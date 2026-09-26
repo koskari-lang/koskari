@@ -17,24 +17,27 @@
 /**
    koskari/lib/demand.c
 
-   Demand path and KoskariSyncViolation. demand_call invokes a Koskari callable
-   without suspension (callee as root).
+   Demand path and KoskariSyncViolation. demand_call invokes a Koskari
+   callable from Python without suspension.
 
-   For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; any
-   attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) is converted into an
-   in-eval KoskariSyncViolation at the deny site so TRY/finally can run;
-   uncaught, the exception surfaces as KOS_RES_RAISE.
+   The demand core is the Python boundary's entry into Koskari: a
+   KosCallable of any kind is called through KosEvalState_CallInto from a
+   code-less root frame marked KOS_FRAME_DEMAND, on the boundary's own
+   context. Any attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) under
+   the mark is converted into an in-eval KoskariSyncViolation at the deny
+   site so TRY/finally can run; uncaught, the exception surfaces as
+   KOS_RES_RAISE.
 
-   Yielding KosFunctions return DemandGenerator instead of raising.
-   DemandGenerator stepping forces KOS_FRAME_DEMAND onto the generator's
-   frame at each entry (demand intent, embodied by the driving node), so
-   AWAIT denies in-eval exactly as in demand functions -- catchable by
-   the generator body for sync fallback; uncaught, it unwinds and exits
-   as KOS_RES_RAISE. YIELD is untouched: it surfaces as iteration. The
-   demand bit is drive-state: kos_dyn_gen_install assigns it from the
-   frame below the splice at every entry, so flattened iteration
-   inherits the consumer's demand state and async node drives force
-   it off.
+   Demand applies to a generator's drive, not its construction: a
+   yielding callable returns its AsyncGenerator as is. KosPyIter stepping
+   from Python forces KOS_FRAME_DEMAND onto the generator's frame at
+   each entry, so AWAIT denies in-eval exactly as in demand functions --
+   catchable by the generator body for sync fallback; uncaught, it
+   unwinds and exits as KOS_RES_RAISE. YIELD is untouched: it surfaces
+   as iteration. The demand bit is drive-state: kos_dyn_gen_install
+   assigns it from the frame below the splice at every entry, so
+   flattened iteration -- over a KosPyIter too -- inherits the
+   consumer's demand state and async node drives force it off.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -173,18 +176,17 @@ steal_fail:
 
 
 /**
-   Classify a value a koskari install or eval reports as settled. A
-   plain value passes through; one that genuinely needs awaiting is
-   eagerly stepped (and denied as a sync violation if it suspends)
-   through the same machinery a plain Python callable's result already
-   takes. KosEval_ResultIsValue is the gate rather than
-   demand_step_python_result's own __await__ probe, so a Defer or a
-   future -- both exempt from ambient await -- passes through as the
-   value it is instead of being stepped.
+   Finish a value at the demand boundary, whether a Python callable or
+   a Koskari install produced it. A plain value passes through; one
+   that genuinely needs awaiting is eagerly stepped, and denied as a
+   sync violation if it suspends. KosEval_ResultIsValue is the gate
+   rather than demand_step_python_result's own __await__ probe, so a
+   Defer or a future -- both exempt from ambient await -- passes
+   through as the value it is instead of being stepped.
 
    Steals value. Returns a new reference, or NULL with PyErr set.
 */
-static PyObject *demand_finish_koskari_value(PyObject *value) {
+static PyObject *demand_finish_value(PyObject *value) {
 
   switch (KosEval_ResultIsValue(value)) {
     case 1:
@@ -198,318 +200,195 @@ static PyObject *demand_finish_koskari_value(PyObject *value) {
 }
 
 
-/* === Demand core (demand_sync_ex) === */
+/* === Demand core === */
 
 
 /**
-  Base implementation: returns 0 (success with *out_result) or -1 (error,
-  PyErr set).
+   The resume on a demand code-less frame: completes the frame with the
+   called callable's result. A failed delivery propagates.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
+    KosEvalState *es,
+    void *state,
+    PyObject *value) {
 
-  For KosCallable run_eval: the root frame is marked KOS_FRAME_DEMAND; in-eval
-  deny guards convert AWAIT/YIELD into KoskariSyncViolation before koskari_eval
-  returns, so KOS_RES_AWAIT and KOS_RES_YIELD are unreachable here.
-  DemandGenerator stepping is unchanged (see demand.c).
+  (void) state;
 
-  callable, args, kwargs are borrowed. Never decref them.
- */
-static int demand_sync_ex(
+  if (! value)
+    return EVAL_RAISE();
+
+  return KosNativeFrame_ReturnPark(es, value, NULL);
+}
+
+
+KOS_RESUME_KIND(demand_resume_kind, "demand",
+                demand_resume, NULL, kos_resume_clone_shared);
+
+
+/**
+   Run a KosCallable to completion from the Python boundary: record the
+   call on a fresh context, and koskari_eval installs it at entry
+   through KosEvalState_CallInto from a code-less root frame marked
+   KOS_FRAME_DEMAND, which is the caller frame every install delivers
+   into, then runs it to its return. Any KosCallable is accepted. The
+   deny guards convert AWAIT and YIELD under the demand mark into
+   KoskariSyncViolation, so koskari_eval answers RETURN, RAISE, or
+   FATAL.
+
+   args and kwnames are borrowed. Returns a new reference, or NULL with
+   PyErr set.
+*/
+static PyObject *demand_run_koskari(
     PyObject *callable,
-    PyObject *args,
-    PyObject *kwargs,
-    PyObject **out_result) {
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
 
-  KosContext *ctx = NULL;
-  PyObject *result = NULL;
+  KosEntryCall call = {
+    callable, args, nargs, kwnames, &demand_resume_kind, KOS_FRAME_DEMAND,
+  };
+  KosContext *ctx = KosContext_New(NULL);
+  KosOpResult r;
 
-  PyObject *call_args = NULL;
+  if (! ctx)
+    return NULL;
 
-  // if (! args) {
-  //   args = PyTuple_New(0);
-  //   if (! args)
-  //     goto ret_fail;
-  // }
+  KosContext_ENTRY_CALL(ctx) = &call;
+  r = koskari_eval(ctx, NULL, NULL, NULL);
+  KosContext_ENTRY_CALL(ctx) = NULL;
+  Py_DECREF(ctx);
 
-  // DO NOT USE %R HERE. It will infinitely recurse into the demand_sync_ex
-  // for the __repr__
+  switch (r.kind) {
+    case KOS_RES_RETURN:
+      /* The returned value is classified like any other settled
+         result: a function that returns an awaitable as data gets the
+         same eager-step-or-deny treatment a plain Python callable's
+         result gets, instead of leaking an unstepped awaitable out of
+         the demand boundary. */
+      return demand_finish_value(r.val);
+
+    case KOS_RES_RAISE:
+    case KOS_RES_FATAL:
+      return NULL;
+
+    case KOS_RES_AWAIT:
+    case KOS_RES_YIELD:
+      Py_XDECREF(r.val);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "demand_sync: unexpected suspension "
+                      "(missing deny guard)");
+      return NULL;
+
+    default:
+      PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
+      return NULL;
+  }
+}
+
+
+/**
+   The demand core over a vectorcall-shaped argument vector. A plain
+   Python callable is called and its result finished; a KosCallable
+   runs through demand_run_koskari. args and kwnames are borrowed.
+   Returns a new reference, or NULL with PyErr set.
+*/
+static PyObject *demand_sync_vector(
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
   SAYF("[demand_sync] callable = %p", callable);
 
-  /* KosDemand wrapper (or a subtype such as Procedure): unwrap and recurse
-     on the inner callable directly. Must come before KosCallable_Check
-     since Demand is now a KosCallable. */
-  if (KosDemand_Check(callable)) {
-    PyObject *inner = KosDemand_GetWrapped(callable);
-    if (! inner) {
-      PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
-      return -1;
-    }
-    return demand_sync_ex(inner, args, kwargs, out_result);
-  }
-
-  /* Plain Python (not KosCallable): call, then eagerly step any awaitable. */
   if (! KosCallable_Check(callable)) {
-    SAYF("[demand_sync] Plain Python (not KosCallable): callable = %p", callable);
-    SAYF("[demand_sync] args = %R", args);
-    SAYF("[demand_sync] kwargs = %R", kwargs);
-
-    if (! args && ! kwargs) {
-      result = PyObject_CallNoArgs(callable);
-    } else {
-      result = PyObject_Call(callable, args, kwargs);
-    }
-
-    if (result)
-      result = demand_step_python_result(result);
-
-    *out_result = result;
-    return result ? 0 : -1;
+    PyObject *result = PyObject_Vectorcall(callable, args, (size_t) nargs,
+                                           kwnames);
+    return result ? demand_finish_value(result) : NULL;
   }
 
-  /* KosBoundMethod: unwrap and prepend self to args; a NULL args is
-     no arguments, as the arms above already take it */
-  if (KosBoundMethod_CheckExact(callable)) {
-    PyObject *fn = KosBoundMethod_FUNC(callable);
-    PyObject *self = KosBoundMethod_SELF(callable);
-    PyObject *tmp = PyTuple_Pack(1, self);
-    if (! tmp)
-      goto ret_fail;
-
-    if (args) {
-      call_args = PySequence_Concat(tmp, args);
-      Py_DECREF(tmp);
-    } else {
-      call_args = tmp;
-    }
-    if (! call_args)
-      goto ret_fail;
-    callable = fn;
-
-  } else {
-    call_args = args;
-    Py_XINCREF(call_args);
-  }
-
-  /* BoundMethod may unwrap to Demand (or a subtype): recurse with bound
-     args. */
-  if (KosDemand_Check(callable)) {
-    PyObject *inner = KosDemand_GetWrapped(callable);
-    if (! inner) {
-      Py_DECREF(call_args);
-      PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
-      return -1;
-    }
-    int r = demand_sync_ex(inner, call_args, kwargs, out_result);
-    Py_DECREF(call_args);
-    return r;
-  }
-
-  /* BoundMethod may also unwrap to other non-KosCallable */
-  if (! KosCallable_Check(callable)) {
-    if (! call_args && ! kwargs) {
-      result = PyObject_CallNoArgs(callable);
-    } else {
-      result = PyObject_Call(callable, call_args, kwargs);
-    }
-    Py_DECREF(call_args);
-    if (result)
-      result = demand_step_python_result(result);
-    *out_result = result;
-    return result ? 0 : -1;
-  }
-
-  /* Other KosCallable kinds (partial, continuations, procedures) are
-     not supported for demand_sync yet: their installs assume a caller
-     frame to deliver into, which a demand root does not have. */
-  if (! KosExpression_CheckExact(callable)
-      && ! KosFunction_CheckExact(callable)) {
-    PyErr_Format(PyExc_TypeError,
-                 "demand_sync does not support %s",
-                 Py_TYPE(callable)->tp_name);
-    goto ret_fail;
-  }
-
-  /* A yielding callable: a call constructs its generator without
-     evaluating anything. The ordinary python-boundary call binds the
-     arguments and returns the async-surface generator; re-surface it
-     for demand. No context is involved. */
-  {
-    KosCallSlots *slots;
-
-    if (KosCallable_CheckSlots(callable, &slots)
-        && ! KosCallSlots_WantsFrame(slots, callable)) {
-      PyObject *agen_obj = Koskari_AsyncCall(callable, call_args, kwargs);
-      if (! agen_obj)
-        goto ret_fail;
-      {
-        PyObject *gen_out = KosIterAdapt_DemandIter(agen_obj);
-        Py_DECREF(agen_obj);
-        if (! gen_out)
-          goto ret_fail;
-        Py_XDECREF(call_args);
-        *out_result = gen_out;
-        return 0;
-      }
-    }
-  }
-
-  /* Non-yielding Expression or Function: install through the shared
-     call entry -- the same frame prep and install-slot dispatch every
-     other call site uses -- on a fresh context, and run the installed
-     frame to completion. */
-  ctx = KosContext_New(NULL);
-  if (! ctx)
-    goto ret_fail;
-
-  {
-    KosEvalState es;
-    KosEvalState_Init(&es, ctx);
-    KosEvalState_ThawFromContext(&es);
-
-    {
-      KosOpResult ir;
-
-      if (! kwargs) {
-        /* No keywords: ride the vector entry, whose simple-bind and
-           parked-frame arms skip the namespace build when the call
-           classifies -- the demand root frame parks back into the
-           function's cache when the context is released. */
-        PyObject *const *argv =
-            call_args ? &PyTuple_GET_ITEM(call_args, 0) : NULL;
-        Py_ssize_t na = call_args ? PyTuple_GET_SIZE(call_args) : 0;
-        ir = KosEvalState_CallResult(&es, callable, argv, na, NULL, 0,
-                                     NULL, NULL);
-      } else {
-        ir = KosEvalState_CallArgs(&es, callable, call_args, kwargs, 0);
-      }
-
-      /* The install either filled the root frame (NORMAL/REPROLOGUE,
-         the only outcomes an Expression or a non-yielding Function
-         produces here today) or settled without one. The settled
-         arms are classified rather than relayed: a demand root has no
-         later delivery point, so an unclassified value or a permitted
-         suspension would have nowhere to go. */
-      if (ir.kind != KOS_RES_NORMAL && ir.kind != KOS_RES_REPROLOGUE) {
-        KosEvalState_FreezeToContext(&es);
-        Py_CLEAR(ctx);
-
-        if (ir.kind == KOS_RES_RETURN) {
-          result = demand_finish_koskari_value(ir.val);
-          goto done;
-        }
-
-        if (ir.kind == KOS_RES_AWAIT) {
-          /* koskari_eval has not started; nothing could ever service
-             this suspension. Deny it here, where the in-eval guards
-             would have denied it had it happened one step later. */
-          Py_XDECREF(ir.val);
-          kos_demand_set_sync_violation(
-              "async suspension is not allowed in demand_sync");
-          goto ret_fail;
-        }
-
-        /* RAISE / FATAL: PyErr already set. */
-        goto ret_fail;
-      }
-    }
-
-    if (! KosEvalState_CODE(&es)) {
-      KosEvalState_FreezeToContext(&es);
-      Py_CLEAR(ctx);
-      PyErr_SetString(PyExc_SystemError,
-                      "demand_sync: install left no code to run");
-      goto ret_fail;
-    }
-
-    /* Mark the installed frame as the demand root; children inherit
-       the flag, and the in-eval deny guards convert any AWAIT/YIELD
-       into KoskariSyncViolation before koskari_eval returns. */
-    KosDynFrame_FLAGS(KosEvalState_FRAME(&es)) |= KOS_FRAME_DEMAND;
-    KosEvalState_FreezeToContext(&es);
-  }
-
-  {
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
-
-    Py_CLEAR(ctx);
-
-    switch (ev.kind) {
-      case KOS_RES_RETURN:
-        /* The returned value is classified like any other settled
-           result: a function that returns an awaitable as data gets
-           the same eager-step-or-deny treatment a plain Python
-           callable's result already gets, instead of leaking an
-           unstepped awaitable out of the demand boundary. */
-        result = demand_finish_koskari_value(ev.val);
-        break;
-
-      case KOS_RES_RAISE:
-      case KOS_RES_FATAL:
-        /* PyErr already set */
-        break;
-
-      case KOS_RES_AWAIT:
-      case KOS_RES_YIELD:
-        /* Both should be intercepted before reaching here — this is a bug. */
-        Py_XDECREF(ev.val);
-        PyErr_SetString(PyExc_RuntimeError,
-                        "demand_sync: unexpected suspension (missing deny guard)");
-        break;
-
-      default:
-        PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
-        break;
-    }
-  }
-  goto done;
-
-ret_fail:
-  Py_XDECREF(call_args);
-  *out_result = NULL;
-  return -1;
-
-done:
-  Py_XDECREF(call_args);
-  *out_result = result;
-  return result ? 0 : -1;
+  return demand_run_koskari(callable, args, nargs, kwnames);
 }
 
 
-int Koskari_DemandSyncEx(
-    PyObject *callable,
-    PyObject *args,
-    PyObject *kwargs,
-    PyObject **out_result) {
-
-  return demand_sync_ex(callable, args, kwargs, out_result);
-}
-
-
-static PyObject *demand_sync_impl(
-    PyObject *callable,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  PyObject *result = NULL;
-  demand_sync_ex(callable, args, kwargs, &result);
-  return result;
-}
-
-
+/**
+   The demand core over a tuple and a dict. A plain Python callable
+   takes them as they are through PyObject_Call; a KosCallable's are
+   spread once to a vector for demand_run_koskari. No buffer: this
+   frame sits on the C stack of every boundary re-entry, and keyword
+   calls here are rare enough to take the heap.
+*/
 PyObject *Koskari_DemandSync(
     PyObject *callable,
     PyObject *args,
     PyObject *kwargs) {
 
-  return demand_sync_impl(callable, args, kwargs);
+  KosArgSpread spread;
+  PyObject *result;
+
+  SAYF("[demand_sync] callable = %p", callable);
+
+  if (! KosCallable_Check(callable)) {
+    PyObject *empty = NULL;
+
+    if (! args) {
+      empty = PyTuple_New(0);
+      if (! empty)
+        return NULL;
+      args = empty;
+    }
+    result = PyObject_Call(callable, args, kwargs);
+    Py_XDECREF(empty);
+    return result ? demand_finish_value(result) : NULL;
+  }
+
+  if (KosArgSpread_Init(&spread, args, kwargs, NULL, 0) < 0)
+    return NULL;
+  result = demand_run_koskari(callable, spread.argv, spread.nargs,
+                              spread.kwnames);
+  KosArgSpread_Clear(&spread);
+  return result;
+}
+
+
+int Koskari_DemandSyncVector(
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **out_result) {
+
+  *out_result = demand_sync_vector(callable, args, nargs, kwnames);
+  return *out_result ? 0 : -1;
 }
 
 
 /* === KosDemand (wrapper) === */
 
 
-typedef struct {
-  PyObject_HEAD
-  PyObject *wrapped;
-} KosDemandObject;
+/**
+   The Python vectorcall entry, and the type's tp_call through
+   PyVectorcall_Call: the demand core over the vector on the wrapped
+   callable. A method-descriptor call from CPython arrives here unbound
+   with self first in args.
+*/
+static PyObject *demand_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  PyObject *wrapped = KosDemand_GetWrapped(self);
+
+  if (! wrapped) {
+    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+    return NULL;
+  }
+  if (kwnames && ! PyTuple_GET_SIZE(kwnames))
+    kwnames = NULL;
+  return demand_sync_vector(wrapped, args, PyVectorcall_NARGS(nargsf),
+                            kwnames);
+}
+
 
 
 static PyObject *demand_new(
@@ -535,11 +414,14 @@ static PyObject *demand_new(
   }
 
   KosDemandObject *self = (KosDemandObject *) type->tp_alloc(type, 0);
+  KosCallSlots *slots;
 
   if (! self)
     return NULL;
 
   self->wrapped = NULL;
+  self->vectorcall = KosCallable_CheckSlots((PyObject *) self, &slots)
+      ? slots->kc_pyvectorcall : NULL;
   return (PyObject *) self;
 }
 
@@ -693,30 +575,12 @@ static int demand_clear(PyObject *self) {
 
 
 /**
-  Return 1 if inner is a non-yielding KosFunction or KosExpression that can be
-  installed directly into the current frame. Returning 0 routes to the
-  demand_sync_ex fallback path (Python callable, yielding function, nested
-  Demand, or any other KosCallable type).
+   Evaluator install: call the inner through the call entry, whatever
+   it is. A settled value the call completes in hand passes; an
+   awaitable settles under a code-less frame marked KOS_FRAME_DEMAND;
+   an installed callee's frame is marked the same, so the in-eval deny
+   guards fire under either.
 */
-static int demand_inner_is_flattenable(PyObject *inner) {
-
-  if (KosDemand_CheckExact(inner))
-    return 0;
-
-  if (! KosCallable_Check(inner))
-    return 0;
-
-  return KosCallable_WantsFrame(inner);
-}
-
-
-static int demand_wants_frame(PyObject *callable) {
-
-  KosDemandObject *d = (KosDemandObject *) callable;
-  return demand_inner_is_flattenable(d->wrapped);
-}
-
-
 static KosOpResult demand_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -727,67 +591,41 @@ static KosOpResult demand_kos_vinstall(
 
   KosDemandObject *d = (KosDemandObject *) callable;
   PyObject *inner = d->wrapped;
+  KosOpResult r;
 
   if (! inner) {
     PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
     return EVAL_RAISE();
   }
 
-  if (demand_inner_is_flattenable(inner)) {
-    /* Install inner directly into the frame prepared by do_frame_prep
-       -- on the vector path, so the inner KosFunction gets its vector
-       (and simple-call) prep.  Then mark the frame as the demand root
-       so in-eval deny guards fire. */
-    KosOpResult r = KosCallable_Call(es, inner, args, nargs, kwnames,
-                                     tail_call);
-    if (r.kind == KOS_RES_NORMAL) {
+  r = KosEvalState_Call(
+      es, inner, args, nargs, kwnames, tail_call, NULL, NULL);
+  switch (r.kind) {
+    case KOS_RES_RETURN:
+      switch (KosEval_ResultIsValue(r.val)) {
+        case 1:
+          return r;
+        case 0:
+          /* an awaitable in hand settles under a demand-marked frame,
+             so a suspension is denied in-eval at the guard */
+          return KosEvalState_SettleInto(
+              es, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
+        default:
+          Py_DECREF(r.val);
+          return EVAL_RAISE();
+      }
+
+    case KOS_RES_NORMAL:
+    case KOS_RES_POLL:
+    case KOS_RES_REPROLOGUE: {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
-    }
-    return r;
-  }
-
-  /* Cold fallback: demand_sync_ex needs the tuple + dict shapes. */
-  {
-    Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-    PyObject *tup = PyTuple_New(nargs);
-    PyObject *kwargs = NULL;
-    PyObject *result = NULL;
-    int sr;
-
-    if (! tup)
-      return EVAL_RAISE();
-    for (Py_ssize_t i = 0; i < nargs; i++) {
-      PyObject *v = args[i];
-      Py_INCREF(v);
-      PyTuple_SET_ITEM(tup, i, v);
-    }
-    if (nkw) {
-      kwargs = PyDict_New();
-      if (! kwargs) {
-        Py_DECREF(tup);
-        return EVAL_RAISE();
-      }
-      for (Py_ssize_t i = 0; i < nkw; i++) {
-        if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
-                           args[nargs + i]) < 0) {
-          Py_DECREF(tup);
-          Py_DECREF(kwargs);
-          return EVAL_RAISE();
-        }
-      }
+      return r;
     }
 
-    sr = demand_sync_ex(inner, tup, kwargs, &result);
-    Py_DECREF(tup);
-    Py_XDECREF(kwargs);
-    if (sr < 0)
-      return EVAL_RAISE();
-
-    if (KosEvalState_StackPUSH(es, result) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
+    default:
+      return r;
   }
 }
 
@@ -800,14 +638,16 @@ KosEvaluatedTypeObject KosDemandCallableType = {
     .tp_basicsize = sizeof(KosDemandObject),
     .tp_itemsize = 0,
     .tp_dealloc = demand_dealloc,
-    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC
+        | Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_METHOD_DESCRIPTOR,
+    .tp_vectorcall_offset = KosDemand_VECTORCALL_OFFSET,
     .tp_doc = "Callable adapter that runs its wrapped callable on the demand path",
     .tp_traverse = demand_traverse,
     .tp_clear = demand_clear,
     .tp_members = demand_members,
     .tp_getset = demand_getset,
     .tp_repr = demand_repr,
-    .tp_call = KosCallAdapt_CallDemand,
+    .tp_call = PyVectorcall_Call,
     .tp_descr_get = demand_descr_get,
     .tp_new = demand_new,
     .tp_init = demand_init,
@@ -815,10 +655,8 @@ KosEvaluatedTypeObject KosDemandCallableType = {
   },
   .kos_call = {
     .kc_vinstall = demand_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = demand_wants_frame,
-    .kc_pycall = KosCallAdapt_CallDemand,
-    .kc_pyvectorcall = KosCallAdapt_VectorDemand,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = demand_vectorcall,
   },
 };
 
@@ -841,7 +679,7 @@ static PyObject *demand_call_kw(
     Py_DECREF(callable);
     return NULL;
   }
-  PyObject *result = demand_sync_impl(callable, call_args, kwargs);
+  PyObject *result = Koskari_DemandSync(callable, call_args, kwargs);
   Py_DECREF(call_args);
   Py_DECREF(callable);
   return result;
@@ -873,7 +711,7 @@ static PyObject *demand_apply_kw(
                     "demand_apply: kwargs must be a dict or None");
     return NULL;
   }
-  return demand_sync_impl(callable, call_args, call_kw);
+  return Koskari_DemandSync(callable, call_args, call_kw);
 }
 
 

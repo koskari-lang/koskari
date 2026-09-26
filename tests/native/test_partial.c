@@ -367,6 +367,75 @@ static int test_kospartial_instance_dict(void) {
 }
 
 
+static int test_argspread_merged_override(void) {
+  /*
+    KosArgSpread_InitMerged lays bound positionals, call positionals,
+    then keyword values; a call keyword replaces the bound value of the
+    same name in place, a new one appends. Names are borrowed into a
+    fresh tuple and released by Clear.
+  */
+  PyObject *bound = Py_BuildValue("(s)", "a");
+  PyObject *kwds = Py_BuildValue("{s:i,s:i}", "x", 1, "y", 2);
+  PyObject *kwnames = Py_BuildValue("(ss)", "y", "z");
+  PyObject *b = PyUnicode_FromString("b");
+  PyObject *v20 = PyLong_FromLong(987620);
+  PyObject *v30 = PyLong_FromLong(987630);
+  PyObject *args[3];
+  PyObject *buf[8];
+  KosArgSpread spread;
+
+  TEST_ASSERT_NOT_NULL(bound, "bound tuple");
+  TEST_ASSERT_NOT_NULL(kwds, "bound dict");
+  TEST_ASSERT_NOT_NULL(kwnames, "call kwnames");
+  TEST_ASSERT_NOT_NULL(b, "call positional");
+  TEST_ASSERT_NOT_NULL(v20, "call value y");
+  TEST_ASSERT_NOT_NULL(v30, "call value z");
+  args[0] = b;
+  args[1] = v20;
+  args[2] = v30;
+
+  Py_ssize_t y_initial = Py_REFCNT(PyTuple_GET_ITEM(kwnames, 0));
+  Py_ssize_t b_initial = Py_REFCNT(b);
+
+  TEST_ASSERT(KosArgSpread_InitMerged(&spread, bound, kwds, args, 1, kwnames,
+                                      buf, 8) == 0,
+              "merged spread");
+  TEST_ASSERT_EQ(spread.nargs, 2, "two positionals");
+  TEST_ASSERT_SAME(spread.argv[0], PyTuple_GET_ITEM(bound, 0),
+                   "bound positional first");
+  TEST_ASSERT_SAME(spread.argv[1], b, "call positional second");
+  TEST_ASSERT_NOT_NULL(spread.kwnames, "merged names");
+  TEST_ASSERT_EQ(PyTuple_GET_SIZE(spread.kwnames), 3, "x, y, z");
+  TEST_ASSERT(PyUnicode_CompareWithASCIIString(
+                  PyTuple_GET_ITEM(spread.kwnames, 0), "x") == 0,
+              "x heads");
+  TEST_ASSERT(PyUnicode_CompareWithASCIIString(
+                  PyTuple_GET_ITEM(spread.kwnames, 1), "y") == 0,
+              "y keeps its bound position");
+  TEST_ASSERT(PyUnicode_CompareWithASCIIString(
+                  PyTuple_GET_ITEM(spread.kwnames, 2), "z") == 0,
+              "z appends");
+  TEST_ASSERT_SAME(spread.argv[2], PyDict_GetItemString(kwds, "x"),
+                   "x keeps its bound value");
+  TEST_ASSERT_SAME(spread.argv[3], v20, "y takes the call value");
+  TEST_ASSERT_SAME(spread.argv[4], v30, "z takes the call value");
+  TEST_ASSERT_NULL(spread.heap, "fits the buffer");
+  TEST_ASSERT_EQ(Py_REFCNT(b), b_initial, "argv entries are borrowed");
+
+  KosArgSpread_Clear(&spread);
+  TEST_ASSERT_EQ(Py_REFCNT(PyTuple_GET_ITEM(kwnames, 0)), y_initial,
+                 "name refcount restored after clear");
+
+  Py_DECREF(v30);
+  Py_DECREF(v20);
+  Py_DECREF(b);
+  Py_DECREF(kwnames);
+  Py_DECREF(kwds);
+  Py_DECREF(bound);
+  return 0;
+}
+
+
 /* === suite entry point === */
 
 
@@ -384,6 +453,7 @@ int run_partial_tests(void) {
   RUN_TEST(test_kospartial_call_merges);
   RUN_TEST(test_kospartial_reduce);
   RUN_TEST(test_kospartial_instance_dict);
+  RUN_TEST(test_argspread_merged_override);
 
   return 0;
 }

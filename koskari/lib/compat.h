@@ -41,6 +41,33 @@
 #endif
 
 
+/* === Immortal objects === */
+
+/*
+   Make one object immortal: its refcount holds the sentinel the
+   interpreter skips in Py_INCREF and Py_DECREF (PEP 683, 3.12 and
+   later; the sentinel was renamed in 3.14). Before 3.12 there is no
+   such refcount and the object stays ordinary, kept alive by its
+   holder's reference. The object must own no references the collector
+   needs to see: untrack it first.
+*/
+#if defined(Py_GIL_DISABLED)
+/* no sentinel: the free-threaded build immortalizes differently */
+#elif PY_MINOR_VERSION >= 14
+#define KOS_IMMORTAL_REFCNT _Py_IMMORTAL_INITIAL_REFCNT
+#elif PY_MINOR_VERSION >= 12
+#define KOS_IMMORTAL_REFCNT _Py_IMMORTAL_REFCNT
+#endif
+
+static inline void kos_immortalize(PyObject *obj) {
+#ifdef KOS_IMMORTAL_REFCNT
+  Py_SET_REFCNT(obj, (Py_ssize_t) KOS_IMMORTAL_REFCNT);
+#else
+  (void) obj;
+#endif
+}
+
+
 /* === The eval breaker === */
 
 /*

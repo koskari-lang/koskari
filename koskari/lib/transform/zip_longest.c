@@ -367,7 +367,6 @@ static PyObject *koszip_longest_new(
   }
 
   z->base.fn.cs_callable = NULL;
-  z->base.fn.cs_slots = NULL;
   z->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
   z->base.source = NULL;
@@ -454,7 +453,7 @@ KosEvaluatedTypeObject KosZipLongestType = {
               "path)",
     .tp_traverse = koszip_longest_traverse,
     .tp_clear = koszip_longest_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koszip_longest_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

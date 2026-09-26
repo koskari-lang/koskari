@@ -53,11 +53,16 @@
 
 
 /**
-   True if descr is a plain instance-method descriptor (KosFunction or
-   PyFunction) that we can return without calling __get__.
+   True if descr's type is a method descriptor: calling descr(obj, *args)
+   is equivalent to calling descr.__get__(obj, type(obj))(*args), so it
+   can be returned unbound and called with the receiver prepended,
+   without running __get__ or allocating a bound method. The type
+   records this itself (Py_TPFLAGS_METHOD_DESCRIPTOR), the same fact
+   CPython's own method calls read: PyFunction, KosFunction, the Demand
+   family, builtin method descriptors.
 */
 static int is_plain_instance_method(PyObject *descr) {
-  return KosFunction_CheckExact(descr) || PyFunction_Check(descr);
+  return PyType_HasFeature(Py_TYPE(descr), Py_TPFLAGS_METHOD_DESCRIPTOR);
 }
 
 
@@ -181,7 +186,8 @@ static uint64_t kos_type_version_assign(PyTypeObject *tp) {
    On success sets *out (new ref). *mode is the cacheable classification and
    *cache_descr the borrowed class-side descriptor to store, or NULL. Only
    the modes that run no __get__ during resolution are reported as cacheable
-   (DIRECT_OBJECT_GUARDED plain method / plain attribute, INSTANCE_DICT);
+   (DIRECT_METHOD_GUARDED method descriptor, DIRECT_OBJECT_GUARDED
+   plain attribute, INSTANCE_DICT);
    anything that invokes a descriptor or custom hook is reported as
    GENERIC_LOOKUP so the caller does not cache a value it cannot safely
    reproduce from a guarded descriptor.
@@ -239,10 +245,11 @@ static int resolve_named_attr_slow(
   if (descr) {
     if (is_plain_instance_method(descr)) {
       /* Return the function unbound; caller invokes fn(obj, *args). No
-         __get__, no bound-method allocation -- safe and worth caching. */
+         __get__, no bound-method allocation -- safe and worth caching,
+         under a mode that records the classification for the hit. */
       Py_INCREF(descr);
       *out = descr;
-      *mode = KOS_METHOD_DIRECT_OBJECT_GUARDED;
+      *mode = KOS_METHOD_DIRECT_METHOD_GUARDED;
       *cache_descr = descr;
       return 0;
     }
@@ -399,7 +406,8 @@ static int method_slot_hit(
   PyObject *descr = slot->u.method.resolved;
 
   switch (slot->u.method.mode) {
-  case KOS_METHOD_DIRECT_OBJECT_GUARDED: {
+  case KOS_METHOD_DIRECT_OBJECT_GUARDED:
+  case KOS_METHOD_DIRECT_METHOD_GUARDED: {
     /* An instance attribute may shadow the class attribute. */
     int shadowed;
 
@@ -423,15 +431,13 @@ static int method_slot_hit(
 
     if (shadowed)
       return KOS_CACHE_HIT_FALL;
-    if (is_plain_instance_method(descr)) {
-      Py_INCREF(descr);
-      *out = descr;
-      return 0;
-    }
-    /* Plain class attribute (cached DIRECT never holds a __get__ descr). */
+    /* The mode recorded the classification at resolution: a method
+       descriptor is returned unbound with the receiver sent, a plain
+       class attribute as is (cached DIRECT never holds a __get__
+       descr). */
     Py_INCREF(descr);
     *out = descr;
-    return 1;
+    return slot->u.method.mode == KOS_METHOD_DIRECT_METHOD_GUARDED ? 0 : 1;
   }
   case KOS_METHOD_INSTANCE_DICT: {
     PyObject *val;

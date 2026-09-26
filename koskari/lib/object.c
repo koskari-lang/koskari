@@ -19,8 +19,9 @@
 
    Functional class builder. kos_build_class demand-wraps the
    synchronous dunders in the class namespace (Demand for
-   value-returning dunders, Procedure for __init__, staticmethod(Demand)
-   for __new__, classmethod(Demand) for the class-construction hooks)
+   value-returning dunders, Procedure for __init__, IterFunction for a
+   generator __iter__, staticmethod(Demand) for __new__,
+   classmethod(Demand) for the class-construction hooks)
    and delegates construction to the
    winning metaclass -- plain type by default. CPython's own slot
    machinery then dispatches tp_repr, tp_richcompare, and the rest
@@ -44,6 +45,7 @@
 static PyObject *str_call_name = NULL;
 static PyObject *str_func_name = NULL;
 static PyObject *str_class_name = NULL;
+static PyObject *str_iter_name = NULL;
 
 
 /**
@@ -59,6 +61,9 @@ static PyObject *str_class_name = NULL;
      functions.
    - class dunders: canonicalized to classmethod(Demand); same
      PyFunction-only gate in type_new's auto-classmethod treatment.
+   - __iter__ bound to a generator KosFunction: wrapped in IterFunction,
+     which presents the generator to Python as a KosPyIter. Any other
+     __iter__ is a demand dunder and must return an iterator itself.
    - demand dunders: every other synchronous object dunder, wrapped in
      Demand.
 
@@ -148,20 +153,29 @@ static PyObject *demand_names[COUNT_OF(demand_dunders)];
 */
 
 
-static PyObject *procedure_tp_call(
+/**
+   The Python vectorcall entry: the demand core over the vector, result
+   discarded. A method-descriptor call from CPython (slot_tp_init)
+   arrives here unbound with self first in args.
+*/
+static PyObject *procedure_vectorcall(
     PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
 
   PyObject *wrapped = KosDemand_GetWrapped(self);
+  PyObject *result = NULL;
 
   if (! wrapped) {
     PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
     return NULL;
   }
+  if (kwnames && ! PyTuple_GET_SIZE(kwnames))
+    kwnames = NULL;
 
-  PyObject *result = Koskari_DemandSync(wrapped, args, kwargs);
-  if (! result)
+  if (Koskari_DemandSyncVector(wrapped, args, PyVectorcall_NARGS(nargsf),
+                               kwnames, &result) < 0)
     return NULL;
 
   Py_DECREF(result);
@@ -189,11 +203,36 @@ static PyObject *procedure_repr(PyObject *self) {
 
 
 /**
-   Evaluator install: run the wrapped callable via the demand core,
-   discard its result, and push None -- the None contract holds on both
-   the Python tp_call path and the evaluator path. No frame is
-   requested, so this mirrors Demand's cold sync fallback rather than
-   its flattening install.
+   The resume on a Procedure's code-less frame: receives the wrapped
+   callable's return and completes the frame with None in its place.
+   A failed delivery propagates.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult procedure_resume(
+    KosEvalState *es,
+    void *state,
+    PyObject *value) {
+
+  (void) state;
+
+  if (! value)
+    return EVAL_RAISE();
+
+  Py_DECREF(value);
+  Py_INCREF(Py_None);
+  return KosNativeFrame_ReturnPark(es, Py_None, NULL);
+}
+
+
+KOS_RESUME_KIND(procedure_resume_kind, "procedure",
+                procedure_resume, NULL, kos_resume_clone_shared);
+
+
+/**
+   Evaluator install: call the wrapped callable from a native frame
+   carrying procedure_resume and marked as the demand root, so the
+   call runs in this evaluator and cannot suspend; in tail position
+   that frame is the caller's, reused. The resume completes the frame
+   with None.
 */
 static KosOpResult procedure_kos_vinstall(
     KosEvalState *es,
@@ -203,63 +242,16 @@ static KosOpResult procedure_kos_vinstall(
     PyObject *kwnames,
     int tail_call) {
 
-  PyObject *tup = NULL;
-  PyObject *kwargs = NULL;
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  PyObject *wrapped = KosDemand_GetWrapped(callable);
 
-  tup = PyTuple_New(nargs);
-  if (! tup)
+  if (! wrapped) {
+    PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
     return EVAL_RAISE();
-  for (Py_ssize_t i = 0; i < nargs; i++) {
-    PyObject *v = args[i];
-    Py_INCREF(v);
-    PyTuple_SET_ITEM(tup, i, v);
   }
 
-  if (nkw) {
-    kwargs = PyDict_New();
-    if (! kwargs) {
-      Py_DECREF(tup);
-      return EVAL_RAISE();
-    }
-    for (Py_ssize_t i = 0; i < nkw; i++) {
-      if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
-                         args[nargs + i]) < 0) {
-        Py_DECREF(tup);
-        Py_DECREF(kwargs);
-        return EVAL_RAISE();
-      }
-    }
-  }
-
-  (void) tail_call;
-  {
-    PyObject *wrapped = KosDemand_GetWrapped(callable);
-    PyObject *result = NULL;
-
-    if (! wrapped) {
-      Py_DECREF(tup);
-      Py_XDECREF(kwargs);
-      PyErr_SetString(PyExc_TypeError,
-                      "Procedure object is not initialized");
-      return EVAL_RAISE();
-    }
-
-    if (Koskari_DemandSyncEx(wrapped, tup, kwargs, &result) < 0) {
-      Py_DECREF(tup);
-      Py_XDECREF(kwargs);
-      return EVAL_RAISE();
-    }
-    Py_XDECREF(result);
-    Py_DECREF(tup);
-    Py_XDECREF(kwargs);
-
-    Py_INCREF(Py_None);
-    if (KosEvalState_StackPUSH(es, Py_None) < 0)
-      return EVAL_RAISE();
-
-    return EVAL_NORMAL();
-  }
+  return KosEvalState_CallInto(
+      es, wrapped, args, nargs, kwnames, &procedure_resume_kind, NULL,
+      KOS_FRAME_DEMAND, tail_call);
 }
 
 
@@ -270,19 +262,19 @@ static KosEvaluatedTypeObject KosProcedureCallableType = {
     .tp_name = "koskari.lib.Procedure",
     .tp_basicsize = 0,  /* inherited from Demand by PyType_Ready */
     .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL
+        | Py_TPFLAGS_METHOD_DESCRIPTOR,
+    .tp_vectorcall_offset = KosDemand_VECTORCALL_OFFSET,
     .tp_doc = "A Demand with no result: runs its wrapped callable on the "
               "demand path and returns None",
     .tp_repr = procedure_repr,
-    .tp_call = KosCallAdapt_CallAsync,
+    .tp_call = PyVectorcall_Call,
     .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
   },
   .kos_call = {
     .kc_vinstall = procedure_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
-    .kc_pycall = procedure_tp_call,
-    .kc_pyvectorcall = NULL,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = procedure_vectorcall,
   },
 };
 
@@ -292,6 +284,119 @@ static PyObject *KosProcedure_New(PyObject *wrapped) {
   return PyObject_CallOneArg(
       (PyObject *) KOS_EVALUATED_PYTYPE(KosProcedureCallableType), wrapped);
 }
+
+
+/* === IterFunction === */
+
+
+/*
+  IterFunction wraps a generator KosFunction bound as __iter__.
+  slot_tp_iter requires __iter__ to return an iterator, and calling a
+  generator function returns its AsyncGenerator, so a call from Python
+  presents that generator as a KosPyIter. Calling a generator function
+  evaluates nothing, so neither path involves the demand core: demand
+  applies when the KosPyIter is driven. Construction, binding, and
+  attribute forwarding are inherited from Demand.
+*/
+
+
+/**
+   The Python vectorcall entry: the wrapped function's own vectorcall
+   builds the generator, presented as a KosPyIter.
+*/
+static PyObject *iterfunction_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  PyObject *wrapped = KosDemand_GetWrapped(self);
+  PyObject *agen;
+  PyObject *iter;
+
+  if (! wrapped) {
+    PyErr_SetString(PyExc_TypeError,
+                    "IterFunction object is not initialized");
+    return NULL;
+  }
+
+  agen = PyObject_Vectorcall(wrapped, args, nargsf, kwnames);
+  if (! agen || ! KosPyAsyncGen_Check(agen))
+    return agen;
+
+  iter = KosIterAdapt_PyIter(agen);
+  Py_DECREF(agen);
+  return iter;
+}
+
+
+static PyObject *iterfunction_repr(PyObject *self) {
+
+  PyObject *wrapped = KosDemand_GetWrapped(self);
+
+  if (! wrapped)
+    return PyUnicode_FromString("<IterFunction ?>");
+
+  PyObject *name = PyObject_GetAttrString(wrapped, "__name__");
+  if (! name) {
+    PyErr_Clear();
+    return PyUnicode_FromString("<IterFunction <lambda>>");
+  }
+
+  PyObject *result = PyUnicode_FromFormat("<IterFunction %R>", name);
+  Py_DECREF(name);
+  return result;
+}
+
+
+/**
+   Evaluator install: the wrapped function's own install, which
+   completes in hand with the new AsyncGenerator for the Koskari caller
+   to iterate natively.
+*/
+static KosOpResult iterfunction_kos_vinstall(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  PyObject *wrapped = KosDemand_GetWrapped(callable);
+
+  if (! wrapped) {
+    PyErr_SetString(PyExc_TypeError,
+                    "IterFunction object is not initialized");
+    return EVAL_RAISE();
+  }
+
+  return KosEvalState_Call(
+      es, wrapped, args, nargs, kwnames, tail_call, NULL, NULL);
+}
+
+
+static KosEvaluatedTypeObject KosIterFunctionType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.IterFunction",
+    .tp_basicsize = 0,  /* inherited from Demand by PyType_Ready */
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL
+        | Py_TPFLAGS_METHOD_DESCRIPTOR,
+    .tp_vectorcall_offset = KosDemand_VECTORCALL_OFFSET,
+    .tp_doc = "A generator function bound as __iter__: called from "
+              "Python, presents its generator as an iterator",
+    .tp_repr = iterfunction_repr,
+    .tp_call = PyVectorcall_Call,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosDemandCallableType),
+  },
+  .kos_call = {
+    .kc_vinstall = iterfunction_kos_vinstall,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = iterfunction_vectorcall,
+  },
+};
 
 
 /* === Namespace preparation === */
@@ -437,13 +542,49 @@ static int canonicalize_name_list(
 
 
 /**
-   Apply the four wrap passes to the class namespace in place. Only
+   Wrap __iter__ in IterFunction when it is bound to a generator
+   KosFunction. Anything else under __iter__ is left to the demand pass
+   and must return an iterator itself. A re-run finds the IterFunction,
+   not a KosFunction, and does nothing.
+*/
+static int wrap_iter_function(PyObject *ns_dict) {
+
+  PyObject *val = PyDict_GetItem(ns_dict, str_iter_name);
+  PyObject *wrapped;
+  KosCode *code;
+  int r;
+
+  if (! val || ! KosFunction_CheckExact(val))
+    return 0;
+
+  code = (KosCode *) KosFunction_CODE(val);
+  if (! code || ! KosCode_YIELDS(code))
+    return 0;
+
+  wrapped = PyObject_CallOneArg(
+      (PyObject *) KOS_EVALUATED_PYTYPE(KosIterFunctionType), val);
+  if (! wrapped)
+    return -1;
+
+  r = PyDict_SetItem(ns_dict, str_iter_name, wrapped);
+  Py_DECREF(wrapped);
+  return r;
+}
+
+
+/**
+   Apply the wrap passes to the class namespace in place. Only
    KosCallables are touched; plain Python callables are already
    synchronous and pass through untouched. Every pass is idempotent.
+   The __iter__ pass runs ahead of the demand pass, which leaves an
+   IterFunction as it is (KosDemand_New returns a Demand unchanged).
 */
 static int demand_wrap_namespace(PyObject *ns_dict) {
 
   if (wrap_name_list(ns_dict, procedure_names, KosProcedure_New) < 0)
+    return -1;
+
+  if (wrap_iter_function(ns_dict) < 0)
     return -1;
 
   if (wrap_name_list(ns_dict, demand_names, KosDemand_New) < 0)
@@ -532,8 +673,11 @@ static PyObject *resolve_prepare_namespace(
 /**
    tp_call shim installed on classes whose __call__ resolves to a
    KosCallable. It doubles as a sentinel: the evaluator recognizes it via
-   KosInstanceCall_Check and inlines the call through the install slot instead
-   of starting a fresh eval loop (see KosEvalState_Call).
+   KosInstanceCall_Check and inlines the call through the target's install
+   slot instead of starting a fresh eval loop (see kos_call_dispatch), with
+   self injected when the target binds its receiver and without it for a
+   non-descriptor such as a partial. This shim follows the same rule for a
+   call from Python.
 
    Unlike the demand-wrapped dunders this preserves async semantics -- a
    bound async __call__ returns a coroutine here, exactly as CPython's
@@ -542,29 +686,54 @@ static PyObject *resolve_prepare_namespace(
 */
 PyObject *kos_instance_call(PyObject *self, PyObject *args, PyObject *kwds) {
 
-  PyObject *call = PyObject_GetAttr(self, str_call_name);
-  if (! call)
-    return NULL;
+  PyTypeObject *tp = Py_TYPE(self);
+  PyObject *descr = PyType_Lookup(tp, str_call_name);
+  PyObject *call;
+  PyObject *result;
 
-  PyObject *result = PyObject_Call(call, args, kwds);
+  if (! descr) {
+    PyErr_Format(PyExc_TypeError, "'%.200s' object is not callable",
+                 tp->tp_name);
+    return NULL;
+  }
+
+  /* CPython's slot_tp_call rule: resolved on the type, bound through
+     its descriptor when it has one, called as is otherwise. */
+  if (Py_TYPE(descr)->tp_descr_get) {
+    call = Py_TYPE(descr)->tp_descr_get(descr, self, (PyObject *) tp);
+    if (! call)
+      return NULL;
+  } else {
+    Py_INCREF(descr);
+    call = descr;
+  }
+
+  result = PyObject_Call(call, args, kwds);
   Py_DECREF(call);
   return result;
 }
 
 
 /**
-   Resolve the unbound __call__ of self's type for inline dispatch. Returns a
-   BORROWED reference to a KosCallable, or NULL if __call__ is absent or not a
-   KosCallable. Uses the type method cache (PyType_Lookup) -- no allocation, no
-   descriptor binding, no transient string. The evaluator injects self as the
-   first positional itself, so no bound method is built.
+   Resolve the __call__ of self's type for inline dispatch: a BORROWED
+   reference to the KosCallable found on the type, or NULL when __call__ is
+   absent or not a KosCallable. *binds says whether that callable binds
+   its receiver (its type has tp_descr_get: a function, the Demand family),
+   in which case the evaluator injects self as the first positional itself
+   and no bound method is built; a non-descriptor such as a partial is
+   called without self, as CPython's slot_tp_call and kos_instance_call
+   call it. Uses the type method cache (PyType_Lookup) -- no allocation,
+   no descriptor binding, no transient string.
 */
-PyObject *kos_instance_call_target(PyObject *self) {
+PyObject *kos_instance_call_target(PyObject *self, int *binds) {
 
   PyObject *fn = PyType_Lookup(Py_TYPE(self), str_call_name);
-  if (fn && KosCallable_Check(fn))
-    return fn;
-  return NULL;
+
+  *binds = 0;
+  if (! fn || ! KosCallable_Check(fn))
+    return NULL;
+  *binds = Py_TYPE(fn)->tp_descr_get != NULL;
+  return fn;
 }
 
 
@@ -714,7 +883,9 @@ int koskari_object_init(PyObject *mod) {
   STR_CONST(str_call_name, "__call__");
   STR_CONST(str_func_name, "__func__");
   STR_CONST(str_class_name, "__class__");
-  if (! str_call_name || ! str_func_name || ! str_class_name)
+  STR_CONST(str_iter_name, "__iter__");
+  if (! str_call_name || ! str_func_name || ! str_class_name
+      || ! str_iter_name)
     return -1;
 
   if (intern_name_list(procedure_dunders, procedure_names) < 0
@@ -725,7 +896,8 @@ int koskari_object_init(PyObject *mod) {
 
   /* Demand must be ready first: koskari_demand_init runs earlier in the
      unit order (see lib.c). */
-  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosProcedureCallableType)) < 0)
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosProcedureCallableType)) < 0
+      || PyType_Ready(KOS_EVALUATED_PYTYPE(KosIterFunctionType)) < 0)
     return -1;
 
   return 0;
@@ -737,6 +909,7 @@ int koskari_object_clear(PyObject *mod) {
   Py_CLEAR(str_call_name);
   Py_CLEAR(str_func_name);
   Py_CLEAR(str_class_name);
+  Py_CLEAR(str_iter_name);
   clear_name_list(procedure_names);
   clear_name_list(static_names);
   clear_name_list(class_names);

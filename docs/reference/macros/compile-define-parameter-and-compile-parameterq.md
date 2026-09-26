@@ -19,9 +19,9 @@ root scope. `parameterize` binds in the running context's own table, so
 concurrent tasks never see each other's bindings. A store with no
 `parameterize` in the way lands in the root scope, shared by the whole
 computation: the channel for host pre-defines and for values set once at
-startup. A `defer` captures the extents applied when it is created, so a
-task reads the bindings live at that moment, while the root scope stays
-shared.
+startup. A `defer` awaited directly runs under the extents applied at
+the await. A task created from it reads the bindings live at its
+creation. The root scope stays shared either way.
 
 **Examples:**
 

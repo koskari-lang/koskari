@@ -96,6 +96,49 @@ def _call_through_bytecode(callable_obj, *args):
     return demand_call(outer_fn)
 
 
+def _call_names_through_bytecode(callable_obj, pos_args, kwd_names, kwd_vals):
+    """
+    Build and run a koskari function that calls callable_obj through the
+    CALL_NAMES opcode, whose stack is callable, positionals, keyword
+    values, then the names tuple, driven synchronously through
+    demand_call
+
+    :return: The call result
+    """
+
+    _, outer_ns = build_expr(
+        [["CONST", 0], ["RETURN", 1]],
+        local_syms=("target",),
+        values={"target": callable_obj},
+    )
+
+    body = [["FAST", 0]]
+    for a in pos_args:
+        body.append(["CONST", a])
+    for v in kwd_vals:
+        body.append(["CONST", v])
+    body.append(["CONST", tuple(kwd_names)])
+    body.append(["CALL_NAMES", len(pos_args)])
+    body.append(["RETURN", 1])
+
+    outer_code = build_code(
+        body,
+        local_syms=(),
+        closure_syms=("target",),
+        name="call_partial_names",
+    )
+    outer_fn = make_callable(outer_code, outer_ns, FormalsSpec())
+    return demand_call(outer_fn)
+
+
+def _pykw(*args, **kwargs):
+    """
+    Plain Python inner that reports what it was called with
+    """
+
+    return (args, kwargs)
+
+
 class TestKosPartialBehavior(unittest.TestCase):
     """
     KosPartial reproduces functools.partial's construction and attributes.
@@ -247,6 +290,107 @@ class TestKosPartialDispatch(unittest.TestCase):
 
         kp = KosPartial(_pyadd, "A")
         self.assertEqual(_call_through_bytecode(kp, "B"), "AB")
+
+
+    def test_bound_keywords(self):
+        """
+        KosPartial(kos_fn, b="B")("A") via bytecode binds b by name
+        """
+
+        kp = KosPartial(_make_concat_fn(), b="B")
+        self.assertEqual(_call_through_bytecode(kp, "A"), "AB")
+
+
+    def test_call_keywords(self):
+        """
+        KosPartial(kos_fn, "A")(b="B") via bytecode binds b by name
+        """
+
+        kp = KosPartial(_make_concat_fn(), "A")
+        self.assertEqual(
+            _call_names_through_bytecode(kp, (), ("b",), ("B",)), "AB")
+
+
+    def test_call_keyword_overrides_bound(self):
+        """
+        A call keyword replaces the bound keyword of the same name
+        """
+
+        kp = KosPartial(_make_concat_fn(), "A", b="X")
+        self.assertEqual(
+            _call_names_through_bytecode(kp, (), ("b",), ("B",)), "AB")
+
+
+    def test_both_sides_override_and_new(self):
+        """
+        Bound and call keywords merge: the call side replaces a shared
+        name and adds a new one, bound names keep their order
+        """
+
+        kp = KosPartial(_pykw, 1, x=1, y=2)
+        args, kwargs = _call_names_through_bytecode(
+            kp, (3,), ("y", "z"), (20, 30))
+        self.assertEqual(args, (1, 3))
+        self.assertEqual(kwargs, {"x": 1, "y": 20, "z": 30})
+        self.assertEqual(list(kwargs), ["x", "y", "z"])
+
+
+    def test_subclass_key_stored_as_plain_str(self):
+        """
+        A str subclass key given at creation is stored as a plain str,
+        so the merge never compares through its Python methods
+        """
+
+        class Loud(str):
+            def __hash__(self):
+                return str.__hash__(self)
+
+            def __eq__(self, other):
+                raise AssertionError("compared through Python")
+
+        kp = KosPartial(_pykw, **{Loud("b"): 1, "c": 2})
+        self.assertEqual([type(k) for k in kp.keywords], [str, str])
+        args, kwargs = _call_names_through_bytecode(
+            kp, (), ("b", "d"), ("B", 4))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"b": "B", "c": 2, "d": 4})
+
+
+    def test_subclass_call_name_matches_by_text(self):
+        """
+        A str subclass call name binds a bound keyword by its text,
+        without its Python methods running
+        """
+
+        class Loud(str):
+            def __hash__(self):
+                raise AssertionError("hashed through Python")
+
+            def __eq__(self, other):
+                raise AssertionError("compared through Python")
+
+        kp = KosPartial(_pykw, b=1, c=2)
+        args, kwargs = _call_names_through_bytecode(
+            kp, (), (Loud("b"),), ("B",))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"b": "B", "c": 2})
+
+
+    def test_non_str_bound_key_refused(self):
+        """
+        A non-str key reaching the bound keywords is refused: at
+        __setstate__ on the way in, and at the call when inserted
+        through the live dict
+        """
+
+        kp = KosPartial(_pykw, b=1)
+        with self.assertRaises(TypeError):
+            kp.__setstate__((_pykw, (), {1: 2}, None))
+        kp.keywords[1] = 2
+        with self.assertRaises(TypeError):
+            _call_names_through_bytecode(kp, (), ("b",), ("B",))
+        with self.assertRaises(TypeError):
+            kp(b="B")
 
 
     def test_gc_sane(self):

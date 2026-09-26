@@ -185,7 +185,7 @@ typedef enum KosGetNextResult {
 
 /**
    A per-frame CPS resume: the fn of the KosResumeKind (dynchain.h) a
-   consumer sets on a frame via KosEvalState_CallResult /
+   consumer sets on a frame via KosEvalState_Call /
    KosEvalState_NextResume to receive exactly one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
    produced.
@@ -489,7 +489,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
 /**
    RESULT_ENTRY(es, r, resume, state): end a resume with the outcome r
-   of a CPS entry (KosEvalState_CallResult, KosEvalState_NextResume)
+   of a CPS entry (KosEvalState_Call, KosEvalState_NextResume)
    it called with that same resume. NORMAL means a callee frame is
    installed and current with resume armed on the caller: thread into
    its first instruction. RETURN means the settled value is in hand
@@ -594,7 +594,7 @@ KosOpResult KosNativeFrame_ReturnPark(
    holds a parked frame it is reinstalled in place of a fresh
    allocation and *cache is emptied. The frame carries kind and state
    from the install on, so a teardown at any point after it hands the
-   kind's clear that state; the caller's later KosEvalState_CallResult
+   kind's clear that state; the caller's later KosEvalState_Call
    / NextResume call sets the resume that receives the delivery.
    Returns the frame, or NULL with PyErr set.
 */
@@ -626,7 +626,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 /**
    Request the next element of iter, delivering it (or the failure) to
    resume instead of making the caller interpret KosIterRequestStatus
-   by hand. Like KosEvalState_CallResult, the entry reports what
+   by hand. Like KosEvalState_Call, the entry reports what
    happened and the calling resume ends in RESULT_ENTRY: a delivered
    element that is settled reports RETURN with it, nothing armed (the
    resume is tail-called with it); one that needs settling settles one
@@ -699,6 +699,23 @@ KosOpResult KosEvalState_NextResume(
   KosEvalState); see KosEvalState_ThawFromContext and KosEvalState_FreezeToContext.
 */
 
+
+/**
+   A call for koskari_eval to install at entry on a fresh context
+   (KosContext::entry_call): KosEvalState_CallInto from a code-less root
+   frame carrying resume and frame_flags. args and kwnames are
+   borrowed for the drive.
+*/
+typedef struct KosEntryCall {
+  PyObject *callable;
+  PyObject *const *args;
+  Py_ssize_t nargs;
+  PyObject *kwnames;
+  const KosResumeKind *resume;
+  uint32_t frame_flags;
+} KosEntryCall;
+
+
 struct KosContext {
   PyObject_HEAD
   KosDynNode *dyn_top;       /* top of dynamic chain */
@@ -723,6 +740,11 @@ struct KosContext {
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
   uint8_t py_resume_kind;      /* 0=none, 1=await, 2=yield */
   PyObject *py_await_iter;     /* iterator from __await__() when suspended on AWAIT */
+
+  /* --- Entry call (set by a Python-boundary entry on a fresh context):
+     koskari_eval installs it on its own eval state at entry, then
+     clears it. Borrowed; the setter owns the record for the drive. --- */
+  const struct KosEntryCall *entry_call;
 
   /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
   int inject_mode;         /* 0=none, 1=pending_throw */
@@ -765,6 +787,7 @@ extern PyTypeObject KosContextType;
 #define KOS_RESUME_NONE  0
 #define KOS_RESUME_AWAIT 1
 #define KOS_RESUME_YIELD 2
+#define KosContext_ENTRY_CALL(c)             (((KosContext *)(c))->entry_call)
 #define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
 #define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
 #define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
@@ -1382,25 +1405,15 @@ extern PyObject *KoskariContinuationError;
 /* === KosEvalState_Call* : eval-state-oriented generic call entry points === */
 
 /**
-   KosEvalState_Call: generic call entry point with vectorcall-style args.
-
-   Accepts any PyObject* callable. Performs KosCallable_Check; if true,
-   dispatches to KosCallable_Call with the same es after applying frame
-   behavior per wants_frame and tail_call. If false, invokes
-   PyObject_Vectorcall and pushes or auto-awaits the result.
-
-   Frame matrix (when KosCallable): wants_frame+tail -> reset; wants_frame+!tail
-   -> create; !wants_frame+tail -> drop; !wants_frame+!tail -> no change.
-
-   Caller must ensure stack is clear before calling when tail_call is true
-   (use KosStackSteal). callable, args, kwnames are borrowed.
+   Install a code frame for a call: on a tail call the live frame is
+   torn down to, reset, and refilled with code and ns; otherwise a new
+   frame is pushed above it. ns is stolen on every path. Returns the
+   installed result (NORMAL, or POLL when the breaker is up), or RAISE.
 */
-KosOpResult KosEvalState_Call(
+KosOpResult KosEvalState_InstallCallFrame(
     KosEvalState *es,
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
+    KosCode *code,
+    PyObject *ns,
     int tail_call);
 
 
@@ -1423,12 +1436,14 @@ KosOpResult KosEvalState_Call(
    frame. A tail call replaces that frame, so it has no caller to
    resume: tail_call with a resume is a caller error.
 
-   With resume NULL the call's result relays exactly as
-   KosEvalState_Call returns it, tail_call included: NORMAL or
-   REPROLOGUE for an installed callee or a value already pushed, RETURN
-   for a value settled in hand, AWAIT, RAISE, FATAL.
+   With resume NULL the call's outcome relays as the install reports
+   it, tail_call included: RETURN with the value in hand, not yet
+   settled; NORMAL, POLL, or REPROLOGUE for an installed callee; AWAIT,
+   RAISE, FATAL. Nothing is pushed on the caller's stack. This is the
+   entry an install slot uses to call through to another callable; the
+   CALL* opcodes have their own push entry inside the call core.
 */
-KosOpResult KosEvalState_CallResult(
+KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -1440,31 +1455,97 @@ KosOpResult KosEvalState_CallResult(
 
 
 /**
-   KosEvalState_CallArgs: generic call entry point with tuple+dict args.
+   Install a frame for a native program: a resume and its state in
+   place of code and a namespace, with frame_flags ORed in. A tail
+   call reuses the live frame, as InstallCallFrame does for bytecode.
+   Otherwise a native frame is pushed. The frame carries the empty
+   namespace. The resume is armed here, before the caller makes its
+   call, so a failure raised while this frame is current is delivered
+   to the resume as NULL. Returns the frame, or NULL with PyErr set.
+*/
+KosDynFrame *KosEvalState_InstallNativeFrame(
+    KosEvalState *es,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags,
+    int tail_call);
 
-   Same semantics as KosEvalState_Call but for tuple+dict form. Use for
-   CALL_STAR, TAIL_CALL_STAR, wind after-thunk, dyn_with exit.
 
-   callable, args_tuple, kwds_dict are borrowed.
+/**
+   Call callable with its result delivered to resume, from a context
+   that is not itself a resume (a callable's install slot): the native
+   form of a function whose body calls callable and then continues.
+   Installs a native frame carrying resume, state, and frame_flags
+   (KOS_FRAME_DEMAND refuses suspension within the call), reusing the
+   live frame on a tail call, and makes the call from it; the inner
+   call is never a tail call, since its return must reach the resume.
+   A value back in hand is staged for the resume; a callee's return
+   and a settled value reach it the same way. A failure during the
+   call reaches resume as a NULL delivery, which it must handle. Later
+   failures reach it the same way. Returns REPROLOGUE for the staged
+   value, else the call's outcome. args are borrowed.
+*/
+KosOpResult KosEvalState_CallInto(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags,
+    int tail_call);
+
+
+/**
+   Settle a value in hand under a fresh native frame carrying resume
+   and frame_flags (KOS_FRAME_DEMAND refuses a suspension). A value
+   that settles at once is staged for the resume. One that suspends
+   delivers on the revive. A failure reaches resume as a NULL
+   delivery, which it must handle. Returns REPROLOGUE or AWAIT, or
+   RAISE. val is consumed.
+*/
+KosOpResult KosEvalState_SettleInto(
+    KosEvalState *es,
+    PyObject *val,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags);
+
+
+/**
+   KosEvalState_Call with self as the receiver, injected as the first
+   positional, under the same resume contract. No bound method is
+   built. args and kwnames are borrowed.
+*/
+KosOpResult KosEvalState_CallMethod(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state);
+
+
+/**
+   KosEvalState_Call over a tuple and a dict, under the same resume
+   contract: a plain Python callable takes them as they are, a
+   KosCallable's are spread once to the vector shape.
+
+   callable, args_tuple (may be NULL), kwds_dict (may be NULL) are
+   borrowed.
 */
 KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
-    int tail_call);
-
-
-/**
-   KosEvalState_CallNoArgs: fast path for zero-argument calls.
-
-   Same semantics as KosEvalState_Call. Uses PyObject_CallNoArgs for
-   non-KosCallable path. callable is borrowed.
-*/
-KosOpResult KosEvalState_CallNoArgs(
-    KosEvalState *es,
-    PyObject *callable,
-    int tail_call);
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state);
 
 
 /* === Unit lifecycle === */
@@ -1472,7 +1553,8 @@ KosOpResult KosEvalState_CallNoArgs(
 
 /**
    Push val onto the current frame stack, or if val is awaitable run one step
-   and either push the result or suspend.
+   and either push the result or suspend; a fresh Koskari coroutine is
+   installed instead and REPROLOGUE names the installed callee.
 
    Use from code outside opcode dispatch that must not apply the CALL* POP,1
    peephole. Implementation: koskari/lib/eval/eval_await.c included into the
@@ -1487,15 +1569,29 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val);
 
 
 /**
+   Settle a value in hand without touching the stack: a plain value, a
+   Defer, or a future comes back as it is; a fresh Koskari coroutine is
+   installed as a call frame on the running chain; any other awaitable
+   is eagerly stepped to its result, or suspends. NORMAL with *out the
+   settled value (new reference), REPROLOGUE with a callee installed
+   whose return lands the value on the current frame's stack, AWAIT
+   with the yielded value (the revive lands the settled value there
+   too), or RAISE. val is consumed.
+*/
+KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out);
+
+
+/**
    Settle a delivery that still needs awaiting and stage the outcome
-   for the current frame's resume: one eager step through
-   KosEvalState_PushOrAwait, then the settled result moves from the
-   frame stack into the pending slot and EVAL_REPROLOGUE returns to
-   the prologue, which classifies it again (a value that settles to a
-   further awaitable bounces again). A genuine suspension relays
-   EVAL_AWAIT; a failure relays EVAL_RAISE. Sets no resume itself --
-   the caller has set one, or sets one on the REPROLOGUE / AWAIT
-   outcome, per its own contract. val is consumed.
+   for the current frame's resume. Takes one eager step through
+   KosEvalState_Settle. A settled value is placed in the pending slot
+   and EVAL_REPROLOGUE returns to the prologue, which classifies it
+   again, so a value that settles to a further awaitable bounces
+   again. A fresh Koskari coroutine is instead installed as a callee
+   and its return delivers. A genuine suspension relays EVAL_AWAIT. A
+   failure relays EVAL_RAISE. Sets no resume itself. The caller has
+   set one, or sets one on the REPROLOGUE or AWAIT outcome, per its
+   own contract. val is consumed.
 */
 KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val);
 

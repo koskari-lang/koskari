@@ -1,0 +1,126 @@
+;; Reproducer: a class __init__ called from Koskari runs in the calling
+;; evaluator. Its return is replaced with None, runaway recursion
+;; through it reaches the frame-depth limit, and a suspension inside it
+;; is refused. An __init__ bound to a callable that installs no frame
+;; takes the same path. async_init is injected by the test.
+
+
+define-class Counter []:
+
+    define __init__ [self n]:
+        set! self.n n
+        n
+
+
+define-class Runaway []:
+
+    define __init__ [self]:
+        (.__init__ self)
+        None
+
+
+define-class Chain []:
+
+    define __init__ [self n]:
+        when (> n 0):
+            (.__init__ self (- n 1))
+
+
+define-class Sleeper []:
+
+    define __init__ [self]:
+        (sleep 0)
+        set! self.done true
+
+
+define-class Raiser []:
+
+    define __init__ [self]:
+        (raise (ValueError "boom"))
+
+
+define init_result []:
+    define c (Counter 1)
+    #(c.n (.__init__ c 7) c.n)
+
+
+define runaway []:
+    (Runaway)
+
+
+define chain [n]:
+    (Chain n)
+    None
+
+
+define sleeper []:
+    (.__init__ (Sleeper.__new__ Sleeper))
+
+
+define raiser []:
+    (.__init__ (Raiser.__new__ Raiser))
+
+
+define set-n [k self]:
+    set! self.n k
+    k
+
+
+define-class Partial []:
+
+    define __init__ (partial set-n 5)
+
+
+define-class AsyncPartial []:
+
+    define __init__ (partial async_init)
+
+
+define partial_result []:
+    define p (Partial)
+    #(p.n (.__init__ p) p.n)
+
+
+define async_partial []:
+    (.__init__ (AsyncPartial.__new__ AsyncPartial))
+
+
+;; A Demand over a continuation installs through the same code-less
+;; frame: an escaping continuation unwinds past it, and a composable
+;; one returns into it once per invocation.
+
+
+(define demand_escape []
+  (call/cc (lambda [k] ((demand k) 5) 99)))
+
+
+(define demand_shift_twice []
+  (reset (* 2 (shift k (+ ((demand k) 1) ((demand k) 2))))))
+
+
+;; Python's list drives the map on the transform's own context, so k is
+;; applied outside the context that captured it: it grafts, delimiter
+;; included, onto the call site there.
+(define map_shift_boundary []
+  (reset (* 2 (shift k (list (map k #[1 2]))))))
+
+
+;; A continuation captured by one top-level form, applied outside its
+;; delimiter by a later one.
+(define escaped_k (reset (* 2 (shift k k))))
+
+
+(define escaped_shift_later []
+  #((escaped_k 5) ((demand escaped_k) 5) (list (map escaped_k #[1 2]))))
+
+
+;; for-each drives the map on this context: k is applied from the
+;; transform's code-less resume frame.
+(define map_shift_native []
+  (reset (* 2 (shift k (let [[out #[]]]
+                         (for-each [x (map k #[1 2])]
+                           (out.append x))
+                         out)))))
+
+
+;; The end.

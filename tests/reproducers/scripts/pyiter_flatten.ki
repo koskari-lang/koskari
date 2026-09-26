@@ -1,0 +1,56 @@
+;; Reproducer: Koskari iteration through a KosPyIter (the CPython
+;; iterator a KosIter provider's tp_iter returns) flattens into the
+;; running evaluator. A parameterize binding made by the consumer is
+;; visible to the generator only when the generator runs on the
+;; consumer's chain. The drive carries the consumer's own demand state.
+
+
+(define-parameter level 1)
+
+
+(define gen []
+  (yield level)
+  (yield level))
+
+
+(define relay []
+  (yield-from (iter (gen))))
+
+
+(define sleeper []
+  (sleep 0)
+  (yield 1))
+
+
+(define consume-bare []
+  (define out #[])
+  (parameterize [[level 10]]
+    (for-each [x (gen)]
+      (out.append x)))
+  out)
+
+
+(define consume-iter []
+  (define out #[])
+  (parameterize [[level 10]]
+    (for-each [x (iter (gen))]
+      (out.append x)))
+  out)
+
+
+(define consume-relay []
+  (define out #[])
+  (parameterize [[level 10]]
+    (for-each [x (relay)]
+      (out.append x)))
+  out)
+
+
+(define consume-sleeper []
+  (define out #[])
+  (for-each [x (iter (sleeper))]
+    (out.append x))
+  out)
+
+
+;; The end.

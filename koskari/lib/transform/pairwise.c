@@ -265,7 +265,7 @@ KosEvaluatedTypeObject KosPairwiseType = {
               "and synchronously (demand path)",
     .tp_traverse = pairwise_traverse,
     .tp_clear = pairwise_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = kospairwise_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

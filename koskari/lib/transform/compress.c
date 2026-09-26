@@ -299,7 +299,6 @@ static PyObject *koscompress_new(
   }
 
   c->base.fn.cs_callable = NULL;
-  c->base.fn.cs_slots = NULL;
   c->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
   c->base.source = NULL;
@@ -373,7 +372,7 @@ KosEvaluatedTypeObject KosCompressType = {
               "koskari-flattened) and synchronously (demand path)",
     .tp_traverse = koscompress_traverse,
     .tp_clear = koscompress_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koscompress_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

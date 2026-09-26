@@ -18,8 +18,8 @@
    koskari/lib/iterate.c
 
    Python-surface adapters over the KosIter suite: the shared async
-   stepper (anext/asend/athrow/aclose awaitable) and the shared sync
-   DemandGenerator, generic over any KosIter provider.
+   stepper (anext/asend/athrow/aclose awaitable) and KosPyIter, the
+   CPython iterator, generic over any KosIter provider.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -876,14 +876,17 @@ static PyObject *stepper_new_ex(
 }
 
 
-/* === KosIterDemandGen === */
+/* === KosPyIter === */
 
 
 /**
-   The sync generator surface over a KosIter provider: tp_iter fills
-   for demand-path for-loops. Every drive forces KOS_FRAME_DEMAND onto
-   the grafted frame, so real suspension denies in-eval as
-   KoskariSyncViolation; YIELD surfaces as iteration.
+   The CPython iterator over a KosIter provider, filling a provider's
+   tp_iter. A drive from Python (next, send, throw, close) is a
+   boundary drive: it forces KOS_FRAME_DEMAND onto the grafted frame,
+   so real suspension denies in-eval as KoskariSyncViolation; YIELD
+   surfaces as iteration. To the evaluator the adapter is its provider:
+   its iter suite forwards, so a Koskari drive flattens and carries
+   only its own invoking frame's demand state.
 */
 typedef struct {
   PyObject_HEAD
@@ -894,19 +897,19 @@ typedef struct {
   int host_owned;          /* host is adapter-owned: recycled between
                               steps, not the provider's durable one */
   PyObject *display_name;  /* provider __name__ for repr; may be NULL */
-} KosIterDemandGen;
+} KosPyIter;
 
 
-static PyTypeObject KosIterDemandGenType;
+static KosEvaluatedTypeObject KosPyIterType;
 
 
 /**
    Drop the view without closing the provider: dealloc and GC-clear of
-   a DemandGenerator abandon this view, but the underlying provider may
+   a KosPyIter abandon this view, but the underlying provider may
    still be referenced and iterable elsewhere (e.g. iter(agen) used
    once, agen driven on afterward).
 */
-static void demandgen_drop_state(KosIterDemandGen *gen) {
+static void pyiter_drop_state(KosPyIter *gen) {
 
   Py_CLEAR(gen->provider);
 
@@ -915,7 +918,7 @@ static void demandgen_drop_state(KosIterDemandGen *gen) {
 }
 
 
-static void demandgen_release_state(KosIterDemandGen *gen) {
+static void pyiter_release_state(KosPyIter *gen) {
 
   if (gen->provider) {
     KosIterSlots *islots;
@@ -937,22 +940,22 @@ static void demandgen_release_state(KosIterDemandGen *gen) {
 }
 
 
-static void demandgen_dealloc(PyObject *self) {
+static void pyiter_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
 
-  KosIterDemandGen *gen = (KosIterDemandGen *) self;
+  KosPyIter *gen = (KosPyIter *) self;
 
-  demandgen_drop_state(gen);
+  pyiter_drop_state(gen);
   Py_CLEAR(gen->display_name);
 
   Py_TYPE(self)->tp_free(self);
 }
 
 
-static int demandgen_traverse(PyObject *self, visitproc visit, void *arg) {
+static int pyiter_traverse(PyObject *self, visitproc visit, void *arg) {
 
-  KosIterDemandGen *gen = (KosIterDemandGen *) self;
+  KosPyIter *gen = (KosPyIter *) self;
 
   Py_VISIT(gen->provider);
   Py_VISIT(gen->display_name);
@@ -962,11 +965,11 @@ static int demandgen_traverse(PyObject *self, visitproc visit, void *arg) {
 }
 
 
-static int demandgen_clear(PyObject *self) {
+static int pyiter_clear(PyObject *self) {
 
-  KosIterDemandGen *gen = (KosIterDemandGen *) self;
+  KosPyIter *gen = (KosPyIter *) self;
 
-  demandgen_drop_state(gen);
+  pyiter_drop_state(gen);
   Py_CLEAR(gen->display_name);
 
   return 0;
@@ -978,11 +981,11 @@ static int demandgen_clear(PyObject *self) {
    view and raise StopIteration carrying the payload. payload consumed
    (may be NULL).
 */
-static PyObject *demandgen_finish_exhausted(
-    KosIterDemandGen *gen,
+static PyObject *pyiter_finish_exhausted(
+    KosPyIter *gen,
     PyObject *payload) {
 
-  demandgen_release_state(gen);
+  pyiter_release_state(gen);
   {
     PyObject *err = PyObject_CallOneArg(
         PyExc_StopIteration, payload ? payload : Py_None);
@@ -1012,8 +1015,8 @@ static PyObject *demandgen_finish_exhausted(
    iterable after other errors. send_val and the throw pair are
    borrowed.
 */
-static PyObject *demandgen_step(
-    KosIterDemandGen *gen,
+static PyObject *pyiter_step(
+    KosPyIter *gen,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc) {
@@ -1051,7 +1054,7 @@ static PyObject *demandgen_step(
         return out;
 
       case KOS_ITER_EXHAUSTED:
-        return demandgen_finish_exhausted(gen, out);
+        return pyiter_finish_exhausted(gen, out);
 
       case KOS_ITER_ERROR:
         return NULL;
@@ -1102,7 +1105,7 @@ static PyObject *demandgen_step(
         }
         islots->ki_finish(gen->provider, 1);
         iterate_reset_host(islots, &gen->host, &gen->host_owned);
-        return demandgen_finish_exhausted(gen, res.val);
+        return pyiter_finish_exhausted(gen, res.val);
 
       case KOS_RES_AWAIT:
         /* Unreachable: the frame carries KOS_FRAME_DEMAND (forced
@@ -1110,7 +1113,7 @@ static PyObject *demandgen_step(
            KoskariSyncViolation before it can surface here. Kept
            defensively. */
         islots->ki_finish(gen->provider, 1);
-        demandgen_release_state(gen);
+        pyiter_release_state(gen);
         Py_XDECREF(res.val);
         kos_demand_set_sync_violation(
             "async suspension is not allowed in demand generator");
@@ -1126,7 +1129,7 @@ static PyObject *demandgen_step(
              signal. */
           islots->ki_finish(gen->provider, 1);
           iterate_reset_host(islots, &gen->host, &gen->host_owned);
-          demandgen_release_state(gen);
+          pyiter_release_state(gen);
           return NULL;
         }
         {
@@ -1137,7 +1140,7 @@ static PyObject *demandgen_step(
           islots->ki_finish(gen->provider, durable ? 1 : 0);
           iterate_reset_host(islots, &gen->host, &gen->host_owned);
           if (durable)
-            demandgen_release_state(gen);
+            pyiter_release_state(gen);
           PyErr_Restore(ftyp, fval, ftb);
         }
         return NULL;
@@ -1146,27 +1149,27 @@ static PyObject *demandgen_step(
 }
 
 
-static PyObject *demandgen_iternext(PyObject *self) {
+static PyObject *pyiter_iternext(PyObject *self) {
 
-  return demandgen_step((KosIterDemandGen *) self, NULL, NULL, NULL);
+  return pyiter_step((KosPyIter *) self, NULL, NULL, NULL);
 }
 
 
-static PyObject *demandgen_send(PyObject *self, PyObject *value) {
+static PyObject *pyiter_send(PyObject *self, PyObject *value) {
 
   if (! value)
     value = Py_None;
   Py_INCREF(value);
-  PyObject *result = demandgen_step(
-      (KosIterDemandGen *) self, value, NULL, NULL);
+  PyObject *result = pyiter_step(
+      (KosPyIter *) self, value, NULL, NULL);
   Py_DECREF(value);
   return result;
 }
 
 
-static PyObject *demandgen_throw(PyObject *self, PyObject *args) {
+static PyObject *pyiter_throw(PyObject *self, PyObject *args) {
 
-  KosIterDemandGen *gen = (KosIterDemandGen *) self;
+  KosPyIter *gen = (KosPyIter *) self;
 
   PyObject *typ = NULL, *exc = NULL;
   if (KosExc_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
@@ -1179,16 +1182,16 @@ static PyObject *demandgen_throw(PyObject *self, PyObject *args) {
     return NULL;
   }
 
-  PyObject *result = demandgen_step(gen, NULL, typ, exc);
+  PyObject *result = pyiter_step(gen, NULL, typ, exc);
   Py_DECREF(typ);
   Py_DECREF(exc);
   return result;
 }
 
 
-static PyObject *demandgen_close(PyObject *self, PyObject *ignored) {
+static PyObject *pyiter_close(PyObject *self, PyObject *ignored) {
 
-  KosIterDemandGen *gen = (KosIterDemandGen *) self;
+  KosPyIter *gen = (KosPyIter *) self;
 
   (void) ignored;
 
@@ -1203,12 +1206,12 @@ static PyObject *demandgen_close(PyObject *self, PyObject *ignored) {
     if (! exc)
       return NULL;
 
-    PyObject *step = demandgen_step(gen, NULL, PyExc_GeneratorExit, exc);
+    PyObject *step = pyiter_step(gen, NULL, PyExc_GeneratorExit, exc);
     Py_DECREF(exc);
 
     if (step) {
       Py_DECREF(step);
-      demandgen_release_state(gen);
+      pyiter_release_state(gen);
       PyErr_SetString(PyExc_RuntimeError,
                       "generator ignored GeneratorExit");
       return NULL;
@@ -1218,26 +1221,26 @@ static PyObject *demandgen_close(PyObject *self, PyObject *ignored) {
         || PyErr_ExceptionMatches(PyExc_StopIteration))
       PyErr_Clear();
     else if (PyErr_Occurred()) {
-      demandgen_release_state(gen);
+      pyiter_release_state(gen);
       return NULL;
     }
   }
 
-  demandgen_release_state(gen);
+  pyiter_release_state(gen);
   Py_RETURN_NONE;
 }
 
 
-static PyObject *demandgen_iter(PyObject *self) {
+static PyObject *pyiter_iter(PyObject *self) {
 
   Py_INCREF(self);
   return self;
 }
 
 
-static PyObject *demandgen_repr(PyObject *self) {
+static PyObject *pyiter_repr(PyObject *self) {
 
-  KosIterDemandGen *gen = (KosIterDemandGen *) self;
+  KosPyIter *gen = (KosPyIter *) self;
 
   if (gen->display_name)
     return PyUnicode_FromFormat(
@@ -1246,36 +1249,108 @@ static PyObject *demandgen_repr(PyObject *self) {
 }
 
 
-static PyMethodDef demandgen_methods[] = {
-  { "send", (PyCFunction) demandgen_send, METH_O,
+static PyMethodDef pyiter_methods[] = {
+  { "send", (PyCFunction) pyiter_send, METH_O,
     "Send a value into the generator" },
 
-  { "throw", (PyCFunction) demandgen_throw, METH_VARARGS,
+  { "throw", (PyCFunction) pyiter_throw, METH_VARARGS,
     "Throw an exception into the generator" },
 
-  { "close", (PyCFunction) demandgen_close, METH_NOARGS,
+  { "close", (PyCFunction) pyiter_close, METH_NOARGS,
     "Close the generator" },
 
   { NULL, NULL, 0, NULL },
 };
 
 
-static PyTypeObject KosIterDemandGenType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+/* The iter suite: the adapter is its provider to the evaluator. Each
+   entry forwards to the provider's suite and adds nothing -- a
+   Koskari drive through the adapter carries whatever demand state its
+   own invoking frame carries, as a drive of the bare provider does. */
 
-  .tp_name = "koskari.lib.DemandGenerator",
-  .tp_basicsize = sizeof(KosIterDemandGen),
-  .tp_itemsize = 0,
-  .tp_dealloc = demandgen_dealloc,
-  .tp_repr = demandgen_repr,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Sync generator surface over a KosIter provider on the "
-            "demand path",
-  .tp_traverse = demandgen_traverse,
-  .tp_clear = demandgen_clear,
-  .tp_iter = demandgen_iter,
-  .tp_iternext = demandgen_iternext,
-  .tp_methods = demandgen_methods,
+
+static KosIterStepResult pyiter_ki_step(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  KosPyIter *gen = (KosPyIter *) self;
+
+  if (! gen->provider) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
+  return gen->islots->ki_step(es, gen->provider, send_val, out);
+}
+
+
+static KosIterStepResult pyiter_ki_throw(
+    KosEvalState *es,
+    PyObject *self,
+    PyObject *throw_typ,
+    PyObject *throw_exc,
+    PyObject **out) {
+
+  KosPyIter *gen = (KosPyIter *) self;
+
+  if (! gen->provider) {
+    PyErr_SetObject(throw_typ, throw_exc);
+    return KOS_ITER_ERROR;
+  }
+  return gen->islots->ki_throw(es, gen->provider, throw_typ, throw_exc,
+                               out);
+}
+
+
+static int pyiter_ki_close(PyObject *self) {
+
+  KosPyIter *gen = (KosPyIter *) self;
+
+  return gen->provider ? gen->islots->ki_close(gen->provider) : 0;
+}
+
+
+/**
+   The request's finish applies the recyclable rule against this
+   adapter's suite, which is not recyclable; apply the provider's own
+   rule here so a wrapped provider finishes as a bare one does.
+*/
+static void pyiter_ki_finish(PyObject *self, int exhausted) {
+
+  KosPyIter *gen = (KosPyIter *) self;
+
+  if (gen->provider)
+    gen->islots->ki_finish(
+        gen->provider, exhausted && ! gen->islots->ki_pyctx_recyclable);
+}
+
+
+static KosEvaluatedTypeObject KosPyIterType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.Iterator",
+    .tp_basicsize = sizeof(KosPyIter),
+    .tp_itemsize = 0,
+    .tp_dealloc = pyiter_dealloc,
+    .tp_repr = pyiter_repr,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_doc = "CPython iterator over a KosIter provider",
+    .tp_traverse = pyiter_traverse,
+    .tp_clear = pyiter_clear,
+    .tp_iter = pyiter_iter,
+    .tp_iternext = pyiter_iternext,
+    .tp_methods = pyiter_methods,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = pyiter_ki_step,
+    .ki_throw = pyiter_ki_throw,
+    .ki_close = pyiter_ki_close,
+    .ki_finish = pyiter_ki_finish,
+    .ki_pyctx = NULL,
+  },
 };
 
 
@@ -1322,7 +1397,7 @@ PyObject *KosIterAdapt_Aclose(PyObject *self, PyObject *ignored) {
 }
 
 
-PyObject *KosIterAdapt_DemandIter(PyObject *self) {
+PyObject *KosIterAdapt_PyIter(PyObject *self) {
 
   KosIterSlots *islots;
 
@@ -1331,8 +1406,8 @@ PyObject *KosIterAdapt_DemandIter(PyObject *self) {
     return NULL;
   }
 
-  KosIterDemandGen *gen = PyObject_GC_New(
-      KosIterDemandGen, &KosIterDemandGenType);
+  KosPyIter *gen = PyObject_GC_New(
+      KosPyIter, KOS_EVALUATED_PYTYPE(KosPyIterType));
   if (! gen)
     return NULL;
 
@@ -1359,7 +1434,7 @@ int koskari_iterate_init(PyObject *mod) {
   STR_CONST(iterate_str_name, "__name__");
 
   if (PyType_Ready(&KosIterStepperType) ||
-      PyType_Ready(&KosIterDemandGenType))
+      PyType_Ready(KOS_EVALUATED_PYTYPE(KosPyIterType)))
     return -1;
 
   return 0;

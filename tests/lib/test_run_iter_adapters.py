@@ -71,7 +71,7 @@ class TestCoroutineDemand(unittest.IsolatedAsyncioTestCase):
 
 class TestAsyncGeneratorSyncList(unittest.IsolatedAsyncioTestCase):
     """
-    list(agen) via DemandGenerator matches async for
+    list(agen) via KosPyIter matches async for
     """
 
     async def test_list_matches_async_for(self):
@@ -127,15 +127,15 @@ class TestAsyncGeneratorSyncList(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(agen), [42])
 
 
-class TestAsyncGeneratorDemandIter(unittest.TestCase):
+class TestAsyncGeneratorPyIter(unittest.TestCase):
     """
-    __iter__ returns a native DemandGenerator
+    __iter__ returns a KosPyIter
     """
 
     def test_iter_on_async_gen_returns_demand_generator(self):
         """
-        iter(agen) on a Koskari AsyncGenerator returns a DemandGenerator.
-        The DemandGenerator is its own iterator and yields the same values
+        iter(agen) on a Koskari AsyncGenerator returns a KosPyIter.
+        The KosPyIter is its own iterator and yields the same values
         via next() as the async generator would via anext().
         """
         code, ns = build_expr([

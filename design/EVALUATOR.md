@@ -1024,37 +1024,53 @@ The **extent contract** for WIND and WITH is total and re-entrant: `enter` / `le
 
 ### 7.1 Invocation Entry Points
 
-- **`KosEvalState_Call` / `KosEvalState_CallArgs`** (eval side): resolve
-  the call suite once via `KosCallable_CheckSlots`, run `do_frame_prep`
-  (frame push, tail reset, or nothing per the wants-frame answer), then
-  dispatch the install through `KosCallable_CallSlots` /
-  `KosCallable_CallArgsSlots` with the already-resolved suite.
+- **`KosEvalState_Call` / `KosEvalState_CallArgs` /
+  `KosEvalState_CallMethod`** (eval side): one contract in three
+  argument shapes (a vector, a tuple and dict, a vector with a
+  receiver), each taking `tail_call` and an optional resume. The entry
+  resolves the call suite once via `KosCallable_CheckSlots` and
+  dispatches through `kos_call_dispatch`: a KosCallable's install slot,
+  an instance's KosCallable `__call__` through
+  `kos_instance_call_target`, or `PyObject_Vectorcall` for a plain
+  Python callable. A value in hand is reported as RETURN, or handed to
+  the resume when one is given.
+- **`KosEvalState_CallInto` / `KosEvalState_SettleInto`**: the native
+  program form. Installs a native frame carrying the resume
+  (`KosEvalState_InstallNativeFrame`) and makes the call, or settles a
+  value, from it.
+- **`kos_call_push` / `kos_call_push_args`** (`eval/eval_call.c`,
+  static): the CALL* opcodes' push contract over the same dispatch. A
+  value in hand lands on the caller's stack.
 - **`Koskari_AsyncCall`** (Python boundary): the suite's `kc_pycall`
   worker, `PyObject_Call` fallback.
 
 ### 7.2 Install Slot Contract
 
 ```c
-KosOpResult (*KosInstallFunc)(KosEvalState *es,
-    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call);
+KosOpResult (*KosVectorInstallFunc)(KosEvalState *es,
+    PyObject *callable, PyObject *const *args, Py_ssize_t nargs,
+    PyObject *kwnames, int tail_call);
 ```
 
-NORMAL/REPROLOGUE mean the install succeeded; RAISE with `PyErr` set on
-failure. The frame was prepared by `do_frame_prep` before the slot ran
-(the slot is not self-contained: `KosEvalState_Call*` are the real entry
-points); the install fills code, namespace, and arguments. It does
-**not** recurse into `koskari_eval`; execution continues in the same
-loop. `callable_promote_normal` upgrades NORMAL to REPROLOGUE when a
-transfer goal is armed or the current frame carries a resume, so
-the prologue notices the new work.
+The install owns its frame and reports the outcome (`evaluated.h`).
+RETURN carries a value in hand, unsettled, with nothing pushed. NORMAL
+and POLL mean a callee frame is installed and current, through
+`KosEvalState_InstallCallFrame` for bytecode. REPROLOGUE and AWAIT
+mean the slot pushed a native frame with a resume armed, through
+`KosEvalState_InstallNativeFrame`. RAISE reports failure with `PyErr`
+set. An install never recurses into `koskari_eval`; execution
+continues in the same loop. `kos_call_dispatch` upgrades NORMAL to
+REPROLOGUE when a transfer goal is armed or the installed frame does
+not thread, so the prologue notices the new work.
 
 ### 7.3 Tail Call Behavior
 
-`do_frame_prep` with `tail_call=1` and a frame-wanting callable tears
-down discardable extents above the frame (`kos_dyn_teardown_to_frame`),
-resets the current frame for reuse, and zeroes the live registers; a
-non-frame-wanting tail callee pops the caller frame when it is bare.
+`KosEvalState_InstallCallFrame` and `KosEvalState_InstallNativeFrame`
+with `tail_call` tear down discardable extents above the live frame
+(`kos_dyn_teardown_to_frame`), reset it for reuse
+(`kos_dynframe_reset_for_tail`), and refill it, so a tail call costs
+no frame. A KosCallable that completes in hand keeps the caller's
+frame, and the RETURN after TAIL_CALL retires it.
 
 A plain-Python tail call completes with `EVAL_CONTROL_RETURNED()`; the handler's relay tails into `kos_eval_control_returned`, which runs `kos_eval_post_opcode_control_returned_after_hook`, which invokes `kos_dynnode_on_control_returned` when a WIND or WITH is current and ends in `kos_eval_delivery_done`.
 
@@ -1063,9 +1079,8 @@ Python call **only when the frame is bare** (`dyn_top == frame`). With
 extent nodes still open above the frame (a `let` NS, etc.), the pop is
 skipped and the result is delivered through a normal `EVAL_RETURN`
 instead of `EVAL_CONTROL_RETURNED`, so the open extents unwind through
-the regular RETURN walk (`KosEvalState_Call` / `CallArgs` / `CallNoArgs`
-in `eval/eval_call.c`; `do_frame_prep` applies the same bare-frame guard
-for frameless KosCallables).
+the regular RETURN walk (`tail_prep_py_call` and `deliver_call_value`
+under `kos_call_push` in `eval/eval_call.c`).
 
 ### 7.4 Transfer Goal Integration
 
@@ -1080,9 +1095,7 @@ the call and iter suites embedded inline. The call suite:
 typedef struct KosCallSlots {
   KosVectorInstallFunc kc_vinstall; // the install entry (vector shape;
                                     // tuple+dict callers are spread
-                                    // centrally by CallArgsSlots)
-  int kc_wants_frame;               // static default
-  KosCallableWantsFrameFunc kc_wants_frame_fn;  // per-instance override
+                                    // centrally by kos_call_dispatch_args)
   ternaryfunc kc_pycall;            // Python-boundary call worker
   vectorcallfunc kc_pyvectorcall;   // vector variant; may be NULL
 } KosCallSlots;
@@ -1091,36 +1104,24 @@ typedef struct KosCallSlots {
 A type whose suite carries an install slot passes
 **`KosCallable_CheckSlots(obj, &slots)`** (check-and-resolve in one; the
 single resolve serves the whole call sequence). Adopters: Function,
-Expression, BoundMethod, KosPartial, Demand, Procedure, both
-continuations, Values, Apply. Python callables fail the check and are
-invoked via `PyObject_Call`.
+Expression, BoundMethod, KosPartial, Demand, Procedure, IterFunction,
+both continuations, Values, Apply. Python callables fail the check and
+are vectorcalled.
 
-Before calling an install slot, the CALL / TAIL_CALL opcodes consult
-**`do_frame_prep`** with **`KosCallSlots_WantsFrame`** (the per-instance
-hook when set, else the static flag). When the result is 0 (no new
-frame needed), `do_frame_prep` is a no-op and the install slot pushes
-its result on the operand stack itself. `do_frame_prep` tolerates an
-empty context (no current frame): installs happen at the chain root in
-adapter-owned host contexts.
+No frame is prepared before the slot runs. The slot installs the frame
+it needs, or completes in hand and answers RETURN, so the caller never
+asks a callable whether it wants a frame. An install may run with no
+current frame: the boundary's entry call installs at the chain root.
 
-**Demand and `KOS_FRAME_DEMAND`.** Demand's `kc_wants_frame_fn`
-delegates to `demand_inner_is_flattenable`: 1 for a non-yielding
-`KosFunction` or `KosExpression`, 0 otherwise. Its install handles both:
-
-- **Flattenable path (wants_frame=1):** installs the inner function's
-  frame and sets `KOS_FRAME_DEMAND` on it. Child frames inherit the
-  flag via tail-reset and frame-push preservation, native-frame
-  installs included (`kos_dyn_push_frame_empty` inherits from the
-  current frame; the demand adapter also forces it onto installed
-  frames).
-
-- **Fallback path (wants_frame=0):** `demand_sync_ex` drives the
-  callable synchronously and pushes the result, riding the unified
-  call machinery: yielding callables construct their demand iterator
-  through `Koskari_AsyncCall` without evaluating any body code, and
-  non-yielding callables run through `KosEvalState_Call` to
-  `KOS_RES_RETURN`. (History:
-  [archive/kos-evaluated-iterator.md](archive/kos-evaluated-iterator.md).)
+**Demand and `KOS_FRAME_DEMAND`.** `demand_kos_vinstall` calls the
+inner through `KosEvalState_Call` with no resume. An installed callee
+frame is marked `KOS_FRAME_DEMAND`. Child frames inherit the flag
+through tail reset and frame push, native frames included. A value in
+hand that is still awaitable settles under a native frame carrying
+`demand_resume` and the mark, through `KosEvalState_SettleInto`, so a
+suspension is denied at the guard. A settled value is reported as
+RETURN. (History:
+[archive/kos-evaluated-iterator.md](archive/kos-evaluated-iterator.md).)
 
 **Demand denial is centralized in `eval_event_await`.** When an opcode
 returns `EVAL_AWAIT(v)` and `kos_eval_in_demand(es)` is true (i.e.
@@ -1191,8 +1192,8 @@ flowchart TD
 
     subgraph legacy["KosCallable / instance call (legacy install)"]
         spill["spill the window into an owned vector"]
-        kcall["KosEvalState_Call: KosCallable_CheckSlots,<br/>do_frame_prep (push / tail reset / none)"]
-        slot["install slot (kc_*) fills the frame;<br/>may arm a resume or a transfer goal"]
+        kcall["kos_call_push: KosCallable_CheckSlots,<br/>kos_call_dispatch"]
+        slot["install slot (kc_vinstall) installs its frame<br/>or completes in hand; may arm a resume or a transfer goal"]
         armed{"plan or resume armed?"}
     end
 
@@ -1238,7 +1239,7 @@ parent's next instruction; into a resume-carrying parent it hops into
 the resume by `RESUME_HOP`; only the shapes that need an unwind take
 the general path inside `kos_return_deliver` (§2.6). The CPS entries the
 natives use,
-`KosEvalState_CallResult` and `KosEvalState_NextResume`, thread a value
+`KosEvalState_Call` and `KosEvalState_NextResume`, thread a value
 that is in hand straight into the resume and stage through `DISPATCH`
 only for an unsettled value or a cold start (§8.2).
 
@@ -1369,7 +1370,7 @@ re-consume source elements.
 #### The entries
 
 ```c
-KosOpResult KosEvalState_CallResult(
+KosOpResult KosEvalState_Call(
     KosEvalState *es, PyObject *callable, PyObject *const *args,
     Py_ssize_t nargs, PyObject *kwnames, int tail_call,
     const KosResumeKind *resume, void *state);
@@ -1904,7 +1905,7 @@ template bottom (**`kos_chain_detach_template`**), resolve resume frame
 For **synchronous** Python code (e.g. tests, scripts) that does not use `asyncio`:
 
 - **KosCoroutine.demand()**: Runs the coroutine to completion on the demand path (no asyncio). If the coroutine suspends on a Python awaitable, `demand()` raises; use `async`/`await` for that case.
-- **`iter(agen)` / `for x in agen`**: `tp_iter` returns a **DemandGenerator** that drives the Koskari async generator synchronously via the evaluator (not `koskari._sync`).
+- **`iter(agen)` / `for x in agen`**: `tp_iter` returns a **KosPyIter** (`KosIterAdapt_PyIter`), the CPython iterator over the provider. A drive from Python applies demand; Koskari iteration through a KosPyIter flattens, since its KosIter suite forwards to the provider. Demand applies to the drive, never to construction: `demand(...)` on a generator function returns the `AsyncGenerator`, and a generator-function `__iter__` is wrapped in `IterFunction` so `iter(obj)` from Python gets a KosPyIter.
 
 Use **`asyncio.run(expr())`** or **`await expr()`** when you need the full asyncio stack.
 
@@ -1912,7 +1913,7 @@ Use **`asyncio.run(expr())`** or **`await expr()`** when you need the full async
 
 To avoid recursive C calls and keep a single state machine:
 
-1. **CALL (Koskari callables)**: The CALL opcode invokes `KosEvalState_Call`, which resolves the call suite, preps the frame (`do_frame_prep`; TAIL_CALL resets the current frame), and dispatches the install slot. The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. The install slot is `kc_vinstall` in the call suite (`evaluated.h`, `callable.h`); the two-slot design it replaced is archived at [archive/special-call-protocol.md](archive/special-call-protocol.md).
+1. **CALL (Koskari callables)**: The CALL opcode's class dispatch (`kos_call_invoke_impl`) installs an exact `KosFunction` directly (`KosFunction_Install`) and routes every other KosCallable through `kos_call_push`, which resolves the call suite and dispatches the install slot; the slot installs its own frame (TAIL_CALL reuses the current one). The evaluator does **not** call Python or recurse into `koskari_eval`; it continues the dispatch loop. The install slot is `kc_vinstall` in the call suite (`evaluated.h`, `callable.h`); the two-slot design it replaced is archived at [archive/special-call-protocol.md](archive/special-call-protocol.md).
 
 2. **RETURN (frame has parent, normal call return)**: When the callee's parent is a plain bytecode frame, a discardable extent over one, or a frame waiting on a resume, the RETURN opcode frees the callee, delivers (push onto the parent's stack, or hand the value to the resume), and threads on (§2.6). Otherwise `kos_return_deliver` runs **`eval_event_return_ng`**, which runs the unwind walk if extents sit above the frame, pops it, and delivers through the iteration node or **`eval_parent_return_deliver`** (pending slot or parent stack, then **`kos_dynnode_on_control_returned`** for WIND/WITH). The outer `koskari_eval` caller still does not observe a completion event for this path unless the evaluator eventually stops for another reason.
 

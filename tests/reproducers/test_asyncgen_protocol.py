@@ -619,7 +619,7 @@ class TestStepperCloseParity(unittest.IsolatedAsyncioTestCase):
 class TestDemandGenParity(unittest.TestCase):
     """
     Identical drive sequences against CPython sync generators and
-    Koskari DemandGenerators produce identical outcomes.
+    Koskari KosPyIters produce identical outcomes.
     """
 
     @classmethod

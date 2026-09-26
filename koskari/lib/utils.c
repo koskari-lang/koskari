@@ -181,9 +181,8 @@ static int kos_apply_build_args_tuple(
 
 /**
    Shared apply install: fn/arglist/kwds already extracted (borrowed).
-   apply wants no frame of its own (see KosApplyType), so do_frame_prep
-   left the caller's frame alone; the tail flag is forwarded unchanged
-   and fn's own prep makes the one frame decision against that frame.
+   The call goes through the call entry with the tail flag forwarded
+   unchanged, and fn's own install reports the outcome.
 */
 static KosOpResult kos_apply_install_core(
     KosEvalState *es,
@@ -207,7 +206,8 @@ static KosOpResult kos_apply_install_core(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_CallArgs(es, fn, seq_args, kwds, tail_call);
+  r = KosEvalState_CallArgs(
+      es, fn, seq_args, kwds, tail_call, NULL, NULL);
   Py_DECREF(seq_args);
   return r;
 }
@@ -280,8 +280,6 @@ static KosEvaluatedTypeObject KosApplyType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_apply,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = apply_call,
     .kc_pyvectorcall = NULL,
   },
@@ -483,7 +481,6 @@ static int kos_utils_repr_registry_dispatch(
   PyObject *args = NULL;
   PyCFunction meth = NULL;
   int flags = 0;
-  int r = 0;
 
   if (! kos_utils_repr_registry)
     return 1;
@@ -517,9 +514,9 @@ static int kos_utils_repr_registry_dispatch(
     if (! args)
       return -1;
 
-    r = Koskari_DemandSyncEx(handler, args, NULL, out);
+    *out = Koskari_DemandSync(handler, args, NULL);
     Py_DECREF(args);
-    return r;
+    return *out ? 0 : -1;
   }
 
   return 1;
@@ -530,7 +527,6 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 
   PyObject *meth = NULL;
   PyObject *out = NULL;
-
   int r;
 
   if (PyUnicode_CheckExact(obj))
@@ -558,22 +554,12 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 
   // CallNoArgs for object. Formals apply for koscallable accepts NULL
   // for no args.
-  r = Koskari_DemandSyncEx(meth, NULL, NULL, &out);
+  out = Koskari_DemandSync(meth, NULL, NULL);
   Py_DECREF(meth);
-
-  if (r == 1) {
-    Py_XDECREF(out);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async suspension is not allowed in __kos_repr__");
+  if (! out)
     return NULL;
-  }
 
-  if (r < 0) {
-    Py_XDECREF(out);
-    return NULL;
-  }
-
-  if (! out || ! PyUnicode_CheckExact(out)) {
+  if (! PyUnicode_CheckExact(out)) {
     Py_XDECREF(out);
     PyErr_SetString(PyExc_TypeError, "__kos_repr__ must return str");
     return NULL;

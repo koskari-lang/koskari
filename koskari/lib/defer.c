@@ -274,6 +274,25 @@ PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
 }
 
 
+PyObject *KosDefer_TakeFreshCoroutine(PyObject *self) {
+
+  KosDefer *d = (KosDefer *) self;
+  PyObject *inner;
+
+  if (d->state != KOS_DEFER_DELEGATING)
+    return NULL;
+  inner = d->u.inner;
+  if (! KosCoroutine_CheckExact(inner)
+      || ((KosCoroutine *) inner)->state != KOS_CORO_NEW)
+    return NULL;
+
+  /* the handle is consumed: its coroutine runs elsewhere */
+  d->u.inner = NULL;
+  d->state = KOS_DEFER_SPENT;
+  return inner;
+}
+
+
 /* === Coroutine protocol ===
 
    defer carries the full coroutine protocol (__await__ returning self,

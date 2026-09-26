@@ -82,6 +82,18 @@ typedef struct {
 PyObject *KosCoroutine_New(KosContext *ctx);
 
 
+/**
+   Take a fresh coroutine's program for installation on another chain:
+   when coro has not been started, its root frame's code and namespace
+   are returned as new references in *code and *ns, its context is
+   released, and it is marked done, so a later send, throw, or close
+   from Python raises as it does after any completion. Returns 1 when
+   taken, 0 when the coroutine has already been started and keeps its
+   own drive.
+*/
+int KosCoroutine_TakeFresh(PyObject *coro, KosCode **code, PyObject **ns);
+
+
 /* === Unit lifecycle === */
 
 

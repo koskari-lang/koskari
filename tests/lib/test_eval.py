@@ -184,7 +184,7 @@ class TestCoroutineDemandIntegration(unittest.TestCase):
 
 class TestAsyncGeneratorIterIntegration(unittest.TestCase):
     """
-    Integration tests for sync iteration via tp_iter / DemandGenerator
+    Integration tests for sync iteration via tp_iter / KosPyIter
     """
 
     def test_list_agen_yields_values(self):

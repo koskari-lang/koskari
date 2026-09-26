@@ -18,7 +18,8 @@
 /**
   koskari/lib/eval/eval_call.c
 
-  The call core: frame prep, the KosEvalState_Call* entries, and
+  The call core: the CPS entries (KosEvalState_Call, CallArgs,
+  CallMethod, CallInto), the one dispatch they share, and
   kos_call_invoke with its per-flag bodies for the CALL* opcode
   prologues. Included into eval.c as a segment (see the eval/ includes
   there).
@@ -29,68 +30,35 @@
 
 
 /**
-  Prepare frame stack for a KosCallable install per wants_frame / tail_call.
-  Inlines effective wants_frame resolution (hook vs static flag).
-
-  A callable that wants no frame leaves the frame stack untouched, tail
-  call or not. It either delivers a value onto the caller's stack, and
-  the RETURN that follows every TAIL_CALL then retires the frame, or it
-  forwards the call with the tail flag intact to a target whose own
-  prep reuses this same frame. Popping the caller here would make that
-  forwarded prep act on the caller's parent instead.
+   Install a code frame for a call. A tail call reuses the live frame:
+   discardable extents left open above it are uninstalled (their POP_*
+   rows are unreachable on the tail path), the frame is reset, and code
+   and ns fill it. Otherwise a new frame is pushed above the live one.
+   ns is stolen on every path.
 */
-static inline int do_frame_prep(
+KosOpResult KosEvalState_InstallCallFrame(
     KosEvalState *es,
-    PyObject *callable,
-    KosCallSlots *slots,
+    KosCode *code,
+    PyObject *ns,
     int tail_call) {
 
-  int wants = KosCallSlots_WantsFrame(slots, callable);
+  if (tail_call) {
+    KosDynFrame *frame = KosEvalState_FRAME(es);
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
-  if (wants && tail_call) {
-    /* Uninstall discardable extents left open above the frame before
-       the reuse; their POP_* rows are unreachable on the tail path. */
-    if (kos_dyn_teardown_to_frame(es, frame) < 0)
-      return -1;
+    if (kos_dyn_teardown_to_frame(es, frame) < 0) {
+      Py_DECREF(ns);
+      return EVAL_RAISE();
+    }
     kos_dynframe_reset_for_tail(frame);
-    KosEvalState_CODE(es) = NULL;
-    KosEvalState_NAMESPACE(es) = NULL;
-    KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
-    (es)->pc = 0;
-    (es)->acting_pc = 0;
-    return 0;
+    (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns);
+    es->pc = 0;
+    es->acting_pc = 0;
+    return kos_call_installed(es);
   }
 
-  if (wants && ! tail_call) {
-    if (kos_dyn_push_frame_empty(es) == NULL)
-      return -1;
-    return 0;
-  }
-
-  return 0;
-}
-
-
-/**
-   The result of an install slot that ran on a prepared frame for a
-   native entry (KosEvalState_Call and the CallArgs pair): a frame the
-   slot filled is a callee entry, and so a cooperation point; a slot
-   that wanted no frame delivered a value and its result stands. POLL
-   is a handler-relay answer, so a native caller gets REPROLOGUE for
-   it and bounces through the trampoline, which polls ahead of the
-   prologue.
-*/
-static inline KosOpResult kos_call_slot_result(
-    KosEvalState *es,
-    KosCallSlots *slots,
-    PyObject *callable,
-    KosOpResult r) {
-
-  if (r.kind == KOS_RES_NORMAL && KosCallSlots_WantsFrame(slots, callable))
-    return KOS_EVAL_BREAKER_UP(es) ? EVAL_REPROLOGUE() : EVAL_NORMAL();
-  return r;
+  if (! kos_dyn_push_frame(es, code, ns))
+    return EVAL_RAISE();
+  return kos_call_installed(es);
 }
 
 
@@ -128,17 +96,20 @@ static int tail_prep_py_call(
 
 
 /**
-   Deliver a plain-Python call result: push-or-await, then map tail-call
-   completion to RETURN (deferred) or CONTROL_RETURNED.  result consumed.
+   Deliver a value in hand onto the current frame's stack: push-or-await,
+   then, for a plain-Python callee in tail position (py_tail), map the
+   completion to CONTROL_RETURNED when tail_prep_py_call popped the
+   caller's frame or left a root frame in place, or to a deferred RETURN
+   when extents open above the frame kept it.  result consumed.
 */
-static KosOpResult deliver_py_call_result(
+static KosOpResult deliver_call_value(
     KosEvalState *es,
     PyObject *result,
-    int tail_call,
+    int py_tail,
     int tail_defer_return) {
 
   KosOpResult por = push_or_await(es, result, 0, 0);
-  if (por.kind == KOS_RES_NORMAL && tail_call) {
+  if (por.kind == KOS_RES_NORMAL && py_tail) {
     if (tail_defer_return) {
       PyObject *rv = KosEvalState_StackPopRef(es);
       if (! rv)
@@ -151,18 +122,138 @@ static KosOpResult deliver_py_call_result(
 }
 
 
-static inline KosOpResult kos_call_invoke_body(
+static KosOpResult kos_call_dispatch(
     KosEvalState *es,
-    KosSegment **caller_slot,
-    size_t window,
+    KosCallSlots *slots,
     PyObject *callable,
-    PyObject *const *argv,
+    PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    unsigned flags);
+    int tail_call);
 
 
-KosOpResult KosEvalState_Call(
+static KosOpResult kos_call_result_arm(
+    KosEvalState *es,
+    KosDynFrame *caller,
+    KosOpResult r,
+    const KosResumeKind *resume,
+    void *state);
+
+
+/**
+   Call callable with self as its receiver: self is injected as the
+   first positional through a small buffer (no bound method, no
+   descriptor bind) and the call dispatched, its outcome handed to
+   resume as the vector entry hands it. Out of line so the buffer is
+   not on the stack of every call.
+*/
+KOS_NOINLINE KosOpResult KosEvalState_CallMethod(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *self,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state) {
+
+  KosDynFrame *caller = KosEvalState_FRAME(es);
+
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  Py_ssize_t ntotal = nargs + nkw;
+  PyObject *small[8];
+  PyObject **inj = small;
+  KosCallSlots *slots = NULL;
+  KosOpResult r;
+
+  if (ntotal + 1 > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
+    inj = PyMem_Malloc((size_t) (ntotal + 1) * sizeof(PyObject *));
+    if (! inj) {
+      PyErr_NoMemory();
+      return EVAL_RAISE();
+    }
+  }
+  inj[0] = self;
+  if (ntotal)
+    memcpy(inj + 1, args, (size_t) ntotal * sizeof(PyObject *));
+  (void) KosCallable_CheckSlots(callable, &slots);
+  r = kos_call_dispatch(es, slots, callable, inj, nargs + 1, kwnames,
+                        tail_call);
+  if (inj != small)
+    PyMem_Free(inj);
+  return kos_call_result_arm(es, caller, r, resume, state);
+}
+
+
+/**
+   The one call dispatch: run a KosCallable's install through its
+   resolved suite (slots), or vectorcall anything else, and report the
+   outcome in hand. slots is NULL for a callable without a suite. An
+   install's NORMAL is promoted to REPROLOGUE when a goal is set or the
+   installed frame cannot be threaded into (it carries a resume rather
+   than bytecode), so the trampoline's prologue picks it up. An
+   install's POLL is answered as REPROLOGUE as well. The prologue polls
+   when the breaker is up before it delivers, and the native callers
+   of the CPS entries take REPROLOGUE as the installed outcome. A plain
+   callable's result, and an instance's KosCallable __call__ run with
+   self injected, report as the install contract does: RETURN with the
+   value in hand, nothing pushed. args and kwnames are borrowed.
+*/
+static KosOpResult kos_call_dispatch(
+    KosEvalState *es,
+    KosCallSlots *slots,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  PyObject *result;
+
+  if (slots) {
+    KosOpResult r = slots->kc_vinstall(es, callable, args, nargs, kwnames,
+                                       tail_call);
+    if (r.kind == KOS_RES_NORMAL
+        && (KosEvalState_GOAL(es)
+            || ! kos_frame_threads(KosEvalState_FRAME(es))))
+      return EVAL_REPROLOGUE();
+    if (r.kind == KOS_RES_POLL)
+      return EVAL_REPROLOGUE();
+    return r;
+  }
+
+  if (KosInstanceCall_Check(callable)) {
+    int binds;
+    PyObject *target = kos_instance_call_target(callable, &binds);
+
+    if (target && binds)
+      return KosEvalState_CallMethod(
+          es, target, callable, args, nargs, kwnames, tail_call, NULL,
+          NULL);
+    if (target) {
+      KosCallSlots *target_slots = NULL;
+
+      (void) KosCallable_CheckSlots(target, &target_slots);
+      return kos_call_dispatch(es, target_slots, target, args, nargs,
+                               kwnames, tail_call);
+    }
+  }
+
+  /* PEP 590: keyword values follow args[nargs .. nargs + nkw - 1]. */
+  result = PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
+  return result ? EVAL_RETURN(result) : EVAL_RAISE();
+}
+
+
+/**
+   The CALL* opcodes' entry, whose result lands on the current frame's
+   stack: a value the dispatch reports in hand is pushed or awaited
+   there and an installed callee is left current. A plain Python
+   callable in tail position gives up the caller's frame before the
+   call. Reached from the class dispatch's legacy arm.
+*/
+static KosOpResult kos_call_push(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -170,77 +261,26 @@ KosOpResult KosEvalState_Call(
     PyObject *kwnames,
     int tail_call) {
 
-  KosCallSlots *slots;
+  KosCallSlots *slots = NULL;
+  int py_tail = 0;
+  int tail_defer_return = 0;
+  KosOpResult r;
 
-  /* Exact simple-arity KosFunction: the shared call core, whose
-     parked-frame reuse the legacy install path lacks. */
-  if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
-      && ! tail_call && ! kwnames
-      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-      && KosFunction_BIND_SELF_STATE(callable) == 2) {
-    KosSegment *dummy = NULL;
-    KosOpResult r = kos_call_invoke_body(es, &dummy, 0, callable, args,
-                                         nargs, kwnames, 0);
-    /* POLL is a handler-relay answer; a native caller bounces through
-       the trampoline, which polls ahead of the prologue as before. */
-    if (r.kind == KOS_RES_POLL)
-      return EVAL_REPROLOGUE();
-    if (r.kind != KOS_RES_NORMAL)
-      return r;
-    if (KosEvalState_GOAL(es))
-      return EVAL_REPROLOGUE();
-    if (KosEvalState_FRAME(es)
-        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
-      return EVAL_REPROLOGUE();
-    return EVAL_NORMAL();
-  }
-
-  if (! KosCallable_CheckSlots(callable, &slots)) {
-    if (KosInstanceCall_Check(callable)) {
-      /* Instance with a KosCallable __call__: dispatch the unbound __call__
-         with self injected as the first positional -- no bound-method,
-         transient-string, or descriptor-bind allocation. */
-      PyObject *call_fn = kos_instance_call_target(callable);
-      if (call_fn) {
-        Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-        Py_ssize_t ntotal = nargs + nkw;
-        PyObject *small[8];
-        PyObject **inj = small;
-        if (ntotal + 1 > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
-          inj = PyMem_Malloc((size_t) (ntotal + 1) * sizeof(PyObject *));
-          if (! inj)
-            return EVAL_RAISE();
-        }
-        inj[0] = callable;
-        if (ntotal)
-          memcpy(inj + 1, args, (size_t) ntotal * sizeof(PyObject *));
-        KosOpResult r = KosEvalState_Call(es, call_fn, inj, nargs + 1,
-                                          kwnames, tail_call);
-        if (inj != small)
-          PyMem_Free(inj);
-        return r;
-      }
-    }
-    int tail_defer_return = 0;
+  /* A plain Python callable in tail position gives up the caller's
+     frame before the call; a KosCallable that completes in hand keeps
+     it, and the RETURN following the TAIL_CALL retires it. */
+  if (! KosCallable_CheckSlots(callable, &slots)
+      && ! KosInstanceCall_Check(callable)) {
     if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
       return EVAL_RAISE();
-    /* nargs matches KosCallable_Call: positional count only. PEP 590:
-       keyword values follow args[nargs .. nargs + nkw - 1]. */
-    PyObject *result = (nargs == 0 && ! kwnames)
-        ? PyObject_CallNoArgs(callable)
-        : PyObject_Vectorcall(callable, args, (size_t) nargs, kwnames);
-    if (! result)
-      return EVAL_RAISE();
-    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
+    py_tail = tail_call;
   }
 
-  if (do_frame_prep(es, callable, slots, tail_call) < 0)
-    return EVAL_RAISE();
-
-  return kos_call_slot_result(
-      es, slots, callable,
-      KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
-                            tail_call));
+  r = kos_call_dispatch(es, slots, callable, args, nargs, kwnames,
+                        tail_call);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+  return deliver_call_value(es, r.val, py_tail, tail_defer_return);
 }
 
 
@@ -278,7 +318,44 @@ static KosOpResult kos_entry_value(
 }
 
 
-KosOpResult KosEvalState_CallResult(
+/**
+   The resume arm shared by the CPS entries: hand a dispatch outcome to
+   resume. A value in hand goes to kos_entry_value; an installed
+   callee, a resume armed on a code-less frame the install pushed, or
+   an await from such a frame leaves caller's own frame unchanged and
+   still reachable, so resume is armed on it for the eventual
+   delivery; RAISE and FATAL relay untouched. With resume NULL the
+   outcome relays as is.
+*/
+static KosOpResult kos_call_result_arm(
+    KosEvalState *es,
+    KosDynFrame *caller,
+    KosOpResult r,
+    const KosResumeKind *resume,
+    void *state) {
+
+  if (! resume)
+    return r;
+
+  switch (r.kind) {
+    case KOS_RES_RETURN:
+      return kos_entry_value(es, caller, r.val, resume, state);
+
+    case KOS_RES_NORMAL:
+    case KOS_RES_POLL:
+    case KOS_RES_REPROLOGUE:
+    case KOS_RES_AWAIT:
+      KosDynFrame_RESUME_KIND(caller) = resume;
+      KosDynFrame_RESUME_STATE(caller) = state;
+      return r;
+
+    default:
+      return r;
+  }
+}
+
+
+KosOpResult KosEvalState_Call(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -299,48 +376,113 @@ KosOpResult KosEvalState_CallResult(
   }
 #endif
 
-  r = KosEvalState_Call(es, callable, args, nargs, kwnames, tail_call);
+  {
+    KosCallSlots *slots = NULL;
 
-  if (! resume)
+    (void) KosCallable_CheckSlots(callable, &slots);
+    r = kos_call_dispatch(es, slots, callable, args, nargs, kwnames,
+                          tail_call);
+  }
+
+  return kos_call_result_arm(es, caller, r, resume, state);
+}
+
+
+/**
+   Install a frame for a native program, the way InstallCallFrame
+   installs one for bytecode: a tail call tears down to the live frame,
+   resets it, and refills it as a native frame; otherwise a native
+   frame is pushed. Either way the frame carries the empty namespace,
+   the resume armed, and frame_flags. Returns the frame, or NULL with
+   PyErr set.
+*/
+KosDynFrame *KosEvalState_InstallNativeFrame(
+    KosEvalState *es,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags,
+    int tail_call) {
+
+  KosDynFrame *frame;
+
+  if (tail_call) {
+    PyObject *empty = KosNamespace_Empty();
+
+    if (! empty)
+      return NULL;
+    frame = KosEvalState_FRAME(es);
+    if (kos_dyn_teardown_to_frame(es, frame) < 0)
+      return NULL;
+    kos_dynframe_reset_for_tail(frame);
+    Py_INCREF(empty);
+    (void) KosEvalState_SetFrameCodeAndNamespace(es, frame, NULL, empty);
+    es->pc = 0;
+    es->acting_pc = 0;
+  } else {
+    frame = KosResumeFrame_Install(es, NULL, NULL, NULL);
+    if (! frame)
+      return NULL;
+  }
+
+  KosDynFrame_FLAGS(frame) |= frame_flags;
+  KosDynFrame_RESUME_KIND(frame) = resume;
+  KosDynFrame_RESUME_STATE(frame) = state;
+  return frame;
+}
+
+
+KosOpResult KosEvalState_CallInto(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags,
+    int tail_call) {
+
+  KosDynFrame *frame = KosEvalState_InstallNativeFrame(
+      es, resume, state, frame_flags, tail_call);
+  KosOpResult r;
+
+  if (! frame)
+    return EVAL_RAISE();
+
+  /* The inner call is never a tail call: its return must reach this
+     frame's resume. */
+  r = KosEvalState_Call(
+      es, callable, args, nargs, kwnames, 0, resume, state);
+  if (r.kind != KOS_RES_RETURN)
     return r;
 
-  switch (r.kind) {
-    case KOS_RES_NORMAL:
-      if (KosEvalState_FRAME(es) == caller) {
-        /* Nothing was installed: the callable ran to a value that
-           Call landed on the caller's own stack (a plain callable's
-           result, a generator function's generator). Take it back
-           and report it in hand. */
-        PyObject *val = KosEvalState_StackPopRef(es);
-        if (unlikely(! val))
-          return EVAL_RAISE();
-        return kos_entry_value(es, caller, val, resume, state);
-      }
-      /* fall through: callee installed and current */
-    case KOS_RES_REPROLOGUE:
-    case KOS_RES_POLL:
-      /* callee installed above caller, or a plan armed by the install;
-         caller's own frame is unchanged and still reachable -- its
-         eventual return delivers here. Call never answers POLL; the
-         arm keeps an installed callee from losing its resume should a
-         path ever relay one. */
-      KosDynFrame_RESUME_KIND(caller) = resume;
-      KosDynFrame_RESUME_STATE(caller) = state;
-      return r;
+  KosEvalState_StageDelivery(es, r.val);
+  return EVAL_REPROLOGUE();
+}
 
-    case KOS_RES_AWAIT:
-      /* the call's own result needed awaiting; the AWAITED revive
-         delivers into resume once it settles. */
-      KosDynFrame_RESUME_KIND(caller) = resume;
-      KosDynFrame_RESUME_STATE(caller) = state;
-      return r;
 
-    case KOS_RES_RETURN:
-      return kos_entry_value(es, caller, r.val, resume, state);
+KosOpResult KosEvalState_SettleInto(
+    KosEvalState *es,
+    PyObject *val,
+    const KosResumeKind *resume,
+    void *state,
+    uint32_t frame_flags) {
 
-    default:
-      return r;  /* RAISE / FATAL: relay untouched */
+  KosDynFrame *frame = KosEvalState_InstallNativeFrame(
+      es, resume, state, frame_flags, 0);
+  KosOpResult r;
+
+  if (! frame) {
+    Py_DECREF(val);
+    return EVAL_RAISE();
   }
+
+  r = kos_entry_value(es, frame, val, resume, state);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+
+  KosEvalState_StageDelivery(es, r.val);
+  return EVAL_REPROLOGUE();
 }
 
 
@@ -363,10 +505,12 @@ KosOpResult KosEvalState_CallResult(
      so it drops the window LAST, keeping the callable and args alive
      through the whole install with no extra refcounting.
 
-   Legacy classes (KosCallables other than exact KosFunction, and
-   instance-call injection) preserve today's steal-first ordering by
-   spilling the window into an owned vector before delegating to
-   KosEvalState_Call.  Tail calls ride the same entry under
+   Legacy classes (KosCallables other than KosFunction, and every
+   tail call the bind-before-reset arm declines) preserve the
+   steal-first ordering by spilling the window into an owned vector
+   before delegating to kos_call_push.  An instance whose __call__ is a
+   KosCallable re-enters the core on the target without a spill
+   (kos_call_invoke_instance).  Tail calls ride the same entry under
    KOS_CALL_TAIL (see the flag notes below). */
 
 #define KOS_CALL_PLAIN            0x0u
@@ -379,7 +523,7 @@ KosOpResult KosEvalState_CallResult(
 /* Tail call: the caller's frame is reused.  Exact non-yielding
    KosFunctions take the bind-before-reset subpath (the frame reset's
    block-clear IS the window drop); everything else spills and keeps
-   KosEvalState_Call's tail semantics. */
+   kos_call_push's tail semantics. */
 #define KOS_CALL_TAIL             0x8u
 /* Internal, set by kos_call_invoke when self_arg was injected: argv is
    the prepend buffer, not the block tail, so the steal-bind fast path
@@ -413,6 +557,124 @@ static inline int kos_tail_ns_reusable(PyObject *ns) {
 }
 
 
+/**
+   The legacy classes' steal-first spill: move the window into an owned
+   vector (refs transfer out of the block), delegate to
+   kos_call_push, release. Out of line so the spill buffer sits in
+   this frame alone, on the paths that take it.
+*/
+static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
+    KosEvalState *es,
+    size_t window,
+    PyObject *callable,
+    PyObject *const *argv,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    unsigned flags) {
+
+  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  PyObject *small[KOS_CALL_SPILL_FAST];
+  PyObject **vals = small;
+  KosOpResult r;
+
+  if (window > KOS_CALL_SPILL_FAST) {
+    vals = PyMem_Malloc(window * sizeof(PyObject *));
+    if (unlikely(! vals)) {
+      if (flags & KOS_CALL_CALLABLE_OWNED)
+        Py_DECREF(callable);
+      return EVAL_RAISE();
+    }
+  }
+  if (unlikely(KosEvalState_StackPopTailPtr(es, window, vals) < 0)) {
+    if (vals != small)
+      PyMem_Free(vals);
+    if (flags & KOS_CALL_CALLABLE_OWNED)
+      Py_DECREF(callable);
+    return EVAL_RAISE();
+  }
+
+  /* vals is the ownership ledger for the spilled window entries and
+     the vector the call reads: a tail call pops the caller's frame
+     before the callee runs, and the block storage argv points into
+     goes with it. A prepend buffer is the handler's own local, so it
+     stays valid, and the objects it names are held by vals. */
+  {
+    PyObject *target;
+    PyObject *const *call_argv;
+    if (flags & KOS_CALL_WINDOW_CALLABLE) {
+      target = vals[0];
+      call_argv = vals + 1;
+    } else {
+      target = callable;
+      /* whatever sits below the arguments in the window (a receiver
+         slot) is skipped by size, so the body need not read the flag
+         that put it there */
+      call_argv = (flags & KOS_CALL_ARGV_PREPENDED)
+          ? argv
+          : vals + (window - (size_t) (nargs + nkw));
+    }
+    r = kos_call_push(
+        es, target, (nargs + nkw) ? call_argv : NULL, nargs, kwnames,
+        (flags & KOS_CALL_TAIL) ? 1 : 0);
+  }
+
+  for (size_t i = 0; i < window; i++)
+    Py_DECREF(vals[i]);
+  if (vals != small)
+    PyMem_Free(vals);
+  if (flags & KOS_CALL_CALLABLE_OWNED)
+    Py_DECREF(callable);
+  return r;
+}
+
+
+static inline KosOpResult kos_call_invoke(
+        KosEvalState *es,
+        PyObject *callable,
+        PyObject *self_arg,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags);
+
+
+/**
+   An instance call from the class dispatch: re-enter the call core
+   with the __call__ target as the callable, and the instance as the
+   receiver when the target binds one. The instance stays where it is:
+   a window slot under the arguments (WINDOW_CALLABLE becomes
+   WINDOW_UNDER, same width) that drops with the window, or a
+   reference the handler owns, released once the invoke returns. The
+   target is borrowed from the type, so the owned-callable flag is
+   cleared for the re-entry. window is unused: kos_call_invoke
+   recomputes it from the rewritten flags.
+*/
+static KOS_NOINLINE KosOpResult kos_call_invoke_instance(
+        KosEvalState *es,
+        size_t window,
+        PyObject *instance,
+        PyObject *target,
+        int binds,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  unsigned reentry = flags & ~KOS_CALL_CALLABLE_OWNED;
+  KosOpResult r;
+
+  (void) window;
+  if (reentry & KOS_CALL_WINDOW_CALLABLE)
+    reentry = (reentry & ~KOS_CALL_WINDOW_CALLABLE) | KOS_CALL_WINDOW_UNDER;
+
+  r = kos_call_invoke(es, target, binds ? instance : NULL, argv, nargs,
+                      kwnames, reentry);
+  if (flags & KOS_CALL_CALLABLE_OWNED)
+    Py_DECREF(instance);
+  return r;
+}
+
+
 /* The class dispatch proper.  Always inlined into the per-flag bodies
    below, each of which passes a literal flags word, so every flag test
    in here folds away and each body carries only its own arms. */
@@ -426,14 +688,12 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         PyObject *kwnames,
         unsigned flags) {
 
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-
   /* Class: exact KosFunction, tail position.  Bind-before-reset: the
      namespace is prepared FROM the still-intact window, then the frame
      reset's block-clear performs the window drop.  Requires the window
      to live in the reused frame's own block and non-yielding code;
      anything else falls to the legacy spill below (which preserves
-     KosEvalState_Call's tail semantics exactly). */
+     kos_call_push's tail semantics exactly). */
   if (unlikely(flags & KOS_CALL_TAIL)) {
     KosDynFrame *frame = KosEvalState_FRAME(es);
 
@@ -530,52 +790,23 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     KosCode *code = (KosCode *) KosFunction_CODE(callable);
     PyObject *frame_ns;
 
-    /* A generator function call NEVER begins evaluating its code: it
-       binds the arguments and completes immediately with the new
-       AsyncGenerator as the call's value.  This gate stands ahead of
-       every install arm below, so none of them can see yielding code
-       no matter how the call classifies.  The agen lands on the
-       caller's block, so the window drops first; NewFromCodeAndNs
-       steals frame_ns. */
-    if (unlikely(code && KosCode_YIELDS(code))) {
-      if (! kwnames
-          && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-          && KosFunction_BIND_SELF_STATE(callable) == 2) {
-        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-            callable, argv, nargs);
-      } else {
-        frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-            callable, argv, nargs, kwnames);
-      }
-      if (unlikely(! frame_ns))
-        goto fail;
-      {
-        PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
-        if (window)
-          kos_stack_drop_noerr_fast(caller_slot, window);
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        if (unlikely(! agen))
-          return EVAL_RAISE();
-        return KosEvalState_StackPUSH(es, agen) < 0
-            ? EVAL_RAISE() : EVAL_NORMAL();
-      }
-    }
-
+    /* A generator function call never begins evaluating its code: it
+       binds the arguments and completes with the new AsyncGenerator as
+       the call's value, which the function's install reports in hand.
+       The steal-bind arm below never sees yielding code. */
     if (likely(! kwnames
-               && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable))) {
+               && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+               && ! (code && KosCode_YIELDS(code)))) {
       /* Simple call: exact arity against plain positional formals on
          non-yielding code (classified at construction, and the
          generator gate above stands regardless).  Binds by slot
-         index; the general formals machine is bypassed.  Any
-         mismatch falls through to the general path, which owns the
-         arity error messages.
+         index; the general formals machine is bypassed.
 
          When argv is the block tail (window, no self-arg prepend) and
          the function has no self-bind, the args steal-move off the
          block into the namespace -- the stolen span leaves the window,
          so only the residue (a WINDOW_CALLABLE slot) drops after the
-         install. */
+         install.  Any other shape takes the function's own install. */
       if (likely((flags & KOS_CALL_ARGV_WINDOW)
                  && ! (flags & KOS_CALL_ARGV_PREPENDED)
                  && KosFunction_BIND_SELF_STATE(callable) == 2)) {
@@ -630,91 +861,47 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         }
       }
 
-      /* Plain vector (no stack window), no self-bind: the parked
-         frame binds directly from argv -- references taken, slots
-         filled, ready-push. A miss installs and tags the frame so its
-         release parks it. */
-      if (likely(! (flags & KOS_CALL_ARGV_WINDOW)
-                 && KosFunction_BIND_SELF_STATE(callable) == 2)) {
-        KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
-
-        if (unlikely(kos_eval_check_frame_room(
-                es, KosEvalState_FRAME(es), 1) < 0)) {
-          goto fail;
-        }
-
-        if (likely(cached)) {
-          for (Py_ssize_t i = 0; i < nargs; i++)
-            Py_INCREF(argv[i]);
-          (void) KosFormals_SimpleStealApply(
-              KosDynFrame_NS(cached), argv, nargs);
-          KosFunction_CACHED_FRAME(callable) = NULL;
-          kos_dyn_push_ready_frame(es, cached);
-          if (! (flags & KOS_CALL_CALLABLE_OWNED))
-            Py_INCREF(callable);
-          KosDynFrame_FN(cached) = callable;
-          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-          return kos_call_installed(es);
-        }
-
-        frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-            callable, argv, nargs);
-        if (unlikely(! frame_ns))
-          goto fail;
-        KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
-        {
-          KosDynFrame *frame = kos_dyn_push_frame_unchecked(
-              es, code, frame_ns);
-          if (unlikely(! frame))
-            goto fail;
-          if (! (flags & KOS_CALL_CALLABLE_OWNED))
-            Py_INCREF(callable);
-          KosDynFrame_FN(frame) = callable;
-          return kos_call_installed(es);
-        }
-      }
-
-      frame_ns = KosFunction_SimpleCallNamespaceFromVector(
-          callable, argv, nargs);
-      if (unlikely(! frame_ns))
-        goto fail;
-      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
-      goto fn_frame_install;
     }
 
-    /* General path: the generator gate above already peeled yielding
-       code off, so this always installs a frame. */
-    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-        callable, argv, nargs, kwnames);
-
-    if (unlikely(! frame_ns))
-      goto fail;
-
-fn_frame_install:
-
-    /* Frame install: nothing lands on the caller's block, so the drop
-       runs last and the window keeps callable and args alive for the
-       whole install.  kos_dyn_push_frame installs code and frame_ns in
-       one pass (consuming frame_ns even on failure), so the live
-       registers are loaded once, with their final values. */
+    /* Every other function call (a generator function, a plain vector,
+       keywords, a non-simple arity, a self-binding function, a
+       prepended receiver): the function's own install, reading argv
+       in place.  An installed frame lands nothing on the caller's
+       block, so the window drops after it; a generator function
+       completes in hand and its AsyncGenerator lands on the block, so
+       the window drops first. */
     {
-      KosDynFrame *frame = kos_dyn_push_frame(es, code, frame_ns);
-      if (unlikely(! frame))
+      KosOpResult r = KosFunction_Install(
+          es, callable, argv, nargs, kwnames, 0);
+
+      if (unlikely(r.kind == KOS_RES_RAISE))
         goto fail;
       if (window)
         kos_stack_drop_noerr_fast(caller_slot, window);
       if (flags & KOS_CALL_CALLABLE_OWNED)
         Py_DECREF(callable);
-      return kos_call_installed(es);
+      if (r.kind == KOS_RES_RETURN)
+        return kos_op_result_PUSH_OR_AWAIT(es, r.val);
+      return r;
     }
+  }
+
+  /* Class: an instance whose __call__ is a KosCallable -- the call
+     core re-entered on the target, with the instance as the window's
+     under-slot and as the receiver when the target binds one. */
+  if (KosInstanceCall_Check(callable)) {
+    int binds;
+    PyObject *target = kos_instance_call_target(callable, &binds);
+    if (target)
+      return kos_call_invoke_instance(es, window, callable, target, binds,
+                                      argv, nargs, kwnames, flags);
   }
 
   /* Class: plain Python callable -- vectorcall reading argv in place;
      the result lands on the caller's block, so the window drops first. */
-  if (! KosCallable_Check(callable) && ! KosInstanceCall_Check(callable)) {
-    PyObject *result = (nargs == 0 && ! kwnames)
-        ? PyObject_CallNoArgs(callable)
-        : PyObject_Vectorcall(callable, argv, (size_t) nargs, kwnames);
+  if (! KosCallable_Check(callable)) {
+    PyObject *result = PyObject_Vectorcall(callable, argv, (size_t) nargs,
+                                           kwnames);
     if (window)
       kos_stack_drop_noerr_fast(caller_slot, window);
     if (flags & KOS_CALL_CALLABLE_OWNED)
@@ -726,67 +913,16 @@ fn_frame_install:
      into an owned vector (refs transfer out of the block), delegate,
      release.  Tail flows land here too (py tails need
      tail_prep_py_call; other-callable and deferred tails keep
-     KosEvalState_Call's semantics). */
+     kos_call_push's semantics). */
 legacy:
-  if (window) {
-    PyObject *small[KOS_CALL_SPILL_FAST];
-    PyObject **vals = small;
-    KosOpResult r;
-
-    if (window > KOS_CALL_SPILL_FAST) {
-      vals = PyMem_Malloc(window * sizeof(PyObject *));
-      if (unlikely(! vals)) {
-        if (flags & KOS_CALL_CALLABLE_OWNED)
-          Py_DECREF(callable);
-        return EVAL_RAISE();
-      }
-    }
-    if (unlikely(KosEvalState_StackPopTailPtr(es, window, vals) < 0)) {
-      if (vals != small)
-        PyMem_Free(vals);
-      if (flags & KOS_CALL_CALLABLE_OWNED)
-        Py_DECREF(callable);
-      return EVAL_RAISE();
-    }
-
-    /* vals is the ownership ledger for the spilled window entries and
-       the vector the call reads: a tail call pops the caller's frame
-       before the callee runs, and the block storage argv points into
-       goes with it. A prepend buffer is the handler's own local, so it
-       stays valid, and the objects it names are held by vals. */
-    {
-      PyObject *target;
-      PyObject *const *call_argv;
-      if (flags & KOS_CALL_WINDOW_CALLABLE) {
-        target = vals[0];
-        call_argv = vals + 1;
-      } else {
-        target = callable;
-        /* whatever sits below the arguments in the window (a receiver
-           slot) is skipped by size, so the body need not read the
-           flag that put it there */
-        call_argv = (flags & KOS_CALL_ARGV_PREPENDED)
-            ? argv
-            : vals + (window - (size_t) (nargs + nkw));
-      }
-      r = KosEvalState_Call(es, target,
-                            (nargs + nkw) ? call_argv : NULL,
-                            nargs, kwnames,
-                            (flags & KOS_CALL_TAIL) ? 1 : 0);
-    }
-
-    for (size_t i = 0; i < window; i++)
-      Py_DECREF(vals[i]);
-    if (vals != small)
-      PyMem_Free(vals);
-    if (flags & KOS_CALL_CALLABLE_OWNED)
-      Py_DECREF(callable);
-    return r;
-  }
+  if (window)
+    return kos_call_legacy_spill(
+        es, window, callable, argv, nargs, kwnames, flags);
 
   {
-    KosOpResult r = KosEvalState_Call(es, callable, argv, nargs, kwnames,
-                                      (flags & KOS_CALL_TAIL) ? 1 : 0);
+    KosOpResult r = kos_call_push(
+        es, callable, argv, nargs, kwnames,
+        (flags & KOS_CALL_TAIL) ? 1 : 0);
     if (flags & KOS_CALL_CALLABLE_OWNED)
       Py_DECREF(callable);
     return r;
@@ -825,7 +961,6 @@ fail:
                                 argv, nargs, kwnames, (FLAGS));         \
   }
 
-KOS_CALL_BODY_VARIANT(kos_call_body_plain, KOS_CALL_PLAIN)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_callable,
                       KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE)
 KOS_CALL_BODY_VARIANT(kos_call_body_window_callable_tail,
@@ -856,8 +991,8 @@ static KOS_NOINLINE KosOpResult kos_call_body_any(
         PyObject *kwnames,
         unsigned flags) {
 
-  return kos_call_invoke_impl(es, caller_slot, window, callable,
-                              argv, nargs, kwnames, flags);
+  return kos_call_invoke_impl(es, caller_slot, window, callable, argv,
+                              nargs, kwnames, flags);
 }
 
 
@@ -872,9 +1007,6 @@ static inline KosOpResult kos_call_invoke_body(
         unsigned flags) {
 
   switch (flags) {
-    case KOS_CALL_PLAIN:
-      return kos_call_body_plain(es, caller_slot, window, callable,
-                                 argv, nargs, kwnames);
     case KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE:
       return kos_call_body_window_callable(es, caller_slot, window,
                                            callable, argv, nargs, kwnames);
@@ -947,6 +1079,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
   if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
       || arity1 != KosFunction_SIMPLE_ARITY1(callable)
       || KosFunction_BIND_SELF_STATE(callable) != 2
+      || ! KosFunction_CODE(callable)
       || KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)))
     return 0;
 
@@ -984,7 +1117,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
    classified the callable -- exact KosFunction, simple arity nargs + 2,
    no self-bind, no kwnames -- and the window holds the args at the
    block tail.  Mirrors the two steal-bind arms of the simple-call
-   branch in kos_call_invoke_body.
+   branch in kos_call_invoke_impl.
 */
 static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
         KosEvalState *es,
@@ -1092,7 +1225,8 @@ static inline KosOpResult kos_call_invoke(
       && nargs + 2 == KosFunction_SIMPLE_ARITY1(callable)
       /* a generator function never takes a frame-install arm; its
          call constructs the AsyncGenerator through the generator gate
-         in kos_call_invoke_body instead */
+         in kos_call_invoke_impl instead */
+      && KosFunction_CODE(callable)
       && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))
       && KosFunction_BIND_SELF_STATE(callable) == 2)
     return kos_call_invoke_self_steal(es, caller_slot, window, callable,
@@ -1129,105 +1263,105 @@ static inline KosOpResult kos_call_invoke(
 }
 
 
-KosOpResult KosEvalState_CallArgs(
+/**
+   The one place a tuple and a dict meet a call: a plain Python
+   callable takes them as they are through PyObject_Call and its result
+   is reported in hand; a KosCallable, or an instance whose __call__ is
+   one, is spread once to the vector shape and dispatched. Keywords
+   take the heap, as PyObject_Call's own dict unpacking does. The
+   outcome is the install contract's.
+*/
+static KosOpResult kos_call_dispatch_args(
+    KosEvalState *es,
+    KosCallSlots *slots,
+    PyObject *callable,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call) {
+
+  KosArgSpread spread;
+  KosOpResult r;
+
+  if (! slots && ! KosInstanceCall_Check(callable)) {
+    PyObject *empty = NULL;
+    PyObject *result;
+
+    if (! args_tuple) {
+      empty = PyTuple_New(0);
+      if (! empty)
+        return EVAL_RAISE();
+      args_tuple = empty;
+    }
+    result = PyObject_Call(callable, args_tuple, kwds_dict);
+    Py_XDECREF(empty);
+    return result ? EVAL_RETURN(result) : EVAL_RAISE();
+  }
+
+  if (KosArgSpread_Init(&spread, args_tuple, kwds_dict, NULL, 0) < 0)
+    return EVAL_RAISE();
+  r = kos_call_dispatch(es, slots, callable, spread.argv, spread.nargs,
+                        spread.kwnames, tail_call);
+  KosArgSpread_Clear(&spread);
+  return r;
+}
+
+
+/**
+   kos_call_push over a tuple and a dict, for CALL_STAR and
+   TAIL_CALL_STAR.
+*/
+static KosOpResult kos_call_push_args(
     KosEvalState *es,
     PyObject *callable,
     PyObject *args_tuple,
     PyObject *kwds_dict,
     int tail_call) {
 
-  KosCallSlots *slots;
+  KosCallSlots *slots = NULL;
+  int py_tail = 0;
+  int tail_defer_return = 0;
+  KosOpResult r;
 
-  if (! KosCallable_CheckSlots(callable, &slots)) {
-    if (KosInstanceCall_Check(callable)) {
-      PyObject *call_fn = kos_instance_call_target(callable);
-      if (call_fn) {
-        /* Prepend self to the positional tuple (the tuple form allocates
-           regardless). */
-        Py_ssize_t na = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
-        PyObject *inj = PyTuple_New(na + 1);
-        if (! inj)
-          return EVAL_RAISE();
-        Py_INCREF(callable);
-        PyTuple_SET_ITEM(inj, 0, callable);
-        for (Py_ssize_t i = 0; i < na; i++) {
-          PyObject *it = PyTuple_GET_ITEM(args_tuple, i);
-          Py_INCREF(it);
-          PyTuple_SET_ITEM(inj, i + 1, it);
-        }
-        KosOpResult r = KosEvalState_CallArgs(es, call_fn, inj, kwds_dict,
-                                              tail_call);
-        Py_DECREF(inj);
-        return r;
-      }
-    }
-    int tail_defer_return = 0;
+  if (! KosCallable_CheckSlots(callable, &slots)
+      && ! KosInstanceCall_Check(callable)) {
     if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
       return EVAL_RAISE();
-
-    PyObject *result = NULL;
-
-    if (args_tuple) {
-      result = PyObject_Call(callable, args_tuple, kwds_dict);
-
-    } else if (kwds_dict) {
-      PyObject *empty_args = PyTuple_New(0);
-      if (! empty_args)
-        return EVAL_RAISE();
-      result = PyObject_Call(callable, empty_args, kwds_dict);
-      Py_DECREF(empty_args);
-
-    } else {
-      result = PyObject_CallNoArgs(callable);
-    }
-
-    if (! result)
-      return EVAL_RAISE();
-
-    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
+    py_tail = tail_call;
   }
 
-  if (do_frame_prep(es, callable, slots, tail_call) < 0)
-    return EVAL_RAISE();
-
-  return kos_call_slot_result(
-      es, slots, callable,
-      KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
-                                kwds_dict, tail_call));
+  r = kos_call_dispatch_args(es, slots, callable, args_tuple, kwds_dict,
+                             tail_call);
+  if (r.kind != KOS_RES_RETURN)
+    return r;
+  return deliver_call_value(es, r.val, py_tail, tail_defer_return);
 }
 
 
-KosOpResult KosEvalState_CallNoArgs(
+KosOpResult KosEvalState_CallArgs(
     KosEvalState *es,
     PyObject *callable,
-    int tail_call) {
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    int tail_call,
+    const KosResumeKind *resume,
+    void *state) {
 
-  KosCallSlots *slots;
+  KosDynFrame *caller = KosEvalState_FRAME(es);
+  KosCallSlots *slots = NULL;
+  KosOpResult r;
 
-  if (! KosCallable_CheckSlots(callable, &slots)) {
-    if (KosInstanceCall_Check(callable)) {
-      PyObject *call_fn = kos_instance_call_target(callable);
-      if (call_fn) {
-        return KosEvalState_Call(es, call_fn, &callable, 1, NULL, tail_call);
-      }
-    }
-    int tail_defer_return = 0;
-    if (tail_prep_py_call(es, tail_call, &tail_defer_return) < 0)
-      return EVAL_RAISE();
-
-    PyObject *result = PyObject_CallNoArgs(callable);
-    if (! result)
-      return EVAL_RAISE();
-    return deliver_py_call_result(es, result, tail_call, tail_defer_return);
-  }
-
-  if (do_frame_prep(es, callable, slots, tail_call) < 0)
+#if KOS_EVAL_SAFETYNET
+  if (unlikely(tail_call && resume)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "tail call with a resume: no caller frame to resume");
     return EVAL_RAISE();
+  }
+#endif
 
-  return kos_call_slot_result(
-      es, slots, callable,
-      KosCallable_CallArgsSlots(es, slots, callable, NULL, NULL,
-                                tail_call));
+  (void) KosCallable_CheckSlots(callable, &slots);
+  r = kos_call_dispatch_args(es, slots, callable, args_tuple, kwds_dict,
+                             tail_call);
+  return kos_call_result_arm(es, caller, r, resume, state);
 }
 
 

@@ -1483,7 +1483,8 @@ static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r) {
 
    :return: EVAL_NORMAL when routed (execution resumes at the invoke
             site) or when an async unwind started (pending return
-            staged); EVAL_RAISE on error
+            staged); EVAL_REPROLOGUE when the invoke site is a
+            code-less resume frame; EVAL_RAISE on error
 */
 static KosOpResult kos_eval_route_delim_return(
     KosEvalState *es,
@@ -1532,6 +1533,13 @@ static KosOpResult kos_eval_route_delim_return(
   } else if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0) {
     return EVAL_RAISE();
   }
+
+  /* Both finishes leave val on the invoking frame's stack. A code-less
+     invoker (a resume frame that called the continuation) has no pc to
+     continue at: the prologue delivers the value on its stack to its
+     armed resume, the way a callee's return reaches it. */
+  if (! KosEvalState_CODE(es))
+    return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }
 
@@ -1754,7 +1762,7 @@ static KosOpResult kos_op_call_star(
     }
   }
 
-  res = KosEvalState_CallArgs(es, callable, args, kwd, tail);
+  res = kos_call_push_args(es, callable, args, kwd, tail);
 
  done:
   Py_XDECREF(kwd);
@@ -2064,14 +2072,16 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
     KosDynFrame **cache) {
 
   if (cache && *cache) {
-    PyObject *live_ns = KosEvalState_NAMESPACE(es);
+    PyObject *empty = KosNamespace_Empty();
     KosDynFrame *frame = *cache;
 
+    if (! empty)
+      return NULL;
     if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
       return NULL;
     *cache = NULL;
-    Py_XINCREF(live_ns);
-    KosDynFrame_NS(frame) = live_ns;
+    Py_INCREF(empty);
+    KosDynFrame_NS(frame) = empty;
     kos_dyn_push_ready_frame(es, frame);
     return frame;
   }
@@ -2234,6 +2244,37 @@ static KosOpResult entry_revive_await(
   }
   *mode = (ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
   return EVAL_NORMAL();
+}
+
+
+/**
+   Phase 0: the entry call a Python-boundary entry recorded on a fresh
+   context. Takes it off the context and installs it through
+   KosEvalState_CallInto on this eval state; a value back in hand is
+   staged for the resume, which the entry phase delivers. An outcome
+   other than an install is applied as the trampoline would apply it.
+   Out of line so koskari_eval's own frame carries none of it.
+
+   :return: EVAL_NORMAL when eval should proceed to the entry phase;
+            terminal KosOpResult when eval should stop.
+*/
+static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosEvalState *es) {
+
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  const KosEntryCall *call = KosContext_ENTRY_CALL(ctx);
+  KosOpResult r;
+
+  KosContext_ENTRY_CALL(ctx) = NULL;
+  r = KosEvalState_CallInto(
+      es, call->callable, call->args, call->nargs, call->kwnames,
+      call->resume, NULL, call->frame_flags, 0);
+  if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+    return EVAL_NORMAL();
+
+  r = apply_kos_op_result(es, r);
+  if (r.kind == KOS_RES_DISPATCH || r.kind == KOS_RES_REPROLOGUE)
+    return EVAL_NORMAL();
+  return r;
 }
 
 
@@ -3085,7 +3126,7 @@ static KosOpResult eval_step_drain_goal(KosEvalState *es) {
 
    A resume-carrying frame's own stack holds nothing else, so an empty
    stack unambiguously means no delivery was ever staged -- a consumer
-   set the resume directly (bypassing KosEvalState_CallResult /
+   set the resume directly (bypassing KosEvalState_Call /
    NextResume) to defer its own first step to this trampoline, the way
    a cold KOS_ITER_INSTALLED install must (koskari_eval runs as a
    separate step after install, never nested inside it). That resume is
@@ -3541,6 +3582,9 @@ KosOpResult koskari_eval(
     }
   }
 
+  if (Py_EnterRecursiveCall(" in koskari_eval"))
+    return EVAL_RAISE();
+
   /* Swap in this context's handler-visible exception state (sys.exc_info),
      saving the host's. Contexts interleaved on one thread must not see
      each other's handled exception; the reverse swap runs at cleanup. */
@@ -3566,6 +3610,15 @@ KosOpResult koskari_eval(
   kos_tls_push_active_eval(&es);
   KOS_TRACE_EVAL_PUSH();
   KOS_TRACE_TRAMPOLINE_STEP();
+
+  /* Phase 0: a boundary entry's call, recorded on the context */
+  if (unlikely(KosContext_ENTRY_CALL(ctx))) {
+    r = eval_phase_entry_call(&es);
+    if (r.kind != KOS_RES_NORMAL) {
+      eval_ret = r;
+      goto koskari_eval_cleanup;
+    }
+  }
 
   /* Phase 1: entry/revive normalization */
   {
@@ -3647,6 +3700,7 @@ koskari_eval_cleanup:
 
   /* the drive's hold on the context, taken at entry; a holder that let
      go during the drive deallocates it here */
+  Py_LeaveRecursiveCall();
   Py_DECREF(ctx);
   return eval_ret;
 }

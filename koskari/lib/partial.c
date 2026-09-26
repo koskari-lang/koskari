@@ -27,10 +27,9 @@
 
    Unlike functools.partial it is not in that type's inheritance tree -- the
    match is by duck typing, not isinstance. The payoff is that it is a static
-   KosEvaluatedTypeObject: when koskari bytecode calls it and the inner callable
-   is a flattenable KosCallable, the install slot merges args and tail-calls
-   straight through, reusing the single frame do_frame_prep prepared, with no
-   intermediate KosContext.
+   KosEvaluatedTypeObject: when koskari bytecode calls it, the install slot
+   merges the arguments and calls the inner callable through the
+   evaluator's call entry, with no intermediate KosContext.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GPL v.3
@@ -50,110 +49,38 @@ typedef struct {
   PyObject *keywords;    /* dict of bound keyword args; non-NULL */
   PyObject *dict;        /* instance __dict__; lazily created, may be NULL */
   PyObject *weakreflist; /* weak references; may be NULL */
+  vectorcallfunc vectorcall;
 } KosPartialObject;
-
-
-/* === argument merging === */
-
-
-/**
-   Merge bound positional args with call-site positional args.
-
-   Returns a new reference to the combined tuple, borrowing an operand without
-   allocation when either side is empty. call_args may be NULL (treated as
-   empty). Returns NULL with PyErr set on failure.
-*/
-static PyObject *kospartial_merge_args(
-    PyObject *bound_args,
-    PyObject *call_args) {
-
-  if (! call_args || PyTuple_GET_SIZE(call_args) == 0) {
-    Py_INCREF(bound_args);
-    return bound_args;
-  }
-
-  if (PyTuple_GET_SIZE(bound_args) == 0) {
-    Py_INCREF(call_args);
-    return call_args;
-  }
-
-  return PySequence_Concat(bound_args, call_args);
-}
-
-
-/**
-   Merge bound keyword args with call-site keyword args into *out.
-
-   *out is set to a new reference, to a borrowed operand (incref'd) when the
-   other side is empty, or to NULL when both are empty. call_kw may be NULL.
-   Returns 0 on success, -1 with PyErr set on failure.
-*/
-static int kospartial_merge_kwds(
-    PyObject *bound_kw,
-    PyObject *call_kw,
-    PyObject **out) {
-
-  int call_empty = (! call_kw) || (PyDict_Size(call_kw) == 0);
-
-  if (PyDict_Size(bound_kw) == 0) {
-    if (call_empty) {
-      *out = NULL;
-      return 0;
-    }
-    Py_INCREF(call_kw);
-    *out = call_kw;
-    return 0;
-  }
-
-  if (call_empty) {
-    Py_INCREF(bound_kw);
-    *out = bound_kw;
-    return 0;
-  }
-
-  PyObject *merged = PyDict_Copy(bound_kw);
-  if (! merged)
-    return -1;
-
-  if (PyDict_Update(merged, call_kw) < 0) {
-    Py_DECREF(merged);
-    return -1;
-  }
-
-  *out = merged;
-  return 0;
-}
 
 
 /* === Python-side call === */
 
 
 /**
-   Python-call worker: merge bound args with call args and invoke func.
-   Returns whatever func returns (a coroutine for an async Koskari callable;
-   a value otherwise). Serves as KosCallAdapt_CallAsync's KosPartial case
-   and the non-flattenable install fallback.
+   The Python vectorcall entry, and the type's tp_call through
+   PyVectorcall_Call: the bound arguments merged with the call vector
+   by the same spread the install uses, then the inner vectorcalled.
+   Returns whatever the inner returns (a coroutine for an async
+   Koskari callable, a value otherwise).
 */
-PyObject *KosPartial_Call(
+static PyObject *kospartial_vectorcall(
     PyObject *self,
-    PyObject *args,
-    PyObject *kwds) {
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
 
   KosPartialObject *p = (KosPartialObject *) self;
+  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+  PyObject *small[16];
+  KosArgSpread spread;
+  PyObject *result;
 
-  PyObject *merged_args = kospartial_merge_args(p->args, args);
-  if (! merged_args)
+  if (KosArgSpread_InitMerged(
+          &spread, p->args, p->keywords, args, nargs, kwnames, small, 16) < 0)
     return NULL;
-
-  PyObject *merged_kw = NULL;
-  if (kospartial_merge_kwds(p->keywords, kwds, &merged_kw) < 0) {
-    Py_DECREF(merged_args);
-    return NULL;
-  }
-
-  PyObject *result = Koskari_AsyncCall(p->func, merged_args, merged_kw);
-  Py_DECREF(merged_args);
-  Py_XDECREF(merged_kw);
+  result = PyObject_Vectorcall(
+      p->func, spread.argv, (size_t) spread.nargs, spread.kwnames);
+  KosArgSpread_Clear(&spread);
   return result;
 }
 
@@ -162,22 +89,12 @@ PyObject *KosPartial_Call(
 
 
 /**
-   Return 1 if inner is a KosCallable that wants a frame, 0 otherwise --
-   the arg-packing choice in kospartial_kos_vinstall: a flattenable
-   inner takes the vector splice, others take the tuple+dict pack.
+   Evaluator install: call the inner through the evaluator's call entry
+   with the bound arguments merged in, whatever the inner is. A
+   KosCallable installs or runs in this evaluator. A Python callable
+   is called and its awaitable result awaited. The merge is one
+   borrowed vector, built beside the call.
 */
-static int kospartial_inner_is_flattenable(PyObject *inner) {
-
-  if (! inner)
-    return 0;
-
-  if (! KosCallable_Check(inner))
-    return 0;
-
-  return KosCallable_WantsFrame(inner);
-}
-
-
 static KosOpResult kospartial_kos_vinstall(
     KosEvalState *es,
     PyObject *callable,
@@ -187,104 +104,18 @@ static KosOpResult kospartial_kos_vinstall(
     int tail_call) {
 
   KosPartialObject *p = (KosPartialObject *) callable;
-  PyObject *inner = p->func;
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  PyObject *small[16];
+  KosArgSpread spread;
+  KosOpResult r;
 
-  /* Flattenable inner with no keywords on either side: splice the
-     bound and call positionals into one borrowed vector, so the
-     inner's vector fast paths stay engaged. */
-  if (kospartial_inner_is_flattenable(inner)
-      && ! nkw
-      && (! p->keywords || ! PyDict_Size(p->keywords))) {
-    Py_ssize_t nb = PyTuple_GET_SIZE(p->args);
-    Py_ssize_t total = nb + nargs;
-    PyObject *small[16];
-    PyObject **vec = small;
-    KosOpResult r;
-
-    if (total > (Py_ssize_t) (sizeof(small) / sizeof(small[0]))) {
-      vec = PyMem_Malloc((size_t) total * sizeof(PyObject *));
-      if (! vec) {
-        PyErr_NoMemory();
-        return EVAL_RAISE();
-      }
-    }
-    for (Py_ssize_t i = 0; i < nb; i++)
-      vec[i] = PyTuple_GET_ITEM(p->args, i);
-    for (Py_ssize_t i = 0; i < nargs; i++)
-      vec[nb + i] = args[i];
-
-    r = KosEvalState_CallResult(es, inner, vec, total, NULL, tail_call,
-                                NULL, NULL);
-    if (vec != small)
-      PyMem_Free(vec);
-    return r;
-  }
-
-  /* Keywords or a non-flattenable inner: pack to tuple + dict and
-     take the tuple arm. */
-  {
-    PyObject *tup = PyTuple_New(nargs);
-    PyObject *kwargs = NULL;
-    KosOpResult r;
-
-    if (! tup)
-      return EVAL_RAISE();
-    for (Py_ssize_t i = 0; i < nargs; i++) {
-      PyObject *v = args[i];
-      Py_INCREF(v);
-      PyTuple_SET_ITEM(tup, i, v);
-    }
-    if (nkw) {
-      kwargs = PyDict_New();
-      if (! kwargs) {
-        Py_DECREF(tup);
-        return EVAL_RAISE();
-      }
-      for (Py_ssize_t i = 0; i < nkw; i++) {
-        if (PyDict_SetItem(kwargs, PyTuple_GET_ITEM(kwnames, i),
-                           args[nargs + i]) < 0) {
-          Py_DECREF(tup);
-          Py_DECREF(kwargs);
-          return EVAL_RAISE();
-        }
-      }
-    }
-
-    if (! kospartial_inner_is_flattenable(inner)) {
-      PyObject *result = KosPartial_Call(callable, tup, kwargs);
-      Py_DECREF(tup);
-      Py_XDECREF(kwargs);
-      if (! result)
-        return EVAL_RAISE();
-      if (KosEvalState_StackPUSH(es, result) < 0)
-        return EVAL_RAISE();  /* PUSH steals ref; released on failure */
-      return EVAL_NORMAL();
-    }
-
-    {
-      PyObject *merged_args = kospartial_merge_args(p->args, tup);
-      PyObject *merged_kw = NULL;
-
-      Py_DECREF(tup);
-      if (! merged_args) {
-        Py_XDECREF(kwargs);
-        return EVAL_RAISE();
-      }
-      if (kospartial_merge_kwds(p->keywords, kwargs, &merged_kw) < 0) {
-        Py_XDECREF(kwargs);
-        Py_DECREF(merged_args);
-        return EVAL_RAISE();
-      }
-      Py_XDECREF(kwargs);
-
-      r = KosEvalState_CallArgs(es, inner, merged_args, merged_kw,
-                                tail_call);
-      Py_DECREF(merged_args);
-      Py_XDECREF(merged_kw);
-      return r;
-    }
-  }
+  if (KosArgSpread_InitMerged(
+          &spread, p->args, p->keywords, args, nargs, kwnames, small, 16) < 0)
+    return EVAL_RAISE();
+  r = KosEvalState_Call(
+      es, p->func, spread.argv, spread.nargs, spread.kwnames, tail_call,
+      NULL, NULL);
+  KosArgSpread_Clear(&spread);
+  return r;
 }
 
 
@@ -333,7 +164,7 @@ static PyObject *kospartial_new(
       Py_DECREF(new_args);
       return NULL;
     }
-    if (kwds && PyDict_Update(new_kw, kwds) < 0) {
+    if (KosKeywords_Update(new_kw, kwds) < 0) {
       Py_DECREF(new_args);
       Py_DECREF(new_kw);
       return NULL;
@@ -343,9 +174,10 @@ static PyObject *kospartial_new(
 
   } else {
     new_args = rest;  /* steal the slice reference */
-    new_kw = kwds ? PyDict_Copy(kwds) : PyDict_New();
-    if (! new_kw) {
+    new_kw = PyDict_New();
+    if (! new_kw || KosKeywords_Update(new_kw, kwds) < 0) {
       Py_DECREF(new_args);
+      Py_XDECREF(new_kw);
       return NULL;
     }
   }
@@ -363,6 +195,7 @@ static PyObject *kospartial_new(
   self->keywords = new_kw;
   self->dict = NULL;
   self->weakreflist = NULL;
+  self->vectorcall = kospartial_vectorcall;
   return (PyObject *) self;
 }
 
@@ -572,9 +405,11 @@ static PyObject *kospartial_setstate(PyObject *self, PyObject *state) {
   if (! new_args)
     return NULL;
 
-  PyObject *new_kw = (kw == Py_None) ? PyDict_New() : PyDict_Copy(kw);
-  if (! new_kw) {
+  PyObject *new_kw = PyDict_New();
+  if (! new_kw
+      || KosKeywords_Update(new_kw, (kw == Py_None) ? NULL : kw) < 0) {
     Py_DECREF(new_args);
+    Py_XDECREF(new_kw);
     return NULL;
   }
 
@@ -674,10 +509,12 @@ KosEvaluatedTypeObject KosPartialCallableType = {
     .tp_itemsize = 0,
     .tp_dealloc = kospartial_dealloc,
     .tp_repr = kospartial_repr,
-    .tp_call = KosCallAdapt_CallAsync,
+    .tp_call = PyVectorcall_Call,
+    .tp_vectorcall_offset = offsetof(KosPartialObject, vectorcall),
     .tp_getattro = PyObject_GenericGetAttr,
     .tp_setattro = PyObject_GenericSetAttr,
-    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE
+        | Py_TPFLAGS_HAVE_VECTORCALL,
     .tp_doc = "KosPartial(func, *args, **keywords) - native KosCallable with "
               "the behavior of functools.partial",
     .tp_traverse = kospartial_traverse,
@@ -692,10 +529,8 @@ KosEvaluatedTypeObject KosPartialCallableType = {
   },
   .kos_call = {
     .kc_vinstall = kospartial_kos_vinstall,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
-    .kc_pycall = KosPartial_Call,
-    .kc_pyvectorcall = NULL,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = kospartial_vectorcall,
   },
 };
 

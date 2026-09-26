@@ -202,8 +202,8 @@ static int test_native_install_fresh_and_cached(void) {
               "resume name set");
   TEST_ASSERT(KosEvalState_StackPushRef(&es, staged) >= 0,
               "stage a value on the new frame");
-  TEST_ASSERT_SAME(KosDynFrame_NS(frame), ns,
-                   "frame carries the owned fill of the live namespace");
+  TEST_ASSERT_SAME(KosDynFrame_NS(frame), KosNamespace_Empty(),
+                   "frame carries the empty namespace");
   TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(&es), frame,
                    "native frame is dyn_top");
 
@@ -225,8 +225,8 @@ static int test_native_install_fresh_and_cached(void) {
         &es, &iterreq_kind, NULL, &cache);
     TEST_ASSERT_SAME(reused, spare, "cached frame is reinstalled");
     TEST_ASSERT_NULL(cache, "cache emptied by the reinstall");
-    TEST_ASSERT_SAME(KosDynFrame_NS(reused), ns,
-                     "reinstall attaches a fresh namespace fill");
+    TEST_ASSERT_SAME(KosDynFrame_NS(reused), KosNamespace_Empty(),
+                     "reinstall attaches the empty namespace");
   }
 
   KosEvalState_FreezeToContext(&es);

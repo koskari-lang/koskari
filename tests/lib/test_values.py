@@ -60,6 +60,16 @@ class TestValuesCreate(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(v), 2)
         self.assertEqual(v['x'], 3)
 
+    async def test_subclass_key_stored_as_plain_str(self):
+        """a str subclass keyword name is stored as a plain str"""
+
+        class Sub(str):
+            pass
+
+        v = values(**{Sub("x"): 1})
+        self.assertEqual(v['x'], 1)
+        self.assertEqual([type(k) for k in v.keys()], [str])
+
 
 class TestValuesBool(unittest.IsolatedAsyncioTestCase):
     """Tests for values bool conversion"""

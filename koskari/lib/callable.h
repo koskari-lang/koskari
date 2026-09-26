@@ -64,44 +64,16 @@ static inline int kos_callable_check(PyObject *obj) {
 #define KosCallable_Check(obj) kos_callable_check(obj)
 
 
-/**
-   Effective wants_frame for a callable: the per-instance hook when the
-   suite provides one, else the static flag. 0 when the type carries no
-   call suite.
-*/
-static inline int KosCallable_WantsFrame(PyObject *callable) {
-
-  KosCallSlots *slots;
-
-  if (! KosCallable_CheckSlots(callable, &slots))
-    return 0;
-  if (slots->kc_wants_frame_fn)
-    return slots->kc_wants_frame_fn(callable);
-  return slots->kc_wants_frame;
-}
-
-
-static inline int KosCallSlots_WantsFrame(
-    KosCallSlots *slots,
-    PyObject *callable) {
-
-  if (slots->kc_wants_frame_fn)
-    return slots->kc_wants_frame_fn(callable);
-  return slots->kc_wants_frame;
-}
-
-
 /* === KosCallShape: a callable held for repeated invocation === */
 
 /**
    How a held callable is invoked, resolved once:
 
-   FRAME -- a KosCallable; invoke through the evaluator
-   (KosEvalState_Call), which asks its suite whether to prepare a
-   frame. A callable that wants none still installs in the running
-   evaluator; wanting no frame says nothing about needing a Python
-   boundary, and routing one across that boundary would force a fresh
-   context and a nested loop for a call the current one can make.
+   FRAME -- a KosCallable; invoke through the evaluator's call entry,
+   whose install reports whether it completed in hand or installed a
+   frame. A KosCallable always runs in the running evaluator; routing
+   one across the Python boundary would force a fresh context and a
+   nested loop for a call the current one can make.
    PLAIN -- an ordinary python callable, needing no evaluator at all;
    invoke directly.
 */
@@ -115,12 +87,10 @@ typedef enum KosCallShapeKind {
    A callable an object holds and invokes repeatedly, with its calling
    shape resolved at construction rather than per call. cs_callable is
    owned -- the holder's traverse visits it and its clear releases it
-   through KosCallShape_Clear. cs_slots is the borrowed static-type
-   suite, NULL for PLAIN.
+   through KosCallShape_Clear.
 */
 typedef struct KosCallShape {
   PyObject *cs_callable;
-  KosCallSlots *cs_slots;
   uint8_t cs_kind;
   uint8_t cs_direct;   /* FRAME only: the install fills a frame whose
                           return is the call's value, guaranteed --
@@ -132,96 +102,91 @@ typedef struct KosCallShape {
 } KosCallShape;
 
 
-/* exactness check for cs_direct; the full declaration is in func.h */
-extern KosEvaluatedTypeObject KosFunctionType;
-
-
 /**
    Resolve callable's shape into *shape, taking a reference.
 */
-static inline void KosCallShape_Init(
-    KosCallShape *shape,
-    PyObject *callable) {
-
-  Py_INCREF(callable);
-  shape->cs_callable = callable;
-
-  if (KosCallable_CheckSlots(callable, &shape->cs_slots)) {
-    shape->cs_kind = KOS_CALL_SHAPE_FRAME;
-  } else {
-    shape->cs_slots = NULL;
-    shape->cs_kind = KOS_CALL_SHAPE_PLAIN;
-  }
-
-  /* The frame-return guarantee needs the callable to actually take a
-     frame, not merely to be a KosCallable: a yielding KosFunction
-     wants none (its install builds an AsyncGenerator and pushes it),
-     so its return is never the call's value. cs_kind alone carried
-     that test until the BOXED shape was retired. */
-  shape->cs_direct =
-      (shape->cs_kind == KOS_CALL_SHAPE_FRAME
-       && Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
-       && KosCallSlots_WantsFrame(shape->cs_slots, callable));
-}
+void KosCallShape_Init(KosCallShape *shape, PyObject *callable);
 
 
 static inline void KosCallShape_Clear(KosCallShape *shape) {
 
   Py_CLEAR(shape->cs_callable);
-  shape->cs_slots = NULL;
 }
 
 
-/* === KosCallable_* : KosCallable-only invocation (no type check, no frame prep) === */
+/* === KosArgSpread: tuple + dict as a vectorcall vector === */
+
 
 /**
-   KosCallable_CallSlots: invoke kc_vinstall through an
-   already-resolved suite with vectorcall-style args.
-
-   es must match the KosEvalState_Call* caller. callable, args, kwnames are
-   borrowed.
+   A tuple of positionals and a dict of keywords spread into a
+   vectorcall-shaped vector: argv holds the positionals then the
+   keyword values, kwnames names the keywords (NULL when there are
+   none). Every argv entry is borrowed from the source tuple and dict,
+   which must outlive the spread. The spread holds no storage of its
+   own: a keyword vector goes in the caller's buffer when it fits,
+   else on the heap.
 */
-KosOpResult KosCallable_CallSlots(KosEvalState *es,
-    KosCallSlots *slots, PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
-    int tail_call);
+typedef struct {
+  PyObject *const *argv;
+  Py_ssize_t nargs;
+  PyObject *kwnames;
+  PyObject **heap;
+} KosArgSpread;
 
-/**
-   KosCallable_CallArgsSlots: the central tuple-to-vector spread --
-   borrow the tuple's item array as the vector (extended with the
-   dict's values under a kwnames tuple when keywords are present) and
-   invoke kc_vinstall.
-*/
-KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
-    KosCallSlots *slots, PyObject *callable,
-    PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call);
 
 /**
-   KosCallable_Call: as KosCallable_CallSlots, resolving the suite from
-   the callable's type. callable MUST be a KosCallable; no type check is
-   performed.
+   Fill spread from args_tuple (may be NULL) and kwds_dict (may be NULL
+   or empty). Without keywords argv borrows the tuple's item array and
+   nothing is used or allocated. With keywords the vector goes in buf
+   when nargs plus the keyword count fits bufcap, else on the heap; buf
+   may be NULL with bufcap 0. Returns 0, or -1 with PyErr set and
+   nothing left to clear.
 */
-KosOpResult KosCallable_Call(KosEvalState *es,
-    PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
-    int tail_call);
+int KosArgSpread_Init(
+    KosArgSpread *spread,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    PyObject **buf,
+    Py_ssize_t bufcap);
+
 
 /**
-   KosCallable_CallArgs: as KosCallable_CallArgsSlots, resolving the
-   suite from the callable's type. callable MUST be a KosCallable; no
-   type check is performed.
+   Fill spread with a bound tuple of positionals and a bound dict of
+   keywords (either may be NULL or empty) merged with a call vector
+   (args, nargs, kwnames): bound positionals first, then the call's,
+   then the keyword values. A call keyword that names a bound keyword
+   replaces its value in place. With nothing bound argv borrows args
+   itself and nothing is allocated. Otherwise the vector goes in buf
+   when it fits bufcap, else on the heap; buf may be NULL with bufcap
+   0. Every argv entry is borrowed from its source, which must outlive
+   the spread. Names are matched by their text, so no Python code runs
+   inside the merge. A bound key that is not a str raises TypeError,
+   and so does a call name when there are bound keywords to match it
+   against. Returns 0, or -1 with PyErr set and nothing left to clear.
 */
-KosOpResult KosCallable_CallArgs(KosEvalState *es,
-    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call);
+int KosArgSpread_InitMerged(
+    KosArgSpread *spread,
+    PyObject *bound_args,
+    PyObject *bound_kwds,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **buf,
+    Py_ssize_t bufcap);
+
+
+/** Release what KosArgSpread_Init or KosArgSpread_InitMerged took. */
+void KosArgSpread_Clear(KosArgSpread *spread);
+
 
 /**
-   KosCallable_CallNoArgs: dispatch kc_vinstall with no arguments.
-   callable MUST be a KosCallable; no type check is performed.
+   Copy src's items into dst under exact str keys: a str subclass key
+   is stored as a plain str, and any other key raises TypeError. The
+   bound keywords of partial and values go through it, so the merge
+   can match names by text. src may be NULL. Returns 0, or -1 with
+   PyErr set.
 */
-KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
-    PyObject *callable, int tail_call);
+int KosKeywords_Update(PyObject *dst, PyObject *src);
 
 
 /* === Python-slot adapters === */
@@ -252,23 +217,6 @@ PyObject *KosCallAdapt_CallAsync(
 PyObject *KosCallAdapt_VectorAsync(
     PyObject *self, PyObject *const *args, size_t nargsf,
     PyObject *kwnames);
-
-/**
-   tp_call filler for a demand-surface callable: run self to completion on
-   the demand path (Koskari_DemandSync). Real suspension raises
-   KoskariSyncViolation; a yielding callable returns a DemandGenerator.
-*/
-PyObject *KosCallAdapt_CallDemand(
-    PyObject *self, PyObject *args, PyObject *kwds);
-
-/**
-   vectorcallfunc filler with the same demand semantics; builds tuple+dict
-   and defers to the demand path.
-*/
-PyObject *KosCallAdapt_VectorDemand(
-    PyObject *self, PyObject *const *args, size_t nargsf,
-    PyObject *kwnames);
-
 
 int koskari_callable_init(PyObject *mod);
 int koskari_callable_clear(PyObject *mod);

@@ -284,7 +284,6 @@ static PyObject *koszip_new(
   }
 
   z->base.fn.cs_callable = NULL;
-  z->base.fn.cs_slots = NULL;
   z->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
   z->base.source = NULL;
@@ -358,7 +357,7 @@ KosEvaluatedTypeObject KosZipType = {
               "synchronously (demand path)",
     .tp_traverse = koszip_traverse,
     .tp_clear = koszip_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koszip_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

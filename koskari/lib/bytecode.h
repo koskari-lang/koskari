@@ -463,6 +463,9 @@ typedef enum KosCacheKind {
 typedef enum KosMethodMode {
   KOS_METHOD_DATA_DESCRIPTOR = 0,     /* call resolved->__get__ on each hit */
   KOS_METHOD_DIRECT_OBJECT_GUARDED,   /* class-side object, instance-shadow checked */
+  KOS_METHOD_DIRECT_METHOD_GUARDED,   /* class-side method descriptor, instance-shadow
+                                         checked, returned unbound with the receiver
+                                         sent */
   KOS_METHOD_INSTANCE_DICT,           /* negative fact: value lives in instance dict */
   KOS_METHOD_GENERIC_LOOKUP,          /* no shortcut; full resolution */
   KOS_METHOD_MEGAMORPHIC,             /* churn bypass: skip guard, never populate */

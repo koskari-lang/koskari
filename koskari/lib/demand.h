@@ -26,6 +26,21 @@
 extern KosEvaluatedTypeObject KosDemandCallableType;
 
 
+/**
+   The layout of Demand and its subtypes (Procedure, IterFunction).
+   vectorcall is the per-type Python vectorcall entry, taken from the
+   type's kc_pyvectorcall at construction; the types are method
+   descriptors, so CPython calls them unbound with self prepended.
+*/
+typedef struct {
+  PyObject_HEAD
+  PyObject *wrapped;
+  vectorcallfunc vectorcall;
+} KosDemandObject;
+
+#define KosDemand_VECTORCALL_OFFSET offsetof(KosDemandObject, vectorcall)
+
+
 #define KosDemand_CheckExact(obj) \
   ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosDemandCallableType)))
 
@@ -54,21 +69,27 @@ int koskari_demand_init(PyObject *mod);
 int koskari_demand_clear(PyObject *mod);
 
 /**
-   callable, args, kwargs are borrowed. Caller retains ownership.
+   Run callable on the demand path from the Python boundary and return
+   its finished result: a KosCallable runs to completion on a fresh
+   context with suspension denied; a plain Python callable is called
+   and an awaitable result stepped, and denied if it suspends. args
+   (may be NULL) and kwargs (may be NULL) are borrowed. Returns a new
+   reference, or NULL with PyErr set.
 */
 PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwargs);
 
 /**
-   Like Koskari_DemandSync but stores result in out_result and returns int.
-   0 = success, -1 = error (exception set). KosCallable run_eval converts
-   AWAIT/YIELD into an in-eval KoskariSyncViolation (KOS_RES_RAISE), so return
-   value 1 is not produced for that path; callers may still treat 1 as suspend
-   for forward compatibility.
-
-   callable, args, and kwargs are borrowed. Caller retains ownership.
- */
-int Koskari_DemandSyncEx(PyObject *callable, PyObject *args, PyObject *kwargs,
-                         PyObject **out_result);
+   Koskari_DemandSync over a vectorcall-shaped argument vector: args
+   holds nargs positionals then one value per kwnames entry (kwnames
+   may be NULL). args and kwnames are borrowed. 0 with *out_result a
+   new reference, or -1 with PyErr set.
+*/
+int Koskari_DemandSyncVector(
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **out_result);
 
 
 /**

@@ -259,7 +259,6 @@ static PyObject *koschain_new(
   c->next = 0;
 
   c->base.fn.cs_callable = NULL;
-  c->base.fn.cs_slots = NULL;
   c->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
 
   /* One source is live at a time, so the arity-one view serves: the
@@ -356,7 +355,7 @@ KosEvaluatedTypeObject KosChainType = {
               "koskari-flattened) and synchronously (demand path)",
     .tp_traverse = koschain_traverse,
     .tp_clear = koschain_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koschain_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

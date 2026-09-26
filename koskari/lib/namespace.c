@@ -40,6 +40,7 @@ static PyObject *_module_str = NULL;     // "<module>"
 
 // forward declarations
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
+static PyObject *ns_empty = NULL;
 static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name);
 static int ns_fast_index(PyObject *self, PyObject *key);
 static PyObject *ns_newfull_from_nspec(
@@ -1453,6 +1454,12 @@ static PyObject *ns_m_bind(PyObject *self, PyObject *args) {
   if (! PyArg_ParseTuple(args, "OO:Namespace.bind", &key, &ref))
     return NULL;
 
+  if (self == ns_empty) {
+    PyErr_SetString(PyExc_TypeError,
+                    "the empty namespace accepts no bindings");
+    return NULL;
+  }
+
   if (ns_bind_ref(self, key, ref))
     return NULL;
 
@@ -2119,6 +2126,21 @@ PyObject *KosNamespace_NewFull(
   return ns_newfull_type(&KosNamespaceType,
                          name, parent,
                          local_syms, closure_syms, global_syms);
+}
+
+
+PyObject *KosNamespace_Empty(void) {
+
+  if (! ns_empty) {
+    PyObject *ns = KosNamespace_NewFull(NULL, NULL, NULL, NULL, NULL);
+
+    if (! ns)
+      return NULL;
+    PyObject_GC_UnTrack(ns);
+    kos_immortalize(ns);
+    ns_empty = ns;
+  }
+  return ns_empty;
 }
 
 
@@ -3143,6 +3165,7 @@ int koskari_namespace_clear(PyObject *mod) {
   }
   ns_freecount = 0;
 
+  Py_CLEAR(ns_empty);
   Py_CLEAR(_namespace_str);
   Py_CLEAR(str_class_name);
   Py_CLEAR(_module_str);

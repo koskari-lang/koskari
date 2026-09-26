@@ -1,0 +1,65 @@
+;; Reproducer: an instance whose __call__ is a KosCallable is called
+;; the way CPython calls it, in the calling evaluator. A function bound
+;; as __call__ binds the instance as its receiver; a partial bound as
+;; __call__ is no descriptor, so it is called without the instance,
+;; from Koskari and from Python alike. __call__ resolves on the type:
+;; an instance attribute of that name does not shadow it.
+
+
+define target [a b]:
+    #(a b)
+
+
+define-class Method []:
+
+    define __call__ [self x]:
+        #(self.tag x)
+
+
+define-class Bound []:
+
+    define __call__ (partial target 1)
+
+
+define method_from_koskari []:
+    define m (Method)
+    set! m.tag "m"
+    (m 2)
+
+
+define bound_from_koskari []:
+    ((Bound) 2)
+
+
+define bound_in_tail []:
+    define b (Bound)
+    (b 3)
+
+
+define deep [n]:
+    if (> n 0):
+        + 1 (deep_step (- n 1))
+    else:
+        0
+
+
+define-class Deep []:
+
+    define __call__ (partial deep)
+
+
+define deep_step (Deep)
+
+
+define bound_deep [n]:
+    (deep_step n)
+
+
+define shadowed_from_koskari []:
+    define m (Method)
+    set! m.tag "type"
+    set! m.__call__ (lambda [x] #("instance" x))
+    (m 2)
+
+
+;; The end.

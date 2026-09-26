@@ -200,7 +200,7 @@ class TestAclose(CevalTest):
 
 class TestDemandClose(CevalTest):
     """
-    close on the sync DemandGenerator.
+    close on the sync KosPyIter.
     """
 
     async def test_close_suspended(self):
@@ -255,7 +255,7 @@ class TestProtocolConformance(CevalTest):
 
     async def test_abc_generator(self):
         """
-        DemandGenerator satisfies collections.abc.Generator
+        KosPyIter satisfies collections.abc.Generator
         """
 
         dgen = iter(make_agen())

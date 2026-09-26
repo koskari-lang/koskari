@@ -17,9 +17,9 @@
 /**
    koskari/lib/callable.c
 
-   The call suite: KosCallable dispatch into the install slots of a
-   KosEvaluatedTypeObject's kos_call suite, and the reusable Python-slot
-   adapters for demand-surface callables.
+   The call suite's shared pieces: the tuple-and-dict argument spread
+   and the reusable Python-slot adapters over a KosEvaluatedTypeObject's
+   kos_call suite.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -33,9 +33,8 @@
 
 
 /**
-   Vector-to-tuple packing for the python-boundary adapters, whose
-   workers (kc_pycall, Koskari_AsyncCall, Koskari_DemandSync) take the
-   tuple + dict shapes.
+   Vector-to-tuple packing for KosCallAdapt_VectorAsync, whose worker
+   (kc_pycall through Koskari_AsyncCall) takes the tuple + dict shapes.
 */
 static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
   PyObject *tup = PyTuple_New(nargs);
@@ -67,150 +66,260 @@ static PyObject *vcall_build_kwds_dict(
 }
 
 
-/* === KosCallable_* : KosCallable-only (no type check, no frame prep) === */
+/* === KosCallShape === */
 
 
-static KosOpResult callable_promote_normal(KosEvalState *es, KosOpResult r) {
-  if (r.kind != KOS_RES_NORMAL)
-    return r;
-  if (KosEvalState_GOAL(es))
-    return EVAL_REPROLOGUE();
-  /* An install that left a resume on the frame rather than bytecode
-     must go through the prologue, which is where it is picked up.
-     NORMAL here would resume instruction dispatch on a frame that has
-     no code. */
-  if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
-    return EVAL_REPROLOGUE();
-  return EVAL_NORMAL();
+void KosCallShape_Init(KosCallShape *shape, PyObject *callable) {
+
+  Py_INCREF(callable);
+  shape->cs_callable = callable;
+  shape->cs_kind = KosCallable_Check(callable)
+      ? KOS_CALL_SHAPE_FRAME : KOS_CALL_SHAPE_PLAIN;
+
+  /* The frame-return guarantee needs the callable to actually take a
+     frame, not merely to be a KosCallable: a yielding KosFunction's
+     install completes in hand with a new AsyncGenerator, so its return
+     is never the call's value. */
+  shape->cs_direct =
+      (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+       && KosFunction_CODE(callable)
+       && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)));
 }
 
 
-KosOpResult KosCallable_CallSlots(KosEvalState *es,
-    KosCallSlots *slots, PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
-    int tail_call) {
-
-  if (! slots->kc_vinstall) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-  return callable_promote_normal(
-      es, slots->kc_vinstall(es, callable, args, nargs, kwnames, tail_call));
-}
+/* === KosArgSpread === */
 
 
-#define KOS_CALLARGS_SPREAD_FAST 16
-
-KosOpResult KosCallable_CallArgsSlots(KosEvalState *es,
-    KosCallSlots *slots, PyObject *callable,
-    PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call) {
+int KosArgSpread_Init(
+    KosArgSpread *spread,
+    PyObject *args_tuple,
+    PyObject *kwds_dict,
+    PyObject **buf,
+    Py_ssize_t bufcap) {
 
   Py_ssize_t nargs = args_tuple ? PyTuple_GET_SIZE(args_tuple) : 0;
   Py_ssize_t nkw = kwds_dict ? PyDict_Size(kwds_dict) : 0;
+  PyObject **argv = buf;
 
-  if (! slots->kc_vinstall) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
+  spread->nargs = nargs;
+  spread->kwnames = NULL;
+  spread->heap = NULL;
 
   /* No keywords: the tuple's item array IS the vector. */
   if (! nkw) {
-    PyObject *const *argv =
-        nargs ? &PyTuple_GET_ITEM(args_tuple, 0) : NULL;
-    return callable_promote_normal(
-        es, slots->kc_vinstall(es, callable, argv, nargs, NULL, tail_call));
+    spread->argv = nargs ? &PyTuple_GET_ITEM(args_tuple, 0) : NULL;
+    return 0;
   }
 
   /* Keywords: extend the vector with the dict's values and name them
-     through a kwnames tuple. Every entry is borrowed -- the caller's
-     tuple and dict stay alive across the install. */
+     through a kwnames tuple. */
+  if (nargs + nkw > bufcap) {
+    argv = PyMem_Malloc((size_t) (nargs + nkw) * sizeof(PyObject *));
+    if (! argv) {
+      PyErr_NoMemory();
+      return -1;
+    }
+    spread->heap = argv;
+  }
+
+  spread->kwnames = PyTuple_New(nkw);
+  if (! spread->kwnames) {
+    PyMem_Free(spread->heap);
+    spread->heap = NULL;
+    return -1;
+  }
+
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    argv[i] = PyTuple_GET_ITEM(args_tuple, i);
   {
-    PyObject *small[KOS_CALLARGS_SPREAD_FAST];
-    PyObject **argv = small;
-    PyObject *kwnames = NULL;
-    KosOpResult r;
+    PyObject *k, *v;
+    Py_ssize_t pos = 0, i = 0;
+    while (PyDict_Next(kwds_dict, &pos, &k, &v)) {
+      Py_INCREF(k);
+      PyTuple_SET_ITEM(spread->kwnames, i, k);
+      argv[nargs + i] = v;
+      i++;
+    }
+  }
 
-    if (nargs + nkw > KOS_CALLARGS_SPREAD_FAST) {
-      argv = PyMem_Malloc((size_t) (nargs + nkw) * sizeof(PyObject *));
-      if (! argv) {
-        PyErr_NoMemory();
-        return EVAL_RAISE();
+  spread->argv = argv;
+  return 0;
+}
+
+
+int KosArgSpread_InitMerged(
+    KosArgSpread *spread,
+    PyObject *bound_args,
+    PyObject *bound_kwds,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    PyObject **buf,
+    Py_ssize_t bufcap) {
+
+  Py_ssize_t nb = bound_args ? PyTuple_GET_SIZE(bound_args) : 0;
+  Py_ssize_t nbk = bound_kwds ? PyDict_Size(bound_kwds) : 0;
+  Py_ssize_t nck = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+  Py_ssize_t npos = nb + nargs;
+  Py_ssize_t nkw = nck;
+  PyObject **argv = buf;
+  PyObject *names = NULL;
+
+  spread->nargs = npos;
+  spread->kwnames = NULL;
+  spread->heap = NULL;
+
+  /* Nothing bound: the call vector IS the vector. */
+  if (! nb && ! nbk) {
+    spread->argv = args;
+    if (nck) {
+      Py_INCREF(kwnames);
+      spread->kwnames = kwnames;
+    }
+    return 0;
+  }
+
+  /* Bound keywords: count the call keywords that replace one, so the
+     merged names tuple is sized once. Names match by text. */
+  if (nbk) {
+    Py_ssize_t nhit = 0;
+
+    for (Py_ssize_t j = 0; j < nck; j++) {
+      PyObject *k = PyTuple_GET_ITEM(kwnames, j);
+      PyObject *bk, *bv;
+      Py_ssize_t pos = 0;
+
+      if (! PyUnicode_Check(k))
+        goto not_str;
+      while (PyDict_Next(bound_kwds, &pos, &bk, &bv)) {
+        if (PyUnicode_Check(bk) && PyUnicode_Compare(bk, k) == 0) {
+          nhit++;
+          break;
+        }
       }
     }
+    nkw = nbk + nck - nhit;
+  }
 
-    for (Py_ssize_t i = 0; i < nargs; i++)
-      argv[i] = PyTuple_GET_ITEM(args_tuple, i);
-
-    kwnames = PyTuple_New(nkw);
-    if (! kwnames) {
-      if (argv != small)
-        PyMem_Free(argv);
-      return EVAL_RAISE();
+  if (npos + nkw > bufcap) {
+    argv = PyMem_Malloc((size_t) (npos + nkw) * sizeof(PyObject *));
+    if (! argv) {
+      PyErr_NoMemory();
+      return -1;
     }
-    {
-      PyObject *k, *v;
-      Py_ssize_t pos = 0, i = 0;
-      while (PyDict_Next(kwds_dict, &pos, &k, &v)) {
-        Py_INCREF(k);
-        PyTuple_SET_ITEM(kwnames, i, k);
-        argv[nargs + i] = v;
-        i++;
+    spread->heap = argv;
+  }
+
+  for (Py_ssize_t i = 0; i < nb; i++)
+    argv[i] = PyTuple_GET_ITEM(bound_args, i);
+  for (Py_ssize_t i = 0; i < nargs; i++)
+    argv[nb + i] = args[i];
+
+  /* Only the call side names keywords: its kwnames serve as they are. */
+  if (! nbk) {
+    for (Py_ssize_t i = 0; i < nck; i++)
+      argv[npos + i] = args[nargs + i];
+    if (nck) {
+      Py_INCREF(kwnames);
+      spread->kwnames = kwnames;
+    }
+    spread->argv = argv;
+    return 0;
+  }
+
+  /* The bound keywords head the names, in dict order; a call keyword
+     that names one replaces its value there, the rest append. */
+  names = PyTuple_New(nkw);
+  if (! names)
+    goto fail;
+
+  {
+    PyObject *k, *v;
+    Py_ssize_t pos = 0, i = 0;
+    Py_ssize_t tail = nbk;
+
+    while (PyDict_Next(bound_kwds, &pos, &k, &v)) {
+      if (! PyUnicode_Check(k))
+        goto not_str;
+      Py_INCREF(k);
+      PyTuple_SET_ITEM(names, i, k);
+      argv[npos + i] = v;
+      i++;
+    }
+
+    for (Py_ssize_t j = 0; j < nck; j++) {
+      Py_ssize_t at = -1;
+
+      k = PyTuple_GET_ITEM(kwnames, j);
+      v = args[nargs + j];
+      for (Py_ssize_t h = 0; h < nbk; h++) {
+        if (PyUnicode_Compare(PyTuple_GET_ITEM(names, h), k) == 0) {
+          at = h;
+          break;
+        }
       }
+      if (at >= 0) {
+        argv[npos + at] = v;
+        continue;
+      }
+      Py_INCREF(k);
+      PyTuple_SET_ITEM(names, tail, k);
+      argv[npos + tail] = v;
+      tail++;
     }
-
-    r = slots->kc_vinstall(es, callable, argv, nargs, kwnames, tail_call);
-    Py_DECREF(kwnames);
-    if (argv != small)
-      PyMem_Free(argv);
-    return callable_promote_normal(es, r);
   }
+
+  spread->kwnames = names;
+  spread->argv = argv;
+  return 0;
+
+ not_str:
+  PyErr_SetString(PyExc_TypeError, "keywords must be strings");
+ fail:
+  Py_XDECREF(names);
+  PyMem_Free(spread->heap);
+  spread->heap = NULL;
+  return -1;
 }
 
 
-KosOpResult KosCallable_Call(KosEvalState *es,
-    PyObject *callable,
-    PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames,
-    int tail_call) {
+void KosArgSpread_Clear(KosArgSpread *spread) {
 
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-
-  if (! slots) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-  return KosCallable_CallSlots(es, slots, callable, args, nargs, kwnames,
-                               tail_call);
+  Py_CLEAR(spread->kwnames);
+  PyMem_Free(spread->heap);
+  spread->heap = NULL;
+  spread->argv = NULL;
 }
 
 
-KosOpResult KosCallable_CallArgs(KosEvalState *es,
-    PyObject *callable, PyObject *args_tuple, PyObject *kwds_dict,
-    int tail_call) {
+int KosKeywords_Update(PyObject *dst, PyObject *src) {
 
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
+  PyObject *k, *v;
+  Py_ssize_t pos = 0;
 
-  if (! slots) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
+  if (! src)
+    return 0;
+
+  while (PyDict_Next(src, &pos, &k, &v)) {
+    int r;
+
+    if (! PyUnicode_Check(k)) {
+      PyErr_SetString(PyExc_TypeError, "keywords must be strings");
+      return -1;
+    }
+    if (PyUnicode_CheckExact(k)) {
+      r = PyDict_SetItem(dst, k, v);
+    } else {
+      PyObject *plain = PyUnicode_FromObject(k);
+      if (! plain)
+        return -1;
+      r = PyDict_SetItem(dst, plain, v);
+      Py_DECREF(plain);
+    }
+    if (r < 0)
+      return -1;
   }
-  return KosCallable_CallArgsSlots(es, slots, callable, args_tuple,
-                                   kwds_dict, tail_call);
-}
-
-
-KosOpResult KosCallable_CallNoArgs(KosEvalState *es,
-    PyObject *callable, int tail_call) {
-
-  KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(callable));
-
-  if (! slots || ! slots->kc_vinstall) {
-    PyErr_SetString(PyExc_TypeError, "KosCallable has no install slot");
-    return EVAL_RAISE();
-  }
-  return callable_promote_normal(
-      es, slots->kc_vinstall(es, callable, NULL, 0, NULL, tail_call));
+  return 0;
 }
 
 
@@ -281,42 +390,6 @@ PyObject *KosCallAdapt_VectorAsync(
   }
 
   PyObject *result = Koskari_AsyncCall(self, tup, kwds);
-  Py_DECREF(tup);
-  Py_XDECREF(kwds);
-  return result;
-}
-
-
-PyObject *KosCallAdapt_CallDemand(
-    PyObject *self,
-    PyObject *args,
-    PyObject *kwds) {
-
-  return Koskari_DemandSync(self, args, kwds);
-}
-
-
-PyObject *KosCallAdapt_VectorDemand(
-    PyObject *self,
-    PyObject *const *args,
-    size_t nargsf,
-    PyObject *kwnames) {
-
-  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
-  PyObject *tup = vcall_build_args_tuple(args, nargs);
-  if (! tup)
-    return NULL;
-
-  PyObject *kwds = NULL;
-  if (kwnames && PyTuple_GET_SIZE(kwnames)) {
-    kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-    if (! kwds) {
-      Py_DECREF(tup);
-      return NULL;
-    }
-  }
-
-  PyObject *result = Koskari_DemandSync(self, tup, kwds);
   Py_DECREF(tup);
   Py_XDECREF(kwds);
   return result;

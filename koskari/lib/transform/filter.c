@@ -16,7 +16,7 @@
    asynchronous runs under one CPS resume-carrying frame, whose
    resumes carry the three-phase progression -- FETCH requests the
    next source element (KosEvalState_NextResume), INVOKE applies the
-   predicate (KosEvalState_CallResult) with the element held on the
+   predicate (KosEvalState_Call) with the element held on the
    filter, VERDICT tests the predicate's result and either completes
    the frame with the held element or fetches again. A rejected
    element loops by a tail call into FETCH, never by C
@@ -168,7 +168,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
      duration. */
   f->pending = element;
   {
-    KosOpResult r = KosEvalState_CallResult(
+    KosOpResult r = KosEvalState_Call(
         es, f->fn.cs_callable, &element, 1, NULL, 0,
         &filter_resume_after_verdict_kind, f);
     RESULT_ENTRY(es, r, &filter_resume_after_verdict_kind, f);
@@ -384,7 +384,7 @@ KosEvaluatedTypeObject KosFilterType = {
               "(demand path)",
     .tp_traverse = kos_transform_traverse,
     .tp_clear = kos_transform_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = kosfilter_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

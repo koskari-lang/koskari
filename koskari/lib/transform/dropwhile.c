@@ -130,9 +130,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
      call; the argument vector borrows it for the call's duration. */
   t->pending = element;
   {
-    KosOpResult r = KosEvalState_CallResult(es, t->fn.cs_callable,
-                                            &element, 1, NULL, 0,
-                                            &dropwhile_resume_verdict_kind, d);
+    KosOpResult r = KosEvalState_Call(
+        es, t->fn.cs_callable, &element, 1, NULL, 0,
+        &dropwhile_resume_verdict_kind, d);
     RESULT_ENTRY(es, r, &dropwhile_resume_verdict_kind, d);
   }
 }
@@ -309,7 +309,7 @@ KosEvaluatedTypeObject KosDropWhileType = {
               "koskari-flattened) and synchronously (demand path)",
     .tp_traverse = kos_transform_traverse,
     .tp_clear = kos_transform_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = kosdropwhile_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

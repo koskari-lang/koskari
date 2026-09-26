@@ -101,7 +101,7 @@ class TestAsyncGenAnextAwait(unittest.IsolatedAsyncioTestCase):
 
     async def test_demand_then_async_alternation(self):
         """
-        a DemandGenerator step, then anext on the same agen: the async
+        a KosPyIter step, then anext on the same agen: the async
         drive's step awaits and completes -- the demand bit was forced
         off at the async install (the alternation pin previously blocked
         by this defect)

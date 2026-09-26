@@ -18,7 +18,7 @@
    koskari/lib/iter.c
 
    KosPyAsyncGen: the generator-backed KosIter provider. Its Python
-   surface (anext/asend/athrow/aclose, tp_iter DemandGenerator) is
+   surface (anext/asend/athrow/aclose, tp_iter KosPyIter) is
    filled by the generic KosIterAdapt_* adapters (iterate.c).
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -570,7 +570,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
     .tp_doc = "Koskari async generator wrapper",
     .tp_traverse = asyncgen_traverse,
     .tp_clear = asyncgen_clear,
-    .tp_iter = KosIterAdapt_DemandIter,
+    .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = asyncgen_methods,
     .tp_getset = asyncgen_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),

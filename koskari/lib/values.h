@@ -32,6 +32,7 @@ typedef struct KosValues {
   PyObject *args;
   PyObject *kwds;
   Py_uhash_t hashed;
+  vectorcallfunc vectorcall;
 } KosValues;
 
 

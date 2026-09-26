@@ -3137,6 +3137,15 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
       KosStack_Release(spent);
   }
 
+  /* POP_PROMPT runs in the resume frame, so the live registers still
+     hold the spent slice's pc: load the restored state into them, or
+     the resync below flushes the slice's pc back over it. The reload
+     after the resync covers only an invoker that is this same frame; a
+     code-less invoker (a resume frame that called the continuation)
+     returns into this one later, at the restored pc. */
+  if (KosEvalState_FRAME(es) == resume_frame)
+    kos_dyn_resync_load_regs(es, resume_frame);
+
   /* Re-link the stashed invoke span above the prompt; the prompt stays on
    * the chain for the shift body's POP_SHIFT. */
   {

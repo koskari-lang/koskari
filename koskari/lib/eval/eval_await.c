@@ -261,54 +261,76 @@ static inline KosOpResult push_or_fuse(
 
 
 /**
-   Push val, or if val is awaitable run eager_step and either push the
-   result or suspend (KOS_RES_AWAIT). Use only for (1) the result of a
-   call (CALL opcode: callable returned a coroutine) and (2) the AWAIT
-   opcode (explicitly awaiting TOS). All other paths must use
-   KosEvalState_StackPUSH so we do not auto-await values that are merely
-   loaded or computed.
-
-   await_defer: the explicit AWAIT opcode drives a Defer or an asyncio
-   future; implicit sites push those as plain handles.
-
-   fuse: a CALL* handler passes 1 so a pushed result followed by POP 1
-   is elided (push_fuse_pop1); every non-opcode caller (defer_drive,
-   KosEvalState_Call, KosEvalState_PushOrAwait) passes 0. Both flags
-   are literals at every call site and fold away.
-
-   val is consumed (new reference).
-
-   :return: EVAL_NORMAL, EVAL_AWAIT, or EVAL_RAISE
+   The settle half of push_or_await. A plain value comes back as it
+   is, and so do a Defer and an asyncio future unless await_defer is
+   set. A fresh Koskari coroutine, or a Defer delegating to one under
+   an explicit await, is installed as a call frame on the running
+   chain. Any other awaitable is eagerly stepped to its result, or
+   suspends with the iterator parked on the context. NORMAL with *out
+   the settled value (new reference), REPROLOGUE with a callee
+   installed whose return delivers the value, AWAIT with the yielded
+   value, or RAISE. val is consumed.
 */
-static inline KosOpResult push_or_await(
+static inline KosOpResult kos_settle_value(
     KosEvalState *es,
     PyObject *val,
     int await_defer,
-    int fuse) {
+    PyObject **out) {
 
   /* Awaitability gate first: a type-level probe (two loads), so the
      dominant non-awaitable result skips everything below -- including
      the Defer subtype walk, which is sound to hoist because KosDefer
      defines am_await and therefore always passes this gate. */
   PyTypeObject *type = Py_TYPE(val);
-  SAYF("[eval] push_or_await entry is_awaitable=%d\n",
+  SAYF("[eval] settle entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
-  if (! type->tp_as_async || ! type->tp_as_async->am_await)
-    return push_or_fuse(es, val, fuse);
+  if (! type->tp_as_async || ! type->tp_as_async->am_await) {
+    *out = val;
+    return EVAL_NORMAL();
+  }
 
-  /* Defer is not auto-awaited; push as plain value (explicit AWAIT drives it). */
-  if (! await_defer && KosDefer_Check(val))
-    return push_or_fuse(es, val, fuse);
+  /* A Koskari coroutine that has not been started is a program with
+     nothing to drive: it installs on this chain as a call frame and
+     returns its value the way a callee does. A Defer under an explicit
+     await hands over the fresh coroutine it delegates to. A coroutine
+     already started keeps its own drive below. */
+  if (await_defer && KosDefer_Check(val)) {
+    PyObject *fresh = KosDefer_TakeFreshCoroutine(val);
+    if (fresh) {
+      Py_DECREF(val);
+      val = fresh;
+      type = Py_TYPE(val);
+    }
+  }
+  if (type == &KosCoroutineType) {
+    KosCode *code;
+    PyObject *ns;
 
-  /* asyncio futures are handles; implicit sites push them plain. */
+    if (KosCoroutine_TakeFresh(val, &code, &ns)) {
+      KosOpResult r = KosEvalState_InstallCallFrame(es, code, ns, 0);
+      Py_DECREF((PyObject *) code);
+      Py_DECREF(val);
+      return r.kind == KOS_RES_RAISE ? r : EVAL_REPROLOGUE();
+    }
+  }
+
+  /* Defer is not auto-awaited; a plain value (explicit AWAIT drives it). */
+  if (! await_defer && KosDefer_Check(val)) {
+    *out = val;
+    return EVAL_NORMAL();
+  }
+
+  /* asyncio futures are handles; implicit sites take them plain. */
   if (! await_defer) {
     int isfut = kos_isfuture(val);
     if (isfut < 0) {
       Py_DECREF(val);
       return EVAL_RAISE();
     }
-    if (isfut)
-      return push_or_fuse(es, val, fuse);
+    if (isfut) {
+      *out = val;
+      return EVAL_NORMAL();
+    }
   }
 
   int suspended = 0;
@@ -316,17 +338,64 @@ static inline KosOpResult push_or_await(
   PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
   Py_DECREF(val);
 
-  if (result)
-    return push_or_fuse(es, result, fuse);
+  if (result) {
+    *out = result;
+    return EVAL_NORMAL();
+  }
 
   if (suspended && yielded) {
     KosEvalState_MarkSuspendedNotRunning(es);
-    SAYF("[eval] push_or_await set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
+    SAYF("[eval] settle set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
   }
 
   return EVAL_RAISE();
+}
+
+
+/**
+   Push val. An awaitable val is settled first through
+   kos_settle_value: its result is pushed, a suspension returns
+   KOS_RES_AWAIT, and a fresh Koskari coroutine is installed as a
+   callee instead, reported as REPROLOGUE, whose return lands the
+   value where the push would have. Use only for the result of a call
+   (a CALL opcode whose callable returned a coroutine) and for the
+   AWAIT opcode (explicitly awaiting TOS). Every other path must use
+   KosEvalState_StackPUSH, so values merely loaded or computed are
+   never auto-awaited.
+
+   await_defer: the explicit AWAIT opcode drives a Defer or an asyncio
+   future. Implicit sites push those as plain handles.
+
+   fuse: a CALL* handler passes 1 so a pushed result followed by POP 1
+   is elided (push_fuse_pop1). Every non-opcode caller passes 0. Both
+   flags are literals at every call site and fold away.
+
+   val is consumed (new reference).
+
+   :return: EVAL_NORMAL, EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE
+*/
+static inline KosOpResult push_or_await(
+    KosEvalState *es,
+    PyObject *val,
+    int await_defer,
+    int fuse) {
+
+  PyObject *settled;
+  KosOpResult r = kos_settle_value(es, val, await_defer, &settled);
+
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
+  return push_or_fuse(es, settled, fuse);
+}
+
+
+KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out) {
+  if (unlikely(! val))
+    return EVAL_RAISE();
+
+  return kos_settle_value(es, val, 0, out);
 }
 
 
@@ -340,15 +409,14 @@ KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
 
 KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
 
-  KosOpResult pr = KosEvalState_PushOrAwait(es, val);
-  PyObject *settled;
+  PyObject *settled = NULL;
+  KosOpResult r = KosEvalState_Settle(es, val, &settled);
 
-  if (pr.kind != KOS_RES_NORMAL)
-    return pr;  /* AWAIT: the revive delivers; RAISE: the walk propagates */
+  /* REPROLOGUE: an installed callee delivers. AWAIT: the revive
+     delivers. RAISE: the walk propagates. */
+  if (r.kind != KOS_RES_NORMAL)
+    return r;
 
-  settled = KosEvalState_StackPopRef(es);
-  if (unlikely(! settled))
-    return EVAL_RAISE();
   KosEvalState_PENDING_VALUE(es) = settled;
   return EVAL_REPROLOGUE();
 }

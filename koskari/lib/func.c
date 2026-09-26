@@ -30,36 +30,11 @@
 #include "debug.h"
 
 
-static int kos_expression_wants_frame(PyObject *callable) {
-
-  KosCode *code = (KosCode *) KosExpression_CODE(callable);
-  return (code && KosCode_YIELDS(code)) ? 0 : 1;
-}
-
-
-static int kos_function_wants_frame(PyObject *callable) {
-
-  KosCode *code = (KosCode *) KosFunction_CODE(callable);
-  return (code && KosCode_YIELDS(code)) ? 0 : 1;
-}
-
-
 static PyObject *boundmethod_resolve_function(PyObject *func);
 
 static Py_ssize_t function_compute_simple_arity(
         PyObject *code,
         PyObject *formals);
-
-
-static int kos_boundmethod_wants_frame(PyObject *callable) {
-
-  PyObject *func = KosBoundMethod_FUNC(callable);
-
-  if (! KosCallable_Check(func))
-    return 1;
-
-  return KosCallable_WantsFrame(func);
-}
 
 
 static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
@@ -156,26 +131,25 @@ static PyMemberDef expression_members[] = {
 /* === KosExpression install slots === */
 
 
-/** Zero-arg install shared by the tuple and vector Expression slots. */
+/**
+   Install an Expression: yielding code completes in hand with a new
+   AsyncGenerator over the expression's namespace; any other code takes
+   a frame.
+*/
 static KosOpResult kos_expression_install_core(
     KosEvalState *es,
-    PyObject *callable) {
+    PyObject *callable,
+    int tail_call) {
 
   KosCode *code = (KosCode *) KosExpression_CODE(callable);
-  if (code && KosCode_YIELDS(code)) {
-    PyObject *ns = KosExpression_NS(callable);
-    Py_INCREF(ns);  // NewFromCodeAndNs steals a reference
-    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
-    if (! agen)
-      return EVAL_RAISE();
-    return KosEvalState_StackPUSH(es, agen) < 0 ? EVAL_RAISE() : EVAL_NORMAL();
-  }
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
   PyObject *ns = KosExpression_NS(callable);
-  Py_INCREF(ns);
-  return KosEvalState_SetFrameCodeAndNamespace(es, frame, code, ns) < 0
-      ? EVAL_RAISE() : EVAL_NORMAL();
+
+  Py_INCREF(ns);  /* NewFromCodeAndNs and InstallCallFrame steal it */
+  if (code && KosCode_YIELDS(code)) {
+    PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
+    return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
+  }
+  return KosEvalState_InstallCallFrame(es, code, ns, tail_call);
 }
 
 
@@ -188,7 +162,6 @@ static KosOpResult kos_vinstall_expression(
     int tail_call) {
 
   (void) args;
-  (void) tail_call;
 
   if (nargs != 0) {
     PyErr_SetString(PyExc_TypeError, "Expression takes no arguments");
@@ -199,14 +172,24 @@ static KosOpResult kos_vinstall_expression(
     return EVAL_RAISE();
   }
 
-  return kos_expression_install_core(es, callable);
+  return kos_expression_install_core(es, callable, tail_call);
 }
 
 
 /* === KosFunction install slots === */
 
 
-static KosOpResult kos_vinstall_function(
+/**
+   Install a KosFunction call. A simple call (exact arity against plain
+   positional formals, no keywords, no self-bind) binds by slot index:
+   not in tail position it takes the function's parked frame when one
+   is there, else pushes a fresh one; in tail position it refills the
+   caller's frame. Any other call binds through the general formals
+   machine. A generator function completes in hand with its new
+   AsyncGenerator. Every installed frame is tagged with the function so
+   its release can park it.
+*/
+KosOpResult KosFunction_Install(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -214,26 +197,69 @@ static KosOpResult kos_vinstall_function(
     PyObject *kwnames,
     int tail_call) {
 
-  (void) tail_call;
   KosCode *code = (KosCode *) KosFunction_CODE(callable);
-  PyObject *frame_ns = KosFunction_PrepareCallNamespaceFromVector(
-      callable, args, nargs, kwnames);
+  int simple = ! kwnames
+      && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+      && KosFunction_BIND_SELF_STATE(callable) == 2;
+  int yields = code && KosCode_YIELDS(code);
+  PyObject *frame_ns;
+  KosOpResult r;
+
+  /* A generator function never takes a frame: it binds and completes
+     with the new AsyncGenerator, so the gate stands ahead of every
+     frame arm below. */
+  if (simple && ! tail_call && ! yields) {
+    KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+    if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
+      return EVAL_RAISE();
+
+    if (cached) {
+      for (Py_ssize_t i = 0; i < nargs; i++)
+        Py_INCREF(args[i]);
+      (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
+                                         nargs);
+      KosFunction_CACHED_FRAME(callable) = NULL;
+      kos_dyn_push_ready_frame(es, cached);
+      Py_INCREF(callable);
+      KosDynFrame_FN(cached) = callable;
+      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+      return kos_call_installed(es);
+    }
+
+    frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
+                                                         nargs);
+    if (! frame_ns)
+      return EVAL_RAISE();
+    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
+    if (! kos_dyn_push_frame_unchecked(es, code, frame_ns))
+      return EVAL_RAISE();
+    Py_INCREF(callable);
+    KosDynFrame_FN(KosEvalState_FRAME(es)) = callable;
+    return kos_call_installed(es);
+  }
+
+  if (simple) {
+    frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
+                                                         nargs);
+  } else {
+    frame_ns = KosFunction_PrepareCallNamespaceFromVector(
+        callable, args, nargs, kwnames);
+  }
   if (! frame_ns)
     return EVAL_RAISE();
-  if (code && KosCode_YIELDS(code)) {
+
+  if (yields) {
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, frame_ns);
-    if (! agen)
-      return EVAL_RAISE();
-    /* Steal our owned reference onto the stack; StackPUSH consumes agen on
-       both success and failure (no separate DECREF). */
-    if (KosEvalState_StackPUSH(es, agen) < 0)
-      return EVAL_RAISE();
-    return EVAL_NORMAL();
+    return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  if (KosEvalState_SetFrameCodeAndNamespace(es, frame, code, frame_ns) < 0)
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+
+  r = KosEvalState_InstallCallFrame(es, code, frame_ns, tail_call);
+  if (r.kind != KOS_RES_RAISE) {
+    Py_INCREF(callable);
+    KosDynFrame_FN(KosEvalState_FRAME(es)) = callable;
+  }
+  return r;
 }
 
 
@@ -278,8 +304,6 @@ KosEvaluatedTypeObject KosExpressionType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_expression,
-    .kc_wants_frame = 1,
-    .kc_wants_frame_fn = kos_expression_wants_frame,
     .kc_pycall = expression_pycall,
     .kc_pyvectorcall = NULL,
   },
@@ -735,34 +759,16 @@ static KosOpResult kos_vinstall_boundmethod(
     int tail_call) {
 
   PyObject *func = KosBoundMethod_FUNC(callable);
-  PyObject *self = KosBoundMethod_SELF(callable);
-  Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
-  Py_ssize_t total_slots = 1 + nargs + nkw;
-  PyObject **new_args = NULL;
-  KosOpResult r;
 
   if (! KosCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
                     "KosBoundMethod eval requires a KosCallable func");
     return EVAL_RAISE();
   }
-
-  new_args = PyMem_New(PyObject *, (size_t) total_slots);
-  if (! new_args) {
-    PyErr_NoMemory();
-    return EVAL_RAISE();
-  }
-  new_args[0] = self;
-  for (Py_ssize_t i = 0; i < nargs; i++)
-    new_args[1 + i] = args[i];
-  for (Py_ssize_t i = 0; i < nkw; i++)
-    new_args[1 + nargs + i] = args[nargs + i];
-  r = KosCallable_Call(es, func, new_args, nargs + 1, kwnames, tail_call);
-  PyMem_Del(new_args);
-  return r;
+  return KosEvalState_CallMethod(
+      es, func, KosBoundMethod_SELF(callable), args, nargs, kwnames,
+      tail_call, NULL, NULL);
 }
-
-
 
 
 static void boundmethod_dealloc(PyObject *self) {
@@ -868,8 +874,6 @@ KosEvaluatedTypeObject KosBoundMethodType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_boundmethod,
-    .kc_wants_frame = 1,
-    .kc_wants_frame_fn = kos_boundmethod_wants_frame,
     .kc_pycall = boundmethod_pycall,
     .kc_pyvectorcall = NULL,
   },
@@ -1496,7 +1500,8 @@ KosEvaluatedTypeObject KosFunctionType = {
   .tp_repr = function_repr,
   .tp_descr_get = function_descr_get,
   .tp_call = KosCallAdapt_CallAsync,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL | Py_TPFLAGS_HAVE_GC,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL
+      | Py_TPFLAGS_METHOD_DESCRIPTOR | Py_TPFLAGS_HAVE_GC,
   .tp_vectorcall_offset = KosFunction_VECTORCALL_OFFSET,
   .tp_dictoffset = offsetof(KosFunction, dict),
   .tp_doc = "Callable(Code, base_namespace, FormalsSpec). Calling with "
@@ -1510,9 +1515,7 @@ KosEvaluatedTypeObject KosFunctionType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_vinstall = kos_vinstall_function,
-    .kc_wants_frame = 1,
-    .kc_wants_frame_fn = kos_function_wants_frame,
+    .kc_vinstall = KosFunction_Install,
     .kc_pycall = KosFunction_Call,
     .kc_pyvectorcall = KosFunction_VectorCall,
   },

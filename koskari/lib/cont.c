@@ -147,12 +147,15 @@ static KosOpResult call_call_continuation(
     }
   }
 
-  /* Delimited: two-path invoke. In-place resume when the capture-time
-   * prompt is live in ancestry; otherwise the push model grafts onto the
-   * current chain. Both return to the call site on POP_PROMPT. */
+  /* Delimited: two-path invoke on the current chain, whatever context
+   * captured it. In-place resume when the capture-time prompt is live
+   * in ancestry; otherwise the push model grafts a clone of the
+   * template, delimiter included, onto the call site. Both return to
+   * the call site on POP_PROMPT. Undelimited on a foreign context goes
+   * to its owner through KoskariContinuationApply below. */
 
-  if (KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)
-      || (KosContinuation_PROMPT_ID(k) == KOS_PROMPT_ID_UNDELIMITED && ! KosContinuation_TOKEN_REF(k))) {
+  if (KosPyDelimitedContinuation_Check(callable)
+      || KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)) {
     if (kos_invoke_continuation(es, k, resume_val, 0, callable) < 0) {
       Py_DECREF(resume_val);
       return EVAL_RAISE();
@@ -213,8 +216,6 @@ KosEvaluatedTypeObject KosPyDelimitedContinuationType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_continuation,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = delimited_continuation_call,
     .kc_pyvectorcall = NULL,
   },
@@ -388,8 +389,6 @@ KosEvaluatedTypeObject KosPyContinuationType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_continuation,
-    .kc_wants_frame = 0,
-    .kc_wants_frame_fn = NULL,
     .kc_pycall = continuation_call,
     .kc_pyvectorcall = NULL,
   },

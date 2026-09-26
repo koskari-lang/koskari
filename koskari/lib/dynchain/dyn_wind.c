@@ -109,29 +109,27 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
 
    :return: EVAL_RAISE; EVAL_AWAIT with the awaitable; EVAL_REPROLOGUE
      when the thunk's frame is installed; EVAL_NORMAL when the thunk ran
-     to completion in place, its result already dropped
+     to completion in hand, its result already dropped
 */
 static KosOpResult kos_dyn_wind_fire(KosEvalState *es, PyObject *thunk) {
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult wr = KosEvalState_CallNoArgs(es, thunk, 0);
+  KosOpResult wr = KosEvalState_Call(
+      es, thunk, NULL, 0, NULL, 0, NULL, NULL);
 
-  if (wr.kind == KOS_RES_RAISE)
-    return wr;
-  if (wr.kind == KOS_RES_AWAIT)
-    return wr;
-  if (wr.kind != KOS_RES_NORMAL || KosEvalState_FRAME(es) != caller)
-    return EVAL_REPROLOGUE();
+  /* A value in hand is settled, or awaited onto the block; settled, it
+     is not the wind's business. */
+  if (wr.kind == KOS_RES_RETURN) {
+    PyObject *val;
 
-  /* completed in place: the result is on the live block and is not
-     the wind's business */
-  if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-      && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
-    PyObject *val = KosEvalState_StackPopRef(es);
-    if (! val)
-      return EVAL_RAISE();
-    Py_DECREF(val);
+    wr = KosEvalState_Settle(es, wr.val, &val);
+    if (wr.kind == KOS_RES_NORMAL) {
+      Py_DECREF(val);
+      return EVAL_NORMAL();
+    }
   }
-  return EVAL_NORMAL();
+
+  if (wr.kind == KOS_RES_RAISE || wr.kind == KOS_RES_AWAIT)
+    return wr;
+  return EVAL_REPROLOGUE();
 }
 
 
