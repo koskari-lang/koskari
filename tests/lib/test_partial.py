@@ -335,6 +335,51 @@ class TestKosPartialDispatch(unittest.TestCase):
         self.assertEqual(list(kwargs), ["x", "y", "z"])
 
 
+    def test_inconsistent_bound_key_raises(self):
+        """
+        A bound keyword key whose equality changes its answer between
+        the merge's sizing and its fill is refused, never written past
+        the merged names
+        """
+
+        class Flip(str):
+            answers = [True]
+
+            def __hash__(self):
+                return str.__hash__(self)
+
+            def __eq__(self, other):
+                if Flip.answers:
+                    return Flip.answers.pop()
+                return False
+
+        kp = KosPartial(_pykw, **{Flip("b"): 1})
+        with self.assertRaises(RuntimeError):
+            _call_names_through_bytecode(kp, (), ("b",), ("B",))
+
+
+    def test_bound_key_growing_the_dict_raises(self):
+        """
+        A bound keyword key whose equality adds to the bound dict is
+        refused, never written past the merged names
+        """
+
+        holder = []
+
+        class Grow(str):
+            def __hash__(self):
+                return str.__hash__(self)
+
+            def __eq__(self, other):
+                holder[0].keywords["extra"] = 1
+                return str.__eq__(self, other)
+
+        kp = KosPartial(_pykw, **{Grow("b"): 1})
+        holder.append(kp)
+        with self.assertRaises(RuntimeError):
+            _call_names_through_bytecode(kp, (), ("b",), ("B",))
+
+
     def test_gc_sane(self):
         """
         KosPartial instances allocate, are GC-tracked, and collect cleanly

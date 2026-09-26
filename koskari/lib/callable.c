@@ -231,11 +231,15 @@ int KosArgSpread_InitMerged(
     Py_ssize_t found = 0;
 
     while (PyDict_Next(bound_kwds, &pos, &k, &v)) {
+      if (i == nbk)
+        goto changed;
       Py_INCREF(k);
       PyTuple_SET_ITEM(names, i, k);
       argv[npos + i] = v;
       i++;
     }
+    if (i != nbk)
+      goto changed;
 
     for (Py_ssize_t j = 0; j < nck; j++) {
       Py_ssize_t at = -1;
@@ -257,6 +261,8 @@ int KosArgSpread_InitMerged(
         argv[npos + at] = v;
         continue;
       }
+      if (tail == nkw)
+        goto changed;
       Py_INCREF(k);
       PyTuple_SET_ITEM(names, tail, k);
       argv[npos + tail] = v;
@@ -268,6 +274,9 @@ int KosArgSpread_InitMerged(
   spread->argv = argv;
   return 0;
 
+ changed:
+  PyErr_SetString(PyExc_RuntimeError,
+                  "bound keywords changed during argument merge");
  fail:
   Py_XDECREF(names);
   PyMem_Free(spread->heap);

@@ -159,8 +159,9 @@ int KosArgSpread_Init(
    itself and nothing is allocated. Otherwise the vector goes in buf
    when it fits bufcap, else on the heap; buf may be NULL with bufcap
    0. Every argv entry is borrowed from its source, which must outlive
-   the spread. Returns 0, or -1 with PyErr set and nothing left to
-   clear.
+   the spread. A bound key whose comparison or hash changes the
+   outcome between sizing and filling raises RuntimeError. Returns 0,
+   or -1 with PyErr set and nothing left to clear.
 */
 int KosArgSpread_InitMerged(
     KosArgSpread *spread,
