@@ -674,10 +674,11 @@ static PyObject *resolve_prepare_namespace(
 /**
    tp_call shim installed on classes whose __call__ resolves to a
    KosCallable. It doubles as a sentinel: the evaluator recognizes it via
-   KosInstanceCall_Check and, when that __call__ binds its receiver, inlines
-   the call through the install slot instead of starting a fresh eval loop
-   (see kos_call_dispatch); a non-binding __call__ (a partial) is called
-   without self, here and through CPython.
+   KosInstanceCall_Check and inlines the call through the target's install
+   slot instead of starting a fresh eval loop (see kos_call_dispatch), with
+   self injected when the target binds its receiver and without it for a
+   non-descriptor such as a partial. This shim follows the same rule for a
+   call from Python.
 
    Unlike the demand-wrapped dunders this preserves async semantics -- a
    bound async __call__ returns a coroutine here, exactly as CPython's
@@ -686,32 +687,54 @@ static PyObject *resolve_prepare_namespace(
 */
 PyObject *kos_instance_call(PyObject *self, PyObject *args, PyObject *kwds) {
 
-  PyObject *call = PyObject_GetAttr(self, str_call_name);
-  if (! call)
-    return NULL;
+  PyTypeObject *tp = Py_TYPE(self);
+  PyObject *descr = PyType_Lookup(tp, str_call_name);
+  PyObject *call;
+  PyObject *result;
 
-  PyObject *result = PyObject_Call(call, args, kwds);
+  if (! descr) {
+    PyErr_Format(PyExc_TypeError, "'%.200s' object is not callable",
+                 tp->tp_name);
+    return NULL;
+  }
+
+  /* CPython's slot_tp_call rule: resolved on the type, bound through
+     its descriptor when it has one, called as is otherwise. */
+  if (Py_TYPE(descr)->tp_descr_get) {
+    call = Py_TYPE(descr)->tp_descr_get(descr, self, (PyObject *) tp);
+    if (! call)
+      return NULL;
+  } else {
+    Py_INCREF(descr);
+    call = descr;
+  }
+
+  result = PyObject_Call(call, args, kwds);
   Py_DECREF(call);
   return result;
 }
 
 
 /**
-   Resolve the unbound __call__ of self's type for inline dispatch. Returns a
-   BORROWED reference to a KosCallable that binds its receiver (its type has
-   tp_descr_get: a function, the Demand family), or NULL when __call__ is
-   absent, not a KosCallable, or a non-descriptor such as a partial, which
-   CPython calls without self and kos_instance_call does too. Uses the type
-   method cache (PyType_Lookup) -- no allocation, no descriptor binding, no
-   transient string. The evaluator injects self as the first positional
-   itself, so no bound method is built.
+   Resolve the __call__ of self's type for inline dispatch: a BORROWED
+   reference to the KosCallable found on the type, or NULL when __call__ is
+   absent or not a KosCallable. *binds says whether that callable binds
+   its receiver (its type has tp_descr_get: a function, the Demand family),
+   in which case the evaluator injects self as the first positional itself
+   and no bound method is built; a non-descriptor such as a partial is
+   called without self, as CPython's slot_tp_call and kos_instance_call
+   call it. Uses the type method cache (PyType_Lookup) -- no allocation,
+   no descriptor binding, no transient string.
 */
-PyObject *kos_instance_call_target(PyObject *self) {
+PyObject *kos_instance_call_target(PyObject *self, int *binds) {
 
   PyObject *fn = PyType_Lookup(Py_TYPE(self), str_call_name);
-  if (fn && KosCallable_Check(fn) && Py_TYPE(fn)->tp_descr_get)
-    return fn;
-  return NULL;
+
+  *binds = 0;
+  if (! fn || ! KosCallable_Check(fn))
+    return NULL;
+  *binds = Py_TYPE(fn)->tp_descr_get != NULL;
+  return fn;
 }
 
 

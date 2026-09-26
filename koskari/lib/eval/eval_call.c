@@ -206,10 +206,19 @@ static KosOpResult kos_call_dispatch(
   }
 
   if (KosInstanceCall_Check(callable)) {
-    PyObject *call_fn = kos_instance_call_target(callable);
-    if (call_fn)
-      return KosEvalState_CallWithReceiver(es, call_fn, callable, args,
+    int binds;
+    PyObject *target = kos_instance_call_target(callable, &binds);
+
+    if (target && binds)
+      return KosEvalState_CallWithReceiver(es, target, callable, args,
                                            nargs, kwnames, tail_call);
+    if (target) {
+      KosCallSlots *target_slots = NULL;
+
+      (void) KosCallable_CheckSlots(target, &target_slots);
+      return kos_call_dispatch(es, target_slots, target, args, nargs,
+                               kwnames, tail_call);
+    }
   }
 
   /* PEP 590: keyword values follow args[nargs .. nargs + nkw - 1]. */
@@ -523,19 +532,21 @@ static inline KosOpResult kos_call_invoke(
 
 /**
    An instance call from the class dispatch: re-enter the call core
-   with the __call__ target as the callable and the instance as the
-   receiver. The instance stays where it is: a window slot under the
-   arguments (WINDOW_CALLABLE becomes WINDOW_UNDER, same width) that
-   drops with the window, or a reference the handler owns, released
-   once the invoke returns. The target is borrowed from the type, so
-   the owned-callable flag is cleared for the re-entry. window is
-   unused: kos_call_invoke recomputes it from the rewritten flags.
+   with the __call__ target as the callable, and the instance as the
+   receiver when the target binds one. The instance stays where it is:
+   a window slot under the arguments (WINDOW_CALLABLE becomes
+   WINDOW_UNDER, same width) that drops with the window, or a
+   reference the handler owns, released once the invoke returns. The
+   target is borrowed from the type, so the owned-callable flag is
+   cleared for the re-entry. window is unused: kos_call_invoke
+   recomputes it from the rewritten flags.
 */
 static KOS_NOINLINE KosOpResult kos_call_invoke_instance(
         KosEvalState *es,
         size_t window,
         PyObject *instance,
         PyObject *target,
+        int binds,
         PyObject *const *argv,
         Py_ssize_t nargs,
         PyObject *kwnames,
@@ -548,7 +559,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_instance(
   if (reentry & KOS_CALL_WINDOW_CALLABLE)
     reentry = (reentry & ~KOS_CALL_WINDOW_CALLABLE) | KOS_CALL_WINDOW_UNDER;
 
-  r = kos_call_invoke(es, target, instance, argv, nargs, kwnames, reentry);
+  r = kos_call_invoke(es, target, binds ? instance : NULL, argv, nargs,
+                      kwnames, reentry);
   if (flags & KOS_CALL_CALLABLE_OWNED)
     Py_DECREF(instance);
   return r;
@@ -752,14 +764,15 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     goto legacy;
   }
 
-  /* Class: an instance whose __call__ binds it as receiver -- the
-     receiver-injecting entry, with the instance as the window's
-     under-slot. */
+  /* Class: an instance whose __call__ is a KosCallable -- the call
+     core re-entered on the target, with the instance as the window's
+     under-slot and as the receiver when the target binds one. */
   if (KosInstanceCall_Check(callable)) {
-    PyObject *target = kos_instance_call_target(callable);
+    int binds;
+    PyObject *target = kos_instance_call_target(callable, &binds);
     if (target)
-      return kos_call_invoke_instance(es, window, callable, target, argv,
-                                      nargs, kwnames, flags);
+      return kos_call_invoke_instance(es, window, callable, target, binds,
+                                      argv, nargs, kwnames, flags);
   }
 
   /* Class: plain Python callable -- vectorcall reading argv in place;

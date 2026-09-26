@@ -77,4 +77,26 @@ class TestInstanceCall(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod.Bound()(2), (1, 2))
 
 
+    async def test_bound_call_runs_on_the_calling_chain(self):
+        """
+        A non-tail recursion through a partial-bound __call__ meets the
+        frame-depth limit, as a recursion on one chain does; a nested
+        evaluator per level would reset it
+        """
+
+        mod = await self.load_module()
+        self.assertEqual(await mod.bound_deep(200), 200)
+        with self.assertRaises(RecursionError):
+            await mod.bound_deep(2000)
+
+
+    async def test_instance_attribute_does_not_shadow(self):
+        mod = await self.load_module()
+        self.assertEqual(await mod.shadowed_from_koskari(), ("type", 2))
+        m = mod.Method()
+        m.tag = "type"
+        m.__call__ = lambda x: ("instance", x)
+        self.assertEqual(await m(2), ("type", 2))
+
+
 # The end.
