@@ -189,7 +189,7 @@ static KosOpResult kos_vinstall_expression(
    AsyncGenerator. Every installed frame is tagged with the function so
    its release can park it.
 */
-static KosOpResult kos_vinstall_function(
+KosOpResult KosFunction_Install(
     KosEvalState *es,
     PyObject *callable,
     PyObject *const *args,
@@ -1515,7 +1515,7 @@ KosEvaluatedTypeObject KosFunctionType = {
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
   .kos_call = {
-    .kc_vinstall = kos_vinstall_function,
+    .kc_vinstall = KosFunction_Install,
     .kc_pycall = KosFunction_Call,
     .kc_pyvectorcall = KosFunction_VectorCall,
   },

@@ -434,6 +434,21 @@ PyObject *KosFunction_VectorCall(
 
 
 /**
+   The install slot of an exact KosFunction: binds args into a call
+   namespace and installs the body as a frame, or completes a
+   generator function in hand with its AsyncGenerator. Reads argv in
+   place. Reported through the install contract (evaluated.h).
+*/
+KosOpResult KosFunction_Install(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call);
+
+
+/**
    Return the function's code (new reference). Caller must Py_DECREF when done.
 */
 PyObject *KosFunction_GetCode(PyObject *func);

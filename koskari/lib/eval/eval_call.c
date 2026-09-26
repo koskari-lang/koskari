@@ -863,7 +863,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
        completes in hand and its AsyncGenerator lands on the block, so
        the window drops first. */
     {
-      KosOpResult r = KosFunctionType.kos_call.kc_vinstall(
+      KosOpResult r = KosFunction_Install(
           es, callable, argv, nargs, kwnames, 0);
 
       if (unlikely(r.kind == KOS_RES_RAISE))
