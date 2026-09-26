@@ -192,9 +192,9 @@ the fix.
 **D9. `OBJECT_REPR` nests for Koskari repr handlers.**
 Deferred to the opcode dispatch group in
 [../FLATTENING.md](../FLATTENING.md) Future.
-`OBJECT_REPR` (`opcode/OBJECT_REPR.c:28`) -> `KosUtils_Repr` ->
-`Koskari_DemandSyncEx` for a registered handler (`utils.c:520`) or
-`__kos_repr__` (`utils.c:561`). A Koskari handler or `__kos_repr__`
+`OBJECT_REPR` (`opcode/OBJECT_REPR.c`) -> `KosUtils_Repr` ->
+`Koskari_DemandSync` for a registered handler or `__kos_repr__`
+(`utils.c`). A Koskari handler or `__kos_repr__`
 nests an eval under a Koskari opcode. The `tp_repr` paths reaching the
 same helper (`pair.c:582/605`, `values.c:717/737`, `partial.c:479-508`)
 are CPython slots: boundary.
@@ -271,11 +271,11 @@ steppers), `iterate.c:1087` (the `KosPyIter` Python-side drive),
 
 ### Behavior notes
 
-- `tail_call` is dropped by the `Procedure` and non-flattenable `Demand`
-  installs (`CallInto` passes 0). `do_frame_prep` leaves the caller for a
-  wants-frame-0 callable and the RETURN after TAIL_CALL retires it
-  (`eval/eval_call.c:36-60`), so results are correct, but a tail call
-  through either wrapper costs two frames per level.
+- `tail_call` was dropped by the `Procedure` and non-flattenable
+  `Demand` installs (`CallInto` passed 0), so a tail call through either
+  wrapper cost two frames per level. Fixed (`540e089d`):
+  `KosEvalState_InstallNativeFrame` reuses the live frame on a tail
+  call, and `Demand` forwards `tail_call` to the inner's install.
 - `CallInto` reviewed for leaks, double frees, and stranded frames on
   the value-in-hand, settle, installed-callee, raise-before-install,
   raise-in-callee, and AWAIT-under-demand paths; none found. A raise
@@ -536,13 +536,12 @@ corrected (done).
 ### 3. D8: `KosPartial` routes every inner through the evaluator (done)
 
 `kospartial_kos_vinstall` no longer splits on whether the inner wants a
-frame. Without keywords on either side it calls
-`KosEvalState_CallResult` with the merged positional vector; with
-keywords it merges them and calls `KosEvalState_CallArgs`.
-`KosEvalState_Call` handles a plain Python callable (`PyObject_Vectorcall`
-+ `deliver_py_call_result`), so a coroutine result is awaited.
-`kospartial_inner_is_flattenable` is removed; `KosPartial_Call` remains
-for `tp_call` only.
+frame. It merges the bound tuple and dict with the call vector into
+one borrowed vector (`KosArgSpread_InitMerged`) and calls
+`KosEvalState_Call`, which handles a plain Python callable
+(`PyObject_Vectorcall`, then the push-or-await of its result), so a
+coroutine result is awaited. `kospartial_inner_is_flattenable` is
+removed; `KosPartial_Call` remains for `tp_call` only.
 
 Tests: `tests/reproducers/test_partial_flatten.py` with
 `scripts/partial_flatten.ki`. `partial(demand(partial(f)))` from Koskari
@@ -586,9 +585,9 @@ tail position.
   (`callable.c:118-166`), e.g. `KosArgSpread` with a small inline array,
   `KosArgSpread_Init(spread, args_tuple, kwds_dict)` and
   `KosArgSpread_Clear(spread)`; no allocation without keywords; entries
-  borrowed from the caller's tuple and dict. `KosCallable_CallArgsSlots`
-  uses it; `Koskari_DemandSync` / `Koskari_DemandSyncEx` keep their
-  signatures and spread once through it.
+  borrowed from the caller's tuple and dict. `kos_call_dispatch_args`
+  uses it; `Koskari_DemandSync` spreads once through it, and
+  `Koskari_DemandSyncEx` is removed.
 - New public `Koskari_DemandSyncVector(callable, args, nargs, kwnames,
   out)` in `demand.h`; `KosCallAdapt_VectorDemand` passes its vector and
   `kwnames` through (zero-length `kwnames` as NULL).
@@ -685,27 +684,25 @@ Koskari calls into CPython from several places, each with its own copy
 of "call, then deliver", and each makes the call deep inside whichever C
 path decided on it, so every frame of that path stays live under
 CPython. Call-outs: the opcode dispatch's plain-Python branch
-(`kos_call_invoke_impl`); the non-KosCallable arms of
-`KosEvalState_Call`, `KosEvalState_CallArgs`, `KosEvalState_CallNoArgs`
-(instance-call injection, `tail_prep_py_call`, the call,
-`deliver_py_call_result`); `KosEvalState_CallResult`'s value-in-hand
-sorting (`kos_entry_value`); the transforms' per-element fast paths.
+(`kos_call_invoke_impl`); `kos_call_dispatch`'s plain-Python arm,
+shared by `KosEvalState_Call`, `CallArgs` and `CallMethod`, with
+`tail_prep_py_call` and `deliver_call_value` in `kos_call_push`;
+`KosEvalState_Call`'s value-in-hand sorting (`kos_entry_value`); the
+transforms' per-element fast paths.
 Re-entries: a CPython slot binds a `KosBoundMethod` per call, which
 goes `boundmethod_pycall` -> the wrapper's `kc_pycall` -> tuple ->
 `Koskari_DemandSync` -> spread -> `demand_run_koskari` (its own eval
 state, `CallInto`, freeze) -> `koskari_eval`.
 
-1. **One Python call for the native entries.** Done in the working
-   tree: `kos_call_python` (`eval/eval_call.c`) is the single
-   non-KosCallable arm of `KosEvalState_Call`, `CallArgs` (spread once
-   through `KosArgSpread`), and `CallNoArgs`, with the one copy of
-   instance-call injection. The tail contract stays: `values.c`'s tail
-   case resets its own frame and relies on `tail_prep_py_call` popping
-   it. The transforms' inline calls stay: they are the per-element fast
-   path, and routing them through `CallResult` would add a resume frame
-   per element. `CallArgs` now vectorcalls a spread instead of passing
-   its tuple to `PyObject_Call`; only a `tp_call`-only callable called
-   with `*args` pays a rebuilt tuple.
+1. **One Python call for the native entries.** Done: `kos_call_dispatch`
+   (`eval/eval_call.c`) is the single non-KosCallable arm of
+   `KosEvalState_Call`, `CallArgs` and `CallMethod`, with the one copy
+   of instance-call injection (`kos_instance_call_target`). The
+   transforms' inline calls stay: they are the per-element fast path,
+   and routing them through a resume would add a resume frame per
+   element. `CallArgs` hands a plain Python callee its tuple and dict
+   through `PyObject_Call` and spreads only a KosCallable
+   (`kos_call_dispatch_args`).
 2. **Make the one call from the shallowest frame.** The call's operands
    already live off the C stack: an opcode call's arguments are on the
    operand stack. `resumable-reads.md` plans every operand row, the

@@ -9,30 +9,34 @@ fails to flatten is a bug. The invariant is recorded in
 This rollup classifies Koskari-to-Koskari call and drive paths. Current
 corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
 
-Entries marked (working tree) are uncommitted.
-
 ## Flattens
 
 - **Function and expression calls.** `KosFunction` / `KosExpression`
-  installs from the `CALL_*` family through `kos_call_invoke_body`
+  installs from the `CALL_*` family through `kos_call_invoke_impl`
   (`eval/eval_call.c`), including tail calls (frame reuse in
-  `do_frame_prep`).
-- **Bound methods.** `kos_vinstall_boundmethod` (`func.c:729`) prepends
-  self and installs the function.
-- **Instance calls.** `__call__` resolving to a KosCallable is inlined
-  through the `kos_instance_call` sentinel (`object.c:522`).
-- **`partial`.** (working tree) `kospartial_kos_vinstall` calls every
-  inner through the evaluator's call entry: the merged positional
-  vector through `KosEvalState_CallResult`, or with keywords the merged
-  tuple and dict through `KosEvalState_CallArgs`. A KosCallable inner
-  installs or runs in this evaluator; a Python inner is called and an
-  awaitable result awaited.
-- **`Demand` over a frame-wanting inner.** `demand_kos_vinstall`
-  installs the inner and marks it `KOS_FRAME_DEMAND`.
-- **`Demand` over any other inner.** `KosEvalState_CallInto`
-  with a pass-through resume.
+  `KosEvalState_InstallCallFrame`).
+- **Bound methods.** `kos_vinstall_boundmethod` (`func.c`) calls the
+  function through `KosEvalState_CallMethod` with self as the receiver.
+- **Instance calls.** `kos_instance_call_target` (`object.c`) reports
+  the KosCallable `__call__` found on the type and whether it binds.
+  The class dispatch re-enters on the target with the instance as the
+  receiver when it binds, and without it otherwise.
+- **`partial` and `values`.** Each install merges its bound tuple and
+  dict with the call vector into one borrowed vector
+  (`KosArgSpread_InitMerged`) and calls the inner through
+  `KosEvalState_Call`. A KosCallable inner installs or runs in this
+  evaluator; a Python inner is called and an awaitable result awaited.
+- **`Demand`.** `demand_kos_vinstall` calls the inner through
+  `KosEvalState_Call`, marks an installed callee `KOS_FRAME_DEMAND`, and
+  settles an awaitable in hand under a demand-marked native frame
+  (`KosEvalState_SettleInto`).
 - **`Procedure` (class `__init__`) called from Koskari.**
-  `KosEvalState_CallInto` with a resume that completes with None.
+  `KosEvalState_CallInto` with a resume that completes with None. A
+  tail call reuses the live frame.
+- **A fresh Koskari coroutine reaching an await.** `kos_settle_value`
+  installs it as a call frame on the running chain, whether it came
+  from a Python wrapper such as `functools.partial` or from a `defer`
+  awaited directly.
 - **Generator construction.** A generator function call binds arguments
   and returns the generator; nothing is evaluated.
 - **Iteration and delegation over KosIter providers.** `for-each`,
@@ -46,27 +50,27 @@ Entries marked (working tree) are uncommitted.
   is a KosIter provider whose suite forwards to its provider, so
   `for-each` / `yield-from` over `(iter (gen))` splice as the bare
   provider does, carrying only the consumer's demand state.
-- **A generator-function `__iter__` called from Koskari.** (working
-  tree) The class builder wraps it in `KosIterFunction`, whose install
+- **A generator-function `__iter__` called from Koskari.** The class
+  builder wraps it in `KosIterFunction`, whose install
   is the function's own: `(.__iter__ obj)` gets the `AsyncGenerator`.
   `for-each` over the instance acquires through `tp_iter`, a slot call
   that evaluates nothing (construction only) and yields a `KosPyIter`,
   which then splices as above.
 - **Transform callbacks.** `map`, `filter`, `starmap`, `accumulate`,
   `takewhile`, `dropwhile` call their function through
-  `KosEvalState_CallResult` from a code-less resume frame.
+  `KosEvalState_Call` from a code-less resume frame.
 - **Continuations.** `call/cc`, `prompt` / `shift` transfers run on the
   running chain. A continuation invoked from a code-less resume frame
   (a transform callback, a `Demand` over a continuation) returns into
-  that frame's resume. (working tree)
+  that frame's resume.
 
 ## Should flatten, does not
 
 - **Opcodes that call Koskari callables.** `OBJECT_REPR` with a Koskari
   repr handler or `__kos_repr__` (`KosUtils_Repr` ->
-  `Koskari_DemandSyncEx`, `utils.c:520`, `:561`); runtime match
-  predicates and APP extractors (`MATCH_CASE` -> `matcher_call_extern`
-  -> `Koskari_DemandSync`, `matcher/datum.c:485`). Tracked as a group in
+  `Koskari_DemandSync`, `utils.c`); runtime match predicates and APP
+  extractors (`MATCH_CASE` -> `matcher_call_extern` ->
+  `Koskari_DemandSync`, `matcher/datum.c`). Tracked as a group in
   Future.
 
 ## Not expected to flatten
@@ -76,7 +80,8 @@ fresh context and `koskari_eval`), resets the per-context frame depth,
 and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry.
 
 - **Type instantiation.** `(C args)` calls the type: `type_call` ->
-  `tp_new` -> `slot_tp_init` -> `procedure_tp_call` -> the demand core.
+  `tp_new` -> `slot_tp_init` -> the Procedure's vectorcall -> the demand
+  core.
 - **Dunders reached through CPython slots.** `tp_repr`, `tp_str`,
   `tp_richcompare`, `tp_hash`, `tp_as_number`, `tp_as_sequence`,
   `tp_as_mapping`, `tp_iter`, `tp_iternext`, `tp_getattro`, `tp_descr_*`,
@@ -84,12 +89,12 @@ and is counted by `Py_EnterRecursiveCall` at `koskari_eval` entry.
   Koskari operator (`==`, `str`, `len`, ...) reaches them.
 - **Python callables invoking Koskari callables.** `sorted(key=...)`,
   `functools`, `operator`, any Python library given a Koskari callable
-  (`KosCallAdapt_CallDemand` / `VectorDemand`, `callable.c:295/319`;
+  (`demand_vectorcall` -> `Koskari_DemandSyncVector`, `demand.c`;
   `Koskari_AsyncCall`).
 - **Undelimited continuations on a foreign context.** Applied
   abortively in the capturing context through `KoskariContinuationApply`.
   A delimited continuation is not in this list: from outside its
-  delimiter it grafts onto the call site on any context. (working tree)
+  delimiter it grafts onto the call site on any context.
 - **Python drives of Koskari generators.** `next` / `send` / `throw` /
   `close` / `list` / `for` from Python through the sync adapter;
   `__anext__` / `asend` / `athrow` / `aclose` through the async steppers

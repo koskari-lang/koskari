@@ -169,7 +169,9 @@ its root.
 ## install
 
 Filling a prepared frame with runnable work. A callable's install slot
-(`kc_vinstall`) fills the frame `do_frame_prep` set up;
+(`kc_vinstall`) installs the frame it needs
+(`KosEvalState_InstallCallFrame`, `KosEvalState_InstallNativeFrame`)
+or completes in hand;
 a generator install (`kos_dyn_gen_install`) re-splices a frozen chain;
 a resume-frame install (`KosResumeFrame_Install`) pushes a code-less
 frame for a resume to be set on. "Installed work" is work now runnable
@@ -217,7 +219,7 @@ The `fn` of a `KosResumeKind` set on a codeless frame (`resume_kind`,
 `resume_state`) to receive exactly one delivery: a call's settled result, a callee's
 return, an iteration element, or an awaited value. Invoked with the
 value, or with NULL and an exception set when the operation failed.
-Set through the CPS entries `KosEvalState_CallResult` and
+Set through the CPS entries `KosEvalState_Call` and
 `KosEvalState_NextResume`; the map and filter steps are built from
 them. Reference: EVALUATOR.md §8.2.
 
