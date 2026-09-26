@@ -160,9 +160,9 @@ int KosArgSpread_Init(
    when it fits bufcap, else on the heap; buf may be NULL with bufcap
    0. Every argv entry is borrowed from its source, which must outlive
    the spread. Names are matched by their text, so no Python code runs
-   inside the merge. A bound key or a call name that is not a str
-   raises TypeError. Returns 0, or -1 with PyErr set and nothing left
-   to clear.
+   inside the merge. A bound key that is not a str raises TypeError,
+   and so does a call name when there are bound keywords to match it
+   against. Returns 0, or -1 with PyErr set and nothing left to clear.
 */
 int KosArgSpread_InitMerged(
     KosArgSpread *spread,
