@@ -52,17 +52,15 @@
    needs to see: untrack it first.
 */
 #if defined(Py_GIL_DISABLED)
-#define KOS_IMMORTAL_REFCNT 0
+/* no sentinel: the free-threaded build immortalizes differently */
 #elif PY_MINOR_VERSION >= 14
 #define KOS_IMMORTAL_REFCNT _Py_IMMORTAL_INITIAL_REFCNT
 #elif PY_MINOR_VERSION >= 12
 #define KOS_IMMORTAL_REFCNT _Py_IMMORTAL_REFCNT
-#else
-#define KOS_IMMORTAL_REFCNT 0
 #endif
 
 static inline void kos_immortalize(PyObject *obj) {
-#if KOS_IMMORTAL_REFCNT
+#ifdef KOS_IMMORTAL_REFCNT
   Py_SET_REFCNT(obj, (Py_ssize_t) KOS_IMMORTAL_REFCNT);
 #else
   (void) obj;
