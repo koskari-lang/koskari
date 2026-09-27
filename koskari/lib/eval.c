@@ -830,6 +830,13 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
    mark the context dead.  Call only when PyErr is set.  When es is non-NULL,
    flushes live pc/acting_pc onto the top frame first so traceback sees the
    current instruction.
+
+   An exact GeneratorExit is not decorated. It is the close protocol's
+   signal: every close drive throws one in and clears whatever comes
+   back, so the dynchain record, the faux frame, and the traceback entry
+   would be built for an exception discarded on the next line, once per
+   abandoned generator. A subclass, or any exception a finally raises in
+   its place, is a different type and is decorated as usual.
 */
 void kos_eval_prepare_boundary_raise(
     KosContext *ctx,
@@ -840,7 +847,8 @@ void kos_eval_prepare_boundary_raise(
   if (es)
     KosEvalState_FlushLiveRegsToFrame(es);
   PyErr_Fetch(&typ, &val, &tb);
-  inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+  if (typ != PyExc_GeneratorExit)
+    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
   if (es)
