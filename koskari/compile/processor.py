@@ -868,6 +868,37 @@ class ByteCodeProcessor:
         return [(fused, feeder_arg)]
 
 
+    @fuse_rule(OpCode.VAR, OpCode.CONST, OpCode.OBJECT_OPERAND)
+    def fuse_var_operand_const(self, op, arg, matched):
+        """
+        VAR x, CONST k, OBJECT_OPERAND (count 2) -> VAR_OPERAND_CONST:
+        the operator as a bare selector, the name, the pooled constant;
+        the fast pass lowers it to FAST_OPERAND_CONST. Registered ahead
+        of the two-row rule so a site with both feeders takes the row
+        naming both
+        """
+
+        merged = merge_opcount(arg)
+        if merged & 0xff != 2:
+            return None
+        return [(OpCode.VAR_OPERAND_CONST,
+                 (merged >> 8, matched[0][1], matched[1][1], None))]
+
+
+    @fuse_rule(OpCode.CONST, OpCode.OBJECT_OPERAND)
+    def fuse_operand_const(self, op, arg, matched):
+        """
+        CONST k, OBJECT_OPERAND (count 2) -> OBJECT_OPERAND_CONST: the
+        left operand stays on the stack, the constant rides the row
+        """
+
+        merged = merge_opcount(arg)
+        if merged & 0xff != 2:
+            return None
+        return [(OpCode.OBJECT_OPERAND_CONST,
+                 (merged >> 8, matched[0][1], None, None))]
+
+
     @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
     def fuse_check_compare(self, op, arg, matched):
         """

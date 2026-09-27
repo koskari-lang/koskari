@@ -65,6 +65,50 @@ def convert_fast(base_nspec, instr):
     return proc.instructions
 
 
+class TestFuseConstOperand(unittest.TestCase):
+    """
+    A binary OBJECT_OPERAND whose right operand is a constant takes the
+    row carrying it, naming the left operand too when it is a variable
+    """
+
+    def test_var_const_operand_fuses(self):
+        out = fuse_ops([(V, "a"), (C, 3), (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 2))])
+        self.assertEqual(out, [
+            (OpCode.VAR_OPERAND_CONST, (int(Operand.ADD), "a", 3, None))])
+
+    def test_stack_const_operand_fuses(self):
+        out = fuse_ops([(OpCode.CALL, 0), (C, 3),
+                        (OpCode.OBJECT_OPERAND, opcount(Operand.MULTIPLY, 2))])
+        self.assertEqual(out, [
+            (OpCode.CALL, 0),
+            (OpCode.OBJECT_OPERAND_CONST, (int(Operand.MULTIPLY), 3, None, None))])
+
+    def test_three_operand_site_stays(self):
+        instr = [(V, "a"), (C, 3), (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 3))]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_two_var_operand_stays(self):
+        instr = [(V, "a"), (V, "b"), (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 2))]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_const_var_operand_keeps_the_stack_form(self):
+        # a constant left operand has no row of its own; the constant
+        # is loaded and the site stays OBJECT_OPERAND
+        instr = [(C, 3), (V, "a"), (OpCode.OBJECT_OPERAND, opcount(Operand.SUBTRACT, 2))]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_var_operand_const_lowers_to_fast(self):
+        nspec = NamespaceSpec("fn", ("a",), ())
+        out = convert_fast(nspec, [
+            (OpCode.VAR_OPERAND_CONST, (int(Operand.ADD), "a", 3, None))])
+        self.assertEqual(out, [
+            (OpCode.FAST_OPERAND_CONST, (int(Operand.ADD), 0, 3, None))])
+        out = convert_fast(nspec, [
+            (OpCode.VAR_OPERAND_CONST, (int(Operand.ADD), "b", 3, None))])
+        self.assertEqual(out, [
+            (OpCode.VAR_OPERAND_CONST, (int(Operand.ADD), "b", 3, None))])
+
+
 class TestFuseControlFeeders(unittest.TestCase):
 
     def test_const_return_fuses(self):

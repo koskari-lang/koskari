@@ -145,6 +145,8 @@ KOS_ELECTOR_DECL(operand_generic)
 KOS_ELECTOR_DECL(inplace_generic)
 KOS_ELECTOR_DECL(fast_inplace_generic)
 KOS_ELECTOR_DECL(fast_inplace_const_generic)
+KOS_ELECTOR_DECL(operand_const_generic)
+KOS_ELECTOR_DECL(fast_operand_const_generic)
 KOS_ELECTOR_DECL(check_compare_generic)
 KOS_ELECTOR_DECL(object_compare_generic)
 KOS_ELECTOR_DECL(fast_attr_inplace_generic)
@@ -175,6 +177,10 @@ static KOS_NOINLINE KosThreadFn kos_elector_generic_of(void *insn) {
       return el_fast_inplace_generic;
     case KOS_OP_FAST_INPLACE_CONST:
       return el_fast_inplace_const_generic;
+    case KOS_OP_OBJECT_OPERAND_CONST:
+      return el_operand_const_generic;
+    case KOS_OP_FAST_OPERAND_CONST:
+      return el_fast_operand_const_generic;
     case KOS_OP_CHECK_COMPARE:
       return el_check_compare_generic;
     case KOS_OP_FAST_ATTR_INPLACE:
@@ -236,6 +242,56 @@ KOS_ELECTOR(fast_inplace_generic) {
    FAST_INPLACE_CONST without an election: slot = slot OP constant
    through the in-place reduce.
 */
+/**
+   OBJECT_OPERAND_CONST without an election: the stack top and the
+   row's constant through the operator's reduce, the result replacing
+   the top.
+*/
+KOS_ELECTOR(operand_const_generic) {
+  const KosExtra *row = KosOp_ROW(insn);
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);
+  PyObject *pair[2];
+  PyObject *result;
+
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  if (unlikely(! top))
+    RESULT_RAISE();
+  pair[0] = top[0];
+  pair[1] = KosExtra_OBJ(row, 1);
+  result = kos_operand_reduce((KosOperand) KosExtra_IMM(row, 0), pair, 2);
+  if (unlikely(! result))
+    RESULT_RAISE();
+  kos_stack_drop1_fast(bl);
+  RESULT_STEAL(es, result);
+}
+
+
+/**
+   FAST_OPERAND_CONST without an election: the slot's value (derefed,
+   so an empty slot raises and a ref runs its own deref) and the row's
+   constant through the operator's reduce, the result pushed.
+*/
+KOS_ELECTOR(fast_operand_const_generic) {
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *ns = KosEvalState_NAMESPACE(es);
+  PyObject *pair[2];
+  PyObject *result;
+
+  KOS_OP_REQUIRE_NS(ns);
+  kos_elector_generic_tick(KosOp_SLOT(insn));
+  pair[0] = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 1));
+  if (unlikely(! pair[0]))
+    RESULT_RAISE();
+  pair[1] = KosExtra_OBJ(row, 2);
+  result = kos_operand_reduce((KosOperand) KosExtra_IMM(row, 0), pair, 2);
+  Py_DECREF(pair[0]);
+  if (unlikely(! result))
+    RESULT_RAISE();
+  RESULT_STEAL(es, result);
+}
+
+
 KOS_ELECTOR(fast_inplace_const_generic) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
@@ -579,6 +635,67 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_BODY, fast_inplace)
       ((void) 0))
 
 KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
+
+
+/* OBJECT_OPERAND_CONST: the left operand is the top of the stack, the
+   right the pool constant on the row, borrowed. The constant's kind was
+   checked at the election and cannot change, so only the top is
+   guarded. The top is offered as the result's home, as the pair body
+   offers its left operand; else the result replaces it. */
+#define KOS_OPERAND_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)       \
+  KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
+    const KosExtra *row = KosOp_ROW(insn);                              \
+    KosSegment **bl = KosEvalState_BLOCK(es);                           \
+    PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);             \
+    PyObject *rhs = KosExtra_OBJ(row, 1);                               \
+    KOS_##KIND##_VARS;                                                  \
+    PyObject *out;                                                      \
+                                                                        \
+    if (unlikely(! top))                                                \
+      RESULT_RAISE();                                                   \
+    if (unlikely(! KOS_##KIND##_CHECK(top[0])))                         \
+      TAILCALL(el_miss, es, insn, value);                               \
+    KOS_##KIND##_EXTRACT(top[0], rhs, kos_elector_generic_of(insn));    \
+                                                                        \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, top[0], out);     \
+    if (out != top[0]) {                                                \
+      kos_stack_drop1_fast(bl);                                         \
+      if (unlikely(kos_stack_push_steal_fast(bl, out) < 0))             \
+        RESULT_RAISE();                                                 \
+    }                                                                   \
+    RESULT_NEXT(es);                                                    \
+  }
+
+KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
+
+
+/* FAST_OPERAND_CONST: the left operand is the fast slot's value,
+   peeked borrowed (a slot the peek cannot read misses; the generic
+   body derefs and raises), the right the pool constant, borrowed and
+   unguarded as above. The slot keeps its value, so no home is offered
+   and the result is a fresh push. */
+#define KOS_FAST_OPERAND_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)  \
+  KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
+    const KosExtra *row = KosOp_ROW(insn);                              \
+    PyObject *ns = KosEvalState_NAMESPACE(es);                          \
+    PyObject *lhs;                                                      \
+    PyObject *rhs = KosExtra_OBJ(row, 2);                               \
+    KOS_##KIND##_VARS;                                                  \
+    PyObject *out;                                                      \
+                                                                        \
+    KOS_OP_REQUIRE_NS(ns);                                              \
+    lhs = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 1));          \
+    if (unlikely(! lhs || ! KOS_##KIND##_CHECK(lhs)))                   \
+      TAILCALL(el_miss, es, insn, value);                               \
+    KOS_##KIND##_EXTRACT(lhs, rhs, kos_elector_generic_of(insn));       \
+                                                                        \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, out);       \
+    if (unlikely(kos_stack_push_steal_fast(KosEvalState_BLOCK(es), out) < 0)) \
+      RESULT_RAISE();                                                   \
+    RESULT_NEXT(es);                                                    \
+  }
+
+KOS_NUMERIC_ELECTORS(KOS_FAST_OPERAND_CONST_BODY, fast_operand_const)
 
 
 /* === Str bodies === */
@@ -1217,10 +1334,57 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
     TAILCALL(fn, es, insn, value);                                      \
   }
 
+/* The classification of an OBJECT_OPERAND_CONST site: the top of the
+   stack and the pool constant. A constant the int body could never
+   read would decline on every execution; the site stays generic. */
+static inline KosThreadFn kos_elector_operand_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *lhs = kos_stack_peek_top(es);
+  PyObject *rhs = KosExtra_OBJ(row, 1);
+  long long b;
+
+  if (! lhs) {
+    PyErr_Clear();
+    return NULL;
+  }
+  if (PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
+    return NULL;
+  return kos_elector_num_body(
+      (KosOperand) KosExtra_IMM(row, 0), lhs, rhs,
+      kos_operand_const_int_bodies, kos_operand_const_float_bodies, NULL);
+}
+
+
+/* The classification of a FAST_OPERAND_CONST site: the peeked slot
+   value and the pool constant, with the same rule on the constant. */
+static inline KosThreadFn kos_elector_fast_operand_const_classify(
+    KosEvalState *es,
+    void *insn) {
+
+  const KosExtra *row = KosOp_ROW(insn);
+  PyObject *lhs = kos_ns_fast_peek(
+      KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 1));
+  PyObject *rhs = KosExtra_OBJ(row, 2);
+  long long b;
+
+  if (PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
+    return NULL;
+  return kos_elector_num_body(
+      (KosOperand) KosExtra_IMM(row, 0), lhs, rhs,
+      kos_fast_operand_const_int_bodies, kos_fast_operand_const_float_bodies,
+      NULL);
+}
+
+
 KOS_ELECTOR_ELECT(operand, kos_elector_pair_classify)
 KOS_ELECTOR_ELECT(inplace, kos_elector_pair_classify)
 KOS_ELECTOR_ELECT(fast_inplace, kos_elector_fast_inplace_classify)
 KOS_ELECTOR_ELECT(fast_inplace_const, kos_elector_fast_inplace_const_classify)
+KOS_ELECTOR_ELECT(operand_const, kos_elector_operand_const_classify)
+KOS_ELECTOR_ELECT(fast_operand_const, kos_elector_fast_operand_const_classify)
 KOS_ELECTOR_ELECT(check_compare, kos_elector_check_compare_classify)
 KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 
@@ -1236,6 +1400,8 @@ KOS_ELECTOR_ELECT(object_compare, kos_elector_object_compare_classify)
 #undef KOS_COMPARE_ELECTOR
 #undef KOS_SLOT_STR_ELECTOR
 #undef KOS_FAST_INPLACE_CONST_BODY
+#undef KOS_OPERAND_CONST_BODY
+#undef KOS_FAST_OPERAND_CONST_BODY
 #undef KOS_FAST_INPLACE_BODY
 #undef KOS_PAIR_FOLD_ELECTOR
 #undef KOS_NUMERIC_FOLD_ELECTORS

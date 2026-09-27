@@ -66,17 +66,27 @@ def _consts(code):
     ]
 
 
+_CONST_OPERAND_ROWS = frozenset((
+    OpCode.OBJECT_OPERAND_CONST, OpCode.VAR_OPERAND_CONST,
+    OpCode.FAST_OPERAND_CONST))
+
+
 def _find_operand(code, operand):
     """
-    Return the operand count of the first OBJECT_OPERAND instruction whose
+    Return the operand count of the first operator instruction whose
     op-type is `operand`, or None if none is present. The arithmetic
     operators were consolidated into OBJECT_OPERAND, whose arg packs the
-    operator selector in the high byte and the count in the low byte.
+    operator selector in the high byte and the count in the low byte; a
+    binary site whose right operand is a constant fuses into a row
+    carrying the bare selector first, and counts as two.
     """
 
     for op, arg in _ops(code):
         if op == OpCode.OBJECT_OPERAND and (arg >> 8) == int(operand):
             return arg & 0xff
+        if op in _CONST_OPERAND_ROWS \
+                and code.extra_tuple(arg)[0] == int(operand):
+            return 2
     return None
 
 

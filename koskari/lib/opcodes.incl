@@ -440,6 +440,14 @@ OP(UNPACK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
 // runtime match/case dispatch — subject held on the stack across arms
 OP(MATCH_CASE, 1, EXTRA, LABEL, CONST, CONST, COUNT)  // no-match label; frozen matcher tuple; missing-externs name tuple (values stacked above the subject); keep-subject flag; a match binds the captures into the namespace; cache: thawed Matcher + capture slot indices
 
+// binary operator sites with one operand off the stack: the left
+// operand's source is the prefix (the stack unnamed, VAR, FAST), the
+// right operand's source the suffix; the operator rides the row as a
+// bare selector since the count is two
+OP(OBJECT_OPERAND_CONST, 1, EXTRA, OPERAND, CONST, NOARG, NOARG)  // stack OP const; cache: elector
+OP(VAR_OPERAND_CONST, 0, EXTRA, OPERAND, VAR, CONST, NOARG)  // var OP const
+OP(FAST_OPERAND_CONST, 1, EXTRA, OPERAND, FASTVAR, CONST, NOARG)  // fast OP const; cache: elector
+
 // THEEND must always be last
 OP(THEEND, 0, NOARG)
 

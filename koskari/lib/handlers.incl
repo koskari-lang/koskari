@@ -305,6 +305,9 @@
 #include "opcode/UNPACK_VAR.c"
 #include "opcode/UNPACK_FAST.c"
 #include "opcode/MATCH_CASE.c"
+#include "opcode/OBJECT_OPERAND_CONST.c"
+#include "opcode/VAR_OPERAND_CONST.c"
+#include "opcode/FAST_OPERAND_CONST.c"
 #include "opcode/THEEND.c"
 
 /* The end. */
