@@ -357,12 +357,12 @@ OP(TAIL_CALL_FAST_ATTR_NAMES, 1, EXTRA, FASTVAR, CONST, CONST, COUNT)
 OP(TAIL_CALL_FAST_ATTR_STAR, 1, EXTRA, FASTVAR, CONST, COUNT, NOARG)
 
 // block control - all foreach/with are async in Koskari
-OP(PUSH_FOREACH, 0, NOARG)
-OP(PUSH_WITH, 0, CONST)
-OP(PUSH_DYN_WITH, 0, CONST)
+OP(PUSH_FOREACH, 1, NOARG)  // cache: extent close record
+OP(PUSH_WITH, 1, CONST)  // cache: extent close record
+OP(PUSH_DYN_WITH, 1, CONST)  // cache: extent close record
 OP(PUSH_COLLECT, 0, CONST)
 OP(PUSH_FINALLY, 0, LABEL)
-OP(PUSH_LOOP, 0, NOARG)
+OP(PUSH_LOOP, 1, NOARG)  // cache: extent close record
 OP(PUSH_NS, 0, EXTRA, CONST, CONST, NOARG, NOARG)
 OP(PUSH_TRY, 0, LABEL)
 
@@ -411,13 +411,13 @@ OP(OBJECT_TYPE, 0, NOARG)
 OP(OBJECT_VARS, 0, NOARG)
 
 // delimited continuation control
-OP(PUSH_PROMPT, 0, CONST)         // arg = prompt_id constant pool index
+OP(PUSH_PROMPT, 1, CONST)         // arg = prompt_id constant pool index
 OP(POP_PROMPT, 0, NOARG)          // pop prompt from dynamic chain
 OP(PUSH_SHIFT, 0, CONST)          // arg = prompt_id; capture continuation, enter shift block
 OP(POP_SHIFT, 0, NOARG)           // pop shift block; return from handler without invoking k
 
 // undelimited continuation (call/cc) block
-OP(PUSH_CC, 0, NOARG)             // arg = instruction index after POP_CC (resume PC)
+OP(PUSH_CC, 1, NOARG)             // arg = instruction index after POP_CC (resume PC)
 OP(POP_CC, 0, NOARG)              // pop CC block from dynamic chain
 OP(CAPTURE_CC, 0, NOARG)          // capture undelimited continuation, push on stack
 

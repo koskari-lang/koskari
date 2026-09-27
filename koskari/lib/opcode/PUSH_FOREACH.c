@@ -14,40 +14,28 @@
 */
 
 /**
-   PUSH_FOREACH: no arg. Break target is derived from the extent table
-   (pop_pc + 1), not from the instruction argument. Stack: [iterable].
+   PUSH_FOREACH: no arg. Break target is the record after the
+   POP_FOREACH closing the FOREACH extent, resolved once per site into
+   the cache slot. Stack: [iterable].
    Pops iterable, creates iterator, stores it in region (result defaults
    to NULL), pushes FOREACH region (with its own segment). Continue target =
    next insn.
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
-
   PyObject *iterable = KosEvalState_StackPopRef(es);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
     RESULT_RAISE();
   }
 
-  /* Derive break target from the extent table (pop_pc + 1) */
-  KosCode *code = KosEvalState_CurrentCode(es);
-  uint32_t pc = KosEvalState_ACTING_PC(es);
-  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_FOREACH);
-  if (eid == KOS_EXTENT_NONE) {
+  /* break lands after the POP_FOREACH that closes the extent */
+  KosOp *close = kos_site_extent_close(es, insn, KOS_EXT_FOREACH,
+                                       "PUSH_FOREACH");
+  if (! close) {
     Py_DECREF(iterable);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "PUSH_FOREACH: no FOREACH extent at this PC");
     RESULT_RAISE();
   }
-
-  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
-  if (! ext) {
-    Py_DECREF(iterable);
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: invalid extent");
-    RESULT_RAISE();
-  }
-  uint32_t break_pc = ext->pop_pc + 1u;
 
   /* Create iterator from iterable (sync or async) */
   PyObject *iter = kos_iter_acquire(iterable);
@@ -57,7 +45,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   /* Push region */
   KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(
-    es, break_pc, continue_pc);
+    es, close + 1, ((KosOp *) insn) + 1);
   if (! region) {
     Py_DECREF(iter);
     PyErr_NoMemory();

@@ -5,7 +5,7 @@
 /**
    Allocate FINALLY with handler_pc; handles RAISE and RETURN when enabled.
 */
-KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
+KosDynFinally *kos_dynfinally_new(KosDynNode *parent, KosOp *handler_at) {
   KosDynFinally *node = kos_dynnode_alloc();
 
   if (! node)
@@ -14,7 +14,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   kos_dynnode_init(node, KOS_DYN_FINALLY, parent,
                    KOS_DYN_CAP_HANDLES_EXCEPTIONS
                    | KOS_DYN_CAP_INTERCEPTS_RAISE);
-  KosDynFinally_HANDLER_PC(node) = handler_pc;
+  KosDynFinally_HANDLER_AT(node) = handler_at;
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_CONTROL(node) = 0;
@@ -36,7 +36,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   kos_dynnode_init(clone, KOS_DYN_FINALLY, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
-  KosDynFinally_HANDLER_PC(clone) = KosDynFinally_HANDLER_PC(node);
+  KosDynFinally_HANDLER_AT(clone) = KosDynFinally_HANDLER_AT(node);
   KosDynFinally_ENABLED(clone) = KosDynFinally_ENABLED(node);
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);
   KosDynFinally_HANDLING_CONTROL(clone) = KosDynFinally_HANDLING_CONTROL(node);
@@ -62,7 +62,7 @@ void kos_dynfinally_free(KosDynFinally *node) {
 static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "handler_pc",
-                        KosDynFinally_HANDLER_PC((KosDynFinally *) node)) < 0)
+                        KosOp_PC(KosDynFinally_HANDLER_AT((KosDynFinally *) node))) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynFinally_ENABLED((KosDynFinally *) node)) < 0)
@@ -80,8 +80,8 @@ static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
 /**
    Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
 */
-KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
-  KosDynFinally *node = kos_dynfinally_new(KosEvalState_DYN_TOP(es), handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosEvalState *es, KosOp *handler_at) {
+  KosDynFinally *node = kos_dynfinally_new(KosEvalState_DYN_TOP(es), handler_at);
   if (! node)
     return NULL;
   if (kos_dyn_push(es, (KosDynNode *) node) < 0) {

@@ -1625,6 +1625,51 @@ void kos_eval_prepare_boundary_raise(
 void kos_eval_note_crossed_frame(KosEvalState *es);
 
 
+/**
+   The record that closes a region push's extent (the POP_* row at the
+   extent's pop pc), for the pushes whose target is not an instruction
+   argument. Read from the site's cache slot once it is filled; the
+   first execution resolves it through the extent table and fills the
+   slot, and a site with no slot resolves every time. The pointer is
+   into the running code object's own instruction array, so the slot
+   owns nothing. Returns NULL with an error set when no extent of the
+   kind encloses the site.
+*/
+static inline KosOp *kos_site_extent_close(
+    KosEvalState *es,
+    KosOp *insn,
+    KosExtentKind kind,
+    const char *who) {
+
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  PyObject *code;
+  uint32_t eid;
+  const KosExtentDesc *ext;
+  KosOp *close;
+
+  if (slot && likely(slot->kind == KOS_CACHE_TARGET))
+    return slot->u.target.target;
+
+  code = (PyObject *) KosEvalState_CODE(es);
+  eid = kos_extent_find(code, KosOp_PC(insn), kind);
+  if (eid == KOS_EXTENT_NONE) {
+    PyErr_Format(PyExc_RuntimeError, "%s: no extent at this PC", who);
+    return NULL;
+  }
+  ext = kos_extent_desc(code, eid);
+  if (! ext) {
+    PyErr_Format(PyExc_RuntimeError, "%s: invalid extent", who);
+    return NULL;
+  }
+  close = &KosEvalState_OPS(es)[ext->pop_pc];
+  if (slot && slot->kind == KOS_CACHE_EMPTY) {
+    slot->kind = KOS_CACHE_TARGET;
+    slot->u.target.target = close;
+  }
+  return close;
+}
+
+
 int koskari_eval_init(PyObject *mod);
 int koskari_eval_clear(PyObject *mod);
 

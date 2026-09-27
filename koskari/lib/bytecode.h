@@ -462,6 +462,7 @@ typedef enum KosCacheKind {
   KOS_CACHE_MATCHER,     /* thawed Matcher for a MATCH_CASE arm */
   KOS_CACHE_ELECTOR,     /* handler elected for the site */
   KOS_CACHE_ITEM,        /* item body elected for the site */
+  KOS_CACHE_TARGET,      /* the record closing a region push's extent */
 } KosCacheKind;
 
 
@@ -636,6 +637,13 @@ struct KosCacheSlot {
       uint8_t ticks;           /* protocol executions; the wrap empties
                                   the slot for a re-election */
     } item;
+
+    /* KOS_CACHE_TARGET: the POP_* record at the pop pc of the extent a
+       region push opens, a pointer into this code object's own
+       instruction array. Owns nothing. */
+    struct {
+      KosOp *target;
+    } target;
   } u;
 };
 

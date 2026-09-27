@@ -16,7 +16,7 @@ static KosDynWith *kos_dyn_with_allocate(
     PyObject *exit,
     uint8_t self_bind,
     PyObject *name,
-    uint32_t resume_pc,
+    KosOp *resume_at,
     uint8_t shot) {
 
   KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
@@ -46,7 +46,7 @@ static KosDynWith *kos_dyn_with_allocate(
   KosDynWith_SHOT(node) = shot;
   KosDynWith_EXIT_DONE(node) = NULL;
   KosDynWith_NAME(node) = name;
-  KosDynWith_RESUME_PC(node) = resume_pc;
+  KosDynWith_RESUME_AT(node) = resume_at;
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
 
   /* Single-shot: the exit-done bit lives in the node's own shot field
@@ -134,7 +134,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   KosDynWith_NAME(node) = KosDynWith_NAME(src);
   if (KosDynWith_NAME(node))
     Py_INCREF(KosDynWith_NAME(node));
-  KosDynWith_RESUME_PC(node) = KosDynWith_RESUME_PC(src);
+  KosDynWith_RESUME_AT(node) = KosDynWith_RESUME_AT(src);
   KosDynWith_OB(node)->kind = KOS_OB_NONE;
   return node;
 }
@@ -186,7 +186,8 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
   if (snapshot_set_int(data, "exit_done",
       kos_dyn_with_single_exit_done(with_node)) < 0)
     return -1;
-  if (snapshot_set_uint(data, "resume_pc", KosDynWith_RESUME_PC(with_node)) < 0)
+  if (snapshot_set_uint(data, "resume_pc",
+                        KosOp_PC(KosDynWith_RESUME_AT(with_node))) < 0)
     return -1;
   if (snapshot_set_int(data, "swallowed",
       KosDynWith_OB(with_node)->kind == KOS_OB_SWALLOWED) < 0)
@@ -208,12 +209,12 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *exit,
     uint8_t self_bind,
     PyObject *name,
-    uint32_t resume_pc,
+    KosOp *resume_at,
     uint8_t shot) {
 
   KosDynWith *node = kos_dyn_with_allocate(
       KosEvalState_DYN_TOP(es), mgr, enter, exit, self_bind, name,
-      resume_pc, shot);
+      resume_at, shot);
   if (! node)
     return NULL;
 
@@ -320,10 +321,10 @@ static int kos_dyn_with_classify_exit(
     kos_dyn_ob_clear(ob);
     ob->kind = KOS_OB_SWALLOWED;
     if (KosEvalState_FRAME(es))
-      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+      KosEvalState_SET_PC(es, KosOp_PC(KosDynWith_RESUME_AT(node)));
   } else if (! handling) {
     if (KosEvalState_FRAME(es))
-      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+      KosEvalState_SET_PC(es, KosOp_PC(KosDynWith_RESUME_AT(node)));
   }
   Py_DECREF(result);
   kos_dyn_with_shot_after_exit_done(node);
@@ -406,7 +407,7 @@ static KosOpResult kos_dyn_with_leave(
     /* __exit__ already ran, possibly on a twin sharing the exit-done
        cell; complete the extent without re-firing it. */
     if (! PyErr_Occurred() && KosEvalState_FRAME(es))
-      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+      KosEvalState_SET_PC(es, KosOp_PC(KosDynWith_RESUME_AT(node)));
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
     return EVAL_NORMAL();
   }

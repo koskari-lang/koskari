@@ -5,15 +5,15 @@
 /**
    LOOP region: break/continue PCs and optional continue result.
 */
-KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
+KosDynLoop *kos_dynloop_new(KosDynNode *parent, KosOp *break_at, KosOp *continue_at) {
   KosDynLoop *node = kos_dynnode_alloc();
 
   if (! node)
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_LOOP, parent, 0);
-  KosDynLoop_BREAK_PC(node) = break_pc;
-  KosDynLoop_CONTINUE_PC(node) = continue_pc;
+  KosDynLoop_BREAK_AT(node) = break_at;
+  KosDynLoop_CONTINUE_AT(node) = continue_at;
   KosDynLoop_ENABLED(node) = 1;
   KosDynLoop_RESULT(node) = NULL;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
@@ -31,8 +31,8 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
   kos_dynnode_init(clone, KOS_DYN_LOOP, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
-  KosDynLoop_BREAK_PC(clone) = KosDynLoop_BREAK_PC(node);
-  KosDynLoop_CONTINUE_PC(clone) = KosDynLoop_CONTINUE_PC(node);
+  KosDynLoop_BREAK_AT(clone) = KosDynLoop_BREAK_AT(node);
+  KosDynLoop_CONTINUE_AT(clone) = KosDynLoop_CONTINUE_AT(node);
   KosDynLoop_ENABLED(clone) = KosDynLoop_ENABLED(node);
   KosDynLoop_RESULT(clone) = KosDynLoop_RESULT(node);
   Py_XINCREF(KosDynLoop_RESULT(clone));
@@ -52,10 +52,10 @@ void kos_dynloop_free(KosDynLoop *node) {
 static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "break_pc",
-                        KosDynLoop_BREAK_PC((KosDynLoop *) node)) < 0)
+                        KosOp_PC(KosDynLoop_BREAK_AT((KosDynLoop *) node))) < 0)
     return -1;
   if (snapshot_set_uint(data, "continue_pc",
-                        KosDynLoop_CONTINUE_PC((KosDynLoop *) node)) < 0)
+                        KosOp_PC(KosDynLoop_CONTINUE_AT((KosDynLoop *) node))) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynLoop_ENABLED((KosDynLoop *) node)) < 0)
@@ -70,8 +70,8 @@ static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
 /**
    Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
 */
-KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosDynLoop *node = kos_dynloop_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
+KosDynLoop *kos_dyn_push_loop(KosEvalState *es, KosOp *break_at, KosOp *continue_at) {
+  KosDynLoop *node = kos_dynloop_new(KosEvalState_DYN_TOP(es), break_at, continue_at);
   if (! node)
     return NULL;
   if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
