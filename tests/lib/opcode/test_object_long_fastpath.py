@@ -122,6 +122,63 @@ class TestLongFastPathHits(LongFastPathTest):
             await self.run_binop("OBJECT_BIT_RIGHT", INT64_MAX, 200), 0)
 
 
+class TestLongFastPathThreeDigitBoundaries(LongFastPathTest):
+    """
+    Values around the third 30-bit digit: those under 2^63 take the
+    fast path, the rest decline to the generic path; the result is the
+    same either way
+    """
+
+    async def test_three_digit_values_that_fit(self):
+        for value in (2 ** 60, 2 ** 60 + 12345, INT64_MAX, -(2 ** 60),
+                      INT64_MIN + 1):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    await self.run_binop("OBJECT_ADD", value, 0), value)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_BIT_AND", value, -1), value)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_SUBTRACT", value, 1),
+                    value - 1)
+
+    async def test_three_digit_values_that_decline(self):
+        for value in (2 ** 63, INT64_MIN, 2 ** 90 - 1, -(2 ** 90 - 1)):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    await self.run_binop("OBJECT_ADD", value, 1), value + 1)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_BIT_AND", value, 0xFF),
+                    value & 0xFF)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_MULTIPLY", 2, value),
+                    2 * value)
+
+    async def test_four_digit_values_decline(self):
+        for value in (2 ** 90, 2 ** 100 + 7, -(2 ** 120)):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    await self.run_binop("OBJECT_ADD", value, value),
+                    value + value)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_BIT_RIGHT", value, 3),
+                    value >> 3)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_FLOOR_DIVIDE", value, 7),
+                    value // 7)
+
+    async def test_mixed_width_pairs(self):
+        wide = 2 ** 63 + 5
+        for left, right in ((wide, 3), (3, wide), (INT64_MAX, 2 ** 90),
+                            (2 ** 61, 2 ** 61)):
+            with self.subTest(left=left, right=right):
+                self.assertEqual(
+                    await self.run_binop("OBJECT_ADD", left, right),
+                    left + right)
+                self.assertEqual(
+                    await self.run_binop("OBJECT_MULTIPLY", left, right),
+                    left * right)
+
+
 class TestLongFastPathFallbacks(LongFastPathTest):
     """
     Operand pairs that must fall back to the generic path and still

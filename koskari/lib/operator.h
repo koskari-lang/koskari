@@ -113,10 +113,14 @@ static inline int kos_object_not(PyObject *v) {
 #endif
 
 
-/* Read an exact int of at most two digits straight from its digits.
-   Two 30-bit digits are at most 60 bits, so the value always fits and
-   there is no overflow test. Returns 1 with *out set, or 0 for a wider
-   int, which the caller converts the general way. */
+/* Read an exact int straight from its digits. Two 30-bit digits are at
+   most 60 bits and always fit. A third digit fits when it is below 8,
+   which puts the magnitude under 2^63; the one representable value
+   that misses, -2^63, declines like any wider int. Returns 1 with *out
+   set, or 0 when the value does not fit a long long; no conversion
+   call is made either way, so a bignum's decline is a tag-word read.
+   A build without the inline digit layout returns -1, and the caller
+   converts the general way. */
 KOS_OP_INLINE int kos_long_as_ll_digits(PyObject *v, long long *out) {
 #if KOS_LONG_INLINE_DIGITS
   PyLongObject *lo = (PyLongObject *) v;
@@ -133,6 +137,12 @@ KOS_OP_INLINE int kos_long_as_ll_digits(PyObject *v, long long *out) {
     case 2:
       mag = digits[0] | ((long long) digits[1] << PyLong_SHIFT);
       break;
+    case 3:
+      if (digits[2] >= (digit) (1u << (63 - 2 * PyLong_SHIFT)))
+        return 0;
+      mag = digits[0] | ((long long) digits[1] << PyLong_SHIFT)
+          | ((long long) digits[2] << (2 * PyLong_SHIFT));
+      break;
     default:
       return 0;
   }
@@ -142,17 +152,18 @@ KOS_OP_INLINE int kos_long_as_ll_digits(PyObject *v, long long *out) {
 #else
   (void) v;
   (void) out;
-  return 0;
+  return -1;
 #endif
 }
 
 
-/* An exact int as a C long long: the two-digit read first, then the
-   general conversion for anything wider. Returns 1 with *out set, or 0
-   when the value does not fit. */
+/* An exact int as a C long long: the digit read decides on a build
+   with the inline layout, and the general conversion decides elsewhere.
+   Returns 1 with *out set, or 0 when the value does not fit. */
 KOS_OP_INLINE int kos_long_as_ll(PyObject *v, long long *out) {
-  if (likely(kos_long_as_ll_digits(v, out)))
-    return 1;
+  int r = kos_long_as_ll_digits(v, out);
+  if (likely(r >= 0))
+    return r;
 
   int overflow;
   *out = PyLong_AsLongLongAndOverflow(v, &overflow);
