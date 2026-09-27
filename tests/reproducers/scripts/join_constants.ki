@@ -1,0 +1,34 @@
+;; Full-stack reproducer: a constant every arm of an if pushes into the
+;; join label is elided when the join's consumer discards it; a join
+;; one arm reaches with a call keeps its POP.
+
+
+define branchy [n]:
+    define acc 0
+    for-each [i (range n)]:
+        if (== 0 (% i 3)):
+            set! acc (+ acc 1)
+        elif (== 0 (% i 5)):
+            set! acc (+ acc 10)
+        else:
+            set! acc (+ acc 100)
+    acc
+
+
+define discarded [x]:
+    if x:
+        set! x 1
+    else:
+        set! x 2
+    7
+
+
+define kept [f x]:
+    if x:
+        (f)
+    else:
+        0
+    7
+
+
+;; The end.
