@@ -197,8 +197,15 @@ static KosDynNode *kos_dynnode_alloc(void) {
    cleanup (refs released).
 */
 static void kos_dynnode_return_to_freelist(KosDynNode *node) {
-  if (KosDynNode_STACK(node)) {
-    KosStack_Release(KosDynNode_STACK(node));
+  KosSegment *seg = KosDynNode_STACK(node);
+
+  if (seg) {
+    /* An empty inline segment is the common case, and its release is
+       the two stores KosStack_Release would make for it. */
+    if (KosSegment_IS_INLINE(seg) && KosSegment_LEN(seg) == 0)
+      KosSegment_BACK(seg) = NULL;
+    else
+      KosStack_Release(seg);
     KosDynNode_STACK(node) = NULL;
   }
 

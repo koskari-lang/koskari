@@ -120,7 +120,8 @@ static void pop_active_token(KosEvaluatorToken *token) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
   if (s && s->token_depth > 0) {
     s->token_depth--;
-    if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0)
+    if (s->ctx_depth == 0 && s->token_depth == 0
+        && s->python_domain_depth == 0 && s->eval_depth == 0)
       tls_state_free(s);
   }
 }
@@ -254,7 +255,8 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
   s->python_domain_depth--;
   Py_DECREF(s->python_domain_stack[s->python_domain_depth]);
   s->python_domain_stack[s->python_domain_depth] = NULL;
-  if (s->ctx_depth == 0 && s->token_depth == 0 && s->python_domain_depth == 0)
+  if (s->ctx_depth == 0 && s->token_depth == 0
+      && s->python_domain_depth == 0 && s->eval_depth == 0)
     tls_state_free(s);
   return 0;
 }

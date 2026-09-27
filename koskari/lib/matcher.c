@@ -1943,8 +1943,10 @@ static void matcher_env_release(MatcherEnv *r) {
 
   for (Py_ssize_t i = 0; i < r->owned; i++)
     Py_DECREF(buf[i]);
-  PyMem_Free(r->buf);
-  r->buf = NULL;
+  if (r->buf) {
+    PyMem_Free(r->buf);
+    r->buf = NULL;
+  }
   r->owned = 0;
 }
 
