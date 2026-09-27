@@ -33,57 +33,75 @@
 /* === KosContext implementation === */
 
 
-KosContext *KosContext_New(KosDynFrame *top) {
+/**
+   The dynamic snapshot a new context starts from: the domain and the
+   parameterize cells in force at this moment. Forked from the active
+   context when there is one (a private copy of its shadow table, so the
+   parameterize extents applied at this moment are captured; the cells
+   are shared by pointer, and the root scope is reached through the
+   domain); otherwise the domain of an enclosing `with Domain():` scope,
+   or a fresh one, with no cells. Both come back as new references,
+   *cells NULL when there are none. Returns -1 with an error set.
+*/
+int KosContext_Snapshot(PyObject **domain, PyObject **cells) {
+
+  KosContext *active = kos_ctx_current();
+
+  *domain = NULL;
+  *cells = NULL;
+
+  if (active) {
+    PyObject *table = KosContext_PARAM_REFS(active);
+    if (table && PyDict_GET_SIZE(table) > 0) {
+      *cells = PyDict_Copy(table);
+      if (! *cells)
+        return -1;
+    }
+    *domain = KosContext_DOMAIN(active);
+    Py_XINCREF(*domain);
+    return 0;
+  }
+
+  {
+    PyObject *ambient = kos_domain_current();
+    if (ambient) {
+      Py_INCREF(ambient);
+      *domain = ambient;
+    } else {
+      *domain = (PyObject *) KosDomain_New();
+      if (! *domain)
+        return -1;
+    }
+  }
+  return 0;
+}
+
+
+/**
+   A context over top, starting from a snapshot taken earlier with
+   KosContext_Snapshot. domain and cells are stolen (cells may be
+   NULL); top's ownership transfers to the context on success and stays
+   with the caller on failure.
+*/
+KosContext *KosContext_NewFromSnapshot(
+    KosDynFrame *top,
+    PyObject *domain,
+    PyObject *cells) {
 
   KosContext *ctx = PyObject_GC_New(KosContext, &KosContextType);
-  if (! ctx)
+  if (! ctx) {
+    Py_XDECREF(domain);
+    Py_XDECREF(cells);
     return NULL;
+  }
 
   /* every field after the object header starts cleared, so a failure
      below can release the half-built context through the type */
   memset((char *) ctx + sizeof(PyObject), 0,
          sizeof(KosContext) - sizeof(PyObject));
 
-  {
-    KosContext *active = kos_ctx_current();
-
-    ctx->domain = NULL;
-    ctx->param_refs = NULL;
-
-    if (active) {
-      /* fork: private copy of the creating context's shadow table, so
-         the parameterize extents applied at this moment are captured.
-         The cells are shared by pointer. The root scope is not copied;
-         it is reached by resolution through the domain. */
-      PyObject *cells = KosContext_PARAM_REFS(active);
-      if (cells && PyDict_GET_SIZE(cells) > 0) {
-        ctx->param_refs = PyDict_Copy(cells);
-        if (! ctx->param_refs) {
-          Py_DECREF(ctx);
-          return NULL;
-        }
-      }
-      ctx->domain = KosContext_DOMAIN(active);
-      Py_XINCREF(ctx->domain);
-
-    } else {
-      /* no active context: a root context under an explicit
-         `with Domain():` scope anchors to that domain, and so resolves
-         against its root scope; otherwise a fresh domain is minted --
-         every context has a domain, created as needed */
-      PyObject *domain = kos_domain_current();
-      if (domain) {
-        ctx->domain = domain;
-        Py_INCREF(ctx->domain);
-      } else {
-        ctx->domain = (PyObject *) KosDomain_New();
-        if (! ctx->domain) {
-          Py_DECREF(ctx);
-          return NULL;
-        }
-      }
-    }
-  }
+  ctx->domain = domain;
+  ctx->param_refs = cells;
 
   KosContext_DYN_TOP(ctx) = (KosDynNode *) top;
   KosContext_FRAME_TOP(ctx) = top;
@@ -115,6 +133,17 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   PyObject_GC_Track((PyObject *) ctx);
   return ctx;
+}
+
+
+KosContext *KosContext_New(KosDynFrame *top) {
+
+  PyObject *domain;
+  PyObject *cells;
+
+  if (KosContext_Snapshot(&domain, &cells) < 0)
+    return NULL;
+  return KosContext_NewFromSnapshot(top, domain, cells);
 }
 
 

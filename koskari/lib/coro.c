@@ -92,16 +92,90 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   if (KosCode_YIELDS((KosCode *) code))
     return KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
 
-  KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
-  if (! frame)
-    return NULL;
-
-  KosContext *ctx = KosContext_New(frame);
-  if (! ctx) {
-    kos_dynframe_free(frame);
+  /* the bound call: nothing runs and no context exists until Python
+     drives it, and a Koskari await takes the program without either */
+  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
+  if (! coro) {
+    Py_DECREF(ns);
     return NULL;
   }
-  return KosCoroutine_New(ctx);
+
+  coro->ctx = NULL;
+  coro->state = KOS_CORO_NEW;
+  coro->pending_await = NULL;
+  coro->in_send = 0;
+  Py_INCREF(code);
+  coro->code = (KosCode *) code;
+  coro->ns = ns;
+  coro->domain = NULL;
+  coro->param_refs = NULL;
+
+  if (KosContext_Snapshot(&coro->domain, &coro->param_refs) < 0) {
+    Py_DECREF(coro);
+    return NULL;
+  }
+
+  PyObject_GC_Track((PyObject *) coro);
+  return (PyObject *) coro;
+}
+
+
+/**
+   Build the drive context from the bound call, for the first drive from
+   Python: the root frame over the program and its namespace, and a
+   context over that frame starting from the creation-time snapshot. A
+   no-op once built. Returns -1 with an error set.
+*/
+static void coroutine_drop_record(KosCoroutine *coro);
+
+
+static int coroutine_materialize(KosCoroutine *coro) {
+
+  KosDynFrame *frame;
+  KosContext *ctx;
+
+  if (coro->ctx)
+    return 0;
+  if (! coro->code) {
+    PyErr_SetString(PyExc_RuntimeError, "coroutine has no program");
+    return -1;
+  }
+
+  frame = kos_dynframe_new(NULL, coro->code, coro->ns);  /* steals ns */
+  coro->ns = NULL;
+  if (! frame)
+    goto fail;
+
+  ctx = KosContext_NewFromSnapshot(frame, coro->domain, coro->param_refs);
+  coro->domain = NULL;
+  coro->param_refs = NULL;
+  if (! ctx) {
+    kos_dynframe_free(frame);
+    goto fail;
+  }
+
+  Py_CLEAR(coro->code);
+  coro->ctx = ctx;
+  return 0;
+
+ fail:
+  /* half a record is no program: the coroutine is finished */
+  coroutine_drop_record(coro);
+  coro->state = KOS_CORO_DONE;
+  return -1;
+}
+
+
+/**
+   Drop the bound call of a coroutine closed before any drive: nothing
+   has entered, so there is nothing to unwind.
+*/
+static void coroutine_drop_record(KosCoroutine *coro) {
+
+  Py_CLEAR(coro->code);
+  Py_CLEAR(coro->ns);
+  Py_CLEAR(coro->domain);
+  Py_CLEAR(coro->param_refs);
 }
 
 
@@ -173,6 +247,7 @@ static void coroutine_dealloc(PyObject *self) {
 
   Py_CLEAR(coro->ctx);
   Py_XDECREF(coro->pending_await);
+  coroutine_drop_record(coro);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -187,6 +262,10 @@ static int coroutine_traverse(
 
   Py_VISIT(coro->pending_await);
   Py_VISIT(coro->ctx);
+  Py_VISIT(coro->code);
+  Py_VISIT(coro->ns);
+  Py_VISIT(coro->domain);
+  Py_VISIT(coro->param_refs);
 
   return 0;
 }
@@ -198,6 +277,7 @@ static int coroutine_clear(PyObject *self) {
 
   Py_CLEAR(coro->pending_await);
   Py_CLEAR(coro->ctx);
+  coroutine_drop_record(coro);
 
   return 0;
 }
@@ -372,6 +452,10 @@ static int coroutine_step(
     return -1;
   }
 
+  /* the first drive from Python builds the context */
+  if (coro->state == KOS_CORO_NEW && coroutine_materialize(coro) < 0)
+    return -1;
+
   /* If suspended on yield, pass value as send_val */
   PyObject *send_val = NULL;
   if (coro->state == KOS_CORO_YIELDED) {
@@ -483,6 +567,10 @@ static PyObject *coroutine_throw_pair(
     return NULL;
   }
 
+  /* a throw into an unstarted coroutine is delivered at its start */
+  if (coro->state == KOS_CORO_NEW && coroutine_materialize(coro) < 0)
+    return NULL;
+
   /* If yielded, throw will inject exception and run (no special case) */
   /* If waiting on Python awaitable, forward throw */
   if (coro->state == KOS_CORO_WAITING_PY) {
@@ -549,6 +637,13 @@ static PyObject *coroutine_close(PyObject *self) {
   }
 
   if (coro->state == KOS_CORO_DONE) {
+    Py_RETURN_NONE;
+  }
+
+  /* never started: nothing entered, nothing to unwind */
+  if (coro->state == KOS_CORO_NEW && ! coro->ctx) {
+    coroutine_drop_record(coro);
+    coro->state = KOS_CORO_DONE;
     Py_RETURN_NONE;
   }
 
@@ -717,6 +812,10 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
   coro->state = KOS_CORO_NEW;
   coro->pending_await = NULL;
   coro->in_send = 0;
+  coro->code = NULL;
+  coro->ns = NULL;
+  coro->domain = NULL;
+  coro->param_refs = NULL;
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
@@ -728,8 +827,24 @@ int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
   KosCoroutine *const coro = (KosCoroutine *) self;
   KosDynFrame *frame;
 
-  if (coro->state != KOS_CORO_NEW || coro->in_send || ! coro->ctx)
+  if (coro->state != KOS_CORO_NEW || coro->in_send)
     return 0;
+
+  if (! coro->ctx) {
+    /* the bound call itself: the program and namespace move to the
+       caller, the snapshot is dropped -- the grafted frame runs under
+       the awaiter's dynamic state */
+    if (! coro->code)
+      return 0;
+    *code = coro->code;
+    coro->code = NULL;
+    *ns = coro->ns;
+    coro->ns = NULL;
+    Py_CLEAR(coro->domain);
+    Py_CLEAR(coro->param_refs);
+    coro->state = KOS_CORO_DONE;
+    return 1;
+  }
 
   frame = KosContext_FRAME_TOP(coro->ctx);
   if (! frame || ! KosDynFrame_CODE(frame))

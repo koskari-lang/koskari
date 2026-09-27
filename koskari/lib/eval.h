@@ -1224,6 +1224,11 @@ PyObject *KosEvalState_PopUnpackSequence(
   :return: new reference to the context, or NULL on error
 */
 KosContext *KosContext_New(KosDynFrame *top);
+int KosContext_Snapshot(PyObject **domain, PyObject **cells);
+KosContext *KosContext_NewFromSnapshot(
+    KosDynFrame *top,
+    PyObject *domain,
+    PyObject *cells);
 KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 
 
