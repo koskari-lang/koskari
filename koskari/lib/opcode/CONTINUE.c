@@ -14,6 +14,17 @@
 */
 
 
+/* Install a continue's result in a region's result home. A NULL result
+   means None: the home already holds None on every pass but the first
+   after a valued continue, so that pass alone touches a refcount. */
+static inline void continue_store_result(PyObject **home, PyObject *result) {
+  if (result)
+    Py_XSETREF(*home, result);
+  else if (*home != Py_None)
+    Py_XSETREF(*home, Py_NewRef(Py_None));
+}
+
+
 /**
   CONTINUE: arg = result count (0 = None, 1 = single value, N = tuple of N).
   Jump to innermost loop/foreach continue target. Updates the region result
@@ -22,20 +33,16 @@
 */
 KOS_OP_HANDLER(CONTINUE) {
   unsigned opa = KosOp_ARG(insn);
-  PyObject *result = NULL;
+  PyObject *result = NULL;   /* NULL stands for None until it is needed */
 
-  if (likely(opa == 0)) {
-    result = Py_None;
-    Py_INCREF(result);
-
-  } else if (opa == 1) {
+  if (opa == 1) {
     result = KosEvalState_StackPopRef(es);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
       RESULT_RAISE();
     }
 
-  } else {
+  } else if (opa > 1) {
     result = KosEvalState_StackPopTail(es, (size_t) opa);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
@@ -44,40 +51,47 @@ KOS_OP_HANDLER(CONTINUE) {
   }
 
   /* Region on top: the general walk below would find this node first,
-     prove the frame its ancestor by the same parent walk, and unwind
-     nothing, so its step 4 runs here directly. A FOREACH region's
-     continue target is its ITER_NEXT row; the step runs here as well,
-     with the region in hand, so the back-edge is one dispatch. Anything
-     above the region takes the walk, where the offer and the
-     suspension handling live. */
+     prove the frame its ancestor, and unwind nothing, so its step 4
+     runs here directly. The proof is the register invariant: FRAME is
+     the first frame node below DYN_TOP, so a region at DYN_TOP has it
+     as its nearest frame ancestor. A FOREACH region's continue target
+     is its ITER_NEXT row; the step runs here as well, with the region
+     in hand, so the back-edge is one dispatch. Anything above the
+     region takes the walk, where the offer and the suspension handling
+     live. */
   {
     KosDynNode *region = KosEvalState_DYN_TOP(es);
     KosDynFrame *frame = KosEvalState_FRAME(es);
-    KosDynNode *n = region ? KosDynNode_PARENT(region) : NULL;
 
-    while (n && ! KosDynNode_IS_FRAME(n))
-      n = KosDynNode_PARENT(n);
-
-    if (likely(frame && n == (KosDynNode *) frame)
-        && KosDynNode_IS_LOOP(region)) {
-      Py_XDECREF(KosDynLoop_RESULT(region));
-      KosDynLoop_RESULT(region) = result;
-      if (unlikely(KosEvalState_StackClear(es) < 0))
+#if KOS_EVAL_SAFETYNET
+    if (region && frame && ! KosDynNode_IS_FRAME(region)) {
+      KosDynNode *n = KosDynNode_PARENT(region);
+      while (n && ! KosDynNode_IS_FRAME(n))
+        n = KosDynNode_PARENT(n);
+      if (n != (KosDynNode *) frame) {
+        Py_XDECREF(result);
+        PyErr_SetString(PyExc_SystemError,
+                        "CONTINUE: FRAME is not the nearest frame below"
+                        " DYN_TOP");
         RESULT_RAISE();
+      }
+    }
+#endif
+
+    if (likely(frame && region) && KosDynNode_IS_LOOP(region)) {
+      continue_store_result(&KosDynLoop_RESULT(region), result);
+      kos_stack_clear_fast(KosEvalState_BLOCK(es));
       KosEvalState_SET_PC(es, KosDynLoop_CONTINUE_PC(region));
       RESULT_NEXT_POLL(es);
     }
 
-    if (likely(frame && n == (KosDynNode *) frame)
-        && KosDynNode_IS_FOREACH(region)) {
+    if (likely(frame && region) && KosDynNode_IS_FOREACH(region)) {
       uint32_t cpc = KosDynForeach_CONTINUE_PC(region);
       KosOp *step = &KosEvalState_OPS(es)[cpc];
       PyObject *out = NULL;
 
-      Py_XDECREF(KosDynForeach_RESULT(region));
-      KosDynForeach_RESULT(region) = result;
-      if (unlikely(KosEvalState_StackClear(es) < 0))
-        RESULT_RAISE();
+      continue_store_result(&KosDynForeach_RESULT(region), result);
+      kos_stack_clear_fast(KosEvalState_BLOCK(es));
 
       if (unlikely(KosOp_OP(step) != KOS_OP_ITER_NEXT)) {
         KosEvalState_SET_PC(es, cpc);
@@ -118,7 +132,8 @@ KOS_OP_HANDLER(CONTINUE) {
   {
     /* the walk consumes result on every answer */
     KosOpResult wr = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_CONTINUE,
-                                            result);
+                                            result ? result
+                                                   : Py_NewRef(Py_None));
     if (unlikely(wr.kind != KOS_RES_NORMAL))
       return wr;
 

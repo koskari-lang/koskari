@@ -111,6 +111,39 @@ class TestLoopResultOpcodes(CevalTest):
         self.assertEqual(result, 2)
 
 
+    async def test_continue_without_value_resets_result_to_none(self):
+        """
+        CONTINUE 0 after a valued CONTINUE 1 leaves the loop result None
+        """
+
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "n"],
+            ["PUSH_LOOP", 0],
+            ["VAR", "n"],
+            ["CONST", 1],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "n"],
+            ["VAR", "n"],
+            ["CONST", 1],
+            ["OBJECT_EQ", 2],
+            ["JUMP_FALSE", "second"],
+            ["CONST", 7],
+            ["CONTINUE", 1],  # first pass: result becomes 7
+            ["LABEL", "second"],
+            ["VAR", "n"],
+            ["CONST", 2],
+            ["OBJECT_EQ", 2],
+            ["JUMP_FALSE", "break_lbl"],
+            ["CONTINUE", 0],  # second pass: result becomes None again
+            ["LABEL", "break_lbl"],
+            ["POP_LOOP", 0],
+            ["RETURN", 1],
+        ], values={"n": 0})
+        result = await make_callable(code, ns)()
+        self.assertIsNone(result)
+
+
     async def test_pop_loop_returns_loop_result(self):
         """
         POP_LOOP pushes region->result (None when no break/continue)
