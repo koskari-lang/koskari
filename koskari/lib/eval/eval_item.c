@@ -635,7 +635,7 @@ static inline int kos_item_inplace_store(
     if (unlikely(! KOS_ITEM_##KIND##_READ(acc, a)                       \
                  || ! KOS_ITEM_##KIND##_READ(rhs, b)))                  \
       return kos_item_inplace_answer(idx, KOS_ITEM_DECLINE);            \
-    rc = KOS_ITEM_##KIND##_FAST(NAME)(a, b, acc, &out);                 \
+    rc = KOS_ITEM_##KIND##_FAST(NAME)(a, b, acc, NULL, &out);           \
     if (unlikely(rc <= 0)) {                                            \
       if (rc < 0) {                                                     \
         kos_item_inplace_release(obj, key, idx);                        \

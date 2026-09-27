@@ -271,12 +271,15 @@ KOS_OP_INLINE int kos_long_reusable(PyObject *v, long long res) {
 #endif
 
 
-/* Materialise res: into reuse when the caller offered an operand it
-   owns outright and kos_long_reusable allows it, in which case *out is
-   that same object and the caller's reference to it becomes the result
-   reference; else a fresh int. Returns 1, or -1 with an error set. */
+/* Materialise res: into reuse, else into reuse2, when the caller
+   offered an operand it owns outright and kos_long_reusable allows it,
+   in which case *out is that same object and the caller's reference to
+   it becomes the result reference; else a fresh int. The two
+   candidates are a pair body's left and right operands: whichever is
+   dying serves, the left first. Either may be NULL. Returns 1, or -1
+   with an error set. */
 KOS_OP_INLINE int kos_long_fast_result(
-    long long res, PyObject *reuse, PyObject **out) {
+    long long res, PyObject *reuse, PyObject *reuse2, PyObject **out) {
 
 #if KOS_LONG_REUSE
   if (reuse && kos_long_reusable(reuse, res)) {
@@ -284,8 +287,14 @@ KOS_OP_INLINE int kos_long_fast_result(
     *out = reuse;
     return 1;
   }
+  if (reuse2 && kos_long_reusable(reuse2, res)) {
+    kos_long_write(reuse2, res);
+    *out = reuse2;
+    return 1;
+  }
 #else
   (void) reuse;
+  (void) reuse2;
 #endif
   *out = PyLong_FromLongLong(res);
   return likely(*out != NULL) ? 1 : -1;
@@ -416,14 +425,16 @@ KOS_OP_INLINE int kos_ll_bit_right(long long a, long long b, long long *res) {
 }
 
 
-/* The _ll forms: one step, materialised. */
+/* The _ll forms: one step, materialised into the first of the two
+   reuse candidates that can take it, else a fresh int. */
 #define KOS_LONG_FAST_LL_FORM(NAME)                                     \
   KOS_OP_INLINE int long_fast_##NAME##_ll(                              \
-      long long a, long long b, PyObject *reuse, PyObject **out) {      \
+      long long a, long long b, PyObject *reuse, PyObject *reuse2,      \
+      PyObject **out) {                                                 \
     long long res;                                                      \
     if (unlikely(! kos_ll_##NAME(a, b, &res)))                          \
       return 0;                                                         \
-    return kos_long_fast_result(res, reuse, out);                       \
+    return kos_long_fast_result(res, reuse, reuse2, out);               \
   }
 
 KOS_LONG_FAST_LL_FORM(add)
@@ -445,9 +456,12 @@ KOS_LONG_FAST_LL_FORM(bit_right)
    exactly represented values is correctly rounded, which is what
    int.__truediv__ computes for them. Wider operands and a zero divisor
    decline. The result is a float, so there is no int step to fold. */
-KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject *reuse, PyObject **out) {
+KOS_OP_INLINE int long_fast_true_divide_ll(
+    long long a, long long b, PyObject *reuse, PyObject *reuse2,
+    PyObject **out) {
   const long long lim = 1LL << 53;
   (void) reuse;
+  (void) reuse2;
   if (unlikely(b == 0 || a <= -lim || a >= lim || b <= -lim || b >= lim))
     return 0;
   *out = PyFloat_FromDouble((double) a / (double) b);
@@ -463,7 +477,7 @@ KOS_OP_INLINE int long_fast_true_divide_ll(long long a, long long b, PyObject *r
     long long a, b;                                                     \
     if (! kos_as_ll2(l, r, &a, &b))                                     \
       return 0;                                                         \
-    return long_fast_##NAME##_ll(a, b, reuse, out);                     \
+    return long_fast_##NAME##_ll(a, b, reuse, NULL, out);               \
   }
 
 KOS_LONG_FAST_OBJECT_FORM(add)
@@ -498,12 +512,14 @@ KOS_LONG_FAST_OBJECT_FORM(power)
    a complex, a zero base with a negative exponent raises) stay with
    the generic path. */
 
-/* Materialise a double result: into reuse when the caller offered an
-   exact float it owns outright, in which case *out is that same
-   object and the caller's reference becomes the result reference;
-   else a fresh float. Returns 1, or -1 with an error set. */
+/* Materialise a double result: into reuse, else into reuse2, when the
+   caller offered an exact float it owns outright, in which case *out
+   is that same object and the caller's reference becomes the result
+   reference; else a fresh float. The candidates are a pair body's
+   operands, the left first; either may be NULL. Returns 1, or -1 with
+   an error set. */
 KOS_OP_INLINE int kos_float_fast_result(
-    double res, PyObject *reuse, PyObject **out) {
+    double res, PyObject *reuse, PyObject *reuse2, PyObject **out) {
 
 #if KOS_FLOAT_REUSE
   if (reuse && Py_REFCNT(reuse) == 1) {
@@ -511,8 +527,14 @@ KOS_OP_INLINE int kos_float_fast_result(
     *out = reuse;
     return 1;
   }
+  if (reuse2 && Py_REFCNT(reuse2) == 1) {
+    ((PyFloatObject *) reuse2)->ob_fval = res;
+    *out = reuse2;
+    return 1;
+  }
 #else
   (void) reuse;
+  (void) reuse2;
 #endif
   *out = PyFloat_FromDouble(res);
   return likely(*out != NULL) ? 1 : -1;
@@ -597,14 +619,16 @@ KOS_OP_INLINE int kos_d_floor_divide(double a, double b, double *res) {
 }
 
 
-/* The _d forms: one step, materialised. */
+/* The _d forms: one step, materialised into the first of the two
+   reuse candidates that can take it, else a fresh float. */
 #define KOS_FLOAT_FAST_D_FORM(NAME)                                     \
   KOS_OP_INLINE int float_fast_##NAME##_d(                              \
-      double a, double b, PyObject *reuse, PyObject **out) {            \
+      double a, double b, PyObject *reuse, PyObject *reuse2,            \
+      PyObject **out) {                                                 \
     double res;                                                         \
     if (unlikely(! kos_d_##NAME(a, b, &res)))                           \
       return 0;                                                         \
-    return kos_float_fast_result(res, reuse, out);                      \
+    return kos_float_fast_result(res, reuse, reuse2, out);              \
   }
 
 KOS_FLOAT_FAST_D_FORM(add)
@@ -625,7 +649,7 @@ KOS_FLOAT_FAST_D_FORM(floor_divide)
     if (! (PyFloat_CheckExact(l) && PyFloat_CheckExact(r)))             \
       return 0;                                                         \
     return float_fast_##NAME##_d(                                       \
-        PyFloat_AS_DOUBLE(l), PyFloat_AS_DOUBLE(r), reuse, out);        \
+        PyFloat_AS_DOUBLE(l), PyFloat_AS_DOUBLE(r), reuse, NULL, out);  \
   }                                                                     \
   KOS_OP_INLINE int num_fast_##NAME(                                    \
       PyObject *l, PyObject *r, PyObject *reuse, PyObject **out) {      \

@@ -413,9 +413,9 @@ KOS_ELECTOR(miss) {
    operator's arithmetic, a decline (overflow, a negative shift, a zero
    divisor) taking the generic body without counting, an allocation
    failure raising. */
-#define KOS_ELECTOR_RESULT_HELD(FAST, a, b, reuse, out, RELEASE)        \
+#define KOS_ELECTOR_RESULT_HELD(FAST, a, b, reuse, reuse2, out, RELEASE) \
   do {                                                                  \
-    int kos_ir_rc_ = FAST((a), (b), (reuse), &(out));                   \
+    int kos_ir_rc_ = FAST((a), (b), (reuse), (reuse2), &(out));         \
     if (unlikely(kos_ir_rc_ <= 0)) {                                    \
       RELEASE;                                                          \
       if (kos_ir_rc_ < 0)                                               \
@@ -427,17 +427,17 @@ KOS_ELECTOR(miss) {
 
 /* The common form: nothing is held across the arithmetic. RELEASE in
    the held form runs before a decline or a raise leaves the body. */
-#define KOS_ELECTOR_RESULT(FAST, a, b, reuse, out)                      \
-  KOS_ELECTOR_RESULT_HELD(FAST, a, b, reuse, out, ((void) 0))
+#define KOS_ELECTOR_RESULT(FAST, a, b, reuse, reuse2, out)              \
+  KOS_ELECTOR_RESULT_HELD(FAST, a, b, reuse, reuse2, out, ((void) 0))
 
 
 /* One body per operator and kind for the two families whose operands
    are the top pair of the stack, OBJECT_OPERAND and OBJECT_INPLACE
    (int OP= int is value-identical to int OP int). The guard is the
-   kind's check on the peeked pair; a miss counts. The left operand is
-   offered as the result's home: when the stack is its only owner the
-   result is written into it and the right operand alone is dropped;
-   else the result replaces the pair. */
+   kind's check on the peeked pair; a miss counts. Both operands are
+   offered as the result's home, the left first: when the stack is the
+   only owner of one of them the result is written into it and the other
+   alone is dropped; else the result replaces the pair. */
 #define KOS_PAIR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)             \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
@@ -452,11 +452,19 @@ KOS_ELECTOR(miss) {
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(args[0], args[1], kos_elector_generic_of(insn)); \
                                                                         \
-    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, args[0], out);    \
-    if (out == args[0])                                                 \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b,                   \
+                       args[0], args[1], out);                          \
+    if (out == args[0]) {                                               \
       kos_stack_drop1_fast(bl);                                         \
-    else                                                                \
+    } else if (out == args[1]) {                                        \
+      /* the result lives in the right operand: it moves down over the \
+         left, whose reference the settle leaves to us */               \
+      PyObject *left = args[0];                                         \
+      kos_stack_settle2_fast(bl, NULL);                                 \
+      Py_DECREF(left);                                                  \
+    } else {                                                            \
       kos_stack_replace2_fast(bl, out);                                 \
+    }                                                                   \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -495,8 +503,14 @@ KOS_ELECTOR(miss) {
     KOS_##KIND##_EXTRACT(acc, rhs, kos_elector_generic_of(insn));       \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b,                   \
-                       raw ? acc : NULL, out);                          \
-    DROP;                                                               \
+                       raw ? acc : NULL, RHS_GUARDED ? rhs : NULL, out); \
+    if (RHS_GUARDED && out == rhs) {                                    \
+      /* the result lives in the stack top: its reference moves to the \
+         slot below instead of being dropped */                         \
+      (*KosEvalState_BLOCK(es))->len -= 1;                              \
+    } else {                                                            \
+      DROP;                                                             \
+    }                                                                   \
     if (out != acc && unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0)) \
       RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
@@ -615,7 +629,7 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
         TAILCALL(kos_elector_generic_of(insn), es, insn, value);        \
     }                                                                   \
                                                                         \
-    rc = KOS_##KIND##_MATERIALISE(res, args[0], &out);                  \
+    rc = KOS_##KIND##_MATERIALISE(res, args[0], NULL, &out);            \
     if (unlikely(rc < 0))                                               \
       RESULT_RAISE();                                                   \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
@@ -681,7 +695,7 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(top[0], rhs, kos_elector_generic_of(insn));    \
                                                                         \
-    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, top[0], out);     \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, top[0], NULL, out); \
     if (out != top[0]) {                                                \
       kos_stack_drop1_fast(bl);                                         \
       if (unlikely(kos_stack_push_steal_fast(bl, out) < 0))             \
@@ -713,7 +727,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(lhs, rhs, kos_elector_generic_of(insn));       \
                                                                         \
-    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, out);       \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, NULL, out); \
     if (unlikely(kos_stack_push_steal_fast(KosEvalState_BLOCK(es), out) < 0)) \
       RESULT_RAISE();                                                   \
     RESULT_NEXT(es);                                                    \
@@ -1228,7 +1242,7 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(acc, rhs, el_##FAMILY##_generic);              \
                                                                         \
-    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, acc, out);        \
+    KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, acc, NULL, out);  \
     KOS_ATTR_ELECTOR_STORE(addr, acc, out);                             \
     RESULT_NEXT(es);                                                    \
   }
