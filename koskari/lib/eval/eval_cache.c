@@ -683,13 +683,13 @@ static PyObject *field_slot_load(PyObject *obj, uint32_t offset) {
 
 
 /**
-   Store into a __slots__ object member at byte offset: take a reference to val
-   (the caller keeps its own) and drop the previous occupant. Equivalent to the
-   member descriptor's __set__ for a T_OBJECT_EX slot, minus the dispatch.
+   Store into a __slots__ object member at byte offset: the member takes
+   the caller's reference to val and drops the previous occupant.
+   Equivalent to the member descriptor's __set__ for a T_OBJECT_EX slot,
+   minus the dispatch. Cannot fail.
 */
 static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
   PyObject **addr = (PyObject **) ((char *) obj + offset);
-  Py_INCREF(val);
   Py_XSETREF(*addr, val);
 }
 
@@ -717,11 +717,13 @@ static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
 
 
 /**
-   Overwrite an inline instance value at its index. Returns 1 on success, 0 to
-   signal fallback: the instance materialized its dict, or the slot is unset --
-   a first assignment must bump the values' used count and insertion order,
-   bookkeeping we do not replicate, so PyObject_SetAttr handles it. The common
-   in-place update (slot already set) takes the fast path.
+   Overwrite an inline instance value at its index. Returns 1 on success,
+   the value slot having taken the caller's reference to val; 0 to signal
+   fallback with val untouched: the instance materialized its dict, or the
+   slot is unset -- a first assignment must bump the values' used count and
+   insertion order, bookkeeping we do not replicate, so PyObject_SetAttr
+   handles it. The common in-place update (slot already set) takes the
+   fast path.
 */
 static int field_instance_value_store(PyObject *obj, uint32_t index,
     PyObject *val) {
@@ -732,7 +734,6 @@ static int field_instance_value_store(PyObject *obj, uint32_t index,
     KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
     return 0;
   }
-  Py_INCREF(val);
   Py_SETREF(slots[index], val);
   return 1;
 }
@@ -916,25 +917,20 @@ static int kos_attr_inplace_cached(
 
   /* Store: reuse the resolved offset only if the guard still holds -- the fold
      may have retyped obj out from under it. On a miss, fall back to setattr. */
-  int res;
   if (slot->kind == KOS_CACHE_FIELD && field_guard_ok(Py_TYPE(obj), slot)) {
     if (m == KOS_FIELD_SLOT) {
-      field_slot_store(obj, off, acc);
-      res = 0;
+      field_slot_store(obj, off, acc);        /* acc stolen */
+      return 0;
     }
 #if PY_MINOR_VERSION >= 11
-    else if (m == KOS_FIELD_INSTANCE_VALUE
-             && field_instance_value_store(obj, off, acc)) {
-      res = 0;
+    if (m == KOS_FIELD_INSTANCE_VALUE
+        && field_instance_value_store(obj, off, acc)) {
+      return 0;                               /* acc stolen */
     }
 #endif
-    else {
-      res = PyObject_SetAttr(obj, attr, acc);
-    }
-  } else {
-    res = PyObject_SetAttr(obj, attr, acc);
   }
 
+  int res = PyObject_SetAttr(obj, attr, acc);
   Py_DECREF(acc);
   return res;
 }

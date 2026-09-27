@@ -40,16 +40,14 @@ KOS_OP_HANDLER(VAR_ATTR_STORE) {
     uint32_t off;
     KosFieldMode m = kos_resolve_attr_location(obj, attr_name, slot, &off);
     if (m == KOS_FIELD_SLOT) {
-      field_slot_store(obj, off, val);
+      field_slot_store(obj, off, val);        /* val stolen */
       Py_DECREF(obj);
-      Py_DECREF(val);
       RESULT_NEXT(es);
     }
 #if PY_MINOR_VERSION >= 11
     if (m == KOS_FIELD_INSTANCE_VALUE
         && field_instance_value_store(obj, off, val)) {
-      Py_DECREF(obj);
-      Py_DECREF(val);
+      Py_DECREF(obj);                         /* val stolen */
       RESULT_NEXT(es);
     }
 #endif
