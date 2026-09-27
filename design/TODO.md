@@ -51,6 +51,42 @@ kernels; measure before taking any.
 
 Ref: [archive/resolved-operands.md](archive/resolved-operands.md).
 
+### Result destinations (design discussion)
+
+An operation whose result goes straight to a store row allocates twice
+while the destination's old value dies. The user wants an encoding for
+"stored in this manner" (a destination operand or an elector body
+variant), not one class of fused opcodes; 42 sites on the churn kernels.
+
+Ref: [interpreter/result-destinations.md](interpreter/result-destinations.md).
+
+### Trailing defaults fast path (design discussion)
+
+A function with defaults only at the tail takes the general formals
+machine on every call and never reuses its parked frame; 18 cycles per
+call over the simple path, every call in the tree kernel. A min..max
+arity classification with a default vector; default modes decide it.
+
+Ref: [interpreter/trailing-defaults.md](interpreter/trailing-defaults.md).
+
+### Call-path follow-ups (measured, not taken)
+
+CALL_FAST_ATTR's duplicated receiver reference, tail calls to a
+different function, the installable arity field, ResetToTemplate word
+at a time, frame bookkeeping, hot/cold handler splits, dispatch and
+stack indirection, node and function layouts, and the KosOp.fn elector
+quickening decision. Each with its measurement and gate.
+
+Ref: [interpreter/call-path-followups.md](interpreter/call-path-followups.md).
+
+### Namespace size survey (investigate)
+
+Size classes were declined. Survey function namespace slot counts over
+the opgrams input set before considering a smaller KOS_NS_MIN_SLOTS.
+
+Ref: [interpreter/call-path-followups.md](interpreter/call-path-followups.md)
+(Namespace size survey).
+
 ---
 
 ## Native build optimization
