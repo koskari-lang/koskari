@@ -38,11 +38,17 @@ static int yield_from_classify(PyObject *obj) {
     return KOS_YF_SYNC_GEN;
 
   /* Python async iterator / async gen: __anext__ steps; async gen also
-     has asend/athrow/aclose. */
-  if (PyObject_HasAttrString(obj, "__anext__"))
-    return PyObject_HasAttrString(obj, "asend")
-        ? KOS_YF_PY_ASYNC_GEN
-        : KOS_YF_PY_ASYNC_ITER;
+     has asend/athrow/aclose. The am_anext test is the one get_await_next
+     drives the step with, so classification and stepping agree; asend is
+     a method protocol, so its lookup is on the type, with no instance
+     getattr and no AttributeError built to be cleared. */
+  {
+    PyTypeObject *tp = Py_TYPE(obj);
+    if (tp->tp_as_async && tp->tp_as_async->am_anext)
+      return PyType_Lookup(tp, str_asend)
+          ? KOS_YF_PY_ASYNC_GEN
+          : KOS_YF_PY_ASYNC_ITER;
+  }
 
   /* Sync iterator: PyIter_Next steps; no send/close. */
   if (PyIter_Check(obj))
