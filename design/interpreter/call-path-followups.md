@@ -105,8 +105,6 @@ their own segments, and spill and grow, must keep the pointer current.
 
 ## Smaller
 
-- **UNPACK_FAST** calls `PySequence_Fast` even for an exact tuple: 3%
-  of binary_trees.
 - **CALL_FAST_ATTR_STAR** goes through `PyObject_GetAttr` and allocates
   bound methods.
 
