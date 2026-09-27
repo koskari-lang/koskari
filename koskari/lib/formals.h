@@ -219,7 +219,14 @@ static inline int KosFormals_SimpleStealApply(
 
    :return: 0 on success; -1 on underrun (error set, nothing moved)
 */
-static inline int KosFormals_SimpleStealApplyBlock(
+/**
+   The underrun report of the steal helpers below, out of line so their
+   bodies fold into the call path. Always returns -1 with the error set.
+*/
+int kos_formals_steal_underrun(const KosSegment *block, Py_ssize_t nargs);
+
+
+KOS_OP_INLINE int KosFormals_SimpleStealApplyBlock(
     PyObject *ns,
     KosSegment *block,
     Py_ssize_t nargs) {
@@ -227,12 +234,8 @@ static inline int KosFormals_SimpleStealApplyBlock(
   if (! nargs)
     return 0;
 
-  if (unlikely(! block || (size_t) nargs > KosSegment_LEN(block))) {
-    PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
-                 " requested: %zu, available: %zu", (size_t) nargs,
-                 block ? KosSegment_LEN(block) : 0);
-    return -1;
-  }
+  if (unlikely(! block || (size_t) nargs > KosSegment_LEN(block)))
+    return kos_formals_steal_underrun(block, nargs);
 
   {
     size_t base = KosSegment_LEN(block) - (size_t) nargs;
@@ -254,19 +257,15 @@ static inline int KosFormals_SimpleStealApplyBlock(
 
    :return: 0 on success; -1 on underrun (error set, nothing moved)
 */
-static inline int KosFormals_SimpleStealApplySelfBlock(
+KOS_OP_INLINE int KosFormals_SimpleStealApplySelfBlock(
     PyObject *ns,
     PyObject *self,
     KosSegment *block,
     Py_ssize_t nargs) {
 
   if (unlikely(nargs
-               && (! block || (size_t) nargs > KosSegment_LEN(block)))) {
-    PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
-                 " requested: %zu, available: %zu", (size_t) nargs,
-                 block ? KosSegment_LEN(block) : 0);
-    return -1;
-  }
+               && (! block || (size_t) nargs > KosSegment_LEN(block))))
+    return kos_formals_steal_underrun(block, nargs);
 
   Py_INCREF(self);
   KosNamespace_GET_FAST_VAL(ns, 0) = self;

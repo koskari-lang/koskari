@@ -1133,7 +1133,7 @@ done:
    The caller has asked kos_eval_check_frame_room for one frame before
    binding into the parked namespace.
 */
-static inline void kos_dyn_push_ready_frame(
+KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosEvalState *es,
     KosDynFrame *frame) {
 

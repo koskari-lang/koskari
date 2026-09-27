@@ -19,6 +19,7 @@
 
 
 #include <Python.h>
+#include "hints.h"
 #include <stdint.h>
 
 
@@ -527,7 +528,7 @@ static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
   as they are. Used by the per-function frame cache when a frame is
   stored, and by the self-tail rebind.
 */
-static inline void KosNamespace_ResetToTemplate(PyObject *ns) {
+KOS_OP_INLINE void KosNamespace_ResetToTemplate(PyObject *ns) {
 
   PyObject *template_ns = KosNamespace_TEMPLATE(ns);
   size_t count = KosNamespace_FAST_COUNT(ns);

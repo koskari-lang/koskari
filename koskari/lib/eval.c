@@ -2639,7 +2639,10 @@ static inline int kos_return_is_plain(
 */
 KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
 
-  kos_dynframe_clear_resume(frame);
+  /* a plain frame-to-frame return carries no resume; the clear stays
+     out of line for the frames that do */
+  if (unlikely(KosDynFrame_RESUME_KIND(frame)))
+    kos_dynframe_clear_resume(frame);
 
   {
     PyObject *fn = KosDynFrame_FN(frame);
