@@ -83,6 +83,35 @@ static void defer_adopt(KosDefer *self, KosDefer *donor) {
 
 
 /**
+   Normalize the deferred call's result into self: a defer is adopted,
+   an awaitable is delegated to, anything else is a done value. result
+   is consumed. Returns 0; -1 with PyErr set when result is NULL.
+*/
+static int defer_normalize_result(KosDefer *self, PyObject *result) {
+
+  if (! result)
+    return -1;
+
+  if (KosDefer_CheckExact(result)) {
+    KosDefer *other = (KosDefer *) result;
+    defer_adopt(self, other);
+    Py_DECREF(result);
+    return 0;
+  }
+
+  if (is_awaitable(result)) {
+    self->state = KOS_DEFER_DELEGATING;
+    self->u.inner = result;
+    return 0;
+  }
+
+  self->state = KOS_DEFER_DONE;
+  self->u.value = result;
+  return 0;
+}
+
+
+/**
    Normalize result into self (defer-of-defer adopt loop). On failure set
    PyErr and return -1. fn/args/kwds are borrowed (not stored on self).
 */
@@ -104,26 +133,78 @@ static int defer_normalize_from_call(
 
   PyObject *result = PyObject_Call(fn, call_args, kwds);
   Py_XDECREF(owned_args);
+  return defer_normalize_result(self, result);
+}
 
-  if (! result)
-    return -1;
 
-  if (KosDefer_CheckExact(result)) {
-    KosDefer *other = (KosDefer *) result;
-    defer_adopt(self, other);
-    Py_DECREF(result);
-    return 0;
+/**
+   A fresh defer over the call's result, with the state a construction
+   failure can be released from. Returns a new untracked reference; the
+   caller tracks it once the result is in.
+*/
+static KosDefer *defer_alloc(void) {
+
+  KosDefer *self = PyObject_GC_New(KosDefer, &KosDeferType);
+  if (! self)
+    return NULL;
+  PyObject_Init((PyObject *) self, &KosDeferType);
+
+  /* Safe defaults: normalize overwrites on success, and dealloc after a
+     normalize failure (or a payload-less adopt) must not switch on a
+     garbage state. */
+  self->state = KOS_DEFER_SPENT;
+  self->u.inner = NULL;
+  return self;
+}
+
+
+/**
+   The vectorcall entry for the type: defer(fn, *args, **kwds) with the
+   argument vector handed on to fn as it stands, no tuple built for the
+   arguments and none for an empty call.
+*/
+static PyObject *defer_vectorcall(
+    PyObject *type,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+  KosDefer *self;
+  PyObject *fn;
+  PyObject *result;
+
+  (void) type;
+
+  if (nargs < 1) {
+    PyErr_SetString(PyExc_TypeError, "defer requires at least one argument (fn)");
+    return NULL;
   }
 
-  if (is_awaitable(result)) {
-    self->state = KOS_DEFER_DELEGATING;
-    self->u.inner = result;
-    return 0;
+  /* Idempotent: defer(d) where d is already a defer returns d directly,
+     mirroring demand(demand(x)) -> demand(x). */
+  if (nargs == 1 && (! kwnames || PyTuple_GET_SIZE(kwnames) == 0)
+      && KosDefer_CheckExact(args[0])) {
+    Py_INCREF(args[0]);
+    return args[0];
   }
 
-  self->state = KOS_DEFER_DONE;
-  self->u.value = result;
-  return 0;
+  self = defer_alloc();
+  if (! self)
+    return NULL;
+
+  fn = args[0];
+  Py_INCREF(fn);
+  result = PyObject_Vectorcall(fn, args + 1, (size_t) (nargs - 1), kwnames);
+  Py_DECREF(fn);
+
+  if (defer_normalize_result(self, result) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+
+  PyObject_GC_Track((PyObject *) self);
+  return (PyObject *) self;
 }
 
 
@@ -253,16 +334,9 @@ static PyObject *defer_repr(PyObject *self) {
 
 
 PyObject *KosDefer_New(PyObject *fn, PyObject *args, PyObject *kwds) {
-  KosDefer *self = PyObject_GC_New(KosDefer, &KosDeferType);
+  KosDefer *self = defer_alloc();
   if (! self)
     return NULL;
-  PyObject_Init((PyObject *) self, &KosDeferType);
-
-  /* Safe defaults: normalize overwrites on success, and dealloc after a
-     normalize failure (or a payload-less adopt) must not switch on a
-     garbage state. */
-  self->state = KOS_DEFER_SPENT;
-  self->u.inner = NULL;
 
   if (defer_normalize_from_call(self, fn, args, kwds) < 0) {
     Py_DECREF(self);
@@ -816,6 +890,7 @@ PyTypeObject KosDeferType = {
   0,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_new = defer_new,
+  .tp_vectorcall = defer_vectorcall,
   .tp_dealloc = defer_dealloc,
   .tp_traverse = defer_traverse,
   .tp_clear = defer_clear,
