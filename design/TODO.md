@@ -79,6 +79,16 @@ quickening decision. Each with its measurement and gate.
 
 Ref: [interpreter/call-path-followups.md](interpreter/call-path-followups.md).
 
+### Node push and pop by shape (investigate)
+
+After the region pushes stopped walking the extent table, a loop entry
+still costs 9.6 ns over a `when` body in push and pop machinery whose
+branches are all decided by facts fixed at construction. Idea: two arms
+(frame, region) inside the existing push and pop, no per-kind push. The
+constructor and clone step that was withdrawn is spelled out there.
+
+Ref: [interpreter/push-pop-shapes.md](interpreter/push-pop-shapes.md).
+
 ### Namespace size survey (investigate)
 
 Size classes were declined. Survey function namespace slot counts over
