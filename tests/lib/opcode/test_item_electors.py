@@ -222,7 +222,159 @@ class TestItemLoadElectors(CevalTest):
             await site([1], 0)
 
 
+STORE_CONST_SITES = {
+    # name: (instr, syms, args builder); every site stores into obj under
+    # the constant key 1 and returns obj
+    'ITEM_CONST_STORE': (
+        [["FAST", 0], ["FAST", 1], ["ITEM_CONST_STORE", 1],
+         ["FAST", 0], ["RETURN", 1]],
+        ("obj", "val")),
+    'ITEM_CONST_STORE_CONST': (
+        [["FAST", 0], ["ITEM_CONST_STORE_CONST", (1, "kv", 0, 0)],
+         ["FAST", 0], ["RETURN", 1]],
+        ("obj", "val")),
+    'ITEM_CONST_STORE_FAST': (
+        [["FAST", 0], ["ITEM_CONST_STORE_FAST", (1, 1, 0, 0)],
+         ["FAST", 0], ["RETURN", 1]],
+        ("obj", "val")),
+    'FAST_ITEM_CONST_STORE': (
+        [["FAST", 1], ["FAST_ITEM_CONST_STORE", (0, 1, 0, 0)],
+         ["FAST", 0], ["RETURN", 1]],
+        ("obj", "val")),
+    'FAST_ITEM_CONST_STORE_CONST': (
+        [["FAST_ITEM_CONST_STORE_CONST", (0, 1, "kv", 0)],
+         ["FAST", 0], ["RETURN", 1]],
+        ("obj", "val")),
+    'FAST_ITEM_CONST_STORE_FAST': (
+        [["FAST_ITEM_CONST_STORE_FAST", (0, 1, 1, 0)],
+         ["FAST", 0], ["RETURN", 1]],
+        ("obj", "val")),
+}
+
+
+class TestConstItemStoreFamilies(CevalTest):
+    """
+    Every constant-key store opcode with a cache slot elects a list or
+    dict body carrying the constant's index and falls to the protocol
+    for everything else
+    """
+
+    def stored(self, opname):
+        # the value a site writes: the constant "kv" for the CONST value
+        # forms, else the val argument
+        return "kv" if opname.endswith("STORE_CONST") else "v"
+
+    async def test_every_store_site_serves_every_kind(self):
+        for opname, (instr, syms) in STORE_CONST_SITES.items():
+            with self.subTest(opname=opname):
+                site, code = make_site(instr, syms)
+                self.assertEqual(code.cache_slots, 1)
+                want = self.stored(opname)
+                for _ in range(5):
+                    lst = [0, 0, 0]
+                    self.assertIs(await site(lst, "v"), lst)
+                    self.assertEqual(lst, [0, want, 0])
+                for _ in range(5):
+                    d = {}
+                    self.assertIs(await site(d, "v"), d)
+                    self.assertEqual(d, {1: want})
+                with self.assertRaises(IndexError) as ctx:
+                    await site([0], "v")
+                self.assertEqual(str(ctx.exception),
+                                 "list assignment index out of range")
+                with self.assertRaises(TypeError):
+                    await site((0, 0), "v")
+                sub = ListSub([0, 0])
+                await site(sub, "v")
+                self.assertEqual(list(sub), [0, "sub"])
+                for _ in range(600):
+                    d = {}
+                    await site(d, "v")
+                lst = [0, 0]
+                await site(lst, "v")
+                self.assertEqual(lst, [0, want])
+
+    async def test_store_sites_keep_reference_counts(self):
+        import sys
+        for opname, (instr, syms) in STORE_CONST_SITES.items():
+            with self.subTest(opname=opname):
+                site, _ = make_site(instr, syms)
+                payload = object()
+                before = sys.getrefcount(payload)
+                lst = [None, None]
+                for _ in range(20):
+                    await site(lst, payload)
+                if not opname.endswith("STORE_CONST"):
+                    self.assertIs(lst[1], payload)
+                    lst[1] = None
+                self.assertEqual(sys.getrefcount(payload), before)
+
+    async def test_store_sites_ungated(self):
+        for opname, (instr, syms) in STORE_CONST_SITES.items():
+            with self.subTest(opname=opname):
+                site, code = make_site(instr, syms, cache=False)
+                self.assertEqual(code.cache_slots, 0)
+                lst = [0, 0]
+                await site(lst, "v")
+                self.assertEqual(lst, [0, self.stored(opname)])
+                d = {}
+                await site(d, "v")
+                self.assertEqual(d, {1: self.stored(opname)})
+
+
 class TestConstItemLoadElectors(CevalTest):
+
+    async def test_fast_const_site_re_elects_across_kinds(self):
+        """
+        A FAST_ITEM_CONST site serves a list, then a dict, then a tuple,
+        then a list again, through misses, a demotion, and a re-election
+        """
+
+        site, code = const_load_site(1, 'FAST_ITEM_CONST')
+        self.assertEqual(code.cache_slots, 1)
+        for _ in range(5):
+            self.assertEqual(await site([7, 8, 9]), 8)
+        for _ in range(5):
+            self.assertEqual(await site({1: "d"}), "d")
+        for _ in range(5):
+            self.assertEqual(await site((4, 5)), 5)
+        with self.assertRaises(KeyError):
+            await site({2: "x"})
+        for _ in range(600):
+            self.assertEqual(await site("abc"), "b")
+        self.assertEqual(await site([7, 8, 9]), 8)
+        self.assertEqual(await site(ListSub([0, 0])), "sub")
+
+    async def test_fast_const_site_negative_and_bounds(self):
+        site, _ = const_load_site(-2, 'FAST_ITEM_CONST')
+        self.assertEqual(await site([1, 2, 3]), 2)
+        self.assertEqual(await site((1, 2, 3)), 2)
+        with self.assertRaises(IndexError) as ctx:
+            await site([1])
+        self.assertEqual(str(ctx.exception), "list index out of range")
+        with self.assertRaises(IndexError) as ctx:
+            await site((1,))
+        self.assertEqual(str(ctx.exception), "tuple index out of range")
+        self.assertEqual(await site([1, 2, 3]), 2)
+
+    async def test_fast_const_site_unbound_slot_raises(self):
+        site, _ = make_site([
+            ["FAST_ITEM_CONST", (0, 0, 0, 0)],
+            ["FAST_CLEAR", 0],
+            ["FAST_ITEM_CONST", (0, 0, 0, 0)],
+            ["RETURN", 1],
+        ], ("obj",))
+        with self.assertRaises(NameError):
+            await site([1])
+
+    async def test_fast_const_site_ungated(self):
+        site, code = const_load_site(0, 'FAST_ITEM_CONST', cache=False)
+        self.assertEqual(code.cache_slots, 0)
+        for _ in range(3):
+            self.assertEqual(await site([7]), 7)
+            self.assertEqual(await site({0: "d"}), "d")
+        with self.assertRaises(IndexError):
+            await site([])
 
     async def test_int_key_sites(self):
         for opname in ('ITEM_CONST', 'FAST_ITEM_CONST'):
