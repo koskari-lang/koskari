@@ -1394,7 +1394,7 @@ PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
      can fail: a NULL return always means the arg span is still intact
      on the block */
   if (unlikely(KosFormals_SimpleStealApplySelfBlock(
-          frame_ns, recv, block, nargs) < 0)) {
+          frame_ns, recv, 0, block, nargs) < 0)) {
     Py_DECREF(frame_ns);
     return NULL;
   }

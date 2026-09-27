@@ -1058,8 +1058,11 @@ static inline KosOpResult kos_call_invoke_body(
    window is nargs wide and the callable is owned by the caller, so a
    taken arm leaves no residue to drop.
 
-   :param self_arg: borrowed receiver for an unbound method call, or
-     NULL; the arity classified is nargs + 2 with it, nargs + 1 without
+   :param self_arg: receiver for an unbound method call, or NULL; the
+     arity classified is nargs + 2 with it, nargs + 1 without
+   :param self_owned: 1 when the caller's reference to self_arg moves
+     into slot 0 on a taken arm (the caller then does not release it),
+     0 when self_arg is borrowed and the slot takes its own reference
    :param out: the installed result when 1 is returned
    :return: 1 when the call was installed here, 0 when the arm does not
      apply, -1 with an error set and nothing consumed when it applied
@@ -1070,6 +1073,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
     KosEvalState *es,
     PyObject *callable,
     PyObject *self_arg,
+    int self_owned,
     Py_ssize_t nargs,
     KosOpResult *out) {
 
@@ -1094,8 +1098,8 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
      parked. */
   if (self_arg
       ? unlikely(KosFormals_SimpleStealApplySelfBlock(
-            KosDynFrame_NS(cached), self_arg, *KosEvalState_BLOCK(es),
-            nargs) < 0)
+            KosDynFrame_NS(cached), self_arg, self_owned,
+            *KosEvalState_BLOCK(es), nargs) < 0)
       : unlikely(KosFormals_SimpleStealApplyBlock(
             KosDynFrame_NS(cached), *KosEvalState_BLOCK(es), nargs) < 0))
     return -1;
@@ -1139,7 +1143,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
     /* Cache hit: steal-bind into the parked namespace first -- on
        failure nothing is stolen and the frame stays parked. */
     if (unlikely(KosFormals_SimpleStealApplySelfBlock(
-            KosDynFrame_NS(cached), self_arg, *caller_slot, nargs) < 0)) {
+            KosDynFrame_NS(cached), self_arg, 0, *caller_slot, nargs) < 0)) {
       goto fail;
     }
     (void) KosFunction_PopCachedFrame(callable);

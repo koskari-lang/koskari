@@ -60,14 +60,17 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   PyObject *self_arg = (send_self == 0) ? obj : NULL;
 
   /* Frame-cache hit, installed here; the tail twin reuses the live
-     frame and never consults the cache. */
+     frame and never consults the cache. The handler's receiver
+     reference moves into slot 0 when the callee takes self, so a taken
+     arm releases it only when it did not. */
   if (! tail) {
     KosOpResult r;
     int taken = kos_call_cached_frame_install(
-        es, resolved, self_arg, (Py_ssize_t) n, &r);
+        es, resolved, self_arg, self_arg != NULL, (Py_ssize_t) n, &r);
 
     if (likely(taken > 0)) {
-      Py_DECREF(obj);
+      if (! self_arg)
+        Py_DECREF(obj);
       RESULT_RELAY(es, r);
     }
     if (unlikely(taken < 0)) {

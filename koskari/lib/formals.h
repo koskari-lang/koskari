@@ -248,7 +248,8 @@ KOS_OP_INLINE int KosFormals_SimpleStealApplyBlock(
 
 /**
    Steal-bind positionals with an out-of-band receiver: slot 0 binds from
-   self (borrowed; a reference is taken here), and the top nargs block
+   self (a reference is taken here when self_owned is 0; when it is 1
+   the caller's reference moves into the slot), and the top nargs block
    references move into slots 1..nargs with the block length retracted in
    the same step.  self never lives on the block, so the caller's window
    accounting is untouched by the injection.  Same classification
@@ -260,6 +261,7 @@ KOS_OP_INLINE int KosFormals_SimpleStealApplyBlock(
 KOS_OP_INLINE int KosFormals_SimpleStealApplySelfBlock(
     PyObject *ns,
     PyObject *self,
+    int self_owned,
     KosSegment *block,
     Py_ssize_t nargs) {
 
@@ -267,7 +269,8 @@ KOS_OP_INLINE int KosFormals_SimpleStealApplySelfBlock(
                && (! block || (size_t) nargs > KosSegment_LEN(block))))
     return kos_formals_steal_underrun(block, nargs);
 
-  Py_INCREF(self);
+  if (! self_owned)
+    Py_INCREF(self);
   KosNamespace_GET_FAST_VAL(ns, 0) = self;
 
   if (nargs) {
