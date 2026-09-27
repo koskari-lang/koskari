@@ -10,19 +10,6 @@ preserve-none trampolines with loop bodies; a fully inlined frame park
 in `kos_return_deliver` cost the method kernel instructions per cycle
 at equal instruction counts.
 
-## CALL_FAST_ATTR holds the receiver the callee already took
-
-`opcode/CALL_FAST_ATTR.c` derefs the receiver owned, and on the
-cached-frame hit `KosFormals_SimpleStealApplySelfBlock` increfs the same
-object into slot 0; the handler then decrefs its own reference. One
-incref and decref pair per method call, 300M executions in the trace.
-The hold is needed across `kos_resolve_named_attr` only when it runs
-user code (a `__getattr__` or a descriptor on the cold path); the hit
-path runs type lookups. Fix: a stealing self arm on the cached-frame
-install, the handler's reference moving into slot 0, with the `_NAMES`
-and `_STAR` twins checked for the same shape. Gate: ASan, since it
-moves ownership. Kernels: method, field, async_tree.
-
 ## Tail calls to a different function
 
 TAIL_CALL_FAST averages 95 ns against CALL_FAST at 45 plus RETURN at
