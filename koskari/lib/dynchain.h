@@ -1118,13 +1118,15 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
 
 
 /**
-   Bootstrap install: graft GEN and src dyn_top chain onto consumer es.
-   ACTIVE must be NULL; runnable chain lives on src only.
+   Bootstrap install: graft GEN and the chain ending at it, headed by
+   chain_head, onto the consumer es. The caller has taken chain_head
+   out of its resting place (the GEN's active slot, or a context's
+   dyn top).
 */
 int kos_dyn_gen_install_bootstrap(
     KosEvalState *es,
-    KosContext *src,
-    KosDynGen *gen);
+    KosDynGen *gen,
+    KosDynNode *chain_head);
 
 
 /**

@@ -45,25 +45,25 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
     return NULL;
   }
 
+  /* the frame steals ns and releases it on failure */
   KosDynFrame *frame = kos_dynframe_new(
       (KosDynNode *) gen, code, ns);
   if (! frame) {
     kos_dyngen_free(gen);
-    Py_DECREF(ns);
     return NULL;
   }
 
-  KosContext *ctx = KosContext_New(frame);
-  if (! ctx) {
-    kos_dynframe_free(frame);
+  /* An unstarted generator rests in the same slot a suspended one does;
+     started == 0 on the wrapper tells the first install to bootstrap
+     rather than resume. No context: the splice from Koskari never needs
+     one, and a drive from Python creates the wrapper's at that moment. */
+  KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
+
+  PyObject *agen = KosPyAsyncGen_New(NULL);
+  if (! agen) {
     kos_dyngen_free(gen);
     return NULL;
   }
-
-  /* the wrapper takes over the new reference */
-  PyObject *agen = KosPyAsyncGen_New(ctx);
-  if (! agen)
-    return NULL;
 
   Py_XINCREF(KosCode_NAME(code));
   ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);

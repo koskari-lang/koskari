@@ -192,8 +192,31 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     PyErr_Restore(fence_typ, fence_val, fence_tb);
   }
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
-    asyncgen_teardown_chain_on_ctx(agen, agen->ctx);
+  if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
+      && ! agen->started) {
+    /* never driven: nothing entered, nothing to unwind */
+    asyncgen_dissociate_chain(agen);
+
+  } else if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
+    /* suspended: the GeneratorExit drive needs a context; one spliced
+       only from Koskari has none, so it gets one here, and falls back
+       to the pure cleanup when even that cannot be had */
+    KosContext *ctx = agen->ctx;
+    if (! ctx) {
+      PyObject *fence_typ, *fence_val, *fence_tb;
+      PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
+      ctx = KosContext_New(NULL);
+      if (! ctx)
+        PyErr_Clear();
+      PyErr_Restore(fence_typ, fence_val, fence_tb);
+    }
+    if (ctx) {
+      asyncgen_teardown_chain_on_ctx(agen, ctx);
+      if (ctx != agen->ctx)
+        Py_DECREF(ctx);
+    } else {
+      asyncgen_dissociate_chain(agen);
+    }
 
   } else if (agen->gen) {
     kos_dyngen_release((KosDynGen *) agen->gen);
@@ -227,7 +250,7 @@ static int asyncgen_traverse(PyObject *self, visitproc visit, void *arg) {
 
   Py_VISIT(agen->code_name);
 
-  if (agen->gen && agen->ctx && ! KosContext_DYN_TOP(agen->ctx)) {
+  if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
     res = kos_dynnode_traverse((KosDynNode *) agen->gen, visit, arg);
     if (res)
       return res;
@@ -387,19 +410,31 @@ static int agen_attach_gen_flatten(
     KosDynGen *gen) {
 
   if (KosDynGen_ACTIVE(gen)) {
-    KosContext_DYN_TOP(agen->ctx) = NULL;
-    KosContext_FRAME_TOP(agen->ctx) = NULL;
+    if (agen->ctx) {
+      KosContext_DYN_TOP(agen->ctx) = NULL;
+      KosContext_FRAME_TOP(agen->ctx) = NULL;
+    }
+    if (! agen->started) {
+      /* never driven: the frame rests in the slot; the first install
+         enters fresh code rather than reviving a yield */
+      KosDynNode *head = (KosDynNode *) KosDynGen_ACTIVE(gen);
+      KosDynGen_ACTIVE(gen) = NULL;
+      return kos_dyn_gen_install_bootstrap(es, gen, head);
+    }
     return kos_dyn_gen_install(es, gen);
   }
 
-  if (KosEvalState_CONTEXT(es) == agen->ctx) {
+  if (agen->ctx && KosEvalState_CONTEXT(es) == agen->ctx) {
     /* Own-ctx drive: the bootstrap (or mid-await) chain thawed into es
        with the context. */
     if (KosEvalState_DYN_TOP(es))
       return 0;
 
   } else if (agen->ctx && KosContext_DYN_TOP(agen->ctx)) {
-    return kos_dyn_gen_install_bootstrap(es, agen->ctx, gen);
+    KosDynNode *head = KosContext_DYN_TOP(agen->ctx);
+    KosContext_DYN_TOP(agen->ctx) = NULL;
+    KosContext_FRAME_TOP(agen->ctx) = NULL;
+    return kos_dyn_gen_install_bootstrap(es, gen, head);
   }
 
   PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
@@ -427,7 +462,7 @@ static KosIterStepResult agen_iter_drive(
     return KOS_ITER_ERROR;
   }
 
-  if (agen->closed || ! agen->ctx || ! agen->gen) {
+  if (agen->closed || ! agen->gen) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
@@ -441,10 +476,13 @@ static KosIterStepResult agen_iter_drive(
 
   {
     KosDynGen *gen = (KosDynGen *) agen->gen;
-    int frozen = (KosDynGen_ACTIVE(gen) != NULL);
-    int own_ctx = (KosEvalState_CONTEXT(es) == agen->ctx);
+    /* the slot holds either the unstarted frame or a suspended chain;
+       only the latter is a frozen yield to revive */
+    int resting = (KosDynGen_ACTIVE(gen) != NULL);
+    int frozen = resting && agen->started;
+    int own_ctx = agen->ctx && (KosEvalState_CONTEXT(es) == agen->ctx);
 
-    if (! frozen && ! KosContext_DYN_TOP(agen->ctx)
+    if (! resting && ! (agen->ctx && KosContext_DYN_TOP(agen->ctx))
         && ! (own_ctx && KosEvalState_DYN_TOP(es))) {
       /* No frozen chain and nothing live on the context: spent. */
       *out = NULL;
@@ -513,7 +551,7 @@ static KosIterStepResult agen_iter_throw(
     return KOS_ITER_ERROR;
   }
 
-  if (agen->closed || ! agen->ctx || ! agen->gen) {
+  if (agen->closed || ! agen->gen) {
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
@@ -550,9 +588,23 @@ static void agen_iter_finish(PyObject *self, int exhausted) {
 }
 
 
+/**
+   The wrapper's context, for a drive from Python: created on the first
+   such drive with the domain and parameterize cells in force then, and
+   kept for the generator's life. A generator only ever spliced from
+   Koskari never has one. NULL on a creation failure, error cleared, so
+   the stepper falls back to a context of its own.
+*/
 static KosContext *agen_iter_pyctx(PyObject *self) {
 
-  return ((KosPyAsyncGen *) self)->ctx;
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (! agen->ctx) {
+    agen->ctx = KosContext_New(NULL);
+    if (! agen->ctx)
+      PyErr_Clear();
+  }
+  return agen->ctx;
 }
 
 
@@ -589,7 +641,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
 
   KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
   if (! agen) {
-    Py_DECREF(ctx);
+    Py_XDECREF(ctx);
     return NULL;
   }
 
