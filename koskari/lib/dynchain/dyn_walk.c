@@ -4,7 +4,6 @@
 int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   KosDynNode *saved_parent;
   KosDynNode *ctx_active;
-  KosDynNode *n;
   PyObject *owner;
 
   SAYF("[gen] freeze ENTER ctx=%p gen=%p dyn_top=%p (%s) gen_parent=%p\n",
@@ -15,12 +14,15 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
            : "NULL",
        (void *) KosDynNode_PARENT(gen));
 
+#if VERBOSE_DEBUG
   if (KosEvalState_DYN_TOP(es)) {
+    KosDynNode *n;
     SAY("[gen] freeze chain from dyn_top: ");
     for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
       SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
   }
+#endif
 
   if (! KosEvalState_DYN_TOP(es)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -65,10 +67,15 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
      the consumer itself may hold. */
   Py_CLEAR(KosDynNode_NS(gen));
 
-  SAY("[gen] freeze storing in gen->active: chain ");
-  for (n = ctx_active; n; n = KosDynNode_PARENT(n))
-    SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
-  SAY("(end)");
+#if VERBOSE_DEBUG
+  {
+    KosDynNode *n;
+    SAY("[gen] freeze storing in gen->active: chain ");
+    for (n = ctx_active; n; n = KosDynNode_PARENT(n))
+      SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
+    SAY("(end)");
+  }
+#endif
 
   /* 3. Put GEN's old parent onto ctx's active. The consumer below the
      GEN has not run since the install recorded its registers, so they

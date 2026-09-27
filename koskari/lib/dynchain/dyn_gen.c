@@ -184,7 +184,6 @@ static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext *const ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
-  KosDynNode *n;
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
 
@@ -305,9 +304,14 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
            : "NULL",
        (void *) KosEvalState_FRAME(es));
-  for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
-    SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
-  SAY("(end)");
+#if VERBOSE_DEBUG
+  {
+    KosDynNode *n;
+    for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
+      SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
+    SAY("(end)");
+  }
+#endif
   return 0;
 }
 
