@@ -234,6 +234,58 @@ static inline KosGetNextResult op_get_next_from_iter(
 
 
 /**
+   The step for an iteration node's bound Python iterator, keyed by the
+   kind its bind recorded, so no step probes the type again. The sync
+   arm calls tp_iternext through the type, as CPython's FOR_ITER does,
+   and consults the error state only on a NULL result; a StopIteration
+   there is exhaustion. The async arm is the eager __anext__ step.
+   Providers never reach here; their suite steps them.
+*/
+static inline KosGetNextResult op_get_next_from_bound(
+    KosEvalState *es,
+    uint8_t kind,
+    PyObject **await_out,
+    PyObject *iter,
+    PyObject **result_out) {
+
+  if (likely(kind == KOS_IREQ_KIND_PY_SYNC)) {
+    iternextfunc next = Py_TYPE(iter)->tp_iternext;
+    PyObject *n = likely(next) ? next(iter) : NULL;
+    if (likely(n)) {
+      *result_out = n;
+      return GET_NEXT_VALUE;
+    }
+    if (PyErr_Occurred()) {
+      if (! PyErr_ExceptionMatches(PyExc_StopIteration))
+        return GET_NEXT_ERROR;
+      PyErr_Clear();
+    } else if (unlikely(! next)) {
+      PyErr_SetString(PyExc_TypeError, "not an iterator");
+      return GET_NEXT_ERROR;
+    }
+    return GET_NEXT_EXHAUSTED;
+  }
+
+  if (kind == KOS_IREQ_KIND_PY_ASYNC) {
+    PyObject *awaitable = get_await_next(iter);
+    if (awaitable)
+      return next_from_python_async_iter(es, await_out, iter, result_out,
+                                         awaitable);
+    /* __anext__ or GetAwaitable failed, or raised StopAsyncIteration
+       synchronously, which is this iterator's exhaustion. */
+    if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+      PyErr_Clear();
+      return GET_NEXT_EXHAUSTED;
+    }
+    return GET_NEXT_ERROR;
+  }
+
+  PyErr_SetString(PyExc_TypeError, "not an iterator");
+  return GET_NEXT_ERROR;
+}
+
+
+/**
   Globals
 */
 static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {

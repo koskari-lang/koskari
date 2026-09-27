@@ -52,6 +52,7 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   KosDynYieldFrom_REQ(node)->iter = NULL;
   KosDynYieldFrom_REQ(node)->islots = NULL;
   KosDynYieldFrom_REQ(node)->mode = KOS_IREQ_IDLE;
+  KosDynYieldFrom_REQ(node)->kind = KOS_IREQ_KIND_NONE;
   KosDynYieldFrom_DRIVE(node) = NULL;
   KosDynYieldFrom_RESUME(node) = NULL;
   KosDynYieldFrom_RESUME_EMIT(node) = NULL;

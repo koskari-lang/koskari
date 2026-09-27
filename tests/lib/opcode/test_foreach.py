@@ -358,4 +358,84 @@ class TestForeachOpcodes(CevalTest):
         self.assertIn("iterator raised in foreach", str(cm.exception))
 
 
+    async def test_foreach_stop_iteration_with_value_is_exhaustion(self):
+        """
+        A sync iterator raising StopIteration(value) from __next__ ends
+        the loop through the else branch; the value is not an error
+        """
+
+        class Counted(object):
+            def __init__(self):
+                self.n = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                self.n += 1
+                if self.n > 2:
+                    raise StopIteration("done")
+                return self.n
+
+        code, ns = build_expr([
+            ["CONST", Counted()],
+            ["PUSH_FOREACH", 0],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR_STORE", "last"],
+            ["JUMP", "loop_head"],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "last"],
+            ["RETURN", 1],
+        ], values={"last": None})
+        self.assertEqual(await make_callable(code, ns)(), 2)
+
+
+    async def test_foreach_prefers_anext_over_next(self):
+        """
+        An iterator offering both __anext__ and __next__ is stepped as an
+        async iterator; __next__ is never called
+        """
+
+        class Both(object):
+            def __init__(self):
+                self.n = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                self.n += 1
+                if self.n > 3:
+                    raise StopAsyncIteration
+                return self.n * 10
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                raise AssertionError("__next__ must not be stepped")
+
+        code, ns = build_expr([
+            ["CONST", Both()],
+            ["PUSH_FOREACH", 0],
+            ["LABEL", "loop_head"],
+            ["ITER_NEXT", "else_lbl"],
+            ["VAR_STORE", "last"],
+            ["JUMP", "loop_head"],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["LABEL", "break_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "last"],
+            ["RETURN", 1],
+        ], values={"last": None})
+        self.assertEqual(await make_callable(code, ns)(), 30)
+
+
 # The end.

@@ -286,7 +286,7 @@ KosIterRequestStatus KosIterRequest_Next(
     PyObject *value = NULL;
     PyObject *_await = NULL;
 
-    switch (op_get_next_from_iter(es, &_await, iter, &value)) {
+    switch (op_get_next_from_bound(es, req->kind, &_await, iter, &value)) {
       case GET_NEXT_VALUE:
         *fast_out = value;
         return KOS_IREQ_DELIVERED;

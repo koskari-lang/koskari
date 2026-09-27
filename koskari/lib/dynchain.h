@@ -198,6 +198,14 @@ typedef enum {
 #define KOS_IREQ_GRAFT_VALUE  3u  /* value graft: the next frame return
                                      below is the element */
 
+/** What a bound iterator is, so the step calls the one entry it needs.
+    Async wins over sync when a type offers both, as the probing order
+    always had it. */
+#define KOS_IREQ_KIND_NONE      0u  /* no iterator bound, or not one */
+#define KOS_IREQ_KIND_PROVIDER  1u  /* KosIter provider; islots set */
+#define KOS_IREQ_KIND_PY_ASYNC  2u  /* tp_as_async->am_anext */
+#define KOS_IREQ_KIND_PY_SYNC   3u  /* tp_iternext */
+
 
 /**
    A snapshot of the live registers at one chain top: the frame, the
@@ -228,6 +236,9 @@ typedef struct KosIterRequest {
                                   so the step and delivery paths never
                                   re-derive it */
   uint8_t mode;         /* KOS_IREQ_* */
+  uint8_t kind;         /* KOS_IREQ_KIND_*: how the step drives iter,
+                           classified once at bind so no step probes
+                           the type again */
 } KosIterRequest;
 
 
