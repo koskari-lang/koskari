@@ -219,7 +219,7 @@ KosOpResult KosFunction_Install(
         Py_INCREF(args[i]);
       (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
                                          nargs);
-      KosFunction_CACHED_FRAME(callable) = NULL;
+      (void) KosFunction_PopCachedFrame(callable);
       kos_dyn_push_ready_frame(es, cached);
       Py_INCREF(callable);
       KosDynFrame_FN(cached) = callable;
@@ -1037,13 +1037,17 @@ static int function_init(
 }
 
 
-/** Tear down the parked frame, if any; the parked node's fn is always
+/** Tear down the parked frames, if any; a parked node's fn is always
     NULL, so this cannot re-enter the function. */
 static void func_drop_cached_frame(KosFunction *fn) {
   KosDynFrame *frame = fn->cached_frame;
-  if (frame) {
-    fn->cached_frame = NULL;
+
+  fn->cached_frame = NULL;
+  while (frame) {
+    KosDynFrame *next = (KosDynFrame *) KosDynFrame_BACK_FRAME(frame);
+    KosDynFrame_BACK_FRAME(frame) = NULL;
     kos_dynnode_free((KosDynNode *) frame);
+    frame = next;
   }
 }
 
@@ -1053,8 +1057,9 @@ static int function_traverse(
     visitproc visit,
     void *arg) {
 
-  if (((KosFunction *) self)->cached_frame) {
-    KosDynFrame *cached = ((KosFunction *) self)->cached_frame;
+  for (KosDynFrame *cached = ((KosFunction *) self)->cached_frame;
+       cached;
+       cached = (KosDynFrame *) KosDynFrame_BACK_FRAME(cached)) {
     int r = kos_dynnode_traverse((KosDynNode *) cached, visit, arg);
     if (r != 0)
       return r;

@@ -431,8 +431,11 @@ struct KosDynNode {
       PyObject *fn;
       /* Unwind cache: the frame displaced at install (borrowed; an
          ancestor on the chain, so it outlives this frame while
-         installed). Set at install only; cleared at park, clone, and
-         span detach; NULL means fall back to the chain walk. */
+         installed). Set at install only; cleared at clone and span
+         detach; NULL means fall back to the chain walk. While the
+         frame is parked in its function's cache this links the next
+         parked frame instead (see KosFunction_TryParkFrame), and the
+         install that takes the frame back overwrites it. */
       struct KosDynNode *back_frame;
     } frame;
     struct {

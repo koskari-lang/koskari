@@ -824,7 +824,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
                   KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
             goto fail;
           }
-          KosFunction_CACHED_FRAME(callable) = NULL;
+          (void) KosFunction_PopCachedFrame(callable);
           window -= (size_t) nargs;
           kos_dyn_push_ready_frame(es, cached);
           if (! (flags & KOS_CALL_CALLABLE_OWNED))
@@ -1100,7 +1100,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
             KosDynFrame_NS(cached), *KosEvalState_BLOCK(es), nargs) < 0))
     return -1;
 
-  KosFunction_CACHED_FRAME(callable) = NULL;
+  (void) KosFunction_PopCachedFrame(callable);
   kos_dyn_push_ready_frame(es, cached);
   KosDynFrame_FN(cached) = callable;  /* the owned reference transfers */
   KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
@@ -1142,7 +1142,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
             KosDynFrame_NS(cached), self_arg, *caller_slot, nargs) < 0)) {
       goto fail;
     }
-    KosFunction_CACHED_FRAME(callable) = NULL;
+    (void) KosFunction_PopCachedFrame(callable);
     window -= (size_t) nargs;
     kos_dyn_push_ready_frame(es, cached);
     if (! (flags & KOS_CALL_CALLABLE_OWNED))
