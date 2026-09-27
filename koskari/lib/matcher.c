@@ -824,6 +824,54 @@ static PyObject *list_to_tuple(PyObject *list) {
 }
 
 
+/**
+   Read the entry's first element test into root_kind / root_ref: the
+   MATCH's first child, through any CAPTURE wrappers, when it is a type
+   test, a class, a form, or a map. Those consume the first element
+   and test it before anything else, so their test failing on a
+   subject means the whole matcher cannot match it. Any other shape,
+   including a first child of variable width, leaves the root at NONE.
+*/
+static void matcher_compute_root(KosMatcher *m) {
+  uint32_t idx = m->entry;
+  Py_ssize_t guard = Py_SIZE(m);
+
+  m->root_kind = KOS_MATCH_ROOT_NONE;
+  m->root_ref = KOS_MATCH_NO_INDEX;
+
+  while (guard-- > 0 && idx != KOS_MATCH_NO_INDEX
+         && (Py_ssize_t) idx < Py_SIZE(m)) {
+    KosMatchNode *n = &m->nodes[idx];
+    switch (n->kind) {
+      case KOS_MATCH_NODE_MATCH:
+        idx = n->as.match.first_child;
+        continue;
+      case KOS_MATCH_NODE_CAPTURE:
+        idx = n->as.capture.subnode;
+        continue;
+      case KOS_MATCH_NODE_TEST:
+        if (n->as.test.test_kind == KOS_MATCH_TEST_TYPE) {
+          m->root_kind = KOS_MATCH_ROOT_TEST_TYPE;
+          m->root_ref = n->as.test.ref_index;
+        }
+        return;
+      case KOS_MATCH_NODE_CLASS:
+        m->root_kind = KOS_MATCH_ROOT_CLASS;
+        m->root_ref = n->as.class_.type_extern;
+        return;
+      case KOS_MATCH_NODE_FORM:
+        m->root_kind = KOS_MATCH_ROOT_SEQUENCE;
+        return;
+      case KOS_MATCH_NODE_MAP:
+        m->root_kind = KOS_MATCH_ROOT_MAPPING;
+        return;
+      default:
+        return;
+    }
+  }
+}
+
+
 PyObject *KosMatcherBuilder_Finalize(
     KosMatcherBuilder *b,
     uint32_t entry) {
@@ -906,6 +954,7 @@ PyObject *KosMatcherBuilder_Finalize(
     return NULL;
   }
 
+  matcher_compute_root(m);
   return (PyObject *) m;
 }
 
@@ -1489,6 +1538,46 @@ static int match_projected_value(
   if (sub_cursor != 1)
     return 0;
   return 1;
+}
+
+
+/* The sequence-pattern gate on a peeled element (PEP 634): str, bytes
+   and bytearray are atoms; the KosPair spine, list and tuple descend;
+   any other type descends only when sequence-flagged (3.10+) or a
+   collections.abc.Sequence (3.9). Mappings, sets and iterators are a
+   soft no-match. Returns 1 to descend, 0 for no match, -1 on error. */
+static int matcher_sequence_gate(PyObject *peeled) {
+  if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
+      || PyByteArray_Check(peeled))
+    return 0;
+  if (KosPair_Check(peeled) || KosNilP(peeled)
+      || PyList_Check(peeled) || PyTuple_Check(peeled))
+    return 1;
+#ifdef Py_TPFLAGS_SEQUENCE
+  return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE) ? 1 : 0;
+#else
+  PyObject *seq_type = get_abc_sequence();
+  if (! seq_type)
+    return -1;
+  return PyObject_IsInstance(peeled, seq_type);
+#endif
+}
+
+
+/* The mapping-pattern gate on a peeled element (PEP 634): a dict, else
+   a mapping-flagged type (3.10+) or a collections.abc.Mapping (3.9).
+   Returns 1 to descend, 0 for no match, -1 on error. */
+static int matcher_mapping_gate(PyObject *peeled) {
+  if (PyDict_Check(peeled))
+    return 1;
+#ifdef Py_TPFLAGS_MAPPING
+  return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_MAPPING) ? 1 : 0;
+#else
+  PyObject *mapping_type = get_abc_mapping();
+  if (! mapping_type)
+    return -1;
+  return PyObject_IsInstance(peeled, mapping_type);
+#endif
 }
 
 
@@ -2218,6 +2307,30 @@ static PyObject *matcher_repr(PyObject *self) {
 
 static PyObject *kos_matcher_extern_defaults = NULL;
 
+/* See KosMatcher_ExternDefaultsVersion. Starts above zero so a slot
+   zeroed at allocation never reads as current. */
+static uint64_t kos_matcher_defaults_version = 1;
+
+#if KOS_MATCHER_ENV_CACHE
+static int kos_matcher_defaults_watcher = -1;
+
+static int matcher_defaults_watch(
+    PyDict_WatchEvent event, PyObject *dict, PyObject *key,
+    PyObject *new_value) {
+  (void) event;
+  (void) dict;
+  (void) key;
+  (void) new_value;
+  kos_matcher_defaults_version++;
+  return 0;
+}
+#endif
+
+
+uint64_t KosMatcher_ExternDefaultsVersion(void) {
+  return kos_matcher_defaults_version;
+}
+
 
 static int kos_matcher_populate_extern_defaults(PyObject *dict) {
   static const struct {
@@ -2254,6 +2367,17 @@ PyObject *KosMatcher_ExternDefaults(void) {
       Py_CLEAR(kos_matcher_extern_defaults);
       return NULL;
     }
+    kos_matcher_defaults_version++;
+#if KOS_MATCHER_ENV_CACHE
+    if (kos_matcher_defaults_watcher < 0)
+      kos_matcher_defaults_watcher = PyDict_AddWatcher(matcher_defaults_watch);
+    if (kos_matcher_defaults_watcher < 0
+        || PyDict_Watch(kos_matcher_defaults_watcher,
+                        kos_matcher_extern_defaults) < 0) {
+      Py_CLEAR(kos_matcher_extern_defaults);
+      return NULL;
+    }
+#endif
   }
 
   return kos_matcher_extern_defaults;
@@ -2262,7 +2386,80 @@ PyObject *KosMatcher_ExternDefaults(void) {
 
 PyObject *KosMatcher_ResetExternDefaults(void) {
   Py_CLEAR(kos_matcher_extern_defaults);
+  kos_matcher_defaults_version++;
   return KosMatcher_ExternDefaults();
+}
+
+
+PyObject *KosMatcher_ResolveDefaultEnv(KosMatcher *m) {
+  Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
+  PyObject *env = PyTuple_New(n_ext);
+  if (! env)
+    return NULL;
+  for (Py_ssize_t i = 0; i < n_ext; i++) {
+    PyObject *val = matcher_extern_default(PyTuple_GET_ITEM(m->externs, i));
+    if (! val) {
+      Py_DECREF(env);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(env, i, Py_NewRef(val));
+  }
+  return env;
+}
+
+
+int KosMatcher_ExternNamesAligned(KosMatcher *m, PyObject *names) {
+  Py_ssize_t n_named = 0;
+  if (names && PyTuple_Check(names))
+    n_named = PyTuple_GET_SIZE(names);
+  Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
+  if (n_named != n_ext)
+    return 0;
+  for (Py_ssize_t i = 0; i < n_ext; i++) {
+    PyObject *a = PyTuple_GET_ITEM(names, i);
+    PyObject *b = PyTuple_GET_ITEM(m->externs, i);
+    if (a == b)
+      continue;
+    int eq = PyObject_RichCompareBool(a, b, Py_EQ);
+    if (eq < 0)
+      return -1;
+    if (! eq)
+      return 0;
+  }
+  return 1;
+}
+
+
+int KosMatcher_RootReject(
+    KosMatcher *m, PyObject *subject, PyObject *const *extern_env) {
+  PyObject *peeled = matcher_peel_datum(subject);
+  int r;
+
+  /* Each arm tests what its engine counterpart tests: a type test and
+     the two gates peel a Datum first, a class pattern does not. */
+  switch (m->root_kind) {
+    case KOS_MATCH_ROOT_TEST_TYPE:
+      if (! extern_env)
+        return 0;
+      r = matcher_isinstance(peeled, extern_env[m->root_ref]);
+      break;
+    case KOS_MATCH_ROOT_CLASS:
+      if (! extern_env)
+        return 0;
+      r = matcher_isinstance(subject, extern_env[m->root_ref]);
+      break;
+    case KOS_MATCH_ROOT_SEQUENCE:
+      r = matcher_sequence_gate(peeled);
+      break;
+    case KOS_MATCH_ROOT_MAPPING:
+      r = matcher_mapping_gate(peeled);
+      break;
+    default:
+      return 0;
+  }
+  if (r < 0)
+    return -1;
+  return r ? 0 : 1;
 }
 
 

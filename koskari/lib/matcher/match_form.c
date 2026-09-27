@@ -23,27 +23,10 @@ static int match_form(
      and an iterator must never be silently consumed by a failed arm.
      Soft no-match for all of them. */
   PyObject *peeled = matcher_peel_datum(elem);
-  if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
-      || PyByteArray_Check(peeled))
-    return 0;
-  if (! (KosPair_Check(peeled) || KosNilP(peeled)
-         || PyList_Check(peeled) || PyTuple_Check(peeled))) {
-#ifdef Py_TPFLAGS_SEQUENCE
-    /* Sequence-flagged types descend, exactly as CPython's
-       MATCH_SEQUENCE does (PEP 634). */
-    if (! PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE))
-      return 0;
-#else
-    /* 3.9: no tp_flags sequence bit; fall back to the ABC check. */
-    PyObject *seq_type = get_abc_sequence();
-    if (! seq_type)
-      return -1;
-    int isinst = PyObject_IsInstance(peeled, seq_type);
-    if (isinst < 0)
-      return -1;
-    if (! isinst)
-      return 0;
-#endif
+  {
+    int gate = matcher_sequence_gate(peeled);
+    if (gate <= 0)
+      return gate;
   }
 
   KosMatchSubject sub;

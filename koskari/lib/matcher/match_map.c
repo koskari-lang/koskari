@@ -109,25 +109,10 @@ static int match_map(
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
   PyObject *mapping = matcher_peel_datum(elem);
 
-  if (! PyDict_Check(mapping)) {
-#ifdef Py_TPFLAGS_MAPPING
-    /* Not a dict: accept mapping-flagged types, exactly as CPython's
-       MATCH_MAPPING does (PEP 634), reject the rest with a soft
-       no-match. */
-    if (! PyType_HasFeature(Py_TYPE(mapping), Py_TPFLAGS_MAPPING))
-      return 0;
-#else
-    /* 3.9: no tp_flags mapping bit; accept any collections.abc.Mapping,
-       reject the rest with a soft no-match. */
-    PyObject *mapping_type = get_abc_mapping();
-    if (! mapping_type)
-      return -1;
-    int isinst = PyObject_IsInstance(mapping, mapping_type);
-    if (isinst < 0)
-      return -1;
-    if (! isinst)
-      return 0;
-#endif
+  {
+    int gate = matcher_mapping_gate(mapping);
+    if (gate <= 0)
+      return gate;
   }
 
   for (uint32_t eidx = n->as.map.first_entry;

@@ -445,6 +445,16 @@ typedef struct KosExtentDesc {
    distinct kinds. Cleanup and GC traversal switch on this value.
    See design/interpreter/attr-lookup-cache.md.
 */
+/* How a MATCH_CASE site obtains its extern env, decided once from the
+   names it stacks: the stacked values are the env as-is; every extern
+   comes from the defaults, held in the slot; or a mix, resolved on
+   each execution. */
+#define KOS_MATCH_ENV_UNKNOWN   0u
+#define KOS_MATCH_ENV_STACKED   1u
+#define KOS_MATCH_ENV_DEFAULTS  2u
+#define KOS_MATCH_ENV_GENERAL   3u
+
+
 typedef enum KosCacheKind {
   KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
@@ -589,6 +599,13 @@ struct KosCacheSlot {
       PyObject *matcher;       /* thawed KosMatcher; owned, may be NULL */
       PyObject *slotmap;       /* KosSlotMap over matcher->slots; owned,
                                   may be NULL */
+      PyObject *env;           /* the externs resolved from the defaults,
+                                  a tuple in extern-table order; owned,
+                                  may be NULL; valid while env_version
+                                  is the defaults version */
+      uint64_t env_version;
+      uint8_t env_kind;        /* KOS_MATCH_ENV_*: how this site's env is
+                                  found, fixed by its stacked names */
     } matcher;
 
     /* KOS_CACHE_ELECTOR: the handler elected for the site. ``fn`` is a
