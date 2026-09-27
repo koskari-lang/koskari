@@ -33,6 +33,7 @@ pytestmark = pytest.mark.phase_lib
 LT = int(Compare.LT)
 EQ = int(Compare.EQ)
 IS = int(Compare.IS)
+IS_NOT = int(Compare.IS_NOT)
 IN = int(Compare.IN)
 NOT_IN = int(Compare.NOT_IN)
 IS_INSTANCE = int(Compare.IS_INSTANCE)
@@ -295,6 +296,108 @@ class TestCheckCompareFast(CevalTest):
             ["CONST", 0],
             ["RETURN", 1],
         ], local_syms=("a",))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+    async def test_is_fast_const_holds(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(IS, False, True), 0, None, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": None})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_is_fast_const_branches(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(IS, False, True), 0, None, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": 9})
+        self.assertEqual(await make_callable(code, ns)(), 0)
+
+
+    async def test_is_fast_fast(self):
+        marker = object()
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(IS, False, False), 0, 1, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a", "b"), values={"a": marker, "b": marker})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_is_fast_fast_distinct_branches(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(IS, False, False), 0, 1, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a", "b"), values={"a": object(), "b": object()})
+        self.assertEqual(await make_callable(code, ns)(), 0)
+
+
+    async def test_is_not_fast_const_holds(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(IS_NOT, False, True), 0, None, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": 9})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_is_not_fast_const_branches(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(IS_NOT, False, True), 0, None, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": None})
+        self.assertEqual(await make_callable(code, ns)(), 0)
+
+
+    async def test_is_unbound_slot_raises(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(IS, False, True), 0, None, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a",))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+    async def test_is_not_unbound_slot_raises(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(IS_NOT, False, False), 0, 1, "fail")],
+            ["CONST", 42],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", 0],
+            ["RETURN", 1],
+        ], local_syms=("a", "b"), values={"a": 1})
         with self.assertRaises(NameError):
             await make_callable(code, ns)()
 
