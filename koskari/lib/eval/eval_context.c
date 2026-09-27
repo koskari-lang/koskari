@@ -136,6 +136,24 @@ KosContext *KosContext_NewFromSnapshot(
 }
 
 
+/**
+   Replace a parked context's domain and parameterize cells with the
+   snapshot in force now, so a context reused across boundary calls
+   sees the dynamic state of each call. Returns -1 with an error set.
+*/
+int KosContext_TakeSnapshot(KosContext *ctx) {
+
+  PyObject *domain;
+  PyObject *cells;
+
+  if (KosContext_Snapshot(&domain, &cells) < 0)
+    return -1;
+  Py_XSETREF(ctx->domain, domain);
+  Py_XSETREF(ctx->param_refs, cells);
+  return 0;
+}
+
+
 KosContext *KosContext_New(KosDynFrame *top) {
 
   PyObject *domain;

@@ -1225,6 +1225,7 @@ PyObject *KosEvalState_PopUnpackSequence(
 */
 KosContext *KosContext_New(KosDynFrame *top);
 int KosContext_Snapshot(PyObject **domain, PyObject **cells);
+int KosContext_TakeSnapshot(KosContext *ctx);
 KosContext *KosContext_NewFromSnapshot(
     KosDynFrame *top,
     PyObject *domain,
