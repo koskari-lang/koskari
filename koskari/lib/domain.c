@@ -82,25 +82,60 @@ static void *tls_stack_reserve(void *stack, size_t *cap, size_t depth) {
 }
 
 
-static void tls_state_free(KosTlsState *s) {
+/* The record lives as long as its thread. It is owned by a capsule in
+   the thread state's dict, which CPython clears when the thread state
+   is destroyed; the TSS slot is only the fast way to reach it. The
+   destructor clears the slot only when the slot still points at the
+   record being freed: a thread state cleared from another thread at
+   interpreter shutdown must not touch that thread's own slot. */
+static const char tls_state_capsule_name[] = "koskari.tls_state";
+static const char tls_state_dict_key[] = "koskari.tls_state";
+
+static void tls_state_capsule_free(PyObject *capsule) {
+  KosTlsState *s = (KosTlsState *) PyCapsule_GetPointer(
+      capsule, tls_state_capsule_name);
+  if (! s) {
+    PyErr_Clear();
+    return;
+  }
+  if (PyThread_tss_get(&tls_state_key) == s)
+    PyThread_tss_set(&tls_state_key, NULL);
   PyMem_Free(s->ctx_stack);
   PyMem_Free(s->eval_stack);
   PyMem_Free(s->token_stack);
   PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
-  PyThread_tss_set(&tls_state_key, NULL);
 }
 
 
 static KosTlsState *get_or_alloc_tls_state(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
-  if (! s) {
-    s = (KosTlsState *) PyMem_Malloc(sizeof(KosTlsState));
-    if (! s)
+  if (s)
+    return s;
+
+  s = (KosTlsState *) PyMem_Malloc(sizeof(KosTlsState));
+  if (! s)
+    return NULL;
+  memset(s, 0, sizeof(KosTlsState));
+
+  {
+    PyObject *capsule = PyCapsule_New(s, tls_state_capsule_name,
+                                      tls_state_capsule_free);
+    PyObject *dict = capsule ? PyThreadState_GetDict() : NULL;
+    if (! capsule || ! dict
+        || PyDict_SetItemString(dict, tls_state_dict_key, capsule) < 0) {
+      if (capsule) {
+        /* the capsule's destructor would free s; do it here instead */
+        PyCapsule_SetDestructor(capsule, NULL);
+        Py_DECREF(capsule);
+      }
+      PyMem_Free(s);
       return NULL;
-    memset(s, 0, sizeof(KosTlsState));
-    PyThread_tss_set(&tls_state_key, s);
+    }
+    Py_DECREF(capsule);
   }
+
+  PyThread_tss_set(&tls_state_key, s);
   return s;
 }
 
@@ -118,12 +153,8 @@ static void push_active_token(KosEvaluatorToken *token) {
 static void pop_active_token(KosEvaluatorToken *token) {
   (void) token;
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
-  if (s && s->token_depth > 0) {
+  if (s && s->token_depth > 0)
     s->token_depth--;
-    if (s->ctx_depth == 0 && s->token_depth == 0
-        && s->python_domain_depth == 0 && s->eval_depth == 0)
-      tls_state_free(s);
-  }
 }
 
 
@@ -255,9 +286,6 @@ int kos_domain_pop_python_scope(const PyObject *domain) {
   s->python_domain_depth--;
   Py_DECREF(s->python_domain_stack[s->python_domain_depth]);
   s->python_domain_stack[s->python_domain_depth] = NULL;
-  if (s->ctx_depth == 0 && s->token_depth == 0
-      && s->python_domain_depth == 0 && s->eval_depth == 0)
-    tls_state_free(s);
   return 0;
 }
 
