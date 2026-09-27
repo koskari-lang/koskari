@@ -97,7 +97,9 @@ struct KosOpResult {
   KosEvaluatorToken is a refcounted PyObject that identifies a koskari_eval
   domain/instance.  It tracks whether the evaluator is currently active on
   this thread (live_depth) and serves as an ownership marker for
-  Continuations and DelimitedContinuations.
+  Continuations and DelimitedContinuations. A context mints its token on
+  the first continuation capture (KosContext_EnsureToken); the depth is
+  maintained only while a token exists.
 */
 
 struct KosEvaluatorToken {
@@ -724,7 +726,8 @@ struct KosContext {
   KosSegment **block;        /* non-owning: &innermost dynnode stack; frozen snapshot */
   PyObject *namespace;       /* borrowed: active namespace object */
 
-  KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
+  KosEvaluatorToken *token; /* ownership marker for continuations; NULL
+                               until the first capture mints it */
   PyObject *domain;         /* KosDomain; mandatory. Inherited from the
                                ambient domain at creation, minted fresh when
                                none is ambient. Identity/lifecycle anchor;
@@ -1221,6 +1224,7 @@ PyObject *KosEvalState_PopUnpackSequence(
   :return: new reference to the context, or NULL on error
 */
 KosContext *KosContext_New(KosDynFrame *top);
+KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 
 
 /*

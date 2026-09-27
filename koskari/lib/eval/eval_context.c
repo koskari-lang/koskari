@@ -44,12 +44,6 @@ KosContext *KosContext_New(KosDynFrame *top) {
   memset((char *) ctx + sizeof(PyObject), 0,
          sizeof(KosContext) - sizeof(PyObject));
 
-  KosContext_TOKEN(ctx) = evaluator_token_new();
-  if (! KosContext_TOKEN(ctx)) {
-    Py_DECREF(ctx);
-    return NULL;
-  }
-
   {
     KosContext *active = kos_ctx_current();
 
@@ -121,6 +115,29 @@ KosContext *KosContext_New(KosDynFrame *top) {
 
   PyObject_GC_Track((PyObject *) ctx);
   return ctx;
+}
+
+
+/**
+   The context's evaluator token, minted here on first use. Only a
+   continuation capture needs one: it is the ownership marker a captured
+   continuation carries, and its live depth answers whether the owning
+   evaluator is on the stack. A context that never captures never
+   allocates one. The depth is seeded from the running flag so a token
+   minted mid-drive reads as live until that drive exits.
+*/
+KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx) {
+
+  KosEvaluatorToken *token = KosContext_TOKEN(ctx);
+
+  if (! token) {
+    token = evaluator_token_new();
+    if (! token)
+      return NULL;
+    token->live_depth = (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) ? 1 : 0;
+    KosContext_TOKEN(ctx) = token;
+  }
+  return token;
 }
 
 

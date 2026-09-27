@@ -3569,8 +3569,8 @@ KosOpResult koskari_eval(
 
   /* FAST-slot code needs a namespace with fast slots. Checked here,
      before anything below is set up, so a refusal returns with nothing
-     to unwind: the cleanup label pops the thread-local eval, context,
-     and token entries that only the pushes below create, and reaching
+     to unwind: the cleanup label pops the thread-local eval and context
+     entries that only the pushes below create, and reaching
      it from an earlier point would pop an enclosing eval's entries
      instead. A resume was checked on its first entry, and a native
      frame carries no code. */

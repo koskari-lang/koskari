@@ -36,7 +36,7 @@
 #include "lib.h"
 
 
-/* === Per-thread TLS state for domain-scoped context and token stacks === */
+/* === Per-thread TLS state for domain-scoped context stacks === */
 
 /* Initial capacity of each per-thread stack; stacks grow by doubling.
    Growth (rather than a fixed cap) is load-bearing: a silently dropped
@@ -53,9 +53,6 @@ typedef struct {
   KosEvalState **eval_stack;
   size_t eval_depth;
   size_t eval_cap;
-  KosEvaluatorToken **token_stack;
-  size_t token_depth;
-  size_t token_cap;
   PyObject **python_domain_stack;
   size_t python_domain_depth;
   size_t python_domain_cap;
@@ -102,7 +99,6 @@ static void tls_state_capsule_free(PyObject *capsule) {
     PyThread_tss_set(&tls_state_key, NULL);
   PyMem_Free(s->ctx_stack);
   PyMem_Free(s->eval_stack);
-  PyMem_Free(s->token_stack);
   PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
 }
@@ -137,24 +133,6 @@ static KosTlsState *get_or_alloc_tls_state(void) {
 
   PyThread_tss_set(&tls_state_key, s);
   return s;
-}
-
-
-static void push_active_token(KosEvaluatorToken *token) {
-  KosTlsState *s = get_or_alloc_tls_state();
-  if (! s)
-    Py_FatalError("koskari: TLS state allocation failed");
-  s->token_stack = (KosEvaluatorToken **) tls_stack_reserve(
-      s->token_stack, &s->token_cap, s->token_depth);
-  s->token_stack[s->token_depth++] = token;
-}
-
-
-static void pop_active_token(KosEvaluatorToken *token) {
-  (void) token;
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
-  if (s && s->token_depth > 0)
-    s->token_depth--;
 }
 
 
@@ -239,7 +217,6 @@ PyObject *kos_domain_current(void) {
 
 
 void kos_domain_push_scope(KosContext *ctx) {
-  push_active_token(KosContext_TOKEN(ctx));
   push_active_ctx(ctx);
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
 }
@@ -248,7 +225,6 @@ void kos_domain_push_scope(KosContext *ctx) {
 void kos_domain_pop_scope(KosContext *ctx) {
   KosEvaluatorToken_DecrementLiveDepth(KosContext_TOKEN(ctx));
   pop_active_ctx();
-  pop_active_token(KosContext_TOKEN(ctx));
 }
 
 

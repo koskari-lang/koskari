@@ -2441,7 +2441,12 @@ static KosContinuation *kos_continuation_capture_segment(
   }
 
   resume_stack = kos_chain_resume_stack(captured_chain, resume_frame);
-  token = KosContext_TOKEN(ctx) ? (PyObject *) KosContext_TOKEN(ctx) : NULL;
+  token = (PyObject *) KosContext_EnsureToken(ctx);
+  if (! token) {
+    if (captured_chain)
+      kos_dynchain_free(captured_chain, NULL);
+    return NULL;
+  }
   k = kos_continuation_create(
       captured_chain,
       resume_pc,
