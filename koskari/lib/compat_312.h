@@ -157,4 +157,22 @@ typedef struct {
   (&((KosInterpreterState312 *) (interp))->ceval)
 
 
+/* === GC tracked test === */
+
+/* Whether the collector holds op: the _gc_next link word of the PyGC_Head
+   that precedes a GC object, non-zero exactly while op is in a collector
+   list. The same read as CPython's _PyObject_GC_IS_TRACKED, whose inline
+   is not in any public header on this version; the head has been two
+   link words ahead of the object since 3.8. Precondition: op's type is a
+   GC type, as every caller here guarantees by construction. */
+static inline int kos_gc_is_tracked(PyObject *op) {
+  return ((const uintptr_t *) op)[-2] != 0;
+}
+
+
+/* A MATCH_CASE site may hold an env resolved from the extern defaults:
+   a dict watcher reports every mutation of the defaults dict. */
+#define KOS_MATCHER_ENV_CACHE 1
+
+
 // The end.

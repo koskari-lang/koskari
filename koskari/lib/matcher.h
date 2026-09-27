@@ -524,14 +524,9 @@ PyObject *KosMatcher_ResetExternDefaults(void);
 
 
 /* A site may hold an env resolved from the extern defaults when it can
-   learn of every change to them: a reset, and on 3.12 and later any
-   mutation of the dict through a dict watcher. Before 3.12 a direct
-   mutation is invisible, so no site caches. */
-#if PY_MINOR_VERSION >= 12
-#define KOS_MATCHER_ENV_CACHE 1
-#else
-#define KOS_MATCHER_ENV_CACHE 0
-#endif
+   learn of every change to them: a reset, and any mutation of the dict
+   through a dict watcher where the version has one. KOS_MATCHER_ENV_CACHE
+   comes from the version's compat header. */
 
 /**
    The version of the extern defaults: bumped by every reset and, where

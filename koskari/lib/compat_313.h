@@ -144,4 +144,28 @@ typedef struct {
 #define KOS_BREAKER_SIGNALS  (1U << 1)  /* _PY_SIGNALS_PENDING_BIT */
 
 
+/* === GC tracked test === */
+
+/* Whether the collector holds op. The free-threaded build keeps the
+   tracked bit in the object header; the default build keeps the object
+   on a collector list, so the _gc_next link word of the PyGC_Head that
+   precedes it is non-zero exactly while tracked. The same read as
+   CPython's _PyObject_GC_IS_TRACKED, whose inline is internal on this
+   version; the head has been two link words ahead of the object since
+   3.8. Precondition: op's type is a GC type, as every caller here
+   guarantees by construction. */
+static inline int kos_gc_is_tracked(PyObject *op) {
+#ifdef Py_GIL_DISABLED
+  return (op->ob_gc_bits & 1u) != 0;   /* _PyGC_BITS_TRACKED */
+#else
+  return ((const uintptr_t *) op)[-2] != 0;
+#endif
+}
+
+
+/* A MATCH_CASE site may hold an env resolved from the extern defaults:
+   a dict watcher reports every mutation of the defaults dict. */
+#define KOS_MATCHER_ENV_CACHE 1
+
+
 // The end.

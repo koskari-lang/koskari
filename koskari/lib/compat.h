@@ -41,6 +41,13 @@
 #endif
 
 
+/* === GC tracked test === */
+
+/* kos_gc_is_tracked(op): whether the collector holds op, read from the
+   object's own GC record the way CPython's internal inline reads it.
+   Defined in each version's compat header, which owns the layout. */
+
+
 /* === Immortal objects === */
 
 /*

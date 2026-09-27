@@ -262,7 +262,7 @@ static inline int KosFunction_TryParkFrame(
      exact template copy and its stack and resume fields are settled by
      kos_dynframe_free before the park is offered. */
   ns = KosDynFrame_NS(frame);
-  if (PyObject_GC_IsTracked(ns) || KosNamespace_BINDS(ns) != NULL)
+  if (kos_gc_is_tracked(ns) || KosNamespace_BINDS(ns) != NULL)
     return 0;
 
 #if KOS_EVAL_SAFETYNET
