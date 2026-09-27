@@ -60,29 +60,52 @@ static PyObject *eager_step_awaitable(
     return NULL;
   }
 
-  /* Get __await__ */
+  /* The await iterator: the type's am_await slot, else __await__ on
+     the instance, else the object is taken as its own iterator. */
   PyObject *await_iter = NULL;
-
-  PyObject *await_method = PyObject_GetAttr(awaitable, str_await);
-  if (! await_method) {
-    /* Maybe it's already an iterator? */
-    PyErr_Clear();
-    await_iter = awaitable;
-    Py_INCREF(await_iter);
-
-  } else {
-    await_iter = PyObject_CallNoArgs(await_method);
-    Py_DECREF(await_method);
-    if (! await_iter)
-      return NULL;
+  {
+    PyTypeObject *tp = Py_TYPE(awaitable);
+    if (tp->tp_as_async && tp->tp_as_async->am_await) {
+      await_iter = tp->tp_as_async->am_await(awaitable);
+      if (! await_iter)
+        return NULL;
+    } else {
+      PyObject *await_method = PyObject_GetAttr(awaitable, str_await);
+      if (! await_method) {
+        PyErr_Clear();
+        await_iter = awaitable;
+        Py_INCREF(await_iter);
+      } else {
+        await_iter = PyObject_CallNoArgs(await_method);
+        Py_DECREF(await_method);
+        if (! await_iter)
+          return NULL;
+      }
+    }
   }
 
   SAYF("[eval] eager_step_awaitable before send(None) (await_iter=%d)\n",
        await_iter ? 1 : 0);
 
+#if PY_MINOR_VERSION >= 10
+  /* First step through the send protocol: am_send when the iterator
+     has it, else tp_iternext for a None send, else a send method. A
+     completion arrives as a value, never as a StopIteration to fetch. */
+  PyObject *result = NULL;
+  PySendResult step = PyIter_Send(await_iter, Py_None, &result);
+  if (step == PYGEN_RETURN) {
+    Py_DECREF(await_iter);
+    return result;
+  }
+  if (step == PYGEN_ERROR) {
+    Py_DECREF(await_iter);
+    return NULL;
+  }
+#else
   /* Try first send(None) */
   PyObject *result = PyObject_CallMethodObjArgs(await_iter, str_send,
                                                 Py_None, NULL);
+#endif
 
   if (result) {
     /* Yielded a value - need to suspend */
@@ -154,7 +177,7 @@ static PyObject *get_await_next(PyObject *val) {
   if (! thing)
     return NULL;
 
-  PyObject *awaitable = PyObject_GetAwaitable(thing);
+  PyObject *awaitable = kos_get_awaitable(thing);
   Py_DECREF(thing);
   return awaitable;
 }

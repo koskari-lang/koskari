@@ -268,10 +268,16 @@ PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type) {
 
 
 /**
-   Return an awaitable (iterator) for o: if o has __await__, call it and
-   return the result; otherwise return NULL. Caller must Py_DECREF the result.
+   The iterator that awaiting o steps: the type's am_await slot when it
+   has one (every class defining __await__ does), else __await__ looked
+   up on the instance and called. No method wrapper is built on the
+   slot path. Caller must Py_DECREF the result.
 */
-PyObject *PyObject_GetAwaitable(PyObject *o) {
+PyObject *kos_get_awaitable(PyObject *o) {
+  PyTypeObject *tp = Py_TYPE(o);
+  if (tp->tp_as_async && tp->tp_as_async->am_await)
+    return tp->tp_as_async->am_await(o);
+
   PyObject *meth = PyObject_GetAttr(o, _str_await);
   if (! meth)
     return NULL;

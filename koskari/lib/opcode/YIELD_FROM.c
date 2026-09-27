@@ -425,7 +425,7 @@ static KosOpResult yield_from_drive_py_async(
     PyObject *send_val = KosDynYieldFrom_PENDING_ARG(yf);
     PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_asend, send_val, NULL);
     if (tmp) {
-      awaitable = PyObject_GetAwaitable(tmp);
+      awaitable = kos_get_awaitable(tmp);
       Py_DECREF(tmp);
     }
 
@@ -436,7 +436,7 @@ static KosOpResult yield_from_drive_py_async(
       PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_athrow, typ, exc,
                                                  Py_None, NULL);
       if (tmp) {
-        awaitable = PyObject_GetAwaitable(tmp);
+        awaitable = kos_get_awaitable(tmp);
         Py_DECREF(tmp);
       }
     }

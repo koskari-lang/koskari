@@ -89,7 +89,7 @@ void kos_iter_close(PyObject *iter) {
     } else {
       PyObject *aw = PyObject_CallMethod(iter, "aclose", NULL);
       if (aw) {
-        PyObject *it = PyObject_GetAwaitable(aw);
+        PyObject *it = kos_get_awaitable(aw);
         Py_DECREF(aw);
         if (it) {
           PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);

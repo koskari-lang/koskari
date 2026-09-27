@@ -327,7 +327,7 @@ static void defer_set_dead_error(KosDefer *self) {
    error propagates.
 */
 static int defer_start_iterating(KosDefer *self) {
-  PyObject *it = PyObject_GetAwaitable(self->u.inner);
+  PyObject *it = kos_get_awaitable(self->u.inner);
   if (! it)
     return -1;
   Py_CLEAR(self->u.inner);
@@ -379,15 +379,12 @@ static PyObject *defer_lookup(PyObject *obj, PyObject *name, int *err) {
 
 
 /**
-   DONE: consume the value by raising StopIteration(value) as a real
-   instance. A bare PyErr_SetObject(PyExc_StopIteration, value) would
-   tuple-splat the value during normalization.
+   Report a completion to a caller on the iterator protocol: raise
+   StopIteration(value) as a real instance, since a bare
+   PyErr_SetObject(PyExc_StopIteration, value) would tuple-splat the
+   value during normalization. Steals value. Always returns NULL.
 */
-static PyObject *defer_finish_done(KosDefer *self) {
-  PyObject *value = self->u.value;
-  self->u.value = NULL;
-  self->state = KOS_DEFER_SPENT;
-
+static PyObject *defer_raise_stop(PyObject *value) {
   PyObject *stop = PyObject_CallOneArg(PyExc_StopIteration, value);
   Py_DECREF(value);
   if (! stop)
@@ -395,6 +392,23 @@ static PyObject *defer_finish_done(KosDefer *self) {
   PyErr_SetObject(PyExc_StopIteration, stop);
   Py_DECREF(stop);
   return NULL;
+}
+
+
+/**
+   DONE: consume the value and report the completion. Returns the value
+   (owned) for the send-slot caller, which reports it as a return.
+*/
+static PyObject *defer_take_done(KosDefer *self) {
+  PyObject *value = self->u.value;
+  self->u.value = NULL;
+  self->state = KOS_DEFER_SPENT;
+  return value;
+}
+
+
+static PyObject *defer_finish_done(KosDefer *self) {
+  return defer_raise_stop(defer_take_done(self));
 }
 
 
@@ -422,7 +436,8 @@ static void defer_raise_thrown(PyObject *typ, PyObject *val, PyObject *tb) {
    SPENT and StopIteration (carrying the return value) or the raised
    error set. The caller-mistake TypeError leaves the state unchanged.
 */
-static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
+static PyObject *defer_forward_send_by_method(
+    KosDefer *self, PyObject *value) {
   PyObject *iter = self->u.iter;
   int err = 0;
   PyObject *result;
@@ -456,6 +471,72 @@ static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
   /* completion (StopIteration) or failure consumes the handle */
   defer_spend(self);
   return NULL;
+}
+
+
+#if PY_MINOR_VERSION >= 10
+/* The inner iterator's am_send slot, or NULL when its type has none. */
+static inline sendfunc defer_inner_am_send(KosDefer *self) {
+  PyTypeObject *tp = Py_TYPE(self->u.iter);
+  return tp->tp_as_async ? tp->tp_as_async->am_send : NULL;
+}
+
+
+/**
+   Forward a send into the ITERATING iterator on the send protocol:
+   through the inner am_send when it has one (a generator, a coroutine,
+   another defer), else through the method protocol with its
+   StopIteration translated back to a return. Completion or failure
+   consumes the handle. *result is owned on RETURN and NEXT, NULL on
+   ERROR.
+*/
+static PySendResult defer_forward_am_send(
+    KosDefer *self, PyObject *value, PyObject **result) {
+  sendfunc am_send = defer_inner_am_send(self);
+  PySendResult r;
+
+  if (am_send) {
+    r = am_send(self->u.iter, value ? value : Py_None, result);
+    if (r != PYGEN_NEXT)
+      defer_spend(self);
+    return r;
+  }
+
+  *result = defer_forward_send_by_method(self, value);
+  if (*result)
+    return PYGEN_NEXT;
+  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    if (PyGen_FetchStopIterationValue(result) < 0)
+      return PYGEN_ERROR;
+    if (! *result)
+      *result = Py_NewRef(Py_None);
+    return PYGEN_RETURN;
+  }
+  return PYGEN_ERROR;
+}
+#endif
+
+
+/**
+   Forward a send into the ITERATING iterator for a caller on the
+   iterator protocol: the inner am_send when it has one, with a return
+   reported as StopIteration; else the method protocol.
+*/
+static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
+#if PY_MINOR_VERSION >= 10
+  sendfunc am_send = defer_inner_am_send(self);
+  if (am_send) {
+    PyObject *result = NULL;
+    PySendResult r = am_send(self->u.iter, value ? value : Py_None, &result);
+    if (r == PYGEN_NEXT)
+      return result;
+    defer_spend(self);
+    if (r == PYGEN_RETURN)
+      return defer_raise_stop(result);
+    return NULL;
+  }
+#endif
+  return defer_forward_send_by_method(self, value);
 }
 
 
@@ -547,6 +628,49 @@ static PyObject *defer_do_send(KosDefer *self, PyObject *value) {
 static PyObject *defer_send(PyObject *self, PyObject *value) {
   return defer_do_send((KosDefer *) self, value);
 }
+
+
+#if PY_MINOR_VERSION >= 10
+/**
+   The send slot asyncio's task step and a yield-from drive use: one
+   step with the outcome as a code and a value, so a completion never
+   builds a StopIteration for the caller to catch and unpack. The
+   states are defer_do_send's; only the reporting differs.
+*/
+static PySendResult defer_am_send(
+    PyObject *self, PyObject *value, PyObject **result) {
+  KosDefer *d = (KosDefer *) self;
+
+  *result = NULL;
+  switch (d->state) {
+    case KOS_DEFER_DONE:
+      if (value && value != Py_None) {
+        PyErr_SetString(PyExc_TypeError,
+                        "can't send non-None value to a"
+                        " just-started coroutine");
+        return PYGEN_ERROR;
+      }
+      *result = defer_take_done(d);
+      return PYGEN_RETURN;
+
+    case KOS_DEFER_DELEGATING:
+      if (defer_start_iterating(d) < 0)
+        return PYGEN_ERROR;
+      return defer_forward_am_send(d, value, result);
+
+    case KOS_DEFER_ITERATING:
+      return defer_forward_am_send(d, value, result);
+
+    case KOS_DEFER_SPENT:
+    case KOS_DEFER_MOVED_FROM:
+      defer_set_dead_error(d);
+      return PYGEN_ERROR;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "defer in unexpected state");
+  return PYGEN_ERROR;
+}
+#endif
 
 
 static PyObject *defer_iternext(PyObject *self) {
@@ -676,6 +800,9 @@ static PyMethodDef defer_methods[] = {
 
 static PyAsyncMethods defer_async_methods = {
   .am_await = defer_await,
+#if PY_MINOR_VERSION >= 10
+  .am_send = defer_am_send,
+#endif
 };
 
 

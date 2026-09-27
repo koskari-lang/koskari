@@ -268,7 +268,10 @@ int koskari_compat_clear(PyObject *mod);
 
 
 /* Our wrapper when the C API symbol is not exported (e.g. 3.12) */
-PyObject *PyObject_GetAwaitable(PyObject *o);
+/* The iterator that awaiting o steps: am_await when the type has the
+   slot, else __await__ looked up and called. New reference, or NULL
+   with an error set. */
+PyObject *kos_get_awaitable(PyObject *o);
 
 
 /**
