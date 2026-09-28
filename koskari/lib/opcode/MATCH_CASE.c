@@ -155,19 +155,10 @@ KOS_OP_HANDLER(MATCH_CASE) {
     RESULT_RAISE();
   }
 
-  /* The capture slot array: inline for the common small table. */
-  Py_ssize_t n_slots = KosMatcher_SLOT_COUNT(matcher);
+  /* The capture slot array: inline for the common small table, spilled
+     to the heap only once the engine is about to run. */
   PyObject *inline_slots[KOS_MATCH_SLOTS_INLINE];
   PyObject **slots = inline_slots;
-  if (n_slots > KOS_MATCH_SLOTS_INLINE) {
-    slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
-    if (unlikely(! slots)) {
-      PyErr_NoMemory();
-      if (matcher_owned)
-        Py_DECREF(matcher);
-      RESULT_RAISE();
-    }
-  }
 
   /* The extern env. Its source is fixed per site by the names the
      compiler stacked, so it is classified once: the stacked values in
@@ -228,26 +219,36 @@ KOS_OP_HANDLER(MATCH_CASE) {
     env = &PyTuple_GET_ITEM(env_tuple, 0);
   }
 
-  if (env_kind == KOS_MATCH_ENV_GENERAL) {
-    KosMatchSubject subj;
-    KosMatchSubject_FromSingle(tail[0], &subj);
-    matched = KosMatcher_RunSlotsVectorcall(
-        m, &subj, n ? tail + 1 : NULL, names, slots);
-    KosMatchSubject_Release(&subj);
-
-  } else {
+  /* The root pre-test settles a rejected arm with no engine setup;
+     the general entry resolves its own env and has no pre-test. */
+  if (env_kind != KOS_MATCH_ENV_GENERAL) {
     int reject = KosMatcher_RootReject(m, tail[0], env);
     if (reject) {
-      Py_ssize_t n_slots_clear = KosMatcher_SLOT_COUNT(m);
-      for (Py_ssize_t i = 0; i < n_slots_clear; i++)
-        slots[i] = NULL;
       matched = reject < 0 ? -1 : 0;
-    } else {
-      KosMatchSubject subj;
-      KosMatchSubject_FromSingle(tail[0], &subj);
-      matched = KosMatcher_RunSlots(m, &subj, env, n_ext, slots);
-      KosMatchSubject_Release(&subj);
+      goto settled;
     }
+  }
+
+  {
+    Py_ssize_t n_slots = KosMatcher_SLOT_COUNT(m);
+    if (n_slots > KOS_MATCH_SLOTS_INLINE) {
+      slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
+      if (unlikely(! slots)) {
+        slots = inline_slots;
+        PyErr_NoMemory();
+        matched = -1;
+        goto settled;
+      }
+    }
+
+    KosMatchSubject subj;
+    KosMatchSubject_FromSingle(tail[0], &subj);
+    if (env_kind == KOS_MATCH_ENV_GENERAL)
+      matched = KosMatcher_RunSlotsVectorcall(
+          m, &subj, n ? tail + 1 : NULL, names, slots);
+    else
+      matched = KosMatcher_RunSlots(m, &subj, env, n_ext, slots);
+    KosMatchSubject_Release(&subj);
   }
 
 settled:
