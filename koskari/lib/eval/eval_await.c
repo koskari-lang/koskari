@@ -60,13 +60,22 @@ static PyObject *eager_step_awaitable(
     return NULL;
   }
 
-  /* The await iterator: an exact native coroutine is its own, as in
-     kos_get_awaitable; else the type's am_await slot, else __await__
-     on the instance, else the object is taken as its own iterator. */
+  /* The await iterator: an exact native coroutine is its own, refused
+     when already awaited, as in kos_get_awaitable; else the type's
+     am_await slot, else __await__ on the instance, else the object is
+     taken as its own iterator. */
   PyObject *await_iter = NULL;
   {
     PyTypeObject *tp = Py_TYPE(awaitable);
     if (PyCoro_CheckExact(awaitable)) {
+      int awaited = kos_coro_awaited(awaitable);
+      if (awaited < 0)
+        return NULL;
+      if (awaited) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "coroutine is being awaited already");
+        return NULL;
+      }
       await_iter = Py_NewRef(awaitable);
     } else if (tp->tp_as_async && tp->tp_as_async->am_await) {
       await_iter = tp->tp_as_async->am_await(awaitable);

@@ -23,7 +23,7 @@
 */
 
 
-#include <Python.h>
+#include "compat.h"
 
 #define STR_CONST(which, val) {                 \
   if (! (which))                              \
@@ -36,6 +36,7 @@
 
 static PyObject *_str_send = NULL;
 static PyObject *_str_await = NULL;
+static PyObject *_str_cr_await = NULL;
 
 
 /* === compatibility functions === */
@@ -268,16 +269,42 @@ PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type) {
 
 
 /**
+   1 when the exact native coroutine coro is suspended under another
+   awaiter (its cr_await is set), 0 when it is not, -1 with an
+   exception set. Read through the cr_await attribute: the yield-from
+   accessor behind it is not exported on any supported version.
+*/
+int kos_coro_awaited(PyObject *coro) {
+  PyObject *yf = PyObject_GetAttr(coro, _str_cr_await);
+  if (! yf)
+    return -1;
+  int awaited = yf != Py_None;
+  Py_DECREF(yf);
+  return awaited;
+}
+
+
+/**
    The iterator that awaiting o steps: an exact native coroutine is its
    own iterator, as CPython's await takes it, with am_send and no
-   wrapper; else the type's am_await slot when it has one (every class
-   defining __await__ does), else __await__ looked up on the instance
-   and called. Caller must Py_DECREF the result.
+   wrapper, refused when it is already suspended under another awaiter;
+   else the type's am_await slot when it has one (every class defining
+   __await__ does), else __await__ looked up on the instance and called.
+   Caller must Py_DECREF the result.
 */
 PyObject *kos_get_awaitable(PyObject *o) {
   PyTypeObject *tp = Py_TYPE(o);
-  if (PyCoro_CheckExact(o))
+  if (PyCoro_CheckExact(o)) {
+    int awaited = kos_coro_awaited(o);
+    if (awaited < 0)
+      return NULL;
+    if (awaited) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "coroutine is being awaited already");
+      return NULL;
+    }
     return Py_NewRef(o);
+  }
   if (tp->tp_as_async && tp->tp_as_async->am_await)
     return tp->tp_as_async->am_await(o);
 
@@ -323,6 +350,7 @@ int koskari_compat_init(const PyObject *mod) {
 
   STR_CONST(_str_send, "send");
   STR_CONST(_str_await, "__await__");
+  STR_CONST(_str_cr_await, "cr_await");
 
   return 0;
 }
@@ -332,6 +360,7 @@ int koskari_compat_clear(PyObject *mod) {
 
   Py_CLEAR(_str_send);
   Py_CLEAR(_str_await);
+  Py_CLEAR(_str_cr_await);
 
   return 0;
 }
