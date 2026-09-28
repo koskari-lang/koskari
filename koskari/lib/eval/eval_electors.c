@@ -1720,12 +1720,8 @@ KOS_ELECTOR(item_const_dict) {
     if (unlikely(! PyDict_CheckExact(obj)))                             \
       TAILCALL(el_miss, es, insn, value);                               \
     VAL_STMT;                                                           \
-    /* the key's hash may run user code before the dict takes its own
-       reference to val (3.9 and 3.10), so hold both across the call */  \
     Py_INCREF(obj);                                                     \
-    Py_INCREF(val);                                                     \
     rc = PyDict_SetItem(obj, KEY, val);                                 \
-    Py_DECREF(val);                                                     \
     Py_DECREF(obj);                                                     \
     if (unlikely(rc < 0))                                               \
       RESULT_RAISE();                                                   \
