@@ -227,17 +227,21 @@ KOS_RESUME_KIND(demand_resume_kind, "demand",
 
 /**
    The drive context for one boundary call: the wrapper's parked host
-   when there is one and no call is running on it, refreshed to the
-   dynamic state in force at this call; otherwise a fresh context. host
-   is NULL when there is no wrapper to park on. New reference.
+   when there is one, taken out of the park before anything else runs
+   so no other call can see it, and refreshed to the dynamic state in
+   force at this call; otherwise a fresh context. host is NULL when
+   there is no wrapper to park on. New reference.
 */
 static KosContext *demand_acquire_host(KosContext **host) {
 
-  if (host && *host && ! (KosContext_FLAGS(*host) & KOS_CTX_RUNNING)) {
-    if (KosContext_TakeSnapshot(*host) < 0)
+  if (host && *host) {
+    KosContext *ctx = *host;
+    *host = NULL;
+    if (KosContext_TakeSnapshot(ctx) < 0) {
+      Py_DECREF(ctx);
       return NULL;
-    Py_INCREF(*host);
-    return *host;
+    }
+    return ctx;
   }
   return KosContext_New(NULL);
 }
