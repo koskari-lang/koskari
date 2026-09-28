@@ -29,7 +29,6 @@
 #include "debug.h"
 
 
-static PyObject *coro_str_send = NULL;
 static PyObject *coro_str_throw = NULL;
 static PyObject *coro_str_close = NULL;
 
@@ -426,7 +425,7 @@ static PyObject *coroutine_raise_at_await(
    Python awaitable the coroutine is waiting on, the drive, and the
    settle. Returns coroutine_settle's code with *out as it describes.
 
-   A waiting coroutine forwards through PyIter_Send, so an awaitable
+   A waiting coroutine forwards through kos_iter_send, so an awaitable
    with a send slot (a generator, a coroutine, a future's iterator)
    completes without building a StopIteration; its return value is the
    send value for the drive that follows.
@@ -485,9 +484,8 @@ static int coroutine_step(
       PyObject *await_result = NULL;
       Py_INCREF(await_iter);
       coro->in_send = 1;
-#if PY_MINOR_VERSION >= 10
-      PySendResult step = PyIter_Send(await_iter, value ? value : Py_None,
-                                      &await_result);
+      PySendResult step = kos_iter_send(await_iter, value ? value : Py_None,
+                                        &await_result);
       coro->in_send = 0;
       Py_DECREF(await_iter);
       if (step == PYGEN_NEXT) {
@@ -498,22 +496,6 @@ static int coroutine_step(
         return coroutine_settle(
             coro, coroutine_drive_await_error(coro, &coro_es), out);
       /* PYGEN_RETURN: await_result is the completion, owned, never NULL */
-#else
-      PyObject *result = PyObject_CallMethodObjArgs(
-          await_iter, coro_str_send, value ? value : Py_None, NULL);
-      coro->in_send = 0;
-      Py_DECREF(await_iter);
-      if (result) {
-        *out = result;   /* still yielding */
-        return 1;
-      }
-      if (! PyErr_ExceptionMatches(PyExc_StopIteration))
-        return coroutine_settle(
-            coro, coroutine_drive_await_error(coro, &coro_es), out);
-      PyGen_FetchStopIterationValue(&await_result);
-      if (! await_result)
-        await_result = Py_NewRef(Py_None);
-#endif
       /* Python awaitable completed: its value is the send value for
          the drive. await_result is uniformly owned; the XDECREF after
          the drive releases it. */
@@ -901,7 +883,6 @@ int koskari_coro_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(coro_str_send, "send");
   STR_CONST(coro_str_throw, "throw");
   STR_CONST(coro_str_close, "close");
 
@@ -918,7 +899,6 @@ int koskari_coro_init(PyObject *mod) {
 
 int koskari_coro_clear(PyObject *mod) {
 
-  Py_CLEAR(coro_str_send);
   Py_CLEAR(coro_str_throw);
   Py_CLEAR(coro_str_close);
 
