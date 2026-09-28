@@ -994,20 +994,15 @@ static int matcher_nominal_miss_is_final(PyObject *inst) {
 
 
 /**
-   isinstance for pattern tests, dispatch-free in both directions when
-   cls is a type whose metaclass is exactly ``type``, which cannot
-   carry a custom ``__instancecheck__``: a nominal identity/MRO hit is
-   the answer isinstance would give, and a nominal miss is final when
-   matcher_nominal_miss_is_final proves the virtual ``__class__`` read
-   cannot change it. Any other metaclass, and a miss the proof does
-   not cover, fall through to PyObject_IsInstance unchanged.
-*/
-/**
    The isinstance answer when it is decided by the type walk alone: 1 or
    0, or -2 when deciding it would run user code (a metaclass
    __instancecheck__, or a __class__ read on a subject whose nominal miss
-   is not final). The root pre-test uses this so the engine's own test is
-   the one place such code runs.
+   is not final). cls is a type whose metaclass is exactly ``type``,
+   which cannot carry a custom ``__instancecheck__``, so a nominal
+   identity/MRO hit is the answer isinstance would give, and a nominal
+   miss is final when matcher_nominal_miss_is_final proves the virtual
+   ``__class__`` read cannot change it. The root pre-test uses this so
+   the engine's own test is the one place such code runs.
 */
 static int matcher_isinstance_pure(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls)) && Py_TYPE(cls) == &PyType_Type) {
@@ -1020,16 +1015,14 @@ static int matcher_isinstance_pure(PyObject *inst, PyObject *cls) {
 }
 
 
+/**
+   isinstance for pattern tests: the type walk's answer where it has
+   one, and PyObject_IsInstance where deciding runs user code.
+*/
 static int matcher_isinstance(PyObject *inst, PyObject *cls) {
-  if (likely(PyType_Check(cls))) {
-    PyTypeObject *meta = Py_TYPE(cls);
-    if (meta == &PyType_Type) {
-      if (PyObject_TypeCheck(inst, (PyTypeObject *) cls))
-        return 1;
-      if (matcher_nominal_miss_is_final(inst))
-        return 0;
-    }
-  }
+  int r = matcher_isinstance_pure(inst, cls);
+  if (r != -2)
+    return r;
   return PyObject_IsInstance(inst, cls);
 }
 
