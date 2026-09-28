@@ -418,8 +418,10 @@ static int agen_attach_gen_flatten(
       /* never driven: the frame rests in the slot; the first install
          enters fresh code rather than reviving a yield */
       KosDynNode *head = (KosDynNode *) KosDynGen_ACTIVE(gen);
+      if (kos_dyn_gen_install_bootstrap(es, gen, head) < 0)
+        return -1;   /* refused (no frame room): the frame stays put */
       KosDynGen_ACTIVE(gen) = NULL;
-      return kos_dyn_gen_install_bootstrap(es, gen, head);
+      return 0;
     }
     return kos_dyn_gen_install(es, gen);
   }
@@ -432,9 +434,11 @@ static int agen_attach_gen_flatten(
 
   } else if (agen->ctx && KosContext_DYN_TOP(agen->ctx)) {
     KosDynNode *head = KosContext_DYN_TOP(agen->ctx);
+    if (kos_dyn_gen_install_bootstrap(es, gen, head) < 0)
+      return -1;
     KosContext_DYN_TOP(agen->ctx) = NULL;
     KosContext_FRAME_TOP(agen->ctx) = NULL;
-    return kos_dyn_gen_install_bootstrap(es, gen, head);
+    return 0;
   }
 
   PyErr_SetString(PyExc_RuntimeError, "async generator has no active frame");
