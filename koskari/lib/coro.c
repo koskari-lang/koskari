@@ -452,9 +452,18 @@ static int coroutine_step(
     return -1;
   }
 
-  /* the first drive from Python builds the context */
-  if (coro->state == KOS_CORO_NEW && coroutine_materialize(coro) < 0)
-    return -1;
+  /* the first drive from Python builds the context; it takes no value,
+     as for a CPython coroutine */
+  if (coro->state == KOS_CORO_NEW) {
+    if (value && value != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "can't send non-None value to a"
+                      " just-started coroutine");
+      return -1;
+    }
+    if (coroutine_materialize(coro) < 0)
+      return -1;
+  }
 
   /* If suspended on yield, pass value as send_val */
   PyObject *send_val = NULL;
