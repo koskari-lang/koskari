@@ -265,6 +265,10 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
     return;
   }
   if (! *host) {
+    /* the park holds nothing of the finished call: the next acquire's
+       snapshot sets both again */
+    Py_CLEAR(KosContext_DOMAIN(ctx));
+    Py_CLEAR(KosContext_PARAM_REFS(ctx));
     *host = ctx;
     return;
   }
