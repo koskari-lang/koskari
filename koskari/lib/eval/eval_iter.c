@@ -271,8 +271,14 @@ static inline KosGetNextResult op_get_next_from_bound(
     if (awaitable)
       return next_from_python_async_iter(es, await_out, iter, result_out,
                                          awaitable);
-    /* __anext__ or GetAwaitable failed, or raised StopAsyncIteration
-       synchronously, which is this iterator's exhaustion. */
+    /* No error: the type lost its __anext__ since the bind classified
+       it; take the sync step, which raises for an iterator with neither.
+       Otherwise __anext__ or GetAwaitable failed, or raised
+       StopAsyncIteration synchronously, which is this iterator's
+       exhaustion. */
+    if (! PyErr_Occurred())
+      return op_get_next_from_bound(es, KOS_IREQ_KIND_PY_SYNC, await_out,
+                                    iter, result_out);
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyErr_Clear();
       return GET_NEXT_EXHAUSTED;
