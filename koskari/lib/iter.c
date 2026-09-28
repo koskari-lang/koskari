@@ -194,8 +194,16 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
 
   if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)
       && ! agen->started) {
-    /* never driven: nothing entered, nothing to unwind */
-    asyncgen_dissociate_chain(agen);
+    /* never driven: nothing entered, nothing to unwind. The unstarted
+       frame still carries the GEN's chain-membership reference (a
+       freeze releases it; no freeze has happened), so the chain is
+       freed through the GEN node, and the owner's reference after. */
+    KosDynGen *gen = (KosDynGen *) agen->gen;
+    KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+    KosDynGen_ACTIVE(gen) = NULL;
+    kos_dynchain_free(active, NULL);
+    kos_dyngen_release(gen);
+    agen->gen = NULL;
 
   } else if (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)) {
     /* suspended: the GeneratorExit drive needs a context; one spliced
