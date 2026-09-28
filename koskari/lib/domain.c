@@ -47,6 +47,12 @@
 #define KOS_TLS_STACK_INITIAL 32
 
 typedef struct {
+  /* the thread state whose dict holds the capsule; NULL once that
+     capsule is gone. Compared against the current thread state to
+     accept the TSS slot's record without a dict lookup. */
+  PyThreadState *owner;
+  /* one count for the capsule, one for the TSS slot that names it */
+  Py_ssize_t refs;
   KosContext **ctx_stack;
   size_t ctx_depth;
   size_t ctx_cap;
@@ -79,14 +85,26 @@ static void *tls_stack_reserve(void *stack, size_t *cap, size_t depth) {
 }
 
 
-/* The record lives as long as its thread. It is owned by a capsule in
-   the thread state's dict, which CPython clears when the thread state
-   is destroyed; the TSS slot is only the fast way to reach it. The
-   destructor clears the slot only when the slot still points at the
-   record being freed: a thread state cleared from another thread at
-   interpreter shutdown must not touch that thread's own slot. */
+/* The record is owned by a capsule in the thread state's dict, which
+   CPython clears when the thread state is destroyed, and by the TSS
+   slot of the OS thread that reached it; each holds one count. The
+   capsule can be destroyed from another OS thread (a thread state
+   cleared at interpreter shutdown, or by an embedder), which cannot
+   reach this thread's slot: the record then lives on the slot's count,
+   with owner cleared, until this thread next enters and releases it. */
 static const char tls_state_capsule_name[] = "koskari.tls_state";
 static PyObject *tls_state_dict_key = NULL;  /* interned "koskari.tls_state" */
+
+
+static void tls_state_release(KosTlsState *s) {
+  if (--s->refs > 0)
+    return;
+  PyMem_Free(s->ctx_stack);
+  PyMem_Free(s->eval_stack);
+  PyMem_Free(s->python_domain_stack);
+  PyMem_Free(s);
+}
+
 
 static void tls_state_capsule_free(PyObject *capsule) {
   KosTlsState *s = (KosTlsState *) PyCapsule_GetPointer(
@@ -95,42 +113,61 @@ static void tls_state_capsule_free(PyObject *capsule) {
     PyErr_Clear();
     return;
   }
-  if (PyThread_tss_get(&tls_state_key) == s)
+  s->owner = NULL;
+  if (PyThread_tss_get(&tls_state_key) == s) {
     PyThread_tss_set(&tls_state_key, NULL);
-  PyMem_Free(s->ctx_stack);
-  PyMem_Free(s->eval_stack);
-  PyMem_Free(s->python_domain_stack);
-  PyMem_Free(s);
+    tls_state_release(s);
+  }
+  tls_state_release(s);
 }
 
 
 /**
-   The record the TSS slot names, when the current thread state's dict
-   still owns it; NULL when the slot is empty or stale. The slot is
-   keyed by OS thread and the record by thread state, and the two come
-   apart when a thread state is cleared or replaced from another OS
-   thread: the record is freed with the capsule and this thread's slot
-   keeps pointing at it. The dict entry is the owner, so it decides.
+   The record for the current thread state, or NULL when it has none.
+   The TSS slot answers when its record's owner is the current thread
+   state. Otherwise the slot's record, if any, belongs to another thread
+   state or to a capsule already destroyed, and is released; the current
+   thread state's dict then supplies the record, adopted into the slot
+   with its own count. The key lookup cannot raise: the key is an
+   interned str.
 */
 static KosTlsState *tls_state_current(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  PyThreadState *ts = PyThreadState_Get();
   PyObject *dict;
   PyObject *capsule;
 
-  if (! s)
-    return NULL;
-  dict = PyThreadState_GetDict();
+  if (s) {
+    if (likely(s->owner == ts))
+      return s;
+    PyThread_tss_set(&tls_state_key, NULL);
+    tls_state_release(s);
+  }
+
+  dict = tls_state_dict_key ? PyThreadState_GetDict() : NULL;
   if (! dict)
-    return s;
+    return NULL;
   capsule = PyDict_GetItemWithError(dict, tls_state_dict_key);
-  if (capsule && PyCapsule_GetPointer(capsule, tls_state_capsule_name) == s)
-    return s;
-  PyErr_Clear();
-  PyThread_tss_set(&tls_state_key, NULL);
-  return NULL;
+  if (! capsule)
+    return NULL;
+  s = (KosTlsState *) PyCapsule_GetPointer(capsule, tls_state_capsule_name);
+  if (! s) {
+    PyErr_Clear();
+    return NULL;
+  }
+  s->refs++;
+  PyThread_tss_set(&tls_state_key, s);
+  return s;
 }
 
 
+/**
+   The current thread state's record, allocated when it has none: owned
+   by a capsule in the thread state's dict and by the TSS slot. With the
+   module cleared (the dict key gone) the slot's count is the only one,
+   so a finalizer entering the evaluator during interpreter teardown
+   still has a record.
+*/
 static KosTlsState *get_or_alloc_tls_state(void) {
   KosTlsState *s = tls_state_current();
   if (s)
@@ -140,15 +177,16 @@ static KosTlsState *get_or_alloc_tls_state(void) {
   if (! s)
     return NULL;
   memset(s, 0, sizeof(KosTlsState));
+  s->refs = 1;   /* the slot's */
 
-  {
+  if (tls_state_dict_key) {
     PyObject *capsule = PyCapsule_New(s, tls_state_capsule_name,
                                       tls_state_capsule_free);
     PyObject *dict = capsule ? PyThreadState_GetDict() : NULL;
     if (! capsule || ! dict
         || PyDict_SetItem(dict, tls_state_dict_key, capsule) < 0) {
       if (capsule) {
-        /* the capsule's destructor would free s; do it here instead */
+        /* the capsule's destructor would release s; do it here instead */
         PyCapsule_SetDestructor(capsule, NULL);
         Py_DECREF(capsule);
       }
@@ -156,6 +194,8 @@ static KosTlsState *get_or_alloc_tls_state(void) {
       return NULL;
     }
     Py_DECREF(capsule);
+    s->owner = PyThreadState_Get();
+    s->refs++;   /* the capsule's */
   }
 
   PyThread_tss_set(&tls_state_key, s);
