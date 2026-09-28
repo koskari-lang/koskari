@@ -268,13 +268,16 @@ PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type) {
 
 
 /**
-   The iterator that awaiting o steps: the type's am_await slot when it
-   has one (every class defining __await__ does), else __await__ looked
-   up on the instance and called. No method wrapper is built on the
-   slot path. Caller must Py_DECREF the result.
+   The iterator that awaiting o steps: an exact native coroutine is its
+   own iterator, as CPython's await takes it, with am_send and no
+   wrapper; else the type's am_await slot when it has one (every class
+   defining __await__ does), else __await__ looked up on the instance
+   and called. Caller must Py_DECREF the result.
 */
 PyObject *kos_get_awaitable(PyObject *o) {
   PyTypeObject *tp = Py_TYPE(o);
+  if (PyCoro_CheckExact(o))
+    return Py_NewRef(o);
   if (tp->tp_as_async && tp->tp_as_async->am_await)
     return tp->tp_as_async->am_await(o);
 
