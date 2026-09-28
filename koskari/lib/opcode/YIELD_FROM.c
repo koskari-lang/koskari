@@ -458,6 +458,12 @@ static KosOpResult yield_from_drive_py_async(
   if (! awaitable) {
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration))
       return yield_from_finish_stop_async(es, yf);
+    /* no error: the type lost its __anext__ since the bind classified
+       it; the kind is fixed, so the step cannot be taken another way */
+    if (! PyErr_Occurred())
+      PyErr_Format(PyExc_TypeError,
+                   "'%.200s' object is no longer an async iterator",
+                   Py_TYPE(delegate)->tp_name);
     return EVAL_RAISE();
   }
 
