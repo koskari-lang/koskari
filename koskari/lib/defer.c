@@ -570,7 +570,11 @@ static PySendResult defer_forward_am_send(
   PySendResult r;
 
   if (am_send) {
-    r = am_send(self->u.iter, value ? value : Py_None, result);
+    /* the step can spend this defer from inside the inner body (a close
+       on it), dropping u.iter's reference while the step is in flight */
+    PyObject *iter = Py_NewRef(self->u.iter);
+    r = am_send(iter, value ? value : Py_None, result);
+    Py_DECREF(iter);
     if (r != PYGEN_NEXT)
       defer_spend(self);
     return r;
@@ -601,7 +605,9 @@ static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
   sendfunc am_send = defer_inner_am_send(self);
   if (am_send) {
     PyObject *result = NULL;
-    PySendResult r = am_send(self->u.iter, value ? value : Py_None, &result);
+    PyObject *iter = Py_NewRef(self->u.iter);  /* see defer_forward_am_send */
+    PySendResult r = am_send(iter, value ? value : Py_None, &result);
+    Py_DECREF(iter);
     if (r == PYGEN_NEXT)
       return result;
     defer_spend(self);
