@@ -221,10 +221,9 @@ static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
   KosDynFrame *head = fn->cached_frame;
 
   if (head) {
-    KosDynFrame *next = (KosDynFrame *) KosDynFrame_BACK_FRAME(head);
-    if (next)
-      KosDynFrame_DEPTH(next) = KosDynFrame_DEPTH(head) - 1;
-    fn->cached_frame = next;
+    /* every parked frame's depth is one more than its successor's,
+       set at the park, so next already carries its own */
+    fn->cached_frame = (KosDynFrame *) KosDynFrame_BACK_FRAME(head);
     KosDynFrame_BACK_FRAME(head) = NULL;
   }
   return head;
