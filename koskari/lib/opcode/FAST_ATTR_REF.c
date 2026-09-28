@@ -24,14 +24,15 @@ KOS_OP_HANDLER(FAST_ATTR_REF) {
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
   size_t idx = (size_t) KosExtra_IMM(row, 0);
-  PyObject *obj, *obj_ref;
-
-  /* The receiver is borrowed from its slot: the ref's constructor
-     takes its own reference and runs no user code. */
-  KOS_NS_FAST_BORROW(obj, obj_ref, ns, idx, { RESULT_RAISE(); });
+  /* The receiver is held owned across the constructor: its allocation
+     can run a collection, and a finalizer there can rebind the slot the
+     receiver was read from (3.9 to 3.11 collect synchronously). */
+  PyObject *obj = kos_ns_fast_deref(ns, idx);
+  if (! obj)
+    RESULT_RAISE();
 
   PyObject *ref = KosAttributeRef_New(attr_name, obj, attr_name);
-  Py_XDECREF(obj_ref);
+  Py_DECREF(obj);
   if (! ref)
     RESULT_RAISE();
   RESULT_STEAL(es, ref);
