@@ -206,7 +206,6 @@ KOS_OP_HANDLER(MATCH_CASE) {
 
   } else if (env_kind == KOS_MATCH_ENV_DEFAULTS) {
     PyObject *env_tuple = NULL;
-#if KOS_MATCHER_ENV_CACHE
     if (slot && slot->u.matcher.env
         && slot->u.matcher.env_version == KosMatcher_ExternDefaultsVersion()) {
       /* held for the run: a type test below may change the defaults and
@@ -214,7 +213,6 @@ KOS_OP_HANDLER(MATCH_CASE) {
       env_owned = Py_NewRef(slot->u.matcher.env);
       env_tuple = env_owned;
     }
-#endif
     if (! env_tuple) {
       env_owned = KosMatcher_ResolveDefaultEnv(m);
       if (unlikely(! env_owned)) {
@@ -222,12 +220,10 @@ KOS_OP_HANDLER(MATCH_CASE) {
         goto settled;
       }
       env_tuple = env_owned;
-#if KOS_MATCHER_ENV_CACHE
       if (slot) {
         Py_XSETREF(slot->u.matcher.env, Py_NewRef(env_owned));
         slot->u.matcher.env_version = KosMatcher_ExternDefaultsVersion();
       }
-#endif
     }
     env = &PyTuple_GET_ITEM(env_tuple, 0);
   }

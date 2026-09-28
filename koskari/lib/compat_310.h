@@ -77,10 +77,15 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 }
 
 
-/* A MATCH_CASE site may hold an env resolved from the extern defaults
-   only when it can learn of every mutation of the defaults dict; this
-   version has no dict watcher, so no site caches. */
-#define KOS_MATCHER_ENV_CACHE 0
+/* The version of the extern defaults dict is its ma_version_tag: a
+   global counter stamped on the dict at creation and at every mutation,
+   so a reset's new dict reads different too. No dict watcher here, and
+   none is needed for this. */
+#define KOS_MATCHER_DEFAULTS_WATCHER 0
+
+static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
+  return ((PyDictObject *) dict)->ma_version_tag;
+}
 
 /* PyDict_SetItem runs the key lookup, which can compare against an
    existing key with a Python __eq__, before it takes its reference to

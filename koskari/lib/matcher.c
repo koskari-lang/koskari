@@ -2398,11 +2398,11 @@ static PyObject *matcher_repr(PyObject *self) {
 
 static PyObject *kos_matcher_extern_defaults = NULL;
 
+#if KOS_MATCHER_DEFAULTS_WATCHER
 /* See KosMatcher_ExternDefaultsVersion. Starts above zero so a slot
    zeroed at allocation never reads as current. */
 static uint64_t kos_matcher_defaults_version = 1;
 
-#if KOS_MATCHER_ENV_CACHE
 static int kos_matcher_defaults_watcher = -1;
 
 static int matcher_defaults_watch(
@@ -2419,7 +2419,15 @@ static int matcher_defaults_watch(
 
 
 uint64_t KosMatcher_ExternDefaultsVersion(void) {
+#if KOS_MATCHER_DEFAULTS_WATCHER
   return kos_matcher_defaults_version;
+#else
+  /* dict tags start at one, so a slot zeroed at allocation never reads
+     as current; with no dict yet there is nothing to be current with */
+  return kos_matcher_extern_defaults
+      ? kos_matcher_defaults_dict_version(kos_matcher_extern_defaults)
+      : 0;
+#endif
 }
 
 
@@ -2458,8 +2466,8 @@ PyObject *KosMatcher_ExternDefaults(void) {
       Py_CLEAR(kos_matcher_extern_defaults);
       return NULL;
     }
+#if KOS_MATCHER_DEFAULTS_WATCHER
     kos_matcher_defaults_version++;
-#if KOS_MATCHER_ENV_CACHE
     if (kos_matcher_defaults_watcher < 0)
       kos_matcher_defaults_watcher = PyDict_AddWatcher(matcher_defaults_watch);
     if (kos_matcher_defaults_watcher < 0
@@ -2477,7 +2485,9 @@ PyObject *KosMatcher_ExternDefaults(void) {
 
 PyObject *KosMatcher_ResetExternDefaults(void) {
   Py_CLEAR(kos_matcher_extern_defaults);
+#if KOS_MATCHER_DEFAULTS_WATCHER
   kos_matcher_defaults_version++;
+#endif
   return KosMatcher_ExternDefaults();
 }
 

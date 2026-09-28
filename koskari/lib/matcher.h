@@ -523,16 +523,13 @@ PyObject *KosMatcher_ExternDefaults(void);
 PyObject *KosMatcher_ResetExternDefaults(void);
 
 
-/* A site may hold an env resolved from the extern defaults when it can
-   learn of every change to them: a reset, and any mutation of the dict
-   through a dict watcher where the version has one. KOS_MATCHER_ENV_CACHE
-   comes from the version's compat header. */
-
 /**
-   The version of the extern defaults: bumped by every reset and, where
-   the cache is enabled, by every mutation of the dict. An env resolved
-   under one version is exactly what resolution yields while the
-   version holds.
+   The version of the extern defaults: a number that changes on every
+   reset and every mutation of the dict, so an env resolved under one
+   version is what resolution yields while the version holds. The
+   compat header decides its source: the dict's own version tag, or a
+   counter bumped by a dict watcher where the tag is deprecated
+   (KOS_MATCHER_DEFAULTS_WATCHER).
  */
 uint64_t KosMatcher_ExternDefaultsVersion(void);
 
