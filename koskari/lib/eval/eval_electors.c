@@ -1741,8 +1741,10 @@ KOS_ELECTOR(item_const_dict) {
   }
 
 /* The generic body of a store family: the object protocol with the
-   operands read the same way, the value held across the call. */
-#define KOS_ITEM_CONST_STORE_GENERIC(FAMILY, NEED, KEY, OBJ_STMT_OWNED,     \
+   operands read the same way. A stack operand is held by the operand
+   stack until SETTLE and a pool constant by the code object; only a
+   fast-slot deref yields a reference of its own, released after. */
+#define KOS_ITEM_CONST_STORE_GENERIC(FAMILY, NEED, KEY, OBJ_STMT,       \
                                      VAL_STMT, SETTLE)                  \
   KOS_ELECTOR(FAMILY##_generic) {                                       \
     const KosExtra *row = KosOp_ROW(insn);                              \
@@ -1750,19 +1752,18 @@ KOS_ELECTOR(item_const_dict) {
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, NEED);         \
     PyObject *obj, *val;                                                \
-    PyObject *val_owned = NULL;  /* a deref's own reference, if any */    \
+    PyObject *obj_owned = NULL;  /* a deref's own reference, if any */    \
+    PyObject *val_owned = NULL;                                         \
     int rc;                                                             \
     (void) row; (void) ns;                                              \
     kos_elector_generic_tick(KosOp_SLOT(insn));                         \
     if (unlikely(NEED && ! tail))                                       \
       RESULT_RAISE();                                                   \
-    OBJ_STMT_OWNED;                                                     \
+    OBJ_STMT;                                                           \
     VAL_STMT;                                                           \
-    Py_INCREF(val);                                                     \
     rc = PyObject_SetItem(obj, KEY, val);                               \
-    Py_DECREF(val);                                                     \
     Py_XDECREF(val_owned);                                              \
-    Py_DECREF(obj);                                                     \
+    Py_XDECREF(obj_owned);                                              \
     if (unlikely(rc < 0))                                               \
       RESULT_RAISE();                                                   \
     SETTLE;                                                             \
@@ -1771,14 +1772,14 @@ KOS_ELECTOR(item_const_dict) {
 
 /* obj: the stack top below the value (NEED 2) or the top (NEED 1) */
 #define KOS_OBJ_STACK(n)          obj = tail[0]
-#define KOS_OBJ_STACK_OWNED(n)    obj = Py_NewRef(tail[0])
 /* obj: a fast slot, borrowed, or a miss; owned form derefs (raises) */
 #define KOS_OBJ_FAST(k)                                                 \
   do { obj = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, k));       \
        if (unlikely(! obj)) TAILCALL(el_miss, es, insn, value); } while (0)
 #define KOS_OBJ_FAST_OWNED(k)                                           \
   do { obj = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, k));      \
-       if (unlikely(! obj)) RESULT_RAISE(); } while (0)
+       if (unlikely(! obj)) RESULT_RAISE();                             \
+       obj_owned = obj; } while (0)
 /* val: the stack top, the pool, or a fast slot; the generic form of
    the fast slot derefs so an empty slot raises */
 #define KOS_VAL_STACK             val = tail[NEED_ - 1]
@@ -1790,13 +1791,13 @@ KOS_ELECTOR(item_const_dict) {
    the only one: it stays owned across the store and is released after */
 #define KOS_VAL_FAST_OWNED(k)                                           \
   do { val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, k));      \
-       if (unlikely(! val)) { Py_DECREF(obj); RESULT_RAISE(); }          \
+       if (unlikely(! val)) { Py_XDECREF(obj_owned); RESULT_RAISE(); }   \
        val_owned = val; } while (0)
 
 /* ITEM_CONST_STORE: stack [obj, val]; key is the op's const */
 #define NEED_ 2
 KOS_ITEM_CONST_STORE_GENERIC(item_const_store, 2, KosOp_OBJ(insn),
-    KOS_OBJ_STACK_OWNED(0), KOS_VAL_STACK,
+    KOS_OBJ_STACK(0), KOS_VAL_STACK,
     kos_stack_drop_noerr_fast(bl, 2))
 KOS_ITEM_CONST_STORE_BODIES(item_const_store, 2, KosOp_OBJ(insn),
     KOS_OBJ_STACK(0), KOS_VAL_STACK, 0, 0,
@@ -1807,7 +1808,7 @@ KOS_ITEM_CONST_STORE_BODIES(item_const_store, 2, KosOp_OBJ(insn),
 #define NEED_ 1
 KOS_ITEM_CONST_STORE_GENERIC(item_const_store_const, 1,
     KosExtra_OBJ(row, 0),
-    KOS_OBJ_STACK_OWNED(0), KOS_VAL_CONST(1),
+    KOS_OBJ_STACK(0), KOS_VAL_CONST(1),
     kos_stack_drop_noerr_fast(bl, 1))
 KOS_ITEM_CONST_STORE_BODIES(item_const_store_const, 1,
     KosExtra_OBJ(row, 0),
@@ -1817,7 +1818,7 @@ KOS_ITEM_CONST_STORE_BODIES(item_const_store_const, 1,
 /* ITEM_CONST_STORE_FAST: stack [obj]; row: key, val slot */
 KOS_ITEM_CONST_STORE_GENERIC(item_const_store_fast, 1,
     KosExtra_OBJ(row, 0),
-    KOS_OBJ_STACK_OWNED(0), KOS_VAL_FAST_OWNED(1),
+    KOS_OBJ_STACK(0), KOS_VAL_FAST_OWNED(1),
     kos_stack_drop_noerr_fast(bl, 1))
 KOS_ITEM_CONST_STORE_BODIES(item_const_store_fast, 1,
     KosExtra_OBJ(row, 0),
@@ -1938,7 +1939,6 @@ KOS_ELECTOR_ELECT(fast_item_const_store_fast,
 #undef KOS_ITEM_CONST_STORE_GENERIC
 #undef KOS_ITEM_CONST_SEQ_BODY
 #undef KOS_OBJ_STACK
-#undef KOS_OBJ_STACK_OWNED
 #undef KOS_OBJ_FAST
 #undef KOS_OBJ_FAST_OWNED
 #undef KOS_VAL_STACK
