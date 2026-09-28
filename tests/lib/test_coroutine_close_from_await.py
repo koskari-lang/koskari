@@ -14,10 +14,10 @@
 """
 tests.lib.test_coroutine_close_from_await
 
-A Koskari coroutine waiting on a Python awaitable forwards each send and
-throw into it. Code inside that awaitable which calls close, send, or
-throw on the waiting coroutine is refused with RuntimeError, and the
-awaitable it runs in stays alive for the rest of the step.
+A Koskari coroutine waiting on a Python awaitable forwards each send,
+throw, and close into it. Code inside that awaitable which calls close,
+send, or throw on the waiting coroutine is refused with RuntimeError,
+and the awaitable it runs in stays alive for the rest of the step.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -36,6 +36,29 @@ pytestmark = pytest.mark.phase_lib
 class Parker:
     def __await__(self):
         yield "parked"
+        return "woken"
+
+
+class Reenter:
+    """
+    Awaitable whose finally calls back into the waiting coroutine
+    """
+
+    def __init__(self, action, holder, outcome):
+        self.action = action
+        self.holder = holder
+        self.outcome = outcome
+
+    def __await__(self):
+        try:
+            yield "parked"
+        finally:
+            try:
+                self.action(self.holder["coro"])
+            except RuntimeError:
+                self.outcome["nested"] = "refused"
+            else:
+                self.outcome["nested"] = "accepted"
         return "woken"
 
 
@@ -112,6 +135,24 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(StopIteration) as caught:
             coro.throw(KeyError("k"))
         self.assertEqual(caught.exception.value, "refused")
+
+    async def check_reenter_during_close(self, action):
+        mod = await self.load()
+        holder = {}
+        outcome = {}
+
+        coro = mod["waiter"](Reenter(action, holder, outcome))
+        holder["coro"] = coro
+        self.assertEqual(coro.send(None), "parked")
+        self.assertIsNone(coro.close())
+        self.assertEqual(outcome, {"nested": "refused"})
+        self.assertIn("done", repr(coro))
+
+    async def test_close_from_inside_a_forwarded_close_is_refused(self):
+        await self.check_reenter_during_close(lambda coro: coro.close())
+
+    async def test_send_from_inside_a_forwarded_close_is_refused(self):
+        await self.check_reenter_during_close(lambda coro: coro.send(None))
 
 
 # The end.

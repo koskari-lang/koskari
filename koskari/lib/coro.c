@@ -671,13 +671,20 @@ static PyObject *coroutine_close(PyObject *self) {
     Py_RETURN_NONE;
   }
 
-  /* Close any pending Python awaitable */
+  /* Close any pending Python awaitable. The iterator is held and
+     in_send set across the call, as in coroutine_step: its close can
+     run user code that calls back into this coroutine. */
   {
     KosEvalState coro_es;
     KosEvalState_Init(&coro_es, coro->ctx);
-    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    if (await_iter) {
+      Py_INCREF(await_iter);
+      coro->in_send = 1;
       PyObject *result = PyObject_CallMethodObjArgs(
-          KosEvalState_PythonAwaitIter(&coro_es), coro_str_close, NULL);
+          await_iter, coro_str_close, NULL);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
       Py_XDECREF(result);
       PyErr_Clear();
       KosEvalState_PythonAwaitClearIter(&coro_es);
