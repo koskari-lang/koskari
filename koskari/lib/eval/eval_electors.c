@@ -1537,6 +1537,10 @@ static inline KosThreadFn kos_elector_fast_item_const_classify(
     return el_fast_item_const_dict;
   if (! PyLong_CheckExact(key) || ! kos_long_as_ll(key, &i))
     return NULL;
+  /* the slot holds a Py_ssize_t: a constant beyond it stays generic so
+     it raises IndexError instead of wrapping (32-bit Py_ssize_t) */
+  if (i < (long long) PY_SSIZE_T_MIN || i > (long long) PY_SSIZE_T_MAX)
+    return NULL;
   if (PyList_CheckExact(obj)) {
     slot->u.elector.index = (Py_ssize_t) i;
     return el_fast_item_const_list;
@@ -1859,6 +1863,10 @@ static inline KosThreadFn kos_item_const_body(
   if (PyDict_CheckExact(obj))
     return dict_body;
   if (! PyLong_CheckExact(key) || ! kos_long_as_ll(key, &i))
+    return NULL;
+  /* the slot holds a Py_ssize_t: a constant beyond it stays generic so
+     it raises IndexError instead of wrapping (32-bit Py_ssize_t) */
+  if (i < (long long) PY_SSIZE_T_MIN || i > (long long) PY_SSIZE_T_MAX)
     return NULL;
   if (PyList_CheckExact(obj)) {
     slot->u.elector.index = (Py_ssize_t) i;
