@@ -615,9 +615,10 @@ struct KosCacheSlot {
        the teardown arm is a no-op. */
     struct {
       KosThreadFn fn;          /* elected body; the generic body once demoted */
-      Py_ssize_t index;        /* an operand a body reads off its site once
+      long long index;         /* an operand a body reads off its site once
                                   at election: the C index a constant key
-                                  elects a sequence body with */
+                                  elects a sequence body with, or the C
+                                  value of an int operand constant */
       uint8_t misses;          /* guard misses since the election; drives
                                   the demotion */
       uint8_t mode;            /* KosElectorMode */

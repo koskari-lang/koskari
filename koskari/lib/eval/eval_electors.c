@@ -87,6 +87,15 @@
    site with no slot only counts as uncached; the body still runs. The
    kind is stored last so a slot never reads as elected before its body
    is in place. */
+/* An int constant's C value, read at the election for the body to
+   take off its site; a site with no slot runs the body once from the
+   classification and reads the constant itself. */
+static inline void kos_elector_keep_const(KosCacheSlot *slot, long long b) {
+  if (slot)
+    slot->u.elector.index = b;
+}
+
+
 static inline void kos_elector_elect(KosCacheSlot *slot, KosThreadFn fn) {
   if (! slot) {
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_UNCACHED);
@@ -385,6 +394,20 @@ KOS_ELECTOR(miss) {
     if (unlikely(! kos_long_as_ll((l), &a) || ! kos_long_as_ll((r), &b))) \
       TAILCALL(DECLINE, es, insn, value);                               \
   } while (0)
+/* the right operand is the site's pool constant, read once at the
+   election into the slot, so only the left is extracted here; a site
+   with no slot runs the elected body straight from its classification
+   and reads the constant itself */
+#define KOS_INT_EXTRACT_CONST(l, r, DECLINE)                            \
+  do {                                                                  \
+    KosCacheSlot *kos_ec_slot_ = KosOp_SLOT(insn);                      \
+    if (unlikely(! kos_long_as_ll((l), &a)))                            \
+      TAILCALL(DECLINE, es, insn, value);                               \
+    if (likely(kos_ec_slot_))                                           \
+      b = kos_ec_slot_->u.elector.index;                                \
+    else if (unlikely(! kos_long_as_ll((r), &b)))                       \
+      TAILCALL(DECLINE, es, insn, value);                               \
+  } while (0)
 #define KOS_INT_COMPARE         kos_ll_compare
 #define KOS_INT_MATERIALISE     kos_long_fast_result
 #define KOS_INT_FAST(NAME)      long_fast_##NAME##_ll
@@ -403,6 +426,8 @@ KOS_ELECTOR(miss) {
     a = PyFloat_AS_DOUBLE(l);                                           \
     b = PyFloat_AS_DOUBLE(r);                                           \
   } while (0)
+/* a float constant's extract is one load; nothing to keep in the slot */
+#define KOS_FLOAT_EXTRACT_CONST  KOS_FLOAT_EXTRACT
 #define KOS_FLOAT_COMPARE       kos_double_compare
 #define KOS_FLOAT_MATERIALISE   kos_float_fast_result
 #define KOS_FLOAT_FAST(NAME)    float_fast_##NAME##_d
@@ -481,7 +506,8 @@ KOS_ELECTOR(miss) {
    the family's operand release (DROP) runs first. A slot the peek
    cannot read (empty, or a ref kind that needs the general deref) is
    a miss; the generic body raises or resolves it. */
-#define KOS_SLOT_ELECTOR(FAMILY, KIND, kind, NAME, RHS, RHS_GUARDED, DROP) \
+#define KOS_SLOT_ELECTOR(FAMILY, KIND, kind, NAME, RHS, RHS_GUARDED,    \
+                         EXTRACT, DROP)                                 \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
@@ -500,7 +526,7 @@ KOS_ELECTOR(miss) {
     if (unlikely(! acc || ! KOS_##KIND##_CHECK(acc)                     \
                  || (RHS_GUARDED && ! KOS_##KIND##_CHECK(rhs))))        \
       TAILCALL(el_miss, es, insn, value);                               \
-    KOS_##KIND##_EXTRACT(acc, rhs, kos_elector_generic_of(insn));       \
+    EXTRACT(acc, rhs, kos_elector_generic_of(insn));                    \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b,                   \
                        raw ? acc : NULL, RHS_GUARDED ? rhs : NULL, out); \
@@ -646,6 +672,15 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
 KOS_NUMERIC_FOLD_ELECTORS(KOS_PAIR_FOLD_ELECTOR, pair_fold)
 
 
+/* Replace the stack top with an owned value. */
+static inline void kos_elector_replace_top(KosSegment **bl, PyObject *val) {
+  KosSegment *s = *bl;
+  PyObject *old = s->objs[s->len - 1];
+  s->objs[s->len - 1] = val;
+  Py_DECREF(old);
+}
+
+
 /* The top of the stack, borrowed, or NULL with an error set. */
 KOS_OP_INLINE PyObject *kos_stack_peek_top(KosEvalState *es) {
   PyObject *const *top = kos_stack_tail_ptr_fast(*KosEvalState_BLOCK(es), 1);
@@ -658,6 +693,7 @@ KOS_OP_INLINE PyObject *kos_stack_peek_top(KosEvalState *es) {
   KOS_SLOT_ELECTOR(                                                     \
       FAMILY, KIND, kind, NAME,                                         \
       kos_stack_peek_top(es), 1,                                        \
+      KOS_##KIND##_EXTRACT,                                             \
       kos_stack_drop1_fast(KosEvalState_BLOCK(es)))
 
 KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_BODY, fast_inplace)
@@ -665,11 +701,13 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_BODY, fast_inplace)
 
 /* FAST_INPLACE_CONST: the operand is the pool constant on the row,
    borrowed; nothing to drop. Its type was checked at the election and
-   cannot change, so the body does not guard it. */
+   cannot change, so the body does not guard it, and an int constant's
+   C value was read into the slot then. */
 #define KOS_FAST_INPLACE_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)  \
   KOS_SLOT_ELECTOR(                                                     \
       FAMILY, KIND, kind, NAME,                                         \
       KosExtra_OBJ(row, 2), 0,                                          \
+      KOS_##KIND##_EXTRACT_CONST,                                       \
       ((void) 0))
 
 KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
@@ -678,8 +716,9 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
 /* OBJECT_OPERAND_CONST: the left operand is the top of the stack, the
    right the pool constant on the row, borrowed. The constant's kind was
    checked at the election and cannot change, so only the top is
-   guarded. The top is offered as the result's home, as the pair body
-   offers its left operand; else the result replaces it. */
+   guarded, and an int constant's C value was read into the slot then.
+   The top is offered as the result's home, as the pair body offers its
+   left operand; else the result replaces it. */
 #define KOS_OPERAND_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)       \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
@@ -693,14 +732,11 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
       RESULT_RAISE();                                                   \
     if (unlikely(! KOS_##KIND##_CHECK(top[0])))                         \
       TAILCALL(el_miss, es, insn, value);                               \
-    KOS_##KIND##_EXTRACT(top[0], rhs, kos_elector_generic_of(insn));    \
+    KOS_##KIND##_EXTRACT_CONST(top[0], rhs, kos_elector_generic_of(insn)); \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, top[0], NULL, out); \
-    if (out != top[0]) {                                                \
-      kos_stack_drop1_fast(bl);                                         \
-      if (unlikely(kos_stack_push_steal_fast(bl, out) < 0))             \
-        RESULT_RAISE();                                                 \
-    }                                                                   \
+    if (out != top[0])                                                  \
+      kos_elector_replace_top(bl, out);                                 \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -709,9 +745,9 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
 
 /* FAST_OPERAND_CONST: the left operand is the fast slot's value,
    peeked borrowed (a slot the peek cannot read misses; the generic
-   body derefs and raises), the right the pool constant, borrowed and
-   unguarded as above. The slot keeps its value, so no home is offered
-   and the result is a fresh push. */
+   body derefs and raises), the right the pool constant, borrowed,
+   unguarded and read from the slot as above. The slot keeps its value,
+   so no home is offered and the result is a fresh push. */
 #define KOS_FAST_OPERAND_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)  \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
@@ -725,7 +761,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
     lhs = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 1));          \
     if (unlikely(! lhs || ! KOS_##KIND##_CHECK(lhs)))                   \
       TAILCALL(el_miss, es, insn, value);                               \
-    KOS_##KIND##_EXTRACT(lhs, rhs, kos_elector_generic_of(insn));       \
+    KOS_##KIND##_EXTRACT_CONST(lhs, rhs, kos_elector_generic_of(insn)); \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, NULL, out); \
     if (unlikely(kos_stack_push_steal_fast(KosEvalState_BLOCK(es), out) < 0)) \
@@ -1440,10 +1476,14 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
   PyObject *rhs = KosExtra_OBJ(row, 2);
   long long b;
 
-  // a constant the int body could never read would decline on every
-  // execution; the site stays generic
-  if (PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
-    return NULL;
+  /* a constant the int body could never read would decline on every
+     execution; the site stays generic. One it can read is kept in the
+     slot, which the election leaves as it finds it. */
+  if (PyLong_CheckExact(rhs)) {
+    if (! kos_long_as_ll(rhs, &b))
+      return NULL;
+    kos_elector_keep_const(KosOp_SLOT(insn), b);
+  }
   return kos_elector_num_body(
       (KosOperand) KosExtra_IMM(row, 0), acc, rhs,
       kos_fast_inplace_const_int_bodies,
@@ -1482,8 +1522,11 @@ static inline KosThreadFn kos_elector_operand_const_classify(
     PyErr_Clear();
     return NULL;
   }
-  if (PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
-    return NULL;
+  if (PyLong_CheckExact(rhs)) {
+    if (! kos_long_as_ll(rhs, &b))
+      return NULL;
+    kos_elector_keep_const(KosOp_SLOT(insn), b);
+  }
   return kos_elector_num_body(
       (KosOperand) KosExtra_IMM(row, 0), lhs, rhs,
       kos_operand_const_int_bodies, kos_operand_const_float_bodies, NULL);
@@ -1502,8 +1545,11 @@ static inline KosThreadFn kos_elector_fast_operand_const_classify(
   PyObject *rhs = KosExtra_OBJ(row, 2);
   long long b;
 
-  if (PyLong_CheckExact(rhs) && ! kos_long_as_ll(rhs, &b))
-    return NULL;
+  if (PyLong_CheckExact(rhs)) {
+    if (! kos_long_as_ll(rhs, &b))
+      return NULL;
+    kos_elector_keep_const(KosOp_SLOT(insn), b);
+  }
   return kos_elector_num_body(
       (KosOperand) KosExtra_IMM(row, 0), lhs, rhs,
       kos_fast_operand_const_int_bodies, kos_fast_operand_const_float_bodies,
@@ -1586,15 +1632,6 @@ static inline int kos_item_const_index(
     return 0;
   *out = i;
   return 1;
-}
-
-
-/* Replace the stack top with an owned value. */
-static inline void kos_elector_replace_top(KosSegment **bl, PyObject *val) {
-  KosSegment *s = *bl;
-  PyObject *old = s->objs[s->len - 1];
-  s->objs[s->len - 1] = val;
-  Py_DECREF(old);
 }
 
 
