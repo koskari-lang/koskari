@@ -201,6 +201,12 @@ static int initialize_types(void) {
         return -1;
     }
 
+    /* Initialize the KosIter drive (step awaitables, iterator adapters) */
+    if (koskari_iterate_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize iterate types\n");
+        return -1;
+    }
+
     /* Initialize matcher types (matcher) */
     if (koskari_matcher_init(kos_lib_module)) {
         fprintf(stderr, "Failed to initialize matcher types\n");
