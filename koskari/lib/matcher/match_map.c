@@ -65,30 +65,6 @@ static int match_one_mentry(
 }
 
 
-#ifndef Py_TPFLAGS_MAPPING
-/**
-   Cached collections.abc.Mapping, resolved lazily on the first non-dict
-   MAP attempt and then immortal. The MAP miss path runs for every
-   non-mapping element that flows past a mapping arm, so it must not pay
-   import-machinery costs per call; a benign double-resolve race under
-   the GIL at worst leaks one reference. Returns a borrowed reference,
-   or NULL with an exception set.
-*/
-static PyObject *get_abc_mapping(void) {
-  static PyObject *abc_mapping_type = NULL;
-
-  if (! abc_mapping_type) {
-    PyObject *abc = PyImport_ImportModule("collections.abc");
-    if (! abc)
-      return NULL;
-    abc_mapping_type = PyObject_GetAttrString(abc, "Mapping");
-    Py_DECREF(abc);
-  }
-  return abc_mapping_type;
-}
-#endif
-
-
 /**
    MAP: match the current spine element as a mapping. The element must
    be dict-like (PyDict, or an instance of collections.abc.Mapping);

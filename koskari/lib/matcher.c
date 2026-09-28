@@ -1559,12 +1559,58 @@ static int match_projected_value(
 }
 
 
-/* The sequence-pattern gate on a peeled element (PEP 634): str, bytes
-   and bytearray are atoms; the KosPair spine, list and tuple descend;
-   any other type descends only when sequence-flagged (3.10+) or a
-   collections.abc.Sequence (3.9). Mappings, sets and iterators are a
-   soft no-match. Returns 1 to descend, 0 for no match, -1 on error. */
-static int matcher_sequence_gate(PyObject *peeled) {
+#ifndef Py_TPFLAGS_SEQUENCE
+/**
+   Cached collections.abc.Sequence, resolved lazily on the first
+   sequence gate that the type alone cannot decide and then immortal:
+   that path runs for every such element that flows past a sequence
+   arm. Returns a borrowed reference, or NULL with an exception set.
+*/
+static PyObject *get_abc_sequence(void) {
+  static PyObject *abc_sequence_type = NULL;
+
+  if (! abc_sequence_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_sequence_type = PyObject_GetAttrString(abc, "Sequence");
+    Py_DECREF(abc);
+  }
+  return abc_sequence_type;
+}
+#endif
+
+
+#ifndef Py_TPFLAGS_MAPPING
+/**
+   Cached collections.abc.Mapping, resolved lazily on the first mapping
+   gate that the type alone cannot decide and then immortal; a
+   double-resolve race under the GIL at worst leaks one reference.
+   Returns a borrowed reference, or NULL with an exception set.
+*/
+static PyObject *get_abc_mapping(void) {
+  static PyObject *abc_mapping_type = NULL;
+
+  if (! abc_mapping_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_mapping_type = PyObject_GetAttrString(abc, "Mapping");
+    Py_DECREF(abc);
+  }
+  return abc_mapping_type;
+}
+#endif
+
+
+/* The sequence-pattern gate on a peeled element (PEP 634), decided by
+   the type alone: str, bytes and bytearray are atoms; the KosPair
+   spine, list and tuple descend; any other type descends when
+   sequence-flagged (3.10+). On 3.9 the answer for any other type is a
+   collections.abc.Sequence isinstance, which reads __class__ and can run
+   user code: -2, for the caller to take or leave. Returns 1 to descend,
+   0 for no match, -2 undecided. */
+static int matcher_sequence_gate_pure(PyObject *peeled) {
   if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
       || PyByteArray_Check(peeled))
     return 0;
@@ -1574,28 +1620,55 @@ static int matcher_sequence_gate(PyObject *peeled) {
 #ifdef Py_TPFLAGS_SEQUENCE
   return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE) ? 1 : 0;
 #else
-  PyObject *seq_type = get_abc_sequence();
-  if (! seq_type)
-    return -1;
-  return PyObject_IsInstance(peeled, seq_type);
+  return -2;
 #endif
 }
 
 
-/* The mapping-pattern gate on a peeled element (PEP 634): a dict, else
-   a mapping-flagged type (3.10+) or a collections.abc.Mapping (3.9).
+/* The sequence gate with the undecided case settled by the ABC
+   isinstance. Mappings, sets and iterators are a soft no-match.
    Returns 1 to descend, 0 for no match, -1 on error. */
-static int matcher_mapping_gate(PyObject *peeled) {
+static int matcher_sequence_gate(PyObject *peeled) {
+  int r = matcher_sequence_gate_pure(peeled);
+#ifndef Py_TPFLAGS_SEQUENCE
+  if (r == -2) {
+    PyObject *seq_type = get_abc_sequence();
+    if (! seq_type)
+      return -1;
+    return PyObject_IsInstance(peeled, seq_type);
+  }
+#endif
+  return r;
+}
+
+
+/* The mapping-pattern gate on a peeled element (PEP 634), decided by
+   the type alone: a dict, else a mapping-flagged type (3.10+). On 3.9
+   any other type is undecided, -2, as for the sequence gate. */
+static int matcher_mapping_gate_pure(PyObject *peeled) {
   if (PyDict_Check(peeled))
     return 1;
 #ifdef Py_TPFLAGS_MAPPING
   return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_MAPPING) ? 1 : 0;
 #else
-  PyObject *mapping_type = get_abc_mapping();
-  if (! mapping_type)
-    return -1;
-  return PyObject_IsInstance(peeled, mapping_type);
+  return -2;
 #endif
+}
+
+
+/* The mapping gate with the undecided case settled by the ABC
+   isinstance. Returns 1 to descend, 0 for no match, -1 on error. */
+static int matcher_mapping_gate(PyObject *peeled) {
+  int r = matcher_mapping_gate_pure(peeled);
+#ifndef Py_TPFLAGS_MAPPING
+  if (r == -2) {
+    PyObject *mapping_type = get_abc_mapping();
+    if (! mapping_type)
+      return -1;
+    return PyObject_IsInstance(peeled, mapping_type);
+  }
+#endif
+  return r;
 }
 
 
@@ -2471,10 +2544,14 @@ int KosMatcher_RootReject(
         return 0;
       break;
     case KOS_MATCH_ROOT_SEQUENCE:
-      r = matcher_sequence_gate(peeled);
+      r = matcher_sequence_gate_pure(peeled);
+      if (r == -2)
+        return 0;
       break;
     case KOS_MATCH_ROOT_MAPPING:
-      r = matcher_mapping_gate(peeled);
+      r = matcher_mapping_gate_pure(peeled);
+      if (r == -2)
+        return 0;
       break;
     default:
       return 0;

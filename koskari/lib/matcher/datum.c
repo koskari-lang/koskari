@@ -447,29 +447,6 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 }
 
 
-#ifndef Py_TPFLAGS_SEQUENCE
-/**
-   Cached collections.abc.Sequence, resolved lazily on the first
-   non-fast-path FORM descent and then immortal — the same shape as
-   get_abc_mapping, for the same reason: the FORM miss path runs for
-   every non-sequence element that flows past a sequence arm. Returns a
-   borrowed reference, or NULL with an exception set.
-*/
-static PyObject *get_abc_sequence(void) {
-  static PyObject *abc_sequence_type = NULL;
-
-  if (! abc_sequence_type) {
-    PyObject *abc = PyImport_ImportModule("collections.abc");
-    if (! abc)
-      return NULL;
-    abc_sequence_type = PyObject_GetAttrString(abc, "Sequence");
-    Py_DECREF(abc);
-  }
-  return abc_sequence_type;
-}
-#endif
-
-
 /**
    Invoke a callable extern (predicate, APP extractor) on one argument
    through the demand path. Matching never enters the evaluator, so the
