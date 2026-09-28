@@ -15,8 +15,9 @@
 
 /**
    PUSH_LOOP: no arg. Break target is the pc after the POP_LOOP closing
-   the LOOP extent, resolved once per site into the cache slot. Push LOOP region (with its own segment); continue target =
-   next instruction. Initializes region result to None.
+   the LOOP extent, resolved once per site into the cache slot. Push
+   LOOP region (with its own segment); continue target = next
+   instruction. Initializes region result to None.
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
