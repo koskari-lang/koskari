@@ -259,8 +259,6 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
     return;
   }
   if (KosContext_Recycle(ctx) < 0) {
-    if (*host == ctx)
-      Py_CLEAR(*host);
     Py_DECREF(ctx);
     return;
   }

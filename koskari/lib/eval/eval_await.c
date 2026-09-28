@@ -169,11 +169,9 @@ static inline PyObject *KosEvalState_EagerStepAwaitable(
 
 
 /**
-   Get the awaitable for one step of an async iterator (__anext__).
-   Mirror of sibilant-ceval get_await_next: tp_as_async->am_anext then
-   PyObject_GetAwaitable. Caller must Py_DECREF the result.
-
-   :return: new reference to awaitable, or NULL on error or if not async
+   The awaitable for one step of an async iterator: am_anext, then
+   kos_get_awaitable on its result. New reference, or NULL on error or
+   when the type has no am_anext, with no exception set in that case.
 */
 static PyObject *get_await_next(PyObject *val) {
   PyTypeObject *type = Py_TYPE(val);

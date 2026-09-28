@@ -87,15 +87,6 @@
    site with no slot only counts as uncached; the body still runs. The
    kind is stored last so a slot never reads as elected before its body
    is in place. */
-/* An int constant's C value, read at the election for the body to
-   take off its site; a site with no slot runs the body once from the
-   classification and reads the constant itself. */
-static inline void kos_elector_keep_const(KosCacheSlot *slot, long long b) {
-  if (slot)
-    slot->u.elector.index = b;
-}
-
-
 static inline void kos_elector_elect(KosCacheSlot *slot, KosThreadFn fn) {
   if (! slot) {
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_UNCACHED);
@@ -108,6 +99,15 @@ static inline void kos_elector_elect(KosCacheSlot *slot, KosThreadFn fn) {
   slot->u.elector.ticks = 0;
   slot->u.elector.mode = KOS_ELECTOR_ELECTED;
   slot->kind = KOS_CACHE_ELECTOR;
+}
+
+
+/* An int constant's C value, read at the election for the body to
+   take off its site; a site with no slot runs the body once from the
+   classification and reads the constant itself. */
+static inline void kos_elector_keep_const(KosCacheSlot *slot, long long b) {
+  if (slot)
+    slot->u.elector.index = b;
 }
 
 
