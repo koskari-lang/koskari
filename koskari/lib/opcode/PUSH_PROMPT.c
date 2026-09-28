@@ -28,22 +28,10 @@ KOS_OP_HANDLER(PUSH_PROMPT) {
   if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
     RESULT_RAISE();
 
-  {
-    PyObject *code = (PyObject *) KosEvalState_CurrentCode(es);
-    uint32_t eid = kos_extent_find(code, KosEvalState_ACTING_PC(es),
-                                   KOS_EXT_PROMPT);
-    KosExtentDesc *extent;
-
-    if (eid == KOS_EXTENT_NONE) {
-      PyErr_SetString(PyExc_RuntimeError,
-                      "PUSH_PROMPT: no PROMPT extent at pc");
-      RESULT_RAISE();
-    }
-    extent = kos_extent_desc(code, eid);
-    if (! extent)
-      RESULT_RAISE();
-    pop_pc = extent->pop_pc;
-  }
+  /* the POP_PROMPT closing the extent, for POP_SHIFT's live reset */
+  if (kos_site_extent_close(es, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
+                            &pop_pc) < 0)
+    RESULT_RAISE();
 
   if (! kos_dyn_push_prompt(es, prompt_id, pop_pc))
     RESULT_RAISE();

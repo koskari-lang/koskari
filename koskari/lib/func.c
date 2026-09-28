@@ -219,7 +219,7 @@ KosOpResult KosFunction_Install(
         Py_INCREF(args[i]);
       (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
                                          nargs);
-      KosFunction_CACHED_FRAME(callable) = NULL;
+      (void) KosFunction_PopCachedFrame(callable);
       kos_dyn_push_ready_frame(es, cached);
       Py_INCREF(callable);
       KosDynFrame_FN(cached) = callable;
@@ -1037,13 +1037,17 @@ static int function_init(
 }
 
 
-/** Tear down the parked frame, if any; the parked node's fn is always
+/** Tear down the parked frames, if any; a parked node's fn is always
     NULL, so this cannot re-enter the function. */
 static void func_drop_cached_frame(KosFunction *fn) {
   KosDynFrame *frame = fn->cached_frame;
-  if (frame) {
-    fn->cached_frame = NULL;
+
+  fn->cached_frame = NULL;
+  while (frame) {
+    KosDynFrame *next = (KosDynFrame *) KosDynFrame_BACK_FRAME(frame);
+    KosDynFrame_BACK_FRAME(frame) = NULL;
     kos_dynnode_free((KosDynNode *) frame);
+    frame = next;
   }
 }
 
@@ -1053,8 +1057,9 @@ static int function_traverse(
     visitproc visit,
     void *arg) {
 
-  if (((KosFunction *) self)->cached_frame) {
-    KosDynFrame *cached = ((KosFunction *) self)->cached_frame;
+  for (KosDynFrame *cached = ((KosFunction *) self)->cached_frame;
+       cached;
+       cached = (KosDynFrame *) KosDynFrame_BACK_FRAME(cached)) {
     int r = kos_dynnode_traverse((KosDynNode *) cached, visit, arg);
     if (r != 0)
       return r;
@@ -1389,7 +1394,7 @@ PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
      can fail: a NULL return always means the arg span is still intact
      on the block */
   if (unlikely(KosFormals_SimpleStealApplySelfBlock(
-          frame_ns, recv, block, nargs) < 0)) {
+          frame_ns, recv, 0, block, nargs) < 0)) {
     Py_DECREF(frame_ns);
     return NULL;
   }
@@ -1661,6 +1666,88 @@ PyObject *KosFunction_NewWithAnnotations(
 
 
 /* === Unit lifecycle === */
+
+
+/**
+   Offer a released frame to the function's frame cache.
+   Parks only when the cache is under its cap and the frame is provably private:
+   exact Namespace with refcount 1, GC-untracked, no binds dict, and no
+   native handler.  On park the namespace's raw slots are cleared, the
+   segment is cleared, and the node base is normalized for
+   kos_dyn_push_ready_frame.  The frame's fn field must already be
+   NULL (kos_dynframe_free clears it before offering).
+
+   :return: 1 when parked (ownership taken), 0 when refused
+*/
+int KosFunction_TryParkFrame(
+    PyObject *self,
+    KosDynFrame *frame) {
+
+  KosFunction *fn = (KosFunction *) self;
+  KosDynFrame *head = fn->cached_frame;
+  PyObject *ns;
+
+  if (head && KosDynFrame_DEPTH(head) >= KOS_FRAME_CACHE_MAX)
+    return 0;
+
+  /* The namespace must be private to the frame. Every reference that
+     can outlive the return goes through KosNamespace_Reveal or
+     KosNamespace_TrackChain (locals, collect, closure templates,
+     continuation clones, snapshots), so GC tracking is the record of
+     escape; a dynamic slot-less bind is the one other visibility. The
+     frame itself is an installed FN-tagged frame: its namespace is an
+     exact template copy and its stack and resume fields are settled by
+     kos_dynframe_free before the park is offered. */
+  ns = KosDynFrame_NS(frame);
+  if (kos_gc_is_tracked(ns) || KosNamespace_BINDS(ns) != NULL)
+    return 0;
+
+#if KOS_EVAL_SAFETYNET
+  if (! KosNamespace_CheckExact(ns))
+    Py_FatalError("KosFunction_TryParkFrame: frame namespace is not an"
+                  " exact KosNamespace");
+  if (Py_REFCNT(ns) != 1)
+    Py_FatalError("KosFunction_TryParkFrame: untracked frame namespace"
+                  " has an escaping reference");
+  if (KosDynFrame_RESUME_KIND(frame))
+    Py_FatalError("KosFunction_TryParkFrame: frame carries a resume");
+  if (! KosDynFrame_STACK(frame))
+    Py_FatalError("KosFunction_TryParkFrame: frame has no stack");
+#endif
+
+  /* Reset to the state a fresh install would produce: the template's
+     raw slots NULL and raw again (its refs retained), empty stack,
+     normalized node base ready for kos_dyn_push_ready_frame. */
+  KosNamespace_ResetToTemplate(ns);
+  kos_stack_clear_fast(&KosDynFrame_STACK(frame));
+  KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
+
+  /* The reset and the clear release the frame's locals and operands,
+     and a finalizer among them can call this function again, taking
+     frames out of the cache or parking new ones. The head read above
+     only sized the early refusal; the link below uses the cache as it
+     is now. */
+  head = fn->cached_frame;
+  if (head && KosDynFrame_DEPTH(head) >= KOS_FRAME_CACHE_MAX)
+    return 0;
+
+  KosDynNode_PARENT(frame) = NULL;
+  KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
+  /* The parked frame keeps the namespace it introduced, so it keeps
+     the cap that tells the collector to look inside it. */
+  KosDynNode_CAPS(frame) = KOS_DYN_CAP_OWNS_NS;
+  KosDynFrame_PC(frame) = 0;
+  KosDynFrame_ACTING_PC(frame) = 0;
+  KosDynFrame_FLAGS(frame) = 0;
+
+  /* Link ahead of the current head; the install that takes this frame
+     back sets both fields for the live chain. */
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) head;
+  KosDynFrame_DEPTH(frame) = head ? KosDynFrame_DEPTH(head) + 1 : 1;
+  fn->cached_frame = frame;
+  return 1;
+}
+
 
 
 int koskari_func_init(PyObject *mod) {

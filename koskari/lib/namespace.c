@@ -2023,9 +2023,11 @@ static void ns_release_header(PyObject *self) {
 static void ns_dealloc(PyObject *self) {
   // SAYF("ns_dealloc(%R)", self);
 
-  /* idempotent; a revealed namespace must leave the collector before
-     its fields are cleared or it is recycled to the freelist */
-  PyObject_GC_UnTrack(self);
+  /* a revealed namespace must leave the collector before its fields
+     are cleared or it is recycled to the freelist; a frame namespace
+     was never tracked and skips the call */
+  if (kos_gc_is_tracked(self))
+    PyObject_GC_UnTrack(self);
 
   ns_release_header(self);
   Py_CLEAR(KosNamespace_BINDS(self));

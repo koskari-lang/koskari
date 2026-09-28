@@ -64,4 +64,41 @@ typedef struct {
   (&((KosInterpreterState310 *) (interp))->ceval)
 
 
+/* === GC tracked test === */
+
+/* Whether the collector holds op: the _gc_next link word of the PyGC_Head
+   that precedes a GC object, non-zero exactly while op is in a collector
+   list. The same read as CPython's _PyObject_GC_IS_TRACKED, whose inline
+   is not in any public header on this version; the head has been two
+   link words ahead of the object since 3.8. Precondition: op's type is a
+   GC type, as every caller here guarantees by construction. */
+static inline int kos_gc_is_tracked(PyObject *op) {
+  return ((const uintptr_t *) op)[-2] != 0;
+}
+
+
+/* The version of the extern defaults dict is its ma_version_tag: a
+   global counter stamped on the dict at creation and at every mutation,
+   so a reset's new dict reads different too. No dict watcher here, and
+   none is needed for this. */
+#define KOS_MATCHER_DEFAULTS_WATCHER 0
+
+static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
+  return ((PyDictObject *) dict)->ma_version_tag;
+}
+
+
+/* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
+   types.coroutine marked generator function's product), which await
+   takes as its own iterator. The code is reached through gi_code. */
+static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
+  PyCodeObject *code = (PyCodeObject *) ((PyGenObject *) gen)->gi_code;
+  return (code->co_flags & CO_ITERABLE_COROUTINE) != 0;
+}
+
+
+/* The send protocol: PyIter_Send on this version. */
+#define kos_iter_send PyIter_Send
+
+
 // The end.

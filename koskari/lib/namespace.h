@@ -19,6 +19,7 @@
 
 
 #include <Python.h>
+#include "hints.h"
 #include <stdint.h>
 
 
@@ -527,7 +528,7 @@ static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
   as they are. Used by the per-function frame cache when a frame is
   stored, and by the self-tail rebind.
 */
-static inline void KosNamespace_ResetToTemplate(PyObject *ns) {
+KOS_OP_INLINE void KosNamespace_ResetToTemplate(PyObject *ns) {
 
   PyObject *template_ns = KosNamespace_TEMPLATE(ns);
   size_t count = KosNamespace_FAST_COUNT(ns);
@@ -622,6 +623,26 @@ static inline PyObject *kos_ns_fast_peek_raw(
   }
   return NULL;
 }
+
+
+/* Bind var to the fast slot's value, borrowed on a peek hit. On a
+   miss (an empty slot, or a ref kind the peek does not read) bind
+   var_ref to the owned general deref, which raises NameError for an
+   empty slot, and var to it; var_ref is NULL on the hit path and is
+   what the handler releases.
+   For a handler that runs no user code while it holds var. on_error runs with the error set. */
+#define KOS_NS_FAST_BORROW(var, var_ref, ns, idx, on_error)             \
+  do {                                                                  \
+    (var_ref) = NULL;                                                   \
+    (var) = kos_ns_fast_peek((ns), (size_t) (idx));                     \
+    if (unlikely(! (var))) {                                            \
+      (var_ref) = kos_ns_fast_deref((ns), (size_t) (idx));              \
+      if (unlikely(! (var_ref))) {                                      \
+        on_error;                                                       \
+      }                                                                 \
+      (var) = (var_ref);                                                \
+    }                                                                   \
+  } while (0)
 
 
 static inline int kos_ns_fast_store(PyObject *ns, size_t idx, PyObject *val) {

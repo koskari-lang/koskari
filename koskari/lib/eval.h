@@ -97,7 +97,9 @@ struct KosOpResult {
   KosEvaluatorToken is a refcounted PyObject that identifies a koskari_eval
   domain/instance.  It tracks whether the evaluator is currently active on
   this thread (live_depth) and serves as an ownership marker for
-  Continuations and DelimitedContinuations.
+  Continuations and DelimitedContinuations. A context mints its token on
+  the first continuation capture (KosContext_EnsureToken); the depth is
+  maintained only while a token exists.
 */
 
 struct KosEvaluatorToken {
@@ -724,7 +726,8 @@ struct KosContext {
   KosSegment **block;        /* non-owning: &innermost dynnode stack; frozen snapshot */
   PyObject *namespace;       /* borrowed: active namespace object */
 
-  KosEvaluatorToken *token; /* evaluator identity; ownership marker for continuations */
+  KosEvaluatorToken *token; /* ownership marker for continuations; NULL
+                               until the first capture mints it */
   PyObject *domain;         /* KosDomain; mandatory. Inherited from the
                                ambient domain at creation, minted fresh when
                                none is ambient. Identity/lifecycle anchor;
@@ -1130,7 +1133,7 @@ done:
    The caller has asked kos_eval_check_frame_room for one frame before
    binding into the parked namespace.
 */
-static inline void kos_dyn_push_ready_frame(
+KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosEvalState *es,
     KosDynFrame *frame) {
 
@@ -1221,6 +1224,13 @@ PyObject *KosEvalState_PopUnpackSequence(
   :return: new reference to the context, or NULL on error
 */
 KosContext *KosContext_New(KosDynFrame *top);
+int KosContext_Snapshot(PyObject **domain, PyObject **cells);
+int KosContext_TakeSnapshot(KosContext *ctx);
+KosContext *KosContext_NewFromSnapshot(
+    KosDynFrame *top,
+    PyObject *domain,
+    PyObject *cells);
+KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 
 
 /*
@@ -1369,14 +1379,29 @@ KosOpResult koskari_eval(
 KosContext *kos_ctx_current(void);
 
 
+/* The per-thread record behind the ambient context and active eval
+   stacks; private to domain.c. */
+typedef struct KosTlsState KosTlsState;
+
+
 /**
-  Push active KosEvalState for GC traverse while KOS_CTX_RUNNING (steal model).
+  Enter a drive: the thread record is resolved once and held for the
+  drive's length, ctx becomes the ambient context and es the active
+  eval state for GC traverse while KOS_CTX_RUNNING (steal model), and
+  the context's token gains a live depth. Returns the held record.
 */
+KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es);
 
-void kos_tls_push_active_eval(KosEvalState *es);
+
+/* Pop the active eval state of the drive holding s. */
+void kos_tls_pop_active_eval(KosTlsState *s);
 
 
-void kos_tls_pop_active_eval(void);
+/**
+  Leave the drive holding s: the token's live depth and the ambient
+  context are dropped and the record is released.
+*/
+void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx);
 
 
 /**
@@ -1613,6 +1638,53 @@ void kos_eval_prepare_boundary_raise(
    pops it. PyErr is preserved; decoration is best-effort.
 */
 void kos_eval_note_crossed_frame(KosEvalState *es);
+
+
+/**
+   The pc that closes a region push's extent (the POP_* row), for the
+   pushes whose target is not an instruction argument. Read from the
+   site's cache slot once it is filled; the first execution resolves it
+   through the extent table and fills the slot, and a site with no slot
+   resolves every time. A pc and not a record pointer: the instruction
+   block moves when the code is packed into an arena, and a pc stays
+   valid across that. Returns -1 with an error set when no extent of the
+   kind encloses the site.
+*/
+static inline int kos_site_extent_close(
+    KosEvalState *es,
+    KosOp *insn,
+    KosExtentKind kind,
+    const char *who,
+    uint32_t *pop_pc) {
+
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  PyObject *code;
+  uint32_t eid;
+  const KosExtentDesc *ext;
+
+  if (slot && likely(slot->kind == KOS_CACHE_TARGET)) {
+    *pop_pc = slot->u.target.pop_pc;
+    return 0;
+  }
+
+  code = (PyObject *) KosEvalState_CODE(es);
+  eid = kos_extent_find(code, KosOp_PC(insn), kind);
+  if (eid == KOS_EXTENT_NONE) {
+    PyErr_Format(PyExc_RuntimeError, "%s: no extent at this PC", who);
+    return -1;
+  }
+  ext = kos_extent_desc(code, eid);
+  if (! ext) {
+    PyErr_Format(PyExc_RuntimeError, "%s: invalid extent", who);
+    return -1;
+  }
+  *pop_pc = ext->pop_pc;
+  if (slot && slot->kind == KOS_CACHE_EMPTY) {
+    slot->kind = KOS_CACHE_TARGET;
+    slot->u.target.pop_pc = ext->pop_pc;
+  }
+  return 0;
+}
 
 
 int koskari_eval_init(PyObject *mod);

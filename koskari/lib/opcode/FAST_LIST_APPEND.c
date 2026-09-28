@@ -25,31 +25,31 @@ KOS_OP_HANDLER(FAST_LIST_APPEND) {
   KOS_OP_REQUIRE_NS(ns);
 
   size_t idx = (size_t) KosOp_ARG(insn);
-  PyObject *list = kos_ns_fast_deref(ns, idx);
-  if (unlikely(! list))
-    RESULT_RAISE();
+  PyObject *list, *list_ref;
+
+  /* The list is borrowed from its slot: the append runs no user code,
+     and the type error names the type rather than repr the value. */
+  KOS_NS_FAST_BORROW(list, list_ref, ns, idx, { RESULT_RAISE(); });
 
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
-                 "FAST_LIST_APPEND requires list, not %R", list);
-    Py_DECREF(list);
+                 "FAST_LIST_APPEND requires list, not %.200s",
+                 Py_TYPE(list)->tp_name);
+    Py_XDECREF(list_ref);
     RESULT_RAISE();
   }
 
   PyObject *value = KosEvalState_StackPopRef(es);
   if (unlikely(! value)) {
-    Py_DECREF(list);
+    Py_XDECREF(list_ref);
     RESULT_RAISE();
   }
 
-  if (unlikely(PyList_Append(list, value) < 0)) {
-    Py_DECREF(list);
-    Py_DECREF(value);
-    RESULT_RAISE();
-  }
-
-  Py_DECREF(list);
+  int rc = PyList_Append(list, value);
+  Py_XDECREF(list_ref);
   Py_DECREF(value);
+  if (unlikely(rc < 0))
+    RESULT_RAISE();
   RESULT_NEXT(es);
 }
 

@@ -594,7 +594,7 @@ source: |-
   
 verify:
   read: (str (type (globals)))
-  expand: (str (type (globals)))
+  expand: (#str (type (globals)))
   eval: '"<class ''koskari.lib.ModuleNamespace''>"'
 references:
   - reference/specials/compile-globals.md

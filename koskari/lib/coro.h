@@ -40,7 +40,11 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns);
 
 
 /**
-   KosCoroutine wraps a KosContext for Python's coroutine protocol.
+   KosCoroutine wraps a Koskari call for Python's coroutine protocol.
+   Unstarted, it holds the bound call and the dynamic snapshot of its
+   creation; the drive context exists only once Python drives it. A
+   Koskari await takes the program straight onto its own chain
+   (KosCoroutine_TakeFresh) and never builds one.
 
    States: KOS_CORO_NEW, KOS_CORO_RUNNING, KOS_CORO_WAITING_PY,
    KOS_CORO_YIELDED (suspended due to yield, awaiting send()),
@@ -61,10 +65,20 @@ typedef enum {
 
 typedef struct {
   PyObject_HEAD
-  KosContext *ctx;
+  KosContext *ctx;          /* the drive context; NULL until the first
+                               drive from Python builds it */
   KosCoroState state;
   PyObject *pending_await;  /* yielded object to bubble outward */
   int in_send;              /* re-entrancy guard */
+
+  /* The bound call an unstarted coroutine is: the program, its bound
+     namespace, and the dynamic snapshot (domain and parameterize cells)
+     taken when the call was made. All owned; all cleared once the
+     context is built or the program is taken onto another chain. */
+  KosCode *code;
+  PyObject *ns;
+  PyObject *domain;
+  PyObject *param_refs;
 } KosCoroutine;
 
 

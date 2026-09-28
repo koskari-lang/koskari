@@ -41,6 +41,13 @@
 #endif
 
 
+/* === GC tracked test === */
+
+/* kos_gc_is_tracked(op): whether the collector holds op, read from the
+   object's own GC record the way CPython's internal inline reads it.
+   Defined in each version's compat header, which owns the layout. */
+
+
 /* === Immortal objects === */
 
 /*
@@ -267,8 +274,21 @@ int koskari_compat_init(const PyObject *mod);
 int koskari_compat_clear(PyObject *mod);
 
 
-/* Our wrapper when the C API symbol is not exported (e.g. 3.12) */
-PyObject *PyObject_GetAwaitable(PyObject *o);
+/* 1 when the exact native coroutine is suspended under another awaiter,
+   0 when not, -1 with an error set. */
+int kos_coro_awaited(PyObject *coro);
+
+/* The iterator that awaiting o steps: an exact native coroutine itself,
+   refused when already awaited; else am_await when the type has the
+   slot; else a types.coroutine marked generator itself; else __await__
+   looked up and called. New reference, or NULL with an error set. */
+PyObject *kos_get_awaitable(PyObject *o);
+
+/* The first step of awaiting o: the await iterator as kos_get_awaitable
+   finds it, sent None once. Returns the completion (new reference) with
+   *iter NULL; or NULL with *iter and *yielded set (new references) when
+   the step suspended; or NULL with both NULL and an exception set. */
+PyObject *kos_await_first_step(PyObject *o, PyObject **iter, PyObject **yielded);
 
 
 /**

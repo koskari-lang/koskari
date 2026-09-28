@@ -211,6 +211,60 @@ class TestYieldFrom(CevalTest):
         await run()
 
 
+    async def test_yield_from_python_async_iterator_values(self):
+        """
+        YIELD_FROM on a plain Python async iterator (no asend) yields its
+        values and completes
+        """
+
+        class Counter(object):
+            def __init__(self):
+                self.n = 0
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                self.n += 1
+                if self.n > 2:
+                    raise StopAsyncIteration
+                return self.n * 10
+
+        code_obj, ns = build_expr([
+            ["CONST", Counter()],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        agen = make_callable(code_obj, ns)()
+        self.assertIsInstance(agen, AsyncGenerator)
+        self.assertEqual(await anext(agen), 10)
+        self.assertEqual(await anext(agen), 20)
+        with self.assertRaises(StopAsyncIteration):
+            await anext(agen)
+
+
+    async def test_yield_from_python_async_gen_receives_sent_values(self):
+        """
+        YIELD_FROM on a Python async gen forwards a sent value through
+        asend to the delegate
+        """
+
+        async def py_agen():
+            got = yield 1
+            yield ("got", got)
+
+        code_obj, ns = build_expr([
+            ["CONST", py_agen()],
+            ["YIELD_FROM", 0],
+            ["RETURN", 0],
+        ])
+        agen = make_callable(code_obj, ns)()
+        self.assertEqual(await anext(agen), 1)
+        self.assertEqual(await agen.asend("hello"), ("got", "hello"))
+        with self.assertRaises(StopAsyncIteration):
+            await anext(agen)
+
+
     async def test_yield_from_koskari_async_gen_values_and_return(self):
         """
         YIELD_FROM on a Koskari async gen yields each value; inner RETURN

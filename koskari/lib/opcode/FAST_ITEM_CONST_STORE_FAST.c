@@ -15,35 +15,17 @@
 
 
 /**
-  FAST_ITEM_CONST_STORE_FAST: arg = extra index. Schema FASTVAR,
-  CONST, FASTVAR, NOARG. No stack operands. Object from a fast slot,
-  key from the pool, value from a fast slot. obj[key] = val; push
-  nothing. The access runs through kos_item_store (eval/eval_item.c)
-  on the site's one KOS_CACHE_ITEM slot.
+  FAST_ITEM_CONST_STORE_FAST: arg = extra index. Schema FASTVAR, CONST,
+  FASTVAR. No stack operands. The fast slot's object[key] = another fast
+  slot's value. Dispatches to the site's elected body, a list or dict form
+  with the constant's index held in the slot, else elects
+  (eval/eval_electors.c, the constant-key item families).
 */
 KOS_OP_HANDLER(FAST_ITEM_CONST_STORE_FAST) {
-  const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
-  PyObject *obj, *obj_ref;
-  PyObject *key = KosExtra_OBJ(row, 1);
-  PyObject *val;
-  int rc;
-
-  KOS_OP_REQUIRE_NS(ns);
-  KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 0),
-                     { RESULT_RAISE(); });
-  val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 2));
-  if (unlikely(! val)) {
-    Py_XDECREF(obj_ref);
-    RESULT_RAISE();
-  }
-
-  rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
-  Py_XDECREF(obj_ref);
-
-  if (unlikely(rc < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_fast_item_const_store_fast_elect, es, insn, NULL);
 }
 
 

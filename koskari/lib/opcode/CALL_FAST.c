@@ -48,7 +48,7 @@ KOS_OP_HANDLER(CALL_FAST) {
   if (! tail) {
     KosOpResult r;
     int taken = kos_call_cached_frame_install(
-        es, callable, NULL, (Py_ssize_t) n, &r);
+        es, callable, NULL, 0, (Py_ssize_t) n, &r);
 
     if (likely(taken > 0))
       RESULT_RELAY(es, r);

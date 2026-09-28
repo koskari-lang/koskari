@@ -14,31 +14,22 @@
 */
 
 /**
-   PUSH_LOOP: no arg. Break target is derived from the extent table
-   (pop_pc + 1). Push LOOP region (with its own segment); continue target =
-   next instruction. Initializes region result to None.
+   PUSH_LOOP: no arg. Break target is the pc after the POP_LOOP closing
+   the LOOP extent, resolved once per site into the cache slot. Push
+   LOOP region (with its own segment); continue target = next
+   instruction. Initializes region result to None.
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
   uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
+  uint32_t pop_pc;
 
-  /* Derive break target from the extent table (pop_pc + 1) */
-  KosCode *code = KosEvalState_CurrentCode(es);
-  uint32_t pc = KosEvalState_ACTING_PC(es);
-  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_LOOP);
-  if (eid == KOS_EXTENT_NONE) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "PUSH_LOOP: no LOOP extent at this PC");
+  /* break lands after the POP_LOOP that closes the extent */
+  if (kos_site_extent_close(es, insn, KOS_EXT_LOOP, "PUSH_LOOP", &pop_pc) < 0)
     RESULT_RAISE();
-  }
-  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
-  if (! ext) {
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_LOOP: invalid extent");
-    RESULT_RAISE();
-  }
-  uint32_t break_pc = ext->pop_pc + 1u;
 
-  KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(es,                                              break_pc, continue_pc);
+  KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(
+      es, pop_pc + 1u, continue_pc);
   if (! region) {
     PyErr_NoMemory();
     RESULT_RAISE();

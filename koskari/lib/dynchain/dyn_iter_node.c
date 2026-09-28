@@ -48,6 +48,20 @@ void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter) {
 
   req->iter = iter;
   req->islots = (iter && KosIter_CheckSlots(iter, &islots)) ? islots : NULL;
+
+  if (req->islots) {
+    req->kind = KOS_IREQ_KIND_PROVIDER;
+  } else if (! iter) {
+    req->kind = KOS_IREQ_KIND_NONE;
+  } else {
+    PyTypeObject *tp = Py_TYPE(iter);
+    if (tp->tp_as_async && tp->tp_as_async->am_anext)
+      req->kind = KOS_IREQ_KIND_PY_ASYNC;
+    else if (PyIter_Check(iter))
+      req->kind = KOS_IREQ_KIND_PY_SYNC;
+    else
+      req->kind = KOS_IREQ_KIND_NONE;
+  }
 }
 
 

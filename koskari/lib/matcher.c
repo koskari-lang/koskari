@@ -824,6 +824,54 @@ static PyObject *list_to_tuple(PyObject *list) {
 }
 
 
+/**
+   Read the entry's first element test into root_kind / root_ref: the
+   MATCH's first child, through any CAPTURE wrappers, when it is a type
+   test, a class, a form, or a map. Those consume the first element
+   and test it before anything else, so their test failing on a
+   subject means the whole matcher cannot match it. Any other shape,
+   including a first child of variable width, leaves the root at NONE.
+*/
+static void matcher_compute_root(KosMatcher *m) {
+  uint32_t idx = m->entry;
+  Py_ssize_t guard = Py_SIZE(m);
+
+  m->root_kind = KOS_MATCH_ROOT_NONE;
+  m->root_ref = KOS_MATCH_NO_INDEX;
+
+  while (guard-- > 0 && idx != KOS_MATCH_NO_INDEX
+         && (Py_ssize_t) idx < Py_SIZE(m)) {
+    KosMatchNode *n = &m->nodes[idx];
+    switch (n->kind) {
+      case KOS_MATCH_NODE_MATCH:
+        idx = n->as.match.first_child;
+        continue;
+      case KOS_MATCH_NODE_CAPTURE:
+        idx = n->as.capture.subnode;
+        continue;
+      case KOS_MATCH_NODE_TEST:
+        if (n->as.test.test_kind == KOS_MATCH_TEST_TYPE) {
+          m->root_kind = KOS_MATCH_ROOT_TEST_TYPE;
+          m->root_ref = n->as.test.ref_index;
+        }
+        return;
+      case KOS_MATCH_NODE_CLASS:
+        m->root_kind = KOS_MATCH_ROOT_CLASS;
+        m->root_ref = n->as.class_.type_extern;
+        return;
+      case KOS_MATCH_NODE_FORM:
+        m->root_kind = KOS_MATCH_ROOT_SEQUENCE;
+        return;
+      case KOS_MATCH_NODE_MAP:
+        m->root_kind = KOS_MATCH_ROOT_MAPPING;
+        return;
+      default:
+        return;
+    }
+  }
+}
+
+
 PyObject *KosMatcherBuilder_Finalize(
     KosMatcherBuilder *b,
     uint32_t entry) {
@@ -906,6 +954,7 @@ PyObject *KosMatcherBuilder_Finalize(
     return NULL;
   }
 
+  matcher_compute_root(m);
   return (PyObject *) m;
 }
 
@@ -945,24 +994,35 @@ static int matcher_nominal_miss_is_final(PyObject *inst) {
 
 
 /**
-   isinstance for pattern tests, dispatch-free in both directions when
-   cls is a type whose metaclass is exactly ``type``, which cannot
-   carry a custom ``__instancecheck__``: a nominal identity/MRO hit is
-   the answer isinstance would give, and a nominal miss is final when
-   matcher_nominal_miss_is_final proves the virtual ``__class__`` read
-   cannot change it. Any other metaclass, and a miss the proof does
-   not cover, fall through to PyObject_IsInstance unchanged.
+   The isinstance answer when it is decided by the type walk alone: 1 or
+   0, or -2 when deciding it would run user code (a metaclass
+   __instancecheck__, or a __class__ read on a subject whose nominal miss
+   is not final). cls is a type whose metaclass is exactly ``type``,
+   which cannot carry a custom ``__instancecheck__``, so a nominal
+   identity/MRO hit is the answer isinstance would give, and a nominal
+   miss is final when matcher_nominal_miss_is_final proves the virtual
+   ``__class__`` read cannot change it. The root pre-test uses this so
+   the engine's own test is the one place such code runs.
+*/
+static int matcher_isinstance_pure(PyObject *inst, PyObject *cls) {
+  if (likely(PyType_Check(cls)) && Py_TYPE(cls) == &PyType_Type) {
+    if (PyObject_TypeCheck(inst, (PyTypeObject *) cls))
+      return 1;
+    if (matcher_nominal_miss_is_final(inst))
+      return 0;
+  }
+  return -2;
+}
+
+
+/**
+   isinstance for pattern tests: the type walk's answer where it has
+   one, and PyObject_IsInstance where deciding runs user code.
 */
 static int matcher_isinstance(PyObject *inst, PyObject *cls) {
-  if (likely(PyType_Check(cls))) {
-    PyTypeObject *meta = Py_TYPE(cls);
-    if (meta == &PyType_Type) {
-      if (PyObject_TypeCheck(inst, (PyTypeObject *) cls))
-        return 1;
-      if (matcher_nominal_miss_is_final(inst))
-        return 0;
-    }
-  }
+  int r = matcher_isinstance_pure(inst, cls);
+  if (r != -2)
+    return r;
   return PyObject_IsInstance(inst, cls);
 }
 
@@ -1492,6 +1552,119 @@ static int match_projected_value(
 }
 
 
+#ifndef Py_TPFLAGS_SEQUENCE
+/**
+   Cached collections.abc.Sequence, resolved lazily on the first
+   sequence gate that the type alone cannot decide and then immortal:
+   that path runs for every such element that flows past a sequence
+   arm. Returns a borrowed reference, or NULL with an exception set.
+*/
+static PyObject *get_abc_sequence(void) {
+  static PyObject *abc_sequence_type = NULL;
+
+  if (! abc_sequence_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_sequence_type = PyObject_GetAttrString(abc, "Sequence");
+    Py_DECREF(abc);
+  }
+  return abc_sequence_type;
+}
+#endif
+
+
+#ifndef Py_TPFLAGS_MAPPING
+/**
+   Cached collections.abc.Mapping, resolved lazily on the first mapping
+   gate that the type alone cannot decide and then immortal; a
+   double-resolve race under the GIL at worst leaks one reference.
+   Returns a borrowed reference, or NULL with an exception set.
+*/
+static PyObject *get_abc_mapping(void) {
+  static PyObject *abc_mapping_type = NULL;
+
+  if (! abc_mapping_type) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    abc_mapping_type = PyObject_GetAttrString(abc, "Mapping");
+    Py_DECREF(abc);
+  }
+  return abc_mapping_type;
+}
+#endif
+
+
+/* The sequence-pattern gate on a peeled element (PEP 634), decided by
+   the type alone: str, bytes and bytearray are atoms; the KosPair
+   spine, list and tuple descend; any other type descends when
+   sequence-flagged (3.10+). On 3.9 the answer for any other type is a
+   collections.abc.Sequence isinstance, which reads __class__ and can run
+   user code: -2, for the caller to take or leave. Returns 1 to descend,
+   0 for no match, -2 undecided. */
+static int matcher_sequence_gate_pure(PyObject *peeled) {
+  if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
+      || PyByteArray_Check(peeled))
+    return 0;
+  if (KosPair_Check(peeled) || KosNilP(peeled)
+      || PyList_Check(peeled) || PyTuple_Check(peeled))
+    return 1;
+#ifdef Py_TPFLAGS_SEQUENCE
+  return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE) ? 1 : 0;
+#else
+  return -2;
+#endif
+}
+
+
+/* The sequence gate with the undecided case settled by the ABC
+   isinstance. Mappings, sets and iterators are a soft no-match.
+   Returns 1 to descend, 0 for no match, -1 on error. */
+static int matcher_sequence_gate(PyObject *peeled) {
+  int r = matcher_sequence_gate_pure(peeled);
+#ifndef Py_TPFLAGS_SEQUENCE
+  if (r == -2) {
+    PyObject *seq_type = get_abc_sequence();
+    if (! seq_type)
+      return -1;
+    return PyObject_IsInstance(peeled, seq_type);
+  }
+#endif
+  return r;
+}
+
+
+/* The mapping-pattern gate on a peeled element (PEP 634), decided by
+   the type alone: a dict, else a mapping-flagged type (3.10+). On 3.9
+   any other type is undecided, -2, as for the sequence gate. */
+static int matcher_mapping_gate_pure(PyObject *peeled) {
+  if (PyDict_Check(peeled))
+    return 1;
+#ifdef Py_TPFLAGS_MAPPING
+  return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_MAPPING) ? 1 : 0;
+#else
+  return -2;
+#endif
+}
+
+
+/* The mapping gate with the undecided case settled by the ABC
+   isinstance. Returns 1 to descend, 0 for no match, -1 on error. */
+static int matcher_mapping_gate(PyObject *peeled) {
+  int r = matcher_mapping_gate_pure(peeled);
+#ifndef Py_TPFLAGS_MAPPING
+  if (r == -2) {
+    PyObject *mapping_type = get_abc_mapping();
+    if (! mapping_type)
+      return -1;
+    return PyObject_IsInstance(peeled, mapping_type);
+  }
+#endif
+  return r;
+}
+
+
 #include "matcher/match_form.c"
 #include "matcher/match_group.c"
 #include "matcher/match_rest.c"
@@ -1943,8 +2116,10 @@ static void matcher_env_release(MatcherEnv *r) {
 
   for (Py_ssize_t i = 0; i < r->owned; i++)
     Py_DECREF(buf[i]);
-  PyMem_Free(r->buf);
-  r->buf = NULL;
+  if (r->buf) {
+    PyMem_Free(r->buf);
+    r->buf = NULL;
+  }
   r->owned = 0;
 }
 
@@ -2216,6 +2391,38 @@ static PyObject *matcher_repr(PyObject *self) {
 
 static PyObject *kos_matcher_extern_defaults = NULL;
 
+#if KOS_MATCHER_DEFAULTS_WATCHER
+/* See KosMatcher_ExternDefaultsVersion. Starts above zero so a slot
+   zeroed at allocation never reads as current. */
+static uint64_t kos_matcher_defaults_version = 1;
+
+static int kos_matcher_defaults_watcher = -1;
+
+static int matcher_defaults_watch(
+    PyDict_WatchEvent event, PyObject *dict, PyObject *key,
+    PyObject *new_value) {
+  (void) event;
+  (void) dict;
+  (void) key;
+  (void) new_value;
+  kos_matcher_defaults_version++;
+  return 0;
+}
+#endif
+
+
+uint64_t KosMatcher_ExternDefaultsVersion(void) {
+#if KOS_MATCHER_DEFAULTS_WATCHER
+  return kos_matcher_defaults_version;
+#else
+  /* dict tags start at one, so a slot zeroed at allocation never reads
+     as current; with no dict yet there is nothing to be current with */
+  return kos_matcher_extern_defaults
+      ? kos_matcher_defaults_dict_version(kos_matcher_extern_defaults)
+      : 0;
+#endif
+}
+
 
 static int kos_matcher_populate_extern_defaults(PyObject *dict) {
   static const struct {
@@ -2252,6 +2459,17 @@ PyObject *KosMatcher_ExternDefaults(void) {
       Py_CLEAR(kos_matcher_extern_defaults);
       return NULL;
     }
+#if KOS_MATCHER_DEFAULTS_WATCHER
+    kos_matcher_defaults_version++;
+    if (kos_matcher_defaults_watcher < 0)
+      kos_matcher_defaults_watcher = PyDict_AddWatcher(matcher_defaults_watch);
+    if (kos_matcher_defaults_watcher < 0
+        || PyDict_Watch(kos_matcher_defaults_watcher,
+                        kos_matcher_extern_defaults) < 0) {
+      Py_CLEAR(kos_matcher_extern_defaults);
+      return NULL;
+    }
+#endif
   }
 
   return kos_matcher_extern_defaults;
@@ -2260,7 +2478,90 @@ PyObject *KosMatcher_ExternDefaults(void) {
 
 PyObject *KosMatcher_ResetExternDefaults(void) {
   Py_CLEAR(kos_matcher_extern_defaults);
+#if KOS_MATCHER_DEFAULTS_WATCHER
+  kos_matcher_defaults_version++;
+#endif
   return KosMatcher_ExternDefaults();
+}
+
+
+PyObject *KosMatcher_ResolveDefaultEnv(KosMatcher *m) {
+  Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
+  PyObject *env = PyTuple_New(n_ext);
+  if (! env)
+    return NULL;
+  for (Py_ssize_t i = 0; i < n_ext; i++) {
+    PyObject *val = matcher_extern_default(PyTuple_GET_ITEM(m->externs, i));
+    if (! val) {
+      Py_DECREF(env);
+      return NULL;
+    }
+    PyTuple_SET_ITEM(env, i, Py_NewRef(val));
+  }
+  return env;
+}
+
+
+int KosMatcher_ExternNamesAligned(KosMatcher *m, PyObject *names) {
+  Py_ssize_t n_named = 0;
+  if (names && PyTuple_Check(names))
+    n_named = PyTuple_GET_SIZE(names);
+  Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
+  if (n_named != n_ext)
+    return 0;
+  for (Py_ssize_t i = 0; i < n_ext; i++) {
+    PyObject *a = PyTuple_GET_ITEM(names, i);
+    PyObject *b = PyTuple_GET_ITEM(m->externs, i);
+    if (a == b)
+      continue;
+    int eq = PyObject_RichCompareBool(a, b, Py_EQ);
+    if (eq < 0)
+      return -1;
+    if (! eq)
+      return 0;
+  }
+  return 1;
+}
+
+
+int KosMatcher_RootReject(
+    KosMatcher *m, PyObject *subject, PyObject *const *extern_env) {
+  PyObject *peeled = matcher_peel_datum(subject);
+  int r;
+
+  /* Each arm tests what its engine counterpart tests: a type test and
+     the two gates peel a Datum first, a class pattern does not. */
+  switch (m->root_kind) {
+    case KOS_MATCH_ROOT_TEST_TYPE:
+      if (! extern_env)
+        return 0;
+      r = matcher_isinstance_pure(peeled, extern_env[m->root_ref]);
+      if (r == -2)
+        return 0;   /* user code would decide it: leave it to the engine */
+      break;
+    case KOS_MATCH_ROOT_CLASS:
+      if (! extern_env)
+        return 0;
+      r = matcher_isinstance_pure(subject, extern_env[m->root_ref]);
+      if (r == -2)
+        return 0;
+      break;
+    case KOS_MATCH_ROOT_SEQUENCE:
+      r = matcher_sequence_gate_pure(peeled);
+      if (r == -2)
+        return 0;
+      break;
+    case KOS_MATCH_ROOT_MAPPING:
+      r = matcher_mapping_gate_pure(peeled);
+      if (r == -2)
+        return 0;
+      break;
+    default:
+      return 0;
+  }
+  if (r < 0)
+    return -1;
+  return r ? 0 : 1;
 }
 
 

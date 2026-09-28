@@ -117,6 +117,93 @@ class TestFastListAppend(CevalTest):
         self.assertEqual(result, [7])
 
 
+    async def test_fast_list_append_keeps_refcounts(self):
+        """
+        Repeated appends leave the list and the value with only the
+        references the namespace and the list hold
+        """
+
+        import sys
+
+        col = []
+        payload = object()
+        before_col = sys.getrefcount(col)
+        before_payload = sys.getrefcount(payload)
+        code, ns = build_expr(
+            [
+                ["CONST", payload],
+                ["FAST_LIST_APPEND", 0],
+                ["CONST", None],
+                ["RETURN", 1],
+            ],
+            local_syms=("col",), values={"col": col})
+        fn = make_callable(code, ns)
+        await fn()
+        await fn()
+        self.assertEqual(col, [payload, payload])
+        del code, ns, fn
+        self.assertEqual(sys.getrefcount(col), before_col)
+        col.clear()
+        self.assertEqual(sys.getrefcount(payload), before_payload)
+
+
+    async def test_fast_list_append_type_error(self):
+        code, ns = build_expr(
+            [
+                ["CONST", 1],
+                ["FAST_LIST_APPEND", 0],
+                ["RETURN", 0],
+            ],
+            local_syms=("col",), values={"col": 99})
+        fn = make_callable(code, ns)
+        with self.assertRaises(TypeError) as ctx:
+            await fn()
+        self.assertIn("int", str(ctx.exception))
+
+
+    async def test_fast_list_append_unbound_slot_raises(self):
+        code, ns = build_expr(
+            [
+                ["CONST", 1],
+                ["FAST_LIST_APPEND", 0],
+                ["RETURN", 0],
+            ],
+            local_syms=("col",))
+        fn = make_callable(code, ns)
+        with self.assertRaises(NameError):
+            await fn()
+
+
+    async def test_fast_list_append_through_computing_ref(self):
+        """
+        A slot bound to a Ref subclass with a computing deref is
+        derefed once per append
+        """
+
+        col = []
+        calls = []
+
+        class Computing(lib.Ref):
+            def deref(self):
+                calls.append(1)
+                return col
+
+        code, ns = build_expr(
+            [
+                ["CONST", 7],
+                ["FAST_LIST_APPEND", 0],
+                ["CONST", None],
+                ["RETURN", 1],
+            ],
+            local_syms=("col",))
+        ns.bind("col", Computing("col"))
+        fn = make_callable(code, ns)
+        await fn()
+        await fn()
+        self.assertEqual(col, [7, 7])
+        self.assertEqual(len(calls), 2)
+
+
 class TestBuildListAppend(CevalTest):
 
     async def test_build_list_append_one(self):

@@ -22,6 +22,7 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_REQ(node)->iter = NULL;
   KosDynForeach_REQ(node)->islots = NULL;
   KosDynForeach_REQ(node)->mode = KOS_IREQ_IDLE;
+  KosDynForeach_REQ(node)->kind = KOS_IREQ_KIND_NONE;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
 }

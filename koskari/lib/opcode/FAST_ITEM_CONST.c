@@ -15,28 +15,17 @@
 
 
 /**
-  FAST_ITEM_CONST: arg = extra index. Schema FASTVAR, CONST, NOARG,
-  NOARG. No stack operands. Object from a fast slot, key from the
-  pool. Push obj[key]. The access runs through kos_item_load
-  (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
+  FAST_ITEM_CONST: arg = extra index. Schema FASTVAR, CONST, NOARG, NOARG.
+  No stack operands. Object from a fast slot, key from the pool. Push
+  obj[key]. Dispatches to the site's elected body, a list, tuple, or dict
+  load with the constant's index held in the slot, else elects
+  (eval/eval_electors.c, the FAST_ITEM_CONST family).
 */
 KOS_OP_HANDLER(FAST_ITEM_CONST) {
-  const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
-  PyObject *obj, *obj_ref;
-  PyObject *key = KosExtra_OBJ(row, 1);
-  PyObject *out;
-
-  KOS_OP_REQUIRE_NS(ns);
-  KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 0),
-                     { RESULT_RAISE(); });
-
-  out = kos_item_load(KosOp_SLOT(insn), obj, key);
-  Py_XDECREF(obj_ref);
-
-  if (unlikely(! out))
-    RESULT_RAISE();
-  RESULT_STEAL(es, out);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_fast_item_const_elect, es, insn, NULL);
 }
 
 

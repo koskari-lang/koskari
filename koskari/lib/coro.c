@@ -29,7 +29,6 @@
 #include "debug.h"
 
 
-static PyObject *coro_str_send = NULL;
 static PyObject *coro_str_throw = NULL;
 static PyObject *coro_str_close = NULL;
 
@@ -45,25 +44,25 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
     return NULL;
   }
 
+  /* the frame steals ns and releases it on failure */
   KosDynFrame *frame = kos_dynframe_new(
       (KosDynNode *) gen, code, ns);
   if (! frame) {
     kos_dyngen_free(gen);
-    Py_DECREF(ns);
     return NULL;
   }
 
-  KosContext *ctx = KosContext_New(frame);
-  if (! ctx) {
-    kos_dynframe_free(frame);
+  /* An unstarted generator rests in the same slot a suspended one does;
+     started == 0 on the wrapper tells the first install to bootstrap
+     rather than resume. No context: the splice from Koskari never needs
+     one, and a drive from Python creates the wrapper's at that moment. */
+  KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
+
+  PyObject *agen = KosPyAsyncGen_New(NULL);
+  if (! agen) {
     kos_dyngen_free(gen);
     return NULL;
   }
-
-  /* the wrapper takes over the new reference */
-  PyObject *agen = KosPyAsyncGen_New(ctx);
-  if (! agen)
-    return NULL;
 
   Py_XINCREF(KosCode_NAME(code));
   ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);
@@ -92,16 +91,90 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   if (KosCode_YIELDS((KosCode *) code))
     return KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
 
-  KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
-  if (! frame)
-    return NULL;
-
-  KosContext *ctx = KosContext_New(frame);
-  if (! ctx) {
-    kos_dynframe_free(frame);
+  /* the bound call: nothing runs and no context exists until Python
+     drives it, and a Koskari await takes the program without either */
+  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
+  if (! coro) {
+    Py_DECREF(ns);
     return NULL;
   }
-  return KosCoroutine_New(ctx);
+
+  coro->ctx = NULL;
+  coro->state = KOS_CORO_NEW;
+  coro->pending_await = NULL;
+  coro->in_send = 0;
+  Py_INCREF(code);
+  coro->code = (KosCode *) code;
+  coro->ns = ns;
+  coro->domain = NULL;
+  coro->param_refs = NULL;
+
+  if (KosContext_Snapshot(&coro->domain, &coro->param_refs) < 0) {
+    Py_DECREF(coro);
+    return NULL;
+  }
+
+  PyObject_GC_Track((PyObject *) coro);
+  return (PyObject *) coro;
+}
+
+
+/**
+   Build the drive context from the bound call, for the first drive from
+   Python: the root frame over the program and its namespace, and a
+   context over that frame starting from the creation-time snapshot. A
+   no-op once built. Returns -1 with an error set.
+*/
+static void coroutine_drop_record(KosCoroutine *coro);
+
+
+static int coroutine_materialize(KosCoroutine *coro) {
+
+  KosDynFrame *frame;
+  KosContext *ctx;
+
+  if (coro->ctx)
+    return 0;
+  if (! coro->code) {
+    PyErr_SetString(PyExc_RuntimeError, "coroutine has no program");
+    return -1;
+  }
+
+  frame = kos_dynframe_new(NULL, coro->code, coro->ns);  /* steals ns */
+  coro->ns = NULL;
+  if (! frame)
+    goto fail;
+
+  ctx = KosContext_NewFromSnapshot(frame, coro->domain, coro->param_refs);
+  coro->domain = NULL;
+  coro->param_refs = NULL;
+  if (! ctx) {
+    kos_dynframe_free(frame);
+    goto fail;
+  }
+
+  Py_CLEAR(coro->code);
+  coro->ctx = ctx;
+  return 0;
+
+ fail:
+  /* half a record is no program: the coroutine is finished */
+  coroutine_drop_record(coro);
+  coro->state = KOS_CORO_DONE;
+  return -1;
+}
+
+
+/**
+   Drop the bound call of a coroutine closed before any drive: nothing
+   has entered, so there is nothing to unwind.
+*/
+static void coroutine_drop_record(KosCoroutine *coro) {
+
+  Py_CLEAR(coro->code);
+  Py_CLEAR(coro->ns);
+  Py_CLEAR(coro->domain);
+  Py_CLEAR(coro->param_refs);
 }
 
 
@@ -173,6 +246,7 @@ static void coroutine_dealloc(PyObject *self) {
 
   Py_CLEAR(coro->ctx);
   Py_XDECREF(coro->pending_await);
+  coroutine_drop_record(coro);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -187,6 +261,10 @@ static int coroutine_traverse(
 
   Py_VISIT(coro->pending_await);
   Py_VISIT(coro->ctx);
+  Py_VISIT(coro->code);
+  Py_VISIT(coro->ns);
+  Py_VISIT(coro->domain);
+  Py_VISIT(coro->param_refs);
 
   return 0;
 }
@@ -198,6 +276,7 @@ static int coroutine_clear(PyObject *self) {
 
   Py_CLEAR(coro->pending_await);
   Py_CLEAR(coro->ctx);
+  coroutine_drop_record(coro);
 
   return 0;
 }
@@ -221,50 +300,83 @@ static PyObject *coroutine_iternext(PyObject *self) {
 
 
 /**
-   Translate a KosOpResult from driving the evaluator into the Python
-   coroutine protocol: StopIteration on return, NULL on raise, or the
-   yielded/awaited value with the coroutine state updated to match.
+   Settle a KosOpResult from driving the evaluator into the coroutine
+   protocol's three outcomes, with the coroutine state updated to
+   match: 0 for a return with *out the value (owned), 1 for a yield or
+   an await with *out the payload (owned), -1 with an exception set and
+   *out NULL. The two entry points report these their own way: the
+   iterator protocol raises StopIteration for a return, the send slot
+   hands the value back as PYGEN_RETURN.
 */
-static PyObject *coroutine_result(KosCoroutine *coro, KosOpResult res) {
+static int coroutine_settle(
+    KosCoroutine *coro,
+    KosOpResult res,
+    PyObject **out) {
 
+  *out = NULL;
   switch (res.kind) {
-    case KOS_RES_RETURN: {
+    case KOS_RES_RETURN:
       coro->state = KOS_CORO_DONE;
-      /* Wrap in StopIteration manually to avoid tuple-arg unpacking. */
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, res.val);
-      PyErr_SetObject(PyExc_StopIteration, err);
-      Py_DECREF(err);
-      Py_XDECREF(res.val);
-      return NULL;
-    }
+      *out = res.val ? res.val : Py_NewRef(Py_None);
+      return 0;
 
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
       coro->state = KOS_CORO_DONE;
-      return NULL;
+      return -1;
 
     case KOS_RES_YIELD:
       coro->state = KOS_CORO_YIELDED;
-      return res.val;  /* transfer ownership to caller */
+      *out = res.val;  /* transfer ownership to caller */
+      return 1;
 
     case KOS_RES_AWAIT:
       if (! res.val) {
         PyErr_SetString(PyExc_RuntimeError,
                         "KOS_RES_AWAIT with NULL payload");
         coro->state = KOS_CORO_DONE;
-        return NULL;
+        return -1;
       }
       /* Driver already stepped the awaitable in push_or_await and set
          ctx->py_await_iter. Just suspend and return the awaitable to
          the event loop. */
       coro->state = KOS_CORO_WAITING_PY;
-      return res.val;  /* transfer ownership to caller (asyncio) */
+      *out = res.val;  /* transfer ownership to caller (asyncio) */
+      return 1;
 
     default:
       PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
       coro->state = KOS_CORO_DONE;
-      return NULL;
+      return -1;
   }
+}
+
+
+/**
+   Report a settled step on the iterator protocol: the payload for a
+   yield or await, StopIteration(value) for a return (built as a real
+   instance so the value is not tuple-splat during normalization), NULL
+   with the error set otherwise.
+*/
+static PyObject *coroutine_report(int settled, PyObject *out) {
+
+  if (settled == 1)
+    return out;
+  if (settled == 0) {
+    PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, out);
+    Py_DECREF(out);
+    if (err) {
+      PyErr_SetObject(PyExc_StopIteration, err);
+      Py_DECREF(err);
+    }
+  }
+  return NULL;
+}
+
+
+static PyObject *coroutine_result(KosCoroutine *coro, KosOpResult res) {
+  PyObject *out;
+  return coroutine_report(coroutine_settle(coro, res, &out), out);
 }
 
 
@@ -274,7 +386,7 @@ static PyObject *coroutine_result(KosCoroutine *coro, KosOpResult res) {
    is delivered at the await point and the frame's handler chain runs
    (mirror revive_await's EVAL_RAISE ingress).
 */
-static PyObject *coroutine_raise_at_await(
+static KosOpResult coroutine_drive_await_error(
     KosCoroutine *coro,
     KosEvalState *coro_es) {
 
@@ -295,26 +407,61 @@ static PyObject *coroutine_raise_at_await(
   Py_XDECREF(val);
   Py_XDECREF(tb);
 
-  return coroutine_result(coro, res);
+  return res;
 }
 
 
-static PyObject *coroutine_send(PyObject *self, PyObject *value) {
+static PyObject *coroutine_raise_at_await(
+    KosCoroutine *coro,
+    KosEvalState *coro_es) {
 
-  KosCoroutine *const coro = (KosCoroutine *) self;
+  return coroutine_result(coro, coroutine_drive_await_error(coro, coro_es));
+}
+
+
+/**
+   One step of the coroutine, shared by the send method, tp_iternext,
+   and the send slot: the reuse and re-entry guards, the forward into a
+   Python awaitable the coroutine is waiting on, the drive, and the
+   settle. Returns coroutine_settle's code with *out as it describes.
+
+   A waiting coroutine forwards through kos_iter_send, so an awaitable
+   with a send slot (a generator, a coroutine, a future's iterator)
+   completes without building a StopIteration; its return value is the
+   send value for the drive that follows.
+*/
+static int coroutine_step(
+    KosCoroutine *coro,
+    PyObject *value,
+    PyObject **out) {
+
+  *out = NULL;
 
   /* Re-entrancy guard */
   if (coro->in_send) {
     PyErr_SetString(PyExc_RuntimeError,
                     "coroutine already being awaited");
-    return NULL;
+    return -1;
   }
 
   /* Check state: a completed coroutine is single-shot, like CPython's */
   if (coro->state == KOS_CORO_DONE) {
     PyErr_SetString(PyExc_RuntimeError,
                     "cannot reuse already awaited coroutine");
-    return NULL;
+    return -1;
+  }
+
+  /* the first drive from Python builds the context; it takes no value,
+     as for a CPython coroutine */
+  if (coro->state == KOS_CORO_NEW) {
+    if (value && value != Py_None) {
+      PyErr_SetString(PyExc_TypeError,
+                      "can't send non-None value to a"
+                      " just-started coroutine");
+      return -1;
+    }
+    if (coroutine_materialize(coro) < 0)
+      return -1;
   }
 
   /* If suspended on yield, pass value as send_val */
@@ -325,38 +472,36 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
     coro->state = KOS_CORO_RUNNING;
   }
 
-  /* If waiting on Python awaitable, forward to it */
+  /* If waiting on Python awaitable, forward to it. The iterator is held
+     across the forward, and in_send is set so close, send and throw
+     from inside the step are refused: either can otherwise clear the
+     context's reference to the iterator while it runs. */
   if (coro->state == KOS_CORO_WAITING_PY) {
     KosEvalState coro_es;
     KosEvalState_Init(&coro_es, coro->ctx);
-    if (KosEvalState_PythonAwaitIter(&coro_es)) {
-      PyObject *result = PyObject_CallMethodObjArgs(
-          KosEvalState_PythonAwaitIter(&coro_es), coro_str_send, value, NULL);
-
-      if (result) {
-        /* Still yielding */
-        return result;
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    if (await_iter) {
+      PyObject *await_result = NULL;
+      Py_INCREF(await_iter);
+      coro->in_send = 1;
+      PySendResult step = kos_iter_send(await_iter, value ? value : Py_None,
+                                        &await_result);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
+      if (step == PYGEN_NEXT) {
+        *out = await_result;   /* still yielding */
+        return 1;
       }
-
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        /* Python awaitable completed - pass result as send_val and drive
-           again. await_result is uniformly owned; the XDECREF after the
-           drive releases it. */
-        PyObject *await_result = NULL;
-        PyGen_FetchStopIterationValue(&await_result);
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
-
-        KosEvalState_PythonAwaitClearIter(&coro_es);
-        coro->state = KOS_CORO_RUNNING;
-        send_val = await_result;
-        /* fall through to drive and handle ev */
-      } else {
-        /* Exception from Python awaitable */
-        return coroutine_raise_at_await(coro, &coro_es);
-      }
+      if (step == PYGEN_ERROR)
+        return coroutine_settle(
+            coro, coroutine_drive_await_error(coro, &coro_es), out);
+      /* PYGEN_RETURN: await_result is the completion, owned, never NULL */
+      /* Python awaitable completed: its value is the send value for
+         the drive. await_result is uniformly owned; the XDECREF after
+         the drive releases it. */
+      KosEvalState_PythonAwaitClearIter(&coro_es);
+      coro->state = KOS_CORO_RUNNING;
+      send_val = await_result;
     }
   }
 
@@ -368,11 +513,34 @@ static PyObject *coroutine_send(PyObject *self, PyObject *value) {
 
   coro->in_send = 0;
 
-  SAYF("[coroutine_send] koskari_eval -> kind=%d payload=%R\n",
+  SAYF("[coroutine_step] koskari_eval -> kind=%d payload=%R\n",
         (int) res.kind, res.val);
 
-  return coroutine_result(coro, res);
+  return coroutine_settle(coro, res, out);
 }
+
+
+static PyObject *coroutine_send(PyObject *self, PyObject *value) {
+  PyObject *out;
+  return coroutine_report(
+      coroutine_step((KosCoroutine *) self, value, &out), out);
+}
+
+
+#if PY_MINOR_VERSION >= 10
+/**
+   The send slot asyncio's task step uses: the same step, reported as
+   a code and a value, so a return never builds a StopIteration.
+*/
+static PySendResult coroutine_am_send(
+    PyObject *self, PyObject *value, PyObject **result) {
+
+  int settled = coroutine_step((KosCoroutine *) self, value, result);
+  if (settled == 1)
+    return PYGEN_NEXT;
+  return settled == 0 ? PYGEN_RETURN : PYGEN_ERROR;
+}
+#endif
 
 
 /**
@@ -399,14 +567,24 @@ static PyObject *coroutine_throw_pair(
     return NULL;
   }
 
+  /* a throw into an unstarted coroutine is delivered at its start */
+  if (coro->state == KOS_CORO_NEW && coroutine_materialize(coro) < 0)
+    return NULL;
+
   /* If yielded, throw will inject exception and run (no special case) */
-  /* If waiting on Python awaitable, forward throw */
+  /* If waiting on Python awaitable, forward throw; the iterator is held
+     and in_send set across it, as in coroutine_step */
   if (coro->state == KOS_CORO_WAITING_PY) {
     KosEvalState coro_es;
     KosEvalState_Init(&coro_es, coro->ctx);
-    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    if (await_iter) {
+      Py_INCREF(await_iter);
+      coro->in_send = 1;
       PyObject *result = PyObject_CallMethodObjArgs(
-          KosEvalState_PythonAwaitIter(&coro_es), coro_str_throw, exc, NULL);
+          await_iter, coro_str_throw, exc, NULL);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
 
       if (result) {
         return result;
@@ -468,13 +646,27 @@ static PyObject *coroutine_close(PyObject *self) {
     Py_RETURN_NONE;
   }
 
-  /* Close any pending Python awaitable */
+  /* never started: nothing entered, nothing to unwind */
+  if (coro->state == KOS_CORO_NEW && ! coro->ctx) {
+    coroutine_drop_record(coro);
+    coro->state = KOS_CORO_DONE;
+    Py_RETURN_NONE;
+  }
+
+  /* Close any pending Python awaitable. The iterator is held and
+     in_send set across the call, as in coroutine_step: its close can
+     run user code that calls back into this coroutine. */
   {
     KosEvalState coro_es;
     KosEvalState_Init(&coro_es, coro->ctx);
-    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    if (await_iter) {
+      Py_INCREF(await_iter);
+      coro->in_send = 1;
       PyObject *result = PyObject_CallMethodObjArgs(
-          KosEvalState_PythonAwaitIter(&coro_es), coro_str_close, NULL);
+          await_iter, coro_str_close, NULL);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
       Py_XDECREF(result);
       PyErr_Clear();
       KosEvalState_PythonAwaitClearIter(&coro_es);
@@ -566,6 +758,9 @@ static PyMethodDef coroutine_methods[] = {
 
 static PyAsyncMethods coroutine_async_methods = {
   .am_await = coroutine_await,
+#if PY_MINOR_VERSION >= 10
+  .am_send = coroutine_am_send,
+#endif
 };
 
 
@@ -630,6 +825,10 @@ PyObject *KosCoroutine_New(KosContext *ctx) {
   coro->state = KOS_CORO_NEW;
   coro->pending_await = NULL;
   coro->in_send = 0;
+  coro->code = NULL;
+  coro->ns = NULL;
+  coro->domain = NULL;
+  coro->param_refs = NULL;
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
@@ -641,8 +840,24 @@ int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
   KosCoroutine *const coro = (KosCoroutine *) self;
   KosDynFrame *frame;
 
-  if (coro->state != KOS_CORO_NEW || coro->in_send || ! coro->ctx)
+  if (coro->state != KOS_CORO_NEW || coro->in_send)
     return 0;
+
+  if (! coro->ctx) {
+    /* the bound call itself: the program and namespace move to the
+       caller, the snapshot is dropped -- the grafted frame runs under
+       the awaiter's dynamic state */
+    if (! coro->code)
+      return 0;
+    *code = coro->code;
+    coro->code = NULL;
+    *ns = coro->ns;
+    coro->ns = NULL;
+    Py_CLEAR(coro->domain);
+    Py_CLEAR(coro->param_refs);
+    coro->state = KOS_CORO_DONE;
+    return 1;
+  }
 
   frame = KosContext_FRAME_TOP(coro->ctx);
   if (! frame || ! KosDynFrame_CODE(frame))
@@ -668,7 +883,6 @@ int koskari_coro_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(coro_str_send, "send");
   STR_CONST(coro_str_throw, "throw");
   STR_CONST(coro_str_close, "close");
 
@@ -685,7 +899,6 @@ int koskari_coro_init(PyObject *mod) {
 
 int koskari_coro_clear(PyObject *mod) {
 
-  Py_CLEAR(coro_str_send);
   Py_CLEAR(coro_str_throw);
   Py_CLEAR(coro_str_close);
 

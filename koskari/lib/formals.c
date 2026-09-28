@@ -1415,6 +1415,18 @@ int KosFormals_VectorApplyFast(
 /* === Simple-call steal binding === */
 
 
+
+KOS_NOINLINE int kos_formals_steal_underrun(
+    const KosSegment *block,
+    Py_ssize_t nargs) {
+
+  PyErr_Format(PyExc_RuntimeError, "formals steal underrun."
+               " requested: %zu, available: %zu", (size_t) nargs,
+               block ? KosSegment_LEN(block) : 0);
+  return -1;
+}
+
+
 /* === Unit lifecycle === */
 
 

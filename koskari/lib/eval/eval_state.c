@@ -259,20 +259,27 @@ PyObject *KosEvalState_PopUnpackSequence(
     const char *who) {
 
   PyObject *raw = KosEvalState_StackPopRef(es);
+  PyObject *seq;
   if (unlikely(! raw))
     return NULL;
 
-  PyObject *seq = PySequence_Fast(raw, "");
-  if (unlikely(! seq)) {
-    if (PyErr_ExceptionMatches(PyExc_TypeError)) {
-      PyErr_Format(PyExc_TypeError,
-                   "%s: cannot unpack non-iterable %.100s object",
-                   who, Py_TYPE(raw)->tp_name);
+  /* a tuple or list is already the fast sequence: keep the popped
+     reference instead of asking libpython to hand it back */
+  if (PyTuple_CheckExact(raw) || PyList_CheckExact(raw)) {
+    seq = raw;
+  } else {
+    seq = PySequence_Fast(raw, "");
+    if (unlikely(! seq)) {
+      if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+        PyErr_Format(PyExc_TypeError,
+                     "%s: cannot unpack non-iterable %.100s object",
+                     who, Py_TYPE(raw)->tp_name);
+      }
+      Py_DECREF(raw);
+      return NULL;
     }
     Py_DECREF(raw);
-    return NULL;
   }
-  Py_DECREF(raw);
 
   Py_ssize_t slen = PySequence_Fast_GET_SIZE(seq);
   if (unlikely(exact ? (slen != need) : (slen < need))) {

@@ -1598,7 +1598,7 @@ source: |-
   
 verify:
   read: (str (type (ref-attr obj count)))
-  expand: (str (type (ref-attr obj count)))
+  expand: (#str (type (ref-attr obj count)))
   eval: '"<class ''koskari.lib.AttributeRef''>"'
 references:
   - reference/specials/compile-ref-attr.md
@@ -1630,7 +1630,7 @@ source: |-
   
 verify:
   read: (str 42)
-  expand: (str 42)
+  expand: (#str 42)
   eval: '"42"'
 references:
   - reference/specials/object-operators/index.md
@@ -1647,7 +1647,7 @@ source: |-
   
 verify:
   read: (str True)
-  expand: (str True)
+  expand: (#str True)
   eval: '"True"'
 references:
   - reference/specials/object-operators/index.md
@@ -1664,7 +1664,7 @@ source: |-
   
 verify:
   read: (str None)
-  expand: (str None)
+  expand: (#str None)
   eval: '"None"'
 references:
   - reference/specials/object-operators/index.md

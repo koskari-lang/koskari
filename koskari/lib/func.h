@@ -186,11 +186,21 @@ typedef struct {
                                call arms test the code for yields
                                themselves; 0 = not simple, so zeroed
                                construction is fail-safe */
-  KosDynFrame *cached_frame; /* parked prepared frame (code + reset ns +
-                                cleared stack, fn NULL) for the next
-                                non-recursive simple call; owned; NULL
-                                when empty.  See KosFunction_TryParkFrame */
+  KosDynFrame *cached_frame; /* head of the parked prepared frames
+                                (code + reset ns + cleared stack, fn
+                                NULL) for the next simple calls; owned;
+                                NULL when empty. Linked through each
+                                frame's back_frame, newest first, with
+                                the list length in the head's depth
+                                field; capped at KOS_FRAME_CACHE_MAX.
+                                See KosFunction_TryParkFrame */
 } KosFunction;
+
+/* Parked frames a function keeps. One serves a non-recursive function;
+   a recursion of depth d finds the cache empty on the way down and
+   parks d frames on the way up, so the next descent is served up to
+   this depth. */
+#define KOS_FRAME_CACHE_MAX 8
 
 #define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
 
@@ -200,8 +210,29 @@ typedef struct {
 
 
 /**
-   Offer a released frame to the function's single-slot frame cache.
-   Parks only when the slot is open and the frame is provably private:
+   Unlink and return the head of the function's parked frames, or NULL.
+   A hit arm reads the head, steal-binds into its namespace, and calls
+   this only once the bind succeeded, so a failed bind leaves the frame
+   parked. The install that follows overwrites the returned frame's
+   back_frame and depth.
+*/
+static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
+  KosFunction *fn = (KosFunction *) self;
+  KosDynFrame *head = fn->cached_frame;
+
+  if (head) {
+    /* every parked frame's depth is one more than its successor's,
+       set at the park, so next already carries its own */
+    fn->cached_frame = (KosDynFrame *) KosDynFrame_BACK_FRAME(head);
+    KosDynFrame_BACK_FRAME(head) = NULL;
+  }
+  return head;
+}
+
+
+/**
+   Offer a released frame to the function's frame cache.
+   Parks only when the cache is under its cap and the frame is provably private:
    exact Namespace with refcount 1, GC-untracked, no binds dict, and no
    native handler.  On park the namespace's raw slots are cleared, the
    segment is cleared, and the node base is normalized for
@@ -210,61 +241,7 @@ typedef struct {
 
    :return: 1 when parked (ownership taken), 0 when refused
 */
-static inline int KosFunction_TryParkFrame(
-    PyObject *self,
-    KosDynFrame *frame) {
-
-  KosFunction *fn = (KosFunction *) self;
-  PyObject *ns;
-
-  if (fn->cached_frame)
-    return 0;
-
-  /* The namespace must be private to the frame. Every reference that
-     can outlive the return goes through KosNamespace_Reveal or
-     KosNamespace_TrackChain (locals, collect, closure templates,
-     continuation clones, snapshots), so GC tracking is the record of
-     escape; a dynamic slot-less bind is the one other visibility. The
-     frame itself is an installed FN-tagged frame: its namespace is an
-     exact template copy and its stack and resume fields are settled by
-     kos_dynframe_free before the park is offered. */
-  ns = KosDynFrame_NS(frame);
-  if (PyObject_GC_IsTracked(ns) || KosNamespace_BINDS(ns) != NULL)
-    return 0;
-
-#if KOS_EVAL_SAFETYNET
-  if (! KosNamespace_CheckExact(ns))
-    Py_FatalError("KosFunction_TryParkFrame: frame namespace is not an"
-                  " exact KosNamespace");
-  if (Py_REFCNT(ns) != 1)
-    Py_FatalError("KosFunction_TryParkFrame: untracked frame namespace"
-                  " has an escaping reference");
-  if (KosDynFrame_RESUME_KIND(frame))
-    Py_FatalError("KosFunction_TryParkFrame: frame carries a resume");
-  if (! KosDynFrame_STACK(frame))
-    Py_FatalError("KosFunction_TryParkFrame: frame has no stack");
-#endif
-
-  /* Reset to the state a fresh install would produce: the template's
-     raw slots NULL and raw again (its refs retained), empty stack,
-     normalized node base ready for kos_dyn_push_ready_frame. */
-  KosNamespace_ResetToTemplate(ns);
-  kos_stack_clear_fast(&KosDynFrame_STACK(frame));
-  KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
-  KosDynFrame_BACK_FRAME(frame) = NULL;
-
-  KosDynNode_PARENT(frame) = NULL;
-  KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
-  /* The parked frame keeps the namespace it introduced, so it keeps
-     the cap that tells the collector to look inside it. */
-  KosDynNode_CAPS(frame) = KOS_DYN_CAP_OWNS_NS;
-  KosDynFrame_PC(frame) = 0;
-  KosDynFrame_ACTING_PC(frame) = 0;
-  KosDynFrame_FLAGS(frame) = 0;
-
-  fn->cached_frame = frame;
-  return 1;
-}
+int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame);
 
 
 /**

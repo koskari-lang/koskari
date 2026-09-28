@@ -53,8 +53,6 @@
 
 static PyObject *KoskariSyncViolation = NULL;
 
-static PyObject *str_await = NULL;
-static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
 
 
@@ -90,52 +88,28 @@ static int register_koskari_sync_exception(PyObject *mod,
 
 
 /**
-   Eagerly step a Python awaitable returned at the demand boundary. On
-   immediate completion (StopIteration), return the value. On suspension
-   (the awaitable yields before completing), inject KoskariSyncViolation
-   via .throw(); the callee may catch it and return a value, or re-raise.
+   Eagerly step a Python awaitable returned at the demand boundary,
+   through kos_await_first_step. On immediate completion, return the
+   value. On suspension, throw KoskariSyncViolation into the await
+   iterator; the callee may catch it and return a value, or re-raise.
 
    Steals the reference to `result`. Returns a new reference to the final
-   value, or NULL with PyErr set. If `result` is not awaitable (no
-   __await__), it is returned unchanged (still stolen).
+   value, or NULL with PyErr set.
 */
 static PyObject *demand_step_python_result(PyObject *result) {
 
   PyObject *await_iter = NULL;
-  PyObject *step = NULL;
+  PyObject *yielded = NULL;
+  PyObject *value = kos_await_first_step(result, &await_iter, &yielded);
 
-  /* Try __await__; if absent, not an awaitable -- return as-is. */
-  PyObject *await_meth = PyObject_GetAttr(result, str_await);
-  if (! await_meth) {
-    if (! PyErr_ExceptionMatches(PyExc_AttributeError))
-      goto steal_fail;
-    PyErr_Clear();
-    return result;
-  }
-  await_iter = PyObject_CallNoArgs(await_meth);
-  Py_DECREF(await_meth);
   Py_DECREF(result);
-  result = NULL;
+  if (value)
+    return value;
   if (! await_iter)
     return NULL;
 
-  /* First step: send(None). */
-  step = PyObject_CallMethodObjArgs(await_iter, str_send, Py_None, NULL);
-
-  if (! step) {
-    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
-      goto iter_fail;
-    /* Completed immediately. */
-    PyObject *value = NULL;
-    if (PyGen_FetchStopIterationValue(&value) < 0)
-      goto iter_fail;
-    Py_DECREF(await_iter);
-    return value ? value : (Py_INCREF(Py_None), Py_None);
-  }
-
-  /* Suspended: discard yielded value, inject KoskariSyncViolation. */
-  Py_DECREF(step);
-  step = NULL;
+  /* Suspended: discard the yield, inject KoskariSyncViolation. */
+  Py_DECREF(yielded);
 
   {
     static const char msg[] = "async suspension is not allowed in demand_sync";
@@ -146,31 +120,26 @@ static PyObject *demand_step_python_result(PyObject *result) {
     Py_DECREF(msg_str);
     if (! exc)
       goto iter_fail;
-    step = PyObject_CallMethodObjArgs(await_iter, str_throw, exc, NULL);
+    value = PyObject_CallMethodObjArgs(await_iter, str_throw, exc, NULL);
     Py_DECREF(exc);
   }
 
-  if (! step) {
+  if (! value) {
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       goto iter_fail;
     /* Callee caught the violation and returned a value. */
-    PyObject *value = NULL;
     if (PyGen_FetchStopIterationValue(&value) < 0)
       goto iter_fail;
     Py_DECREF(await_iter);
-    return value ? value : (Py_INCREF(Py_None), Py_None);
+    return value ? value : Py_NewRef(Py_None);
   }
 
   /* throw() returned without raising: still suspended. */
-  Py_DECREF(step);
+  Py_DECREF(value);
   kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
 
 iter_fail:
   Py_DECREF(await_iter);
-  return NULL;
-
-steal_fail:
-  Py_DECREF(result);
   return NULL;
 }
 
@@ -226,9 +195,59 @@ KOS_RESUME_KIND(demand_resume_kind, "demand",
 
 
 /**
+   The drive context for one boundary call: the wrapper's parked host
+   when there is one, taken out of the park before anything else runs
+   so no other call can see it, and refreshed to the dynamic state in
+   force at this call; otherwise a fresh context. host is NULL when
+   there is no wrapper to park on. New reference.
+*/
+static KosContext *demand_acquire_host(KosContext **host) {
+
+  if (host && *host) {
+    KosContext *ctx = *host;
+    *host = NULL;
+    if (KosContext_TakeSnapshot(ctx) < 0) {
+      Py_DECREF(ctx);
+      return NULL;
+    }
+    return ctx;
+  }
+  return KosContext_New(NULL);
+}
+
+
+/**
+   Return the drive context after the call: recycled, it stays parked
+   or takes the empty park; one the recycle cannot account for, or
+   with nowhere to park, is released. Consumes ctx.
+*/
+static void demand_release_host(KosContext **host, KosContext *ctx) {
+
+  if (! host) {
+    Py_DECREF(ctx);
+    return;
+  }
+  if (KosContext_Recycle(ctx) < 0) {
+    Py_DECREF(ctx);
+    return;
+  }
+  if (! *host) {
+    /* the park holds nothing of the finished call: the next acquire's
+       snapshot sets both again */
+    Py_CLEAR(KosContext_DOMAIN(ctx));
+    Py_CLEAR(KosContext_PARAM_REFS(ctx));
+    *host = ctx;
+    return;
+  }
+  Py_DECREF(ctx);
+}
+
+
+/**
    Run a KosCallable to completion from the Python boundary: record the
-   call on a fresh context, and koskari_eval installs it at entry
-   through KosEvalState_CallInto from a code-less root frame marked
+   call on the drive context (the wrapper's parked host, or a fresh
+   one), and koskari_eval installs it at entry through
+   KosEvalState_CallInto from a code-less root frame marked
    KOS_FRAME_DEMAND, which is the caller frame every install delivers
    into, then runs it to its return. Any KosCallable is accepted. The
    deny guards convert AWAIT and YIELD under the demand mark into
@@ -242,12 +261,13 @@ static PyObject *demand_run_koskari(
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
-    PyObject *kwnames) {
+    PyObject *kwnames,
+    KosContext **host) {
 
   KosEntryCall call = {
     callable, args, nargs, kwnames, &demand_resume_kind, KOS_FRAME_DEMAND,
   };
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = demand_acquire_host(host);
   KosOpResult r;
 
   if (! ctx)
@@ -256,7 +276,7 @@ static PyObject *demand_run_koskari(
   KosContext_ENTRY_CALL(ctx) = &call;
   r = koskari_eval(ctx, NULL, NULL, NULL);
   KosContext_ENTRY_CALL(ctx) = NULL;
-  Py_DECREF(ctx);
+  demand_release_host(host, ctx);
 
   switch (r.kind) {
     case KOS_RES_RETURN:
@@ -296,7 +316,8 @@ static PyObject *demand_sync_vector(
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
-    PyObject *kwnames) {
+    PyObject *kwnames,
+    KosContext **host) {
 
   SAYF("[demand_sync] callable = %p", callable);
 
@@ -306,7 +327,7 @@ static PyObject *demand_sync_vector(
     return result ? demand_finish_value(result) : NULL;
   }
 
-  return demand_run_koskari(callable, args, nargs, kwnames);
+  return demand_run_koskari(callable, args, nargs, kwnames, host);
 }
 
 
@@ -344,7 +365,7 @@ PyObject *Koskari_DemandSync(
   if (KosArgSpread_Init(&spread, args, kwargs, NULL, 0) < 0)
     return NULL;
   result = demand_run_koskari(callable, spread.argv, spread.nargs,
-                              spread.kwnames);
+                              spread.kwnames, NULL);
   KosArgSpread_Clear(&spread);
   return result;
 }
@@ -357,7 +378,7 @@ int Koskari_DemandSyncVector(
     PyObject *kwnames,
     PyObject **out_result) {
 
-  *out_result = demand_sync_vector(callable, args, nargs, kwnames);
+  *out_result = demand_sync_vector(callable, args, nargs, kwnames, NULL);
   return *out_result ? 0 : -1;
 }
 
@@ -386,7 +407,7 @@ static PyObject *demand_vectorcall(
   if (kwnames && ! PyTuple_GET_SIZE(kwnames))
     kwnames = NULL;
   return demand_sync_vector(wrapped, args, PyVectorcall_NARGS(nargsf),
-                            kwnames);
+                            kwnames, &((KosDemandObject *) self)->host);
 }
 
 
@@ -420,6 +441,7 @@ static PyObject *demand_new(
     return NULL;
 
   self->wrapped = NULL;
+  self->host = NULL;
   self->vectorcall = KosCallable_CheckSlots((PyObject *) self, &slots)
       ? slots->kc_pyvectorcall : NULL;
   return (PyObject *) self;
@@ -553,6 +575,7 @@ static void demand_dealloc(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
 
   Py_CLEAR(d->wrapped);
+  Py_CLEAR(d->host);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -562,6 +585,7 @@ static int demand_traverse(PyObject *self, visitproc visit, void *arg) {
 
   if (d->wrapped)
     Py_VISIT(d->wrapped);
+  Py_VISIT(d->host);
   return 0;
 }
 
@@ -570,6 +594,7 @@ static int demand_clear(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
 
   Py_CLEAR(d->wrapped);
+  Py_CLEAR(d->host);
   return 0;
 }
 
@@ -740,8 +765,6 @@ int koskari_demand_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(str_await, "__await__");
-  STR_CONST(str_send, "send");
   STR_CONST(str_throw, "throw");
 
   if (register_koskari_sync_exception(mod,
@@ -783,8 +806,6 @@ int koskari_demand_init(PyObject *mod) {
 int koskari_demand_clear(PyObject *mod) {
 
   KoskariSyncViolation = NULL;
-  Py_CLEAR(str_await);
-  Py_CLEAR(str_send);
   Py_CLEAR(str_throw);
   (void) mod;
   return 0;

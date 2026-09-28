@@ -82,7 +82,6 @@ typedef struct {
 
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
-static PyObject *str_await = NULL;
 static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
 static PyObject *str_asend = NULL;
@@ -286,7 +285,7 @@ KosIterRequestStatus KosIterRequest_Next(
     PyObject *value = NULL;
     PyObject *_await = NULL;
 
-    switch (op_get_next_from_iter(es, &_await, iter, &value)) {
+    switch (op_get_next_from_bound(es, req->kind, &_await, iter, &value)) {
       case GET_NEXT_VALUE:
         *fast_out = value;
         return KOS_IREQ_DELIVERED;
@@ -830,6 +829,13 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
    mark the context dead.  Call only when PyErr is set.  When es is non-NULL,
    flushes live pc/acting_pc onto the top frame first so traceback sees the
    current instruction.
+
+   An exact GeneratorExit is not decorated. It is the close protocol's
+   signal: every close drive throws one in and clears whatever comes
+   back, so the dynchain record, the faux frame, and the traceback entry
+   would be built for an exception discarded on the next line, once per
+   abandoned generator. A subclass, or any exception a finally raises in
+   its place, is a different type and is decorated as usual.
 */
 void kos_eval_prepare_boundary_raise(
     KosContext *ctx,
@@ -840,7 +846,8 @@ void kos_eval_prepare_boundary_raise(
   if (es)
     KosEvalState_FlushLiveRegsToFrame(es);
   PyErr_Fetch(&typ, &val, &tb);
-  inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+  if (typ != PyExc_GeneratorExit)
+    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
   if (es)
@@ -2631,7 +2638,10 @@ static inline int kos_return_is_plain(
 */
 KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
 
-  kos_dynframe_clear_resume(frame);
+  /* a plain frame-to-frame return carries no resume; the clear stays
+     out of line for the frames that do */
+  if (unlikely(KosDynFrame_RESUME_KIND(frame)))
+    kos_dynframe_clear_resume(frame);
 
   {
     PyObject *fn = KosDynFrame_FN(frame);
@@ -3552,6 +3562,7 @@ KosOpResult koskari_eval(
   KosOpResult eval_ret = EVAL_RAISE();
   KosExcState host_exc;
   KosEvalState es;
+  KosTlsState *tls;
   KosOpResult r;
 
   if (! ctx) {
@@ -3561,8 +3572,8 @@ KosOpResult koskari_eval(
 
   /* FAST-slot code needs a namespace with fast slots. Checked here,
      before anything below is set up, so a refusal returns with nothing
-     to unwind: the cleanup label pops the thread-local eval, context,
-     and token entries that only the pushes below create, and reaching
+     to unwind: the cleanup label pops the thread-local eval and context
+     entries that only the pushes below create, and reaching
      it from an earlier point would pop an enclosing eval's entries
      instead. A resume was checked on its first entry, and a native
      frame carries no code. */
@@ -3606,8 +3617,7 @@ KosOpResult koskari_eval(
 
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
-  KosEvalState_EnterDomainScope(&es);
-  kos_tls_push_active_eval(&es);
+  tls = kos_tls_enter_drive(ctx, &es);
   KOS_TRACE_EVAL_PUSH();
   KOS_TRACE_TRAMPOLINE_STEP();
 
@@ -3676,11 +3686,11 @@ KosOpResult koskari_eval(
 koskari_eval_cleanup:
   KOS_TRACE_OP_EXIT();
   KOS_TRACE_EVAL_POP();
-  kos_tls_pop_active_eval();
+  kos_tls_pop_active_eval(tls);
   KosEvalState_FlushLiveRegsToFrame(&es);
   KosEvalState_FreezeToContext(&es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  KosEvalState_LeaveDomainScope(&es);
+  kos_tls_leave_drive(tls, ctx);
 
   /* Save this context's handler-visible exception state and restore the
      host's (the reverse of the entry swap). */
@@ -3759,7 +3769,6 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_asend, "asend");
   STR_CONST(str_asyncio_future_blocking, "_asyncio_future_blocking");
   STR_CONST(str_athrow, "athrow");
-  STR_CONST(str_await, "__await__");
   STR_CONST(str_continuation, "continuation");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
@@ -3828,7 +3837,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_asend);
   Py_CLEAR(str_asyncio_future_blocking);
   Py_CLEAR(str_athrow);
-  Py_CLEAR(str_await);
   Py_CLEAR(str_continuation);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);

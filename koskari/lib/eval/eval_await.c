@@ -31,25 +31,20 @@
 
 
 /**
-   Attempt eager-step of a Python awaitable.
-
-   This tries to get __await__() and call send(None) once.
-   If the awaitable completes immediately (StopIteration), the value
-   is returned. If it yields, we store the iterator and return the
-   yielded value with *suspended = 1.
-
-   :param awaitable: the Python awaitable object
-   :param ctx: context to store await state if suspended
-   :param suspended: output flag, set to 1 if we need to suspend
-   :param yielded: output, the yielded value if suspended
-
-   :return: completed value on immediate completion, NULL on suspend or error
+   The first step of a Python awaitable, through kos_await_first_step.
+   A completion is returned. A suspension stores the await iterator on
+   ctx for the resume, hands back the yield in *yielded with
+   *suspended set, and returns NULL. An error returns NULL with
+   neither set.
 */
 static PyObject *eager_step_awaitable(
     PyObject *awaitable,
     KosContext *ctx,
     int *suspended,
     PyObject **yielded) {
+
+  PyObject *await_iter = NULL;
+  PyObject *result;
 
   *suspended = 0;
   *yielded = NULL;
@@ -60,65 +55,14 @@ static PyObject *eager_step_awaitable(
     return NULL;
   }
 
-  /* Get __await__ */
-  PyObject *await_iter = NULL;
-
-  PyObject *await_method = PyObject_GetAttr(awaitable, str_await);
-  if (! await_method) {
-    /* Maybe it's already an iterator? */
-    PyErr_Clear();
-    await_iter = awaitable;
-    Py_INCREF(await_iter);
-
-  } else {
-    await_iter = PyObject_CallNoArgs(await_method);
-    Py_DECREF(await_method);
-    if (! await_iter)
-      return NULL;
-  }
-
-  SAYF("[eval] eager_step_awaitable before send(None) (await_iter=%d)\n",
-       await_iter ? 1 : 0);
-
-  /* Try first send(None) */
-  PyObject *result = PyObject_CallMethodObjArgs(await_iter, str_send,
-                                                Py_None, NULL);
-
-  if (result) {
-    /* Yielded a value - need to suspend */
-    *suspended = 1;
-
-    /* Store yielded value */
-    *yielded = result;
-
-    /* Store iterator for later resumption */
-    Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
-    KosContext_PY_AWAIT_ITER(ctx) = await_iter;
-
-    /* signal suspend */
+  result = kos_await_first_step(awaitable, &await_iter, yielded);
+  if (result)
+    return result;
+  if (! await_iter)
     return NULL;
-  }
 
-  /* Check for StopIteration (immediate completion) */
-  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-    PyObject *value = NULL;
-    if (PyGen_FetchStopIterationValue(&value) < 0) {
-      /* FetchStopIterationValue failed and set a new exception; propagate. */
-      Py_DECREF(await_iter);
-      return NULL;
-    }
-    Py_DECREF(await_iter);
-
-    if (! value) {
-      value = Py_None;
-      Py_INCREF(value);
-    }
-
-    return value;
-  }
-
-  /* Other exception */
-  Py_DECREF(await_iter);
+  *suspended = 1;
+  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), await_iter);
   return NULL;
 }
 
@@ -134,11 +78,9 @@ static inline PyObject *KosEvalState_EagerStepAwaitable(
 
 
 /**
-   Get the awaitable for one step of an async iterator (__anext__).
-   Mirror of sibilant-ceval get_await_next: tp_as_async->am_anext then
-   PyObject_GetAwaitable. Caller must Py_DECREF the result.
-
-   :return: new reference to awaitable, or NULL on error or if not async
+   The awaitable for one step of an async iterator: am_anext, then
+   kos_get_awaitable on its result. New reference, or NULL on error or
+   when the type has no am_anext, with no exception set in that case.
 */
 static PyObject *get_await_next(PyObject *val) {
   PyTypeObject *type = Py_TYPE(val);
@@ -154,7 +96,7 @@ static PyObject *get_await_next(PyObject *val) {
   if (! thing)
     return NULL;
 
-  PyObject *awaitable = PyObject_GetAwaitable(thing);
+  PyObject *awaitable = kos_get_awaitable(thing);
   Py_DECREF(thing);
   return awaitable;
 }
@@ -285,8 +227,14 @@ static inline KosOpResult kos_settle_value(
   SAYF("[eval] settle entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    *out = val;
-    return EVAL_NORMAL();
+    /* an explicit await also takes a types.coroutine marked generator,
+       as CPython's await does; the eager step below runs it as its own
+       iterator. Every other slotless object is a value. */
+    if (! (await_defer && PyGen_CheckExact(val)
+           && kos_gen_is_iterable_coroutine(val))) {
+      *out = val;
+      return EVAL_NORMAL();
+    }
   }
 
   /* A Koskari coroutine that has not been started is a program with

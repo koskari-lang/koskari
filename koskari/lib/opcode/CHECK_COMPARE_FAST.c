@@ -26,24 +26,35 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
-  /* Exact-int pair under a richcompare selector: settle on the
-     extracted values with no refcount traffic, peeking the slots
-     borrowed. Nothing runs between the peek and the compare that could
-     rebind a slot, so the borrow is sound; any other shape takes the
-     owned path below. */
-  if (likely(KosCmpSrc_SEL(src) <= KOS_COMPARE_GE)) {
+  /* Borrowed arms: an exact-int pair under a richcompare selector
+     settles on the extracted values, and IS / IS_NOT settle on the
+     pointers, neither with any refcount traffic. Nothing runs between
+     the peek and the compare that could rebind a slot, so the borrow
+     is sound. A slot the peek cannot answer (empty, or a ref kind
+     needing the general deref) and any other operand shape take the
+     owned path below, which raises for an empty slot. */
+  KosCompare sel = (KosCompare) KosCmpSrc_SEL(src);
+  if (likely(sel <= KOS_COMPARE_IS_NOT)) {
     PyObject *x = KosCmpSrc_X_CONST(src)
         ? KosExtra_OBJ(row, 1)
         : kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 1));
     PyObject *y = KosCmpSrc_Y_CONST(src)
         ? KosExtra_OBJ(row, 2)
         : kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 2));
-    long long a, b;
 
-    if (x && y && kos_as_ll2(x, y, &a, &b)) {
-      if (kos_ll_compare((KosCompare) KosCmpSrc_SEL(src), a, b))
-        RESULT_NEXT(es);
-      RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+    if (x && y) {
+      long long a, b;
+
+      if (sel > KOS_COMPARE_GE) {
+        if ((x == y) == (sel == KOS_COMPARE_IS))
+          RESULT_NEXT(es);
+        RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+      }
+      if (kos_as_ll2(x, y, &a, &b)) {
+        if (kos_ll_compare(sel, a, b))
+          RESULT_NEXT(es);
+        RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+      }
     }
   }
 
@@ -70,7 +81,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
     }
   }
 
-  int res = kos_compare_chain((KosCompare) KosCmpSrc_SEL(src), ops, 2);
+  int res = kos_compare_chain(sel, ops, 2);
 
   if (! KosCmpSrc_X_CONST(src))
     Py_DECREF(ops[0]);

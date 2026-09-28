@@ -15,36 +15,16 @@
 
 
 /**
-  ITEM_CONST_STORE: arg = constant index. Stack [obj, val]. Object
-  from the stack, key from the pool, value from the stack. obj[key] =
-  val; push nothing. The access runs through kos_item_store
-  (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
+  ITEM_CONST_STORE: arg = pool const. Stack: [obj, val]. obj[key] = val;
+  both popped. Dispatches to the site's elected body, a list or dict form
+  with the constant's index held in the slot, else elects
+  (eval/eval_electors.c, the constant-key item families).
 */
 KOS_OP_HANDLER(ITEM_CONST_STORE) {
-  KosSegment **bl = KosEvalState_BLOCK(es);
-  PyObject *const *tail;
-  PyObject *obj;
-  PyObject *key = KosOp_OBJ(insn);
-  PyObject *val;
-  int rc;
-
-  val = kos_stack_pop_ref_fast(bl);
-  if (unlikely(! val))
-    RESULT_RAISE();
-  tail = kos_stack_tail_ptr_fast(*bl, 1);
-  if (unlikely(! tail)) {
-    Py_DECREF(val);
-    RESULT_RAISE();
-  }
-
-  obj = tail[0];
-  rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
-
-  if (unlikely(rc < 0))
-    RESULT_RAISE();
-
-  kos_stack_drop_noerr_fast(bl, 1);
-  RESULT_NEXT(es);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_item_const_store_elect, es, insn, NULL);
 }
 
 

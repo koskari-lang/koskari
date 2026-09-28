@@ -128,6 +128,9 @@ KOS_OP_HANDLER(MATCH_CASE) {
       slot->kind = KOS_CACHE_MATCHER;
       slot->u.matcher.matcher = matcher;   /* slot takes ownership */
       slot->u.matcher.slotmap = NULL;
+      slot->u.matcher.env = NULL;
+      slot->u.matcher.env_version = 0;
+      slot->u.matcher.env_kind = KOS_MATCH_ENV_UNKNOWN;
     } else {
       matcher_owned = 1;
     }
@@ -152,27 +155,104 @@ KOS_OP_HANDLER(MATCH_CASE) {
     RESULT_RAISE();
   }
 
-  /* The capture slot array: inline for the common small table. */
-  Py_ssize_t n_slots = KosMatcher_SLOT_COUNT(matcher);
+  /* The capture slot array: inline for the common small table, spilled
+     to the heap only once the engine is about to run. */
   PyObject *inline_slots[KOS_MATCH_SLOTS_INLINE];
   PyObject **slots = inline_slots;
-  if (n_slots > KOS_MATCH_SLOTS_INLINE) {
-    slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
-    if (unlikely(! slots)) {
-      PyErr_NoMemory();
-      if (matcher_owned)
-        Py_DECREF(matcher);
-      RESULT_RAISE();
+
+  /* The extern env. Its source is fixed per site by the names the
+     compiler stacked, so it is classified once: the stacked values in
+     table order are the env as-is; a site stacking nothing takes
+     every extern from the defaults, resolved once into the slot and
+     held while the defaults version stands; any mix resolves on each
+     execution through the general entry. With the env in hand the
+     matcher's own first element test runs on the bare subject, and an
+     arm it rules out jumps with no engine setup at all. */
+  KosMatcher *m = (KosMatcher *) matcher;
+  Py_ssize_t n_ext = PyTuple_GET_SIZE(m->externs);
+  uint8_t env_kind = slot ? slot->u.matcher.env_kind : KOS_MATCH_ENV_UNKNOWN;
+  PyObject *const *env = NULL;
+  PyObject *env_owned = NULL;
+  int matched;
+
+  if (env_kind == KOS_MATCH_ENV_UNKNOWN) {
+    if (n_ext == 0) {
+      env_kind = KOS_MATCH_ENV_STACKED;
+    } else if (n == 0) {
+      env_kind = KOS_MATCH_ENV_DEFAULTS;
+    } else {
+      int aligned = KosMatcher_ExternNamesAligned(m, names);
+      if (unlikely(aligned < 0)) {
+        matched = -1;
+        goto settled;
+      }
+      env_kind = aligned ? KOS_MATCH_ENV_STACKED : KOS_MATCH_ENV_GENERAL;
+    }
+    if (slot)
+      slot->u.matcher.env_kind = env_kind;
+  }
+
+  if (env_kind == KOS_MATCH_ENV_STACKED) {
+    env = n ? tail + 1 : NULL;
+
+  } else if (env_kind == KOS_MATCH_ENV_DEFAULTS) {
+    PyObject *env_tuple = NULL;
+    if (slot && slot->u.matcher.env
+        && slot->u.matcher.env_version == KosMatcher_ExternDefaultsVersion()) {
+      /* held for the run: a type test below may change the defaults and
+         re-enter this site, which replaces the slot's tuple */
+      env_owned = Py_NewRef(slot->u.matcher.env);
+      env_tuple = env_owned;
+    }
+    if (! env_tuple) {
+      env_owned = KosMatcher_ResolveDefaultEnv(m);
+      if (unlikely(! env_owned)) {
+        matched = -1;
+        goto settled;
+      }
+      env_tuple = env_owned;
+      if (slot) {
+        Py_XSETREF(slot->u.matcher.env, Py_NewRef(env_owned));
+        slot->u.matcher.env_version = KosMatcher_ExternDefaultsVersion();
+      }
+    }
+    env = &PyTuple_GET_ITEM(env_tuple, 0);
+  }
+
+  /* The root pre-test settles a rejected arm with no engine setup;
+     the general entry resolves its own env and has no pre-test. */
+  if (env_kind != KOS_MATCH_ENV_GENERAL) {
+    int reject = KosMatcher_RootReject(m, tail[0], env);
+    if (reject) {
+      matched = reject < 0 ? -1 : 0;
+      goto settled;
     }
   }
 
-  KosMatchSubject subj;
-  KosMatchSubject_FromSingle(tail[0], &subj);
+  {
+    Py_ssize_t n_slots = KosMatcher_SLOT_COUNT(m);
+    if (n_slots > KOS_MATCH_SLOTS_INLINE) {
+      slots = PyMem_Malloc((size_t) n_slots * sizeof(PyObject *));
+      if (unlikely(! slots)) {
+        slots = inline_slots;
+        PyErr_NoMemory();
+        matched = -1;
+        goto settled;
+      }
+    }
 
-  int matched = KosMatcher_RunSlotsVectorcall(
-      (KosMatcher *) matcher, &subj,
-      n ? tail + 1 : NULL, names, slots);
-  KosMatchSubject_Release(&subj);
+    KosMatchSubject subj;
+    KosMatchSubject_FromSingle(tail[0], &subj);
+    if (env_kind == KOS_MATCH_ENV_GENERAL)
+      matched = KosMatcher_RunSlotsVectorcall(
+          m, &subj, n ? tail + 1 : NULL, names, slots);
+    else
+      matched = KosMatcher_RunSlots(m, &subj, env, n_ext, slots);
+    KosMatchSubject_Release(&subj);
+  }
+
+settled:
+  Py_XDECREF(env_owned);
 
   int rc = 0;
   if (matched > 0) {

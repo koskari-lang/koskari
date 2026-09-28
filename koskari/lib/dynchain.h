@@ -198,6 +198,14 @@ typedef enum {
 #define KOS_IREQ_GRAFT_VALUE  3u  /* value graft: the next frame return
                                      below is the element */
 
+/** What a bound iterator is, so the step calls the one entry it needs.
+    Async wins over sync when a type offers both, as the probing order
+    always had it. */
+#define KOS_IREQ_KIND_NONE      0u  /* no iterator bound, or not one */
+#define KOS_IREQ_KIND_PROVIDER  1u  /* KosIter provider; islots set */
+#define KOS_IREQ_KIND_PY_ASYNC  2u  /* tp_as_async->am_anext */
+#define KOS_IREQ_KIND_PY_SYNC   3u  /* tp_iternext */
+
 
 /**
    A snapshot of the live registers at one chain top: the frame, the
@@ -228,6 +236,9 @@ typedef struct KosIterRequest {
                                   so the step and delivery paths never
                                   re-derive it */
   uint8_t mode;         /* KOS_IREQ_* */
+  uint8_t kind;         /* KOS_IREQ_KIND_*: how the step drives iter,
+                           classified once at bind so no step probes
+                           the type again */
 } KosIterRequest;
 
 
@@ -420,8 +431,11 @@ struct KosDynNode {
       PyObject *fn;
       /* Unwind cache: the frame displaced at install (borrowed; an
          ancestor on the chain, so it outlives this frame while
-         installed). Set at install only; cleared at park, clone, and
-         span detach; NULL means fall back to the chain walk. */
+         installed). Set at install only; cleared at clone and span
+         detach; NULL means fall back to the chain walk. While the
+         frame is parked in its function's cache this links the next
+         parked frame instead (see KosFunction_TryParkFrame), and the
+         install that takes the frame back overwrites it. */
       struct KosDynNode *back_frame;
     } frame;
     struct {
@@ -429,7 +443,8 @@ struct KosDynNode {
       /* pc of the POP_PROMPT closing this prompt's region, resolved from
          the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
          pop_pc + 1; stored resolved because by the time a shift body
-         runs, no live acting pc still points into the extent. */
+         runs, no live acting pc still points into the extent. A pc, not
+         a record pointer: the block moves when the code is packed. */
       uint32_t pop_pc;
     } prompt;
     struct {
@@ -450,7 +465,7 @@ struct KosDynNode {
       uint32_t saved_acting_pc;
     } delim;
     struct {
-      uint32_t resume_pc;
+      uint32_t resume_pc;  /* pc after POP_CC */
     } cc;
     struct {
       PyObject *before_thunk;  /* callable (owned) or NULL */
@@ -526,7 +541,7 @@ struct KosDynNode {
                               once the single-shot __exit__ has run. NULL for
                               multi-shot */
       PyObject *name;      /* binding name or NULL (owned) */
-      uint32_t resume_pc;  /* PC to jump to after with body (pop_pc + 1) */
+      uint32_t resume_pc;  /* pc after the with body (pop_pc + 1) */
       KosObligation ob;    /* the exception __exit__ is handling, or what
                               a walk parked while __exit__ runs */
     } with;
@@ -1104,13 +1119,15 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
 
 
 /**
-   Bootstrap install: graft GEN and src dyn_top chain onto consumer es.
-   ACTIVE must be NULL; runnable chain lives on src only.
+   Bootstrap install: graft GEN and the chain ending at it, headed by
+   chain_head, onto the consumer es. The caller has taken chain_head
+   out of its resting place (the GEN's active slot, or a context's
+   dyn top).
 */
 int kos_dyn_gen_install_bootstrap(
     KosEvalState *es,
-    KosContext *src,
-    KosDynGen *gen);
+    KosDynGen *gen,
+    KosDynNode *chain_head);
 
 
 /**

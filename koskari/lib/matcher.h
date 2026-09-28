@@ -224,6 +224,21 @@ typedef struct {
 /* === Matcher object === */
 
 
+/* The shape a subject must have for the matcher's first element test
+   to pass, read off the entry at finalize: the test the engine would
+   run first, so a site can run it before any engine setup and skip
+   the arm when it fails. */
+typedef enum {
+  KOS_MATCH_ROOT_NONE = 0,   /* no cheap first test; run the engine */
+  KOS_MATCH_ROOT_TEST_TYPE,  /* a type test: isinstance of extern
+                                root_ref on the peeled element */
+  KOS_MATCH_ROOT_CLASS,      /* a class pattern: isinstance of extern
+                                root_ref on the element as it is */
+  KOS_MATCH_ROOT_SEQUENCE,   /* the sequence-pattern gate */
+  KOS_MATCH_ROOT_MAPPING,    /* the mapping-pattern gate */
+} KosMatchRootKind;
+
+
 typedef struct KosMatcher {
   PyObject_VAR_HEAD      /* ob_size carries node_count */
 
@@ -232,6 +247,8 @@ typedef struct KosMatcher {
   PyObject *consts;      /* tuple[object], literal/sub-matcher consts */
 
   uint32_t entry;
+  uint32_t root_kind;    /* KosMatchRootKind, set at finalize */
+  uint32_t root_ref;     /* extern index for the isinstance roots */
 
   KosMatchNode nodes[];  /* trailing flexible array; tp_itemsize */
 } KosMatcher;
@@ -504,6 +521,41 @@ PyObject *KosMatcher_ExternDefaults(void);
    as KosMatcher_ExternDefaults).
  */
 PyObject *KosMatcher_ResetExternDefaults(void);
+
+
+/**
+   The version of the extern defaults: a number that changes on every
+   reset and every mutation of the dict, so an env resolved under one
+   version is what resolution yields while the version holds. The
+   compat header decides its source: the dict's own version tag, or a
+   counter bumped by a dict watcher where the tag is deprecated
+   (KOS_MATCHER_DEFAULTS_WATCHER).
+ */
+uint64_t KosMatcher_ExternDefaultsVersion(void);
+
+/**
+   Resolve every extern of m from the defaults into a new tuple, in
+   extern-table order. Returns the tuple, or NULL with an exception
+   set when a default is missing.
+ */
+PyObject *KosMatcher_ResolveDefaultEnv(KosMatcher *m);
+
+/**
+   Whether names covers m's extern table in order, so a value array
+   stacked under names is the env as-is. Names may be NULL or empty.
+   Returns 1, 0, or -1 with an exception set.
+ */
+int KosMatcher_ExternNamesAligned(KosMatcher *m, PyObject *names);
+
+/**
+   The engine's first element test run on the bare subject with the
+   env in hand: the isinstance test, the sequence gate, or the mapping
+   gate that match_node would apply first, and nothing when the entry
+   has no such test. Returns 1 when the subject cannot match, 0 when
+   the engine must run, -1 with an exception set.
+ */
+int KosMatcher_RootReject(
+    KosMatcher *m, PyObject *subject, PyObject *const *extern_env);
 
 
 /* === C-internal builder ===

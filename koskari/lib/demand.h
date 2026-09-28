@@ -36,6 +36,9 @@ typedef struct {
   PyObject_HEAD
   PyObject *wrapped;
   vectorcallfunc vectorcall;
+  KosContext *host;   /* the drive context boundary calls reuse; NULL
+                         until the first one parks it, and detached
+                         while a call runs */
 } KosDemandObject;
 
 #define KosDemand_VECTORCALL_OFFSET offsetof(KosDemandObject, vectorcall)

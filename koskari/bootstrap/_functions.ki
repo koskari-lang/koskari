@@ -106,4 +106,22 @@ define-syntax labels:
         body ...)
 
 
+define-syntax str:
+  """
+  The str builtin at a call head. One argument lowers to #str, which
+  converts through __str__ and returns an exact str unchanged, as str()
+  does; no argument is the empty string. Any other arity, a bytes
+  decode or an encoding keyword among them, is a call to the runtime
+  builtin. As a value, str is the builtin type as ever.
+  """
+
+  syntax-rules []:
+    case (str):
+      ""
+    case (str x):
+      (#str x)
+    case (str x rest ...):
+      (call str x rest ...)
+
+
 ;; The end.

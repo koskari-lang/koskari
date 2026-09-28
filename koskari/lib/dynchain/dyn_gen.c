@@ -184,7 +184,6 @@ static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosContext *const ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
-  KosDynNode *n;
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
 
@@ -305,30 +304,36 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
            : "NULL",
        (void *) KosEvalState_FRAME(es));
-  for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
-    SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
-  SAY("(end)");
+#if VERBOSE_DEBUG
+  {
+    KosDynNode *n;
+    for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
+      SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
+    SAY("(end)");
+  }
+#endif
   return 0;
 }
 
 
 /**
-   First-run bootstrap: graft GEN and its ctx chain head onto consumer es.
-   Runnable state lives on src only (dyn_top -> ... -> gen); ACTIVE is NULL.
+   First-run bootstrap: graft GEN and the chain that ends at it onto the
+   consumer es. chain_head is the head of that chain (head -> ... -> gen),
+   taken out of wherever it rested by the caller: the GEN's active slot
+   for a generator never driven, or a context's dyn top.
 */
 int kos_dyn_gen_install_bootstrap(
     KosEvalState *es,
-    KosContext *src,
-    KosDynGen *gen) {
+    KosDynGen *gen,
+    KosDynNode *chain_head) {
 
-  KosDynNode *chain_head;
   KosDynNode *n;
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
 
-  if (! es || ! src || ! gen) {
+  if (! es || ! gen) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "NULL es, src, or gen for gen_install_bootstrap");
+                    "NULL es or gen for gen_install_bootstrap");
     return -1;
   }
 
@@ -338,7 +343,6 @@ int kos_dyn_gen_install_bootstrap(
       ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
       : 0;
 
-  chain_head = KosContext_DYN_TOP(src);
   if (! chain_head) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_install_bootstrap: empty source chain");
@@ -373,15 +377,12 @@ int kos_dyn_gen_install_bootstrap(
   kos_live_regs_capture(es, KosDynGen_HOST(gen));
 
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
-  /* The GEN's chain-membership reference transfers from src to es along with
-     the chain itself (src->dyn_top is cleared below); do NOT acquire a fresh
-     one, or src's membership ref is orphaned and the GEN node leaks. */
+  /* The GEN's chain-membership reference travels with the chain onto
+     es; do NOT acquire a fresh one, or the reference the resting place
+     held is orphaned and the GEN node leaks. */
   kos_dyn_commit_dyn_top(es, chain_head);
   /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
   kos_dyngen_keepalive_acquire(gen);
-
-  KosContext_DYN_TOP(src) = NULL;
-  KosContext_FRAME_TOP(src) = NULL;
 
   {
     KosDynFrame *surfaced = KosEvalState_FRAME(es);

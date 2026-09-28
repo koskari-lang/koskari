@@ -14,26 +14,17 @@
 */
 
 /**
-   PUSH_CC: no arg. Push a CC block onto the dynamic chain. The resume PC
-   (instruction after the matching POP_CC) is taken from the block table
-   (extent pop_pc + 1), not from an instruction argument.
+   PUSH_CC: no arg. Push a CC block onto the dynamic chain. The resume pc
+   (the instruction after the matching POP_CC) comes from the CC extent,
+   resolved once per site into the cache slot.
 */
 
 KOS_OP_HANDLER(PUSH_CC) {
-  KosCode *code = KosEvalState_CurrentCode(es);
-  uint32_t pc = KosEvalState_ACTING_PC(es);
-  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_CC);
-  if (eid == KOS_EXTENT_NONE) {
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: no CC extent at this PC");
+  /* the continuation resumes after the POP_CC closing the extent */
+  uint32_t pop_pc;
+  if (kos_site_extent_close(es, insn, KOS_EXT_CC, "PUSH_CC", &pop_pc) < 0)
     RESULT_RAISE();
-  }
-  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
-  if (! ext) {
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_CC: invalid extent");
-    RESULT_RAISE();
-  }
-  uint32_t resume_pc = ext->pop_pc + 1u;
-  if (! kos_dyn_push_cc(es, resume_pc)) {
+  if (! kos_dyn_push_cc(es, pop_pc + 1u)) {
     RESULT_RAISE();
   }
   RESULT_NEXT(es);

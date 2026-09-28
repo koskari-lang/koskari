@@ -23,7 +23,7 @@
 */
 
 
-#include <Python.h>
+#include "compat.h"
 
 #define STR_CONST(which, val) {                 \
   if (! (which))                              \
@@ -36,6 +36,13 @@
 
 static PyObject *_str_send = NULL;
 static PyObject *_str_await = NULL;
+static PyObject *_str_cr_await = NULL;
+
+/* The cr_await getter of the native coroutine type, taken from its
+   getset descriptor once at init: the read itself, with no attribute
+   lookup around it. */
+static getter _coro_cr_await_get = NULL;
+static void *_coro_cr_await_closure = NULL;
 
 
 /* === compatibility functions === */
@@ -268,16 +275,86 @@ PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type) {
 
 
 /**
-   Return an awaitable (iterator) for o: if o has __await__, call it and
-   return the result; otherwise return NULL. Caller must Py_DECREF the result.
+   1 when the exact native coroutine coro is suspended under another
+   awaiter (its cr_await is set), 0 when it is not, -1 with an
+   exception set. The yield-from accessor behind cr_await is not
+   exported on any supported version; the type's getter for it is
+   called directly, with no attribute lookup.
 */
-PyObject *PyObject_GetAwaitable(PyObject *o) {
+int kos_coro_awaited(PyObject *coro) {
+  PyObject *yf = _coro_cr_await_get(coro, _coro_cr_await_closure);
+  if (! yf)
+    return -1;
+  int awaited = yf != Py_None;
+  Py_DECREF(yf);
+  return awaited;
+}
+
+
+/**
+   The iterator that awaiting o steps: an exact native coroutine is its
+   own iterator, as CPython's await takes it, with am_send and no
+   wrapper, refused when it is already suspended under another awaiter;
+   else the type's am_await slot when it has one (every class defining
+   __await__ does); else a types.coroutine marked generator is its own
+   iterator; else __await__ looked up on the instance and called.
+   Caller must Py_DECREF the result.
+*/
+PyObject *kos_get_awaitable(PyObject *o) {
+  PyTypeObject *tp = Py_TYPE(o);
+  if (PyCoro_CheckExact(o)) {
+    int awaited = kos_coro_awaited(o);
+    if (awaited < 0)
+      return NULL;
+    if (awaited) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "coroutine is being awaited already");
+      return NULL;
+    }
+    return Py_NewRef(o);
+  }
+  if (tp->tp_as_async && tp->tp_as_async->am_await)
+    return tp->tp_as_async->am_await(o);
+  if (PyGen_CheckExact(o) && kos_gen_is_iterable_coroutine(o))
+    return Py_NewRef(o);
+
   PyObject *meth = PyObject_GetAttr(o, _str_await);
   if (! meth)
     return NULL;
   PyObject *res = PyObject_CallNoArgs(meth);
   Py_DECREF(meth);
   return res;
+}
+
+
+/**
+   The first step of awaiting o: the await iterator as kos_get_awaitable
+   finds it, sent None once through the send protocol. Returns the
+   completion (new reference) with *iter NULL; or NULL with *iter and
+   *yielded set (new references) when the step suspended, the caller
+   deciding what a suspension means; or NULL with both NULL and an
+   exception set.
+*/
+PyObject *kos_await_first_step(PyObject *o, PyObject **iter, PyObject **yielded) {
+  PyObject *await_iter;
+  PyObject *result = NULL;
+  PySendResult step;
+
+  *iter = NULL;
+  *yielded = NULL;
+
+  await_iter = kos_get_awaitable(o);
+  if (! await_iter)
+    return NULL;
+
+  step = kos_iter_send(await_iter, Py_None, &result);
+  if (step == PYGEN_NEXT) {
+    *iter = await_iter;
+    *yielded = result;
+    return NULL;
+  }
+  Py_DECREF(await_iter);
+  return step == PYGEN_RETURN ? result : NULL;
 }
 
 
@@ -314,6 +391,19 @@ int koskari_compat_init(const PyObject *mod) {
 
   STR_CONST(_str_send, "send");
   STR_CONST(_str_await, "__await__");
+  STR_CONST(_str_cr_await, "cr_await");
+
+  if (! _coro_cr_await_get) {
+    PyObject *descr = PyType_Lookup(&PyCoro_Type, _str_cr_await);   /* borrowed */
+    if (! descr || Py_TYPE(descr) != &PyGetSetDescr_Type) {
+      PyErr_SetString(PyExc_SystemError,
+                      "coroutine type has no cr_await getset");
+      return -1;
+    }
+    PyGetSetDef *def = ((PyGetSetDescrObject *) descr)->d_getset;
+    _coro_cr_await_get = def->get;
+    _coro_cr_await_closure = def->closure;
+  }
 
   return 0;
 }
@@ -323,6 +413,7 @@ int koskari_compat_clear(PyObject *mod) {
 
   Py_CLEAR(_str_send);
   Py_CLEAR(_str_await);
+  Py_CLEAR(_str_cr_await);
 
   return 0;
 }

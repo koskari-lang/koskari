@@ -1938,7 +1938,10 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
     PyObject *agen_obj;
     KosPyAsyncGen *agen;
     KosDynGen *gen;
-    KosOpResult ev;
+    PyObject *step;
+    PyObject *got;
+    PyObject *typ, *exc, *tb;
+    PyObject *yielded;
 
     PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
@@ -1960,13 +1963,30 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
     gen = (KosDynGen *) agen->gen;
     TEST_ASSERT_NOT_NULL(gen, "agen owns gen");
 
-    ev = koskari_eval(agen->ctx, NULL, NULL, NULL);
-    TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first eval yields");
-    TEST_ASSERT_NOT_NULL(ev.val, "yield value");
-    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded 42");
-    Py_DECREF(ev.val);
+    /* the generator has no context until a drive from Python; step it
+       as a Python caller would, through __anext__'s awaitable */
+    TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
+
+    step = Py_TYPE(agen_obj)->tp_as_async->am_anext(agen_obj);
+    TEST_ASSERT_NOT_NULL(step, "__anext__ awaitable");
+    got = Py_TYPE(step)->tp_iternext(step);
+    Py_DECREF(step);
+    TEST_ASSERT_NULL(got, "the yield completes the awaitable");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_StopIteration),
+                "the yield surfaces as StopIteration");
+
+    PyErr_Fetch(&typ, &exc, &tb);
+    PyErr_NormalizeException(&typ, &exc, &tb);
+    yielded = PyObject_GetAttrString(exc, "value");
+    Py_XDECREF(typ);
+    Py_XDECREF(exc);
+    Py_XDECREF(tb);
+    TEST_ASSERT_NOT_NULL(yielded, "yield value");
+    TEST_ASSERT_EQ(PyLong_AsLong(yielded), 42, "yielded 42");
+    Py_DECREF(yielded);
 
     TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE(gen), "gen frozen with active chain");
+    TEST_ASSERT_NOT_NULL(agen->ctx, "the drive created the context");
     TEST_ASSERT_NULL(KosContext_DYN_TOP(agen->ctx), "ctx dyn_top cleared on freeze");
 
     KosPyAsyncGen_Teardown(agen);

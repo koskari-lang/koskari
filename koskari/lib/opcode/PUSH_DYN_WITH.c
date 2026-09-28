@@ -33,31 +33,20 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     RESULT_RAISE();
   }
 
-  KosCode *code = KosEvalState_CurrentCode(es);
-  uint32_t pc = KosEvalState_ACTING_PC(es);
-  uint32_t eid = kos_extent_find((PyObject *) code, pc, KOS_EXT_DYN_WITH);
-  if (eid == KOS_EXTENT_NONE) {
+  /* the body resumes after the POP_DYN_WITH closing the extent */
+  uint32_t pop_pc;
+  if (kos_site_extent_close(es, insn, KOS_EXT_DYN_WITH, "PUSH_DYN_WITH", &pop_pc) < 0) {
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_DYN_WITH: no DYN_WITH extent at this PC");
     RESULT_RAISE();
   }
-  KosExtentDesc *const ext = kos_extent_desc((PyObject *) code, eid);
-  if (! ext) {
-    Py_DECREF(exit);
-    Py_DECREF(enter);
-    Py_DECREF(mgr);
-    PyErr_SetString(PyExc_RuntimeError, "PUSH_DYN_WITH: invalid extent");
-    RESULT_RAISE();
-  }
-  uint32_t resume_pc = ext->pop_pc + 1u;
 
   PyObject *name_obj = KosOp_OBJ(insn);
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, self_bind, name_obj, resume_pc,
+      es, mgr, enter, exit, self_bind, name_obj, pop_pc + 1u,
       KOS_DYN_WITH_SHOT_MULTI);
   if (! with_node) {
     Py_DECREF(name_obj);

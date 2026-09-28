@@ -635,7 +635,7 @@ static inline int kos_item_inplace_store(
     if (unlikely(! KOS_ITEM_##KIND##_READ(acc, a)                       \
                  || ! KOS_ITEM_##KIND##_READ(rhs, b)))                  \
       return kos_item_inplace_answer(idx, KOS_ITEM_DECLINE);            \
-    rc = KOS_ITEM_##KIND##_FAST(NAME)(a, b, acc, &out);                 \
+    rc = KOS_ITEM_##KIND##_FAST(NAME)(a, b, acc, NULL, &out);           \
     if (unlikely(rc <= 0)) {                                            \
       if (rc < 0) {                                                     \
         kos_item_inplace_release(obj, key, idx);                        \
@@ -942,25 +942,6 @@ static inline void kos_item_replace_top(KosSegment **bl, PyObject *val) {
   s->objs[s->len - 1] = val;
   Py_DECREF(old);
 }
-
-
-/* Bind var to the fast slot's value, borrowed on a peek hit. On a
-   miss (an empty slot, or a ref kind the peek does not read) bind
-   var_ref to the owned general deref, which raises NameError for an
-   empty slot, and var to it; var_ref is NULL on the hit path and is
-   what the handler releases. on_error runs with the error set. */
-#define KOS_NS_FAST_BORROW(var, var_ref, ns, idx, on_error)             \
-  do {                                                                  \
-    (var_ref) = NULL;                                                   \
-    (var) = kos_ns_fast_peek((ns), (size_t) (idx));                     \
-    if (unlikely(! (var))) {                                            \
-      (var_ref) = kos_ns_fast_deref((ns), (size_t) (idx));              \
-      if (unlikely(! (var_ref))) {                                      \
-        on_error;                                                       \
-      }                                                                 \
-      (var) = (var_ref);                                                \
-    }                                                                   \
-  } while (0)
 
 
 // The end.

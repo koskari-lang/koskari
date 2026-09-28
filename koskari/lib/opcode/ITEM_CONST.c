@@ -15,30 +15,16 @@
 
 
 /**
-  ITEM_CONST: arg = constant index. Stack [obj]. Object from the
-  stack, key from the pool. Push obj[key]. The access runs through
-  kos_item_load (eval/eval_item.c) on the site's one KOS_CACHE_ITEM
-  slot.
+  ITEM_CONST: arg = pool const. Stack: [obj]. Push obj[key] in place of obj.
+  Dispatches to the site's elected body, a list or dict form with the
+  constant's index held in the slot, else elects (eval/eval_electors.c, the
+  constant-key item families).
 */
 KOS_OP_HANDLER(ITEM_CONST) {
-  KosSegment **bl = KosEvalState_BLOCK(es);
-  PyObject *const *tail;
-  PyObject *obj;
-  PyObject *key = KosOp_OBJ(insn);
-  PyObject *out;
-
-  tail = kos_stack_tail_ptr_fast(*bl, 1);
-  if (unlikely(! tail))
-    RESULT_RAISE();
-
-  obj = tail[0];
-  out = kos_item_load(KosOp_SLOT(insn), obj, key);
-
-  if (unlikely(! out))
-    RESULT_RAISE();
-
-  kos_item_replace_top(bl, out);
-  RESULT_NEXT(es);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+  if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
+    TAILCALL(slot->u.elector.fn, es, insn, NULL);
+  TAILCALL(el_item_const_elect, es, insn, NULL);
 }
 
 

@@ -625,7 +625,7 @@ source: |-
   
 verify:
   read: (str (type (ref-item seq 0)))
-  expand: (str (type (ref-item seq 0)))
+  expand: (#str (type (ref-item seq 0)))
   eval: '"<class ''koskari.lib.ItemRef''>"'
 references:
   - reference/specials/compile-ref-item.md

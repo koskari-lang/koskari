@@ -398,6 +398,20 @@ EXTENT_POPS = frozenset((
 ROUTE_TRANSPARENT = frozenset((
     OpCode.LABEL, OpCode.POSITION, OpCode.NOOP)) | EXTENT_POPS
 
+# rows a join-point edge reads past between its last real row and the
+# label: they push nothing and transfer nowhere
+JOIN_TRANSPARENT = frozenset((OpCode.POSITION, OpCode.NOOP))
+
+# rows after which the next row is never reached by falling through
+NO_FALLTHROUGH = frozenset((
+    OpCode.JUMP, OpCode.RAISE, OpCode.RETURN, OpCode.RETURN_CONST,
+    OpCode.RETURN_VAR, OpCode.RETURN_FAST, OpCode.BREAK,
+    OpCode.CONTINUE))
+
+# control ops whose 1-arg form over a pushed None is their 0-arg form
+CONTROL_NONE_OPS = frozenset((
+    OpCode.RETURN, OpCode.BREAK, OpCode.CONTINUE, OpCode.YIELD))
+
 
 # The per-pass rule registries: trigger opcode -> candidate list of
 # (priors, rule method). Sight reading a pass means reading its
@@ -852,6 +866,37 @@ class ByteCodeProcessor:
             fused = (OpCode.YIELD_CONST if feeder_op == OpCode.CONST
                      else OpCode.YIELD_VAR)
         return [(fused, feeder_arg)]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.CONST, OpCode.OBJECT_OPERAND)
+    def fuse_var_operand_const(self, op, arg, matched):
+        """
+        VAR x, CONST k, OBJECT_OPERAND (count 2) -> VAR_OPERAND_CONST:
+        the operator as a bare selector, the name, the pooled constant;
+        the fast pass lowers it to FAST_OPERAND_CONST. Registered ahead
+        of the two-row rule so a site with both feeders takes the row
+        naming both
+        """
+
+        merged = merge_opcount(arg)
+        if merged & 0xff != 2:
+            return None
+        return [(OpCode.VAR_OPERAND_CONST,
+                 (merged >> 8, matched[0][1], matched[1][1], None))]
+
+
+    @fuse_rule(OpCode.CONST, OpCode.OBJECT_OPERAND)
+    def fuse_operand_const(self, op, arg, matched):
+        """
+        CONST k, OBJECT_OPERAND (count 2) -> OBJECT_OPERAND_CONST: the
+        left operand stays on the stack, the constant rides the row
+        """
+
+        merged = merge_opcount(arg)
+        if merged & 0xff != 2:
+            return None
+        return [(OpCode.OBJECT_OPERAND_CONST,
+                 (merged >> 8, matched[0][1], None, None))]
 
 
     @fuse_rule(FEEDER, FEEDER, OpCode.CHECK_COMPARE)
@@ -1351,6 +1396,98 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
+    def elide_join_constants(self):
+        """
+        Remove a constant every path pushes into a label whose one
+        consumer discards it.
+
+        A label is eligible when every reference to it is an
+        unconditional JUMP whose preceding row is a CONST, and its
+        fall-through edge, when reachable, also ends in a CONST. Any
+        other reference -- a conditional jump, a compare or switch
+        label field, an iteration else target, a handler label -- is an
+        edge that arrives without a pushed constant, so the label is
+        left alone. References are read from the opcode schema: a
+        LABEL-style arg, or LABEL fields in an EXTRA row.
+
+        With every edge a CONST, the row after the label decides. A
+        POP 1 consumed a value that was dead on every path: the pop and
+        every edge's CONST go. A RETURN, BREAK, CONTINUE, or YIELD of
+        one value whose every edge pushed None takes its zero-arg form,
+        and the constants go, which is the adjacent-row normalization
+        the label was blocking. Nothing else moves: the label and the
+        jumps stay, so the stack at the join is unchanged on every path
+        by construction.
+        """
+
+        instr = self.instructions
+        if not any(op == OpCode.LABEL for op, _ in instr):
+            return
+
+        def prev_row(i):
+            i -= 1
+            while i >= 0 and instr[i][0] in JOIN_TRANSPARENT:
+                i -= 1
+            return i if i >= 0 else None
+
+        def next_row(i):
+            i += 1
+            while i < len(instr) and instr[i][0] in JOIN_TRANSPARENT:
+                i += 1
+            return i if i < len(instr) else None
+
+        refs = {}
+        for i, (op, arg) in enumerate(instr):
+            if op.style == OpStyle.LABEL:
+                refs.setdefault(arg, []).append(i)
+            elif op.extra and OpStyle.LABEL in op.extra:
+                for v, fk in zip(arg, op.extra):
+                    if fk == OpStyle.LABEL:
+                        refs.setdefault(v, []).append(i)
+
+        drop = set()
+        replace = {}
+        for li, (op, label) in enumerate(instr):
+            if op != OpCode.LABEL:
+                continue
+            edges = []
+            for ri in refs.get(label, ()):
+                pi = prev_row(ri)
+                if instr[ri][0] != OpCode.JUMP or pi is None \
+                        or instr[pi][0] != OpCode.CONST:
+                    edges = None
+                    break
+                edges.append(pi)
+            if edges is None:
+                continue
+            pi = prev_row(li)
+            if pi is None:
+                # the stream's entry reaches this label with nothing pushed
+                continue
+            if instr[pi][0] not in NO_FALLTHROUGH:
+                if instr[pi][0] != OpCode.CONST:
+                    continue
+                edges.append(pi)
+            if not edges:
+                continue
+            ci = next_row(li)
+            if ci is None:
+                continue
+            cop, carg = instr[ci]
+            if cop == OpCode.POP and carg == 1:
+                drop.update(edges)
+                drop.add(ci)
+            elif cop in CONTROL_NONE_OPS and carg == 1 \
+                    and all(instr[e][1] is None for e in edges):
+                drop.update(edges)
+                replace[ci] = (cop, 0)
+
+        if drop or replace:
+            self.instructions = [
+                replace.get(i, row) for i, row in enumerate(instr)
+                if i not in drop]
+
+
     def promote_tail_calls(self):
         """
         Rewrite calls with a clear route to RETURN 1 into their
@@ -1474,6 +1611,10 @@ class ByteCodeProcessor:
         # first we do the peephole squish, which sounds more suggestive than
         # it actually is.
         self.squish()
+
+        # a constant every path pushes into a label whose consumer
+        # discards it goes, on the join-point proof the rule requires
+        self.elide_join_constants()
 
         # then we fuse the feeders and consumer opcodes where applicable
         self.fuse_feeders()

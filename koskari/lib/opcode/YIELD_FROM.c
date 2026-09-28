@@ -38,11 +38,17 @@ static int yield_from_classify(PyObject *obj) {
     return KOS_YF_SYNC_GEN;
 
   /* Python async iterator / async gen: __anext__ steps; async gen also
-     has asend/athrow/aclose. */
-  if (PyObject_HasAttrString(obj, "__anext__"))
-    return PyObject_HasAttrString(obj, "asend")
-        ? KOS_YF_PY_ASYNC_GEN
-        : KOS_YF_PY_ASYNC_ITER;
+     has asend/athrow/aclose. The am_anext test is the one get_await_next
+     drives the step with, so classification and stepping agree; asend is
+     a method protocol, so its lookup is on the type, with no instance
+     getattr and no AttributeError built to be cleared. */
+  {
+    PyTypeObject *tp = Py_TYPE(obj);
+    if (tp->tp_as_async && tp->tp_as_async->am_anext)
+      return PyType_Lookup(tp, str_asend)
+          ? KOS_YF_PY_ASYNC_GEN
+          : KOS_YF_PY_ASYNC_ITER;
+  }
 
   /* Sync iterator: PyIter_Next steps; no send/close. */
   if (PyIter_Check(obj))
@@ -419,7 +425,7 @@ static KosOpResult yield_from_drive_py_async(
     PyObject *send_val = KosDynYieldFrom_PENDING_ARG(yf);
     PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_asend, send_val, NULL);
     if (tmp) {
-      awaitable = PyObject_GetAwaitable(tmp);
+      awaitable = kos_get_awaitable(tmp);
       Py_DECREF(tmp);
     }
 
@@ -430,7 +436,7 @@ static KosOpResult yield_from_drive_py_async(
       PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_athrow, typ, exc,
                                                  Py_None, NULL);
       if (tmp) {
-        awaitable = PyObject_GetAwaitable(tmp);
+        awaitable = kos_get_awaitable(tmp);
         Py_DECREF(tmp);
       }
     }
@@ -452,6 +458,12 @@ static KosOpResult yield_from_drive_py_async(
   if (! awaitable) {
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration))
       return yield_from_finish_stop_async(es, yf);
+    /* no error: the type lost its __anext__ since the bind classified
+       it; the kind is fixed, so the step cannot be taken another way */
+    if (! PyErr_Occurred())
+      PyErr_Format(PyExc_TypeError,
+                   "'%.200s' object is no longer an async iterator",
+                   Py_TYPE(delegate)->tp_name);
     return EVAL_RAISE();
   }
 

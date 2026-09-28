@@ -80,4 +80,69 @@ typedef struct {
   (&((KosInterpreterState39 *) (interp))->ceval)
 
 
+/* === GC tracked test === */
+
+/* Whether the collector holds op: the _gc_next link word of the PyGC_Head
+   that precedes a GC object, non-zero exactly while op is in a collector
+   list. The same read as CPython's _PyObject_GC_IS_TRACKED, whose inline
+   is not in any public header on this version; the head has been two
+   link words ahead of the object since 3.8. Precondition: op's type is a
+   GC type, as every caller here guarantees by construction. */
+static inline int kos_gc_is_tracked(PyObject *op) {
+  return ((const uintptr_t *) op)[-2] != 0;
+}
+
+
+/* The version of the extern defaults dict is its ma_version_tag: a
+   global counter stamped on the dict at creation and at every mutation,
+   so a reset's new dict reads different too. No dict watcher here, and
+   none is needed for this. */
+#define KOS_MATCHER_DEFAULTS_WATCHER 0
+
+static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
+  return ((PyDictObject *) dict)->ma_version_tag;
+}
+
+
+/* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
+   types.coroutine marked generator function's product), which await
+   takes as its own iterator. The code is reached through gi_code. */
+static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
+  PyCodeObject *code = (PyCodeObject *) ((PyGenObject *) gen)->gi_code;
+  return (code->co_flags & CO_ITERABLE_COROUTINE) != 0;
+}
+
+
+/* The send protocol of 3.10 (PyIter_Send) over the send method: a
+   yield is PYGEN_NEXT with *result the value, a completion is
+   PYGEN_RETURN with *result the StopIteration value (None when it
+   carried none), anything else is PYGEN_ERROR with *result NULL and
+   the exception set. */
+typedef enum {
+  PYGEN_RETURN = 0,
+  PYGEN_ERROR = -1,
+  PYGEN_NEXT = 1,
+} PySendResult;
+
+static inline PySendResult kos_iter_send(
+    PyObject *iter, PyObject *value, PyObject **result) {
+  PyObject *r = PyObject_CallMethod(iter, "send", "(O)", value);
+  if (r) {
+    *result = r;
+    return PYGEN_NEXT;
+  }
+  if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    *result = NULL;
+    return PYGEN_ERROR;
+  }
+  if (_PyGen_FetchStopIterationValue(result) < 0) {
+    *result = NULL;
+    return PYGEN_ERROR;
+  }
+  if (! *result)
+    *result = Py_NewRef(Py_None);
+  return PYGEN_RETURN;
+}
+
+
 // The end.
