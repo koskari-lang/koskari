@@ -84,6 +84,31 @@ class TestThreadState(unittest.IsolatedAsyncioTestCase):
         # the main thread's own record is untouched by the workers' exits
         self.assertEqual(await add(20, 22), 42)
 
+    async def test_many_sequential_threads_and_interleaving(self):
+        mod = await self.load()
+        add = mod["add"]
+        results = []
+        errors = []
+
+        def run(n):
+            try:
+                results.append(add(n, 1).demand())
+            except Exception as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        for n in range(40):
+            t = threading.Thread(target=run, args=(n,))
+            t.start()
+            t.join()
+        workers = [threading.Thread(target=run, args=(100 + n,)) for n in range(8)]
+        for t in workers:
+            t.start()
+        for t in workers:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(results), [n + 1 for n in range(40)] + [101 + n for n in range(8)])
+        self.assertEqual(await add(1, 1), 2)
+
     async def test_nested_python_domains_keep_their_depth(self):
         mod = await self.load()
         add = mod["add"]

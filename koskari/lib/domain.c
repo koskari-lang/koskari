@@ -86,7 +86,7 @@ static void *tls_stack_reserve(void *stack, size_t *cap, size_t depth) {
    record being freed: a thread state cleared from another thread at
    interpreter shutdown must not touch that thread's own slot. */
 static const char tls_state_capsule_name[] = "koskari.tls_state";
-static const char tls_state_dict_key[] = "koskari.tls_state";
+static PyObject *tls_state_dict_key = NULL;  /* interned "koskari.tls_state" */
 
 static void tls_state_capsule_free(PyObject *capsule) {
   KosTlsState *s = (KosTlsState *) PyCapsule_GetPointer(
@@ -104,8 +104,35 @@ static void tls_state_capsule_free(PyObject *capsule) {
 }
 
 
-static KosTlsState *get_or_alloc_tls_state(void) {
+/**
+   The record the TSS slot names, when the current thread state's dict
+   still owns it; NULL when the slot is empty or stale. The slot is
+   keyed by OS thread and the record by thread state, and the two come
+   apart when a thread state is cleared or replaced from another OS
+   thread: the record is freed with the capsule and this thread's slot
+   keeps pointing at it. The dict entry is the owner, so it decides.
+*/
+static KosTlsState *tls_state_current(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  PyObject *dict;
+  PyObject *capsule;
+
+  if (! s)
+    return NULL;
+  dict = PyThreadState_GetDict();
+  if (! dict)
+    return s;
+  capsule = PyDict_GetItemWithError(dict, tls_state_dict_key);
+  if (capsule && PyCapsule_GetPointer(capsule, tls_state_capsule_name) == s)
+    return s;
+  PyErr_Clear();
+  PyThread_tss_set(&tls_state_key, NULL);
+  return NULL;
+}
+
+
+static KosTlsState *get_or_alloc_tls_state(void) {
+  KosTlsState *s = tls_state_current();
   if (s)
     return s;
 
@@ -119,7 +146,7 @@ static KosTlsState *get_or_alloc_tls_state(void) {
                                       tls_state_capsule_free);
     PyObject *dict = capsule ? PyThreadState_GetDict() : NULL;
     if (! capsule || ! dict
-        || PyDict_SetItemString(dict, tls_state_dict_key, capsule) < 0) {
+        || PyDict_SetItem(dict, tls_state_dict_key, capsule) < 0) {
       if (capsule) {
         /* the capsule's destructor would free s; do it here instead */
         PyCapsule_SetDestructor(capsule, NULL);
@@ -147,7 +174,7 @@ static void push_active_ctx(KosContext *ctx) {
 
 
 static void pop_active_ctx(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_current();
   if (s && s->ctx_depth > 0)
     s->ctx_depth--;
 }
@@ -168,7 +195,7 @@ void kos_tls_push_active_eval(KosEvalState *es) {
 
 
 void kos_tls_pop_active_eval(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_current();
   if (s && s->eval_depth > 0)
     s->eval_depth--;
 }
@@ -180,7 +207,7 @@ KosEvalState *kos_tls_active_eval_for_ctx(const KosContext *ctx) {
 
   if (! ctx)
     return NULL;
-  s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  s = tls_state_current();
   if (! s)
     return NULL;
   for (i = s->eval_depth; i > 0; i--) {
@@ -196,13 +223,13 @@ KosEvalState *kos_tls_active_eval_for_ctx(const KosContext *ctx) {
 
 
 KosContext *kos_ctx_current(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_current();
   return (s && s->ctx_depth > 0) ? s->ctx_stack[s->ctx_depth - 1] : NULL;
 }
 
 
 PyObject *kos_domain_current(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_current();
   KosContext *c;
 
   if (s && s->ctx_depth > 0) {
@@ -248,7 +275,7 @@ int kos_domain_push_python_scope(PyObject *domain) {
 
 
 int kos_domain_pop_python_scope(const PyObject *domain) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_current();
 
   if (! s || s->python_domain_depth == 0) {
     PyErr_SetString(PyExc_RuntimeError, "python domain stack underflow");
@@ -498,7 +525,7 @@ static PyObject *domain_current_domain(PyObject *cls, PyObject *unused) {
 static PyObject *domain_get_contexts(const PyObject *self, PyObject *unused) {
 
   (void) unused;
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_current();
   PyObject *out = PyList_New(0);
   if (! out)
     return NULL;
@@ -660,6 +687,9 @@ int koskari_domain_init(PyObject *mod) {
   }
   if (PyThread_tss_create(&tls_state_key) != 0)
     return -1;
+  tls_state_dict_key = PyUnicode_InternFromString("koskari.tls_state");
+  if (! tls_state_dict_key)
+    return -1;
 
   for (PyMethodDef *mdef = domain_mod_methods; mdef->ml_name; mdef++) {
     PyObject *func = PyCFunction_New(mdef, mod);
@@ -679,6 +709,7 @@ int koskari_domain_init(PyObject *mod) {
 int koskari_domain_clear(PyObject *mod) {
   (void) mod;
   PyThread_tss_delete(&tls_state_key);
+  Py_CLEAR(tls_state_dict_key);
   return 0;
 }
 
