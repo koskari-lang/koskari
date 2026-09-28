@@ -246,6 +246,11 @@ int KosContext_Recycle(KosContext *ctx) {
   if (KosContext_GOAL(ctx))
     return -1;
 
+  /* A continuation captured in the finished run carries this token; the
+     next run on the recycled context is a different evaluation and must
+     not answer to it. The next capture mints a fresh one. */
+  Py_CLEAR(KosContext_TOKEN(ctx));
+
   /* the frozen block and namespace point into the chain freed here;
      the next drive derives both again from the frame it installs */
   if (KosContext_DYN_TOP(ctx))
