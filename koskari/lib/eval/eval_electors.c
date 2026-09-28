@@ -838,9 +838,21 @@ KOS_FAST_ITEM_CONST_SEQ_BODY(tuple, PyTuple_CheckExact, PyTuple_GET_SIZE,
                              PyTuple_GET_ITEM)
 
 
+/* The KeyError an exact dict raises for a missing key: the key as the
+   one argument, wrapped so a tuple key reports as one key. */
+static void kos_elector_set_key_error(PyObject *key) {
+  PyObject *args = PyTuple_Pack(1, key);
+  if (! args)
+    return;
+  PyErr_SetObject(PyExc_KeyError, args);
+  Py_DECREF(args);
+}
+
+
 /* The dict body holds obj across the lookup as the item body does: a
-   key comparison inside the dict can run user code. A missing key
-   declines to the protocol for the KeyError. */
+   key comparison inside the dict can run user code. A missing key is
+   the exact dict's KeyError, raised here rather than by a second
+   lookup through the protocol. */
 KOS_ELECTOR(fast_item_const_dict) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
@@ -855,9 +867,9 @@ KOS_ELECTOR(fast_item_const_dict) {
   v = PyDict_GetItemWithError(obj, KosExtra_OBJ(row, 1));
   if (unlikely(! v)) {
     Py_DECREF(obj);
-    if (PyErr_Occurred())
-      RESULT_RAISE();
-    TAILCALL(el_fast_item_const_generic, es, insn, value);
+    if (! PyErr_Occurred())
+      kos_elector_set_key_error(KosExtra_OBJ(row, 1));
+    RESULT_RAISE();
   }
   Py_INCREF(v);
   Py_DECREF(obj);
@@ -1687,12 +1699,13 @@ KOS_ELECTOR(item_const_dict) {
     RESULT_RAISE();
   if (unlikely(! PyDict_CheckExact(tail[0])))
     TAILCALL(el_miss, es, insn, value);
-  /* the stack's reference holds the dict across the lookup */
+  /* the stack's reference holds the dict across the lookup; a missing
+     key is the exact dict's KeyError, raised here */
   v = PyDict_GetItemWithError(tail[0], KosOp_OBJ(insn));
   if (unlikely(! v)) {
-    if (PyErr_Occurred())
-      RESULT_RAISE();
-    TAILCALL(el_item_const_generic, es, insn, value);
+    if (! PyErr_Occurred())
+      kos_elector_set_key_error(KosOp_OBJ(insn));
+    RESULT_RAISE();
   }
   Py_INCREF(v);
   KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
