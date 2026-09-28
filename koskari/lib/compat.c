@@ -289,7 +289,8 @@ int kos_coro_awaited(PyObject *coro) {
    own iterator, as CPython's await takes it, with am_send and no
    wrapper, refused when it is already suspended under another awaiter;
    else the type's am_await slot when it has one (every class defining
-   __await__ does), else __await__ looked up on the instance and called.
+   __await__ does); else a types.coroutine marked generator is its own
+   iterator; else __await__ looked up on the instance and called.
    Caller must Py_DECREF the result.
 */
 PyObject *kos_get_awaitable(PyObject *o) {
@@ -307,6 +308,8 @@ PyObject *kos_get_awaitable(PyObject *o) {
   }
   if (tp->tp_as_async && tp->tp_as_async->am_await)
     return tp->tp_as_async->am_await(o);
+  if (PyGen_CheckExact(o) && kos_gen_is_iterable_coroutine(o))
+    return Py_NewRef(o);
 
   PyObject *meth = PyObject_GetAttr(o, _str_await);
   if (! meth)

@@ -88,4 +88,13 @@ static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
 }
 
 
+/* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
+   types.coroutine marked generator function's product), which await
+   takes as its own iterator. The code is reached through gi_code. */
+static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
+  PyCodeObject *code = (PyCodeObject *) ((PyGenObject *) gen)->gi_code;
+  return (code->co_flags & CO_ITERABLE_COROUTINE) != 0;
+}
+
+
 // The end.

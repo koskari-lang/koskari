@@ -280,8 +280,8 @@ int kos_coro_awaited(PyObject *coro);
 
 /* The iterator that awaiting o steps: an exact native coroutine itself,
    refused when already awaited; else am_await when the type has the
-   slot, else __await__ looked up and called. New reference, or NULL
-   with an error set. */
+   slot; else a types.coroutine marked generator itself; else __await__
+   looked up and called. New reference, or NULL with an error set. */
 PyObject *kos_get_awaitable(PyObject *o);
 
 

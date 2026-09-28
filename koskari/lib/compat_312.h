@@ -175,4 +175,16 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 #define KOS_MATCHER_DEFAULTS_WATCHER 1
 
 
+/* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
+   types.coroutine marked generator function's product), which await
+   takes as its own iterator. gi_code is gone from the struct; the
+   code is reached through PyGen_GetCode, a new reference. */
+static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
+  PyCodeObject *code = PyGen_GetCode((PyGenObject *) gen);
+  int marked = (code->co_flags & CO_ITERABLE_COROUTINE) != 0;
+  Py_DECREF(code);
+  return marked;
+}
+
+
 // The end.

@@ -62,8 +62,9 @@ static PyObject *eager_step_awaitable(
 
   /* The await iterator: an exact native coroutine is its own, refused
      when already awaited, as in kos_get_awaitable; else the type's
-     am_await slot, else __await__ on the instance, else the object is
-     taken as its own iterator. */
+     am_await slot; else a types.coroutine marked generator is its own;
+     else __await__ on the instance, else the object is taken as its
+     own iterator. */
   PyObject *await_iter = NULL;
   {
     PyTypeObject *tp = Py_TYPE(awaitable);
@@ -81,6 +82,9 @@ static PyObject *eager_step_awaitable(
       await_iter = tp->tp_as_async->am_await(awaitable);
       if (! await_iter)
         return NULL;
+    } else if (PyGen_CheckExact(awaitable)
+               && kos_gen_is_iterable_coroutine(awaitable)) {
+      await_iter = Py_NewRef(awaitable);
     } else {
       PyObject *await_method = PyObject_GetAttr(awaitable, str_await);
       if (! await_method) {
@@ -318,8 +322,14 @@ static inline KosOpResult kos_settle_value(
   SAYF("[eval] settle entry is_awaitable=%d\n",
        (type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0);
   if (! type->tp_as_async || ! type->tp_as_async->am_await) {
-    *out = val;
-    return EVAL_NORMAL();
+    /* an explicit await also takes a types.coroutine marked generator,
+       as CPython's await does; the eager step below runs it as its own
+       iterator. Every other slotless object is a value. */
+    if (! (await_defer && PyGen_CheckExact(val)
+           && kos_gen_is_iterable_coroutine(val))) {
+      *out = val;
+      return EVAL_NORMAL();
+    }
   }
 
   /* A Koskari coroutine that has not been started is a program with

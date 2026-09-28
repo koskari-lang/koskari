@@ -42,9 +42,13 @@ static PyObject *str_close = NULL;
 /* === helpers === */
 
 
+/* What await accepts: an am_await slot, or a types.coroutine marked
+   generator. */
 static int is_awaitable(PyObject *obj) {
   PyTypeObject *type = Py_TYPE(obj);
-  return (type && type->tp_as_async && type->tp_as_async->am_await) ? 1 : 0;
+  if (type->tp_as_async && type->tp_as_async->am_await)
+    return 1;
+  return PyGen_CheckExact(obj) && kos_gen_is_iterable_coroutine(obj);
 }
 
 
