@@ -38,6 +38,12 @@ static PyObject *_str_send = NULL;
 static PyObject *_str_await = NULL;
 static PyObject *_str_cr_await = NULL;
 
+/* The cr_await getter of the native coroutine type, taken from its
+   getset descriptor once at init: the read itself, with no attribute
+   lookup around it. */
+static getter _coro_cr_await_get = NULL;
+static void *_coro_cr_await_closure = NULL;
+
 
 /* === compatibility functions === */
 
@@ -271,11 +277,12 @@ PyObject *koskari_DictView_New(PyObject *dict, PyTypeObject *type) {
 /**
    1 when the exact native coroutine coro is suspended under another
    awaiter (its cr_await is set), 0 when it is not, -1 with an
-   exception set. Read through the cr_await attribute: the yield-from
-   accessor behind it is not exported on any supported version.
+   exception set. The yield-from accessor behind cr_await is not
+   exported on any supported version; the type's getter for it is
+   called directly, with no attribute lookup.
 */
 int kos_coro_awaited(PyObject *coro) {
-  PyObject *yf = PyObject_GetAttr(coro, _str_cr_await);
+  PyObject *yf = _coro_cr_await_get(coro, _coro_cr_await_closure);
   if (! yf)
     return -1;
   int awaited = yf != Py_None;
@@ -354,6 +361,18 @@ int koskari_compat_init(const PyObject *mod) {
   STR_CONST(_str_send, "send");
   STR_CONST(_str_await, "__await__");
   STR_CONST(_str_cr_await, "cr_await");
+
+  if (! _coro_cr_await_get) {
+    PyObject *descr = PyType_Lookup(&PyCoro_Type, _str_cr_await);   /* borrowed */
+    if (! descr || Py_TYPE(descr) != &PyGetSetDescr_Type) {
+      PyErr_SetString(PyExc_SystemError,
+                      "coroutine type has no cr_await getset");
+      return -1;
+    }
+    PyGetSetDef *def = ((PyGetSetDescrObject *) descr)->d_getset;
+    _coro_cr_await_get = def->get;
+    _coro_cr_await_closure = def->closure;
+  }
 
   return 0;
 }
