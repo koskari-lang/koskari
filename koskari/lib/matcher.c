@@ -1002,6 +1002,24 @@ static int matcher_nominal_miss_is_final(PyObject *inst) {
    cannot change it. Any other metaclass, and a miss the proof does
    not cover, fall through to PyObject_IsInstance unchanged.
 */
+/**
+   The isinstance answer when it is decided by the type walk alone: 1 or
+   0, or -2 when deciding it would run user code (a metaclass
+   __instancecheck__, or a __class__ read on a subject whose nominal miss
+   is not final). The root pre-test uses this so the engine's own test is
+   the one place such code runs.
+*/
+static int matcher_isinstance_pure(PyObject *inst, PyObject *cls) {
+  if (likely(PyType_Check(cls)) && Py_TYPE(cls) == &PyType_Type) {
+    if (PyObject_TypeCheck(inst, (PyTypeObject *) cls))
+      return 1;
+    if (matcher_nominal_miss_is_final(inst))
+      return 0;
+  }
+  return -2;
+}
+
+
 static int matcher_isinstance(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls))) {
     PyTypeObject *meta = Py_TYPE(cls);
@@ -2441,12 +2459,16 @@ int KosMatcher_RootReject(
     case KOS_MATCH_ROOT_TEST_TYPE:
       if (! extern_env)
         return 0;
-      r = matcher_isinstance(peeled, extern_env[m->root_ref]);
+      r = matcher_isinstance_pure(peeled, extern_env[m->root_ref]);
+      if (r == -2)
+        return 0;   /* user code would decide it: leave it to the engine */
       break;
     case KOS_MATCH_ROOT_CLASS:
       if (! extern_env)
         return 0;
-      r = matcher_isinstance(subject, extern_env[m->root_ref]);
+      r = matcher_isinstance_pure(subject, extern_env[m->root_ref]);
+      if (r == -2)
+        return 0;
       break;
     case KOS_MATCH_ROOT_SEQUENCE:
       r = matcher_sequence_gate(peeled);
