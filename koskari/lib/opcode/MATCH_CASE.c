@@ -208,8 +208,12 @@ KOS_OP_HANDLER(MATCH_CASE) {
     PyObject *env_tuple = NULL;
 #if KOS_MATCHER_ENV_CACHE
     if (slot && slot->u.matcher.env
-        && slot->u.matcher.env_version == KosMatcher_ExternDefaultsVersion())
-      env_tuple = slot->u.matcher.env;
+        && slot->u.matcher.env_version == KosMatcher_ExternDefaultsVersion()) {
+      /* held for the run: a type test below may change the defaults and
+         re-enter this site, which replaces the slot's tuple */
+      env_owned = Py_NewRef(slot->u.matcher.env);
+      env_tuple = env_owned;
+    }
 #endif
     if (! env_tuple) {
       env_owned = KosMatcher_ResolveDefaultEnv(m);
