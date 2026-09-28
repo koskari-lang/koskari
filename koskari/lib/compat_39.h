@@ -103,10 +103,5 @@ static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
   return ((PyDictObject *) dict)->ma_version_tag;
 }
 
-/* PyDict_SetItem runs the key lookup, which can compare against an
-   existing key with a Python __eq__, before it takes its reference to
-   the value; a value borrowed from a fast slot is held across the call. */
-#define KOS_DICT_STORE_HOLDS_SLOT_VALUE 1
-
 
 // The end.

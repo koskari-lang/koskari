@@ -174,9 +174,5 @@ static inline int kos_gc_is_tracked(PyObject *op) {
    watcher: ma_version_tag is deprecated on this version. */
 #define KOS_MATCHER_DEFAULTS_WATCHER 1
 
-/* PyDict_SetItem takes its reference to the value before the key
-   lookup, so a value borrowed from a fast slot needs no hold. */
-#define KOS_DICT_STORE_HOLDS_SLOT_VALUE 0
-
 
 // The end.
