@@ -1722,6 +1722,15 @@ int KosFunction_TryParkFrame(
   kos_stack_clear_fast(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
 
+  /* The reset and the clear release the frame's locals and operands,
+     and a finalizer among them can call this function again, taking
+     frames out of the cache or parking new ones. The head read above
+     only sized the early refusal; the link below uses the cache as it
+     is now. */
+  head = fn->cached_frame;
+  if (head && KosDynFrame_DEPTH(head) >= KOS_FRAME_CACHE_MAX)
+    return 0;
+
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
   /* The parked frame keeps the namespace it introduced, so it keeps
