@@ -98,5 +98,10 @@ static inline int kos_gc_is_tracked(PyObject *op) {
    version has no dict watcher, so no site caches. */
 #define KOS_MATCHER_ENV_CACHE 0
 
+/* PyDict_SetItem runs the key lookup, which can compare against an
+   existing key with a Python __eq__, before it takes its reference to
+   the value; a value borrowed from a fast slot is held across the call. */
+#define KOS_DICT_STORE_HOLDS_SLOT_VALUE 1
+
 
 // The end.

@@ -1680,7 +1680,7 @@ KOS_ELECTOR(item_const_dict) {
    from its source; SETTLE, the stack adjustment after the store took
    its own reference to val; and GENERIC_BODY, the protocol form. */
 #define KOS_ITEM_CONST_STORE_BODIES(FAMILY, NEED, KEY, OBJ_STMT, VAL_STMT, \
-                                    SETTLE)                             \
+                                    OBJ_HOLD, VAL_HOLD, SETTLE)         \
   KOS_ELECTOR(FAMILY##_list) {                                          \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
@@ -1720,9 +1720,19 @@ KOS_ELECTOR(item_const_dict) {
     if (unlikely(! PyDict_CheckExact(obj)))                             \
       TAILCALL(el_miss, es, insn, value);                               \
     VAL_STMT;                                                           \
-    Py_INCREF(obj);                                                     \
+    /* the key lookup can run an existing key's __eq__, which can rebind \
+       a fast slot: a dict borrowed from one is held; a value borrowed  \
+       from one is held only where the dict takes its reference after  \
+       the lookup */                                                     \
+    if (OBJ_HOLD)                                                       \
+      Py_INCREF(obj);                                                   \
+    if (VAL_HOLD && KOS_DICT_STORE_HOLDS_SLOT_VALUE)                    \
+      Py_INCREF(val);                                                   \
     rc = PyDict_SetItem(obj, KEY, val);                                 \
-    Py_DECREF(obj);                                                     \
+    if (VAL_HOLD && KOS_DICT_STORE_HOLDS_SLOT_VALUE)                    \
+      Py_DECREF(val);                                                   \
+    if (OBJ_HOLD)                                                       \
+      Py_DECREF(obj);                                                   \
     if (unlikely(rc < 0))                                               \
       RESULT_RAISE();                                                   \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
@@ -1789,7 +1799,7 @@ KOS_ITEM_CONST_STORE_GENERIC(item_const_store, 2, KosOp_OBJ(insn),
     KOS_OBJ_STACK_OWNED(0), KOS_VAL_STACK,
     kos_stack_drop_noerr_fast(bl, 2))
 KOS_ITEM_CONST_STORE_BODIES(item_const_store, 2, KosOp_OBJ(insn),
-    KOS_OBJ_STACK(0), KOS_VAL_STACK,
+    KOS_OBJ_STACK(0), KOS_VAL_STACK, 0, 0,
     kos_stack_drop_noerr_fast(bl, 2))
 #undef NEED_
 
@@ -1801,7 +1811,7 @@ KOS_ITEM_CONST_STORE_GENERIC(item_const_store_const, 1,
     kos_stack_drop_noerr_fast(bl, 1))
 KOS_ITEM_CONST_STORE_BODIES(item_const_store_const, 1,
     KosExtra_OBJ(row, 0),
-    KOS_OBJ_STACK(0), KOS_VAL_CONST(1),
+    KOS_OBJ_STACK(0), KOS_VAL_CONST(1), 0, 0,
     kos_stack_drop_noerr_fast(bl, 1))
 
 /* ITEM_CONST_STORE_FAST: stack [obj]; row: key, val slot */
@@ -1811,7 +1821,7 @@ KOS_ITEM_CONST_STORE_GENERIC(item_const_store_fast, 1,
     kos_stack_drop_noerr_fast(bl, 1))
 KOS_ITEM_CONST_STORE_BODIES(item_const_store_fast, 1,
     KosExtra_OBJ(row, 0),
-    KOS_OBJ_STACK(0), KOS_VAL_FAST(1),
+    KOS_OBJ_STACK(0), KOS_VAL_FAST(1), 0, 1,
     kos_stack_drop_noerr_fast(bl, 1))
 
 /* FAST_ITEM_CONST_STORE: stack [val]; row: obj slot, key */
@@ -1821,7 +1831,7 @@ KOS_ITEM_CONST_STORE_GENERIC(fast_item_const_store, 1,
     kos_stack_drop_noerr_fast(bl, 1))
 KOS_ITEM_CONST_STORE_BODIES(fast_item_const_store, 1,
     KosExtra_OBJ(row, 1),
-    KOS_OBJ_FAST(0), KOS_VAL_STACK,
+    KOS_OBJ_FAST(0), KOS_VAL_STACK, 1, 0,
     kos_stack_drop_noerr_fast(bl, 1))
 #undef NEED_
 
@@ -1832,7 +1842,7 @@ KOS_ITEM_CONST_STORE_GENERIC(fast_item_const_store_const, 0,
     KOS_OBJ_FAST_OWNED(0), KOS_VAL_CONST(2), ((void) 0))
 KOS_ITEM_CONST_STORE_BODIES(fast_item_const_store_const, 0,
     KosExtra_OBJ(row, 1),
-    KOS_OBJ_FAST(0), KOS_VAL_CONST(2), ((void) 0))
+    KOS_OBJ_FAST(0), KOS_VAL_CONST(2), 1, 0, ((void) 0))
 
 /* FAST_ITEM_CONST_STORE_FAST: no stack; row: obj slot, key, val slot */
 KOS_ITEM_CONST_STORE_GENERIC(fast_item_const_store_fast, 0,
@@ -1840,7 +1850,7 @@ KOS_ITEM_CONST_STORE_GENERIC(fast_item_const_store_fast, 0,
     KOS_OBJ_FAST_OWNED(0), KOS_VAL_FAST_OWNED(2), ((void) 0))
 KOS_ITEM_CONST_STORE_BODIES(fast_item_const_store_fast, 0,
     KosExtra_OBJ(row, 1),
-    KOS_OBJ_FAST(0), KOS_VAL_FAST(2), ((void) 0))
+    KOS_OBJ_FAST(0), KOS_VAL_FAST(2), 1, 1, ((void) 0))
 #undef NEED_
 
 

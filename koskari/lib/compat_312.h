@@ -174,5 +174,9 @@ static inline int kos_gc_is_tracked(PyObject *op) {
    a dict watcher reports every mutation of the defaults dict. */
 #define KOS_MATCHER_ENV_CACHE 1
 
+/* PyDict_SetItem takes its reference to the value before the key
+   lookup, so a value borrowed from a fast slot needs no hold. */
+#define KOS_DICT_STORE_HOLDS_SLOT_VALUE 0
+
 
 // The end.
