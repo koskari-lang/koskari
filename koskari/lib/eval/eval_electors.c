@@ -1716,8 +1716,12 @@ KOS_ELECTOR(item_const_dict) {
     if (unlikely(! PyDict_CheckExact(obj)))                             \
       TAILCALL(el_miss, es, insn, value);                               \
     VAL_STMT;                                                           \
+    /* the key's hash may run user code before the dict takes its own
+       reference to val (3.9 and 3.10), so hold both across the call */  \
     Py_INCREF(obj);                                                     \
+    Py_INCREF(val);                                                     \
     rc = PyDict_SetItem(obj, KEY, val);                                 \
+    Py_DECREF(val);                                                     \
     Py_DECREF(obj);                                                     \
     if (unlikely(rc < 0))                                               \
       RESULT_RAISE();                                                   \
@@ -1736,6 +1740,7 @@ KOS_ELECTOR(item_const_dict) {
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, NEED);         \
     PyObject *obj, *val;                                                \
+    PyObject *val_owned = NULL;  /* a deref's own reference, if any */    \
     int rc;                                                             \
     (void) row; (void) ns;                                              \
     kos_elector_generic_tick(KosOp_SLOT(insn));                         \
@@ -1746,6 +1751,7 @@ KOS_ELECTOR(item_const_dict) {
     Py_INCREF(val);                                                     \
     rc = PyObject_SetItem(obj, KEY, val);                               \
     Py_DECREF(val);                                                     \
+    Py_XDECREF(val_owned);                                              \
     Py_DECREF(obj);                                                     \
     if (unlikely(rc < 0))                                               \
       RESULT_RAISE();                                                   \
@@ -1770,10 +1776,12 @@ KOS_ELECTOR(item_const_dict) {
 #define KOS_VAL_FAST(k)                                                 \
   do { val = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, k));       \
        if (unlikely(! val)) TAILCALL(el_miss, es, insn, value); } while (0)
+/* the deref may build the value (a computing ref), so its reference is
+   the only one: it stays owned across the store and is released after */
 #define KOS_VAL_FAST_OWNED(k)                                           \
   do { val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, k));      \
        if (unlikely(! val)) { Py_DECREF(obj); RESULT_RAISE(); }          \
-       Py_DECREF(val); } while (0)
+       val_owned = val; } while (0)
 
 /* ITEM_CONST_STORE: stack [obj, val]; key is the op's const */
 #define NEED_ 2
