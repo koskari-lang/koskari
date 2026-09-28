@@ -53,8 +53,6 @@
 
 static PyObject *KoskariSyncViolation = NULL;
 
-static PyObject *str_await = NULL;
-static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
 
 
@@ -90,52 +88,28 @@ static int register_koskari_sync_exception(PyObject *mod,
 
 
 /**
-   Eagerly step a Python awaitable returned at the demand boundary. On
-   immediate completion (StopIteration), return the value. On suspension
-   (the awaitable yields before completing), inject KoskariSyncViolation
-   via .throw(); the callee may catch it and return a value, or re-raise.
+   Eagerly step a Python awaitable returned at the demand boundary,
+   through kos_await_first_step. On immediate completion, return the
+   value. On suspension, throw KoskariSyncViolation into the await
+   iterator; the callee may catch it and return a value, or re-raise.
 
    Steals the reference to `result`. Returns a new reference to the final
-   value, or NULL with PyErr set. If `result` is not awaitable (no
-   __await__), it is returned unchanged (still stolen).
+   value, or NULL with PyErr set.
 */
 static PyObject *demand_step_python_result(PyObject *result) {
 
   PyObject *await_iter = NULL;
-  PyObject *step = NULL;
+  PyObject *yielded = NULL;
+  PyObject *value = kos_await_first_step(result, &await_iter, &yielded);
 
-  /* Try __await__; if absent, not an awaitable -- return as-is. */
-  PyObject *await_meth = PyObject_GetAttr(result, str_await);
-  if (! await_meth) {
-    if (! PyErr_ExceptionMatches(PyExc_AttributeError))
-      goto steal_fail;
-    PyErr_Clear();
-    return result;
-  }
-  await_iter = PyObject_CallNoArgs(await_meth);
-  Py_DECREF(await_meth);
   Py_DECREF(result);
-  result = NULL;
+  if (value)
+    return value;
   if (! await_iter)
     return NULL;
 
-  /* First step: send(None). */
-  step = PyObject_CallMethodObjArgs(await_iter, str_send, Py_None, NULL);
-
-  if (! step) {
-    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
-      goto iter_fail;
-    /* Completed immediately. */
-    PyObject *value = NULL;
-    if (PyGen_FetchStopIterationValue(&value) < 0)
-      goto iter_fail;
-    Py_DECREF(await_iter);
-    return value ? value : (Py_INCREF(Py_None), Py_None);
-  }
-
-  /* Suspended: discard yielded value, inject KoskariSyncViolation. */
-  Py_DECREF(step);
-  step = NULL;
+  /* Suspended: discard the yield, inject KoskariSyncViolation. */
+  Py_DECREF(yielded);
 
   {
     static const char msg[] = "async suspension is not allowed in demand_sync";
@@ -146,31 +120,26 @@ static PyObject *demand_step_python_result(PyObject *result) {
     Py_DECREF(msg_str);
     if (! exc)
       goto iter_fail;
-    step = PyObject_CallMethodObjArgs(await_iter, str_throw, exc, NULL);
+    value = PyObject_CallMethodObjArgs(await_iter, str_throw, exc, NULL);
     Py_DECREF(exc);
   }
 
-  if (! step) {
+  if (! value) {
     if (! PyErr_ExceptionMatches(PyExc_StopIteration))
       goto iter_fail;
     /* Callee caught the violation and returned a value. */
-    PyObject *value = NULL;
     if (PyGen_FetchStopIterationValue(&value) < 0)
       goto iter_fail;
     Py_DECREF(await_iter);
-    return value ? value : (Py_INCREF(Py_None), Py_None);
+    return value ? value : Py_NewRef(Py_None);
   }
 
   /* throw() returned without raising: still suspended. */
-  Py_DECREF(step);
+  Py_DECREF(value);
   kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
 
 iter_fail:
   Py_DECREF(await_iter);
-  return NULL;
-
-steal_fail:
-  Py_DECREF(result);
   return NULL;
 }
 
@@ -796,8 +765,6 @@ int koskari_demand_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(str_await, "__await__");
-  STR_CONST(str_send, "send");
   STR_CONST(str_throw, "throw");
 
   if (register_koskari_sync_exception(mod,
@@ -839,8 +806,6 @@ int koskari_demand_init(PyObject *mod) {
 int koskari_demand_clear(PyObject *mod) {
 
   KoskariSyncViolation = NULL;
-  Py_CLEAR(str_await);
-  Py_CLEAR(str_send);
   Py_CLEAR(str_throw);
   (void) mod;
   return 0;

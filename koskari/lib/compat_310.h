@@ -97,4 +97,8 @@ static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
 }
 
 
+/* The send protocol: PyIter_Send on this version. */
+#define kos_iter_send PyIter_Send
+
+
 // The end.

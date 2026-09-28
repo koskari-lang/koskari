@@ -327,6 +327,37 @@ PyObject *kos_get_awaitable(PyObject *o) {
 }
 
 
+/**
+   The first step of awaiting o: the await iterator as kos_get_awaitable
+   finds it, sent None once through the send protocol. Returns the
+   completion (new reference) with *iter NULL; or NULL with *iter and
+   *yielded set (new references) when the step suspended, the caller
+   deciding what a suspension means; or NULL with both NULL and an
+   exception set.
+*/
+PyObject *kos_await_first_step(PyObject *o, PyObject **iter, PyObject **yielded) {
+  PyObject *await_iter;
+  PyObject *result = NULL;
+  PySendResult step;
+
+  *iter = NULL;
+  *yielded = NULL;
+
+  await_iter = kos_get_awaitable(o);
+  if (! await_iter)
+    return NULL;
+
+  step = kos_iter_send(await_iter, Py_None, &result);
+  if (step == PYGEN_NEXT) {
+    *iter = await_iter;
+    *yielded = result;
+    return NULL;
+  }
+  Py_DECREF(await_iter);
+  return step == PYGEN_RETURN ? result : NULL;
+}
+
+
 #if PY_MINOR_VERSION >= 13
 /**
    Replace _PyErr_FormatFromCause (moved to Python's internal-only header

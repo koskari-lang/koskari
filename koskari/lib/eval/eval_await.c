@@ -31,25 +31,20 @@
 
 
 /**
-   Attempt eager-step of a Python awaitable.
-
-   This tries to get __await__() and call send(None) once.
-   If the awaitable completes immediately (StopIteration), the value
-   is returned. If it yields, we store the iterator and return the
-   yielded value with *suspended = 1.
-
-   :param awaitable: the Python awaitable object
-   :param ctx: context to store await state if suspended
-   :param suspended: output flag, set to 1 if we need to suspend
-   :param yielded: output, the yielded value if suspended
-
-   :return: completed value on immediate completion, NULL on suspend or error
+   The first step of a Python awaitable, through kos_await_first_step.
+   A completion is returned. A suspension stores the await iterator on
+   ctx for the resume, hands back the yield in *yielded with
+   *suspended set, and returns NULL. An error returns NULL with
+   neither set.
 */
 static PyObject *eager_step_awaitable(
     PyObject *awaitable,
     KosContext *ctx,
     int *suspended,
     PyObject **yielded) {
+
+  PyObject *await_iter = NULL;
+  PyObject *result;
 
   *suspended = 0;
   *yielded = NULL;
@@ -60,104 +55,14 @@ static PyObject *eager_step_awaitable(
     return NULL;
   }
 
-  /* The await iterator: an exact native coroutine is its own, refused
-     when already awaited, as in kos_get_awaitable; else the type's
-     am_await slot; else a types.coroutine marked generator is its own;
-     else __await__ on the instance, else the object is taken as its
-     own iterator. */
-  PyObject *await_iter = NULL;
-  {
-    PyTypeObject *tp = Py_TYPE(awaitable);
-    if (PyCoro_CheckExact(awaitable)) {
-      int awaited = kos_coro_awaited(awaitable);
-      if (awaited < 0)
-        return NULL;
-      if (awaited) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "coroutine is being awaited already");
-        return NULL;
-      }
-      await_iter = Py_NewRef(awaitable);
-    } else if (tp->tp_as_async && tp->tp_as_async->am_await) {
-      await_iter = tp->tp_as_async->am_await(awaitable);
-      if (! await_iter)
-        return NULL;
-    } else if (PyGen_CheckExact(awaitable)
-               && kos_gen_is_iterable_coroutine(awaitable)) {
-      await_iter = Py_NewRef(awaitable);
-    } else {
-      PyObject *await_method = PyObject_GetAttr(awaitable, str_await);
-      if (! await_method) {
-        PyErr_Clear();
-        await_iter = awaitable;
-        Py_INCREF(await_iter);
-      } else {
-        await_iter = PyObject_CallNoArgs(await_method);
-        Py_DECREF(await_method);
-        if (! await_iter)
-          return NULL;
-      }
-    }
-  }
-
-  SAYF("[eval] eager_step_awaitable before send(None) (await_iter=%d)\n",
-       await_iter ? 1 : 0);
-
-#if PY_MINOR_VERSION >= 10
-  /* First step through the send protocol: am_send when the iterator
-     has it, else tp_iternext for a None send, else a send method. A
-     completion arrives as a value, never as a StopIteration to fetch. */
-  PyObject *result = NULL;
-  PySendResult step = PyIter_Send(await_iter, Py_None, &result);
-  if (step == PYGEN_RETURN) {
-    Py_DECREF(await_iter);
+  result = kos_await_first_step(awaitable, &await_iter, yielded);
+  if (result)
     return result;
-  }
-  if (step == PYGEN_ERROR) {
-    Py_DECREF(await_iter);
+  if (! await_iter)
     return NULL;
-  }
-#else
-  /* Try first send(None) */
-  PyObject *result = PyObject_CallMethodObjArgs(await_iter, str_send,
-                                                Py_None, NULL);
-#endif
 
-  if (result) {
-    /* Yielded a value - need to suspend */
-    *suspended = 1;
-
-    /* Store yielded value */
-    *yielded = result;
-
-    /* Store iterator for later resumption */
-    Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
-    KosContext_PY_AWAIT_ITER(ctx) = await_iter;
-
-    /* signal suspend */
-    return NULL;
-  }
-
-  /* Check for StopIteration (immediate completion) */
-  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-    PyObject *value = NULL;
-    if (PyGen_FetchStopIterationValue(&value) < 0) {
-      /* FetchStopIterationValue failed and set a new exception; propagate. */
-      Py_DECREF(await_iter);
-      return NULL;
-    }
-    Py_DECREF(await_iter);
-
-    if (! value) {
-      value = Py_None;
-      Py_INCREF(value);
-    }
-
-    return value;
-  }
-
-  /* Other exception */
-  Py_DECREF(await_iter);
+  *suspended = 1;
+  Py_XSETREF(KosContext_PY_AWAIT_ITER(ctx), await_iter);
   return NULL;
 }
 

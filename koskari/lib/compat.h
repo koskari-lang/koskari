@@ -284,6 +284,12 @@ int kos_coro_awaited(PyObject *coro);
    looked up and called. New reference, or NULL with an error set. */
 PyObject *kos_get_awaitable(PyObject *o);
 
+/* The first step of awaiting o: the await iterator as kos_get_awaitable
+   finds it, sent None once. Returns the completion (new reference) with
+   *iter NULL; or NULL with *iter and *yielded set (new references) when
+   the step suspended; or NULL with both NULL and an exception set. */
+PyObject *kos_await_first_step(PyObject *o, PyObject **iter, PyObject **yielded);
+
 
 /**
    Extend list with items from iterable.  Returns 0 on success, -1 on error.

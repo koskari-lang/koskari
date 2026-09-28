@@ -113,4 +113,36 @@ static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
 }
 
 
+/* The send protocol of 3.10 (PyIter_Send) over the send method: a
+   yield is PYGEN_NEXT with *result the value, a completion is
+   PYGEN_RETURN with *result the StopIteration value (None when it
+   carried none), anything else is PYGEN_ERROR with *result NULL and
+   the exception set. */
+typedef enum {
+  PYGEN_RETURN = 0,
+  PYGEN_ERROR = -1,
+  PYGEN_NEXT = 1,
+} PySendResult;
+
+static inline PySendResult kos_iter_send(
+    PyObject *iter, PyObject *value, PyObject **result) {
+  PyObject *r = PyObject_CallMethod(iter, "send", "(O)", value);
+  if (r) {
+    *result = r;
+    return PYGEN_NEXT;
+  }
+  if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    *result = NULL;
+    return PYGEN_ERROR;
+  }
+  if (_PyGen_FetchStopIterationValue(result) < 0) {
+    *result = NULL;
+    return PYGEN_ERROR;
+  }
+  if (! *result)
+    *result = Py_NewRef(Py_None);
+  return PYGEN_RETURN;
+}
+
+
 // The end.

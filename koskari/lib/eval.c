@@ -82,7 +82,6 @@ typedef struct {
 
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
-static PyObject *str_await = NULL;
 static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
 static PyObject *str_asend = NULL;
@@ -3770,7 +3769,6 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_asend, "asend");
   STR_CONST(str_asyncio_future_blocking, "_asyncio_future_blocking");
   STR_CONST(str_athrow, "athrow");
-  STR_CONST(str_await, "__await__");
   STR_CONST(str_continuation, "continuation");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
@@ -3839,7 +3837,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_asend);
   Py_CLEAR(str_asyncio_future_blocking);
   Py_CLEAR(str_athrow);
-  Py_CLEAR(str_await);
   Py_CLEAR(str_continuation);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);
