@@ -464,16 +464,23 @@ static int coroutine_step(
     coro->state = KOS_CORO_RUNNING;
   }
 
-  /* If waiting on Python awaitable, forward to it */
+  /* If waiting on Python awaitable, forward to it. The iterator is held
+     across the forward, and in_send is set so close, send and throw
+     from inside the step are refused: either can otherwise clear the
+     context's reference to the iterator while it runs. */
   if (coro->state == KOS_CORO_WAITING_PY) {
     KosEvalState coro_es;
     KosEvalState_Init(&coro_es, coro->ctx);
     PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
     if (await_iter) {
       PyObject *await_result = NULL;
+      Py_INCREF(await_iter);
+      coro->in_send = 1;
 #if PY_MINOR_VERSION >= 10
       PySendResult step = PyIter_Send(await_iter, value ? value : Py_None,
                                       &await_result);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
       if (step == PYGEN_NEXT) {
         *out = await_result;   /* still yielding */
         return 1;
@@ -485,6 +492,8 @@ static int coroutine_step(
 #else
       PyObject *result = PyObject_CallMethodObjArgs(
           await_iter, coro_str_send, value ? value : Py_None, NULL);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
       if (result) {
         *out = result;   /* still yielding */
         return 1;
@@ -572,13 +581,19 @@ static PyObject *coroutine_throw_pair(
     return NULL;
 
   /* If yielded, throw will inject exception and run (no special case) */
-  /* If waiting on Python awaitable, forward throw */
+  /* If waiting on Python awaitable, forward throw; the iterator is held
+     and in_send set across it, as in coroutine_step */
   if (coro->state == KOS_CORO_WAITING_PY) {
     KosEvalState coro_es;
     KosEvalState_Init(&coro_es, coro->ctx);
-    if (KosEvalState_PythonAwaitIter(&coro_es)) {
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    if (await_iter) {
+      Py_INCREF(await_iter);
+      coro->in_send = 1;
       PyObject *result = PyObject_CallMethodObjArgs(
-          KosEvalState_PythonAwaitIter(&coro_es), coro_str_throw, exc, NULL);
+          await_iter, coro_str_throw, exc, NULL);
+      coro->in_send = 0;
+      Py_DECREF(await_iter);
 
       if (result) {
         return result;
