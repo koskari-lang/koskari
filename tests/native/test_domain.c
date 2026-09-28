@@ -81,9 +81,51 @@ static int test_domain_two_thread_states_on_one_os_thread(void) {
 }
 
 
+/* Last in the suite: it clears the domain unit, after which records
+   are owned by the thread's slot alone. */
+static int test_domain_record_survives_module_clear(void) {
+  PyThreadState *first = PyThreadState_Get();
+  PyThreadState *second;
+  KosContext *a;
+
+  a = KosContext_New(NULL);
+  TEST_ASSERT_NOT_NULL(a, "context a");
+
+  koskari_domain_clear(NULL);
+
+  /* a thread state with no record yet allocates one after the clear */
+  second = PyThreadState_New(PyThreadState_GetInterpreter(first));
+  TEST_ASSERT_NOT_NULL(second, "second thread state");
+  PyThreadState_Swap(second);
+  TEST_ASSERT_NULL(kos_ctx_current(), "the second state starts empty");
+  kos_domain_push_scope(a);
+  TEST_ASSERT_SAME(kos_ctx_current(), a,
+                   "a is current on a record allocated after the clear");
+  kos_domain_push_scope(a);
+  TEST_ASSERT_SAME(kos_ctx_current(), a, "a is current after a second push");
+  kos_domain_pop_scope(a);
+  TEST_ASSERT_SAME(kos_ctx_current(), a, "a is current after one pop");
+  kos_domain_pop_scope(a);
+  TEST_ASSERT_NULL(kos_ctx_current(), "the second state is empty after pop");
+
+  PyThreadState_Swap(first);
+  PyThreadState_Clear(second);
+  PyThreadState_Delete(second);
+  kos_domain_push_scope(a);
+  TEST_ASSERT_SAME(kos_ctx_current(), a,
+                   "a is current on the first state after the clear");
+  kos_domain_pop_scope(a);
+  TEST_ASSERT_NULL(kos_ctx_current(), "the first state is empty at the end");
+
+  Py_DECREF(a);
+  return 0;
+}
+
+
 int run_domain_tests(void) {
   BEGIN_TEST_SUITE("Domain");
   RUN_TEST(test_domain_two_thread_states_on_one_os_thread);
+  RUN_TEST(test_domain_record_survives_module_clear);
   return 0;
 }
 

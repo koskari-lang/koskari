@@ -166,7 +166,8 @@ static KosTlsState *tls_state_current(void) {
    by a capsule in the thread state's dict and by the TSS slot. With the
    module cleared (the dict key gone) the slot's count is the only one,
    so a finalizer entering the evaluator during interpreter teardown
-   still has a record.
+   still has a record; the owner is set either way, since the slot
+   answers only for a record owned by the current thread state.
 */
 static KosTlsState *get_or_alloc_tls_state(void) {
   KosTlsState *s = tls_state_current();
@@ -177,6 +178,7 @@ static KosTlsState *get_or_alloc_tls_state(void) {
   if (! s)
     return NULL;
   memset(s, 0, sizeof(KosTlsState));
+  s->owner = PyThreadState_Get();
   s->refs = 1;   /* the slot's */
 
   if (tls_state_dict_key) {
@@ -194,7 +196,6 @@ static KosTlsState *get_or_alloc_tls_state(void) {
       return NULL;
     }
     Py_DECREF(capsule);
-    s->owner = PyThreadState_Get();
     s->refs++;   /* the capsule's */
   }
 
@@ -746,9 +747,11 @@ int koskari_domain_init(PyObject *mod) {
 }
 
 
+/* The TSS key outlives the module: a finalizer entering the evaluator
+   after the clear still stores its record in the slot. Creating the
+   key again at a later init is a no-op. */
 int koskari_domain_clear(PyObject *mod) {
   (void) mod;
-  PyThread_tss_delete(&tls_state_key);
   Py_CLEAR(tls_state_dict_key);
   return 0;
 }
