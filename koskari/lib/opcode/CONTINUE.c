@@ -81,13 +81,13 @@ KOS_OP_HANDLER(CONTINUE) {
     if (likely(frame && region) && KosDynNode_IS_LOOP(region)) {
       continue_store_result(&KosDynLoop_RESULT(region), result);
       kos_stack_clear_fast(KosEvalState_BLOCK(es));
-      KosEvalState_SET_PC(es, KosOp_PC(KosDynLoop_CONTINUE_AT(region)));
+      KosEvalState_SET_PC(es, KosDynLoop_CONTINUE_PC(region));
       RESULT_NEXT_POLL(es);
     }
 
     if (likely(frame && region) && KosDynNode_IS_FOREACH(region)) {
-      KosOp *step = KosDynForeach_CONTINUE_AT(region);
-      uint32_t cpc = KosOp_PC(step);
+      uint32_t cpc = KosDynForeach_CONTINUE_PC(region);
+      KosOp *step = &KosEvalState_OPS(es)[cpc];
       PyObject *out = NULL;
 
       continue_store_result(&KosDynForeach_RESULT(region), result);

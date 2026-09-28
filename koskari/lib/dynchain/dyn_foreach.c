@@ -5,15 +5,15 @@
 /**
    FOREACH region: loop PCs, iterator, exhausted flag, for/else PC.
 */
-KosDynForeach *kos_dynforeach_new(KosDynNode *parent, KosOp *break_at, KosOp *continue_at) {
+KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynForeach *node = kos_dynnode_alloc();
 
   if (! node)
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_FOREACH, parent, 0);
-  KosDynForeach_BREAK_AT(node) = break_at;
-  KosDynForeach_CONTINUE_AT(node) = continue_at;
+  KosDynForeach_BREAK_PC(node) = break_pc;
+  KosDynForeach_CONTINUE_PC(node) = continue_pc;
   KosDynForeach_ENABLED(node) = 1;
   KosDynForeach_RESULT(node) = NULL;
   KosDynForeach_ITER(node) = NULL;
@@ -38,8 +38,8 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   kos_dynnode_init(clone, KOS_DYN_FOREACH, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
-  KosDynForeach_BREAK_AT(clone) = KosDynForeach_BREAK_AT(node);
-  KosDynForeach_CONTINUE_AT(clone) = KosDynForeach_CONTINUE_AT(node);
+  KosDynForeach_BREAK_PC(clone) = KosDynForeach_BREAK_PC(node);
+  KosDynForeach_CONTINUE_PC(clone) = KosDynForeach_CONTINUE_PC(node);
   KosDynForeach_ENABLED(clone) = KosDynForeach_ENABLED(node);
   KosDynForeach_RESULT(clone) = KosDynForeach_RESULT(node);
   Py_XINCREF(KosDynForeach_RESULT(clone));
@@ -67,10 +67,10 @@ void kos_dynforeach_free(KosDynForeach *node) {
 static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "break_pc",
-                        KosOp_PC(KosDynForeach_BREAK_AT((KosDynForeach *) node))) < 0)
+                        KosDynForeach_BREAK_PC((KosDynForeach *) node)) < 0)
     return -1;
   if (snapshot_set_uint(data, "continue_pc",
-                        KosOp_PC(KosDynForeach_CONTINUE_AT((KosDynForeach *) node))) < 0)
+                        KosDynForeach_CONTINUE_PC((KosDynForeach *) node)) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynForeach_ENABLED((KosDynForeach *) node)) < 0)
@@ -97,8 +97,8 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
 /**
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */
-KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, KosOp *break_at, KosOp *continue_at) {
-  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(es), break_at, continue_at);
+KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
+  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push(es, (KosDynNode *) node) < 0) {

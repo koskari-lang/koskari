@@ -2026,8 +2026,8 @@ uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
      at push time; no runtime extent lookup. */
   (void) es;
   if (KosDynNode_IS_TRY(region))
-    return KosOp_PC(KosDynTry_HANDLER_AT((KosDynTry *) region));
-  return KosOp_PC(KosDynFinally_HANDLER_AT((KosDynFinally *) region));
+    return KosDynTry_HANDLER_PC((KosDynTry *) region);
+  return KosDynFinally_HANDLER_PC((KosDynFinally *) region);
 }
 
 
@@ -2040,9 +2040,9 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
   if (! node || ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CATCH))
     return (uint32_t) -1;
   if (KosDynNode_IS_CC(node))
-    return KosOp_PC(KosDynCC_RESUME_AT((KosDynCC *) node));
+    return KosDynCC_RESUME_PC((KosDynCC *) node);
   if (KosDynNode_IS_WITH(node))
-    return KosOp_PC(KosDynWith_RESUME_AT((KosDynWith *) node));
+    return KosDynWith_RESUME_PC((KosDynWith *) node);
   return (uint32_t) -1;
 }
 
@@ -2703,7 +2703,7 @@ int kos_capture_cc(KosEvalState *es, KosContinuation **out_k) {
         es,
         segment_top,
         NULL,
-        KosOp_PC(KosDynCC_RESUME_AT(cc)),
+        KosDynCC_RESUME_PC(cc),
         KOS_PROMPT_ID_UNDELIMITED,
         0,
         NULL,

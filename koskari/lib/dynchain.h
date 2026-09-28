@@ -440,12 +440,12 @@ struct KosDynNode {
     } frame;
     struct {
       uint32_t prompt_id;
-      /* the POP_PROMPT record closing this prompt's region, resolved
-         from the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes
-         at the record after it; stored resolved because by the time a
-         shift body runs, no live acting pc still points into the
-         extent. NULL until resolved. */
-      KosOp *pop_at;
+      /* pc of the POP_PROMPT closing this prompt's region, resolved from
+         the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
+         pop_pc + 1; stored resolved because by the time a shift body
+         runs, no live acting pc still points into the extent. A pc, not
+         a record pointer: the block moves when the code is packed. */
+      uint32_t pop_pc;
     } prompt;
     struct {
       uint8_t mode;       /* KOS_DYN_DELIM_MODE_* */
@@ -465,7 +465,7 @@ struct KosDynNode {
       uint32_t saved_acting_pc;
     } delim;
     struct {
-      KosOp *resume_at;   /* the record after POP_CC */
+      uint32_t resume_pc;  /* pc after POP_CC */
     } cc;
     struct {
       PyObject *before_thunk;  /* callable (owned) or NULL */
@@ -476,13 +476,13 @@ struct KosDynNode {
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
     struct {
-      KosOp *handler_at;  /* the handler's first record */
+      uint32_t handler_pc;
       uint8_t enabled;
       uint8_t exc_saved;      /* consumed a raise: saved is what it displaced */
       KosExcState saved;      /* handler-visible state before this region */
     } try_;
     struct {
-      KosOp *handler_at;  /* the finally block's first record */
+      uint32_t handler_pc;
       uint8_t enabled;
       uint8_t handling_raise;
       uint8_t handling_control;  /* KosPendingReturnKind parked here */
@@ -490,10 +490,10 @@ struct KosDynNode {
       KosExcState saved;      /* handler-visible state before this region */
       KosExcState handling;   /* the raise being propagated through the body */
     } finally_;
-    struct { KosOp *break_at; KosOp *continue_at; uint8_t enabled; PyObject *result; } loop;
+    struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
     struct {
-      KosOp *break_at;
-      KosOp *continue_at;
+      uint32_t break_pc;
+      uint32_t continue_pc;
       uint8_t enabled;
       PyObject *result;
       PyObject *iter;
@@ -541,7 +541,7 @@ struct KosDynNode {
                               once the single-shot __exit__ has run. NULL for
                               multi-shot */
       PyObject *name;      /* binding name or NULL (owned) */
-      KosOp *resume_at;   /* the record after the with body */
+      uint32_t resume_pc;  /* pc after the with body (pop_pc + 1) */
       KosObligation ob;    /* the exception __exit__ is handling, or what
                               a walk parked while __exit__ runs */
     } with;
@@ -851,15 +851,15 @@ void kos_dynwind_free(KosDynWind *wind);
 
    :param parent: parent node in dynamic chain
    :param style: region type
-   :param break_at: the record a break lands on
-   :param continue_at: the record a continue lands on
+   :param break_pc: break/exit jump target
+   :param continue_pc: continue jump target (or 0)
 
    :return: new region node, or NULL on error
 */
-KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_at);
-KosDynFinally *kos_dynfinally_new(KosDynNode *parent, KosOp *handler_at);
-KosDynLoop *kos_dynloop_new(KosDynNode *parent, KosOp *break_at, KosOp *continue_at);
-KosDynForeach *kos_dynforeach_new(KosDynNode *parent, KosOp *break_at, KosOp *continue_at);
+KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc);
+KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc);
+KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc);
+KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc);
 
 
 /**
@@ -1197,7 +1197,7 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
 KosDynPrompt *kos_dyn_push_prompt(
     KosEvalState *es,
     uint32_t prompt_id,
-    KosOp *pop_at);
+    uint32_t pop_pc);
 
 
 /**
@@ -1289,11 +1289,11 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim);
    Push a CC (call/cc) block onto the dynamic chain.
 
    :param ctx: execution context
-   :param resume_at: the record to resume at when the continuation is invoked
+   :param resume_pc: instruction index to resume at when continuation is invoked
 
    :return: the new CC node, or NULL on error
 */
-KosDynCC *kos_dyn_push_cc(KosEvalState *es, KosOp *resume_at);
+KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc);
 
 
 /**
@@ -1339,15 +1339,15 @@ KosDynWind *kos_dyn_push_wind(
 
    :param ctx: execution context
    :param style: region type
-   :param break_at: the record a break lands on
-   :param continue_at: the record a continue lands on
+   :param break_pc: break/exit jump target
+   :param continue_pc: continue jump target (or 0)
 
    :return: new region, or NULL on error
 */
-KosDynTry *kos_dyn_push_try(KosEvalState *es, KosOp *handler_at);
-KosDynFinally *kos_dyn_push_finally(KosEvalState *es, KosOp *handler_at);
-KosDynLoop *kos_dyn_push_loop(KosEvalState *es, KosOp *break_at, KosOp *continue_at);
-KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, KosOp *break_at, KosOp *continue_at);
+KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc);
+KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
+KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
 
 
 int kos_dyn_push_next_node(
@@ -1570,7 +1570,7 @@ KosDynWith *kos_dyn_push_with_provisional(
     PyObject *exit,
     uint8_t self_bind,
     PyObject *name,
-    KosOp *resume_at,
+    uint32_t resume_pc,
     uint8_t shot);
 
 
@@ -2210,7 +2210,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
   (KosDynFrame_RESUME_KIND(f) ? KosDynFrame_RESUME_KIND(f)->name : NULL)
 
 #define KosDynPrompt_ID(p)               (((KosDynNode *)(p))->u.prompt.prompt_id)
-#define KosDynPrompt_POP_AT(p)           (((KosDynNode *)(p))->u.prompt.pop_at)
+#define KosDynPrompt_POP_PC(p)           (((KosDynNode *)(p))->u.prompt.pop_pc)
 
 #define KOS_DYN_DELIM_MODE_NONE       0u
 /* 1u retired: K_RETURN (pre-walk delim scan in the RETURN opcode).  The
@@ -2231,7 +2231,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynDelim_SAVED_ACTING_PC(d) \
   (((KosDynNode *)(d))->u.delim.saved_acting_pc)
 
-#define KosDynCC_RESUME_AT(c)     (((KosDynNode *)(c))->u.cc.resume_at)
+#define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 
 #define KosDynShift_PROMPT_NODE_ID(s) \
   (((KosDynNode *)(s))->u.shift.prompt_node_id)
@@ -2242,23 +2242,23 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynWind_ENTERED(w)      (((KosDynNode *)(w))->u.wind.entered)
 #define KosDynWind_PHASE(w)        (((KosDynNode *)(w))->u.wind.phase)
 
-#define KosDynTry_HANDLER_AT(r)      (((KosDynNode *)(r))->u.try_.handler_at)
+#define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
 #define KosDynTry_EXC_SAVED(r)       (((KosDynNode *)(r))->u.try_.exc_saved)
 #define KosDynTry_SAVED(r)           (&((KosDynNode *)(r))->u.try_.saved)
-#define KosDynFinally_HANDLER_AT(r)  (((KosDynNode *)(r))->u.finally_.handler_at)
+#define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
 #define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
 #define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
 #define KosDynFinally_HANDLING_CONTROL(r) (((KosDynNode *)(r))->u.finally_.handling_control)
 #define KosDynFinally_EXC_SAVED(r)   (((KosDynNode *)(r))->u.finally_.exc_saved)
 #define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)
 #define KosDynFinally_HANDLING(r)    (&((KosDynNode *)(r))->u.finally_.handling)
-#define KosDynLoop_BREAK_AT(r)       (((KosDynNode *)(r))->u.loop.break_at)
-#define KosDynLoop_CONTINUE_AT(r)    (((KosDynNode *)(r))->u.loop.continue_at)
+#define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
+#define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
 #define KosDynLoop_ENABLED(r)        (((KosDynNode *)(r))->u.loop.enabled)
 #define KosDynLoop_RESULT(r)         (((KosDynNode *)(r))->u.loop.result)
-#define KosDynForeach_BREAK_AT(r)    (((KosDynNode *)(r))->u.foreach.break_at)
-#define KosDynForeach_CONTINUE_AT(r) (((KosDynNode *)(r))->u.foreach.continue_at)
+#define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.break_pc)
+#define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.continue_pc)
 #define KosDynForeach_ENABLED(r)     (((KosDynNode *)(r))->u.foreach.enabled)
 #define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.result)
 #define KosDynForeach_ITER(r)        (((KosDynNode *)(r))->u.foreach.iter)
@@ -2395,7 +2395,7 @@ static inline void kos_dyn_iter_request_arm(
 #define KosDynWith_SHOT(n)         (((KosDynNode *)(n))->u.with.shot)
 #define KosDynWith_EXIT_DONE(n)    (((KosDynNode *)(n))->u.with.exit_done)
 #define KosDynWith_NAME(n)         (((KosDynNode *)(n))->u.with.name)
-#define KosDynWith_RESUME_AT(n)    (((KosDynNode *)(n))->u.with.resume_at)
+#define KosDynWith_RESUME_PC(n)    (((KosDynNode *)(n))->u.with.resume_pc)
 #define KosDynWith_OB(n)           (&((KosDynNode *)(n))->u.with.ob)
 
 /**

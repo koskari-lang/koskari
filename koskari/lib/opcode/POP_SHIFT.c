@@ -106,8 +106,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
 
   /* Live reset: the prompt recorded its region's closing pc when
      PUSH_PROMPT resolved the PROMPT extent; resume past POP_PROMPT. */
-  prompt_pop_pc = KosDynPrompt_POP_AT(prompt)
-      ? KosOp_PC(KosDynPrompt_POP_AT(prompt)) : (uint32_t) -1;
+  prompt_pop_pc = KosDynPrompt_POP_PC(prompt);
   if (prompt_pop_pc == (uint32_t) -1) {
     Py_DECREF(result);
     PyErr_SetString(PyExc_RuntimeError,

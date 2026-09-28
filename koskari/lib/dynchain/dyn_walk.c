@@ -238,12 +238,12 @@ KosOpResult kos_dyn_unwind_return(
           }
           Py_DECREF(val);
           if (KosEvalState_FRAME(es))
-            KosEvalState_SET_PC(es, KosOp_PC(KosDynFinally_HANDLER_AT(fin)));
+            KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
           KosDynFinally_ENABLED(fin) = 0;
           KosDynFinally_HANDLING_CONTROL(fin) = KOS_PENDING_RETURN_FRAME;
           if (KOS_XFER_TRACE)
             SAYF("[xfer] unwind_return: delivered to FINALLY, pc=%u",
-                 (unsigned) KosDynFinally_HANDLER_AT(fin));
+                 (unsigned) KosDynFinally_HANDLER_PC(fin));
           return EVAL_REPROLOGUE();
         }
         /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
@@ -417,14 +417,14 @@ KosOpResult kos_dyn_unwind_to_loop(
           }
           Py_DECREF(result);
           if (KosEvalState_FRAME(es))
-            KosEvalState_SET_PC(es, KosOp_PC(KosDynFinally_HANDLER_AT(fin)));
+            KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
           KosDynFinally_ENABLED(fin) = 0;
           KosDynFinally_HANDLING_CONTROL(fin) =
               (event == KOS_XFER_EVENT_BREAK)
                   ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
           if (KOS_XFER_TRACE)
             SAYF("[xfer] unwind_to_loop: delivered to FINALLY, pc=%u",
-                 (unsigned) KosDynFinally_HANDLER_AT(fin));
+                 (unsigned) KosDynFinally_HANDLER_PC(fin));
           return EVAL_REPROLOGUE();
         }
         PyErr_SetString(PyExc_RuntimeError,
@@ -469,22 +469,22 @@ KosOpResult kos_dyn_unwind_to_loop(
       KosDynForeach_RESULT((KosDynForeach *) region) = result;
     }
 
-    KosOp *continue_at = (KosDynNode_IS_LOOP(region))
-        ? KosDynLoop_CONTINUE_AT((KosDynLoop *) region)
-        : KosDynForeach_CONTINUE_AT((KosDynForeach *) region);
+    uint32_t continue_pc = (KosDynNode_IS_LOOP(region))
+        ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region)
+        : KosDynForeach_CONTINUE_PC((KosDynForeach *) region);
 
     if (KosEvalState_StackClear(es) < 0)
       return EVAL_RAISE();
 
-    KosEvalState_SET_PC(es, KosOp_PC(continue_at));
+    KosEvalState_SET_PC(es, continue_pc);
     return EVAL_NORMAL();
   }
 
   /* KOS_XFER_EVENT_BREAK: read break_pc before popping, then pop, drop block,
      push result */
-  KosOp *break_at = (KosDynNode_IS_LOOP(region))
-      ? KosDynLoop_BREAK_AT((KosDynLoop *) region)
-      : KosDynForeach_BREAK_AT((KosDynForeach *) region);
+  uint32_t break_pc = (KosDynNode_IS_LOOP(region))
+      ? KosDynLoop_BREAK_PC((KosDynLoop *) region)
+      : KosDynForeach_BREAK_PC((KosDynForeach *) region);
 
   if (KosDynNode_IS_LOOP(region)) {
     if (kos_dyn_pop_loop(es, (KosDynLoop *) region) < 0) {
@@ -502,7 +502,7 @@ KosOpResult kos_dyn_unwind_to_loop(
   }
   Py_DECREF(result);
 
-  KosEvalState_SET_PC(es, KosOp_PC(break_at));
+  KosEvalState_SET_PC(es, break_pc);
   return EVAL_NORMAL();
 }
 

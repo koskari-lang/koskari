@@ -1626,47 +1626,49 @@ void kos_eval_note_crossed_frame(KosEvalState *es);
 
 
 /**
-   The record that closes a region push's extent (the POP_* row at the
-   extent's pop pc), for the pushes whose target is not an instruction
-   argument. Read from the site's cache slot once it is filled; the
-   first execution resolves it through the extent table and fills the
-   slot, and a site with no slot resolves every time. The pointer is
-   into the running code object's own instruction array, so the slot
-   owns nothing. Returns NULL with an error set when no extent of the
+   The pc that closes a region push's extent (the POP_* row), for the
+   pushes whose target is not an instruction argument. Read from the
+   site's cache slot once it is filled; the first execution resolves it
+   through the extent table and fills the slot, and a site with no slot
+   resolves every time. A pc and not a record pointer: the instruction
+   block moves when the code is packed into an arena, and a pc stays
+   valid across that. Returns -1 with an error set when no extent of the
    kind encloses the site.
 */
-static inline KosOp *kos_site_extent_close(
+static inline int kos_site_extent_close(
     KosEvalState *es,
     KosOp *insn,
     KosExtentKind kind,
-    const char *who) {
+    const char *who,
+    uint32_t *pop_pc) {
 
   KosCacheSlot *slot = KosOp_SLOT(insn);
   PyObject *code;
   uint32_t eid;
   const KosExtentDesc *ext;
-  KosOp *close;
 
-  if (slot && likely(slot->kind == KOS_CACHE_TARGET))
-    return slot->u.target.target;
+  if (slot && likely(slot->kind == KOS_CACHE_TARGET)) {
+    *pop_pc = slot->u.target.pop_pc;
+    return 0;
+  }
 
   code = (PyObject *) KosEvalState_CODE(es);
   eid = kos_extent_find(code, KosOp_PC(insn), kind);
   if (eid == KOS_EXTENT_NONE) {
     PyErr_Format(PyExc_RuntimeError, "%s: no extent at this PC", who);
-    return NULL;
+    return -1;
   }
   ext = kos_extent_desc(code, eid);
   if (! ext) {
     PyErr_Format(PyExc_RuntimeError, "%s: invalid extent", who);
-    return NULL;
+    return -1;
   }
-  close = &KosEvalState_OPS(es)[ext->pop_pc];
+  *pop_pc = ext->pop_pc;
   if (slot && slot->kind == KOS_CACHE_EMPTY) {
     slot->kind = KOS_CACHE_TARGET;
-    slot->u.target.target = close;
+    slot->u.target.pop_pc = ext->pop_pc;
   }
-  return close;
+  return 0;
 }
 
 

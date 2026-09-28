@@ -14,17 +14,17 @@
 */
 
 /**
-   PUSH_CC: no arg. Push a CC block onto the dynamic chain. The resume
-   record (the instruction after the matching POP_CC) comes from the CC
-   extent, resolved once per site into the cache slot.
+   PUSH_CC: no arg. Push a CC block onto the dynamic chain. The resume pc
+   (the instruction after the matching POP_CC) comes from the CC extent,
+   resolved once per site into the cache slot.
 */
 
 KOS_OP_HANDLER(PUSH_CC) {
   /* the continuation resumes after the POP_CC closing the extent */
-  KosOp *close = kos_site_extent_close(es, insn, KOS_EXT_CC, "PUSH_CC");
-  if (! close)
+  uint32_t pop_pc;
+  if (kos_site_extent_close(es, insn, KOS_EXT_CC, "PUSH_CC", &pop_pc) < 0)
     RESULT_RAISE();
-  if (! kos_dyn_push_cc(es, close + 1)) {
+  if (! kos_dyn_push_cc(es, pop_pc + 1u)) {
     RESULT_RAISE();
   }
   RESULT_NEXT(es);

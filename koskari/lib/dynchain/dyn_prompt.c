@@ -19,7 +19,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
                    KOS_DYN_CAP_BARRIER
                    | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynPrompt_ID(prompt) = prompt_id;
-  KosDynPrompt_POP_AT(prompt) = NULL;
+  KosDynPrompt_POP_PC(prompt) = (uint32_t) -1;
   kos_dynnode_use_inline_segment((KosDynNode *) prompt);
   return prompt;
 }
@@ -49,7 +49,7 @@ static KosDynPrompt *kos_dynprompt_new_invocation(
                    | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
   KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
   KosDynPrompt_ID(prompt) = prompt_id;
-  KosDynPrompt_POP_AT(prompt) = NULL;
+  KosDynPrompt_POP_PC(prompt) = (uint32_t) -1;
   return prompt;
 }
 
@@ -69,7 +69,7 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
-  KosDynPrompt_POP_AT(clone) = KosDynPrompt_POP_AT(prompt);
+  KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   return clone;
 }
 
@@ -100,14 +100,14 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
 KosDynPrompt *kos_dyn_push_prompt(
     KosEvalState *es,
     uint32_t prompt_id,
-    KosOp *pop_at) {
+    uint32_t pop_pc) {
 
   // CONTEXT: dirty, touches context directly
   KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(es), prompt_id);
   if (! prompt)
     return NULL;
 
-  KosDynPrompt_POP_AT(prompt) = pop_at;
+  KosDynPrompt_POP_PC(prompt) = pop_pc;
 
   if (kos_dyn_push(es, (KosDynNode *) prompt) < 0) {
     kos_dynprompt_free(prompt);

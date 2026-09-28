@@ -6,14 +6,14 @@
    Allocate call/cc marker with resume PC after CAPTURE_CC. Callers:
    opcode PUSH_CC.
 */
-static KosDynCC *kos_dyncc_new(KosDynNode *parent, KosOp *resume_at) {
+static KosDynCC *kos_dyncc_new(KosDynNode *parent, uint32_t resume_pc) {
 
   KosDynCC *cc = kos_dynnode_alloc();
   if (! cc)
     return NULL;
 
   kos_dynnode_init(cc, KOS_DYN_CC, parent, 0);
-  KosDynCC_RESUME_AT(cc) = resume_at;
+  KosDynCC_RESUME_PC(cc) = resume_pc;
   return cc;
 }
 
@@ -32,7 +32,7 @@ static KosDynCC *kos_dyncc_clone(KosDynCC *cc) {
   kos_dynnode_init(clone, KOS_DYN_CC, NULL, KosDynNode_CAPS(cc));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(cc) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(cc);
-  KosDynCC_RESUME_AT(clone) = KosDynCC_RESUME_AT(cc);
+  KosDynCC_RESUME_PC(clone) = KosDynCC_RESUME_PC(cc);
   return clone;
 }
 
@@ -51,10 +51,10 @@ static void kos_dyncc_free(KosDynCC *cc) {
 /**
    Link CC as DYN_TOP (minimal push). Callers: PUSH_CC.
 */
-KosDynCC *kos_dyn_push_cc(KosEvalState *es, KosOp *resume_at) {
+KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynCC *cc = kos_dyncc_new(KosEvalState_DYN_TOP(es), resume_at);
+  KosDynCC *cc = kos_dyncc_new(KosEvalState_DYN_TOP(es), resume_pc);
   if (! cc)
     return NULL;
 
@@ -92,7 +92,7 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc) {
 static int dynnode_to_dict_cc(KosDynNode *node, PyObject *data) {
 
   return snapshot_set_uint(data, "resume_pc",
-                           KosOp_PC(KosDynCC_RESUME_AT((KosDynCC *) node)));
+                           KosDynCC_RESUME_PC((KosDynCC *) node));
 }
 
 

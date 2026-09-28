@@ -357,12 +357,12 @@ OP(TAIL_CALL_FAST_ATTR_NAMES, 1, EXTRA, FASTVAR, CONST, CONST, COUNT)
 OP(TAIL_CALL_FAST_ATTR_STAR, 1, EXTRA, FASTVAR, CONST, COUNT, NOARG)
 
 // block control - all foreach/with are async in Koskari
-OP(PUSH_FOREACH, 1, NOARG)  // cache: extent close record
-OP(PUSH_WITH, 1, CONST)  // cache: extent close record
-OP(PUSH_DYN_WITH, 1, CONST)  // cache: extent close record
+OP(PUSH_FOREACH, 1, NOARG)  // cache: extent close pc
+OP(PUSH_WITH, 1, CONST)  // cache: extent close pc
+OP(PUSH_DYN_WITH, 1, CONST)  // cache: extent close pc
 OP(PUSH_COLLECT, 0, CONST)
 OP(PUSH_FINALLY, 0, LABEL)
-OP(PUSH_LOOP, 1, NOARG)  // cache: extent close record
+OP(PUSH_LOOP, 1, NOARG)  // cache: extent close pc
 OP(PUSH_NS, 0, EXTRA, CONST, CONST, NOARG, NOARG)
 OP(PUSH_TRY, 0, LABEL)
 

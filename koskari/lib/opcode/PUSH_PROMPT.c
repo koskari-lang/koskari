@@ -23,17 +23,17 @@
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
   uint32_t prompt_id;
-  KosOp *close;
+  uint32_t pop_pc;
 
   if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
     RESULT_RAISE();
 
   /* the POP_PROMPT closing the extent, for POP_SHIFT's live reset */
-  close = kos_site_extent_close(es, insn, KOS_EXT_PROMPT, "PUSH_PROMPT");
-  if (! close)
+  if (kos_site_extent_close(es, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
+                            &pop_pc) < 0)
     RESULT_RAISE();
 
-  if (! kos_dyn_push_prompt(es, prompt_id, close))
+  if (! kos_dyn_push_prompt(es, prompt_id, pop_pc))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }

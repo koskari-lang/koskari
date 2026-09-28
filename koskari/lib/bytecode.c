@@ -3046,7 +3046,7 @@ static void cache_slot_release(KosCacheSlot *slot) {
     /* ref-free: a static function and two counters. */
     break;
   case KOS_CACHE_TARGET:
-    /* ref-free: a pointer into this code object's own records. */
+    /* ref-free: one pc. */
     break;
   }
   memset(slot, 0, sizeof(*slot));

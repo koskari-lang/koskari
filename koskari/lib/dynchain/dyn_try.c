@@ -5,7 +5,7 @@
 /**
    Allocate TRY with handler_pc; HANDLES_EXCEPTIONS cap for kos_dyn_handle.
 */
-KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_at) {
+KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynTry *node = kos_dynnode_alloc();
 
   if (! node)
@@ -14,7 +14,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, KosOp *handler_at) {
   kos_dynnode_init(node, KOS_DYN_TRY, parent,
                    KOS_DYN_CAP_HANDLES_EXCEPTIONS
                    | KOS_DYN_CAP_INTERCEPTS_RAISE);
-  KosDynTry_HANDLER_AT(node) = handler_at;
+  KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
   KosDynTry_EXC_SAVED(node) = 0;
   KosExc_Init(KosDynTry_SAVED(node));
@@ -33,7 +33,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   kos_dynnode_init(clone, KOS_DYN_TRY, NULL, KosDynNode_CAPS(node));
   KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
-  KosDynTry_HANDLER_AT(clone) = KosDynTry_HANDLER_AT(node);
+  KosDynTry_HANDLER_PC(clone) = KosDynTry_HANDLER_PC(node);
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
   KosDynTry_EXC_SAVED(clone) = KosDynTry_EXC_SAVED(node);
   KosExc_Init(KosDynTry_SAVED(clone));
@@ -54,7 +54,7 @@ void kos_dyntry_free(KosDynTry *node) {
 static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
 
   if (snapshot_set_uint(data, "handler_pc",
-                        KosOp_PC(KosDynTry_HANDLER_AT((KosDynTry *) node))) < 0)
+                        KosDynTry_HANDLER_PC((KosDynTry *) node)) < 0)
     return -1;
   if (snapshot_set_int(data, "enabled",
                        KosDynTry_ENABLED((KosDynTry *) node)) < 0)
@@ -66,8 +66,8 @@ static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
 /**
    Push TRY as DYN_TOP. Callers: opcode PUSH_TRY.
 */
-KosDynTry *kos_dyn_push_try(KosEvalState *es, KosOp *handler_at) {
-  KosDynTry *node = kos_dyntry_new(KosEvalState_DYN_TOP(es), handler_at);
+KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
+  KosDynTry *node = kos_dyntry_new(KosEvalState_DYN_TOP(es), handler_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push(es, (KosDynNode *) node) < 0) {

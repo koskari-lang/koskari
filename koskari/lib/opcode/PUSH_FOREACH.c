@@ -14,15 +14,18 @@
 */
 
 /**
-   PUSH_FOREACH: no arg. Break target is the record after the
-   POP_FOREACH closing the FOREACH extent, resolved once per site into
-   the cache slot. Stack: [iterable].
+   PUSH_FOREACH: no arg. Break target is the pc after the POP_FOREACH
+   closing the FOREACH extent, resolved once per site into the cache
+   slot. Stack: [iterable].
    Pops iterable, creates iterator, stores it in region (result defaults
    to NULL), pushes FOREACH region (with its own segment). Continue target =
    next insn.
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
+  uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
+  uint32_t pop_pc;
+
   PyObject *iterable = KosEvalState_StackPopRef(es);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
@@ -30,9 +33,8 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
   }
 
   /* break lands after the POP_FOREACH that closes the extent */
-  KosOp *close = kos_site_extent_close(es, insn, KOS_EXT_FOREACH,
-                                       "PUSH_FOREACH");
-  if (! close) {
+  if (kos_site_extent_close(es, insn, KOS_EXT_FOREACH, "PUSH_FOREACH",
+                            &pop_pc) < 0) {
     Py_DECREF(iterable);
     RESULT_RAISE();
   }
@@ -45,7 +47,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   /* Push region */
   KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(
-    es, close + 1, ((KosOp *) insn) + 1);
+    es, pop_pc + 1u, continue_pc);
   if (! region) {
     Py_DECREF(iter);
     PyErr_NoMemory();
