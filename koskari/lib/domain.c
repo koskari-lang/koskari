@@ -46,12 +46,13 @@
    silently. */
 #define KOS_TLS_STACK_INITIAL 32
 
-typedef struct {
+struct KosTlsState {
   /* the thread state whose dict holds the capsule; NULL once that
      capsule is gone. Compared against the current thread state to
      accept the TSS slot's record without a dict lookup. */
   PyThreadState *owner;
-  /* one count for the capsule, one for the TSS slot that names it */
+  /* one count for the capsule, one for the TSS slot that names it,
+     and one per drive holding the record across its run */
   Py_ssize_t refs;
   KosContext **ctx_stack;
   size_t ctx_depth;
@@ -62,7 +63,7 @@ typedef struct {
   PyObject **python_domain_stack;
   size_t python_domain_depth;
   size_t python_domain_cap;
-} KosTlsState;
+};
 
 static Py_tss_t tls_state_key = Py_tss_NEEDS_INIT;
 
@@ -221,24 +222,33 @@ static void pop_active_ctx(void) {
 }
 
 
-void kos_tls_push_active_eval(KosEvalState *es) {
-  KosTlsState *s;
-
-  if (! es)
-    return;
-  s = get_or_alloc_tls_state();
+KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es) {
+  KosTlsState *s = get_or_alloc_tls_state();
   if (! s)
     Py_FatalError("koskari: TLS state allocation failed");
+  s->refs++;   /* the drive's */
+  s->ctx_stack = (KosContext **) tls_stack_reserve(
+      s->ctx_stack, &s->ctx_cap, s->ctx_depth);
+  s->ctx_stack[s->ctx_depth++] = ctx;
   s->eval_stack = (KosEvalState **) tls_stack_reserve(
       s->eval_stack, &s->eval_cap, s->eval_depth);
   s->eval_stack[s->eval_depth++] = es;
+  KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
+  return s;
 }
 
 
-void kos_tls_pop_active_eval(void) {
-  KosTlsState *s = tls_state_current();
-  if (s && s->eval_depth > 0)
+void kos_tls_pop_active_eval(KosTlsState *s) {
+  if (s->eval_depth > 0)
     s->eval_depth--;
+}
+
+
+void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx) {
+  KosEvaluatorToken_DecrementLiveDepth(KosContext_TOKEN(ctx));
+  if (s->ctx_depth > 0)
+    s->ctx_depth--;
+  tls_state_release(s);
 }
 
 

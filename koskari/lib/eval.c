@@ -3563,6 +3563,7 @@ KosOpResult koskari_eval(
   KosOpResult eval_ret = EVAL_RAISE();
   KosExcState host_exc;
   KosEvalState es;
+  KosTlsState *tls;
   KosOpResult r;
 
   if (! ctx) {
@@ -3617,8 +3618,7 @@ KosOpResult koskari_eval(
 
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
 
-  KosEvalState_EnterDomainScope(&es);
-  kos_tls_push_active_eval(&es);
+  tls = kos_tls_enter_drive(ctx, &es);
   KOS_TRACE_EVAL_PUSH();
   KOS_TRACE_TRAMPOLINE_STEP();
 
@@ -3687,11 +3687,11 @@ KosOpResult koskari_eval(
 koskari_eval_cleanup:
   KOS_TRACE_OP_EXIT();
   KOS_TRACE_EVAL_POP();
-  kos_tls_pop_active_eval();
+  kos_tls_pop_active_eval(tls);
   KosEvalState_FlushLiveRegsToFrame(&es);
   KosEvalState_FreezeToContext(&es);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  KosEvalState_LeaveDomainScope(&es);
+  kos_tls_leave_drive(tls, ctx);
 
   /* Save this context's handler-visible exception state and restore the
      host's (the reverse of the entry swap). */

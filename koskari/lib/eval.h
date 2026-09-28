@@ -1379,14 +1379,29 @@ KosOpResult koskari_eval(
 KosContext *kos_ctx_current(void);
 
 
+/* The per-thread record behind the ambient context and active eval
+   stacks; private to domain.c. */
+typedef struct KosTlsState KosTlsState;
+
+
 /**
-  Push active KosEvalState for GC traverse while KOS_CTX_RUNNING (steal model).
+  Enter a drive: the thread record is resolved once and held for the
+  drive's length, ctx becomes the ambient context and es the active
+  eval state for GC traverse while KOS_CTX_RUNNING (steal model), and
+  the context's token gains a live depth. Returns the held record.
 */
+KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es);
 
-void kos_tls_push_active_eval(KosEvalState *es);
+
+/* Pop the active eval state of the drive holding s. */
+void kos_tls_pop_active_eval(KosTlsState *s);
 
 
-void kos_tls_pop_active_eval(void);
+/**
+  Leave the drive holding s: the token's live depth and the ambient
+  context are dropped and the record is released.
+*/
+void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx);
 
 
 /**

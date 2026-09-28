@@ -124,14 +124,6 @@ static inline int KosEvalState_PythonResumeTake(
 }
 
 
-#define KosEvalState_EnterDomainScope(es) \
-  kos_domain_push_scope(KosEvalState_CONTEXT(es))
-
-
-#define KosEvalState_LeaveDomainScope(es) \
-  kos_domain_pop_scope(KosEvalState_CONTEXT(es))
-
-
 KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
   if (! es)
     return NULL;
