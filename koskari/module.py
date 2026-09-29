@@ -145,7 +145,7 @@ def init_module(module, filename, spec=None):
             ns['__path__'] = list(spec.submodule_search_locations)
 
 
-def compile_top_level(module, compiler, reader, source_stream):
+def compile_top_level(compiler, reader, source_stream):
     """
     Read and compile each top-level form of a module's source in order,
     yielding one expression Code per form. The caller runs each before
@@ -156,7 +156,6 @@ def compile_top_level(module, compiler, reader, source_stream):
     define of ``__doc__`` and yielded like any other form, which is also
     the body a .kio carries for it
 
-    :param module: koskari Module whose namespace the forms run in
     :param compiler: Compiler facet for this load
     :param reader: LayoutReader facet for this load
     :param source_stream: SourceStream from source_open or source_str
@@ -295,7 +294,7 @@ async def load_module_async(module, *, seal=True, detach=True):
     with source_open(filename) as source_stream, \
             load_facets(module, filename, seal=seal, detach=detach) as facets:
         await run_codes_async(
-            module, compile_top_level(module, *facets, source_stream))
+            module, compile_top_level(*facets, source_stream))
 
 
 def load_module_demand(module, *, seal=True, detach=True):
@@ -318,7 +317,7 @@ def load_module_demand(module, *, seal=True, detach=True):
     with source_open(filename) as source_stream, \
             load_facets(module, filename, seal=seal, detach=detach) as facets:
         run_codes_demand(
-            module, compile_top_level(module, *facets, source_stream))
+            module, compile_top_level(*facets, source_stream))
 
 
 async def load_module_source_async(
@@ -352,7 +351,7 @@ async def load_module_source_async(
         if not layout:
             reader.set_layout_modes(layout_enabled=False)
         await run_codes_async(
-            module, compile_top_level(module, compiler, reader, source_stream))
+            module, compile_top_level(compiler, reader, source_stream))
 
 
 async def load_module_kio_async(module):

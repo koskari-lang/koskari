@@ -44,7 +44,7 @@ def compile_top_level_to_codes(mod, filename, source_stream):
     bodies = []
 
     with load_facets(mod, filename, seal=False, detach=True) as facets:
-        for code in compile_top_level(mod, *facets, source_stream):
+        for code in compile_top_level(*facets, source_stream):
             bodies.append(code)
             demand_call(code.expression(ns))
 

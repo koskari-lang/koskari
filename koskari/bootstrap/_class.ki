@@ -59,7 +59,7 @@ define-syntax define-dataclass:
     (define Point? [value] (instance? value Point))
   """
 
-  syntax-rules [begin]:
+  syntax-rules []:
     case (define-dataclass name (members ...)):
       (define-dataclass name [] (members ...))
     case (define-dataclass name supers members ...):
