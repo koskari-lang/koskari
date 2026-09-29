@@ -321,6 +321,16 @@ and unparks its cells through `kos_dyn_extent_park` / `unpark`; decide
 whether other kinds need a leave and re-enter walk without unlinking.
 Ref: [interpreter/generator-extent-park.md](interpreter/generator-extent-park.md).
 
+### Closing a delegate through `yield-from` (investigate)
+
+A throw into a generator suspended in `yield-from` reaches the
+delegate; GeneratorExit does not. It raises at the frame and the raise
+walk closes a sync generator but only marks a KosIter finished and
+drops a Python async generator, so their cleanup runs at collection,
+not at the relay's aclose. Decide whether GeneratorExit should route
+through the resume so the drive can await the delegate's close.
+Ref: [interpreter/yield-from-close.md](interpreter/yield-from-close.md).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
