@@ -330,6 +330,10 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
 
   PyList_Append(col, cons_open);
 
+  /* rest is held for the whole iteration, and the car across its
+     repr: an element's __repr__ can cut the spine or swap the car,
+     and the walk keeps reading the cells it reached */
+  Py_INCREF(rest);
   while (KosPair_IsCell(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
@@ -343,19 +347,25 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
         PyList_Append(col, _str_close_paren);
       }
       Py_DECREF(rest_id);
-      rest = NULL;
+      Py_CLEAR(rest);
       break;
 
     } else {
+      PyObject *car, *next;
+
       index += 2;
 
       tmp = PyLong_FromSize_t(index);
       PyDict_SetItem(found, rest_id, tmp);
       Py_DECREF(tmp);
+      Py_DECREF(rest_id);
 
-      tmp = PyObject_Repr(KosPair_CAR(rest));
+      car = KosPair_CAR(rest);
+      Py_INCREF(car);
+      tmp = PyObject_Repr(car);
+      Py_DECREF(car);
       if (! tmp) {
-        Py_DECREF(rest_id);
+        Py_DECREF(rest);
         Py_DECREF(col);
         Py_DECREF(found);
         return NULL;
@@ -364,13 +374,15 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
       PyList_Append(col, _str_comma_space);
       Py_DECREF(tmp);
 
-      rest = KosPair_CDR(rest);
-      Py_DECREF(rest_id);
+      next = KosPair_CDR(rest);
+      Py_INCREF(next);
+      Py_SETREF(rest, next);
     }
   }
 
   if (rest) {
     tmp = PyObject_Repr(rest);
+    Py_DECREF(rest);
     if (! tmp) {
       Py_DECREF(col);
       Py_DECREF(found);
@@ -451,7 +463,11 @@ static PyObject *pair_str_inner(
 
   PyList_Append(col, open_s);
 
-  for (rest = self; KosPair_IsCell(rest); rest = KosPair_CDR(rest)) {
+  /* rest is held for the whole iteration, and the car across its
+     str: an element's __str__ can cut the spine or swap the car, and
+     the walk keeps reading the cells it reached */
+  Py_INCREF(rest);
+  while (KosPair_IsCell(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
     if (PyDict_Contains(found, rest_id)) {
@@ -469,10 +485,12 @@ static PyObject *pair_str_inner(
 
       /* set rest to NULL so we don't try to close it like we would a
          normal proper or improper list */
-      rest = NULL;
+      Py_CLEAR(rest);
       break;
 
     } else {
+      PyObject *car, *next;
+
       index += 2;
 
       tmp = PyLong_FromSize_t(index);
@@ -480,8 +498,12 @@ static PyObject *pair_str_inner(
       Py_DECREF(tmp);
       Py_DECREF(rest_id);
 
-      tmp = pair_elem_str(KosPair_CAR(rest));
+      car = KosPair_CAR(rest);
+      Py_INCREF(car);
+      tmp = pair_elem_str(car);
+      Py_DECREF(car);
       if (! tmp) {
+        Py_DECREF(rest);
         Py_DECREF(col);
         Py_DECREF(found);
         return NULL;
@@ -491,12 +513,17 @@ static PyObject *pair_str_inner(
       Py_DECREF(tmp);
 
       PyList_Append(col, _str_space);
+
+      next = KosPair_CDR(rest);
+      Py_INCREF(next);
+      Py_SETREF(rest, next);
     }
   }
 
-  if(KosNilP(rest)) {
+  if (rest && KosNilP(rest)) {
     /* end of a proper list */
 
+    Py_DECREF(rest);
     Py_INCREF(close_s);
     PyList_SetItem(col, index, close_s);
 
@@ -504,6 +531,7 @@ static PyObject *pair_str_inner(
     /* end of an improper list */
 
     tmp = pair_elem_str(rest);
+    Py_DECREF(rest);
     if (! tmp) {
       Py_DECREF(col);
       Py_DECREF(found);
@@ -550,7 +578,11 @@ static PyObject *pair_kos_repr_inner(
 
   PyList_Append(col, open_s);
 
-  for (rest = self; KosPair_IsCell(rest); rest = KosPair_CDR(rest)) {
+  /* rest is held for the whole iteration, and the car across its
+     kos_repr: an element's __kos_repr__ can cut the spine or swap the
+     car, and the walk keeps reading the cells it reached */
+  Py_INCREF(rest);
+  while (KosPair_IsCell(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
     if (PyDict_Contains(found, rest_id)) {
@@ -568,10 +600,12 @@ static PyObject *pair_kos_repr_inner(
 
       /* set rest to NULL so we don't try to close it like we would a
          normal proper or improper list */
-      rest = NULL;
+      Py_CLEAR(rest);
       break;
 
     } else {
+      PyObject *car, *next;
+
       index += 2;
 
       tmp = PyLong_FromSize_t(index);
@@ -579,8 +613,12 @@ static PyObject *pair_kos_repr_inner(
       Py_DECREF(tmp);
       Py_DECREF(rest_id);
 
-      tmp = KosUtils_Repr(KosPair_CAR(rest));
+      car = KosPair_CAR(rest);
+      Py_INCREF(car);
+      tmp = KosUtils_Repr(car);
+      Py_DECREF(car);
       if (! tmp) {
+        Py_DECREF(rest);
         Py_DECREF(col);
         Py_DECREF(found);
         return NULL;
@@ -590,12 +628,17 @@ static PyObject *pair_kos_repr_inner(
       Py_DECREF(tmp);
 
       PyList_Append(col, _str_space);
+
+      next = KosPair_CDR(rest);
+      Py_INCREF(next);
+      Py_SETREF(rest, next);
     }
   }
 
-  if (KosNilP(rest)) {
+  if (rest && KosNilP(rest)) {
     /* end of a proper list */
 
+    Py_DECREF(rest);
     Py_INCREF(close_s);
     PyList_SetItem(col, index, close_s);
 
@@ -603,6 +646,7 @@ static PyObject *pair_kos_repr_inner(
     /* end of an improper list */
 
     tmp = KosUtils_Repr(rest);
+    Py_DECREF(rest);
     if (! tmp) {
       Py_DECREF(col);
       Py_DECREF(found);
@@ -640,6 +684,12 @@ static long pair_eq(PyObject *left, PyObject *right) {
   seen = PyDict_New();
   if (! seen)
     return -1;
+
+  /* both cells are held for the whole iteration, and both cars across
+     their comparison: an element's __eq__ can cut either spine or swap
+     a car, and the walk keeps reading the cells it reached */
+  Py_INCREF(left);
+  Py_INCREF(right);
 
   while (left != right) {
     if (KosNilP(left) && KosNilP(right)) {
@@ -686,8 +736,16 @@ static long pair_eq(PyObject *left, PyObject *right) {
       break;
 
     } else {
-      int eq = PyObject_RichCompareBool(KosPair_CAR(left),
-                                       KosPair_CAR(right), Py_EQ);
+      PyObject *left_car = KosPair_CAR(left);
+      PyObject *right_car = KosPair_CAR(right);
+      int eq;
+
+      Py_INCREF(left_car);
+      Py_INCREF(right_car);
+      eq = PyObject_RichCompareBool(left_car, right_car, Py_EQ);
+      Py_DECREF(left_car);
+      Py_DECREF(right_car);
+
       if (eq > 0) {
         /* equal, so make note that we've compared these to each other */
         PyDict_SetItem(seen, left_id, right_id);
@@ -702,10 +760,18 @@ static long pair_eq(PyObject *left, PyObject *right) {
       }
     }
 
-    left = KosPair_CDR(left);
-    right = KosPair_CDR(right);
+    {
+      PyObject *next_left = KosPair_CDR(left);
+      PyObject *next_right = KosPair_CDR(right);
+      Py_INCREF(next_left);
+      Py_INCREF(next_right);
+      Py_SETREF(left, next_left);
+      Py_SETREF(right, next_right);
+    }
   }
 
+  Py_DECREF(left);
+  Py_DECREF(right);
   Py_DECREF(seen);
   return answer;
 }

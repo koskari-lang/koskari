@@ -25,7 +25,7 @@ import pytest
 
 from koskari.lib import (
     bracket_pair, break_recursive, build_unpack_pair, car, cdr, cons,
-    make_recursive, nil, pair, setcar, setcdr)
+    kos_repr, make_recursive, nil, pair, setcar, setcdr)
 
 
 pytestmark = pytest.mark.phase_lib
@@ -679,6 +679,77 @@ class TestPairRenderErrors(unittest.IsolatedAsyncioTestCase):
             repr(p)
         with self.assertRaises(RecursionError):
             str(p)
+
+
+class TestPairRenderMutation(unittest.IsolatedAsyncioTestCase):
+    """
+    A walk over the spine holds the cell and the element it is
+    rendering or comparing, so an element that mutates the list from
+    its dunder cannot free what the walk still reads. The walk keeps
+    going over the cells it reached before the cut
+    """
+
+    class Cutter:
+        """
+        Rendering or comparing this element cuts the spine after the
+        head cell, dropping the only reference to every later cell
+        """
+
+        def __init__(self, head):
+            self.head = head
+
+        def __repr__(self):
+            setcdr(self.head, nil)
+            return "<cut>"
+
+        __str__ = __repr__
+
+        def __eq__(self, other):
+            setcdr(self.head, nil)
+            return True
+
+        __hash__ = None
+
+    class Swapper:
+        """
+        Rendering this element replaces it in its cell, dropping the
+        only reference to itself
+        """
+
+        def __init__(self, cell):
+            self.cell = cell
+
+        def __repr__(self):
+            setcar(self.cell, "swapped")
+            return "<swap>"
+
+        __str__ = __repr__
+
+    def cut_list(self):
+        p = cons(1, None, 3, 4, nil)
+        setcar(cdr(p), self.Cutter(p))
+        return p
+
+    async def test_repr_survives_a_spine_cut(self):
+        self.assertEqual(repr(self.cut_list()), "cons(1, <cut>, 3, 4, nil)")
+
+    async def test_str_survives_a_spine_cut(self):
+        self.assertEqual(str(self.cut_list()), "(1 <cut> 3 4)")
+
+    async def test_kos_repr_survives_a_spine_cut(self):
+        self.assertEqual(kos_repr(self.cut_list()), "(1 <cut> 3 4)")
+
+    async def test_repr_survives_a_car_swap(self):
+        p = cons(1, None, 3, nil)
+        setcar(cdr(p), self.Swapper(cdr(p)))
+        self.assertEqual(repr(p), "cons(1, <swap>, 3, nil)")
+        self.assertEqual(car(cdr(p)), "swapped")
+
+    async def test_eq_survives_a_spine_cut(self):
+        left = self.cut_list()
+        right = cons(1, "anything", 3, 4, nil)
+        self.assertTrue(left == right)
+        self.assertEqual(str(left), "(1)")
 
 
 class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
