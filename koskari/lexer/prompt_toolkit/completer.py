@@ -24,11 +24,7 @@ Tab completion for Koskari REPL.
 # prompt_toolkit REPL enhancements.
 
 
-try:
-    from prompt_toolkit.completion import Completer, Completion
-except ImportError:
-    Completion = object
-    Completer = object
+from prompt_toolkit.completion import Completer, Completion
 
 from ..tokens import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES
 

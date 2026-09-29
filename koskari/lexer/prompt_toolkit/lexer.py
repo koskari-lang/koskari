@@ -24,10 +24,7 @@ Koskari syntax highlighting for prompt_toolkit.
 # prompt_toolkit REPL enhancements.
 
 
-try:
-    from prompt_toolkit.lexers import Lexer
-except ImportError:
-    Lexer = object
+from prompt_toolkit.lexers import Lexer
 
 from ..highlight import prompt_toolkit_style_class
 from ..tokens import SPECIAL_NAMES, tokenize

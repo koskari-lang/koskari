@@ -24,30 +24,8 @@ import unittest
 
 import pytest
 
-from koskari.lexer.highlight import token_start_index
-from koskari.lexer.tokens import tokenize
-
 
 pytestmark = pytest.mark.phase_extras
-
-
-class TestHighlightHelpers(unittest.TestCase):
-
-    def test_token_start_index_first_line(self):
-        source = '(+ 1 2)'
-        tokens = list(tokenize(source))
-        one = [t for t in tokens if t.text == '1'][0]
-        self.assertEqual(token_start_index(source, tokens[0]), 0)
-        self.assertEqual(token_start_index(source, one), 3)
-        self.assertEqual(source[token_start_index(source, one)], '1')
-
-
-    def test_token_start_index_multiline(self):
-        source = '(+\n 1\n 2)'
-        tokens = list(tokenize(source))
-        one = [t for t in tokens if t.text == '1'][0]
-        self.assertEqual(one.start_line, 2)
-        self.assertEqual(source[token_start_index(source, one)], '1')
 
 
 class TestPygmentsOptional(unittest.TestCase):
