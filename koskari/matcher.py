@@ -256,15 +256,6 @@ class MatchCompiler:
         top[name] = signature
 
 
-    def on_pattern(self, pat):
-        """
-        Invoked when a pattern participates in lowering; baseline compiler
-        ignores it
-        """
-
-        pass
-
-
     def lower(self, root):
         """
         Lower root into this compiler and return the frozen matcher tuple
@@ -298,8 +289,7 @@ class Pattern(Protocol):
     """
     Structural base for matcher pattern builders. Implementations define
     lower(ctx); the compiler passes itself as ctx when lowering a root
-    pattern. Composite and some other patterns call ctx.on_pattern(self)
-    before expanding. GROUP and ONEOF bracket nested lowering with
+    pattern. GROUP and ONEOF bracket nested lowering with
     begin_nested_claims and end_nested_claims. Methods freeze and build use
     MatchCompiler by default for standalone compilation
     """
@@ -342,14 +332,6 @@ class Pattern(Protocol):
         """
 
         return self.build().match(subject, **externs)
-
-
-    def visit(self, fn):
-        """
-        Invoke fn on this pattern; subclasses recurse into children
-        """
-
-        fn(self)
 
 
     @staticmethod
@@ -454,10 +436,6 @@ class SAME(Pattern):
                 % (self._slot,))
         return ctx.append_node(
             ("SAME", slot_idx, self._depth))
-
-
-    def visit(self, fn):
-        fn(self)
 
 
     def __repr__(self):
@@ -669,12 +647,6 @@ class CAPTURE(Pattern):
         return ctx.append_node(("CAPTURE", slot_idx, sub_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-        if self._sub is not None:
-            self._sub.visit(fn)
-
-
     def __repr__(self):
         parts = [f"CAPTURE({self._slot!r}"]
         if self._sub is not None:
@@ -742,11 +714,6 @@ class FORM(Pattern):
         return ctx.append_node(("FORM", sub_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
-
-
     def __repr__(self):
         return f"FORM({repr(self._sub)})"
 
@@ -790,12 +757,6 @@ class APP(Pattern):
         idx = ctx.intern_extern(self._extern)
         sub_idx = self._sub.lower(ctx) if self._sub is not None else -1
         return ctx.append_node(("APP", idx, sub_idx))
-
-
-    def visit(self, fn):
-        fn(self)
-        if self._sub is not None:
-            self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -853,11 +814,6 @@ class MAP_ENTRY:
         return ctx.append_node((tag, ref, sub_idx))
 
 
-    def visit(self, fn):
-        if self._sub is not None:
-            self._sub.visit(fn)
-
-
     def __repr__(self):
         parts = [repr(self._key)]
         if self._sub is not None:
@@ -898,12 +854,6 @@ class MAP(Pattern):
         return ctx.append_node(("MAP",) + tuple(idxs))
 
 
-    def visit(self, fn):
-        fn(self)
-        for entry in self._entries:
-            entry.visit(fn)
-
-
     def __repr__(self):
         inner = ", ".join(repr(entry) for entry in self._entries)
         return f"MAP({inner})"
@@ -933,12 +883,6 @@ class MATCH(Pattern):
 
         idxs = [c.lower(ctx) for c in self._children]
         return ctx.append_node(("MATCH",) + tuple(idxs))
-
-
-    def visit(self, fn):
-        fn(self)
-        for c in self._children:
-            c.visit(fn)
 
 
     def __repr__(self):
@@ -999,12 +943,6 @@ class GROUP(Pattern):
         return ctx.append_node(("CAPTURE", slot_idx, g_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-        for c in self._children:
-            c.visit(fn)
-
-
     def __repr__(self):
         slot = self._slot
         if self._children:
@@ -1055,12 +993,6 @@ class ONEOF(Pattern):
         return ctx.append_node(("ONEOF",) + tuple(idxs))
 
 
-    def visit(self, fn):
-        fn(self)
-        for b in self._branches:
-            b.visit(fn)
-
-
     def __repr__(self):
         return f"ONEOF({', '.join(map(repr, self._branches))})"
 
@@ -1108,11 +1040,6 @@ class REPEAT(Pattern):
         return ctx.append_node(("REPEAT", sub_idx, self._min_count))
 
 
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
-
-
     def __repr__(self):
         if self._min_count == 0:
             return f"REPEAT({repr(self._sub)})"
@@ -1150,11 +1077,6 @@ class OPTIONAL(Pattern):
 
         sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("OPTIONAL", sub_idx))
-
-
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -1210,10 +1132,6 @@ class REST(Pattern):
         return ctx.append_node(("CAPTURE", slot_idx, rest_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-
-
     def __repr__(self):
         if self._slot is None and self._min_tail == 0:
             return "REST()"
@@ -1258,11 +1176,6 @@ class NOT(Pattern):
 
         sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("NOT", sub_idx))
-
-
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -1319,12 +1232,6 @@ class CLASS(Pattern):
             ctx.in_class_fields = prev
         return ctx.append_node(
             ("CLASS", ext_idx) + tuple(field_idxs))
-
-
-    def visit(self, fn):
-        fn(self)
-        for f in self._fields:
-            f.visit(fn)
 
 
     def __repr__(self):
@@ -1384,11 +1291,6 @@ class FIELD(Pattern):
         if self._name is None:
             return ctx.append_node(("FIELD_POS", sub_idx))
         return ctx.append_node(("FIELD_KW", sub_idx, self._name))
-
-
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -1453,16 +1355,6 @@ def binding_inner_pattern():
     ))
 
 
-def binding_group_capture_pattern():
-    """
-    Same inner layout as :class:`BINDING` GROUP dict and each
-    :class:`BINDINGS` repeat frame (no synthetic source capture; pair-backed
-    matches expose the whole-cell spine on :class:`DatumFrame` ``.source``)
-    """
-
-    return binding_inner_pattern()
-
-
 def bindings_grouped_list_cell_pattern():
     """
     Match one binding-list element that wraps a single pair in an extra
@@ -1471,7 +1363,7 @@ def bindings_grouped_list_cell_pattern():
     pair tree for ONEOF(MATCH, MATCH)
     """
 
-    inner = binding_group_capture_pattern()
+    inner = binding_inner_pattern()
     return FORM(MATCH(inner))
 
 
@@ -1580,7 +1472,6 @@ class Composite(Pattern):
         Emit the expanded primitive pattern
         """
 
-        ctx.on_pattern(self)
         primitive = self._expand()
         return primitive.lower(ctx)
 
@@ -1592,11 +1483,6 @@ class Composite(Pattern):
         """
 
         ...
-
-
-    def visit(self, fn):
-        fn(self)
-        self._expand().visit(fn)
 
 
 class CALLEDBY(Composite):
@@ -1720,7 +1606,7 @@ class BINDING(Composite):
 
 
     def _expand(self):
-        return GROUP(self._slot, binding_group_capture_pattern())
+        return GROUP(self._slot, binding_inner_pattern())
 
 
     def __repr__(self):
@@ -1770,7 +1656,7 @@ class BINDINGS(Composite):
 
         row = GROUP(None, ONEOF(
             bindings_grouped_list_cell_pattern(),
-            binding_group_capture_pattern(),
+            binding_inner_pattern(),
         ))
         return ONEOF(
             CAPTURE(self._slot, LITERAL(nil)),
@@ -2035,52 +1921,6 @@ class USING_UNPACK(Composite):
         return GROUP(self._slot, FORM(MATCH(PAIR("lhs"), VALUE("expr"))))
 
 
-def _iter_unpack_lhs_symbols(lhs):
-    """
-    Yield symbols introduced by an unpack LHS (symbol or proper list)
-    """
-
-    if is_symbol(lhs):
-        yield lhs
-        return
-    if not is_pair(lhs):
-        return
-    if not is_proper(lhs):
-        return
-    cells = list(unpack(lhs))
-    _kw_star = keyword("*")
-    star_idx = [i for i, elt in enumerate(cells) if elt == _kw_star]
-    if len(star_idx) > 1:
-        return
-    if not star_idx:
-        for elt in cells:
-            if is_pair(elt):
-                yield from _iter_unpack_lhs_symbols(elt)
-            elif is_symbol(elt):
-                yield elt
-        return
-    si = star_idx[0]
-    prefix = cells[:si]
-    after = cells[si + 1:]
-    if not after:
-        return
-    star_name = after[0]
-    suffix = after[1:]
-    if not is_symbol(star_name):
-        return
-    for elt in prefix:
-        if is_pair(elt):
-            yield from _iter_unpack_lhs_symbols(elt)
-        elif is_symbol(elt):
-            yield elt
-    yield star_name
-    for elt in suffix:
-        if is_pair(elt):
-            yield from _iter_unpack_lhs_symbols(elt)
-        elif is_symbol(elt):
-            yield elt
-
-
 class VALUE(Pattern):
     """
     Single-element capture of a slot holding an expression the form
@@ -2105,7 +1945,6 @@ class VALUE(Pattern):
         Emit ``CAPTURE``
         """
 
-        ctx.on_pattern(self)
         return CAPTURE(self._slot).lower(ctx)
 
 
@@ -2142,7 +1981,6 @@ class BODY(Pattern):
         Emit ``REST`` with ``min_tail=1``
         """
 
-        ctx.on_pattern(self)
         return REST(self._slot, min_tail=1).lower(ctx)
 
 
@@ -2228,12 +2066,8 @@ META_PATTERN = ONEOF(
         CAPTURE("class_extern", TYPE("symbol")),
         REST("class_fields"))),
     FORM(MATCH(
-        LITERAL_SYM("CLASS"),
-        CAPTURE("class_extern", TYPE("symbol")))),
-    FORM(MATCH(
         CAPTURE("head", TYPE("symbol")),
         REST("head_args"))),
-    FORM(MATCH(CAPTURE("head", TYPE("symbol")))),
     CAPTURE("bare_symbol", TYPE("symbol")),
     CAPTURE("atom_literal"),
 )
