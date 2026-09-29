@@ -418,24 +418,6 @@ int KosMatcher_Run(
 
 
 /**
-   Vectorcall-style entry to ``KosMatcher_Run``: ``ext_values`` is a
-   borrowed value array (a stack segment works as-is) named by the
-   aligned ``ext_names`` tuple. Each extern-table entry resolves from
-   the named values first, then the matcher's inbuilt extern defaults;
-   a genuine miss raises the matcher's missing-binding TypeError. When
-   the names cover the whole extern table in order the value array is
-   used as the env directly with no allocation. Same returns as
-   ``KosMatcher_Run``.
- */
-int KosMatcher_RunVectorcall(
-    KosMatcher *matcher,
-    KosMatchSubject *subject,
-    PyObject *const *ext_values,
-    PyObject *ext_names,
-    PyObject **out_caps);
-
-
-/**
    Number of capture slots in the matcher's slot table; the length of
    the array the slot-array entries below fill.
  */
@@ -468,9 +450,14 @@ int KosMatcher_RunSlots(
 
 
 /**
-   ``KosMatcher_RunVectorcall`` with the ``KosMatcher_RunSlots``
-   result contract: same extern resolution, captures into the caller's
-   slot array.
+   Vectorcall-style entry to ``KosMatcher_RunSlots``: ``ext_values`` is
+   a borrowed value array (a stack segment works as-is) named by the
+   aligned ``ext_names`` tuple. Each extern-table entry resolves from
+   the named values first, then the matcher's inbuilt extern defaults;
+   a genuine miss raises the matcher's missing-binding TypeError. When
+   the names cover the whole extern table in order the value array is
+   used as the env directly with no allocation. Captures go into the
+   caller's slot array; same returns as ``KosMatcher_RunSlots``.
  */
 int KosMatcher_RunSlotsVectorcall(
     KosMatcher *matcher,
@@ -581,11 +568,6 @@ typedef struct KosMatcherBuilder KosMatcherBuilder;
 KosMatcherBuilder *KosMatcherBuilder_New(void);
 
 void KosMatcherBuilder_Free(KosMatcherBuilder *builder);
-
-/**
-   Number of nodes appended to the builder so far.
- */
-Py_ssize_t KosMatcherBuilder_NodeCount(KosMatcherBuilder *builder);
 
 /**
    Append a capture slot name. Returns the new slot index, or -1 on

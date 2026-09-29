@@ -206,10 +206,6 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "MATCH") == 0) {
     Py_ssize_t cnt = arity - 1;
-    if (cnt < 0) {
-      PyErr_SetString(PyExc_ValueError, "MATCH node must have arity >= 1");
-      return -1;
-    }
     uint32_t *children = NULL;
     if (cnt > 0) {
       children = PyMem_Malloc(cnt * sizeof(uint32_t));
@@ -231,10 +227,6 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "GROUP") == 0) {
     Py_ssize_t cnt = arity - 1;
-    if (cnt < 0) {
-      PyErr_SetString(PyExc_ValueError, "GROUP node must have arity >= 1");
-      return -1;
-    }
     uint32_t *children = NULL;
     if (cnt > 0) {
       children = PyMem_Malloc(cnt * sizeof(uint32_t));

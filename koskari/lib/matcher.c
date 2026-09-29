@@ -266,11 +266,6 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *b) {
 }
 
 
-Py_ssize_t KosMatcherBuilder_NodeCount(KosMatcherBuilder *b) {
-  return b ? b->node_count : 0;
-}
-
-
 static int builder_add_to_list(PyObject *list, PyObject *value) {
   Py_ssize_t idx = PyList_GET_SIZE(list);
   if (PyList_Append(list, value))
@@ -2215,29 +2210,6 @@ static int matcher_env_resolve(
  fail:
   matcher_env_release(r);
   return -1;
-}
-
-
-int KosMatcher_RunVectorcall(
-    KosMatcher *m,
-    KosMatchSubject *subj,
-    PyObject *const *ext_values,
-    PyObject *ext_names,
-    PyObject **out_caps) {
-
-  if (! m) {
-    PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_RunVectorcall requires matcher");
-    return -1;
-  }
-
-  MatcherEnv r;
-  if (matcher_env_resolve(m, ext_values, ext_names, &r))
-    return -1;
-  int matched = KosMatcher_Run(
-      m, subj, r.env, PyTuple_GET_SIZE(m->externs), out_caps);
-  matcher_env_release(&r);
-  return matched;
 }
 
 
