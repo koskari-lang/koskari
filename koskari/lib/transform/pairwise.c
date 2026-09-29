@@ -58,7 +58,10 @@ KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
 /**
    FETCH: request the next source element. Always entered with a NULL
    value -- either cold, from the driven-source install, or from
-   pairwise_resume_deliver after the fetch that primed the pair.
+   pairwise_resume_deliver after the fetch that primed the pair. Armed
+   only from the step's driven-source branch, so src_sync is 0 on every
+   entry: every fetch here is a request. A sync source never reaches
+   this resume -- it steps whole inside the step.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     KosEvalState *es, void *state, PyObject *value) {
@@ -69,17 +72,6 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
 
   if (PyErr_Occurred())
     return EVAL_RAISE();
-
-  if (t->src_sync) {
-    PyObject *element = PyIter_Next(t->source);
-
-    if (! element) {
-      if (! PyErr_Occurred())
-        PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-    RESUME_HOP(&pairwise_resume_deliver_kind, es, t, element);
-  }
 
   {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
