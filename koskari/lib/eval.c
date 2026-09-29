@@ -538,13 +538,16 @@ static KosEvalMode revive_yield(
 
   /* A frame waiting on a resume (a yield-from delegation in flight)
      took no placeholder at install and takes its delivery through the
-     pending slot; a throw raises at the frame, and the raise walk
-     disarms the resume when it unwinds the delegation's node. */
+     pending slot. A throw goes to the resume the same way, which
+     throws it into the delegate; GeneratorExit raises at the frame
+     instead, and the raise walk closes the delegate and disarms the
+     resume when it unwinds the delegation's node. */
   if (KosEvalState_FRAME(es)
       && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
     if (throw_exc != NULL) {
       PyErr_SetObject(throw_typ, throw_exc);
-      return KOS_MODE_EXCEPTION;
+      return KosEvalState_ThrowIntoResume(es)
+          ? KOS_MODE_NORMAL : KOS_MODE_EXCEPTION;
     }
     to_push = (send_val != NULL) ? send_val : Py_None;
     Py_INCREF(to_push);

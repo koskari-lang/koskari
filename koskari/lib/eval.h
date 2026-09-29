@@ -1371,6 +1371,22 @@ KosOpResult koskari_eval(
 
 
 /**
+   Route the raised exception to the current frame's resume when one is
+   armed: a delegation in flight takes it as its pending throw and throws
+   it into the delegate, so a delegate that catches it answers with its
+   next value, as CPython's yield from does. GeneratorExit is not routed;
+   a close closes the delegate through the raise walk instead.
+
+   Callers: revive_yield, the flattened generator throw ingress.
+
+   :return: 1 when the exception was taken and staged for the resume,
+       0 when no resume is armed or the exception is GeneratorExit and
+       it stays raised for the frame
+*/
+int KosEvalState_ThrowIntoResume(KosEvalState *es);
+
+
+/**
   Return the active Koskari context during bytecode execution, or NULL
   when not inside koskari_eval.
 

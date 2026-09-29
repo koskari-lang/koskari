@@ -358,17 +358,23 @@ static KosOpResult yield_from_drive_sync_gen(
 
   if (action == KOS_YF_THROW) {
     PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
-    if (exc) {
-      PyObject *res = PyObject_CallMethodObjArgs(delegate, str_throw,
-          exc, Py_None, Py_None, NULL);
-      if (res) {
-        yield_from_clear_pending(yf);
-        return yield_from_yield_value(es, yf, res);
-      }
-    }
-    kos_yieldfrom_close_delegate(yf);
-    if (kos_dyn_pop_yield_from(es, yf) < 0)
+    if (! exc) {
+      PyErr_SetString(PyExc_SystemError,
+                      "yield-from throw with no exception");
       return EVAL_RAISE();
+    }
+    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_throw, exc,
+                                               NULL);
+    if (res) {
+      yield_from_clear_pending(yf);
+      return yield_from_yield_value(es, yf, res);
+    }
+    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      yield_from_discard_stop_iteration_value();
+      return yield_from_finish(es, yf);
+    }
+    /* The delegate let it propagate, or raised in its place: it lands
+       here and the raise walk retires the node. */
     return EVAL_RAISE();
   }
 
@@ -432,9 +438,8 @@ static KosOpResult yield_from_drive_py_async(
   } else if (kind == KOS_YF_PY_ASYNC_GEN && action == KOS_YF_THROW) {
     PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
     if (exc) {
-      PyObject *typ = (PyObject *) Py_TYPE(exc);
-      PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_athrow, typ, exc,
-                                                 Py_None, NULL);
+      PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_athrow, exc,
+                                                 NULL);
       if (tmp) {
         awaitable = kos_get_awaitable(tmp);
         Py_DECREF(tmp);
@@ -545,6 +550,10 @@ static KosOpResult yield_from_drive_kos_iter(
             (KosDynNode *) yf, delegate,
             (tr == KOS_ITER_INSTALLED) ? KOS_IREQ_INSTALLED
                                        : KOS_IREQ_GRAFT_VALUE);
+        /* A throw the ingress left raised for the installed frame is
+           processed by the prologue, never threaded past. */
+        if (PyErr_Occurred())
+          return EVAL_REPROLOGUE();
         return kos_iter_installed(es);
       }
       case KOS_ITER_VALUE:

@@ -50,6 +50,31 @@ static inline int KosEvalState_TakeInjectThrow(
 }
 
 
+int KosEvalState_ThrowIntoResume(KosEvalState *es) {
+
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosContext *ctx = KosEvalState_CONTEXT(es);
+  PyObject *exc;
+
+  if (! frame || ! KosDynFrame_RESUME_KIND(frame))
+    return 0;
+  if (PyErr_ExceptionMatches(PyExc_GeneratorExit))
+    return 0;
+
+  exc = PyErr_GetRaisedException();
+  KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
+  Py_XSETREF(KosContext_INJECT_VALUE(ctx), exc);
+  Py_XSETREF(KosContext_INJECT_TYPE(ctx),
+             Py_NewRef((PyObject *) Py_TYPE(exc)));
+
+  /* The resume runs on a delivery; the throw it takes first makes the
+     value moot. */
+  Py_INCREF(Py_None);
+  KosEvalState_StageDelivery(es, Py_None);
+  return 1;
+}
+
+
 int KosEvalState_SetFrameCodeAndNamespace(
     KosEvalState *es,
     KosDynFrame *frame,

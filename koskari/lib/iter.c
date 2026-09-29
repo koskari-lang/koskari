@@ -507,6 +507,12 @@ static KosIterStepResult agen_iter_drive(
 
     agen->started = 1;
 
+    /* A throw ingress primed the exception: a frame waiting on a
+       resume takes it there and throws it into its delegate; any
+       other frame raises it at the resume point as before. */
+    if (frozen && PyErr_Occurred())
+      (void) KosEvalState_ThrowIntoResume(es);
+
     /* Resume-of-frozen-yield only: the frozen install pushed the
        Py_None placeholder for the suspended yield expression; replace
        it with the sent value. A bootstrap install enters fresh code
