@@ -395,8 +395,11 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   if (! KosDynWith_ENTERED(node)) {
-    /* never entered: no __exit__ */
-    kos_dyn_with_abort_impl(node);
+    /* never entered: no __exit__. A grafted clone lands this way, and
+       the exit-done cell it shares with the live twin records only an
+       __exit__ that ran, so the cell and the shot field stay as they
+       are; the live twin's own leave still fires its __exit__. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
     return EVAL_NORMAL();
   }
 
