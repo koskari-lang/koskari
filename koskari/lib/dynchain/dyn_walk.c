@@ -60,6 +60,10 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
   kos_dyn_clear_unwind_caches(ctx_active, NULL);
+  /* An effect a node holds outside itself leaves with it, innermost
+     first; the install puts it back. */
+  for (KosDynNode *n = ctx_active; n; n = KosDynNode_PARENT(n))
+    kos_dyn_extent_park(es, n);
   /* The GEN's namespace fill is the consumer's live namespace stamped
      at the install; the next install stamps it again from that
      consumer's registers. Holding it across the freeze would keep the

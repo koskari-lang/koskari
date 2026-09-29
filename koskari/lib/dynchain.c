@@ -936,6 +936,34 @@ KosOpResult kos_dyn_extent_leave(
 }
 
 
+void kos_dyn_extent_park(KosEvalState *es, KosDynNode *node) {
+
+  /* A yield moves the node intact, so a kind whose effect is the node
+     rides the span as it is: a WITH's __enter__ and a WIND's before
+     thunk stay done. PARAM's effect is the cells it swapped into the
+     context's table, which the consumer shares; that leaves with the
+     node. */
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      kos_dyn_param_unwind(es, (KosDynParam *) node);
+      break;
+    default:
+      break;
+  }
+}
+
+
+int kos_dyn_extent_unpark(KosEvalState *es, KosDynNode *node) {
+
+  switch (KosDynNode_KIND(node)) {
+    case KOS_DYN_PARAM:
+      return kos_dyn_param_wind(es, (KosDynParam *) node);
+    default:
+      return 0;
+  }
+}
+
+
 int kos_dyn_extent_settle(KosEvalState *es, KosDynNode *node) {
 
   switch (KosDynNode_KIND(node)) {

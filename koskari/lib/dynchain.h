@@ -1703,6 +1703,21 @@ void kos_dyn_extent_abort(KosDynNode *node);
 
 
 /**
+   park / unpark: a generator freeze moves the span above the GEN off
+   the live chain intact, and the install moves it back. A kind whose
+   effect lives outside its node (PARAM: the cells it swapped into the
+   context's table) takes that effect out at the park and puts it back
+   at the unpark, over the table as it is then. Every other kind is a
+   no-op. park cannot fail; unpark returns 0, or -1 with PyErr set and
+   the node's effect not applied.
+
+   Callers: kos_dyn_gen_freeze, kos_dyn_gen_install.
+*/
+void kos_dyn_extent_park(KosEvalState *es, KosDynNode *node);
+int kos_dyn_extent_unpark(KosEvalState *es, KosDynNode *node);
+
+
+/**
    True when node is a CONTROL_HOOK node whose enter or leave is in
    flight.
 */
@@ -1813,8 +1828,9 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
    the live registers retarget to it. A yield is not an unwind: no node
    between the frame and its GEN acts on it (no finally, no __exit__),
    so the open extents freeze with the chain and return on the next
-   install. gen is the node kos_dyn_find_gen returned for the running
-   frame.
+   install. A node whose effect lives outside itself parks it
+   (kos_dyn_extent_park) and takes it back at the install. gen is the
+   node kos_dyn_find_gen returned for the running frame.
 
    Callers: eval.c eval_event_yield.
 
