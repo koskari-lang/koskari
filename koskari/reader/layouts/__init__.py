@@ -130,13 +130,6 @@ def reader_for(target):
     return find_module_reader(target)
 
 
-_is_block = is_block
-
-
-def _block_candidate(entry):
-    return entry if _is_block(entry) else None
-
-
 def _gather_peers(tail, declared):
     """
     Consume declared peer blocks from the head of a spine
@@ -149,8 +142,8 @@ def _gather_peers(tail, declared):
 
     peers = []
     while tail:
-        sibling = _block_candidate(tail.car)
-        if sibling is None:
+        sibling = tail.car
+        if not is_block(sibling):
             break
         if str(strip_mark(sibling.cdr.car.car)) not in declared:
             break
@@ -240,7 +233,7 @@ def apply_lines(entries, target):
     while entries:
         entry, tail = entries
 
-        if _is_block(entry):
+        if is_block(entry):
             if is_keyword(entry.cdr.car.car):
                 out.append(entry)
             else:

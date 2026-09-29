@@ -1024,7 +1024,7 @@ class LayoutReader(Reader):
                     nil)
 
 
-    def _finish_header_line(self, stream, values, first_value_pos, pos):
+    def _finish_header_line(self, values, first_value_pos):
         """
         Collect the values on one layout line into a LINE result
 
@@ -1036,10 +1036,8 @@ class LayoutReader(Reader):
         returned as ``(:splice: FORM)``, so the filled forms spread into
         lines of their own when the block is expanded.
 
-        :param stream: the source stream (for error reporting)
         :param values: non-empty list of values collected on the line
         :param first_value_pos: position of the first value
-        :param pos: position of the line terminator (for error reporting)
         :return: (LINE, first_value_pos, the line as a proper cons list)
         """
 
@@ -1196,8 +1194,7 @@ class LayoutReader(Reader):
                 if event is LINE_END:
                     if not values:
                         break
-                    return self._finish_header_line(
-                        stream, values, first_value_pos, pos)
+                    return self._finish_header_line(values, first_value_pos)
 
                 if event is COLON:
                     if not values:
@@ -1218,8 +1215,7 @@ class LayoutReader(Reader):
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
-                    return self._finish_header_line(
-                        stream, values, first_value_pos, pos)
+                    return self._finish_header_line(values, first_value_pos)
 
                 if event is DOT:
                     raise stream.error('invalid syntax', pos)

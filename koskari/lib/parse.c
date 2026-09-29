@@ -592,7 +592,6 @@ static PyObject *m_bss_readline(
 
   /* scan to newline */
   Py_ssize_t scan_count = 0;
-  int found_newline = 0;
 
   while (1) {
     PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
@@ -610,7 +609,6 @@ static PyObject *m_bss_readline(
 
     if (ch_str && ch_str[0] == '\n') {
       Py_DECREF(ch);
-      found_newline = 1;
       break;
     }
 
@@ -626,12 +624,7 @@ static PyObject *m_bss_readline(
     return PyUnicode_FromString("");
   }
 
-  PyObject *result = KosBaseSourceStream_Read(self, scan_count);
-
-  /* if we hit a newline, the position is already updated by read */
-  (void) found_newline;
-
-  return result;
+  return KosBaseSourceStream_Read(self, scan_count);
 }
 
 
