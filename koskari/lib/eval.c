@@ -72,14 +72,6 @@
 #include <time.h>
 
 
-/* eval.c-local static inline helpers (not KosEvalState bodies; see eval/eval_state.c). */
-
-typedef struct {
-  PyObject *left;
-  PyObject *right;
-} KosEvalStackLR;
-
-
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
 static PyObject *str_send = NULL;
@@ -90,7 +82,6 @@ static PyObject *str_enter = NULL;
 static PyObject *str_exit = NULL;
 static PyObject *str_aenter = NULL;
 static PyObject *str_aexit = NULL;
-static PyObject *str_getattr = NULL;
 static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
 static PyObject *str_asyncio_future_blocking = NULL;
@@ -3747,10 +3738,6 @@ static int register_koskari_exception(
 
 int koskari_eval_init(PyObject *mod) {
 
-  PyObject *dict = PyModule_GetDict(mod);
-  if (! dict)
-    return -1;
-
   /* Initialize the import fromlist sentinel used by kos_import_module. */
   if (! _import_fromlist) {
     PyObject *star = PyUnicode_FromString("*");
@@ -3772,13 +3759,11 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_continuation, "continuation");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
-  STR_CONST(str_getattr, "__getattr__");
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
   STR_CONST(str_send, "send");
   STR_CONST(str_target, "target");
   STR_CONST(str_throw, "throw");
-  // STR_CONST(str_getattribute, "__getattribute__");
 
   if (PyType_Ready(&KosContextType) < 0)
     return -1;
@@ -3840,7 +3825,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_continuation);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);
-  Py_CLEAR(str_getattr);
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
   Py_CLEAR(str_send);

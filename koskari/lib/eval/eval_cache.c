@@ -18,8 +18,7 @@
    koskari/lib/eval/eval_cache.c
 
    Per-site opcode cache mechanisms. This file is #included into eval.c and
-   is not a standalone translation unit -- it shares eval.c's statics (e.g.
-   str_getattr).
+   is not a standalone translation unit -- it shares eval.c's statics.
 
    It holds one mechanism today: monomorphic caching of attribute/method
    resolution for the CALL_ATTR* family (and, later, the attribute-read
@@ -271,29 +270,6 @@ static int resolve_named_attr_slow(
     *mode = KOS_METHOD_DIRECT_OBJECT_GUARDED;
     *cache_descr = descr;
     return 1;
-  }
-
-  /* __getattr__ fallback (invoked only when standard lookup fails). */
-  {
-    PyObject *getattr_descr = PyType_Lookup(tp, str_getattr);
-    if (getattr_descr) {
-      PyObject *bound;
-      if (Py_TYPE(getattr_descr)->tp_descr_get != NULL) {
-        bound = Py_TYPE(getattr_descr)->tp_descr_get(
-            getattr_descr, obj, (PyObject *) tp);
-      } else {
-        bound = getattr_descr;
-        Py_INCREF(bound);
-      }
-      if (! bound)
-        return -1;
-      PyObject *res = PyObject_CallFunctionObjArgs(bound, name, NULL);
-      Py_DECREF(bound);
-      if (! res)
-        return -1;
-      *out = res;
-      return 1;
-    }
   }
 
   PyErr_Format(PyExc_AttributeError,
