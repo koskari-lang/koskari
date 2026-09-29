@@ -596,16 +596,23 @@ static PyObject *list_kos_repr(PyObject *self, PyObject *_unused) {
 
   PyList_Append(col, _str_hash_list_open);
 
-  for (i = 0; i < n; i++) {
-    tmp = KosUtils_Repr(PyList_GET_ITEM(self, i));
+  /* the size is re-read each round and the item held across its
+     repr, as list_repr does: an element's repr can shrink, grow or
+     clear the list */
+  for (i = 0; i < PyList_GET_SIZE(self); i++) {
+    PyObject *item = PyList_GET_ITEM(self, i);
+
+    if (i > 0)
+      PyList_Append(col, _str_space);
+
+    Py_INCREF(item);
+    tmp = KosUtils_Repr(item);
+    Py_DECREF(item);
     if (! tmp)
       goto error;
 
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
-
-    if (i + 1 < n)
-      PyList_Append(col, _str_space);
   }
 
   PyList_Append(col, _str_list_close);
@@ -704,20 +711,30 @@ static PyObject *dict_kos_repr(PyObject *self, PyObject *_unused) {
 
   PyList_Append(col, _str_hash_dict_open);
 
+  /* key and val are held across both reprs, as dict_repr does: the
+     key's repr can delete the entry, and val would go with it */
   while (PyDict_Next(self, &pos, &key, &val)) {
     if (! first)
       PyList_Append(col, _str_space);
     first = 0;
 
+    Py_INCREF(key);
+    Py_INCREF(val);
+
     tmp = KosUtils_Repr(key);
-    if (! tmp)
+    if (! tmp) {
+      Py_DECREF(key);
+      Py_DECREF(val);
       goto error;
+    }
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
 
     PyList_Append(col, _str_colon_space);
 
     tmp = KosUtils_Repr(val);
+    Py_DECREF(key);
+    Py_DECREF(val);
     if (! tmp)
       goto error;
     PyList_Append(col, tmp);

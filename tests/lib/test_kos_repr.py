@@ -288,6 +288,59 @@ class TestKosRepr(unittest.TestCase):
             kos_repr(Weird())
 
 
+class TestKosReprContainerMutation(unittest.TestCase):
+    """
+    The list and dict renderers hold each element across its repr and
+    re-read the container, so an element that mutates the container
+    from its repr cannot free what the renderer still reads
+    """
+
+    def test_list_element_clears_the_list(self):
+        lst = []
+
+        class Clearer:
+            def __repr__(self):
+                lst.clear()
+                return "<clear>"
+
+        lst.extend([Clearer(), 2, 3])
+        self.assertEqual(kos_repr(lst), "#[<clear>]")
+        self.assertEqual(lst, [])
+
+
+    def test_list_element_grows_the_list(self):
+        lst = []
+
+        class Grower:
+            def __repr__(self):
+                lst.append(9)
+                return "<grow>"
+
+        lst.extend([Grower(), 2])
+        self.assertEqual(kos_repr(lst), "#[<grow> 2 9]")
+
+
+    def test_dict_key_deletes_its_own_entry(self):
+        d = {}
+        released = []
+
+        class Val:
+            def __del__(self):
+                released.append(True)
+
+            def __repr__(self):
+                return "<val>"
+
+        class Key:
+            def __repr__(self):
+                d.clear()
+                return "<key>"
+
+        d[Key()] = Val()
+        self.assertEqual(kos_repr(d), "#{<key>: <val>}")
+        self.assertEqual(released, [True])
+
+
 class TestKosPartialKosRepr(unittest.TestCase):
     """
     Tests for KosPartial's Koskari s-expression kos form
