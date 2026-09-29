@@ -37,8 +37,9 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE) {
   KOS_OP_REQUIRE_NS(ns);
   KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 1),
                      { RESULT_RAISE(); });
-  KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 2),
-                     { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+  KOS_NS_FAST_BORROW_HOLDING(key, key_ref, ns, KosExtra_IMM(row, 2),
+                             { KOS_NS_HOLD(obj, obj_ref); },
+                             { Py_XDECREF(obj_ref); RESULT_RAISE(); });
 
   tail = kos_stack_tail_ptr_fast(*bl, (size_t) count);
   if (unlikely(count && ! tail)) {

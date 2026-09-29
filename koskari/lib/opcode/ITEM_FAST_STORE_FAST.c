@@ -34,11 +34,9 @@ KOS_OP_HANDLER(ITEM_FAST_STORE_FAST) {
   KOS_OP_REQUIRE_NS(ns);
   KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 0),
                      { RESULT_RAISE(); });
-  val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 1));
-  if (unlikely(! val)) {
-    Py_XDECREF(key_ref);
-    RESULT_RAISE();
-  }
+  KOS_NS_FAST_DEREF_HOLDING(val, ns, KosExtra_IMM(row, 1),
+                            { KOS_NS_HOLD(key, key_ref); },
+                            { Py_XDECREF(key_ref); RESULT_RAISE(); });
 
   tail = kos_stack_tail_ptr_fast(*bl, 1);
   if (unlikely(! tail)) {

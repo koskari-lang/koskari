@@ -645,6 +645,60 @@ static inline PyObject *kos_ns_fast_peek_raw(
   } while (0)
 
 
+/* Turn a borrowed operand into a held one: var_ref takes a reference
+   to var when it does not own one yet. For a handler about to run
+   code that can rebind the slot var was peeked from. */
+#define KOS_NS_HOLD(var, var_ref)                                       \
+  do {                                                                  \
+    if (! (var_ref)) {                                                  \
+      Py_INCREF(var);                                                   \
+      (var_ref) = (var);                                                \
+    }                                                                   \
+  } while (0)
+
+
+/* KOS_NS_FAST_BORROW for an operand fetched after another operand was
+   borrowed. The general deref of a ref kind the peek does not read can
+   run user code (an attribute or item ref getter, a dynamic ref), and
+   that code can rebind the slot an earlier operand was peeked from.
+   The hold statement runs before that deref and holds each earlier
+   operand (KOS_NS_HOLD); the peek-hit path runs no code and holds
+   nothing. */
+#define KOS_NS_FAST_BORROW_HOLDING(var, var_ref, ns, idx, hold, on_error) \
+  do {                                                                  \
+    (var_ref) = NULL;                                                   \
+    (var) = kos_ns_fast_peek((ns), (size_t) (idx));                     \
+    if (unlikely(! (var))) {                                            \
+      hold;                                                             \
+      (var_ref) = kos_ns_fast_deref((ns), (size_t) (idx));              \
+      if (unlikely(! (var_ref))) {                                      \
+        on_error;                                                       \
+      }                                                                 \
+      (var) = (var_ref);                                                \
+    }                                                                   \
+  } while (0)
+
+
+/* An owned fast-slot read fetched after other operands were borrowed:
+   the peek-hit path takes its reference without running code; the
+   general deref path runs the hold statement first, as
+   KOS_NS_FAST_BORROW_HOLDING does. var is NULL with the error set on
+   failure, after on_error. */
+#define KOS_NS_FAST_DEREF_HOLDING(var, ns, idx, hold, on_error)         \
+  do {                                                                  \
+    (var) = kos_ns_fast_peek((ns), (size_t) (idx));                     \
+    if (likely(var)) {                                                  \
+      Py_INCREF(var);                                                   \
+    } else {                                                            \
+      hold;                                                             \
+      (var) = kos_ns_fast_deref((ns), (size_t) (idx));                  \
+      if (unlikely(! (var))) {                                          \
+        on_error;                                                       \
+      }                                                                 \
+    }                                                                   \
+  } while (0)
+
+
 static inline int kos_ns_fast_store(PyObject *ns, size_t idx, PyObject *val) {
   if (kos_ns_is_raw(ns, idx)) {
     PyObject *old = KosNamespace_GET_FAST_VAL(ns, idx);

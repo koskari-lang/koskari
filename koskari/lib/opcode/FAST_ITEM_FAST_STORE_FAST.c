@@ -32,14 +32,15 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_STORE_FAST) {
   KOS_OP_REQUIRE_NS(ns);
   KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 0),
                      { RESULT_RAISE(); });
-  KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 1),
-                     { Py_XDECREF(obj_ref); RESULT_RAISE(); });
-  val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 2));
-  if (unlikely(! val)) {
-    Py_XDECREF(obj_ref);
-    Py_XDECREF(key_ref);
-    RESULT_RAISE();
-  }
+  KOS_NS_FAST_BORROW_HOLDING(key, key_ref, ns, KosExtra_IMM(row, 1),
+                             { KOS_NS_HOLD(obj, obj_ref); },
+                             { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+  KOS_NS_FAST_DEREF_HOLDING(val, ns, KosExtra_IMM(row, 2),
+                            { KOS_NS_HOLD(obj, obj_ref);
+                              KOS_NS_HOLD(key, key_ref); },
+                            { Py_XDECREF(obj_ref);
+                              Py_XDECREF(key_ref);
+                              RESULT_RAISE(); });
 
   rc = kos_item_store(KosOp_SLOT(insn), obj, key, val);
   Py_XDECREF(obj_ref);
