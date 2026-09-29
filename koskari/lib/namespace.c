@@ -1027,8 +1027,7 @@ static int ns_store_classified(
     }
 
     Py_XINCREF(val);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) index));
-    KosNamespace_GET_FAST_VAL(self, (size_t) index) = val;
+    Py_XSETREF(KosNamespace_GET_FAST_VAL(self, (size_t) index), val);
     // raw bit is already 1 when dict entry is Py_None; reaffirm it
     kos_ns_set_raw(self, (size_t) index, 1);
 
@@ -1079,8 +1078,7 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
     return -1;
   if (fast >= 0) {
     Py_INCREF(ref);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) fast));
-    KosNamespace_GET_FAST_VAL(self, (size_t) fast) = ref;
+    Py_XSETREF(KosNamespace_GET_FAST_VAL(self, (size_t) fast), ref);
     kos_ns_set_raw(self, (size_t) fast, 0);
   }
 
@@ -2433,8 +2431,7 @@ int KosNamespace_FastStore(
 
   if (kos_ns_is_raw(namespace, index)) {
     Py_INCREF(value);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(namespace, index));
-    KosNamespace_GET_FAST_VAL(namespace, index) = value;
+    Py_XSETREF(KosNamespace_GET_FAST_VAL(namespace, index), value);
     return 0;
 
   } else {
@@ -2534,8 +2531,7 @@ int KosNamespace_FastBind(
   PyObject *name = PyTuple_GET_ITEM(names, (Py_ssize_t) index);
 
   Py_INCREF(ref);
-  Py_XDECREF(KosNamespace_GET_FAST_VAL(namespace, index));
-  KosNamespace_GET_FAST_VAL(namespace, index) = ref;
+  Py_XSETREF(KosNamespace_GET_FAST_VAL(namespace, index), ref);
   kos_ns_set_raw(namespace, index, 0);
 
   // The Ref lives in the fast slot; mirror it into binds only when present.

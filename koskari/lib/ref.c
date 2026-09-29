@@ -116,8 +116,7 @@ static PyObject *sym_ref_m_deref(PyObject *self) {
 
 static PyObject *sym_ref_m_store(PyObject *self, PyObject *value) {
   Py_XINCREF(value);
-  Py_XDECREF(KosSymbolicRef_VALUE(self));
-  KosSymbolicRef_VALUE(self) = value;
+  Py_XSETREF(KosSymbolicRef_VALUE(self), value);
   Py_RETURN_NONE;
 }
 
@@ -1194,8 +1193,7 @@ static PyObject *weak_ref_m_store(PyObject *self, PyObject *value) {
   PyObject *wr = PyWeakref_NewRef(value, NULL);
   if (! wr)
     return NULL;
-  Py_XDECREF(KosSymbolicRef_VALUE(self));
-  KosSymbolicRef_VALUE(self) = wr;
+  Py_XSETREF(KosSymbolicRef_VALUE(self), wr);
   Py_RETURN_NONE;
 }
 
@@ -1527,8 +1525,7 @@ int KosRef_Store(PyObject *self, PyObject *value) {
   // Py_None materialization the PyObject-returning method convention needs.
   if (likely(tp == &KosRefType)) {
     Py_XINCREF(value);
-    Py_XDECREF(KosSymbolicRef_VALUE(self));
-    KosSymbolicRef_VALUE(self) = value;
+    Py_XSETREF(KosSymbolicRef_VALUE(self), value);
     return 0;
   }
 

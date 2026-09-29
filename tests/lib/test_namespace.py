@@ -500,6 +500,24 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns.name, "<namespace>")
 
 
+    async def test_store_finalizer_sees_new_value(self):
+        """
+        store() on a raw slot points the slot at the new value before
+        releasing the old one, so a finalizer running during the release
+        that reads the same name sees the new value
+        """
+        ns = Namespace("ns", None, ('a',))
+        seen = []
+
+        class Elem:
+            def __del__(self):
+                seen.append(ns.deref('a'))
+
+        ns.store('a', [Elem()])
+        ns.store('a', "after")
+        self.assertEqual(seen, ["after"])
+
+
 class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
     """
     Tests for the ModuleNamespace type

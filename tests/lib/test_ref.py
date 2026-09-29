@@ -116,6 +116,23 @@ class TestSymbolicRef(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             Ref(name="foo")
 
+    async def test_store_finalizer_sees_new_value(self):
+        """
+        store() points the cell at the new value before releasing the
+        old one. A finalizer that runs during that release and derefs
+        the same ref sees the new value, never the object being freed
+        """
+        r = Ref("cell")
+        seen = []
+
+        class Elem:
+            def __del__(self):
+                seen.append(r.deref())
+
+        r.store([Elem()])
+        r.store("after")
+        self.assertEqual(seen, ["after"])
+
 
 class Obj:
     """Simple test object for attribute tests"""
