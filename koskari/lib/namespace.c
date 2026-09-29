@@ -1465,42 +1465,6 @@ static PyObject *ns_m_bind(PyObject *self, PyObject *args) {
 }
 
 
-/*
-static PyObject *ns_m_reset(PyObject *self) {
-  if (! KosNamespace_Reset(self))
-    return NULL;
-
-  Py_RETURN_NONE;
-}
-*/
-
-
-/*
-static PyObject *ns_m_get_name(PyObject *self) {
-  PyObject *name = KosNamespace_NAME(self);
-  if (name) {
-    Py_XINCREF(name);
-    return name;
-
-  } else {
-    Py_RETURN_NONE;
-  }
-}
-
-
-static PyObject *ns_m_get_parent(PyObject *self) {
-  PyObject *parent = KosNamespace_PARENT(self);
-  if (parent) {
-    Py_XINCREF(parent);
-    return parent;
-
-  } else {
-    Py_RETURN_NONE;
-  }
-}
-*/
-
-
 static PyObject *ns_m_contains(PyObject *self, PyObject *key) {
   int res = ns_mapping_contains(self, key);
   if (res < 0)
@@ -2103,7 +2067,6 @@ PyTypeObject KosNamespaceType = {
   .tp_as_mapping = &ns_as_mapping,
   .tp_as_sequence = &ns_seq,
   .tp_iter = ns_mapping_iter,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -2559,7 +2522,6 @@ PyTypeObject KosCollectorNamespaceType = {
   .tp_methods = ns_methods,
   .tp_as_mapping = &ns_as_mapping,
   .tp_as_sequence = &ns_seq,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -2768,7 +2730,6 @@ PyTypeObject KosModuleNamespaceType = {
   .tp_dealloc = mdl_ns_dealloc,
   .tp_traverse = mdl_ns_traverse,
   .tp_clear = mdl_ns_clear,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -2985,7 +2946,6 @@ PyTypeObject KosModuleType = {
   .tp_methods = mdl_methods,
   .tp_getattro = mdl_getattro,
   .tp_setattro = mdl_setattro,
-  // .tp_repr = ns_repr,
 };
 
 
