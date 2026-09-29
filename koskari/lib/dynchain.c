@@ -1994,8 +1994,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
         return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
     case KOS_DYN_GEN:
-      if (event == KOS_XFER_EVENT_YIELD
-          || event == KOS_XFER_EVENT_RETURN
+      if (event == KOS_XFER_EVENT_RETURN
           || event == KOS_XFER_EVENT_RAISE)
         return KOS_HANDLE_CONSUMED;
       if (event == KOS_XFER_EVENT_SHIFT) {
@@ -2032,15 +2031,13 @@ uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
 
 
 /**
-   Resume PC for nodes that may swallow exceptions (CC, WITH). Used when a pop
+   Resume PC for nodes that may swallow exceptions (WITH). Used when a pop
    cleared PyErr and execution should continue at a catch label.
 */
 uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node) {
 
   if (! node || ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CATCH))
     return (uint32_t) -1;
-  if (KosDynNode_IS_CC(node))
-    return KosDynCC_RESUME_PC((KosDynCC *) node);
   if (KosDynNode_IS_WITH(node))
     return KosDynWith_RESUME_PC((KosDynWith *) node);
   return (uint32_t) -1;

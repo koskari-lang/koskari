@@ -386,12 +386,10 @@ static KosOpResult kos_dyn_with_leave(
     return EVAL_NORMAL();
 
   if (KosDynWith_EXIT_PENDING(node) || KosDynWith_ENTER_PENDING(node)) {
-    /* A call in flight sits in a frame above this node. If this node
-       is dyn_top, that frame is gone (it raised, or the walk crossed
+    /* A call in flight sat in a frame above this node. The node is
+       dyn_top, so that frame is gone (it raised, or the walk crossed
        it): the manager is discharged with nothing to take, and an
        __exit__ that raised has replaced the exception it was handling. */
-    if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node)
-      return EVAL_REPROLOGUE();
     kos_dyn_with_abort_impl(node);
     return EVAL_NORMAL();
   }

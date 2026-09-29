@@ -1496,12 +1496,8 @@ static KosOpResult kos_eval_route_delim_return(
   {
     KosOpResult wr;
     KosDynNode *pending = NULL;
-    if (KosDynDelim_RETURN_NODE(ret_delim) != NULL)
-      wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
-                                  KOS_XFER_EVENT_SHIFT, &pending);
-    else
-      wr = kos_dyn_unwind_to_frame(es, KosDynDelim_RETURN_FRAME(ret_delim),
-                                   KOS_XFER_EVENT_SHIFT, &pending);
+    wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
+                                KOS_XFER_EVENT_SHIFT, &pending);
     if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
       /* a leave went into a thunk or onto an awaitable; val parks on
          that node and re-enters this route once the node has finished */

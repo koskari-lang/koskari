@@ -16,7 +16,6 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_CONTINUE_PC(node) = continue_pc;
   KosDynForeach_ENABLED(node) = 1;
   KosDynForeach_RESULT(node) = NULL;
-  KosDynForeach_ITER(node) = NULL;
   KosDynForeach_EXHAUSTED(node) = 0;
   KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
   KosDynForeach_REQ(node)->iter = NULL;
@@ -43,8 +42,6 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   KosDynForeach_ENABLED(clone) = KosDynForeach_ENABLED(node);
   KosDynForeach_RESULT(clone) = KosDynForeach_RESULT(node);
   Py_XINCREF(KosDynForeach_RESULT(clone));
-  KosDynForeach_ITER(clone) = KosDynForeach_ITER(node);
-  Py_XINCREF(KosDynForeach_ITER(clone));
   KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
   KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
   *KosDynForeach_REQ(clone) = *KosDynForeach_REQ(node);
@@ -58,7 +55,6 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
 */
 void kos_dynforeach_free(KosDynForeach *node) {
   Py_XDECREF(KosDynForeach_RESULT(node));
-  Py_XDECREF(KosDynForeach_ITER(node));
   Py_XDECREF(KosDynForeach_REQ(node)->iter);
   kos_dynnode_return_to_freelist((KosDynNode *) node);
 }
@@ -172,7 +168,6 @@ int kos_dyn_foreach_deliver_exhausted(
 */
 static int dynnode_traverse_foreach(KosDynNode *node, visitproc visit, void *arg) {
   Py_VISIT(KosDynForeach_RESULT((KosDynForeach *) node));
-  Py_VISIT(KosDynForeach_ITER((KosDynForeach *) node));
   Py_VISIT(KosDynForeach_REQ(node)->iter);
   return 0;
 }

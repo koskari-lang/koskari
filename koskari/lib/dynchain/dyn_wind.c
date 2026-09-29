@@ -179,12 +179,10 @@ static KosOpResult kos_dyn_wind_leave(
 
     case KOS_WIND_PHASE_PRE_AFTER:
     case KOS_WIND_PHASE_PRE_BEGIN:
-      /* A thunk in flight sits in a frame above this node. If this
-         node is dyn_top, that frame is gone (it raised, or the walk
-         crossed it) and the thunk is dead: nothing to wait for and,
-         for a before-thunk, never entered. */
-      if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node)
-        return EVAL_REPROLOGUE();
+      /* A thunk in flight sat in a frame above this node. The node is
+         dyn_top, so that frame is gone (it raised, or the walk crossed
+         it) and the thunk is dead: nothing to wait for and, for a
+         before-thunk, never entered. */
       KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
       return EVAL_NORMAL();
 

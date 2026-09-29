@@ -431,35 +431,6 @@ int kos_dyn_pop_frame(KosEvalState *es) {
 
 
 /**
-   Attach an existing frame to the context's dynamic chain (no allocation).
-
-   Reparents the frame so its parent is KosEvalState_DYN_TOP(es), then sets it as
-   dyn_top/frame_top. Used to run a generator frame in the current context
-   (e.g. async gen step). Does not free the frame on detach.
-
-   :param ctx: execution context
-   :param frame: existing frame (not freed by this module)
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
-  KosDynFrame *cur = KosEvalState_FRAME(es);
-
-  if (! frame) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
-    return -1;
-  }
-  if (kos_eval_check_frame_room(es, cur, 1) < 0)
-    return -1;
-  KosDynFrame_DEPTH(frame) = cur ? KosDynFrame_DEPTH(cur) + 1 : 1;
-  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
-  if (kos_dyn_push(es, (KosDynNode *) frame) < 0)
-    return -1;
-  return 0;
-}
-
-
-/**
    Detach the top frame from the context's dynamic chain without freeing it.
 
    Sets KosEvalState_DYN_TOP(es) to the frame's parent and updates frame_top. Clears the
