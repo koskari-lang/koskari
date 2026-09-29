@@ -337,9 +337,9 @@ typedef struct {
 struct KosMatchSubject {
   const KosMatchSubjectVTable *vt;
   PyObject *backing;     /* ref-counted backing object (tuple or pair) */
-  PyObject **kp_cars;    /* KosPair adapter only: borrowed car ptrs */
+  PyObject **kp_cars;    /* KosPair adapter only: owned car refs */
   PyObject **kp_tails;   /* KosPair adapter only: each tails[i] is the
-                            pair-or-nil at position i (borrowed) */
+                            pair-or-nil at position i (owned) */
   Py_ssize_t cached_length;
 };
 

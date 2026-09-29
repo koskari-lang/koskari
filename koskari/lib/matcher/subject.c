@@ -155,6 +155,12 @@ static PyObject *kospair_slice(
 
 
 static void kospair_release(KosMatchSubject *s) {
+  for (Py_ssize_t i = 0; i < s->cached_length; i++) {
+    Py_DECREF(s->kp_cars[i]);
+    Py_DECREF(s->kp_tails[i]);
+  }
+  if (s->kp_tails)
+    Py_DECREF(s->kp_tails[s->cached_length]);
   Py_CLEAR(s->backing);
   PyMem_Free(s->kp_cars);
   PyMem_Free(s->kp_tails);
@@ -230,12 +236,19 @@ int KosMatchSubject_FromKosPair(
     return -1;
   }
 
+  /* Every cell and car is held for the life of the subject: a
+     predicate, extractor, __eq__ or getter run mid-match can cut the
+     spine or swap a car, and the engine keeps reading the list it
+     loaded. */
   cursor = pair_or_nil;
   for (Py_ssize_t i = 0; i < n; i++) {
+    Py_INCREF(cursor);
     tails[i] = cursor;
     cars[i] = KosPair_CAR(cursor);
+    Py_INCREF(cars[i]);
     cursor = KosPair_CDR(cursor);
   }
+  Py_INCREF(cursor);
   tails[n] = cursor;  /* KosNil */
 
   out->vt = &kospair_vtable;

@@ -23,9 +23,11 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cdr, cons, keyword, nil, setcdr, symbol
+from koskari.lib import (
+    Datum, cdr, cons, keyword, nil, setcar, setcdr, symbol)
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORMALS, LITERAL, MATCH,
+    PREDICATE,
     REST, TYPE, USING, VALUE, DatumFrame,
     MatchCompiler, Matcher, MatchResult, make_matcher)
 from koskari.types import build_proper
@@ -977,5 +979,45 @@ class TestCyclicPairSubject(unittest.TestCase):
         m = make_matcher(MATCH(CAPTURE("a")))
         with self.assertRaises(ValueError):
             m.match(subject)
+
+
+class TestPairSubjectMutation(unittest.TestCase):
+    """
+    The pair subject owns every cell and car it loaded, so a predicate
+    that mutates the list mid-match cannot free what the engine still
+    reads; the match finishes over the list it loaded
+    """
+
+    def test_predicate_cuts_the_spine(self):
+        subject = cons(1, 2, 3, 4, nil)
+
+        def chop(v):
+            setcdr(subject, nil)
+            return True
+
+        m = make_matcher(MATCH(PREDICATE("chop"), CAPTURE("b"), REST("rest")))
+        result = m.match(subject, chop=chop)
+        self.assertTrue(result.matched)
+        caps = _ucaps(result)
+        self.assertEqual(caps["b"], 2)
+        self.assertEqual(list(caps["rest"].unpack()), [3, 4])
+        self.assertEqual(list(subject.unpack()), [1])
+
+
+    def test_predicate_swaps_the_next_car(self):
+        subject = cons(1, "two", 3, nil)
+        second = cdr(subject)
+
+        def swap(v):
+            setcar(second, "swapped")
+            return True
+
+        m = make_matcher(MATCH(PREDICATE("swap"), CAPTURE("b"), CAPTURE("c")))
+        result = m.match(subject, swap=swap)
+        self.assertTrue(result.matched)
+        caps = _ucaps(result)
+        self.assertEqual(caps["b"], "two")
+        self.assertEqual(caps["c"], 3)
+        self.assertEqual(list(subject.unpack()), [1, "swapped", 3])
 
 # The end.
