@@ -1337,8 +1337,6 @@ typedef struct {
   uint32_t code_len;          /* instruction count after squashing LABEL/POSITION */
   uint32_t cpool_len;         /* unique constants by identity */
   uint32_t extent_count;      /* PUSH_* count for extent table sizing */
-  uint16_t line;
-  uint16_t col;
   uint16_t last_line;
   uint16_t last_col;
   /* LABEL slots in EXTRA rows deferred until emit: (extra_idx, slot, label_name) */
@@ -1523,8 +1521,6 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   coll->code_len = 0;
   coll->cpool_len = 0;
   coll->extent_count = 0;
-  coll->line = 0;
-  coll->col = 0;
   coll->last_line = 0;
   coll->last_col = 0;
 
@@ -1553,8 +1549,6 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       if (unpack_position(b, &line, &col)) {
         goto failure;
       }
-      coll->line = line;
-      coll->col = col;
       /* Emit position entry only when line/col changes (delta encoding) */
       if (line != coll->last_line || col != coll->last_col) {
         /* Coalesce consecutive POSITION ops that map to the same output
@@ -2006,7 +2000,6 @@ static int code_emit(
   uint32_t di = 0;
   uint32_t pi = 0;
   uint32_t extra_idx = 0;
-  uint16_t last_line = 0, last_col = 0;
   uint16_t next_slot = 0;
   int cache_on = (KosCode_FLAGS(self) & KOS_CODE_CACHE) != 0;
 
@@ -2019,17 +2012,8 @@ static int code_emit(
     KosOpStyle style = opcode_styles[op].style;
 
     /* LABEL/POSITION were squashed in collect; skip them here */
-    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
-      if (op == KOS_OP_POSITION) {
-        uint16_t l = 0, c = 0;
-        unpack_position(b, &l, &c);
-        if (l != last_line || c != last_col) {
-          last_line = l;
-          last_col = c;
-        }
-      }
+    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION)
       continue;
-    }
 
     code[di].op = (uint16_t) op;
     code[di].arg = 0;
@@ -2348,7 +2332,6 @@ static int derive_extents_fill(
       e->push_pc = pc;
       e->pop_pc = 0;
       e->parent_extent_id = parent_id;
-      e->flags = 0;
 
       stack[stack_top].push_pc = pc;
       stack[stack_top].extent_id = extent_idx;
@@ -3506,25 +3489,6 @@ uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind) {
     eid = extents[eid].parent_extent_id;
   }
 
-  return KOS_EXTENT_NONE;
-}
-
-
-uint32_t kos_extent_find_by_pop_pc(PyObject *code, uint32_t pop_pc,
-    KosExtentKind kind) {
-
-  if (! code || ! KosCode_Check(code)) {
-    return KOS_EXTENT_NONE;
-  }
-
-  const KosExtentDesc *const extents = KosCode_EXTENTS(code);
-  uint32_t extent_len = KosCode_EXTENT_LEN(code);
-
-  for (uint32_t eid = 0; eid < extent_len; eid++) {
-    if (extents[eid].kind == kind && extents[eid].pop_pc == pop_pc) {
-      return eid;
-    }
-  }
   return KOS_EXTENT_NONE;
 }
 

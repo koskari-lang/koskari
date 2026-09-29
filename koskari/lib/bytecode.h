@@ -405,8 +405,6 @@ typedef enum KosExtentKind {
   KOS_EXT_PROMPT,
   KOS_EXT_CC,
   KOS_EXT_SHIFT,
-  KOS_EXT_SHIFT_BODY,  /* deprecated; use KOS_EXT_SHIFT */
-  KOS_EXT_CALLCC_BIND,
   KOS_EXT_FINALLY,
   KOS_EXT_WIND,
   KOS_EXT_WITH,
@@ -428,8 +426,6 @@ typedef struct KosExtentDesc {
   uint32_t push_pc;
   uint32_t pop_pc;
   uint32_t parent_extent_id;
-
-  uint32_t flags;
 } KosExtentDesc;
 
 
@@ -782,8 +778,6 @@ int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
 
 uint32_t kos_extent_top(PyObject *code, uint32_t pc);
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
-uint32_t kos_extent_find_by_pop_pc(PyObject *code, uint32_t pop_pc,
-    KosExtentKind kind);
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
 
 
