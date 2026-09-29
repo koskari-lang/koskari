@@ -931,8 +931,8 @@ PyObject *KosMatcherBuilder_Finalize(
     }
   }
 
-  /* Phase B: REPEAT min-width and no-CAPTURE-in-NOT */
-  if (validate_repeat_and_not(m)) {
+  /* Phase B: subnode presence, REPEAT min-width, no-CAPTURE-in-NOT */
+  if (validate_subnodes(m)) {
     Py_DECREF(m);
     return NULL;
   }

@@ -221,6 +221,36 @@ class TestMatcherFromTuple(unittest.TestCase):
             thaw(frozen)
 
 
+    def test_thaw_rejects_form_without_subnode(self):
+        """
+        A frozen FORM whose subnode is -1 is rejected at finalize
+        """
+
+        frozen = ("MATCHER", (), (), (), (("FORM", -1),), 0)
+        with self.assertRaises(ValueError):
+            thaw(frozen)
+
+
+    def test_thaw_rejects_optional_without_subnode(self):
+        """
+        A frozen OPTIONAL whose subnode is -1 is rejected at finalize
+        """
+
+        frozen = ("MATCHER", (), (), (), (("OPTIONAL", -1),), 0)
+        with self.assertRaises(ValueError):
+            thaw(frozen)
+
+
+    def test_thaw_rejects_not_without_subnode(self):
+        """
+        A frozen NOT whose subnode is -1 is rejected at finalize
+        """
+
+        frozen = ("MATCHER", (), (), (), (("NOT", -1),), 0)
+        with self.assertRaises(ValueError):
+            thaw(frozen)
+
+
     def test_thaw_rejects_duplicate_child_index(self):
         """
         A frozen MATCH that names the same child twice is rejected
