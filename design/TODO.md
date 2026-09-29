@@ -312,6 +312,15 @@ Investigate a snapshot API that preserves a finished context's state
 (namespace, last frames) for later inspection.
 Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
 
+### Extents across a generator yield (investigate)
+
+A yield moves the span above the GEN off the chain intact, so a
+`dynamic-wind` or `with` inside a generator holds its state while the
+consumer runs and does not re-establish it at the resume. PARAM parks
+and unparks its cells through `kos_dyn_extent_park` / `unpark`; decide
+whether other kinds need a leave and re-enter walk without unlinking.
+Ref: [interpreter/generator-extent-park.md](interpreter/generator-extent-park.md).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
