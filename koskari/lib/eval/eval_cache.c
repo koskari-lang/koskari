@@ -38,13 +38,16 @@
 */
 
 
-/* __slots__ object-member type tag; the constant moved from structmember.h
-   (<=3.11) to descrobject.h as Py_T_OBJECT_EX (3.12+). Same value (16). */
+/* __slots__ object-member type tag and the read-only member flag; both
+   moved from structmember.h (<=3.11) to descrobject.h as Py_T_OBJECT_EX and
+   Py_READONLY (3.12+). Same values (16 and 1). */
 #if PY_MINOR_VERSION >= 12
 # define KOS_T_OBJECT_EX Py_T_OBJECT_EX
+# define KOS_READONLY Py_READONLY
 #else
 # include <structmember.h>
 # define KOS_T_OBJECT_EX T_OBJECT_EX
+# define KOS_READONLY READONLY
 #endif
 
 
@@ -622,14 +625,15 @@ static KosFieldMode resolve_attr_location_slow(
   /* A data descriptor intercepts the access. A __slots__ object member is a
      data descriptor with a fixed byte offset (SLOT); it takes precedence over
      any instance dict, so the offset is authoritative for load and store.
-     Every other data descriptor (property, ...) computes per access and stays
-     GENERIC. */
+     A READONLY member's setter raises, and the one mode serves both
+     directions, so it stays GENERIC. Every other data descriptor
+     (property, ...) computes per access and stays GENERIC. */
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
   if (descr && descr_is_data(descr)) {
     if (Py_IS_TYPE(descr, &PyMemberDescr_Type)) {
       PyMemberDef *m = ((PyMemberDescrObject *) descr)->d_member;
-      if (m->type == KOS_T_OBJECT_EX && m->offset > 0
-          && m->offset <= (Py_ssize_t) UINT32_MAX) {
+      if (m->type == KOS_T_OBJECT_EX && ! (m->flags & KOS_READONLY)
+          && m->offset > 0 && m->offset <= (Py_ssize_t) UINT32_MAX) {
         *index = (uint32_t) m->offset;
         return KOS_FIELD_SLOT;
       }

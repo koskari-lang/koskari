@@ -1,0 +1,17 @@
+;; Attribute stores on a C type whose member descriptor is READONLY.
+;; The field cache classifies a __slots__-style object member by its
+;; byte offset and writes the raw field on a hit; a READONLY member
+;; must stay on the generic setattr path, which raises. The range
+;; type declares start/stop/step this way.
+
+(define poke
+  (lambda [r v]
+    (set-attr r start v)))
+
+(define bump
+  (lambda [r v]
+    (inplace-attr + r start v)))
+
+(define peek
+  (lambda [r]
+    (attr r start)))
