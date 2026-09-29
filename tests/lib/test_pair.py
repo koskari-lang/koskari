@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    bracket_pair, break_recursive, build_unpack_pair, car, cdr, cons,
+    bracket_pair, break_recursive, car, cdr, cons,
     kos_repr, make_recursive, nil, pair, setcar, setcdr)
 
 
@@ -516,58 +516,6 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
         setcdr(a, b)
         with self.assertRaises(ValueError):
             break_recursive(pair(0, a))
-
-
-class TestBuildUnpackPair(unittest.IsolatedAsyncioTestCase):
-    """Tests for the build_unpack_pair() function"""
-
-    async def test_empty(self):
-        """build_unpack_pair() with no args returns nil"""
-        self.assertIs(build_unpack_pair(), nil)
-
-    async def test_single_list(self):
-        """build_unpack_pair([1, 2, 3]) creates improper list (non-pair tail)"""
-        p = build_unpack_pair([1, 2, 3])
-        # Python lists are not pairs, so result is improper
-        self.assertFalse(p.is_proper())
-        self.assertEqual(list(p.unpack()), [1, 2, 3])
-
-    async def test_single_pair(self):
-        """build_unpack_pair(proper_pair) preserves proper termination"""
-        proper = cons(1, 2, 3, nil)
-        p = build_unpack_pair(proper)
-        self.assertTrue(p.is_proper())
-        self.assertEqual(list(p.unpack()), [1, 2, 3])
-
-    async def test_multiple_lists(self):
-        """build_unpack_pair concatenates multiple sequences"""
-        p = build_unpack_pair([1, 2], [3, 4])
-        self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
-
-    async def test_with_pairs(self):
-        """build_unpack_pair works with pair arguments"""
-        p1 = cons(1, 2, nil)
-        p2 = cons(3, 4, nil)
-        result = build_unpack_pair(p1, p2)
-        self.assertEqual(list(result.unpack()), [1, 2, 3, 4])
-
-    async def test_skips_nil(self):
-        """build_unpack_pair skips nil arguments"""
-        p = build_unpack_pair([1, 2], nil, [3, 4])
-        self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
-
-    async def test_with_bracket_pairs(self):
-        """build_unpack_pair unpacks bracket-pair segments (PAIR_SPLICE twin)"""
-        b1 = bracket_pair(1, bracket_pair(2, nil))
-        b2 = bracket_pair(3, bracket_pair(4, nil))
-        result = build_unpack_pair(b1, b2)
-        self.assertEqual(list(result.unpack()), [1, 2, 3, 4])
-
-    async def test_preserves_improper_tail(self):
-        """build_unpack_pair preserves improper tail from last arg"""
-        improper = cons(3, 4, 5)  # improper: ends with 5, not nil
-        p = build_unpack_pair([1, 2], improper)
-        self.assertFalse(p.is_proper())
 
 
 class TestCarCdrErrors(unittest.IsolatedAsyncioTestCase):

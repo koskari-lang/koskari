@@ -989,11 +989,6 @@ long KosPair_IsProper(PyObject *self) {
   long result = 0;
 
   for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
-    if (KosNilP(self)) {
-      result = 1;
-      break;
-    }
-
     pair_id = PyLong_FromVoidPtr(self);
 
     if (PySet_Contains(seen, pair_id)) {
@@ -2313,73 +2308,6 @@ static PyObject *m_setcdr(PyObject *mod, PyObject *args) {
 }
 
 
-static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
-  Py_ssize_t count = seqs? PyTuple_GET_SIZE(seqs): 0;
-  Py_ssize_t index = 0;
-  PyObject *tmp;
-
-  if (! count) {
-    Py_INCREF(KosNil);
-    return KosNil;
-  }
-
-  PyObject *coll = PyList_New(0);
-
-  while (index < count) {
-    PyObject *item = PyTuple_GET_ITEM(seqs, index++);
-    PyObject *work;
-
-    if (KosNilP(item)) {
-      /* skip nil */
-      continue;
-
-    } else if (KosPair_IsCell(item)) {
-      work = pair_unpack(item, NULL);
-
-    } else {
-      work = PyObject_GetIter(item);
-    }
-
-    if (! work) {
-      Py_DECREF(coll);
-      return NULL;
-    }
-
-    tmp = _PyList_Extend((PyListObject *) coll, work);
-    Py_CLEAR(work);
-
-    if (! tmp) {
-      Py_DECREF(coll);
-      return NULL;
-
-    } else {
-      Py_CLEAR(tmp);
-    }
-  }
-
-  if (! PyList_GET_SIZE(coll)) {
-    /* The collection didn't net any actual elements, so let's skip
-       out early and just return nil */
-
-    Py_DECREF(coll);
-    Py_INCREF(KosNil);
-    return KosNil;
-  }
-
-  tmp = PyTuple_GET_ITEM(seqs, count - 1);
-  if (KosPair_IsProper(tmp)) {
-    if(PyList_Append(coll, KosNil)) {
-      Py_DECREF(coll);
-      return NULL;
-    }
-  }
-
-  PyObject *result = KosPair_Cons(coll);
-  Py_DECREF(coll);
-  return result;
-}
-
-
 static PyMethodDef pair_mod_methods[] = {
 
   { "cons", (PyCFunction) m_cons, METH_VARARGS,
@@ -2418,11 +2346,6 @@ static PyMethodDef pair_mod_methods[] = {
   { "setcdr", m_setcdr, METH_VARARGS,
     "setcdr(P, obj) -> None\n"
     "Assigns the tail element of a koskari pair instance P to obj." },
-
-  { "build_unpack_pair", (PyCFunction) m_build_unpack_pair, METH_VARARGS,
-    "build_unpack_pair(*pair_or_seq) -> new pair\n"
-    "Creates a new koskari pair list from a collection of pair or\n"
-    "non-pair sequences." },
 
   { NULL, NULL, 0, NULL },
 };

@@ -41,12 +41,6 @@ int KosExc_NormalizeThrow(
     Py_XINCREF(tb);
     PyErr_NormalizeException(&typ, &val, &tb);
     Py_XDECREF(tb);
-    if (! typ)
-      return -1;
-    if (! val) {
-      val = typ;
-      Py_INCREF(val);
-    }
     *typ_out = typ;
     *exc_out = val;
     return 0;
