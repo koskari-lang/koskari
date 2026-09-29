@@ -29,7 +29,7 @@ import operator
 
 from ..lib import (
     NAMESPACE_FAST_SLOT_MAX, Compare, FunctionSpec, NamespaceSpec, OpCode,
-    Operand, OpStyle, symbol)
+    Operand, OpStyle)
 
 
 OPERAND_COUNT = len(Operand)
@@ -475,17 +475,9 @@ def fuse_rule(*pattern):
     return register
 
 
-def spell_name(name):
+def fuckup_namespace_spec(nspec):
     """
-    A name lowered to its spelling; a spelling is returned unchanged
-    """
-
-    return str(name) if isinstance(name, symbol) else name
-
-
-def spell_namespace_spec(nspec):
-    """
-    The NamespaceSpec with every name lowered to its spelling
+    The NamespaceSpec with every name munged to a str
 
     :param nspec: a NamespaceSpec whose names are atoms or spellings
     :return: a NamespaceSpec of spellings
@@ -493,37 +485,40 @@ def spell_namespace_spec(nspec):
 
     return NamespaceSpec(
         nspec.name,
-        tuple(map(spell_name, nspec.local_syms)),
-        tuple(map(spell_name, nspec.closure_syms)),
-        tuple(map(spell_name, nspec.global_syms)))
+        tuple(map(str, nspec.local_syms)),
+        tuple(map(str, nspec.closure_syms)),
+        tuple(map(str, nspec.global_syms)))
 
 
-def spell_operands(rows):
+def fuckup_operands(rows):
     """
     The rows with every variable operand and inline scope's names
-    lowered to their spellings
+    lowered to their final forms, which is mostly str conversion from
+    symbols.
 
     :param rows: instruction rows whose names are atoms
     :return: a new list of rows
     """
 
-    # a fused compare row's VAR field holds a constant when its source
-    # selector says so, so only a symbol is spelled
     out = []
     for op, arg in rows:
         if op == OpCode.PUSH_NS:
             nspec, names = arg[0], arg[1]
             if names is not None:
-                names = tuple(map(spell_name, names))
-            arg = (spell_namespace_spec(nspec), names) + tuple(arg[2:])
+                names = tuple(map(str, names))
+            arg = (fuckup_namespace_spec(nspec), names, *arg[2:])
+
         elif op == OpCode.PUSH_COLLECT:
-            arg = spell_namespace_spec(arg)
+            arg = fuckup_namespace_spec(arg)
+
         elif op.style == OpStyle.VAR:
-            arg = spell_name(arg)
+            arg = str(arg)
+
         elif op.extra and OpStyle.VAR in op.extra:
             arg = tuple(
-                spell_name(v) if fk == OpStyle.VAR else v
+                str(v) if fk == OpStyle.VAR else v
                 for v, fk in zip(arg, op.extra))
+
         out.append((op, arg))
     return out
 
@@ -549,7 +544,7 @@ class ByteCodeProcessor:
         """
 
         self.fragment = fragment
-        self.instructions = spell_operands(fragment.instructions)
+        self.instructions = fuckup_operands(fragment.instructions)
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction
@@ -1275,19 +1270,12 @@ class ByteCodeProcessor:
                 return -1
             return idx if idx < NAMESPACE_FAST_SLOT_MAX else -1
 
-        nspec = None
         for op, arg in self.instructions:
-            if op == OpCode.CONST:
-                if isinstance(arg, NamespaceSpec):
-                    nspec = arg
-
-            elif op == OpCode.PUSH_NS:
+            if op == OpCode.PUSH_NS:
                 push_nspec(arg[0])
-                nspec = None
 
             elif op == OpCode.PUSH_COLLECT:
-                push_nspec(arg if isinstance(arg, NamespaceSpec) else nspec)
-                nspec = None
+                push_nspec(arg)
 
             elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 pop_nspec()
@@ -1637,7 +1625,7 @@ class ByteCodeProcessor:
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
         self.cpool_scan_merge()
-        self.base_nspec = spell_namespace_spec(
+        self.base_nspec = fuckup_namespace_spec(
             self.fragment.resolution.build_namespace_spec(self.fragment))
 
         if compiler.convert_fast_enabled and function_body:

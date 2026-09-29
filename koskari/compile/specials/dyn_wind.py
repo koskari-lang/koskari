@@ -143,10 +143,6 @@ def special_dyn_wind(
 
     before_src, body_src, after_src = _find_segments(caps, called_by)
 
-    # print(f"before_src: {before_src}")
-    # print(f"body_src: {body_src}")
-    # print(f"after_src: {after_src}")
-
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
 
@@ -162,7 +158,6 @@ def special_dyn_wind(
         _compile_thunk(compiler, after_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 2)
 
-    # helper_begin(fragment, body_src)
     fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)
     return fragment

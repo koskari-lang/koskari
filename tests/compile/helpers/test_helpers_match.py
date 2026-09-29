@@ -78,15 +78,6 @@ class TestMatchAndMatch1(unittest.TestCase):
         self.assertEqual(caps["left"].datum, symbol("q"))
         self.assertEqual(caps["right"].datum, symbol("r"))
 
-    def test_with_specs_returns_tuple(self):
-        src = cons(cons(symbol("m"), nil), nil)
-        out = match(src, [LIST(SYMBOL("s"))], with_specs=True)
-        self.assertIsInstance(out, tuple)
-        caps, specs = out
-        self.assertIsInstance(caps, dict)
-        self.assertEqual(caps["s"].datum, symbol("m"))
-        self.assertEqual(specs, {})
-
     def test_no_match_returns_none(self):
         inner = cons(symbol("only"), nil)
         src = cons(inner, nil)

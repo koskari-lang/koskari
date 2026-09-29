@@ -1011,12 +1011,6 @@ class Compiler:
             return self.compile_special(
                 fragment, comp, Datum(sym, position))
 
-        # This is handled by the reader macros now.
-        # ex = sym.rsplit(".", 1)
-        # if len(ex) > 1:
-        #     source = cons(_symbol_attr, *ex, nil)
-        #     return self.compile_pair(fragment, source)
-
         return self.compile_raw_symbol(fragment, sym)
 
 
@@ -1130,8 +1124,6 @@ class Compiler:
 
 
     def compile_pair(self, fragment, source_obj, position=None):
-        # print("compile_pair", kos_repr(source_obj))
-
         if is_nil(source_obj):
             return self.compile_const(fragment, source_obj)
 

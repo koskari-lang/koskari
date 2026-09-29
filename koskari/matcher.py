@@ -1781,8 +1781,7 @@ class BINDINGS(Composite):
 def formal_param_pattern():
     """
     Build a one-element matcher that recognises a single formal
-    parameter cell. Accepted shapes mirror parse_formal_parameter:
-    bare symbol, (name), (name default), (type as: name),
+    parameter cell. Accepted shapes: bare symbol, (name), (name default), (type as: name),
     (name kw1 v1 kw2 v2 ...) with one-or-more keyword/value pairs
     in the tail, and (name: default kw1 v1 ...) where a keyword heads
     the cell and its value is the default. Captures inside this

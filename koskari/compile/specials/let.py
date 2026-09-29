@@ -48,8 +48,6 @@ def _let_bindings_parallel(bindings):
 
     cells = bindings
 
-    # print("cells", cells)
-
     names = []
     values = []
     for fr in cells:
@@ -93,8 +91,6 @@ def special_let(
         name = name.datum
 
     args, vals = _let_bindings_parallel(caps["bindings"])
-    # print("args", args)
-    # print("vals", vals)
 
     body = caps["body"].datum
 
@@ -140,8 +136,6 @@ def special_letrec(
     pos = caps["called-by"].position
 
     args, vals = _let_bindings_parallel(caps["bindings"])
-    # print("args", args)
-    # print("vals", vals)
 
     body = caps["body"].datum
 
