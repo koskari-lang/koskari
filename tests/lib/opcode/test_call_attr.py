@@ -590,4 +590,36 @@ class TestCallVarAttr(CevalTest):
         self.assertIn("nonexistent", str(ctx.exception))
 
 
+    async def test_call_var_attr_set_only_descriptor(self):
+        """
+        A class attribute that defines __set__ but not __get__ is a data
+        descriptor with no getter. CPython returns the descriptor object
+        itself, so the call runs its __call__; the resolver must not call
+        the NULL tp_descr_get slot
+        """
+
+        class SetOnly:
+            def __set__(self, obj, value):
+                pass
+
+            def __call__(self, *args):
+                return ("descr called", args)
+
+        class Host:
+            meth = SetOnly()
+
+        h = Host()
+        code = build_code([
+            ["CONST", 1],
+            ["CALL_VAR_ATTR", ("obj", "meth", 1, 0)],
+            ["RETURN", 1],
+        ], local_syms=("obj",))
+        nspec = NamespaceSpec(None, ("obj",), ())
+        ns = nspec.get_namespace(None)
+        fn = make_callable(code, ns, FormalsSpec(("obj",)))
+        result = await fn(h)
+        self.assertEqual(result, h.meth(1))
+        self.assertEqual(result, ("descr called", (1,)))
+
+
 # The end.

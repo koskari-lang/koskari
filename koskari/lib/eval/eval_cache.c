@@ -220,9 +220,12 @@ static int resolve_named_attr_slow(
 
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
 
-  /* Data descriptor: overrides instance dict; __get__ runs per access.
-     Not cached in this version -- its __get__ may run arbitrary Python. */
-  if (descr && descr_is_data(descr)) {
+  /* Data descriptor with a getter: overrides instance dict; __get__ runs
+     per access. Not cached in this version -- its __get__ may run
+     arbitrary Python. A __set__-only descriptor has no getter and falls
+     through to the instance dict and the plain class attribute arm, as
+     PyObject_GenericGetAttr does. */
+  if (descr && descr_is_data(descr) && Py_TYPE(descr)->tp_descr_get) {
     PyObject *res = Py_TYPE(descr)->tp_descr_get(descr, obj, (PyObject *) tp);
     if (! res)
       return -1;
