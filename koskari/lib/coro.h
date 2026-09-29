@@ -68,7 +68,6 @@ typedef struct {
   KosContext *ctx;          /* the drive context; NULL until the first
                                drive from Python builds it */
   KosCoroState state;
-  PyObject *pending_await;  /* yielded object to bubble outward */
   int in_send;              /* re-entrancy guard */
 
   /* The bound call an unstarted coroutine is: the program, its bound
@@ -90,18 +89,11 @@ typedef struct {
 
 
 /**
-   ctx: ownership is transferred to the coroutine. Caller must not use
-   or free ctx after the call.
-*/
-PyObject *KosCoroutine_New(KosContext *ctx);
-
-
-/**
    Take a fresh coroutine's program for installation on another chain:
-   when coro has not been started, its root frame's code and namespace
-   are returned as new references in *code and *ns, its context is
-   released, and it is marked done, so a later send, throw, or close
-   from Python raises as it does after any completion. Returns 1 when
+   when coro has not been started, its bound code and namespace move to
+   the caller in *code and *ns, its dynamic snapshot is dropped, and it
+   is marked done, so a later send, throw, or close from Python raises
+   as it does after any completion. Returns 1 when
    taken, 0 when the coroutine has already been started and keeps its
    own drive.
 */

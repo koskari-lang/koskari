@@ -101,7 +101,6 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 
   coro->ctx = NULL;
   coro->state = KOS_CORO_NEW;
-  coro->pending_await = NULL;
   coro->in_send = 0;
   Py_INCREF(code);
   coro->code = (KosCode *) code;
@@ -245,7 +244,6 @@ static void coroutine_dealloc(PyObject *self) {
   KosCoroutine *const coro = (KosCoroutine *) self;
 
   Py_CLEAR(coro->ctx);
-  Py_XDECREF(coro->pending_await);
   coroutine_drop_record(coro);
 
   Py_TYPE(self)->tp_free(self);
@@ -259,7 +257,6 @@ static int coroutine_traverse(
 
   KosCoroutine *const coro = (KosCoroutine *) self;
 
-  Py_VISIT(coro->pending_await);
   Py_VISIT(coro->ctx);
   Py_VISIT(coro->code);
   Py_VISIT(coro->ns);
@@ -274,7 +271,6 @@ static int coroutine_clear(PyObject *self) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
 
-  Py_CLEAR(coro->pending_await);
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
 
@@ -647,7 +643,7 @@ static PyObject *coroutine_close(PyObject *self) {
   }
 
   /* never started: nothing entered, nothing to unwind */
-  if (coro->state == KOS_CORO_NEW && ! coro->ctx) {
+  if (coro->state == KOS_CORO_NEW) {
     coroutine_drop_record(coro);
     coro->state = KOS_CORO_DONE;
     Py_RETURN_NONE;
@@ -813,62 +809,24 @@ PyTypeObject KosCoroutineType = {
 };
 
 
-PyObject *KosCoroutine_New(KosContext *ctx) {
-
-  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
-  if (! coro) {
-    Py_DECREF(ctx);
-    return NULL;
-  }
-
-  coro->ctx = ctx;
-  coro->state = KOS_CORO_NEW;
-  coro->pending_await = NULL;
-  coro->in_send = 0;
-  coro->code = NULL;
-  coro->ns = NULL;
-  coro->domain = NULL;
-  coro->param_refs = NULL;
-
-  PyObject_GC_Track((PyObject *) coro);
-  return (PyObject *) coro;
-}
-
-
 int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
-  KosDynFrame *frame;
 
   if (coro->state != KOS_CORO_NEW || coro->in_send)
     return 0;
 
-  if (! coro->ctx) {
-    /* the bound call itself: the program and namespace move to the
-       caller, the snapshot is dropped -- the grafted frame runs under
-       the awaiter's dynamic state */
-    if (! coro->code)
-      return 0;
-    *code = coro->code;
-    coro->code = NULL;
-    *ns = coro->ns;
-    coro->ns = NULL;
-    Py_CLEAR(coro->domain);
-    Py_CLEAR(coro->param_refs);
-    coro->state = KOS_CORO_DONE;
-    return 1;
-  }
-
-  frame = KosContext_FRAME_TOP(coro->ctx);
-  if (! frame || ! KosDynFrame_CODE(frame))
+  /* the bound call itself: the program and namespace move to the
+     caller, the snapshot is dropped -- the grafted frame runs under
+     the awaiter's dynamic state */
+  if (! coro->code)
     return 0;
-
-  *code = KosDynFrame_CODE(frame);
-  Py_INCREF((PyObject *) *code);
-  *ns = KosDynFrame_NS(frame);
-  Py_XINCREF(*ns);
-
-  Py_CLEAR(coro->ctx);
+  *code = coro->code;
+  coro->code = NULL;
+  *ns = coro->ns;
+  coro->ns = NULL;
+  Py_CLEAR(coro->domain);
+  Py_CLEAR(coro->param_refs);
   coro->state = KOS_CORO_DONE;
   return 1;
 }
