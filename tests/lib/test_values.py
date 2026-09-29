@@ -408,6 +408,39 @@ class TestValuesAdd(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['x'], 10)
         self.assertEqual(result['y'], 20)
 
+    async def test_add_dict_rejects_non_str_keys(self):
+        """
+        a dict merged into values passes the same keyword check as
+        values(**kwds): every key must be a str
+        """
+
+        with self.assertRaises(TypeError):
+            values(1) + {1: 2}
+        with self.assertRaises(TypeError):
+            {1: 2} + values(1)
+
+    async def test_add_dict_normalizes_str_subclass_keys(self):
+        """
+        a str-subclass key lands as an exact str, as values(**kwds) does
+        """
+
+        class S(str):
+            pass
+
+        result = values(1) + {S('k'): 2}
+        self.assertEqual(result['k'], 2)
+        self.assertIs(type(list(result.keys())[0]), str)
+        result = {S('k'): 2} + values(1)
+        self.assertIs(type(list(result.keys())[0]), str)
+
+    async def test_add_dict_kos_repr(self):
+        """
+        the merged keywords render through __kos_repr__
+        """
+
+        from koskari.lib import kos_repr
+        self.assertEqual(kos_repr(values(1) + {'k': 2}), "(values 1 k: 2)")
+
 
 class TestValuesCall(unittest.IsolatedAsyncioTestCase):
     """Tests for values call protocol"""

@@ -417,8 +417,14 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
             args = KosValues_ARGS(s);
             Py_INCREF(args);
 
+            /* the dict's keys pass the keyword check values(**kwds)
+               applies; the merged keywords are all str after this */
             kwds = KosValues_KWDS(s) ? PyDict_Copy(KosValues_KWDS(s)) : PyDict_New();
-            PyDict_Update(kwds, right);
+            if (KosKeywords_Update(kwds, right) < 0) {
+                Py_XDECREF(kwds);
+                Py_DECREF(args);
+                return NULL;
+            }
 
         } else {
             tmp = PySequence_Tuple(right);
@@ -442,13 +448,16 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
             args = KosValues_ARGS(s);
             Py_INCREF(args);
 
-            if (KosValues_KWDS(s)) {
-                kwds = PyDict_Copy(left);
-                PyDict_Update(kwds, KosValues_KWDS(s));
-
-            } else {
-                kwds = PyDict_Copy(left);
+            /* the dict's keys pass the keyword check, then the values'
+               own keywords override them */
+            kwds = PyDict_New();
+            if (KosKeywords_Update(kwds, left) < 0) {
+                Py_XDECREF(kwds);
+                Py_DECREF(args);
+                return NULL;
             }
+            if (KosValues_KWDS(s))
+                PyDict_Update(kwds, KosValues_KWDS(s));
 
         } else {
             tmp = PySequence_Tuple(left);
