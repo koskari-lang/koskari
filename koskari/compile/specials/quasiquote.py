@@ -101,7 +101,19 @@ def _qq_expr(compiler, frag, expr, level, keep=False):
         return
 
     if head is _symbol_unquote_splicing:
-        raise SpecialError("unquote-splicing not in list position", expr)
+        if level == 0:
+            raise SpecialError("unquote-splicing not in list position", expr)
+        if is_nil(tail) or not is_pair(tail):
+            raise SpecialError("unquote-splicing requires one argument", expr)
+        inner, rest = tail
+        if not is_nil(rest):
+            raise SpecialError("unquote-splicing takes one argument", expr)
+
+        # at level > 0 the splice is data, as an inner unquote is
+        frag.instruction(OpCode.CONST, _symbol_unquote_splicing)
+        _qq_expr(compiler, frag, inner, level - 1, keep)
+        frag.instruction(OpCode.PROPER, 2)
+        return
 
     if head is _symbol_quasiquote:
         if is_nil(tail) or not is_pair(tail):

@@ -420,6 +420,23 @@ class TestQuasiquoteNested(SpecialsTestCase):
         self.assertEqual(symbol("x"), result[1][0])
 
 
+    async def test_nested_quasiquote_inner_splice_kept_as_data(self):
+        """
+        ``(a ,@xs) yields (quasiquote (a (unquote-splicing xs))) as data,
+        with xs neither evaluated nor spliced
+        """
+
+        expr, mod = self.compile_expr("``(a ,@xs)")
+        result = await expr()
+        self.assertEqual(
+            cons(symbol("quasiquote"),
+                 cons(symbol("a"),
+                      cons(symbol("unquote-splicing"), symbol("xs"), nil),
+                      nil),
+                 nil),
+            result)
+
+
 class TestQuasiquoteErrors(SpecialsTestCase):
     """
     Error cases: unquote and unquote-splicing outside quasiquote
