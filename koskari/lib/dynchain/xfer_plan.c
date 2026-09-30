@@ -195,6 +195,23 @@ static int kos_delimited_invoke_inplace(
          (void *) resume_frame, (unsigned) return_pc);
   #endif
 
+  /* The one step that can fail comes first, before the chain is
+     touched: the displaced segment is stored away from its node until
+     restitch, and an inline segment cannot leave its node, so detach
+     spills it to a heap segment. A failure here leaves the chain as
+     it was. */
+  {
+    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
+    if (! displaced && KosDynFrame_STACK(resume_frame)) {
+      if (resume_stack)
+        KosStack_Release(resume_stack);
+      return -1;
+    }
+    KosDynDelim_SAVED_STACK(delim) = displaced;
+    if (displaced)
+      KosSegment_BACK(displaced) = NULL;
+  }
+
   /* Detach the invoke span and stash it on the delim. Its segments'
    * unwind-cache back links die with the detach. */
   KosDynNode_PARENT(shift) = NULL;
@@ -217,23 +234,10 @@ static int kos_delimited_invoke_inplace(
   }
 
   /* Displace the resume frame's live state with the captured resume
-   * state; the delim owns the displaced stack until restitch. The
-   * invoke-site acting pc is saved for extent lookups after restitch
-   * (slice execution overwrites the frame's acting pc). */
-  /* The displaced segment is stored away from its node until restitch;
-     an inline segment cannot leave its node, so detach spills it to a
-     heap segment first. */
-  {
-    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
-    if (! displaced && KosDynFrame_STACK(resume_frame)) {
-      if (resume_stack)
-        KosStack_Release(resume_stack);
-      return -1;
-    }
-    KosDynDelim_SAVED_STACK(delim) = displaced;
-    if (displaced)
-      KosSegment_BACK(displaced) = NULL;
-  }
+   * state; the delim owns the displaced stack, detached above, until
+   * restitch. The invoke-site acting pc is saved for extent lookups
+   * after restitch (slice execution overwrites the frame's acting
+   * pc). */
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
   KosDynFrame_STACK(resume_frame) = resume_stack;
