@@ -75,10 +75,7 @@ class TestKioImporterParity(unittest.TestCase):
         loader = KoskariSourceFileLoader(modname, path)
         spec = importlib.util.spec_from_file_location(
             modname, path, loader=loader)
-        module = types.ModuleType(modname)
-        module.__name__ = modname
-        module.__package__ = None
-        module.__spec__ = spec
+        module = importlib.util.module_from_spec(spec)
         loader.exec_module_demand(module)
         return module
 
@@ -367,10 +364,7 @@ class TestKioImporterParity(unittest.TestCase):
         loader = KoskariSourceFileLoader('parity_kio', kio_path)
         spec = importlib.util.spec_from_file_location(
             'parity_kio', kio_path, loader=loader)
-        module = types.ModuleType('parity_kio')
-        module.__name__ = 'parity_kio'
-        module.__package__ = None
-        module.__spec__ = spec
+        module = importlib.util.module_from_spec(spec)
         loader.exec_module_demand(module)
         self.assertEqual(42, module.parity_answer)
 

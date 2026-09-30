@@ -123,7 +123,16 @@ class KoskariSourceFileLoader(FileLoader):
     """
 
     def create_module(self, spec):
-        return None
+        """
+        The koskari Module the module's code runs in is the module
+        importlib places in sys.modules: what the body defines, what
+        its functions rebind, what Python assigns and what a circular
+        import reads are one namespace
+        """
+
+        from koskari.module import new_module
+
+        return new_module(spec.name, package=spec.parent)
 
 
     def _filename_to_load(self, fullname):
@@ -152,47 +161,25 @@ class KoskariSourceFileLoader(FileLoader):
 
     def load_target(self, module):
         """
-        A fresh koskari Module for the Python module being executed,
-        initialised from its spec, with the file to load
+        Initialise the module from its spec and name the file to load
         """
 
-        from koskari.module import init_module, new_module
+        from koskari.module import init_module
 
         filename = self._filename_to_load(module.__name__)
-
-        ki_mod = new_module(
-            module.__name__,
-            package=getattr(module, '__package__', None))
-        init_module(ki_mod, filename, spec=getattr(module, '__spec__', None))
-
-        return ki_mod, filename
-
-
-    @staticmethod
-    def finish_module(ki_mod, module):
-        """
-        Copy the loaded koskari Module's bindings onto the Python module
-        object
-        """
-
-        for name in list(vars(ki_mod).keys()):
-            try:
-                setattr(module, name, getattr(ki_mod, name))
-            except AttributeError:
-                pass
+        init_module(module, filename, spec=getattr(module, '__spec__', None))
+        return filename
 
 
     async def exec_module_async(self, module):
         from koskari.module import load_module_async, load_module_kio_async
 
-        ki_mod, filename = self.load_target(module)
+        filename = self.load_target(module)
 
         if filename.endswith('.kio'):
-            await load_module_kio_async(ki_mod)
+            await load_module_kio_async(module)
         else:
-            await load_module_async(ki_mod)
-
-        self.finish_module(ki_mod, module)
+            await load_module_async(module)
 
 
     def exec_module_demand(self, module):
@@ -205,14 +192,12 @@ class KoskariSourceFileLoader(FileLoader):
 
         from koskari.module import load_module_demand, load_module_kio_demand
 
-        ki_mod, filename = self.load_target(module)
+        filename = self.load_target(module)
 
         if filename.endswith('.kio'):
-            load_module_kio_demand(ki_mod)
+            load_module_kio_demand(module)
         else:
-            load_module_demand(ki_mod)
-
-        self.finish_module(ki_mod, module)
+            load_module_demand(module)
 
 
     def exec_module(self, module):

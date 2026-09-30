@@ -173,10 +173,7 @@ class TestExecModuleDemand(unittest.TestCase):
         loader = KoskariSourceFileLoader('demand_loader', path)
         spec = importlib.util.spec_from_file_location(
             'demand_loader', path, loader=loader)
-        module = types.ModuleType('demand_loader')
-        module.__name__ = 'demand_loader'
-        module.__package__ = None
-        module.__spec__ = spec
+        module = importlib.util.module_from_spec(spec)
         loader.exec_module_demand(module)
         self.assertEqual(42, module.result)
 
