@@ -423,7 +423,8 @@ class MacroTransform(Transform):
         :return: expanded form after finalize
         """
 
-        expanded = self.handler(compiler, **result.captures)
+        expanded = self.handler(
+            compiler, **_captures_for_procedure(result.captures))
         return _finalize_macro_output(
             compiler, expanded, gensym.next_mark())
 
@@ -513,7 +514,31 @@ def _repeat_frames(value):
     return value
 
 
-def _promote_repeat_frame_bindings(bindings):
+# the anonymous slot a pair sub-pattern under an ellipsis captures into;
+# its frames are promoted onto the pair's own variables, and the slot
+# itself is never a template name or a procedure formal
+_REPEAT_SLOT_PREFIX = "_repeat"
+
+
+def _is_repeat_slot(key):
+    return str(key).startswith(_REPEAT_SLOT_PREFIX + "#")
+
+
+def _captures_for_procedure(captures):
+    """
+    The keyword arguments a procedural arm's lambda takes from a match:
+    repeat frames promoted onto the pattern's variables, as the template
+    arm sees them, with the anonymous repeat slots dropped since they
+    are not formals
+    """
+
+    bindings = _promote_repeat_frame_bindings(
+        _captures_to_bindings(captures), named=False)
+    return {str(k): v for k, v in bindings.items()
+            if not _is_repeat_slot(k)}
+
+
+def _promote_repeat_frame_bindings(bindings, named=True):
     """
     For each ``repeat_capture`` value (bare list of per-iteration dicts),
     copy slot columns onto template keys.
@@ -525,16 +550,22 @@ def _promote_repeat_frame_bindings(bindings):
     shape template ellipsis indexing peels one level at a time.
 
     Keys already present in ``bindings`` are left alone so outer captures and
-    the first promoted column win when names collide
+    the first promoted column win when names collide.
+
+    :param named: promote a REPEAT the pattern named as well as the
+        anonymous slots the rule dialect makes; a procedural arm passes
+        False, since a named REPEAT is a formal whose value is its frames
     """
 
     out = dict(bindings)
-    for v in bindings.values():
+    for k, v in bindings.items():
         frames = _repeat_frames(v)
         if frames is None:
             continue
+        if not named and not _is_repeat_slot(k):
+            continue
 
-        frames = [_promote_repeat_frame_bindings(fr) for fr in frames]
+        frames = [_promote_repeat_frame_bindings(fr, named) for fr in frames]
 
         # each frame maps slot names to one iteration's captures (often
         # Datum-wrapped); transpose into parallel lists for template
@@ -756,7 +787,7 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
                 else:
                     specs.append(repeat_capture(str(pat), TEST_ANY()))
             else:
-                slot = str(gensym("_repeat"))
+                slot = str(gensym(_REPEAT_SLOT_PREFIX))
                 inner = _syntax_elem_pattern(
                     pat, literals, source_ctx, set())
                 specs.append(repeat_capture(slot, inner))
@@ -789,7 +820,8 @@ def _wrap_special_handler(raw):
 
     @wraps(raw)
     def handler(compiler, source_obj, match_result):
-        return demand_call(raw, compiler, **match_result.captures)
+        return demand_call(
+            raw, compiler, **_captures_for_procedure(match_result.captures))
 
     return handler
 

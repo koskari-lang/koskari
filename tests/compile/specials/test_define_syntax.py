@@ -287,6 +287,60 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
         self.assertEqual([1, 2, 3], list(result))
 
 
+    async def test_compile_macro_rules_pair_under_ellipsis(self):
+        """
+        ``(a b) ...`` binds each of the pair's variables to a list, one
+        entry per iteration, the way a repeated symbol does
+        """
+
+        src_str = """
+        (define pairs
+          (macro-rules pairs []
+            [(pairs (a b) ...)
+             `(#list ,@a ,@b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs (1 2) (3 4))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([1, 3, 2, 4], list(result))
+
+
+    async def test_compile_special_rules_pair_under_ellipsis(self):
+        """
+        A special arm gets the pair's variables as lists of the captured
+        datums, one entry per iteration
+        """
+
+        src_str = """
+        (define pairs
+          (special-rules pairs []
+            [(c (pairs (a b) ...))
+             `(#list ,(len a) ,(len b) ,(attr (item b 1) datum))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs (1 2) (3 4))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([2, 2, 4], list(result))
+
+
 class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_match_value_pattern(self):
