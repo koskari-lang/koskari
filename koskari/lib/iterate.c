@@ -679,7 +679,9 @@ static PyObject *stepper_iternext(PyObject *self) {
 
   if (! st->provider) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "cannot reuse already awaited __anext__()/asend()");
+                    (st->is_throw || st->closing)
+                    ? "cannot reuse already awaited aclose()/athrow()"
+                    : "cannot reuse already awaited __anext__()/asend()");
     return NULL;
   }
 
@@ -687,6 +689,7 @@ static PyObject *stepper_iternext(PyObject *self) {
     PyObject *send_val = st->send_value;
     PyObject *throw_typ = st->throw_typ;
     PyObject *throw_exc = st->throw_exc;
+    PyObject *res;
     /* Durable here means generator-style: suspended state lives in
        the provider's context between steps. A provider whose durable
        context is recyclable is stateless between steps and keeps the
@@ -700,8 +703,19 @@ static PyObject *stepper_iternext(PyObject *self) {
     st->throw_typ = NULL;
     st->throw_exc = NULL;
 
-    return stepper_drive(st, islots, durable, send_val, throw_typ,
-                         throw_exc);
+    res = stepper_drive(st, islots, durable, send_val, throw_typ,
+                        throw_exc);
+    /* The step ended, in a value, exhaustion or an error: the
+       awaitable is spent, and a second await meets the guard above. A
+       mid-step await keeps the state for its resume. */
+    if (! st->awaiting) {
+      PyObject *ftyp, *fval, *ftb;
+
+      PyErr_Fetch(&ftyp, &fval, &ftb);
+      stepper_release_state(st);
+      PyErr_Restore(ftyp, fval, ftb);
+    }
+    return res;
   }
 }
 

@@ -259,6 +259,49 @@ class TestAsyncGenParity(unittest.IsolatedAsyncioTestCase):
         await self.parity(p_echo(), "g-echo", scenario)
 
 
+    async def test_reawait_anext(self):
+        """
+        a finished __anext__ awaitable refuses a second await rather
+        than driving the generator again
+        """
+
+        async def scenario(agen):
+            step = agen.__anext__()
+            return [
+                await outcome(step),
+                await outcome(step),
+                await outcome(agen.__anext__()),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_reawait_asend(self):
+        async def scenario(agen):
+            step = agen.asend(None)
+            return [
+                await outcome(step),
+                await outcome(step),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_plain(), "g-plain", scenario)
+
+
+    async def test_reawait_athrow(self):
+        async def scenario(agen):
+            first = await outcome(agen.asend(None))
+            step = agen.athrow(ValueError("boom"))
+            return [
+                first,
+                await outcome(step),
+                await outcome(step),
+                await outcome(agen.asend(None)),
+            ]
+
+        await self.parity(p_catches(), "g-catches", scenario)
+
+
     async def test_asend_non_none_just_started(self):
         async def scenario(agen):
             first = await outcome(agen.asend("early"))
