@@ -740,40 +740,14 @@ KOS_NOINLINE int kos_compare_chain_ext(
 }
 
 
-/* Cold extended tail of kos_compare_reduce. Bool results throughout;
-   the isinstance/issubclass count form (value + N classes) builds the
-   class tuple the way OBJECT_IS_INSTANCE's PopTail did. */
+/* Cold extended tail of kos_compare_reduce: the truth of the chain as
+   a bool. Every extended selector is binary, isinstance and issubclass
+   included, which take a tuple as their second operand the way the
+   runtime instance? and subclass? do. */
 static KOS_NOINLINE PyObject *compare_reduce_ext(
     KosCompare sel,
     PyObject *const *args,
     size_t count) {
-
-  if (sel == KOS_COMPARE_IS_INSTANCE || sel == KOS_COMPARE_IS_SUBCLASS) {
-    PyObject *match;
-    if (count < 2) {
-      PyErr_Format(PyExc_TypeError, "comparison selector %i requires at"
-                   " least 2 positional arguments", (int) sel);
-      return NULL;
-    } else if (count == 2) {
-      match = args[1];
-      Py_INCREF(match);
-    } else {
-      match = PyTuple_New((Py_ssize_t) count - 1);
-      if (! match)
-        return NULL;
-      for (size_t i = 1; i < count; i++) {
-        Py_INCREF(args[i]);
-        PyTuple_SET_ITEM(match, (Py_ssize_t) i - 1, args[i]);
-      }
-    }
-    int res = (sel == KOS_COMPARE_IS_INSTANCE)
-        ? PyObject_IsInstance(args[0], match)
-        : PyObject_IsSubclass(args[0], match);
-    Py_DECREF(match);
-    if (res < 0)
-      return NULL;
-    return PyBool_FromLong(res);
-  }
 
   int res = kos_compare_chain_ext(sel, args, count);
   if (res < 0)

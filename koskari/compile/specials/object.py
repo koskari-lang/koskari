@@ -49,10 +49,6 @@ _COMPARE_PATTERNS = [
 ]
 
 # A value and one or more types
-_TYPE_CHECK_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), REST("args", min_tail=2)),
-]
-
 _BINARY_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("a"), VALUE("b")),
 ]
@@ -516,56 +512,30 @@ def special_is_not(compiler, called_by, a, b):
         opa=(Compare.IS_NOT, 2))
 
 
-def emit_type_check(compiler, called_by, args, sel):
-    """
-    Compile a type-check operator as OBJECT_COMPARE carrying the
-    IS_INSTANCE or IS_SUBCLASS selector. The CMPCOUNT count is the total
-    operand count (value plus N types); the handler treats operands past
-    the value as the match, tupled when N > 1. Requires at least 2
-    arguments (value plus at least one type).
-
-    Calling forms:
-      (compile/instance? VAL TYPE)         -> count = 2  (single type)
-      (compile/instance? VAL T1 T2 ...)    -> count = N+1  (types as tuple)
-
-    :param compiler: active Compiler
-    :param called_by: the head capture
-    :param args: the value-and-types capture
-    :param sel: Compare.IS_INSTANCE or Compare.IS_SUBCLASS
-    :return: ByteCodeFragment
-    """
-
-    frag = compiler.fragment(called_by.datum)
-    exprs = list(args.datum.unpack())
-
-    frag.position(called_by.position)
-
-    for expr in exprs:
-        frag.merge(compiler.full_compile(expr))
-
-    frag.instruction(OpCode.OBJECT_COMPARE, (sel, len(exprs)))
-    return frag
-
-
 @builtin("compile/instance?")
-@special("compile/instance?", patterns=_TYPE_CHECK_PATTERNS,
-         unpack="kwargs")
-def special_isinstance(compiler, called_by, args):
+@special("compile/instance?", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_isinstance(compiler, called_by, a, b):
     """
-    Compile (compile/instance? OBJ TYPE ...). Instance type check
+    Compile (compile/instance? OBJ TYPE). Instance type check with the
+    runtime instance? signature: TYPE is one type or a tuple of types
     """
 
-    return emit_type_check(compiler, called_by, args, Compare.IS_INSTANCE)
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IS_INSTANCE, 2))
 
 
 @builtin("compile/subclass?")
-@special("compile/subclass?", patterns=_TYPE_CHECK_PATTERNS, unpack="kwargs")
-def special_issubclass(compiler, called_by, args):
+@special("compile/subclass?", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_issubclass(compiler, called_by, a, b):
     """
-    Compile (compile/subclass? CLS TYPE ...). Subclass type check
+    Compile (compile/subclass? CLS BASE). Subclass check with the
+    runtime subclass? signature: BASE is one class or a tuple of classes
     """
 
-    return emit_type_check(compiler, called_by, args, Compare.IS_SUBCLASS)
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IS_SUBCLASS, 2))
 
 
 # ---------------------------------------------------------------------------

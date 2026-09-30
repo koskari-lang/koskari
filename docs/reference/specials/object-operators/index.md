@@ -57,9 +57,10 @@ These take exactly two operands and also emit `OBJECT_COMPARE`. Each has a
 
 ## Type predicates
 
-`(instance? OBJ TYPE ...)` checks whether OBJ is an instance of any of the
-types given. `(subclass? CLS BASE ...)` checks the subclass relation, combining
-several bases the same way.
+`(instance? OBJ TYPE)` checks whether OBJ is an instance of TYPE, and
+`(subclass? CLS BASE)` checks the subclass relation. Both take the
+signature of their runtime namesakes: the second operand is one type or
+a tuple of types, and a tuple succeeds for any of them.
 
 ```koskari
 >>> (instance? 42 int)
