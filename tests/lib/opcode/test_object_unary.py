@@ -132,6 +132,38 @@ class TestObjectUnaryOpcodes(CevalTest):
         self.assertEqual(result, {"x": 1})
 
 
+    async def test_object_vars_without_dict_raises_type_error(self):
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["OBJECT_VARS", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(TypeError):
+            await make_callable(code, ns)()
+
+
+    async def test_object_vars_propagates_the_lookup_error(self):
+        """
+        Only a missing __dict__ becomes TypeError; an error raised by the
+        lookup itself propagates as raised
+        """
+
+        class Broken:
+            __slots__ = ()
+
+            @property
+            def __dict__(self):
+                raise ValueError("no dict today")
+
+        code, ns = build_expr([
+            ["CONST", Broken()],
+            ["OBJECT_VARS", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(ValueError):
+            await make_callable(code, ns)()
+
+
     async def test_object_repr(self):
         code, ns = build_expr([
             ["CONST", 42],
