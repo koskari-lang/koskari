@@ -443,6 +443,49 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
         self.assertEqual(2, result)
 
 
+    async def test_compile_macro_match_tail_slot_absent_is_none(self):
+        """
+        A slot that did not fire arrives as None: the formals are the
+        pattern's slots with a None default, not required positionals
+        """
+
+        src_str = """
+        (define tailed
+          (macro-match tailed
+            [(tailed (VALUE a) (TAIL rest))
+             `(#list ,a.datum ,(is rest None))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/tailed': vars(mod)['tailed'], '#list': build_list}
+
+        expr, mod = self.compile_expr("(tailed 1)", **defn)
+        self.assertEqual([1, True], list(await expr()))
+
+        expr, mod = self.compile_expr("(tailed 1 2 3)", **defn)
+        self.assertEqual([1, False], list(await expr()))
+
+
+    async def test_compile_macro_match_bindings_slot_is_one_formal(self):
+        """
+        BINDINGS claims its slot in both of its branches; the arm gets it
+        once
+        """
+
+        src_str = """
+        (define bound
+          (macro-match bound
+            [(bound (BINDINGS bs) (VALUE a))
+             `(#list ,(len bs) ,a.datum)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/bound': vars(mod)['bound'], '#list': build_list}
+
+        expr, mod = self.compile_expr("(bound ((x 1) (y 2)) 3)", **defn)
+        self.assertEqual([2, 3], list(await expr()))
+
+
 class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_special_rules_identity(self):
@@ -521,6 +564,24 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
         result = await expr()
         self.assertEqual(42, result)
+
+
+    async def test_compile_special_match_tail_slot_absent_is_none(self):
+        src_str = """
+        (define tailed
+          (special-match tailed
+            [(compiler (tailed (VALUE a) (TAIL rest)))
+             `(#list ,a.datum ,(is rest None))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/tailed': vars(mod)['tailed'], '#list': build_list}
+
+        expr, mod = self.compile_expr("(tailed 1)", **defn)
+        self.assertEqual([1, True], list(await expr()))
+
+        expr, mod = self.compile_expr("(tailed 1 2 3)", **defn)
+        self.assertEqual([1, False], list(await expr()))
 
 
     async def test_compile_special_match_bare_symbol_inner_pattern(self):

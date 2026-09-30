@@ -24,7 +24,7 @@ convenience syntax to runtime call forms of builder functions.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import cons, nil, symbol
+from ...lib import cons, keyword, nil, symbol
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, REPEAT, SYMBOL,
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
@@ -308,11 +308,11 @@ def special_compile_macro_match(compiler, called_by, name, rules):
         body_src = sub_res["body"].datum
 
         pattern_matcher = parse_explicit_rule_pattern(pattern_src)
-        vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(pattern_src))
         parts.append(cons(symbol("lambda"),
-                          build_proper(*vars_ordered), body_src))
+                          build_proper(*slot_formals(pattern_matcher)),
+                          body_src))
 
     return cons(symbol("build-macro"), str(namesym), *parts, nil)
 
@@ -399,14 +399,33 @@ def special_compile_special_match(compiler, called_by, name, rules):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
 
         pattern_matcher = parse_explicit_rule_pattern(inner)
-        vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(inner))
         parts.append(cons(symbol("lambda"),
-                          build_proper(compiler_formal, *vars_ordered),
+                          build_proper(compiler_formal,
+                                       *slot_formals(pattern_matcher)),
                           body_src))
 
     return cons(symbol("build-special"), str(namesym), *parts, nil)
+
+
+def slot_formals(pattern_matcher):
+    """
+    The formals an explicit-pattern arm takes for its captures: each
+    slot once, in slot-table order, as a keyword formal defaulting to
+    None. A match result is sparse, so a slot behind TAIL or an
+    unmatched ONEOF branch arrives as None, and a slot the table lists
+    once per branch (BINDINGS) is one formal
+
+    :param pattern_matcher: the lowered rule pattern
+    :return: the formals list items, keyword and default alternating
+    """
+
+    out = []
+    for name in dict.fromkeys(pattern_slot_names(pattern_matcher)):
+        out.append(keyword(name))
+        out.append(None)
+    return out
 
 
 def collect_pattern_variable_symbols(pattern_expr, literals):
