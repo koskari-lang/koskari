@@ -649,7 +649,53 @@ function_set_annotations(PyObject *self, PyObject *val, void *closure) {
 }
 
 
+/**
+   The cells the function captured, as a dict of name to current value:
+   every slot its base namespace holds as a Ref (closure and global
+   cells), an unset cell omitted. A dict, so nothing handed out reaches
+   the base namespace itself, the template every call is copied from
+   and reset against.
+*/
+static PyObject *function_get_closures(PyObject *self, void *closure) {
+
+  PyObject *ns = KosFunction_BASE_NS(self);
+  PyObject *names = KosNamespace_FAST_NAMES(ns);
+  size_t count = KosNamespace_FAST_COUNT(ns);
+  PyObject *out;
+
+  (void) closure;
+
+  out = PyDict_New();
+  if (! out)
+    return NULL;
+
+  for (size_t i = 0; i < count; i++) {
+    PyObject *ref, *value;
+
+    if (kos_ns_is_raw(ns, i))
+      continue;
+    ref = KosNamespace_GET_FAST_VAL(ns, i);
+    if (! ref || KosRef_IsEmpty(ref))
+      continue;
+    value = KosRef_Deref(ref);
+    if (! value)
+      goto fail;
+    if (PyDict_SetItem(out, PyTuple_GET_ITEM(names, i), value) < 0) {
+      Py_DECREF(value);
+      goto fail;
+    }
+    Py_DECREF(value);
+  }
+  return out;
+
+ fail:
+  Py_DECREF(out);
+  return NULL;
+}
+
+
 static PyGetSetDef function_getsets[] = {
+  { "closures", (getter) function_get_closures, NULL, NULL, NULL },
   { "__signature__", (getter) function_get_signature, NULL, NULL, NULL },
   { "__annotations__", (getter) function_get_annotations,
     (setter) function_set_annotations, NULL, NULL },
@@ -1488,7 +1534,6 @@ static PyObject *function_repr(PyObject *self) {
 
 static PyMemberDef function_members[] = {
   { "code", T_OBJECT, offsetof(KosFunction, code), READONLY, NULL },
-  { "base_ns", T_OBJECT, offsetof(KosFunction, base_ns), READONLY, NULL },
   { "formals", T_OBJECT, offsetof(KosFunction, formals), READONLY, NULL },
   { "name", T_OBJECT, offsetof(KosFunction, name), READONLY, NULL },
   { "__doc__", T_OBJECT, offsetof(KosFunction, doc), 0, NULL },

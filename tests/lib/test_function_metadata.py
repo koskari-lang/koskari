@@ -26,12 +26,14 @@ methods.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import functools
 import unittest
 
 import pytest
 
 from koskari.lib import FormalsSpec
+from koskari.module import load_module_source_async, new_module
 from tests.lib.test_expression_function import build_expr
 
 
@@ -163,6 +165,61 @@ class TestBoundMethodDelegation(unittest.TestCase):
             bm.__name__ = "nope"
         with self.assertRaises(AttributeError):
             bm.__doc__ = "nope"
+
+
+CLOSURE_SRC = """
+(define outer (lambda [v]
+  (define mk (lambda [] (define x v) (lambda [] x)))
+  mk))
+(define g (lambda [flag] (when flag (define y 5)) y))
+"""
+
+
+class TestFunctionClosures(unittest.TestCase):
+    """
+    A function reports the cells it captured as a dict of name to
+    value, and nothing it hands out reaches its own base namespace:
+    the template every call is copied from stays as it was
+    """
+
+    def load(self):
+        async def go():
+            mod = new_module("function_closures")
+            vars(mod)["__file__"] = "<function_closures>"
+            await load_module_source_async(mod, CLOSURE_SRC, layout=False)
+            v = vars(mod)
+            mk = await v["outer"](7)
+            return v, mk
+        return asyncio.run(go())
+
+    def test_closures_lists_captured_cells(self):
+        v, mk = self.load()
+        self.assertEqual(mk.closures, {"v": 7})
+        self.assertFalse(hasattr(mk, "base_ns"))
+
+    def test_locals_stay_private_to_each_call(self):
+        v, mk = self.load()
+
+        async def go():
+            c1 = await mk()
+            c2 = await mk()
+            first = (await c1(), await c2())
+            mk.closures["x"] = "poke"
+            c1 = await mk()
+            c2 = await mk()
+            return first, (await c1(), await c2())
+        self.assertEqual(asyncio.run(go()), ((7, 7), (7, 7)))
+
+    def test_unbound_local_stays_unbound_across_calls(self):
+        v, mk = self.load()
+        g = v["g"]
+
+        async def go():
+            await g(True)
+            g.closures
+            with self.assertRaises(NameError):
+                await g(False)
+        asyncio.run(go())
 
 
 # The end.

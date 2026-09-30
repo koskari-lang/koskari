@@ -90,7 +90,7 @@ define _format_constant [val]:
 define _write_function_instance_section [file fn]:
   """
   Write a leading section for a Function instance: name, formals,
-  base_ns (closures).
+  closures.
 
   :param file: file-like object to write to
   :param fn: Function instance (KosFunction)
@@ -111,10 +111,10 @@ define _write_function_instance_section [file fn]:
   else:
     file.write "    (none)\n"
 
-  define base_ns fn.base_ns
-  file.write "  base_ns (closures):\n"
-  if base_ns:
-    for-each [[k v] (base_ns.items)]:
+  define closures fn.closures
+  file.write "  closures:\n"
+  if closures:
+    for-each [[k v] (closures.items)]:
       file.write f"    {(repr k)}: {(_format_constant v)}\n"
   else:
     file.write "    (none)\n"
@@ -440,7 +440,7 @@ define dis [x file: None]:
   Print a disassembly of a Koskari Code or Function object.
 
   For Function: prints a leading section with function instance details
-  (name, formals, base_ns closures), then the disassembly of its code.
+  (name, formals, closures), then the disassembly of its code.
 
   For BoundMethod: prints a bound-method section (__self__), then the
   same function-instance section and code disassembly as for __func__.

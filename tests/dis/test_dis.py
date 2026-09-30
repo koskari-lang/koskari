@@ -291,7 +291,7 @@ class TestDisFunction(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Function instance:", text)
         self.assertIn("  name:", text)
         self.assertIn("  formals:", text)
-        self.assertIn("  base_ns (closures):", text)
+        self.assertIn("  closures:", text)
         self.assertIn("KosCode", text)
         self.assertIn("truthy_yus", text)
         self.assertIn("VAR", text)
