@@ -331,6 +331,15 @@ not at the relay's aclose. Decide whether GeneratorExit should route
 through the resume so the drive can await the delegate's close.
 Ref: [interpreter/yield-from-close.md](interpreter/yield-from-close.md).
 
+### Variadic `instance?` and `subclass?` (implement)
+
+The specials are binary, with the signature of the runtime copies
+(`isinstance`, `issubclass`): several types go in a tuple. A variadic
+form `(instance? OBJ T1 T2 ...)` needs runtime `instance?` and
+`subclass?` with the same signature bound in the bootstrap, then the
+specials, the value and truth reductions in `operator.c`, and the
+reference pages widen together.
+
 ---
 
 ## Recorded proposals (evaluate / implement)
