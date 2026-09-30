@@ -163,6 +163,40 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
         parts = fstring_parts(form)
         self.assertEqual(format_field_args(parts[0]), [symbol("x"), "{w}"])
 
+    async def test_unary_minus_on_name_in_field(self):
+        """
+        A field reads a unary prefix the way bare source does: -x is
+        (- x), not the symbol -x
+        """
+
+        form = read_fstring_pragma('f"{-x}"')
+        args = format_field_args(fstring_parts(form)[0])
+        self.assertEqual(len(args), 1)
+        self.assertEqual(list(unpack(args[0])), [symbol("-"), symbol("x")])
+
+    async def test_unary_minus_on_dotted_name_in_field(self):
+        form = read_fstring_pragma('f"{-x.y}"')
+        args = format_field_args(fstring_parts(form)[0])
+        self.assertEqual(len(args), 1)
+        op, operand = list(unpack(args[0]))
+        self.assertEqual(op, symbol("-"))
+        self.assertEqual(
+            list(unpack(operand)), [symbol("attr"), symbol("x"), symbol("y")])
+
+    async def test_unary_prefix_keeps_the_colon_spec_in_field(self):
+        for src in ('f"{-x:04d}"', 'f"{+x:04d}"', 'f"{~x:04d}"'):
+            form = read_fstring_pragma(src)
+            args = format_field_args(fstring_parts(form)[0])
+            self.assertEqual(len(args), 2, src)
+            self.assertEqual(
+                list(unpack(args[0])), [symbol(src[3]), symbol("x")], src)
+            self.assertEqual(args[1], "04d", src)
+
+    async def test_negative_literal_in_field_stays_a_number(self):
+        form = read_fstring_pragma('f"{-1}"')
+        args = format_field_args(fstring_parts(form)[0])
+        self.assertEqual(args, [-1])
+
     async def test_bracket_suffix_attaches_in_field(self):
         # a bare index-bracket suffix in a slot must attach as a subscript,
         # not land in the format-spec position as a separate form.

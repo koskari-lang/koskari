@@ -2309,6 +2309,62 @@ class FormatStringReader(object):
         return ''.join(parts)
 
 
+    def _read_field_expr(self, stream, opened_at=None):
+        """
+        Read the value expression of a ``{...}`` field
+
+        A delimited form reads through the general reader. A leading
+        atom is collected with ``:`` and ``}`` as extra terminators so
+        the format spec stays outside it, then suffix adjacency applies,
+        so ``{foo[0]}`` is one subscript form rather than ``[0]`` in the
+        spec position. A unary prefix the bare grammar admits (``-``,
+        ``+`` or ``~`` before a name or an opening delimiter, under
+        ``reader/unary``) wraps the operand read the same way, so
+        ``{-x:04d}`` is ``(- x)`` with its spec; ``-`` before a digit is
+        the literal's sign and stays in the atom.
+
+        :param stream: the source stream, positioned at the expression
+        :param opened_at: (line, col) of the opening ``{``
+        :return: tuple of (event, position, value)
+        """
+
+        norm = self.normal
+        position = stream.position()
+        lead = stream.peek(1)
+
+        if lead in '([{':
+            return norm._read(stream)
+
+        if lead and lead in _unary_symbols and norm.unary:
+            peek = stream.peek(2)
+            nxt = peek[1:2]
+            digit = nxt.isdigit() or (nxt == '.' and stream.peek(3)[2:3].isdigit())
+            if (nxt.isalpha() or nxt == '_' or nxt in '([{'
+                    or (digit and lead != '-')):
+                stream.read(1)
+                event, pos, child = self._read_field_expr(stream, opened_at)
+                if event is EOF:
+                    raise stream.reader_eof(
+                        opened_at=opened_at, context=f"unary {lead}")
+                if event is not VALUE:
+                    raise stream.error(f"invalid use of {lead}", pos)
+                return VALUE, position, cons(_unary_symbols[lead], child, nil)
+
+        if lead and (lead.isalpha() or lead == '_' or lead.isdigit()
+                     or lead == '-'):
+            first = stream.read(1)
+            terms = norm._terms
+            for c in ':}':
+                if c not in terms:
+                    terms = terms + c
+            expr = norm.process_atom(
+                norm._collect_atom_continuation(stream, first, terms))
+            expr = norm._dispatch_suffix_macros(stream, expr, position)
+            return VALUE, position, expr
+
+        return norm._read(stream)
+
+
     def _read_format_field(self, stream, opened_at=None):
         """
         Read one ``{...}`` f-string field
@@ -2320,28 +2376,7 @@ class FormatStringReader(object):
         norm = self.normal
 
         norm._skip_horizontal_whitespace(stream)
-        position = stream.position()
-        lead = stream.peek(1)
-
-        if lead in '([{':
-            event, pos, expr = norm._read(stream)
-        elif lead and (lead.isalpha() or lead == '_' or lead.isdigit()
-                       or lead == '-'):
-            first = stream.read(1)
-            terms = norm._terms
-            for c in ':}':
-                if c not in terms:
-                    terms = terms + c
-            expr = norm.process_atom(
-                norm._collect_atom_continuation(stream, first, terms))
-            # apply suffix adjacency (subscript, attribute, ...) before the
-            # value/format-spec split, so `{foo[0]}` reads as one subscript
-            # form rather than dropping `[0]` into the spec position.
-            expr = norm._dispatch_suffix_macros(stream, expr, position)
-            pos = position
-            event = VALUE
-        else:
-            event, pos, expr = norm._read(stream)
+        event, pos, expr = self._read_field_expr(stream, opened_at)
 
         if event is EOF:
             raise stream.reader_eof(opened_at=opened_at,
