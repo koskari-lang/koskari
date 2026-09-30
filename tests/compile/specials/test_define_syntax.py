@@ -23,7 +23,7 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.exceptions import CompilerError
-from koskari.lib import OpCode, build_list, cons, nil, symbol
+from koskari.lib import OpCode, build_list, build_tuple, cons, nil, symbol
 from koskari.syntax import (
     Syntax, build_macro, build_special, build_syntax, parse_match_pattern,
     parse_rule_pattern)
@@ -156,6 +156,60 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         result = await expr()
         self.assertEqual(
             [[1, 2, 3], [4, 5]], [list(g) for g in result])
+
+
+    async def test_compile_syntax_rules_pair_under_two_ellipses(self):
+        """
+        ``(k (a b) ...) ...`` captures the pair's variables under two
+        ellipses; the template rebuilds every pair inside every group
+        """
+
+        src_str = """
+        (define keyed
+          (syntax-rules keyed [#list #tuple]
+            [(keyed (k (a b) ...) ...)
+             (#list (#list k (#tuple a b) ...) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/keyed': vars(mod)['keyed'],
+            '#list': build_list,
+            '#tuple': build_tuple,
+        }
+
+        src_str = """
+        (keyed ("x" (1 2) (3 4)) ("y" (5 6)))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual(
+            [["x", (1, 2), (3, 4)], ["y", (5, 6)]],
+            [list(g) for g in result])
+
+
+    async def test_compile_syntax_rules_bare_pair_under_two_ellipses(self):
+        src_str = """
+        (define pairs
+          (syntax-rules pairs [#list #tuple]
+            [(pairs ((a b) ...) ...)
+             (#list (#list (#tuple a b) ...) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+            '#tuple': build_tuple,
+        }
+
+        src_str = """
+        (pairs ((1 2) (3 4)) ((5 6)))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual(
+            [[(1, 2), (3, 4)], [(5, 6)]], [list(g) for g in result])
 
 
     async def test_compile_syntax_rules_no_matching_rule_raises(self):

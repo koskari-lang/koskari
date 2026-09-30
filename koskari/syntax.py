@@ -493,10 +493,36 @@ def _captures_to_bindings(captures):
     return {symbol(k): v for k, v in captures.items()}
 
 
+def _repeat_frames(value):
+    """
+    The per-iteration frame dicts a ``repeat_capture`` value holds, or None
+    when the value is not that shape
+
+    A Datum at the binding root is never the frame vector; that structure is
+    always a bare, non-empty list of dicts. A Datum here is one wrapped cell
+    (often a pair spine for REST or a leaf for BIND), and a flat list of
+    anything else came from elsewhere
+    """
+
+    if isinstance(value, Datum):
+        return None
+    if not (value and isinstance(value, list)):
+        return None
+    if not all(isinstance(fr, dict) for fr in value):
+        return None
+    return value
+
+
 def _promote_repeat_frame_bindings(bindings):
     """
     For each ``repeat_capture`` value (bare list of per-iteration dicts),
-    copy slot columns onto top-level template keys.
+    copy slot columns onto template keys.
+
+    Each frame is promoted first, so a pair sub-pattern under a further
+    ellipsis, which the matcher captured as a nested frame vector inside
+    the frame, becomes named columns of that frame before the frames are
+    transposed. A variable under N ellipses then lands N lists deep, the
+    shape template ellipsis indexing peels one level at a time.
 
     Keys already present in ``bindings`` are left alone so outer captures and
     the first promoted column win when names collide
@@ -504,26 +530,15 @@ def _promote_repeat_frame_bindings(bindings):
 
     out = dict(bindings)
     for v in bindings.values():
-        # Stage 1: Datum at the binding root is never repeat_capture's frame
-        # vector; that structure is always a bare list. A Datum here is one
-        # wrapped cell (often a pair spine for REST or a leaf for BIND). If we
-        # mis-classified that as repeat rows, ellipsis would see wrong shapes.
-        if isinstance(v, Datum):
+        frames = _repeat_frames(v)
+        if frames is None:
             continue
 
-        # Stage 2: only non-empty Python lists can be repeat_capture output.
-        if not (v and isinstance(v, list)):
-            continue
+        frames = [_promote_repeat_frame_bindings(fr) for fr in frames]
 
-        frames = v
-        # Stage 3: repeat rows are dicts per iteration; anything else is not this
-        # transpose shape (e.g. a flat list of syntax objects from elsewhere).
-        if not all(isinstance(fr, dict) for fr in frames):
-            continue
-
-        # Stage 4: each frame maps string slot names to one iteration's
-        # captures (often Datum-wrapped); transpose into parallel lists for
-        # template ellipsis indexing.
+        # each frame maps slot names to one iteration's captures (often
+        # Datum-wrapped); transpose into parallel lists for template
+        # ellipsis indexing
         slot_keys = set()
         for fr in frames:
             slot_keys.update(fr.keys())
