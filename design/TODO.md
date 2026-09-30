@@ -36,7 +36,10 @@ A ref deref that answers "call this" or an awaitable instead of
 running a nested evaluator, so a read can raise, suspend and be
 captured like a call. A schema-derived row resume finishes the
 multi-slot and fused rows; RETURN and YIELD loads tail into the
-getter. Raw and plain-ref reads keep their code.
+getter. Raw and plain-ref reads keep their code. The same row resume
+carries UNPACK and the star call over a Koskari generator, collecting
+it element by element through the NEXT node instead of materialising
+it on the demand path (section 7).
 
 Ref: [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 

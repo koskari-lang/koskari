@@ -72,6 +72,16 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   extractors (`MATCH_CASE` -> `matcher_call_extern` ->
   `Koskari_DemandSync`, `matcher/datum.c`). Tracked as a group in
   Future.
+- **Opcodes that materialise a Koskari generator.** The UNPACK family
+  (`KosEvalState_PopUnpackSequence` -> `PySequence_Fast`,
+  `eval/eval_state.c`) and the star-call family (`kos_op_call_star` ->
+  `PySequence_Tuple`, `eval.c`) go through the generator's `tp_iter`
+  into a `KosPyIter`, a nested evaluator per element on the demand
+  path, so a generator whose body awaits fails as a sync violation
+  where `for-each` over it flattens. The demand path is forced today.
+  The collecting row, one NEXT node per element under the row resume,
+  is section 7 of
+  [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 
 ## Not expected to flatten
 
