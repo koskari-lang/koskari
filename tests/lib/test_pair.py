@@ -566,6 +566,23 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         # Should complete without infinite recursion
         self.assertEqual(p1, p2)
 
+    async def test_eq_recursive_coprime_periods(self):
+        """
+        Circular lists whose periods share no factor still compare in
+        bounded steps: every cell pair the walk reaches is remembered,
+        so the walk stops when one comes round again
+        """
+
+        p2 = cons(1, 1, nil)
+        setcdr(cdr(p2), p2)
+        p3 = cons(1, 1, 1, nil)
+        setcdr(cdr(cdr(p3)), p3)
+        self.assertEqual(p2, p3)
+
+        q3 = cons(1, 1, 2, nil)
+        setcdr(cdr(cdr(q3)), q3)
+        self.assertNotEqual(p2, q3)
+
     async def test_copy_recursive(self):
         """copy() handles recursive pairs"""
         import copy

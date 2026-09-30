@@ -674,14 +674,19 @@ static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
 
 static long pair_eq(PyObject *left, PyObject *right) {
   PyObject *seen = NULL;
-  PyObject *left_id, *right_id;
+  PyObject *left_id, *right_id, *visit;
   long answer = 1;
-  void *left_seen, *right_seen;
+  int revisit;
 
   if (left == right)
     return 1;
 
-  seen = PyDict_New();
+  /* every (left, right) cell pair the walk compares, by address: the
+     pairs are finite, so a walk over two circular spines comes back to
+     one it has seen within their lengths' product and stops there,
+     whatever the periods. Remembering only each cell's latest partner
+     never repeats when the periods share no factor. */
+  seen = PySet_New(NULL);
   if (! seen)
     return -1;
 
@@ -722,17 +727,25 @@ static long pair_eq(PyObject *left, PyObject *right) {
        their CAR equivs and their CDR equivs */
 
     left_id = PyLong_FromVoidPtr(left);
-    right_id = PyLong_FromVoidPtr(right);
+    right_id = left_id ? PyLong_FromVoidPtr(right) : NULL;
+    visit = right_id ? PyTuple_Pack(2, left_id, right_id) : NULL;
+    Py_XDECREF(left_id);
+    Py_XDECREF(right_id);
+    if (! visit) {
+      answer = -1;
+      break;
+    }
 
-    left_seen = PyDict_GetItem(seen, left_id);
-    right_seen = PyDict_GetItem(seen, right_id);
+    revisit = PySet_Contains(seen, visit);
+    if (revisit < 0 || (! revisit && PySet_Add(seen, visit) < 0)) {
+      Py_DECREF(visit);
+      answer = -1;
+      break;
+    }
+    Py_DECREF(visit);
 
-    if ((left_seen && PyLong_AsVoidPtr(left_seen) == right) ||
-        (right_seen && PyLong_AsVoidPtr(right_seen) == left)) {
-
+    if (revisit) {
       /* we've already compared these two against one another */
-      Py_DECREF(left_id);
-      Py_DECREF(right_id);
       break;
 
     } else {
@@ -746,13 +759,6 @@ static long pair_eq(PyObject *left, PyObject *right) {
       Py_DECREF(left_car);
       Py_DECREF(right_car);
 
-      if (eq > 0) {
-        /* equal, so make note that we've compared these to each other */
-        PyDict_SetItem(seen, left_id, right_id);
-        PyDict_SetItem(seen, right_id, left_id);
-      }
-      Py_DECREF(left_id);
-      Py_DECREF(right_id);
       if (eq <= 0) {
         /* not equal, or the element comparison raised (-1) */
         answer = eq;
