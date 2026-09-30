@@ -46,9 +46,18 @@ static int kos_pending_missing_module_is(PyObject *full) {
 /**
   Fetch one from-import member from the module, importing
   "{mod.__name__}.{attr}" and retrying on AttributeError. New
-  reference or NULL with error set.
+  reference or NULL with error set. When missing is given it records
+  which failure this was: 1 when the member does not exist and the
+  "cannot import name" report here is the whole story, 0 when the
+  member's own import raised and that exception is passed on as is.
 */
-static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
+static PyObject *kos_import_from_member(
+    PyObject *mod,
+    PyObject *attr,
+    int *missing) {
+
+  if (missing)
+    *missing = 0;
 
   PyObject *val = PyObject_GetAttr(mod, attr);
   if (val || ! PyErr_ExceptionMatches(PyExc_AttributeError))
@@ -62,6 +71,8 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
   if (! PyUnicode_Check(mod_name)) {
     Py_DECREF(mod_name);
     PyErr_Format(PyExc_ImportError, "cannot import %R", attr);
+    if (missing)
+      *missing = 1;
     return NULL;
   }
 
@@ -77,6 +88,8 @@ static PyObject *kos_import_from_member(PyObject *mod, PyObject *attr) {
   if (! sub && kos_pending_missing_module_is(full)) {
     /* No such attribute and no such submodule: the real story is the
        missing member, not a missing module. */
+    if (missing)
+      *missing = 1;
     PyErr_Clear();
     PyObject *path = PyModule_GetFilenameObject(mod);
     if (path) {
@@ -145,7 +158,8 @@ KOS_OP_HANDLER(IMPORT_FROM) {
 
   Py_ssize_t n = PyTuple_GET_SIZE(attrs);
   for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *val = kos_import_from_member(mod, PyTuple_GET_ITEM(attrs, i));
+    PyObject *val = kos_import_from_member(mod, PyTuple_GET_ITEM(attrs, i),
+                                           NULL);
     if (unlikely(! val)) {
       Py_DECREF(mod);
       RESULT_RAISE();

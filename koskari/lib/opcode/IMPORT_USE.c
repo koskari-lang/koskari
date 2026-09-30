@@ -100,9 +100,10 @@ KOS_OP_HANDLER(IMPORT_USE) {
     }
 
     int hits = 0;
+    int missing = 0;
 
     /* the bare candidate, with from-import's submodule fallback */
-    PyObject *val = kos_import_from_member(mod, stem);
+    PyObject *val = kos_import_from_member(mod, stem, &missing);
     if (val) {
       int stored = frame_ns_store(es, bind, val);
       Py_DECREF(val);
@@ -112,11 +113,10 @@ KOS_OP_HANDLER(IMPORT_USE) {
       }
       hits++;
 
-    } else if (PyErr_ExceptionMatches(PyExc_ImportError) &&
-               ! PyErr_ExceptionMatches(PyExc_ModuleNotFoundError)) {
-      /* the member-missing report crafted by kos_import_from_member;
-         a ModuleNotFoundError is a real failure inside a submodule's
-         own import and must propagate, matching IMPORT_FROM */
+    } else if (missing) {
+      /* no such member: a miss on this facet, the others may hit. Any
+         other failure, an exception raised inside a submodule's own
+         import included, propagates as it does from IMPORT_FROM. */
       PyErr_Clear();
 
     } else {

@@ -238,6 +238,29 @@ class TestUseErrorFidelity(UseCase):
         self.assertIn("boom inside broken", str(caught.exception))
 
 
+    async def test_submodule_import_error_propagates(self):
+        """
+        An ImportError raised by the submodule's own body is the
+        submodule's failure, not a missing member, and propagates
+        with its message
+        """
+
+        pkg = os.path.join(self._tmpdir, 'ki_use_pkg2')
+        os.makedirs(pkg)
+        with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+            fh.write("(define marker 1)\n")
+        with open(os.path.join(pkg, 'needy.ki'), 'w') as fh:
+            fh.write('(raise (ImportError "optional dependency missing"))\n')
+
+        self.write_ki('ki_use_user10', """
+        (use ki_use_pkg2 needy)
+        """)
+
+        with self.assertRaises(ImportError) as caught:
+            importlib.import_module('ki_use_user10')
+        self.assertIn("optional dependency missing", str(caught.exception))
+
+
 class TestUseBare(UseCase):
     """
     The bare form: (use mod) lowers to import-all-from, and the seal-
