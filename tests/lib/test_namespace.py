@@ -105,6 +105,20 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIs(type(ns), Namespace)
 
 
+    async def test_global_sym_with_no_parent_is_refused(self):
+        """
+        A global sym resolves through the parent chain to the module;
+        with no parent there is nothing to resolve it in, and the
+        namespace is refused rather than built with an empty slot
+        marked as holding a reference
+        """
+
+        spec = NamespaceSpec("ns", ("a",), (), ("g",))
+        with self.assertRaises(RuntimeError):
+            spec.get_namespace(None)
+        with self.assertRaises(RuntimeError):
+            Namespace("ns", None, (), (), ("g",))
+
     async def test_empty_namespace_refuses_bind(self):
         """
         The empty namespace every native frame carries is one shared

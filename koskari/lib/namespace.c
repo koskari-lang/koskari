@@ -718,9 +718,11 @@ static int ns_init_syms_from_nspec(
   }
 
   // Globals: find ref in module namespace and bind into the fast slot.
-  // The global slots are already not-raw in the precomputed bitmask.
+  // The global slots are already not-raw in the precomputed bitmask, so
+  // a global sym with no module to resolve it in refuses the namespace
+  // rather than leaving a slot marked as holding a Ref empty.
   PyObject *global_syms = KosNamespaceSpec_GLOBAL_SYMS(nspec);
-  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
+  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0) {
     PyObject *module_ns = find_module_in_chain(parent);
     if (! module_ns) {
       PyErr_Format(PyExc_RuntimeError,
@@ -879,7 +881,7 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
     }
   }
 
-  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
+  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0) {
     PyObject *module_ns = find_module_in_chain(parent);
     if (! module_ns) {
       PyErr_Format(PyExc_RuntimeError,
