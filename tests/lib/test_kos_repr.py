@@ -438,6 +438,24 @@ class TestKosReprRegistry(unittest.TestCase):
         self.assertEqual(kos_repr(Reggie()), "reggie-out")
 
 
+    def test_bound_builtin_handler_is_called_not_rebound(self):
+        """
+        A bound builtin method registered as a handler is called with
+        the object as its argument; its body never runs on the object
+        as self
+        """
+
+        class Listy(list):
+            pass
+
+        kos_repr_register(Listy, {}.copy)
+        try:
+            with self.assertRaises(TypeError):
+                kos_repr(Listy([1, 2]))
+        finally:
+            kos_repr_unregister(Listy)
+
+
     def test_unregister_restores_repr(self):
         """
         after unregister, default repr path is used

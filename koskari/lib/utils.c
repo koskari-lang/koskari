@@ -491,7 +491,12 @@ static int kos_utils_repr_registry_dispatch(
     if (! handler)
       continue;
 
-    if (PyCFunction_Check(handler)) {
+    /* The direct call hands the object to the C body as its self,
+       which is how this module's own handlers, created with no self,
+       take it. A bound builtin has a self of its own and a body that
+       expects it, so it is called like any other callable, with the
+       object as its argument. */
+    if (PyCFunction_Check(handler) && PyCFunction_GetSelf(handler) == NULL) {
       flags = PyCFunction_GetFlags(handler);
       if ((flags & ~METH_CLASS) == METH_NOARGS) {
         meth = PyCFunction_GetFunction(handler);
