@@ -103,11 +103,29 @@ match msg:
 
 ### Names resolve from the enclosing scope
 
-Every name a pattern references, the `T` in `x :: T`, the class in
+A name a pattern references, the `T` in `x :: T`, the class in
 `Point[...]`, the `pred` in `(? pred)`, the `f` in `(app f ...)`, a
 symbol mapping key, is an ordinary binding resolved from the enclosing
 scope at match time. Closure-captured and local names work as they
 would in the body.
+
+Seven type names are the exception: `int`, `str`, `list`, `tuple`,
+`pair`, `symbol` and `keyword` in a pattern always mean the builtin
+types. They come from the matcher's own table, so a match arm reads
+nothing from the namespace for them, and rebinding one of those names
+in the enclosing scope does not change what the pattern tests:
+
+```koskari
+define int float            ; does not reach the pattern below
+
+match 2.5:
+  case x :: int:
+    "unreached: int in a pattern is the builtin"
+  case x:
+    "taken"
+```
+
+To test against your own type, bind it under another name.
 
 ### Callables are called synchronously
 
