@@ -1837,7 +1837,8 @@ class Reader:
         # decoded per literal chunk and per field interior in the splitter.
         _evnt, data = self._read_string(stream, char, with_escapes=False)
 
-        substream = source_str(data, stream.filename,
+        # string text, not a script: a body starting with #! is literal
+        substream = source_str(data, stream.filename, auto_skip_exec=False,
                                line_no=lin, col_no=col)
 
         fsr = FormatStringReader(self)
@@ -2456,6 +2457,7 @@ class FormatStringReader(object):
         pos = stream.position()
         raw = self._read_raw_field(stream, opened_at)
         substream = source_str(_as_unicode(raw) + '}', stream.filename,
+                               auto_skip_exec=False,
                                line_no=pos[0], col_no=pos[1])
         return self._read_format_field(substream, opened_at)
 

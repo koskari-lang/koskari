@@ -85,6 +85,22 @@ def format_field_args(field):
 
 class TestFormatStringReader(IsolatedAsyncioTestCase):
 
+    async def test_body_starting_with_shebang_is_literal_text(self):
+        """
+        The body is string text, not a script: a leading #! is kept
+        """
+
+        form = read_fstring('f"#!/usr/bin/env python"')
+        parts = fstring_parts(form)
+        self.assertEqual(parts, ["#!/usr/bin/env python"])
+
+    async def test_body_starting_with_shebang_keeps_its_field(self):
+        form = read_fstring('f"#!{x}"')
+        parts = fstring_parts(form)
+        self.assertEqual(len(parts), 2)
+        self.assertEqual(parts[0], "#!")
+        self.assertEqual(format_field_args(parts[1]), [symbol("x")])
+
     async def test_single_arg_field(self):
         form = read_fstring('f"{x}"')
         parts = fstring_parts(form)
