@@ -102,8 +102,12 @@ static PyObject *_import_fromlist = NULL;
 
 /* === Static forward declarations === */
 
-static void inject_eval_frame_traceback(KosContext *ctx,
-    PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
+static void inject_eval_frame_traceback(
+    KosContext *ctx,
+    KosEvalState *es,
+    PyObject **exc_type,
+    PyObject **exc_val,
+    PyObject **exc_tb);
 
 static void kos_eval_mark_context_dead(KosContext *ctx);
 
@@ -697,6 +701,7 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
 
 static void inject_eval_frame_traceback(
     KosContext *ctx,
+    KosEvalState *es,
     PyObject **exc_type,
     PyObject **exc_val,
     PyObject **exc_tb) {
@@ -717,9 +722,10 @@ static void inject_eval_frame_traceback(
 
   decorate_exception_with_dynchain(ctx, *exc_val);
 
-  KosEvalState _inj_es;
-  KosEvalState_Init(&_inj_es, ctx);
-  KosDynFrame *frame_top = KosEvalState_FRAME(&_inj_es);
+  /* the raising frame: the live state's during a drive, where the
+     chain is stolen off the context; the context's own between drives */
+  KosDynFrame *frame_top = es ? KosEvalState_FRAME(es)
+                              : (KosDynFrame *) KosContext_FRAME_TOP(ctx);
   if (! frame_top || ! KosDynFrame_CODE(frame_top)) {
     return;
   }
@@ -810,7 +816,7 @@ void kos_eval_prepare_boundary_raise(
     KosEvalState_FlushLiveRegsToFrame(es);
   PyErr_Fetch(&typ, &val, &tb);
   if (typ != PyExc_GeneratorExit)
-    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+    inject_eval_frame_traceback(ctx, es, &typ, &val, &tb);
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
   if (es)
