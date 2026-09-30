@@ -793,18 +793,21 @@ PyObject *KosStack_PopTailDict(
   if (! ret)
     return NULL;
 
-  s->len -= tcount;
-
-  size_t i = s->len;
-  while (count--) {
-    PyObject *key = s->objs[i++];
-    PyObject *val = s->objs[i++];
-
-    PyDict_SetItem(ret, key, val);
-
-    Py_DECREF(key);
-    Py_DECREF(val);
+  /* every insert first, the dict taking its own references; the
+     segment gives its entries up only once all of them are in, so a
+     failed insert leaves it owning every entry for the unwind to
+     release once */
+  size_t base = s->len - tcount;
+  for (size_t i = base; i < s->len; i += 2) {
+    if (PyDict_SetItem(ret, s->objs[i], s->objs[i + 1]) < 0) {
+      Py_DECREF(ret);
+      return NULL;
+    }
   }
+
+  s->len = base;
+  for (size_t i = base; i < base + tcount; i++)
+    Py_DECREF(s->objs[i]);
 
   *self = s;
   return ret;
@@ -848,19 +851,19 @@ PyObject *KosStack_PopTailDictNames(
   if (! ret)
     goto failure;
 
-  /* set the stack height down ahead of time. We'll work our way back
-     up in order from there, because we want to insert in the same
-     order things arrived on the stack */
-  s->len -= count;
+  /* every insert first, in the order the values arrived; the segment
+     gives its entries up only once all of them are in */
+  {
+    size_t base = s->len - count;
+    for (size_t j = 0; j < count; j++) {
+      if (PyDict_SetItem(ret, PyTuple_GET_ITEM(names, j),
+                         s->objs[base + j]) < 0)
+        goto failure;
+    }
 
-  size_t i = s->len, j = 0;
-  while (count--) {
-    PyObject *key = PyTuple_GET_ITEM(names, j++);
-    PyObject *val = s->objs[i++];
-
-    PyDict_SetItem(ret, key, val);
-
-    Py_DECREF(val);
+    s->len = base;
+    for (size_t j = 0; j < count; j++)
+      Py_DECREF(s->objs[base + j]);
   }
 
   Py_DECREF(names);
@@ -907,20 +910,22 @@ PyObject *KosStack_PopTailDictFromNames(
   if (! ret)
     return NULL;
 
+  /* every insert first; the segment gives its entries up only once
+     all of them are in, so a failed insert leaves it owning every
+     entry for the unwind to release once */
   size_t base = s->len - count;
   for (size_t j = 0; j < count; j++) {
-    PyObject *key = PyTuple_GET_ITEM(names, j);
-    PyObject *val = s->objs[base + j];
-
-    if (PyDict_SetItem(ret, key, val) < 0) {
-      Py_DECREF(val);
+    if (PyDict_SetItem(ret, PyTuple_GET_ITEM(names, j),
+                       s->objs[base + j]) < 0) {
       Py_DECREF(ret);
       return NULL;
     }
-    Py_DECREF(val);
   }
 
-  s->len -= count;
+  s->len = base;
+  for (size_t j = 0; j < count; j++)
+    Py_DECREF(s->objs[base + j]);
+
   *self = s;
   return ret;
 }
