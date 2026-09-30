@@ -63,6 +63,22 @@ class TestCollectDiagnostics(IsolatedAsyncioTestCase):
         self.assertIn('eof', diags[0].message.lower())
 
 
+    async def test_diagnostic_range_starts_on_the_faulting_character(self):
+        """
+        A reader location carries a 0-based column; the range starts on
+        that character, not one to its left
+        """
+
+        diags = collect_diagnostics('(a "hello', 'file:///test.ki')
+        start = diags[0].range.start
+        self.assertEqual((start.line, start.character), (0, 3))
+        self.assertEqual(diags[0].range.end.character, 4)
+
+        diags = collect_diagnostics('(+ 1 2', 'file:///test.ki')
+        start = diags[0].range.start
+        self.assertEqual((start.line, start.character), (0, 0))
+
+
     async def test_layout_error_emits_diagnostic(self):
         diags = collect_diagnostics(
             'define foo []:\n  if:\n    x', 'file:///test.ki')
