@@ -522,6 +522,27 @@ tags:
   - define-type
 notes: the generated Point? predicate returns false for a non-instance (a plain int). koskari/bootstrap/_class.ki
 ---
+id: class-layout-define-dataclass-elided-supers-001
+feature: layout/define-dataclass
+source: |-
+  define-dataclass Point:
+    define x :: int 0
+    define y :: int 0
+  (Point 3 5).y
+verify:
+  eval: "5"
+references:
+  - reference/layouts/layout-define-dataclass.md
+  - reference/macros/compile-define-dataclass.md
+stability: evolving
+tags:
+  - class
+  - define-dataclass
+  - dataclass
+  - layout
+  - define-type
+notes: "block form with the supers elided reads as (define-dataclass Point () (begin ...)); read/expand omitted: :: annotation does not round-trip through the corpus renderer. koskari/reader/layouts/classes.py"
+---
 id: class-property-getter-eval-001
 feature: special/compile/decorate
 source: (begin (define-class Rectangle [] (define __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (define area [self] (* self.w self.h)))) (define r (Rectangle 3 4)) r.area)

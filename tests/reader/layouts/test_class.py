@@ -75,4 +75,37 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+class TestLayoutDefineDataclass(IsolatedAsyncioTestCase):
+
+    async def test_define_dataclass_omit_supers(self):
+        """
+        The header may elide the supers, which read as nil, the same
+        shape as define-class
+        """
+
+        src = """
+        define-dataclass P:
+          x
+        """
+        expected = pycons(
+            (symbol('define-dataclass'),
+             symbol('P'),
+             (),
+             (symbol('begin'), symbol('x'))))
+        self.assertEqual(parse_layout(src), expected)
+
+
+    async def test_define_dataclass_with_supers(self):
+        src = """
+        define-dataclass P (Base):
+          x
+        """
+        expected = pycons(
+            (symbol('define-dataclass'),
+             symbol('P'),
+             (symbol('Base'),),
+             (symbol('begin'), symbol('x'))))
+        self.assertEqual(parse_layout(src), expected)
+
+
 # The end.

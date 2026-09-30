@@ -31,7 +31,8 @@ from .basics import (
     layout_block, layout_block_begin, layout_inline_block,
     layout_quasiquote, layout_quasiquote_syntax, layout_quote,
     layout_quote_syntax)
-from .classes import layout_class, layout_define_class
+from .classes import (
+    layout_class, layout_define_class, layout_define_dataclass)
 from .conditionals import layout_if, layout_match, layout_switch
 from .define_syntax import (
     layout_bare_syntax, layout_macro_match, layout_macro_rules,
@@ -58,6 +59,7 @@ __all__ = (
     "layout_quasiquote_syntax",
     "layout_class",
     "layout_define_class",
+    "layout_define_dataclass",
     "layout_dyn_wind",
     "layout_if",
     "layout_match",

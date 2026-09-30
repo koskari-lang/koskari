@@ -60,8 +60,6 @@ define-syntax define-dataclass:
   """
 
   syntax-rules []:
-    case (define-dataclass name (members ...)):
-      (define-dataclass name [] (members ...))
     case (define-dataclass name supers members ...):
       define name:
         let []:
