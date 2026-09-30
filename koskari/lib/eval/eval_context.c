@@ -203,9 +203,15 @@ static int context_clear(PyObject *self) {
   Py_XDECREF(KosContext_TOKEN(ctx));
   KosContext_TOKEN(ctx) = NULL;
 
+  /* the cached frame, block and namespace point into the chain freed
+     here; a finalizer in the same garbage cycle can still reach the
+     context, so nothing on it may point at freed memory */
   if (KosContext_DYN_TOP(ctx))
     kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
   KosContext_DYN_TOP(ctx) = NULL;
+  KosContext_FRAME_TOP(ctx) = NULL;
+  KosContext_BLOCK(ctx) = NULL;
+  KosContext_NAMESPACE(ctx) = NULL;
 
   while (KosContext_GOAL(ctx)) {
     KosXferGoal *goal = KosContext_GOAL(ctx);

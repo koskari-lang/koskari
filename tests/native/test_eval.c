@@ -253,6 +253,53 @@ static int test_context_clear_then_dealloc_releases_once(void) {
 }
 
 
+/* === Test: tp_clear leaves no pointer into the freed chain === */
+
+
+static int test_context_clear_drops_chain_caches(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+    TEST_ASSERT_NOT_NULL(KosContext_FRAME_TOP(ctx), "frame cached");
+    TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(ctx), "namespace cached");
+
+    /* what the collector does to a context in a garbage cycle: the
+       chain is freed, and the cached frame, block and namespace that
+       pointed into it must go with it, since a finalizer in the same
+       cycle can still reach the context */
+    int res = Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
+    TEST_ASSERT_EQ(res, 0, "tp_clear succeeds");
+    TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
+    TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame cache dropped");
+    TEST_ASSERT_NULL(KosContext_BLOCK(ctx), "block cache dropped");
+    TEST_ASSERT_NULL(KosContext_NAMESPACE(ctx), "namespace cache dropped");
+
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: two contexts without TLS get distinct domains === */
 
 
@@ -2181,6 +2228,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
+    RUN_TEST(test_context_clear_drops_chain_caches);
     RUN_TEST(test_domain_fresh_when_no_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
