@@ -34,6 +34,35 @@ from tests.lib.opcode import build_code, build_expr
 pytestmark = pytest.mark.phase_lib
 
 
+
+class TestRefConstruction(unittest.IsolatedAsyncioTestCase):
+    """
+    A ref is complete the moment it exists: construction takes its
+    arguments in __new__, so __new__ alone either yields a usable ref or
+    refuses, and a later __init__ call changes nothing
+    """
+
+    async def test_new_alone_yields_a_usable_ref_or_refuses(self):
+        r = Ref.__new__(Ref)
+        self.assertTrue(r.empty)
+        with self.assertRaises(NameError):
+            r.deref()
+        with self.assertRaises(TypeError):
+            AttributeRef.__new__(AttributeRef)
+        with self.assertRaises(TypeError):
+            ItemRef.__new__(ItemRef)
+        with self.assertRaises(TypeError):
+            DynamicRef.__new__(DynamicRef)
+
+    async def test_init_after_construction_changes_nothing(self):
+        r = Ref("x", 1)
+        r.__init__("y", 2)
+        self.assertEqual(r.deref(), 1)
+        self.assertEqual(r.name, "x")
+        a = AttributeRef("a", [], "append")
+        a.__init__("b", {}, "keys")
+        self.assertEqual(a.attr, "append")
+
 class TestSymbolicRef(unittest.IsolatedAsyncioTestCase):
     """Tests for the base Ref type"""
 
