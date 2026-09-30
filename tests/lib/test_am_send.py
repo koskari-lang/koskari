@@ -166,6 +166,28 @@ class TestAmSend(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             d.send("x")
 
+    async def test_koskari_await_of_a_sendless_iterator(self):
+        """
+        A Koskari await of an object whose __await__ returns a plain
+        iterator steps it with next: a None send takes the iteration
+        protocol on every version, as PyIter_Send does
+        """
+
+        class Aw:
+            def __await__(self):
+                return iter(["a"])
+
+        v = await self.load()
+
+        async def run():
+            return await v["waiter"](Aw())
+
+        coro = run()
+        self.assertEqual(coro.send(None), "a")
+        with self.assertRaises(TypeError):
+            # the completion is None, and (+ 1 None) fails as it should
+            coro.send(None)
+
     async def test_sendless_iterator_completes_with_none(self):
         class Aw:
             def __await__(self):
