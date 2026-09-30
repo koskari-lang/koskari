@@ -456,4 +456,45 @@ class TestFunctionDescriptor(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 42)
 
 
+class TestConstruction(unittest.IsolatedAsyncioTestCase):
+    """
+    An Expression or Function is complete the moment it exists:
+    construction takes its arguments in __new__, so __new__ alone
+    refuses, and a later __init__ call changes nothing
+    """
+
+    async def test_new_alone_refuses(self):
+        with self.assertRaises(TypeError):
+            Expression.__new__(Expression)
+        with self.assertRaises(TypeError):
+            Function.__new__(Function)
+
+    async def test_construction_checks_its_arguments(self):
+        code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec((), None, ())
+        with self.assertRaises(TypeError):
+            Expression(code, "not a namespace")
+        with self.assertRaises(TypeError):
+            Expression("not code", ns)
+        with self.assertRaises(TypeError):
+            Function(code, "not a namespace", fspec)
+        with self.assertRaises(TypeError):
+            Function(code, ns, "not a formals spec")
+
+    async def test_init_after_construction_changes_nothing(self):
+        code, ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        other, other_ns = build_expr([["CONST", 7], ["RETURN", 1]])
+        fspec = FormalsSpec((), None, ())
+
+        expr = Expression(code, ns)
+        expr.__init__(other, other_ns)
+        self.assertIs(expr.code, code)
+        self.assertEqual(await expr(), 42)
+
+        fn = Function(code, ns, fspec)
+        fn.__init__(other, other_ns, fspec)
+        self.assertIs(fn.code, code)
+        self.assertEqual(await fn(), 42)
+
+
 # The end.

@@ -24,6 +24,7 @@ use indices within the NamespaceSpec fast-slot range.
 
 import pytest
 
+from koskari.lib import ModuleNamespace
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_code, build_expr
 
@@ -92,15 +93,15 @@ class TestFastOpcodes(CevalTest):
     Tests for FAST, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE
     """
 
-    async def test_fast_on_dict_namespace_raises_runtime_error(self):
+    async def test_fast_on_module_namespace_raises_runtime_error(self):
         """
-        FAST-slot code entered with a non-fast namespace raises RuntimeError
-        at eval entry, not a crash in the opcode handler
+        FAST-slot code entered with a namespace without fast slots raises
+        RuntimeError at eval entry, not a crash in the opcode handler
         """
         code_obj, _ = build_expr(
             [["FAST", 0], ["RETURN", 1]],
             local_syms=("x",))
-        ns = {}
+        ns = ModuleNamespace("m", {})
         with self.assertRaises(RuntimeError) as ctx:
             await make_callable(code_obj, ns)()
         self.assertIn("fast slots", str(ctx.exception))

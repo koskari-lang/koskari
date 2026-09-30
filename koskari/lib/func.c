@@ -40,32 +40,40 @@ static Py_ssize_t function_compute_simple_arity(
 static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
                                         PyObject *parent_ns);
 
+static PyObject *function_construct(PyTypeObject *type, PyObject *code,
+                                    PyObject *formals, PyObject *parent_ns);
+
 
 /* === KosExpression: callable (code, ns) -> coroutine on __call__ === */
 
 
-static int expression_init(
-    KosExpression *self,
-    PyObject *args,
-    PyObject *kwargs) {
-
-  (void) kwargs;
-  PyObject *code = NULL;
-  PyObject *ns = NULL;
-
-  if (! PyArg_ParseTuple(args, "OO:Expression", &code, &ns))
-    return -1;
+/**
+   Validate code and ns and build a complete expression of the given
+   type. Construction happens here, in tp_new, so an expression is never
+   observable with either field unset.
+*/
+static PyObject *expression_construct(
+    PyTypeObject *type,
+    PyObject *code,
+    PyObject *ns) {
 
   if (! KosCode_Check(code)) {
-    PyErr_Format(PyExc_TypeError, "expected Code, got %s",
-                 Py_TYPE(code)->tp_name);
-    return -1;
+    PyErr_Format(PyExc_TypeError, "Expression code must be Code, not %R", code);
+    return NULL;
+  }
+  if (! ns) {
+    PyErr_SetString(PyExc_TypeError, "Expression namespace is required");
+    return NULL;
+  }
+  if (! KosNamespace_Check(ns)) {
+    PyErr_Format(PyExc_TypeError, "Expression namespace must be Namespace,"
+                 " not %R", ns);
+    return NULL;
   }
 
-  if (! ns) {
-    PyErr_SetString(PyExc_TypeError, "namespace is required");
-    return -1;
-  }
+  PyObject *self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
 
   Py_INCREF(code);
   KosExpression_CODE(self) = code;
@@ -73,7 +81,23 @@ static int expression_init(
   Py_INCREF(ns);
   KosExpression_NS(self) = ns;
 
-  return 0;
+  return self;
+}
+
+
+static PyObject *expression_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwargs) {
+
+  PyObject *code = NULL;
+  PyObject *ns = NULL;
+
+  (void) kwargs;
+  if (! PyArg_ParseTuple(args, "OO:Expression", &code, &ns))
+    return NULL;
+
+  return expression_construct(type, code, ns);
 }
 
 
@@ -297,8 +321,7 @@ KosEvaluatedTypeObject KosExpressionType = {
   .tp_call = KosCallAdapt_CallAsync,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Callable(Code, namespace). Calling with () returns a Coroutine.",
-  .tp_init = (initproc) expression_init,
-  .tp_new = PyType_GenericNew,
+  .tp_new = expression_new,
   .tp_members = expression_members,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
   },
@@ -1014,72 +1037,44 @@ kos_function_attach_annotations(KosFunction *fn, PyObject *annotations) {
 }
 
 
-static int function_init(
-    KosFunction *self,
+static PyObject *function_new(
+    PyTypeObject *type,
     PyObject *args,
     PyObject *kwargs) {
 
   PyObject *code = NULL;
   PyObject *base_ns = NULL;
   PyObject *formals_spec = NULL;
-  PyObject *formals = NULL;
   PyObject *annotations = NULL;
+  PyObject *formals;
+  PyObject *self;
 
   (void) kwargs;
   if (! PyArg_ParseTuple(args, "OOO|O:Function", &code, &base_ns,
                          &formals_spec, &annotations))
-    return -1;
-
-  if (! KosCode_Check(code)) {
-    PyErr_Format(PyExc_TypeError, "expected Code, got %s",
-                 Py_TYPE(code)->tp_name);
-    return -1;
-  }
+    return NULL;
 
   if (! KosFormalsSpec_CheckExact(formals_spec)) {
-    PyErr_Format(PyExc_TypeError, "expected FormalsSpec, got %s",
-                 Py_TYPE(formals_spec)->tp_name);
-    return -1;
-  }
-
-  if (! base_ns) {
-    PyErr_SetString(PyExc_TypeError, "base namespace is required");
-    return -1;
+    PyErr_Format(PyExc_TypeError, "Function formals spec must be FormalsSpec,"
+                 " not %R", formals_spec);
+    return NULL;
   }
 
   formals = KosFormals_New(formals_spec, NULL);
   if (! formals)
-    return -1;
+    return NULL;
 
-  KosFunction_FORMALS(self) = formals;
+  self = function_construct(type, code, formals, base_ns);
+  Py_DECREF(formals);
+  if (! self)
+    return NULL;
 
-  Py_INCREF(code);
-  KosFunction_CODE(self) = code;
+  if (kos_function_attach_annotations((KosFunction *) self, annotations) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
 
-  PyObject *template = func_build_template_ns(code, formals, base_ns);
-  if (! template)
-    return -1;
-  KosFunction_BASE_NS(self) = template;
-
-  /* the function captures its defining namespace chain; reveal it so a
-     closure stored back into scope forms a collectable cycle */
-  KosNamespace_TrackChain(template);
-
-  self->vectorcall = KosCallAdapt_VectorAsync;
-  self->inspect_signature = NULL;
-  self->creation_annotations = NULL;
-  self->annotations_cache = NULL;
-  self->annotations_need_resolve = 0;
-  self->bind_self_state = 0;
-  self->simple_arity1 = function_compute_simple_arity(code, formals) + 1;
-  self->cached_frame = NULL;
-
-  if (kos_function_attach_annotations(self, annotations) < 0)
-    return -1;
-
-  KosFunction_DOC(self) = doc_from_code(code);
-
-  return 0;
+  return self;
 }
 
 
@@ -1558,8 +1553,7 @@ KosEvaluatedTypeObject KosFunctionType = {
              "(*args, **kwargs) binds formals and returns a Coroutine.",
   .tp_traverse = function_traverse,
   .tp_clear = function_clear,
-  .tp_init = (initproc) function_init,
-  .tp_new = PyType_GenericNew,
+  .tp_new = function_new,
   .tp_members = function_members,
   .tp_getset = function_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
@@ -1574,35 +1568,17 @@ KosEvaluatedTypeObject KosFunctionType = {
 
 PyObject *KosExpression_New(PyObject *code, PyObject *ns) {
 
-  if (! KosCode_Check(code)) {
-    PyErr_Format(PyExc_TypeError, "Expression code must be Code, not %R", code);
-    return NULL;
-  }
-  if (! ns) {
-    PyErr_SetString(PyExc_TypeError, "Expression namespace is required");
-    return NULL;
-  }
-  if (! KosNamespace_Check(ns)) {
-    PyErr_Format(PyExc_TypeError, "Expression namespace must be Namespace,"
-                 " not %R", ns);
-    return NULL;
-  }
-
-  PyObject *self = PyType_GenericNew(KOS_EVALUATED_PYTYPE(KosExpressionType), NULL, NULL);
-  if (! self)
-    return NULL;
-
-  Py_INCREF(code);
-  KosExpression_CODE(self) = code;
-
-  Py_INCREF(ns);
-  KosExpression_NS(self) = ns;
-
-  return self;
+  return expression_construct(KOS_EVALUATED_PYTYPE(KosExpressionType), code, ns);
 }
 
 
-PyObject *KosFunction_NewFromFormals(
+/**
+   Validate code, formals and parent_ns and build a complete function of
+   the given type. Construction happens here, in tp_new, so a function
+   is never observable with a field unset.
+*/
+static PyObject *function_construct(
+    PyTypeObject *type,
     PyObject *code,
     PyObject *formals,
     PyObject *parent_ns) {
@@ -1626,7 +1602,7 @@ PyObject *KosFunction_NewFromFormals(
     return NULL;
   }
 
-  PyObject *self = PyType_GenericNew(KOS_EVALUATED_PYTYPE(KosFunctionType), NULL, NULL);
+  PyObject *self = type->tp_alloc(type, 0);
   if (! self)
     return NULL;
 
@@ -1642,6 +1618,9 @@ PyObject *KosFunction_NewFromFormals(
     return NULL;
   }
   KosFunction_BASE_NS(self) = template;
+
+  /* the function captures its defining namespace chain; reveal it so a
+     closure stored back into scope forms a collectable cycle */
   KosNamespace_TrackChain(template);
 
   KosFunction_NAME(self) = NULL;
@@ -1653,10 +1632,21 @@ PyObject *KosFunction_NewFromFormals(
   ((KosFunction *) self)->bind_self_state = 0;
   ((KosFunction *) self)->simple_arity1 =
       function_compute_simple_arity(code, formals) + 1;
+  ((KosFunction *) self)->cached_frame = NULL;
 
   KosFunction_DOC(self) = doc_from_code(code);
 
   return self;
+}
+
+
+PyObject *KosFunction_NewFromFormals(
+    PyObject *code,
+    PyObject *formals,
+    PyObject *parent_ns) {
+
+  return function_construct(KOS_EVALUATED_PYTYPE(KosFunctionType),
+                            code, formals, parent_ns);
 }
 
 

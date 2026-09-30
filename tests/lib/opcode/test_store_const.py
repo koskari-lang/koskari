@@ -23,6 +23,7 @@ Stores a constant value without using the stack.
 
 import pytest
 
+from koskari.lib import ModuleNamespace
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -66,15 +67,15 @@ class TestFastStoreConstOpcodes(CevalTest):
         self.assertEqual(result, 100)
 
 
-    async def test_fast_store_const_on_dict_namespace_raises(self):
+    async def test_fast_store_const_on_module_namespace_raises(self):
         """
-        FAST_STORE_CONST code entered with a non-fast namespace raises
-        RuntimeError at eval entry
+        FAST_STORE_CONST code entered with a namespace without fast slots
+        raises RuntimeError at eval entry
         """
         code_obj, _ = build_expr(
             [["FAST_STORE_CONST", (0, 1, None, None)], ["RETURN", 1]],
             local_syms=("x",))
-        ns = {}
+        ns = ModuleNamespace("m", {})
         with self.assertRaises(RuntimeError) as ctx:
             await make_callable(code_obj, ns)()
         self.assertIn("fast slots", str(ctx.exception))
