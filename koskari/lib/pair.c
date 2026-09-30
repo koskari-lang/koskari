@@ -1805,6 +1805,18 @@ static void nil_dealloc(const PyObject *self) {
 }
 
 
+/* The nil types take the pair's GC flag, traverse and clear by
+   inheritance, but their singletons are static objects with no GC
+   header in front of them: the collector's visit callbacks would read
+   the bytes before the singleton as one. tp_is_gc answering no is
+   CPython's own way for a GC type whose static instances carry no
+   header, the way static type objects do it. */
+static int nil_is_gc(PyObject *self) {
+  (void) self;
+  return 0;
+}
+
+
 static PyObject *nil_repr(PyObject *self) {
   Py_INCREF(_str_nil);
   return _str_nil;
@@ -1891,6 +1903,7 @@ PyTypeObject KosNilType = {
   .tp_base = &KosPairType,
   .tp_new = nil_new,
   .tp_dealloc = (destructor) nil_dealloc,
+  .tp_is_gc = nil_is_gc,
 
   .tp_traverse = NULL,
   .tp_clear = NULL,
@@ -1983,6 +1996,7 @@ PyTypeObject KosBracketNilType = {
   .tp_base = &KosBracketPairType,
   .tp_new = bracket_nil_new,
   .tp_dealloc = (destructor) bracket_nil_dealloc,
+  .tp_is_gc = nil_is_gc,
 
   .tp_traverse = NULL,
   .tp_clear = NULL,
@@ -2404,6 +2418,11 @@ int koskari_pair_init(PyObject *mod) {
 
   if (PyType_Ready(&KosBracketNilType))
     return -1;
+
+  /* the two empty-list singletons are static and never freed: a
+     reference to either moves no refcount */
+  kos_immortalize(KosNil);
+  kos_immortalize(KosBracketNil);
 
   if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosPairType))
     return -1;

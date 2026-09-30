@@ -24,7 +24,7 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    bracket_pair, break_recursive, car, cdr, cons,
+    bracket_nil, bracket_pair, break_recursive, car, cdr, cons,
     kos_repr, make_recursive, nil, pair, setcar, setcdr)
 
 
@@ -351,6 +351,29 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         from koskari.lib import nil as nil1
         from koskari.lib import nil as nil2
         self.assertIs(nil1, nil2)
+
+    async def test_singletons_are_not_gc_objects(self):
+        """
+        The static singletons carry no GC header, though their types
+        inherit the pair's GC flag; the collector must never see them
+        as GC objects. A contract guard: a fault here is a read of the
+        bytes before the singleton that only a sanitizer reports
+        """
+        import gc
+        self.assertFalse(gc.is_tracked(nil))
+        self.assertFalse(gc.is_tracked(bracket_nil))
+
+    @unittest.skipIf(sys.version_info < (3, 12), "no immortal refcount")
+    async def test_singletons_are_immortal(self):
+        """
+        A reference taken to either singleton moves no refcount
+        """
+        before = (sys.getrefcount(nil), sys.getrefcount(bracket_nil))
+        held = [cons(1, nil) for _ in range(1000)]
+        held += [cons(1, bracket_nil) for _ in range(1000)]
+        self.assertEqual(
+            (sys.getrefcount(nil), sys.getrefcount(bracket_nil)), before)
+        del held
 
     async def test_repr(self):
         """repr(nil) returns 'nil'"""
