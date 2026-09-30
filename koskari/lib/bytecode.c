@@ -1810,6 +1810,25 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       continue;
     }
 
+    /* Count-like styles: the arg is the instruction's 16-bit field.
+       Refuse anything emit could not store as given; NOARG ignores its
+       arg. */
+    if (style == KOSTYLE_COUNT || style == KOSTYLE_PAIR_COUNT
+        || style == KOSTYLE_STAR || style == KOSTYLE_FASTVAR) {
+      if (! PyLong_Check(b)) {
+        PyErr_Format(PyExc_TypeError, "Code instruction %zd argument must be"
+                     " an int, not %.100s", i, Py_TYPE(b)->tp_name);
+        goto failure;
+      }
+      long val = PyLong_AsLong(b);
+      if ((val == -1 && PyErr_Occurred()) || val < 0 || val > UINT16_MAX) {
+        PyErr_Clear();
+        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R is"
+                     " outside 0..%u", i, b, (unsigned) UINT16_MAX);
+        goto failure;
+      }
+    }
+
     di++;
   }
 
@@ -2058,11 +2077,11 @@ static int code_emit(
         code[di].u.row = &extra[extra_idx];
       }
       extra_idx++;
+    } else if (style == KOSTYLE_NOARG) {
+      code[di].arg = 0;
     } else {
-      /* COUNT, NOARG, etc: use raw integer from b */
-      if (PyLong_Check(b)) {
-        code[di].arg = (uint16_t) PyLong_AsLong(b);
-      }
+      /* COUNT, PAIR_COUNT, STAR, FASTVAR: collect checked the range */
+      code[di].arg = (uint16_t) PyLong_AsLong(b);
     }
 
     /* Record YIELDS flag for generators */

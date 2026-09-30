@@ -79,4 +79,30 @@ class TestCodeInstructionValidation(unittest.TestCase):
         self.assertIn("instruction 2", str(caught.exception))
 
 
+class TestCountArgumentValidation(unittest.TestCase):
+    """
+    A count-style argument is an int in the 16-bit range; anything else
+    is refused instead of truncated or ignored
+    """
+
+    def test_count_over_16_bits_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CONST, 1], [OpCode.RETURN, 65536]])
+        self.assertIn("instruction 1", str(caught.exception))
+
+    def test_negative_count_rejected(self):
+        with self.assertRaises(ValueError):
+            make([[OpCode.CONST, 1], [OpCode.RETURN, -1]])
+
+    def test_non_int_count_rejected(self):
+        with self.assertRaises(TypeError):
+            make([[OpCode.CONST, 1], [OpCode.RETURN, "1"]])
+        with self.assertRaises(TypeError):
+            make([[OpCode.CONST, 1], [OpCode.RETURN, None]])
+
+    def test_count_at_16_bit_limit_builds(self):
+        code = make([[OpCode.CONST, 1], [OpCode.POP, 65535]])
+        self.assertIsInstance(code, Code)
+
+
 # The end.
