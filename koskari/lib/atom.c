@@ -55,13 +55,27 @@ static PyObject *atom_new(
     PyErr_SetString(PyExc_TypeError, "interned atom requires a name");
     return NULL;
 
-  } else if (! PyUnicode_CheckExact(name)) {
-    name = PyObject_Str(name);
-    if (! name)
-      return NULL;
+  } else if (PyUnicode_CheckExact(name)) {
+    Py_INCREF(name);
 
   } else {
-    Py_INCREF(name);
+    /* the name an atom keeps is a true str: it keys the intern table
+       and answers the atom's str methods, so a str subclass, or a
+       __str__ that hands one back, is copied to a plain str */
+    if (! PyUnicode_Check(name)) {
+      name = PyObject_Str(name);
+      if (! name)
+        return NULL;
+    } else {
+      Py_INCREF(name);
+    }
+    if (! PyUnicode_CheckExact(name)) {
+      PyObject *plain = PyUnicode_FromObject(name);
+      Py_DECREF(name);
+      if (! plain)
+        return NULL;
+      name = plain;
+    }
   }
 
   // name is ref'd
@@ -123,10 +137,9 @@ static int atom_rewrap(PyObject *vals, unaryfunc conv) {
     if (! tmp)
       return -1;
 
-    if (PyList_SetItem(vals, index, tmp)) {
-      Py_DECREF(tmp);
+    /* a failed SetItem has released tmp itself */
+    if (PyList_SetItem(vals, index, tmp))
       return -1;
-    }
   }
   return 0;
 }
