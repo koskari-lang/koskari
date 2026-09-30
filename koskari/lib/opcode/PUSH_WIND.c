@@ -75,6 +75,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosOpResult wr = kos_dyn_extent_enter(es, (KosDynNode *) wind);
   if (wr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
@@ -83,10 +84,20 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (wr.kind == KOS_RES_AWAIT)
     return wr;
 
-  /* NORMAL: no thunk, or it ran in place. REPROLOGUE: the thunk's frame
-     is current; continue from es->pc runs it, and its return settles
-     the wind. */
-  RESULT_CONTINUE(es);
+  /* REPROLOGUE means one of two things. Either the thunk is a Koskari
+     function whose frame is now the current frame: continue from es->pc
+     runs it, and its return settles the wind. Or the call left work for
+     the trampoline (a transfer goal armed by the callee): return so the
+     trampoline drains it first. Continuing in that second case would
+     run the wind body before the transfer it was meant to make. */
+  if (wr.kind == KOS_RES_REPROLOGUE) {
+    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
+      RESULT_CONTINUE(es);
+    return wr;
+  }
+
+  /* NORMAL: no thunk, or it ran in place */
+  RESULT_NEXT(es);
 }
 
 
