@@ -37,14 +37,20 @@ KOS_OP_HANDLER(UNPACK_FAST) {
   if (unlikely(! seq))
     RESULT_RAISE();
 
-  if (unlikely(
-      kos_ns_fast_store(ns, idx0, PySequence_Fast_GET_ITEM(seq, 0)) ||
-      kos_ns_fast_store(ns, idx1, PySequence_Fast_GET_ITEM(seq, 1)))) {
-    Py_DECREF(seq);
-    RESULT_RAISE();
-  }
-
+  /* own both items before either store: the first store releases the
+     slot's old value, and its finalizer may change the list */
+  PyObject *val0 = PySequence_Fast_GET_ITEM(seq, 0);
+  PyObject *val1 = PySequence_Fast_GET_ITEM(seq, 1);
+  Py_INCREF(val0);
+  Py_INCREF(val1);
   Py_DECREF(seq);
+
+  int res = kos_ns_fast_store(ns, idx0, val0) || kos_ns_fast_store(ns, idx1, val1);
+  Py_DECREF(val0);
+  Py_DECREF(val1);
+  if (unlikely(res))
+    RESULT_RAISE();
+
   RESULT_NEXT(es);
 }
 

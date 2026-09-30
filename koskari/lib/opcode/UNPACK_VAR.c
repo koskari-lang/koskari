@@ -28,14 +28,20 @@ KOS_OP_HANDLER(UNPACK_VAR) {
   if (unlikely(! seq))
     RESULT_RAISE();
 
-  if (unlikely(
-      frame_ns_store(es, name0, PySequence_Fast_GET_ITEM(seq, 0)) ||
-      frame_ns_store(es, name1, PySequence_Fast_GET_ITEM(seq, 1)))) {
-    Py_DECREF(seq);
-    RESULT_RAISE();
-  }
-
+  /* own both items before either store: the first store releases the
+     name's old value, and its finalizer may change the list */
+  PyObject *val0 = PySequence_Fast_GET_ITEM(seq, 0);
+  PyObject *val1 = PySequence_Fast_GET_ITEM(seq, 1);
+  Py_INCREF(val0);
+  Py_INCREF(val1);
   Py_DECREF(seq);
+
+  int res = frame_ns_store(es, name0, val0) || frame_ns_store(es, name1, val1);
+  Py_DECREF(val0);
+  Py_DECREF(val1);
+  if (unlikely(res))
+    RESULT_RAISE();
+
   RESULT_NEXT(es);
 }
 
