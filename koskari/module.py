@@ -348,10 +348,16 @@ async def load_module_source_async(
 
     with load_facets(module, filename, seal=seal, detach=detach) \
             as (compiler, reader):
+        # the switch is this load's: a reader retained for a session
+        # afterward reads as it did before
+        prior = reader.layout_enabled
         if not layout:
             reader.set_layout_modes(layout_enabled=False)
-        await run_codes_async(
-            module, compile_top_level(compiler, reader, source_stream))
+        try:
+            await run_codes_async(
+                module, compile_top_level(compiler, reader, source_stream))
+        finally:
+            reader.set_layout_modes(layout_enabled=prior)
 
 
 async def load_module_kio_async(module):
