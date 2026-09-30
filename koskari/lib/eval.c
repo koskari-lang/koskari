@@ -74,7 +74,6 @@
 
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
-static PyObject *str_send = NULL;
 static PyObject *str_throw = NULL;
 static PyObject *str_asend = NULL;
 static PyObject *str_athrow = NULL;
@@ -3760,7 +3759,6 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_exit, "__exit__");
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
-  STR_CONST(str_send, "send");
   STR_CONST(str_target, "target");
   STR_CONST(str_throw, "throw");
 
@@ -3826,7 +3824,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_exit);
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
-  Py_CLEAR(str_send);
   Py_CLEAR(str_target);
   Py_CLEAR(str_throw);
 

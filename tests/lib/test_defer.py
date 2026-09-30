@@ -512,18 +512,16 @@ class TestDeferCoroutineProtocol(unittest.IsolatedAsyncioTestCase):
 
     def test_send_non_none_to_sendless_iterator(self):
         """
-        Non-None send to a send-less __await__ iterator is a TypeError
+        Non-None send to a send-less __await__ iterator is CPython's
+        AttributeError for the missing send, raised at the delegation
+        point, so it ends the delegation and spends the handle
         """
 
         d = lib.defer(lambda: SendlessAwaitable(["a"]))
         self.assertEqual(d.send(None), "a")
         self.assertIn("iterating", repr(d))
-        with self.assertRaisesRegex(TypeError, "plain iterator"):
+        with self.assertRaises(AttributeError):
             d.send("x")
-        # the caller mistake does not consume the handle
-        self.assertIn("iterating", repr(d))
-        with self.assertRaises(StopIteration):
-            d.send(None)
         self.assertIn("spent", repr(d))
 
 

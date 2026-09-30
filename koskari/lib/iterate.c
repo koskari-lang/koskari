@@ -29,7 +29,6 @@
 #include "lib.h"
 
 
-static PyObject *iterate_str_send = NULL;
 static PyObject *iterate_str_name = NULL;
 
 
@@ -368,7 +367,6 @@ static PyObject *stepper_finish_yield(PyObject *val) {
 */
 static int stepper_resume_await(
     KosIterStepper *st,
-    KosIterSlots *islots,
     PyObject *send_val,
     PyObject **still,
     PyObject **hsend,
@@ -385,44 +383,33 @@ static int stepper_resume_await(
     return 0;
   }
 
-  step = PyObject_CallMethodObjArgs(
-      it, iterate_str_send, send_val ? send_val : Py_None, NULL);
-  Py_XDECREF(send_val);
-
-  if (step) {
-    *still = step;
-    return 1;
-  }
-
-  if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
-    /* the awaitable failed: deliver the exception into the provider
-       at the await point (raise-at-await shape) */
-    PyObject *tb = NULL;
-    PyErr_Fetch(httyp, htexc, &tb);
-    PyErr_NormalizeException(httyp, htexc, &tb);
-    if (*htexc && tb)
-      PyException_SetTraceback(*htexc, tb);
-    Py_XDECREF(tb);
-    Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
-    st->awaiting = 0;
-    return 0;
-  }
-
   {
-    PyObject *await_result = NULL;
-    if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-      islots->ki_finish(st->provider, 0);
+    PySendResult r = kos_iter_send(it, send_val ? send_val : Py_None, &step);
+    Py_XDECREF(send_val);
+
+    if (r == PYGEN_NEXT) {
+      *still = step;
+      return 1;
+    }
+
+    if (r == PYGEN_ERROR) {
+      /* the awaitable failed: deliver the exception into the provider
+         at the await point (raise-at-await shape) */
+      PyObject *tb = NULL;
+      PyErr_Fetch(httyp, htexc, &tb);
+      PyErr_NormalizeException(httyp, htexc, &tb);
+      if (*htexc && tb)
+        PyException_SetTraceback(*htexc, tb);
+      Py_XDECREF(tb);
+      Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
       st->awaiting = 0;
-      return -1;
+      return 0;
     }
-    if (! await_result) {
-      await_result = Py_None;
-      Py_INCREF(await_result);
-    }
+
+    /* PYGEN_RETURN: the completion, owned, never NULL */
     Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
     st->awaiting = 0;
-    *hsend = await_result;
-    PyErr_Clear();
+    *hsend = step;
     return 0;
   }
 }
@@ -521,8 +508,8 @@ static PyObject *stepper_drive(
        the eval throw ingress. */
     if (! throw_typ) {
       PyObject *still = NULL;
-      int rr = stepper_resume_await(st, islots, send_val, &still,
-                                    &hsend, &httyp, &htexc);
+      int rr = stepper_resume_await(
+          st, send_val, &still, &hsend, &httyp, &htexc);
       send_val = NULL;
       if (rr > 0) {
         Py_XDECREF(throw_exc);
@@ -1430,7 +1417,6 @@ int koskari_iterate_init(PyObject *mod) {
 
   (void) mod;
 
-  STR_CONST(iterate_str_send, "send");
   STR_CONST(iterate_str_name, "__name__");
 
   if (PyType_Ready(&KosIterStepperType) ||
@@ -1443,7 +1429,6 @@ int koskari_iterate_init(PyObject *mod) {
 
 int koskari_iterate_clear(PyObject *mod) {
 
-  Py_CLEAR(iterate_str_send);
   Py_CLEAR(iterate_str_name);
 
   (void) mod;

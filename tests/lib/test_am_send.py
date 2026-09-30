@@ -163,8 +163,65 @@ class TestAmSend(unittest.IsolatedAsyncioTestCase):
 
         d = lib.defer(Aw)
         self.assertEqual(d.send(None), "a")
-        with self.assertRaises(TypeError):
+        with self.assertRaises(AttributeError):
             d.send("x")
+
+    async def test_none_send_takes_next_over_a_send_method(self):
+        """
+        A None send on an iterator that has both __next__ and send is a
+        step of the iteration protocol, as PyIter_Send makes it
+        """
+
+        calls = []
+
+        class Both:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                calls.append("next")
+                raise StopIteration("done")
+
+            def send(self, value):
+                calls.append(("send", value))
+                raise StopIteration("done")
+
+        class Aw:
+            def __await__(self):
+                return Both()
+
+        value, yielded = drive_await(lib.defer(Aw))
+        self.assertEqual((value, yielded), ("done", []))
+        self.assertEqual(calls, ["next"])
+
+    async def test_provider_await_resumes_a_sendless_iterator(self):
+        """
+        A provider's function awaiting an object whose __await__ is a
+        plain iterator resumes it with next after its yield settles
+        """
+
+        loop = asyncio.get_running_loop()
+
+        def make(x):
+            fut = loop.create_future()
+            fut.set_result(None)
+            fut._asyncio_future_blocking = True
+
+            class Aw:
+                def __await__(self):
+                    return iter([fut])
+
+            return Aw()
+
+        mod = new_module("provider_await")
+        vars(mod)["__file__"] = "<provider_await>"
+        await load_module_source_async(
+            mod,
+            "(define run (lambda [mk]"
+            " (map (lambda [x] (begin (await (mk x)) x)) #[1 2])))",
+            layout=False)
+        provider = await vars(mod)["run"](make)
+        self.assertEqual([v async for v in provider], [1, 2])
 
     async def test_koskari_await_of_a_sendless_iterator(self):
         """

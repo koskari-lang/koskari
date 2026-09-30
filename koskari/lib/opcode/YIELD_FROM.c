@@ -379,15 +379,16 @@ static KosOpResult yield_from_drive_sync_gen(
   }
 
   {
-    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_send, send_val, NULL);
-    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      Py_XDECREF(res);
-      yield_from_discard_stop_iteration_value();
+    PyObject *res = NULL;
+    PySendResult r = kos_iter_send(delegate, send_val, &res);
+
+    if (r == PYGEN_NEXT)
+      return yield_from_yield_value(es, yf, res);
+    if (r == PYGEN_RETURN) {
+      /* the delegation ends; its value is discarded, as it was */
+      Py_DECREF(res);
       return yield_from_finish(es, yf);
     }
-
-    if (res)
-      return yield_from_yield_value(es, yf, res);
     return EVAL_RAISE();
   }
 }
