@@ -20,6 +20,7 @@ of temporary .ki files.
 from textwrap import dedent
 
 import importlib
+import importlib.metadata
 import importlib.util
 import os
 import sys
@@ -50,6 +51,19 @@ class TestInstallUninstall(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(is_installed())
         install()
         self.assertTrue(is_installed())
+
+    async def test_install_does_not_add_distributions(self):
+        """
+        The finder finds modules, not distribution metadata: installing
+        it leaves importlib.metadata's view of the environment as it was
+        """
+
+        before = sorted(
+            d.metadata['Name'] for d in importlib.metadata.distributions())
+        install()
+        after = sorted(
+            d.metadata['Name'] for d in importlib.metadata.distributions())
+        self.assertEqual(before, after)
 
     async def test_install_at_front_of_meta_path(self):
         install()

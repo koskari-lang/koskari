@@ -54,6 +54,11 @@ class KoskariPathFinder(PathFinder):
     finder instances do not pollute Python's own importer cache.
     """
 
+    # importlib.metadata asks every meta path finder for distributions
+    # and skips a None; the inherited PathFinder scan would report every
+    # distribution a second time on top of Python's own finder
+    find_distributions = None
+
     @classmethod
     def invalidate_caches(cls):
         for finder in path_importer_cache.values():
