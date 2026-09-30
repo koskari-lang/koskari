@@ -29,11 +29,17 @@ static int match_form(
       return gate;
   }
 
+  /* The gate accepted the element, so a failed build is a real error
+     from reading a Python sequence or walking a looping spine, and it
+     propagates. An improper pair spine is a shape: no match. */
   KosMatchSubject sub;
-  if (subject_from_any(elem, &sub)) {
-    /* Not a sequence-like subject — match fails (no exception). */
-    PyErr_Clear();
-    return 0;
+  if (KosPair_Check(peeled) || KosNilP(peeled)) {
+    int r = KosMatchSubject_FromKosPair(peeled, &sub);
+
+    if (r)
+      return r > 0 ? 0 : -1;
+  } else if (KosMatchSubject_FromPySequence(peeled, &sub) < 0) {
+    return -1;
   }
 
   /* Save engine subject and replace with sub-subject for the inner

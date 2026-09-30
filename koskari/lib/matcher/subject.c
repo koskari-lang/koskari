@@ -212,11 +212,10 @@ int KosMatchSubject_FromKosPair(
     }
   }
 
-  if (! KosNilP(cursor)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "FromKosPair requires a proper list (nil-terminated)");
-    return -1;
-  }
+  /* an improper spine is a shape, not a failure: the caller decides
+     whether that is a no-match or a refusal */
+  if (! KosNilP(cursor))
+    return 1;
 
   PyObject **cars = NULL;
   PyObject **tails = NULL;
@@ -274,8 +273,16 @@ static int subject_from_any(PyObject *value, KosMatchSubject *out) {
      fail to consume the trailing nil. Peel Datum layers so KosPair lists
      use the proper-list spine adapter. */
   value = matcher_peel_datum(value);
-  if (KosPair_Check(value) || KosNilP(value))
-    return KosMatchSubject_FromKosPair(value, out);
+  if (KosPair_Check(value) || KosNilP(value)) {
+    int r = KosMatchSubject_FromKosPair(value, out);
+
+    if (r > 0) {
+      PyErr_SetString(PyExc_TypeError,
+                      "match subject must be a proper list (nil-terminated)");
+      return -1;
+    }
+    return r;
+  }
   return KosMatchSubject_FromPySequence(value, out);
 }
 

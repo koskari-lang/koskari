@@ -358,8 +358,10 @@ int KosMatchSubject_FromPySequence(
    Initialize a subject from a KosPair root (or KosNil for the empty
    subject). Walks the cons spine once at construction time and caches
    per-position car and pair pointers so length/get/tail are O(1).
-   Returns 0 on success; -1 with a Python exception on failure
-   (improper list, recursive list, etc.).
+   Returns 0 on success; 1 with no exception when the spine is not a
+   proper list (improper, non-nil terminated), which is a shape the
+   caller judges; -1 with a Python exception on failure (a looping
+   spine, allocation).
  */
 int KosMatchSubject_FromKosPair(
     PyObject *pair_or_nil,

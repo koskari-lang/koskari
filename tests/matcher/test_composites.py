@@ -19,6 +19,7 @@ asserted directly
 """
 
 
+import collections.abc
 import unittest
 
 import pytest
@@ -26,8 +27,8 @@ import pytest
 from koskari.lib import (
     Datum, cdr, cons, keyword, nil, setcar, setcdr, symbol)
 from koskari.matcher import (
-    BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORMALS, LITERAL, MATCH,
-    PREDICATE,
+    BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORM, FORMALS, LITERAL,
+    MATCH, PREDICATE,
     REST, TYPE, USING, VALUE, DatumFrame,
     MatchCompiler, Matcher, MatchResult, make_matcher)
 from koskari.types import build_proper
@@ -979,6 +980,41 @@ class TestCyclicPairSubject(unittest.TestCase):
         m = make_matcher(MATCH(CAPTURE("a")))
         with self.assertRaises(ValueError):
             m.match(subject)
+
+
+class BrokenSequence(collections.abc.Sequence):
+    """
+    A sequence whose reads raise
+    """
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, i):
+        raise RuntimeError("read failed")
+
+
+class TestFormSubjectErrors(unittest.TestCase):
+    """
+    FORM descends into an element the sequence gate accepted. A read
+    that raises while the sub-subject is built propagates; an improper
+    pair spine is a plain no-match
+    """
+
+    def test_sequence_whose_reads_raise_propagates(self):
+        m = make_matcher(MATCH(FORM(MATCH(CAPTURE("a")))))
+        with self.assertRaises(RuntimeError):
+            m.match((BrokenSequence(),))
+
+    def test_improper_pair_is_a_no_match(self):
+        m = make_matcher(MATCH(FORM(MATCH(CAPTURE("a"), CAPTURE("b")))))
+        self.assertFalse(m.match((cons(1, 2),)).matched)
+        self.assertTrue(m.match((cons(1, 2, nil),)).matched)
+
+    def test_improper_root_subject_is_refused(self):
+        m = make_matcher(MATCH(CAPTURE("a")))
+        with self.assertRaises(TypeError):
+            m.match(cons(1, 2))
 
 
 class TestPairSubjectMutation(unittest.TestCase):
