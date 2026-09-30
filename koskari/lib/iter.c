@@ -355,9 +355,7 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen) {
 
   PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
   if (it) {
-    PyObject *r = PyObject_CallMethod(it, "close", NULL);
-    Py_XDECREF(r);
-    PyErr_Clear();
+    kos_iter_close(it);
     Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
   }
 

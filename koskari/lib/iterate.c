@@ -224,9 +224,7 @@ static void stepper_abandon_drive(KosIterStepper *st) {
   {
     PyObject *it = KosContext_PY_AWAIT_ITER(st->host);
     if (it) {
-      PyObject *r = PyObject_CallMethod(it, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
+      kos_iter_close(it);
       Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
     }
   }

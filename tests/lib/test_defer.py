@@ -539,6 +539,64 @@ class TestDeferCoroutineProtocol(unittest.IsolatedAsyncioTestCase):
             d.throw(ValueError)
 
 
+    def test_throw_into_delegate_with_one_argument_throw(self):
+        """
+        A delegate whose throw takes the modern single argument is
+        thrown into with the exception instance alone
+        """
+
+        seen = []
+
+        class It:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                return "y"
+
+            def throw(self, exc):
+                seen.append(exc)
+                raise StopIteration("handled")
+
+        class Aw:
+            def __await__(self):
+                return It()
+
+        d = lib.defer(Aw)
+        self.assertEqual(d.send(None), "y")
+        with self.assertRaises(StopIteration) as caught:
+            d.throw(ValueError, ValueError("boom"))
+        self.assertEqual(caught.exception.value, "handled")
+        self.assertIsInstance(seen[0], ValueError)
+        self.assertIn("spent", repr(d))
+
+    def test_generator_exit_closes_a_throwless_delegate(self):
+        """
+        GeneratorExit thrown into a delegate with close but no throw
+        closes it first, an error from that close propagating, as the
+        yield-from rule has it
+        """
+
+        class It:
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                return "y"
+
+            def close(self):
+                raise KeyError("close failed")
+
+        class Aw:
+            def __await__(self):
+                return It()
+
+        d = lib.defer(Aw)
+        self.assertEqual(d.send(None), "y")
+        with self.assertRaises(KeyError):
+            d.throw(GeneratorExit)
+        self.assertIn("spent", repr(d))
+
     def test_throw_into_delegating_coroutine(self):
         """
         throw on a DELEGATING defer forwards into the inner coroutine

@@ -3268,9 +3268,6 @@ int kos_dyn_finish_inplace_pop_return(
 int koskari_dynchain_init(PyObject *mod) {
   (void) mod;
 
-  if (kos_dynyieldfrom_strings_init() < 0)
-    return -1;
-
   Py_CLEAR(_param_sentinel_unset);
   _param_sentinel_unset = Py_BuildValue("(s)", "<param was unset>");
   if (! _param_sentinel_unset)
@@ -3286,7 +3283,6 @@ int koskari_dynchain_init(PyObject *mod) {
 int koskari_dynchain_clear(PyObject *mod) {
   (void) mod;
 
-  kos_dynyieldfrom_strings_clear();
   Py_CLEAR(_param_sentinel_unset);
 
   while (dyn_freelist) {

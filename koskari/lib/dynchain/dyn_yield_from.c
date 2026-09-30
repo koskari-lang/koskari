@@ -2,24 +2,6 @@
 /* === KosDynYieldFrom implementation === */
 
 
-static PyObject *kos_dynyieldfrom_str_close = NULL;
-
-
-static int kos_dynyieldfrom_strings_init(void) {
-
-  STR_CONST(kos_dynyieldfrom_str_close, "close");
-  if (! kos_dynyieldfrom_str_close)
-    return -1;
-  return 0;
-}
-
-
-static void kos_dynyieldfrom_strings_clear(void) {
-
-  Py_CLEAR(kos_dynyieldfrom_str_close);
-}
-
-
 /**
    YIELD_FROM node: delegate iterator, pending action for close/send. Callers:
    kos_dyn_push_yield_from.
@@ -282,13 +264,9 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
   case KOS_YF_SYNC_ITER:
     break;
 
-  case KOS_YF_SYNC_GEN: {
-    PyObject *res = PyObject_CallMethodObjArgs(
-        delegate, kos_dynyieldfrom_str_close, NULL);
-    Py_XDECREF(res);
-    PyErr_Clear();
+  case KOS_YF_SYNC_GEN:
+    kos_iter_close(delegate);
     break;
-  }
 
   case KOS_YF_PY_ASYNC_ITER:
   case KOS_YF_PY_ASYNC_GEN:

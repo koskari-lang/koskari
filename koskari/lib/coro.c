@@ -29,7 +29,6 @@
 #include "debug.h"
 
 
-static PyObject *coro_str_throw = NULL;
 static PyObject *coro_str_close = NULL;
 
 
@@ -577,23 +576,17 @@ static PyObject *coroutine_throw_pair(
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
-      PyObject *result = PyObject_CallMethodObjArgs(
-          await_iter, coro_str_throw, exc, NULL);
+      PyObject *await_result = NULL;
+      PySendResult step = kos_iter_throw(await_iter, exc, &await_result);
       coro->in_send = 0;
       Py_DECREF(await_iter);
 
-      if (result) {
-        return result;
+      if (step == PYGEN_NEXT) {
+        return await_result;
       }
 
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      if (step == PYGEN_RETURN) {
         /* await_result is uniformly owned; PythonResumeSet steals it. */
-        PyObject *await_result = NULL;
-        PyGen_FetchStopIterationValue(&await_result);
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
         KosEvalState_PythonAwaitClearIter(&coro_es);
         coro->state = KOS_CORO_RUNNING;
         KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);
@@ -659,12 +652,9 @@ static PyObject *coroutine_close(PyObject *self) {
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
-      PyObject *result = PyObject_CallMethodObjArgs(
-          await_iter, coro_str_close, NULL);
+      kos_iter_close(await_iter);
       coro->in_send = 0;
       Py_DECREF(await_iter);
-      Py_XDECREF(result);
-      PyErr_Clear();
       KosEvalState_PythonAwaitClearIter(&coro_es);
     }
   }
@@ -841,7 +831,6 @@ int koskari_coro_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(coro_str_throw, "throw");
   STR_CONST(coro_str_close, "close");
 
   if (PyType_Ready(&KosCoroutineType))
@@ -857,7 +846,6 @@ int koskari_coro_init(PyObject *mod) {
 
 int koskari_coro_clear(PyObject *mod) {
 
-  Py_CLEAR(coro_str_throw);
   Py_CLEAR(coro_str_close);
 
   (void) mod;

@@ -363,14 +363,15 @@ static KosOpResult yield_from_drive_sync_gen(
                       "yield-from throw with no exception");
       return EVAL_RAISE();
     }
-    PyObject *res = PyObject_CallMethodObjArgs(delegate, str_throw, exc,
-                                               NULL);
-    if (res) {
+    PyObject *res = NULL;
+    PySendResult r = kos_iter_throw(delegate, exc, &res);
+
+    if (r == PYGEN_NEXT) {
       yield_from_clear_pending(yf);
       return yield_from_yield_value(es, yf, res);
     }
-    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-      yield_from_discard_stop_iteration_value();
+    if (r == PYGEN_RETURN) {
+      Py_DECREF(res);
       return yield_from_finish(es, yf);
     }
     /* The delegate let it propagate, or raised in its place: it lands

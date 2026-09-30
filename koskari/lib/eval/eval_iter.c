@@ -82,8 +82,7 @@ void kos_iter_close(PyObject *iter) {
       PyErr_Clear();
 
     } else if (Py_TYPE(iter)->tp_iternext) {
-      PyObject *r = PyObject_CallMethod(iter, "close", NULL);
-      Py_XDECREF(r);
+      (void) kos_iter_close_or_raise(iter);
       PyErr_Clear();
 
     } else {
@@ -92,14 +91,14 @@ void kos_iter_close(PyObject *iter) {
         PyObject *it = kos_get_awaitable(aw);
         Py_DECREF(aw);
         if (it) {
-          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
-          if (step) {
+          PyObject *step = NULL;
+          if (kos_iter_send(it, Py_None, &step) == PYGEN_NEXT) {
             /* Suspend attempt during close; cannot honor further --
                close the iterator so its GeneratorExit cleanup runs. */
             Py_DECREF(step);
-            PyObject *r = PyObject_CallMethod(it, "close", NULL);
-            Py_XDECREF(r);
+            (void) kos_iter_close_or_raise(it);
           }
+          Py_XDECREF(step);
           Py_DECREF(it);
         }
       }

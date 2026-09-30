@@ -34,8 +34,6 @@
 
 
 /* Method-name constants for delegation; init/cleared in unit lifecycle */
-static PyObject *str_throw = NULL;
-static PyObject *str_close = NULL;
 
 
 /* === helpers === */
@@ -436,26 +434,6 @@ static void defer_spend(KosDefer *self) {
 
 
 /**
-   Method lookup distinguishing lookup-AttributeError (NULL, *err=0,
-   error cleared) from a raising descriptor (NULL, *err=1, error left
-   set), so an AttributeError raised inside a delegated body is never
-   mistaken for a missing method.
-*/
-static PyObject *defer_lookup(PyObject *obj, PyObject *name, int *err) {
-  *err = 0;
-  PyObject *meth = PyObject_GetAttr(obj, name);
-  if (! meth) {
-    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
-      PyErr_Clear();
-    } else {
-      *err = 1;
-    }
-  }
-  return meth;
-}
-
-
-/**
    Report a completion to a caller on the iterator protocol: raise
    StopIteration(value) as a real instance, since a bare
    PyErr_SetObject(PyExc_StopIteration, value) would tuple-splat the
@@ -554,9 +532,10 @@ static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
 
 
 /**
-   Forward a throw into the ITERATING iterator with yield-from rules.
-   val and tb may be NULL. Returns a yielded value (stay ITERATING), or
-   NULL with the handle SPENT and an exception set.
+   Forward a throw into the ITERATING iterator by the yield-from rule
+   kos_iter_throw applies. val and tb may be NULL. Returns a yielded
+   value (stay ITERATING), or NULL with the handle SPENT and
+   StopIteration (carrying the return value) or the raised error set.
 */
 static PyObject *defer_forward_throw(
     KosDefer *self,
@@ -564,43 +543,24 @@ static PyObject *defer_forward_throw(
     PyObject *val,
     PyObject *tb) {
 
-  PyObject *iter = self->u.iter;
-  int err = 0;
+  PyObject *cls = NULL, *exc = NULL, *result = NULL;
+  PyObject *iter;
+  PySendResult r;
 
-  PyObject *meth = defer_lookup(iter, str_throw, &err);
-  if (meth) {
-    /* CallFunctionObjArgs truncates at the first NULL, so a single-arg
-       throw forwards single-arg (avoids 3.12's three-arg deprecation) */
-    PyObject *result = PyObject_CallFunctionObjArgs(meth, typ, val, tb, NULL);
-    Py_DECREF(meth);
-    if (result)
-      return result;
-    defer_spend(self);
-    return NULL;
-  }
-
-  if (err)
+  if (KosExc_NormalizeThrow(typ, val, tb, &cls, &exc) < 0)
     return NULL;
 
-  /* No throw on the delegate: close it if the exception is
-     GeneratorExit, then raise the exception here (yield-from rules). */
-  if (PyErr_GivenExceptionMatches(typ, PyExc_GeneratorExit)) {
-    PyObject *close_meth = defer_lookup(iter, str_close, &err);
-    if (err)
-      return NULL;
-    if (close_meth) {
-      PyObject *res = PyObject_CallNoArgs(close_meth);
-      Py_DECREF(close_meth);
-      if (! res) {
-        defer_spend(self);
-        return NULL;
-      }
-      Py_DECREF(res);
-    }
-  }
+  iter = Py_NewRef(self->u.iter);  /* see defer_forward_step */
+  r = kos_iter_throw(iter, exc, &result);
+  Py_DECREF(iter);
+  Py_DECREF(cls);
+  Py_DECREF(exc);
 
+  if (r == PYGEN_NEXT)
+    return result;
   defer_spend(self);
-  defer_raise_thrown(typ, val, tb);
+  if (r == PYGEN_RETURN)
+    return defer_raise_stop(result);
   return NULL;
 }
 
@@ -754,21 +714,14 @@ static PyObject *defer_close(PyObject *self, PyObject *ignored) {
   /* Delegate close when the payload supports it; the delegate raises
      the "ignored GeneratorExit" RuntimeError itself, and errors from
      it propagate. The handle is consumed either way. */
-  int err = 0;
-  PyObject *meth = defer_lookup(target, str_close, &err);
-  if (! meth) {
+  {
+    PyObject *held = Py_NewRef(target);
+    int r = kos_iter_close_or_raise(held);
+    Py_DECREF(held);
     defer_spend(d);
-    if (err)
+    if (r < 0)
       return NULL;
-    Py_RETURN_NONE;
   }
-
-  PyObject *res = PyObject_CallNoArgs(meth);
-  Py_DECREF(meth);
-  defer_spend(d);
-  if (! res)
-    return NULL;
-  Py_DECREF(res);
   Py_RETURN_NONE;
 }
 
@@ -857,8 +810,6 @@ int koskari_defer_init(PyObject *mod) {
   if (PyType_Ready(&KosDeferType) < 0)
     return -1;
 
-  STR_CONST(str_throw, "throw");
-  STR_CONST(str_close, "close");
 
   if (PyDict_SetItemString(dict, "defer", (PyObject *) &KosDeferType) < 0)
     return -1;
@@ -870,8 +821,6 @@ int koskari_defer_init(PyObject *mod) {
 int koskari_defer_clear(PyObject *mod) {
   (void) mod;
 
-  Py_CLEAR(str_throw);
-  Py_CLEAR(str_close);
 
   return 0;
 }

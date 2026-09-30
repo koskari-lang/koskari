@@ -290,6 +290,22 @@ PyObject *kos_get_awaitable(PyObject *o);
    the step suspended; or NULL with both NULL and an exception set. */
 PyObject *kos_await_first_step(PyObject *o, PyObject **iter, PyObject **yielded);
 
+/* Throw exc, an exception instance, into a delegated iterator by the
+   yield-from rule: a GeneratorExit closes the iterator first, an error
+   from that close propagating, and is then raised here; any other
+   exception goes to the iterator's throw when it has one, in the
+   one-argument form, and is raised here when it has none. The outcome
+   is the send protocol's: PYGEN_NEXT with *result the yield,
+   PYGEN_RETURN with *result the completion (None when it carried
+   none), PYGEN_ERROR with *result NULL and the exception set. */
+PySendResult kos_iter_throw(PyObject *iter, PyObject *exc, PyObject **result);
+
+/* Close a delegated iterator: its close when it has one, an error from
+   it propagating. Returns 0, or -1 with the exception set. The fenced
+   teardown form that also covers providers and async iterators is
+   kos_iter_close in eval.h. */
+int kos_iter_close_or_raise(PyObject *iter);
+
 
 /**
    Extend list with items from iterable.  Returns 0 on success, -1 on error.

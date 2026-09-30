@@ -74,7 +74,6 @@
 
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
-static PyObject *str_throw = NULL;
 static PyObject *str_asend = NULL;
 static PyObject *str_athrow = NULL;
 static PyObject *str_enter = NULL;
@@ -404,49 +403,20 @@ static KosOpResult revive_await(
       PyObject *typ = typ_eff;
       PyObject *val = throw_exc;
       PyObject *tb = Py_None;
-      PyObject *res;
-      PyObject *throw_meth;
+      PyObject *res = NULL;
+      PySendResult step;
       Py_INCREF(typ);
       Py_INCREF(val);
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
-      throw_meth = PyObject_GetAttr(KosEvalState_PythonAwaitIter(es), str_throw);
-      if (! throw_meth || ! PyCallable_Check(throw_meth)) {
-        if (! throw_meth && PyErr_ExceptionMatches(PyExc_AttributeError)) {
-          PyErr_Clear();
-          PyErr_SetObject(typ_eff, throw_exc);
-        } else if (throw_meth) {
-          PyErr_Format(PyExc_TypeError,
-                       "%R object attribute throw is not callable",
-                       KosEvalState_PythonAwaitIter(es));
-        }
-        Py_XDECREF(throw_meth);
-        Py_DECREF(typ);
-        Py_DECREF(val);
-        Py_XDECREF(tb);
-        KosEvalState_PythonAwaitClearIter(es);
-        return EVAL_RAISE();
-      }
-      /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
-      res = PyObject_CallOneArg(throw_meth, val);
-      Py_DECREF(throw_meth);
+      step = kos_iter_throw(KosEvalState_PythonAwaitIter(es), val, &res);
       Py_DECREF(typ);
       Py_DECREF(val);
       Py_XDECREF(tb);
-      if (res) {
-        PyErr_Clear();
+      if (step == PYGEN_NEXT)
         return EVAL_AWAIT(res);
-      }
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        PyObject *await_result = NULL;
-        if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          KosEvalState_PythonAwaitClearIter(es);
-          return EVAL_RAISE();
-        }
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
+      if (step == PYGEN_RETURN) {
+        PyObject *await_result = res;
         KosEvalState_PythonAwaitClearIter(es);
         KosEvalState_PythonResumeSet(es, await_result, KOS_RESUME_AWAIT);
         PyErr_Clear();
@@ -3760,7 +3730,6 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
   STR_CONST(str_target, "target");
-  STR_CONST(str_throw, "throw");
 
   if (PyType_Ready(&KosContextType) < 0)
     return -1;
@@ -3825,7 +3794,6 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
   Py_CLEAR(str_target);
-  Py_CLEAR(str_throw);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;
