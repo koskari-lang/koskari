@@ -45,11 +45,18 @@ static void kos_dyngen_dispose_active(KosDynGen *gen) {
 /**
    Clear owner/active; return node to freelist.
 */
+static void kos_dyngen_keepalive_release(KosDynGen *gen);
+
+
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
     return;
 
   kos_dyngen_dispose_active(gen);
+  /* a GEN freed with its frame abandoned on a chain (a close that
+     could not finish) still holds its keepalive; the frame is not
+     live once the GEN is gone, so the owner is released here */
+  kos_dyngen_keepalive_release(gen);
   KosDynGen_OWNER(gen) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }

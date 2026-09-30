@@ -235,16 +235,74 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
 }
 
 
+/**
+   Release the generator's chain and context without driving the body:
+   an unstarted chain is freed through the GEN node, a suspended one is
+   dissociated, and the context is dropped. The close itself belongs
+   to the finalizer, which has already run by the time clear or
+   dealloc reaches here.
+*/
+static void asyncgen_drop_state(KosPyAsyncGen *agen) {
+
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (gen && KosDynGen_ACTIVE(gen) && ! agen->started) {
+    /* never driven: the unstarted frame still carries the GEN's
+       chain-membership reference, so the chain is freed through the
+       GEN node, and the owner's reference after */
+    KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+    KosDynGen_ACTIVE(gen) = NULL;
+    kos_dynchain_free(active, NULL);
+    kos_dyngen_release(gen);
+    agen->gen = NULL;
+  } else if (gen && KosDynGen_ACTIVE(gen)) {
+    asyncgen_dissociate_chain(agen);
+  } else if (gen) {
+    kos_dyngen_release(gen);
+    agen->gen = NULL;
+  }
+
+  Py_CLEAR(agen->ctx);
+}
+
+
+/**
+   Finalizer: a generator dropped while suspended is closed before its
+   state is torn down, the way CPython closes an abandoned async
+   generator, so its finally blocks, with exits and wind after thunks
+   run against its frame as it was. GeneratorExit is thrown at the
+   suspension point through the same drive aclose uses, and whatever
+   comes back is swallowed there. A generator never started has
+   entered nothing, a finished or closed one has nothing left to
+   unwind, and one mid-drive belongs to that drive.
+*/
+static void asyncgen_finalize(PyObject *self) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->in_progress || agen->closed || ! agen->started)
+    return;
+  if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx))
+      && ! (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)))
+    return;
+
+  KosPyAsyncGen_Teardown(agen);
+  agen->closed = 1;
+}
+
+
 static void asyncgen_dealloc(PyObject *self) {
+
+  /* run the finalizer first; it may resurrect the generator, in which
+     case the dealloc is abandoned here and happens on the next drop */
+  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+    return;
 
   PyObject_GC_UnTrack(self);
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  /* demand-path close; exception-fenced, so safe mid-unwind. A live
-     (abandoned mid-await) chain is demand-driven closed first. */
-  KosPyAsyncGen_Teardown(agen);
-
+  asyncgen_drop_state(agen);
   Py_XDECREF(agen->code_name);
 
   Py_TYPE(self)->tp_free(self);
@@ -275,8 +333,7 @@ static int asyncgen_clear(PyObject *self) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   Py_CLEAR(agen->code_name);
-
-  KosPyAsyncGen_Teardown(agen);
+  asyncgen_drop_state(agen);
 
   return 0;
 }
@@ -632,6 +689,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
     .tp_basicsize = sizeof(KosPyAsyncGen),
     .tp_itemsize = 0,
     .tp_dealloc = asyncgen_dealloc,
+    .tp_finalize = asyncgen_finalize,
     .tp_repr = asyncgen_repr,
     .tp_as_async = &asyncgen_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
