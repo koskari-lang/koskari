@@ -109,10 +109,10 @@ symbol mapping key, is an ordinary binding resolved from the enclosing
 scope at match time. Closure-captured and local names work as they
 would in the body.
 
-### Callables run on the demand path
+### Callables are called synchronously
 
-Predicates and extractors are called synchronously through the demand
-mechanism, so a plain Koskari `define` works without wrapping:
+A predicate or extractor is an ordinary callable, and a plain Koskari
+`define` works without wrapping:
 
 ```koskari
 define splitext [name]:
@@ -123,9 +123,11 @@ match path:
     (compile-source base)
 ```
 
-A callable that suspends raises `KoskariSyncViolation`; a pattern
-cannot pause. A predicate or extractor that raises propagates the error
-rather than counting as a no-match.
+The call is synchronous in the current release: a predicate or
+extractor that suspends, an `async` function that awaits inside a
+`match`, raises `KoskariSyncViolation`. Keep awaiting work in the arm
+body, or resolve it before the `match`. A predicate or extractor that
+raises propagates the error rather than counting as a no-match.
 
 ## Guards
 

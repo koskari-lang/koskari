@@ -205,9 +205,8 @@ Deferred (stretch) to the opcode dispatch group in
 `KOS_MATCH_TEST_PREDICATE` (`matcher.c:1376-1384`) ->
 `matcher_call_extern` -> `Koskari_DemandSync` (`matcher/datum.c:485`). A
 Koskari predicate or APP extractor in a runtime `match` nests an eval.
-The comment there ("Matching never enters the evaluator ... koskari
-callables run on a demand eval drive") describes nesting as acceptable
-and is removed with the fix.
+The comment there names it a flattening gap and points at
+[resumable-reads.md](resumable-reads.md) section 8, the match row.
 
 **D11. Composable continuations invoked from a code-less resume frame.**
 Fixed in the working tree; the transform case predates this work. When

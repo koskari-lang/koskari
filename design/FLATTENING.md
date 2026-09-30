@@ -71,7 +71,10 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   `Koskari_DemandSync`, `utils.c`); runtime match predicates and APP
   extractors (`MATCH_CASE` -> `matcher_call_extern` ->
   `Koskari_DemandSync`, `matcher/datum.c`). Tracked as a group in
-  Future.
+  Future. The demand path is forced today. The match row, the walk's
+  position moved off the C stack so the test can wait for the
+  installed call, is section 8 of
+  [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 - **Opcodes that materialise a Koskari generator.** The UNPACK family
   (`KosEvalState_PopUnpackSequence` -> `PySequence_Fast`,
   `eval/eval_state.c`) and the star-call family (`kos_op_call_star` ->
@@ -127,8 +130,10 @@ design for the group.
   `values.c:717/737`, `partial.c:479-508`).
 - **Runtime match predicates and APP extractors** (stretch). The
   `MATCH_CASE` step suspends on the call and resumes the match with the
-  delivered value, which needs the match engine's state held across the
-  call. A match entered from Python keeps the demand core.
+  delivered value, which needs the walk's position held in the engine
+  rather than on the C stack: section 8 of
+  [interpreter/resumable-reads.md](interpreter/resumable-reads.md). A
+  match entered from Python keeps the demand core.
 - **Koskari operators on Koskari dunders** (candidate). `==`, `str`,
   `len`, and the rest reach Koskari dunders through CPython slots and
   nest per call. Dispatching a Koskari dunder directly from the

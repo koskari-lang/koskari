@@ -218,14 +218,18 @@ These lower to native nodes.
 | `LIST(p1, …, key=slot)` | One list element matching `FORM(MATCH(...))` | Optional `CAPTURE(slot, …)` |
 | `CLASS(name, FIELD…)` | Extern-typed object with fields | Via `FIELD` captures |
 | `FIELD(pat)` / `FIELD(name, pat)` | One field | Inner slot |
-| `APP(fn, sub=None)` | Call extern `fn` on the element (demand path), match `sub` against the result in a projected single-element subject; a raising extractor propagates, a genuine async suspension raises `KoskariSyncViolation` | Via `sub` |
+| `APP(fn, sub=None)` | Call extern `fn` on the element, match `sub` against the result in a projected single-element subject; a raising extractor propagates | Via `sub` |
 | `MAP(MAP_ENTRY…)` | One mapping element (dict or `collections.abc.Mapping`); each entry's key must be present with value matching the entry's sub-pattern; extra keys ignored (PEP 634) | Via entry sub-patterns |
 | `MAP_ENTRY(key, sub=None, extern=False)` | One MAP entry; key is a const, or an extern name resolved at match time when `extern` | Via `sub` |
 
-**Callable externs run on the demand path** (`Koskari_DemandSync`): `PREDICATE`
-and `APP` externs may be plain koskari callables with no wrapping; a plain
-Python awaitable result is eagerly stepped, and a genuine async suspension
-raises `KoskariSyncViolation`.
+**Callable externs today run on the demand path** (`Koskari_DemandSync`):
+`PREDICATE` and `APP` externs may be plain koskari callables with no
+wrapping; a plain Python awaitable result is eagerly stepped, and a genuine
+async suspension raises `KoskariSyncViolation`. That is a flattening gap,
+not the design: a Koskari callable runs a nested evaluator per call because
+the walk holds its position on the C stack. The fix, the match row, is
+section 8 of [interpreter/resumable-reads.md](interpreter/resumable-reads.md)
+and the entry in [FLATTENING.md](FLATTENING.md).
 
 ### Ergonomic shorthands (primitives)
 

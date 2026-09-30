@@ -449,11 +449,14 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 
 /**
    Invoke a callable extern (predicate, APP extractor) on one argument
-   through the demand path. Matching never enters the evaluator, so the
-   call is driven synchronously: koskari callables run on a demand eval
-   drive, plain Python awaitable results are eagerly stepped, and a
-   genuine async suspension raises KoskariSyncViolation. Returns a new
-   reference, or NULL with an exception set.
+   on the demand path: a Koskari callable runs a nested evaluator, a
+   plain Python awaitable result is eagerly stepped, and a genuine
+   async suspension raises KoskariSyncViolation. This is a flattening
+   gap, not the design: the match walk holds its position on the C
+   stack, so it cannot yet suspend on the call and resume with the
+   delivered value (design/FLATTENING.md, design/interpreter/
+   resumable-reads.md section 8). Returns a new reference, or NULL
+   with an exception set.
 */
 static PyObject *matcher_call_extern(PyObject *fn, PyObject *arg) {
   PyObject *args = PyTuple_Pack(1, arg);

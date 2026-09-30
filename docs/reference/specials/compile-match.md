@@ -39,7 +39,8 @@ Contracts (details in
 [Match patterns](../../guide/match-patterns.md)): captures are sparse -- an
 unbound optional slot raises `NameError` when read; bindings persist after
 the form; `str` / `bytes` never destructure under sequence patterns;
-pattern callables run on the demand path.
+pattern callables are called synchronously, so one that suspends raises
+`KoskariSyncViolation`.
 
 The head may be written as `match` or `compile/match`; compiler lookup
 resolves `match` to `compile/match`.
