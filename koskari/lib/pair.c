@@ -1267,63 +1267,97 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
 }
 
 
-static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
-  PyObject *pair_id;
-  KosPair *sp;
+/**
+   Walk the cells reachable from pair through cdrs and cell cars and
+   give each a position. With fill unset every cell takes pos (NULL
+   clears). With fill set a cell with no position takes pos and a cell
+   that already has one ends its branch: neither it, its car nor the
+   rest of its spine is touched, so what the reader positioned stays
+   as it was and what a macro built around it is filled in.
 
-  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
-    sp = (KosPair *) pair;
+   The walk is depth-first in the recursion's order but keeps its own
+   stack: at a cell whose car is a cell the rest of the spine is
+   pushed and the car walked first. Depth is bounded by memory, not the
+   C stack. seen holds the cells visited, by address, so a cycle ends.
 
-    pair_id = PyLong_FromVoidPtr(pair);
+   :return: 0, or -1 with PyErr set
+*/
+static int pwalk_position(
+    PyObject *pair,
+    PyObject *seen,
+    PyObject *pos,
+    int fill) {
 
-    if (PySet_Contains(seen, pair_id)) {
+  PyObject **stack = NULL;
+  Py_ssize_t depth = 0, cap = 0;
+  int res = -1;
+
+  for (;;) {
+    while (KosPair_IsCell(pair)) {
+      KosPair *sp = (KosPair *) pair;
+      PyObject *pair_id = PyLong_FromVoidPtr(pair);
+      int visited;
+
+      if (! pair_id)
+        goto done;
+      visited = PySet_Contains(seen, pair_id);
+      if (visited < 0 || (! visited && PySet_Add(seen, pair_id) < 0)) {
+        Py_DECREF(pair_id);
+        goto done;
+      }
       Py_DECREF(pair_id);
+      if (visited)
+        break;
+
+      if (fill) {
+        if (KosPair_POSITION(sp))
+          break;
+        Py_INCREF(pos);
+        KosPair_POSITION(sp) = pos;
+      } else {
+        Py_XINCREF(pos);
+        Py_XSETREF(KosPair_POSITION(sp), pos);
+      }
+
+      if (KosPair_IsCell(KosPair_CAR(sp))) {
+        if (depth == cap) {
+          Py_ssize_t ncap = cap ? cap * 2 : 64;
+          PyObject **grown = PyMem_Realloc(
+              stack, (size_t) ncap * sizeof(PyObject *));
+          if (! grown) {
+            PyErr_NoMemory();
+            goto done;
+          }
+          stack = grown;
+          cap = ncap;
+        }
+        stack[depth++] = KosPair_CDR(sp);
+        pair = KosPair_CAR(sp);
+        continue;
+      }
+
+      pair = KosPair_CDR(sp);
+    }
+
+    if (depth == 0)
       break;
-
-    } else {
-      PySet_Add(seen, pair_id);
-      Py_DECREF(pair_id);
-    }
-
-    Py_ASSIGN(KosPair_POSITION(sp), pos);
-
-    if (KosPair_IsCell(KosPair_CAR(sp))) {
-      pwalk_setpos(KosPair_CAR(sp), seen, pos);
-    }
+    pair = stack[--depth];
   }
+  res = 0;
+
+ done:
+  PyMem_Free(stack);
+  return res;
 }
 
 
-static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
-  PyObject *pair_id;
-  KosPair *sp;
+static int pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
+  return pwalk_position(pair, seen, pos, 0);
+}
 
-  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
-    sp = (KosPair *) pair;
 
-    pair_id = PyLong_FromVoidPtr(pair);
-
-    if (PySet_Contains(seen, pair_id)) {
-      Py_DECREF(pair_id);
-      break;
-
-    } else {
-      PySet_Add(seen, pair_id);
-      Py_DECREF(pair_id);
-    }
-
-    if (KosPair_POSITION(sp)) {
-      pos = KosPair_POSITION(sp);
-
-    } else {
-      Py_INCREF(pos);
-      KosPair_POSITION(sp) = pos;
-    }
-
-    if (KosPair_IsCell(KosPair_CAR(sp))) {
-      pwalk_fillpos(KosPair_CAR(sp), seen, pos);
-    }
-  }
+static int pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
+  return pwalk_position(pair, seen, pos, 1);
 }
 
 
@@ -1345,8 +1379,13 @@ static PyObject *pair_clear_position(PyObject *self,
 
   if (follow) {
     PyObject *seen = PySet_New(NULL);
-    pwalk_setpos(self, seen, NULL);
+    int r;
+    if (! seen)
+      return NULL;
+    r = pwalk_setpos(self, seen, NULL);
     Py_DECREF(seen);
+    if (r < 0)
+      return NULL;
 
   } else {
     Py_CLEAR(KosPair_POSITION(self));
@@ -1369,8 +1408,13 @@ static PyObject *pair_set_position(PyObject *self,
 
   if (follow) {
     PyObject *seen = PySet_New(NULL);
-    pwalk_setpos(self, seen, position);
+    int r;
+    if (! seen)
+      return NULL;
+    r = pwalk_setpos(self, seen, position);
     Py_DECREF(seen);
+    if (r < 0)
+      return NULL;
 
   } else {
     if (pair_write_position(self, position) < 0)
@@ -1394,8 +1438,13 @@ static PyObject *pair_fill_position(PyObject *self,
 
   if (follow) {
     PyObject *seen = PySet_New(NULL);
-    pwalk_fillpos(self, seen, position);
+    int r;
+    if (! seen)
+      return NULL;
+    r = pwalk_fillpos(self, seen, position);
     Py_DECREF(seen);
+    if (r < 0)
+      return NULL;
 
   } else {
     if (! KosPair_POSITION(self)) {
@@ -1458,7 +1507,10 @@ static PyMethodDef pair_methods[] = {
 
   { "fill_position", (PyCFunction) pair_fill_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.fill_position(position, follow=True)" },
+    "P.fill_position(position, follow=True)\n"
+    "Give this cell position when it has none. With follow, do the same\n"
+    "along the cdr spine and into cell cars; a cell that already has a\n"
+    "position ends its branch, subtree included." },
 
   { "get_position", (PyCFunction) pair_get_position, METH_NOARGS,
     "P.get_position()" },

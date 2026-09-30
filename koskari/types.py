@@ -295,11 +295,15 @@ def fill_position(value, position, follow=True):
     Fill in the source position on pairs that do not have one set.
 
     Unlike set_position, this only sets the position on pairs that
-    do not already have a position.
+    do not already have a position. A pair that has one ends its
+    branch: the walk does not enter its car or continue its spine, so
+    what the reader positioned stays as it was and what was built
+    around it is filled in.
 
     :param value: a pair to fill position on
     :param position: the position tuple to set
-    :param follow: if True, fill position on all pairs in the tail
+    :param follow: if True, fill position along the tail and into
+        cell cars until a positioned pair ends each branch
     """
 
     if position and is_pair(value):

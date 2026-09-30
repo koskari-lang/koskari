@@ -342,6 +342,41 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         p.clear_position()
         self.assertIsNone(p.get_position())
 
+    async def test_fill_position_follow_stops_at_a_positioned_branch(self):
+        """
+        fill_position adds positions where there are none; a cell that
+        already has one ends that branch, its own subtree included, and
+        the walk carries the caller's position throughout
+        """
+        inner = cons(2, 3, nil)
+        inner.set_position(("inner", 1, 1))
+        outer = cons(1, inner, 4, nil)
+        outer.fill_position(("outer", 9, 9), True)
+
+        self.assertEqual(outer.get_position(), ("outer", 9, 9))
+        self.assertEqual(cdr(cdr(outer)).get_position(), ("outer", 9, 9))
+        self.assertEqual(inner.get_position(), ("inner", 1, 1))
+        self.assertIsNone(cdr(inner).get_position())
+
+    async def test_follow_walks_a_deep_car_nesting(self):
+        """
+        The follow walks descend into cars with an explicit stack, so a
+        nesting deeper than the C stack allows is fine
+        """
+        deep = nil
+        for _ in range(200000):
+            deep = cons(deep, nil)
+        innermost = deep
+        for _ in range(199999):
+            innermost = car(innermost)
+
+        deep.set_position(("set", 1, 1), True)
+        self.assertEqual(innermost.get_position(), ("set", 1, 1))
+        deep.clear_position(True)
+        self.assertIsNone(innermost.get_position())
+        deep.fill_position(("fill", 2, 2), True)
+        self.assertEqual(innermost.get_position(), ("fill", 2, 2))
+
 
 class TestNil(unittest.IsolatedAsyncioTestCase):
     """Tests for the nil singleton"""
