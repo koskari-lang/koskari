@@ -84,6 +84,73 @@ class TestPythonPragma(SpecialsTestCase):
             vars(mod).deref('local_var')
 
 
+    async def test_setq_inside_let_writes_the_function_binding(self):
+        """
+        A name the function declares is written through a let, not
+        shadowed by a fresh let-local
+        """
+
+        src_str = """
+        ((lambda ()
+           (define x 0)
+           (let [[y 1]] (setq x y))
+           x))
+        """
+        expr, mod = self.compile_expr(
+            src_str, resolution_mode=ResolutionMode.PYTHON)
+        self.assertEqual(1, await expr())
+
+
+    async def test_setq_inside_let_writes_a_parameter(self):
+        src_str = """
+        ((lambda (x)
+           (let [[y 1]] (setq x y))
+           x) 5)
+        """
+        expr, mod = self.compile_expr(
+            src_str, resolution_mode=ResolutionMode.PYTHON)
+        self.assertEqual(1, await expr())
+
+
+    async def test_setq_to_the_let_binding_writes_the_let(self):
+        src_str = """
+        ((lambda ()
+           (define y 0)
+           (let [[y 1]] (setq y 2) y)))
+        """
+        expr, mod = self.compile_expr(
+            src_str, resolution_mode=ResolutionMode.PYTHON)
+        self.assertEqual(2, await expr())
+
+
+    async def test_undeclared_write_inside_let_declares_in_the_function(self):
+        """
+        A first write is a declaration in the nearest function, so the
+        name is visible after the let
+        """
+
+        src_str = """
+        ((lambda ()
+           (let [[y 1]] (setq x y))
+           x))
+        """
+        expr, mod = self.compile_expr(
+            src_str, resolution_mode=ResolutionMode.PYTHON)
+        self.assertEqual(1, await expr())
+
+
+    async def test_write_inside_nested_lambda_stays_its_own_local(self):
+        src_str = """
+        ((lambda ()
+           (define x 0)
+           ((lambda () (setq x 1)))
+           x))
+        """
+        expr, mod = self.compile_expr(
+            src_str, resolution_mode=ResolutionMode.PYTHON)
+        self.assertEqual(0, await expr())
+
+
 class TestSchemePragma(SpecialsTestCase):
 
     async def test_unsatisfied_write_promotes_to_global(self):

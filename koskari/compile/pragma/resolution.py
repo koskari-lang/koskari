@@ -477,15 +477,50 @@ class PythonPragma(KoskariPragma):
 
     def on_write(self, fragment, name, *, position=None):
         """
-        If name is in explicit-globals for current scope, treat as global.
-        Otherwise implicit local: declare on first write (Scheme-like).
+        Bind a write where the open scopes put it. A scope that already
+        declares the name, a let included, takes the write as its own
+        binding; one that declared it global makes it a global write.
+        A name no open scope declares is an implicit declaration in the
+        nearest function or class body, the only scopes Python has to
+        declare in, so a first write inside a let is a local of the
+        function, visible after the let, not a let-local.
         """
+
+        home = None
+        for scope in self._open_scopes(fragment):
+            if name in scope.declares:
+                super().on_write(fragment, name, position=position)
+                return
+            if name in scope._request_global:
+                self.on_explicit_global(fragment, name, position=position)
+                return
+            if scope.function_scope or scope.collector_scope:
+                home = scope
+                break
 
         if self._explicit_globals_stack \
            and name in self._explicit_globals_stack[-1]:
             self.on_explicit_global(fragment, name, position=position)
-        else:
+        elif home is None or home is fragment:
             self.on_declare(fragment, name, position=position)
+        else:
+            home.declare_var(name)
+            super().on_write(fragment, name, position=position)
+
+
+    @staticmethod
+    def _open_scopes(fragment):
+        """
+        The scopes a write in fragment can see, innermost first: the
+        fragment itself, then the compiler's open lexical chain
+        """
+
+        yield fragment
+        compiler = fragment.compiler
+        if compiler is not None:
+            for scope in reversed(compiler.lexical_stack):
+                if scope is not fragment:
+                    yield scope
 
 
     def on_explicit_global(self, fragment, name, *, position=None):
