@@ -170,4 +170,27 @@ class TestLambdaReturnType(SpecialsTestCase):
         self.assertNotIn('return', fn.__annotations__)
 
 
+class TestLambdaKeywordOnlyDefaults(SpecialsTestCase):
+    """
+    A keyword-only parameter is required when it is a bare name after
+    the star segment, and defaulted when it carries a value, nil
+    included
+    """
+
+    async def test_nil_is_a_default(self):
+        from koskari.lib import nil
+
+        expr, mod = self.compile_expr("(lambda [*: nil k: ()] k)")
+        fn = await expr()
+        self.assertIs(await fn(), nil)
+        self.assertEqual(await fn(k=3), 3)
+
+    async def test_bare_name_is_required(self):
+        expr, mod = self.compile_expr("(lambda [*: nil k] k)")
+        fn = await expr()
+        with self.assertRaises(TypeError):
+            await fn()
+        self.assertEqual(await fn(k=3), 3)
+
+
 # The end.

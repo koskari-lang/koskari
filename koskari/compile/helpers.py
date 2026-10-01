@@ -37,6 +37,7 @@ from .compiler import ByteCodeFragment, _is_const
 
 
 __all__ = (
+    "NO_DEFAULT",
     "BINDING",
     "FORMALS",
     "BINDINGS",
@@ -1031,17 +1032,19 @@ def _merge_formal_annotations(annotations, name_sym, ann_bundle):
         annotations[key] = dict(ann_bundle)
 
 
-_NO_DEFAULT = object()
+# the default slot of a formal with no default: positional and
+# keyword-only alike, so a nil default, the source form (), is a value
+NO_DEFAULT = object()
 
 
 def _attrs_frames_to_ann(attr_frames: List[dict], source):
     """
     Fold formal attribute REPEAT frames into (ann dict, default or
-    _NO_DEFAULT, by_ref bool)
+    NO_DEFAULT, by_ref bool)
     """
 
     ann = {}
-    default = _NO_DEFAULT
+    default = NO_DEFAULT
     by_ref = False
     for afr in attr_frames:
         kw_cell = afr.get('kw')
@@ -1108,7 +1111,7 @@ def _gather_one_positional_frame(fr: dict, source):
     if "default" in fr:
         default_expr = fr['default'].datum
     else:
-        default_expr = _NO_DEFAULT
+        default_expr = NO_DEFAULT
 
     kw_cell = fr.get('kw')
     if kw_cell is not None:
@@ -1127,8 +1130,8 @@ def _gather_one_positional_frame(fr: dict, source):
                     f"conflicting formal annotations for {name!r}",
                     source)
             annotations[k2] = v2
-        if default2 is not _NO_DEFAULT:
-            if default_expr is not _NO_DEFAULT:
+        if default2 is not NO_DEFAULT:
+            if default_expr is not NO_DEFAULT:
                 raise SpecialError(
                     f"duplicate default for formal {name!r}",
                     source)
@@ -1210,7 +1213,7 @@ def gather_formals(formals_group, source=None):
         _merge_formal_annotations(annotations, name, ann_bundle)
         if by_ref:
             by_refs.append(str(name))
-        if default is not _NO_DEFAULT:
+        if default is not NO_DEFAULT:
             defaults.append((keyword(str(name)), default))
         else:
             positional.append(name)
@@ -1245,7 +1248,7 @@ def gather_formals(formals_group, source=None):
             name, by_ref = _strip_byref_sym(name)
             if by_ref:
                 by_refs.append(str(name))
-            kwonly.append((keyword(str(name)), nil))
+            kwonly.append((keyword(str(name)), NO_DEFAULT))
             prev_name = name
             continue
         kw = None if (v := fr.get('kw')) is None else v.datum
