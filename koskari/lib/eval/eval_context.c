@@ -381,23 +381,25 @@ static KosDynNode *context_acting_dyn_top(KosContext *ctx) {
 }
 
 
+static PyObject *context_get_namespace(PyObject *self, void *unused) {
+
+  PyObject *ns = context_acting_namespace((KosContext *) self);
+  if (! ns)
+    Py_RETURN_NONE;
+  return KosNamespace_Reveal(ns);
+}
+
+
 static PyObject *context_snapshot(PyObject *self, PyObject *unused) {
 
   KosContext *ctx = (KosContext *) self;
   PyObject *out;
-  PyObject *ns;
 
   (void) unused;
 
   out = PyDict_New();
   if (! out)
     return NULL;
-
-  ns = context_acting_namespace(ctx);
-  if (ns)
-    KosNamespace_Reveal(ns);
-  else
-    ns = Py_NewRef(Py_None);
 
   if (context_snapshot_set(out, "schema_version", PyLong_FromLong(1)) < 0
       || context_snapshot_set(out, "context_id",
@@ -412,7 +414,8 @@ static PyObject *context_snapshot(PyObject *self, PyObject *unused) {
                               Py_NewRef(KosContext_DOMAIN(ctx)
                                         ? KosContext_DOMAIN(ctx)
                                         : Py_None)) < 0
-      || context_snapshot_set(out, "namespace", ns) < 0
+      || context_snapshot_set(out, "namespace",
+                              context_get_namespace(self, NULL)) < 0
       || context_snapshot_set(out, "dynnodes",
                               kos_dynchain_snapshot_to_list(
                                   context_acting_dyn_top(ctx))) < 0) {
@@ -428,15 +431,6 @@ static PyObject *context_get_domain(PyObject *self, void *unused) {
 
   PyObject *domain = KosContext_DOMAIN(self);
   return Py_NewRef(domain ? domain : Py_None);
-}
-
-
-static PyObject *context_get_namespace(PyObject *self, void *unused) {
-
-  PyObject *ns = context_acting_namespace((KosContext *) self);
-  if (! ns)
-    Py_RETURN_NONE;
-  return KosNamespace_Reveal(ns);
 }
 
 
