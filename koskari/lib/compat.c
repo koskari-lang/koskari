@@ -264,6 +264,41 @@ int koskari_Unicode_Equal(PyObject *a, PyObject *b) {
 
 
 /**
+   Raise the AttributeError getattr raises for a name obj lacks, with the
+   message CPython formats.  On 3.10+ the exception also carries name and
+   obj, the fields the traceback printer reads for its suggestions.  On 3.9
+   AttributeError has no such fields and only the message is set.
+*/
+void koskari_Err_SetMissingAttribute(PyObject *obj, PyObject *name) {
+#if PY_MINOR_VERSION >= 10
+  PyObject *msg = PyUnicode_FromFormat(
+      "'%.100s' object has no attribute '%U'", Py_TYPE(obj)->tp_name, name);
+  if (! msg)
+    return;
+  PyObject *args = PyTuple_Pack(1, msg);
+  Py_DECREF(msg);
+  if (! args)
+    return;
+  PyObject *kwds = Py_BuildValue("{sOsO}", "name", name, "obj", obj);
+  if (! kwds) {
+    Py_DECREF(args);
+    return;
+  }
+  PyObject *exc = PyObject_Call(PyExc_AttributeError, args, kwds);
+  Py_DECREF(args);
+  Py_DECREF(kwds);
+  if (! exc)
+    return;
+  PyErr_SetObject(PyExc_AttributeError, exc);
+  Py_DECREF(exc);
+#else
+  PyErr_Format(PyExc_AttributeError,
+      "'%.100s' object has no attribute '%U'", Py_TYPE(obj)->tp_name, name);
+#endif
+}
+
+
+/**
    Fetch and clear the current exception, return the exception instance
    (new ref).  Uses PyErr_GetRaisedException on 3.12+, PyErr_Fetch on older.
 */

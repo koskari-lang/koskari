@@ -20,6 +20,7 @@ schema; resolves obj.attr and invokes with (obj, *args) for unbound fn, else
 """
 
 import pytest
+import sys
 
 from koskari.lib import FormalsSpec, NamespaceSpec
 from tests import make_callable
@@ -96,6 +97,33 @@ class TestCallAttr(CevalTest):
             await fn()
         self.assertIn("int", str(ctx.exception))
         self.assertIn("nonexistent", str(ctx.exception))
+
+
+    async def test_call_attr_missing_attr_message_and_context(self):
+        """
+        CALL_ATTR on a missing name raises the message getattr would, with
+        the name and receiver recorded on the exception where the Python
+        version has those fields
+        """
+
+        class Box(object):
+            pass
+
+        box = Box()
+        code, ns = build_expr([
+            ["CONST", box],
+            ["CALL_ATTR", ("missing", 0, 0, 0)],
+            ["RETURN", 1],
+        ])
+        fn = make_callable(code, ns)
+        with self.assertRaises(AttributeError) as ctx:
+            await fn()
+        exc = ctx.exception
+        self.assertEqual(
+            str(exc), "'Box' object has no attribute 'missing'")
+        if sys.version_info >= (3, 10):
+            self.assertEqual(exc.name, "missing")
+            self.assertIs(exc.obj, box)
 
 
     async def test_call_attr_non_callable_raises(self):

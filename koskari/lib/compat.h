@@ -349,6 +349,13 @@ PyObject *koskari_Err_GetRaisedException(void);
 
 
 /**
+   Raise the AttributeError getattr raises for a name obj lacks: CPython's
+   message, with name and obj recorded on the exception from 3.10 on.
+*/
+void koskari_Err_SetMissingAttribute(PyObject *obj, PyObject *name);
+
+
+/**
    True when two str objects are equal, 0 otherwise: identity first, then
    PyUnicode_Compare. Both operands must be str; there is no type check.
    Replaces PyUnicode_Equal (public from 3.14).

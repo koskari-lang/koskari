@@ -275,8 +275,7 @@ static int resolve_named_attr_slow(
     return 1;
   }
 
-  PyErr_Format(PyExc_AttributeError,
-      "'%.100s' object has no attribute '%R'", tp->tp_name, name);
+  koskari_Err_SetMissingAttribute(obj, name);
   return -1;
 }
 
