@@ -176,10 +176,18 @@ static void arena_dealloc(PyObject *self) {
   }
 
   if (arena->base) {
-    if (arena->sealed) {
-      mprotect(arena->base, arena->size, PROT_WRITE);
+    /* a sealed arena's pages are read-only; freeing them writes the
+       allocator's own words into them, so they go back to the
+       protection they had before the seal first. When that fails the
+       storage stays allocated: a leak is the safe outcome, a fault in
+       free is not, and the one channel a deallocator has reports it. */
+    if (arena->sealed
+        && mprotect(arena->base, arena->size, PROT_READ | PROT_WRITE)) {
+      PyErr_SetFromErrno(PyExc_OSError);
+      PyErr_WriteUnraisable(self);
+    } else {
+      free(arena->base);
     }
-    free(arena->base);
   }
 
   arena->base = NULL;
