@@ -152,6 +152,16 @@ rule. Dead-region sweep and label GC stay last, if at all.
 
 Ref: [extent-verification.md](extent-verification.md).
 
+### Values pack as the multi-value carrier (design)
+
+`return` and `yield` pop a count into a tuple, `break` and `continue`
+carry one value, and a keyword among the values rewrites the source to
+a call of `values` by name, which a binding of that name shadows. A
+`compile/values` special and a `BUILD_VALUES` opcode put one pack at
+every delivery and every receiver.
+
+Ref: [language/values-pack.md](language/values-pack.md).
+
 ### Externs slot in NamespaceSpec (investigate)
 
 A fourth name list on `NamespaceSpec`: names a frame reads from a

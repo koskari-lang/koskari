@@ -17,4 +17,5 @@ This directory documents the language-level features of Koskari, including synta
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features
 - **generators.md**: Generator and yield features
+- **values-pack.md**: The values pack as the one carrier for multi-value delivery and receipt, with a `values` special and a `BUILD_VALUES` opcode (proposed)
 - **RESOLUTION-MODEL.md**: Variable resolution model (proposed) — read vs write semantics, define-global, typo safety
