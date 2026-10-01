@@ -1474,12 +1474,19 @@ KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
 
 
 /**
-   Pop a collector scope node.
+   Pop the collector scope node at the top of the chain and hand out
+   the namespace it collected, revealed for the value stack.
 
-   :param ctx: execution context
+   :param es: eval state
    :param node: COLLECT node to pop (must be dyn_top)
+   :param out_ns: the collected namespace (new ref); untouched on error
+   :return: 0, or -1 with an exception set when node is not the top of
+     the chain or not a COLLECT node
 */
-int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
+int kos_dyn_pop_collect(
+    KosEvalState *es,
+    KosDynCollect *node,
+    PyObject **out_ns);
 
 
 

@@ -85,9 +85,16 @@ KosDynCollect *kos_dyn_push_collect(
 
 
 /**
-   Pop COLLECT when top. Callers: POP_COLLECT.
+   Pop COLLECT when top, handing out the collected namespace. The node
+   owns that namespace and the pop frees the node, so the reveal
+   happens here, after the checks and before the free. Callers:
+   POP_COLLECT.
 */
-int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
+int kos_dyn_pop_collect(
+    KosEvalState *es,
+    KosDynCollect *node,
+    PyObject **out_ns) {
+
   if (! KosEvalState_DYN_TOP(es) ||
       KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
@@ -98,6 +105,7 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
+    *out_ns = KosNamespace_Reveal(KosDynNode_NS(node));
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyncollect_free(node);

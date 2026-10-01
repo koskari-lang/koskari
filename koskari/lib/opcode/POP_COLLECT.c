@@ -14,21 +14,19 @@
 */
 
 /**
-   POP_COLLECT: arg unused. Verify dyn_top is KOS_DYN_COLLECT, pop the node,
-   and push the collected namespace onto the value stack.
+   POP_COLLECT: arg unused. Pop the COLLECT node at dyn_top and push the
+   namespace it collected onto the value stack. The pop verifies the
+   kind and hands the namespace out revealed.
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
   (void) insn;
 
-  KosDynNode *top = KosEvalState_CurrentNode(es);
-  /* the collected namespace lands on the value stack: reveal it */
-  PyObject *collector = KosNamespace_Reveal(KosDynNode_NS(top));
+  KosDynCollect *top = (KosDynCollect *) KosEvalState_CurrentNode(es);
+  PyObject *collector;
 
-  if (unlikely(kos_dyn_pop_collect(es, (KosDynCollect *) top) < 0)) {
-    Py_DECREF(collector);
+  if (unlikely(kos_dyn_pop_collect(es, top, &collector) < 0))
     RESULT_RAISE();
-  }
 
   RESULT_STEAL(es, collector);
 }
