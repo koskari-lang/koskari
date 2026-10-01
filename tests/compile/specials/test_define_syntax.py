@@ -374,6 +374,71 @@ class TestMatchIsAPlainPatternSymbol(DefineSyntaxCompileHelpers):
         self.assertEqual((1, 2), await expr())
 
 
+class TestDottedRulePatterns(DefineSyntaxCompileHelpers):
+    """
+    A dotted RULE pattern binds its tail symbol to the remaining
+    elements as a list, and a dotted template splices it back; a tail
+    of any other shape is refused at definition
+    """
+
+    async def test_syntax_rules_dotted_tail(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m a . rest) (#tuple a (quote rest))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2 3)", **defn)
+        a, rest = await expr()
+        self.assertEqual(a, 1)
+        self.assertEqual([2, 3], list(rest.unpack()))
+
+        expr, mod = self.compile_expr("(m 1)", **defn)
+        a, rest = await expr()
+        self.assertEqual(a, 1)
+        self.assertIs(rest, nil)
+
+    async def test_dotted_template_splices_the_tail(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m a . rest) (#tuple a . rest)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2 3)", **defn)
+        self.assertEqual((1, 2, 3), await expr())
+
+    async def test_macro_rules_dotted_tail(self):
+        src_str = """
+        (define m
+          (macro-rules m []
+            [(m a . rest) `(#tuple ,a ,@rest)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2 3)", **defn)
+        self.assertEqual((1, 2, 3), await expr())
+
+    async def test_non_symbol_tail_is_refused(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m a . 5) a]))
+        """
+        with self.assertRaises(Exception) as caught:
+            expr, mod = self.compile_expr(src_str)
+            await expr()
+        self.assertIn("dotted", str(caught.exception))
+
+
 class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_match_value_pattern(self):

@@ -30,7 +30,7 @@ from ...matcher import (
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import (
-    build_proper, is_pair, is_proper, is_symbol, unpack)
+    build_proper, is_nil, is_pair, is_proper, is_symbol, unpack)
 
 
 _sym_quote_syntax = symbol("quote-syntax")
@@ -444,7 +444,13 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
         if not is_pair(expr):
             return
 
-        items = list(unpack(expr))
+        # the spine's elements, then a dotted tail, which the lowerer
+        # binds as a pattern variable when it is a symbol
+        items = []
+        cell = expr
+        while is_pair(cell) and not is_nil(cell):
+            items.append(cell.car)
+            cell = cell.cdr
         i = 0
         while i < len(items):
             if i + 1 < len(items) and items[i + 1] is Ellipsis:
@@ -453,6 +459,8 @@ def collect_pattern_variable_symbols(pattern_expr, literals):
             else:
                 walk(items[i])
                 i += 1
+        if not is_nil(cell) and is_symbol(cell):
+            walk(cell)
 
     walk(pattern_expr)
     return seen

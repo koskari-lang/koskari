@@ -38,7 +38,7 @@ from koskari.matcher import (
     parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
-    fill_position, get_position, is_pair, is_proper, is_symbol,
+    fill_position, get_position, is_nil, is_pair, is_proper, is_symbol,
     strip_mark, unpack)
 
 
@@ -702,8 +702,9 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     if not is_pair(pattern_expr):
         return MATCH(LITERAL(pattern_expr))
 
+    items, tail = _spine_items(pattern_expr)
     return MATCH(*_syntax_pattern_specs(
-        list(unpack(pattern_expr)), literals, source_ctx, set()))
+        items, literals, source_ctx, set(), tail))
 
 
 @builtin("parse-match-pattern")
@@ -758,11 +759,39 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
         # a keyword or other atom literal matches by its bare spelling
         return LITERAL(pat)
 
+    items, tail = _spine_items(pat)
     return FORM(MATCH(*_syntax_pattern_specs(
-        list(unpack(pat)), literals, source_ctx, seen)))
+        items, literals, source_ctx, seen, tail)))
 
 
-def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
+def _spine_items(pattern):
+    """
+    The elements of a pattern spine and its terminator: None for a
+    proper list, otherwise the datum after the dot
+
+    :param pattern: a pair
+    :return: (items, tail)
+    """
+
+    items = []
+    cell = pattern
+    while is_pair(cell) and not is_nil(cell):
+        items.append(cell.car)
+        cell = cell.cdr
+    return items, (None if is_nil(cell) else cell)
+
+
+def _syntax_pattern_specs(p_items, literals, source_ctx, seen, tail=None):
+    """
+    The matcher specs for a pattern spine's elements, and for its dotted
+    tail when it has one: a tail symbol that is not a literal binds the
+    remaining elements as a list, the REST a bare symbol pattern or a
+    leading ``x ...`` lowers to; any other tail is refused
+
+    :param tail: the datum after the dot, or None for a proper spine
+    :raises ValueError: when the dotted tail is not a pattern variable
+    """
+
     specs = []
     i = 0
     while i < len(p_items):
@@ -784,6 +813,14 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
         specs.append(_syntax_elem_pattern(
             p_items[i], literals, source_ctx, seen))
         i += 1
+
+    if tail is not None:
+        if not is_symbol(tail) or strip_mark(tail) in literals \
+           or tail is Ellipsis:
+            raise ValueError(
+                f"dotted pattern tail must be a pattern variable, got"
+                f" {tail!r} (context {source_ctx!r})")
+        specs.append(REST(str(tail)))
 
     return specs
 
