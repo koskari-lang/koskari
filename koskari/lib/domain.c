@@ -487,8 +487,9 @@ static PyObject *domain_exit(PyObject *self, PyObject *args) {
   PyObject *exc_val = NULL;
   PyObject *exc_tb = NULL;
 
-  (void) PyArg_UnpackTuple(args, "__exit__", 3, 3,
-                          &exc_type, &exc_val, &exc_tb);
+  if (! PyArg_UnpackTuple(args, "__exit__", 3, 3,
+                          &exc_type, &exc_val, &exc_tb))
+    return NULL;
   if (kos_domain_pop_python_scope(self) < 0)
     return NULL;
   Py_RETURN_NONE;

@@ -30,6 +30,20 @@ from tests.lib.opcode import build_expr
 pytestmark = pytest.mark.phase_lib
 
 
+class TestDomainExitArity(unittest.IsolatedAsyncioTestCase):
+    """
+    __exit__ takes the three exception arguments; a call with another
+    count is refused rather than popping the scope with the error pending
+    """
+
+    async def test_exit_with_wrong_arity_is_refused(self):
+        dom = Domain()
+        dom.__enter__()
+        with self.assertRaises(TypeError):
+            dom.__exit__()
+        dom.__exit__(None, None, None)
+
+
 class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
     """
     Domain as context manager (with Domain():)

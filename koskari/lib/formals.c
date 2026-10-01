@@ -30,15 +30,22 @@
 #include "debug.h"
 
 
+/* seq becomes the tuple of its items, or NULL for None or an empty
+   sequence; a failed size or tuple read jumps to tuple_error with the
+   error set */
 #define TUPLE_OR_NULL(seq)                        \
   if (seq) {                                      \
     if (seq == Py_None) {                         \
       seq = NULL;                                 \
-    } else if (PySequence_Size(seq) <= 0) {       \
-      seq = NULL;                                 \
     } else {                                      \
-      seq = PySequence_Tuple(seq);                \
-      if (! seq) goto tuple_error;                \
+      Py_ssize_t _n = PySequence_Size(seq);       \
+      if (_n < 0) goto tuple_error;               \
+      if (_n == 0) {                              \
+        seq = NULL;                               \
+      } else {                                    \
+        seq = PySequence_Tuple(seq);              \
+        if (! seq) goto tuple_error;              \
+      }                                           \
     }                                             \
   }
 
@@ -734,8 +741,11 @@ PyObject *KosFormals_NewFull(
   Py_XINCREF(starstar);
   KosFormals_STARSTAR(self) = starstar;
 
-  if (defaults)
+  if (defaults) {
     defaults = PyDict_Copy(defaults);
+    if (! defaults)
+      goto tuple_error;
+  }
   KosFormals_DEFAULTS(self) = defaults;
 
   TUPLE_OR_NULL(by_refs);

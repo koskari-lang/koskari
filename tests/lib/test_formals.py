@@ -176,6 +176,34 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(formals.defaults, {'c': 99})
 
 
+class TestFormalsConstructionErrors(unittest.IsolatedAsyncioTestCase):
+    """
+    A failure while reading a formals argument propagates from the
+    constructor instead of leaving a half-built Formals behind with the
+    error pending
+    """
+
+    async def test_sequence_whose_len_raises(self):
+        class BadList(list):
+            def __len__(self):
+                raise ValueError("no len")
+
+        with self.assertRaises(ValueError):
+            Formals(BadList(["a"]), (), (), (), None, None, None)
+
+    async def test_defaults_whose_copy_raises(self):
+        class BadDict(dict):
+            # an overridden __iter__ sends the copy through keys()
+            def __iter__(self):
+                return iter(())
+
+            def keys(self):
+                raise ValueError("no keys")
+
+        with self.assertRaises(ValueError):
+            Formals(("a",), (), (), (), None, None, BadDict(a=1))
+
+
 class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     """
     Tests for Formals.apply() method
