@@ -290,6 +290,23 @@ class TestValuesEquality(unittest.IsolatedAsyncioTestCase):
         v2 = values(x=1, y=2)
         self.assertEqual(v1, v2)
 
+    async def test_no_keywords_is_one_state(self):
+        """
+        A values with no keyword dict, one built with an empty keyword
+        set, and one with an empty dict added are the same values: equal
+        to each other, hashed alike, and equal to the bare tuple
+        """
+
+        plain = values(1)
+        spelled = values(1, **{})
+        added = values(1) + {}
+        self.assertEqual(plain, spelled)
+        self.assertEqual(plain, added)
+        self.assertEqual(spelled, added)
+        self.assertEqual(hash(plain), hash(added))
+        for v in (plain, spelled, added):
+            self.assertEqual(v, (1,))
+
     async def test_ne_different_keywords(self):
         """values with different keywords are not equal"""
 

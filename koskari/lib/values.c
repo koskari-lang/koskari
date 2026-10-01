@@ -332,10 +332,19 @@ static long values_eq(PyObject *self, PyObject *other) {
            compare their positionals and keywords. We'll actually do the
            keywords check first, because it has a quick NULL-check */
 
-        if (KosValues_KWDS(s) && KosValues_KWDS(o)) {
-            answer = PyObject_RichCompareBool(KosValues_KWDS(s), KosValues_KWDS(o), Py_EQ);
+        /* no keywords is no dict or an empty one, the reading the hash
+           and the tuple comparison take */
+        PyObject *skw = KosValues_KWDS(s);
+        PyObject *okw = KosValues_KWDS(o);
+        if (skw && ! PyDict_Size(skw))
+            skw = NULL;
+        if (okw && ! PyDict_Size(okw))
+            okw = NULL;
+
+        if (skw && okw) {
+            answer = PyObject_RichCompareBool(skw, okw, Py_EQ);
         } else {
-            answer = (KosValues_KWDS(s) == KosValues_KWDS(o));
+            answer = (skw == okw);
         }
 
         /* a -1 from the keywords comparison propagates as is */
@@ -478,6 +487,11 @@ static PyObject *values_add(PyObject *left, PyObject *right) {
         PyErr_SetString(PyExc_TypeError, "values_add invoked with no values");
         return NULL;
     }
+
+    /* a merge that left no keywords stores none: the dict is released
+       rather than kept empty */
+    if (kwds && ! PyDict_Size(kwds))
+        Py_CLEAR(kwds);
 
     result = (KosValues *) KosValues_New(args, NULL);
     if (result) {
@@ -686,6 +700,9 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
             Py_DECREF(self);
             return NULL;
         }
+        /* no keywords stores none: an empty dict is released, not kept */
+        if (! PyDict_Size(KosValues_KWDS(self)))
+            Py_CLEAR(KosValues_KWDS(self));
     }
 
     KosValues_HASHED(self) = 0;
