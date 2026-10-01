@@ -604,15 +604,17 @@ static PyObject *m_bss_readline(
       break;
     }
 
-    const char *ch_str = PyUnicode_AsUTF8(ch);
-    scan_count++;
-
-    if (ch_str && ch_str[0] == '\n') {
-      Py_DECREF(ch);
-      break;
-    }
-
+    /* the code point, read without encoding: a lone surrogate is a
+       character to scan past, not an error */
+    Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
     Py_DECREF(ch);
+
+    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred())
+      return NULL;
+
+    scan_count++;
+    if (codepoint == '\n')
+      break;
   }
 
   /* seek back to start */

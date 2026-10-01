@@ -875,6 +875,16 @@ class TestBaseSourceStreamReadline(IsolatedAsyncioTestCase):
         line = s.readline()
         self.assertEqual(line, "\n")
 
+    async def test_readline_over_a_lone_surrogate(self):
+        """
+        The newline scan reads code points, so a character that cannot
+        be encoded is read through like any other
+        """
+
+        s = BaseSourceStream(StringIO("a \ud800 b\nnext"), "test.txt")
+        self.assertEqual(s.readline(), "a \ud800 b\n")
+        self.assertEqual(s.readline(), "next")
+
 
 class TestBaseSourceStreamProperties(IsolatedAsyncioTestCase):
 
