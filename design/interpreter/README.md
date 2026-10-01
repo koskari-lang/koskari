@@ -27,6 +27,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **execution-invariants.md**: Koskari execution model invariants and design commitments
 - **generator-extent-park.md**: extents across a generator yield -- PARAM parks and unparks its cells at freeze and install; whether WIND and WITH need a leave and re-enter walk without unlinking is open
 - **yield-from-close.md**: closing a delegate through yield-from -- GeneratorExit takes the raise walk, which cannot await an async or Koskari delegate's close; whether it should route through the resume like every other throw is open
+- **pair-const-opcodes.md**: PROPER_CONST, BRACKET_PROPER_CONST, CONS_CONST and BRACKET_CONS_CONST, pair builders fed from a pool tuple so quoted and quasiquoted lists render down over their constant elements in one row (idea)
 - **opcode-sizing.md**: per-handler code size joined with per-opcode timing (`make opsizing`, `design/perf/opsizing.tsv`); how to read the table and how to measure a change
 - **demand-evalex-phase1.md** / **demand-evalex-phase2.md** (archived under [archive/](../archive/)): demand in-eval denial and call flattening — see [EVALUATOR.md](../EVALUATOR.md) §7 and the archived [archive/demand-wrapper.md](../archive/demand-wrapper.md)
 - **[archive/introspection-trace.md](../archive/introspection-trace.md)** (archived): the TraceView snapshot proposal, never built; the live views are `Context.snapshot()` and `__koskari_dynchain__`

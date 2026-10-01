@@ -21,6 +21,18 @@ investigation, gated by a real workload that shows the win:
 Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 (§Phase 5).
 
+### Pair opcodes fed from the constant pool (investigate)
+
+A quoted list compiles to one CONST per element and a CONS or PROPER;
+the pool holds tuples but not pairs. PROPER_CONST and
+BRACKET_PROPER_CONST would build the list from a pool tuple in one
+row, and CONS_CONST and BRACKET_CONS_CONST would join stacked values
+with a constant run and tail without pushing the constants, so a
+template's quotes and quasiquotes render down over their constant
+elements.
+
+Ref: [interpreter/pair-const-opcodes.md](interpreter/pair-const-opcodes.md).
+
 ### Electors: remaining homes
 
 A `KosThreadFn` chosen once for a site's operands (a cache slot) or an
