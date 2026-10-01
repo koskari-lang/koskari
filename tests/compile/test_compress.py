@@ -49,10 +49,51 @@ class TestCompress(unittest.TestCase):
 
     def test_pop_elides_dup(self):
         out = squish_ops([
-            (OpCode.DUP, 0),
+            (OpCode.DUP, 1),
             (OpCode.POP, 1),
         ])
         self.assertEqual(out, [(OpCode.RETURN, 1)])
+
+    def test_dup_zero_is_dropped(self):
+        out = squish_ops([
+            (OpCode.DUP, 0),
+            (OpCode.POP, 1),
+        ])
+        self.assertEqual(out, [(OpCode.POP, 1), (OpCode.RETURN, 1)])
+
+    def test_pop_zero_is_dropped(self):
+        out = squish_ops([
+            (OpCode.DUP, 2),
+            (OpCode.POP, 0),
+        ])
+        self.assertEqual(out, [(OpCode.DUP, 2), (OpCode.RETURN, 1)])
+
+    def test_pop_of_every_copy_elides_dup(self):
+        out = squish_ops([
+            (OpCode.DUP, 2),
+            (OpCode.POP, 2),
+        ])
+        self.assertEqual(out, [(OpCode.RETURN, 1)])
+
+    def test_pop_of_fewer_copies_keeps_dup(self):
+        """
+        DUP 2 copies the top two in order, so one POP leaves a copy of
+        the slot below the top, which no smaller DUP gives
+        """
+
+        out = squish_ops([
+            (OpCode.DUP, 2),
+            (OpCode.POP, 1),
+        ])
+        self.assertEqual(out, [(OpCode.DUP, 2), (OpCode.POP, 1),
+                               (OpCode.RETURN, 1)])
+
+    def test_pop_past_the_copies_keeps_the_rest_of_the_drop(self):
+        out = squish_ops([
+            (OpCode.DUP, 1),
+            (OpCode.POP, 3),
+        ])
+        self.assertEqual(out, [(OpCode.POP, 2), (OpCode.RETURN, 1)])
 
     def test_object_not_folds_const_truthy(self):
         out = squish_ops([

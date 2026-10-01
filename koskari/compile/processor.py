@@ -637,15 +637,44 @@ class ByteCodeProcessor:
         return rows
 
 
+    @squish_rule(OpCode.DUP)
+    def dup_nothing(self, op, arg, matched):
+        """
+        DUP 0 -> nothing: it copies no slot
+        """
+
+        return [] if arg == 0 else None
+
+
+    @squish_rule(OpCode.POP)
+    def pop_nothing(self, op, arg, matched):
+        """
+        POP 0 -> nothing: it drops no slot
+        """
+
+        return [] if arg == 0 else None
+
+
     @squish_rule(POP_PRIORS, OpCode.POP)
     def pop_pushed_value(self, op, arg, matched):
         """
-        CONST|DUP POP1 -> nothing: both rows vanish
+        CONST POP1 -> nothing: both rows vanish. DUP n POP m: the POP
+        drops the copies first, so POP n takes the DUP with it, and a
+        larger POP keeps the rest of its drop; a smaller POP leaves a
+        stack no single DUP gives, since DUP copies its slots in order,
+        and both rows stay
         """
 
-        if arg != 1:
+        if arg == 0:
             return None
-        return []
+        prior_op, prior_arg = matched[0]
+        if prior_op == OpCode.CONST:
+            return [] if arg == 1 else None
+        if arg == prior_arg:
+            return []
+        if arg > prior_arg:
+            return [(OpCode.POP, arg - prior_arg)]
+        return None
 
 
     @squish_rule(OpCode.CONST, OpCode.OBJECT_NOT)

@@ -201,7 +201,7 @@ or demote tail calls when yields are present. Those happen later; see section 1.
 
 | Category | Rule |
 |----------|------|
-| Dead stack | **`KOS_OP_CONST`** or **`KOS_OP_DUP`** followed by **`KOS_OP_POP`** with **arg 1** -> drop both (omit the POP and remove the prior instruction). |
+| Dead stack | **`KOS_OP_CONST`** followed by **`KOS_OP_POP`** with **arg 1** -> drop both. **`KOS_OP_DUP`** with arg n followed by **`KOS_OP_POP`** with arg n -> drop both; with a larger POP arg m -> **`KOS_OP_POP`** with arg m - n; with a smaller POP arg both stay, since DUP copies its slots in order. **`KOS_OP_DUP`** or **`KOS_OP_POP`** with **arg 0** -> dropped. |
 | Constant fold | **`KOS_OP_OBJECT_NOT`** with prior **`KOS_OP_CONST`** -> replace the pair with a single **`KOS_OP_CONST`** whose value is **`not`** the prior constant (Python `bool` semantics for the folded value). |
 | Constant + `JUMP_TRUE` | Prior **`KOS_OP_CONST`**: if truthy, replace with **`KOS_OP_JUMP`** to the same label; if falsy, drop both (no jump). |
 | Constant + `JUMP_FALSE` | Prior **`KOS_OP_CONST`**: if the constant is falsy, unconditional **`KOS_OP_JUMP`**; if truthy, drop both. |
