@@ -106,7 +106,10 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
     KOS_TRACE_FL_ALLOC("namespace", 1);
 
     PyObject *p = (PyObject *) ns;
-    Py_SET_REFCNT(p, 1);
+    /* the revival CPython's own type freelists use: a refcount of one,
+       and in a debug build the reference total and trace chain the
+       dealloc gave up */
+    _Py_NewReference(p);
     ns_init_raw_storage(ns, count);
     // Py_SET_TYPE(p, type);
     // Py_SET_SIZE(p, (Py_ssize_t) KOS_NS_MIN_SLOTS);
