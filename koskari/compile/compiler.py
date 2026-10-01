@@ -390,8 +390,7 @@ class ByteCodeFragment:
         for name in other.requests_for_write:
             self.request_for_write(name)
         for name in other._request_global:
-            if name not in self.declares:
-                self.request_global(name)
+            self.request_global(name)
         self.annotation_bindings.extend(other.annotation_bindings)
         if other.marked:
             self.marked = True

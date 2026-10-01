@@ -163,6 +163,18 @@ use-site rule.
 
 Ref: [namespace-externs.md](namespace-externs.md).
 
+### Scope declaration positions (implement)
+
+The resolution keeps a position only for the first write to a name.
+Record one for the first request, define and define-global of each
+name too, so a duplicate or conflicting scope declaration (a define
+and a define-global of one name in a frame) raises at the line of the
+earlier form and names the later one, instead of the bare message.
+
+Ref: `koskari/compile/pragma/resolution.py` (`on_declare`,
+`on_explicit_global`, `_write_positions`),
+[language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md).
+
 ### Resolver candidate spellings (investigate)
 
 `Resolver.choose` rebuilds a marked atom's prefix gensyms and their

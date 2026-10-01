@@ -28,6 +28,10 @@ from ...exceptions import CompilerError
 from ...lib import FunctionSpec, NamespaceSpec, symbol
 
 
+_LOCAL_GLOBAL_CONFLICT = (
+    "%r cannot be both local (define) and global (define-global).")
+
+
 def _unique_append(lst, val):
     """
     Append val to lst only if not already present
@@ -37,6 +41,19 @@ def _unique_append(lst, val):
     # because we're just using it for ordered name collecting
     if val not in lst:
         lst.append(val)
+
+
+def _in_module_scope(fragment):
+    """
+    Whether fragment compiles at module scope: it is no frame or inline
+    scope itself and none is open around it, so its declarations are
+    module bindings
+    """
+
+    if fragment.function_scope or fragment.collector_scope:
+        return False
+    compiler = fragment.compiler
+    return compiler is None or not compiler.lexical_stack
 
 
 def _spellings(fragment):
@@ -185,11 +202,19 @@ class KoskariPragma:
     def on_declare(self, fragment, name, *, position=None):
         """
         Record a declaration (define, params, bindings) of name, a
-        symbol. Removes name from other buckets and adds to declares.
+        symbol. Removes name from the read and write requests and adds
+        to declares. A name the fragment already pulls from the module
+        is the local-or-global conflict, except at module scope, where
+        a declaration and a global request name the same binding
         """
 
-        for bucket in (fragment.requests, fragment.requests_for_write,
-                       fragment._request_global):
+        if name in fragment._request_global:
+            if _in_module_scope(fragment):
+                fragment._request_global.remove(name)
+            else:
+                raise CompilerError(_LOCAL_GLOBAL_CONFLICT % (str(name),), name)
+
+        for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
                 bucket.remove(name)
 
@@ -202,11 +227,8 @@ class KoskariPragma:
         Conflicts with local declaration; removes from requests buckets.
         """
 
-        if name in fragment.declares:
-            raise CompilerError(
-                f"{str(name)!r} cannot be both local (define) and global"
-                " (define-global).",
-                name)
+        if name in fragment.declares and not _in_module_scope(fragment):
+            raise CompilerError(_LOCAL_GLOBAL_CONFLICT % (str(name),), name)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:

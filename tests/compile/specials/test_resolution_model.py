@@ -71,6 +71,50 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         result = await expr()
         self.assertEqual(2, result)
 
+    async def test_define_then_define_global_in_a_frame_conflicts(self):
+        """
+        A name cannot be both a local and a global of one frame
+        """
+
+        src_str = """
+        (lambda []
+          (define x 1)
+          (define-global x 2)
+          x)
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("'x'", str(caught.exception))
+
+    async def test_define_global_then_define_in_a_frame_conflicts(self):
+        """
+        The other order is the same conflict: the declaration would
+        retarget the define-global's store onto the local
+        """
+
+        src_str = """
+        (lambda []
+          (define-global x 2)
+          (define x 1)
+          x)
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("'x'", str(caught.exception))
+
+    async def test_define_and_define_global_at_module_level_agree(self):
+        """
+        At module level both forms name the module binding, in either
+        order
+        """
+
+        for src_str in (
+                "(begin (define x 1) (define-global x 2) x)",
+                "(begin (define-global x 1) (define x 2) x)"):
+            expr, mod = self.compile_expr(src_str)
+            self.assertEqual(2, await expr())
+            self.assertEqual(vars(mod).deref('x'), 2)
+
 
 class TestResolutionModelImplicitRead(SpecialsTestCase):
 

@@ -49,8 +49,8 @@ implicit closures and global reads.
 
 | When adding to… | Remove from… | Conflict (error) |
 |-----------------|--------------|------------------|
-| `declare_var(x)` | request, request_for_write, request_global | — |
-| `request_global(x)` | request, request_for_write | If x in declares |
+| `declare_var(x)` | request, request_for_write | If x in request_global (frame scope); at module scope x is removed from request_global, both naming the module binding |
+| `request_global(x)` | request, request_for_write | If x in declares (frame scope); at module scope both are kept |
 | `request_for_write(x)` | — | — |
 | `request(x)` | — | — |
 
