@@ -20,10 +20,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cons, keyword, symbol
+from koskari.lib import Datum, cons, gensym, keyword, symbol
 from koskari.matcher import (
-    CAPTURE, LITERAL, MATCH, REPEAT, REST, Matcher,
-    parse_explicit_rule_pattern)
+    CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, Matcher,
+    parse_explicit_rule_pattern, parse_matcher)
 from koskari.types import build_proper
 
 
@@ -58,6 +58,27 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         self.assertTrue(r.matched)
         r2 = m.match((a, symbol("c")))
         self.assertFalse(r2.matched)
+
+
+    def test_field_name_is_the_symbols_base(self):
+        """
+        (FIELD NAME pat) names an attribute, which has no marks to
+        carry: a template-written NAME arrives as a gensym and the
+        lookup uses its base spelling
+        """
+
+        class Point:
+            def __init__(self, x):
+                self.x = x
+
+        marked_x = gensym(symbol("x"), marks=1)
+        field = parse_matcher(build_proper(
+            symbol("FIELD"), marked_x,
+            build_proper(symbol("VALUE"), symbol("v"))))
+        m = Matcher.from_tuple(MATCH(CLASS("Point", field)).freeze())
+        r = m.match((Point(7),), Point=Point)
+        self.assertTrue(r.matched)
+        self.assertEqual(r.captures["v"], 7)
 
 
     def test_symbol_declaration(self):

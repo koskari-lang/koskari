@@ -2630,7 +2630,9 @@ def field_factory(head_sym, raw_args):
         if not is_symbol(first):
             raise ValueError(
                 f"(FIELD NAME pat) NAME must be a symbol, got {first!r}")
-        return FIELD(parse_matcher(items[1]), name=str(first))
+        # the name reaches getattr and carries no marks: a template-written
+        # NAME is a gensym, read by its base as the case dialect does
+        return FIELD(parse_matcher(items[1]), name=str(strip_mark(first)))
     raise ValueError(
         f"(FIELD ...) expects 1 or 2 arguments, got {len(items)}")
 
