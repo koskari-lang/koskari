@@ -29,7 +29,7 @@ KOS_OP_HANDLER(CONS) {
   if (! ptr)
     RESULT_RAISE();
 
-  PyObject *result = KosPair_ConsFromPtr(ptr, (int) count);
+  PyObject *result = KosPair_ConsFromPtr(ptr, (Py_ssize_t) count);
   if (! result)
     RESULT_RAISE();
 

@@ -125,7 +125,7 @@ PyObject *KosPair_Cons(PyObject *sequence);
    ptr[count-1] is the tail. Same logical order as KosPair_Cons.
    INCREFs each element when storing into a pair. count may be 0 (returns nil).
  */
-PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count);
+PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count);
 
 /**
    Bracket-pair variants of KosPair_Cons / KosPair_ConsFromPtr: identical
@@ -134,7 +134,7 @@ PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count);
  */
 PyObject *KosBracketPair_Cons(PyObject *sequence);
 
-PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count);
+PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count);
 
 /**
    Make the pair chain circular: set the tail-most link's cdr to the head.

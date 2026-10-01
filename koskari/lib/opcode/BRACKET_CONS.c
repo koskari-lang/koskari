@@ -29,7 +29,7 @@ KOS_OP_HANDLER(BRACKET_CONS) {
   if (! ptr)
     RESULT_RAISE();
 
-  PyObject *result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+  PyObject *result = KosBracketPair_ConsFromPtr(ptr, (Py_ssize_t) count);
   if (! result)
     RESULT_RAISE();
 

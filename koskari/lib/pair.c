@@ -2085,7 +2085,7 @@ PyObject *KosPair_Cons(PyObject *members) {
   PyObject *result;
   if (PyList_Check(seq)) {
     PyObject **ptr = ((PyListObject *) seq)->ob_item;
-    result = KosPair_ConsFromPtr(ptr, (int) count);
+    result = KosPair_ConsFromPtr(ptr, count);
   } else {
     PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count * sizeof(PyObject *));
     if (! ptr) {
@@ -2094,7 +2094,7 @@ PyObject *KosPair_Cons(PyObject *members) {
     }
     for (Py_ssize_t i = 0; i < count; i++)
       ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
-    result = KosPair_ConsFromPtr(ptr, (int) count);
+    result = KosPair_ConsFromPtr(ptr, count);
     PyMem_Free(ptr);
   }
 
@@ -2193,7 +2193,7 @@ int KosPair_BreakRecursive(PyObject *pair) {
 }
 
 
-PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
+PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count) {
   if (count <= 0) {
     Py_INCREF(KosNil);
     return KosNil;
@@ -2209,7 +2209,7 @@ PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
   PyObject *work = ptr[count - 1];
   Py_INCREF(work);
 
-  for (int i = count - 2; i >= 1; i--) {
+  for (Py_ssize_t i = count - 2; i >= 1; i--) {
     PyObject *tmp = KosPair_New(ptr[i], work);
     Py_DECREF(work);
     if (! tmp) {
@@ -2225,7 +2225,7 @@ PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
 }
 
 
-PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count) {
+PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count) {
   if (count <= 0) {
     Py_INCREF(KosBracketNil);
     return KosBracketNil;
@@ -2241,7 +2241,7 @@ PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count) {
   PyObject *work = ptr[count - 1];
   Py_INCREF(work);
 
-  for (int i = count - 2; i >= 1; i--) {
+  for (Py_ssize_t i = count - 2; i >= 1; i--) {
     PyObject *tmp = KosBracketPair_New(ptr[i], work);
     Py_DECREF(work);
     if (! tmp) {
@@ -2274,7 +2274,7 @@ PyObject *KosBracketPair_Cons(PyObject *members) {
   PyObject *result;
   if (PyList_Check(seq)) {
     PyObject **ptr = ((PyListObject *) seq)->ob_item;
-    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+    result = KosBracketPair_ConsFromPtr(ptr, count);
   } else {
     PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count
                                                 * sizeof(PyObject *));
@@ -2284,7 +2284,7 @@ PyObject *KosBracketPair_Cons(PyObject *members) {
     }
     for (Py_ssize_t i = 0; i < count; i++)
       ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
-    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
+    result = KosBracketPair_ConsFromPtr(ptr, count);
     PyMem_Free(ptr);
   }
 

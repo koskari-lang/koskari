@@ -33,7 +33,7 @@ KOS_OP_HANDLER(BRACKET_PROPER) {
   if (unlikely(! ptr))
     RESULT_RAISE();
 
-  PyObject *result = KosBracketPair_ConsFromPtr(ptr, (int) (count + 1));
+  PyObject *result = KosBracketPair_ConsFromPtr(ptr, (Py_ssize_t) (count + 1));
   if (unlikely(! result))
     RESULT_RAISE();
 
