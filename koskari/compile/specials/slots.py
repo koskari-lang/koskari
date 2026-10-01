@@ -40,9 +40,10 @@ _SET_ATTR_PATTERNS = [
 
 def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
     """
-    A fragment for an attribute special: a symbol object takes the var
-    path, var_op with the (obj, sym, 0, 0) operand; any other object is
-    compiled onto the stack and takes stack_op with the attribute name.
+    A fragment for an attribute special: a symbol object that reads a
+    variable takes the var path, var_op with the (obj, sym, 0, 0)
+    operand; any other object is compiled onto the stack and takes
+    stack_op with the attribute name.
     before, when given, is called with the fragment between the object
     and the row so a store can compile its value in the right place
 
@@ -55,7 +56,7 @@ def emit_attr(compiler, called_by, obj, sym, var_op, stack_op, before=None):
     obj = obj.datum
     name = str(sym.datum.base)
 
-    if is_symbol(obj):
+    if is_symbol(obj) and compiler.symbol_is_variable(obj):
         frag.request_var(obj)
         if before is not None:
             before(frag)

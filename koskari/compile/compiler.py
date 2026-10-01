@@ -824,6 +824,21 @@ class Compiler:
         return self._find_compiled("compile/" + name)
 
 
+    def symbol_is_variable(self, sym):
+        """
+        Whether a lone symbol compiles to a variable read, so a special
+        may name it in a fused VAR operand: it is not a compiler literal
+        and no bare arm expands it. Anything else must go through
+        full_compile, which expands the bare arm or emits the constant
+
+        :param sym: the symbol as written, marks included
+        """
+
+        if sym.base in _COMPILER_LITERALS:
+            return False
+        return self.find_bare_compiled(sym) is None
+
+
     def find_bare_compiled(self, name):
         """
         Resolve as :meth:`find_compiled`, keeping only a Compiled that
