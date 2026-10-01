@@ -96,6 +96,12 @@ def _reduce_fold(py_fold, compiler, body):
     while not is_nil(current):
         expr, rest = current
 
+        # a keyword argument reroutes the form to a call; it is
+        # structural there and is never compiled as a value, so the fold
+        # stops ahead of it with nothing pending
+        if is_keyword(expr):
+            break
+
         expr_frag = compiler.full_compile(expr)
         is_const, const_val = const_only_expr(expr_frag)
 
