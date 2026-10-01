@@ -341,6 +341,39 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
         self.assertEqual([2, 2, 4], list(result))
 
 
+class TestMatchIsAPlainPatternSymbol(DefineSyntaxCompileHelpers):
+    """
+    The word match carries no meaning inside a RULE pattern, so a rule
+    may use it as a pattern variable in any position, the head included
+    """
+
+    async def test_syntax_rules_pattern_headed_match(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(match a b) (#tuple a b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2)", **defn)
+        self.assertEqual((1, 2), await expr())
+
+    async def test_macro_rules_pattern_headed_match(self):
+        src_str = """
+        (define m
+          (macro-rules m []
+            [(match a b) `(#tuple ,a ,b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2)", **defn)
+        self.assertEqual((1, 2), await expr())
+
+
 class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_syntax_match_value_pattern(self):

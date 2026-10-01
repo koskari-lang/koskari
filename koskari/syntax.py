@@ -38,7 +38,7 @@ from koskari.matcher import (
     parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
-    fill_position, get_position, is_nil, is_pair, is_proper, is_symbol,
+    fill_position, get_position, is_pair, is_proper, is_symbol,
     strip_mark, unpack)
 
 
@@ -59,7 +59,6 @@ __all__ = (
 )
 
 
-_symbol_match = symbol("match")
 
 
 class Syntax(Compiled):
@@ -687,18 +686,6 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
 
     # a literal is named and matched by its bare spelling
     literals = frozenset(strip_mark(lit) for lit in literals)
-
-    if is_pair(pattern_expr):
-        head, rest = pattern_expr
-        if strip_mark(head) == _symbol_match:
-            if (not is_proper(rest)
-                    or not is_nil(rest.cdr)
-                    or is_nil(rest)):
-                raise ValueError(
-                    f"match pattern must have exactly one form: {pattern_expr!r}"
-                    f" (context {source_ctx!r})"
-                )
-            pattern_expr = rest.car
 
     if pattern_expr is Ellipsis:
         raise TypeError(

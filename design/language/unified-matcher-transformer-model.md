@@ -38,13 +38,13 @@ type annotations on individual rules.
 
 **Nested `(match …)` inside a RULE pattern**
 
-Inside **`syntax-rules`** / **`macro-rules`** only, `parse_syntax_rules_pattern` may
-see a pattern whose car is the **`match`** symbol. That dispatch is
-**orthogonal** to the table above: it is an escape **within** the RULE pattern
-column (`(match INNER)` is lowered with the same RULE lowerer). Prefer the
-**four** top-level forms (`syntax-rules`, `macro-rules`, `syntax-match`,
-`macro-match`) for the primary RULE vs MATCH split; **MATCH** patterns are not
-embedded via a **`rule`** wrapper inside RULE columns.
+No word carries meaning inside a RULE pattern beyond the grammar: a symbol
+is a pattern variable or a listed literal, `...` is the repeat marker, and a
+list is a sub-form. The symbol **`match`** is a symbol like any other there;
+the earlier `(match INNER)` escape, an unwrap honoured at the top of a
+pattern only, is gone. The **four** top-level forms (`syntax-rules`,
+`macro-rules`, `syntax-match`, `macro-match`) carry the RULE vs MATCH split;
+**MATCH** patterns are not embedded inside RULE columns.
 
 **Completed (recent / current tree):**
 

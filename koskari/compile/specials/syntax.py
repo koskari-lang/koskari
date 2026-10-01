@@ -26,12 +26,11 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...lib import cons, keyword, nil, symbol
 from ...matcher import (
-    BIND, BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, REPEAT, SYMBOL,
+    BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import (
     build_proper, is_pair, is_proper, is_symbol, unpack)
-from ..helpers import match1
 
 
 _sym_quote_syntax = symbol("quote-syntax")
@@ -95,8 +94,6 @@ _SPECIAL_MATCH_RULE_ROWS = repeat_capture(
         LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
         min_count=1))
 
-_MATCH_FORM_PATTERN = LIST(LITERAL_SYM("match"), VALUE("inner"))
-
 
 def _syntax_rules_row_pattern_and_template(raw_rule):
     """
@@ -107,8 +104,6 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     can also supply longer proper lists; then the
     template is the last top-level form and all preceding forms are grouped
     like :func:`koskari.reader.layouts.define_syntax._pattern_template_from_rule`.
-    A pattern column ``(match INNER)`` is unwrapped to ``INNER`` for RULE
-    lowering.
     """
 
     if not is_pair(raw_rule):
@@ -124,9 +119,6 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     else:
         pattern_src = cons(*rule_parts[:-1], nil)
         template_expr = rule_parts[-1]
-    match_m = match1(pattern_src, [_MATCH_FORM_PATTERN])
-    if match_m is not None:
-        pattern_src = match_m["inner"].datum
     return pattern_src, template_expr
 
 

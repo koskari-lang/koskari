@@ -174,31 +174,6 @@ class TestSyntaxExpansion(unittest.TestCase):
 
 class TestSyntaxRulesPatternParsing(unittest.TestCase):
 
-    def test_match_pattern_equivalent_to_plain(self):
-        rule_plain = build_proper(
-            build_proper(symbol('double'), symbol('x')),
-            build_proper(symbol('+'), symbol('x'), symbol('x')),
-        )
-        rule_match = build_proper(
-            build_proper(
-                symbol('match'),
-                build_proper(symbol('double'), symbol('x')),
-            ),
-            build_proper(symbol('+'), symbol('x'), symbol('x')),
-        )
-        p0, t0 = list(unpack(rule_plain))
-        p1, t1 = list(unpack(rule_match))
-        name = symbol('double')
-        literals = frozenset({name})
-        p0_m = parse_syntax_rules_pattern(p0, literals, p0)
-        p1_m = parse_syntax_rules_pattern(p1, literals, p1)
-        t_plain = build_syntax(name, p0_m, t0)
-        t_match = build_syntax(name, p1_m, t1)
-        ex = expand(t_plain, build_proper(symbol('double'), 21))
-        assert_forms_equal(
-            self, ex, expand(t_match, build_proper(symbol('double'), 21)))
-
-
     def test_rule_pattern_explicit_value_matcher(self):
         rule_row = build_proper(
             build_proper(
