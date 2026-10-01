@@ -229,8 +229,15 @@ static void kos_dynnode_return_to_freelist(KosDynNode *node) {
 }
 
 
+/**
+   Store value under key in dict, taking ownership of value. Returns -1
+   when value is NULL (a constructor failed, exception set) or when the
+   store fails; value is released on every path.
+*/
 static int snapshot_set_item(PyObject *dict, const char *key, PyObject *value) {
 
+  if (! value)
+    return -1;
   if (PyDict_SetItemString(dict, key, value) < 0) {
     Py_DECREF(value);
     return -1;
