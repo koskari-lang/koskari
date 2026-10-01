@@ -1863,7 +1863,7 @@ static PyObject *ns_newfull_type(
 
   if (parent && ! KosNamespace_Check(parent)) {
     PyErr_Format(PyExc_TypeError, "Namespace parent must be Namespace,"
-                 " not %R", name);
+                 " not %R", parent);
     return NULL;
   }
 
@@ -2899,7 +2899,7 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
 
     } else {
       PyErr_Format(PyExc_AttributeError, "%R object attribute %R is read-only",
-                   self, value);
+                   self, name);
       return -1;
     }
   }

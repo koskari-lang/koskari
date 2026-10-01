@@ -1071,6 +1071,21 @@ class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
 class TestModule(unittest.IsolatedAsyncioTestCase):
     """Tests for the Module type"""
 
+    async def test_read_only_attribute_error_names_the_attribute(self):
+        """
+        Storing to or deleting a read-only module descriptor names the
+        attribute in the error, not the value
+        """
+
+        m = Module(Namespace("ns", None, ('a',)))
+        with self.assertRaises(AttributeError) as caught:
+            m.__name__ = "other"
+        self.assertIn("'__name__'", str(caught.exception))
+        self.assertNotIn("'other'", str(caught.exception))
+        with self.assertRaises(AttributeError) as caught:
+            del m.__name__
+        self.assertIn("'__name__'", str(caught.exception))
+
     async def test_create_with_namespace(self):
         """Module can be created with a Namespace"""
         ns = Namespace("ns", None, ('a', 'b'))
