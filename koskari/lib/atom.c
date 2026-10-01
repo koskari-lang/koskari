@@ -91,7 +91,10 @@ static PyObject *atom_new(
     KosInternedAtom_NAME(atom) = name;
 
     if (PyDict_SetItem(intern, name, (PyObject *) atom)) {
-      Py_DECREF(atom);  /* clears KosInternedAtom_NAME(atom) as well */
+      /* the key was never set: an atom with no name was never interned,
+         and its dealloc leaves the table alone */
+      Py_CLEAR(KosInternedAtom_NAME(atom));
+      Py_DECREF(atom);
       return NULL;
     }
 
@@ -180,10 +183,12 @@ PyObject *KosSymbol_FromString(PyObject *name) {
 /**
    Drop a dying atom's entry from its intern table. The refcount is
    raised past zero for the duration so the dict's own decref of the
-   value does not re-enter dealloc.
+   value does not re-enter dealloc. An atom with no name was never
+   interned (its constructor cleared the name when the table refused
+   it) and has no entry to drop.
 */
 static void atom_forget(PyObject *self, PyObject *intern) {
-  if (intern) {
+  if (intern && KosInternedAtom_NAME(self)) {
     self->ob_refcnt = 3;
     PyDict_DelItem(intern, KosInternedAtom_NAME(self));
   }
@@ -503,11 +508,10 @@ static PyObject *gensym_intern(
   g->marks = marks;
 
   if (PyDict_SetItem(intern_syms, name, (PyObject *) g)) {
-    // dealloc deletes a key that was never set; keep the real error
-    PyObject *typ, *val, *tb;
-    PyErr_Fetch(&typ, &val, &tb);
+    // the key was never set: a gensym with no name was never interned,
+    // and its dealloc leaves the table alone
+    Py_CLEAR(KosInternedAtom_NAME(g));
     Py_DECREF(g);
-    PyErr_Restore(typ, val, tb);
     return NULL;
   }
 
