@@ -251,4 +251,46 @@ class TestKosChainFromIterable(unittest.TestCase):
                              series)
 
 
+class TestKosChainFromIterableLaziness(unittest.IsolatedAsyncioTestCase):
+    """
+    The series is pulled as the chain advances: an inner iterable is
+    produced only when the one before it runs out, so an unbounded or
+    driven series serves
+    """
+
+    def from_iterable(self):
+        import koskari.lib as kl
+
+        return getattr(kl, 'chain-from-iterable')
+
+    def test_inner_iterables_are_produced_on_demand(self):
+        log = []
+
+        def series():
+            for n in (0, 2, 4):
+                log.append(n)
+                yield [n, n + 1]
+
+        c = self.from_iterable()(series())
+        it = iter(c)
+        self.assertEqual([next(it), next(it)], [0, 1])
+        self.assertEqual(log, [0])
+        self.assertEqual(next(it), 2)
+        self.assertEqual(log, [0, 2])
+
+    async def test_driven_series(self):
+        c = self.from_iterable()(agen([[1, 2], agen([3]), [], [4]]))
+        self.assertEqual([item async for item in c], [1, 2, 3, 4])
+
+    def test_series_that_raises_propagates(self):
+        def series():
+            yield [1]
+            raise KeyError("series")
+
+        it = iter(self.from_iterable()(series()))
+        self.assertEqual(next(it), 1)
+        with self.assertRaises(KeyError):
+            next(it)
+
+
 # The end.

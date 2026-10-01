@@ -36,8 +36,10 @@
 
 typedef struct KosChain {
   KosTransform base;
-  PyObject *pending_srcs;  /* tuple of iterables not yet acquired */
-  Py_ssize_t next;         /* index of the next one to acquire */
+  PyObject *series;        /* acquired iterator over the iterables not
+                              yet reached; NULL once it runs out */
+  int series_sync;         /* the series steps through tp_iternext
+                              alone; a driven one is requested */
 } KosChain;
 
 
@@ -51,32 +53,68 @@ static int chain_spent(void) {
 
 
 /**
-   Move to the next iterable in the series: release the spent source
-   and acquire its successor, re-resolving whether the new one steps
-   through tp_iternext alone.
+   Make the iterable the series just produced the live source,
+   re-resolving whether it steps through tp_iternext alone. iterable
+   is borrowed.
+
+   :return: 0, or -1 with PyErr set when acquiring failed
+*/
+static int chain_take_source(KosChain *c, PyObject *iterable) {
+
+  KosTransform *t = &c->base;
+  PyObject *source = kos_iter_acquire(iterable);
+
+  if (! source)
+    return -1;
+
+  t->source = source;
+  t->src_sync = KosIter_CheckSync(source);
+
+  return 0;
+}
+
+
+/**
+   Move to the next iterable of a sync series: release the spent
+   source and acquire its successor. A driven series is pulled through
+   a request instead (chain_resume_series).
 
    :return: 1 when a new source is live, 0 when the series is spent,
-            -1 with PyErr set when acquiring failed
+            -1 with PyErr set when pulling or acquiring failed
 */
 static int chain_advance(KosChain *c) {
 
   KosTransform *t = &c->base;
-  PyObject *source;
+  PyObject *iterable;
+  int r;
 
   Py_CLEAR(t->source);
 
-  if (c->next >= PyTuple_GET_SIZE(c->pending_srcs))
+  if (! c->series)
     return 0;
 
-  source = kos_iter_acquire(PyTuple_GET_ITEM(c->pending_srcs, c->next));
-  if (! source)
-    return -1;
+  iterable = PyIter_Next(c->series);
+  if (! iterable) {
+    if (PyErr_Occurred())
+      return -1;
+    Py_CLEAR(c->series);
+    return 0;
+  }
 
-  c->next++;
-  t->source = source;
-  t->src_sync = KosIter_CheckSync(source);
+  r = chain_take_source(c, iterable);
+  Py_DECREF(iterable);
 
-  return 1;
+  return r < 0 ? -1 : 1;
+}
+
+
+/**
+   Is the series driven and still live, so that the next iterable has
+   to be requested rather than pulled in C?
+*/
+static inline int chain_series_driven(const KosChain *c) {
+
+  return c->series && ! c->series_sync;
 }
 
 
@@ -96,11 +134,15 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
     KosEvalState *es, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     KosEvalState *es, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
+    KosEvalState *es, void *state, PyObject *value);
 
 KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step",
                 chain_resume_deliver, kos_transform_step_clear, NULL);
 KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step",
                 chain_resume_fetch, kos_transform_step_clear, NULL);
+KOS_RESUME_KIND(chain_resume_series_kind, "chain-step",
+                chain_resume_series, kos_transform_step_clear, NULL);
 
 
 /**
@@ -124,8 +166,17 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     PyObject *element;
 
     if (! t->source) {
-      int moved = chain_advance(c);
+      int moved;
 
+      if (chain_series_driven(c)) {
+        /* the next iterable is requested from the series; its
+           delivery lands in chain_resume_series */
+        KosOpResult r = KosEvalState_NextResume(es, c->series, NULL,
+                                                &chain_resume_series_kind, c);
+        RESULT_ENTRY(es, r, &chain_resume_series_kind, c);
+      }
+
+      moved = chain_advance(c);
       if (moved < 0)
         return EVAL_RAISE();
       if (! moved) {
@@ -182,6 +233,36 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
 }
 
 
+/**
+   SERIES: the driven series produced the next iterable, or ran out.
+   The iterable becomes the live source and the fetch goes on; running
+   out ends the chain. iterable is consumed.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
+    KosEvalState *es, void *state, PyObject *iterable) {
+
+  KosChain *c = (KosChain *) state;
+  int r;
+
+  if (! iterable) {
+    if (! chain_spent())
+      return EVAL_RAISE();
+
+    /* the series is spent, and with it the chain: the StopIteration
+       stands as the step's outcome */
+    Py_CLEAR(c->series);
+    return EVAL_RAISE();
+  }
+
+  r = chain_take_source(c, iterable);
+  Py_DECREF(iterable);
+  if (r < 0)
+    return EVAL_RAISE();
+
+  RESUME_HOP(&chain_resume_fetch_kind, es, c, NULL);
+}
+
+
 /* === the step === */
 
 
@@ -199,14 +280,19 @@ static KosIterStepResult chain_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  /* Walk the series in C for as long as the sources are sync, and
-     defer only once a driven one is reached. */
+  /* Walk the series in C for as long as the series and the sources
+     are sync, and defer only once a driven one is reached. */
   for (;;) {
     PyObject *element;
 
     if (! t->source) {
-      int moved = chain_advance(c);
+      int moved;
 
+      if (chain_series_driven(c))
+        return kos_transform_stage(es, t, NULL, &chain_resume_fetch_kind,
+                                   pre_top);
+
+      moved = chain_advance(c);
       if (moved < 0)
         return KOS_ITER_ERROR;
       if (! moved) {
@@ -238,25 +324,26 @@ static KosIterStepResult chain_iter_step(
 /* === the type === */
 
 
-static PyObject *koschain_new(
-    PyTypeObject *type,
-    PyObject *args,
-    PyObject *kwds) {
+/**
+   Build a chain over the iterables that series produces: the argument
+   tuple of the chain form, or whatever chain-from-iterable was given.
+   The series is acquired here and pulled as the chain advances, so an
+   iterable it has not produced yet is never touched. series is
+   borrowed.
+*/
+static PyObject *chain_build(PyTypeObject *type, PyObject *series) {
 
-  KosChain *c;
+  KosChain *c = (KosChain *) type->tp_alloc(type, 0);
 
-  if (kwds && PyDict_Size(kwds)) {
-    PyErr_SetString(PyExc_TypeError, "chain takes no keyword arguments");
-    return NULL;
-  }
-
-  c = (KosChain *) type->tp_alloc(type, 0);
   if (! c)
     return NULL;
 
-  Py_INCREF(args);
-  c->pending_srcs = args;
-  c->next = 0;
+  c->series = kos_iter_acquire(series);
+  if (! c->series) {
+    Py_DECREF(c);
+    return NULL;
+  }
+  c->series_sync = KosIter_CheckSync(c->series);
 
   c->base.fn.cs_callable = NULL;
   c->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
@@ -280,25 +367,31 @@ static PyObject *koschain_new(
 }
 
 
+static PyObject *koschain_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  if (kwds && PyDict_Size(kwds)) {
+    PyErr_SetString(PyExc_TypeError, "chain takes no keyword arguments");
+    return NULL;
+  }
+
+  return chain_build(type, args);
+}
+
+
 /**
    chain.from-iterable(iterables): the series comes from one iterable
-   rather than from the argument list. It is read eagerly into a
-   tuple, which is what holding the unacquired series requires; the
-   iterables in it are still acquired only as they are reached.
+   rather than from the argument list. It may be unbounded, and it may
+   be driven: it is pulled one iterable at a time as the chain reaches
+   the end of the one before.
 */
 static PyObject *koschain_from_iterable(PyObject *self, PyObject *arg) {
 
-  PyObject *series = PySequence_Tuple(arg);
-  PyObject *made;
-
   (void) self;
 
-  if (! series)
-    return NULL;
-
-  made = koschain_new(KOS_EVALUATED_PYTYPE(KosChainType), series, NULL);
-  Py_DECREF(series);
-  return made;
+  return chain_build(KOS_EVALUATED_PYTYPE(KosChainType), arg);
 }
 
 
@@ -309,11 +402,30 @@ static PyMethodDef koschain_from_iterable_def = {
 };
 
 
+/**
+   Close reaches the live source through the base, and the series
+   after it: an iterable the series has not produced is never touched,
+   but the series itself may hold state to release.
+*/
+static int koschain_close(PyObject *self) {
+
+  KosChain *c = (KosChain *) self;
+  int r = kos_transform_close(self);
+
+  if (c->base.closed && ! c->base.busy && c->series) {
+    kos_iter_close(c->series);
+    Py_CLEAR(c->series);
+  }
+
+  return r;
+}
+
+
 static int koschain_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosChain *c = (KosChain *) self;
 
-  Py_VISIT(c->pending_srcs);
+  Py_VISIT(c->series);
   return kos_transform_traverse(self, visit, arg);
 }
 
@@ -322,7 +434,7 @@ static int koschain_clear(PyObject *self) {
 
   KosChain *c = (KosChain *) self;
 
-  Py_CLEAR(c->pending_srcs);
+  Py_CLEAR(c->series);
   return kos_transform_clear(self);
 }
 
@@ -332,7 +444,7 @@ static void koschain_dealloc(PyObject *self) {
   KosChain *c = (KosChain *) self;
 
   PyObject_GC_UnTrack(self);
-  Py_CLEAR(c->pending_srcs);
+  Py_CLEAR(c->series);
 
   kos_transform_dealloc(self);
 }
@@ -363,7 +475,7 @@ KosEvaluatedTypeObject KosChainType = {
   .kos_iter = {
     .ki_step = chain_iter_step,
     .ki_throw = kos_transform_throw,
-    .ki_close = kos_transform_close,
+    .ki_close = koschain_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
     .ki_pyctx_recyclable = 1,
