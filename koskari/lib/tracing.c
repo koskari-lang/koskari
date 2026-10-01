@@ -437,6 +437,28 @@ void kos_trace_clear(void) {
 
 /* === report builder === */
 
+
+#if KOS_TRACE_FREELIST || KOS_TRACE_TIMING || KOS_TRACE_EVAL_SYNC
+/**
+   Store value under key in dict, taking ownership of value. Returns -1
+   when value is NULL (a constructor failed, exception set) or when the
+   store fails; value is released on every path. Only the sections built
+   under the trace flags above store fresh values this way.
+*/
+static int trace_set_item(PyObject *dict, const char *key, PyObject *value) {
+
+  if (! value)
+    return -1;
+  if (PyDict_SetItemString(dict, key, value) < 0) {
+    Py_DECREF(value);
+    return -1;
+  }
+  Py_DECREF(value);
+  return 0;
+}
+#endif
+
+
 static int add_fl_section(PyObject *report) {
 #if KOS_TRACE_FREELIST
   PyObject *freelists = PyDict_New();
@@ -446,13 +468,13 @@ static int add_fl_section(PyObject *report) {
 #define ADD_FL_ENTRY(name, counters) do {                              \
     PyObject *entry = PyDict_New();                                    \
     if (! entry) { Py_DECREF(freelists); return -1; }                   \
-    if (PyDict_SetItemString(entry, "alloc_hits",                      \
+    if (trace_set_item(entry, "alloc_hits",                      \
             PyLong_FromUnsignedLong((counters).alloc_hits)) < 0 ||      \
-        PyDict_SetItemString(entry, "alloc_misses",                    \
+        trace_set_item(entry, "alloc_misses",                    \
             PyLong_FromUnsignedLong((counters).alloc_misses)) < 0 ||    \
-        PyDict_SetItemString(entry, "return_hits",                     \
+        trace_set_item(entry, "return_hits",                     \
             PyLong_FromUnsignedLong((counters).return_hits)) < 0 ||     \
-        PyDict_SetItemString(entry, "overruns",                        \
+        trace_set_item(entry, "overruns",                        \
             PyLong_FromUnsignedLong((counters).overruns)) < 0) {        \
       Py_DECREF(entry);                                                \
       Py_DECREF(freelists);                                            \
@@ -599,9 +621,9 @@ static int add_eval_state_sync_section(PyObject *report) {
       Py_DECREF(sec);
       return -1;
     }
-    if (PyDict_SetItemString(entry, "count",
+    if (trace_set_item(entry, "count",
             PyLong_FromUnsignedLongLong(kos_tevs_slots[i].count)) < 0 ||
-        PyDict_SetItemString(entry, "total_ns",
+        trace_set_item(entry, "total_ns",
             PyLong_FromUnsignedLongLong(kos_tevs_slots[i].total_ns)) < 0) {
       Py_DECREF(entry);
       Py_DECREF(sec);
@@ -727,17 +749,17 @@ static int add_opcode_timing_section(PyObject *report) {
     if (! entry)
       goto fail;
 
-    if (PyDict_SetItemString(entry, "count",
+    if (trace_set_item(entry, "count",
             PyLong_FromUnsignedLongLong(c)) < 0 ||
-        PyDict_SetItemString(entry, "total_ns",
+        trace_set_item(entry, "total_ns",
             PyLong_FromUnsignedLongLong(t)) < 0 ||
-        PyDict_SetItemString(entry, "avg_ns",
+        trace_set_item(entry, "avg_ns",
             PyLong_FromUnsignedLongLong(avg)) < 0 ||
-        PyDict_SetItemString(entry, "share_of_time",
+        trace_set_item(entry, "share_of_time",
             PyFloat_FromDouble(share_time)) < 0 ||
-        PyDict_SetItemString(entry, "share_of_executions",
+        trace_set_item(entry, "share_of_executions",
             PyFloat_FromDouble(share_exec)) < 0 ||
-        PyDict_SetItemString(entry, "ratio_vs_mean",
+        trace_set_item(entry, "ratio_vs_mean",
             PyFloat_FromDouble(ratio_mean)) < 0) {
       Py_DECREF(entry);
       goto fail;
@@ -754,28 +776,28 @@ static int add_opcode_timing_section(PyObject *report) {
   if (! summary)
     goto fail;
 
-  if (PyDict_SetItemString(summary, "clock",
+  if (trace_set_item(summary, "clock",
           PyUnicode_FromString(kos_trace_clock_name())) < 0 ||
-      PyDict_SetItemString(summary, "ns_per_tick",
+      trace_set_item(summary, "ns_per_tick",
           PyFloat_FromDouble(ns_per_tick)) < 0 ||
-      PyDict_SetItemString(summary, "step_overhead_ns",
+      trace_set_item(summary, "step_overhead_ns",
           PyFloat_FromDouble((double) kos_trace_step_overhead_ticks
                              * ns_per_tick)) < 0 ||
-      PyDict_SetItemString(summary, "total_executions",
+      trace_set_item(summary, "total_executions",
           PyLong_FromUnsignedLongLong(total_executions)) < 0 ||
-      PyDict_SetItemString(summary, "total_ns",
+      trace_set_item(summary, "total_ns",
           PyLong_FromUnsignedLongLong(total_ns_all)) < 0 ||
-      PyDict_SetItemString(summary, "avg_ns_per_dispatch",
+      trace_set_item(summary, "avg_ns_per_dispatch",
           PyLong_FromUnsignedLongLong(avg_ns_per_dispatch)) < 0 ||
-      PyDict_SetItemString(summary, "opcode_count_nonzero",
+      trace_set_item(summary, "opcode_count_nonzero",
           PyLong_FromUnsignedLong((unsigned long) opcode_count_nonzero)) < 0 ||
-      PyDict_SetItemString(summary, "max_total_ns_op",
+      trace_set_item(summary, "max_total_ns_op",
           PyUnicode_FromString(max_total_ns_op)) < 0 ||
-      PyDict_SetItemString(summary, "max_total_ns",
+      trace_set_item(summary, "max_total_ns",
           PyLong_FromUnsignedLongLong(max_total_ns)) < 0 ||
-      PyDict_SetItemString(summary, "max_avg_ns_op",
+      trace_set_item(summary, "max_avg_ns_op",
           PyUnicode_FromString(max_avg_ns_op)) < 0 ||
-      PyDict_SetItemString(summary, "max_avg_ns",
+      trace_set_item(summary, "max_avg_ns",
           PyLong_FromUnsignedLongLong(max_avg_ns)) < 0) {
     goto fail;
   }
@@ -812,9 +834,9 @@ static int add_opcode_timing_section(PyObject *report) {
           goto fail;
         }
         opname = kos_trace_slot_name(tmp[k].idx);
-        if (PyDict_SetItemString(row, "op",
+        if (trace_set_item(row, "op",
                 PyUnicode_FromString(opname)) < 0 ||
-            PyDict_SetItemString(row, "total_ns",
+            trace_set_item(row, "total_ns",
                 PyLong_FromUnsignedLongLong(tmp[k].total_ns)) < 0) {
           Py_DECREF(row);
           Py_DECREF(top_total);
@@ -847,9 +869,9 @@ static int add_opcode_timing_section(PyObject *report) {
           goto fail;
         }
         opname = kos_trace_slot_name(tmp[k].idx);
-        if (PyDict_SetItemString(row, "op",
+        if (trace_set_item(row, "op",
                 PyUnicode_FromString(opname)) < 0 ||
-            PyDict_SetItemString(row, "avg_ns",
+            trace_set_item(row, "avg_ns",
                 PyLong_FromUnsignedLongLong(tmp[k].avg_ns)) < 0) {
           Py_DECREF(row);
           Py_DECREF(top_total);
@@ -1052,17 +1074,17 @@ static int add_post_handler_timing_section(PyObject *report) {
     if (! entry)
       goto fail;
 
-    if (PyDict_SetItemString(entry, "count",
+    if (trace_set_item(entry, "count",
             PyLong_FromUnsignedLongLong(c)) < 0 ||
-        PyDict_SetItemString(entry, "total_ns",
+        trace_set_item(entry, "total_ns",
             PyLong_FromUnsignedLongLong(t)) < 0 ||
-        PyDict_SetItemString(entry, "avg_ns",
+        trace_set_item(entry, "avg_ns",
             PyLong_FromUnsignedLongLong(avg)) < 0 ||
-        PyDict_SetItemString(entry, "share_of_time",
+        trace_set_item(entry, "share_of_time",
             PyFloat_FromDouble(share_time)) < 0 ||
-        PyDict_SetItemString(entry, "share_of_executions",
+        trace_set_item(entry, "share_of_executions",
             PyFloat_FromDouble(share_exec)) < 0 ||
-        PyDict_SetItemString(entry, "ratio_vs_mean",
+        trace_set_item(entry, "ratio_vs_mean",
             PyFloat_FromDouble(ratio_mean)) < 0) {
       Py_DECREF(entry);
       goto fail;
@@ -1079,27 +1101,27 @@ static int add_post_handler_timing_section(PyObject *report) {
   if (! summary)
     goto fail;
 
-  if (PyDict_SetItemString(summary, "total_executions",
+  if (trace_set_item(summary, "total_executions",
           PyLong_FromUnsignedLongLong(total_executions)) < 0 ||
-      PyDict_SetItemString(summary, "total_ns",
+      trace_set_item(summary, "total_ns",
           PyLong_FromUnsignedLongLong(total_ns_all)) < 0 ||
-      PyDict_SetItemString(summary, "avg_ns_per_dispatch",
+      trace_set_item(summary, "avg_ns_per_dispatch",
           PyLong_FromUnsignedLongLong(avg_ns_per_dispatch)) < 0 ||
-      PyDict_SetItemString(summary, "handler_count_nonzero",
+      trace_set_item(summary, "handler_count_nonzero",
           PyLong_FromUnsignedLong((unsigned long) handler_count_nonzero)) < 0 ||
-      PyDict_SetItemString(summary, "max_total_ns_handler",
+      trace_set_item(summary, "max_total_ns_handler",
           PyUnicode_FromString(max_total_ns_handler)) < 0 ||
-      PyDict_SetItemString(summary, "max_total_ns",
+      trace_set_item(summary, "max_total_ns",
           PyLong_FromUnsignedLongLong(max_total_ns)) < 0 ||
-      PyDict_SetItemString(summary, "max_avg_ns_handler",
+      trace_set_item(summary, "max_avg_ns_handler",
           PyUnicode_FromString(max_avg_ns_handler)) < 0 ||
-      PyDict_SetItemString(summary, "max_avg_ns",
+      trace_set_item(summary, "max_avg_ns",
           PyLong_FromUnsignedLongLong(max_avg_ns)) < 0 ||
-      PyDict_SetItemString(summary, "rollup_invocations",
+      trace_set_item(summary, "rollup_invocations",
           PyLong_FromUnsignedLongLong(rollup_count)) < 0 ||
-      PyDict_SetItemString(summary, "rollup_total_ns",
+      trace_set_item(summary, "rollup_total_ns",
           PyLong_FromUnsignedLongLong(rollup_total_ns)) < 0 ||
-      PyDict_SetItemString(summary, "rollup_avg_ns",
+      trace_set_item(summary, "rollup_avg_ns",
           PyLong_FromUnsignedLongLong(rollup_avg_ns)) < 0) {
     goto fail;
   }
@@ -1136,9 +1158,9 @@ static int add_post_handler_timing_section(PyObject *report) {
           goto fail;
         }
         hname = kos_tp_names[tmp[k].idx];
-        if (PyDict_SetItemString(row, "handler",
+        if (trace_set_item(row, "handler",
                 PyUnicode_FromString(hname)) < 0 ||
-            PyDict_SetItemString(row, "total_ns",
+            trace_set_item(row, "total_ns",
                 PyLong_FromUnsignedLongLong(tmp[k].total_ns)) < 0) {
           Py_DECREF(row);
           Py_DECREF(top_total);
@@ -1171,9 +1193,9 @@ static int add_post_handler_timing_section(PyObject *report) {
           goto fail;
         }
         hname = kos_tp_names[tmp[k].idx];
-        if (PyDict_SetItemString(row, "handler",
+        if (trace_set_item(row, "handler",
                 PyUnicode_FromString(hname)) < 0 ||
-            PyDict_SetItemString(row, "avg_ns",
+            trace_set_item(row, "avg_ns",
                 PyLong_FromUnsignedLongLong(tmp[k].avg_ns)) < 0) {
           Py_DECREF(row);
           Py_DECREF(top_total);
