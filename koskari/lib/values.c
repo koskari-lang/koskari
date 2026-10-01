@@ -115,8 +115,13 @@ static PyObject *values_kwds_getitem(
     PyObject *key) {
 
     if (PyLong_CheckExact(key)) {
-        return PySequence_GetItem(KosValues_ARGS(self),
-                                  PyLong_AsSsize_t(key));
+        Py_ssize_t index = PyLong_AsSsize_t(key);
+
+        /* an int outside ssize_t converts to -1 with OverflowError set,
+           which is an error, not the last item */
+        if (index == -1 && PyErr_Occurred())
+            return NULL;
+        return PySequence_GetItem(KosValues_ARGS(self), index);
 
     } else {
         PyObject *kwds = KosValues_KWDS(self);

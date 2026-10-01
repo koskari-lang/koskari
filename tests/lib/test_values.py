@@ -125,6 +125,21 @@ class TestValuesSequence(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(v[-1], 30)
         self.assertEqual(v[-2], 20)
 
+    async def test_getitem_overflowing_index_raises(self):
+        """
+        An index outside ssize_t is an OverflowError from the subscript,
+        through the operator and the method alike, never the last item
+        with an error pending
+        """
+
+        v = values(10, 20, 30)
+        with self.assertRaises(OverflowError):
+            v[2 ** 70]
+        with self.assertRaises(OverflowError):
+            v.__getitem__(2 ** 70)
+        with self.assertRaises(OverflowError):
+            v.__getitem__(-(2 ** 70))
+
     async def test_getitem_out_of_range(self):
         """out of range index raises IndexError"""
 
