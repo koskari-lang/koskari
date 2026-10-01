@@ -414,20 +414,25 @@ class ByteCodeFragment:
 
         compiler = self.compiler
         ns_name = str(ns_name)
+        names = tuple(names)
+        if len(names) != len(values):
+            raise CompilerError(
+                "mismatch between names and values",
+                (names, values))
+
+        # the values run before PUSH_NS, in the enclosing scope, so they
+        # compile there too: before the child scope opens and before its
+        # names are declared
+        valfrag = None
+        if names:
+            valfrag = compiler.fragment(ns_name)
+            for val in values:
+                valfrag.merge(compiler.full_compile(val))
+
         child = compiler.fragment(ns_name)
         with compiler.resolution_scope(child):
-            names = tuple(names)
-            if len(names) != len(values):
-                raise CompilerError(
-                    "mismatch between names and values",
-                    (names, values))
-
-            if names:
-                for name in names:
-                    child.declare_var(name)
-                valfrag = compiler.fragment(ns_name)
-                for val in values:
-                    valfrag.merge(compiler.full_compile(val))
+            for name in names:
+                child.declare_var(name)
 
             yield child
             nspec = child.as_namespace_spec()
