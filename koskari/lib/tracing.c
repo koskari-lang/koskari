@@ -417,6 +417,9 @@ void kos_trace_init(void) {
 #if KOS_TRACE_EVENTS
   memset(kos_te_counters, 0, sizeof(kos_te_counters));
 #endif
+#if KOS_TRACE_OPCACHE
+  memset(kos_oc_counters, 0, sizeof(kos_oc_counters));
+#endif
 #if KOS_TRACE_TIMING
   memset(kos_op_timing, 0, sizeof(kos_op_timing));
   kos_trace_cal_ns0 = kos_trace_now_ns();
