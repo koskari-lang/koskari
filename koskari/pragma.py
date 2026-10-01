@@ -27,7 +27,7 @@ from types import MappingProxyType
 from typing import (
     Any, Callable, Dict, Iterator, Optional, Protocol, Sequence, Tuple, Union)
 from warnings import warn
-from weakref import WeakSet
+from weakref import WeakMethod, ref
 
 from .lib import values
 
@@ -119,6 +119,61 @@ class ReloadPragmaWatcher(Protocol):
 PragmaWatcher = Union[ReloadPragmaWatcher, Callable[["ModulePragma"], None]]
 
 
+class _Held:
+    """
+    A strong hold on a watcher nothing else owns, with the same call
+    shape as a weak reference
+    """
+
+    def __init__(self, watcher: PragmaWatcher):
+        self.watcher = watcher
+
+    def __call__(self) -> PragmaWatcher:
+        return self.watcher
+
+    def __hash__(self) -> int:
+        return hash(self.watcher)
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, _Held) and self.watcher == other.watcher
+
+
+def _hold_watcher(watcher: PragmaWatcher) -> Callable[[], Any]:
+    """
+    How a pragma keeps hold of a watcher, by what the watcher is: an
+    object offering reload_pragma is held weakly, so a reader or
+    compiler is not kept alive by the pragma it reads; a bound method
+    lives with its receiver; any other callable has no owner but the
+    pragma and is held strongly
+
+    :raises TypeError: when the watcher is not callable and has no
+        reload_pragma method
+    """
+
+    if hasattr(watcher, "reload_pragma"):
+        if not callable(watcher.reload_pragma):
+            raise TypeError(
+                f"Watcher {watcher} has a reload_pragma that is not callable")
+        try:
+            return ref(watcher)
+        except TypeError:
+            return _Held(watcher)
+
+    if not callable(watcher):
+        raise TypeError(
+            f"Watcher {watcher} is not callable and does"
+            " not have a reload_pragma method")
+
+    if getattr(watcher, "__self__", None) is not None and hasattr(
+            watcher, "__func__"):
+        try:
+            return WeakMethod(watcher)
+        except TypeError:
+            return _Held(watcher)
+
+    return _Held(watcher)
+
+
 class ModulePragma:
     """
     Module level Pragma settings
@@ -134,7 +189,7 @@ class ModulePragma:
             stns.update(settings)
 
         self._settings = MappingProxyType(stns)
-        self._watchers = WeakSet(watchers) if watchers else WeakSet()
+        self._watchers = set(map(_hold_watcher, watchers)) if watchers else set()
 
 
     def get(self, name: str, default: Any = None) -> Any:
@@ -237,8 +292,13 @@ class ModulePragma:
         replacement = ModulePragma(collected)
         replacement._watchers = self._watchers
 
-        # copy to avoid mutating while iterating over watchers
-        for watch in tuple(self._watchers):
+        # copy to avoid mutating while iterating over watchers; a hold
+        # whose watcher has died is dropped here
+        for held in tuple(self._watchers):
+            watch = held()
+            if watch is None:
+                self._watchers.discard(held)
+                continue
             if hasattr(watch, "reload_pragma"):
                 watch = watch.reload_pragma
 
@@ -257,17 +317,7 @@ class ModulePragma:
         Subscribe a watcher to be announced on rebuild
         """
 
-        if hasattr(watcher, "reload_pragma"):
-            chk = watcher.reload_pragma
-        else:
-            chk = watcher
-
-        if not callable(chk):
-            raise TypeError(
-                f"Watcher {watcher} is not callable and does"
-                " not have a reload_pragma method")
-
-        self._watchers.add(watcher)
+        self._watchers.add(_hold_watcher(watcher))
 
 
 # The end.
