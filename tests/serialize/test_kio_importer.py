@@ -93,6 +93,55 @@ class TestKioImporterParity(unittest.TestCase):
                 self._load(stem + '_kio', kio_path))
 
 
+    def _package(self, name, files):
+        """
+        Write a package directory under the temp dir from a mapping of
+        file name to source; return its path
+        """
+
+        pkg = os.path.join(self._tmpdir, name)
+        os.mkdir(pkg)
+        for fname, source in files.items():
+            with open(os.path.join(pkg, fname), 'w', encoding='utf-8') as fh:
+                fh.write(source)
+        return pkg
+
+
+    def test_kio_build_inherits_the_package_pragma(self):
+        """
+        A submodule compiled to .kio is compiled under the package's
+        pragma, as a source load of it is: the package turns asserts
+        off, so the submodule's failing assert is dropped at build
+        """
+
+        pkg = self._package('kiopkg_pragma', {
+            '__init__.ki': "(package-pragma [compiler/enable-asserts False])\n",
+            'sub.ki': '(assert False "kept by the default pragma")\n'
+                      '(define x 1)\n',
+        })
+        compile_ki_file_to_kio(os.path.join(pkg, 'sub.ki'),
+                               os.path.join(pkg, 'sub.kio'))
+        mod = importlib.import_module('kiopkg_pragma.sub')
+        self.assertEqual(mod.x, 1)
+
+
+    def test_kio_build_resolves_a_relative_import(self):
+        """
+        A submodule's relative import needs __package__, which the build
+        sets from the file's place in its package
+        """
+
+        pkg = self._package('kiopkg_rel', {
+            '__init__.ki': "",
+            'helper.ki': "(define helper 41)\n",
+            'rel.ki': "(import-from .helper helper)\n(define y (+ helper 1))\n",
+        })
+        compile_ki_file_to_kio(os.path.join(pkg, 'rel.ki'),
+                               os.path.join(pkg, 'rel.kio'))
+        mod = importlib.import_module('kiopkg_rel.rel')
+        self.assertEqual(mod.y, 42)
+
+
     def test_docstring_via_kio_matches_ki(self):
         ki, kio = self._both('doc', '"""the module doc"""\n(define x 1)\n')
         self.assertEqual(ki.__doc__, "the module doc")
