@@ -477,8 +477,14 @@ static KosOpResult kos_dyn_with_leave(
 */
 static int kos_dyn_with_settle(KosEvalState *es, KosDynWith *node) {
 
-  if (! KosEvalState_FRAME(es))
+  /* A pending with node sits above its owning frame, so that frame is
+     live while the node is; without it there is no operand block to
+     settle from. */
+  if (! KosEvalState_FRAME(es)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "with settle: pending node with no live frame");
     return -1;
+  }
 
   if (KosDynWith_ENTER_PENDING(node))
     return kos_dyn_with_bind_entered(es, node);
