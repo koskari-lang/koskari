@@ -532,6 +532,42 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen, ["after"])
 
 
+class Incomparable:
+    """
+    A key whose equality raises
+    """
+
+    def __eq__(self, other):
+        raise ValueError("no compare")
+
+    __hash__ = object.__hash__
+
+
+class TestNamespaceKeyComparisonErrors(unittest.IsolatedAsyncioTestCase):
+    """
+    A key whose comparison against a fast slot's name raises propagates
+    that error from deref, store and containment, instead of matching
+    the slot with the error pending
+    """
+
+    def namespace(self):
+        ns = NamespaceSpec(None, ("x", "y"), ()).get_namespace(None)
+        ns.store("x", 1)
+        return ns
+
+    async def test_deref_propagates(self):
+        with self.assertRaises(ValueError):
+            self.namespace().deref(Incomparable())
+
+    async def test_store_propagates(self):
+        with self.assertRaises(ValueError):
+            self.namespace().store(Incomparable(), 2)
+
+    async def test_contains_propagates(self):
+        with self.assertRaises(ValueError):
+            Incomparable() in self.namespace()
+
+
 class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
     """
     Tests for the ModuleNamespace type

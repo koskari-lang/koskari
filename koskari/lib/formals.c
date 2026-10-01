@@ -303,7 +303,9 @@ PyObject *KosFormalsSpec_New(
   } while (0)
 
 
-static void list_unique_extend(PyObject *dst, PyObject *seq) {
+/* Append each item of seq that dst does not already hold. 0, or -1
+   with an error set when a comparison raised or the append failed. */
+static int list_unique_extend(PyObject *dst, PyObject *seq) {
   size_t l = SAFE_SIZE(seq);
   for (size_t i = 0; i < l; i++) {
     PyObject *val = PySequence_Fast_GET_ITEM(seq, i);
@@ -311,15 +313,19 @@ static void list_unique_extend(PyObject *dst, PyObject *seq) {
 
     for (size_t j = SAFE_SIZE(dst); j--; ) {
       PyObject *obj = PyList_GET_ITEM(dst, j);
-      if (Py_EQUALS(val, obj)) {
+      int same = Py_EQUALS(val, obj);
+      if (same < 0)
+        return -1;
+      if (same) {
         exists = 1;
         break;
       }
     }
 
-    if (! exists)
-      PyList_Append(dst, val);
+    if (! exists && PyList_Append(dst, val) < 0)
+      return -1;
   }
+  return 0;
 }
 
 
@@ -380,7 +386,10 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
   PyObject *glbl = NULL;
 
   if (base_nspec) {
-    list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec));
+    if (list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec)) < 0) {
+      Py_DECREF(lcls);
+      return NULL;
+    }
     name = KosNamespaceSpec_NAME(base_nspec);
     clsr = KosNamespaceSpec_CLOSURE_SYMS(base_nspec);
     glbl = KosNamespaceSpec_GLOBAL_SYMS(base_nspec);

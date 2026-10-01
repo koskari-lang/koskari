@@ -111,9 +111,12 @@ int koskari_lib_clear(PyObject *mod);
 /* === macros === */
 
 
+/* 1 when left and right are the same object or compare equal, 0 when
+   not, -1 with an error set when the comparison raised: a caller tests
+   for 1, never for truth, since the error is truthy */
 #define Py_EQUALS(left, right)                                          \
-  (((left) == (right)) ||                                               \
-   PyObject_RichCompareBool((left), (right), Py_EQ))
+  (((left) == (right)) ? 1                                              \
+   : PyObject_RichCompareBool((left), (right), Py_EQ))
 
 
 #define STR_CONST(which, val) {                 \

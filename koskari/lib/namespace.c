@@ -916,6 +916,10 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
 }
 
 
+/* The fast slot index of key, or -1: with no error set when there is
+   no slot, with the comparison's error set when a name comparison
+   raised. A caller whose key may be any object tests PyErr_Occurred on
+   a miss. */
 static int ns_fast_index(PyObject *self, PyObject *key) {
   PyObject *names = KosNamespace_FAST_NAMES(self);
   if (! names)
@@ -923,7 +927,12 @@ static int ns_fast_index(PyObject *self, PyObject *key) {
   Py_ssize_t count = PyTuple_GET_SIZE(names);
   for (Py_ssize_t index = 0; index < count; index++) {
     PyObject *name = PyTuple_GET_ITEM(names, index);
-    if (name && Py_EQUALS(key, name))
+    if (! name)
+      continue;
+    int same = Py_EQUALS(key, name);
+    if (same < 0)
+      return -1;
+    if (same)
       return (int) index;
   }
   return -1;
@@ -938,7 +947,8 @@ static PyObject *ns_deref_loose(PyObject *self, PyObject *key,
   if (ref == Py_None) {
     int index = ns_fast_index(self, key);
     if (index < 0) {
-      PyErr_Format(PyExc_NameError, "No such reference: %S", key);
+      if (! PyErr_Occurred())
+        PyErr_Format(PyExc_NameError, "No such reference: %S", key);
       return NULL;
     }
 
@@ -1134,8 +1144,9 @@ static int ns_has_value(PyObject *self, PyObject *key) {
     return PyErr_Occurred()? -1: 0;
   if (ref == Py_None) {
     int index = ns_fast_index(self, key);
-    return index >= 0 &&
-      KosNamespace_GET_FAST_VAL(self, (size_t) index) != NULL;
+    if (index < 0)
+      return PyErr_Occurred()? -1: 0;
+    return KosNamespace_GET_FAST_VAL(self, (size_t) index) != NULL;
   }
   return ! KosRef_IsEmpty(ref);
 }
@@ -1172,6 +1183,8 @@ static int ns_mapping_owns(PyObject *self, PyObject *key) {
   int index = ns_fast_index(self, key);
   if (index >= 0)
     return kos_ns_is_raw(self, (size_t) index);
+  if (PyErr_Occurred())
+    return -1;
   PyObject *binds = KosNamespace_BINDS(self);
   return binds? PyDict_Contains(binds, key): 0;
 }
@@ -1201,8 +1214,15 @@ static PyObject *ns_declared_names(PyObject *self, int gathered) {
   PyObject *key = NULL;
   Py_ssize_t pos = 0;
   while (binds && PyDict_Next(binds, &pos, &key, NULL)) {
-    if (fn_count && ns_fast_index(self, key) >= 0)
-      continue;
+    if (fn_count) {
+      int index = ns_fast_index(self, key);
+      if (index >= 0)
+        continue;
+      if (PyErr_Occurred()) {
+        Py_DECREF(keys);
+        return NULL;
+      }
+    }
     if (PyList_Append(keys, key) < 0) {
       Py_DECREF(keys);
       return NULL;
