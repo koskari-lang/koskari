@@ -1309,8 +1309,10 @@ PyObject *kos_iter_acquire(PyObject *iterable);
    through close(), an async iterator through aclose() -- the aclose
    awaitable is demand-driven, so an immediate completion honors the
    cleanup and a genuine suspension takes the cannot-honor fallback of
-   closing the in-flight iterator. A missing close method is ignored.
-   Any pending exception is preserved across the close.
+   closing the in-flight iterator. A missing close method is ignored;
+   an error the close raises has no frame to propagate into and is
+   reported through sys.unraisablehook. Any pending exception is
+   preserved across the close.
 
    :param iter: borrowed; NULL is a no-op
 */

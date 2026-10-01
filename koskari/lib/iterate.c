@@ -211,7 +211,9 @@ static PyTypeObject KosIterStepperType;
    Mid-await abandonment: the live chain sits on the stepper's host, so
    the provider's own close cannot reach it. Drive GeneratorExit through
    the host so finally/with cleanup runs, exception-fenced (callable
-   from dealloc mid-unwind); every outcome of the drive is swallowed.
+   from dealloc mid-unwind); the drive's own outcome is swallowed, and
+   an error from closing the pending await iterator is reported as
+   unraisable.
    Marks the provider finished-exhausted and clears the awaiting mark.
 */
 static void stepper_abandon_drive(KosIterStepper *st) {
