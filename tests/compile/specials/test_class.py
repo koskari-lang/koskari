@@ -53,6 +53,25 @@ class TestClassEmpty(SpecialsTestCase):
         self.assertIsInstance(c, result)
 
 
+class TestClassBodyBoundRef(SpecialsTestCase):
+
+    async def test_name_bound_to_a_ref_stays_a_class_attribute(self):
+        """
+        A name the body declares and then binds to a ref is still the
+        body's own, and reaches the class with the ref's value
+        """
+
+        src_str = """
+        (class C ()
+          (define plain 1)
+          (bindq bound (refq y)))
+        """
+        expr, mod = self.compile_expr(src_str, y=41)
+        cls = await expr()
+        self.assertEqual(cls.plain, 1)
+        self.assertEqual(cls.bound, 41)
+
+
 class TestClassBodyRefs(SpecialsTestCase):
 
     async def test_ref_in_body_resolves_past_the_body(self):

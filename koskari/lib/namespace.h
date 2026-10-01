@@ -122,7 +122,11 @@ typedef struct KosNamespace {
                          // through it (it owns them for at least as long as
                          // this copy holds it); when NULL they are owned here.
 
-  size_t fast_count;       // number of fast slots
+  uint32_t fast_count;     // number of fast slots, at most
+                           // KosNamespace_FAST_SLOT_MAX
+  uint32_t fast_locals;    // the slots the scope declared itself: slots 0
+                           // to fast_locals - 1; the closure and global
+                           // captures sharing the namespace follow them
   PyObject *fast_names;    // PyTupleObject of slot names, shared across copies
   uint64_t fast_raw[2];    // raw-flag bits for slots 0-127
   uint64_t *fast_raw_more; // bits for slots 128 and up: &fast[fast_count],
@@ -348,6 +352,9 @@ int KosNamespace_FastBind(
 
 #define KosNamespace_FAST_COUNT(ns)             \
   (((KosNamespace *) ns)->fast_count)
+
+#define KosNamespace_FAST_LOCALS(ns)            \
+  (((KosNamespace *) ns)->fast_locals)
 
 #define KosNamespace_FAST_NAMES(ns)             \
   (((KosNamespace *) ns)->fast_names)

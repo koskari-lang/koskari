@@ -227,7 +227,8 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   // against fast_names, so no binds dict is allocated.  Raw-slot promotion
   // stays in the fast slot; only a dynamic non-slot bind lazily creates one.
   KosNamespace_BINDS(self) = NULL;
-  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_COUNT(self) = (uint32_t) count;
+  KosNamespace_FAST_LOCALS(self) = KosNamespace_FAST_LOCALS(template_ns);
 
   // Copy raw-flag bits wholesale.
   ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
@@ -691,6 +692,7 @@ static int ns_init_syms_from_nspec(
   // are set in the bitmask above.  No dict entries for locals (sentinel-free).
   PyObject *local_syms = KosNamespaceSpec_LOCAL_SYMS(nspec);
   size_t count = local_syms ? (size_t) PyTuple_GET_SIZE(local_syms) : 0;
+  KosNamespace_FAST_LOCALS(self) = (uint32_t) count;
 
   // Closures: find ref in parent chain and bind in dict + fast slot.
   // The closure slots are already not-raw in the precomputed bitmask.
@@ -809,7 +811,7 @@ static PyObject *ns_newfull_from_nspec(
     KosNamespace_PARENT(self) = link;
   }
   KosNamespace_BINDS(self) = binds;
-  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_COUNT(self) = (uint32_t) count;
   KosNamespace_FAST_NAMES(self) = NULL;
 
   /* closure and global syms resolve from the live parent, where the
@@ -1168,9 +1170,10 @@ static int ns_has_value(PyObject *self, PyObject *key) {
    a symbol evaluated here would see, through resolve().
 
    A collector namespace's mapping ranges only over the names its body
-   declared (raw fast slots and dynamic dict entries), never the closure
-   or global captures sharing the namespace; that set is what a class
-   body hands to its metaclass. */
+   declared (the fast slots below its local count, raw or bound to a
+   ref, and the dynamic dict entries), never the closure or global
+   captures sharing the namespace; that set is what a class body hands
+   to its metaclass. */
 
 
 /* Which declared names a namespace's mapping ranges over: 1 when key
@@ -1182,7 +1185,7 @@ static int ns_mapping_owns(PyObject *self, PyObject *key) {
 
   int index = ns_fast_index(self, key);
   if (index >= 0)
-    return kos_ns_is_raw(self, (size_t) index);
+    return (uint32_t) index < KosNamespace_FAST_LOCALS(self);
   if (PyErr_Occurred())
     return -1;
   PyObject *binds = KosNamespace_BINDS(self);
@@ -1201,7 +1204,7 @@ static PyObject *ns_declared_names(PyObject *self, int gathered) {
   PyObject *names = KosNamespace_FAST_NAMES(self);
   Py_ssize_t fn_count = names? PyTuple_GET_SIZE(names): 0;
   for (Py_ssize_t i = 0; i < fn_count; i++) {
-    if (gathered && ! kos_ns_is_raw(self, (size_t) i))
+    if (gathered && (uint32_t) i >= KosNamespace_FAST_LOCALS(self))
       continue;
     if (PyList_Append(keys, PyTuple_GET_ITEM(names, i)) < 0) {
       Py_DECREF(keys);
@@ -1926,7 +1929,9 @@ static PyObject *ns_newfull_type(
 
   KosNamespace_BINDS(self) = binds;
 
-  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_COUNT(self) = (uint32_t) count;
+  KosNamespace_FAST_LOCALS(self) =
+      local_syms ? (uint32_t) PySequence_Fast_GET_SIZE(local_syms) : 0;
   KosNamespace_FAST_NAMES(self) = NULL;
 
   if (ns_init_syms(self, parent, local_syms, closure_syms, global_syms))
@@ -2019,6 +2024,7 @@ static void ns_dealloc(PyObject *self) {
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
   KosNamespace_FAST_COUNT(self) = 0;
+  KosNamespace_FAST_LOCALS(self) = 0;
 
   // check if the namespace is valid for the freelist.
   if (Py_TYPE(self) == &KosNamespaceType &&
@@ -2065,6 +2071,7 @@ static int ns_clear(PyObject *self) {
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
   KosNamespace_FAST_COUNT(self) = 0;
+  KosNamespace_FAST_LOCALS(self) = 0;
 
   return 0;
 }
@@ -2790,6 +2797,7 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   KosNamespace_TEMPLATE(self) = NULL;
   KosNamespace_BINDS(self) = binds;
   KosNamespace_FAST_COUNT(self) = 0;
+  KosNamespace_FAST_LOCALS(self) = 0;
   KosNamespace_FAST_NAMES(self) = NULL;
 
   Py_INCREF(builtins);
