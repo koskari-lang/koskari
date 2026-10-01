@@ -21,11 +21,14 @@ Quasi-quote constructs a pair structure at runtime, with selected
 sub-expressions evaluated via unquote (,) and lists spliced in via
 unquote-splicing (,@).
 
-The compiler emits CONST, PROPER, CONS, and PAIR_SPLICE opcodes:
+The compiler emits CONST, PROPER, CONS, their bracket twins, and
+PAIR_SPLICE opcodes:
 
 - CONST atom: push a constant symbol, keyword, number, etc.
 - PROPER n: pop N elements, build a proper list (appends nil automatically)
 - CONS n: pop N elements using the last as an explicit tail (for dotted pairs)
+- BRACKET_PROPER n, BRACKET_CONS n: the same two over bracket pairs, for
+  a [ ] form
 - PAIR_SPLICE n: concatenate N pair/tuple segments into one proper list
 
 When a segment of a quasi-quoted list contains only compile-time-constant
@@ -51,7 +54,6 @@ _symbol_quasiquote = symbol("quasiquote")
 _symbol_quote = symbol("quote")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
-_symbol_bracket_cons = symbol("bracket-cons")
 _symbol_bracket_splice = symbol("bracket-splice")
 
 _ONE_PATTERNS = [
@@ -194,9 +196,8 @@ def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
             frag.merge(sub_frag)
 
     if bracket and not as_tuple_for_splice:
-        # whole-list build for a [ ] form: bracket-cons elements + bracket-nil
-        frag.instruction(OpCode.CONST, bracket_nil)
-        _emit_call_var(frag, _symbol_bracket_cons, len(segment) + 1)
+        # whole-list build for a [ ] form
+        frag.instruction(OpCode.BRACKET_PROPER, len(segment))
     else:
         frag.instruction(OpCode.PROPER, len(segment))
 
@@ -356,9 +357,9 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
         else:
             _qq_expr(compiler, frag, current, level, keep)
 
-        # explicit-tail build: bracket-cons for [ ], CONS for ( )
+        # explicit-tail build: BRACKET_CONS for [ ], CONS for ( )
         if bracket:
-            _emit_call_var(frag, _symbol_bracket_cons, len(segment) + 1)
+            frag.instruction(OpCode.BRACKET_CONS, len(segment) + 1)
         else:
             frag.instruction(OpCode.CONS, len(segment) + 1)
         return

@@ -74,6 +74,34 @@ tags:
   - construct
 notes: compile/cons examples
 ---
+id: special-bracket-cons-001
+feature: special/compile/bracket-cons
+source: (bracket-cons 1 2 bracket-nil)
+verify:
+  eval: "bracket-list:[1, 2]"
+references:
+  - reference/specials/compile-bracket-cons.md
+stability: evolving
+tags:
+  - special
+  - pair
+  - construct
+notes: the bracket twin of compile/cons; the VM builds the chain with BRACKET_CONS
+---
+id: special-bracket-proper-001
+feature: special/compile/bracket-proper
+source: (bracket-proper 1 2)
+verify:
+  eval: "bracket-list:[1, 2]"
+references:
+  - reference/specials/compile-bracket-proper.md
+stability: evolving
+tags:
+  - special
+  - pair
+  - construct
+notes: a proper bracket list with bracket-nil as its implicit tail; BRACKET_PROPER
+---
 id: special-car-001
 feature: special/compile/car
 source: (car (quote (a b c)))

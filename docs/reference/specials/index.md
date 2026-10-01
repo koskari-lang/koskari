@@ -84,6 +84,7 @@ special, a macro, and a call is in
 | Form | Does |
 |------|------|
 | [`cons`](compile-cons.md), [`car`](compile-car.md), [`cdr`](compile-cdr.md) | Build a pair chain; its first element; its rest |
+| [`bracket-cons`](compile-bracket-cons.md), [`bracket-proper`](compile-bracket-proper.md) | Build a bracket pair chain; a proper bracket list |
 | [`quote`](compile-quote.md) | A form as data; `'form` |
 | [`quote-syntax`](compile-quote-syntax.md) | A form as data, keeping hygiene marks; `#'form`; what a transformer's patterns and templates are quoted with |
 | [`quasiquote`](compile-quasiquote.md), [`unquote`](compile-unquote.md), [`unquote-splicing`](compile-unquote-splicing.md) | A template; `` `form ``, `,form`, `,@form` |

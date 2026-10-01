@@ -306,6 +306,8 @@ The opcodes by family, each linking to its section.
 | CDR | COUNT | Apply cdr **n** times (**n** >= 1); **n** = 0 invalid | [section 5.1](opcodes/kos-op-cdr.md) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [section 5.1](opcodes/kos-op-cons.md) |
 | PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [section 5.1](opcodes/kos-op-proper.md) |
+| BRACKET_CONS | COUNT | Pop N values; push the bracket pair chain [e_0 . ... . e_{N-1}] | [section 5.1](opcodes/kos-op-bracket-cons.md) |
+| BRACKET_PROPER | COUNT | Pop N values; push the proper bracket list [e_0 ... e_{N-1}] | [section 5.1](opcodes/kos-op-bracket-proper.md) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [section 5.1](opcodes/kos-op-pair-splice.md) |
 | AWAIT | COUNT | Suspend on awaitable; resume with value | [section 6](opcodes/kos-op-await.md) |
 | BREAK | COUNT | Jump to loop break target | [section 6](opcodes/kos-op-break.md) |
@@ -928,6 +930,24 @@ bottom to top matches push order).
 | 1     | CONST  | 1   | 1 (sym b)  | stack: [..., a, b] |
 | 2     | CONST  | 2   | 2 (sym c)  | stack: [..., a, b, c] |
 | 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
+
+### KOS_OP_BRACKET_CONS
+- **Style**: COUNT. Arg = number of values on stack (bottom = first element,
+  top = tail).
+- **Stack**: `[..., e_0, ..., e_{count-1}] -> [..., result]` where result is
+  the bracket pair chain `[e_0 . [e_1 . ... [e_{count-1}] ...]]`: the twin of
+  **CONS** over bracket pairs, built with KosBracketPair_ConsFromPtr. count 0
+  -> push bracket-nil.
+- **Use-case**: Emitted by `compile/bracket-cons` and by the quasiquote
+  compiler for a `[ ]` form with an explicit tail.
+
+### KOS_OP_BRACKET_PROPER
+- **Style**: COUNT. Arg = number of element values on stack.
+- **Stack**: `[..., e_0, ..., e_{count-1}] -> [..., result]` where result is the
+  proper bracket list `[e_0 e_1 ... e_{count-1}]`. bracket-nil is implicitly
+  appended as the tail. count 0 -> push bracket-nil directly.
+- **Use-case**: Emitted by `compile/bracket-proper` and by the quasiquote
+  compiler for the segments of a `[ ]` form; the twin of **PROPER**.
 
 ### KOS_OP_PAIR_SPLICE
 - **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,

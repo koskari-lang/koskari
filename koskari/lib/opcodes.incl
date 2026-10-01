@@ -63,6 +63,8 @@ OP(CAR, 0, COUNT)
 OP(CDR, 0, COUNT)
 OP(CONS, 0, COUNT)
 OP(PROPER, 0, COUNT)
+OP(BRACKET_CONS, 0, COUNT)
+OP(BRACKET_PROPER, 0, COUNT)
 OP(PAIR_SPLICE, 0, COUNT)
 
 // mode control - all code is async, yields flag async generators

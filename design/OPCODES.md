@@ -312,6 +312,8 @@ When adding or changing an opcode:
 | CDR | COUNT | Apply cdr **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_cdr) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
 | PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [§5.1](#kos_op_proper) |
+| BRACKET_CONS | COUNT | Pop N values; push the bracket pair chain [e_0 . ... . e_{N-1}] | [§5.1](#kos_op_bracket_cons) |
+| BRACKET_PROPER | COUNT | Pop N values; push the proper bracket list [e_0 ... e_{N-1}] | [§5.1](#kos_op_bracket_proper) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [§5.1](#kos_op_pair_splice) |
 | NILP | NOARG | Pop TOS; push True when it is an empty-list singleton | [§5.1](#kos_op_nilp) |
 | AWAIT | COUNT | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
@@ -795,6 +797,30 @@ bottom to top matches push order).
 | 1     | CONST  | 1   | 1 (sym b)  | stack: [..., a, b] |
 | 2     | CONST  | 2   | 2 (sym c)  | stack: [..., a, b, c] |
 | 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
+
+
+### KOS_OP_BRACKET_CONS {#kos_op_bracket_cons}
+
+- **Style**: COUNT. Arg = number of values on stack (bottom = first element,
+  top = tail).
+- **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result is
+  the bracket pair chain `[e_0 . [e_1 . ... [e_{count-1}] ...]]`: the twin of
+  CONS over bracket pairs, via KosBracketPair_ConsFromPtr. count 0 → push
+  bracket-nil.
+- **Use-case**: `compile/bracket-cons`, and the quasiquote compiler for a
+  `[ ]` form with an explicit tail. Before these two opcodes the quasiquote
+  called the `bracket-cons` builtin by name, which a binding of that name
+  shadowed.
+
+
+### KOS_OP_BRACKET_PROPER {#kos_op_bracket_proper}
+
+- **Style**: COUNT. Arg = number of element values on stack.
+- **Stack**: `[..., e_0, ..., e_{count-1}] → [..., result]` where result is the
+  proper bracket list `[e_0 e_1 ... e_{count-1}]`; bracket-nil is the
+  implicit tail. count 0 → push bracket-nil directly.
+- **Use-case**: `compile/bracket-proper`, and the quasiquote compiler for the
+  segments of a `[ ]` form; the twin of PROPER.
 
 
 ### KOS_OP_PAIR_SPLICE {#kos_op_pair_splice}

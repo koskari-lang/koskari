@@ -24,7 +24,7 @@ compile/cons.
 
 from ...bootstrap import builtin
 from ...lib import OpCode, cons, symbol
-from ...matcher import BODY, CALLEDBY, MATCH, VALUE
+from ...matcher import BODY, CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
 from ...types import is_keyword, is_nil, is_pair, strip_mark
 from ..helpers import requote
@@ -36,6 +36,10 @@ _ONE_PATTERNS = [
 
 _CONS_PATTERNS = [
     MATCH(CALLEDBY("called_by"), BODY("exprs")),
+]
+
+_BRACKET_PROPER_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), REST("exprs")),
 ]
 
 
@@ -156,6 +160,63 @@ def special_cons(compiler, called_by, exprs):
         frag.merge(compiler.full_compile(form))
 
     frag.instruction(OpCode.CONS, len(forms))
+
+    return frag
+
+
+@builtin("compile/bracket-cons")
+@special("compile/bracket-cons", patterns=_CONS_PATTERNS, unpack="kwargs")
+def special_bracket_cons(compiler, called_by, exprs):
+    """
+    Variadic: (compile/bracket-cons EXPR1 EXPR2 ... EXPR_TAIL), the
+    bracket twin of compile/cons. Compile each expression in order,
+    then emit BRACKET_CONS with arg = number of expressions. At least
+    one argument (the tail).
+    """
+
+    body = exprs.datum
+    forms = list(body.unpack())
+
+    for fm in forms:
+        if is_keyword(fm):
+            # a keyword among the arguments makes this the bracket-cons
+            # function applied to complex arguments instead
+            rewritten = cons(symbol("call"), called_by.datum, body)
+            rewritten.cdr.set_position(called_by.position)
+            return rewritten
+
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+
+    for form in forms:
+        frag.merge(compiler.full_compile(form))
+
+    frag.instruction(OpCode.BRACKET_CONS, len(forms))
+
+    return frag
+
+
+@builtin("compile/bracket-proper")
+@special("compile/bracket-proper", patterns=_BRACKET_PROPER_PATTERNS,
+         unpack="kwargs")
+def special_bracket_proper(compiler, called_by, exprs):
+    """
+    Variadic: (compile/bracket-proper EXPR ...). Compile each expression
+    in order, then emit BRACKET_PROPER with arg = number of expressions:
+    the proper bracket list of their values, bracket-nil as its tail.
+    No arguments is bracket-nil.
+    """
+
+    body = exprs.datum
+    forms = list(body.unpack())
+
+    frag = compiler.fragment(called_by.datum)
+    frag.position(called_by.position)
+
+    for form in forms:
+        frag.merge(compiler.full_compile(form))
+
+    frag.instruction(OpCode.BRACKET_PROPER, len(forms))
 
     return frag
 

@@ -673,7 +673,7 @@ def requote(
     Rewrite a list form so each element is wrapped in ``(quote_sym ELEMENT)``.
 
     The reconstruction preserves the source's delimiter style: a bracket-pair
-    spine rebuilds via a runtime ``bracket-cons`` call (terminating with
+    spine rebuilds via the ``bracket-cons`` special (terminating with
     ``bracket-nil``), a plain pair spine via the ``cons`` special
     (the ``CONS`` opcode). Nested elements are re-quoted, so each sublist's
     own style is detected recursively.

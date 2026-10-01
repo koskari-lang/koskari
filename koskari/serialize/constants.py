@@ -71,10 +71,12 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # the unread hygiene_role and scope_slot elements are gone.
 # PATCH bumped: a gensym constant is written as the SYMBOL record of its
 # base.
+# MINOR bumped: BRACKET_CONS and BRACKET_PROPER inserted after PROPER,
+# renumbering every opcode after them.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 19
+BYTECODE_ABI_MINOR = 20
 BYTECODE_ABI_MICRO = 0
-BYTECODE_ABI_PATCH = 5
+BYTECODE_ABI_PATCH = 0
 
 
 # The end.

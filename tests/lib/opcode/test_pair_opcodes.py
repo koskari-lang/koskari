@@ -20,7 +20,7 @@ Tests for PROPER, PAIR_SPLICE, CAR, and CDR
 
 import pytest
 
-from koskari.lib import cons, nil, symbol
+from koskari.lib import bracket_nil, bracket_pair, cons, nil, symbol
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -297,6 +297,71 @@ class TestProperOpcode(CevalTest):
         ])
         result = await make_callable(code, ns)()
         self.assertTrue(result.is_proper())
+
+
+class TestBracketConsOpcode(CevalTest):
+    """
+    BRACKET_CONS: the twin of CONS over bracket pairs
+    """
+
+    async def test_bracket_cons_zero_pushes_bracket_nil(self):
+        code, ns = build_expr([
+            ["BRACKET_CONS", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, bracket_nil)
+
+    async def test_bracket_cons_builds_a_bracket_pair_with_a_tail(self):
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["BRACKET_CONS", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual((result.car, result.cdr), (1, 2))
+
+    async def test_bracket_cons_with_bracket_nil_tail_is_proper(self):
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", bracket_nil],
+            ["BRACKET_CONS", 3],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual([1, 2], list(result.unpack()))
+        self.assertTrue(result.is_proper())
+
+
+class TestBracketProperOpcode(CevalTest):
+    """
+    BRACKET_PROPER: the twin of PROPER over bracket pairs
+    """
+
+    async def test_bracket_proper_zero_pushes_bracket_nil(self):
+        code, ns = build_expr([
+            ["BRACKET_PROPER", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, bracket_nil)
+
+    async def test_bracket_proper_three_elements(self):
+        code, ns = build_expr([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", 3],
+            ["BRACKET_PROPER", 3],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual([1, 2, 3], list(result.unpack()))
+        self.assertIs(result.cdr.cdr.cdr, bracket_nil)
 
 
 class TestPairSpliceOpcode(CevalTest):
