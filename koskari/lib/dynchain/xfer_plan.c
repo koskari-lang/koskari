@@ -159,6 +159,10 @@ static int kos_delimited_invoke_inplace(
                            return_frame,
                            NULL);
   if (! delim) {
+    /* No delim took the holds flag, so the handler snapshot is still
+       ours to free. */
+    if (handler_nested)
+      kos_dynframe_free(return_frame);
     if (resume_stack)
       KosStack_Release(resume_stack);
     if (! PyErr_Occurred())
