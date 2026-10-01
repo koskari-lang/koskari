@@ -1446,11 +1446,10 @@ static PyObject *pair_fill_position(PyObject *self,
     if (r < 0)
       return NULL;
 
-  } else {
-    if (! KosPair_POSITION(self)) {
-      Py_INCREF(position);
-      KosPair_POSITION(self) = position;
-    }
+  } else if (! KosNilP(self) && ! KosPair_POSITION(self)) {
+    /* a nil cell takes no position, as for set and clear */
+    Py_INCREF(position);
+    KosPair_POSITION(self) = position;
   }
 
   Py_RETURN_NONE;

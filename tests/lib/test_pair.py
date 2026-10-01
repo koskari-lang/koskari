@@ -387,6 +387,19 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         from koskari.lib import nil as nil2
         self.assertIs(nil1, nil2)
 
+    async def test_fill_position_leaves_the_singletons_alone(self):
+        """
+        A nil cell takes no position: filling one onto nil or bracket-nil
+        changes nothing, as setting one does not
+        """
+
+        for empty in (nil, bracket_nil):
+            empty.fill_position(("stamp", 1, 1))
+            self.assertIsNone(empty.position)
+            empty.fill_position(("stamp", 1, 1), True)
+            self.assertIsNone(empty.position)
+        self.assertIsNone(cons(1, nil).cdr.position)
+
     async def test_singletons_are_not_gc_objects(self):
         """
         The static singletons carry no GC header, though their types
