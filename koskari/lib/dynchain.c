@@ -1548,12 +1548,16 @@ static void kos_dyn_resync_after_pop(
    clear, detaches clear, and direct links never stamp. Chain
    mutations are top-regional (installs, restitches, and thaws land at
    or near dyn_top), so unstamped nodes form a contiguous prefix;
-   collect it, read the facts live at its base, and stamp
-   rootward-first -- segment backs, frame back links, and ns fills --
-   so the pop-side caches are complete for every resident node.
-   Stamps never overwrite: a non-NULL cache is valid by the detach
-   hygiene invariant. Allocation failure just leaves the prefix
-   unstamped; the counted fallback walks remain the safety net.
+   measure it, then stamp it rootward-first in chunks -- segment
+   backs, frame back links, and ns fills -- so the pop-side caches are
+   complete for every resident node. Each chunk is collected by a walk
+   from dyn_top into a fixed buffer and stamped from the facts live at
+   its own base; the first chunk's base is the stamped node that ended
+   the prefix, every later chunk's base is the top of the chunk just
+   stamped. No allocation, so there is no failure path: a prefix
+   longer than the buffer costs one extra walk per chunk. Stamps never
+   overwrite: a non-NULL cache is valid by the detach hygiene
+   invariant.
 
    Known, accepted waste: the scan keys on positive stamp evidence,
    and two node classes never provide any -- bookmarks (no
@@ -1568,66 +1572,73 @@ static void kos_dyn_resync_after_pop(
 */
 #define KOS_RESTAMP_FIXED 64
 
+
+/**
+   True when node ends an unstamped prefix: at least one cache set and
+   none missing. Absence of evidence is not stamped-ness -- a bookmark
+   carries no restampable caches at all (its ns fill is stamped like
+   any other node's and a GEN's is cleared at the freeze, so it proves
+   nothing about the nodes below it), and the caches at the bottom of
+   the chain are legitimately NULL. A partially stamped node (e.g. a
+   frame whose back link survived while its restored segment's did
+   not) still needs collecting.
+*/
+static inline int kos_dyn_node_fully_stamped(KosDynNode *node) {
+
+  int seg_set = KosDynNode_STACK(node)
+      && KosSegment_BACK(KosDynNode_STACK(node)) != NULL;
+  int seg_missing = KosDynNode_STACK(node)
+      && KosSegment_BACK(KosDynNode_STACK(node)) == NULL;
+  int bf_set = KosDynNode_IS_FRAME(node)
+      && KosDynFrame_BACK_FRAME(node) != NULL;
+  int bf_missing = KosDynNode_IS_FRAME(node)
+      && KosDynFrame_BACK_FRAME(node) == NULL;
+
+  return (seg_set || bf_set) && ! seg_missing && ! bf_missing;
+}
+
+
 static void kos_dyn_restamp_spliced_prefix(KosEvalState *es) {
 
-  KosDynNode *fixed[KOS_RESTAMP_FIXED];
-  KosDynNode **span = fixed;
-  size_t cap = KOS_RESTAMP_FIXED;
-  size_t len = 0;
-  KosDynNode *node = KosEvalState_DYN_TOP(es);
+  KosDynNode *chunk[KOS_RESTAMP_FIXED];
+  KosDynNode *top = KosEvalState_DYN_TOP(es);
+  KosDynNode *node;
+  size_t total = 0;
+  size_t remaining;
 
-  /* Collect until the first COMPLETELY stamped node: at least one
-     cache set and none missing. Absence of evidence is not
-     stamped-ness -- a bookmark carries no restampable caches at all
-     (its ns fill is stamped like any other node's and a GEN's is
-     cleared at the freeze, so it proves nothing about the nodes below
-     it), and the caches at the bottom
-     of the chain are legitimately NULL. A partially stamped node
-     (e.g. a frame whose back link survived while its restored
-     segment's did not) still needs collecting. */
-  for (; node; node = KosDynNode_PARENT(node)) {
-    int seg_set = KosDynNode_STACK(node)
-        && KosSegment_BACK(KosDynNode_STACK(node)) != NULL;
-    int seg_missing = KosDynNode_STACK(node)
-        && KosSegment_BACK(KosDynNode_STACK(node)) == NULL;
-    int bf_set = KosDynNode_IS_FRAME(node)
-        && KosDynFrame_BACK_FRAME(node) != NULL;
-    int bf_missing = KosDynNode_IS_FRAME(node)
-        && KosDynFrame_BACK_FRAME(node) == NULL;
+  /* Measure the prefix: every node above the first completely stamped
+     one. */
+  for (node = top; node && ! kos_dyn_node_fully_stamped(node);
+       node = KosDynNode_PARENT(node))
+    total++;
 
-    if ((seg_set || bf_set) && ! seg_missing && ! bf_missing)
-      break;
-
-    if (len == cap) {
-      size_t ncap = cap * 2;
-      KosDynNode **grown;
-      if (span == fixed) {
-        grown = PyMem_Malloc(ncap * sizeof(KosDynNode *));
-        if (grown)
-          memcpy(grown, span, len * sizeof(KosDynNode *));
-      } else {
-        grown = PyMem_Realloc(span, ncap * sizeof(KosDynNode *));
-      }
-      if (! grown)
-        goto out;
-      span = grown;
-      cap = ncap;
-    }
-    span[len++] = node;
-  }
-
-  if (len) {
-    /* facts live at the base of the prefix */
+  /* Stamp it bottom chunk first. The chunk at prefix positions
+     [remaining - len, remaining) is collected by walking down from
+     dyn_top; the node below it is its base, which is stamped by the
+     time the chunk is reached. */
+  remaining = total;
+  while (remaining) {
+    size_t len = remaining < KOS_RESTAMP_FIXED
+        ? remaining : KOS_RESTAMP_FIXED;
+    size_t skip = remaining - len;
+    size_t i;
     KosDynFrame *rft = NULL;
     KosSegment **rbl = NULL;
     PyObject *rns = NULL;
-    kos_dyn_resync_from(node, &rft, &rbl, &rns);
-    kos_dyn_stamp_span(span, len, rft, rbl, rns);
-  }
 
-out:
-  if (span != fixed)
-    PyMem_Free(span);
+    node = top;
+    for (i = 0; i < skip; i++)
+      node = KosDynNode_PARENT(node);
+    for (i = 0; i < len; i++) {
+      chunk[i] = node;
+      node = KosDynNode_PARENT(node);
+    }
+
+    /* facts live at the base of the chunk */
+    kos_dyn_resync_from(node, &rft, &rbl, &rns);
+    kos_dyn_stamp_span(chunk, len, rft, rbl, rns);
+    remaining -= len;
+  }
 }
 
 
