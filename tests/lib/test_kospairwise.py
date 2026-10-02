@@ -23,6 +23,7 @@ import asyncio
 import gc
 import itertools
 import unittest
+import weakref
 
 import pytest
 
@@ -169,6 +170,24 @@ class TestKosPairwiseTeardown(unittest.IsolatedAsyncioTestCase):
 
         del p, step
         gc.collect()
+
+    async def test_exhausted_driven_source_releases_the_held_element(self):
+        class Element:
+            pass
+
+        items = [Element(), Element(), Element()]
+        last = weakref.ref(items[-1])
+        p = KosPairwise(agen(items))
+
+        rows = [row async for row in p]
+        self.assertEqual(len(rows), 2)
+
+        del rows, items
+        gc.collect()
+
+        # p is still alive; only its held element should be gone
+        self.assertIsNone(last())
+        self.assertEqual([row async for row in p], [])
 
     async def test_concurrent_step_refused(self):
         release = asyncio.Event()

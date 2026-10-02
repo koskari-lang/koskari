@@ -85,6 +85,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
    DELIVER: the first element of a cold step primes the pair and
    fetches again; any later one completes the step as the second half
    of a pair and becomes the held element. element is consumed.
+
+   A NULL element arrives with the source's exception pending. When
+   that is StopIteration the source is spent: release the held element
+   and mark the provider closed, as the sync branch of the step does,
+   before the raise carries the exhaustion to the stepping node.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
     KosEvalState *es, void *state, PyObject *element) {
@@ -93,8 +98,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
   KosTransform *t = &p->base;
   PyObject *row;
 
-  if (! element)
+  if (! element) {
+    if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      Py_CLEAR(p->held);
+      t->closed = 1;
+    }
     return EVAL_RAISE();
+  }
 
   if (! p->held) {
     p->held = element;  /* steals */
@@ -198,20 +208,6 @@ static PyObject *kospairwise_new(
 }
 
 
-/**
-   Release the held element once the source is spent, so an exhausted
-   pairwise keeps nothing alive.
-*/
-static void pairwise_iter_finish(PyObject *self, int exhausted) {
-
-  KosPairwise *p = (KosPairwise *) self;
-
-  kos_transform_finish(self, exhausted);
-  if (exhausted)
-    Py_CLEAR(p->held);
-}
-
-
 static int pairwise_traverse(PyObject *self, visitproc visit, void *arg) {
 
   KosPairwise *p = (KosPairwise *) self;
@@ -266,7 +262,7 @@ KosEvaluatedTypeObject KosPairwiseType = {
     .ki_step = pairwise_iter_step,
     .ki_throw = kos_transform_throw,
     .ki_close = kos_transform_close,
-    .ki_finish = pairwise_iter_finish,
+    .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
     .ki_pyctx_recyclable = 1,
   },
