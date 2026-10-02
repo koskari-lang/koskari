@@ -142,10 +142,12 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
     Lowers to ``(build-syntax NAME-STR (parse-rule-pattern (quote-syntax PATTERN)
     (quote-syntax LITERALS-LIST)) (quote-syntax TEMPLATE) ...)`` for
     recompilation. ``NAME-STR`` is the macro name as a string. ``LITERALS-LIST``
-    is the literals list form from the source; the macro name is unioned into
-    the literal set when rules are evaluated. The built transformer is the value
-    of that expression; use ``(compile/define NAME ...)`` to bind it. Pattern
-    parsing runs when that expression is evaluated.
+    is the literals list form from the source, emitted as written; the macro
+    name is not a literal. The head of each pattern lowers to a CALLEDBY
+    capture under its own name, binding the symbol the macro was invoked as,
+    so a template may use it. The built transformer is the value of that
+    expression; use ``(compile/define NAME ...)`` to bind it. Pattern parsing
+    runs when that expression is evaluated.
     """
 
     namesym = name.datum

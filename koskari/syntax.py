@@ -703,8 +703,25 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         return MATCH(LITERAL(pattern_expr))
 
     items, tail = _spine_items(pattern_expr)
-    return MATCH(*_syntax_pattern_specs(
-        items, literals, source_ctx, {}, object(), tail))
+    owners = {}
+    scope = object()
+    specs = []
+
+    # the head is the symbol the macro was invoked as: a CALLEDBY
+    # capture under the pattern's own name for it, so a template can
+    # use the invoked name; a literal head, as macro-rules and
+    # special-rules write, lowers as a literal like any element
+    head = items[0] if items else None
+    if (is_symbol(head) and strip_mark(head) not in literals
+            and not (len(items) > 1 and items[1] is Ellipsis)):
+        name = str(head)
+        owners[name] = scope
+        specs.append(CALLEDBY(name))
+        items = items[1:]
+
+    specs.extend(_syntax_pattern_specs(
+        items, literals, source_ctx, owners, scope, tail))
+    return MATCH(*specs)
 
 
 @builtin("parse-match-pattern")

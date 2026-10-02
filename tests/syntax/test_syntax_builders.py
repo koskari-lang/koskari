@@ -21,7 +21,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
+from koskari.lib import Datum, Module, ModuleNamespace, cons, nil, symbol
+from koskari.matcher import Matcher
 from koskari.reader import default_reader, source_str
 from koskari.syntax import parse_rule_pattern
 from koskari.types import build_proper, strip_marks
@@ -112,6 +113,20 @@ class TestRulePatternVariables(unittest.TestCase):
             with self.assertRaises(ValueError, msg=src) as caught:
                 _rule_pattern(src)
             self.assertIn("x", str(caught.exception))
+
+    def test_head_is_the_called_by_capture(self):
+        pat = _rule_pattern("(m x)")
+        self.assertTrue(repr(pat).startswith("MATCH(CALLEDBY('m')"), repr(pat))
+
+        m = Matcher.from_tuple(pat.freeze())
+        res = m.match(default_reader.read(source_str("(alias 1)", "<t>")))
+        self.assertTrue(res.matched)
+        head = res.captures["m"]
+        head = head.datum if isinstance(head, Datum) else head
+        self.assertIs(head, symbol("alias"))
+
+    def test_head_repeated_in_the_pattern_is_same(self):
+        self.assertIn("SAME('m')", repr(_rule_pattern("(m x m)")))
 
     def test_variable_bound_in_two_ellipsis_groups_is_refused(self):
         with self.assertRaises(ValueError) as caught:
