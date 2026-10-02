@@ -399,15 +399,25 @@ def find_package_pragma(module):
     """
     The nearest ancestor package's ``__package_pragma__``, or None.
 
-    Walks the module-name hierarchy through ``sys.modules``, skipping
-    ancestors that do not carry the slot (namespace packages, plain
-    Python packages, missing entries).
-
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :return: ModulePragma or None
     """
 
-    name = getattr(module, '__name__', None)
+    return find_package_pragma_by_name(getattr(module, '__name__', None))
+
+
+def find_package_pragma_by_name(name):
+    """
+    The nearest ancestor package's ``__package_pragma__``, or None.
+
+    Walks the module-name hierarchy through ``sys.modules``, skipping
+    ancestors that do not carry the slot (namespace packages, plain
+    Python packages, missing entries).
+
+    :param name: the dotted module name, or None
+    :return: ModulePragma or None
+    """
+
     while name and '.' in name:
         name = name.rsplit('.', 1)[0]
         parent = sys.modules.get(name)
@@ -517,7 +527,10 @@ def find_module_reader(ns):
 
     pragma = ns.get('__pragma__')
     if pragma is None:
-        pragma = ModulePragma()
+        # the module namespace carries the module's name; seed from
+        # the nearest package pragma as a load would
+        inherited = find_package_pragma_by_name(getattr(ns, 'name', None))
+        pragma = inherited.copy() if inherited is not None else ModulePragma()
         ns['__pragma__'] = pragma
 
     reader = LayoutReader.from_pragma(ns, pragma=pragma)
