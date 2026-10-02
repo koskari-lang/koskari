@@ -295,6 +295,17 @@ Ref: [interpreter/kio-format.md](interpreter/kio-format.md);
 [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [api/import-system.md](api/import-system.md).
 
+### Module `__dict__` as a dict (investigate)
+
+The Koskari Module in `sys.modules` exposes a `ModuleNamespace` as its
+`__dict__`, which `exec` refuses, so `@dataclass`, `typing` and
+`inspect` fail on imported `.ki` modules. Options: a dict subclass that
+reads through the namespace and purges anything written into it on the
+next read, or dict-backed ItemRef bindings made invisible by dict
+version or watcher caching.
+
+Ref: [interpreter/module-dict.md](interpreter/module-dict.md).
+
 ### Import path selection
 
 Add a feature flag (e.g. environment variable or loader knob) to choose at
