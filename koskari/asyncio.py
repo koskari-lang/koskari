@@ -23,6 +23,7 @@ asyncio loops which specifically check for the Python coroutine type.
 
 
 import asyncio
+import warnings
 from functools import wraps
 from json import loads as _json_loads
 from subprocess import CalledProcessError
@@ -99,9 +100,27 @@ def run_until_complete(loop, coro):
         coro = as_coroutine(coro)
 
     if loop is None:
-        loop = asyncio.get_event_loop()
+        loop = _default_loop()
 
     return loop.run_until_complete(coro)
+
+
+def _default_loop():
+    """
+    The current event loop, or a new one installed as current when none
+    is set. Python 3.12 and 3.13 would create one implicitly with a
+    DeprecationWarning and 3.14 refuses outright; the warning is raised
+    here so every version takes the same path.
+    """
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            return asyncio.get_event_loop()
+    except (RuntimeError, DeprecationWarning):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
 
 
 add_builtin("sleep", asyncio.sleep)

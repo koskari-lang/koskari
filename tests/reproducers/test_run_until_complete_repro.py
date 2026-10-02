@@ -30,6 +30,7 @@ loop.run_until_complete, which cannot run on an already-running loop.)
 
 import asyncio
 import unittest
+import warnings
 
 import pytest
 
@@ -89,6 +90,35 @@ class TestRunUntilComplete(unittest.TestCase):
             asyncio.set_event_loop(None)
             loop.close()
         self.assertEqual(result, 7)
+
+
+    def test_default_loop_when_none_is_set(self):
+        """
+        With no current loop a None loop makes one and installs it,
+        without the implicit-creation deprecation warning
+        """
+
+        asyncio.set_event_loop(None)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                result = koskari.asyncio.run_until_complete(
+                    None, defer(lambda: 7))
+            self.assertEqual(result, 7)
+
+            # the loop made for the call is now the current one, so a
+            # second call reuses it
+            loop = asyncio.get_event_loop()
+            self.assertFalse(loop.is_closed())
+            self.assertEqual(
+                koskari.asyncio.run_until_complete(None, defer(lambda: 8)), 8)
+            self.assertIs(asyncio.get_event_loop(), loop)
+        finally:
+            try:
+                asyncio.get_event_loop().close()
+            except RuntimeError:
+                pass
+            asyncio.set_event_loop(None)
 
 
 # The end.
