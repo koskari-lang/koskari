@@ -20,7 +20,7 @@ Layout handler for layout/dyn-wind block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...types import fill_position, get_position, is_nil, strip_mark
+from ...types import fill_position, get_position, strip_mark
 from .helpers import layout
 
 
@@ -53,6 +53,7 @@ def layout_dyn_wind(reader, source, peers):
 
     before_form = nil
     after_form = nil
+    seen = set()
 
     _called_by, hrest = head
     if hrest:
@@ -66,11 +67,15 @@ def layout_dyn_wind(reader, source, peers):
         phead, ppargs = pheader
         phead = strip_mark(phead)
 
+        # tracked by head, not by the built form: an empty peer body
+        # leaves its form nil and would otherwise let a second one in
+        if phead in seen:
+            raise LayoutError(
+                f'{phead} block appears twice',
+                get_position(peer))
+        seen.add(phead)
+
         if phead is _symbol_before:
-            if not is_nil(before_form):
-                raise LayoutError(
-                    'before block appears twice',
-                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'before block does not take arguments',
@@ -80,10 +85,6 @@ def layout_dyn_wind(reader, source, peers):
                 fill_position(before_form, get_position(peer))
 
         elif phead is _symbol_after:
-            if not is_nil(after_form):
-                raise LayoutError(
-                    'after block appears twice',
-                    get_position(peer))
             if ppargs:
                 raise LayoutError(
                     'after block does not take arguments',

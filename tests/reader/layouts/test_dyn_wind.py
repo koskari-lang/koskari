@@ -132,6 +132,30 @@ class TestLayoutDynWind(IsolatedAsyncioTestCase):
             parse_layout(src)
 
 
+    async def test_duplicate_before_rejected_when_first_is_empty(self):
+        src = """
+        dyn-wind:
+          x
+        before:
+        before:
+          c
+        """
+        with self.assertRaises(LayoutError):
+            parse_layout(src)
+
+
+    async def test_duplicate_after_rejected_when_first_is_empty(self):
+        src = """
+        dyn-wind:
+          x
+        after:
+        after:
+          c
+        """
+        with self.assertRaises(LayoutError):
+            parse_layout(src)
+
+
     async def test_peer_arguments_rejected(self):
         src = """
         dyn-wind:
