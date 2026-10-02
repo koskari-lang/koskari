@@ -148,7 +148,6 @@ static KosDefer *defer_alloc(void) {
   KosDefer *self = PyObject_GC_New(KosDefer, &KosDeferType);
   if (! self)
     return NULL;
-  PyObject_Init((PyObject *) self, &KosDeferType);
 
   /* Safe defaults: normalize overwrites on success, and dealloc after a
      normalize failure (or a payload-less adopt) must not switch on a
