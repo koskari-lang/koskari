@@ -798,6 +798,9 @@ class Reader:
         :raises ReaderSyntaxError: when the group carries no key
         """
 
+        # the stream sits on the bracket; hand its position to the pair
+        # reader as the opener, as _read does for every other trigger
+        stream.event_position = stream.position()
         index = self.read_pair(stream)
 
         keys = []
