@@ -795,6 +795,29 @@ static uint32_t code_visible_len(PyObject *self) {
 }
 
 
+/**
+   The (opcode, arg) pair of one instruction as a tuple of two ints.
+   New reference, or NULL with an exception set.
+*/
+static PyObject *op_as_tuple(KosOp op) {
+
+  PyObject *opv = PyLong_FromLong((long) op.op);
+  PyObject *argv = PyLong_FromLong((long) op.arg);
+  PyObject *p = NULL;
+
+  if (opv && argv)
+    p = PyTuple_New(2);
+  if (! p) {
+    Py_XDECREF(opv);
+    Py_XDECREF(argv);
+    return NULL;
+  }
+  PyTuple_SET_ITEM(p, 0, opv);
+  PyTuple_SET_ITEM(p, 1, argv);
+  return p;
+}
+
+
 static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
   if (! PyLong_Check(index)) {
@@ -812,17 +835,7 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
     return NULL;
   }
 
-  KosOp op = KosCode_CODE(self)[i];
-
-  PyObject *p = PyTuple_New(2);
-  if (! p) {
-    return NULL;
-  }
-
-  PyTuple_SET_ITEM(p, 0, PyLong_FromLong((long) op.op));
-  PyTuple_SET_ITEM(p, 1, PyLong_FromLong((long) op.arg));
-
-  return p;
+  return op_as_tuple(KosCode_CODE(self)[i]);
 }
 
 
@@ -1426,6 +1439,8 @@ static int collect_label(
     uint32_t index) {
 
   PyObject *io = PyLong_FromLong(index);
+  if (! io)
+    return -1;
   int ret = PyDict_SetItem(labels, name, io);
   Py_DECREF(io);
   return ret;
@@ -3366,6 +3381,11 @@ PyObject *KosCode_New(
 
   KosCode_FAUX(self) = NULL;
   KosCode_EXTRAS(self) = PyDict_New();
+  if (! KosCode_EXTRAS(self)) {
+    Py_CLEAR(self);
+    Py_DECREF(instr);
+    return NULL;
+  }
 
   if (code_instr_init(self, instr, protect)) {
     Py_CLEAR(self);
@@ -3402,17 +3422,7 @@ PyObject *KosCode_GetInstruction(PyObject *self, uint32_t index) {
     return NULL;
   }
 
-  KosOp op = KosCode_CODE(self)[index];
-
-  PyObject *tup = PyTuple_New(2);
-  if (! tup) {
-    return NULL;
-  }
-
-  PyTuple_SET_ITEM(tup, 0, PyLong_FromLong(op.op));
-  PyTuple_SET_ITEM(tup, 1, PyLong_FromLong(op.arg));
-
-  return tup;
+  return op_as_tuple(KosCode_CODE(self)[index]);
 }
 
 
@@ -3586,15 +3596,30 @@ PyCodeObject *KosCode_Faux(PyObject *self) {
 /* === Enum creation === */
 
 
+/**
+   Add one member to an enum dict. Returns 0, or -1 with an exception
+   set when the int or the store fails.
+*/
+static int enum_dict_add(PyObject *enum_dict, const char *name, long value) {
+
+  PyObject *v = PyLong_FromLong(value);
+  if (! v)
+    return -1;
+  int ret = PyDict_SetItemString(enum_dict, name, v);
+  Py_DECREF(v);
+  return ret;
+}
+
+
 /* Add one member to an enum dict, keyed by the bare suffix of its C
-   constant. The prefix exists so the constant stands alone in C; from
-   the object model the enum class already supplies that context, so
-   OpCode.CONST rather than OpCode.CONST. */
-#define int_enum(enum_dict, prefix, suffix)               \
-  do {                                                    \
-    PyObject *_v = PyLong_FromLong(prefix ## suffix);     \
-    PyDict_SetItemString(enum_dict, #suffix, _v);         \
-    Py_DECREF(_v);                                        \
+   constant, or leave the function at its fail label. The prefix exists
+   so the constant stands alone in C; from the object model the enum
+   class already supplies that context, so OpCode.CONST rather than
+   OpCode.KOS_OP_CONST. */
+#define int_enum(enum_dict, prefix, suffix)                        \
+  do {                                                             \
+    if (enum_dict_add(enum_dict, #suffix, prefix ## suffix) < 0)   \
+      goto fail;                                                   \
   } while(0)
 
 
@@ -3646,6 +3671,10 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, OPERAND);
 
   return create_int_enum("OpStyle", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
@@ -3732,6 +3761,7 @@ static int decorate_opcode(PyObject *member, PyObject *styles,
 
 static PyObject *create_opcode_enum(PyObject *styles) {
 
+  PyObject *res;
   PyObject *enum_dict = PyDict_New();
   if (! enum_dict)
     return NULL;
@@ -3740,7 +3770,7 @@ static PyObject *create_opcode_enum(PyObject *styles) {
 #include "opcodes.incl"
 #undef OP
 
-  PyObject *res = create_int_enum("OpCode", enum_dict);
+  res = create_int_enum("OpCode", enum_dict);
   if (! res)
     return NULL;
 
@@ -3761,6 +3791,10 @@ static PyObject *create_opcode_enum(PyObject *styles) {
   }
 
   return res;
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
@@ -3792,6 +3826,10 @@ static PyObject *create_operand_enum(void) {
   int_enum(enum_dict, KOS_OPERAND_, POWER);
 
   return create_int_enum("Operand", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
@@ -3822,6 +3860,10 @@ static PyObject *create_compare_enum(void) {
   int_enum(enum_dict, KOS_COMPARE_, IS_SUBCLASS);
 
   return create_int_enum("Compare", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
