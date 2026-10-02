@@ -20,7 +20,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cons, gensym, keyword, symbol
+from koskari.lib import Datum, cons, gensym, keyword, nil, symbol
 from koskari.matcher import (
     CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, Matcher,
     parse_explicit_rule_pattern, parse_matcher)
@@ -114,6 +114,18 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         with self.assertRaises(ValueError) as ar:
             parse_explicit_rule_pattern(bad)
         self.assertIn("proper", str(ar.exception).lower())
+
+
+    def test_empty_cell_rejected(self):
+        """
+        An empty list is an empty inline group, refused by name at the
+        top level and as a cell
+        """
+
+        for form in (nil, cons(symbol("a"), nil, nil)):
+            with self.assertRaises(ValueError) as ar:
+                parse_explicit_rule_pattern(form)
+            self.assertIn("empty", str(ar.exception).lower())
 
 
     def test_rest_min_tail_zero_binds_empty_tuple(self):

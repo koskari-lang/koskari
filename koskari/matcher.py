@@ -2153,7 +2153,8 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
     :param form: koskari pattern datum
     :param source_ctx: optional value appended to error messages
     :return: Pattern instance (often ``MATCH`` wrapping a sequence)
-    :raises ValueError: on ellipsis, improper lists, or factory failures
+    :raises ValueError: on ellipsis, improper lists, empty cells, or
+        factory failures
     """
 
     ctx = "" if source_ctx is None else " (context %r)" % (source_ctx,)
@@ -2166,6 +2167,11 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
 
     if not is_proper(form):
         raise ValueError("MATCH pattern must be a proper list%s" % ctx)
+
+    # nil is a pair and a proper list; as a cell it would be an empty
+    # inline group, which matches nothing and names nothing
+    if is_nil(form):
+        raise ValueError("empty MATCH pattern cell%s" % ctx)
 
     head, tail = form
 
