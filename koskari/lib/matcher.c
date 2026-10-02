@@ -34,6 +34,9 @@
 
 struct KosMatcherBuilder {
   KosMatchNode *nodes;
+  uint8_t *claimed;    /* per node: 1 once a chain has taken it as a
+                          child, so no later chain can; a chain's last
+                          child has no next link to show it */
   Py_ssize_t node_count;
   Py_ssize_t node_capacity;
 
@@ -56,8 +59,16 @@ static int builder_grow_nodes(KosMatcherBuilder *b, Py_ssize_t need) {
     PyErr_NoMemory();
     return -1;
   }
-
   b->nodes = nn;
+
+  uint8_t *nc = PyMem_Realloc(b->claimed, (size_t) cap);
+  if (! nc) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  memset(nc + b->node_capacity, 0, (size_t) (cap - b->node_capacity));
+  b->claimed = nc;
+
   b->node_capacity = cap;
   return 0;
 }
@@ -239,6 +250,7 @@ KosMatcherBuilder *KosMatcherBuilder_New(void) {
   }
 
   b->nodes = NULL;
+  b->claimed = NULL;
   b->node_count = 0;
   b->node_capacity = 0;
   b->slots = PyList_New(0);
@@ -259,6 +271,7 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *b) {
     return;
 
   PyMem_Free(b->nodes);
+  PyMem_Free(b->claimed);
   Py_XDECREF(b->slots);
   Py_XDECREF(b->externs);
   Py_XDECREF(b->consts);
@@ -390,7 +403,7 @@ static int builder_validate_chain_children(
                    what, (unsigned) cidx, b->node_count);
       return -1;
     }
-    if (b->nodes[cidx].next != KOS_MATCH_NO_INDEX) {
+    if (b->claimed[cidx]) {
       PyErr_Format(PyExc_ValueError,
                    "%s child %u already participates in another chain",
                    what, (unsigned) cidx);
@@ -407,6 +420,8 @@ static int builder_validate_chain_children(
 
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[children[i]].next = children[i + 1];
+  for (Py_ssize_t i = 0; i < count; i++)
+    b->claimed[children[i]] = 1;
 
   return 0;
 }
@@ -621,7 +636,7 @@ int KosMatcherBuilder_AppendClass(
                    (unsigned) fidx);
       return -1;
     }
-    if (fn->next != KOS_MATCH_NO_INDEX) {
+    if (b->claimed[fidx]) {
       PyErr_Format(PyExc_ValueError,
                    "AppendClass child %u already participates in another "
                    "chain", (unsigned) fidx);
@@ -641,6 +656,7 @@ int KosMatcherBuilder_AppendClass(
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[fields[i]].next = fields[i + 1];
   for (Py_ssize_t i = 0; i < count; i++) {
+    b->claimed[fields[i]] = 1;
     if (b->nodes[fields[i]].as.field.field_kind
         == KOS_MATCH_FIELD_POSITIONAL)
       num_positional++;
@@ -766,7 +782,7 @@ int KosMatcherBuilder_AppendMap(
                    (unsigned) eidx);
       return -1;
     }
-    if (en->next != KOS_MATCH_NO_INDEX) {
+    if (b->claimed[eidx]) {
       PyErr_Format(PyExc_ValueError,
                    "AppendMap child %u already participates in another "
                    "chain", (unsigned) eidx);
@@ -784,6 +800,8 @@ int KosMatcherBuilder_AppendMap(
 
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[entries[i]].next = entries[i + 1];
+  for (Py_ssize_t i = 0; i < count; i++)
+    b->claimed[entries[i]] = 1;
 
   if (builder_grow_nodes(b, 1))
     return -1;

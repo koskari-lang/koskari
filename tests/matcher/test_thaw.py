@@ -209,6 +209,24 @@ class TestMatcherFromTuple(unittest.TestCase):
             thaw(frozen)
 
 
+    def test_thaw_rejects_node_claimed_by_two_chains(self):
+        """
+        A node that is the last child of one container cannot be a child
+        of a later one; the two containers would share it
+        """
+
+        nodes = (
+            ("TEST", "ANY", -1),       # 0
+            ("TEST", "ANY", -1),       # 1
+            ("MATCH", 0),              # 2: claims 0 as its only child
+            ("MATCH", 0, 1),           # 3: claims 0 again
+        )
+        frozen = ("MATCHER", (), (), (), nodes, 3)
+        with self.assertRaises(ValueError) as ctx:
+            thaw(frozen)
+        self.assertIn("already participates", str(ctx.exception))
+
+
     def test_thaw_raises_on_unknown_node_tag(self):
         """
         Thaw rejects node tuples whose tag is unknown
