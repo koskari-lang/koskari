@@ -209,15 +209,9 @@ static int kos_dyn_gen_unpark_span(KosEvalState *es, KosDynNode *node) {
 
 
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
-  KosContext *const ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
-
-  if (! es || ! gen) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL es or gen for gen_install");
-    return -1;
-  }
 
   /* The demand bit is drive-state: forcibly assigned to the generator's
      frame at every entry, inherited from the frame below the splice.
@@ -231,7 +225,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",
-       (void *) ctx, (void *) gen,
+       (void *) KosEvalState_CONTEXT(es), (void *) gen,
        (void *) KosEvalState_DYN_TOP(es),
        KosEvalState_DYN_TOP(es)
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
@@ -244,11 +238,6 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     //   SAYF("  %p %s -> ", (void *) n,
     //        kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
-  }
-
-  if (! gen || ! ctx) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL ctx or gen for gen_install");
-    return -1;
   }
 
   active = (KosDynNode *) KosDynGen_ACTIVE(gen);
