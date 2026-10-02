@@ -28,6 +28,7 @@ import koskari.compile.specials as _koskari_compile_specials  # noqa: F401
 import koskari.reader.layouts as _koskari_reader_layouts  # noqa: F401
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile.helpers import pycons
+from koskari.exceptions import LayoutError
 from koskari.lib import Module, ModuleNamespace, car, cdr, keyword, symbol
 from koskari.reader import (
     READ_EOF, IndentAwareStream, LayoutReader, source_str)
@@ -427,6 +428,22 @@ class TestLayoutReaderNamespace(IsolatedAsyncioTestCase):
     async def test_accepts_dict(self):
         reader = LayoutReader({})
         self.assertIsNotNone(reader._ns)
+
+
+class TestLoopElsePeer(IsolatedAsyncioTestCase):
+
+    async def test_else_with_arguments_points_at_the_else_line(self):
+        src = """
+        for-each [x xs]:
+          (print x)
+        else foo:
+          (print 1)
+        """
+        with self.assertRaises(LayoutError) as caught:
+            parse_layout(src)
+        # a layout header is positioned at its colon, as the else
+        # clause itself is when the block is accepted
+        self.assertEqual(caught.exception.location, (4, 9))
 
 
 # The end.

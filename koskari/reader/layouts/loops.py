@@ -49,7 +49,7 @@ def _layout_loop(reader, source, peers):
         if pargs:
             raise LayoutError(
                 "else block does not take arguments",
-                get_position(peers))
+                get_position(peer))
 
         clause = cons(_keyword_else, reader.fold_lines(pbody))
         fill_position(clause, get_position(peer))
