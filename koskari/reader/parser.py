@@ -344,9 +344,17 @@ _FSTRING_ESCAPE_PEEK = 128
 def _decode_sub(match):
     """
     Decode a matched escape sequence
+
+    :raises ValueError: naming the escape and the codec's reason when
+        the characters after the escape prefix do not decode
     """
 
-    return decode(match.group(0), 'unicode-escape')
+    text = match.group(0)
+    try:
+        return decode(text, 'unicode-escape')
+    except UnicodeDecodeError as ude:
+        raise ValueError(
+            f"invalid escape sequence {text}: {ude.reason}") from None
 
 
 def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):

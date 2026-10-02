@@ -266,6 +266,20 @@ class TestStrings(IsolatedAsyncioTestCase):
         col = parse_source(src)
         self.assertEqual(col, "hello\n \tworld")
 
+    async def test_malformed_escape_names_the_escape(self):
+        cases = (
+            (r'"\N{NOPE}"', r'\N{NOPE}', "unknown Unicode character name"),
+            (r'"\xZZ"', r'\xZZ', "truncated \\xXX escape"),
+            (r'b"\xZZ"', r'\xZZ', "truncated \\xXX escape"),
+            (r'f"\xZZ"', r'\xZZ', "truncated \\xXX escape"),
+        )
+        for src, escape, reason in cases:
+            with self.assertRaises(ReaderSyntaxError) as caught:
+                parse_source(src)
+            message = str(caught.exception)
+            self.assertIn(escape, message, src)
+            self.assertIn(reason, message, src)
+
     async def test_unicode(self):
         src = '"hello"'
         col = parse_source(src)
