@@ -79,6 +79,15 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual([t.type for t in tokenize('0xFF')], ['symbol'])
 
 
+    async def test_fraction_anchoring_matches_reader(self):
+        # A fraction is digits, a slash and digits, nothing after; the
+        # reader reads 1/2x and 3/4ths as symbols, so must the tokenizer.
+        self.assertEqual([t.type for t in tokenize('1/2')], ['number'])
+        self.assertEqual([t.type for t in tokenize('-1/2')], ['number'])
+        for src in ('1/2x', '3/4ths', '1/2/3'):
+            self.assertEqual([t.type for t in tokenize(src)], ['symbol'], src)
+
+
     async def test_string_prefixes_match_reader(self):
         # f/r/b (lowercase) are string prefixes; uppercase are not.
         self.assertEqual([t.type for t in tokenize('b"y"')], ['string'])

@@ -203,9 +203,9 @@ class TestComplex(IsolatedAsyncioTestCase):
 
 class TestFraction(IsolatedAsyncioTestCase):
 
-    async def test_invalid_fraction(self):
-        src = "1/2/3"
-        self.assertRaises(SyntaxError, parse_source, src)
+    async def test_fraction_like_tokens_are_symbols(self):
+        for src in ("1/2/3", "1/2x", "3/4ths", "1/2.5"):
+            self.assertEqual(parse_source(src), symbol(src), src)
 
     async def test_simple_fraction(self):
         src = "1/2"
