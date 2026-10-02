@@ -1830,6 +1830,7 @@ int koskari_func_clear(PyObject *mod) {
   Py_CLEAR(kos_inspect_Parameter);
   Py_CLEAR(kos_inspect_Signature);
   Py_CLEAR(kos_inspect_Parameter_empty);
+  Py_CLEAR(kos_str_return);
 
   return 0;
 }
