@@ -1835,7 +1835,8 @@ class Reader:
         pos = stream.position()
         lin, col = pos
 
-        if stream.peek(3) == '"""':
+        # the first quote is consumed; two more make the opener triple
+        if stream.peek(2) == char * 2:
             col += 2
 
         # Read the body raw (escapes undecoded) so the field/literal split

@@ -243,6 +243,18 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
             [symbol("item"), symbol("foo"), 0])
         self.assertEqual(args[1], "3d")
 
+    async def test_field_position_in_triple_quoted_string(self):
+        # the field form carries the source column of its expression;
+        # a triple-quoted opener is two characters longer than a single
+        single = fstring_parts(read_fstring('f"a {x}"'))[1]
+        triple = fstring_parts(read_fstring('f"""a {x}"""'))[1]
+        self.assertEqual(single.get_position(), (1, 5))
+        self.assertEqual(triple.get_position(), (1, 7))
+
+        # a body that opens with a quote is not an opener character
+        leading = fstring_parts(read_fstring('f""""a {x}"""'))[1]
+        self.assertEqual(leading.get_position(), (1, 8))
+
 
 class TestFormatStringEval(IsolatedAsyncioTestCase):
 
