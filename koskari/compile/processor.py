@@ -782,19 +782,6 @@ class ByteCodeProcessor:
         return [(op, arg)]
 
 
-    @squish_rule(OpCode.CONST, JUMP_PRIORS, OpCode.LABEL)
-    def label_const_jump_elision(self, op, arg, matched):
-        """
-        CONST JUMP_TRUE|FALSE L LABEL L -> the label alone: the
-        conditional jump to the next instruction vanishes with its
-        constant test
-        """
-
-        if matched[1][1] != arg:
-            return None
-        return [(op, arg)]
-
-
     @squish_rule(JUMP_PRIORS, OpCode.LABEL)
     def label_dynamic_jump_elision(self, op, arg, matched):
         """
