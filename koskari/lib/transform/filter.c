@@ -341,30 +341,21 @@ static PyObject *kosfilter_new(
 
 /**
    filterfalse(func, iterable): a filter whose verdict is turned over.
-   It is the same object with one flag set rather than a type of its
-   own, since nothing else about the two differs.
+   It is a subtype of filter with one flag set at construction rather
+   than a provider of its own: the step reads the flag, and the type
+   exists so that messages and the repr carry its name.
 */
-static PyObject *kosfilter_false(PyObject *self, PyObject *args) {
+static PyObject *kosfilterfalse_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
-  PyObject *made;
+  PyObject *made = kos_transform_new(type, args, kwds, &filter_spec);
 
-  (void) self;
-
-  made = kos_transform_new(KOS_EVALUATED_PYTYPE(KosFilterType), args, NULL,
-                           &filter_spec);
-  if (! made)
-    return NULL;
-
-  ((KosFilter *) made)->invert = 1;
+  if (made)
+    ((KosFilter *) made)->invert = 1;
   return made;
 }
-
-
-static PyMethodDef kosfilter_false_def = {
-  "filterfalse", (PyCFunction) kosfilter_false, METH_VARARGS,
-  "filterfalse(func, iterable) - native lazy filterfalse; keeps what "
-  "filter would drop. A None func keeps falsey elements",
-};
 
 
 KosEvaluatedTypeObject KosFilterType = {
@@ -388,6 +379,36 @@ KosEvaluatedTypeObject KosFilterType = {
     .tp_methods = kos_transform_methods,
     .tp_new = kosfilter_new,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_iter = {
+    .ki_step = filter_iter_step,
+    .ki_throw = kos_transform_throw,
+    .ki_close = kos_transform_close,
+    .ki_finish = kos_transform_finish,
+    .ki_pyctx = kos_transform_pyctx,
+    .ki_pyctx_recyclable = 1,
+  },
+};
+
+
+/* A static subtype resolves to its own extended type object, so it
+   carries the filter suite itself. */
+KosEvaluatedTypeObject KosFilterFalseType = {
+  .type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+
+    .tp_name = "koskari.lib.filterfalse",
+    .tp_basicsize = sizeof(KosFilter),
+    .tp_itemsize = 0,
+    .tp_dealloc = kos_transform_dealloc,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+    .tp_traverse = kos_transform_traverse,
+    .tp_clear = kos_transform_clear,
+    .tp_doc = "KosFilterFalse(func, iterable) - native lazy filterfalse; "
+              "keeps what filter would drop. A None func keeps falsey "
+              "elements",
+    .tp_new = kosfilterfalse_new,
+    .tp_base = KOS_EVALUATED_PYTYPE(KosFilterType),
   },
   .kos_iter = {
     .ki_step = filter_iter_step,

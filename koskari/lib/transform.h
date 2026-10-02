@@ -220,6 +220,7 @@ extern PyAsyncMethods kos_transform_async_methods;
 
 extern KosEvaluatedTypeObject KosMapType;
 extern KosEvaluatedTypeObject KosFilterType;
+extern KosEvaluatedTypeObject KosFilterFalseType;
 extern KosEvaluatedTypeObject KosZipType;
 extern KosEvaluatedTypeObject KosZipLongestType;
 extern KosEvaluatedTypeObject KosChainType;

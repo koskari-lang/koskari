@@ -440,6 +440,7 @@ static const struct {
 } transform_types[] = {
   { &KosMapType,         "KosMap",         "map" },
   { &KosFilterType,      "KosFilter",      "filter" },
+  { &KosFilterFalseType, "KosFilterFalse", "filterfalse" },
   { &KosZipType,         "KosZip",         "zip" },
   { &KosZipLongestType,  "KosZipLongest",  "zip-longest" },
   { &KosChainType,       "KosChain",       "chain" },
@@ -457,8 +458,8 @@ static const struct {
 
 /**
    Bind a provider that is a plain function rather than a type.
-   filterfalse and chain-from-iterable are the two: one is a filter
-   with a flag set, the other takes its series from an iterable.
+   chain-from-iterable is the one: a chain that takes its series from
+   an iterable.
 */
 static int transform_bind_function(PyObject *dict, PyMethodDef *def) {
 
@@ -495,8 +496,7 @@ int koskari_transform_init(PyObject *mod) {
       return -1;
   }
 
-  if (transform_bind_function(dict, &kosfilter_false_def) ||
-      transform_bind_function(dict, &koschain_from_iterable_def))
+  if (transform_bind_function(dict, &koschain_from_iterable_def))
     return -1;
 
   return 0;

@@ -121,6 +121,19 @@ class TestFilterFalseConstruction(unittest.TestCase):
         with self.assertRaises(TypeError):
             filterfalse(None)
 
+    def test_errors_name_filterfalse(self):
+        with self.assertRaises(TypeError) as caught:
+            filterfalse(5, [1, 2])
+        self.assertTrue(str(caught.exception).startswith("filterfalse"),
+                        str(caught.exception))
+
+        with self.assertRaises(TypeError) as caught:
+            filterfalse(None)
+        self.assertIn("filterfalse", str(caught.exception))
+
+    def test_repr_names_filterfalse(self):
+        self.assertIn("filterfalse", repr(filterfalse(None, [])))
+
 
 class TestFilterFalseDriven(unittest.IsolatedAsyncioTestCase):
     """
