@@ -10,6 +10,10 @@ continuation is invoked with a value, control returns to the point just after th
 `compile/call/cc` form with that value. If `FN` returns normally without invoking
 the continuation, the return value of `FN` becomes the value of the form.
 
+The continuation packs its arguments the way `return` does: `(k)` resumes
+with `None`, `(k v)` with `v`, `(k a b)` with the tuple `(a, b)`, and a call
+with keywords, `(k a x: 1)`, with a `values` instance over all of them.
+
 **Behaviour:** Emits `PUSH_CC` (opens a CC block), compiles `FN`, emits
 `CAPTURE_CC` (captures the continuation and pushes it), emits `CALL 1` (calls
 `FN` with the continuation), then `POP_CC` (closes the CC block on normal

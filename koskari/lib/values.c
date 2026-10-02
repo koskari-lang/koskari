@@ -722,6 +722,79 @@ PyObject *KosValues_New(PyObject *args, PyObject *kwds) {
 }
 
 
+PyObject *KosValues_PackVector(
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames) {
+
+    Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
+    PyObject *tup;
+    PyObject *kwds;
+    PyObject *result;
+    Py_ssize_t i;
+
+    if (! nkw) {
+        if (nargs == 0)
+            Py_RETURN_NONE;
+        if (nargs == 1)
+            return Py_NewRef(args[0]);
+        tup = PyTuple_New(nargs);
+        if (! tup)
+            return NULL;
+        for (i = 0; i < nargs; i++)
+            PyTuple_SET_ITEM(tup, i, Py_NewRef(args[i]));
+        return tup;
+    }
+
+    tup = PyTuple_New(nargs);
+    if (! tup)
+        return NULL;
+    for (i = 0; i < nargs; i++)
+        PyTuple_SET_ITEM(tup, i, Py_NewRef(args[i]));
+
+    kwds = PyDict_New();
+    if (! kwds) {
+        Py_DECREF(tup);
+        return NULL;
+    }
+    for (i = 0; i < nkw; i++) {
+        if (PyDict_SetItem(kwds, PyTuple_GET_ITEM(kwnames, i),
+                           args[nargs + i]) < 0) {
+            Py_DECREF(kwds);
+            Py_DECREF(tup);
+            return NULL;
+        }
+    }
+
+    result = KosValues_New(tup, kwds);
+    Py_DECREF(kwds);
+    Py_DECREF(tup);
+    return result;
+}
+
+
+PyObject *KosValues_PackTuple(PyObject *args, PyObject *kwds) {
+
+    Py_ssize_t nargs = args ? PyTuple_GET_SIZE(args) : 0;
+
+    if (kwds && PyDict_GET_SIZE(kwds)) {
+        PyObject *result;
+        PyObject *tup = args ? Py_NewRef(args) : PyTuple_New(0);
+
+        if (! tup)
+            return NULL;
+        result = KosValues_New(tup, kwds);
+        Py_DECREF(tup);
+        return result;
+    }
+    if (nargs == 0)
+        Py_RETURN_NONE;
+    if (nargs == 1)
+        return Py_NewRef(PyTuple_GET_ITEM(args, 0));
+    return Py_NewRef(args);
+}
+
+
 int koskari_values_init(PyObject *mod) {
     if (! mod)
         return -1;

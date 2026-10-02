@@ -191,10 +191,18 @@ static KosOpResult kos_vinstall_continuation(
     PyObject *kwnames,
     int tail_call) {
 
-  (void) kwnames;
+  PyObject *resume_val;
+  KosOpResult r;
+
   (void) tail_call;
-  return call_call_continuation(es, callable,
-                                (nargs > 0) ? args[0] : Py_None);
+
+  /* the arguments pack as return's do; the resume takes its own ref */
+  resume_val = KosValues_PackVector(args, nargs, kwnames);
+  if (! resume_val)
+    return EVAL_RAISE();
+  r = call_call_continuation(es, callable, resume_val);
+  Py_DECREF(resume_val);
+  return r;
 }
 
 
@@ -290,7 +298,6 @@ static PyObject *continuation_call(
     PyObject *kwds) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
-  (void) kwds;
 
   if (! KosPyContinuation_CAPTURED(cont)) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -325,10 +332,10 @@ static PyObject *continuation_call(
     }
   }
 
-  PyObject *resume_val = Py_None;
-  if (args && PyTuple_GET_SIZE(args) > 0)
-    resume_val = PyTuple_GET_ITEM(args, 0);
-  Py_INCREF(resume_val);
+  /* the arguments pack as return's do */
+  PyObject *resume_val = KosValues_PackTuple(args, kwds);
+  if (! resume_val)
+    return NULL;
 
   PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
   if (! exc) {
