@@ -1650,7 +1650,7 @@ class Reader:
             stream.read(1)
             return self._read_quasiquote(
                 stream, fchar + peek, _symbol_quasiquote_syntax)
-        if peek not in "({[":
+        if not peek or peek not in "({[":
             return DEFER, None
 
         peek = stream.read(1)

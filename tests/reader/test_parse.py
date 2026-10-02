@@ -462,6 +462,10 @@ class TestQuoted(IsolatedAsyncioTestCase):
         col = parse_source(src)
         self.assertEqual(col, cons(symbol("#list"), 1, 2, nil))
 
+    async def test_bare_hash_at_end_of_input_is_a_symbol(self):
+        self.assertEqual(parse_source("#"), symbol("#"))
+        self.assertEqual(parse_source("# "), symbol("#"))
+
 
 class TestLists(IsolatedAsyncioTestCase):
 

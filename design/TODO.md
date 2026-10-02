@@ -269,6 +269,16 @@ character, that the layout reader and lexer read as data.
 
 Ref: [reader-macro-triggers.md](reader-macro-triggers.md).
 
+### Bare `#` symbol policy (investigate)
+
+A `#` with nothing it prefixes reads as the symbol `#`, which is almost
+always a typo for a collection opener or `#'`. Investigate a pragma on
+the model of `compiler/stray-colon`, with `allow`, `warn` and `error`,
+applied where the bare symbol is read or compiled as a name.
+
+Ref: [PRAGMA.md](PRAGMA.md) (`compiler/stray-colon`);
+`koskari/reader/parser.py` (`_read_collection`).
+
 ---
 
 ## Import / loader
