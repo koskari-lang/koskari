@@ -1350,12 +1350,15 @@ typedef struct {
    Must use identity (pointer equality), not hash/equality, because
    Python's 1 == True and 0 == False would incorrectly merge distinct
    constants. Linear scan of cpool_list; append if not found.
+
+   :return: the 16-bit pool index, so every value 0..65535 is a valid
+     result, or -1 with an exception set
 */
-static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
+static int intern_const(CodeCollect *coll, PyObject *value) {
 
   if (! value) {
     PyErr_SetString(PyExc_RuntimeError, "NULL value passed to intern_const");
-    return (uint16_t) -1;
+    return -1;
   }
 
   Py_INCREF(value);
@@ -1370,7 +1373,7 @@ static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
   for (Py_ssize_t i = 0; i < n; i++) {
     if (PyList_GET_ITEM(list, i) == value) {
       Py_DECREF(value);
-      return (uint16_t) i;
+      return (int) i;
     }
   }
 
@@ -1378,17 +1381,17 @@ static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
     PyErr_Format(PyExc_OverflowError,
                  "constant pool exceeds 16-bit limit (%zd entries)", n);
     Py_DECREF(value);
-    return (uint16_t) -1;
+    return -1;
   }
 
   if (PyList_Append(list, value) < 0) {
     Py_DECREF(value);
-    return (uint16_t) -1;
+    return -1;
   }
 
   Py_DECREF(value);
-  coll->cpool_len = (uint16_t) (n + 1);
-  return (uint16_t) n;
+  coll->cpool_len = (uint32_t) (n + 1);
+  return (int) n;
 }
 
 
@@ -1662,8 +1665,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         }
         /* CONST: intern value, store cpool index in row slot */
         if (fk == KOSTYLE_CONST) {
-          uint16_t idx = intern_const(coll, elem);
-          if (idx == (uint16_t) -1) {
+          int idx = intern_const(coll, elem);
+          if (idx < 0) {
             goto failure;
           }
           if (slot == 0) {
@@ -1683,9 +1686,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           if (! name) {
             goto failure;
           }
-          uint16_t idx = intern_const(coll, name);
+          int idx = intern_const(coll, name);
           Py_DECREF(name);
-          if (idx == (uint16_t) -1) {
+          if (idx < 0) {
             goto failure;
           }
           if (slot == 0) {
@@ -1771,11 +1774,11 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
     /* CONST: intern arg into cpool; emit reads the index back */
     if (style == KOSTYLE_CONST) {
-      uint16_t idx = intern_const(coll, b);
-      if (idx == (uint16_t) -1) {
+      int idx = intern_const(coll, b);
+      if (idx < 0) {
         goto failure;
       }
-      coll->args[di] = idx;
+      coll->args[di] = (uint16_t) idx;
       di++;
       continue;
     }
@@ -1787,12 +1790,12 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       if (! name) {
         goto failure;
       }
-      uint16_t idx = intern_const(coll, name);
+      int idx = intern_const(coll, name);
       Py_DECREF(name);
-      if (idx == (uint16_t) -1) {
+      if (idx < 0) {
         goto failure;
       }
-      coll->args[di] = idx;
+      coll->args[di] = (uint16_t) idx;
       di++;
       continue;
     }
