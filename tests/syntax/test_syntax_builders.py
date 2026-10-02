@@ -22,6 +22,8 @@ import unittest
 import pytest
 
 from koskari.lib import Module, ModuleNamespace, cons, nil, symbol
+from koskari.reader import default_reader, source_str
+from koskari.syntax import parse_rule_pattern
 from koskari.types import build_proper, strip_marks
 from tests.syntax.datum_syntax_helpers import (
     macro_from_rule_rows, special_from_match_rows, special_from_rule_rows,
@@ -89,6 +91,32 @@ class TestBuildSyntax(unittest.TestCase):
         m = symbol("compile/m4")
         with self.assertRaises(ValueError):
             syntax_from_rule_datums(m, (), ((symbol("a"), symbol("b"), symbol("c")),))
+
+
+def _rule_pattern(src):
+    return parse_rule_pattern(default_reader.read(source_str(src, "<t>")), ())
+
+
+class TestRulePatternVariables(unittest.TestCase):
+    """
+    A pattern variable repeated within one ellipsis scope is an
+    equality test; repeated across scopes it is refused
+    """
+
+    def test_repeat_at_one_level_is_same(self):
+        self.assertIn("SAME('x')", repr(_rule_pattern("(m x x)")))
+        self.assertIn("SAME('x')", repr(_rule_pattern("(m (x y x) ...)")))
+
+    def test_variable_bound_outside_and_under_an_ellipsis_is_refused(self):
+        for src in ("(m x (x y) ...)", "(m (x ...) x)", "(m x x ...)"):
+            with self.assertRaises(ValueError, msg=src) as caught:
+                _rule_pattern(src)
+            self.assertIn("x", str(caught.exception))
+
+    def test_variable_bound_in_two_ellipsis_groups_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            _rule_pattern("(m ((a b) ...) ((a c) ...))")
+        self.assertIn("a", str(caught.exception))
 
 
 class TestMacroFromRuleRows(unittest.TestCase):

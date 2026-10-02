@@ -704,7 +704,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
 
     items, tail = _spine_items(pattern_expr)
     return MATCH(*_syntax_pattern_specs(
-        items, literals, source_ctx, set(), tail))
+        items, literals, source_ctx, {}, object(), tail))
 
 
 @builtin("parse-match-pattern")
@@ -734,7 +734,38 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     return parse_syntax_rules_pattern(pattern_expr, lit, source_ctx)
 
 
-def _syntax_elem_pattern(pat, literals, source_ctx, seen):
+# the owner recorded for a variable bound by ``x ...`` or a dotted
+# tail: a sequence of captures, which no later binding of the name
+# can be the same as
+_REPEAT_OWNER = object()
+
+
+def _claim_repeat_variable(name, owners, source_ctx):
+    """
+    Record a variable bound by an ellipsis or a dotted tail; a name
+    already bound anywhere in the pattern is refused
+    """
+
+    if name in owners:
+        raise ValueError(
+            f"pattern variable {name!r} is already bound at another"
+            f" ellipsis depth (context {source_ctx!r})")
+    owners[name] = _REPEAT_OWNER
+
+
+def _syntax_elem_pattern(pat, literals, source_ctx, owners, scope):
+    """
+    The matcher spec for one pattern element
+
+    :param owners: pattern-wide map from each bound variable name to
+        the scope that bound it: the top level or one pair sub-pattern
+        under an ellipsis, or _REPEAT_OWNER for an ellipsis variable
+    :param scope: the token of the scope being parsed
+    :raises ValueError: when a variable is bound in two scopes, where
+        the second occurrence is a sequence or another iteration's
+        value and equality has no meaning
+    """
+
     if pat is Ellipsis:
         raise ValueError(
             f"invalid ellipsis placement in pattern: {pat!r}"
@@ -750,9 +781,15 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
         if bare in literals:
             return LITERAL(bare)
         name = str(pat)
-        if name in seen:
+        owner = owners.get(name)
+        if owner is scope:
+            # a repeat within one scope is an equality test
             return SAME(name)
-        seen.add(name)
+        if owner is not None:
+            raise ValueError(
+                f"pattern variable {name!r} is already bound at another"
+                f" ellipsis depth (context {source_ctx!r})")
+        owners[name] = scope
         return BIND(name)
 
     if not is_pair(pat):
@@ -761,7 +798,7 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
 
     items, tail = _spine_items(pat)
     return FORM(MATCH(*_syntax_pattern_specs(
-        items, literals, source_ctx, seen, tail)))
+        items, literals, source_ctx, owners, scope, tail)))
 
 
 def _spine_items(pattern):
@@ -781,15 +818,21 @@ def _spine_items(pattern):
     return items, (None if is_nil(cell) else cell)
 
 
-def _syntax_pattern_specs(p_items, literals, source_ctx, seen, tail=None):
+def _syntax_pattern_specs(
+        p_items, literals, source_ctx, owners, scope, tail=None):
     """
     The matcher specs for a pattern spine's elements, and for its dotted
     tail when it has one: a tail symbol that is not a literal binds the
     remaining elements as a list, the REST a bare symbol pattern or a
     leading ``x ...`` lowers to; any other tail is refused
 
+    :param owners: pattern-wide variable ownership, see
+        _syntax_elem_pattern
+    :param scope: the token of the scope this spine is in; a pair
+        sub-pattern under an ellipsis opens a scope of its own
     :param tail: the datum after the dot, or None for a proper spine
-    :raises ValueError: when the dotted tail is not a pattern variable
+    :raises ValueError: when the dotted tail is not a pattern variable,
+        or a variable is bound in two scopes
     """
 
     specs = []
@@ -798,20 +841,22 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen, tail=None):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
             if is_symbol(pat) and strip_mark(pat) not in literals:
+                name = str(pat)
+                _claim_repeat_variable(name, owners, source_ctx)
                 if i + 2 < len(p_items):
-                    specs.append(REST(str(pat)))
+                    specs.append(REST(name))
                 else:
-                    specs.append(repeat_capture(str(pat), TEST_ANY()))
+                    specs.append(repeat_capture(name, TEST_ANY()))
             else:
                 slot = str(gensym(_REPEAT_SLOT_PREFIX))
                 inner = _syntax_elem_pattern(
-                    pat, literals, source_ctx, set())
+                    pat, literals, source_ctx, owners, object())
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
         specs.append(_syntax_elem_pattern(
-            p_items[i], literals, source_ctx, seen))
+            p_items[i], literals, source_ctx, owners, scope))
         i += 1
 
     if tail is not None:
@@ -820,7 +865,9 @@ def _syntax_pattern_specs(p_items, literals, source_ctx, seen, tail=None):
             raise ValueError(
                 f"dotted pattern tail must be a pattern variable, got"
                 f" {tail!r} (context {source_ctx!r})")
-        specs.append(REST(str(tail)))
+        name = str(tail)
+        _claim_repeat_variable(name, owners, source_ctx)
+        specs.append(REST(name))
 
     return specs
 
