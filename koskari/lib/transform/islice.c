@@ -40,7 +40,7 @@ typedef struct KosISlice {
    anything else must be an integer that fits a Py_ssize_t and is not
    negative.
 
-   :return: 0, or -1 with the TypeError Python's islice raises
+   :return: 0, or -1 with the ValueError Python's islice raises
 */
 static int islice_bound(
     PyObject *arg,
