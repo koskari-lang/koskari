@@ -22,7 +22,6 @@ Special form handler for compile/let.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BINDINGS, BODY, CALLEDBY, MATCH, SYMBOL
 from ...syntax import special
@@ -138,9 +137,6 @@ def special_letrec(
     args, vals = _let_bindings_parallel(caps["bindings"])
 
     body = caps["body"].datum
-
-    if len(args) != len(vals):
-        raise SpecialError("letrec binding name/value mismatch", pos)
 
     fragment = compiler.fragment(called_by)
     fragment.position(pos)
