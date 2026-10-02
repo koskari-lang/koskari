@@ -732,6 +732,18 @@ static PyObject *demand_apply_kw(
                     "demand_apply: kwargs must be a dict or None");
     return NULL;
   }
+  if (call_kw && ! PyDict_CheckExact(call_kw)) {
+    /* a dict subclass that relays its reads, such as a module
+       namespace, is copied into a plain dict the callee reads raw */
+    PyObject *fixed = PyDict_New();
+    if (! fixed || PyDict_Update(fixed, call_kw) < 0) {
+      Py_XDECREF(fixed);
+      return NULL;
+    }
+    PyObject *res = Koskari_DemandSync(callable, call_args, fixed);
+    Py_DECREF(fixed);
+    return res;
+  }
   return Koskari_DemandSync(callable, call_args, call_kw);
 }
 

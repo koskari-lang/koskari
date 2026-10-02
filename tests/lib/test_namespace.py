@@ -575,7 +575,9 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
     async def test_type(self):
         """ModuleNamespace is a subclass of Namespace"""
-        self.assertTrue(issubclass(ModuleNamespace, Namespace))
+        # a module namespace is a dict subclass, not a Namespace subtype
+        self.assertTrue(issubclass(ModuleNamespace, dict))
+        self.assertFalse(issubclass(ModuleNamespace, Namespace))
         self.assertEqual(ModuleNamespace.__name__, "ModuleNamespace")
 
 
@@ -598,17 +600,22 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(type(mn), ModuleNamespace)
         self.assertIsInstance(mn, ModuleNamespace)
-        self.assertIsInstance(mn, Namespace)
+        # a module namespace is a dict subclass, so exec and eval take
+        # it as globals; it is not a Namespace subtype
+        self.assertIsInstance(mn, dict)
+        self.assertNotIsInstance(mn, Namespace)
 
 
-    async def test_copy_rejected(self):
+    async def test_copy_is_a_plain_dict(self):
         """
-        copy() has no fast slots to duplicate on a ModuleNamespace and must
-        raise TypeError rather than track a NULL result
+        copy() on a ModuleNamespace is the dict API's copy: a plain dict
+        of the names holding a value, which exec'd code and doctest expect
         """
         mn = ModuleNamespace("mn", {})
-        with self.assertRaises(TypeError):
-            mn.copy()
+        mn['a'] = 1
+        c = mn.copy()
+        self.assertIs(type(c), dict)
+        self.assertEqual(c, {'a': 1})
 
 
     async def test_name_and_parent(self):

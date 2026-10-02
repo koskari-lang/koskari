@@ -115,10 +115,14 @@ class LayoutReader(Reader):
         super().__init__(nodefaults=True, bracket_pairs=bracket_pairs)
         self._inner = Reader(nodefaults=True, bracket_pairs=bracket_pairs)
 
-        from ..lib import ModuleNamespace
+        from ..lib import ModuleNamespace, Namespace
 
+        # a ModuleNamespace is a dict subclass, so the namespace kinds
+        # are checked ahead of a plain dict of builtins
         if isinstance(namespace, Module):
             self._ns = vars(namespace)
+        elif isinstance(namespace, (Namespace, ModuleNamespace)):
+            self._ns = namespace
         elif isinstance(namespace, dict):
             self._ns = ModuleNamespace('layout', namespace)
         else:

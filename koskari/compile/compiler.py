@@ -585,12 +585,14 @@ class Compiler:
         # its ancestry for write validation at the root
         self.lexical_stack = []
 
+        # a ModuleNamespace is a dict subclass, so the namespace kinds
+        # are checked ahead of a plain dict of builtins
         if module is None:
             module = Module(ModuleNamespace(name, {}))
+        elif isinstance(module, (Namespace, ModuleNamespace)):
+            module = Module(module)
         elif isinstance(module, dict):
             module = Module(ModuleNamespace(name, module))
-        elif isinstance(module, Namespace):
-            module = Module(module)
 
         self.module = module
 
@@ -598,11 +600,13 @@ class Compiler:
 
         ns = vars(module)
 
-        r = ns.ref("__name__")
-        if r.empty:
-            r.store(name)
+        # stored through the namespace, not its Ref, so a module
+        # namespace mirrors __name__ where CPython reads it raw
+        current = ns.get("__name__")
+        if current is None:
+            ns.store("__name__", name)
         elif name is None:
-            name = r.deref()
+            name = current
         self.name = name
 
         r = ns.ref("__file__")

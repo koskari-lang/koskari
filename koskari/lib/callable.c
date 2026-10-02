@@ -296,30 +296,47 @@ int KosKeywords_Update(PyObject *dst, PyObject *src) {
 
   PyObject *k, *v;
   Py_ssize_t pos = 0;
+  PyObject *plain_src = NULL;
 
   if (! src)
     return 0;
 
-  while (PyDict_Next(src, &pos, &k, &v)) {
-    int r;
+  /* PyDict_Next reads the dict storage raw; a dict subclass that
+     relays its reads, such as a module namespace, is copied into a
+     plain dict first */
+  if (! PyDict_CheckExact(src)) {
+    plain_src = PyDict_New();
+    if (! plain_src || PyDict_Update(plain_src, src) < 0) {
+      Py_XDECREF(plain_src);
+      return -1;
+    }
+    src = plain_src;
+  }
 
+  int rc = 0;
+  while (PyDict_Next(src, &pos, &k, &v)) {
     if (! PyUnicode_Check(k)) {
       PyErr_SetString(PyExc_TypeError, "keywords must be strings");
-      return -1;
+      rc = -1;
+      break;
     }
     if (PyUnicode_CheckExact(k)) {
-      r = PyDict_SetItem(dst, k, v);
+      rc = PyDict_SetItem(dst, k, v);
     } else {
       PyObject *plain = PyUnicode_FromObject(k);
-      if (! plain)
-        return -1;
-      r = PyDict_SetItem(dst, plain, v);
+      if (! plain) {
+        rc = -1;
+        break;
+      }
+      rc = PyDict_SetItem(dst, plain, v);
       Py_DECREF(plain);
     }
-    if (r < 0)
-      return -1;
+    if (rc < 0)
+      break;
   }
-  return 0;
+
+  Py_XDECREF(plain_src);
+  return rc;
 }
 
 

@@ -1685,7 +1685,9 @@ static KosOpResult kos_op_call_star(
     Py_SETREF(pos, fixed);
   }
 
-  if (kwd && ! PyDict_Check(kwd)) {
+  /* exact: a dict subclass that relays its reads, such as a module
+     namespace, is copied into a plain dict the callee reads raw */
+  if (kwd && ! PyDict_CheckExact(kwd)) {
     PyObject *fixed = PyDict_New();
     if (! fixed)
       goto done;
