@@ -57,7 +57,7 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
      one, and a drive from Python creates the wrapper's at that moment. */
   KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
 
-  PyObject *agen = KosPyAsyncGen_New(NULL);
+  PyObject *agen = KosPyAsyncGen_New(NULL, gen);
   if (! agen) {
     kos_dyngen_free(gen);
     return NULL;
@@ -66,7 +66,6 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
   Py_XINCREF(KosCode_NAME(code));
   ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);
   KosDynGen_OWNER(gen) = (PyObject *) agen;
-  ((KosPyAsyncGen *) agen)->gen = (void *) gen;
   kos_dyngen_acquire(gen);
   return agen;
 }

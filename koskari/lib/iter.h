@@ -57,7 +57,13 @@ struct KosPyAsyncGen {
   ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosPyAsyncGenType)))
 
 
-PyObject *KosPyAsyncGen_New(KosContext *ctx);
+/**
+   A wrapper over gen, complete before it is GC-tracked: gen is the
+   field the traverse dereferences, so it is set here rather than by
+   the caller afterwards. Steals ctx (may be NULL); gen is borrowed and
+   the caller arranges its ownership.
+*/
+PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen);
 
 
 /**

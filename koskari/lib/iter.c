@@ -719,7 +719,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
 };
 
 
-PyObject *KosPyAsyncGen_New(KosContext *ctx) {
+PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen) {
 
   KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
   if (! agen) {
@@ -728,6 +728,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   }
 
   agen->ctx = ctx;
+  agen->gen = (void *) gen;
   agen->code_name = NULL;
   agen->in_progress = 0;
   agen->started = 0;
