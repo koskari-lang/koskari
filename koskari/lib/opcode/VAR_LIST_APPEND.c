@@ -27,9 +27,12 @@ KOS_OP_HANDLER(VAR_LIST_APPEND) {
   if (unlikely(! list))
     RESULT_RAISE();
 
+  /* the type error names the type rather than repr the value, as the
+     FAST form does, so the two report one fault one way */
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
-                 "VAR_LIST_APPEND requires list, not %R", list);
+                 "#list-append requires a list, not %.200s",
+                 Py_TYPE(list)->tp_name);
     Py_DECREF(list);
     RESULT_RAISE();
   }

@@ -95,8 +95,10 @@ class TestVarListAppend(CevalTest):
             ],
             local_syms=("col",))
         fn = make_callable(code, ns)
-        with self.assertRaises(TypeError):
+        with self.assertRaises(TypeError) as ctx:
             await fn()
+        self.assertEqual(
+            str(ctx.exception), "#list-append requires a list, not int")
 
 
 class TestFastListAppend(CevalTest):
@@ -158,7 +160,8 @@ class TestFastListAppend(CevalTest):
         fn = make_callable(code, ns)
         with self.assertRaises(TypeError) as ctx:
             await fn()
-        self.assertIn("int", str(ctx.exception))
+        self.assertEqual(
+            str(ctx.exception), "#list-append requires a list, not int")
 
 
     async def test_fast_list_append_unbound_slot_raises(self):

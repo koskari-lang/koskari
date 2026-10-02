@@ -33,7 +33,7 @@ KOS_OP_HANDLER(FAST_LIST_APPEND) {
 
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
-                 "FAST_LIST_APPEND requires list, not %.200s",
+                 "#list-append requires a list, not %.200s",
                  Py_TYPE(list)->tp_name);
     Py_XDECREF(list_ref);
     RESULT_RAISE();
