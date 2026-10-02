@@ -387,7 +387,9 @@ def special_format(compiler, caps):
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)
 
-    if rules_expr:
+    # presence is the capture, not the form's truthiness: 0, "" and ()
+    # are rules values that format judges at runtime
+    if rules_expr is not None:
         if obj_is_const and rules_is_const:
             frag.instruction(OpCode.CONST, format(obj_const, rules_const))
         elif rules_is_const:

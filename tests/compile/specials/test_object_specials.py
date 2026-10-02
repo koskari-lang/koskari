@@ -1316,6 +1316,16 @@ class TestObjectFormat(SpecialsTestCase):
         self.assertEqual("04d", code.constant(arg))
 
 
+    async def test_format_falsy_rules_are_passed_through(self):
+        # a falsy rules form is a value, not an absent argument: it is
+        # handed to format, which rejects a non-str at runtime
+        for src, expected in (('(format (a) 0)', 0), ('(format (a) "")', "")):
+            code = self.compile_to_code(src)
+            arg = _find_op(code, OpCode.OBJECT_FORMAT_CONST)
+            self.assertIsNotNone(arg, src)
+            self.assertEqual(expected, code.constant(arg), src)
+
+
     async def test_format_quoted_symbol_rules_emits_opcode(self):
         code = self.compile_to_code("(format a (quote z))")
         a0, a1, _a2, _a3 = code.extra_tuple(

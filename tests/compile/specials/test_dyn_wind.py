@@ -20,6 +20,7 @@ Dynamic-wind runs before/after thunks on extent entry and exit.
 
 import pytest
 
+from koskari.lib import OpCode
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -217,6 +218,18 @@ class TestDynWindSpecial(SpecialsTestCase):
         result = await expr()
         self.assertEqual(result, 99)
         self.assertEqual(log, ["before", "body", "after"])
+
+
+    async def test_falsy_before_is_a_thunk_not_an_absence(self):
+        """
+        A falsy literal in the before position is an expression the
+        thunk returns, so both thunks are pushed
+        """
+
+        code = self.compile_to_code("(dyn-wind 0 (b) (c))")
+        ops = [code.oparg(i)[0] for i in range(code.length())]
+        self.assertEqual(ops.count(OpCode.BUILD_FUNCTION), 2)
+        self.assertEqual(ops.count(OpCode.PUSH_WIND), 1)
 
 
     async def test_dyn_wind_body_value_is_expression_result(self):

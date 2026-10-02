@@ -146,11 +146,16 @@ def special_dyn_wind(
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
 
-    if before_src and after_src:
+    # an absent segment is nil from _find_segments; a falsy literal in
+    # a segment is an expression its thunk returns
+    has_before = not is_nil(before_src)
+    has_after = not is_nil(after_src)
+
+    if has_before and has_after:
         _compile_thunk(compiler, before_src, fragment)
         _compile_thunk(compiler, after_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 2)
-    elif before_src:
+    elif has_before:
         _compile_thunk(compiler, before_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 1)
     else:
