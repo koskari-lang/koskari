@@ -50,4 +50,29 @@ def test_drive_async_loop_delegates_to_same_module():
     assert launcher_drive is drive_async_loop
 
 
+async def _break_shutdown(seen):
+    loop = asyncio.get_running_loop()
+    seen.append(loop)
+
+    async def failing_shutdown_asyncgens():
+        raise RuntimeError("shutdown_asyncgens refused")
+
+    loop.shutdown_asyncgens = failing_shutdown_asyncgens
+    return 42
+
+
+def test_drive_async_loop_closes_loop_when_shutdown_step_fails():
+    """
+    A failure inside the orderly shutdown still resets the current loop
+    and closes the one the driver created
+    """
+
+    seen = []
+    with pytest.raises(RuntimeError, match="shutdown_asyncgens refused"):
+        drive_async_loop(_break_shutdown(seen))
+    assert len(seen) == 1
+    assert seen[0].is_closed()
+    asyncio.set_event_loop(None)
+
+
 # The end.

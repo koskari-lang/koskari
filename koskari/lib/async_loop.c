@@ -60,14 +60,6 @@ static PyObject *str_close = NULL;
   PyObject_CallMethodOneArg((loop), str_run_until_complete, (awaitable))
 
 
-#define KOS_LOOP_SHUTDOWN_ASYNCGENS(loop)                               \
-  PyObject_CallMethodNoArgs((loop), str_shutdown_asyncgens)
-
-
-#define KOS_LOOP_SHUTDOWN_DEFAULT_EXECUTOR(loop)                        \
-  PyObject_CallMethodNoArgs((loop), str_shutdown_default_executor)
-
-
 #define KOS_LOOP_CLOSE(loop)                                            \
   PyObject_CallMethodNoArgs((loop), str_close)
 
@@ -190,45 +182,76 @@ static int kos_asyncio_gather_all_tasks(PyObject *loop) {
 }
 
 
+/**
+   Run the awaitable loop.<method>() returns to completion on loop.
+*/
+static int kos_loop_run_method(PyObject *loop, PyObject *method) {
+
+  PyObject *aw = PyObject_CallMethodNoArgs(loop, method);
+  if (! aw)
+    return -1;
+
+  if (kos_loop_run_until_complete(loop, aw) < 0) {
+    Py_DECREF(aw);
+    return -1;
+  }
+  Py_DECREF(aw);
+  return 0;
+}
+
+
+/**
+   Note a failure of one shutdown step: the first failure's exception is
+   kept raised for the caller, a later one is dropped in its favour.
+*/
+static void shutdown_step_failed(
+    int *rc,
+    PyObject **typ,
+    PyObject **val,
+    PyObject **tb) {
+
+  if (*rc < 0) {
+    PyErr_Clear();
+    return;
+  }
+  PyErr_Fetch(typ, val, tb);
+  *rc = -1;
+}
+
+
+/**
+   Orderly shutdown of a loop the driver created: cancel and gather the
+   outstanding tasks, close the async generators, shut the default
+   executor, then whatever happened in those steps, stop the loop being
+   current and close it. Returns -1 with the first failure raised.
+*/
 static int kos_asyncio_shutdown_loop(PyObject *loop) {
 
-  if (kos_asyncio_cancel_all_tasks(loop) < 0)
-    return -1;
+  int rc = 0;
+  PyObject *typ = NULL;
+  PyObject *val = NULL;
+  PyObject *tb = NULL;
+  PyObject *res;
 
-  if (kos_asyncio_gather_all_tasks(loop) < 0)
-    return -1;
+  if (kos_asyncio_cancel_all_tasks(loop) < 0
+      || kos_asyncio_gather_all_tasks(loop) < 0
+      || kos_loop_run_method(loop, str_shutdown_asyncgens) < 0
+      || kos_loop_run_method(loop, str_shutdown_default_executor) < 0)
+    shutdown_step_failed(&rc, &typ, &val, &tb);
 
-  PyObject *shutdown_asyncgens = KOS_LOOP_SHUTDOWN_ASYNCGENS(loop);
-  if (! shutdown_asyncgens)
-    return -1;
+  res = KOS_ASYNCIO_SET_EVENT_LOOP(Py_None);
+  if (! res)
+    shutdown_step_failed(&rc, &typ, &val, &tb);
+  Py_XDECREF(res);
 
-  if (kos_loop_run_until_complete(loop, shutdown_asyncgens) < 0) {
-    Py_DECREF(shutdown_asyncgens);
-    return -1;
-  }
-  Py_DECREF(shutdown_asyncgens);
+  res = KOS_LOOP_CLOSE(loop);
+  if (! res)
+    shutdown_step_failed(&rc, &typ, &val, &tb);
+  Py_XDECREF(res);
 
-  PyObject *shutdown_executor = KOS_LOOP_SHUTDOWN_DEFAULT_EXECUTOR(loop);
-  if (! shutdown_executor)
-    return -1;
-
-  if (kos_loop_run_until_complete(loop, shutdown_executor) < 0) {
-    Py_DECREF(shutdown_executor);
-    return -1;
-  }
-  Py_DECREF(shutdown_executor);
-
-  PyObject *clear_loop = KOS_ASYNCIO_SET_EVENT_LOOP(Py_None);
-  if (! clear_loop)
-    return -1;
-  Py_DECREF(clear_loop);
-
-  PyObject *close_res = KOS_LOOP_CLOSE(loop);
-  if (! close_res)
-    return -1;
-  Py_DECREF(close_res);
-
-  return 0;
+  if (rc < 0)
+    PyErr_Restore(typ, val, tb);
+  return rc;
 }
 
 
@@ -257,7 +280,7 @@ PyObject *kos_drive_async_loop(PyObject *coro) {
 
   PyObject *set_loop = KOS_ASYNCIO_SET_EVENT_LOOP(loop);
   if (! set_loop)
-    goto fail;
+    goto shutdown;
 
   Py_DECREF(set_loop);
 
@@ -268,7 +291,6 @@ PyObject *kos_drive_async_loop(PyObject *coro) {
   if (kos_asyncio_shutdown_loop(loop) < 0) {
     Py_DECREF(result);
     result = NULL;
-    goto fail;
   }
 
   Py_DECREF(loop);
@@ -286,8 +308,7 @@ PyObject *kos_drive_async_loop(PyObject *coro) {
     PyErr_Restore(exc_type, exc_val, exc_tb);
   }
 
- fail:
-  Py_XDECREF(loop);
+  Py_DECREF(loop);
   return result;
 }
 
