@@ -2060,9 +2060,11 @@ static PyObject *matcher_extern_default(PyObject *name) {
    Build the extern env tuple aligned to m->externs: each name resolves
    from the provided dict first (may be NULL), then the inbuilt extern
    defaults. Unknown provided names are ignored, matching the kwargs
-   behavior of ``Matcher.match``. On success *out_env is a new tuple
-   reference, or NULL when the matcher declares no externs (provided
-   entries are then rejected). Returns 0, or -1 with an exception set.
+   behavior of ``Matcher.match``; a matcher declaring no externs ignores
+   every provided name, so one keyword set serves every matcher of a
+   selection. On success *out_env is a new tuple reference, or NULL
+   when the matcher declares no externs. Returns 0, or -1 with an
+   exception set.
 */
 static int matcher_extern_env(
     KosMatcher *m,
@@ -2071,14 +2073,8 @@ static int matcher_extern_env(
 
   *out_env = NULL;
   Py_ssize_t n = PyTuple_GET_SIZE(m->externs);
-  if (n == 0) {
-    if (provided && PyDict_GET_SIZE(provided) > 0) {
-      PyErr_SetString(PyExc_TypeError,
-                      "matcher takes no extern bindings");
-      return -1;
-    }
+  if (n == 0)
     return 0;
-  }
 
   PyObject *env = PyTuple_New(n);
   if (! env)
@@ -2181,11 +2177,10 @@ static int matcher_env_resolve(
     }
   }
 
-  if (n_ext == 0) {
-    PyErr_SetString(PyExc_TypeError,
-                    "matcher takes no extern bindings");
-    return -1;
-  }
+  /* no extern table: every provided name is ignored and the env is
+     empty, as for the kwargs path */
+  if (n_ext == 0)
+    return 0;
 
   PyObject **env = r->inline_buf;
   if (n_ext > KOS_MATCH_ENV_INLINE) {
