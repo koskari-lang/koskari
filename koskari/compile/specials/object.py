@@ -68,6 +68,43 @@ _STR_PATTERNS = [
 ]
 
 
+# caps on a folded constant, after CPython's AST optimizer: a result
+# past these is left to the runtime operator rather than pooled
+FOLD_MAX_INT_BITS = 128
+FOLD_MAX_STR_SIZE = 4096
+FOLD_MAX_SEQ_SIZE = 256
+
+
+def _fold_product_fits(a, b):
+    """
+    Whether a * b stays within the fold caps, judged from the operands
+    so that an oversized product is never built
+    """
+
+    if isinstance(a, int) and isinstance(b, int):
+        return a.bit_length() + b.bit_length() <= FOLD_MAX_INT_BITS
+    for seq, count in ((a, b), (b, a)):
+        if isinstance(count, int) and isinstance(seq, (str, bytes, tuple)):
+            cap = (FOLD_MAX_STR_SIZE if isinstance(seq, (str, bytes))
+                   else FOLD_MAX_SEQ_SIZE)
+            return len(seq) * max(count, 0) <= cap
+    return True
+
+
+def _fold_result_fits(value):
+    """
+    Whether a folded constant is within the fold caps
+    """
+
+    if isinstance(value, int):
+        return value.bit_length() <= FOLD_MAX_INT_BITS
+    if isinstance(value, (str, bytes)):
+        return len(value) <= FOLD_MAX_STR_SIZE
+    if isinstance(value, tuple):
+        return len(value) <= FOLD_MAX_SEQ_SIZE
+    return True
+
+
 def _reduce_fold(py_fold, compiler, body):
     """
     Consume leading constant arguments from body, folding them with
@@ -115,12 +152,24 @@ def _reduce_fold(py_fold, compiler, body):
             current = rest
             continue
 
-        try:
-            acc = py_fold(acc, const_val)
-        except (TypeError, ValueError, ArithmeticError):
+        # a fold whose result would pass the caps stops here, and the
+        # rest of the chain multiplies at runtime; a product is judged
+        # from its operands so the oversized value is never built
+        if py_fold is _op.mul and not _fold_product_fits(acc, const_val):
             pending = expr_frag
             break
 
+        try:
+            folded = py_fold(acc, const_val)
+        except (TypeError, ValueError, ArithmeticError, MemoryError):
+            pending = expr_frag
+            break
+
+        if not _fold_result_fits(folded):
+            pending = expr_frag
+            break
+
+        acc = folded
         current = rest
 
     return (current, have_acc, acc, pending)

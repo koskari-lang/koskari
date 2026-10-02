@@ -738,6 +738,46 @@ class TestObjectMultiply(SpecialsTestCase):
         self.assertIn(12, consts)
 
 
+    async def test_multiply_str_fold_stops_at_the_size_cap(self):
+        # a folded str may be 4096 characters; one more is left to runtime
+        code = self.compile_to_code('(* "x" 4096)')
+        self.assertIsNone(_find_operand(code, Operand.MULTIPLY))
+        self.assertIn("x" * 4096, _consts(code))
+
+        # the right operand fuses into the operator row, so only the
+        # left one is a CONST load
+        code = self.compile_to_code('(* "x" 4097)')
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+        self.assertIn("x", _consts(code))
+
+
+    async def test_multiply_tuple_fold_stops_at_the_size_cap(self):
+        code = self.compile_to_code("(* #(1) 256)")
+        self.assertIsNone(_find_operand(code, Operand.MULTIPLY))
+
+        code = self.compile_to_code("(* #(1) 257)")
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+
+
+    async def test_multiply_int_fold_stops_at_the_bit_cap(self):
+        # the operands' bit lengths may sum to 128; 64 + 64 folds,
+        # 65 + 65 is left to runtime
+        code = self.compile_to_code(f"(* {2 ** 63} {2 ** 63})")
+        self.assertIsNone(_find_operand(code, Operand.MULTIPLY))
+        self.assertIn(2 ** 126, _consts(code))
+
+        code = self.compile_to_code(f"(* {2 ** 64} {2 ** 64})")
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+
+
+    async def test_fold_prefix_survives_a_refused_fold(self):
+        # (* 2 3 "x" 4097): 2, 3 and "x" fold to "xxxxxx"; the 4097
+        # would overrun the cap, so it multiplies at runtime
+        code = self.compile_to_code('(* 2 3 "x" 4097)')
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+        self.assertIn("xxxxxx", _consts(code))
+
+
 class TestObjectPower(SpecialsTestCase):
 
     async def test_power_two_args(self):
