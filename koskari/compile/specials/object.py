@@ -973,10 +973,10 @@ def special_inplace(compiler, called_by, op, var, value):
 
     frag.request_for_write(var.datum, position=pos)
     frag.merge(compiler.full_compile(value_expr))
-    # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
+    # EXTRA row [OPERAND(op-type), VAR(name)]; resolution lowers the
     # name to a fast slot (-> FAST_INPLACE) when possible.
     frag.instruction(OpCode.VAR_INPLACE,
-                     ((binop, 1), var.datum, 0, 0))
+                     (binop, var.datum, 0, 0))
     frag.instruction(OpCode.CONST, None)
 
     return frag

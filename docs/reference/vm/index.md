@@ -1945,8 +1945,8 @@ row: `("os.path", 0, 0, 0)`.
 
 ### KOS_OP_VAR_INPLACE
 
-- **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the variable name.
-- **Stack**: `[..., v0 .. v_{n-1}] -> [...]`. Reduce the count operands from the stack into the frame namespace binding with the operator, left to right, and store the result back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_var_inplace_operand`.
+- **Style**: EXTRA (OPERAND, VAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the variable name.
+- **Stack**: `[..., rhs] -> [...]`. Pop the one rhs and reduce it into the frame namespace binding with the operator, storing the result back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_var_inplace_operand`.
 - **Compiler form:** Emitted by **`compile/inplace`** when the target is a symbol. May lower to **FAST_INPLACE**; a single constant operand squashes into **VAR_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_INPLACE.c`
 
@@ -2444,8 +2444,8 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_FAST_INPLACE
 
-- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the fast slot.
-- **Stack**: `[..., v0 .. v_{n-1}] -> [...]`. Reduce the count operands from the stack into the slot with the operator, left to right; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
+- **Style**: EXTRA (OPERAND, FASTVAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the fast slot.
+- **Stack**: `[..., rhs] -> [...]`. Pop the one rhs and reduce it into the slot with the operator; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
 - **Compiler form:** The lowered form of **VAR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/FAST_INPLACE.c`
 
@@ -3937,19 +3937,18 @@ value is pushed (the form evaluates to None). The operator is a KosOperand
 selector dispatched through `kos_inplace_reduce` (`operator.c`), the same
 selector set as OBJECT_OPERAND / OBJECT_INPLACE.
 
-**VAR_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
-selector with the operand count (count is 1 in all compiler emission: one rhs
-popped from the stack); a1 = constant pool index of the name. Stack:
-`[..., rhs] -> [...]`.
+**VAR_INPLACE** -- EXTRA (OPERAND, VAR). Row a0 is the bare operator
+selector (one rhs popped from the stack); a1 = constant pool index of the
+name. Stack: `[..., rhs] -> [...]`.
 
-**FAST_INPLACE** -- EXTRA (OPCOUNT, FASTVAR). As above with a fast
+**FAST_INPLACE** -- EXTRA (OPERAND, FASTVAR). As above with a fast
 slot. Produced by `convert_fast` lowering of the VAR form.
 
 **VAR_INPLACE_CONST** -- EXTRA (OPERAND, VAR, CONST). The compressed
 single-operand form with a constant rhs: a0 is a *bare* KosOperand selector
-(OPERAND kind -- the count is fixed at 1 by the shape), a1 the name, a2 the
-pooled operand. **Completely stack-free**: no push, no pop. Produced by
-`Compiler.compress` fusing a prior CONST into a count-1 VAR_INPLACE --
+(OPERAND kind), a1 the name, a2 the pooled operand. **Completely
+stack-free**: no push, no pop. Produced by `Compiler.compress` fusing a
+prior CONST into a VAR_INPLACE --
 the `(set! i (+ i 1))` / `incr!` loop-tail idiom. Cold handler.
 
 **FAST_INPLACE_CONST** -- EXTRA (OPERAND, FASTVAR, CONST). The

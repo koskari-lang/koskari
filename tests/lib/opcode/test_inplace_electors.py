@@ -31,7 +31,7 @@ import pytest
 
 from koskari.lib import FormalsSpec, NamespaceSpec, Operand
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_code, opcount
+from tests.lib.opcode import CevalTest, build_code
 
 
 pytestmark = pytest.mark.phase_lib
@@ -103,7 +103,7 @@ def make_fast_site(opname='ADD', cache=True):
 
     code = build_code([
         ['FAST', 1],
-        ['FAST_INPLACE', (opcount(Operand[opname], 1), 0, 0, 0)],
+        ['FAST_INPLACE', (int(Operand[opname]), 0, 0, 0)],
         ['FAST', 0],
         ['RETURN', 1],
     ], local_syms=('a', 'b'), name='site', cache=cache)

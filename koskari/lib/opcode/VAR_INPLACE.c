@@ -14,17 +14,17 @@
 */
 
 /**
-   VAR_INPLACE: arg = EXTRA row index. Row a0 = OPCOUNT
-   (op-type high byte, reduce count low byte), a1 = constant-pool index of the
-   variable name. Reduce the count operands from the stack into the frame
-   namespace binding with the operator. Cold: the op-type switch lives in the
-   shared kos_var_inplace_operand, out of the inlined dispatch loop.
+   VAR_INPLACE: arg = EXTRA row index. Row a0 = OPERAND (the bare operator
+   selector), a1 = constant-pool index of the variable name. Pop the one rhs
+   from the stack and reduce it into the frame namespace binding with the
+   operator. Cold: the op-type switch lives in the shared
+   kos_var_inplace_operand, out of the inlined dispatch loop.
 */
 
 KOS_OP_HANDLER(VAR_INPLACE) {
   const KosExtra *row = KosOp_ROW(insn);
 
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   PyObject *name = KosExtra_OBJ(row, 1);
 
   if (unlikely(kos_var_inplace_operand(es, op, name) < 0))

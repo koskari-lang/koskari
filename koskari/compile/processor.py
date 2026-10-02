@@ -860,15 +860,12 @@ class ByteCodeProcessor:
     @squish_rule(OpCode.CONST, OpCode.VAR_INPLACE)
     def var_inplace_const_fuse(self, op, arg, matched):
         """
-        CONST VAR_INPLACE (single operand) -> the stack-free
-        VAR_INPLACE_CONST: bare operator selector, name, pooled operand
+        CONST VAR_INPLACE -> the stack-free VAR_INPLACE_CONST: the same
+        operator selector and name, with the pooled operand on the row
         """
 
-        merged = merge_opcount(arg[0])
-        if merged & 0xff != 1:
-            return None
         return [(OpCode.VAR_INPLACE_CONST,
-                 (merged >> 8, arg[1], matched[0][1], None))]
+                 (arg[0], arg[1], matched[0][1], None))]
 
 
     @fuse_rule(FEEDER, OpCode.RETURN)

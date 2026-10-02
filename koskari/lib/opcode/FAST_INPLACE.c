@@ -14,9 +14,9 @@
 */
 
 /**
-   FAST_INPLACE: arg = EXTRA row index. Row a0 = OPCOUNT
-   (op-type high byte, reduce count low byte), a1 = fast slot. Reduce the
-   count operands from the stack into the slot with the operator. Hot.
+   FAST_INPLACE: arg = EXTRA row index. Row a0 = OPERAND (the bare operator
+   selector), a1 = fast slot. Pop the one rhs from the stack and reduce it
+   into the slot with the operator. Hot.
    Prologue only: tail-call the body the site's slot elected
    (eval/eval_electors.c); an empty slot or an ungated site takes the
    electing function. One cache slot: KOS_CACHE_ELECTOR.

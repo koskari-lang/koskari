@@ -378,15 +378,15 @@ class TestCompress(unittest.TestCase):
 
 class TestInplaceConstSquash(unittest.TestCase):
     """
-    CONST rhs on a single-operand VAR_INPLACE fuses to the
-    stack-free VAR_INPLACE_CONST form
+    CONST rhs on a VAR_INPLACE fuses to the stack-free VAR_INPLACE_CONST
+    form
     """
 
     def test_const_rhs_fuses(self):
         out = squish_ops([
             (OpCode.CONST, 1),
             (OpCode.VAR_INPLACE,
-             ((Operand.ADD, 1), "i", 0, 0)),
+             (Operand.ADD, "i", 0, 0)),
         ])
         self.assertIn(
             (OpCode.VAR_INPLACE_CONST,
@@ -399,27 +399,12 @@ class TestInplaceConstSquash(unittest.TestCase):
         out = squish_ops([
             (OpCode.VAR, "y"),
             (OpCode.VAR_INPLACE,
-             ((Operand.ADD, 1), "i", 0, 0)),
+             (Operand.ADD, "i", 0, 0)),
         ])
         self.assertIn(
             (OpCode.VAR_INPLACE,
-             ((Operand.ADD, 1), "i", 0, 0)),
+             (Operand.ADD, "i", 0, 0)),
             out)
-
-    def test_multi_operand_stays_generic(self):
-        instr = [
-            (OpCode.VAR, "y"),
-            (OpCode.CONST, 1),
-            (OpCode.VAR_INPLACE,
-             ((Operand.ADD, 2), "i", 0, 0)),
-        ]
-        out = squish_ops(instr)
-        self.assertIn(
-            (OpCode.VAR_INPLACE,
-             ((Operand.ADD, 2), "i", 0, 0)),
-            out)
-        self.assertNotIn(
-            OpCode.VAR_INPLACE_CONST, [op for op, _ in out])
 
 
 class TestCompareConstFold(unittest.TestCase):

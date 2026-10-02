@@ -1,7 +1,6 @@
 # KOS_OP_VAR_INPLACE
-- **Style**: EXTRA (OPCOUNT, VAR). Row a0 packs the KosOperand selector
-  with the operand count (1 in all compiler emission); a1 = constant pool
-  index of the variable name.
+- **Style**: EXTRA (OPERAND, VAR). Row a0 = the bare KosOperand
+  selector; a1 = constant pool index of the variable name.
 - **Stack**: `[..., rhs] → [...]`. Augmented assignment through the frame
   namespace: obj = deref(name); obj OP= rhs; store back. No value pushed.
 - **Compiler form:** Emitted by the inplace specials (`set!` with an

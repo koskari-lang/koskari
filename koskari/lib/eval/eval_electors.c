@@ -261,7 +261,7 @@ KOS_ELECTOR(inplace_generic) {
 */
 KOS_ELECTOR(fast_inplace_generic) {
   const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   size_t idx = (size_t) KosExtra_IMM(row, 1);
 
   kos_elector_generic_tick(KosOp_SLOT(insn));
@@ -1470,7 +1470,7 @@ static inline KosThreadFn kos_elector_fast_inplace_classify(
   PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
 
   return kos_elector_num_body(
-      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
+      (KosOperand) KosExtra_IMM(row, 0), acc, rhs,
       kos_fast_inplace_int_bodies, kos_fast_inplace_float_bodies,
       el_fast_inplace_str_add);
 }

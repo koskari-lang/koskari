@@ -127,7 +127,7 @@ def make_fast_site(cache=True):
 
     code = build_code([
         ['FAST', 1],
-        ['FAST_INPLACE', (opcount(Operand['ADD'], 1), 0, 0, 0)],
+        ['FAST_INPLACE', (int(Operand['ADD']), 0, 0, 0)],
         ['FAST', 0],
         ['RETURN', 1],
     ], local_syms=('a', 'b'), name='site', cache=cache)

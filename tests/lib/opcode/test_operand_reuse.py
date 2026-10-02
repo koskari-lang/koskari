@@ -29,7 +29,7 @@ import pytest
 
 from koskari.lib import FormalsSpec, NamespaceSpec, Operand
 from tests import make_callable
-from tests.lib.opcode import CevalTest, build_code, opcount
+from tests.lib.opcode import CevalTest, build_code
 
 
 pytestmark = pytest.mark.phase_lib
@@ -81,7 +81,7 @@ def make_inplace_shape(scale):
         ['FAST', 1],
         ['CONST', scale],
         ['OBJECT_MULTIPLY', 2],
-        ['FAST_INPLACE', (opcount(Operand.ADD, 1), 0, 0, 0)],
+        ['FAST_INPLACE', (int(Operand.ADD), 0, 0, 0)],
         ['FAST', 0],
         ['CONST', "mark"],
         ['BUILD_ARGS', 2],
