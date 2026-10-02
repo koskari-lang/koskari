@@ -1797,15 +1797,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       continue;
     }
 
-    /* LABEL-style (JUMP etc): record instruction index -> label name so emit
-       can resolve target pc from labels dict (name -> pc) */
+    /* LABEL-style (JUMP etc): emit resolves the operand itself from
+       the name -> pc dict pass 1 filled; nothing to record here */
     if (style == KOSTYLE_LABEL) {
-      PyObject *key = PyLong_FromLong(di);
-      if (! key || PyDict_SetItem(coll->labels, key, b) < 0) {
-        Py_XDECREF(key);
-        goto failure;
-      }
-      Py_DECREF(key);
       di++;
       continue;
     }

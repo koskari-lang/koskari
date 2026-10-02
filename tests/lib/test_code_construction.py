@@ -105,4 +105,28 @@ class TestCountArgumentValidation(unittest.TestCase):
         self.assertIsInstance(code, Code)
 
 
+class TestLabelResolution(unittest.TestCase):
+
+    def test_int_label_name_equal_to_a_jump_pc_resolves(self):
+        """
+        A label is looked up by its name alone, so a label named with the
+        int that is also some jump's output pc still resolves to the pc
+        the label was defined at
+        """
+
+        code = make([
+            [OpCode.CONST, "a"],
+            [OpCode.JUMP, "L"],
+            [OpCode.LABEL, "L"],
+            [OpCode.JUMP, 1],
+            [OpCode.CONST, "x"],
+            [OpCode.RETURN, 1],
+            [OpCode.LABEL, 1],
+            [OpCode.CONST, "b"],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+        self.assertEqual(code.oparg(2)[1], 5)
+
+
 # The end.
