@@ -41,10 +41,13 @@ static PyObject *str_target = NULL;
 static void delimited_continuation_dealloc(PyObject *self) {
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
+  KosContinuation *k = KosPyDelimitedContinuation_CAPTURED(cont);
+
   /* the captured chain's teardown can run arbitrary Python; leave the
-     collector's lists before it starts */
+     collector's lists and unlink the field before it starts */
   PyObject_GC_UnTrack(self);
-  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
+  KosPyDelimitedContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -68,9 +71,12 @@ static int delimited_continuation_traverse(
 static int delimited_continuation_clear(PyObject *self) {
 
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
+  KosContinuation *k = KosPyDelimitedContinuation_CAPTURED(cont);
 
-  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
+  /* unlink before the free: its teardown can run Python that reaches
+     this wrapper */
   KosPyDelimitedContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   return 0;
 }
@@ -296,9 +302,11 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
+  KosContinuation *k = KosPyContinuation_CAPTURED(cont);
 
   PyObject_GC_UnTrack(self);
-  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
+  KosPyContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -322,9 +330,12 @@ static int continuation_traverse(
 static int continuation_clear(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
+  KosContinuation *k = KosPyContinuation_CAPTURED(cont);
 
-  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
+  /* unlink before the free: its teardown can run Python that reaches
+     this wrapper */
   KosPyContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   return 0;
 }
