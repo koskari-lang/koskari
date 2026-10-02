@@ -54,6 +54,29 @@ class TestKoskariPragma(SpecialsTestCase):
         self.assertIn('not declared', str(ctx.exception))
 
 
+    async def test_undeclared_write_error_points_at_the_write(self):
+        """KoskariPragma: the error carries the written name's position"""
+        src_str = """
+        ((lambda ()
+           (setq mistyped 1)))
+        """
+        with self.assertRaises(CompilerError) as ctx:
+            self.compile_expr(src_str, resolution_mode=ResolutionMode.KOSKARI)
+        self.assertEqual(ctx.exception.position, (3, 9))
+
+
+    async def test_undeclared_write_in_let_body_points_at_the_write(self):
+        """KoskariPragma: a write inside an inline let scope is located too"""
+        src_str = """
+        ((lambda ()
+           (let [[a 1]]
+             (setq mistyped 2))))
+        """
+        with self.assertRaises(CompilerError) as ctx:
+            self.compile_expr(src_str, resolution_mode=ResolutionMode.KOSKARI)
+        self.assertEqual(ctx.exception.position, (4, 11))
+
+
 class TestPythonPragma(SpecialsTestCase):
 
     async def test_implicit_local_on_first_write(self):

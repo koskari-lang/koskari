@@ -164,9 +164,6 @@ class KoskariPragma:
     """
 
     def __init__(self):
-        # Map (fragment_id, name) -> (line, col) for error reporting
-        self._write_positions = {}
-
         # Map code_id -> source fragment for validation-time position lookup
         self._code_to_fragment = {}
 
@@ -188,13 +185,8 @@ class KoskariPragma:
         Adds to requests_for_write unless already declared or global.
         """
 
-        # Store first occurrence position for validation error messages,
-        # keyed by spelling since validation reads names from a Code
-        if position is not None:
-            key = (id(fragment), str(name))
-            if key not in self._write_positions:
-                self._write_positions[key] = position
-
+        # the fragment records the position itself (write_positions)
+        # and carries it through merge, so validation reads it there
         if name not in fragment.declares and name not in fragment._request_global:
             _unique_append(fragment.requests_for_write, name)
 
@@ -389,7 +381,7 @@ class KoskariPragma:
 
         if fragment is None:
             return None
-        return self._write_positions.get((id(fragment), name))
+        return fragment.write_positions.get(name)
 
 
     def get_request_for_write_syms(self, code) -> Tuple:

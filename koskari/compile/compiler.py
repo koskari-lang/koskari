@@ -153,6 +153,11 @@ class ByteCodeFragment:
         self.annotation_bindings = []
         self.doc = None
 
+        # the source position of the first write to each name, by its
+        # str spelling, carried along by merge so the fragment that is
+        # validated can locate the write that fails
+        self.write_positions = {}
+
         # write requests copied up from inner Codes at completion; they
         # are validated where they originate, so the validator skips
         # them here (see KoskariPragma.cpool_merge)
@@ -218,6 +223,8 @@ class ByteCodeFragment:
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
             self.note_mark(var_name)
+        if position is not None:
+            self.write_positions.setdefault(str(var_name), position)
         self.resolution.on_write(self, var_name, position=position)
 
 
@@ -388,7 +395,8 @@ class ByteCodeFragment:
         for name in other.requests:
             self.request_var(name)
         for name in other.requests_for_write:
-            self.request_for_write(name)
+            self.request_for_write(
+                name, position=other.write_positions.get(str(name)))
         for name in other._request_global:
             self.request_global(name)
         self.annotation_bindings.extend(other.annotation_bindings)
