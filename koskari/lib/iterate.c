@@ -1038,12 +1038,11 @@ static PyObject *pyiter_step(
   {
     PyObject *out = NULL;
     KosIterStepResult r;
+    int thrown = (throw_exc != NULL);
 
     if (throw_exc && ! durable) {
       r = iterate_suite_throw(&gen->host, &gen->host_owned, islots,
                               gen->provider, throw_typ, throw_exc, &out);
-      throw_typ = NULL;
-      throw_exc = NULL;
     } else {
       /* A durable provider's throw pair rides the eval ingress below. */
       r = iterate_suite_step(&gen->host, &gen->host_owned, islots,
@@ -1055,6 +1054,14 @@ static PyObject *pyiter_step(
         return out;
 
       case KOS_ITER_EXHAUSTED:
+        if (thrown) {
+          /* the provider was already finished: a throw into a finished
+             generator raises what was thrown, not StopIteration */
+          Py_XDECREF(out);
+          pyiter_release_state(gen);
+          PyErr_SetObject(throw_typ, throw_exc);
+          return NULL;
+        }
         return pyiter_finish_exhausted(gen, out);
 
       case KOS_ITER_ERROR:
@@ -1177,9 +1184,11 @@ static PyObject *pyiter_throw(PyObject *self, PyObject *args) {
     return NULL;
 
   if (! gen->provider) {
+    /* a throw into a finished generator raises what was thrown, as the
+       generator protocol does; pyiter_ki_throw answers the same way */
+    PyErr_SetObject(typ, exc);
     Py_DECREF(typ);
     Py_DECREF(exc);
-    PyErr_SetNone(PyExc_StopIteration);
     return NULL;
   }
 

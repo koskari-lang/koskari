@@ -702,6 +702,16 @@ class TestDemandGenParity(unittest.TestCase):
         self.parity(s_plain(), "g-plain", scenario)
 
 
+    def test_throw_exhausted(self):
+        def scenario(gen):
+            return [
+                sync_outcome(lambda: list(gen)),
+                sync_outcome(lambda: gen.throw(ValueError("late"))),
+            ]
+
+        self.parity(s_plain(), "g-plain", scenario)
+
+
     def test_close_runs_finally(self):
         def scenario(gen, col):
             out = [
