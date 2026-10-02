@@ -630,9 +630,17 @@ static KosIterStepResult agen_iter_throw(
   }
 
   /* Throw ingress: prime the exception, then attach; the pending error
-     is delivered at the resume point inside the flattened drive. */
+     is delivered at the resume point inside the flattened drive. A
+     generator the drive finds spent takes no delivery: a throw into a
+     finished generator completes quietly, and EXHAUSTED carries no
+     exception. */
   PyErr_SetObject(throw_typ, throw_exc);
-  return agen_iter_drive(es, agen, NULL, out);
+  {
+    KosIterStepResult r = agen_iter_drive(es, agen, NULL, out);
+    if (r == KOS_ITER_EXHAUSTED)
+      PyErr_Clear();
+    return r;
+  }
 }
 
 
