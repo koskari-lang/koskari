@@ -687,6 +687,12 @@ kos_function_realize_annotations(KosFunction *fn) {
     }
   }
 
+  /* resolution runs Python, which may have read __annotations__ and
+     filled the cache under us: the first store wins */
+  if (fn->annotations_cache) {
+    Py_DECREF(out);
+    return fn->annotations_cache;
+  }
   fn->annotations_cache = out;
   return out;
 }

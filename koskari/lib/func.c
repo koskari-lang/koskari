@@ -493,7 +493,12 @@ function_get_signature(PyObject *self, void *closure) {
     PyObject *sig = kos_function_compute_signature(self);
     if (! sig)
       return NULL;
-    fn->inspect_signature = sig;
+    /* the build runs Python, which may have read __signature__ and
+       filled the cache under us: the first store wins */
+    if (fn->inspect_signature)
+      Py_DECREF(sig);
+    else
+      fn->inspect_signature = sig;
   }
 
   Py_INCREF(fn->inspect_signature);

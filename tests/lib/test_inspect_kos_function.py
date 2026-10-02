@@ -241,4 +241,54 @@ class TestInspectBoundMethod(unittest.TestCase):
         self.assertIs(sig.return_annotation, str)
 
 
+class TestInspectCacheReentrancy(unittest.TestCase):
+    """
+    Resolving a string annotation runs attribute lookups, and that code
+    may read the same function's __annotations__ or __signature__. The
+    object such a read caches is the one later reads see
+    """
+
+    def make(self, holder, attr):
+        """
+        A function with one string annotation whose dotted tail is looked
+        up on a class whose metaclass reads fn.<attr> during the lookup
+        """
+
+        seen = []
+        entered = []
+
+        class Meta(type):
+            def __getattr__(cls, name):
+                if not entered:
+                    entered.append(True)
+                    seen.append(getattr(holder[0], attr))
+                return int
+
+        class Probe(metaclass=Meta):
+            pass
+
+        code, base_ns = build_expr(
+            [["CONST", 42], ["RETURN", 1]], values={'Probe': Probe})
+        fspec = FormalsSpec(('a',), None, ())
+        fn = Function(code, base_ns, fspec, {'a': 'Probe.attr'})
+        holder.append(fn)
+        return fn, seen
+
+    def test_annotations_read_during_resolve_is_the_cache(self):
+        holder = []
+        fn, seen = self.make(holder, '__annotations__')
+        outer = fn.__annotations__
+        self.assertEqual(len(seen), 1)
+        self.assertIs(outer, seen[0])
+        self.assertIs(fn.__annotations__, seen[0])
+
+    def test_signature_read_during_resolve_is_the_cache(self):
+        holder = []
+        fn, seen = self.make(holder, '__signature__')
+        outer = fn.__signature__
+        self.assertEqual(len(seen), 1)
+        self.assertIs(outer, seen[0])
+        self.assertIs(fn.__signature__, seen[0])
+
+
 # The end.
