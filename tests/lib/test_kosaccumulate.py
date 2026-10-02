@@ -103,6 +103,16 @@ class TestKosAccumulateSync(unittest.TestCase):
         self.assertEqual(list(KosAccumulate([1, 2, 3], initial=None)),
                          [1, 3, 6])
 
+    def test_function_by_keyword(self):
+        self.assertEqual(
+            list(KosAccumulate([1, 2, 3], func=operator.mul)),
+            [1, 2, 6])
+
+    def test_none_function_by_keyword_with_a_seed(self):
+        self.assertEqual(
+            list(KosAccumulate([1, 2, 3], func=None, initial=5)),
+            [5, 6, 8, 11])
+
     def test_matches_itertools_accumulate(self):
         cases = ((([1, 2, 3, 4],), {}),
                  (([1, 2, 3, 4], operator.mul), {}),
@@ -125,7 +135,8 @@ class TestKosAccumulateSync(unittest.TestCase):
 
 class TestKosAccumulateConstruction(unittest.TestCase):
     """
-    The function is optional; initial is the only keyword
+    The function is optional, by position or keyword; initial is
+    keyword-only
     """
 
     def test_non_callable_function_refused(self):

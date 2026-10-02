@@ -279,28 +279,19 @@ static PyObject *kosaccumulate_new(
   PyObject *func = NULL;
   PyObject *initial = NULL;
   KosAccumulate *a;
+  static char *kwlist[] = {"iterable", "func", "initial", NULL};
 
-  if (kwds && PyDict_Size(kwds)) {
-    if (PyDict_Size(kwds) != 1)
-      goto bad_kwds;
-
-    initial = PyDict_GetItemString(kwds, "initial");
-    if (! initial) {
-      if (PyErr_Occurred())
-        return NULL;
-      goto bad_kwds;
-    }
-    if (initial == Py_None)
-      initial = NULL;
-  }
-
-  if (! PyArg_UnpackTuple(args, "accumulate", 1, 2, &iterable, &func))
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "O|O$O:accumulate", kwlist,
+                                    &iterable, &func, &initial))
     return NULL;
 
   /* None is the default fold, not the absence of one: an accumulate
-     with no function adds, which the step does with PyNumber_Add. */
+     with no function adds, which the step does with PyNumber_Add. A
+     None seed is no seed. */
   if (func == Py_None)
     func = NULL;
+  if (initial == Py_None)
+    initial = NULL;
 
   if (func && ! PyCallable_Check(func)) {
     PyErr_SetString(PyExc_TypeError,
@@ -322,11 +313,6 @@ static PyObject *kosaccumulate_new(
   a->initial = initial;
 
   return (PyObject *) a;
-
- bad_kwds:
-  PyErr_SetString(PyExc_TypeError,
-                  "accumulate takes only an initial keyword argument");
-  return NULL;
 }
 
 
