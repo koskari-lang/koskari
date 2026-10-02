@@ -114,7 +114,9 @@ static void islice_advance(KosISlice *s) {
 
   Py_ssize_t prev = s->next;
 
-  s->next += s->step;
+  /* unsigned addition so an overflow wraps instead of being undefined
+     behaviour, which would let the compiler drop the wrap test */
+  s->next = (Py_ssize_t) ((size_t) s->next + (size_t) s->step);
   if (s->next < prev || (s->stop != -1 && s->next > s->stop))
     s->next = s->stop;
 }
