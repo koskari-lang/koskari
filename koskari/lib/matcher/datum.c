@@ -16,10 +16,24 @@ typedef struct {
 
 static void datum_iter_dealloc(PyObject *self) {
   KosDatumIter *it = (KosDatumIter *) self;
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(it->current);
   Py_CLEAR(it->fallback);
   Py_CLEAR(it->binding);
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int datum_iter_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosDatumIter *it = (KosDatumIter *) self;
+  Py_VISIT(it->current);
+  Py_VISIT(it->fallback);
+  Py_VISIT(it->binding);
+  return 0;
 }
 
 
@@ -68,7 +82,8 @@ static PyTypeObject KosDatumIterType = {
   .tp_name = "koskari.lib.DatumIter",
   .tp_basicsize = sizeof(KosDatumIter),
   .tp_dealloc = datum_iter_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = datum_iter_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = datum_iter_iternext,
 };
@@ -76,10 +91,24 @@ static PyTypeObject KosDatumIterType = {
 
 static void datum_dealloc(PyObject *self) {
   KosDatum *d = (KosDatum *) self;
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(d->datum);
   Py_CLEAR(d->position);
   Py_CLEAR(d->binding);
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int datum_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosDatum *d = (KosDatum *) self;
+  Py_VISIT(d->datum);
+  Py_VISIT(d->position);
+  Py_VISIT(d->binding);
+  return 0;
 }
 
 
@@ -138,7 +167,7 @@ static PyObject *datum_iter(PyObject *self) {
         d->datum);
   }
 
-  KosDatumIter *it = PyObject_New(KosDatumIter, &KosDatumIterType);
+  KosDatumIter *it = PyObject_GC_New(KosDatumIter, &KosDatumIterType);
   if (! it)
     return NULL;
 
@@ -148,6 +177,7 @@ static PyObject *datum_iter(PyObject *self) {
   it->current = d->datum;
   it->fallback = d->position;
   it->binding = d->binding;
+  PyObject_GC_Track((PyObject *) it);
   return (PyObject *) it;
 }
 
@@ -190,7 +220,8 @@ PyTypeObject KosDatumType = {
   .tp_dealloc = datum_dealloc,
   .tp_repr = datum_repr,
   .tp_iter = datum_iter,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = datum_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Matched value with optional KosPair source position and "
             "capture binding name",
   .tp_getset = datum_getset,
@@ -203,7 +234,7 @@ static PyObject *kos_datum_new(
     PyObject *position,
     PyObject *binding) {
 
-  KosDatum *d = PyObject_New(KosDatum, &KosDatumType);
+  KosDatum *d = PyObject_GC_New(KosDatum, &KosDatumType);
   if (! d)
     return NULL;
   if (! binding)
@@ -214,6 +245,7 @@ static PyObject *kos_datum_new(
   d->datum = datum;
   d->position = position;
   d->binding = binding;
+  PyObject_GC_Track((PyObject *) d);
   return (PyObject *) d;
 }
 
@@ -360,8 +392,19 @@ static PyObject *kos_datum_frame_new(void) {
 
 static void match_result_dealloc(PyObject *self) {
   KosMatchResult *r = (KosMatchResult *) self;
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(r->captures);
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int match_result_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  Py_VISIT(((KosMatchResult *) self)->captures);
+  return 0;
 }
 
 
@@ -414,7 +457,8 @@ PyTypeObject KosMatchResultType = {
   .tp_dealloc = match_result_dealloc,
   .tp_repr = match_result_repr,
   .tp_as_number = &match_result_as_number,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = match_result_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Result of running a matcher against a subject",
   .tp_getset = match_result_getset,
 };
@@ -424,12 +468,13 @@ static PyObject *make_match_result(
     int matched,
     PyObject *captures) {
 
-  KosMatchResult *r = PyObject_New(KosMatchResult, &KosMatchResultType);
+  KosMatchResult *r = PyObject_GC_New(KosMatchResult, &KosMatchResultType);
   if (! r)
     return NULL;
   Py_INCREF(captures);
   r->captures = captures;
   r->matched = matched;
+  PyObject_GC_Track((PyObject *) r);
   return (PyObject *) r;
 }
 

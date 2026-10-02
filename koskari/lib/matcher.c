@@ -918,8 +918,8 @@ PyObject *KosMatcherBuilder_Finalize(
     return NULL;
   }
 
-  KosMatcher *m = PyObject_NewVar(KosMatcher, &KosMatcherType,
-                                  b->node_count);
+  KosMatcher *m = PyObject_GC_NewVar(KosMatcher, &KosMatcherType,
+                                     b->node_count);
   if (! m) {
     Py_DECREF(slots_t);
     Py_DECREF(externs_t);
@@ -934,6 +934,8 @@ PyObject *KosMatcherBuilder_Finalize(
 
   if (b->node_count > 0)
     memcpy(m->nodes, b->nodes, b->node_count * sizeof(KosMatchNode));
+
+  PyObject_GC_Track((PyObject *) m);
 
   /* Phase B: range checks for slot/extern/const indices */
   if (validate_slot_extern_const_indices(m)) {
@@ -2354,11 +2356,25 @@ int KosMatcher_MatchSelect(
 static void matcher_dealloc(PyObject *self) {
   KosMatcher *m = (KosMatcher *) self;
 
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(m->slots);
   Py_CLEAR(m->externs);
   Py_CLEAR(m->consts);
 
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int matcher_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosMatcher *m = (KosMatcher *) self;
+  Py_VISIT(m->slots);
+  Py_VISIT(m->externs);
+  Py_VISIT(m->consts);
+  return 0;
 }
 
 
@@ -2735,7 +2751,8 @@ PyTypeObject KosMatcherType = {
   .tp_itemsize = sizeof(KosMatchNode),
   .tp_dealloc = matcher_dealloc,
   .tp_repr = matcher_repr,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = matcher_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Compiled native matcher (matcher)",
   .tp_methods = matcher_methods,
   .tp_getset = matcher_getset,
