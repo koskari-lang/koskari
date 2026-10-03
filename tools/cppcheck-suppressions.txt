@@ -1,43 +1,14 @@
-# Baseline suppressions for pre-existing cppcheck findings in koskari/lib.
-# Populated during initial static-analysis setup; do not fix issues here by
-# editing koskari sources from this file alone.
+# Suppressions for cppcheck findings that are properties of the build
+# setup rather than of the code. Entries carry no line numbers, so they
+# do not drift as the sources change.
+#
+# The Python C-API return macros (Py_RETURN_NONE and friends) are known
+# to cppcheck through --library=python in the Makefile target, so no
+# missingReturn baseline is needed here.
 
-syntaxError:koskari/lib/opcodes.incl:43
-
-missingReturn:koskari/lib/domain.c:246
-missingReturn:koskari/lib/formals.c:498
-missingReturn:koskari/lib/iter.c:564
-missingReturn:koskari/lib/namespace.c:731
-missingReturn:koskari/lib/namespace.c:739
-missingReturn:koskari/lib/namespace.c:753
-missingReturn:koskari/lib/namespace.c:810
-missingReturn:koskari/lib/operator.c:221
-missingReturn:koskari/lib/operator.c:240
-missingReturn:koskari/lib/pair.c:1217
-missingReturn:koskari/lib/pair.c:1244
-missingReturn:koskari/lib/pair.c:1355
-missingReturn:koskari/lib/pair.c:1788
-missingReturn:koskari/lib/pair.c:1798
-missingReturn:koskari/lib/pair.c:1813
-missingReturn:koskari/lib/pair.c:1829
-missingReturn:koskari/lib/ref.c:1382
-missingReturn:koskari/lib/ref.c:327
-missingReturn:koskari/lib/ref.c:339
-missingReturn:koskari/lib/ref.c:535
-missingReturn:koskari/lib/ref.c:547
-missingReturn:koskari/lib/ref.c:712
-missingReturn:koskari/lib/stack.c:1096
-missingReturn:koskari/lib/stack.c:1105
-missingReturn:koskari/lib/stack.c:1119
-missingReturn:koskari/lib/stack.c:1159
-missingReturn:koskari/lib/stack.c:1174
-missingReturn:koskari/lib/stack.c:1189
-missingReturn:koskari/lib/stack.c:1220
-missingReturn:koskari/lib/stack.c:1235
-missingReturn:koskari/lib/stack.c:1244
-missingReturn:koskari/lib/stack.c:1300
-missingReturn:koskari/lib/utils.c:1167
-missingReturn:koskari/lib/utils.c:1183
-missingReturn:koskari/lib/utils.c:1217
+# compat.h selects the eval-breaker accessors per Python version with
+# macros cppcheck cannot resolve without the interpreter headers, and
+# reports the unresolved expression as a syntax error.
+syntaxError:koskari/lib/compat.h
 
 # The end.
