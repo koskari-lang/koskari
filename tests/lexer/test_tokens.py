@@ -72,6 +72,27 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual(t.end_col, 8)
 
 
+    async def test_leading_dot_atoms_match_reader(self):
+        # the reader collects a whole atom and makes DOT only of a lone
+        # '.', so .5 is a float and .name a symbol; a '.' attached to a
+        # closed form is the attribute suffix and stays a dot
+        self.assertEqual(
+            [(t.type, t.text) for t in tokenize('.5')],
+            [('number', '.5')])
+        self.assertEqual(
+            [(t.type, t.text) for t in tokenize('(.append lst x)')],
+            [('paren_open', '('), ('symbol', '.append'),
+             ('symbol', 'lst'), ('symbol', 'x'), ('paren_close', ')')])
+        self.assertEqual(
+            [t.type for t in tokenize('(a . b)')],
+            ['paren_open', 'symbol', 'dot', 'symbol', 'paren_close'])
+        self.assertEqual(
+            [t.type for t in tokenize('(f x).y')],
+            ['paren_open', 'symbol', 'symbol', 'paren_close',
+             'dot', 'symbol'])
+        self.assertEqual([t.type for t in tokenize('...')], ['ellipsis'])
+
+
     async def test_hex_case_matches_reader(self):
         # The reader only reads lowercase 0x hex; the tokenizer must agree,
         # so 0xFF is a symbol while 0xff is a number.
