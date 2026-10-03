@@ -216,15 +216,18 @@ define _help_protocol [obj formatter]:
   Invoke __kos_help__ or legacy __help__ on obj
   """
 
+  ;; the attribute names the calling convention: __kos_help__ renders
+  ;; into the formatter, the legacy __help__ takes nothing and returns
+  ;; text. Each is called once, so an error raised inside a handler
+  ;; propagates as itself.
   for-each [attrname #("__kos_help__" "__help__")]:
     define meth (getattr obj attrname None)
     unless (callable? meth):
       continue
 
-    try:
+    if (== attrname "__kos_help__"):
       (meth formatter)
-
-    except [TypeError]:
+    else:
       define text (meth)
       when (and (str? text) (text.strip)):
         (formatter.paragraph (text.strip))

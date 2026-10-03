@@ -130,4 +130,23 @@ class TestKosHelp(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Lower if/elif/else block sources', layout_if.__doc__)
 
 
+    async def test_kos_help_error_inside_handler_propagates_as_itself(self):
+        class Broken:
+            def __kos_help__(self, formatter):
+                raise TypeError("boom from inside the handler")
+
+        with self.assertRaises(TypeError) as caught:
+            await kos_help_text('broken', {'broken': Broken()})
+        self.assertEqual(str(caught.exception), "boom from inside the handler")
+
+
+    async def test_kos_help_legacy_help_returns_text(self):
+        class Legacy:
+            def __help__(self):
+                return "legacy text"
+
+        text = _plain_help(await kos_help_text('legacy', {'legacy': Legacy()}))
+        self.assertIn('legacy text', text)
+
+
 # The end.
