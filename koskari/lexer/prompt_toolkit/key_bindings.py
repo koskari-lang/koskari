@@ -20,9 +20,6 @@ when the cursor is in leading whitespace (so Tab still runs completion
 elsewhere). Shift+Tab dedents from any cursor position on the line.
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 
 from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition

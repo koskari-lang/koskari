@@ -20,9 +20,6 @@ Tab completion for Koskari REPL.
 :license: GNU General Public License v3
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 
 from prompt_toolkit.completion import Completer, Completion
 

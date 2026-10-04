@@ -23,9 +23,6 @@ into s-expressions without compilation or evaluation.
 :license: GNU General Public License v3
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 from koskari.reader import IndentAwareStream, source_str
 from koskari.reader.parser import READ_EOF
 
