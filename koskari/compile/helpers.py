@@ -14,7 +14,12 @@
 """
 koskari.compile.helpers
 
-Compile helpers for matcher FORMALS captures (GROUP dict payload)
+Shared helpers for the special-form compilers: matching a form against
+its declared patterns, gathering formals, bindings and declarations
+from their captures, rerouting and splatting call forms, partitioning
+collection runs, emitting item access and item places, requoting
+forms, discovering docstrings, compiling begin bodies, and the
+unpacking left-hand-side helpers
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

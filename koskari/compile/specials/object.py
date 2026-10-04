@@ -461,7 +461,7 @@ def emit_chain_compare(compiler, caps, sel):
 @special("compile/==", patterns=_COMPARE_PATTERNS, unpack="match")
 def special_eq(compiler, caps):
     """
-    Compile (compile/= A B). Test equality via __eq__
+    Compile (compile/== A B). Test equality via __eq__
     """
 
     return emit_chain_compare(compiler, caps, Compare.EQ)
@@ -707,10 +707,6 @@ def special_matrix_multiply(compiler, called_by, args):
         operand=Operand.MATRIX_MULTIPLY)
 
 
-# ---------------------------------------------------------------------------
-# Numeric interface — NOARG binary opcodes (no constant folding)
-# ---------------------------------------------------------------------------
-
 @builtin("compile//")
 @special("compile//", patterns=_REDUCE_PATTERNS, unpack="kwargs")
 def special_true_divide(compiler, called_by, args):
@@ -722,6 +718,10 @@ def special_true_divide(compiler, called_by, args):
         compiler, called_by, args, None, _op.truediv,
         operand=Operand.TRUE_DIVIDE)
 
+
+# ---------------------------------------------------------------------------
+# Numeric interface — NOARG binary opcodes (no constant folding)
+# ---------------------------------------------------------------------------
 
 @builtin("compile/%")
 @special("compile/%", patterns=_BINARY_PATTERNS, unpack="kwargs")
