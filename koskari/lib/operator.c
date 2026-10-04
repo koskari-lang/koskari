@@ -588,6 +588,11 @@ PyObject *KosOperator_MatrixMultiply(PyObject *const *values, size_t count) {
 }
 
 
+PyObject *KosOperator_Power(PyObject *const *values, size_t count) {
+  return op_power(values, count);
+}
+
+
 /* === Operator dispatch === */
 
 
@@ -869,6 +874,7 @@ VAR_FUNC(KosOperator_BitwiseOr);
 VAR_FUNC(KosOperator_BitwiseXor);
 VAR_FUNC(KosOperator_FloorDivide);
 VAR_FUNC(KosOperator_MatrixMultiply);
+VAR_FUNC(KosOperator_Power);
 VAR_FUNC(KosOperator_Multiply);
 VAR_FUNC(KosOperator_Subtract);
 VAR_FUNC(KosOperator_TrueDivide);
@@ -902,6 +908,9 @@ static PyMethodDef operators[] = {
 
   { "@", PICK_FUNC(KosOperator_MatrixMultiply), METHOD_TYPE,
     "(@ VAL BY_VAL *: BY_VALS)" },
+
+  { "**", PICK_FUNC(KosOperator_Power), METHOD_TYPE,
+    "(** BASE EXP [MOD])" },
 
   { "//", PICK_FUNC(KosOperator_FloorDivide), METHOD_TYPE,
     "(// VAL DENOM *: DENOMS)" },

@@ -818,6 +818,10 @@ PyObject *KosOperator_FloorDivide(PyObject *const *values, size_t count);
 
 PyObject *KosOperator_MatrixMultiply(PyObject *const *values, size_t count);
 
+/* Not a reduce: two values are base and exponent, three add the
+   modulus of three-argument pow. Any other count is a TypeError. */
+PyObject *KosOperator_Power(PyObject *const *values, size_t count);
+
 PyObject *KosOperator_Multiply(PyObject *const *values, size_t count);
 
 PyObject *KosOperator_Subtract(PyObject *const *values, size_t count);

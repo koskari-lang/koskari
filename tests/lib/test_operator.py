@@ -434,6 +434,32 @@ class TestOperatorMatrixMultiply(unittest.IsolatedAsyncioTestCase):
             matmul(5)
 
 
+class TestOperatorPower(unittest.IsolatedAsyncioTestCase):
+    """Tests for the ** power operator"""
+
+    async def test_two_args(self):
+        """** with base and exponent"""
+
+        power = getattr(lib, '**')
+        self.assertEqual(1024, power(2, 10))
+        self.assertEqual(0.25, power(2.0, -2))
+
+    async def test_three_args_modulus(self):
+        """** with a modulus is three-argument pow"""
+
+        power = getattr(lib, '**')
+        self.assertEqual(56, power(2, 8, 100))
+        self.assertEqual(pow(7, 123, 1000), power(7, 123, 1000))
+
+    async def test_arity_errors(self):
+        """** outside two or three args raises TypeError"""
+
+        power = getattr(lib, '**')
+        for args in ((), (2,), (2, 3, 4, 5)):
+            with self.assertRaises(TypeError):
+                power(*args)
+
+
 class TestOperatorIn(unittest.IsolatedAsyncioTestCase):
     """Tests for the in membership operator"""
 

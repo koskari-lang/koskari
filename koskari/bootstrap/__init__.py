@@ -271,7 +271,7 @@ def make_bootstrap():
     _ty('py-zip', zip)
 
     import koskari.lib as kl
-    for name in ('*', '+', '-', '/', '//', '&', '|', '^'):
+    for name in ('*', '+', '-', '/', '//', '@', '**', '&', '|', '^'):
         _bind(name, getattr(kl, name))
     for (name, alias) in (('==', 'equal?'), ('!=', 'not-equal?'),
                           ('<', 'lt?'), ('<=', 'le?'),
@@ -283,8 +283,6 @@ def make_bootstrap():
 
     _bind("is?", _op.is_)
     _bind("is-not?", _op.is_not)
-    _bind('**', _op.pow)
-    _bind('@', _op.matmul)
     _bind('<<', _op.lshift)
     _bind('>>', _op.rshift)
     _bind('itemgetter', _op.itemgetter)
