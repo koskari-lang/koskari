@@ -17,10 +17,10 @@
 
    A step fetches up to n times, so the driven path is the flattened
    walk zip's row uses: one loop that leaves only for a fetch that
-   suspends and re-enters where it left off. A source that runs out
-   part way through a batch is the one place a resume handles the
-   pending StopIteration rather than propagating it: the short batch
-   is the step's value, and the batch after it is the exhaustion.
+   suspends and re-enters where it left off. When a source runs out
+   part way through a batch the resume handles the pending
+   StopIteration rather than propagating it: the short batch is the
+   step's value, and the batch after it is the exhaustion.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3

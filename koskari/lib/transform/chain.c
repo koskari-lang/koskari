@@ -23,11 +23,10 @@
    flag is resolved again at every acquisition rather than fixed for
    the transform's lifetime.
 
-   Exhaustion of one source is not exhaustion of the chain, so like
-   batched, zip-longest and cycle this provider catches a source
-   running out rather than propagating it -- and, having more sources
-   to fetch from, carries the step on by threading back into its own
-   fetch.
+   Exhaustion of one source is not exhaustion of the chain, so this
+   provider catches a source running out rather than propagating it --
+   and, having more sources to fetch from, carries the step on by
+   threading back into its own fetch.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3

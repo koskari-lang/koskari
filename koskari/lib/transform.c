@@ -15,9 +15,9 @@
 
 
 /**
-   koskari/lib/transform/transform.c
+   koskari/lib/transform.c
 
-   The shared body of the map and filter providers. See transform.h.
+   The shared body of the transform/ providers. See transform.h.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3

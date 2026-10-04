@@ -6,7 +6,7 @@
 
    KosZip: a native lazy zip over N sources, duck-typed against
    builtins.zip, implemented as a KosIter provider on the shared
-   transform body (transform.c). The first multi-source provider: the
+   transform body (transform.c). A multi-source provider: the
    acquired iterators live in a tuple this unit owns, published to the
    base through the sources view so the base closes them without
    knowing where they are kept.

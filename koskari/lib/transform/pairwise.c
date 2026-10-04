@@ -9,7 +9,7 @@
    the shared transform body (transform.c). This unit holds only the
    pairwise step and the resume chain it arms.
 
-   The first provider with no callable at all: the argument tuple is
+   A provider with no callable at all: the argument tuple is
    just the source, and nothing is applied per element. The previous
    element outlives the step that fetched it, so it is this provider's
    own field rather than base.pending, which ki_finish clears at every
