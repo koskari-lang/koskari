@@ -191,6 +191,18 @@ so a generator whose body awaits fails inside the materialisation as a
 sync violation where `for-each` over it flattens. Today the demand
 path is forced, and that is the accepted behaviour until this change.
 
+The splice and splat rows are the same class: `PAIR_SPLICE` over a
+generic iterable segment, `COMBINE_ARGS`, `BUILD_LIST_EXTEND` and
+`BUILD_LIST_EXTEND_CONST` materialise through `_PyList_Extend`,
+`PySequence_InPlaceConcat` and `PySequence_Tuple`, so `` `(a ,@(gen)) ``
+and `#[*: (gen)]` run the generator on the demand path and fail the
+same way when its body awaits (probed 2026-10-04). The nested
+evaluation runs on the generator's own context, or on a host the
+adapter owns, never on the calling eval state's stack, so the operand
+pointers `PAIR_SPLICE` and `COMBINE_ARGS` hold into their segment
+across the iteration are not invalidated by it. These rows take the
+collecting shape below when it is built.
+
 The row kind carries this without a new node kind. The operand is
 one of the row's lookups; when it is a KosIter provider (the
 `KosIter_Check` gate `OBJECT_NEXT` already uses) the handler does not
