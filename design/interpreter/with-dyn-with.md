@@ -65,10 +65,9 @@ dedicated `None` sentinel. See [OPCODES.md §18.1](../OPCODES.md#181-context-man
 
 ## Dynamic chain nodes
 
-Dedicated dyn node kinds:
+One dyn node kind serves both forms:
 
-- `KOS_DYN_WITH` — single-shot context manager
-- `KOS_DYN_DYN_WITH` — multi-shot context manager
+- `KOS_DYN_WITH` — context manager extent. The shot lives in `u.with.shot`: PUSH_WITH pushes it as `KOS_DYN_WITH_SHOT_SINGLE_ACTIVE`, which becomes `KOS_DYN_WITH_SHOT_SINGLE_DONE` once `__exit__` has run; PUSH_DYN_WITH pushes it as `KOS_DYN_WITH_SHOT_MULTI`.
 
 ### Node payload (minimum)
 
@@ -213,13 +212,16 @@ extent:
    - pop the dyn node
    - re-raise / propagate
 
-**Async exit — evaluator flow:** When `exit` returns an awaitable (e.g.
-`__aexit__`), the VM uses `kos_with_exit_start_await`, which steps the
-awaitable (via `push_or_await`). That helper pushes the awaitable's result
-when it completes; that value must **not** become the with-expression value.
+**Async exit — evaluator flow:** The leave (`kos_dyn_with_leave`) sets the
+node to `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` and calls `exit` through
+`KosEvalState_Call` with no resume. A value in hand is settled by
+`KosEvalState_Settle` and classified for swallow at once; a raise from
+`exit` propagates in place of the exception it was handling; anything else
+(an awaitable such as `__aexit__`'s, or an installed Koskari frame) leaves
+the node on the chain. The exit result must **not** become the
+with-expression value.
 
-- **Sync completion (r==0):** The awaitable completed in one step, so the exit
-  result was pushed. The node's leave settles it at once
+- **Sync completion:** The exit result settled in one step and was pushed. The node's leave settles it at once
   (`kos_dyn_extent_settle` pops it; a swallow leaves a SWALLOWED obligation), and the unlink
   (`kos_dyn_unlink_top`) drops the owned segment, pops the WITH node, sets
   the frame PC to `resume_pc`, and pushes the parked body value (`None`
@@ -244,7 +246,7 @@ only used internally for swallow and then discarded in favour of `None`.
 
 Same as PUSH_WITH, except:
 
-- Installs `KOS_DYN_DYN_WITH`.
+- Pushes the `KOS_DYN_WITH` node with shot `KOS_DYN_WITH_SHOT_MULTI`.
 - The node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal re-enters it when it lands the extent.
 
 
