@@ -65,16 +65,14 @@ static int pair_free_count = 0;
 /* === helper macros === */
 
 
+/* Store value into dest, taking a reference to it before the old
+   value is released, so a finalizer the release runs sees the slot
+   already holding the new value. */
 #define Py_ASSIGN(dest, value) {                \
-    Py_XDECREF(dest);                           \
-    dest = value;                               \
-    Py_XINCREF(dest);                           \
+    PyObject *_kos_new = (value);               \
+    Py_XINCREF(_kos_new);                       \
+    Py_XSETREF(dest, _kos_new);                 \
   }
-
-
-/* trashcan macros for deep recursion protection */
-#define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_BEGIN(op, dealloc)
-#define CPy_TRASHCAN_END(op) Py_TRASHCAN_END
 
 
 /* === PairIteratorType === */
@@ -803,7 +801,7 @@ static PyObject *pair_richcomp(PyObject *self, PyObject *other, int op) {
 
 static void pair_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
-  CPy_TRASHCAN_BEGIN(self, pair_dealloc);
+  Py_TRASHCAN_BEGIN(self, pair_dealloc);
 
   Py_CLEAR(KosPair_CAR(self));
   Py_CLEAR(KosPair_CDR(self));
@@ -820,7 +818,7 @@ static void pair_dealloc(PyObject *self) {
     PyObject_GC_Del(self);
   }
 
-  CPy_TRASHCAN_END(self);
+  Py_TRASHCAN_END;
 }
 
 

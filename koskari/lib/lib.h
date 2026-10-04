@@ -113,7 +113,8 @@ int koskari_lib_clear(PyObject *mod);
 
 /* 1 when left and right are the same object or compare equal, 0 when
    not, -1 with an error set when the comparison raised: a caller tests
-   for 1, never for truth, since the error is truthy */
+   for 1, never for truth, since the error is truthy. The identity test
+   is inline so the common hit skips the call. */
 #define Py_EQUALS(left, right)                                          \
   (((left) == (right)) ? 1                                              \
    : PyObject_RichCompareBool((left), (right), Py_EQ))
