@@ -902,7 +902,7 @@ static KosOpResult handle_continuation_apply(KosEvalState *es) {
       Py_INCREF(resume_val);
     }
 
-    if (kos_invoke_continuation(es, k, resume_val, 0, cont_obj) == 0) {
+    if (kos_invoke_continuation(es, k, resume_val, cont_obj) == 0) {
       Py_DECREF(resume_val);
       Py_DECREF(args_obj);
       Py_DECREF(typ);
@@ -942,7 +942,7 @@ own_fail:
     if (seam && ! KosDynNode_IS_GEN(seam))
       seam = NULL;
 
-    goal = kos_xfer_goal_new(NULL, seam, val, 1, (uint32_t) -1, NULL, 1);
+    goal = kos_xfer_goal_new(NULL, seam, val, (uint32_t) -1, NULL, 1);
     Py_DECREF(typ);
     Py_DECREF(val);
     if (! goal)

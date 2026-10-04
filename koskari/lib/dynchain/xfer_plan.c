@@ -266,7 +266,7 @@ static int kos_delimited_invoke_inplace(
 
 
 /**
-   Invoke k with value or throw. Delimited with the capture-time reset live
+   Invoke k with value. Delimited with the capture-time reset live
    in ancestry: in-place resume (no goal). Otherwise arms a transfer goal:
    for a delimited k the caller stays on the chain and a fresh clone of the
    template lands on a DELIM bookmark; for an undelimited k the chain is
@@ -276,7 +276,6 @@ int kos_invoke_continuation(
     KosEvalState *es,
     KosContinuation *k,
     PyObject *value,
-    int is_throw,
     PyObject *continuation_ref) {
 
   if (! k) {
@@ -288,10 +287,8 @@ int kos_invoke_continuation(
      dyn_top ancestry: resume on the live chain, no graft, no wind replay.
      Only the first invoke can run in place (it consumes the live slice);
      re-invokes fall through to the PUSH graft, which instantiates the
-     captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))).
-     Throw injection also stays on the PUSH path. */
+     captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))). */
   if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
-      && ! is_throw
       && ! KosContinuation_LIVE_SLICE_CONSUMED(k)) {
     KosDynFrame *nested_frame = NULL;
 
@@ -375,7 +372,7 @@ int kos_invoke_continuation(
 
   {
     KosXferGoal *goal = kos_xfer_goal_new(
-        target, seam, value, is_throw, KosContinuation_RESUME_PC(k),
+        target, seam, value, KosContinuation_RESUME_PC(k),
         continuation_ref, 0);
     if (! goal) {
       /* target is freed by kos_xfer_goal_new on failure. Undo only the

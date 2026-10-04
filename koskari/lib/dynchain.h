@@ -2003,7 +2003,6 @@ void kos_continuation_free(KosContinuation *k);
    :param es: execution/eval state
    :param k: continuation to invoke
    :param value: resume value
-   :param is_throw: if nonzero, throw value as exception
 
    :return: 0 on success, -1 on error
 */
@@ -2022,7 +2021,6 @@ int kos_invoke_continuation(
    KosEvalState *es,
    KosContinuation *k,
    PyObject *value,
-   int is_throw,
    PyObject *continuation_ref);
 
 
