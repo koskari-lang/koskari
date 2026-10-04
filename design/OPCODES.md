@@ -1054,21 +1054,21 @@ bottom to top matches push order).
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, and arm a phase resume on the node. Each resume drives one step of the delegate (or handles a send/throw/close inject) and arms the next; the opcode itself is not re-entered. On completion: pop the dyn node, push final value. PC does not advance until delegation completes.
+- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, and arm a phase resume on the node. Each resume drives one step of the delegate (or handles a send/throw/close inject) and arms the next; the opcode itself is not re-entered. On completion: pop the dyn node and continue at the next instruction with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
 - **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic chain node `KOS_DYN_YIELD_FROM`, which holds the delegate, its kind, and pending action/arg for send/throw/close and for resume-from-await.
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
-- **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
+- **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Yielded values are never re-awaited; they are emitted as yields only.
 - **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The node stays armed, one resume succeeding the next, until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
-- **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize, arm and dispatch the phase resumes, fetch StopIteration value, emit yield, complete with value, drive sync iter/gen and Python/Koskari async) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
+- **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize and classify, the four per-kind drives -- sync iter, sync gen, Python async, Koskari iter -- selected once and stored on the node, yield emission, void finish, and the send/await/emit resume phases that take a transfer plan's throw injection before delivery) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
 - **Design**: [design/archive/yield-from-execution-model.md](archive/yield-from-execution-model.md) (archived narrative; see [EVALUATOR.md](EVALUATOR.md) §5)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
-**Example:** Delegate to a sync iterator; each yielded value is emitted (or pushed in-loop); final value is pushed when the iterator exhausts. Pool: 0 = [1, 2, 3].
+**Example:** Delegate to a sync iterator; each yielded value is emitted; nothing is pushed when the iterator exhausts. Pool: 0 = [1, 2, 3].
 
 | index | opcode   | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
 | 0     | CONST   | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
-| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, arm resume; each resume drives the delegate; on exhaust stack: [..., final_value] |
+| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, arm resume; each resume drives the delegate; on exhaust: pop node, nothing pushed |
 | 2     | RETURN  | 1   | 1        | |
 
 
