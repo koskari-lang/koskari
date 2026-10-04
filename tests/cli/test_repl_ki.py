@@ -30,8 +30,10 @@ import pytest
 from koskari.cli import main
 from koskari.cli.host import startup_lines
 from koskari.importer import install
-from koskari.lib import drive_async_loop
-from koskari.module import init_module, load_module_source_async, new_module
+from koskari.lib import drive_async_loop, values
+from koskari.module import (
+    build_module_load_facets, init_module, load_module_source_async,
+    new_module)
 
 
 pytestmark = pytest.mark.phase_cli
@@ -90,6 +92,27 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
     async def test_module_imports(self):
         self.assertTrue(hasattr(_repl(), 'repl'))
+
+
+    async def test_detached_reader_rebuilds_from_the_bound_pragma(self):
+        repl = _repl()
+        mod = new_module('replprobe')
+        init_module(mod, '<stdin>')
+        compiler, _ = build_module_load_facets(mod, filename='<stdin>')
+        ns = vars(mod)
+        pragma = ns['__pragma__']
+        del ns['__reader__']
+
+        await repl.eval_expression(compiler, '1', ns)
+
+        reader = ns.get('__reader__')
+        self.assertIsNotNone(reader)
+        self.assertIs(ns['__pragma__'], pragma)
+
+        # the rebuilt reader follows the module's pragma
+        layout = reader.layout_enabled
+        pragma.rebuild(('reader/layout', values(not layout)))
+        self.assertEqual(reader.layout_enabled, not layout)
 
 
     async def test_simple_expression_prints_result(self):

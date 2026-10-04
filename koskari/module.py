@@ -48,6 +48,7 @@ __all__ = (
     'MODULE_DETACH_FACET_NAMES',
 
     'build_module_load_facets',
+    'find_module_pragma',
     'find_module_reader',
     'build_module_pragma',
     'attach_module_load_facets',
@@ -508,11 +509,33 @@ def build_module_pragma(module):
     return pragma
 
 
+def find_module_pragma(ns):
+    """
+    The pragma record for the module owning ns. Returns the bound
+    __pragma__, or seeds one from the nearest package pragma, as a load
+    would, and binds it
+
+    :param ns: a module, function, or let namespace, or a plain mapping
+    :return: the ModulePragma
+    """
+
+    while getattr(ns, 'parent', None) is not None:
+        ns = ns.parent
+
+    pragma = ns.get('__pragma__')
+    if pragma is None:
+        # the module namespace carries the module's name
+        inherited = find_package_pragma_by_name(getattr(ns, 'name', None))
+        pragma = inherited.copy() if inherited is not None else ModulePragma()
+        ns['__pragma__'] = pragma
+    return pragma
+
+
 def find_module_reader(ns):
     """
     The layout reader for the module owning ns. Returns the bound
-    __reader__, or rebuilds one from __pragma__ and binds it when the
-    load-time facet was detached
+    __reader__, or rebuilds one from the module's pragma and binds it
+    when the load-time facet was detached
 
     :param ns: a module, function, or let namespace, or a plain mapping
     :return: the LayoutReader
@@ -525,15 +548,7 @@ def find_module_reader(ns):
     if reader is not None:
         return reader
 
-    pragma = ns.get('__pragma__')
-    if pragma is None:
-        # the module namespace carries the module's name; seed from
-        # the nearest package pragma as a load would
-        inherited = find_package_pragma_by_name(getattr(ns, 'name', None))
-        pragma = inherited.copy() if inherited is not None else ModulePragma()
-        ns['__pragma__'] = pragma
-
-    reader = LayoutReader.from_pragma(ns, pragma=pragma)
+    reader = LayoutReader.from_pragma(ns, pragma=find_module_pragma(ns))
     ns['__reader__'] = reader
     return reader
 

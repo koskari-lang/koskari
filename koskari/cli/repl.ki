@@ -37,8 +37,8 @@ import-from ..exceptions:
   format_code_boundary_exception format_exception_with_koskari_trace
   apply_sys_last_exc CompilerError UncaughtCompilerError
   ReaderEOF ReaderSyntaxError
-import-from ..reader IndentAwareStream LayoutReader source_str READ_EOF
-import-from ..module init_module build_module_load_facets
+import-from ..reader IndentAwareStream source_str READ_EOF
+import-from ..module init_module build_module_load_facets find_module_reader
 import-from ..lib kos_repr
 
 
@@ -120,12 +120,9 @@ define eval_expression [compiler source ns]:
   Reader- and compile-phase errors propagate to the caller.
   """
 
-  define reader (ns.get "__reader__")
-  when (None? reader):
-    ;; build against the session's pragma (or a default one), so the
-    ;; REPL reads with the same pragma-gated surfaces as a module
-    set! reader (LayoutReader.from_pragma ns pragma: (ns.get "__pragma__"))
-    set! ns["__reader__"] reader
+  ;; the session's reader, rebuilt from its pragma when detached, so
+  ;; the REPL reads with the same pragma-gated surfaces as a module
+  define reader (find_module_reader ns)
 
   define stream (IndentAwareStream.from_source (source_str source "<stdin>"))
 

@@ -19,8 +19,7 @@ Portion of koskari.builtins
 
 let []:
   import-from koskari.compile Compiler
-  import-from koskari.pragma ModulePragma
-  import-from koskari.module find_package_pragma_by_name
+  import-from koskari.module find_module_pragma
 
 
   define-global get-compiler [ns]:
@@ -40,16 +39,9 @@ let []:
 
     ;; the module namespace carries the module's name; the bound
     ;; __name__ exists only after a loader stamped it
-    define name ns.name
-
-    define pragma (ns.get "__pragma__")
-    when (None? pragma):
-      define inherited (find_package_pragma_by_name name)
-      set! pragma (if inherited (inherited.copy) (ModulePragma))
-      set! ns["__pragma__"] pragma
-
-    set! compiler (Compiler.from_pragma name ns
-                    filename: (ns.get "__file__") pragma: pragma)
+    set! compiler (Compiler.from_pragma ns.name ns
+                    filename: (ns.get "__file__")
+                    pragma: (find_module_pragma ns))
     set! ns["__compiler__"] compiler
     compiler
 
