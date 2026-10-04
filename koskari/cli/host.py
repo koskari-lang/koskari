@@ -152,11 +152,27 @@ def _make_repl_prompter(histfile, ns):
             atexit.register(readline.write_history_file, histfile)
 
     except ImportError:
-        pass
+        readline = None
+
+    def _read_line(prompt, default):
+        """
+        input() with the default pre-filled on the line through
+        readline's startup hook, when readline is present; without it
+        nothing can pre-fill a plain input line and the default is not
+        offered
+        """
+
+        if readline is None or not default:
+            return input(prompt)
+        readline.set_startup_hook(lambda: readline.insert_text(default))
+        try:
+            return input(prompt)
+        finally:
+            readline.set_startup_hook(None)
 
     async def _input_prompt(prompt, default=''):
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: input(prompt))
+        return await loop.run_in_executor(None, _read_line, prompt, default)
 
     return _input_prompt
 
