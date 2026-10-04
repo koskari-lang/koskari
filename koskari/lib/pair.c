@@ -1732,7 +1732,10 @@ static PyObject *pair_alloc(PyTypeObject *type,
     pair_free_count--;
     KOS_TRACE_FL_ALLOC("pair", 1);
     Py_SET_TYPE(self, type);
-    Py_INCREF(self);
+    /* the revival CPython's own type freelists use: a refcount of one,
+       and in a debug build the reference total and trace chain the
+       dealloc gave up */
+    _Py_NewReference((PyObject *) self);
 
   } else {
     KOS_TRACE_FL_ALLOC("pair", 0);

@@ -183,13 +183,16 @@ PyObject *KosSymbol_FromString(PyObject *name) {
 /**
    Drop a dying atom's entry from its intern table. The refcount is
    raised past zero for the duration so the dict's own decref of the
-   value does not re-enter dealloc. An atom with no name was never
+   value does not re-enter dealloc; the incref balances that decref
+   in a debug build's reference total, as the decref at interning
+   balanced the dict's incref. An atom with no name was never
    interned (its constructor cleared the name when the table refused
    it) and has no entry to drop.
 */
 static void atom_forget(PyObject *self, PyObject *intern) {
   if (intern && KosInternedAtom_NAME(self)) {
-    self->ob_refcnt = 3;
+    Py_SET_REFCNT(self, 1);
+    Py_INCREF(self);
     PyDict_DelItem(intern, KosInternedAtom_NAME(self));
   }
 }
