@@ -17,8 +17,9 @@
 /**
   CALL_VAR and TAIL_CALL_VAR: arg = extra index. Schema VAR (name), COUNT (arg
   count). Call callable from namespace by name. Stack [arg_0, ..., arg_{N-1}].
-  KosCallable: steal args then KosEvalState_Call. Plain Python: TailPtr +
-  PyObject_Vectorcall + DropNoErr. A TAIL_CALL instruction reaches this same
+  Prologue only: deref the callable (owned), take the borrowed argv window,
+  and delegate to kos_call_invoke (which owns the window drop and the
+  callable release). A TAIL_CALL instruction reaches this same
   handler and adds the tail bit, which the core turns into a frame reset
   instead of a push.
 */

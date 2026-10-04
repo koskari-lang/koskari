@@ -44,8 +44,8 @@ static int kos_pending_missing_module_is(PyObject *full) {
 
 
 /**
-  Fetch one from-import member from the module, importing
-  "{mod.__name__}.{attr}" and retrying on AttributeError. New
+  Fetch one from-import member from the module; on AttributeError import
+  "{mod.__name__}.{attr}" and return that submodule. New
   reference or NULL with error set. When missing is given it records
   which failure this was: 1 when the member does not exist and the
   "cannot import name" report here is the whole story, 0 when the
@@ -127,7 +127,7 @@ static PyObject *kos_import_from_member(
 
   Submodule fallback: when getattr raises AttributeError and the
   member is actually a not-yet-imported submodule, import
-  "{module.__name__}.{attr}" and retry the getattr — matching
+  "{module.__name__}.{attr}" and bind that submodule -- matching
   CPython's "from pkg import sub" behavior for submodules the package
   __init__ does not import. When the fallback fails because the
   synthesized submodule itself does not exist, the raw

@@ -135,10 +135,6 @@ typedef enum KosOpStyle {
 #define KosCmpSrc_Y_CONST(v)  (((v) >> 5) & 1)
 
 
-/** Operator selector carried in the OPCOUNT high byte and dispatched by the
-    OBJECT_OPERAND / *_INPLACE handlers to the KosOperator_* functions. The
-    ordinals are part of the bytecode ABI (encoded in OPCOUNT and mirrored by
-    the Python Operand IntEnum); keep this order stable. */
 /** Comparison selector carried in CMP fields and the CMPCOUNT high byte,
     dispatched by the CHECK_COMPARE / OBJECT_COMPARE handlers to the
     kos_compare_* cores. WARNING: values 0..5 are CPython's Py_LT..Py_GE
@@ -162,6 +158,10 @@ typedef enum KosCompare {
 } KosCompare;
 
 
+/** Operator selector carried in the OPCOUNT high byte and dispatched by the
+    OBJECT_OPERAND / *_INPLACE handlers to the KosOperator_* functions. The
+    ordinals are part of the bytecode ABI (encoded in OPCOUNT and mirrored by
+    the Python Operand IntEnum); keep this order stable. */
 typedef enum KosOperand {
   KOS_OPERAND_ADD,
   KOS_OPERAND_SUBTRACT,
@@ -432,15 +432,6 @@ typedef struct KosExtentDesc {
 /* === Per-site cache slots === */
 
 
-/**
-   The kind of a per-site cache slot: the top-level discriminant of the
-   KosCacheSlot tagged union. KOS_CACHE_EMPTY (zero) is an unused slot -- the
-   state of every freshly zeroed slot -- and owns nothing. Each other kind
-   names one specialized layout for one caching use case. Kinds never
-   sub-branch: two different uses do not share or fork a layout, they get
-   distinct kinds. Cleanup and GC traversal switch on this value.
-   See design/archive/attr-lookup-cache.md.
-*/
 /* How a MATCH_CASE site obtains its extern env, decided once from the
    names it stacks: the stacked values are the env as-is; every extern
    comes from the defaults, held in the slot; or a mix, resolved on
@@ -451,6 +442,15 @@ typedef struct KosExtentDesc {
 #define KOS_MATCH_ENV_GENERAL   3u
 
 
+/**
+   The kind of a per-site cache slot: the top-level discriminant of the
+   KosCacheSlot tagged union. KOS_CACHE_EMPTY (zero) is an unused slot -- the
+   state of every freshly zeroed slot -- and owns nothing. Each other kind
+   names one specialized layout for one caching use case. Kinds never
+   sub-branch: two different uses do not share or fork a layout, they get
+   distinct kinds. Cleanup and GC traversal switch on this value.
+   See design/archive/attr-lookup-cache.md.
+*/
 typedef enum KosCacheKind {
   KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
@@ -782,8 +782,8 @@ KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
 
 
 /**
-   Get ic_pc for innermost SHIFT_BODY extent at pc. Returns KOS_EXTENT_NONE
-   if none.
+   The resume pc for the innermost SHIFT extent at pc: the instruction after
+   its POP_SHIFT. Returns KOS_EXTENT_NONE if none.
 */
 uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
 
@@ -791,9 +791,10 @@ uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
 /**
    Get or create the faux CPython code object for tracebacks.
 
-   :param self: KosCode object
+   :param self: KosCode object, or NULL for a fresh empty code object
 
-   :return: borrowed reference to PyCodeObject
+   :return: borrowed reference to the KosCode's cached PyCodeObject; with
+     self NULL, a new reference to a fresh empty one
 */
 PyCodeObject *KosCode_Faux(PyObject *self);
 
@@ -830,11 +831,10 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
 
 
 /**
-   Get the count of per-site cache slots an opcode requests. Zero means the
-   opcode is not a cache consumer. The initial framework landing returns 0
-   for every opcode; individual opcodes opt in over time. Currently 0 or 1
-   in practice, but a small count is supported so a single opcode may reserve
-   a contiguous run of slots (see design/archive/attr-lookup-cache.md).
+   Get the count of per-site cache slots an opcode requests, from its
+   opcodes.incl row. Zero means the opcode is not a cache consumer. Most
+   consumers take one; a small count is supported so a single opcode may
+   reserve a contiguous run of slots (see design/archive/attr-lookup-cache.md).
 
    :param op: opcode enum value
 

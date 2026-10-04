@@ -2053,7 +2053,7 @@ static int code_emit(
     /* Reserve this site's cache slot run. A cache-consuming opcode gets the
        next free index; the count_cache_slots pre-pass sized the trailing
        array to match. When the cache is gated off (cache_on == 0) no site
-       gets a slot. All opcodes request 0 today, so every site stays UNSET. */
+       gets a slot and every index stays UNSET. */
     uint8_t ncache = cache_on ? kos_opcode_cache_count(op) : 0;
     if (ncache) {
       code[di].cache = next_slot;
@@ -3236,18 +3236,6 @@ PyTypeObject KosCodeType = {
 /* === Constructor === */
 
 
-/**
-   Sum the per-site cache slots requested across a softened instruction
-   sequence. Each instruction's opcode declares how many slots it wants via
-   kos_opcode_cache_count; the total sizes the KosCode's trailing slot array.
-   Pseudo-ops (LABEL/POSITION) request zero, so counting the whole sequence
-   matches the assignment pass in code_emit. All opcodes request 0 today.
-
-   :param instr: fast-sequence of (op, arg) pairs
-   :param out: receives the slot total on success
-   :return: 0 on success; -1 (with exception) if the total would exceed the
-     index range (KOS_CACHE_UNSET is reserved as the unset sentinel)
-*/
 /* The one shape check for user-supplied instructions, run before any
    reader touches the items: every item is a list or tuple (the only
    types the PySequence_Fast item macros are defined for) of at least
@@ -3298,6 +3286,18 @@ static int validate_instructions(PyObject *instr) {
 }
 
 
+/**
+   Sum the per-site cache slots requested across a softened instruction
+   sequence. Each instruction's opcode declares how many slots it wants via
+   kos_opcode_cache_count; the total sizes the KosCode's trailing slot array.
+   Pseudo-ops (LABEL/POSITION) request zero, so counting the whole sequence
+   matches the assignment pass in code_emit.
+
+   :param instr: fast-sequence of (op, arg) pairs
+   :param out: receives the slot total on success
+   :return: 0 on success; -1 (with exception) if the total would exceed the
+     index range (KOS_CACHE_UNSET is reserved as the unset sentinel)
+*/
 static int count_cache_slots(PyObject *instr, uint16_t *out) {
 
   Py_ssize_t n = PySequence_Fast_GET_SIZE(instr);

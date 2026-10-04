@@ -16,8 +16,8 @@
 /**
   CALL_NAMES and TAIL_CALL_NAMES: arg = N (number of positional arguments).
   Stack: [callable, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1},
-  names] with names at TOS. KosCallable: steal then KosEvalState_Call. Plain
-  Python: TailPtr + PyObject_Vectorcall + DropNoErr. A TAIL_CALL instruction
+  names] with names at TOS. Prologue only: take the borrowed argv window and delegate to
+  kos_call_invoke (which owns the window drop). A TAIL_CALL instruction
   reaches this same handler and adds the tail bit, which the core turns into a
   frame reset instead of a push.
 */
