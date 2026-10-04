@@ -129,4 +129,37 @@ class TestLabelResolution(unittest.TestCase):
         self.assertEqual(code.oparg(2)[1], 5)
 
 
+
+class TestTailCallExtentValidation(unittest.TestCase):
+    """
+    A tail call may run through the extents frame handoff can discard,
+    NS, LOOP and FOREACH, and through nothing else; the compiler never
+    emits the other shape, so a hand-assembled stream carrying it is
+    refused when the Code is built
+    """
+
+    def test_tail_call_inside_try_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            make([
+                [OpCode.PUSH_TRY, "handler"],
+                [OpCode.CONST, None],
+                [OpCode.TAIL_CALL, 1],
+                [OpCode.POP_TRY, 0],
+                [OpCode.LABEL, "handler"],
+                [OpCode.RETURN, 1],
+            ])
+        self.assertIn("non-discardable", str(caught.exception))
+        self.assertIn("TRY", str(caught.exception))
+
+    def test_tail_call_inside_loop_builds(self):
+        code = make([
+            [OpCode.PUSH_LOOP, 0],
+            [OpCode.CONST, None],
+            [OpCode.TAIL_CALL, 1],
+            [OpCode.POP_LOOP, 0],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+
+
 # The end.

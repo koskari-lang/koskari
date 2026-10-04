@@ -2269,6 +2269,39 @@ typedef struct {
    Catches POP with no PUSH, extent mismatch, unclosed extent.
    Call when extent_count == 0 to reject code that has POP_* but no PUSH_*.
 */
+/**
+   Refuse a TAIL_CALL family row nested in an extent frame handoff
+   cannot discard. The tail call tears down the extents open above the
+   frame; NS, LOOP and FOREACH uninstall by pure release, every other
+   kind has uninstall behavior that must run, so the compiler's promoter
+   never puts a tail call inside one and a hand-assembled stream that
+   does is refused here, the same set the runtime teardown holds.
+
+   :return: 0 when pc is not a tail call or sits only in discardable
+     extents, -1 with ValueError set otherwise
+*/
+static int validate_tail_call_extents(
+    KosOpCode op, uint32_t pc,
+    const ExtentStackEntry *stack, uint32_t stack_top) {
+
+  if (op < KOS_OP_TAIL_CALL || op > KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
+    return 0;
+
+  for (uint32_t i = 0; i < stack_top; i++) {
+    KosOpCode push = stack[i].push_op;
+    if (push == KOS_OP_PUSH_NS || push == KOS_OP_PUSH_LOOP
+        || push == KOS_OP_PUSH_FOREACH)
+      continue;
+    PyErr_Format(PyExc_ValueError,
+                 "TAIL_CALL at pc %u inside a non-discardable %s extent"
+                 " opened at pc %u",
+                 pc, kos_opcode_name(push), stack[i].push_pc);
+    return -1;
+  }
+  return 0;
+}
+
+
 static int validate_extents(KosOp *code, uint32_t code_len) {
 
   ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
@@ -2277,6 +2310,9 @@ static int validate_extents(KosOp *code, uint32_t code_len) {
   /* Simulate PUSH/POP stack; error on POP with empty stack or mismatch */
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
+
+    if (validate_tail_call_extents(op, pc, stack, stack_top))
+      return -1;
 
     if (is_push_op(op)) {
       /* PUSH: push onto stack */
@@ -2340,6 +2376,9 @@ static int derive_extents_fill(
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
+
+    if (validate_tail_call_extents(op, pc, stack, stack_top))
+      return -1;
 
     if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
