@@ -84,7 +84,7 @@ Module-level `deref(ref)` calls `ref.deref()`. Used when passing refs as first-c
 ### compile/bindq
 
 - **Syntax:** `(compile/bindq SYM EXPR)`
-- **Effect:** Create a new binding SYM and initialize it with the value of EXPR. Form evaluates to None.
+- **Effect:** Bind SYM to the Ref that EXPR evaluates to, sharing that cell with whatever else holds it; a non-Ref value is a TypeError. Form evaluates to None.
 - **Bytecode:** Declare SYM, compile EXPR, `VAR_BIND`, then `CONST None`.
 - **Use:** Introduce a new local/block binding.
 
@@ -136,7 +136,7 @@ Module-level `deref(ref)` calls `ref.deref()`. Used when passing refs as first-c
 | Opcode | Purpose |
 |--------|---------|
 | VAR_REF | Push Ref for name from current frame namespace. |
-| VAR_BIND | Create/update binding: pop value, bind name to new Ref holding it. |
+| VAR_BIND | Create/update binding: pop a Ref, bind name to that cell (TypeError for a non-Ref). |
 | VAR_STORE | Pop value, store into existing binding. |
 | VAR_CLEAR | Clear binding for name. |
 | DEREF | Pop Ref, call `ref.deref()`, push result. |
