@@ -345,6 +345,9 @@ int kos_transform_clear(PyObject *self) {
   /* a stepper mid-step on this context holds its own reference and
      finishes its drive before letting go; the last holder frees */
   Py_CLEAR(t->ctx);
+  /* a cleared transform has nothing left to step; closed makes any
+     later step report exhaustion instead of reading the freed fields */
+  t->closed = 1;
   return 0;
 }
 
