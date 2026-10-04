@@ -65,13 +65,10 @@ KOS_OP_HANDLER(PUSH_NS) {
     }
   }
 
-  /*
-   * Use parent only if it is a KosNamespace (supports closure lookup).
-   * When frame has a dict (e.g. shift handler), use NULL so nspec
-   * must have empty closure_syms.
-   */
-  PyObject *spec_parent = KosNamespace_Check(parent) ? parent : NULL;
-  new_ns = KosNamespace_FromSpec(nspec, spec_parent);
+  /* The frame's namespace is the new scope's parent. A frame holds a
+     KosNamespace and nothing else: no other mapping ever stands in for
+     one, so the parent is passed as it is. */
+  new_ns = KosNamespace_FromSpec(nspec, parent);
   Py_DECREF(nspec);
   if (unlikely(! new_ns)) {
     RESULT_RAISE();
