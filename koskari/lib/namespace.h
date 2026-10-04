@@ -598,11 +598,13 @@ KOS_OP_INLINE void KosNamespace_ResetToTemplate(PyObject *ns) {
 }
 
 
-/* === Opcode-only fast inline helpers === */
+/* === Fast-slot inline helpers === */
 /*
-   The following inlines are ONLY for use in opcode handlers where the
-   compiler guarantees the namespace type and slot index are valid.
-   Do NOT call them from public API functions or namespace.c internals.
+   The following inlines skip the type and bounds checks the public API
+   performs. The caller must already hold a namespace that supports fast
+   slots and a slot index known to be in range: the compiler establishes
+   both for opcode rows and the elector bodies, the frame builder for
+   formals binding, and the slot-map layout for its own namespace.
 */
 
 #include "ref.h"
