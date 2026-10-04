@@ -507,6 +507,19 @@ typedef enum KosElectorMode {
 
 
 /**
+   The election accounting the KOS_CACHE_ELECTOR and KOS_CACHE_ITEM
+   layouts share. ``misses`` counts guard misses since the election and
+   drives the demotion; ``ticks`` counts slow-path executions, and its
+   wrap empties the slot for a re-election.
+*/
+typedef struct KosElection {
+  uint8_t misses;            /* guard misses since the election */
+  uint8_t mode;              /* KosElectorMode */
+  uint8_t ticks;             /* slow-path executions since the election */
+} KosElection;
+
+
+/**
    The bodies of the KOS_CACHE_ITEM layout: one container kind's load,
    store, or in-place reduce over borrowed obj and key. A body answers
    a KosItemCode (eval/eval_item.c): hit, a guard miss, a decline to
@@ -615,11 +628,7 @@ struct KosCacheSlot {
                                   at election: the C index a constant key
                                   elects a sequence body with, or the C
                                   value of an int operand constant */
-      uint8_t misses;          /* guard misses since the election; drives
-                                  the demotion */
-      uint8_t mode;            /* KosElectorMode */
-      uint8_t ticks;           /* generic-body executions; the wrap empties
-                                  the slot for a re-election */
+      KosElection election;    /* the ticks count generic-body runs */
     } elector;
 
     /* KOS_CACHE_ITEM: the item body elected for the site, by the verb
@@ -629,10 +638,7 @@ struct KosCacheSlot {
        references; the teardown arm is a no-op. */
     struct {
       KosItemBody fn;          /* elected body; NULL once demoted */
-      uint8_t misses;          /* guard misses since the election */
-      uint8_t mode;            /* KosElectorMode */
-      uint8_t ticks;           /* protocol executions; the wrap empties
-                                  the slot for a re-election */
+      KosElection election;    /* the ticks count protocol runs */
     } item;
 
     /* KOS_CACHE_TARGET: the pop pc of the extent a region push opens,
