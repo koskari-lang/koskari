@@ -58,7 +58,7 @@ Active in `LayoutReader` at depth 0 (outside all delimiters).
 <ignored>       ::= ( <ws> | <comment> )*
 
 <digit>         ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-<hex-digit>     ::= <digit> | "a"-"f" | "A"-"F"
+<hex-digit>     ::= <digit> | "a"-"f"
 <atom-char>     ::= any Unicode character except <hspace> <newline>
                     "(" ")" "[" "]" "{" "}" ";" "\""
 ```

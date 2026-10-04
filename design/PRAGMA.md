@@ -395,8 +395,8 @@ compiler *with* it:
 ```
 pragma  = <active source>                 ; default, or inherited package pragma
 module.__pragma__ = pragma
-reader  = Reader(pragma)                  ; subscribes itself as a watcher
-compiler = Compiler(pragma)               ; subscribes itself as a watcher
+reader  = LayoutReader.from_pragma(ns, pragma)  ; from_pragma subscribes it as a watcher
+compiler = Compiler.from_pragma(..., pragma)    ; likewise
 ```
 
 This single chokepoint is where every pragma *source* plugs in (see
@@ -542,8 +542,8 @@ registry defaults in a follow-up.
    watcher cell, with `replace` / `subscribe` / `announce`), the registry and
    `PragmaFeature` metadata (owner, target, kind, baseline, params + defaults,
    stability), `register_feature`, and the stability tiers.
-2. **Reader** registers its `reader/*` features at import; subscribes itself when
-   constructed; its refresh callback re-derives the layout and bracket-reading
+2. **Reader** registers its `reader/*` features at import; `LayoutReader.from_pragma`
+   subscribes the instance it builds (a plain `Reader` never subscribes); its refresh callback re-derives the layout and bracket-reading
    switches from the announced pragma.
 3. **Compiler** registers its `compiler/*` features at import; subscribes itself;
    its refresh callback applies the flags and swaps the resolution class.
