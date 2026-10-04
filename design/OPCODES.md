@@ -342,8 +342,8 @@ When adding or changing an opcode:
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var_attr) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
 | MATCH_CASE | EXTRA | Run the site's cached matcher on the subject; bind captures and fall through on match, jump on no match | [§9.2](#kos_op_match_case) |
-| GLOBALS | NOARG | Push globals dict | [§10](#kos_op_globals) |
-| LOCALS | NOARG | Push locals dict | [§10](#kos_op_locals) |
+| GLOBALS | NOARG | Push the module (outermost) namespace | [§10](#kos_op_globals) |
+| LOCALS | NOARG | Push the frame's current namespace | [§10](#kos_op_locals) |
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [§10.1](#kos_op_import) |
 | IMPORT_FROM | EXTRA | Import module; bind named attrs (self-contained) | [§10.1](#kos_op_import_from) |
 | IMPORT_STAR | EXTRA | Import module; bind its public names | [§10.1](#kos_op_import_star) |
@@ -632,13 +632,14 @@ When adding or changing an opcode:
 - **Stack**: `[..., raw] → [..., v_{n-1}, ..., v_1, v_0]` where `v_i` is the
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
-  first). Implementation: pop TOS, `PySequence_List(raw)` (new list), require
-  `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
+  first). Implementation: pop TOS and materialize it through
+  `KosEvalState_PopUnpackSequence` (an exact tuple or list is used as is,
+  anything else goes through `PySequence_Fast`), require `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
   then `Py_DECREF(seq)`.
 - **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
   realization.
-- **Errors**: `ValueError` if length ≠ `n`; `TypeError` or other error if
-  `PySequence_List` fails.
+- **Errors**: `ValueError` if length ≠ `n`; `TypeError` when TOS is not
+  iterable.
 - **Compiler form:** Pre-compile / post-compile arg = `n` (uint16).
 
 **Example:** Unpack `(1, 2, 3)` so TOS is `1`, then return three values (stack
@@ -657,7 +658,7 @@ bottom to top matches push order).
 - **Style**: EXTRA (`COUNT`, `COUNT`, `NOARG`, `NOARG`). Instruction arg =
   index into the code object's **extra** table; that row has `a0 = left`,
   `a1 = right` (both non-negative counts).
-- **Semantics**: Pop TOS, `PySequence_List(raw)`. Require `left + right > 0`
+- **Semantics**: Pop TOS and materialize it as UNPACK does. Require `left + right > 0`
   and `len(seq) >= left + right`. Let `L = len(seq)`. The **middle** slice is
   `seq[left : L - right]` (inclusive start, exclusive end), materialized as a
   **tuple** (new reference). Pushes are ordered so that after all pushes,
@@ -671,7 +672,7 @@ bottom to top matches push order).
   middle, seq[left-1], ..., seq[0]]` when all parts are non-empty; adjust when
   `left` or `right` is zero (no prefix or suffix pushes for that side).
 - **Invariants**: Extra row matches schema; `left + right` fits in uint16;
-  realized value must be a valid sequence for `PySequence_List` / slicing.
+  realized value must be iterable.
 - **Errors**: `ValueError` if `left + right == 0` or `len(seq) < left + right`.
 - **Compiler form:** Pre-compile extra operand is a 4-tuple
   `(left, right, 0, 0)`; `NOARG` slots are ignored by the assembler. Same
@@ -694,8 +695,10 @@ bottom to top matches push order).
   pool indices of the two names (strings).
 - **Stack**: `[..., raw] → [...]`. No values pushed; **STORE** semantics only
   (same as `VAR_STORE` / `KosNamespace_Store` through `frame_ns_store`): `seq[0]`
-  into the first name, `seq[1]` into the second. Pop TOS, `PySequence_List`,
-  require `len == 2`, then store; release the temporary list.
+  into the first name, `seq[1]` into the second. Pop TOS and materialize it
+  as UNPACK does, require `len == 2`, own both items, release the sequence,
+  then store; owning both before the first store keeps the second safe from
+  a finalizer the first store runs.
 - **Invariants**: Both names must already be bound in the frame namespace (see
   §1.9 STORE vs BIND).
 - **Errors**: `ValueError` if length ≠ 2.
@@ -708,8 +711,8 @@ bottom to top matches push order).
 
 - **Style**: EXTRA (`FASTVAR`, `FASTVAR`, `NOARG`, `NOARG`). Row: `a0`, `a1` =
   fast local slot indices.
-- **Stack**: `[..., raw] → [...]`. Pop TOS, `PySequence_List`, require `len == 2`,
-  then `KosNamespace_FastStore` for slot `a0` with `seq[0]` and slot `a1` with
+- **Stack**: `[..., raw] → [...]`. Pop TOS and materialize it as UNPACK does,
+  require `len == 2`, own both items before either store, then `KosNamespace_FastStore` for slot `a0` with `seq[0]` and slot `a1` with
   `seq[1]` (same ownership rules as `FAST_STORE`: namespace increments ref as
   needed).
 - **Invariants**: Frame namespace supports fast locals; both indices in range
@@ -1524,14 +1527,14 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 ### KOS_OP_GLOBALS
 
 - **Style**: NOARG.
-- **Stack**: `[...] → [..., globals_dict]`.
+- **Stack**: `[...] → [..., globals_ns]`. Pushes the outermost parent of the frame's namespace (a KosNamespace, not a dict), found by walking `KosNamespace_PARENT`.
 - **Invariants**: Frame has globals namespace.
 
-**Example:** Push frame's globals dict.
+**Example:** Push the frame's module namespace.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | GLOBALS| 0   | 0        | stack: [..., globals_dict] |
+| 0     | GLOBALS| 0   | 0        | stack: [..., globals_ns] |
 | 1     | RETURN | 1   | 1        | |
 
 ---
@@ -1539,28 +1542,30 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 ### KOS_OP_LOCALS
 
 - **Style**: NOARG.
-- **Stack**: `[...] → [..., locals_dict]`.
+- **Stack**: `[...] → [..., locals_ns]`. Pushes the frame's current namespace (a KosNamespace, not a dict), revealed to the cyclic collector because it is now storable.
 - **Invariants**: Frame has locals namespace.
 
-**Example:** Push frame's locals dict.
+**Example:** Push the frame's current namespace.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
-| 0     | LOCALS | 0   | 0        | stack: [..., locals_dict] |
+| 0     | LOCALS | 0   | 0        | stack: [..., locals_ns] |
 | 1     | RETURN | 1   | 1        | |
 
 ---
 
 ### 10.1 Module import
 
-The three import opcodes each implement one Koskari import surface form.
+The four import opcodes (IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE) each
+implement one Koskari import surface form.
 They are **self-contained and stack-neutral**: each carries the module name
 and relative-import level in its EXTRA row, imports its own module through
 the shared `kos_import_module` helper (`koskari/lib/eval.c`), and stores its
 own bindings into the current frame namespace. None of them touch the
 operand stack, chain a module between instructions, or need a compensating
 POP. See `koskari/compile/specials/imports.py` (`special_import`,
-`special_import_from`, `special_import_all_from`) for the compiler forms.
+`special_import_from`, `special_import_all_from`, `special_use`) for the
+compiler forms.
 
 `kos_import_module(es, name, level, leaf)` builds, for a relative import
 (`level > 0`), a temporary globals dict holding `__name__` / `__package__`
@@ -1949,8 +1954,8 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 ### KOS_OP_VAR_INPLACE {#kos_op_var_inplace}
 
-- **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the variable name.
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce the count operands from the stack into the frame namespace binding with the operator, left to right, and store the result back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_var_inplace_operand`.
+- **Style**: EXTRA (OPERAND, VAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the variable name.
+- **Stack**: `[..., rhs] → [...]`. Pop the one rhs and apply the operator to the frame namespace binding with it, storing the result back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_var_inplace_operand`.
 - **Compiler form:** Emitted by **`compile/inplace`** when the target is a symbol. May lower to **FAST_INPLACE**; a single constant operand squashes into **VAR_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_INPLACE.c`
 
@@ -2473,8 +2478,8 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_FAST_INPLACE {#kos_op_fast_inplace}
 
-- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the fast slot.
-- **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Reduce the count operands from the stack into the slot with the operator, left to right; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
+- **Style**: EXTRA (OPERAND, FASTVAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the fast slot.
+- **Stack**: `[..., rhs] → [...]`. Pop the one rhs and apply the operator to the slot's value with it, storing the result back; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
 - **Compiler form:** The lowered form of **VAR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/FAST_INPLACE.c`
 
@@ -3218,7 +3223,7 @@ popped.
 ### KOS_OP_CALL_NAMES {#kos_op_call_names}
 
 - **Style**: COUNT. Arg = N (number of positional arguments).
-- **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. TailPtr for callable + args + kwnames; validate names tuple; kos_callable_vcall; DropNoErr. No tuple or dict allocation.
+- **Stack**: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple] → [..., result]`. TOS = names_tuple (tuple of M keyword names); below it the M keyword values in the same order as names; below that the N positional args; then callable. The names tuple is validated, then the window of callable, positionals and keyword values goes to `kos_call_invoke` with the names; no tuple or dict allocation.
 - **Invariants**: names_tuple must be a tuple; stack must have 1 + N + M + 1 elements (callable + N positionals + M keyword values + names).
 
 **Example:** Call with 1 positional and 1 keyword (x=42). Pool: 0 = fn, 1 = 10, 2 = 42, 3 = ("x",).
@@ -3237,7 +3242,7 @@ popped.
 ### KOS_OP_CALL_STAR {#kos_op_call_star}
 
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
-- **Stack**: `[..., callable, pos, kwd]` with kwd at TOS. pos = *args (tuple or iterable); kwd = **kwargs (dict). Pop per opa: both (opa & 3 == 3): pop 3; **kwargs only (opa & 2): pop 2, pos = (); *args only (opa & 1): pop 2, kwd = NULL; neither: pop 1, pos = (), kwd = NULL. Ensure pos is tuple (PySequence_Tuple if needed). Call via kos_callable_call(ctx, out_ev, callable, pos, kwd).
+- **Stack**: `[..., callable, pos, kwd]` with kwd at TOS. pos = *args (tuple or iterable); kwd = **kwargs (dict). Pop per opa: both (opa & 3 == 3): pop 3; **kwargs only (opa & 2): pop 2, pos = (); *args only (opa & 1): pop 2, kwd = NULL; neither: pop 1, pos = (), kwd = NULL. `kos_op_call_star` pops the operands the flags name, coerces pos to a tuple and kwd to a dict (TypeError naming the type otherwise), and calls through the shared core.
 - **Invariants**: Stack height per opa; pos converted to tuple when *args present.
 
 **Example:** Call with *args and **kwargs. Pool: 0 = fn, 1 = (1,2), 2 = {"x": 3}.
@@ -3255,16 +3260,16 @@ popped.
 ### KOS_OP_CALL_VAR {#kos_op_call_var}
 
 - **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
-- **Stack**: `[..., pos_0, ..., pos_{N-1}] → [..., result]`. Callable is loaded from frame namespace by name (`frame_ns_deref`); not on stack. KosCallable: steal args then KosContext_Call. Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}] → [..., result]`. Callable is loaded from the frame namespace by name (`frame_ns_deref`, owned); not on stack. The argv window is borrowed and handed with the callable to `kos_call_invoke` under `KOS_CALL_CALLABLE_OWNED`, which owns both the window drop and the callable release.
+- **Compiler form:** Emitted by `compile/call` when the callee is a symbol that reads a variable (`symbol_is_variable`), and by `compile/quasiquote` for its runtime bracket helpers. `convert_fast` lowers it to **CALL_FAST** when the name has a fast slot; `promote_tail_calls` relabels a tail-position row to **TAIL_CALL_VAR**.
 
 ---
 
 ### KOS_OP_CALL_FAST {#kos_op_call_fast}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
-- **Stack**: Same as CALL_VAR. Callable is loaded from fast local slot via `KosNamespace_FastDeref`; not on stack.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Stack**: Same as CALL_VAR. Callable is loaded from the fast local slot (`kos_ns_fast_deref`, owned); not on stack. A non-tail row first tries the frame cache (`kos_call_cached_frame_install`); otherwise it hands the window to `kos_call_invoke` as CALL_VAR does.
+- **Compiler form:** The `convert_fast` lowering of **CALL_VAR**; never emitted by a special.
 
 ---
 
@@ -3272,7 +3277,7 @@ popped.
 
 - **Style**: EXTRA. Schema: VAR (name cpool idx), CONST (kw names tuple cpool idx), COUNT (npos), NOARG.
 - **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Callable from namespace by name; kw names tuple from constant pool. Same call semantics as CALL_NAMES.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Compiler form:** Emitted by `compile/call` for a variable callee with keyword arguments and no `*:` or `**:`. Lowers to **CALL_FAST_NAMES**.
 
 ---
 
@@ -3280,15 +3285,15 @@ popped.
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index), CONST (kw names tuple cpool idx), COUNT (npos), NOARG.
 - **Stack**: Same as CALL_VAR_NAMES. Callable from fast slot via `KosNamespace_FastDeref`.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Compiler form:** The `convert_fast` lowering of **CALL_VAR_NAMES**; never emitted by a special.
 
 ---
 
 ### KOS_OP_CALL_VAR_STAR {#kos_op_call_var_star}
 
 - **Style**: EXTRA. Schema: VAR (name cpool idx), STAR (bitflags: 1 = *args, 2 = **kwargs), NOARG, NOARG.
-- **Stack**: Same as CALL_STAR minus callable. `[..., pos, kwd]` or subsets per flags. Callable from namespace by name. Pop per flags, ensure pos is tuple, call via KosContext_CallArgs.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Stack**: Same as CALL_STAR minus callable. `[..., pos, kwd]` or subsets per flags. Callable from namespace by name (owned), stolen by `kos_op_call_star`, which pops per flags, coerces pos and kwd, and calls through the shared core.
+- **Compiler form:** Emitted by `compile/call` for a variable callee with `*:` or `**:`. Lowers to **CALL_FAST_STAR**.
 
 ---
 
@@ -3296,7 +3301,7 @@ popped.
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index), STAR (bitflags), NOARG, NOARG.
 - **Stack**: Same as CALL_VAR_STAR. Callable from fast slot via `KosNamespace_FastDeref`.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Compiler form:** The `convert_fast` lowering of **CALL_VAR_STAR**; never emitted by a special.
 
 ---
 
@@ -3307,17 +3312,13 @@ popped.
 - **Invariants**: Stack has at least 1 + N elements (obj, N args). Resolved attribute must be callable or TypeError.
 - **Design**: [design/archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 
-**Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
+**Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval/eval_call.c):
 
-- **Stack arrangement**: `ptr = KosStack_TailPtr(*stack, count)` where `count = n + 1`. Index layout: `ptr[0]` = obj, `ptr[1..count-1]` = positional args. Attr name from `KosCode_GetConstant(code, row.a0)`. Stack is consumed via `KosStackSteal_Tail` (KosCallable path) or `KosStack_DropNoErr` (plain Python path).
+- **Stack arrangement**: `ptr = KosEvalState_StackTailPtr(es, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
 
-- **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound class method — caller invokes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. — caller invokes `callable(*args)`).
+- **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound function found on the type -- the call becomes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. -- the call is `callable(*args)`). The resolution goes through the row's cache slot.
 
-- **Invocation paths**:
-  - **KosCallable** (KosFunction, KosBoundMethod, etc.): `KosStackSteal_Tail(&steal, count, stack)` to own args; if `send_self == 0` then `args = &steal.vals[1]`, `nargs = n + 1`; else `args = (n > 0) ? &steal.vals[2] : NULL`, `nargs = n`. Then `KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0)`; `KosStackSteal_Free(&steal)`.
-  - **Plain Python**: `PyObject_Vectorcall(resolved, ...)` with same arg layout; then `kos_push_or_await(ctx, out_ev, result)`.
-
-- **Implemented functions** (eval.c): `kos_resolve_named_attr` (static; full resolution, cache placeholder for Phase 3); `is_plain_instance_method` (KosFunction/PyFunction); `descr_is_data` (tp_descr_set != NULL); `instance_dict_get` (via `_PyObject_GetDictPtr`). Invocation: `KosContext_Call`, `kos_push_or_await`, `KosStackSteal_Tail` / `KosStackSteal_Free` (stack.h/stack.c).
+- **Invocation**: one call to `kos_call_invoke` with the resolved callable, `self_arg = obj` when send_self is 0 (the core prepends it through a borrowed-pointer buffer; self never lives on the caller's stack) and NULL otherwise, the borrowed argv window, and `KOS_CALL_ARGV_WINDOW` plus the tail bit. The core pushes a frame for a Koskari callable, or calls a Python callable and awaits an awaitable result in place.
 
 **Example:** `"hello".upper()` (0 args). Pool: 0 = "upper", 1 = "hello". EXTRA row 0: a0 = cpool index of "upper", a1 = 0 (npos).
 
@@ -3349,26 +3350,26 @@ popped.
 ### KOS_OP_CALL_FAST_ATTR {#kos_op_call_fast_attr}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (npos), NOARG.
-- **Stack**: `[..., arg_0, ..., arg_{N-1}] → [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend `obj` to the stolen args; when `send_self=1`, uses `KosStackSteal_Tail` for `N` args only.
-- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): `obj` is an owned deref from the fast slot (`kos_ns_fast_deref` increfs); the handler releases it on every path, same discipline as `KOS_OP_CALL_VAR_ATTR`.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Stack**: `[..., arg_0, ..., arg_{N-1}] → [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound function) `obj` is passed to `kos_call_invoke` as `self_arg` and the core prepends it; when `send_self=1` only the `N` args go.
+- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): `obj` is an owned deref from the fast slot (`kos_ns_fast_deref` increfs); the handler releases it after the core returns, on every path, same discipline as `KOS_OP_CALL_VAR_ATTR`.
+- **Compiler form:** The `convert_fast` lowering of **CALL_VAR_ATTR**; never emitted by a special.
 
 ---
 
 ### KOS_OP_CALL_VAR_ATTR {#kos_op_call_var_attr}
 
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (npos), NOARG.
-- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(ctx, var_name)` (owned reference); the handler balances refcounts with `Py_DECREF(obj)` on exit paths.
-- **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, KosCallable vs plain Python, `TailPrepend` when `send_self=0`).
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(es, var_name)` (owned reference); the handler releases it with `Py_DECREF(obj)` on every exit path.
+- **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, then `kos_call_invoke` with `obj` as `self_arg` when `send_self=0`).
+- **Compiler form:** Emitted by `compile/call-attr` when the receiver is a symbol that reads a variable and the call has only positional arguments. Lowers to **CALL_FAST_ATTR**.
 
 ---
 
 ### KOS_OP_CALL_FAST_ATTR_NAMES {#kos_op_call_fast_attr_names}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
-- **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Obj is loaded from fast slot `a0` via `KosNamespace_FastDeref`; not on stack. One fewer element than CALL_ATTR_NAMES. Resolve and call like CALL_ATTR_NAMES. When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend obj to args; when `send_self=1`, uses `KosStackSteal_Tail`.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Obj is loaded from fast slot `a0` via `KosNamespace_FastDeref`; not on stack. One fewer element than CALL_ATTR_NAMES. Resolve and call like CALL_ATTR_NAMES. When `send_self=0` (unbound function) `obj` goes to `kos_call_invoke` as `self_arg`; when `send_self=1` only the args go.
+- **Compiler form:** The `convert_fast` lowering of **CALL_VAR_ATTR_NAMES**; never emitted by a special.
 
 ---
 
@@ -3376,14 +3377,14 @@ popped.
 
 - **Style**: EXTRA. Schema: VAR (name/cpool for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
 - **Stack**: Same as CALL_FAST_ATTR_NAMES. Obj is loaded from frame namespace by name (`frame_ns_deref`) instead of fast slot.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Compiler form:** Emitted by `compile/call-attr` for a variable receiver with keyword arguments and no `*:` or `**:`. Lowers to **CALL_FAST_ATTR_NAMES**.
 
 ---
 
 ### KOS_OP_CALL_ATTR_STAR {#kos_op_call_attr_star}
 
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
-- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom … TOS): opa=0 → `[obj]`; opa=1 → `[obj, pos]` (pos = *args); opa=2 → `[obj, kwd]` (kwd = **kwargs); opa=3 → `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). Resolve obj.name via `kos_resolve_named_attr`; when `send_self=0`, prepend `obj` to the positional tuple before the call. Call via `KosContext_CallArgs`.
+- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom … TOS): opa=0 → `[obj]`; opa=1 → `[obj, pos]` (pos = *args); opa=2 → `[obj, kwd]` (kwd = **kwargs); opa=3 → `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). `kos_op_call_star` resolves obj.name through the row's cache, prepends `obj` to the positional tuple when the resolution asks for it, and calls through the shared core.
 - **Invariants**: attr name in constant pool. opa bits: 1 = has *args, 2 = has **kwargs.
 
 ---
@@ -3391,28 +3392,28 @@ popped.
 ### KOS_OP_CALL_VAR_ATTR_STAR {#kos_op_call_var_attr_star}
 
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
-- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(ctx, var_name)` (owned reference; handler decrements on exit paths). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; resolve via `kos_resolve_named_attr`, prepend `obj` to tuple args when `send_self=0`, call via `KosContext_CallArgs`.
+- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(es, var_name)` (owned reference, stolen by `kos_op_call_star`). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `kos_op_call_star` resolves, prepends `obj` to the tuple args when the resolution asks for it, and calls through the shared core.
 - **Invariants**: `var_name` and attr name in constant pool; same opa bit meanings as CALL_ATTR_STAR.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR_STAR.c): Parallel to CALL_ATTR_STAR with VAR receiver semantics (see [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr)).
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Compiler form:** Emitted by `compile/call-attr` for a variable receiver with `*:` or `**:`. Lowers to **CALL_FAST_ATTR_STAR**.
 
 ---
 
 ### KOS_OP_CALL_FAST_ATTR_STAR {#kos_op_call_fast_attr_star}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (opa bitflags), NOARG.
-- **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` comes from `KosNamespace_FastDeref(ns, slot)` (slot `a0`); requires `KosNamespace_SupportsFast`. Pop/resolve/call semantics match CALL_ATTR_STAR. Same refcount convention as [`KOS_OP_CALL_FAST_ATTR`](#kos_op_call_fast_attr): no `Py_DECREF(obj)` on control paths (contrast [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star)).
+- **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` comes from `KosNamespace_FastDeref(ns, slot)` (slot `a0`); requires `KosNamespace_SupportsFast`. Pop/resolve/call semantics match CALL_ATTR_STAR. `obj` is an owned deref stolen by `kos_op_call_star`, which releases it; the handler holds nothing after the call.
 - **Invariants**: Same opa and tuple/`pos` rules as CALL_ATTR_STAR; fast slot must be in range and bound.
 - **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR_STAR.c): Parallel to CALL_FAST_ATTR / CALL_ATTR_STAR.
-- **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
+- **Compiler form:** The `convert_fast` lowering of **CALL_VAR_ATTR_STAR**; never emitted by a special.
 
 ---
 
 ### KOS_OP_TAIL_CALL
 
 - **Style**: COUNT. Arg = number of positional arguments.
-- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Extracts args via PopTailPtr (small counts) or PopTail (large) before branching; opcode owns storage, DECREFs at end. For KosCallable: tail install recycles the frame. For Plain Python: `kos_dyn_pop_frame` when parent exists, then PyObject_Vectorcall, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing (triggers **`kos_dynnode_on_control_returned`** for wind thunks).
-- **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install). For all other callable types, the opcode drops the current frame when parent exists, calls the callable, and pushes the result.
+- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Shares the CALL handler (`op_TAIL_CALL` is `op_CALL`); the opcode adds `KOS_CALL_TAIL`, which `kos_call_invoke` turns into a reset of the current frame instead of a push for a Koskari callable. For a Python callable the core calls it and the return settles a pending wind thunk.
+- **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install); an exact non-yielding KosFunction takes the bind-before-reset subpath. For all other callable types the core calls the callable and the result is pushed, with an awaitable result awaited in place.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
 - **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL in function-body code; never emitted by a special.
 
@@ -3428,21 +3429,21 @@ popped.
 ### KOS_OP_TAIL_CALL_NAMES {#kos_op_tail_call_names}
 
 - **Style**: COUNT. Arg = N (number of positional arguments).
-- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Extracts via PopTailPtr (small) or PopTail (large); opcode owns storage, DECREFs at end. KosCallable: kos_callable_tail_vcall. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Vectorcall, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing.
+- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Shares the CALL_NAMES handler with the tail bit set; tail semantics as [`KOS_OP_TAIL_CALL`](#kos_op_tail_call).
 
 ---
 
 ### KOS_OP_TAIL_CALL_STAR {#kos_op_tail_call_star}
 
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
-- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing. Same replace-frame semantics as TAIL_CALL.
+- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Shares the CALL_STAR handler; `kos_op_call_star` runs with the tail bit set. Same replace-frame semantics as TAIL_CALL.
 
 ---
 
 ### KOS_OP_TAIL_CALL_ATTR {#kos_op_tail_call_attr}
 
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG. One cache slot (attr resolution).
-- **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. Resolve `obj.name` via `kos_resolve_named_attr`, then call in tail position: the caller's frame is reused rather than a new frame pushed (`KOS_CALL_TAIL` through `kos_call_invoke`; an exact non-yielding KosFunction takes the bind-before-reset subpath, every other callable class spills and keeps `KosEvalState_Call`'s tail semantics).
+- **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. Resolve `obj.name` via `kos_resolve_named_attr`, then call in tail position: the caller's frame is reused rather than a new frame pushed (`KOS_CALL_TAIL` through `kos_call_invoke`; an exact non-yielding KosFunction takes the bind-before-reset subpath, every other callable class takes the core's general tail path).
 - **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL_ATTR in function-body code; never emitted by a special.
 
 ---
@@ -3619,11 +3620,15 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 
 - **Style**: CONST. Arg = constant pool index of NamespaceSpec.
 - **Stack**: Does not consume the stack. Loads NamespaceSpec from constant pool at
-  arg, creates CollectorNamespace, installs as frame ns, pushes KOS_DYN_COLLECT,
-  and owns an operand segment; the body runs in it; expression results (e.g.
-  None from compile/define) stay in the block and are discarded on POP_COLLECT.
-- **Pushes:** KOS_DYN_COLLECT (static extent KOS_EXT_COLLECT; stores saved ns for
-  restore on POP_COLLECT), with its owned segment for the body.
+  arg, creates a CollectorNamespace parented to the current namespace, and
+  pushes KOS_DYN_COLLECT owning it (`KOS_DYN_CAP_OWNS_NS`). The live namespace
+  follows the chain top, so the body runs in the collector while the node is
+  on the chain; nothing is saved or restored. The node's operand segment
+  attaches at push; expression results (e.g. None from compile/define) stay in
+  it and are discarded on POP_COLLECT, which pops the node and pushes the
+  collected namespace.
+- **Pushes:** KOS_DYN_COLLECT (static extent KOS_EXT_COLLECT) owning the
+  collector namespace, with its segment for the body.
 - **Invariants**: Extent kind KOS_EXT_COLLECT. Frame namespace must be KosNamespace.
 
 ---
@@ -4129,19 +4134,17 @@ generic reduce. FAST_ATTR_INPLACE carries two: its field cache first
 and an elector slot second, whose bodies guard through the field slot;
 see [interpreter/electors.md](interpreter/electors.md).
 
-**VAR_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
-selector with the operand count (count is 1 in all compiler emission: one rhs
-popped from the stack); a1 = constant pool index of the name. Stack:
-`[..., rhs] → [...]`.
+**VAR_INPLACE** -- EXTRA (OPERAND, VAR). Row a0 is the bare operator
+selector; a1 = constant pool index of the name. One rhs is popped from the
+stack. Stack: `[..., rhs] → [...]`.
 
-**FAST_INPLACE** -- EXTRA (OPCOUNT, FASTVAR). As above with a fast
+**FAST_INPLACE** -- EXTRA (OPERAND, FASTVAR). As above with a fast
 slot. Produced by `convert_fast` lowering of the VAR form.
 
 **VAR_INPLACE_CONST** -- EXTRA (OPERAND, VAR, CONST). The compressed
-single-operand form with a constant rhs: a0 is a *bare* KosOperand selector
-(OPERAND kind -- the count is fixed at 1 by the shape), a1 the name, a2 the
-pooled operand. **Completely stack-free**: no push, no pop. Produced by
-`Compiler.compress` fusing a prior CONST into a count-1 VAR_INPLACE --
+single-operand form with a constant rhs: a0 is the same bare KosOperand selector,
+a1 the name, a2 the pooled operand. **Completely stack-free**: no push, no pop. Produced by
+`Compiler.compress` fusing a prior CONST into a VAR_INPLACE --
 the `(set! i (+ i 1))` / `incr!` loop-tail idiom. Cold handler.
 
 **FAST_INPLACE_CONST** -- EXTRA (OPERAND, FASTVAR, CONST). The
