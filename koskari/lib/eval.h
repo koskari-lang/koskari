@@ -865,13 +865,6 @@ struct KosEvalState {
 
 
 /**
-   The result a call-core install arm returns once the callee frame is
-   live at pc 0: thread on, or POLL when the eval breaker is up so the
-   handler's RESULT_RELAY tails into the breaker service before the
-   callee's first instruction. Frame entry is a cooperation point
-   because a tail-recursive loop has no CONTINUE.
-*/
-/**
    True when a just-installed frame can be threaded into at its pc: it
    has code and is not waiting on a resume. A frame suspended inside a
    yield-from carries the node's phase resume, and its delivery must
@@ -882,6 +875,13 @@ static inline int kos_frame_threads(KosDynFrame *nf) {
 }
 
 
+/**
+   The result a call-core install arm returns once the callee frame is
+   live at pc 0: thread on, or POLL when the eval breaker is up so the
+   handler's RESULT_RELAY tails into the breaker service before the
+   callee's first instruction. Frame entry is a cooperation point
+   because a tail-recursive loop has no CONTINUE.
+*/
 static inline KosOpResult kos_call_installed(KosEvalState *es) {
   return KOS_EVAL_BREAKER_UP(es) ? EVAL_POLL() : EVAL_NORMAL();
 }

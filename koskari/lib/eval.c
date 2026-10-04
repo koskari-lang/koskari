@@ -25,8 +25,10 @@
 
    Invariants:
 
-   1. Context ownership: A KosContext is owned by exactly one Python
-      wrapper (KosCoroutine or KosPyAsyncGen) during its lifetime.
+   1. Context ownership: A KosContext is a Python object held by
+      reference; every holder (coroutine, async generator, transform,
+      iteration adapter) keeps its own reference and the last one to
+      let go deallocates it. See the ownership notes in eval.h.
 
    2. Chain ownership: The dynamic chain is owned by the context.
       On continuation capture, chains are cloned for multi-shot semantics.
@@ -1405,26 +1407,6 @@ static PyObject *kos_import_module(
 static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
   return push_or_await(es, value, 1, 0);
 }
-
-
-/* === CALL === */
-
-
-/**
-   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-   ..., arg_{N-1}] (callable oldest). Call callable with those args, drop
-   them, then push result or await it.
-*/
-
-
-/* === THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM === */
-
-/* THEEND: no runtime implementation; hardcoded error (not a "stub" to be implemented). */
-
-/**
-   THEEND: arg unused. End-of-code sentinel; has no runtime implementation.
-   If execution reaches THEEND, raise a hardcoded unimplemented error.
-*/
 
 
 /* === NEXT, ITER_NEXT === */
@@ -3304,14 +3286,6 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
   PyErr_SetString(PyExc_SystemError,
                   "koskari eval: instruction fetch failed");
 }
-
-
-/**
-  Dispatch prelude: next PC and acting PC live only on es (no heap write).
-  Code from es->code first (hot cache); if NULL, KosDynFrame_CODE (e.g. tail
-  reset cleared heap slot before es->code was updated).  On OOB, goto on_bad.
-*/
-
 
 
 /* Internal-invariant safety net. See KOS_EVAL_SAFETYNET in hints.h.

@@ -272,10 +272,6 @@ KOS_ELECTOR(fast_inplace_generic) {
 
 
 /**
-   FAST_INPLACE_CONST without an election: slot = slot OP constant
-   through the in-place reduce.
-*/
-/**
    OBJECT_OPERAND_CONST without an election: the stack top and the
    row's constant through the operator's reduce, the result replacing
    the top.
@@ -325,6 +321,10 @@ KOS_ELECTOR(fast_operand_const_generic) {
 }
 
 
+/**
+   FAST_INPLACE_CONST without an election: slot = slot OP constant
+   through the in-place reduce.
+*/
 KOS_ELECTOR(fast_inplace_const_generic) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);

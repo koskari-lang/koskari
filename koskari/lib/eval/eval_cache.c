@@ -590,8 +590,9 @@ KOS_OP_INLINE int kos_resolve_named_attr(
    resolves a *location*: where an instance attribute lives, so load, store,
    and delete at any site for the same type+name can share one resolved
    (mode, index). The payload is a plain integer -- no owned refs -- so the
-   FIELD slot is ref-free (see the layout in bytecode.h). Baseline only: no
-   opcode consumes it yet, and the direct modes are stubbed to GENERIC.
+   FIELD slot is ref-free (see the layout in bytecode.h). FAST_ATTR,
+   VAR_ATTR, their STORE rows and the attribute inplace electors consume
+   the resolved (mode, index).
 */
 
 
@@ -600,12 +601,12 @@ KOS_OP_INLINE int kos_resolve_named_attr(
    (a value slot / byte offset / dict-key hint, per the mode). The result is a
    location for the caller to load/store/delete through, not a value.
 
-   Public today: a custom get/setattro or any data descriptor falls to
-   GENERIC, correct via PyObject_GetAttr/SetAttr. The direct modes need
-   per-version instance-layout access and land behind compat*.h; until then
-   this reports GENERIC, so a consumer is correct but unaccelerated.
-   TODO(field-offset): SLOT via member-descriptor offset (public);
-   INSTANCE_VALUE / DICT_HINT via compat*.h.
+   A custom get/setattro or a data descriptor other than a writable
+   object member falls to GENERIC, correct via PyObject_GetAttr/SetAttr.
+   A __slots__ member resolves to SLOT with its byte offset, and on 3.11
+   and later a managed-dict type with inline values resolves to
+   INSTANCE_VALUE with the value index (compat*.h supplies the layout
+   access). Anything else is GENERIC.
 */
 static KosFieldMode resolve_attr_location_slow(
     PyObject *obj,
@@ -814,8 +815,8 @@ KOS_NOINLINE static KosFieldMode kos_resolve_attr_location_cold(
    path only -- a guarded hit returns inline, everything else tail-calls the
    outlined cold path. In the same vein as kos_resolve_named_attr.
 
-   Baseline: no opcode consumes this yet. Load/store/delete handlers will call
-   it and branch on the returned mode.
+   The FAST_ATTR and VAR_ATTR load and store handlers and the attribute
+   inplace electors call it and branch on the returned mode.
 */
 KOS_OP_INLINE KosFieldMode kos_resolve_attr_location(
     PyObject *obj,
