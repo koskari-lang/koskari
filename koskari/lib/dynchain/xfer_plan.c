@@ -170,6 +170,10 @@ static int kos_delimited_invoke_inplace(
     return -1;
   }
   KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
+  /* The snapshot has no owner but this delim until the restitch hands
+     it to the chain. The flag is only ever set here, on an INPLACE
+     delim, which kos_dyn_clone_segment never clones, so no template
+     can hold a borrowed pointer to a frame this delim will free. */
   if (handler_nested)
     KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 

@@ -44,8 +44,12 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
     return NULL;
 
   kos_dynnode_init(clone, KOS_DYN_DELIM, NULL, KosDynNode_CAPS(delim));
-  /* The clone borrows RETURN_FRAME; ownership of a held snapshot stays
-     with the original, so the holds flag must not be copied. */
+  /* RETURN_FRAME is a borrow of a live frame on the chain, here as in
+     the original. A delim that owns its frame, a held handler snapshot
+     under KOS_DYNF_HOLDS_RETURN_FRAME, exists only in INPLACE mode,
+     and kos_dyn_clone_segment links around every INPLACE delim, so this
+     clone never meets one; the flag is masked off so a clone can never
+     claim to own a frame it merely points at. */
   KosDynNode_FLAGS(clone) = (KosDynNode_FLAGS(delim) | KOS_DYNF_CLONED)
       & ~KOS_DYNF_HOLDS_RETURN_FRAME;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(delim);
