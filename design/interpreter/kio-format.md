@@ -69,19 +69,21 @@ other objects reference it exclusively.
 
 ### 2.2 DAG constraint — no cycles
 
-Because `Code` may reference constants and constants (via `CODE_REF` entries)
-may reference `Code`, the global reference graph is a **DAG**:
+Because `Code` may reference constants and a `FUNCTION_SPEC` constant embeds
+its own code body, the global reference graph is a **DAG**:
 
 * Cycles are **forbidden** by construction and validated at load time.
-* A `CODE_REF` pool entry may point only "downward" in topological order;
-  tuples must not contain themselves directly or transitively.
+* A pool entry may reference only entries written before it; tuples must
+  not contain themselves directly or transitively. `CODE_REF` is a reserved
+  kind that nothing writes or reads.
 
 ### 2.3 Canonicalization and interning
 
 * Atom-like values (`symbol`, `keyword`) are interned on load via the runtime
   interning mechanism already provided by `koskari.lib`.
-* Composite constants (tuples of allowed constants) are **canonicalized** so
-  identical tuples become one pool entry.
+* Deduplication is by `pool_key`: `int`, `str`, `bytes`, `float` and
+  `complex` values dedupe by value; every other value, composites included,
+  dedupes by identity, so two equal tuples are two pool entries.
 * Pool indices are assigned in a stable, deterministic order during finalize
   so identical compilations produce identical bytes.
 
@@ -104,12 +106,16 @@ Minimal set:
 | `SYMBOL` | `symbol` (interned on load) |
 | `KEYWORD` | `keyword` (interned on load) |
 | `TUPLE` | tuple of allowed constants |
+| `BRACKET_NIL` | the bracket-nil singleton |
+| `ELLIPSIS` | `Ellipsis` |
+| `FROZENSET` | frozenset of allowed constants |
+| `SLICE` | `slice` of allowed constants |
 
 Frozen VM structures (encoded as pool records; see `PoolKind` in `koskari.serialize.codex`):
 
 | Kind | Python type |
 |------|-------------|
-| `CODE_REF` | forward reference to a `Code` body in the `CODE` section |
+| `CODE_REF` | reserved; nothing writes or reads it |
 | `NAMESPACE_SPEC` | `NamespaceSpec` |
 | `FORMALS_SPEC` | `FormalsSpec` |
 | `FUNCTION_SPEC` | `FunctionSpec` (embeds a softened instruction blob) |
@@ -286,10 +292,10 @@ Each code body in `CODEP` begins with:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `name_pool_idx` | u32 | pool index of `STR` constant for name, or `0xFFFFFFFF` |
-| `filename_pool_idx` | u32 | pool index of `STR` constant for filename, or `0xFFFFFFFF` |
+| `name_pool_idx` | u32 | pool index of the `STR` name, or of the `NONE` entry when unnamed |
+| `filename_pool_idx` | u32 | pool index of the `STR` filename, or of the `NONE` entry |
 | `nspec_pool_idx` | u32 | pool index of a `NamespaceSpec` (pool `NAMESPACE_SPEC` record) |
-| `flags` | u32 | `KOS_CODE_YIELDS = 0x01` |
+| `flags` | u32 | `YIELDS = 0x01`, `PROTECT = 0x02`, `CACHE = 0x04` (`CodeFlags`): how the Code was constructed, fed back to the constructor on load; a `FUNCTION_SPEC` record carries the same word |
 | `instr_count` | u32 | number of instruction records following |
 
 Then `instr_count` instruction records (§5.1).
@@ -303,17 +309,21 @@ Then `instr_count` instruction records (§5.1).
 * consistent block tables
 * stack-effect sanity checks
 
-A finalize failure on load is treated as a hard cache miss — the `.kio` file
-is rejected and the source is recompiled.
+The only fallback to source runs before any decoding: `source_for_stale_kio`
+yields to the sibling `.ki` when the META stamp is missing or does not match
+the source's mtime and size, or when the header is unreadable or carries the
+wrong ABI. Once a `.kio` is chosen, a decode or construction error propagates
+as an import failure; nothing recompiles.
 
 ## 6. Cache invalidation metadata (META section)
 
 Hard validation (magic and bytecode ABI) happens in the **file header** (§4.1)
-only. The `META` section body is **optional opaque bytes**; its length is the
-section length from the directory entry. A length of zero is valid.
-
-Future soft-cache policy may interpret this blob (e.g. digests, mtimes); the
-binary format does not nest a second hard-invalidating prefix inside `META`.
+only. The `META` body (`KioMeta`) leads with a flag byte: bit `0x01`
+(`STAMPED`) says a source stamp follows, the source's `mtime_ns` (i64) and
+size (u64) as the `.ki` was when compiled. Any bytes after that are
+`soft_meta`, opaque to the runtime. A length of zero is valid: no stamp, no
+soft metadata. The loader compares the stamp against a sibling `.ki` and
+yields to the source when they differ or when no stamp was recorded (§5.5).
 
 ### 6.1 Soft invalidators — policy-controlled (not yet fixed layout)
 
@@ -372,11 +382,9 @@ u32 arity + u32 pool_index[arity]
 5. Decode each record in the `CODE` section into softened instructions using
    the pool for operand resolution.
 6. Run `Compiler.complete()` (or an equivalent finalize path) for each top-level
-   code body to produce a hardened `Code` object. A finalize failure is a hard
-   cache miss.
-7. Resolve any remaining `CODE_REF` / composite entries if the codec defers
-   them until after code bodies exist (matches pool fixup order in the reader).
-8. Optionally apply the plugin materialization stage for `TAGTUP` entries
+   code body to produce a hardened `Code` object. A failure here propagates as
+   an import error (§5.5).
+7. Optionally apply the plugin materialization stage for `TAGTUP` entries
    (§3.2.3), gated by caller policy.
 
 ## 9. Tradeoffs and guidance
