@@ -8,9 +8,12 @@ omitted, only `expr` and `body ...` are given (no binding).
 
 **Use-case:** Single-shot context manager: evaluate `expr` to get a manager,
 call enter (auto-await if needed), run body in a fresh operand stack block,
-then call exit on normal or exception exit. Safe for normal control-flow and
-exception unwind; **not** safe across continuation transfers (transfer across
-an active `with` raises a runtime error).
+then call exit on normal or exception exit. A continuation transfer out of
+the body runs the manager's exit as an exception would, and the instance is
+finished: single-shot means each `with` instance enters once and exits once,
+and a transfer back into a captured body does not enter it again. Use
+[dyn-with](dyn-with.md) for a manager that should wind and unwind on every
+transfer.
 
 **Behaviour:** Compiles `expr`, emits PUSH_WITH with optional name (constant
 pool index or no-binding sentinel), compiles body with `helper_begin`, emits

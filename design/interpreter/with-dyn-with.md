@@ -263,22 +263,21 @@ The VM always uses the Python convention:
 
 ## Continuation / non-local transfer rules
 
-### Rule 1: Single-shot `with` is a transfer barrier
+### Rule 1: Single-shot `with` exits once and is never re-entered
 
-If a continuation transfer (delimited or undelimited) would cross an active
-`KOS_DYN_WITH` node:
+A continuation transfer (delimited or undelimited) that LEAVES through an
+active `KOS_DYN_WITH` node is not refused. The goal unlinks the node with
+`KOS_XFER_EVENT_TRANSFER`, which runs `exit` in the no-exception form, as
+an exception unwind would, and the instance is finished. A transfer that
+LANDS a segment containing a single-shot `with` does not run `enter`
+again: ENTERING skips the node, and its exit-done mark is shared across
+clones, so no instance runs `exit` twice.
 
-- **Reject** the transfer.
-- Raise a dedicated runtime error (e.g. `KoskariIllegalTransferAcrossWith`).
-
-This preserves the single-shot contract and prevents resource unsafety.
-
-> **Note:** [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) §9.7 supersedes
-> this rule with respect to continuation **capture**: WITH nodes may be included in captured
-> chain segments (they are cloneable). The barrier applies only to **transfer** (wind/unwind
-> across an active WITH instance), not to capture of a chain that contains a WITH node.
-> Single-shot semantics are preserved because each clone creates a fresh extent instance
-> (enter runs once per instance on wind, exit once on unwind); no instance is re-entered.
+Single-shot means one `enter` and one `exit` per extent instance, not a
+barrier. WITH nodes are cloneable and may be captured in a chain segment
+([dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md)
+§9.7); each clone is a fresh instance whose own enter runs on wind and
+whose own exit runs on unwind, and no instance is re-entered.
 
 ### Rule 2: `dyn-with` participates in transfer goals
 
@@ -361,7 +360,7 @@ for other extent kinds; no special case for dyn-with.
 
 - Stack restoration for with bodies is structural (block push/pop), never
   arithmetic marking.
-- `with` is single-shot: each dynamic extent instance is entered and exited at most once. Transfer across an active WITH instance is rejected; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
+- `with` is single-shot: each dynamic extent instance is entered and exited at most once. A transfer leaving through an active WITH instance runs its exit and finishes it; a landed segment does not re-enter one; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
 - `dyn-with` is multi-shot and must wind/unwind on non-local transfer.
 - Expression value is the body's value, or `None` when exit swallowed an
   exception.
