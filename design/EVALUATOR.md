@@ -28,7 +28,9 @@ The evaluator runs until it hits a **boundary event** (return, raise, yield, awa
 Dispatch is **threaded**: each opcode handler is a separate function with the `KosThreadFn` prototype, reached through the handler pointer recorded in its instruction (`KosOp.fn`), and each handler ends by tail-calling the next. Every control transfer is the same kind of tail call into a thread function: the raise walk (`kos_eval_raise`), the return, yield and await events (`kos_return_deliver`, `kos_yield_deliver`, `kos_eval_await`), the control-returned hook (`kos_eval_control_returned`), the breaker service (`kos_eval_poll`), and the prologue itself (`kos_eval_prologue`), which runs the re-entry protocol and tail-calls the instruction at the pc. `koskari_eval` makes one call into the prologue and gets back only a **boundary** result, one the event that produced it marked terminal on the eval state (`KosEvalState.terminal`). Requires a compiler that enforces tail calls (clang, or GCC 15+); `eval.h` refuses to build without musttail.
 
 Entry and cleanup also **swap the thread's handler-visible exception state
-(`sys.exc_info`) with the context's saved triple** (`KosContext.exc_info_*`),
+(`sys.exc_info`) with the context's saved state** (`KosContext.exc_info`, a
+`KosExcState` of type, value and tb, swapped through `KosExc_Fetch` and
+`KosExc_Install`),
 so contexts interleaved on one thread never see each other's handled
 exception across suspensions. The all-empty common case skips the swap.
 Contexts are isolated: a fresh context starts with empty handler state (no
@@ -772,9 +774,10 @@ at the chain root (NULL parent) or a generator node. Per iteration:
 
 ### 4.3 Traceback Injection
 
-`inject_eval_frame_traceback` decorates the exception with `__koskari_dynchain__` and injects the current frame into the traceback so Python can display Koskari-native frames. Called via `kos_eval_prepare_boundary_raise` at:
+`inject_eval_frame_traceback` takes the live eval state, decorates the exception with `__koskari_dynchain__`, and injects the current frame into the traceback as a faux Python frame whose globals carry `__koskari_trace__`, so Python can display Koskari-native frames. An exact `GeneratorExit` is not decorated: it is the close protocol's signal and is discarded by the close drive. `kos_eval_prepare_boundary_raise` runs it, flushes the live pc first, and marks the context dead; it is called at:
+- `process_raise` (eval.c), the unified RAISE ingress, when the walk leaves no handler
 - `kos_dyn_unwind_raise` (GEN-node, barrier-without-recovery, and no-handler branches)
-- `xfer_emit_cc_unwind_signal` (foreign cc-unwind sentinel re-emit)
+- `goal_deliver` (xfer_goal.c), when a transfer goal lands a raise at its boundary
 
 Frames **crossed** by the raise walk are recorded incrementally by
 `kos_eval_note_crossed_frame` before each frame pop, as meta dicts marked
@@ -795,9 +798,10 @@ Four distinct carriers, each with one job:
   RETURN crossing a leave in flight. Inline in the node arm, one slot per
   node, cleared by the unlink's release table (kind x event, §6.3) or by
   node free. Traversed by the GC through the node.
-- **`KosContext.exc_info_*`** -- the context's **handler-visible** state
-  (`sys.exc_info`), swapped with the thread slot at `koskari_eval`
-  entry/exit (§1.1). exc_info itself is the bytecode contract only
+- **`KosContext.exc_info`** (a `KosExcState`) -- the context's
+  **handler-visible** state (`sys.exc_info`), swapped with the thread slot
+  at `koskari_eval` entry/exit through `KosExc_Fetch` / `KosExc_Install`
+  (§1.1). exc_info itself is the bytecode contract only
   (`EXCEPTION` / `CHECK_EXCEPTION` read it; TRY/FINALLY consumption
   writes it) -- never a cross-suspension or cross-context stash.
 - **Node handler state** -- what a node needs to do its own job stays in
@@ -865,9 +869,9 @@ from `KOS_DYN_CAP_HANDLES_EXCEPTIONS`, which marks failed-pop *recovery*
 (`kos_dyn_exception_unwind`; PROMPT has recovery but passes on
 handle(RAISE), so the two sets genuinely differ).
 
-### 5.5 unwind(node, event)
+### 5.5 The unwind walks
 
-`kos_dyn_unwind` takes a `KosXferEvent` (RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT) so nodes know *why* they are being torn down. Transfer-aware nodes (e.g. `dynamic-wind`) use this for after-thunks.
+There is no single unwind entry. Four walks, each over the eval state, tear nodes down for one reason: `kos_dyn_unwind_raise` (RAISE), `kos_dyn_unwind_return` (RETURN), `kos_dyn_unwind_to_loop` (BREAK and CONTINUE), and `kos_dyn_unwind_to_node` (a transfer or shift to a chosen node). The reason reaches a node as a `KosXferEvent` (NONE, RETURN, RAISE, BREAK, CONTINUE, SHIFT, TRANSFER) so it knows *why* it is being torn down; transfer-aware nodes (e.g. `dynamic-wind`) use it for after-thunks.
 
 ### 5.6 Transit types
 
@@ -937,11 +941,11 @@ the find phase before unwind if no loop exists in-frame.
 
 ### 5.10 Implementation map
 
-- **KosXferEvent** -- RETURN, RAISE, YIELD, BREAK, CONTINUE, SHIFT (unwind/handle).
+- **KosXferEvent** -- NONE, RETURN, RAISE, BREAK, CONTINUE, SHIFT, TRANSFER (unwind/handle).
 - **KosHandleResult** -- PASS, CONSUME, DENY.
 - **kos_dyn_handle()** -- Offer event before unwind on RETURN, RAISE, YIELD, SHIFT
   walks.
-- **kos_dyn_unwind(ctx, node, event)** -- Semantic exit with reason.
+- **kos_dyn_unwind_raise() / kos_dyn_unwind_return() / kos_dyn_unwind_to_node()** -- the RAISE, RETURN and targeted walks; each takes the eval state and tears nodes down with the matching event.
 - **kos_dyn_unwind_to_loop()** -- BREAK / CONTINUE targeting.
 - **KOS_DYN_GEN** -- Generator node; intercepts YIELD; denies SHIFT.
 - **Yield-from phase resumes** -- `yield_from_resume_send` after an emitted
@@ -1393,7 +1397,7 @@ goes by ending in **`RESULT_ENTRY(es, r, resume, state)`**:
 | `RAISE` | failure; it reaches the resume as a NULL delivery, which handles it or declines (§8.2) | tail into `kos_eval_raise` |
 | `FATAL` | internal fault | return |
 
-`CallResult` with `resume == NULL` relays `KosEvalState_Call`'s result
+`KosEvalState_Call` with `resume == NULL` relays the install's result
 untouched, `tail_call` included; that is what partial, demand, and
 `TAIL_CALL_NAMES` use. `NextResume` with `resume == NULL` is the
 `OBJECT_NEXT` default: push the element and continue.
@@ -1658,8 +1662,9 @@ KosDynShift, KosDynParam, KosDynYieldFrom, …) all refer to this same struct.
 **All field access must use the macros** defined in dynchain.h; do not touch union
 members or base fields directly. Node kinds are enumerated by `KosDynKind`:
 `KOS_DYN_FRAME` through `KOS_DYN_GEN` (see `dynchain.h`; `KOS_DYN_UNKNOWN` is a
-sentinel). The macro `KosDynNode_IS_REGION` matches TRY, FINALLY, LOOP, and
-FOREACH for convenience. Behavior is driven by capability bits (`KOS_DYN_CAP_*`);
+sentinel). TRY, FINALLY, LOOP, and FOREACH are the region kinds: each owns
+the embedded operand segment, and each has only its own `KosDynNode_IS_*`
+test; there is no shared region macro. Behavior is driven by capability bits (`KOS_DYN_CAP_*`);
 see [dynamic-node-unified-api.md](archive/dynamic-node-unified-api.md) for the capability model.
 
 **Context managers (`KOS_DYN_WITH`)** -- Lexical `with` and `dyn-with` share one
