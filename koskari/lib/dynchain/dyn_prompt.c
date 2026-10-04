@@ -143,7 +143,8 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
 
 
 /**
-   GC traverse a KOS_DYN_PROMPT: the owned region block.
+   GC traverse a KOS_DYN_PROMPT: nothing beyond the base node; the generic
+   traverse already covers the owned segment.
 */
 static int dynnode_traverse_prompt(KosDynNode *node, visitproc visit, void *arg) {
   (void) node;

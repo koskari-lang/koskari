@@ -19,8 +19,8 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   }
 
   caps = KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP;
-  /* KOS_YF_KOS_ITER (4): flattened iteration node with main eval loop */
-  if (kind == (uint8_t) 4)
+  /* flattened iteration node with the main eval loop */
+  if (kind == KOS_YF_KOS_ITER)
     caps |= KOS_DYN_CAP_ITER_RECEIVER;
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent, caps);
@@ -166,10 +166,6 @@ int kos_dyn_yield_from_deliver_inner_yield(
 }
 
 
-/**
-   Inner Koskari async gen returned: pop yield-from (void completion).
-   Advance delegating frame PC past the YIELD_FROM instruction.
-*/
 /**
    Exhaustion tail shared by the inner-return delivery (GEN just
    unwound) and the raise-walk StopIteration conversion (GEN already

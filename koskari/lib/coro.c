@@ -116,15 +116,15 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 }
 
 
+static void coroutine_drop_record(KosCoroutine *coro);
+
+
 /**
    Build the drive context from the bound call, for the first drive from
    Python: the root frame over the program and its namespace, and a
    context over that frame starting from the creation-time snapshot. A
    no-op once built. Returns -1 with an error set.
 */
-static void coroutine_drop_record(KosCoroutine *coro);
-
-
 static int coroutine_materialize(KosCoroutine *coro) {
 
   KosDynFrame *frame;

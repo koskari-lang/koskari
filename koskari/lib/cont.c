@@ -296,7 +296,7 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 }
 
 
-/* === KosPyContinuation type (undelimited, for future call/cc) === */
+/* === KosPyContinuation type (undelimited, call/cc) === */
 
 
 static void continuation_dealloc(PyObject *self) {
@@ -422,7 +422,6 @@ KosEvaluatedTypeObject KosPyContinuationType = {
   KosPyContinuation wraps an undelimited KosContinuation (from call/cc).
 
   Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
-  Not yet instantiated (call/cc capture not implemented).
 */
 PyObject *KosPyContinuation_New(KosContinuation *captured) {
 
