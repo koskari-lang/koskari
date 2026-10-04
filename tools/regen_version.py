@@ -290,12 +290,12 @@ def assemble_version(version, state, now=None):
         release = 'ga'
     else:
         build_kind = 'dev'
-        release = 'dev+' + commit
+        release = 'dev.' + commit
         if dirty:
             if now is None:
                 now = datetime.now(timezone.utc)
             stamp = now.strftime('%Y%m%dT%H%M%S')
-            release = release + '+' + stamp
+            release = release + '.' + stamp
 
     # a snapshot build stamps a dev release like 0.1.0.dev20260817 into
     # setup.cfg; the numeric triple is the leading three components and
