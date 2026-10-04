@@ -1,5 +1,11 @@
 # Vectorcall Integration Design
 
+**Status**: implemented, then superseded. The borrowed-window call path
+landed, and the per-handler sequence below was later replaced by the shared
+call core `kos_call_invoke` and `kos_op_call_star` (`eval/eval_call.c`,
+`eval.c`); the TAIL_CALL handlers are now aliases of their CALL twins. The
+stack layout section remains accurate; the rest is historical.
+
 This document describes the design for integrating CPython's vectorcall
 convention (PEP 590) into the Koskari call and tail-call paths, eliminating
 the transient tuple allocation that currently mediates every positional function

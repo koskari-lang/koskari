@@ -379,7 +379,7 @@ bodies (currently missed).
 ## See also
 
 - [special-call-protocol.md](../archive/special-call-protocol.md) (archived) — the two-slot tail install design, superseded by `kc_vinstall`
-- [vector-call.md](../interpreter/vector-call.md) — `CALL` / `TAIL_CALL` stack layout
+- [vector-call.md](../archive/vector-call.md) (archived) — `CALL` / `TAIL_CALL` stack layout
 - [PRAGMA.md](../PRAGMA.md) — deferred pass gating
 - [bytecode-finalization.md](../archive/bytecode-finalization.md) (archived, implemented) — finalization pipeline (orthogonal)
 - `koskari/compile/compiler.py` — `complete()`, `compress`, `convert_fast`

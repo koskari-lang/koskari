@@ -111,7 +111,7 @@ struct KosCode {
     KosExtra *extra;      /* extended operand rows (read-only) */
 
     uint32_t extent_len;  /* extent descriptor count */
-    KosExtentDesc *extents;     /* extent table, tagged-union descriptors (read-only; NULL if none) */
+    KosExtentDesc *extents;     /* extent table, flat descriptors (read-only; NULL if none) */
     uint16_t *top_extent_id;    /* [code_len] innermost extent per pc (NULL if none) */
 
     PyCodeObject *faux;   /* faux code object for tracebacks */
@@ -126,7 +126,7 @@ The per-site cache slots follow the struct as a variable-length tail; they are
 the one thing a Code owns that can take part in a reference cycle, and the
 reason the type is GC-tracked.
 
-The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). Each entry is a KosExtentDesc (tagged union: kind plus kind-specific targets in u.try_finally, u.loop, u.exit_only, or u.shift). It enables O(1) lookup of block membership and handler targets. See [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md).
+The extent table is derived during Code construction from PUSH/POP pairs (TRY, LOOP, FINALLY, PROMPT, etc.). Each entry is a flat KosExtentDesc: kind, push_pc, pop_pc and parent_extent_id; handler and jump targets are derived on demand from the instruction at push_pc and from pop_pc. It enables O(1) lookup of block membership. See [archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md).
 
 ### Memory Protection
 
@@ -300,7 +300,7 @@ A captured continuation is an ordinary callable (`DelimitedContinuation`, `Conti
 - `KOS_OP_EXCEPTION_MATCH`: Match exception type
 
 ### No runtime implementation
-- `KOS_OP_THEEND`: End-of-code sentinel. If execution reaches THEEND, the handler raises RuntimeError with a fixed message; THEEND has no runtime implementation and never will.
+- `KOS_OP_THEEND`: End-of-code sentinel appended by code construction and rejected in user input. If execution reaches it, the handler reports the pc-bounds fault as a SystemError and returns the fatal result; it never does work.
 
 ### Compile-time semantics (runtime no-op)
 - `KOS_OP_LABEL`: Jump target (compile-time); at runtime no-op (advance PC only). May be rewritten to NOOP during code build or left as LABEL.
@@ -381,7 +381,6 @@ int kos_loc_lookup(PyObject *code, uint32_t pc, uint16_t *line, uint16_t *col);
 uint32_t kos_extent_top(PyObject *code, uint32_t pc);
 uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind);
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id);
-int kos_try_handler_for(PyObject *code, uint32_t pc, KosTryHandler *out);
 uint32_t kos_shift_ic_for(PyObject *code, uint32_t pc);
 
 /* Macros */
@@ -399,7 +398,7 @@ KosCode_TOP_EXTENT_ID(code)
 
 ## Extent table and metadata
 
-Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)**. Each extent descriptor is a tagged union (use the union member that matches `kind`); prefer `kos_try_handler_for` and `kos_shift_ic_for` for handler/IC targets. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
+Static metadata tables (location table, extent table, pc→extent lookup, JUMP locality validation) are implemented per **[archive/bytecode-metadata-tables.md](../archive/bytecode-metadata-tables.md)**. Each extent descriptor is flat (kind, push_pc, pop_pc, parent_extent_id); targets are derived from the push instruction and pop_pc, and `kos_shift_ic_for` resolves a shift's resume pc. Extents are derived during Code construction; malformed bytecode (unmatched PUSH/POP or non-local control-flow jumps) is rejected.
 
 ## Files
 
