@@ -22,8 +22,8 @@
    identity comparisons. A gensym is a symbol scoped by expansion
    marks, interned in the symbol table under its derived spelling.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

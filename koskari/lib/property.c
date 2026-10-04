@@ -27,7 +27,7 @@
    KosProperty instances through property_copy's Py_TYPE(self) dispatch.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
-   :license: GPL v.3
+   :license: GNU General Public License v3
 */
 
 

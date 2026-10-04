@@ -22,8 +22,8 @@
    reduction, and instance __dict__ -- with refcounts restored after dealloc so
    Valgrind / ASan see no leaks.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

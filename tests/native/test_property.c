@@ -21,8 +21,8 @@
    construction with KosCallable, plain Python callable, None, and repeated
    (idempotent) Demand wrapping.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

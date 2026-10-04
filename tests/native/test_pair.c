@@ -20,8 +20,8 @@
    Tests the pair free list, reference counting of head/tail contents,
    cyclic structure handling, and nil singleton behavior.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

@@ -27,8 +27,8 @@
    the identity/lifecycle anchor of the computation. See
    design/archive/parameter-resolution.md.
 
-   author: Christopher O'Brien <obriencj@preoccupied.net>
-   license: GNU General Public License v3
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
 */
 
 

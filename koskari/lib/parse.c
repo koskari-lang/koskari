@@ -20,8 +20,8 @@
    Character-level I/O with position tracking over a Python file-like
    source, for the Koskari s-expression reader.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

@@ -20,8 +20,8 @@
    Tests reference counting, push/pop operations, growth, the
    freelist, tail extraction, and deep copy for the segment API.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

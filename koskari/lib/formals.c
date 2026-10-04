@@ -21,8 +21,8 @@
    Formals combines a FormalsSpec with default values and provides
    argument application to a namespace.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

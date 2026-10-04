@@ -25,8 +25,8 @@
    consumes the handle (SPENT); reuse raises RuntimeError like a
    finished coroutine.
 
-   author: Christopher O'Brien <obriencj@preoccupied.net>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
 */
 
 

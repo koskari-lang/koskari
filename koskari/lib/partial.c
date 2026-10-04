@@ -32,7 +32,7 @@
    evaluator's call entry, with no intermediate KosContext.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
-   :license: GPL v.3
+   :license: GNU General Public License v3
 */
 
 

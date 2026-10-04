@@ -21,8 +21,8 @@
    slots. The nil singleton represents the empty list and is a
    subtype of pair.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
