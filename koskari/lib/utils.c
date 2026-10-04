@@ -22,7 +22,7 @@
 static PyObject *kos_utils_repr_registry = NULL;
 
 
-/* double-quote escape for KosUtils_Repr on plain str (see pair.c sib_quoted) */
+/* double-quote escape for KosUtils_QuoteStr */
 static PyObject *_str_dq = NULL;
 static PyObject *_str_esc_dq = NULL;
 static PyObject *_str_kos_repr = NULL;
@@ -44,12 +44,12 @@ static PyObject *_str_space = NULL;
 static PyObject *_str_tuple_close = NULL;
 
 
-static PyObject *kos_utils_unicode_kos_repr(PyObject *obj) {
+PyObject *KosUtils_QuoteStr(PyObject *u) {
 
   PyObject *escaped = NULL;
   PyObject *result = NULL;
 
-  escaped = PyUnicode_Replace(obj, _str_dq, _str_esc_dq, -1);
+  escaped = PyUnicode_Replace(u, _str_dq, _str_esc_dq, -1);
   if (! escaped)
     return NULL;
 
@@ -535,7 +535,7 @@ PyObject *KosUtils_Repr(PyObject *obj) {
   int r;
 
   if (PyUnicode_CheckExact(obj))
-    return kos_utils_unicode_kos_repr(obj);
+    return KosUtils_QuoteStr(obj);
 
   r = kos_utils_repr_registry_dispatch(obj, &out);
   if (r != 1) {

@@ -588,6 +588,18 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             break_recursive(pair(0, a))
 
+    async def test_cycle_below_the_head(self):
+        """a spine looping below the head is recursive and proper"""
+        a = pair(1, nil)
+        b = pair(2, a)
+        setcdr(a, b)
+        p = pair(0, a)
+        self.assertEqual(p.length(), 3)
+        self.assertTrue(p.is_proper())
+        self.assertTrue(p.is_recursive())
+        with self.assertRaises(ValueError):
+            p.append(3)
+
 
 class TestCarCdrErrors(unittest.IsolatedAsyncioTestCase):
     """Tests for error handling in car/cdr functions"""

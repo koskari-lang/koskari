@@ -97,6 +97,16 @@ PyObject *KosUtils_Repr(PyObject *obj);
 
 
 /**
+   Quote a str for printing: wrapped in double quotes, with each double
+   quote inside escaped by a backslash.
+
+   :param u: a str
+   :return: new unicode string, or NULL with an exception set
+*/
+PyObject *KosUtils_QuoteStr(PyObject *u);
+
+
+/**
    Register a ``type`` to ``handler`` for KosUtils_Repr.
 
    ``type`` must be a type object. ``handler`` must be callable and must
