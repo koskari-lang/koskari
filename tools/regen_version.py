@@ -269,7 +269,7 @@ def assemble_version(version, state, now=None):
     """
     Build version metadata from release string and git state
 
-    :param release: base release from setup.cfg
+    :param version: base version string from setup.cfg
     :param state: dict from git_state
     :param now: optional datetime for dirty local segments (tests)
     :return: dict with version, release, build_kind, commit, dirty
@@ -351,11 +351,11 @@ def should_regen(root=None):
 
 def regen_version_py(root=None, dest=None):
     """
-    Regenerate koskari/_version.py when inputs differ from output
+    Regenerate koskari/_version.py from the template and the current
+    version info
 
     :param root: repository root path
     :param dest: optional output path override
-    :return: True when the file was written or updated
     """
 
     root = project_root(root)

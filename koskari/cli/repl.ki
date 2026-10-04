@@ -164,9 +164,9 @@ define repl [
   last result is stored as '_' in the namespace.
 
   :param mod: koskari Module to use as the execution context
-  :param prompter: input(prompt)-style callable; built via make_prompter
-      when None
-  :param histfile: history file path passed to make_prompter
+  :param prompter: input(prompt)-style callable; built via
+      _make_repl_prompter when None
+  :param histfile: history file path passed to _make_repl_prompter
   :param stdin: input stream, defaults to sys.stdin
   :param stdout: output stream, defaults to sys.stdout
   :param stderr: error stream, defaults to sys.stderr
