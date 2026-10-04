@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.importer.module
+koskari.module
 
 Module lifecycle for Koskari source files.
 

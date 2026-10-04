@@ -103,7 +103,7 @@ define-syntax list-each:
 
 define-syntax dict-each:
   """
-  Dict comprehension over a sequence via `compile/each`
+  Dict comprehension over a sequence via the `each` macro
   """
 
   syntax-rules [when: unless: key: value:]:

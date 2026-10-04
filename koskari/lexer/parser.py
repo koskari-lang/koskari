@@ -37,8 +37,8 @@ def make_layout_reader():
     """
     Build a fresh LayoutReader with default atoms, macros, and layouts.
 
-    Read-only; no execution. Uses ``koskari.stdlib.BUILTINS`` as the layout
-    namespace. Each call returns a new instance -- reads mutate per-read
+    Read-only; no execution. Uses a copy of ``koskari.bootstrap``'s builtin
+    registry as the layout namespace. Each call returns a new instance -- reads mutate per-read
     reader state, so callers that may run concurrently (e.g. an LSP server
     handling overlapping requests) must not share one reader.
 

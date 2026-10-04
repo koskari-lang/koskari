@@ -20,8 +20,8 @@ koskari.builtins
 """
 
 
-# creates the actual module and stores it in sys.modules and
-# on the koskari package.
+# assembles the builtins and copies every public binding into this
+# module's own globals, so koskari.builtins is a plain module to import
 def _setup():
     from .bootstrap import make_builtins_demand
 

@@ -16,7 +16,8 @@ koskari.reader.layouts
 
 Layout handlers for reader block syntax.
 
-Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS``.
+Handlers register via ``koskari.bootstrap.builtin`` into its builtin
+registry.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

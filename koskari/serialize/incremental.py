@@ -14,7 +14,8 @@
 """
 koskari.serialize.incremental
 
-Compile .ki sources into .kio bodies and drive evaluation from loaded .kio.
+Compile .ki sources into .kio bodies, stamped from the source they were
+compiled from; loading a .kio lives in koskari.module.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
