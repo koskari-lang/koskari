@@ -16,7 +16,9 @@ an active `with` raises a runtime error).
 pool index or no-binding sentinel), compiles body with `helper_begin`, emits
 POP_WITH. PUSH_WITH looks up the WITH extent at its PC and stores
 `resume_pc = pop_pc + 1` on the node for use when exit swallows an exception.
-The expression value is always `None`. Both sync and async context managers
+The expression value is the body's value; when the exit swallows an exception
+the value is `None`. The exit's own return decides only whether the exception
+is swallowed and is never the value. Both sync and async context managers
 are supported (VM auto-awaits enter/exit when they return awaitables). See
 [dyn-with](dyn-with.md) for the multi-shot variant and
 [PUSH_WITH / POP_WITH](../vm/opcodes/kos-op-push-with.md) in the VM reference.

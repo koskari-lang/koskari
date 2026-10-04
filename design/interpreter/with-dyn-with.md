@@ -106,14 +106,16 @@ block for the body.
 
 ### Result value
 
-- The overall expression result is **always** `None`.
-- Any value needed from the body must be stored explicitly (e.g. `setq`) before
-  leaving.
+- The overall expression result is the body's value: POP_WITH parks it as
+  the pop's value and the unlink pushes it once exit has run.
+- When exit swallows an exception the body produced no value, and the
+  result is `None`.
 - **Exit return is never the with value.** The value returned by `exit` (or
   `__aexit__`) is used **only** for swallow logic (exception and truthy means
   swallow). The VM never leaves the exit return on the stack as the
-  with-expression value; it is consumed and then `None` is pushed. Both the
-  sync path and the async exit path (sync completion and resume) enforce this.
+  with-expression value; it is consumed and then the parked body value (or
+  `None` on a swallow) is pushed. Both the sync path and the async exit path
+  (sync completion and resume) enforce this.
 
 
 ## Enter/exit protocol and transparent async
@@ -192,7 +194,7 @@ is pushed, and the exception propagates.
    Auto-await if needed.
 2. Pop the operand stack block owned by the node.
 3. Pop the dyn node.
-4. Push `None` as the value of the `with` expression.
+4. Push the parked body value as the value of the `with` expression.
 
 **Behaviour (exception unwinding):** When leaving due to an exception inside the
 body, the runtime enters the exception path for the nearest active `with`
@@ -220,7 +222,8 @@ when it completes; that value must **not** become the with-expression value.
   result was pushed. The node's leave settles it at once
   (`kos_dyn_extent_settle` pops it; a swallow leaves a SWALLOWED obligation), and the unlink
   (`kos_dyn_unlink_top`) drops the owned segment, pops the WITH node, sets
-  the frame PC to `resume_pc`, and pushes `None`.
+  the frame PC to `resume_pc`, and pushes the parked body value (`None`
+  after a swallow).
 - **Suspend:** The leave answers AWAIT; the node stays on the chain in
   `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` holding the exception it is handling
   in its obligation slot. The evaluator returns `KOS_RES_AWAIT`. The driver
@@ -228,9 +231,10 @@ when it completes; that value must **not** become the with-expression value.
   **revive** runs before the next opcode: `revive_await` pushes the send
   value, then `kos_dyn_settle_top` settles the node at `dyn_top` (pops that
   value, applies swallow) and unlinks it, which drops the segment, pops the
-  node, sets the PC, and pushes `None` (or re-raises the parked exception
-  when `__exit__` did not swallow). Execution then continues at the
-  instruction after POP_WITH with `None` as the with value.
+  node, sets the PC, and pushes the body value, `None` after a swallow (or
+  re-raises the parked exception when `__exit__` did not swallow).
+  Execution then continues at the instruction after POP_WITH with that
+  value as the with value.
 
 So the exit return is never observable as the with-expression result; it is
 only used internally for swallow and then discarded in favour of `None`.
@@ -327,8 +331,8 @@ for other extent kinds; no special case for dyn-with.
   compiler does not need to emit separate VAR_BIND sequences.
 - The with body should compile as a normal block that ends with a `POP_*_WITH`
   at the structurally correct exit point(s).
-- Since the overall expression value is always `None`, the compiler may omit
-  carrying the body’s last value.
+- The body's last value is the expression value, so the compiler carries it
+  to POP_WITH, which parks it across the exit call.
 
 
 ## Required tests (minimal)
@@ -359,6 +363,7 @@ for other extent kinds; no special case for dyn-with.
   arithmetic marking.
 - `with` is single-shot: each dynamic extent instance is entered and exited at most once. Transfer across an active WITH instance is rejected; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
 - `dyn-with` is multi-shot and must wind/unwind on non-local transfer.
-- Expression value is always `None`.
+- Expression value is the body's value, or `None` when exit swallowed an
+  exception.
 - Enter failure installs no dyn node and no stack block.
 - Swallowing clears exception state and resumes normally.
