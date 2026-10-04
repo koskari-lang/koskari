@@ -700,4 +700,24 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(0, code)
 
 
+    async def test_main_repl_sets_sys_argv_like_python(self):
+        """
+        an interactive session has sys.argv[0] == '' as Python's does
+        """
+
+        def run():
+            orig_argv, orig_stdin = sys.argv, sys.stdin
+            sys.stdin = io.StringIO('')
+            try:
+                code = main(['koskari'])
+                return code, list(sys.argv)
+            finally:
+                sys.argv, sys.stdin = orig_argv, orig_stdin
+
+        loop = asyncio.get_running_loop()
+        code, argv = await loop.run_in_executor(None, run)
+        self.assertEqual(0, code)
+        self.assertEqual([''], argv)
+
+
 # The end.
