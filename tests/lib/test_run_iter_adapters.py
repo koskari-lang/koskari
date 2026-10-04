@@ -157,6 +157,23 @@ class TestAsyncGeneratorPyIter(unittest.TestCase):
             next(dsg)
 
 
+    def test_iter_repr_names_koskari_iterator(self):
+        """
+        The sync iterator over an AsyncGenerator reprs as a koskari
+        iterator carrying the generator's name
+        """
+        code, ns = build_expr([
+            ["CONST", 7],
+            ["YIELD", 1],
+            ["RETURN", 0],
+        ], name='counting_fn')
+        expr = make_callable(code, ns)
+        it = iter(expr())
+        r = repr(it)
+        self.assertTrue(r.startswith('<koskari iterator counting_fn at 0x'), r)
+        self.assertNotIn('generator object', r)
+
+
     def test_two_fresh_agens_list_same(self):
         """
         Two fresh async generators list to the same values

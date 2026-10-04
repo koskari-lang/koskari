@@ -15,14 +15,15 @@
 
 
 /**
-   matcher — native low-level matcher core (Phase 1)
+   matcher -- native matcher core
 
-   Implements the tagged-node array, C-internal builder, and validator
-   for the new matcher engine. The matching engine and subject adapters
-   land in Phase 2; the frozen tagged-tuple thaw lands in Phase 3.
+   The tagged-node array, the C-internal builder and validator, the
+   matching engine with its subject adapters, the frozen tagged-tuple
+   thaw, and the Matcher, MatchResult and Datum types. The per-node
+   match steps live in the matcher/ fragments included below.
 
-   author: Christopher O'Brien <obriencj@preoccupied.net>
-   license: GNU General Public License v3
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
 */
 
 

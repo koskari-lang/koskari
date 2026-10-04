@@ -1254,8 +1254,8 @@ static PyObject *pyiter_repr(PyObject *self) {
 
   if (gen->display_name)
     return PyUnicode_FromFormat(
-        "<generator object %U at %p>", gen->display_name, (void *) self);
-  return PyUnicode_FromFormat("<generator object at %p>", (void *) self);
+        "<koskari iterator %U at %p>", gen->display_name, (void *) self);
+  return PyUnicode_FromFormat("<koskari iterator at %p>", (void *) self);
 }
 
 
