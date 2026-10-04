@@ -64,7 +64,10 @@ def _line_start_index(doc):
 def _replace_line_leading_indent(buffer, new_cols):
     """
     Replace the current line's leading whitespace with new_cols spaces.
-    Preserves cursor offset relative to content after the leading run.
+
+    A cursor past the leading run keeps its distance from the content;
+    a cursor inside the run keeps its offset on the line, capped at the
+    new indent, so it never leaves the line or crosses into the content.
     """
 
     doc = buffer.document
@@ -79,9 +82,12 @@ def _replace_line_leading_indent(buffer, new_cols):
         + new_prefix
         + buffer.text[line_start + old_prefix_len:]
     )
-    delta = len(new_prefix) - old_prefix_len
-    new_cursor = old_cursor + delta
-    buffer.document = Document(new_text, new_cursor)
+    offset = old_cursor - line_start
+    if offset >= old_prefix_len:
+        new_offset = offset + len(new_prefix) - old_prefix_len
+    else:
+        new_offset = min(offset, len(new_prefix))
+    buffer.document = Document(new_text, line_start + new_offset)
 
 
 def _whitespace_before_cursor():
