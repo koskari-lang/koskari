@@ -89,7 +89,7 @@ OP(JUMP_AND, 0, LABEL)
 OP(JUMP_OR, 0, LABEL)
 
 // check jumps - jump to label if predicate does not match. The
-// the comparison check is variadic and selector-keyed: the EXTRA row
+// comparison check is variadic and selector-keyed: the EXTRA row
 // carries (CMP, COUNT, LABEL) so a chained compare over COUNT operands
 // under any KosCompare selector fuses with its jump. The arity-2 fused
 // forms absorb their operand feeders: CMPSRC packs the selector with

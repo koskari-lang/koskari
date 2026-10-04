@@ -26,7 +26,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
-      unsigned opa = KosExtra_IMM(row, 3);
+  unsigned opa = KosExtra_IMM(row, 3);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

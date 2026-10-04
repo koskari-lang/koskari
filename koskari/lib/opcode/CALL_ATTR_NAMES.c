@@ -24,7 +24,7 @@
 KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
-      unsigned opa = KosExtra_IMM(row, 2);
+  unsigned opa = KosExtra_IMM(row, 2);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
