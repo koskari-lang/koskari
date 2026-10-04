@@ -489,12 +489,25 @@ define features-under [prefix]:
     out
 
 
-define fts-search [search_text cap]:
+define searchable-table [feature_path]:
     """
-    Token-ranked corpus search over the code-bearing columns
+    The corpus rows a text search ranks: the whole table, or only the
+    rows of a feature, so the feature narrows before the limit cuts
     """
 
-    (token-search (corpus-table) search_text SEARCH_COLUMNS cap)
+    if feature_path:
+        (filter-rows-by-feature (corpus-table) feature_path)
+    else:
+        (corpus-table)
+
+
+define fts-search [search_text feature_path cap]:
+    """
+    Token-ranked corpus search over the code-bearing columns,
+    optionally narrowed to a feature
+    """
+
+    (token-search (searchable-table feature_path) search_text SEARCH_COLUMNS cap)
 
 
 define like-search [search_text feature_path cap]:
@@ -505,11 +518,7 @@ define like-search [search_text feature_path cap]:
     for-each, if, and, or, not).
     """
 
-    define rows (substring-search (corpus-table) search_text SEARCH_COLUMNS cap)
-    if feature_path:
-        (filter-rows-by-feature rows feature_path)
-    else:
-        rows
+    (substring-search (searchable-table feature_path) search_text SEARCH_COLUMNS cap)
 
 
 define search-docs-table [search_text cap table]:
@@ -674,9 +683,7 @@ define search_examples [
     define rows #[]
 
     if search_text:
-        set! rows (fts-search search_text cap)
-        when feature_path:
-            set! rows (filter-rows-by-feature rows feature_path)
+        set! rows (fts-search search_text feature_path cap)
         unless rows:
             set! rows (like-search search_text feature_path cap)
 
