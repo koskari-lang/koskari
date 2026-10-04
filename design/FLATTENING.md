@@ -139,10 +139,3 @@ design for the group.
   nest per call. Dispatching a Koskari dunder directly from the
   evaluator, as `kos_instance_call` does for `__call__`, would flatten
   them.
-
-### Other
-
-- **Tail calls through `Procedure` and non-flattened `Demand`.** Both
-  installs call `CallInto` with `tail_call` 0; a tail call through
-  either costs two frames per level (a code-less resume frame and the
-  callee).
