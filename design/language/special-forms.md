@@ -54,8 +54,7 @@ Special forms are compile-time constructs that have no runtime representation. T
 ### Generators and Coroutines
 
 - **`yield`**: Generator yield
-- **`yield-from`**: Delegate to another generator/coroutine
-  - Optional `send:` keyword argument
+- **`yield-from`**: Delegate to another generator/coroutine (one argument)
 - **`await`**: Await async operation
 - **`declare-async`**: Flag function/generator as coroutine/async generator
 

@@ -277,11 +277,11 @@ Minimal helpful behaviors:
 
 * `repr` includes state:
 
-  * `<defer delegating inner=...>`
-  * `<defer done>`
-  * `<defer iterating>`
-  * `<defer spent>`
-  * `<defer moved_from>`
+  * `<koskari defer delegating inner=...>`
+  * `<koskari defer done>`
+  * `<koskari defer iterating>`
+  * `<koskari defer spent>`
+  * `<koskari defer moved_from>`
 
 ---
 
