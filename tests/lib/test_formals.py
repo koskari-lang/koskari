@@ -354,6 +354,36 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             formals.apply(ns, (1,), {"unexpected": 42})
 
+    async def test_apply_keyword_for_filled_positional_raises(self):
+        """
+        a keyword naming a formal the positionals already filled is
+        refused as multiple values, with or without a starstar formal
+        """
+
+        cases = (
+            (Formals(("x",), (), (), (), None, "kw", None, None),
+             ("x", "kw"), (1,), {"x": 2}),
+            (Formals(("x",), (), (), (), None, None, None, None),
+             ("x",), (1,), {"x": 2}),
+            (Formals(("x",), (), ("y",), (), None, None, None, None),
+             ("x", "y"), (1, 2), {"y": 3}),
+        )
+        for formals, names, args, kwds in cases:
+            ns = Namespace("f", None, names)
+            with self.assertRaisesRegex(TypeError, "multiple values"):
+                formals.apply(ns, args, kwds)
+
+    async def test_apply_keyword_naming_a_positional_only_goes_to_starstar(self):
+        """
+        as in Python, a positional-only formal's name is free for **kw
+        """
+
+        formals = Formals((), ("x",), (), (), None, "kw", None, None)
+        ns = Namespace("f", None, ("x", "kw"))
+        formals.apply(ns, (1,), {"x": 2})
+        self.assertEqual(ns.deref("x"), 1)
+        self.assertEqual(ns.deref("kw"), {"x": 2})
+
     async def test_apply_empty_star(self):
         """apply() handles empty star args"""
 

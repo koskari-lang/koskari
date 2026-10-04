@@ -1012,6 +1012,29 @@ static int kwsource_take(KwSource *ks, PyObject *key, PyObject **out) {
 
 
 /**
+   Whether an entry named key remains, without taking it: 1, 0, or -1
+   with an error set
+*/
+static int kwsource_has(KwSource *ks, PyObject *key) {
+
+  if (! ks->remaining)
+    return 0;
+
+  for (Py_ssize_t j = 0; j < ks->count; j++) {
+    if (ks->used[j])
+      continue;
+    PyObject *nm = ks->names[j];
+    if (nm == key)
+      return 1;
+    int hit = PyObject_RichCompareBool(nm, key, Py_EQ);
+    if (hit)
+      return hit;
+  }
+  return 0;
+}
+
+
+/**
    A new dict of the entries not yet taken; empty when none remain
 */
 static PyObject *kwsource_leftovers(KwSource *ks) {
@@ -1340,6 +1363,29 @@ static inline int formals_bind(
       PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
       return formals_type_error(namespace,
                                 "missing keyword-only argument: %S", key);
+    }
+  }
+
+  /* A keyword naming a formal the positionals already filled is a
+     second value for it, as Python reports; positional-only formals
+     are left out, their names being free for the starstar dict. The
+     runs are read from the formals again, since a run filled to its
+     end was dropped above. The scan runs only when keywords remain,
+     and the names are interned, so a hit is an identity match before
+     any comparison. */
+  if (ks->remaining) {
+    PyObject *filled[2] = { KosFormals_POS(formals), KosFormals_KWD(formals) };
+    Py_ssize_t counts[2] = { ipos, ikwd };
+    for (int r = 0; r < 2; r++) {
+      for (Py_ssize_t k = 0; filled[r] && k < counts[r]; k++) {
+        PyObject *key = PyTuple_GET_ITEM(filled[r], k);
+        int found = kwsource_has(ks, key);
+        if (found < 0)
+          return -1;
+        if (found)
+          return formals_type_error(
+              namespace, "got multiple values for argument %S", key);
+      }
     }
   }
 
