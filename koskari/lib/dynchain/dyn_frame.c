@@ -295,8 +295,8 @@ KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
 /**
    Offer a detached native-program frame to a holder's one-frame
    cache: strip it to an inert allocation and store it in *cache when
-   the slot is empty. The namespace slot holds only the owned fill of
-   the live namespace (kos_dyn_push_frame_native) and is released
+   the slot is empty. The namespace slot holds only an owned reference
+   to the empty namespace (kos_dyn_push_frame_native) and is released
    here; a frame with code or a cache-participation fn is not a
    native-program frame and takes the ordinary free instead.
 */
@@ -387,7 +387,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
 
-  /* Replace ns with empty dict */
+  /* Drop the namespace; the tail install sets the callee's */
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = NULL;
 

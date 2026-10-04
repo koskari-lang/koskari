@@ -704,6 +704,11 @@ static int kos_dyn_pop_transparent_deliver(
 #include "dynchain/dyn_shift.c"
 #include "dynchain/dyn_gen.c"
 #include "dynchain/dyn_wind.c"
+
+
+/* === Region exception restore === */
+
+
 /**
    A TRY or FINALLY region leaving the chain gives back the
    handler-visible exception it displaced when it consumed a raise,
@@ -1043,7 +1048,7 @@ KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return) {
 /**
    Release kind-specific payload and PyObject refs, then return the struct to
    the freelist or PyMem_Free. Does not walk parent links. Callers:
-   kos_dyn_uninstall_core, kos_dynchain_free, error paths after failed push.
+   kos_dyn_uninstall_handler, kos_dynchain_free, error paths after failed push.
 */
 void kos_dynnode_free(KosDynNode *node) {
   if (! node)
@@ -1500,11 +1505,11 @@ static void kos_dyn_resync_after_pop(
 #else
   /* The cache model is authoritative for frame and block. The one
      question it cannot answer is the namespace when the survivor
-     carries no fill and the dying node held the live one; native
-     frames carry the owned fill (kos_dyn_push_frame_native), so this
-     arises only when the surviving extent genuinely has no namespace
-     anywhere -- a native frame at the root of an adapter host whose
-     fill was NULL. Recompute by walk; applying ns_new there would
+     carries no namespace and the dying node held the live one; native
+     frames carry an owned reference to the empty namespace
+     (kos_dyn_push_frame_native), so this arises only when the surviving
+     extent genuinely has no namespace anywhere -- a native frame at the
+     root of an adapter host whose slot was NULL. Recompute by walk; applying ns_new there would
      republish the dying frame's namespace, which the pop is about to
      release. A model violation in the frame or block facts lands NULL
      here and fails fast nearby; build with -DKOS_EVAL_SAFETYNET=1 to
@@ -1811,8 +1816,8 @@ int kos_dyn_push(KosEvalState *es, KosDynNode *node) {
 
    Central commit for pops and any dyn_top publish that is not a push. Captures
    the old dyn_top as removed and calls kos_dyn_resync_after_pop. Use for
-   kos_dyn_uninstall_core, fast kos_dyn_pop_* paths, gen install, and manual
-   splices.
+   kos_dyn_uninstall_handler, fast kos_dyn_pop_* paths, gen install, and
+   manual splices.
    Do not use for kos_dyn_push; use kos_dyn_resync_after_push via push instead.
 */
 void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
@@ -2241,8 +2246,9 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
 
 /**
    Predicate: does the chain from dyn_top reach target?  Read-only; never
-   sets PyErr.  Callers: kos_validate_capture_cc, kos_dyn_wind_on_control_returned,
-   the NEXT and YIELD_FROM still-on-chain checks.
+   sets PyErr.  Callers: the transfer goal's seam and frontier checks
+   (xfer_goal.c), the delimited return route (eval.c), and the NEXT and
+   YIELD_FROM still-on-chain checks.
 
    :return: 1 if target is on the chain from dyn_top, 0 otherwise
 */
@@ -3295,8 +3301,8 @@ int koskari_dynchain_init(PyObject *mod) {
 
 
 /**
-   Interpreter shutdown: clear sentinel, drain dyn_node and continuation
-   freelists, release cached transfer plan buffer.
+   Interpreter shutdown: clear the param sentinel and drain the dyn_node
+   and continuation freelists.
 */
 int koskari_dynchain_clear(PyObject *mod) {
   (void) mod;

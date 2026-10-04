@@ -45,8 +45,8 @@
    KosDynKind enumerates the types of nodes in the dynamic chain.
 
    KOS_DYN_FRAME  - Function activation record
-  KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
-  KOS_DYN_DELIM  - Delimited invoke return marker with return metadata
+   KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
+   KOS_DYN_DELIM  - Delimited invoke return marker with return metadata
    KOS_DYN_WIND   - Dynamic-wind extent with before/after hooks
    KOS_DYN_TRY - try region
    KOS_DYN_FINALLY - finally region
@@ -63,6 +63,8 @@
                        frame, or namespace of its own)
    KOS_DYN_GEN       - Generator node; intercepts handle(YIELD/RETURN/RAISE),
                        denies handle(SHIFT)
+   KOS_DYN_NEXT      - Iteration node for a standalone NEXT over a Koskari
+                       iterator, and extended FOREACH stepping
 */
 
 typedef enum KosDynKind {
@@ -263,10 +265,11 @@ typedef enum {
 
 
 /**
-   KosXferEvent indicates why an unwind is occurring.  Passed to
-   kos_dyn_unwind and propagated through the unwind path so nodes
-   can react appropriately (e.g. dynamic-wind after-thunk runs
-   regardless; event is for diagnostics or future use).
+   KosXferEvent says why a node is leaving the chain. Every walk and
+   unlink passes one, and kos_dyn_unlink_top acts on the node's
+   obligation by kind and event (deliver a parked value, re-raise a
+   parked exception, release, or fault), so the event decides what a
+   leaving node does with what it holds.
 */
 typedef enum KosXferEvent {
   KOS_XFER_EVENT_NONE = 0,
@@ -815,12 +818,13 @@ void kos_dynwind_free(KosDynWind *wind);
 
 
 /**
-   Allocate a new region node.
+   Allocate a new region node. TRY and FINALLY take the handler pc;
+   LOOP and FOREACH take the break and continue targets.
 
    :param parent: parent node in dynamic chain
-   :param style: region type
-   :param break_pc: break/exit jump target
-   :param continue_pc: continue jump target (or 0)
+   :param handler_pc: handler jump target (TRY, FINALLY)
+   :param break_pc: break/exit jump target (LOOP, FOREACH)
+   :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
 
    :return: new region node, or NULL on error
 */
@@ -958,7 +962,7 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
 
 /**
-   Push a frame with code=NULL, ns=empty dict, stack=NULL for INSTALL to configure.
+   Push a placeholder frame with code=NULL and ns=NULL for INSTALL to configure.
 
    :return: new frame, or NULL on error
 */
@@ -967,10 +971,10 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 
 /**
    Push a frame for a native program: no code, and the namespace slot
-   holds an owned fill of the live namespace -- a native frame
-   introduces no namespace of its own, so it carries the fill like any
-   other non-introducer node and the live register stays truthful over
-   the program's extent.
+   holds an owned reference to the shared empty namespace -- a native
+   frame reads and stores no name, so the slot only keeps the live
+   register non-NULL over the program's extent, and nothing is visible
+   or storable through it.
 
    :return: new frame, or NULL on error
 */
@@ -1292,12 +1296,13 @@ KosDynWind *kos_dyn_push_wind(
 
 
 /**
-   Push a region onto the dynamic chain.
+   Push a region onto the dynamic chain. TRY and FINALLY take the
+   handler pc; LOOP and FOREACH take the break and continue targets.
 
-   :param ctx: execution context
-   :param style: region type
-   :param break_pc: break/exit jump target
-   :param continue_pc: continue jump target (or 0)
+   :param es: eval state
+   :param handler_pc: handler jump target (TRY, FINALLY)
+   :param break_pc: break/exit jump target (LOOP, FOREACH)
+   :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
 
    :return: new region, or NULL on error
 */
@@ -1395,12 +1400,6 @@ int kos_dyn_iter_node_deliver_exhausted(
 */
 PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node);
 
-
-/**
-   True when the node's in-flight step is a parked KosIter provider
-   under the re-entry contract: the awaited value feeds back into the
-   provider's ki_step rather than delivering as the element.
-*/
 
 /**
    True when the node's in-flight step is a value graft: the next
@@ -1625,9 +1624,9 @@ typedef enum KosPendingReturnKind {
    node still at dyn_top for the hook to settle; EVAL_RAISE or EVAL_FATAL
    with PyErr set.
 
-   kos_dyn_unwind_to_node offers handle(event) to each node before
-   popping and crosses barriers and delimiters; a node that CONSUMES is
-   an error for it. A suspension leaves the value the
+   kos_dyn_unwind_to_node offers nothing: it unlinks each node above
+   the target through kos_dyn_unlink_top with the barrier allowed, so
+   it crosses barriers and delimiters and no node can consume. A suspension leaves the value the
    caller is carrying with the caller, to park on the node whose leave
    is in flight, which is stored in *out_pending (NULL otherwise; the
    out-param itself may be NULL when the caller carries nothing). That
@@ -1778,7 +1777,7 @@ int kos_dyn_ob_park_return(
 
 
 /**
-   Generic dispatch functions for the seven dynchain operations.  Each
+   Generic dispatch functions over the node kinds.  Each
    switches on the node's kind and invokes the appropriate per-type
    implementation directly, allowing the compiler to emit a jump table
    with inlined handlers rather than an indirect function-pointer call.
@@ -1931,10 +1930,7 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
 int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 
 
-/* === Prompt lookup and continuation capture === */
-
-
-/* === Context exception stash === */
+/* === Prompt and CC lookup === */
 
 
 /**
