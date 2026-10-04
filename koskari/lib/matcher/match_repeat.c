@@ -46,6 +46,10 @@ static int match_repeat_capture_list(
         return -1;
       }
       if (r == 0 || *cursor == saved) {
+        /* a failed attempt leaves sub_dict NULL; a zero-width success
+           cannot pass the REPEAT min-width validation, but if one did
+           its dict is released here rather than leaked */
+        Py_XDECREF(sub_dict);
         *cursor = saved;
         engine_rollback(e, snap);
         break;
