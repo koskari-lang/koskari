@@ -30,7 +30,7 @@ from ...matcher import (
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import (
-    build_proper, is_nil, is_pair, is_proper, is_symbol, unpack)
+    build_proper, is_pair, is_proper, is_symbol, unpack)
 
 
 _sym_quote_syntax = symbol("quote-syntax")
@@ -348,7 +348,9 @@ def special_compile_special_rules(compiler, called_by, name, literals, rules):
         inner = res["pattern"].datum
         body_forms = res["body"].datum
 
-        vars_ordered = collect_pattern_variable_symbols(inner, literal_set)
+        variables = {}
+        parse_syntax_rules_pattern(inner, literal_set, inner, variables)
+        vars_ordered = variables.values()
 
         parts.append(_emit_parse_rule_pattern(inner, literal_set))
         parts.append(cons(symbol("lambda"),
@@ -422,52 +424,6 @@ def slot_formals(pattern_matcher):
     return out
 
 
-def collect_pattern_variable_symbols(pattern_expr, literals):
-    """
-    Pattern variables in pre-order, excluding literals and ellipsis markers.
-    Each symbol appears once (first occurrence). Used for macro-rules formals.
-    """
-
-    seen = []
-
-    def walk(expr):
-        if expr is Ellipsis:
-            return
-
-        if is_symbol(expr):
-            if expr in literals:
-                return
-
-            if expr not in seen:
-                seen.append(expr)
-
-            return
-
-        if not is_pair(expr):
-            return
-
-        # the spine's elements, then a dotted tail, which the lowerer
-        # binds as a pattern variable when it is a symbol
-        items = []
-        cell = expr
-        while is_pair(cell) and not is_nil(cell):
-            items.append(cell.car)
-            cell = cell.cdr
-        i = 0
-        while i < len(items):
-            if i + 1 < len(items) and items[i + 1] is Ellipsis:
-                walk(items[i])
-                i += 2
-            else:
-                walk(items[i])
-                i += 1
-        if not is_nil(cell) and is_symbol(cell):
-            walk(cell)
-
-    walk(pattern_expr)
-    return seen
-
-
 def parse_macro_rules_rows(name, literals_expr, raw_rules):
     """
     Parse macro-rules literals and rules tail into matchers and body datums
@@ -499,9 +455,11 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
         if not body_forms:
             raise SpecialError("macro-rules rule requires a body", raw_rule)
 
-        pattern = parse_syntax_rules_pattern(pattern_src, literals, raw_rule)
-        varsyms = collect_pattern_variable_symbols(pattern_src, literals)
-        rows.append((pattern, pattern_src, tuple(varsyms), body_forms))
+        variables = {}
+        pattern = parse_syntax_rules_pattern(
+            pattern_src, literals, raw_rule, variables)
+        rows.append(
+            (pattern, pattern_src, tuple(variables.values()), body_forms))
 
     return literals, tuple(rows)
 

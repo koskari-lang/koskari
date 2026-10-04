@@ -667,7 +667,11 @@ def special(form_symbol, *, patterns, unpack=None):
     return deco
 
 
-def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
+def parse_syntax_rules_pattern(
+        pattern_expr,
+        literals,
+        source_ctx,
+        variables=None):
     """
     Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
@@ -678,11 +682,17 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     :param pattern_expr: koskari pattern datum
     :param literals: set, frozenset, list, or tuple of literal symbols
     :param source_ctx: value recorded in error messages
+    :param variables: a dict that, when given, receives each pattern
+        variable's name mapped to its source symbol, in the order the
+        variables are bound
     :rtype: Pattern
     """
 
     # a literal is named and matched by its bare spelling
     literals = frozenset(strip_mark(lit) for lit in literals)
+
+    if variables is None:
+        variables = {}
 
     if pattern_expr is Ellipsis:
         raise TypeError(
@@ -694,6 +704,7 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         bare = strip_mark(pattern_expr)
         if bare in literals:
             return MATCH(LITERAL(bare))
+        variables[str(pattern_expr)] = pattern_expr
         return MATCH(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
@@ -713,11 +724,12 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
             and not (len(items) > 1 and items[1] is Ellipsis)):
         name = str(head)
         owners[name] = scope
+        variables[name] = head
         specs.append(CALLEDBY(name))
         items = items[1:]
 
     specs.extend(_syntax_pattern_specs(
-        items, literals, source_ctx, owners, scope, tail))
+        items, literals, source_ctx, owners, variables, scope, tail))
     return MATCH(*specs)
 
 
@@ -754,26 +766,31 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
 _REPEAT_OWNER = object()
 
 
-def _claim_repeat_variable(name, owners, source_ctx):
+def _claim_repeat_variable(sym, owners, variables, source_ctx):
     """
     Record a variable bound by an ellipsis or a dotted tail; a name
     already bound anywhere in the pattern is refused
     """
 
+    name = str(sym)
     if name in owners:
         raise ValueError(
             f"pattern variable {name!r} is already bound at another"
             f" ellipsis depth (context {source_ctx!r})")
     owners[name] = _REPEAT_OWNER
+    variables[name] = sym
 
 
-def _syntax_elem_pattern(pat, literals, source_ctx, owners, scope):
+def _syntax_elem_pattern(
+        pat, literals, source_ctx, owners, variables, scope):
     """
     The matcher spec for one pattern element
 
     :param owners: pattern-wide map from each bound variable name to
         the scope that bound it: the top level or one pair sub-pattern
         under an ellipsis, or _REPEAT_OWNER for an ellipsis variable
+    :param variables: pattern-wide map from each bound variable name
+        to its source symbol, in the order the variables are bound
     :param scope: the token of the scope being parsed
     :raises ValueError: when a variable is bound in two scopes, where
         the second occurrence is a sequence or another iteration's
@@ -804,6 +821,7 @@ def _syntax_elem_pattern(pat, literals, source_ctx, owners, scope):
                 f"pattern variable {name!r} is already bound at another"
                 f" ellipsis depth (context {source_ctx!r})")
         owners[name] = scope
+        variables[name] = pat
         return BIND(name)
 
     if not is_pair(pat):
@@ -812,7 +830,7 @@ def _syntax_elem_pattern(pat, literals, source_ctx, owners, scope):
 
     items, tail = _spine_items(pat)
     return FORM(MATCH(*_syntax_pattern_specs(
-        items, literals, source_ctx, owners, scope, tail)))
+        items, literals, source_ctx, owners, variables, scope, tail)))
 
 
 def _spine_items(pattern):
@@ -833,7 +851,13 @@ def _spine_items(pattern):
 
 
 def _syntax_pattern_specs(
-        p_items, literals, source_ctx, owners, scope, tail=None):
+        p_items,
+        literals,
+        source_ctx,
+        owners,
+        variables,
+        scope,
+        tail=None):
     """
     The matcher specs for a pattern spine's elements, and for its dotted
     tail when it has one: a tail symbol that is not a literal binds the
@@ -841,6 +865,8 @@ def _syntax_pattern_specs(
     leading ``x ...`` lowers to; any other tail is refused
 
     :param owners: pattern-wide variable ownership, see
+        _syntax_elem_pattern
+    :param variables: the bound variables' source symbols, see
         _syntax_elem_pattern
     :param scope: the token of the scope this spine is in; a pair
         sub-pattern under an ellipsis opens a scope of its own
@@ -856,7 +882,7 @@ def _syntax_pattern_specs(
             pat = p_items[i]
             if is_symbol(pat) and strip_mark(pat) not in literals:
                 name = str(pat)
-                _claim_repeat_variable(name, owners, source_ctx)
+                _claim_repeat_variable(pat, owners, variables, source_ctx)
                 if i + 2 < len(p_items):
                     specs.append(REST(name))
                 else:
@@ -864,13 +890,13 @@ def _syntax_pattern_specs(
             else:
                 slot = str(gensym(_REPEAT_SLOT_PREFIX))
                 inner = _syntax_elem_pattern(
-                    pat, literals, source_ctx, owners, object())
+                    pat, literals, source_ctx, owners, variables, object())
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
         specs.append(_syntax_elem_pattern(
-            p_items[i], literals, source_ctx, owners, scope))
+            p_items[i], literals, source_ctx, owners, variables, scope))
         i += 1
 
     if tail is not None:
@@ -880,7 +906,7 @@ def _syntax_pattern_specs(
                 f"dotted pattern tail must be a pattern variable, got"
                 f" {tail!r} (context {source_ctx!r})")
         name = str(tail)
-        _claim_repeat_variable(name, owners, source_ctx)
+        _claim_repeat_variable(tail, owners, variables, source_ctx)
         specs.append(REST(name))
 
     return specs
