@@ -264,7 +264,7 @@ async def _await_user_form(expr):
     ``await`` allocates a fresh coroutine context rooted at the user form.
     Keeping the eval step behind this Python boundary is what keeps REPL
     infrastructure frames off the user form's native dynchain; see
-    ``design/cli-repl-rework.md`` section 3.
+    ``design/archive/cli-repl-rework.md`` section 3.
 
     Compiler errors are re-raised so the Koskari loop can render them via
     ``.explain()``; any other error is wrapped in ``REPLCodeBoundary`` so

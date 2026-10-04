@@ -810,7 +810,7 @@ extern PyTypeObject KosContextType;
   frame, code, operand-segment slot, and namespace for the active eval
   slice.
 
-  See design/interpreter/eval-state-live-authority.md and the archived
+  See design/archive/eval-state-live-authority.md and the archived
   design/archive/freeze-thaw-context-segments.md.
 
   KosEvalState_Init only binds ctx and clears es. koskari_eval calls

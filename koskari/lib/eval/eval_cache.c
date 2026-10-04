@@ -31,7 +31,7 @@
    detail that never escapes it, so callers are insulated from whatever
    mechanism lives behind it.
 
-   See design/interpreter/attr-lookup-cache.md.
+   See design/archive/attr-lookup-cache.md.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3

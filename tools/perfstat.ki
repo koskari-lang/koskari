@@ -14,7 +14,7 @@
 """
 perfstat -- hardware-counter collection over the churn kernels.
 
-Follows the methodology in design/dispatch-sizing.md. The stat mode
+Follows the methodology in design/archive/dispatch-sizing.md. The stat mode
 runs perf stat per kernel with the bootstrap floor subtracted from the
 deterministic instruction count and appends one row per kernel to a
 TSV log. The opcodes mode runs perf record over all kernels and

@@ -18,7 +18,7 @@ koskari.cli.repl
 Koskari-native read-eval-print loop.  Read and compile happen here; the
 eval step crosses the Python boundary shim ``_await_user_form`` so the
 user form runs in a fresh coroutine context and REPL infrastructure stays
-off its native dynchain (see design/cli-repl-rework.md section 3).  Error
+off its native dynchain (see design/archive/cli-repl-rework.md section 3).  Error
 rendering reuses the Python formatters in koskari.exceptions.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>

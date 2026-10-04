@@ -2703,7 +2703,7 @@ KNOWN_HEADS = frozenset(MATCHER_REGISTRY)
 # decided entirely by head symbol or marker -- reader sugars mint the
 # distinguishing heads (#list / #tuple for sequences, item for class,
 # #dict for mappings) -- never by cell or bracket type. See
-# design/language/match-pattern-language.md.
+# design/archive/match-pattern-language.md.
 
 
 CASE_ELEMENT_PATTERN = ONEOF(

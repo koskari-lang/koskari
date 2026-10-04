@@ -210,7 +210,7 @@ typedef struct KosCacheSlot KosCacheSlot;
    names the index. Resolved at finalize and on every load, never
    serialized: soften recovers a constant's index by identity against
    the pool and a label's pc off the target.
-   See design/interpreter/resolved-operands.md.
+   See design/archive/resolved-operands.md.
 */
 typedef union KosExtraField {
   uint32_t imm;
@@ -286,7 +286,7 @@ typedef enum KosCodeFlag {
 /** Cache-index value meaning "no slot reserved for this instruction".
     Every instruction defaults to this; the assembler overwrites it only for
     cache-consuming opcodes when caching is enabled for the code object.
-    See design/interpreter/attr-lookup-cache.md. */
+    See design/archive/attr-lookup-cache.md. */
 #define KOS_CACHE_UNSET 0xFFFF
 
 /** Sentinel for KosCacheSlot method.value_ix: the site's name is not an
@@ -323,7 +323,7 @@ typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
    names, or NULL. ``obj`` and ``slot`` point out of
    the block and are stable; ``target`` and ``row`` point into it.
    A handler receives a pointer to its own instruction as its arg.
-   See design/interpreter/resolved-operands.md.
+   See design/archive/resolved-operands.md.
 */
 struct KosOp {
   KosThreadFn fn;      /* kos_op_handlers[op] */
@@ -439,7 +439,7 @@ typedef struct KosExtentDesc {
    names one specialized layout for one caching use case. Kinds never
    sub-branch: two different uses do not share or fork a layout, they get
    distinct kinds. Cleanup and GC traversal switch on this value.
-   See design/interpreter/attr-lookup-cache.md.
+   See design/archive/attr-lookup-cache.md.
 */
 /* How a MATCH_CASE site obtains its extern env, decided once from the
    names it stacks: the stacked values are the env as-is; every extern
@@ -537,7 +537,7 @@ typedef union KosItemBody {
    Layouts are specialized per use case and discriminated only here, at the
    top. A future field-accessor, jump-target, or exception-type cache adds
    its own kind and its own union member; it never reshapes an existing one.
-   See design/interpreter/attr-lookup-cache.md.
+   See design/archive/attr-lookup-cache.md.
 */
 struct KosCacheSlot {
   KosCacheKind kind;         /* discriminant; KOS_CACHE_EMPTY (0) = unused */
@@ -834,7 +834,7 @@ KosExtraSchema kos_opcode_extra_schema(KosOpCode op);
    opcode is not a cache consumer. The initial framework landing returns 0
    for every opcode; individual opcodes opt in over time. Currently 0 or 1
    in practice, but a small count is supported so a single opcode may reserve
-   a contiguous run of slots (see design/interpreter/attr-lookup-cache.md).
+   a contiguous run of slots (see design/archive/attr-lookup-cache.md).
 
    :param op: opcode enum value
 
