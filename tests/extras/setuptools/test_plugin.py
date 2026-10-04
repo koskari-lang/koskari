@@ -23,6 +23,7 @@ import sys
 import tempfile
 import types
 import unittest
+import warnings
 from importlib import import_module
 
 import pytest
@@ -130,7 +131,12 @@ class TestConfigureKoskariScripts(unittest.TestCase):
             'koskari_scripts': ['koslife = koslife.cli:main'],
             'console_scripts': ['koskari = koskari.cli:main'],
         }, packages=['koslife'])
-        configure_koskari_scripts(dist)
+        # the fake declares zip_safe=True, which the plugin overrides
+        # and announces
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            configure_koskari_scripts(dist)
+        self.assertTrue(any('zip_safe' in str(w.message) for w in caught))
         self.assertIs(dist.cmdclass['install_scripts'], KoskariInstallScripts)
         self.assertIs(dist.cmdclass['editable_wheel'], KoskariEditableWheel)
         self.assertEqual(
