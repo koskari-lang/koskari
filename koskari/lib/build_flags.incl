@@ -19,8 +19,10 @@
 
    Included by lib.c with FLAG(name) defined. Each name that is a
    defined object-like macro when the extension compiles becomes a key
-   in build_flags with its integer value; an undefined name is absent.
-   A knob defined with no value reports 0. Function-like macros cannot
+   in build_flags with its integer value. A name that no header defaults
+   and no build defines is absent; the knobs hints.h, debug.h and
+   tracing.h default to 0 are always present. A knob defined with no
+   value reports 0. Function-like macros cannot
    be listed here. Every entry carries its own #ifdef: the preprocessor
    cannot test definedness from inside a macro expansion.
 

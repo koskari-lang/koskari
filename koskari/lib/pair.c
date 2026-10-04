@@ -18,8 +18,8 @@
    Cons pair and nil types
 
    The pair type is a mutable cons cell with head (car) and tail (cdr)
-   slots. The nil singleton represents the empty list and serves as
-   the base type for pairs.
+   slots. The nil singleton represents the empty list and is a
+   subtype of pair.
 
    author: Christopher O'Brien <obriencj@gmail.com>
    license: GPL v.3
@@ -1498,15 +1498,15 @@ static PyMethodDef pair_methods[] = {
 
   { "clear_position", (PyCFunction) pair_clear_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.clear_position(follow=True)" },
+    "P.clear_position(follow=False)" },
 
   { "set_position", (PyCFunction) pair_set_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.set_position(position, follow=True)" },
+    "P.set_position(position, follow=False)" },
 
   { "fill_position", (PyCFunction) pair_fill_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.fill_position(position, follow=True)\n"
+    "P.fill_position(position, follow=False)\n"
     "Give this cell position when it has none. With follow, do the same\n"
     "along the cdr spine and into cell cars; a cell that already has a\n"
     "position ends its branch, subtree included." },

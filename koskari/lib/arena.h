@@ -97,7 +97,7 @@ PyObject *KosArena_New(size_t nbytes);
 
 
 /**
-   Reserve a pointer-aligned slice of nbytes from the arena.
+   Reserve a slice of nbytes from the arena, aligned to KOS_ARENA_UNIT.
 
    :param arena: KosArena object, unsealed
    :param nbytes: slice size in bytes
