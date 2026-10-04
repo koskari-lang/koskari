@@ -98,7 +98,7 @@ class TypePredicate(partial):
 
 
     def __repr__(self):
-        return "<builtin type predicate %s>" % self.__name__
+        return f"<builtin type predicate {self.__name__}>"
 
 
 class BuiltinPredicate(partial):
@@ -113,7 +113,7 @@ class BuiltinPredicate(partial):
 
 
     def __repr__(self):
-        return "<builtin predicate %s>" % self.__name__
+        return f"<builtin predicate {self.__name__}>"
 
 
 is_symbol = TypePredicate("symbol?", symbol)

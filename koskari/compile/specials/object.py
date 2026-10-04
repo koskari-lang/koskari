@@ -433,7 +433,7 @@ def emit_chain_compare(compiler, caps, sel):
 
     if "args" not in caps:
         raise SpecialError(
-            "%s requires at least two arguments" % head,
+            f"{head} requires at least two arguments",
             head, position=called_by.position)
 
     body = caps["args"].datum

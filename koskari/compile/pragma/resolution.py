@@ -28,10 +28,6 @@ from ...exceptions import CompilerError
 from ...lib import FunctionSpec, NamespaceSpec, symbol
 
 
-_LOCAL_GLOBAL_CONFLICT = (
-    "%r cannot be both local (define) and global (define-global).")
-
-
 def _unique_append(lst, val):
     """
     Append val to lst only if not already present
@@ -204,7 +200,9 @@ class KoskariPragma:
             if _in_module_scope(fragment):
                 fragment._request_global.remove(name)
             else:
-                raise CompilerError(_LOCAL_GLOBAL_CONFLICT % (str(name),), name)
+                raise CompilerError(
+                    f"{str(name)!r} cannot be both local (define)"
+                    " and global (define-global).", name)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
@@ -220,7 +218,9 @@ class KoskariPragma:
         """
 
         if name in fragment.declares and not _in_module_scope(fragment):
-            raise CompilerError(_LOCAL_GLOBAL_CONFLICT % (str(name),), name)
+            raise CompilerError(
+                f"{str(name)!r} cannot be both local (define)"
+                " and global (define-global).", name)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:

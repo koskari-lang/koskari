@@ -102,7 +102,7 @@ def layout_if(reader, source, peers):
 
         else:
             raise LayoutError(
-                'invalid peer for if block: %r' % (phead,),
+                f'invalid peer for if block: {phead!r}',
                 get_position(peer))
 
     return cons(symbol('cond'), *clauses, nil)

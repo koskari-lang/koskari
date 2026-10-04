@@ -73,14 +73,13 @@ def layout_try(reader, source, peers):
                 if not is_pair(ppargs[0]):
                     raise LayoutError(
                         'except requires a bracketed USE form, '
-                        'e.g. [Exception] or [Exception as: e], not %r'
-                        % ppargs[0],
+                        f'e.g. [Exception] or [Exception as: e], not {ppargs[0]!r}',
                         get_position(peer))
                 try:
                     helper_using(prest.car)
                 except Exception as e:
                     raise LayoutError(
-                        'invalid except USE form: %s' % e,
+                        f'invalid except USE form: {e}',
                         get_position(peer))
                 clause = cons(prest.car, pbody)
                 fill_position(clause, get_position(peer))
@@ -110,7 +109,7 @@ def layout_try(reader, source, peers):
 
         else:
             raise LayoutError(
-                'invalid peer for try block: %r' % (phead,),
+                f'invalid peer for try block: {phead!r}',
                 get_position(peer))
 
     if not has_except and act_finally is None:

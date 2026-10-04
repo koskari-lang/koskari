@@ -64,7 +64,7 @@ def special_bytecode(
             opc = None
 
         if opc is None:
-            raise TypeError("invalid Koskari OpCode: %r" % op)
+            raise TypeError(f"invalid Koskari OpCode: {op!r}")
 
         # the op capture's position is the segment cell's own position
         fragment.position(opcap.position)

@@ -207,7 +207,7 @@ def bind_builtin_member(documenter, name, value, builtins_module):
     :param builtins_module: loaded koskari.builtins module
     """
 
-    full_name = 'koskari.builtins.%s' % name
+    full_name = f'koskari.builtins.{name}'
     documenter.modname = 'koskari.builtins'
     documenter.objpath = [name]
     documenter.fullname = full_name

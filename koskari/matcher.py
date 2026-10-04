@@ -247,12 +247,11 @@ class MatchCompiler:
                     and len(prev) >= 1 and len(signature) >= 1
                     and prev[0] == "capture" and signature[0] == "capture"):
                 raise ValueError(
-                    "duplicate slot name %r in matcher pattern "
-                    "(differing matcher type); use SAME for repeats"
-                    % (name,))
+                    f"duplicate slot name {name!r} in matcher pattern "
+                    "(differing matcher type); use SAME for repeats")
             raise ValueError(
-                "duplicate slot name %r in matcher pattern; use SAME "
-                "for repeats" % (name,))
+                f"duplicate slot name {name!r} in matcher pattern; use SAME "
+                "for repeats")
         top[name] = signature
 
 
@@ -360,8 +359,7 @@ def check_pattern_arg(arg, what):
 
     if not isinstance(arg, Pattern):
         raise TypeError(
-            "%s must be a matcher pattern, got %r"
-            % (what, type(arg).__name__))
+            f"{what} must be a matcher pattern, got {type(arg).__name__!r}")
 
 
 def check_str_arg(arg, what, *, allow_empty=False):
@@ -372,9 +370,9 @@ def check_str_arg(arg, what, *, allow_empty=False):
 
     if not isinstance(arg, str):
         raise TypeError(
-            "%s must be a str, got %r" % (what, type(arg).__name__))
+            f"{what} must be a str, got {type(arg).__name__!r}")
     if not allow_empty and not arg:
-        raise ValueError("%s must be a non-empty str" % (what,))
+        raise ValueError(f"{what} must be a non-empty str")
 
 
 def pattern_slot_names(pattern):
@@ -411,11 +409,10 @@ class SAME(Pattern):
         check_str_arg(slot, "SAME slot")
         if isinstance(depth, bool) or not isinstance(depth, int):
             raise TypeError(
-                "SAME depth must be an int, got %r"
-                % type(depth).__name__)
+                f"SAME depth must be an int, got {type(depth).__name__!r}")
         if depth < 0:
             raise ValueError(
-                "SAME depth must be non-negative, got %d" % (depth,))
+                f"SAME depth must be non-negative, got {depth}")
         self._slot = slot
         self._depth = depth
 
@@ -432,22 +429,21 @@ class SAME(Pattern):
                 break
         if slot_idx is None:
             raise ValueError(
-                "SAME slot %r is not bound earlier in this pattern"
-                % (self._slot,))
+                f"SAME slot {self._slot!r} is not bound earlier in this pattern")
         return ctx.append_node(
             ("SAME", slot_idx, self._depth))
 
 
     def __repr__(self):
         if self._depth:
-            return "SAME(%r, depth=%d)" % (self._slot, self._depth)
-        return "SAME(%r)" % (self._slot,)
+            return f"SAME({self._slot!r}, depth={self._depth})"
+        return f"SAME({self._slot!r})"
 
 
     def __kos_repr__(self):
         if self._depth:
-            return "(SAME %s depth: %d)" % (self._slot, self._depth)
-        return "(SAME %s)" % (self._slot,)
+            return f"(SAME {self._slot} depth: {self._depth})"
+        return f"(SAME {self._slot})"
 
 
 class TEST_ANY(Pattern):
@@ -500,7 +496,7 @@ class LITERAL(Pattern):
         if isinstance(value, Pattern):
             raise TypeError(
                 "LITERAL value must be a concrete value, "
-                "not a pattern: %r" % (type(value).__name__,))
+                f"not a pattern: {type(value).__name__!r}")
         self._value = strip_mark(value)
 
 
@@ -521,8 +517,9 @@ class LITERAL(Pattern):
         if is_symbol(self._value):
             return str(self._value)
         if is_keyword(self._value):
-            return '(LITERAL_KW "%s")' % (str(self._value).rstrip(':'),)
-        return "(LITERAL %s)" % (kos_repr(self._value),)
+            name = str(self._value).rstrip(':')
+            return f'(LITERAL_KW "{name}")'
+        return f"(LITERAL {kos_repr(self._value)})"
 
 
 class TYPE(Pattern):
@@ -553,11 +550,11 @@ class TYPE(Pattern):
 
 
     def __repr__(self):
-        return 'TYPE(%r)' % (self._extern,)
+        return f'TYPE({self._extern!r})'
 
 
     def __kos_repr__(self):
-        return "(:: %s)" % (self._extern,)
+        return f"(:: {self._extern})"
 
 
 class PREDICATE(Pattern):
@@ -589,11 +586,11 @@ class PREDICATE(Pattern):
 
 
     def __repr__(self):
-        return 'PREDICATE(%r)' % (self._extern,)
+        return f'PREDICATE({self._extern!r})'
 
 
     def __kos_repr__(self):
-        return "(PREDICATE %s)" % (self._extern,)
+        return f"(PREDICATE {self._extern})"
 
 
 class CAPTURE(Pattern):
@@ -1021,12 +1018,10 @@ class REPEAT(Pattern):
         check_pattern_arg(sub, "REPEAT sub")
         if isinstance(min_count, bool) or not isinstance(min_count, int):
             raise TypeError(
-                "REPEAT min_count must be an int, got %r"
-                % (type(min_count).__name__,))
+                f"REPEAT min_count must be an int, got {type(min_count).__name__!r}")
         if min_count < 0:
             raise ValueError(
-                "REPEAT min_count must be non-negative, got %d"
-                % (min_count,))
+                f"REPEAT min_count must be non-negative, got {min_count}")
         self._sub = sub
         self._min_count = min_count
 
@@ -1109,11 +1104,10 @@ class REST(Pattern):
             check_str_arg(slot, "REST slot")
         if isinstance(min_tail, bool) or not isinstance(min_tail, int):
             raise TypeError(
-                "REST min_tail must be an int, got %r"
-                % (type(min_tail).__name__,))
+                f"REST min_tail must be an int, got {type(min_tail).__name__!r}")
         if min_tail < 0:
             raise ValueError(
-                "REST min_tail must be non-negative, got %d" % (min_tail,))
+                f"REST min_tail must be non-negative, got {min_tail}")
         self._slot = slot
         self._min_tail = min_tail
 
@@ -1449,8 +1443,7 @@ def make_matcher(pattern):
 
     if not isinstance(pattern, Pattern):
         raise TypeError(
-            "make_matcher requires a matcher pattern, got %r"
-            % (type(pattern).__name__,))
+            f"make_matcher requires a matcher pattern, got {type(pattern).__name__!r}")
 
     return pattern.build()
 
@@ -1536,11 +1529,11 @@ class DEFINE(Composite):
 
 
     def __repr__(self):
-        return 'DEFINE(%r)' % (self._slot,)
+        return f'DEFINE({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(DEFINE %s)' % (self._slot,)
+        return f'(DEFINE {self._slot})'
 
 
 class DECL(Composite):
@@ -1567,11 +1560,11 @@ class DECL(Composite):
 
 
     def __repr__(self):
-        return 'DECL(%r)' % (self._slot,)
+        return f'DECL({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(DECL %s)' % (self._slot,)
+        return f'(DECL {self._slot})'
 
 
     def _expand(self):
@@ -1610,11 +1603,11 @@ class BINDING(Composite):
 
 
     def __repr__(self):
-        return 'BINDING(%r)' % (self._slot,)
+        return f'BINDING({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(BINDING %s)' % (self._slot,)
+        return f'(BINDING {self._slot})'
 
 
 class BINDINGS(Composite):
@@ -1640,11 +1633,11 @@ class BINDINGS(Composite):
 
 
     def __repr__(self):
-        return 'BINDINGS(%r)' % (self._slot,)
+        return f'BINDINGS({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(BINDINGS %s)' % (self._slot,)
+        return f'(BINDINGS {self._slot})'
 
 
     def _expand(self):
@@ -1841,11 +1834,11 @@ class FORMALS(Composite):
 
 
     def __repr__(self):
-        return 'FORMALS(%r)' % (self._slot,)
+        return f'FORMALS({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(FORMALS %s)' % (self._slot,)
+        return f'(FORMALS {self._slot})'
 
 
 class USING(Composite):
@@ -1875,11 +1868,11 @@ class USING(Composite):
 
 
     def __repr__(self):
-        return 'USING(%r)' % (self._slot,)
+        return f'USING({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(USING %s)' % (self._slot,)
+        return f'(USING {self._slot})'
 
 
     def _expand(self):
@@ -1910,11 +1903,11 @@ class USING_UNPACK(Composite):
 
 
     def __repr__(self):
-        return 'USING_UNPACK(%r)' % (self._slot,)
+        return f'USING_UNPACK({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(USING_UNPACK %s)' % (self._slot,)
+        return f'(USING_UNPACK {self._slot})'
 
 
     def _expand(self):
@@ -1949,11 +1942,11 @@ class VALUE(Pattern):
 
 
     def __repr__(self):
-        return 'VALUE(%r)' % (self._slot,)
+        return f'VALUE({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(VALUE %s)' % (self._slot,)
+        return f'(VALUE {self._slot})'
 
 
 class BODY(Pattern):
@@ -2157,21 +2150,21 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
         factory failures
     """
 
-    ctx = "" if source_ctx is None else " (context %r)" % (source_ctx,)
+    ctx = "" if source_ctx is None else f" (context {source_ctx!r})"
 
     if form is Ellipsis:
-        raise ValueError("invalid ellipsis in MATCH pattern%s" % ctx)
+        raise ValueError(f"invalid ellipsis in MATCH pattern{ctx}")
 
     if not is_pair(form):
         return LITERAL(form)
 
     if not is_proper(form):
-        raise ValueError("MATCH pattern must be a proper list%s" % ctx)
+        raise ValueError(f"MATCH pattern must be a proper list{ctx}")
 
     # nil is a pair and a proper list; as a cell it would be an empty
     # inline group, which matches nothing and names nothing
     if is_nil(form):
-        raise ValueError("empty MATCH pattern cell%s" % ctx)
+        raise ValueError(f"empty MATCH pattern cell{ctx}")
 
     head, tail = form
 
@@ -2251,8 +2244,7 @@ def lower_named_capture(name_sym, args):
             if elem is KW_DCOLON or elem is KW_TYPE:
                 if i + 1 >= n:
                     raise ValueError(
-                        "(%s ...) constraint marker missing payload"
-                        % (name,))
+                        f"({name} ...) constraint marker missing payload")
                 payload = strip_mark(items[i + 1])
                 if is_symbol(payload):
                     constraints.append(TYPE(str(payload)))
@@ -2263,21 +2255,19 @@ def lower_named_capture(name_sym, args):
             if elem is KW_VAL:
                 if i + 1 >= n:
                     raise ValueError(
-                        "(%s ...) val: marker missing payload"
-                        % (name,))
+                        f"({name} ...) val: marker missing payload")
                 constraints.append(LITERAL(items[i + 1]))
                 i += 2
                 continue
             raise ValueError(
-                "(%s ...) unrecognised keyword %r in capture body"
-                % (name, elem))
+                f"({name} ...) unrecognised keyword {elem!r} in capture body")
         constraints.append(parse_matcher(elem))
         i += 1
 
     if len(constraints) > 1:
         raise ValueError(
-            "(%s ...) named capture accepts at most one constraint;"
-            " got %d" % (name, len(constraints)))
+            f"({name} ...) named capture accepts at most one constraint;"
+            f" got {len(constraints)}")
     sub = constraints[0] if constraints else None
     return CAPTURE(name, sub)
 
@@ -2293,8 +2283,7 @@ def expect_arity(name, items, expected):
 
     if len(items) != expected:
         raise ValueError(
-            "(%s ...) expects %d argument(s), got %d"
-            % (name, expected, len(items)))
+            f"({name} ...) expects {expected} argument(s), got {len(items)}")
 
 
 def coerce_slot(name, value):
@@ -2308,8 +2297,7 @@ def coerce_slot(name, value):
     if isinstance(value, str):
         return value
     raise ValueError(
-        "(%s ...) slot name must be a symbol or string, got %r"
-        % (name, type(value).__name__))
+        f"({name} ...) slot name must be a symbol or string, got {type(value).__name__!r}")
 
 
 def coerce_str_arg(name, value):
@@ -2324,8 +2312,8 @@ def coerce_str_arg(name, value):
     if isinstance(value, str):
         return value
     raise ValueError(
-        "(%s ...) argument must be a symbol, keyword, or string,"
-        " got %r" % (name, type(value).__name__))
+        f"({name} ...) argument must be a symbol, keyword, or string,"
+        f" got {type(value).__name__!r}")
 
 
 def slot_only_factory(name, ctor):
@@ -2391,21 +2379,20 @@ def repeat_match_factory(head_sym, raw_args):
         if not is_keyword(elem):
             raise ValueError(
                 "(REPEAT ...) trailing arguments must be keyword/value pairs,"
-                " got %r" % (elem,))
+                f" got {elem!r}")
         if _min_option_key(elem) not in _MATCH_MIN_KW:
             raise ValueError(
-                "(REPEAT ...) unknown option %r" % (elem,))
+                f"(REPEAT ...) unknown option {elem!r}")
         if i + 1 >= n:
             raise ValueError(
-                "(REPEAT ...) option %r missing value" % (elem,))
+                f"(REPEAT ...) option {elem!r} missing value")
         mv = items[i + 1]
         if isinstance(mv, bool) or not isinstance(mv, int):
             raise TypeError(
-                "(REPEAT ...) min value must be int, got %r"
-                % (type(mv).__name__,))
+                f"(REPEAT ...) min value must be int, got {type(mv).__name__!r}")
         if mv < 0:
             raise ValueError(
-                "(REPEAT ...) min must be non-negative, got %d" % (mv,))
+                f"(REPEAT ...) min must be non-negative, got {mv}")
         min_count = mv
         i += 2
     return repeat_capture(slot, REPEAT(inner, min_count=min_count))
@@ -2429,21 +2416,20 @@ def rest_match_factory(head_sym, raw_args):
         if not is_keyword(elem):
             raise ValueError(
                 "(REST ...) trailing arguments must be keyword/value pairs,"
-                " got %r" % (elem,))
+                f" got {elem!r}")
         if _min_option_key(elem) not in _MATCH_MIN_KW:
             raise ValueError(
-                "(REST ...) unknown option %r" % (elem,))
+                f"(REST ...) unknown option {elem!r}")
         if i + 1 >= n:
             raise ValueError(
-                "(REST ...) option %r missing value" % (elem,))
+                f"(REST ...) option {elem!r} missing value")
         mv = items[i + 1]
         if isinstance(mv, bool) or not isinstance(mv, int):
             raise TypeError(
-                "(REST ...) min value must be int, got %r"
-                % (type(mv).__name__,))
+                f"(REST ...) min value must be int, got {type(mv).__name__!r}")
         if mv < 0:
             raise ValueError(
-                "(REST ...) min must be non-negative, got %d" % (mv,))
+                f"(REST ...) min must be non-negative, got {mv}")
         min_tail = mv
         i += 2
     return REST(slot, min_tail=min_tail)

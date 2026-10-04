@@ -162,7 +162,7 @@ def _lower_rules(reader, source, peers, head_sym, head_patterns,
 
     if peers:
         raise LayoutError(
-            '%s block does not take peers' % (head_sym,),
+            f'{head_sym} block does not take peers',
             get_position(source))
 
     parent_header, parent_body = source
@@ -171,18 +171,17 @@ def _lower_rules(reader, source, peers, head_sym, head_patterns,
     if head_m is None:
         if with_literals:
             raise LayoutError(
-                '%s requires literals list and at least one rule' % (
-                    head_sym,),
+                f'{head_sym} requires literals list and at least one rule',
                 get_position(source))
         raise LayoutError(
-            '%s requires at least one rule' % (head_sym,),
+            f'{head_sym} requires at least one rule',
             get_position(source))
 
     rules = _rule_rows(reader, parent_body, layout_body)
 
     if not rules:
         raise LayoutError(
-            '%s requires at least one rule' % (head_sym,),
+            f'{head_sym} requires at least one rule',
             get_position(source))
 
     ret = cons(*rules, nil)

@@ -84,7 +84,7 @@ def _label_generator(formatstr="label_%04x"):
         counter += 1
         if text is None:
             return formatstr % counter
-        return "%s_%x" % (text, counter)
+        return f"{text}_{counter:x}"
 
     return gen_label
 

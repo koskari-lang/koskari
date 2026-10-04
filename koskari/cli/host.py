@@ -57,7 +57,7 @@ def version_line():
     :return: version line beginning with koskari
     """
 
-    return 'koskari %s' % (koskari.__version__,)
+    return f'koskari {koskari.__version__}'
 
 
 def startup_lines():
@@ -68,8 +68,8 @@ def startup_lines():
     """
 
     return [
-        'Koskari %s on %s' % (koskari.__version__, platform.system()),
-        'Python %s' % (sys.version,),
+        f'Koskari {koskari.__version__} on {platform.system()}',
+        f'Python {sys.version}',
     ]
 
 

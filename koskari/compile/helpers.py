@@ -176,7 +176,7 @@ def helper_binding(source):
     """
 
     msg = ("a binding must be in the form of (SYM EXPR) or (EXPR as: SYM),"
-           " not %s" % source)
+           f" not {source}")
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -205,7 +205,7 @@ def helper_using(source):
     """
 
     msg = ("a using must be in the form of (EXPR), (SYM EXPR),"
-           " or (EXPR as: SYM), not %s" % source)
+           f" or (EXPR as: SYM), not {source}")
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -288,12 +288,11 @@ def _parse_decl_tail(tail, source):
         cur = cdr(cur)
         if not is_keyword(kw):
             raise SpecialError(
-                "expected keyword in declaration attribute list, not %r"
-                % kw,
+                f"expected keyword in declaration attribute list, not {kw!r}",
                 source)
         if is_nil(cur):
             raise SpecialError(
-                "missing value for declaration attribute %r" % kw,
+                f"missing value for declaration attribute {kw!r}",
                 source)
         val = car(cur)
         cur = cdr(cur)
@@ -306,7 +305,7 @@ def _parse_decl_tail(tail, source):
             ann["type"] = val
         else:
             raise SpecialError(
-                "unknown declaration attribute %r" % kw,
+                f"unknown declaration attribute {kw!r}",
                 source)
     return ann
 
@@ -320,11 +319,11 @@ def parse_decl(form, source=None):
         return (form, None)
     if not is_pair(form):
         raise SpecialError(
-            "declaration must be symbol or proper list, not %r" % form,
+            f"declaration must be symbol or proper list, not {form!r}",
             source)
     if not is_proper(form):
         raise SpecialError(
-            "declaration list must be proper, not %r" % form,
+            f"declaration list must be proper, not {form!r}",
             source)
 
     elems = tuple(unpack(form))
@@ -348,7 +347,7 @@ def parse_decl(form, source=None):
     _FORMAL_HEAD = (LIST(MATCH(SYMBOL("name"), REST("tail"))),)
     m = match1(form, _FORMAL_HEAD)
     if m is None:
-        raise SpecialError("invalid declaration form %r" % form, source)
+        raise SpecialError(f"invalid declaration form {form!r}", source)
 
     name = m["name"].datum
     tail = m["tail"].datum
@@ -379,8 +378,7 @@ def gather_parameters(args, source=None):
 
     else:
         raise ParametersError(
-            "parameters must be symbol or pair, not %r"
-            % args, source)
+            f"parameters must be symbol or pair, not {args!r}", source)
 
     args_seq = []
     kwds_seq = []
@@ -419,7 +417,7 @@ def gather_parameters(args, source=None):
                 value = next(iargs, undefined)
                 if value is undefined:
                     raise ParametersError(
-                        "missing value for keyword parameter %s" % label,
+                        f"missing value for keyword parameter {label}",
                         source)
                 kwds_seq.append((str(label), value))
 
