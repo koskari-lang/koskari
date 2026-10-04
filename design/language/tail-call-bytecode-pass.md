@@ -180,7 +180,7 @@ Restore consistent fast paths: `use_var_path = is_symbol(callable)` always
 
 Same cleanup: always `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`, and
 `CALL_VAR_ATTR*` variants. No `tc` parameter. Tail promotion for method calls
-becomes a pass concern (see §5.2 — v1 may exclude these opcodes).
+becomes a pass concern (§4.1 covers these opcodes).
 
 ### 3.4 What specials still own
 
@@ -197,30 +197,14 @@ The promotion pass must respect these shapes; it does not replace them.
 
 ## 4. Promotion pass algorithm
 
-### 4.1 Opcode families (phase 1 scope)
+### 4.1 Opcode families
 
-**In scope** — existing `CALL` / `TAIL_CALL` analogues only:
-
-| Source | Target |
-|--------|--------|
-| `KOS_OP_CALL` | `KOS_OP_TAIL_CALL` |
-| `KOS_OP_CALL_NAMES` | `KOS_OP_TAIL_CALL_NAMES` |
-| `KOS_OP_CALL_STAR` | `KOS_OP_TAIL_CALL_STAR` |
-
-**Out of scope for v1** — no `TAIL_*` opcode exists yet; leave unchanged
-until a later phase adds tail variants (or defines expansion rules):
-
-- `CALL_VAR`, `CALL_VAR_NAMES`, `CALL_VAR_STAR`
-- `CALL_FAST`, `CALL_FAST_NAMES`, `CALL_FAST_STAR`
-- `CALL_ATTR`, `CALL_ATTR_NAMES`, `CALL_ATTR_STAR`
-- `CALL_VAR_ATTR`, `CALL_VAR_ATTR_NAMES`, `CALL_VAR_ATTR_STAR`
-- `CALL_FAST_ATTR*`
-
-A later phase may add `TAIL_CALL_VAR` / `TAIL_CALL_FAST` / `TAIL_CALL_ATTR`
-families, or teach the pass to expand `CALL_VAR` → load + `CALL` before
-promotion. v1 intentionally matches today's practical coverage for
-stack-style `CALL*` (which is what tail `tc=True` already used for
-non-symbol callees, and symbol callees after the `VAR` load path).
+Every call opcode has a schema-identical `TAIL_CALL*` twin, so promotion is a
+pure relabel through the name-derived `CALL_TO_TAIL_CALL` map in
+`koskari/compile/processor.py`: `CALL`, `CALL_NAMES`, `CALL_STAR`, the `VAR`,
+`FAST` and `ATTR` fused families, and their `NAMES` and `STAR` forms all take
+part. `convert_fast` lowers a promoted `TAIL_CALL_VAR*` row to its
+`TAIL_CALL_FAST*` twin the same way it lowers the non-tail row.
 
 ### 4.2 Tail position is not only `CALL, RETURN`
 
@@ -268,35 +252,39 @@ Treat promotion as **backward reachability** from returning exits:
    - Its single stack result reaches a returning exit without incompatible
      intervening stack ops (`POP`, second `CALL`, etc.)
    - Extent state at *p* allows tail frame reuse (see §4.4)
-   - The call opcode is in the v1 family (§4.1)
+   - The call opcode has a `TAIL_CALL*` twin, which every call opcode does (§4.1)
 
 Reuse or mirror `extent_pairs` from `bytecode.c` rather than duplicating the
 table ad hoc.
 
 ### 4.4 Extent constraints
 
-Extents fall into two categories for promotion:
+The pass keeps an extent stack from the push and pop rows while it reads. A
+call is promoted only when every open extent is **discardable**: an extent
+whose uninstall behaviour must run after the call cannot be tail-called
+through. `EXTENT_DISCARDABLE` in `processor.py` is the table:
 
-**Dynamic unwind on `RETURN`** (wind, with, param, …): tail-calling from
-inside is generally valid; `RETURN` / `TAIL_CALL` unwinds the dyn chain.
-`kos_dynframe_reset_for_tail` recycles the frame object without tearing down
-dyn nodes above it.
+| Discardable (promotion allowed) | Not discardable (promotion denied) |
+|---|---|
+| `PUSH_NS`, `PUSH_LOOP`, `PUSH_FOREACH` | `PUSH_COLLECT`, `PUSH_TRY`, `PUSH_FINALLY`, `PUSH_WITH`, `PUSH_DYN_WITH`, `PUSH_WIND`, `PUSH_PROMPT`, `PUSH_SHIFT`, `PUSH_CC`, `PUSH_PARAM` |
 
-**Bytecode completion protocol** (try, finally, loop): normal exit requires
-explicit opcodes (`CLEAR_TRY`, `POP_TRY`, `CONTINUE`, `POP_LOOP`, …). Do
-**not** promote a `CALL` that is followed by these cleanup opcodes on the path
-to the function return. This matches today's conservative choice: try bodies
-compile with `full_compile(try_expr, False)` even when the surrounding
-function is in tail position.
+The evaluator's tail teardown (`kos_dyn_teardown_to_frame`) enforces the same
+set at runtime: only NS, LOOP and FOREACH nodes may sit above the frame being
+reused.
 
-When in doubt, prefer **no promotion** (correctness over maximal TCO).
+The route from the call to the return must also be clear: extent pops,
+`LABEL`, `POSITION` and `NOOP` rows pass, an unconditional `JUMP` is followed
+through the label index with a seen set guarding cycles, arrival at `RETURN 1`
+promotes, and any other arrival denies. A stream that yields is skipped
+outright, since generator frames never reuse the frame.
 
 ### 4.5 Implementation location
 
-Add `promote_tail_calls(self, instr) -> list` on `Compiler`, alongside
-`compress`, `convert_fast`, and `demote_tail_calls_if_yields`. Pure function
-over `(op, arg)` pairs; no fragment access required. Unit tests can feed
-hand-built instruction lists without compiling source.
+`promote_tail_calls` is a method of `ByteCodeProcessor`
+(`koskari/compile/processor.py`), alongside `compress`, `convert_fast`, and
+`demote_tail_calls_if_yields`, rewriting the processor's own instruction
+list in place. Unit tests feed hand-built instruction lists without
+compiling source.
 
 ---
 
@@ -311,9 +299,9 @@ Must run **before** promotion so that:
 
 ### 5.2 `convert_fast`
 
-Runs **after** promotion. Only `CALL` / `TAIL_CALL` triplet exist at stack
-style; there is no `TAIL_CALL_FAST*`. Fast lowering applies to `VAR` loads and
-`CALL_VAR*` opcodes that were **not** promoted in v1.
+Runs **after** promotion. Fast lowering applies to `VAR` loads and to both
+`CALL_VAR*` and promoted `TAIL_CALL_VAR*` rows, each to its `FAST` twin
+through the name-derived `var_to_fast` map.
 
 ### 5.3 `demote_tail_calls_if_yields`
 
@@ -353,7 +341,7 @@ bodies (currently missed).
 
 ## 7. Implementation checklist
 
-1. Implement `promote_tail_calls` with v1 opcode scope and extent-aware analysis
+1. Implement `promote_tail_calls` over every call family with extent-aware analysis
 2. Wire into `complete()` between `compress` and `convert_fast`
 3. Gate with `tco_enabled`
 4. Remove `tc` from compiler dispatch and all specials
@@ -369,9 +357,7 @@ bodies (currently missed).
 
 | Item | Notes |
 |------|-------|
-| `TAIL_CALL_VAR` / `TAIL_CALL_FAST` / `TAIL_CALL_ATTR` opcodes | Extend promotion to fast and attr call families |
 | Pragma gate | Replace `tco_enabled` with `compiler_pass_tail_call` per [PRAGMA.md](../PRAGMA.md) |
-| `call-attr` tail coverage | Automatic once attr tail opcodes or expansion rules exist |
 | Self-hosted compiler | `.ki` specials drop `tc` in parallel when bootstrap is ported |
 
 ---
