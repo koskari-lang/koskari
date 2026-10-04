@@ -8,7 +8,7 @@ hygiene, and the **runtime match/case system** (the case-pattern dialect, the
 
 **Implementation:** `koskari/matcher.py`, `koskari/hygiene.py`,
 `koskari/syntax.py`, `koskari/lib/matcher.{c,h}`;
-runtime match/case: `koskari/compile/specials/conditionals.py`,
+runtime match/case: `koskari/compile/specials/match.py`,
 `koskari/reader/layouts/conditionals.py`,
 `koskari/lib/opcode/MATCH_CASE.c`
 
@@ -175,7 +175,9 @@ markers in its argument list is an error.
 
 ### Rule-level patterns (`parse_explicit_rule_pattern`)
 
-Used for **syntax-rules / syntax-match** rule patterns (`koskari/syntax.py`):
+Used for **syntax-match / macro-match** rule patterns (MATCH dialect,
+`koskari/matcher.py`); syntax-rules and macro-rules take the RULE dialect
+through `parse_syntax_rules_pattern` in `koskari/syntax.py`:
 
 - Walks a **proper list** spine; each cell is lowered with `parse_explicit_rule_pattern`.
 - `(HEAD slot mode: ...)` with `HEAD` in `MATCHER_REGISTRY` and symbol `slot` → composite declaration.
@@ -505,7 +507,7 @@ registry-headed forms back to `parse_matcher`.
 
 The runtime `match` statement is the value-matching consumer of the engine:
 `compile/match` (s-expr) and `layout/match` (block syntax) lower each arm's
-pattern to a frozen matcher constant and emit a `SWITCH_EQ`-style opcode chain.
+pattern to a frozen matcher constant and emit a `MATCH_CASE` per arm over it.
 
 ### The case-pattern dialect
 
