@@ -209,6 +209,8 @@ static int kosproperty_override_doc(void) {
 
   int r = PyDict_SetItemString(KosPropertyType.tp_dict, "__doc__", descr);
   Py_DECREF(descr);
+  if (r == 0)
+    PyType_Modified(&KosPropertyType);
   return r;
 }
 

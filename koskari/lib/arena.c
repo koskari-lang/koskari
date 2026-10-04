@@ -318,6 +318,7 @@ int koskari_arena_init(PyObject *mod) {
     if (res) {
       return -1;
     }
+    PyType_Modified(&KosArenaType);
   }
 
   return 0;
