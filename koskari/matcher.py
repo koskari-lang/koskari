@@ -306,7 +306,7 @@ class Pattern(Protocol):
 
     def freeze(self):
         """
-        Lower this pattern to a frozen 7-tuple suitable for
+        Lower this pattern to a frozen 6-tuple suitable for
         Matcher.from_tuple
         """
 
@@ -2380,7 +2380,7 @@ def repeat_match_factory(head_sym, raw_args):
         return REPEAT(parse_matcher(items[0]))
     if len(items) < 2:
         raise ValueError(
-            "(REPEAT ...) with multiple arguments requires slot and pattern")
+            "(REPEAT ...) requires a pattern, or a slot and a pattern")
     slot = coerce_slot("REPEAT", items[0])
     inner = parse_matcher(items[1])
     min_count = 1

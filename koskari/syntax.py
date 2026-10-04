@@ -131,7 +131,8 @@ class Syntax(Compiled):
 
     def compile_impl(self, compiler, source_obj):
         """
-        Try each transform in order; first non-``None`` result wins
+        Try each transform in order; the first arm whose pattern matches
+        expands, and its result is returned as it is
 
         A non-pair source is a lone-atom use, which bypasses the matchers
         entirely and goes straight to the ``bare`` arm
@@ -257,8 +258,6 @@ class Transform(ABC):
     def __init__(self, pattern):
         """
         :param pattern: matcher pattern tree
-        :param handler: callable invoked by procedural arms; ``None`` for
-            template-only ``SyntaxTransform`` arms
         """
 
         if not isinstance(pattern, Pattern):
@@ -303,8 +302,6 @@ class SyntaxTransform(Transform):
     def __init__(self, pattern, template, pattern_src=nil):
         """
         :param pattern: matcher pattern tree
-        :param transformer: ``(compiler, **captures)`` procedure, or
-            ``nil`` / ``None`` for template-only expansion
         :param template: syntax-rules template form (often contains pattern vars)
         :param pattern_src: original RULE or MATCH pattern datum for errors
         """
@@ -317,7 +314,7 @@ class SyntaxTransform(Transform):
 
     def handle_expand(self, compiler, source, result):
         """
-        run ``transformer`` or expand ``template`` with captures
+        expand ``template`` with the captures
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
