@@ -1,4 +1,26 @@
-/* Included by matcher.c — match_form */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. The FORM match step.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === FORM matching === */
 
 
@@ -14,8 +36,8 @@ static int match_form(
 
   PyObject *elem = e->subj->vt->get(e->subj, *cursor);
 
-  /* PEP 634 sequence-pattern gate. str / bytes / bytearray are atoms —
-     destructuring a string into characters is never what a match
+  /* PEP 634 sequence-pattern gate. str / bytes / bytearray are atoms,
+     since destructuring a string into characters is never what a match
      meant. Beyond the KosPair spine and the list/tuple fast paths,
      only sequence types descend (Py_TPFLAGS_SEQUENCE on 3.10+, the
      collections.abc.Sequence ABC on 3.9): mappings and sets are not
