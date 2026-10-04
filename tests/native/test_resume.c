@@ -596,7 +596,7 @@ static int test_capture_restore_clones_and_clears_unapplied(void) {
   KosDynFrame_RESUME_STATE(tmpl) = &marker;
 
   KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, NULL,
-                                        0, 0, NULL, 0);
+                                        0, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
 
   TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
@@ -625,8 +625,9 @@ static int test_capture_restore_clones_and_clears_unapplied(void) {
 
 
 /* Applying a record clears the resume the live frame held and hands
-   the clone to the frame, so the goal no longer owns it: driven as a
-   throw, whose delivery touches no frame stack. */
+   the clone to the frame, so the goal no longer owns it. The landing
+   frame then carries the record's resume, so the delivery stages the
+   payload for that resume and touches no frame stack. */
 static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
@@ -652,7 +653,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   PyObject *exc = PyObject_CallNoArgs(PyExc_ValueError);
   TEST_ASSERT_NOT_NULL(exc, "create payload");
   KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, exc,
-                                        1, (uint32_t) -1, NULL, 0);
+                                        (uint32_t) -1, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
   TEST_ASSERT_EQ(kos_xfer_goal_capture_restore(
                      goal, (KosDynNode *) live, (KosDynNode *) tmpl),
@@ -677,6 +678,9 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
                    "the live frame carries the record's kind");
   TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(live), &recorded_clone_out,
                    "the live frame carries the record's clone");
+  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(&es), exc,
+                   "the payload is staged for the record's resume");
+  Py_CLEAR(KosEvalState_PENDING_VALUE(&es));
 
   KosDynFrame_RESUME_KIND(live) = NULL;
   KosDynFrame_RESUME_STATE(live) = NULL;
@@ -715,7 +719,7 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
   PyObject *payload = PyLong_FromLong(99);
   TEST_ASSERT_NOT_NULL(payload, "create payload");
   KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, payload,
-                                        0, (uint32_t) -1, NULL, 0);
+                                        (uint32_t) -1, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
 
   kos_xfer_goal_arm(&es, goal);
@@ -762,7 +766,7 @@ static int test_capture_restore_refuses_uncloneable_kind(void) {
   KosDynFrame_RESUME_STATE(tmpl) = (void *) tmpl;
 
   KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, NULL,
-                                        0, 0, NULL, 0);
+                                        0, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
 
   int r = kos_xfer_goal_capture_restore(
