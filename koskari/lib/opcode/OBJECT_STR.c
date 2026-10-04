@@ -16,7 +16,7 @@
 
 /**
   OBJECT_STR: arg = number of operands. Build str from top N values (e.g. for
-  f-string), push result or await it.
+  f-string) and push the result.
 */
 KOS_OP_HANDLER(OBJECT_STR) {
   if (unlikely(obj_op_reducing(es, insn, KosOperator_BuildStr) < 0))

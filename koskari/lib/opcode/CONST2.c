@@ -16,10 +16,8 @@
 
 /**
   CONST2: arg = extra index. Schema CONST, CONST. Push two code object
-  constants in row order. Both constants resolve before either push, so
-  a bad index raises with nothing pushed.
-
-  The pool object is resolved onto the record at finalize.
+  constants in row order. The pool objects are resolved onto the row at
+  finalize, so the handler only pushes.
 */
 KOS_OP_HANDLER(CONST2) {
   const KosExtra *row = KosOp_ROW(insn);
