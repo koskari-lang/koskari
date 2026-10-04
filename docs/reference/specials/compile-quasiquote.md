@@ -16,42 +16,30 @@ flattens a list into the surrounding list.
 - `` `HEAD: BODY `` -> `(quasiquote (block: (HEAD) ...))`; see
   [Block quasiquote](compile-quasiquote-block.md)
 
-**Behaviour:** One argument required. The compiler walks the expression
-recursively at a nesting *level* (starting at 0):
+**Behaviour:** One argument required. The result is the argument rebuilt as
+data, with each escape replaced by a runtime value. The walk tracks a nesting
+*level*, starting at 0:
 
-- **Atoms and constants** (symbols, keywords, numbers, nil): emitted as `CONST`.
-  A symbol a macro template wrote is emitted as the plain symbol, without its
-  hygiene mark; `quasiquote-syntax` keeps the mark.
-- `**(unquote INNER)`** at level 0: `INNER` is compiled normally
-(evaluated at runtime); its result becomes that position's value.
-- `**(unquote INNER)**` at level > 0: the unquote form is reconstructed
-literally as a pair -- `CONST compile/unquote`, recurse on INNER at level - 1,
-`PROPER 2`.
-- `**(quasiquote INNER)**` at any level: reconstructed literally at
-level + 1.
-- **Proper lists**: walked element by element. Consecutive non-splice elements
-are accumulated into *segments*:
-  - If no `unquote-splicing` site is present anywhere in the list, each segment
-  is emitted individually with `PROPER n`.
-  - If any splice is present, constant-only segments are folded into a single
-  `CONST (e0, e1, ...)` tuple (which `PAIR_SPLICE` accepts natively); mixed
-  segments use `PROPER n`. Each splice site compiles its inner expression
-  directly (must produce an iterable pair or nil). All segments and splices are
-  gathered then combined with `PAIR_SPLICE count`.
-- **Dotted (improper) pairs**: like a proper list but the non-nil tail is emitted
-after all elements and the whole thing is closed with `CONS count+1` (the tail
-is explicit). Splice in dotted-tail position raises `SpecialError`.
+- **Atoms** (symbols, keywords, numbers, nil) are themselves. A symbol a macro
+  template wrote loses its hygiene mark; `quasiquote-syntax` keeps it.
+- `(unquote INNER)` at level 0 evaluates `INNER` at runtime and puts its value
+  in that position.
+- `(unquote-splicing INNER)` at level 0, in list position, evaluates `INNER`
+  at runtime and splices its elements into the surrounding list. The value
+  must be a pair or nil. A splice in dotted-tail position, or mixed with a
+  dotted tail, is a compile-time error.
+- `(unquote INNER)` and `(unquote-splicing INNER)` at level > 0 are data, not
+  escapes: the form is rebuilt with `INNER` walked at level - 1.
+- `(quasiquote INNER)` at any level is rebuilt as data with `INNER` walked at
+  level + 1.
+- **Proper lists** are rebuilt element by element; **dotted pairs** keep their
+  tail. Positions that hold no escape are built as constants.
 
-**Nesting:** Each additional ``` increments the level; each `,` decrements
-it. At level > 0, unquote forms are data, not escapes.
+**Nesting:** Each additional ``` increments the level; each `,` decrements it.
 
-**Note on dotted tails with unquote:** `(a . ,x)` is parsed by the reader as the
-three-element proper list `(a compile/unquote x)` (because `(a . (unquote x))`
-collapses to a proper list). Only atomic tails produce genuine improper pairs
-(e.g. ``(a . 42)` or ``(a . b)`).
-
-**Opcodes emitted:** `CONST`, `PROPER`, `CONS`, `PAIR_SPLICE` (see
-[VM reference](../vm/index.md)).
+**Dotted tails with unquote:** `(a . ,x)` reads as the three-element proper
+list `(a unquote x)`, because `(a . (unquote x))` is a proper list. Only an
+atomic tail produces an improper pair, as in ``(a . 42)` or ``(a . b)`.
 
 **Examples:**
 
@@ -60,7 +48,7 @@ collapses to a proper list). Only atomic tails produce genuine improper pairs
 `42           ; -> 42
 `foo          ; -> symbol foo
 
-;; Proper list -- compiles to PROPER 3
+;; Proper list
 `(a b c)      ; -> (a b c)
 
 ;; Unquote -- x is evaluated at runtime
