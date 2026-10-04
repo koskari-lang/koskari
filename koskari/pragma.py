@@ -61,9 +61,12 @@ def register(
     _REGISTRY[str(name)] = (settingfn, default)
 
 
-def lookup(name: str) -> Tuple[Callable[..., Any], Any]:
+def lookup(name: str) -> Optional[Tuple[Callable[..., Any], Any]]:
     """
     Lookup a setting by name
+
+    :return: the (setting, undefined value) pair, or None when no setting
+      of that name is registered
     """
 
     return _REGISTRY.get(str(name))
@@ -87,7 +90,8 @@ def unregister(name: str) -> None:
 
 def registry() -> MappingProxyType[str, Tuple[Callable[..., Any], Any]]:
     """
-    A copy of the current setting/undefined-value registry
+    A read-only live view of the setting/undefined-value registry; later
+    registrations show through it
     """
 
     return MappingProxyType(_REGISTRY)

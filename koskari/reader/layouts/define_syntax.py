@@ -220,8 +220,8 @@ def layout_bare_syntax(reader, source, peers):
     leading name in the header, ``(bare-syntax NAME SLOT TMPL)``; a
     multi-form template body is wrapped in ``begin``.
 
-    The header names the called-by slot; the body is the template, left
-    unexpanded like a syntax-rules template.
+    The header names the called-by slot; the body is expanded like any
+    block body, then folded, before it becomes the template.
     """
 
     if peers:
