@@ -121,7 +121,6 @@ void kos_iter_close(PyObject *iter) {
           if (kos_iter_send(it, Py_None, &step) == PYGEN_NEXT) {
             /* Suspend attempt during close; cannot honor further --
                close the iterator so its GeneratorExit cleanup runs. */
-            Py_DECREF(step);
             (void) kos_iter_close_or_raise(it);
           }
           Py_XDECREF(step);
