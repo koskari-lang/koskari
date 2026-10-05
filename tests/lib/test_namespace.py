@@ -618,6 +618,27 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(c, {'a': 1})
 
 
+    async def test_compares_by_identity(self):
+        """
+        A module namespace is its module's state: it compares and hashes
+        by identity, so neither its storage nor its bindings make it
+        equal to a dict or to another namespace
+        """
+
+        a = ModuleNamespace("a", {})
+        a['x'] = 1
+        b = ModuleNamespace("b", {})
+        b['x'] = 1
+        self.assertEqual(a, a)
+        self.assertNotEqual(a, b)
+        self.assertNotEqual(a, {})
+        self.assertNotEqual({}, a)
+        self.assertFalse(a == {'x': 1})
+        self.assertFalse({'x': 1} == a)
+        self.assertIn(a, {a})
+        self.assertNotIn(b, {a})
+
+
     async def test_update_reads_a_mapping_through_keys(self):
         """
         update and |= take a source with keys() as a mapping, the way

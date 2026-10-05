@@ -2732,10 +2732,24 @@ static int mdl_ns_init(PyObject *self, PyObject *args, PyObject *kwds) {
 }
 
 
-/* Identity hash and repr, as the other namespace kinds have; the dict
-   base would refuse the hash and print the scratch dict. */
+/* Identity hash, comparison and repr, as the other namespace kinds
+   have; the dict base would refuse the hash and print the scratch
+   dict. */
 static Py_hash_t mdl_ns_hash(PyObject *self) {
   return PyBaseObject_Type.tp_hash(self);
+}
+
+
+/* Identity comparison to match the identity hash. The dict base would
+   compare the scratch storage, never the bindings, and it would also
+   take the reflected comparison against a plain dict, so equality and
+   inequality are answered here outright instead of left to it. */
+static PyObject *mdl_ns_richcompare(PyObject *self, PyObject *other, int op) {
+  if (op == Py_EQ)
+    return PyBool_FromLong(self == other);
+  if (op == Py_NE)
+    return PyBool_FromLong(self != other);
+  Py_RETURN_NOTIMPLEMENTED;
 }
 
 
@@ -3103,6 +3117,7 @@ PyTypeObject KosModuleNamespaceType = {
   .tp_as_number = &mdl_ns_as_number,
   .tp_iter = ns_mapping_iter,
   .tp_hash = mdl_ns_hash,
+  .tp_richcompare = mdl_ns_richcompare,
   .tp_repr = mdl_ns_repr,
   .tp_new = mdl_ns_new,
   .tp_init = mdl_ns_init,
