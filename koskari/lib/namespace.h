@@ -219,7 +219,7 @@ PyObject *KosNamespace_Copy(PyObject *template_ns);
 
    Borrowed reference, or NULL with error set
  */
-PyObject *KosNamespace_Ref(PyObject *ns, PyObject *key);
+PyObject *KosNamespace_ClaimRef(PyObject *ns, PyObject *key);
 
 
 /**
@@ -229,7 +229,7 @@ PyObject *KosNamespace_Ref(PyObject *ns, PyObject *key);
    Borrowed reference, or NULL. Does not set error if no match is found,
    but may set an error if some other failure occured in the lookup.
  */
-PyObject *KosNamespace_REF(PyObject *ns, PyObject *key);
+PyObject *KosNamespace_BorrowRef(PyObject *ns, PyObject *key);
 
 
 /**
@@ -242,10 +242,10 @@ PyObject *KosNamespace_REF(PyObject *ns, PyObject *key);
    The Py_None value is used as a sentinel to indicate that the
    namespace has the binding, but it is in fast raw mode. The
    binding's value will be lazily wrapped in a KosSymbolicRef instance
-   if accessed via KosNamespace_REF, KosNamespace_Ref, or
+   if accessed via KosNamespace_BorrowRef, KosNamespace_ClaimRef, or
    KosNamespace_FastRef
  */
-PyObject *KosNamespace_LOOSE_REF(PyObject *ns, PyObject *key);
+PyObject *KosNamespace_BorrowLooseRef(PyObject *ns, PyObject *key);
 
 
 /**

@@ -26,7 +26,7 @@ This document summarizes the Koskari/Sibilant model of **Namespace** (lexical sc
 - **KosNamespace_Store(ns, key, val)** — Store value into binding.
 - **KosNamespace_Bind(ns, key, ref)** — Bind name to a Ref (used for VAR_BIND).
 - **KosNamespace_Clear(ns, key)** — Clear the binding.
-- **KosNamespace_Ref / KosNamespace_FindRef** — Look up the Ref for a name (for VAR_REF).
+- **KosNamespace_ClaimRef / KosNamespace_FindRef** — Look up the Ref for a name (for VAR_REF).
 
 ### Bindings
 

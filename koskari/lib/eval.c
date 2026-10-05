@@ -1312,7 +1312,7 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
     return NULL;
   }
 
-  return KosNamespace_Ref(ns, name);
+  return KosNamespace_ClaimRef(ns, name);
 }
 
 
