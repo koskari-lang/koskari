@@ -116,7 +116,9 @@ const char *kos_opcode_name(KosOpCode op) {
 static inline int is_push_op(KosOpCode op);
 static inline int is_pop_op(KosOpCode op);
 static inline KosOpCode pop_for_push(KosOpCode push_op);
+static inline KosOpCode push_for_pop(KosOpCode pop_op);
 static inline KosExtentKind kind_for_push(KosOpCode push_op);
+static inline int discardable_for_push(KosOpCode push_op);
 
 
 /* === Extra operand schema === */
@@ -2187,24 +2189,31 @@ typedef struct {
   KosOpCode push_op;
   KosOpCode pop_op;
   KosExtentKind kind;
+  int discardable;   /* a tail call may pass through the extent: its
+                        uninstall is a pure release, so frame handoff
+                        drops it without running its POP_* row */
 } ExtentOpPair;
 
 
-/* PUSH_* -> POP_* and extent kind; source of truth for extent op classification */
+/* PUSH_* -> POP_*, extent kind and discardability; the source of truth
+   for extent op classification. The OpCode enum carries these facts to
+   the compiler (decorate_opcode), so the compiler's tables derive from
+   this one. The runtime teardown (kos_dyn_teardown_to_frame) holds the
+   discardable set once more, keyed by node kind. */
 static const ExtentOpPair extent_pairs[] = {
-  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY },
-  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP },
-  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY },
-  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT },
-  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT },
-  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC },
-  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH },
-  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH },
-  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS },
-  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT },
-  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND },
-  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH },
-  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM },
+  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
+  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
+  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
+  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT,   0 },
+  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT,    0 },
+  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
+  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
+  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },
+  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS,       1 },
+  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT,  0 },
+  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0 },
+  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1 },
+  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0 },
 };
 
 
@@ -2245,6 +2254,28 @@ static inline KosOpCode pop_for_push(KosOpCode push_op) {
 }
 
 
+static inline KosOpCode push_for_pop(KosOpCode pop_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].pop_op == pop_op) {
+      return extent_pairs[i].push_op;
+    }
+  }
+  return KOS_OP_NOOP;
+}
+
+
+static inline int discardable_for_push(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].discardable;
+    }
+  }
+  return 0;
+}
+
+
 static inline KosExtentKind kind_for_push(KosOpCode push_op) {
 
   for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
@@ -2272,10 +2303,11 @@ typedef struct {
 /**
    Refuse a TAIL_CALL family row nested in an extent frame handoff
    cannot discard. The tail call tears down the extents open above the
-   frame; NS, LOOP and FOREACH uninstall by pure release, every other
-   kind has uninstall behavior that must run, so the compiler's promoter
-   never puts a tail call inside one and a hand-assembled stream that
-   does is refused here, the same set the runtime teardown holds.
+   frame; the pairs table marks the kinds that uninstall by pure
+   release, every other kind has uninstall behavior that must run, so
+   the compiler's promoter never puts a tail call inside one and a
+   hand-assembled stream that does is refused here, the same set the
+   runtime teardown holds.
 
    :return: 0 when pc is not a tail call or sits only in discardable
      extents, -1 with ValueError set otherwise
@@ -2289,8 +2321,7 @@ static int validate_tail_call_extents(
 
   for (uint32_t i = 0; i < stack_top; i++) {
     KosOpCode push = stack[i].push_op;
-    if (push == KOS_OP_PUSH_NS || push == KOS_OP_PUSH_LOOP
-        || push == KOS_OP_PUSH_FOREACH)
+    if (discardable_for_push(push))
       continue;
     PyErr_Format(PyExc_ValueError,
                  "TAIL_CALL at pc %u inside a non-discardable %s extent"
@@ -3760,41 +3791,81 @@ static PyObject *opstyle_schema(PyObject *styles, KosExtraSchema ex) {
 
 
 /**
-   Attach the ``style`` and ``extra`` attributes to one opcode member.
-   ``style`` is an OpStyle member; ``extra`` is the field schema of an
-   EXTRA opcode, or an empty tuple for every other style, so consumers
-   can test it for truth and iterate it without a presence check.
+   The OpCode member for an opcode, or None for KOS_OP_NOOP, which the
+   extent pair lookups return for an opcode outside the table.
 
+   :param opcodes: the OpCode IntEnum
+   :return: new reference, or NULL with an exception set
+*/
+static PyObject *opcode_member_or_none(PyObject *opcodes, KosOpCode op) {
+
+  if (op == KOS_OP_NOOP)
+    Py_RETURN_NONE;
+  return PyObject_CallFunction(opcodes, "i", (int) op);
+}
+
+
+/**
+   Set one attribute on an opcode member, consuming value.
+
+   :return: 0 on success, -1 with an exception set
+*/
+static int set_opcode_attr(PyObject *member, const char *name,
+    PyObject *value) {
+
+  int rc;
+
+  if (! value)
+    return -1;
+  rc = PyObject_SetAttrString(member, name, value);
+  Py_DECREF(value);
+  return rc ? -1 : 0;
+}
+
+
+/**
+   Attach the attributes every opcode member carries, so consumers can
+   read each without a presence check: ``style`` is an OpStyle member;
+   ``extra`` is the field schema of an EXTRA opcode, or an empty tuple
+   for every other style; ``yields`` says whether the row makes a code
+   object a generator; ``pop`` is the paired POP_* member of a PUSH_*
+   row and ``push`` the paired PUSH_* member of a POP_* row, None
+   otherwise; ``discardable`` says whether a tail call may pass through
+   the extent a PUSH_* row opens, False for every other row. The extent
+   facts come from extent_pairs, so the compiler's tables derive from
+   the one classification the validator and extent derivation use.
+
+   :param opcodes: the OpCode IntEnum
    :param styles: the OpStyle IntEnum
    :return: 0 on success, -1 with an exception set
 */
-static int decorate_opcode(PyObject *member, PyObject *styles,
-    KosOpCode op) {
+static int decorate_opcode(PyObject *member, PyObject *opcodes,
+    PyObject *styles, KosOpCode op) {
 
   KosOpStyle style = opcode_styles[op].style;
-
-  PyObject *sty = opstyle_member(styles, style);
-  if (! sty)
-    return -1;
-
-  int rc = PyObject_SetAttrString(member, "style", sty);
-  Py_DECREF(sty);
-  if (rc)
-    return -1;
-
   PyObject *extra;
+
+  if (set_opcode_attr(member, "style", opstyle_member(styles, style)))
+    return -1;
+
   if (style == KOSTYLE_EXTRA) {
     extra = opstyle_schema(styles, opcode_styles[op].extra);
   } else {
     extra = PyTuple_New(0);
   }
-  if (! extra)
+  if (set_opcode_attr(member, "extra", extra))
     return -1;
 
-  rc = PyObject_SetAttrString(member, "extra", extra);
-  Py_DECREF(extra);
-
-  return rc ? -1 : 0;
+  if (set_opcode_attr(member, "yields", PyBool_FromLong(kos_op_yields(op))))
+    return -1;
+  if (set_opcode_attr(member, "pop",
+                      opcode_member_or_none(opcodes, pop_for_push(op))))
+    return -1;
+  if (set_opcode_attr(member, "push",
+                      opcode_member_or_none(opcodes, push_for_pop(op))))
+    return -1;
+  return set_opcode_attr(member, "discardable",
+                         PyBool_FromLong(discardable_for_push(op)));
 }
 
 
@@ -3813,7 +3884,8 @@ static PyObject *create_opcode_enum(PyObject *styles) {
   if (! res)
     return NULL;
 
-  /* Attach style and extra schema to each opcode */
+  /* Attach the style, extra schema, yield and extent facts to each
+     opcode; every member exists by now, so a pair can name its twin */
   for (KosOpCode op = 0; op <= KOS_OP_THEEND; op++) {
     PyObject *member = PyObject_GetAttrString(res, opcode_names[op]);
     if (! member) {
@@ -3821,7 +3893,7 @@ static PyObject *create_opcode_enum(PyObject *styles) {
       return NULL;
     }
 
-    int rc = decorate_opcode(member, styles, op);
+    int rc = decorate_opcode(member, res, styles, op);
     Py_DECREF(member);
     if (rc) {
       Py_DECREF(res);
