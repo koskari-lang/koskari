@@ -119,7 +119,71 @@ int kos_transform_init_one(
 }
 
 
+void kos_transform_init_view(
+    KosTransform *t,
+    PyObject **sources,
+    uint16_t nsrc) {
+
+  t->fn.cs_callable = NULL;
+  t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
+
+  t->source = NULL;
+  t->sources = sources;
+  t->nsrc = nsrc;
+  t->idx = 0;
+
+  t->pending = NULL;
+  t->cached_frame = NULL;
+  t->ctx = NULL;
+  t->src_sync = 0;
+  t->closed = 0;
+  t->busy = 0;
+}
+
+
+int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables) {
+
+  Py_ssize_t n = PyTuple_GET_SIZE(iterables);
+  PyObject *srcs = PyTuple_New(n);
+  Py_ssize_t i;
+
+  if (! srcs)
+    return -1;
+
+  m->sync_mask = 0;
+  m->all_sync = 1;
+
+  for (i = 0; i < n; i++) {
+    PyObject *source = kos_iter_acquire(PyTuple_GET_ITEM(iterables, i));
+
+    if (! source) {
+      Py_DECREF(srcs);
+      return -1;
+    }
+    PyTuple_SET_ITEM(srcs, i, source);
+
+    if (KosIter_CheckSync(source)) {
+      if (i < 32)
+        m->sync_mask |= (uint32_t) 1u << i;
+    } else {
+      m->all_sync = 0;
+    }
+  }
+
+  m->srcs = srcs;
+  kos_transform_init_view(&m->base, n ? PySequence_Fast_ITEMS(srcs) : NULL,
+                          (uint16_t) n);
+  return 0;
+}
+
+
 /* === the step's shared pieces === */
+
+
+int kos_transform_source_spent(void) {
+
+  return PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_StopIteration);
+}
 
 
 int kos_transform_step_ready(
@@ -373,6 +437,40 @@ PyObject *kos_transform_repr(PyObject *self) {
 
   return PyUnicode_FromFormat("<koskari %s object at %p>",
                               transform_kind(Py_TYPE(self)), self);
+}
+
+
+int kos_transform_multi_traverse(PyObject *self, visitproc visit, void *arg) {
+
+  KosTransformMulti *m = (KosTransformMulti *) self;
+
+  Py_VISIT(m->srcs);
+  return kos_transform_traverse(self, visit, arg);
+}
+
+
+int kos_transform_multi_clear(PyObject *self) {
+
+  KosTransformMulti *m = (KosTransformMulti *) self;
+
+  m->base.sources = NULL;
+  m->base.nsrc = 0;
+  Py_CLEAR(m->srcs);
+
+  return kos_transform_clear(self);
+}
+
+
+void kos_transform_multi_dealloc(PyObject *self) {
+
+  KosTransformMulti *m = (KosTransformMulti *) self;
+
+  PyObject_GC_UnTrack(self);
+  m->base.sources = NULL;
+  m->base.nsrc = 0;
+  Py_CLEAR(m->srcs);
+
+  kos_transform_dealloc(self);
 }
 
 

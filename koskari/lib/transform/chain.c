@@ -43,15 +43,6 @@ typedef struct KosChain {
 
 
 /**
-   Is the pending failure just a source running out?
-*/
-static int chain_spent(void) {
-
-  return PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_StopIteration);
-}
-
-
-/**
    Make the iterable the series just produced the live source,
    re-resolving whether it steps through tp_iternext alone. iterable
    is borrowed.
@@ -219,7 +210,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
   KosTransform *t = &c->base;
 
   if (! element) {
-    if (! chain_spent())
+    if (! kos_transform_source_spent())
       return EVAL_RAISE();
 
     PyErr_Clear();
@@ -244,7 +235,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
   int r;
 
   if (! iterable) {
-    if (! chain_spent())
+    if (! kos_transform_source_spent())
       return EVAL_RAISE();
 
     /* the series is spent, and with it the chain: the StopIteration
@@ -344,23 +335,10 @@ static PyObject *chain_build(PyTypeObject *type, PyObject *series) {
   }
   c->series_sync = KosIter_CheckSync(c->series);
 
-  c->base.fn.cs_callable = NULL;
-  c->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
-
   /* One source is live at a time, so the arity-one view serves: the
      step fills the slot as it advances and close reaches whichever
      source is current. A NULL slot is nothing to close. */
-  c->base.source = NULL;
-  c->base.sources = &c->base.source;
-  c->base.nsrc = 1;
-  c->base.idx = 0;
-
-  c->base.pending = NULL;
-  c->base.cached_frame = NULL;
-  c->base.ctx = NULL;
-  c->base.src_sync = 0;
-  c->base.closed = 0;
-  c->base.busy = 0;
+  kos_transform_init_view(&c->base, &c->base.source, 1);
 
   return (PyObject *) c;
 }

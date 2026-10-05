@@ -36,15 +36,6 @@ typedef struct KosBatched {
 
 
 /**
-   Is the pending failure just the source running out?
-*/
-static int batched_spent(void) {
-
-  return PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_StopIteration);
-}
-
-
-/**
    Close out a batch the source ended part way through: trim the
    over-allocated tuple to what actually arrived and mark the provider
    spent, so the step after this one reports exhaustion.
@@ -142,7 +133,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
   if (! element) {
     PyObject *shorter;
 
-    if (! b->filled || ! batched_spent())
+    if (! b->filled || ! kos_transform_source_spent())
       return EVAL_RAISE();
 
     PyErr_Clear();

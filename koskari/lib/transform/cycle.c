@@ -34,15 +34,6 @@ typedef struct KosCycle {
 
 
 /**
-   Is the pending failure just the source running out?
-*/
-static int cycle_spent(void) {
-
-  return PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_StopIteration);
-}
-
-
-/**
    Take the next element from the buffer, wrapping at its end. Only
    called once the buffer is known non-empty.
 
@@ -129,7 +120,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
   KosTransform *t = &c->base;
 
   if (! element) {
-    if (! cycle_spent())
+    if (! kos_transform_source_spent())
       return EVAL_RAISE();
 
     PyErr_Clear();
