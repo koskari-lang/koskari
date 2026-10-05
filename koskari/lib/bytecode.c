@@ -2296,11 +2296,6 @@ typedef struct {
 
 
 /**
-   Validate extent structure (push/pop matching) without allocating.
-   Catches POP with no PUSH, extent mismatch, unclosed extent.
-   Call when extent_count == 0 to reject code that has POP_* but no PUSH_*.
-*/
-/**
    Refuse a TAIL_CALL family row nested in an extent frame handoff
    cannot discard. The tail call tears down the extents open above the
    frame; the pairs table marks the kinds that uninstall by pure
@@ -2333,61 +2328,19 @@ static int validate_tail_call_extents(
 }
 
 
-static int validate_extents(KosOp *code, uint32_t code_len) {
-
-  ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
-  uint32_t stack_top = 0;
-
-  /* Simulate PUSH/POP stack; error on POP with empty stack or mismatch */
-  for (uint32_t pc = 0; pc < code_len; pc++) {
-    KosOpCode op = (KosOpCode) code[pc].op;
-
-    if (validate_tail_call_extents(op, pc, stack, stack_top))
-      return -1;
-
-    if (is_push_op(op)) {
-      /* PUSH: push onto stack */
-      if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_SetString(PyExc_RuntimeError, "extent nesting too deep");
-        return -1;
-      }
-      stack[stack_top].push_pc = pc;
-      stack[stack_top].push_op = op;
-      stack_top++;
-    }
-    else if (is_pop_op(op)) {
-      /* POP: must match top of stack */
-      if (stack_top == 0) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "POP at pc %u with no matching PUSH", pc);
-        return -1;
-      }
-      KosOpCode expected_pop = pop_for_push(stack[stack_top - 1].push_op);
-      if (op != expected_pop) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "extent mismatch at pc %u: expected %d, got %d",
-                     pc, (int) expected_pop, (int) op);
-        return -1;
-      }
-      stack_top--;
-    }
-  }
-
-  if (stack_top != 0) {
-    PyErr_Format(PyExc_RuntimeError, "unclosed extent at pc %u",
-                 stack[stack_top - 1].push_pc);
-    return -1;
-  }
-
-  return 0;
-}
-
-
 /**
-   Fill extent table and top_extent_id from instruction stream. Walk code;
-   on PUSH_* allocate extent descriptor, push onto stack; on POP_* close
-   extent, propagate top_extent_id to all pcs inside the block.
-   Call when extent_count > 0; buffers are pre-allocated in unified block.
+   Walk the instruction stream matching each PUSH_* with its POP_*, and
+   fill the extent table and top_extent_id as it goes: on PUSH_* a
+   descriptor is allocated and pushed, on POP_* the extent closes and
+   its id is propagated to every pc inside the block. A tail call
+   inside an extent frame handoff cannot discard, a POP_* with no
+   PUSH_*, a mismatched pair, nesting past the stack limit and an
+   extent left open at the end are refused.
+
+   With NULL outputs the walk validates alone, so a stream with no
+   PUSH_* (extent_count 0, no buffers allocated) still has its POP_*
+   rows refused. The buffers, when given, sit pre-allocated in the
+   unified block.
 */
 static int derive_extents_fill(
     KosOp *code,
@@ -2401,8 +2354,10 @@ static int derive_extents_fill(
   uint32_t extent_idx = 0;
 
   /* Initialize all pcs to "no extent" */
-  for (uint32_t i = 0; i < code_len; i++) {
-    top_extent_id_out[i] = KOS_EXTENT_NONE;
+  if (top_extent_id_out) {
+    for (uint32_t i = 0; i < code_len; i++) {
+      top_extent_id_out[i] = KOS_EXTENT_NONE;
+    }
   }
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
@@ -2422,22 +2377,24 @@ static int derive_extents_fill(
         return -1;
       }
 
-      /* Build extent descriptor; parent is current stack top */
-      uint32_t parent_id = KOS_EXTENT_NONE;
-      if (stack_top > 0) {
-        parent_id = stack[stack_top - 1].extent_id;
-      }
+      if (extents_out) {
+        /* Build extent descriptor; parent is current stack top */
+        uint32_t parent_id = KOS_EXTENT_NONE;
+        if (stack_top > 0) {
+          parent_id = stack[stack_top - 1].extent_id;
+        }
 
-      KosExtentDesc *e = &extents_out[extent_idx];
-      e->kind = kind_for_push(op);
-      e->push_pc = pc;
-      e->pop_pc = 0;
-      e->parent_extent_id = parent_id;
+        KosExtentDesc *e = &extents_out[extent_idx];
+        e->kind = kind_for_push(op);
+        e->push_pc = pc;
+        e->pop_pc = 0;
+        e->parent_extent_id = parent_id;
+        top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
+      }
 
       stack[stack_top].push_pc = pc;
       stack[stack_top].extent_id = extent_idx;
       stack[stack_top].push_op = op;
-      top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
       stack_top++;
       extent_idx++;
     }
@@ -2456,22 +2413,16 @@ static int derive_extents_fill(
         return -1;
       }
 
-      uint32_t eid = stack[stack_top - 1].extent_id;
-      extents_out[eid].pop_pc = pc;
+      if (extents_out) {
+        uint32_t eid = stack[stack_top - 1].extent_id;
+        extents_out[eid].pop_pc = pc;
 
-      /* Sanity: push must precede pop */
-      if (extents_out[eid].push_pc >= extents_out[eid].pop_pc) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "invalid extent range: push_pc %u >= pop_pc %u",
-                     extents_out[eid].push_pc, extents_out[eid].pop_pc);
-        return -1;
-      }
-
-      /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
-      uint32_t enter_pc = extents_out[eid].push_pc + 1;
-      for (uint32_t j = enter_pc; j < pc; j++) {
-        if (top_extent_id_out[j] == KOS_EXTENT_NONE) {
-          top_extent_id_out[j] = (uint16_t) eid;
+        /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
+        uint32_t enter_pc = extents_out[eid].push_pc + 1;
+        for (uint32_t j = enter_pc; j < pc; j++) {
+          if (top_extent_id_out[j] == KOS_EXTENT_NONE) {
+            top_extent_id_out[j] = (uint16_t) eid;
+          }
         }
       }
 
@@ -2917,7 +2868,7 @@ static int validate_fast_slots(
       extra_len, extent_count).
    2. Allocate: single block for all regions (page-aligned when protect).
    3. Emit: write instructions, positions, cpool, extra into block.
-   4. Finalize: derive_extents_fill or validate_extents; validate jumps;
+   4. Finalize: derive_extents_fill; validate jumps;
       with protect, mprotect(PROT_READ) and set KOS_CODE_PROTECTED; set
       KosCode fields.
 
@@ -3002,16 +2953,12 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   code_collect_clear(&coll);
   Py_DECREF(instr_fast);
 
-  /* Phase 4: Finalize — fill extent table, validate, seal */
-  if (extent_count > 0) {
-    if (derive_extents_fill(code, code_len, extents, extent_count,
-                            top_extent_id))
-      goto reject;
-  }
-  else if (validate_extents(code, code_len)) {
-    /* No PUSH_* but has POP_*: reject malformed bytecode */
+  /* Phase 4: Finalize — fill extent table, validate, seal. The
+     buffers are NULL when no PUSH_* was counted, and the walk then
+     validates alone, refusing a stray POP_*. */
+  if (derive_extents_fill(code, code_len, extents, extent_count,
+                          top_extent_id))
     goto reject;
-  }
 
   if (extents && top_extent_id &&
       validate_jump_locality(code, code_len, extra, extra_len, extents,

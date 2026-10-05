@@ -162,4 +162,19 @@ class TestTailCallExtentValidation(unittest.TestCase):
         self.assertIsInstance(code, Code)
 
 
+class TestExtentStructureValidation(unittest.TestCase):
+    """
+    Every PUSH_* must be closed by its POP_* before the stream ends
+    """
+
+    def test_unclosed_extent_is_refused(self):
+        with self.assertRaises(RuntimeError) as caught:
+            make([
+                [OpCode.PUSH_LOOP, 0],
+                [OpCode.CONST, None],
+                [OpCode.RETURN, 1],
+            ])
+        self.assertIn("unclosed extent", str(caught.exception))
+
+
 # The end.
