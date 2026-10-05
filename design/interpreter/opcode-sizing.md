@@ -67,7 +67,7 @@ run) and appends to `design/perf/perf.tsv`.
 The timing build is for attributing time, not for measuring a change:
 its stamps add a fixed cost per transfer and inflate the sweep.
 
-Forcing `eval_ng_plain_return` back inline was measured and rejected
+Forcing `eval_plain_return` back inline was measured and rejected
 (8,886 B; the body owns frame teardown and drags `kos_dynframe_free`,
 `KosStack_Release` and `ns_dealloc` in with it). Splitting it into an
 always-inlined core plus an out-of-line wrapper measured byte for byte

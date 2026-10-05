@@ -268,7 +268,7 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
      fresh FRAME node: flush the outgoing frame's live PCs, then load
      every live register directly from the new frame (PC/ACTING are 0
      from kos_dynframe_new).  Mirror of the return-side inline retarget
-     in eval_ng_plain_return. */
+     in eval_plain_return. */
   if (cur)
     KosEvalState_FlushLiveRegsToFrame(es);
   kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),

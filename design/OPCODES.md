@@ -320,7 +320,7 @@ When adding or changing an opcode:
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
 | RAISE | COUNT | Pop N, raise exception | [§6](#kos_op_raise) |
-| RETURN | COUNT | Pop return value; threads the plain, extent, and resume-parent shapes itself, else `EVAL_RETURN(val)` → **`eval_event_return_ng`** (unwind/pop/delivery); **`KOS_RES_RETURN`** at driver boundary | [§6](#kos_op_return) |
+| RETURN | COUNT | Pop return value; threads the plain, extent, and resume-parent shapes itself, else `EVAL_RETURN(val)` → **`eval_event_return`** (unwind/pop/delivery); **`KOS_RES_RETURN`** at driver boundary | [§6](#kos_op_return) |
 | YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
@@ -1003,7 +1003,7 @@ bottom to top matches push order).
 ### KOS_OP_RETURN
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
-- **Stack**: Pops the return value(s) per `arg`. The handler threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_ng_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction), a **region** over such a parent (**`kos_return_is_region`** → **`eval_ng_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook), and a **resume-carrying parent** (**`kos_return_take_resume`** → **`RESUME_HOP`** into the resume). Only the shapes that need an unwind walk signal **`EVAL_RETURN(val)`**, which **`apply_kos_op_result`** routes to **`eval_event_return_ng`** (**`kos_dyn_unwind_return`**, pop, iterator-boundary or parent delivery, then **`kos_dynnode_on_control_returned`**). **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**.
+- **Stack**: Pops the return value(s) per `arg`. The handler threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction), a **region** over such a parent (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook), and a **resume-carrying parent** (**`kos_return_take_resume`** → **`RESUME_HOP`** into the resume). Only the shapes that need an unwind walk signal **`EVAL_RETURN(val)`**, which **`apply_kos_op_result`** routes to **`eval_event_return`** (**`kos_dyn_unwind_return`**, pop, iterator-boundary or parent delivery, then **`kos_dynnode_on_control_returned`**). **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 

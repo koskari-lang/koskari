@@ -15,14 +15,7 @@
 """
 koskari.matcher
 
-Python surface for the next-generation native matcher. Provides the thaw
-helper that reconstructs a native Matcher from its frozen tagged-tuple
-representation, plus a small builder API for authoring matcher patterns in
-Python that lower to the same frozen form through MatchCompiler (slots,
-externs, consts, nodes). Rule-level MATCH spines use
-:func:`parse_explicit_rule_pattern`. :func:`repeat_capture` lowers to CAPTURE
-wrapping REPEAT of an anonymous GROUP so each iteration yields one row value
-(dict, Datum slice, etc.); see repeat_capture and binding_inner_pattern
+Python surface for the native matcher
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -41,58 +34,66 @@ from koskari.types import (
 __all__ = (
     "thaw",
     "make_matcher",
+    "match_pattern_raw",
+    "match",
+    "match1",
 
     "Matcher",
     "MatchResult",
     "Datum",
     "DatumFrame",
-
     "Pattern",
     "Composite",
     "MatchCompiler",
 
-    "TEST_ANY",
-    "SAME",
-    "LITERAL",
-    "TYPE",
-    "PREDICATE",
+    "BINDING_FORMS",
+    "USING_FORMS",
     "APP",
-    "MAP",
-    "MAP_ENTRY",
-    "CAPTURE",
-    "FORM",
-    "MATCH",
-    "GROUP",
-    "ONEOF",
-    "REPEAT",
-    "OPTIONAL",
-    "REST",
-    "NOT",
-    "CLASS",
-    "FIELD",
-
     "BIND",
-    "VALUE",
+    "BINDING",
+    "BINDINGS",
+    "BODY",
+    "CALLEDBY",
+    "CAPTURE",
+    "CLASS",
+    "DECL",
+    "DEFINE",
+    "FIELD",
+    "FORM",
+    "FORMALS",
+    "GROUP",
     "KEYWORD",
-    "SYMBOL",
-    "PAIR",
+    "LITERAL",
     "LITERAL_KW",
     "LITERAL_SYM",
     "LIST",
+    "MAP",
+    "MAP_ENTRY",
+    "MATCH",
+    "NOT",
+    "ONEOF",
+    "OPTIONAL",
+    "PAIR",
+    "PREDICATE",
+    "REPEAT",
+    "REST",
+    "SAME",
+    "SYMBOL",
+    "TEST_ANY",
+    "TYPE",
+    "USING",
+    "USING_UNPACK",
+    "VALUE",
+    "CASE_DELIM_MATCHER",
+    "CASE_DELIM_PATTERN",
+    "CASE_ELEMENT_MATCHER",
+    "CASE_ELEMENT_PATTERN",
+    "META_MATCHER",
+    "META_PATTERN",
 
     "repeat_capture",
     "binding_inner_pattern",
     "bindings_grouped_list_cell_pattern",
-
-    "CALLEDBY",
-    "DEFINE",
-    "DECL",
-    "BINDING",
-    "BINDINGS",
-    "FORMALS",
-    "USING",
-    "USING_UNPACK",
-    "BODY",
 
     "MATCHER_REGISTRY",
     "register_matcher",
@@ -100,14 +101,6 @@ __all__ = (
     "parse_matcher",
     "parse_explicit_rule_pattern",
     "pattern_slot_names",
-    "META_PATTERN",
-    "META_MATCHER",
-    "KNOWN_HEADS",
-
-    "CASE_ELEMENT_PATTERN",
-    "CASE_ELEMENT_MATCHER",
-    "CASE_DELIM_PATTERN",
-    "CASE_DELIM_MATCHER",
     "parse_case_element",
     "parse_case_pattern",
 )
@@ -1428,6 +1421,51 @@ def LIST(*specs, key=None):
     return CAPTURE(key, inner)
 
 
+# === One-shot matching ===
+
+
+def match_pattern_raw(source, patterns):
+    """
+    Try each matcher pattern against ``source`` (pair spine or ``nil``).
+    Return native ``MatchResult.captures`` on first match, else ``None``
+    """
+
+    if not is_nil(source) and not is_pair(source):
+        raise TypeError(
+            f"match source must be nil or a pair, got {source!r}")
+
+    if not isinstance(patterns, (list, tuple)):
+        patterns = [patterns]
+
+    for pat in patterns:
+        if not isinstance(pat, Pattern):
+            raise TypeError(
+                f"match_pattern_raw expects a matcher Pattern, got {pat!r}")
+        bm = MatchCompiler.compile(pat)
+        m = bm.match(source)
+        if m.matched:
+            return m.captures
+
+    return None
+
+
+def match(source, patterns):
+    """
+    Try each matcher pattern against ``source`` (pair spine or ``nil``).
+    Returns native ``MatchResult.captures`` on first match, else ``None``.
+    """
+
+    return match_pattern_raw(source, patterns)
+
+
+def match1(value, patterns):
+    """
+    Match a single element by wrapping ``cons(value, nil)``
+    """
+
+    return match(cons(value, nil), patterns)
+
+
 def make_matcher(pattern):
     """
     Lower a pattern AST into a native Matcher. The matcher carries
@@ -1983,6 +2021,22 @@ class BODY(Pattern):
 
     def __kos_repr__(self):
         return f"(BODY {self._slot})"
+
+
+# === The binding cell forms ===
+
+
+# the shapes of one binding cell, (SYM EXPR) or (EXPR as: SYM), and of
+# one using cell, which also admits a bare (EXPR)
+BINDING_FORMS = (
+    LIST(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
+    LIST(SYMBOL("name"), VALUE("expr")),
+)
+
+USING_FORMS = (
+    *BINDING_FORMS,
+    LIST(VALUE("expr")),
+)
 
 
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===
@@ -2675,9 +2729,6 @@ def register_builtin_matchers():
 
 
 register_builtin_matchers()
-
-
-KNOWN_HEADS = frozenset(MATCHER_REGISTRY)
 
 
 # === Runtime case-pattern dialect (match/case surface) ===

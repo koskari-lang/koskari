@@ -18,10 +18,11 @@ Layout handlers for try/except/else/finally block syntax.
 """
 
 from ...bootstrap import builtin
-from ...compile.helpers import helper_using
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...types import fill_position, get_position, is_pair, strip_mark, unpack
+from ...matcher import USING_FORMS, match1
+from ...types import (
+    fill_position, get_position, is_pair, is_proper, strip_mark, unpack)
 from .helpers import layout
 
 
@@ -75,11 +76,12 @@ def layout_try(reader, source, peers):
                         'except requires a bracketed USE form, '
                         f'e.g. [Exception] or [Exception as: e], not {ppargs[0]!r}',
                         get_position(peer))
-                try:
-                    helper_using(prest.car)
-                except Exception as e:
+                if not is_proper(prest.car) \
+                   or match1(prest.car, USING_FORMS) is None:
                     raise LayoutError(
-                        f'invalid except USE form: {e}',
+                        'invalid except USE form: a using must be in the'
+                        ' form of (EXPR), (SYM EXPR), or (EXPR as: SYM),'
+                        f' not {prest.car}',
                         get_position(peer))
                 clause = cons(prest.car, pbody)
                 fill_position(clause, get_position(peer))

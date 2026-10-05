@@ -14,12 +14,11 @@
 """
 koskari.compile.helpers
 
-Shared helpers for the special-form compilers: matching a form against
-its declared patterns, gathering formals, bindings and declarations
-from their captures, rerouting and splatting call forms, partitioning
-collection runs, emitting item access and item places, requoting
-forms, discovering docstrings, compiling begin bodies, and the
-unpacking left-hand-side helpers
+Shared helpers for the special-form compilers: gathering formals,
+bindings and declarations from a form's captures, rerouting and
+splatting call forms, partitioning collection runs, emitting item
+access and item places, requoting forms, discovering docstrings,
+compiling begin bodies, and the unpacking left-hand-side helpers
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -33,8 +32,9 @@ from ..lib import (
     DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
     keyword, nil, pair, symbol)
 from ..matcher import (
-    BINDING, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST, SYMBOL, USING,
-    USING_UNPACK, VALUE, MatchCompiler, Pattern, frame_formal_name)
+    BINDING, BINDING_FORMS, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST,
+    SYMBOL, USING, USING_FORMS, USING_UNPACK, VALUE, frame_formal_name,
+    match1)
 from ..types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark,
     unpack)
@@ -61,9 +61,6 @@ __all__ = (
     "helper_binding",
     "helper_elsebody",
     "helper_using",
-    "match",
-    "match_pattern_raw",
-    "match1",
     "parse_decl",
     "pycons",
     "requote",
@@ -110,49 +107,6 @@ _SYM_BEGIN = symbol('begin')
 _BEGIN_HEADS = (_SYM_BEGIN,)
 
 
-def match_pattern_raw(source, patterns):
-    """
-    Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Return native ``MatchResult.captures`` on first match, else ``None``
-    """
-
-    if not is_nil(source) and not is_pair(source):
-        raise TypeError(
-            f"match source must be nil or a pair, got {source!r}")
-
-    if not isinstance(patterns, (list, tuple)):
-        patterns = [patterns]
-
-    for pat in patterns:
-        if not isinstance(pat, Pattern):
-            raise TypeError(
-                "compile helpers.match_pattern_raw expects matcher Pattern,"
-                f" got {pat!r}")
-        bm = MatchCompiler.compile(pat)
-        m = bm.match(source)
-        if m.matched:
-            return m.captures
-
-    return None
-
-
-def match(source, patterns):
-    """
-    Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Returns native ``MatchResult.captures`` on first match, else ``None``.
-    """
-
-    return match_pattern_raw(source, patterns)
-
-
-def match1(value, patterns):
-    """
-    Match a single element by wrapping ``cons(value, nil)``
-    """
-
-    return match(cons(value, nil), patterns)
-
-
 _keyword_star = keyword("*")
 _keyword_starstar = keyword("**")
 
@@ -162,12 +116,6 @@ _PYCONS_DIRECT = (
     symbol, keyword, type(nil), type(bracket_nil), pair,
 )
 _PYCONS_RECONS = (tuple, list)
-
-
-_BINDING_FORMS = [
-    LIST(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
-    LIST(SYMBOL("name"), VALUE("expr")),
-]
 
 
 def helper_binding(source):
@@ -181,7 +129,7 @@ def helper_binding(source):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    m = match1(source, _BINDING_FORMS)
+    m = match1(source, BINDING_FORMS)
     if m is None:
         raise SpecialError(msg, source)
 
@@ -191,12 +139,6 @@ def helper_binding(source):
     return (
         name.datum if name else None,
         value.datum)
-
-
-_USING_FORMS = (
-    *_BINDING_FORMS,
-    LIST(VALUE("expr")),
-)
 
 
 def helper_using(source):
@@ -210,7 +152,7 @@ def helper_using(source):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    m = match1(source, _USING_FORMS)
+    m = match1(source, USING_FORMS)
     if m is None:
         raise SpecialError(msg, source)
 

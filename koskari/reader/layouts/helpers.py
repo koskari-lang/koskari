@@ -22,9 +22,8 @@ Layout decorator for reader block syntax and block-form matchers.
 """
 
 
-from ...compile.helpers import match1
 from ...lib import keyword
-from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST
+from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST, match1
 from ...types import is_pair, is_symbol
 
 
