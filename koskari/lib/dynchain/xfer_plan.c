@@ -235,6 +235,12 @@ static int kos_delimited_invoke_inplace(
   {
     KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
     if (! displaced && KosDynFrame_STACK(resume_frame)) {
+      /* Nothing on the chain points at the delim or the invocation
+         prompt yet, so both are ours to free; the delim's free takes
+         the handler snapshot it holds. */
+      kos_dynprompt_free(invocation_prompt);
+      KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+      kos_dyndelim_free(delim);
       if (resume_stack)
         KosStack_Release(resume_stack);
       return -1;
