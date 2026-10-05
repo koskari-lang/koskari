@@ -102,7 +102,7 @@ typedef struct {
 ```
 
 **Behavior**:
-- Not callable from Python: `tp_call` always raises `TypeError` (invocation only via CALL inside koskari_eval)
+- Calling it from Python never resumes in place: the call raises `KoskariContinuationDead` when the owning evaluator is gone, and otherwise `KoskariContinuationApply` carrying the owner token, the continuation and the packed value, which the owner delivers (in-VM invocation is via CALL inside koskari_eval)
 - Multi-shot: clones captured state on each apply
 - GC-tracked: traverses captured chain
 
@@ -111,8 +111,8 @@ typedef struct {
 The `kos_shift_capture()` function handles capture:
 
 ```c
-int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
-        KosContinuation **out_k);
+int kos_shift_capture(KosEvalState *es, uint32_t prompt_id,
+        uint32_t resume_pc, KosContinuation **out_k);
 ```
 
 **Algorithm**:
@@ -356,7 +356,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 ## Opcodes
 
 ### Undelimited continuations (call/cc)
-- `PUSH_CC` — Push CC block; arg = resume label (instruction index after POP_CC)
+- `PUSH_CC` — Push CC block; NOARG. The resume pc (the instruction after the closing POP_CC) comes from the CC extent, resolved once per site into the cache slot
 - `CAPTURE_CC` — Capture undelimited continuation up to the current CC block; push continuation on stack; stores owning evaluator token in the continuation
 - `POP_CC` — Pop CC block (normal completion)
 - **Invocation**: Use the general `CALL` opcode with stack `[callable, arg_0, ...]`. Same evaluator token → direct apply; different token → VM sets `KoskariContinuationApply` and returns -1 so the exception propagates to the caller. CALL 0 = resume with one value (Py_None); CALL 1 = resume with one argument.
@@ -373,7 +373,7 @@ Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 
 ### Continuation Invocation
 - **Undelimited**: Invoke via `CALL` 0 or 1 (continuation and optional arg on stack; stack order [callable, arg_0, ...]).
-- `INVOKE_K` / `INVOKE_K_VAR` — Invoke delimited continuation; two-path (resume in place when the capture-time prompt is live in ancestry, PUSH graft otherwise; return to call site when POP_PROMPT runs). Prompt need not be in chain for the graft path.
+- **Delimited**: also the `CALL` family; the continuation types install through `kos_vinstall_continuation`, which packs the arguments as return does and runs the two-path invoke (resume in place when the capture-time prompt is live in ancestry, PUSH graft otherwise; return to call site when POP_PROMPT runs). Prompt need not be in chain for the graft path.
 
 ## Related Documentation
 

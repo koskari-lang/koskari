@@ -1,4 +1,26 @@
-/* Included by matcher.c — match_repeat */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. The REPEAT match step and its width.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === REPEAT matching === */
 
 
@@ -46,6 +68,10 @@ static int match_repeat_capture_list(
         return -1;
       }
       if (r == 0 || *cursor == saved) {
+        /* a failed attempt leaves sub_dict NULL; a zero-width success
+           cannot pass the REPEAT min-width validation, but if one did
+           its dict is released here rather than leaked */
+        Py_XDECREF(sub_dict);
         *cursor = saved;
         engine_rollback(e, snap);
         break;

@@ -19,9 +19,8 @@
 
    Validator-only tests; no matching engine yet (Phase 2).
 
-   author: Christopher O'Brien <obriencj@preoccupied.net>
-   license: GNU General Public License v3
-   ai-assistant: Claude Opus 4.7 via Cursor
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
 */
 
 

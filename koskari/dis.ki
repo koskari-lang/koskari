@@ -90,7 +90,7 @@ define _format_constant [val]:
 define _write_function_instance_section [file fn]:
   """
   Write a leading section for a Function instance: name, formals,
-  base_ns (closures).
+  closures.
 
   :param file: file-like object to write to
   :param fn: Function instance (KosFunction)
@@ -111,10 +111,10 @@ define _write_function_instance_section [file fn]:
   else:
     file.write "    (none)\n"
 
-  define base_ns fn.base_ns
-  file.write "  base_ns (closures):\n"
-  if base_ns:
-    for-each [[k v] (base_ns.items)]:
+  define closures fn.closures
+  file.write "  closures:\n"
+  if closures:
+    for-each [[k v] (closures.items)]:
       file.write f"    {(repr k)}: {(_format_constant v)}\n"
   else:
     file.write "    (none)\n"
@@ -297,7 +297,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
   Format an opcode argument for display. Uses constant pool, local
   names, and closure names when the argument is an index into them.
 
-  For PUSH_NS and PUSH_CLASS, the optional ns_label string is appended
+  For PUSH_NS and PUSH_COLLECT, the optional ns_label string is appended
   to annotate which namespace is being pushed.
 
   :param code: Koskari Code
@@ -306,7 +306,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
   :param cpool: code.constants_pool (sequence)
   :param local_names: sequence of local sym names from nspec
   :param closure_names: sequence of closure sym names from nspec
-  :param ns_label: optional inline namespace label for PUSH_NS / PUSH_CLASS
+  :param ns_label: optional inline namespace label for PUSH_NS / PUSH_COLLECT
   :param extra_schema: op.extra -- a 4-tuple of OpStyle field kinds for
     an EXTRA-style opcode, empty for every other style
   :return: string description of the argument
@@ -440,7 +440,7 @@ define dis [x file: None]:
   Print a disassembly of a Koskari Code or Function object.
 
   For Function: prints a leading section with function instance details
-  (name, formals, base_ns closures), then the disassembly of its code.
+  (name, formals, closures), then the disassembly of its code.
 
   For BoundMethod: prints a bound-method section (__self__), then the
   same function-instance section and code disassembly as for __func__.
@@ -449,7 +449,7 @@ define dis [x file: None]:
   expanded to show their locals and closures), vars (local_syms from
   namespace_spec), closure refs (closure_syms from namespace_spec),
   and indexed instructions with decoded arguments. FAST_* instructions
-  show whether the slot is a local or closure. PUSH_NS and PUSH_CLASS
+  show whether the slot is a local or closure. PUSH_NS and PUSH_COLLECT
   instructions are annotated with the namespace ID (ns#K) and name of
   the NamespaceSpec they push.
 

@@ -84,7 +84,7 @@ def _label_generator(formatstr="label_%04x"):
         counter += 1
         if text is None:
             return formatstr % counter
-        return "%s_%x" % (text, counter)
+        return f"{text}_{counter:x}"
 
     return gen_label
 
@@ -153,6 +153,11 @@ class ByteCodeFragment:
         self.annotation_bindings = []
         self.doc = None
 
+        # the source position of the first write to each name, by its
+        # str spelling, carried along by merge so the fragment that is
+        # validated can locate the write that fails
+        self.write_positions = {}
+
         # write requests copied up from inner Codes at completion; they
         # are validated where they originate, so the validator skips
         # them here (see KoskariPragma.cpool_merge)
@@ -218,6 +223,8 @@ class ByteCodeFragment:
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
             self.note_mark(var_name)
+        if position is not None:
+            self.write_positions.setdefault(str(var_name), position)
         self.resolution.on_write(self, var_name, position=position)
 
 
@@ -388,10 +395,10 @@ class ByteCodeFragment:
         for name in other.requests:
             self.request_var(name)
         for name in other.requests_for_write:
-            self.request_for_write(name)
+            self.request_for_write(
+                name, position=other.write_positions.get(str(name)))
         for name in other._request_global:
-            if name not in self.declares:
-                self.request_global(name)
+            self.request_global(name)
         self.annotation_bindings.extend(other.annotation_bindings)
         if other.marked:
             self.marked = True
@@ -415,20 +422,25 @@ class ByteCodeFragment:
 
         compiler = self.compiler
         ns_name = str(ns_name)
+        names = tuple(names)
+        if len(names) != len(values):
+            raise CompilerError(
+                "mismatch between names and values",
+                (names, values))
+
+        # the values run before PUSH_NS, in the enclosing scope, so they
+        # compile there too: before the child scope opens and before its
+        # names are declared
+        valfrag = None
+        if names:
+            valfrag = compiler.fragment(ns_name)
+            for val in values:
+                valfrag.merge(compiler.full_compile(val))
+
         child = compiler.fragment(ns_name)
         with compiler.resolution_scope(child):
-            names = tuple(names)
-            if len(names) != len(values):
-                raise CompilerError(
-                    "mismatch between names and values",
-                    (names, values))
-
-            if names:
-                for name in names:
-                    child.declare_var(name)
-                valfrag = compiler.fragment(ns_name)
-                for val in values:
-                    valfrag.merge(compiler.full_compile(val))
+            for name in names:
+                child.declare_var(name)
 
             yield child
             nspec = child.as_namespace_spec()
@@ -581,12 +593,14 @@ class Compiler:
         # its ancestry for write validation at the root
         self.lexical_stack = []
 
+        # a ModuleNamespace is a dict subclass, so the namespace kinds
+        # are checked ahead of a plain dict of builtins
         if module is None:
             module = Module(ModuleNamespace(name, {}))
+        elif isinstance(module, (Namespace, ModuleNamespace)):
+            module = Module(module)
         elif isinstance(module, dict):
             module = Module(ModuleNamespace(name, module))
-        elif isinstance(module, Namespace):
-            module = Module(module)
 
         self.module = module
 
@@ -594,11 +608,13 @@ class Compiler:
 
         ns = vars(module)
 
-        r = ns.ref("__name__")
-        if r.empty:
-            r.store(name)
+        # stored through the namespace, not its Ref, so a module
+        # namespace mirrors __name__ where CPython reads it raw
+        current = ns.get("__name__")
+        if current is None:
+            ns.store("__name__", name)
         elif name is None:
-            name = r.deref()
+            name = current
         self.name = name
 
         r = ns.ref("__file__")
@@ -820,6 +836,21 @@ class Compiler:
         return self._find_compiled("compile/" + name)
 
 
+    def symbol_is_variable(self, sym):
+        """
+        Whether a lone symbol compiles to a variable read, so a special
+        may name it in a fused VAR operand: it is not a compiler literal
+        and no bare arm expands it. Anything else must go through
+        full_compile, which expands the bare arm or emits the constant
+
+        :param sym: the symbol as written, marks included
+        """
+
+        if sym.base in _COMPILER_LITERALS:
+            return False
+        return self.find_bare_compiled(sym) is None
+
+
     def find_bare_compiled(self, name):
         """
         Resolve as :meth:`find_compiled`, keeping only a Compiled that
@@ -1011,12 +1042,6 @@ class Compiler:
             return self.compile_special(
                 fragment, comp, Datum(sym, position))
 
-        # This is handled by the reader macros now.
-        # ex = sym.rsplit(".", 1)
-        # if len(ex) > 1:
-        #     source = cons(_symbol_attr, *ex, nil)
-        #     return self.compile_pair(fragment, source)
-
         return self.compile_raw_symbol(fragment, sym)
 
 
@@ -1130,8 +1155,6 @@ class Compiler:
 
 
     def compile_pair(self, fragment, source_obj, position=None):
-        # print("compile_pair", kos_repr(source_obj))
-
         if is_nil(source_obj):
             return self.compile_const(fragment, source_obj)
 

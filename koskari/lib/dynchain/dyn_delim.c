@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_delim */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_DELIM node: the return bookmark
+  of a delimited continuation invoke.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynDelim implementation === */
 
 
@@ -44,8 +67,12 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
     return NULL;
 
   kos_dynnode_init(clone, KOS_DYN_DELIM, NULL, KosDynNode_CAPS(delim));
-  /* The clone borrows RETURN_FRAME; ownership of a held snapshot stays
-     with the original, so the holds flag must not be copied. */
+  /* RETURN_FRAME is a borrow of a live frame on the chain, here as in
+     the original. A delim that owns its frame, a held handler snapshot
+     under KOS_DYNF_HOLDS_RETURN_FRAME, exists only in INPLACE mode,
+     and kos_dyn_clone_segment links around every INPLACE delim, so this
+     clone never meets one; the flag is masked off so a clone can never
+     claim to own a frame it merely points at. */
   KosDynNode_FLAGS(clone) = (KosDynNode_FLAGS(delim) | KOS_DYNF_CLONED)
       & ~KOS_DYNF_HOLDS_RETURN_FRAME;
   KosDynNode_NODE_ID(clone) = kos_dynnode_id(delim);
@@ -205,3 +232,6 @@ static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) 
     return 0;
   return kos_dynchain_traverse(chain, NULL, visit, arg);
 }
+
+
+// The end.

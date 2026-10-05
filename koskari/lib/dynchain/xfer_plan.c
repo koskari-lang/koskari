@@ -1,4 +1,28 @@
-/* Included by dynchain.c -- continuation invocation */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. Continuation invocation: the in-place resume
+  and the transfer plan that grafts a captured chain onto the call
+  site.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === Continuation invocation === */
 
 
@@ -159,6 +183,10 @@ static int kos_delimited_invoke_inplace(
                            return_frame,
                            NULL);
   if (! delim) {
+    /* No delim took the holds flag, so the handler snapshot is still
+       ours to free. */
+    if (handler_nested)
+      kos_dynframe_free(return_frame);
     if (resume_stack)
       KosStack_Release(resume_stack);
     if (! PyErr_Occurred())
@@ -166,6 +194,10 @@ static int kos_delimited_invoke_inplace(
     return -1;
   }
   KosDynDelim_RETURN_NODE(delim) = (KosDynNode *) delim;
+  /* The snapshot has no owner but this delim until the restitch hands
+     it to the chain. The flag is only ever set here, on an INPLACE
+     delim, which kos_dyn_clone_segment never clones, so no template
+     can hold a borrowed pointer to a frame this delim will free. */
   if (handler_nested)
     KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 
@@ -195,6 +227,29 @@ static int kos_delimited_invoke_inplace(
          (void *) resume_frame, (unsigned) return_pc);
   #endif
 
+  /* The one step that can fail comes first, before the chain is
+     touched: the displaced segment is stored away from its node until
+     restitch, and an inline segment cannot leave its node, so detach
+     spills it to a heap segment. A failure here leaves the chain as
+     it was. */
+  {
+    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
+    if (! displaced && KosDynFrame_STACK(resume_frame)) {
+      /* Nothing on the chain points at the delim or the invocation
+         prompt yet, so both are ours to free; the delim's free takes
+         the handler snapshot it holds. */
+      kos_dynprompt_free(invocation_prompt);
+      KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+      kos_dyndelim_free(delim);
+      if (resume_stack)
+        KosStack_Release(resume_stack);
+      return -1;
+    }
+    KosDynDelim_SAVED_STACK(delim) = displaced;
+    if (displaced)
+      KosSegment_BACK(displaced) = NULL;
+  }
+
   /* Detach the invoke span and stash it on the delim. Its segments'
    * unwind-cache back links die with the detach. */
   KosDynNode_PARENT(shift) = NULL;
@@ -217,23 +272,10 @@ static int kos_delimited_invoke_inplace(
   }
 
   /* Displace the resume frame's live state with the captured resume
-   * state; the delim owns the displaced stack until restitch. The
-   * invoke-site acting pc is saved for extent lookups after restitch
-   * (slice execution overwrites the frame's acting pc). */
-  /* The displaced segment is stored away from its node until restitch;
-     an inline segment cannot leave its node, so detach spills it to a
-     heap segment first. */
-  {
-    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
-    if (! displaced && KosDynFrame_STACK(resume_frame)) {
-      if (resume_stack)
-        KosStack_Release(resume_stack);
-      return -1;
-    }
-    KosDynDelim_SAVED_STACK(delim) = displaced;
-    if (displaced)
-      KosSegment_BACK(displaced) = NULL;
-  }
+   * state; the delim owns the displaced stack, detached above, until
+   * restitch. The invoke-site acting pc is saved for extent lookups
+   * after restitch (slice execution overwrites the frame's acting
+   * pc). */
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
   KosDynFrame_STACK(resume_frame) = resume_stack;
@@ -254,7 +296,7 @@ static int kos_delimited_invoke_inplace(
 
 
 /**
-   Invoke k with value or throw. Delimited with the capture-time reset live
+   Invoke k with value. Delimited with the capture-time reset live
    in ancestry: in-place resume (no goal). Otherwise arms a transfer goal:
    for a delimited k the caller stays on the chain and a fresh clone of the
    template lands on a DELIM bookmark; for an undelimited k the chain is
@@ -264,7 +306,6 @@ int kos_invoke_continuation(
     KosEvalState *es,
     KosContinuation *k,
     PyObject *value,
-    int is_throw,
     PyObject *continuation_ref) {
 
   if (! k) {
@@ -276,10 +317,8 @@ int kos_invoke_continuation(
      dyn_top ancestry: resume on the live chain, no graft, no wind replay.
      Only the first invoke can run in place (it consumes the live slice);
      re-invokes fall through to the PUSH graft, which instantiates the
-     captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))).
-     Throw injection also stays on the PUSH path. */
+     captured template per invoke (multi-shot, e.g. (sum (k 0) (k 1))). */
   if (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED
-      && ! is_throw
       && ! KosContinuation_LIVE_SLICE_CONSUMED(k)) {
     KosDynFrame *nested_frame = NULL;
 
@@ -363,7 +402,7 @@ int kos_invoke_continuation(
 
   {
     KosXferGoal *goal = kos_xfer_goal_new(
-        target, seam, value, is_throw, KosContinuation_RESUME_PC(k),
+        target, seam, value, KosContinuation_RESUME_PC(k),
         continuation_ref, 0);
     if (! goal) {
       /* target is freed by kos_xfer_goal_new on failure. Undo only the
@@ -438,3 +477,6 @@ int kos_chain_common_ancestor(
   PyMem_Free(live_arr);
   return 0;
 }
+
+
+// The end.

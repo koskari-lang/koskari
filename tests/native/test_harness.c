@@ -20,8 +20,8 @@
    Initializes Python, loads the koskari.lib module, and runs all
    native memory tests.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

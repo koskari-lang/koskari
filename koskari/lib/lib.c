@@ -19,8 +19,8 @@
 
    Native extension module for Koskari
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -135,7 +135,8 @@ static int koskari_lib_init(PyObject *mod) {
       return -1;
   }
 
-  /* compat must be initialized first; sync before coro and iter */
+  /* compat interns the coroutine protocol names and the cr_await
+     descriptor before coro and iter use them */
   if (koskari_arena_init(mod) ||
       koskari_atom_init(mod) ||
       koskari_bytecode_init(mod) ||

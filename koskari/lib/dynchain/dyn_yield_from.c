@@ -1,23 +1,28 @@
-/* Included by dynchain.c — dyn_yield_from */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_YIELD_FROM node: a yield-from
+  delegation and its resume phases.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynYieldFrom implementation === */
-
-
-static PyObject *kos_dynyieldfrom_str_close = NULL;
-
-
-static int kos_dynyieldfrom_strings_init(void) {
-
-  STR_CONST(kos_dynyieldfrom_str_close, "close");
-  if (! kos_dynyieldfrom_str_close)
-    return -1;
-  return 0;
-}
-
-
-static void kos_dynyieldfrom_strings_clear(void) {
-
-  Py_CLEAR(kos_dynyieldfrom_str_close);
-}
 
 
 /**
@@ -37,8 +42,8 @@ KosDynYieldFrom *kos_dynyieldfrom_new(
   }
 
   caps = KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP;
-  /* KOS_YF_KOS_ITER (4): flattened iteration node with main eval loop */
-  if (kind == (uint8_t) 4)
+  /* flattened iteration node with the main eval loop */
+  if (kind == KOS_YF_KOS_ITER)
     caps |= KOS_DYN_CAP_ITER_RECEIVER;
 
   kos_dynnode_init((KosDynNode *) node, KOS_DYN_YIELD_FROM, parent, caps);
@@ -185,10 +190,6 @@ int kos_dyn_yield_from_deliver_inner_yield(
 
 
 /**
-   Inner Koskari async gen returned: pop yield-from (void completion).
-   Advance delegating frame PC past the YIELD_FROM instruction.
-*/
-/**
    Exhaustion tail shared by the inner-return delivery (GEN just
    unwound) and the raise-walk StopIteration conversion (GEN already
    finished): clear the delegate's in-progress mark, resume after the
@@ -282,13 +283,9 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
   case KOS_YF_SYNC_ITER:
     break;
 
-  case KOS_YF_SYNC_GEN: {
-    PyObject *res = PyObject_CallMethodObjArgs(
-        delegate, kos_dynyieldfrom_str_close, NULL);
-    Py_XDECREF(res);
-    PyErr_Clear();
+  case KOS_YF_SYNC_GEN:
+    kos_iter_close(delegate);
     break;
-  }
 
   case KOS_YF_PY_ASYNC_ITER:
   case KOS_YF_PY_ASYNC_GEN:
@@ -372,3 +369,5 @@ static int dynnode_traverse_yield_from(KosDynNode *node, visitproc visit, void *
   return 0;
 }
 
+
+// The end.

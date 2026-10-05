@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_collect */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_COLLECT node: the collector
+  namespace scope a class body runs in.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynCollect implementation === */
 
 
@@ -85,9 +108,16 @@ KosDynCollect *kos_dyn_push_collect(
 
 
 /**
-   Pop COLLECT when top. Callers: POP_COLLECT.
+   Pop COLLECT when top, handing out the collected namespace. The node
+   owns that namespace and the pop frees the node, so the reveal
+   happens here, after the checks and before the free. Callers:
+   POP_COLLECT.
 */
-int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
+int kos_dyn_pop_collect(
+    KosEvalState *es,
+    KosDynCollect *node,
+    PyObject **out_ns) {
+
   if (! KosEvalState_DYN_TOP(es) ||
       KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
@@ -98,6 +128,7 @@ int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node) {
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
+    *out_ns = KosNamespace_Reveal(KosDynNode_NS(node));
     kos_dyn_commit_dyn_top(es, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyncollect_free(node);
@@ -118,3 +149,6 @@ static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg
   (void) arg;
   return 0;
 }
+
+
+// The end.

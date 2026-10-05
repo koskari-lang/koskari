@@ -19,8 +19,8 @@
 
   Reference types for Koskari
 
-  author: Christopher O'Brien <obriencj@gmail.com>
-  license: GPL v.3
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
 */
 
 
@@ -50,9 +50,31 @@ static PyObject *_str_empty = NULL;  // "empty"
 static int ref_nb_bool(PyObject *self);
 
 
+/**
+   The init of every ref type other than Ref. They take their arguments
+   in __new__, and they derive from Ref, whose __init__ parses Ref's
+   argument shape; this inert slot stops them inheriting it. It accepts
+   and ignores arguments, which is what object's init does for a type
+   with its own __new__.
+*/
+static int ref_tp_init_inert(PyObject *self, PyObject *args, PyObject *kwds) {
+
+  (void) self;
+  (void) args;
+  (void) kwds;
+  return 0;
+}
+
+
 /* === Ref (base symbolic reference) === */
 
 
+/**
+   Fill or refill the ref. The name is resolved before either field is
+   touched, so a failure leaves the ref as it was; the fields are
+   replaced rather than assigned, so a refill releases what it
+   overwrites. Fresh refs arrive with both fields NULL.
+*/
 static int sym_ref_init(PyObject *self, PyObject *name, PyObject *value) {
 
   if ((! name) || Py_None == name) {
@@ -63,10 +85,10 @@ static int sym_ref_init(PyObject *self, PyObject *name, PyObject *value) {
     if (! name)
       return -1;
   }
-  KosRef_NAME(self) = name;
+  Py_XSETREF(KosRef_NAME(self), name);
 
   Py_XINCREF(value);
-  KosSymbolicRef_VALUE(self) = value;
+  Py_XSETREF(KosSymbolicRef_VALUE(self), value);
 
   return 0;
 }
@@ -116,8 +138,7 @@ static PyObject *sym_ref_m_deref(PyObject *self) {
 
 static PyObject *sym_ref_m_store(PyObject *self, PyObject *value) {
   Py_XINCREF(value);
-  Py_XDECREF(KosSymbolicRef_VALUE(self));
-  KosSymbolicRef_VALUE(self) = value;
+  Py_XSETREF(KosSymbolicRef_VALUE(self), value);
   Py_RETURN_NONE;
 }
 
@@ -154,6 +175,36 @@ static PyMethodDef sym_ref_methods[] = {
 
   { NULL, },
 };
+
+
+/**
+   Ref is the one ref type open to subclassing, and a subclass defined
+   at runtime must be free to give __init__ any shape and to forward to
+   Ref's. So Ref follows dict's convention rather than the other ref
+   types': __new__ ignores its arguments and yields a complete, empty
+   ref, and __init__ reads the arguments and fills it. A type that
+   parsed them in __new__ would reject a subclass signature of another
+   arity, and object's __init__ would reject the forwarded arguments.
+*/
+static PyObject *sym_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *self;
+
+  (void) args;
+  (void) kwds;
+
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (sym_ref_init(self, NULL, NULL) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
+}
 
 
 static int sym_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
@@ -230,7 +281,7 @@ PyTypeObject KosRefType = {
   .tp_getset = sym_ref_getset,
   .tp_methods = sym_ref_methods,
   .tp_as_number = &ref_as_number,
-  .tp_new = PyType_GenericNew,
+  .tp_new = sym_ref_tp_new,
   .tp_init = sym_ref_tp_init,
   .tp_traverse = sym_ref_traverse,
   .tp_clear = sym_ref_clear,
@@ -382,21 +433,32 @@ static PyMethodDef attr_ref_methods[] = {
 };
 
 
-static int attr_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *attr_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
   PyObject *obj = NULL;
   PyObject *attr = NULL;
+  PyObject *self;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "AttributeRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "OOO:AttributeRef", &name, &obj, &attr))
-    return -1;
+    return NULL;
 
-  return attr_ref_init(self, name, obj, attr);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (attr_ref_init(self, name, obj, attr) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -437,8 +499,8 @@ PyTypeObject KosAttributeRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = attr_ref_getset,
   .tp_methods = attr_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = attr_ref_tp_init,
+  .tp_new = attr_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = attr_ref_traverse,
   .tp_clear = attr_ref_clear,
   .tp_dealloc = attr_ref_dealloc,
@@ -594,21 +656,32 @@ static PyMethodDef item_ref_methods[] = {
 };
 
 
-static int item_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *item_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
   PyObject *obj = NULL;
   PyObject *key = NULL;
+  PyObject *self;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "ItemRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "OOO:ItemRef", &name, &obj, &key))
-    return -1;
+    return NULL;
 
-  return item_ref_init(self, name, obj, key);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (item_ref_init(self, name, obj, key) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -649,8 +722,8 @@ PyTypeObject KosItemRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = item_ref_getset,
   .tp_methods = item_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = item_ref_tp_init,
+  .tp_new = item_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = item_ref_traverse,
   .tp_clear = item_ref_clear,
   .tp_dealloc = item_ref_dealloc,
@@ -796,24 +869,35 @@ static PyMethodDef dyn_ref_methods[] = {
 };
 
 
-static int dyn_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *dyn_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
   PyObject *getfn = NULL;
   PyObject *setfn = NULL;
   PyObject *delfn = NULL;
   PyObject *emptyfn = NULL;
+  PyObject *self;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "DynamicRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "OO|OOO:DynamicRef", &name,
                          &getfn, &setfn, &delfn, &emptyfn))
-    return -1;
+    return NULL;
 
-  return dyn_ref_init(self, name, getfn, setfn, delfn, emptyfn);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (dyn_ref_init(self, name, getfn, setfn, delfn, emptyfn) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -860,8 +944,8 @@ PyTypeObject KosDynamicRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = dyn_ref_getset,
   .tp_methods = dyn_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = dyn_ref_tp_init,
+  .tp_new = dyn_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = dyn_ref_traverse,
   .tp_clear = dyn_ref_clear,
   .tp_dealloc = dyn_ref_dealloc,
@@ -925,19 +1009,31 @@ static PyMethodDef const_ref_methods[] = {
 };
 
 
-static int const_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *const_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *self;
   PyObject *name = NULL;
   PyObject *val = NULL;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "ConstantRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "OO:ConstantRef", &name, &val))
-    return -1;
+    return NULL;
 
-  return const_ref_init(self, name, val);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (const_ref_init(self, name, val) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -953,8 +1049,8 @@ PyTypeObject KosConstantRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = sym_ref_getset,
   .tp_methods = const_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = const_ref_tp_init,
+  .tp_new = const_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = sym_ref_traverse,
   .tp_clear = sym_ref_clear,
   .tp_dealloc = sym_ref_dealloc,
@@ -1026,19 +1122,31 @@ static PyMethodDef memo_ref_methods[] = {
 };
 
 
-static int memo_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *memo_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *self;
   PyObject *name = NULL;
   PyObject *val = NULL;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "MemoizedRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "OO:MemoizedRef", &name, &val))
-    return -1;
+    return NULL;
 
-  return memo_ref_init(self, name, val);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (memo_ref_init(self, name, val) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -1079,8 +1187,8 @@ PyTypeObject KosMemoizedRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = sym_ref_getset,
   .tp_methods = memo_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = memo_ref_tp_init,
+  .tp_new = memo_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = memo_ref_traverse,
   .tp_clear = memo_ref_clear,
   .tp_dealloc = memo_ref_dealloc,
@@ -1194,8 +1302,7 @@ static PyObject *weak_ref_m_store(PyObject *self, PyObject *value) {
   PyObject *wr = PyWeakref_NewRef(value, NULL);
   if (! wr)
     return NULL;
-  Py_XDECREF(KosSymbolicRef_VALUE(self));
-  KosSymbolicRef_VALUE(self) = wr;
+  Py_XSETREF(KosSymbolicRef_VALUE(self), wr);
   Py_RETURN_NONE;
 }
 
@@ -1227,20 +1334,31 @@ static PyGetSetDef weak_ref_getset[] = {
 };
 
 
-static int weak_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *weak_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
 
   PyObject *name = NULL;
   PyObject *val = NULL;
+  PyObject *self;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "WeakRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "|OO:WeakRef", &name, &val))
-    return -1;
+    return NULL;
 
-  return weak_ref_init(self, name, val);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (weak_ref_init(self, name, val) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -1256,8 +1374,8 @@ PyTypeObject KosWeakRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = weak_ref_getset,
   .tp_methods = weak_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = weak_ref_tp_init,
+  .tp_new = weak_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = sym_ref_traverse,
   .tp_clear = sym_ref_clear,
   .tp_dealloc = sym_ref_dealloc,
@@ -1405,19 +1523,31 @@ static PyMethodDef param_ref_methods[] = {
 };
 
 
-static int param_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
+static PyObject *param_ref_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *self;
   PyObject *key = NULL;
   PyObject *default_value = NULL;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "ParamRef takes no named arguments");
-    return -1;
+    return NULL;
   }
 
   if (! PyArg_ParseTuple(args, "O|O:ParamRef", &key, &default_value))
-    return -1;
+    return NULL;
 
-  return param_ref_init(self, key, default_value);
+  self = type->tp_alloc(type, 0);
+  if (! self)
+    return NULL;
+  if (param_ref_init(self, key, default_value) < 0) {
+    Py_DECREF(self);
+    return NULL;
+  }
+  return self;
 }
 
 
@@ -1455,8 +1585,8 @@ PyTypeObject KosParamRefType = {
   .tp_repr = ref_generic_repr,
   .tp_getset = param_ref_getset,
   .tp_methods = param_ref_methods,
-  .tp_new = PyType_GenericNew,
-  .tp_init = param_ref_tp_init,
+  .tp_new = param_ref_tp_new,
+  .tp_init = ref_tp_init_inert,
   .tp_traverse = param_ref_traverse,
   .tp_clear = param_ref_clear,
   .tp_dealloc = param_ref_dealloc,
@@ -1527,8 +1657,7 @@ int KosRef_Store(PyObject *self, PyObject *value) {
   // Py_None materialization the PyObject-returning method convention needs.
   if (likely(tp == &KosRefType)) {
     Py_XINCREF(value);
-    Py_XDECREF(KosSymbolicRef_VALUE(self));
-    KosSymbolicRef_VALUE(self) = value;
+    Py_XSETREF(KosSymbolicRef_VALUE(self), value);
     return 0;
   }
 

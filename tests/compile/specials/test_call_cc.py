@@ -99,6 +99,51 @@ class TestCallCcSpecial(SpecialsTestCase):
         self.assertEqual(result, 42)
 
 
+    async def test_continuation_packs_arguments_like_return(self):
+        """
+        A continuation called with no argument resumes with None, with one
+        argument resumes with it, with several resumes with their tuple,
+        and with keywords resumes with a values instance over all of them
+        """
+
+        cases = [
+            ("(call/cc (lambda [k] (k)))", None),
+            ("(call/cc (lambda [k] (k 1)))", 1),
+            ("(call/cc (lambda [k] (k 1 2)))", (1, 2)),
+        ]
+        for src_str, expected in cases:
+            expr, mod = self.compile_expr(src_str)
+            self.assertEqual(await expr(), expected, src_str)
+
+        expr, mod = self.compile_expr("(call/cc (lambda [k] (k 1 x: 2)))")
+        result = await expr()
+        self.assertIsInstance(result, lib.values)
+        self.assertEqual(tuple(result), (1,))
+        self.assertEqual(result["x"], 2)
+
+
+    async def test_python_call_packs_arguments_like_return(self):
+        """
+        The Python-side call of a continuation packs its arguments the
+        same way as a call from Koskari
+        """
+
+        def two(k):
+            return k(1, 2)
+
+        def keyed(k):
+            return k(1, x=2)
+
+        expr, mod = self.compile_expr("(call/cc fn)", fn=two)
+        self.assertEqual(await expr(), (1, 2))
+
+        expr, mod = self.compile_expr("(call/cc fn)", fn=keyed)
+        result = await expr()
+        self.assertIsInstance(result, lib.values)
+        self.assertEqual(tuple(result), (1,))
+        self.assertEqual(result["x"], 2)
+
+
     async def test_call_cc_wrong_arg_count_raises(self):
         """
         (call/cc) with no arguments raises SpecialError

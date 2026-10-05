@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_frame */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_FRAME node: function activation
+  records, their push, pop, tail reset and parking.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynFrame implementation === */
 
 
@@ -295,8 +318,8 @@ KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
 /**
    Offer a detached native-program frame to a holder's one-frame
    cache: strip it to an inert allocation and store it in *cache when
-   the slot is empty. The namespace slot holds only the owned fill of
-   the live namespace (kos_dyn_push_frame_native) and is released
+   the slot is empty. The namespace slot holds only an owned reference
+   to the empty namespace (kos_dyn_push_frame_native) and is released
    here; a frame with code or a cache-participation fn is not a
    native-program frame and takes the ordinary free instead.
 */
@@ -387,7 +410,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
 
-  /* Replace ns with empty dict */
+  /* Drop the namespace; the tail install sets the callee's */
   Py_XDECREF(KosDynFrame_NS(frame));
   KosDynFrame_NS(frame) = NULL;
 
@@ -426,35 +449,6 @@ int kos_dyn_pop_frame(KosEvalState *es) {
     kos_dynnode_free(old_top);
   }
 
-  return 0;
-}
-
-
-/**
-   Attach an existing frame to the context's dynamic chain (no allocation).
-
-   Reparents the frame so its parent is KosEvalState_DYN_TOP(es), then sets it as
-   dyn_top/frame_top. Used to run a generator frame in the current context
-   (e.g. async gen step). Does not free the frame on detach.
-
-   :param ctx: execution context
-   :param frame: existing frame (not freed by this module)
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame) {
-  KosDynFrame *cur = KosEvalState_FRAME(es);
-
-  if (! frame) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL frame for attach");
-    return -1;
-  }
-  if (kos_eval_check_frame_room(es, cur, 1) < 0)
-    return -1;
-  KosDynFrame_DEPTH(frame) = cur ? KosDynFrame_DEPTH(cur) + 1 : 1;
-  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(es);
-  if (kos_dyn_push(es, (KosDynNode *) frame) < 0)
-    return -1;
   return 0;
 }
 
@@ -561,4 +555,4 @@ void kos_dyn_renumber_frames(
 }
 
 
-
+// The end.

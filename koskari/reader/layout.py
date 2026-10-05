@@ -19,7 +19,9 @@ subclasses Reader as a layout coordinator, owning structural colon,
 LINE_END header tails, and layout-only prefixes, and holds an inner
 Reader with full s-expression defaults. Bridge macros on the
 coordinator forward delimited reads into the inner reader so they do
-not see layout rules. Body reads require an IndentAwareStream.
+not see layout rules; the one exception is an index bracket attached
+to a value on a layout line, which the coordinator's own suffix macro
+reads in header mode. Body reads require an IndentAwareStream.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -65,7 +67,9 @@ class LayoutReader(Reader):
     with full s-expr defaults—balanced forms and prefix reads there use only
     inner state. (2) **Bridge** macros on this coordinator forward ``( ) [ ] {
     }`` ``"`` ``;`` ``f`` ``r`` ``b`` ``#`` into ``inner`` so delimiter and
-    string/comment/prefix parsing matches s-expr mode. (3) **Layout-only**
+    string/comment/prefix parsing matches s-expr mode; an index bracket
+    attached to a value is the exception, read by this coordinator's own
+    suffix macro in header mode. (3) **Layout-only**
     registrations: structural ``:``, ``_layout_macros`` (e.g. ``@``), and
     stacked ``'`` / backtick (predicated raw block then normal quote).
 
@@ -115,10 +119,14 @@ class LayoutReader(Reader):
         super().__init__(nodefaults=True, bracket_pairs=bracket_pairs)
         self._inner = Reader(nodefaults=True, bracket_pairs=bracket_pairs)
 
-        from ..lib import ModuleNamespace
+        from ..lib import ModuleNamespace, Namespace
 
+        # a ModuleNamespace is a dict subclass, so the namespace kinds
+        # are checked ahead of a plain dict of builtins
         if isinstance(namespace, Module):
             self._ns = vars(namespace)
+        elif isinstance(namespace, (Namespace, ModuleNamespace)):
+            self._ns = namespace
         elif isinstance(namespace, dict):
             self._ns = ModuleNamespace('layout', namespace)
         else:
@@ -1024,7 +1032,7 @@ class LayoutReader(Reader):
                     nil)
 
 
-    def _finish_header_line(self, stream, values, first_value_pos, pos):
+    def _finish_header_line(self, values, first_value_pos):
         """
         Collect the values on one layout line into a LINE result
 
@@ -1036,10 +1044,8 @@ class LayoutReader(Reader):
         returned as ``(:splice: FORM)``, so the filled forms spread into
         lines of their own when the block is expanded.
 
-        :param stream: the source stream (for error reporting)
         :param values: non-empty list of values collected on the line
         :param first_value_pos: position of the first value
-        :param pos: position of the line terminator (for error reporting)
         :return: (LINE, first_value_pos, the line as a proper cons list)
         """
 
@@ -1196,8 +1202,7 @@ class LayoutReader(Reader):
                 if event is LINE_END:
                     if not values:
                         break
-                    return self._finish_header_line(
-                        stream, values, first_value_pos, pos)
+                    return self._finish_header_line(values, first_value_pos)
 
                 if event is COLON:
                     if not values:
@@ -1218,8 +1223,7 @@ class LayoutReader(Reader):
                 if event is EOF:
                     if not values:
                         return EOF, pos, None
-                    return self._finish_header_line(
-                        stream, values, first_value_pos, pos)
+                    return self._finish_header_line(values, first_value_pos)
 
                 if event is DOT:
                     raise stream.error('invalid syntax', pos)

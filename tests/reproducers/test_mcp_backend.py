@@ -103,6 +103,10 @@ _CORPUS_ROWS = [
     _corpus_row(
         'ex-while-bad', 'loops/while', '(while #t (step))', ['invalid'],
         []),
+    # ahead of ex-map so a feature fallback over functions/ would hand
+    # back this row first; only ex-map holds the token xs
+    _corpus_row(
+        'ex-reduce', 'functions/reduce', '(reduce fn acc)', [], []),
     _corpus_row(
         'ex-map', 'functions/map', '(map fn xs)', ['higher-order'], []),
 ]
@@ -193,7 +197,7 @@ class TestMcpBakedBackend(unittest.IsolatedAsyncioTestCase):
 
         # provenance surface
         self.assertEqual(out['version']['git_ref'], 'testref')
-        self.assertEqual(out['version']['corpus'], 4)
+        self.assertEqual(out['version']['corpus'], 5)
         self.assertEqual(out['version']['docs'], 1)
         self.assertEqual(out['version']['programs'], 1)
 
@@ -212,6 +216,11 @@ class TestMcpBakedBackend(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             out['feature_loops'], ['ex-while', 'ex-foreach', 'ex-while-bad'])
         self.assertEqual(out['feature_loops'][-1], 'ex-while-bad')
+
+        # the feature narrows the search before the limit cuts it: the
+        # one functions/ row holding xs wins even at limit 1, although it
+        # ranks below a loops/ row corpus-wide
+        self.assertEqual(out['xs_functions'], ['ex-map'])
 
         # references resolve to their doc title/summary
         resolved = out['get_refs']

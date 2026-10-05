@@ -63,7 +63,7 @@ special, a macro, and a call is in
 | [`call`](compile-call.md) | Call a value; forces a runtime call past a same-named macro |
 | [`call-attr`](compile-call-attr.md) | Call a method by name; `(obj.method ...)` reads to this |
 | [`class`](compile-class.md) | Build a class value; what `define-class` lowers to |
-| [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests, accepting several types |
+| [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests; a tuple as the second operand tests several types |
 | [`#str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional bare format spec |
 | [`#list`, `#tuple`, `#list-append`](object-operators/index.md#collection-builders) | Build a list or tuple; append to a list |
 
@@ -84,6 +84,7 @@ special, a macro, and a call is in
 | Form | Does |
 |------|------|
 | [`cons`](compile-cons.md), [`car`](compile-car.md), [`cdr`](compile-cdr.md) | Build a pair chain; its first element; its rest |
+| [`bracket-cons`](compile-bracket-cons.md), [`bracket-proper`](compile-bracket-proper.md) | Build a bracket pair chain; a proper bracket list |
 | [`quote`](compile-quote.md) | A form as data; `'form` |
 | [`quote-syntax`](compile-quote-syntax.md) | A form as data, keeping hygiene marks; `#'form`; what a transformer's patterns and templates are quoted with |
 | [`quasiquote`](compile-quasiquote.md), [`unquote`](compile-unquote.md), [`unquote-splicing`](compile-unquote-splicing.md) | A template; `` `form ``, `,form`, `,@form` |

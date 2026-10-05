@@ -1,4 +1,26 @@
-/* Included by matcher.c — match_match */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. The MATCH match step and its width.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === MATCH matching === */
 
 
@@ -13,7 +35,7 @@ static int match_match(
     Py_ssize_t *cursor,
     uint32_t trailing_min) {
 
-  /* Sum of min_widths of all children — we drain it as we iterate to
+  /* Sum of min_widths of all children, drained as we iterate to
      compute each child's trailing. UNBOUNDED min would mean a child
      reserves arbitrary spine; treat as 0 for trailing accounting (the
      validator already enforces post-REST suffixes are deterministic). */

@@ -588,6 +588,11 @@ PyObject *KosOperator_MatrixMultiply(PyObject *const *values, size_t count) {
 }
 
 
+PyObject *KosOperator_Power(PyObject *const *values, size_t count) {
+  return op_power(values, count);
+}
+
+
 /* === Operator dispatch === */
 
 
@@ -740,40 +745,14 @@ KOS_NOINLINE int kos_compare_chain_ext(
 }
 
 
-/* Cold extended tail of kos_compare_reduce. Bool results throughout;
-   the isinstance/issubclass count form (value + N classes) builds the
-   class tuple the way OBJECT_IS_INSTANCE's PopTail did. */
+/* Cold extended tail of kos_compare_reduce: the truth of the chain as
+   a bool. Every extended selector is binary, isinstance and issubclass
+   included, which take a tuple as their second operand the way the
+   runtime instance? and subclass? do. */
 static KOS_NOINLINE PyObject *compare_reduce_ext(
     KosCompare sel,
     PyObject *const *args,
     size_t count) {
-
-  if (sel == KOS_COMPARE_IS_INSTANCE || sel == KOS_COMPARE_IS_SUBCLASS) {
-    PyObject *match;
-    if (count < 2) {
-      PyErr_Format(PyExc_TypeError, "comparison selector %i requires at"
-                   " least 2 positional arguments", (int) sel);
-      return NULL;
-    } else if (count == 2) {
-      match = args[1];
-      Py_INCREF(match);
-    } else {
-      match = PyTuple_New((Py_ssize_t) count - 1);
-      if (! match)
-        return NULL;
-      for (size_t i = 1; i < count; i++) {
-        Py_INCREF(args[i]);
-        PyTuple_SET_ITEM(match, (Py_ssize_t) i - 1, args[i]);
-      }
-    }
-    int res = (sel == KOS_COMPARE_IS_INSTANCE)
-        ? PyObject_IsInstance(args[0], match)
-        : PyObject_IsSubclass(args[0], match);
-    Py_DECREF(match);
-    if (res < 0)
-      return NULL;
-    return PyBool_FromLong(res);
-  }
 
   int res = kos_compare_chain_ext(sel, args, count);
   if (res < 0)
@@ -895,6 +874,7 @@ VAR_FUNC(KosOperator_BitwiseOr);
 VAR_FUNC(KosOperator_BitwiseXor);
 VAR_FUNC(KosOperator_FloorDivide);
 VAR_FUNC(KosOperator_MatrixMultiply);
+VAR_FUNC(KosOperator_Power);
 VAR_FUNC(KosOperator_Multiply);
 VAR_FUNC(KosOperator_Subtract);
 VAR_FUNC(KosOperator_TrueDivide);
@@ -928,6 +908,9 @@ static PyMethodDef operators[] = {
 
   { "@", PICK_FUNC(KosOperator_MatrixMultiply), METHOD_TYPE,
     "(@ VAL BY_VAL *: BY_VALS)" },
+
+  { "**", PICK_FUNC(KosOperator_Power), METHOD_TYPE,
+    "(** BASE EXP [MOD])" },
 
   { "//", PICK_FUNC(KosOperator_FloorDivide), METHOD_TYPE,
     "(// VAL DENOM *: DENOMS)" },

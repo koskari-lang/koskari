@@ -53,7 +53,6 @@
 
 static PyObject *KoskariSyncViolation = NULL;
 
-static PyObject *str_throw = NULL;
 
 
 void kos_demand_set_sync_violation(const char *msg) {
@@ -120,18 +119,15 @@ static PyObject *demand_step_python_result(PyObject *result) {
     Py_DECREF(msg_str);
     if (! exc)
       goto iter_fail;
-    value = PyObject_CallMethodObjArgs(await_iter, str_throw, exc, NULL);
+    PySendResult step = kos_iter_throw(await_iter, exc, &value);
     Py_DECREF(exc);
-  }
-
-  if (! value) {
-    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
+    if (step == PYGEN_ERROR)
       goto iter_fail;
-    /* Callee caught the violation and returned a value. */
-    if (PyGen_FetchStopIterationValue(&value) < 0)
-      goto iter_fail;
-    Py_DECREF(await_iter);
-    return value ? value : Py_NewRef(Py_None);
+    if (step == PYGEN_RETURN) {
+      /* Callee caught the violation and returned a value. */
+      Py_DECREF(await_iter);
+      return value;
+    }
   }
 
   /* throw() returned without raising: still suspended. */
@@ -736,6 +732,18 @@ static PyObject *demand_apply_kw(
                     "demand_apply: kwargs must be a dict or None");
     return NULL;
   }
+  if (call_kw && ! PyDict_CheckExact(call_kw)) {
+    /* a dict subclass that relays its reads, such as a module
+       namespace, is copied into a plain dict the callee reads raw */
+    PyObject *fixed = PyDict_New();
+    if (! fixed || PyDict_Update(fixed, call_kw) < 0) {
+      Py_XDECREF(fixed);
+      return NULL;
+    }
+    PyObject *res = Koskari_DemandSync(callable, call_args, fixed);
+    Py_DECREF(fixed);
+    return res;
+  }
   return Koskari_DemandSync(callable, call_args, call_kw);
 }
 
@@ -765,7 +773,6 @@ int koskari_demand_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(str_throw, "throw");
 
   if (register_koskari_sync_exception(mod,
           "koskari.lib.KoskariSyncViolation",
@@ -806,7 +813,6 @@ int koskari_demand_init(PyObject *mod) {
 int koskari_demand_clear(PyObject *mod) {
 
   KoskariSyncViolation = NULL;
-  Py_CLEAR(str_throw);
   (void) mod;
   return 0;
 }

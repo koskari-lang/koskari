@@ -22,6 +22,7 @@ Unit tests for tools.regen_version
 
 import importlib.util
 import os
+import re
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -46,6 +47,16 @@ def load_regen():
 regen = load_regen()
 
 
+# the version pattern of PEP 440, appendix B
+PEP440 = re.compile(
+    r'^v?(?:(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*'
+    r'(?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview)[-_.]?[0-9]*)?'
+    r'(?:-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?'
+    r'(?:[-_.]?dev[-_.]?[0-9]*)?)'
+    r'(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?$',
+    re.IGNORECASE)
+
+
 class TestAssembleVersion(unittest.TestCase):
 
     def test_release_at_exact_tag(self):
@@ -66,7 +77,7 @@ class TestAssembleVersion(unittest.TestCase):
         }
         fixed = datetime(2026, 6, 5, 18, 55, 53, tzinfo=timezone.utc)
         info = regen.assemble_version('0.1.0', state, now=fixed)
-        self.assertEqual(info['release'], 'dev+abc1234+20260605T185553')
+        self.assertEqual(info['release'], 'dev.abc1234.20260605T185553')
         self.assertEqual(info['build_kind'], 'dev')
         self.assertTrue(info['dirty'])
 
@@ -168,7 +179,24 @@ class TestReport(unittest.TestCase):
             'exact_tag': None,
             'dirty': False,
         })
-        self.assertEqual(regen.full_version(info), '0.1.0+dev+abc1234')
+        self.assertEqual(regen.full_version(info), '0.1.0+dev.abc1234')
+
+    def test_full_version_is_pep440(self):
+        fixed = datetime(2026, 6, 5, 18, 55, 53, tzinfo=timezone.utc)
+        cases = [
+            ('0.1.0', {'commit': 'abc1234', 'exact_tag': 'v0.1.0',
+                       'dirty': False}),
+            ('0.1.0', {'commit': 'abc1234', 'exact_tag': None,
+                       'dirty': False}),
+            ('0.1.0', {'commit': 'abc1234', 'exact_tag': None,
+                       'dirty': True}),
+            ('0.1.0.dev20260817', {'commit': 'abc1234',
+                                   'exact_tag': 'v0.1.0.dev20260817',
+                                   'dirty': False}),
+        ]
+        for version, state in cases:
+            info = regen.assemble_version(version, state, now=fixed)
+            self.assertRegex(regen.full_version(info), PEP440)
 
     def test_report_tag_oci_safe(self):
         tag = regen.report_tag(ROOT)

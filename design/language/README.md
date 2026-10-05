@@ -9,6 +9,7 @@ This directory documents the language-level features of Koskari, including synta
 - **[archive/operators.md](../archive/operators.md)** (archived): python-sibilant operator notes; the operator surface is documented for users in `docs/reference/specials/object-operators/index.md`
 - **macros.md**: Macro system (reader macros and compile-time macros) — see [archive/macros.md](../archive/macros.md)
 - **[archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)** (archived): syntax-box hygiene design (`koskari.syntax.Syntax`, `koskari.hygiene`); implemented
+- **dataclass-builder.md**: a `dataclass` builtin written in Koskari that collects the fields, records the stdlib's `__dataclass_fields__` metadata, and compiles the generated methods as Koskari functions, so `define-dataclass` never runs the stdlib's `exec` against the module namespace (proposed)
 - **unified-matcher-transformer-model.md**: Shared Matcher IR and transformer pipeline for `define-syntax`, `macro-rules`, specials, and post-expand hygiene/unbox
 - **syntax.md**: Syntax elements, literals, and parsing rules
 - **Layout syntax (user docs):** [docs/reference/reader-layout.md](../docs/reference/reader-layout.md), [docs/reference/concepts/layout-and-s-expressions.md](../docs/reference/concepts/layout-and-s-expressions.md); archived drafts in [archive/layout-syntax.md](../archive/layout-syntax.md), [archive/layout-syntax-formal.md](../archive/layout-syntax-formal.md)
@@ -17,4 +18,5 @@ This directory documents the language-level features of Koskari, including synta
 - **functions.md**: Function definition and calling conventions
 - **async.md**: Async/await and coroutine features
 - **generators.md**: Generator and yield features
+- **values-pack.md**: The values pack as the one carrier for multi-value delivery and receipt, with a `values` special and a `BUILD_VALUES` opcode (proposed)
 - **RESOLUTION-MODEL.md**: Variable resolution model (proposed) — read vs write semantics, define-global, typo safety

@@ -143,7 +143,7 @@ class KosBuiltinsDirective(SphinxDirective):
             if doccls is None:
                 continue
 
-            full_name = '%s.%s' % (_BUILTINS_MODULE, name)
+            full_name = f'{_BUILTINS_MODULE}.{name}'
             member_bridge = DocumenterBridge(
                 self.env,
                 bridge._reporter,

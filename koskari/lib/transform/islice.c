@@ -40,7 +40,7 @@ typedef struct KosISlice {
    anything else must be an integer that fits a Py_ssize_t and is not
    negative.
 
-   :return: 0, or -1 with the TypeError Python's islice raises
+   :return: 0, or -1 with the ValueError Python's islice raises
 */
 static int islice_bound(
     PyObject *arg,
@@ -114,7 +114,9 @@ static void islice_advance(KosISlice *s) {
 
   Py_ssize_t prev = s->next;
 
-  s->next += s->step;
+  /* unsigned addition so an overflow wraps instead of being undefined
+     behaviour, which would let the compiler drop the wrap test */
+  s->next = (Py_ssize_t) ((size_t) s->next + (size_t) s->step);
   if (s->next < prev || (s->stop != -1 && s->next > s->stop))
     s->next = s->stop;
 }
@@ -123,7 +125,10 @@ static void islice_advance(KosISlice *s) {
 /**
    SKIP: discard elements until the source reaches the next wanted
    position, then fetch the one to emit. Always entered with a NULL
-   value.
+   value. Armed only from the step's driven-source branch, and
+   re-entered only from islice_resume_discard, so src_sync is 0 on
+   every entry: every fetch here is a request. A sync source never
+   reaches this resume -- it slices whole inside the step.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     KosEvalState *es, void *state, PyObject *value) {
@@ -136,24 +141,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  while (s->cnt < s->next) {
-    if (! t->src_sync) {
-      KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
-                                              &islice_resume_discard_kind, s);
-      RESULT_ENTRY(es, r, &islice_resume_discard_kind, s);
-    }
-
-    {
-      PyObject *element = PyIter_Next(t->source);
-
-      if (! element) {
-        if (! PyErr_Occurred())
-          PyErr_SetNone(PyExc_StopIteration);
-        return EVAL_RAISE();
-      }
-      Py_DECREF(element);
-      s->cnt++;
-    }
+  if (s->cnt < s->next) {
+    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+                                            &islice_resume_discard_kind, s);
+    RESULT_ENTRY(es, r, &islice_resume_discard_kind, s);
   }
 
   /* The slice is spent: stop here rather than consuming the rest. */
@@ -162,21 +153,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     return EVAL_RAISE();
   }
 
-  if (! t->src_sync) {
+  {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
                                             &islice_resume_emit_kind, s);
     RESULT_ENTRY(es, r, &islice_resume_emit_kind, s);
-  }
-
-  {
-    PyObject *element = PyIter_Next(t->source);
-
-    if (! element) {
-      if (! PyErr_Occurred())
-        PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-    RESUME_HOP(&islice_resume_emit_kind, es, s, element);
   }
 }
 

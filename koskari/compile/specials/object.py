@@ -49,10 +49,6 @@ _COMPARE_PATTERNS = [
 ]
 
 # A value and one or more types
-_TYPE_CHECK_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), REST("args", min_tail=2)),
-]
-
 _BINARY_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("a"), VALUE("b")),
 ]
@@ -70,6 +66,43 @@ _REDUCE_PATTERNS = [
 _STR_PATTERNS = [
     MATCH(CALLEDBY("called_by"), REST("args")),
 ]
+
+
+# caps on a folded constant, after CPython's AST optimizer: a result
+# past these is left to the runtime operator rather than pooled
+FOLD_MAX_INT_BITS = 128
+FOLD_MAX_STR_SIZE = 4096
+FOLD_MAX_SEQ_SIZE = 256
+
+
+def _fold_product_fits(a, b):
+    """
+    Whether a * b stays within the fold caps, judged from the operands
+    so that an oversized product is never built
+    """
+
+    if isinstance(a, int) and isinstance(b, int):
+        return a.bit_length() + b.bit_length() <= FOLD_MAX_INT_BITS
+    for seq, count in ((a, b), (b, a)):
+        if isinstance(count, int) and isinstance(seq, (str, bytes, tuple)):
+            cap = (FOLD_MAX_STR_SIZE if isinstance(seq, (str, bytes))
+                   else FOLD_MAX_SEQ_SIZE)
+            return len(seq) * max(count, 0) <= cap
+    return True
+
+
+def _fold_result_fits(value):
+    """
+    Whether a folded constant is within the fold caps
+    """
+
+    if isinstance(value, int):
+        return value.bit_length() <= FOLD_MAX_INT_BITS
+    if isinstance(value, (str, bytes)):
+        return len(value) <= FOLD_MAX_STR_SIZE
+    if isinstance(value, tuple):
+        return len(value) <= FOLD_MAX_SEQ_SIZE
+    return True
 
 
 def _reduce_fold(py_fold, compiler, body):
@@ -100,6 +133,12 @@ def _reduce_fold(py_fold, compiler, body):
     while not is_nil(current):
         expr, rest = current
 
+        # a keyword argument reroutes the form to a call; it is
+        # structural there and is never compiled as a value, so the fold
+        # stops ahead of it with nothing pending
+        if is_keyword(expr):
+            break
+
         expr_frag = compiler.full_compile(expr)
         is_const, const_val = const_only_expr(expr_frag)
 
@@ -113,12 +152,24 @@ def _reduce_fold(py_fold, compiler, body):
             current = rest
             continue
 
-        try:
-            acc = py_fold(acc, const_val)
-        except (TypeError, ValueError, ArithmeticError):
+        # a fold whose result would pass the caps stops here, and the
+        # rest of the chain multiplies at runtime; a product is judged
+        # from its operands so the oversized value is never built
+        if py_fold is _op.mul and not _fold_product_fits(acc, const_val):
             pending = expr_frag
             break
 
+        try:
+            folded = py_fold(acc, const_val)
+        except (TypeError, ValueError, ArithmeticError, MemoryError):
+            pending = expr_frag
+            break
+
+        if not _fold_result_fits(folded):
+            pending = expr_frag
+            break
+
+        acc = folded
         current = rest
 
     return (current, have_acc, acc, pending)
@@ -336,7 +387,9 @@ def special_format(compiler, caps):
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)
 
-    if rules_expr:
+    # presence is the capture, not the form's truthiness: 0, "" and ()
+    # are rules values that format judges at runtime
+    if rules_expr is not None:
         if obj_is_const and rules_is_const:
             frag.instruction(OpCode.CONST, format(obj_const, rules_const))
         elif rules_is_const:
@@ -380,7 +433,7 @@ def emit_chain_compare(compiler, caps, sel):
 
     if "args" not in caps:
         raise SpecialError(
-            "%s requires at least two arguments" % head,
+            f"{head} requires at least two arguments",
             head, position=called_by.position)
 
     body = caps["args"].datum
@@ -408,7 +461,7 @@ def emit_chain_compare(compiler, caps, sel):
 @special("compile/==", patterns=_COMPARE_PATTERNS, unpack="match")
 def special_eq(compiler, caps):
     """
-    Compile (compile/= A B). Test equality via __eq__
+    Compile (compile/== A B). Test equality via __eq__
     """
 
     return emit_chain_compare(compiler, caps, Compare.EQ)
@@ -516,56 +569,30 @@ def special_is_not(compiler, called_by, a, b):
         opa=(Compare.IS_NOT, 2))
 
 
-def emit_type_check(compiler, called_by, args, sel):
-    """
-    Compile a type-check operator as OBJECT_COMPARE carrying the
-    IS_INSTANCE or IS_SUBCLASS selector. The CMPCOUNT count is the total
-    operand count (value plus N types); the handler treats operands past
-    the value as the match, tupled when N > 1. Requires at least 2
-    arguments (value plus at least one type).
-
-    Calling forms:
-      (compile/instance? VAL TYPE)         -> count = 2  (single type)
-      (compile/instance? VAL T1 T2 ...)    -> count = N+1  (types as tuple)
-
-    :param compiler: active Compiler
-    :param called_by: the head capture
-    :param args: the value-and-types capture
-    :param sel: Compare.IS_INSTANCE or Compare.IS_SUBCLASS
-    :return: ByteCodeFragment
-    """
-
-    frag = compiler.fragment(called_by.datum)
-    exprs = list(args.datum.unpack())
-
-    frag.position(called_by.position)
-
-    for expr in exprs:
-        frag.merge(compiler.full_compile(expr))
-
-    frag.instruction(OpCode.OBJECT_COMPARE, (sel, len(exprs)))
-    return frag
-
-
 @builtin("compile/instance?")
-@special("compile/instance?", patterns=_TYPE_CHECK_PATTERNS,
-         unpack="kwargs")
-def special_isinstance(compiler, called_by, args):
+@special("compile/instance?", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_isinstance(compiler, called_by, a, b):
     """
-    Compile (compile/instance? OBJ TYPE ...). Instance type check
+    Compile (compile/instance? OBJ TYPE). Instance type check with the
+    runtime instance? signature: TYPE is one type or a tuple of types
     """
 
-    return emit_type_check(compiler, called_by, args, Compare.IS_INSTANCE)
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IS_INSTANCE, 2))
 
 
 @builtin("compile/subclass?")
-@special("compile/subclass?", patterns=_TYPE_CHECK_PATTERNS, unpack="kwargs")
-def special_issubclass(compiler, called_by, args):
+@special("compile/subclass?", patterns=_BINARY_PATTERNS, unpack="kwargs")
+def special_issubclass(compiler, called_by, a, b):
     """
-    Compile (compile/subclass? CLS TYPE ...). Subclass type check
+    Compile (compile/subclass? CLS BASE). Subclass check with the
+    runtime subclass? signature: BASE is one class or a tuple of classes
     """
 
-    return emit_type_check(compiler, called_by, args, Compare.IS_SUBCLASS)
+    return emit_binary_op(
+        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
+        opa=(Compare.IS_SUBCLASS, 2))
 
 
 # ---------------------------------------------------------------------------
@@ -680,10 +707,6 @@ def special_matrix_multiply(compiler, called_by, args):
         operand=Operand.MATRIX_MULTIPLY)
 
 
-# ---------------------------------------------------------------------------
-# Numeric interface — NOARG binary opcodes (no constant folding)
-# ---------------------------------------------------------------------------
-
 @builtin("compile//")
 @special("compile//", patterns=_REDUCE_PATTERNS, unpack="kwargs")
 def special_true_divide(compiler, called_by, args):
@@ -695,6 +718,10 @@ def special_true_divide(compiler, called_by, args):
         compiler, called_by, args, None, _op.truediv,
         operand=Operand.TRUE_DIVIDE)
 
+
+# ---------------------------------------------------------------------------
+# Numeric interface — NOARG binary opcodes (no constant folding)
+# ---------------------------------------------------------------------------
 
 @builtin("compile/%")
 @special("compile/%", patterns=_BINARY_PATTERNS, unpack="kwargs")
@@ -997,10 +1024,10 @@ def special_inplace(compiler, called_by, op, var, value):
 
     frag.request_for_write(var.datum, position=pos)
     frag.merge(compiler.full_compile(value_expr))
-    # EXTRA row [OPCOUNT(op-type, count=1), VAR(name)]; resolution lowers the
+    # EXTRA row [OPERAND(op-type), VAR(name)]; resolution lowers the
     # name to a fast slot (-> FAST_INPLACE) when possible.
     frag.instruction(OpCode.VAR_INPLACE,
-                     ((binop, 1), var.datum, 0, 0))
+                     (binop, var.datum, 0, 0))
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -1081,7 +1108,7 @@ def special_inplace_attr(compiler, called_by, op, obj, attr, values):
     if not is_pair(value_exprs[0]):
         frag.position(op.position)
 
-    if is_symbol(obj_expr):
+    if is_symbol(obj_expr) and compiler.symbol_is_variable(obj_expr):
         # obj is a variable: fused VAR_ATTR_INPLACE, derefing the name and
         # get/op/set-ing the attribute in one op. Only the values ride the
         # stack. Resolution lowers this to FAST_ATTR_INPLACE where possible.

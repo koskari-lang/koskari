@@ -27,7 +27,8 @@ import unittest
 import pytest
 
 from koskari.compile.helpers import (
-    FORMALS, gather_formals, gather_parameters, match_pattern_raw)
+    FORMALS, NO_DEFAULT, gather_formals, gather_parameters,
+    match_pattern_raw)
 from koskari.exceptions import ParametersError, SpecialError
 from koskari.lib import Datum, cons, keyword, nil, symbol
 
@@ -217,7 +218,7 @@ class TestGatherFormalsFromMatcher(unittest.TestCase):
         self.assertIs(star, symbol("args"))
         self.assertIsNone(starstar)
         self.assertEqual(len(kwonly), 2)
-        self.assertEqual(kwonly[0], (keyword("x"), nil))
+        self.assertEqual(kwonly[0], (keyword("x"), NO_DEFAULT))
         self.assertEqual(kwonly[1], (keyword("y"), symbol("yv")))
 
     def test_starstar_only_tail(self):

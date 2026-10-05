@@ -203,9 +203,9 @@ class TestComplex(IsolatedAsyncioTestCase):
 
 class TestFraction(IsolatedAsyncioTestCase):
 
-    async def test_invalid_fraction(self):
-        src = "1/2/3"
-        self.assertRaises(SyntaxError, parse_source, src)
+    async def test_fraction_like_tokens_are_symbols(self):
+        for src in ("1/2/3", "1/2x", "3/4ths", "1/2.5"):
+            self.assertEqual(parse_source(src), symbol(src), src)
 
     async def test_simple_fraction(self):
         src = "1/2"
@@ -265,6 +265,20 @@ class TestStrings(IsolatedAsyncioTestCase):
         src = ' "hello\n \tworld" '
         col = parse_source(src)
         self.assertEqual(col, "hello\n \tworld")
+
+    async def test_malformed_escape_names_the_escape(self):
+        cases = (
+            (r'"\N{NOPE}"', r'\N{NOPE}', "unknown Unicode character name"),
+            (r'"\xZZ"', r'\xZZ', "truncated \\xXX escape"),
+            (r'b"\xZZ"', r'\xZZ', "truncated \\xXX escape"),
+            (r'f"\xZZ"', r'\xZZ', "truncated \\xXX escape"),
+        )
+        for src, escape, reason in cases:
+            with self.assertRaises(ReaderSyntaxError) as caught:
+                parse_source(src)
+            message = str(caught.exception)
+            self.assertIn(escape, message, src)
+            self.assertIn(reason, message, src)
 
     async def test_unicode(self):
         src = '"hello"'
@@ -447,6 +461,10 @@ class TestQuoted(IsolatedAsyncioTestCase):
         """
         col = parse_source(src)
         self.assertEqual(col, cons(symbol("#list"), 1, 2, nil))
+
+    async def test_bare_hash_at_end_of_input_is_a_symbol(self):
+        self.assertEqual(parse_source("#"), symbol("#"))
+        self.assertEqual(parse_source("# "), symbol("#"))
 
 
 class TestLists(IsolatedAsyncioTestCase):
@@ -874,6 +892,16 @@ class TestBaseSourceStreamReadline(IsolatedAsyncioTestCase):
         s = BaseSourceStream(StringIO("\nhello"), "test.txt")
         line = s.readline()
         self.assertEqual(line, "\n")
+
+    async def test_readline_over_a_lone_surrogate(self):
+        """
+        The newline scan reads code points, so a character that cannot
+        be encoded is read through like any other
+        """
+
+        s = BaseSourceStream(StringIO("a \ud800 b\nnext"), "test.txt")
+        self.assertEqual(s.readline(), "a \ud800 b\n")
+        self.assertEqual(s.readline(), "next")
 
 
 class TestBaseSourceStreamProperties(IsolatedAsyncioTestCase):

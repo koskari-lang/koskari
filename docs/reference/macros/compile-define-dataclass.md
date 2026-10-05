@@ -11,13 +11,20 @@ annotations and generates `__init__`, `__repr__`, and `__eq__`.
 **Examples:**
 
 ```koskari
-define-dataclass Point []:
+define-dataclass Point:
   define x :: int 0
   define y :: int 0
 
 (Point 1 2)        ;; Point(x=1, y=2)
 (Point? (Point))   ;; True
+
+define-dataclass Point3 [Point]:
+  define z :: int 0
 ```
+
+In block form the supers may be omitted, as with `define-class`; see
+[`layout/define-dataclass`](../layouts/layout-define-dataclass.md). A
+subclass that adds no fields is `(define-dataclass Child [Parent])`.
 
 ```koskari
 (define-dataclass P [] (define x :: int 0) (define y :: int 0))

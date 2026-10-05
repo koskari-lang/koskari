@@ -125,6 +125,21 @@ class TestValuesSequence(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(v[-1], 30)
         self.assertEqual(v[-2], 20)
 
+    async def test_getitem_overflowing_index_raises(self):
+        """
+        An index outside ssize_t is an OverflowError from the subscript,
+        through the operator and the method alike, never the last item
+        with an error pending
+        """
+
+        v = values(10, 20, 30)
+        with self.assertRaises(OverflowError):
+            v[2 ** 70]
+        with self.assertRaises(OverflowError):
+            v.__getitem__(2 ** 70)
+        with self.assertRaises(OverflowError):
+            v.__getitem__(-(2 ** 70))
+
     async def test_getitem_out_of_range(self):
         """out of range index raises IndexError"""
 
@@ -290,6 +305,23 @@ class TestValuesEquality(unittest.IsolatedAsyncioTestCase):
         v2 = values(x=1, y=2)
         self.assertEqual(v1, v2)
 
+    async def test_no_keywords_is_one_state(self):
+        """
+        A values with no keyword dict, one built with an empty keyword
+        set, and one with an empty dict added are the same values: equal
+        to each other, hashed alike, and equal to the bare tuple
+        """
+
+        plain = values(1)
+        spelled = values(1, **{})
+        added = values(1) + {}
+        self.assertEqual(plain, spelled)
+        self.assertEqual(plain, added)
+        self.assertEqual(spelled, added)
+        self.assertEqual(hash(plain), hash(added))
+        for v in (plain, spelled, added):
+            self.assertEqual(v, (1,))
+
     async def test_ne_different_keywords(self):
         """values with different keywords are not equal"""
 
@@ -407,6 +439,39 @@ class TestValuesAdd(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, values)
         self.assertEqual(result['x'], 10)
         self.assertEqual(result['y'], 20)
+
+    async def test_add_dict_rejects_non_str_keys(self):
+        """
+        a dict merged into values passes the same keyword check as
+        values(**kwds): every key must be a str
+        """
+
+        with self.assertRaises(TypeError):
+            values(1) + {1: 2}
+        with self.assertRaises(TypeError):
+            {1: 2} + values(1)
+
+    async def test_add_dict_normalizes_str_subclass_keys(self):
+        """
+        a str-subclass key lands as an exact str, as values(**kwds) does
+        """
+
+        class S(str):
+            pass
+
+        result = values(1) + {S('k'): 2}
+        self.assertEqual(result['k'], 2)
+        self.assertIs(type(list(result.keys())[0]), str)
+        result = {S('k'): 2} + values(1)
+        self.assertIs(type(list(result.keys())[0]), str)
+
+    async def test_add_dict_kos_repr(self):
+        """
+        the merged keywords render through __kos_repr__
+        """
+
+        from koskari.lib import kos_repr
+        self.assertEqual(kos_repr(values(1) + {'k': 2}), "(values 1 k: 2)")
 
 
 class TestValuesCall(unittest.IsolatedAsyncioTestCase):

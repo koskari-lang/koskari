@@ -64,26 +64,21 @@ class TestTailCallExtents(CevalTest):
 
     async def test_tail_call_through_cc_extent_refuses(self):
         """
-        A tail call under an open CC extent raises rather than
-        discarding a node whose uninstall must run
+        A tail call under an open CC extent would discard a node whose
+        uninstall must run; the stream is refused when the Code is
+        built, before it can execute
         """
 
-        inner_code, inner_ns = build_expr([
-            ["CONST", 42],
-            ["RETURN", 1],
-        ], name="inner")
-        inner = make_callable(inner_code, inner_ns)
-
-        code, ns = build_expr([
-            ["PUSH_CC", 0],
-            ["VAR", "fn"],
-            ["TAIL_CALL", 0],
-            ["POP_CC", 0],
-            ["RETURN", 1],
-        ], values={"fn": inner})
-        with self.assertRaises(RuntimeError) as ctx:
-            await make_callable(code, ns)()
+        with self.assertRaises(ValueError) as ctx:
+            build_expr([
+                ["PUSH_CC", 0],
+                ["VAR", "fn"],
+                ["TAIL_CALL", 0],
+                ["POP_CC", 0],
+                ["RETURN", 1],
+            ], values={"fn": None})
         self.assertIn("non-discardable", str(ctx.exception))
+        self.assertIn("PUSH_CC", str(ctx.exception))
 
 
     async def test_yield_with_tail_twin_rejected_at_construction(self):

@@ -20,8 +20,8 @@
    separate active-context stack for each, and clearing one thread
    state from the other leaves the survivor answering.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GNU General Public License v3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

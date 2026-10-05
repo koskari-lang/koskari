@@ -21,8 +21,8 @@
    hierarchy for Namespace, NamespaceSpec, CollectorNamespace,
    ModuleNamespace, and Module types.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

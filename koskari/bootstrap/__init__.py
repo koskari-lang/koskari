@@ -13,9 +13,11 @@
 
 
 """
-koskari.stdlib
+koskari.bootstrap
 
-Registration hooks for names merged into the Koskari builtins dict.
+Registration hooks for names merged into the Koskari builtins dict, and
+the assembly of the builtins from the Python registry and the bootstrap
+.ki sources.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -103,7 +105,8 @@ _BUILTINS_SOURCES = (
     # requires: _define_syntax.ki, _conditionals.ki
     '_fences.ki',
 
-    # final stub
+    # runtime reflection API (get-compiler, macroexpand, compile,
+    # evaluate, inline-macro), loaded last
     'basics.ki',
 )
 
@@ -113,16 +116,16 @@ def make_bootstrap():
     Assemble the minimal Python-only bootstrap builtins dict.
 
     Returns a plain dict of primitives, specials, layouts, and exceptions
-    used to bootstrap basics.ki.  This dict is sufficient to load and
-    execute .ki source; basics.ki is then loaded on top to compose the
-    full builtins.
+    sufficient to load and execute .ki source. The bootstrap .ki sources
+    in BOOTSTRAP_SOURCES, basics.ki last, are then loaded on top of it to
+    compose the full builtins.
 
     :return: dict of builtin name -> value
     """
 
     # delayed imports to avoid circular dependencies, but we do need to ensure
-    # they're loaded. They each have decorated builtins that self-register
-    # into the _BUILTIN_REGISTRY.
+    # they're loaded. Each has decorated builtins that self-register into
+    # the _BUILTIN_REGISTRY, except fences, imported for its own setup.
 
     from .. import asyncio as _koskari_asyncio  # noqa: F401
     from .. import exceptions as _koskari_exceptions  # noqa: F401
@@ -271,7 +274,7 @@ def make_bootstrap():
     _ty('py-zip', zip)
 
     import koskari.lib as kl
-    for name in ('*', '+', '-', '/', '//', '&', '|', '^'):
+    for name in ('*', '+', '-', '/', '//', '@', '**', '&', '|', '^'):
         _bind(name, getattr(kl, name))
     for (name, alias) in (('==', 'equal?'), ('!=', 'not-equal?'),
                           ('<', 'lt?'), ('<=', 'le?'),
@@ -283,8 +286,6 @@ def make_bootstrap():
 
     _bind("is?", _op.is_)
     _bind("is-not?", _op.is_not)
-    _bind('**', _op.pow)
-    _bind('@', _op.matmul)
     _bind('<<', _op.lshift)
     _bind('>>', _op.rshift)
     _bind('itemgetter', _op.itemgetter)
@@ -398,13 +399,13 @@ def make_builtins_demand():
 
 def builtin(name: str, *aliases: str):
     """
-    Register the decorated object under explicit stdlib string keys
+    Register the decorated object under explicit builtin name strings
 
     Each name must be the bootstrap string for that binding (no inference).
 
-    :param names: one or more builtin name strings
+    :param name: the builtin name string
+    :param aliases: further names bound to the same object
     :return: decorator that registers ``obj`` and returns it unchanged
-    :raises TypeError: when ``names`` is empty or any entry is not a ``str``
     """
 
     def decorator(obj):

@@ -810,7 +810,7 @@ extern PyTypeObject KosContextType;
   frame, code, operand-segment slot, and namespace for the active eval
   slice.
 
-  See design/interpreter/eval-state-live-authority.md and the archived
+  See design/archive/eval-state-live-authority.md and the archived
   design/archive/freeze-thaw-context-segments.md.
 
   KosEvalState_Init only binds ctx and clears es. koskari_eval calls
@@ -865,13 +865,6 @@ struct KosEvalState {
 
 
 /**
-   The result a call-core install arm returns once the callee frame is
-   live at pc 0: thread on, or POLL when the eval breaker is up so the
-   handler's RESULT_RELAY tails into the breaker service before the
-   callee's first instruction. Frame entry is a cooperation point
-   because a tail-recursive loop has no CONTINUE.
-*/
-/**
    True when a just-installed frame can be threaded into at its pc: it
    has code and is not waiting on a resume. A frame suspended inside a
    yield-from carries the node's phase resume, and its delivery must
@@ -882,6 +875,13 @@ static inline int kos_frame_threads(KosDynFrame *nf) {
 }
 
 
+/**
+   The result a call-core install arm returns once the callee frame is
+   live at pc 0: thread on, or POLL when the eval breaker is up so the
+   handler's RESULT_RELAY tails into the breaker service before the
+   callee's first instruction. Frame entry is a cooperation point
+   because a tail-recursive loop has no CONTINUE.
+*/
 static inline KosOpResult kos_call_installed(KosEvalState *es) {
   return KOS_EVAL_BREAKER_UP(es) ? EVAL_POLL() : EVAL_NORMAL();
 }
@@ -1309,8 +1309,10 @@ PyObject *kos_iter_acquire(PyObject *iterable);
    through close(), an async iterator through aclose() -- the aclose
    awaitable is demand-driven, so an immediate completion honors the
    cleanup and a genuine suspension takes the cannot-honor fallback of
-   closing the in-flight iterator. A missing close method is ignored.
-   Any pending exception is preserved across the close.
+   closing the in-flight iterator. A missing close method is ignored;
+   an error the close raises has no frame to propagate into and is
+   reported through sys.unraisablehook. Any pending exception is
+   preserved across the close.
 
    :param iter: borrowed; NULL is a no-op
 */
@@ -1368,6 +1370,22 @@ KosOpResult koskari_eval(
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc);
+
+
+/**
+   Route the raised exception to the current frame's resume when one is
+   armed: a delegation in flight takes it as its pending throw and throws
+   it into the delegate, so a delegate that catches it answers with its
+   next value, as CPython's yield from does. GeneratorExit is not routed;
+   a close closes the delegate through the raise walk instead.
+
+   Callers: revive_yield, the flattened generator throw ingress.
+
+   :return: 1 when the exception was taken and staged for the resume,
+       0 when no resume is armed or the exception is GeneratorExit and
+       it stays raised for the frame
+*/
+int KosEvalState_ThrowIntoResume(KosEvalState *es);
 
 
 /**

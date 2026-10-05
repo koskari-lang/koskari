@@ -23,9 +23,6 @@ into s-expressions without compilation or evaluation.
 :license: GNU General Public License v3
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 from koskari.reader import IndentAwareStream, source_str
 from koskari.reader.parser import READ_EOF
 
@@ -37,8 +34,8 @@ def make_layout_reader():
     """
     Build a fresh LayoutReader with default atoms, macros, and layouts.
 
-    Read-only; no execution. Uses ``koskari.stdlib.BUILTINS`` as the layout
-    namespace. Each call returns a new instance -- reads mutate per-read
+    Read-only; no execution. Uses a copy of ``koskari.bootstrap``'s builtin
+    registry as the layout namespace. Each call returns a new instance -- reads mutate per-read
     reader state, so callers that may run concurrently (e.g. an LSP server
     handling overlapping requests) must not share one reader.
 

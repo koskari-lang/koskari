@@ -20,8 +20,8 @@
    Tests the pair free list, reference counting of head/tail contents,
    cyclic structure handling, and nil singleton behavior.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -390,15 +390,20 @@ static int test_nil_singleton(void) {
     /* NilType is a subtype of KosPairType */
     TEST_ASSERT(PyType_IsSubtype(Py_TYPE(KosNil), &KosPairType), "nil is pair subtype");
 
-    /* nil should never be deallocated - its dealloc is a no-op */
+    /* nil is never deallocated: its dealloc is a no-op, and on an
+       interpreter with immortal objects it is immortalized at init,
+       so a reference taken to it moves no refcount at all */
     Py_ssize_t initial_refcnt = Py_REFCNT(KosNil);
 
-    /* Increment and decrement should work */
     Py_INCREF(KosNil);
+#ifdef KOS_IMMORTAL_REFCNT
+    TEST_ASSERT_EQ(Py_REFCNT(KosNil), initial_refcnt, "nil incref moves nothing");
+#else
     TEST_ASSERT_EQ(Py_REFCNT(KosNil), initial_refcnt + 1, "nil incref works");
+#endif
 
     Py_DECREF(KosNil);
-    TEST_ASSERT_EQ(Py_REFCNT(KosNil), initial_refcnt, "nil decref works");
+    TEST_ASSERT_EQ(Py_REFCNT(KosNil), initial_refcnt, "nil decref restores");
 
     return 0;
 }

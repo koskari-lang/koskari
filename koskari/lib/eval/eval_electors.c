@@ -79,8 +79,46 @@
       KosEvalState *es, void *insn, PyObject *value);
 
 
-/* Guard misses since the election before a site demotes. */
-#define KOS_ELECTOR_MISS_LIMIT 8
+/* Guard misses since the election before a site demotes. Shared by the
+   elector and item caches (eval/eval_item.c). */
+#define KOS_ELECTION_MISS_LIMIT 8
+
+
+/* Start an election's accounting over in the given mode. */
+static inline void kos_election_reset(KosElection *el, KosElectorMode mode) {
+  el->misses = 0;
+  el->ticks = 0;
+  el->mode = (uint8_t) mode;
+}
+
+
+/* Count a guard miss at an elected site. At the limit the accounting
+   resets as megamorphic and the answer is 1: the caller demotes the
+   site's body.
+
+   :return: 1 when the site demotes, else 0 */
+static inline int kos_election_miss(KosElection *el) {
+  uint8_t n;
+
+  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_MISS);
+  n = (uint8_t) (el->misses + 1);
+  if (n >= KOS_ELECTION_MISS_LIMIT) {
+    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_BYPASS);
+    kos_election_reset(el, KOS_ELECTOR_MEGAMORPHIC);
+    return 1;
+  }
+  el->misses = n;
+  return 0;
+}
+
+
+/* Count one slow-path execution at a site.
+
+   :return: 1 when the count wraps and the caller empties the slot for a
+     re-election, else 0 */
+static inline int kos_election_tick(KosElection *el) {
+  return ++el->ticks == 0;
+}
 
 
 /* Populate a slot with the body the family's classification chose. A
@@ -95,9 +133,7 @@ static inline void kos_elector_elect(KosCacheSlot *slot, KosThreadFn fn) {
 
   KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_MISS);
   slot->u.elector.fn = fn;
-  slot->u.elector.misses = 0;
-  slot->u.elector.ticks = 0;
-  slot->u.elector.mode = KOS_ELECTOR_ELECTED;
+  kos_election_reset(&slot->u.elector.election, KOS_ELECTOR_ELECTED);
   slot->kind = KOS_CACHE_ELECTOR;
 }
 
@@ -116,22 +152,11 @@ static inline void kos_elector_keep_const(KosCacheSlot *slot, long long b) {
    family's ladder on every execution until the generic body's own
    count empties the slot for a re-election. */
 static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
-  uint8_t n;
-
   if (! slot || slot->kind != KOS_CACHE_ELECTOR)
     return;
 
-  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_MISS);
-  n = (uint8_t) (slot->u.elector.misses + 1);
-  if (n >= KOS_ELECTOR_MISS_LIMIT) {
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_BYPASS);
+  if (kos_election_miss(&slot->u.elector.election))
     slot->u.elector.fn = generic;
-    slot->u.elector.misses = 0;
-    slot->u.elector.ticks = 0;
-    slot->u.elector.mode = KOS_ELECTOR_MEGAMORPHIC;
-    return;
-  }
-  slot->u.elector.misses = n;
 }
 
 
@@ -142,7 +167,7 @@ static inline void kos_elector_miss(KosCacheSlot *slot, KosThreadFn generic) {
    demotion. */
 static inline void kos_elector_generic_tick(KosCacheSlot *slot) {
   if (slot && slot->kind == KOS_CACHE_ELECTOR
-      && ++slot->u.elector.ticks == 0)
+      && kos_election_tick(&slot->u.elector.election))
     slot->kind = KOS_CACHE_EMPTY;
 }
 
@@ -261,7 +286,7 @@ KOS_ELECTOR(inplace_generic) {
 */
 KOS_ELECTOR(fast_inplace_generic) {
   const KosExtra *row = KosOp_ROW(insn);
-  KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
+  KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   size_t idx = (size_t) KosExtra_IMM(row, 1);
 
   kos_elector_generic_tick(KosOp_SLOT(insn));
@@ -271,10 +296,6 @@ KOS_ELECTOR(fast_inplace_generic) {
 }
 
 
-/**
-   FAST_INPLACE_CONST without an election: slot = slot OP constant
-   through the in-place reduce.
-*/
 /**
    OBJECT_OPERAND_CONST without an election: the stack top and the
    row's constant through the operator's reduce, the result replacing
@@ -325,6 +346,10 @@ KOS_ELECTOR(fast_operand_const_generic) {
 }
 
 
+/**
+   FAST_INPLACE_CONST without an election: slot = slot OP constant
+   through the in-place reduce.
+*/
 KOS_ELECTOR(fast_inplace_const_generic) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
@@ -1470,7 +1495,7 @@ static inline KosThreadFn kos_elector_fast_inplace_classify(
   PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
 
   return kos_elector_num_body(
-      (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0)), acc, rhs,
+      (KosOperand) KosExtra_IMM(row, 0), acc, rhs,
       kos_fast_inplace_int_bodies, kos_fast_inplace_float_bodies,
       el_fast_inplace_str_add);
 }

@@ -18,8 +18,7 @@
    koskari/lib/eval/eval_cache.c
 
    Per-site opcode cache mechanisms. This file is #included into eval.c and
-   is not a standalone translation unit -- it shares eval.c's statics (e.g.
-   str_getattr).
+   is not a standalone translation unit -- it shares eval.c's statics.
 
    It holds one mechanism today: monomorphic caching of attribute/method
    resolution for the CALL_ATTR* family (and, later, the attribute-read
@@ -32,20 +31,23 @@
    detail that never escapes it, so callers are insulated from whatever
    mechanism lives behind it.
 
-   See design/interpreter/attr-lookup-cache.md.
+   See design/archive/attr-lookup-cache.md.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
 */
 
 
-/* __slots__ object-member type tag; the constant moved from structmember.h
-   (<=3.11) to descrobject.h as Py_T_OBJECT_EX (3.12+). Same value (16). */
+/* __slots__ object-member type tag and the read-only member flag; both
+   moved from structmember.h (<=3.11) to descrobject.h as Py_T_OBJECT_EX and
+   Py_READONLY (3.12+). Same values (16 and 1). */
 #if PY_MINOR_VERSION >= 12
 # define KOS_T_OBJECT_EX Py_T_OBJECT_EX
+# define KOS_READONLY Py_READONLY
 #else
 # include <structmember.h>
 # define KOS_T_OBJECT_EX T_OBJECT_EX
+# define KOS_READONLY READONLY
 #endif
 
 
@@ -220,9 +222,12 @@ static int resolve_named_attr_slow(
 
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
 
-  /* Data descriptor: overrides instance dict; __get__ runs per access.
-     Not cached in this version -- its __get__ may run arbitrary Python. */
-  if (descr && descr_is_data(descr)) {
+  /* Data descriptor with a getter: overrides instance dict; __get__ runs
+     per access. Not cached in this version -- its __get__ may run
+     arbitrary Python. A __set__-only descriptor has no getter and falls
+     through to the instance dict and the plain class attribute arm, as
+     PyObject_GenericGetAttr does. */
+  if (descr && descr_is_data(descr) && Py_TYPE(descr)->tp_descr_get) {
     PyObject *res = Py_TYPE(descr)->tp_descr_get(descr, obj, (PyObject *) tp);
     if (! res)
       return -1;
@@ -270,31 +275,7 @@ static int resolve_named_attr_slow(
     return 1;
   }
 
-  /* __getattr__ fallback (invoked only when standard lookup fails). */
-  {
-    PyObject *getattr_descr = PyType_Lookup(tp, str_getattr);
-    if (getattr_descr) {
-      PyObject *bound;
-      if (Py_TYPE(getattr_descr)->tp_descr_get != NULL) {
-        bound = Py_TYPE(getattr_descr)->tp_descr_get(
-            getattr_descr, obj, (PyObject *) tp);
-      } else {
-        bound = getattr_descr;
-        Py_INCREF(bound);
-      }
-      if (! bound)
-        return -1;
-      PyObject *res = PyObject_CallFunctionObjArgs(bound, name, NULL);
-      Py_DECREF(bound);
-      if (! res)
-        return -1;
-      *out = res;
-      return 1;
-    }
-  }
-
-  PyErr_Format(PyExc_AttributeError,
-      "'%.100s' object has no attribute '%R'", tp->tp_name, name);
+  koskari_Err_SetMissingAttribute(obj, name);
   return -1;
 }
 
@@ -609,8 +590,9 @@ KOS_OP_INLINE int kos_resolve_named_attr(
    resolves a *location*: where an instance attribute lives, so load, store,
    and delete at any site for the same type+name can share one resolved
    (mode, index). The payload is a plain integer -- no owned refs -- so the
-   FIELD slot is ref-free (see the layout in bytecode.h). Baseline only: no
-   opcode consumes it yet, and the direct modes are stubbed to GENERIC.
+   FIELD slot is ref-free (see the layout in bytecode.h). FAST_ATTR,
+   VAR_ATTR, their STORE rows and the attribute inplace electors consume
+   the resolved (mode, index).
 */
 
 
@@ -619,12 +601,12 @@ KOS_OP_INLINE int kos_resolve_named_attr(
    (a value slot / byte offset / dict-key hint, per the mode). The result is a
    location for the caller to load/store/delete through, not a value.
 
-   Public today: a custom get/setattro or any data descriptor falls to
-   GENERIC, correct via PyObject_GetAttr/SetAttr. The direct modes need
-   per-version instance-layout access and land behind compat*.h; until then
-   this reports GENERIC, so a consumer is correct but unaccelerated.
-   TODO(field-offset): SLOT via member-descriptor offset (public);
-   INSTANCE_VALUE / DICT_HINT via compat*.h.
+   A custom get/setattro or a data descriptor other than a writable
+   object member falls to GENERIC, correct via PyObject_GetAttr/SetAttr.
+   A __slots__ member resolves to SLOT with its byte offset, and on 3.11
+   and later a managed-dict type with inline values resolves to
+   INSTANCE_VALUE with the value index (compat*.h supplies the layout
+   access). Anything else is GENERIC.
 */
 static KosFieldMode resolve_attr_location_slow(
     PyObject *obj,
@@ -643,14 +625,15 @@ static KosFieldMode resolve_attr_location_slow(
   /* A data descriptor intercepts the access. A __slots__ object member is a
      data descriptor with a fixed byte offset (SLOT); it takes precedence over
      any instance dict, so the offset is authoritative for load and store.
-     Every other data descriptor (property, ...) computes per access and stays
-     GENERIC. */
+     A READONLY member's setter raises, and the one mode serves both
+     directions, so it stays GENERIC. Every other data descriptor
+     (property, ...) computes per access and stays GENERIC. */
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
   if (descr && descr_is_data(descr)) {
     if (Py_IS_TYPE(descr, &PyMemberDescr_Type)) {
       PyMemberDef *m = ((PyMemberDescrObject *) descr)->d_member;
-      if (m->type == KOS_T_OBJECT_EX && m->offset > 0
-          && m->offset <= (Py_ssize_t) UINT32_MAX) {
+      if (m->type == KOS_T_OBJECT_EX && ! (m->flags & KOS_READONLY)
+          && m->offset > 0 && m->offset <= (Py_ssize_t) UINT32_MAX) {
         *index = (uint32_t) m->offset;
         return KOS_FIELD_SLOT;
       }
@@ -832,8 +815,8 @@ KOS_NOINLINE static KosFieldMode kos_resolve_attr_location_cold(
    path only -- a guarded hit returns inline, everything else tail-calls the
    outlined cold path. In the same vein as kos_resolve_named_attr.
 
-   Baseline: no opcode consumes this yet. Load/store/delete handlers will call
-   it and branch on the returned mode.
+   The FAST_ATTR and VAR_ATTR load and store handlers and the attribute
+   inplace electors call it and branch on the returned mode.
 */
 KOS_OP_INLINE KosFieldMode kos_resolve_attr_location(
     PyObject *obj,

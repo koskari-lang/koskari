@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_with */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_WITH node: the context manager
+  extent for with and dyn-with, told apart by the shot field.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynWith (context manager; multi/single via u.with.shot) === */
 
 
@@ -386,19 +409,20 @@ static KosOpResult kos_dyn_with_leave(
     return EVAL_NORMAL();
 
   if (KosDynWith_EXIT_PENDING(node) || KosDynWith_ENTER_PENDING(node)) {
-    /* A call in flight sits in a frame above this node. If this node
-       is dyn_top, that frame is gone (it raised, or the walk crossed
+    /* A call in flight sat in a frame above this node. The node is
+       dyn_top, so that frame is gone (it raised, or the walk crossed
        it): the manager is discharged with nothing to take, and an
        __exit__ that raised has replaced the exception it was handling. */
-    if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node)
-      return EVAL_REPROLOGUE();
     kos_dyn_with_abort_impl(node);
     return EVAL_NORMAL();
   }
 
   if (! KosDynWith_ENTERED(node)) {
-    /* never entered: no __exit__ */
-    kos_dyn_with_abort_impl(node);
+    /* never entered: no __exit__. A grafted clone lands this way, and
+       the exit-done cell it shares with the live twin records only an
+       __exit__ that ran, so the cell and the shot field stay as they
+       are; the live twin's own leave still fires its __exit__. */
+    KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
     return EVAL_NORMAL();
   }
 
@@ -476,8 +500,14 @@ static KosOpResult kos_dyn_with_leave(
 */
 static int kos_dyn_with_settle(KosEvalState *es, KosDynWith *node) {
 
-  if (! KosEvalState_FRAME(es))
+  /* A pending with node sits above its owning frame, so that frame is
+     live while the node is; without it there is no operand block to
+     settle from. */
+  if (! KosEvalState_FRAME(es)) {
+    PyErr_SetString(PyExc_SystemError,
+                    "with settle: pending node with no live frame");
     return -1;
+  }
 
   if (KosDynWith_ENTER_PENDING(node))
     return kos_dyn_with_bind_entered(es, node);

@@ -23,7 +23,7 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.exceptions import CompilerError
-from koskari.lib import OpCode, build_list, cons, nil, symbol
+from koskari.lib import OpCode, build_list, build_tuple, cons, nil, symbol
 from koskari.syntax import (
     Syntax, build_macro, build_special, build_syntax, parse_match_pattern,
     parse_rule_pattern)
@@ -158,6 +158,60 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
             [[1, 2, 3], [4, 5]], [list(g) for g in result])
 
 
+    async def test_compile_syntax_rules_pair_under_two_ellipses(self):
+        """
+        ``(k (a b) ...) ...`` captures the pair's variables under two
+        ellipses; the template rebuilds every pair inside every group
+        """
+
+        src_str = """
+        (define keyed
+          (syntax-rules keyed [#list #tuple]
+            [(keyed (k (a b) ...) ...)
+             (#list (#list k (#tuple a b) ...) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/keyed': vars(mod)['keyed'],
+            '#list': build_list,
+            '#tuple': build_tuple,
+        }
+
+        src_str = """
+        (keyed ("x" (1 2) (3 4)) ("y" (5 6)))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual(
+            [["x", (1, 2), (3, 4)], ["y", (5, 6)]],
+            [list(g) for g in result])
+
+
+    async def test_compile_syntax_rules_bare_pair_under_two_ellipses(self):
+        src_str = """
+        (define pairs
+          (syntax-rules pairs [#list #tuple]
+            [(pairs ((a b) ...) ...)
+             (#list (#list (#tuple a b) ...) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+            '#tuple': build_tuple,
+        }
+
+        src_str = """
+        (pairs ((1 2) (3 4)) ((5 6)))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual(
+            [[(1, 2), (3, 4)], [(5, 6)]], [list(g) for g in result])
+
+
     async def test_compile_syntax_rules_no_matching_rule_raises(self):
         src_str = """
         (define only-one
@@ -231,6 +285,240 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
 
         result = await expr()
         self.assertEqual([1, 2, 3], list(result))
+
+
+    async def test_compile_macro_rules_pair_under_ellipsis(self):
+        """
+        ``(a b) ...`` binds each of the pair's variables to a list, one
+        entry per iteration, the way a repeated symbol does
+        """
+
+        src_str = """
+        (define pairs
+          (macro-rules pairs []
+            [(pairs (a b) ...)
+             `(#list ,@a ,@b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs (1 2) (3 4))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([1, 3, 2, 4], list(result))
+
+
+    async def test_compile_special_rules_pair_under_ellipsis(self):
+        """
+        A special arm gets the pair's variables as lists of the captured
+        datums, one entry per iteration
+        """
+
+        src_str = """
+        (define pairs
+          (special-rules pairs []
+            [(c (pairs (a b) ...))
+             `(#list ,(len a) ,(len b) ,(attr (item b 1) datum))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs (1 2) (3 4))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([2, 2, 4], list(result))
+
+
+    async def test_compile_macro_rules_pair_under_ellipsis_zero_times(self):
+        """
+        A pair sub-pattern matched zero times still binds each of its
+        variables, to an empty list, the way a repeated symbol does
+        """
+
+        src_str = """
+        (define pairs
+          (macro-rules pairs []
+            [(pairs (a b) ...)
+             `(#list ,@a ,@b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([], list(result))
+
+
+    async def test_compile_special_rules_pair_under_ellipsis_zero_times(self):
+        """
+        A special arm gets a pair sub-pattern's variables as empty lists
+        when the pair matched zero times
+        """
+
+        src_str = """
+        (define pairs
+          (special-rules pairs []
+            [(c (pairs (a b) ...))
+             `(#list ,(len a) ,(len b))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([0, 0], list(result))
+
+
+    async def test_compile_macro_rules_pair_under_two_ellipses_empty_group(self):
+        """
+        Under two ellipses, a group with no pairs contributes an empty
+        inner list for each variable, so the outer list keeps one entry
+        per group
+        """
+
+        src_str = """
+        (define pairs
+          (macro-rules pairs []
+            [(pairs ((a b) ...) ...)
+             `(#list ,(len a) ,(len (item a 1)))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs ((1 2)) ())
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([2, 0], list(result))
+
+
+class TestMatchIsAPlainPatternSymbol(DefineSyntaxCompileHelpers):
+    """
+    The word match carries no meaning inside a RULE pattern, so a rule
+    may use it as a pattern variable in any position, the head included
+    """
+
+    async def test_syntax_rules_pattern_headed_match(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(match a b) (#tuple a b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2)", **defn)
+        self.assertEqual((1, 2), await expr())
+
+    async def test_macro_rules_pattern_headed_match(self):
+        src_str = """
+        (define m
+          (macro-rules m []
+            [(match a b) `(#tuple ,a ,b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2)", **defn)
+        self.assertEqual((1, 2), await expr())
+
+
+class TestDottedRulePatterns(DefineSyntaxCompileHelpers):
+    """
+    A dotted RULE pattern binds its tail symbol to the remaining
+    elements as a list, and a dotted template splices it back; a tail
+    of any other shape is refused at definition
+    """
+
+    async def test_syntax_rules_dotted_tail(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m a . rest) (#tuple a (quote rest))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2 3)", **defn)
+        a, rest = await expr()
+        self.assertEqual(a, 1)
+        self.assertEqual([2, 3], list(rest.unpack()))
+
+        expr, mod = self.compile_expr("(m 1)", **defn)
+        a, rest = await expr()
+        self.assertEqual(a, 1)
+        self.assertIs(rest, nil)
+
+    async def test_dotted_template_splices_the_tail(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m a . rest) (#tuple a . rest)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2 3)", **defn)
+        self.assertEqual((1, 2, 3), await expr())
+
+    async def test_macro_rules_dotted_tail(self):
+        src_str = """
+        (define m
+          (macro-rules m []
+            [(m a . rest) `(#tuple ,a ,@rest)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+
+        expr, mod = self.compile_expr("(m 1 2 3)", **defn)
+        self.assertEqual((1, 2, 3), await expr())
+
+    async def test_non_symbol_tail_is_refused(self):
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m a . 5) a]))
+        """
+        with self.assertRaises(Exception) as caught:
+            expr, mod = self.compile_expr(src_str)
+            await expr()
+        self.assertIn("dotted", str(caught.exception))
 
 
 class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
@@ -335,6 +623,49 @@ class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
         self.assertEqual(2, result)
 
 
+    async def test_compile_macro_match_tail_slot_absent_is_none(self):
+        """
+        A slot that did not fire arrives as None: the formals are the
+        pattern's slots with a None default, not required positionals
+        """
+
+        src_str = """
+        (define tailed
+          (macro-match tailed
+            [(tailed (VALUE a) (TAIL rest))
+             `(#list ,a.datum ,(is rest None))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/tailed': vars(mod)['tailed'], '#list': build_list}
+
+        expr, mod = self.compile_expr("(tailed 1)", **defn)
+        self.assertEqual([1, True], list(await expr()))
+
+        expr, mod = self.compile_expr("(tailed 1 2 3)", **defn)
+        self.assertEqual([1, False], list(await expr()))
+
+
+    async def test_compile_macro_match_bindings_slot_is_one_formal(self):
+        """
+        BINDINGS claims its slot in both of its branches; the arm gets it
+        once
+        """
+
+        src_str = """
+        (define bound
+          (macro-match bound
+            [(bound (BINDINGS bs) (VALUE a))
+             `(#list ,(len bs) ,a.datum)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/bound': vars(mod)['bound'], '#list': build_list}
+
+        expr, mod = self.compile_expr("(bound ((x 1) (y 2)) 3)", **defn)
+        self.assertEqual([2, 3], list(await expr()))
+
+
 class TestCompileSpecialRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_special_rules_identity(self):
@@ -413,6 +744,24 @@ class TestCompileSpecialMatch(DefineSyntaxCompileHelpers):
 
         result = await expr()
         self.assertEqual(42, result)
+
+
+    async def test_compile_special_match_tail_slot_absent_is_none(self):
+        src_str = """
+        (define tailed
+          (special-match tailed
+            [(compiler (tailed (VALUE a) (TAIL rest)))
+             `(#list ,a.datum ,(is rest None))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/tailed': vars(mod)['tailed'], '#list': build_list}
+
+        expr, mod = self.compile_expr("(tailed 1)", **defn)
+        self.assertEqual([1, True], list(await expr()))
+
+        expr, mod = self.compile_expr("(tailed 1 2 3)", **defn)
+        self.assertEqual([1, False], list(await expr()))
 
 
     async def test_compile_special_match_bare_symbol_inner_pattern(self):

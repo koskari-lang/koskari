@@ -103,8 +103,8 @@ def special_let_cc(compiler, called_by, k, body):
 @special("compile/capture/cc", patterns=_K_BODY_PATTERNS, unpack="kwargs")
 def special_capture_cc(compiler, called_by, k, body):
     """
-    Compile (compile/capture/cc K BODY...). Captures continuation, binds to K,
-    runs body.
+    Compile (compile/capture/cc K BODY...). Captures continuation, declare
+    and stores to K, runs body.
 
     Intentionally does not open a child namespace: K is bound directly into
     the enclosing scope so the continuation remains reachable after the body
@@ -113,9 +113,11 @@ def special_capture_cc(compiler, called_by, k, body):
     completes.
     """
 
-    k_sym = k.datum
-
     fragment = compiler.fragment(called_by.datum)
+
+    k_sym = k.datum
+    fragment.declare_var(k_sym, position=k.position)
+
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.instruction(OpCode.CAPTURE_CC, 0)

@@ -1,4 +1,27 @@
-/* Included by matcher.c — datum */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. The Datum, DatumIter and DatumFrame types that
+  carry captured material with its position.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === Datum === */
 
 static PyObject *kos_datum_new(
@@ -16,10 +39,24 @@ typedef struct {
 
 static void datum_iter_dealloc(PyObject *self) {
   KosDatumIter *it = (KosDatumIter *) self;
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(it->current);
   Py_CLEAR(it->fallback);
   Py_CLEAR(it->binding);
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int datum_iter_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosDatumIter *it = (KosDatumIter *) self;
+  Py_VISIT(it->current);
+  Py_VISIT(it->fallback);
+  Py_VISIT(it->binding);
+  return 0;
 }
 
 
@@ -68,7 +105,8 @@ static PyTypeObject KosDatumIterType = {
   .tp_name = "koskari.lib.DatumIter",
   .tp_basicsize = sizeof(KosDatumIter),
   .tp_dealloc = datum_iter_dealloc,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = datum_iter_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_iter = PyObject_SelfIter,
   .tp_iternext = datum_iter_iternext,
 };
@@ -76,10 +114,24 @@ static PyTypeObject KosDatumIterType = {
 
 static void datum_dealloc(PyObject *self) {
   KosDatum *d = (KosDatum *) self;
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(d->datum);
   Py_CLEAR(d->position);
   Py_CLEAR(d->binding);
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int datum_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosDatum *d = (KosDatum *) self;
+  Py_VISIT(d->datum);
+  Py_VISIT(d->position);
+  Py_VISIT(d->binding);
+  return 0;
 }
 
 
@@ -138,7 +190,7 @@ static PyObject *datum_iter(PyObject *self) {
         d->datum);
   }
 
-  KosDatumIter *it = PyObject_New(KosDatumIter, &KosDatumIterType);
+  KosDatumIter *it = PyObject_GC_New(KosDatumIter, &KosDatumIterType);
   if (! it)
     return NULL;
 
@@ -148,6 +200,7 @@ static PyObject *datum_iter(PyObject *self) {
   it->current = d->datum;
   it->fallback = d->position;
   it->binding = d->binding;
+  PyObject_GC_Track((PyObject *) it);
   return (PyObject *) it;
 }
 
@@ -190,7 +243,8 @@ PyTypeObject KosDatumType = {
   .tp_dealloc = datum_dealloc,
   .tp_repr = datum_repr,
   .tp_iter = datum_iter,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = datum_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Matched value with optional KosPair source position and "
             "capture binding name",
   .tp_getset = datum_getset,
@@ -203,7 +257,7 @@ static PyObject *kos_datum_new(
     PyObject *position,
     PyObject *binding) {
 
-  KosDatum *d = PyObject_New(KosDatum, &KosDatumType);
+  KosDatum *d = PyObject_GC_New(KosDatum, &KosDatumType);
   if (! d)
     return NULL;
   if (! binding)
@@ -214,6 +268,7 @@ static PyObject *kos_datum_new(
   d->datum = datum;
   d->position = position;
   d->binding = binding;
+  PyObject_GC_Track((PyObject *) d);
   return (PyObject *) d;
 }
 
@@ -360,8 +415,19 @@ static PyObject *kos_datum_frame_new(void) {
 
 static void match_result_dealloc(PyObject *self) {
   KosMatchResult *r = (KosMatchResult *) self;
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(r->captures);
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int match_result_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  Py_VISIT(((KosMatchResult *) self)->captures);
+  return 0;
 }
 
 
@@ -414,7 +480,8 @@ PyTypeObject KosMatchResultType = {
   .tp_dealloc = match_result_dealloc,
   .tp_repr = match_result_repr,
   .tp_as_number = &match_result_as_number,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = match_result_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Result of running a matcher against a subject",
   .tp_getset = match_result_getset,
 };
@@ -424,12 +491,13 @@ static PyObject *make_match_result(
     int matched,
     PyObject *captures) {
 
-  KosMatchResult *r = PyObject_New(KosMatchResult, &KosMatchResultType);
+  KosMatchResult *r = PyObject_GC_New(KosMatchResult, &KosMatchResultType);
   if (! r)
     return NULL;
   Py_INCREF(captures);
   r->captures = captures;
   r->matched = matched;
+  PyObject_GC_Track((PyObject *) r);
   return (PyObject *) r;
 }
 
@@ -449,11 +517,14 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
 
 /**
    Invoke a callable extern (predicate, APP extractor) on one argument
-   through the demand path. Matching never enters the evaluator, so the
-   call is driven synchronously: koskari callables run on a demand eval
-   drive, plain Python awaitable results are eagerly stepped, and a
-   genuine async suspension raises KoskariSyncViolation. Returns a new
-   reference, or NULL with an exception set.
+   on the demand path: a Koskari callable runs a nested evaluator, a
+   plain Python awaitable result is eagerly stepped, and a genuine
+   async suspension raises KoskariSyncViolation. This is a flattening
+   gap, not the design: the match walk holds its position on the C
+   stack, so it cannot yet suspend on the call and resume with the
+   delivered value (design/FLATTENING.md, design/interpreter/
+   resumable-reads.md section 8). Returns a new reference, or NULL
+   with an exception set.
 */
 static PyObject *matcher_call_extern(PyObject *fn, PyObject *arg) {
   PyObject *args = PyTuple_Pack(1, arg);

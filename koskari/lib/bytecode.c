@@ -795,6 +795,29 @@ static uint32_t code_visible_len(PyObject *self) {
 }
 
 
+/**
+   The (opcode, arg) pair of one instruction as a tuple of two ints.
+   New reference, or NULL with an exception set.
+*/
+static PyObject *op_as_tuple(KosOp op) {
+
+  PyObject *opv = PyLong_FromLong((long) op.op);
+  PyObject *argv = PyLong_FromLong((long) op.arg);
+  PyObject *p = NULL;
+
+  if (opv && argv)
+    p = PyTuple_New(2);
+  if (! p) {
+    Py_XDECREF(opv);
+    Py_XDECREF(argv);
+    return NULL;
+  }
+  PyTuple_SET_ITEM(p, 0, opv);
+  PyTuple_SET_ITEM(p, 1, argv);
+  return p;
+}
+
+
 static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
   if (! PyLong_Check(index)) {
@@ -812,17 +835,7 @@ static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
     return NULL;
   }
 
-  KosOp op = KosCode_CODE(self)[i];
-
-  PyObject *p = PyTuple_New(2);
-  if (! p) {
-    return NULL;
-  }
-
-  PyTuple_SET_ITEM(p, 0, PyLong_FromLong((long) op.op));
-  PyTuple_SET_ITEM(p, 1, PyLong_FromLong((long) op.arg));
-
-  return p;
+  return op_as_tuple(KosCode_CODE(self)[i]);
 }
 
 
@@ -1337,8 +1350,6 @@ typedef struct {
   uint32_t code_len;          /* instruction count after squashing LABEL/POSITION */
   uint32_t cpool_len;         /* unique constants by identity */
   uint32_t extent_count;      /* PUSH_* count for extent table sizing */
-  uint16_t line;
-  uint16_t col;
   uint16_t last_line;
   uint16_t last_col;
   /* LABEL slots in EXTRA rows deferred until emit: (extra_idx, slot, label_name) */
@@ -1352,12 +1363,15 @@ typedef struct {
    Must use identity (pointer equality), not hash/equality, because
    Python's 1 == True and 0 == False would incorrectly merge distinct
    constants. Linear scan of cpool_list; append if not found.
+
+   :return: the 16-bit pool index, so every value 0..65535 is a valid
+     result, or -1 with an exception set
 */
-static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
+static int intern_const(CodeCollect *coll, PyObject *value) {
 
   if (! value) {
     PyErr_SetString(PyExc_RuntimeError, "NULL value passed to intern_const");
-    return (uint16_t) -1;
+    return -1;
   }
 
   Py_INCREF(value);
@@ -1372,7 +1386,7 @@ static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
   for (Py_ssize_t i = 0; i < n; i++) {
     if (PyList_GET_ITEM(list, i) == value) {
       Py_DECREF(value);
-      return (uint16_t) i;
+      return (int) i;
     }
   }
 
@@ -1380,17 +1394,17 @@ static uint16_t intern_const(CodeCollect *coll, PyObject *value) {
     PyErr_Format(PyExc_OverflowError,
                  "constant pool exceeds 16-bit limit (%zd entries)", n);
     Py_DECREF(value);
-    return (uint16_t) -1;
+    return -1;
   }
 
   if (PyList_Append(list, value) < 0) {
     Py_DECREF(value);
-    return (uint16_t) -1;
+    return -1;
   }
 
   Py_DECREF(value);
-  coll->cpool_len = (uint16_t) (n + 1);
-  return (uint16_t) n;
+  coll->cpool_len = (uint32_t) (n + 1);
+  return (int) n;
 }
 
 
@@ -1425,6 +1439,8 @@ static int collect_label(
     uint32_t index) {
 
   PyObject *io = PyLong_FromLong(index);
+  if (! io)
+    return -1;
   int ret = PyDict_SetItem(labels, name, io);
   Py_DECREF(io);
   return ret;
@@ -1523,8 +1539,6 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   coll->code_len = 0;
   coll->cpool_len = 0;
   coll->extent_count = 0;
-  coll->line = 0;
-  coll->col = 0;
   coll->last_line = 0;
   coll->last_col = 0;
 
@@ -1553,8 +1567,6 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       if (unpack_position(b, &line, &col)) {
         goto failure;
       }
-      coll->line = line;
-      coll->col = col;
       /* Emit position entry only when line/col changes (delta encoding) */
       if (line != coll->last_line || col != coll->last_col) {
         /* Coalesce consecutive POSITION ops that map to the same output
@@ -1668,8 +1680,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         }
         /* CONST: intern value, store cpool index in row slot */
         if (fk == KOSTYLE_CONST) {
-          uint16_t idx = intern_const(coll, elem);
-          if (idx == (uint16_t) -1) {
+          int idx = intern_const(coll, elem);
+          if (idx < 0) {
             goto failure;
           }
           if (slot == 0) {
@@ -1689,9 +1701,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           if (! name) {
             goto failure;
           }
-          uint16_t idx = intern_const(coll, name);
+          int idx = intern_const(coll, name);
           Py_DECREF(name);
-          if (idx == (uint16_t) -1) {
+          if (idx < 0) {
             goto failure;
           }
           if (slot == 0) {
@@ -1777,11 +1789,11 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
     /* CONST: intern arg into cpool; emit reads the index back */
     if (style == KOSTYLE_CONST) {
-      uint16_t idx = intern_const(coll, b);
-      if (idx == (uint16_t) -1) {
+      int idx = intern_const(coll, b);
+      if (idx < 0) {
         goto failure;
       }
-      coll->args[di] = idx;
+      coll->args[di] = (uint16_t) idx;
       di++;
       continue;
     }
@@ -1793,27 +1805,40 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       if (! name) {
         goto failure;
       }
-      uint16_t idx = intern_const(coll, name);
+      int idx = intern_const(coll, name);
       Py_DECREF(name);
-      if (idx == (uint16_t) -1) {
+      if (idx < 0) {
         goto failure;
       }
-      coll->args[di] = idx;
+      coll->args[di] = (uint16_t) idx;
       di++;
       continue;
     }
 
-    /* LABEL-style (JUMP etc): record instruction index -> label name so emit
-       can resolve target pc from labels dict (name -> pc) */
+    /* LABEL-style (JUMP etc): emit resolves the operand itself from
+       the name -> pc dict pass 1 filled; nothing to record here */
     if (style == KOSTYLE_LABEL) {
-      PyObject *key = PyLong_FromLong(di);
-      if (! key || PyDict_SetItem(coll->labels, key, b) < 0) {
-        Py_XDECREF(key);
-        goto failure;
-      }
-      Py_DECREF(key);
       di++;
       continue;
+    }
+
+    /* Count-like styles: the arg is the instruction's 16-bit field.
+       Refuse anything emit could not store as given; NOARG ignores its
+       arg. */
+    if (style == KOSTYLE_COUNT || style == KOSTYLE_PAIR_COUNT
+        || style == KOSTYLE_STAR || style == KOSTYLE_FASTVAR) {
+      if (! PyLong_Check(b)) {
+        PyErr_Format(PyExc_TypeError, "Code instruction %zd argument must be"
+                     " an int, not %.100s", i, Py_TYPE(b)->tp_name);
+        goto failure;
+      }
+      long val = PyLong_AsLong(b);
+      if ((val == -1 && PyErr_Occurred()) || val < 0 || val > UINT16_MAX) {
+        PyErr_Clear();
+        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R is"
+                     " outside 0..%u", i, b, (unsigned) UINT16_MAX);
+        goto failure;
+      }
     }
 
     di++;
@@ -2006,7 +2031,6 @@ static int code_emit(
   uint32_t di = 0;
   uint32_t pi = 0;
   uint32_t extra_idx = 0;
-  uint16_t last_line = 0, last_col = 0;
   uint16_t next_slot = 0;
   int cache_on = (KosCode_FLAGS(self) & KOS_CODE_CACHE) != 0;
 
@@ -2019,17 +2043,8 @@ static int code_emit(
     KosOpStyle style = opcode_styles[op].style;
 
     /* LABEL/POSITION were squashed in collect; skip them here */
-    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION) {
-      if (op == KOS_OP_POSITION) {
-        uint16_t l = 0, c = 0;
-        unpack_position(b, &l, &c);
-        if (l != last_line || c != last_col) {
-          last_line = l;
-          last_col = c;
-        }
-      }
+    if (op == KOS_OP_LABEL || op == KOS_OP_POSITION)
       continue;
-    }
 
     code[di].op = (uint16_t) op;
     code[di].arg = 0;
@@ -2038,7 +2053,7 @@ static int code_emit(
     /* Reserve this site's cache slot run. A cache-consuming opcode gets the
        next free index; the count_cache_slots pre-pass sized the trailing
        array to match. When the cache is gated off (cache_on == 0) no site
-       gets a slot. All opcodes request 0 today, so every site stays UNSET. */
+       gets a slot and every index stays UNSET. */
     uint8_t ncache = cache_on ? kos_opcode_cache_count(op) : 0;
     if (ncache) {
       code[di].cache = next_slot;
@@ -2074,11 +2089,11 @@ static int code_emit(
         code[di].u.row = &extra[extra_idx];
       }
       extra_idx++;
+    } else if (style == KOSTYLE_NOARG) {
+      code[di].arg = 0;
     } else {
-      /* COUNT, NOARG, etc: use raw integer from b */
-      if (PyLong_Check(b)) {
-        code[di].arg = (uint16_t) PyLong_AsLong(b);
-      }
+      /* COUNT, PAIR_COUNT, STAR, FASTVAR: collect checked the range */
+      code[di].arg = (uint16_t) PyLong_AsLong(b);
     }
 
     /* Record YIELDS flag for generators */
@@ -2254,6 +2269,39 @@ typedef struct {
    Catches POP with no PUSH, extent mismatch, unclosed extent.
    Call when extent_count == 0 to reject code that has POP_* but no PUSH_*.
 */
+/**
+   Refuse a TAIL_CALL family row nested in an extent frame handoff
+   cannot discard. The tail call tears down the extents open above the
+   frame; NS, LOOP and FOREACH uninstall by pure release, every other
+   kind has uninstall behavior that must run, so the compiler's promoter
+   never puts a tail call inside one and a hand-assembled stream that
+   does is refused here, the same set the runtime teardown holds.
+
+   :return: 0 when pc is not a tail call or sits only in discardable
+     extents, -1 with ValueError set otherwise
+*/
+static int validate_tail_call_extents(
+    KosOpCode op, uint32_t pc,
+    const ExtentStackEntry *stack, uint32_t stack_top) {
+
+  if (op < KOS_OP_TAIL_CALL || op > KOS_OP_TAIL_CALL_FAST_ATTR_STAR)
+    return 0;
+
+  for (uint32_t i = 0; i < stack_top; i++) {
+    KosOpCode push = stack[i].push_op;
+    if (push == KOS_OP_PUSH_NS || push == KOS_OP_PUSH_LOOP
+        || push == KOS_OP_PUSH_FOREACH)
+      continue;
+    PyErr_Format(PyExc_ValueError,
+                 "TAIL_CALL at pc %u inside a non-discardable %s extent"
+                 " opened at pc %u",
+                 pc, kos_opcode_name(push), stack[i].push_pc);
+    return -1;
+  }
+  return 0;
+}
+
+
 static int validate_extents(KosOp *code, uint32_t code_len) {
 
   ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
@@ -2262,6 +2310,9 @@ static int validate_extents(KosOp *code, uint32_t code_len) {
   /* Simulate PUSH/POP stack; error on POP with empty stack or mismatch */
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
+
+    if (validate_tail_call_extents(op, pc, stack, stack_top))
+      return -1;
 
     if (is_push_op(op)) {
       /* PUSH: push onto stack */
@@ -2326,6 +2377,9 @@ static int derive_extents_fill(
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
 
+    if (validate_tail_call_extents(op, pc, stack, stack_top))
+      return -1;
+
     if (is_push_op(op)) {
       if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
         PyErr_SetString(PyExc_RuntimeError,
@@ -2348,7 +2402,6 @@ static int derive_extents_fill(
       e->push_pc = pc;
       e->pop_pc = 0;
       e->parent_extent_id = parent_id;
-      e->flags = 0;
 
       stack[stack_top].push_pc = pc;
       stack[stack_top].extent_id = extent_idx;
@@ -3183,18 +3236,6 @@ PyTypeObject KosCodeType = {
 /* === Constructor === */
 
 
-/**
-   Sum the per-site cache slots requested across a softened instruction
-   sequence. Each instruction's opcode declares how many slots it wants via
-   kos_opcode_cache_count; the total sizes the KosCode's trailing slot array.
-   Pseudo-ops (LABEL/POSITION) request zero, so counting the whole sequence
-   matches the assignment pass in code_emit. All opcodes request 0 today.
-
-   :param instr: fast-sequence of (op, arg) pairs
-   :param out: receives the slot total on success
-   :return: 0 on success; -1 (with exception) if the total would exceed the
-     index range (KOS_CACHE_UNSET is reserved as the unset sentinel)
-*/
 /* The one shape check for user-supplied instructions, run before any
    reader touches the items: every item is a list or tuple (the only
    types the PySequence_Fast item macros are defined for) of at least
@@ -3245,6 +3286,18 @@ static int validate_instructions(PyObject *instr) {
 }
 
 
+/**
+   Sum the per-site cache slots requested across a softened instruction
+   sequence. Each instruction's opcode declares how many slots it wants via
+   kos_opcode_cache_count; the total sizes the KosCode's trailing slot array.
+   Pseudo-ops (LABEL/POSITION) request zero, so counting the whole sequence
+   matches the assignment pass in code_emit.
+
+   :param instr: fast-sequence of (op, arg) pairs
+   :param out: receives the slot total on success
+   :return: 0 on success; -1 (with exception) if the total would exceed the
+     index range (KOS_CACHE_UNSET is reserved as the unset sentinel)
+*/
 static int count_cache_slots(PyObject *instr, uint16_t *out) {
 
   Py_ssize_t n = PySequence_Fast_GET_SIZE(instr);
@@ -3367,6 +3420,11 @@ PyObject *KosCode_New(
 
   KosCode_FAUX(self) = NULL;
   KosCode_EXTRAS(self) = PyDict_New();
+  if (! KosCode_EXTRAS(self)) {
+    Py_CLEAR(self);
+    Py_DECREF(instr);
+    return NULL;
+  }
 
   if (code_instr_init(self, instr, protect)) {
     Py_CLEAR(self);
@@ -3403,17 +3461,7 @@ PyObject *KosCode_GetInstruction(PyObject *self, uint32_t index) {
     return NULL;
   }
 
-  KosOp op = KosCode_CODE(self)[index];
-
-  PyObject *tup = PyTuple_New(2);
-  if (! tup) {
-    return NULL;
-  }
-
-  PyTuple_SET_ITEM(tup, 0, PyLong_FromLong(op.op));
-  PyTuple_SET_ITEM(tup, 1, PyLong_FromLong(op.arg));
-
-  return tup;
+  return op_as_tuple(KosCode_CODE(self)[index]);
 }
 
 
@@ -3510,25 +3558,6 @@ uint32_t kos_extent_find(PyObject *code, uint32_t pc, KosExtentKind kind) {
 }
 
 
-uint32_t kos_extent_find_by_pop_pc(PyObject *code, uint32_t pop_pc,
-    KosExtentKind kind) {
-
-  if (! code || ! KosCode_Check(code)) {
-    return KOS_EXTENT_NONE;
-  }
-
-  const KosExtentDesc *const extents = KosCode_EXTENTS(code);
-  uint32_t extent_len = KosCode_EXTENT_LEN(code);
-
-  for (uint32_t eid = 0; eid < extent_len; eid++) {
-    if (extents[eid].kind == kind && extents[eid].pop_pc == pop_pc) {
-      return eid;
-    }
-  }
-  return KOS_EXTENT_NONE;
-}
-
-
 KosExtentDesc *kos_extent_desc(PyObject *code, uint32_t extent_id) {
 
   if (! code || ! KosCode_Check(code)) {
@@ -3606,15 +3635,30 @@ PyCodeObject *KosCode_Faux(PyObject *self) {
 /* === Enum creation === */
 
 
+/**
+   Add one member to an enum dict. Returns 0, or -1 with an exception
+   set when the int or the store fails.
+*/
+static int enum_dict_add(PyObject *enum_dict, const char *name, long value) {
+
+  PyObject *v = PyLong_FromLong(value);
+  if (! v)
+    return -1;
+  int ret = PyDict_SetItemString(enum_dict, name, v);
+  Py_DECREF(v);
+  return ret;
+}
+
+
 /* Add one member to an enum dict, keyed by the bare suffix of its C
-   constant. The prefix exists so the constant stands alone in C; from
-   the object model the enum class already supplies that context, so
-   OpCode.CONST rather than OpCode.CONST. */
-#define int_enum(enum_dict, prefix, suffix)               \
-  do {                                                    \
-    PyObject *_v = PyLong_FromLong(prefix ## suffix);     \
-    PyDict_SetItemString(enum_dict, #suffix, _v);         \
-    Py_DECREF(_v);                                        \
+   constant, or leave the function at its fail label. The prefix exists
+   so the constant stands alone in C; from the object model the enum
+   class already supplies that context, so OpCode.CONST rather than
+   OpCode.KOS_OP_CONST. */
+#define int_enum(enum_dict, prefix, suffix)                        \
+  do {                                                             \
+    if (enum_dict_add(enum_dict, #suffix, prefix ## suffix) < 0)   \
+      goto fail;                                                   \
   } while(0)
 
 
@@ -3666,6 +3710,10 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, OPERAND);
 
   return create_int_enum("OpStyle", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
@@ -3752,6 +3800,7 @@ static int decorate_opcode(PyObject *member, PyObject *styles,
 
 static PyObject *create_opcode_enum(PyObject *styles) {
 
+  PyObject *res;
   PyObject *enum_dict = PyDict_New();
   if (! enum_dict)
     return NULL;
@@ -3760,7 +3809,7 @@ static PyObject *create_opcode_enum(PyObject *styles) {
 #include "opcodes.incl"
 #undef OP
 
-  PyObject *res = create_int_enum("OpCode", enum_dict);
+  res = create_int_enum("OpCode", enum_dict);
   if (! res)
     return NULL;
 
@@ -3781,6 +3830,10 @@ static PyObject *create_opcode_enum(PyObject *styles) {
   }
 
   return res;
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
@@ -3812,6 +3865,10 @@ static PyObject *create_operand_enum(void) {
   int_enum(enum_dict, KOS_OPERAND_, POWER);
 
   return create_int_enum("Operand", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 
@@ -3842,6 +3899,10 @@ static PyObject *create_compare_enum(void) {
   int_enum(enum_dict, KOS_COMPARE_, IS_SUBCLASS);
 
   return create_int_enum("Compare", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
 }
 
 

@@ -36,7 +36,6 @@ KosXferGoal *kos_xfer_goal_new(
     KosDynNode *target,
     KosDynNode *seam,
     PyObject *payload,
-    int is_throw,
     uint32_t resume_pc,
     PyObject *continuation_ref,
     int is_cc_unwind) {
@@ -64,7 +63,6 @@ KosXferGoal *kos_xfer_goal_new(
   goal->restore = NULL;
   goal->restore_count = 0;
   goal->phase = KOS_GOAL_LEAVING;
-  goal->is_throw = (uint8_t) (is_throw != 0);
   goal->is_cc_unwind = (uint8_t) (is_cc_unwind != 0);
   return goal;
 }
@@ -534,29 +532,22 @@ static KosOpResult goal_deliver(
     return EVAL_RAISE();
   }
 
-  if (goal->is_throw) {
-    KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-    Py_XSETREF(KosContext_INJECT_VALUE(ctx), Py_NewRef(goal->payload));
-    Py_XSETREF(KosContext_INJECT_TYPE(ctx),
-        Py_NewRef((PyObject *) Py_TYPE(goal->payload)));
-  } else {
-    if (! KosEvalState_FRAME(es)) {
-      PyErr_SetString(PyExc_SystemError,
-          "transfer: no frame to deliver to");
-      return EVAL_RAISE();
-    }
-    if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
+  if (! KosEvalState_FRAME(es)) {
+    PyErr_SetString(PyExc_SystemError,
+        "transfer: no frame to deliver to");
+    return EVAL_RAISE();
+  }
+  if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
 #if KOS_EVAL_SAFETYNET
-      if (KosEvalState_PENDING_VALUE(es)) {
-        PyErr_SetString(PyExc_SystemError,
-            "transfer: landed on a frame with a delivery already staged");
-        return EVAL_RAISE();
-      }
-#endif
-      Py_XSETREF(KosEvalState_PENDING_VALUE(es), Py_NewRef(goal->payload));
-    } else if (KosEvalState_StackPushRef(es, goal->payload) < 0) {
+    if (KosEvalState_PENDING_VALUE(es)) {
+      PyErr_SetString(PyExc_SystemError,
+          "transfer: landed on a frame with a delivery already staged");
       return EVAL_RAISE();
     }
+#endif
+    Py_XSETREF(KosEvalState_PENDING_VALUE(es), Py_NewRef(goal->payload));
+  } else if (KosEvalState_StackPushRef(es, goal->payload) < 0) {
+    return EVAL_RAISE();
   }
 
   kos_xfer_goal_pop(es);

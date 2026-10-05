@@ -452,11 +452,29 @@ class TestObjectIsInstance(SpecialsTestCase):
         self.assertEqual(2, count)
 
 
-    async def test_isinstance_multi_type_emits_arg_n(self):
-        # two types: count 3 (value + tupled types)
-        code = self.compile_to_code("(instance? a b c)")
-        count = _find_compare(code, Compare.IS_INSTANCE)
-        self.assertEqual(3, count)
+    async def test_isinstance_rejects_a_third_argument(self):
+        """
+        instance? has the runtime copy's signature: a value and one
+        type, several types as a tuple
+        """
+
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(instance? a b c)")
+
+
+    async def test_isinstance_tuple_of_types_as_value(self):
+        expr, mod = self.compile_expr(
+            "(instance? a #(b c))", a="hello", b=int, c=str)
+        self.assertTrue(await expr())
+
+
+    async def test_isinstance_tuple_of_types_as_condition(self):
+        expr, mod = self.compile_expr(
+            "(cond ((instance? a #(b c)) 1) (else: 0))", a="hello", b=int, c=str)
+        self.assertEqual(await expr(), 1)
+        expr, mod = self.compile_expr(
+            "(cond ((instance? a #(b c)) 1) (else: 0))", a=1.5, b=int, c=str)
+        self.assertEqual(await expr(), 0)
 
 
     async def test_isinstance_requires_at_least_two_args(self):
@@ -489,10 +507,18 @@ class TestObjectIsSubclass(SpecialsTestCase):
         self.assertEqual(2, count)
 
 
-    async def test_issubclass_multi_type_emits_arg_n(self):
-        code = self.compile_to_code("(subclass? a b c)")
-        count = _find_compare(code, Compare.IS_SUBCLASS)
-        self.assertEqual(3, count)
+    async def test_issubclass_rejects_a_third_argument(self):
+        with self.assertRaises(SpecialError):
+            self.compile_to_code("(subclass? a b c)")
+
+
+    async def test_issubclass_tuple_of_bases_as_condition(self):
+        expr, mod = self.compile_expr(
+            "(cond ((subclass? a #(b c)) 1) (else: 0))", a=bool, b=int, c=str)
+        self.assertEqual(await expr(), 1)
+        expr, mod = self.compile_expr(
+            "(cond ((subclass? a #(b c)) 1) (else: 0))", a=float, b=int, c=str)
+        self.assertEqual(await expr(), 0)
 
 
 # ---------------------------------------------------------------------------
@@ -710,6 +736,46 @@ class TestObjectMultiply(SpecialsTestCase):
         self.assertIsNone(arg)
         consts = _consts(code)
         self.assertIn(12, consts)
+
+
+    async def test_multiply_str_fold_stops_at_the_size_cap(self):
+        # a folded str may be 4096 characters; one more is left to runtime
+        code = self.compile_to_code('(* "x" 4096)')
+        self.assertIsNone(_find_operand(code, Operand.MULTIPLY))
+        self.assertIn("x" * 4096, _consts(code))
+
+        # the right operand fuses into the operator row, so only the
+        # left one is a CONST load
+        code = self.compile_to_code('(* "x" 4097)')
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+        self.assertIn("x", _consts(code))
+
+
+    async def test_multiply_tuple_fold_stops_at_the_size_cap(self):
+        code = self.compile_to_code("(* #(1) 256)")
+        self.assertIsNone(_find_operand(code, Operand.MULTIPLY))
+
+        code = self.compile_to_code("(* #(1) 257)")
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+
+
+    async def test_multiply_int_fold_stops_at_the_bit_cap(self):
+        # the operands' bit lengths may sum to 128; 64 + 64 folds,
+        # 65 + 65 is left to runtime
+        code = self.compile_to_code(f"(* {2 ** 63} {2 ** 63})")
+        self.assertIsNone(_find_operand(code, Operand.MULTIPLY))
+        self.assertIn(2 ** 126, _consts(code))
+
+        code = self.compile_to_code(f"(* {2 ** 64} {2 ** 64})")
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+
+
+    async def test_fold_prefix_survives_a_refused_fold(self):
+        # (* 2 3 "x" 4097): 2, 3 and "x" fold to "xxxxxx"; the 4097
+        # would overrun the cap, so it multiplies at runtime
+        code = self.compile_to_code('(* 2 3 "x" 4097)')
+        self.assertEqual(2, _find_operand(code, Operand.MULTIPLY))
+        self.assertIn("xxxxxx", _consts(code))
 
 
 class TestObjectPower(SpecialsTestCase):
@@ -1248,6 +1314,16 @@ class TestObjectFormat(SpecialsTestCase):
         code = self.compile_to_code('(format (a) "04d")')
         arg = _find_op(code, OpCode.OBJECT_FORMAT_CONST)
         self.assertEqual("04d", code.constant(arg))
+
+
+    async def test_format_falsy_rules_are_passed_through(self):
+        # a falsy rules form is a value, not an absent argument: it is
+        # handed to format, which rejects a non-str at runtime
+        for src, expected in (('(format (a) 0)', 0), ('(format (a) "")', "")):
+            code = self.compile_to_code(src)
+            arg = _find_op(code, OpCode.OBJECT_FORMAT_CONST)
+            self.assertIsNotNone(arg, src)
+            self.assertEqual(expected, code.constant(arg), src)
 
 
     async def test_format_quoted_symbol_rules_emits_opcode(self):

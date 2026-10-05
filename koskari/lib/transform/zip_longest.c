@@ -15,14 +15,13 @@
    base's close loop skips, so the provider tracks only how many
    remain live.
 
-   That makes it the second provider that must catch a source running
-   out rather than propagate it, after batched: exhaustion arrives at
-   the deliver resume as a NULL with StopIteration pending, and the
-   resume files the fill value and carries the row on. The row itself
-   is the flattened walk zip uses -- one loop over the sources that
-   leaves only for a fetch that suspends and re-enters at base.idx --
-   with the partial row in base.pending, which ki_finish and the step
-   abort already clear.
+   The provider catches a source running out rather than propagating
+   it: exhaustion arrives at the deliver resume as a NULL with
+   StopIteration pending, and the resume files the fill value and
+   carries the row on. The row itself is the flattened walk zip uses --
+   one loop over the sources that leaves only for a fetch that suspends
+   and re-enters at base.idx -- with the partial row in base.pending,
+   which ki_finish and the step abort already clear.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3

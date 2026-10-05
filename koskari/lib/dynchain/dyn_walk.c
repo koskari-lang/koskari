@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_walk */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The chain walks: raise, return, loop and
+  targeted unwinds, and the pop primitives they share.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === Dynamic chain walk and pop primitives === */
 
 int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
@@ -60,6 +83,10 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   /* The frozen span leaves the live chain; its segments' unwind-cache
      back links cannot survive the detach. */
   kos_dyn_clear_unwind_caches(ctx_active, NULL);
+  /* An effect a node holds outside itself leaves with it, innermost
+     first; the install puts it back. */
+  for (KosDynNode *n = ctx_active; n; n = KosDynNode_PARENT(n))
+    kos_dyn_extent_park(es, n);
   /* The GEN's namespace fill is the consumer's live namespace stamped
      at the install; the next install stamps it again from that
      consumer's registers. Holding it across the freeze would keep the
@@ -280,59 +307,6 @@ KosOpResult kos_dyn_unwind_return(
   if (KOS_XFER_TRACE)
     SAYF("[xfer] unwind_return: done, dyn_top=%p",
          (void *) KosEvalState_DYN_TOP(es));
-  return EVAL_NORMAL();
-}
-
-
-/**
-   Generic unwind walk toward a frame. See dynchain.h for the contract.
-   Pops toward frame with handle(event) before each pop; a CONSUME (other
-   than the FINALLY case, handled by kos_dyn_unwind_return) is an error.
-   Callers: eval.c route_delim_return.
-*/
-KosOpResult kos_dyn_unwind_to_frame(
-    KosEvalState *es,
-    KosDynFrame *frame,
-    KosXferEvent event,
-    KosDynNode **out_pending) {
-
-  if (out_pending)
-    *out_pending = NULL;
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] unwind_to_frame: target frame=%p", (void *) frame);
-
-  while (KosEvalState_DYN_TOP(es) != NULL
-         && KosEvalState_DYN_TOP(es) != (KosDynNode *) frame) {
-    KosDynNode *top = KosEvalState_DYN_TOP(es);
-    KosOpResult r;
-
-    /* Handle phase: offer event before unwind */
-    {
-      KosHandleResult hr = kos_dyn_handle(es, top, event);
-      if (hr == KOS_HANDLE_CONSUMED) {
-        /* RETURN: use kos_dyn_unwind_return. RAISE: use kos_dyn_unwind_raise. */
-        PyErr_SetString(PyExc_RuntimeError,
-                        "handle(CONSUMED) during unwind_to_frame not implemented");
-        return EVAL_RAISE();
-      }
-      if (hr == KOS_HANDLE_ERROR)
-        return EVAL_RAISE();
-    }
-
-    if (KOS_XFER_TRACE)
-      SAYF("[xfer] unwind_to_frame: popping node=%p kind=%s",
-           (void *) top, kos_dynnode_kind_name(KosDynNode_KIND(top)));
-    KOS_TRACE_EVENTS_INC(KOS_TE_DYN_UNWIND_STEP);
-    r = kos_dyn_unlink_top(es, event, 1);
-    if (r.kind == KOS_RES_NORMAL)
-      continue;
-    if (out_pending
-        && (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT))
-      *out_pending = top;
-    return r;
-  }
-  if (KOS_XFER_TRACE)
-    SAYF("[xfer] unwind_to_frame: done, dyn_top=%p", (void *) KosEvalState_DYN_TOP(es));
   return EVAL_NORMAL();
 }
 
@@ -700,7 +674,6 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
            (int) hr,
            hr == KOS_HANDLE_CONSUMED ? "CONSUMED"
              : hr == KOS_HANDLE_PASS ? "PASS"
-             : hr == KOS_HANDLE_DEFERRED ? "DEFERRED"
              : hr == KOS_HANDLE_ERROR ? "ERROR" : "?");
 
       if (hr == KOS_HANDLE_CONSUMED) {
@@ -932,3 +905,6 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
     return EVAL_RAISE();
   }
 }
+
+
+// The end.

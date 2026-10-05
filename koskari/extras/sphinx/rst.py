@@ -40,7 +40,7 @@ def syntax_accepts_lines(syntax_obj):
     head = str(syntax_obj.name)
     lines = ['', '**Accepts**', '']
     for transform in syntax_obj.transforms:
-        lines.append('* %s' % format_accept_pattern(transform.pattern, head))
+        lines.append(f'* {format_accept_pattern(transform.pattern, head)}')
     return lines
 
 
@@ -57,7 +57,7 @@ def layout_peers_lines(layout_obj):
 
     lines = ['', '**Peers**', '']
     for peer in layout_obj.peers:
-        lines.append('* %s' % format_layout_peer(peer))
+        lines.append(f'* {format_layout_peer(peer)}')
     return lines
 
 

@@ -75,10 +75,7 @@ class TestKioImporterParity(unittest.TestCase):
         loader = KoskariSourceFileLoader(modname, path)
         spec = importlib.util.spec_from_file_location(
             modname, path, loader=loader)
-        module = types.ModuleType(modname)
-        module.__name__ = modname
-        module.__package__ = None
-        module.__spec__ = spec
+        module = importlib.util.module_from_spec(spec)
         loader.exec_module_demand(module)
         return module
 
@@ -94,6 +91,75 @@ class TestKioImporterParity(unittest.TestCase):
         compile_ki_file_to_kio(ki_path, kio_path)
         return (self._load(stem + '_ki', ki_path),
                 self._load(stem + '_kio', kio_path))
+
+
+    def _package(self, name, files):
+        """
+        Write a package directory under the temp dir from a mapping of
+        file name to source; return its path
+        """
+
+        pkg = os.path.join(self._tmpdir, name)
+        os.mkdir(pkg)
+        for fname, source in files.items():
+            path = os.path.join(pkg, fname)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write(source)
+        return pkg
+
+
+    def test_kio_build_inherits_the_package_pragma(self):
+        """
+        A submodule compiled to .kio is compiled under the package's
+        pragma, as a source load of it is: the package turns asserts
+        off, so the submodule's failing assert is dropped at build
+        """
+
+        pkg = self._package('kiopkg_pragma', {
+            '__init__.ki': "(package-pragma [compiler/enable-asserts False])\n",
+            'sub.ki': '(assert False "kept by the default pragma")\n'
+                      '(define x 1)\n',
+        })
+        compile_ki_file_to_kio(os.path.join(pkg, 'sub.ki'),
+                               os.path.join(pkg, 'sub.kio'))
+        mod = importlib.import_module('kiopkg_pragma.sub')
+        self.assertEqual(mod.x, 1)
+
+
+    def test_kio_build_of_a_nested_package_init_inherits_the_package_pragma(self):
+        """
+        A nested package's own __init__ compiled to .kio is compiled
+        under the parent package's pragma, as a source load of it is
+        """
+
+        pkg = self._package('kiopkg_nested', {
+            '__init__.ki': "(package-pragma [compiler/enable-asserts False])\n",
+            'inner/__init__.ki':
+                '(assert False "kept by the default pragma")\n'
+                '(define x 1)\n',
+        })
+        compile_ki_file_to_kio(os.path.join(pkg, 'inner', '__init__.ki'),
+                               os.path.join(pkg, 'inner', '__init__.kio'))
+        mod = importlib.import_module('kiopkg_nested.inner')
+        self.assertEqual(mod.x, 1)
+
+
+    def test_kio_build_resolves_a_relative_import(self):
+        """
+        A submodule's relative import needs __package__, which the build
+        sets from the file's place in its package
+        """
+
+        pkg = self._package('kiopkg_rel', {
+            '__init__.ki': "",
+            'helper.ki': "(define helper 41)\n",
+            'rel.ki': "(import-from .helper helper)\n(define y (+ helper 1))\n",
+        })
+        compile_ki_file_to_kio(os.path.join(pkg, 'rel.ki'),
+                               os.path.join(pkg, 'rel.kio'))
+        mod = importlib.import_module('kiopkg_rel.rel')
+        self.assertEqual(mod.y, 42)
 
 
     def test_docstring_via_kio_matches_ki(self):
@@ -367,10 +433,7 @@ class TestKioImporterParity(unittest.TestCase):
         loader = KoskariSourceFileLoader('parity_kio', kio_path)
         spec = importlib.util.spec_from_file_location(
             'parity_kio', kio_path, loader=loader)
-        module = types.ModuleType('parity_kio')
-        module.__name__ = 'parity_kio'
-        module.__package__ = None
-        module.__spec__ = spec
+        module = importlib.util.module_from_spec(spec)
         loader.exec_module_demand(module)
         self.assertEqual(42, module.parity_answer)
 

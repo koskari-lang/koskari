@@ -103,16 +103,34 @@ match msg:
 
 ### Names resolve from the enclosing scope
 
-Every name a pattern references, the `T` in `x :: T`, the class in
+A name a pattern references, the `T` in `x :: T`, the class in
 `Point[...]`, the `pred` in `(? pred)`, the `f` in `(app f ...)`, a
 symbol mapping key, is an ordinary binding resolved from the enclosing
 scope at match time. Closure-captured and local names work as they
 would in the body.
 
-### Callables run on the demand path
+Seven type names are the exception: `int`, `str`, `list`, `tuple`,
+`pair`, `symbol` and `keyword` in a pattern always mean the builtin
+types. They come from the matcher's own table, so a match arm reads
+nothing from the namespace for them, and rebinding one of those names
+in the enclosing scope does not change what the pattern tests:
 
-Predicates and extractors are called synchronously through the demand
-mechanism, so a plain Koskari `define` works without wrapping:
+```koskari
+define int float            ; does not reach the pattern below
+
+match 2.5:
+  case x :: int:
+    "unreached: int in a pattern is the builtin"
+  case x:
+    "taken"
+```
+
+To test against your own type, bind it under another name.
+
+### Callables are called synchronously
+
+A predicate or extractor is an ordinary callable, and a plain Koskari
+`define` works without wrapping:
 
 ```koskari
 define splitext [name]:
@@ -123,9 +141,11 @@ match path:
     (compile-source base)
 ```
 
-A callable that suspends raises `KoskariSyncViolation`; a pattern
-cannot pause. A predicate or extractor that raises propagates the error
-rather than counting as a no-match.
+The call is synchronous in the current release: a predicate or
+extractor that suspends, an `async` function that awaits inside a
+`match`, raises `KoskariSyncViolation`. Keep awaiting work in the arm
+body, or resolve it before the `match`. A predicate or extractor that
+raises propagates the error rather than counting as a no-match.
 
 ## Guards
 

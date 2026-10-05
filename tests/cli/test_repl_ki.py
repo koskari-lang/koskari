@@ -30,8 +30,10 @@ import pytest
 from koskari.cli import main
 from koskari.cli.host import startup_lines
 from koskari.importer import install
-from koskari.lib import drive_async_loop
-from koskari.module import new_module
+from koskari.lib import drive_async_loop, values
+from koskari.module import (
+    build_module_load_facets, init_module, load_module_source_async,
+    new_module)
 
 
 pytestmark = pytest.mark.phase_cli
@@ -58,7 +60,8 @@ def _repl():
 
 class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
-    async def _run_repl(self, lines, full_trace=False, quiet=True):
+    async def _run_repl(self, lines, full_trace=False, quiet=True,
+                        mod=None):
         """
         Drive the Koskari REPL with a sequence of input lines.
 
@@ -75,7 +78,8 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
             except StopIteration:
                 raise EOFError
 
-        mod = new_module('__main__')
+        if mod is None:
+            mod = new_module('__main__')
         await _repl().repl(
             mod,
             prompter=prompter,
@@ -90,9 +94,47 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(hasattr(_repl(), 'repl'))
 
 
+    async def test_detached_reader_rebuilds_from_the_bound_pragma(self):
+        repl = _repl()
+        mod = new_module('replprobe')
+        init_module(mod, '<stdin>')
+        compiler, _ = build_module_load_facets(mod, filename='<stdin>')
+        ns = vars(mod)
+        pragma = ns['__pragma__']
+        del ns['__reader__']
+
+        await repl.eval_expression(compiler, '1', ns)
+
+        reader = ns.get('__reader__')
+        self.assertIsNotNone(reader)
+        self.assertIs(ns['__pragma__'], pragma)
+
+        # the rebuilt reader follows the module's pragma
+        layout = reader.layout_enabled
+        pragma.rebuild(('reader/layout', values(not layout)))
+        self.assertEqual(reader.layout_enabled, not layout)
+
+
     async def test_simple_expression_prints_result(self):
         out, _ = await self._run_repl(['(+ 1 2)'])
         self.assertIn('3', out)
+
+
+    async def test_prompt_reads_layout_after_a_command_load(self):
+        """
+        A -c string is read as s-expressions with the facets retained
+        for -i; the prompt that follows still reads layout
+        """
+
+        mod = new_module('__main__')
+        init_module(mod, '<string>')
+        await load_module_source_async(
+            mod, '(define x 41)', detach=False, layout=False)
+        self.assertTrue(vars(mod)['__reader__'].layout_enabled)
+
+        out, err = await self._run_repl(['+ x 1'], mod=mod)
+        self.assertIn('42', out)
+        self.assertNotIn('Error', err)
 
 
     async def test_none_result_not_printed(self):

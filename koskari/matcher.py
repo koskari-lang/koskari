@@ -247,22 +247,12 @@ class MatchCompiler:
                     and len(prev) >= 1 and len(signature) >= 1
                     and prev[0] == "capture" and signature[0] == "capture"):
                 raise ValueError(
-                    "duplicate slot name %r in matcher pattern "
-                    "(differing matcher type); use SAME for repeats"
-                    % (name,))
+                    f"duplicate slot name {name!r} in matcher pattern "
+                    "(differing matcher type); use SAME for repeats")
             raise ValueError(
-                "duplicate slot name %r in matcher pattern; use SAME "
-                "for repeats" % (name,))
+                f"duplicate slot name {name!r} in matcher pattern; use SAME "
+                "for repeats")
         top[name] = signature
-
-
-    def on_pattern(self, pat):
-        """
-        Invoked when a pattern participates in lowering; baseline compiler
-        ignores it
-        """
-
-        pass
 
 
     def lower(self, root):
@@ -298,8 +288,7 @@ class Pattern(Protocol):
     """
     Structural base for matcher pattern builders. Implementations define
     lower(ctx); the compiler passes itself as ctx when lowering a root
-    pattern. Composite and some other patterns call ctx.on_pattern(self)
-    before expanding. GROUP and ONEOF bracket nested lowering with
+    pattern. GROUP and ONEOF bracket nested lowering with
     begin_nested_claims and end_nested_claims. Methods freeze and build use
     MatchCompiler by default for standalone compilation
     """
@@ -316,7 +305,7 @@ class Pattern(Protocol):
 
     def freeze(self):
         """
-        Lower this pattern to a frozen 7-tuple suitable for
+        Lower this pattern to a frozen 6-tuple suitable for
         Matcher.from_tuple
         """
 
@@ -342,14 +331,6 @@ class Pattern(Protocol):
         """
 
         return self.build().match(subject, **externs)
-
-
-    def visit(self, fn):
-        """
-        Invoke fn on this pattern; subclasses recurse into children
-        """
-
-        fn(self)
 
 
     @staticmethod
@@ -378,8 +359,7 @@ def check_pattern_arg(arg, what):
 
     if not isinstance(arg, Pattern):
         raise TypeError(
-            "%s must be a matcher pattern, got %r"
-            % (what, type(arg).__name__))
+            f"{what} must be a matcher pattern, got {type(arg).__name__!r}")
 
 
 def check_str_arg(arg, what, *, allow_empty=False):
@@ -390,9 +370,9 @@ def check_str_arg(arg, what, *, allow_empty=False):
 
     if not isinstance(arg, str):
         raise TypeError(
-            "%s must be a str, got %r" % (what, type(arg).__name__))
+            f"{what} must be a str, got {type(arg).__name__!r}")
     if not allow_empty and not arg:
-        raise ValueError("%s must be a non-empty str" % (what,))
+        raise ValueError(f"{what} must be a non-empty str")
 
 
 def pattern_slot_names(pattern):
@@ -429,11 +409,10 @@ class SAME(Pattern):
         check_str_arg(slot, "SAME slot")
         if isinstance(depth, bool) or not isinstance(depth, int):
             raise TypeError(
-                "SAME depth must be an int, got %r"
-                % type(depth).__name__)
+                f"SAME depth must be an int, got {type(depth).__name__!r}")
         if depth < 0:
             raise ValueError(
-                "SAME depth must be non-negative, got %d" % (depth,))
+                f"SAME depth must be non-negative, got {depth}")
         self._slot = slot
         self._depth = depth
 
@@ -450,26 +429,21 @@ class SAME(Pattern):
                 break
         if slot_idx is None:
             raise ValueError(
-                "SAME slot %r is not bound earlier in this pattern"
-                % (self._slot,))
+                f"SAME slot {self._slot!r} is not bound earlier in this pattern")
         return ctx.append_node(
             ("SAME", slot_idx, self._depth))
 
 
-    def visit(self, fn):
-        fn(self)
-
-
     def __repr__(self):
         if self._depth:
-            return "SAME(%r, depth=%d)" % (self._slot, self._depth)
-        return "SAME(%r)" % (self._slot,)
+            return f"SAME({self._slot!r}, depth={self._depth})"
+        return f"SAME({self._slot!r})"
 
 
     def __kos_repr__(self):
         if self._depth:
-            return "(SAME %s depth: %d)" % (self._slot, self._depth)
-        return "(SAME %s)" % (self._slot,)
+            return f"(SAME {self._slot} depth: {self._depth})"
+        return f"(SAME {self._slot})"
 
 
 class TEST_ANY(Pattern):
@@ -522,7 +496,7 @@ class LITERAL(Pattern):
         if isinstance(value, Pattern):
             raise TypeError(
                 "LITERAL value must be a concrete value, "
-                "not a pattern: %r" % (type(value).__name__,))
+                f"not a pattern: {type(value).__name__!r}")
         self._value = strip_mark(value)
 
 
@@ -543,8 +517,9 @@ class LITERAL(Pattern):
         if is_symbol(self._value):
             return str(self._value)
         if is_keyword(self._value):
-            return '(LITERAL_KW "%s")' % (str(self._value).rstrip(':'),)
-        return "(LITERAL %s)" % (kos_repr(self._value),)
+            name = str(self._value).rstrip(':')
+            return f'(LITERAL_KW "{name}")'
+        return f"(LITERAL {kos_repr(self._value)})"
 
 
 class TYPE(Pattern):
@@ -575,11 +550,11 @@ class TYPE(Pattern):
 
 
     def __repr__(self):
-        return 'TYPE(%r)' % (self._extern,)
+        return f'TYPE({self._extern!r})'
 
 
     def __kos_repr__(self):
-        return "(:: %s)" % (self._extern,)
+        return f"(:: {self._extern})"
 
 
 class PREDICATE(Pattern):
@@ -611,11 +586,11 @@ class PREDICATE(Pattern):
 
 
     def __repr__(self):
-        return 'PREDICATE(%r)' % (self._extern,)
+        return f'PREDICATE({self._extern!r})'
 
 
     def __kos_repr__(self):
-        return "(PREDICATE %s)" % (self._extern,)
+        return f"(PREDICATE {self._extern})"
 
 
 class CAPTURE(Pattern):
@@ -667,12 +642,6 @@ class CAPTURE(Pattern):
         else:
             sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("CAPTURE", slot_idx, sub_idx))
-
-
-    def visit(self, fn):
-        fn(self)
-        if self._sub is not None:
-            self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -742,11 +711,6 @@ class FORM(Pattern):
         return ctx.append_node(("FORM", sub_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
-
-
     def __repr__(self):
         return f"FORM({repr(self._sub)})"
 
@@ -790,12 +754,6 @@ class APP(Pattern):
         idx = ctx.intern_extern(self._extern)
         sub_idx = self._sub.lower(ctx) if self._sub is not None else -1
         return ctx.append_node(("APP", idx, sub_idx))
-
-
-    def visit(self, fn):
-        fn(self)
-        if self._sub is not None:
-            self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -853,11 +811,6 @@ class MAP_ENTRY:
         return ctx.append_node((tag, ref, sub_idx))
 
 
-    def visit(self, fn):
-        if self._sub is not None:
-            self._sub.visit(fn)
-
-
     def __repr__(self):
         parts = [repr(self._key)]
         if self._sub is not None:
@@ -898,12 +851,6 @@ class MAP(Pattern):
         return ctx.append_node(("MAP",) + tuple(idxs))
 
 
-    def visit(self, fn):
-        fn(self)
-        for entry in self._entries:
-            entry.visit(fn)
-
-
     def __repr__(self):
         inner = ", ".join(repr(entry) for entry in self._entries)
         return f"MAP({inner})"
@@ -933,12 +880,6 @@ class MATCH(Pattern):
 
         idxs = [c.lower(ctx) for c in self._children]
         return ctx.append_node(("MATCH",) + tuple(idxs))
-
-
-    def visit(self, fn):
-        fn(self)
-        for c in self._children:
-            c.visit(fn)
 
 
     def __repr__(self):
@@ -999,12 +940,6 @@ class GROUP(Pattern):
         return ctx.append_node(("CAPTURE", slot_idx, g_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-        for c in self._children:
-            c.visit(fn)
-
-
     def __repr__(self):
         slot = self._slot
         if self._children:
@@ -1055,12 +990,6 @@ class ONEOF(Pattern):
         return ctx.append_node(("ONEOF",) + tuple(idxs))
 
 
-    def visit(self, fn):
-        fn(self)
-        for b in self._branches:
-            b.visit(fn)
-
-
     def __repr__(self):
         return f"ONEOF({', '.join(map(repr, self._branches))})"
 
@@ -1089,12 +1018,10 @@ class REPEAT(Pattern):
         check_pattern_arg(sub, "REPEAT sub")
         if isinstance(min_count, bool) or not isinstance(min_count, int):
             raise TypeError(
-                "REPEAT min_count must be an int, got %r"
-                % (type(min_count).__name__,))
+                f"REPEAT min_count must be an int, got {type(min_count).__name__!r}")
         if min_count < 0:
             raise ValueError(
-                "REPEAT min_count must be non-negative, got %d"
-                % (min_count,))
+                f"REPEAT min_count must be non-negative, got {min_count}")
         self._sub = sub
         self._min_count = min_count
 
@@ -1106,11 +1033,6 @@ class REPEAT(Pattern):
 
         sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("REPEAT", sub_idx, self._min_count))
-
-
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -1152,11 +1074,6 @@ class OPTIONAL(Pattern):
         return ctx.append_node(("OPTIONAL", sub_idx))
 
 
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
-
-
     def __repr__(self):
         return f"OPTIONAL({repr(self._sub)})"
 
@@ -1187,11 +1104,10 @@ class REST(Pattern):
             check_str_arg(slot, "REST slot")
         if isinstance(min_tail, bool) or not isinstance(min_tail, int):
             raise TypeError(
-                "REST min_tail must be an int, got %r"
-                % (type(min_tail).__name__,))
+                f"REST min_tail must be an int, got {type(min_tail).__name__!r}")
         if min_tail < 0:
             raise ValueError(
-                "REST min_tail must be non-negative, got %d" % (min_tail,))
+                f"REST min_tail must be non-negative, got {min_tail}")
         self._slot = slot
         self._min_tail = min_tail
 
@@ -1208,10 +1124,6 @@ class REST(Pattern):
         if self._slot is None:
             return rest_idx
         return ctx.append_node(("CAPTURE", slot_idx, rest_idx))
-
-
-    def visit(self, fn):
-        fn(self)
 
 
     def __repr__(self):
@@ -1258,11 +1170,6 @@ class NOT(Pattern):
 
         sub_idx = self._sub.lower(ctx)
         return ctx.append_node(("NOT", sub_idx))
-
-
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -1319,12 +1226,6 @@ class CLASS(Pattern):
             ctx.in_class_fields = prev
         return ctx.append_node(
             ("CLASS", ext_idx) + tuple(field_idxs))
-
-
-    def visit(self, fn):
-        fn(self)
-        for f in self._fields:
-            f.visit(fn)
 
 
     def __repr__(self):
@@ -1384,11 +1285,6 @@ class FIELD(Pattern):
         if self._name is None:
             return ctx.append_node(("FIELD_POS", sub_idx))
         return ctx.append_node(("FIELD_KW", sub_idx, self._name))
-
-
-    def visit(self, fn):
-        fn(self)
-        self._sub.visit(fn)
 
 
     def __repr__(self):
@@ -1453,16 +1349,6 @@ def binding_inner_pattern():
     ))
 
 
-def binding_group_capture_pattern():
-    """
-    Same inner layout as :class:`BINDING` GROUP dict and each
-    :class:`BINDINGS` repeat frame (no synthetic source capture; pair-backed
-    matches expose the whole-cell spine on :class:`DatumFrame` ``.source``)
-    """
-
-    return binding_inner_pattern()
-
-
 def bindings_grouped_list_cell_pattern():
     """
     Match one binding-list element that wraps a single pair in an extra
@@ -1471,7 +1357,7 @@ def bindings_grouped_list_cell_pattern():
     pair tree for ONEOF(MATCH, MATCH)
     """
 
-    inner = binding_group_capture_pattern()
+    inner = binding_inner_pattern()
     return FORM(MATCH(inner))
 
 
@@ -1557,8 +1443,7 @@ def make_matcher(pattern):
 
     if not isinstance(pattern, Pattern):
         raise TypeError(
-            "make_matcher requires a matcher pattern, got %r"
-            % (type(pattern).__name__,))
+            f"make_matcher requires a matcher pattern, got {type(pattern).__name__!r}")
 
     return pattern.build()
 
@@ -1580,7 +1465,6 @@ class Composite(Pattern):
         Emit the expanded primitive pattern
         """
 
-        ctx.on_pattern(self)
         primitive = self._expand()
         return primitive.lower(ctx)
 
@@ -1592,11 +1476,6 @@ class Composite(Pattern):
         """
 
         ...
-
-
-    def visit(self, fn):
-        fn(self)
-        self._expand().visit(fn)
 
 
 class CALLEDBY(Composite):
@@ -1650,11 +1529,11 @@ class DEFINE(Composite):
 
 
     def __repr__(self):
-        return 'DEFINE(%r)' % (self._slot,)
+        return f'DEFINE({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(DEFINE %s)' % (self._slot,)
+        return f'(DEFINE {self._slot})'
 
 
 class DECL(Composite):
@@ -1681,11 +1560,11 @@ class DECL(Composite):
 
 
     def __repr__(self):
-        return 'DECL(%r)' % (self._slot,)
+        return f'DECL({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(DECL %s)' % (self._slot,)
+        return f'(DECL {self._slot})'
 
 
     def _expand(self):
@@ -1720,15 +1599,15 @@ class BINDING(Composite):
 
 
     def _expand(self):
-        return GROUP(self._slot, binding_group_capture_pattern())
+        return GROUP(self._slot, binding_inner_pattern())
 
 
     def __repr__(self):
-        return 'BINDING(%r)' % (self._slot,)
+        return f'BINDING({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(BINDING %s)' % (self._slot,)
+        return f'(BINDING {self._slot})'
 
 
 class BINDINGS(Composite):
@@ -1754,11 +1633,11 @@ class BINDINGS(Composite):
 
 
     def __repr__(self):
-        return 'BINDINGS(%r)' % (self._slot,)
+        return f'BINDINGS({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(BINDINGS %s)' % (self._slot,)
+        return f'(BINDINGS {self._slot})'
 
 
     def _expand(self):
@@ -1770,7 +1649,7 @@ class BINDINGS(Composite):
 
         row = GROUP(None, ONEOF(
             bindings_grouped_list_cell_pattern(),
-            binding_group_capture_pattern(),
+            binding_inner_pattern(),
         ))
         return ONEOF(
             CAPTURE(self._slot, LITERAL(nil)),
@@ -1781,8 +1660,7 @@ class BINDINGS(Composite):
 def formal_param_pattern():
     """
     Build a one-element matcher that recognises a single formal
-    parameter cell. Accepted shapes mirror parse_formal_parameter:
-    bare symbol, (name), (name default), (type as: name),
+    parameter cell. Accepted shapes: bare symbol, (name), (name default), (type as: name),
     (name kw1 v1 kw2 v2 ...) with one-or-more keyword/value pairs
     in the tail, and (name: default kw1 v1 ...) where a keyword heads
     the cell and its value is the default. Captures inside this
@@ -1956,11 +1834,11 @@ class FORMALS(Composite):
 
 
     def __repr__(self):
-        return 'FORMALS(%r)' % (self._slot,)
+        return f'FORMALS({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(FORMALS %s)' % (self._slot,)
+        return f'(FORMALS {self._slot})'
 
 
 class USING(Composite):
@@ -1990,11 +1868,11 @@ class USING(Composite):
 
 
     def __repr__(self):
-        return 'USING(%r)' % (self._slot,)
+        return f'USING({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(USING %s)' % (self._slot,)
+        return f'(USING {self._slot})'
 
 
     def _expand(self):
@@ -2025,61 +1903,15 @@ class USING_UNPACK(Composite):
 
 
     def __repr__(self):
-        return 'USING_UNPACK(%r)' % (self._slot,)
+        return f'USING_UNPACK({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(USING_UNPACK %s)' % (self._slot,)
+        return f'(USING_UNPACK {self._slot})'
 
 
     def _expand(self):
         return GROUP(self._slot, FORM(MATCH(PAIR("lhs"), VALUE("expr"))))
-
-
-def _iter_unpack_lhs_symbols(lhs):
-    """
-    Yield symbols introduced by an unpack LHS (symbol or proper list)
-    """
-
-    if is_symbol(lhs):
-        yield lhs
-        return
-    if not is_pair(lhs):
-        return
-    if not is_proper(lhs):
-        return
-    cells = list(unpack(lhs))
-    _kw_star = keyword("*")
-    star_idx = [i for i, elt in enumerate(cells) if elt == _kw_star]
-    if len(star_idx) > 1:
-        return
-    if not star_idx:
-        for elt in cells:
-            if is_pair(elt):
-                yield from _iter_unpack_lhs_symbols(elt)
-            elif is_symbol(elt):
-                yield elt
-        return
-    si = star_idx[0]
-    prefix = cells[:si]
-    after = cells[si + 1:]
-    if not after:
-        return
-    star_name = after[0]
-    suffix = after[1:]
-    if not is_symbol(star_name):
-        return
-    for elt in prefix:
-        if is_pair(elt):
-            yield from _iter_unpack_lhs_symbols(elt)
-        elif is_symbol(elt):
-            yield elt
-    yield star_name
-    for elt in suffix:
-        if is_pair(elt):
-            yield from _iter_unpack_lhs_symbols(elt)
-        elif is_symbol(elt):
-            yield elt
 
 
 class VALUE(Pattern):
@@ -2106,16 +1938,15 @@ class VALUE(Pattern):
         Emit ``CAPTURE``
         """
 
-        ctx.on_pattern(self)
         return CAPTURE(self._slot).lower(ctx)
 
 
     def __repr__(self):
-        return 'VALUE(%r)' % (self._slot,)
+        return f'VALUE({self._slot!r})'
 
 
     def __kos_repr__(self):
-        return '(VALUE %s)' % (self._slot,)
+        return f'(VALUE {self._slot})'
 
 
 class BODY(Pattern):
@@ -2143,7 +1974,6 @@ class BODY(Pattern):
         Emit ``REST`` with ``min_tail=1``
         """
 
-        ctx.on_pattern(self)
         return REST(self._slot, min_tail=1).lower(ctx)
 
 
@@ -2229,12 +2059,8 @@ META_PATTERN = ONEOF(
         CAPTURE("class_extern", TYPE("symbol")),
         REST("class_fields"))),
     FORM(MATCH(
-        LITERAL_SYM("CLASS"),
-        CAPTURE("class_extern", TYPE("symbol")))),
-    FORM(MATCH(
         CAPTURE("head", TYPE("symbol")),
         REST("head_args"))),
-    FORM(MATCH(CAPTURE("head", TYPE("symbol")))),
     CAPTURE("bare_symbol", TYPE("symbol")),
     CAPTURE("atom_literal"),
 )
@@ -2320,19 +2146,25 @@ def parse_explicit_rule_pattern(form, source_ctx=None):
     :param form: koskari pattern datum
     :param source_ctx: optional value appended to error messages
     :return: Pattern instance (often ``MATCH`` wrapping a sequence)
-    :raises ValueError: on ellipsis, improper lists, or factory failures
+    :raises ValueError: on ellipsis, improper lists, empty cells, or
+        factory failures
     """
 
-    ctx = "" if source_ctx is None else " (context %r)" % (source_ctx,)
+    ctx = "" if source_ctx is None else f" (context {source_ctx!r})"
 
     if form is Ellipsis:
-        raise ValueError("invalid ellipsis in MATCH pattern%s" % ctx)
+        raise ValueError(f"invalid ellipsis in MATCH pattern{ctx}")
 
     if not is_pair(form):
         return LITERAL(form)
 
     if not is_proper(form):
-        raise ValueError("MATCH pattern must be a proper list%s" % ctx)
+        raise ValueError(f"MATCH pattern must be a proper list{ctx}")
+
+    # nil is a pair and a proper list; as a cell it would be an empty
+    # inline group, which matches nothing and names nothing
+    if is_nil(form):
+        raise ValueError(f"empty MATCH pattern cell{ctx}")
 
     head, tail = form
 
@@ -2412,8 +2244,7 @@ def lower_named_capture(name_sym, args):
             if elem is KW_DCOLON or elem is KW_TYPE:
                 if i + 1 >= n:
                     raise ValueError(
-                        "(%s ...) constraint marker missing payload"
-                        % (name,))
+                        f"({name} ...) constraint marker missing payload")
                 payload = strip_mark(items[i + 1])
                 if is_symbol(payload):
                     constraints.append(TYPE(str(payload)))
@@ -2424,21 +2255,19 @@ def lower_named_capture(name_sym, args):
             if elem is KW_VAL:
                 if i + 1 >= n:
                     raise ValueError(
-                        "(%s ...) val: marker missing payload"
-                        % (name,))
+                        f"({name} ...) val: marker missing payload")
                 constraints.append(LITERAL(items[i + 1]))
                 i += 2
                 continue
             raise ValueError(
-                "(%s ...) unrecognised keyword %r in capture body"
-                % (name, elem))
+                f"({name} ...) unrecognised keyword {elem!r} in capture body")
         constraints.append(parse_matcher(elem))
         i += 1
 
     if len(constraints) > 1:
         raise ValueError(
-            "(%s ...) named capture accepts at most one constraint;"
-            " got %d" % (name, len(constraints)))
+            f"({name} ...) named capture accepts at most one constraint;"
+            f" got {len(constraints)}")
     sub = constraints[0] if constraints else None
     return CAPTURE(name, sub)
 
@@ -2454,8 +2283,7 @@ def expect_arity(name, items, expected):
 
     if len(items) != expected:
         raise ValueError(
-            "(%s ...) expects %d argument(s), got %d"
-            % (name, expected, len(items)))
+            f"({name} ...) expects {expected} argument(s), got {len(items)}")
 
 
 def coerce_slot(name, value):
@@ -2469,8 +2297,7 @@ def coerce_slot(name, value):
     if isinstance(value, str):
         return value
     raise ValueError(
-        "(%s ...) slot name must be a symbol or string, got %r"
-        % (name, type(value).__name__))
+        f"({name} ...) slot name must be a symbol or string, got {type(value).__name__!r}")
 
 
 def coerce_str_arg(name, value):
@@ -2485,8 +2312,8 @@ def coerce_str_arg(name, value):
     if isinstance(value, str):
         return value
     raise ValueError(
-        "(%s ...) argument must be a symbol, keyword, or string,"
-        " got %r" % (name, type(value).__name__))
+        f"({name} ...) argument must be a symbol, keyword, or string,"
+        f" got {type(value).__name__!r}")
 
 
 def slot_only_factory(name, ctor):
@@ -2541,7 +2368,7 @@ def repeat_match_factory(head_sym, raw_args):
         return REPEAT(parse_matcher(items[0]))
     if len(items) < 2:
         raise ValueError(
-            "(REPEAT ...) with multiple arguments requires slot and pattern")
+            "(REPEAT ...) requires a pattern, or a slot and a pattern")
     slot = coerce_slot("REPEAT", items[0])
     inner = parse_matcher(items[1])
     min_count = 1
@@ -2552,21 +2379,20 @@ def repeat_match_factory(head_sym, raw_args):
         if not is_keyword(elem):
             raise ValueError(
                 "(REPEAT ...) trailing arguments must be keyword/value pairs,"
-                " got %r" % (elem,))
+                f" got {elem!r}")
         if _min_option_key(elem) not in _MATCH_MIN_KW:
             raise ValueError(
-                "(REPEAT ...) unknown option %r" % (elem,))
+                f"(REPEAT ...) unknown option {elem!r}")
         if i + 1 >= n:
             raise ValueError(
-                "(REPEAT ...) option %r missing value" % (elem,))
+                f"(REPEAT ...) option {elem!r} missing value")
         mv = items[i + 1]
         if isinstance(mv, bool) or not isinstance(mv, int):
             raise TypeError(
-                "(REPEAT ...) min value must be int, got %r"
-                % (type(mv).__name__,))
+                f"(REPEAT ...) min value must be int, got {type(mv).__name__!r}")
         if mv < 0:
             raise ValueError(
-                "(REPEAT ...) min must be non-negative, got %d" % (mv,))
+                f"(REPEAT ...) min must be non-negative, got {mv}")
         min_count = mv
         i += 2
     return repeat_capture(slot, REPEAT(inner, min_count=min_count))
@@ -2590,21 +2416,20 @@ def rest_match_factory(head_sym, raw_args):
         if not is_keyword(elem):
             raise ValueError(
                 "(REST ...) trailing arguments must be keyword/value pairs,"
-                " got %r" % (elem,))
+                f" got {elem!r}")
         if _min_option_key(elem) not in _MATCH_MIN_KW:
             raise ValueError(
-                "(REST ...) unknown option %r" % (elem,))
+                f"(REST ...) unknown option {elem!r}")
         if i + 1 >= n:
             raise ValueError(
-                "(REST ...) option %r missing value" % (elem,))
+                f"(REST ...) option {elem!r} missing value")
         mv = items[i + 1]
         if isinstance(mv, bool) or not isinstance(mv, int):
             raise TypeError(
-                "(REST ...) min value must be int, got %r"
-                % (type(mv).__name__,))
+                f"(REST ...) min value must be int, got {type(mv).__name__!r}")
         if mv < 0:
             raise ValueError(
-                "(REST ...) min must be non-negative, got %d" % (mv,))
+                f"(REST ...) min must be non-negative, got {mv}")
         min_tail = mv
         i += 2
     return REST(slot, min_tail=min_tail)
@@ -2797,7 +2622,9 @@ def field_factory(head_sym, raw_args):
         if not is_symbol(first):
             raise ValueError(
                 f"(FIELD NAME pat) NAME must be a symbol, got {first!r}")
-        return FIELD(parse_matcher(items[1]), name=str(first))
+        # the name reaches getattr and carries no marks: a template-written
+        # NAME is a gensym, read by its base as the case dialect does
+        return FIELD(parse_matcher(items[1]), name=str(strip_mark(first)))
     raise ValueError(
         f"(FIELD ...) expects 1 or 2 arguments, got {len(items)}")
 
@@ -2862,7 +2689,7 @@ KNOWN_HEADS = frozenset(MATCHER_REGISTRY)
 # decided entirely by head symbol or marker -- reader sugars mint the
 # distinguishing heads (#list / #tuple for sequences, item for class,
 # #dict for mappings) -- never by cell or bracket type. See
-# design/language/match-pattern-language.md.
+# design/archive/match-pattern-language.md.
 
 
 CASE_ELEMENT_PATTERN = ONEOF(

@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-koskari.importer.module
+koskari.module
 
 Module lifecycle for Koskari source files.
 
@@ -48,6 +48,7 @@ __all__ = (
     'MODULE_DETACH_FACET_NAMES',
 
     'build_module_load_facets',
+    'find_module_pragma',
     'find_module_reader',
     'build_module_pragma',
     'attach_module_load_facets',
@@ -145,7 +146,7 @@ def init_module(module, filename, spec=None):
             ns['__path__'] = list(spec.submodule_search_locations)
 
 
-def compile_top_level(module, compiler, reader, source_stream):
+def compile_top_level(compiler, reader, source_stream):
     """
     Read and compile each top-level form of a module's source in order,
     yielding one expression Code per form. The caller runs each before
@@ -156,7 +157,6 @@ def compile_top_level(module, compiler, reader, source_stream):
     define of ``__doc__`` and yielded like any other form, which is also
     the body a .kio carries for it
 
-    :param module: koskari Module whose namespace the forms run in
     :param compiler: Compiler facet for this load
     :param reader: LayoutReader facet for this load
     :param source_stream: SourceStream from source_open or source_str
@@ -295,7 +295,7 @@ async def load_module_async(module, *, seal=True, detach=True):
     with source_open(filename) as source_stream, \
             load_facets(module, filename, seal=seal, detach=detach) as facets:
         await run_codes_async(
-            module, compile_top_level(module, *facets, source_stream))
+            module, compile_top_level(*facets, source_stream))
 
 
 def load_module_demand(module, *, seal=True, detach=True):
@@ -318,7 +318,7 @@ def load_module_demand(module, *, seal=True, detach=True):
     with source_open(filename) as source_stream, \
             load_facets(module, filename, seal=seal, detach=detach) as facets:
         run_codes_demand(
-            module, compile_top_level(module, *facets, source_stream))
+            module, compile_top_level(*facets, source_stream))
 
 
 async def load_module_source_async(
@@ -349,10 +349,16 @@ async def load_module_source_async(
 
     with load_facets(module, filename, seal=seal, detach=detach) \
             as (compiler, reader):
+        # the switch is this load's: a reader retained for a session
+        # afterward reads as it did before
+        prior = reader.layout_enabled
         if not layout:
             reader.set_layout_modes(layout_enabled=False)
-        await run_codes_async(
-            module, compile_top_level(module, compiler, reader, source_stream))
+        try:
+            await run_codes_async(
+                module, compile_top_level(compiler, reader, source_stream))
+        finally:
+            reader.set_layout_modes(layout_enabled=prior)
 
 
 async def load_module_kio_async(module):
@@ -394,15 +400,25 @@ def find_package_pragma(module):
     """
     The nearest ancestor package's ``__package_pragma__``, or None.
 
-    Walks the module-name hierarchy through ``sys.modules``, skipping
-    ancestors that do not carry the slot (namespace packages, plain
-    Python packages, missing entries).
-
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :return: ModulePragma or None
     """
 
-    name = getattr(module, '__name__', None)
+    return find_package_pragma_by_name(getattr(module, '__name__', None))
+
+
+def find_package_pragma_by_name(name):
+    """
+    The nearest ancestor package's ``__package_pragma__``, or None.
+
+    Walks the module-name hierarchy through ``sys.modules``, skipping
+    ancestors that do not carry the slot (namespace packages, plain
+    Python packages, missing entries).
+
+    :param name: the dotted module name, or None
+    :return: ModulePragma or None
+    """
+
     while name and '.' in name:
         name = name.rsplit('.', 1)[0]
         parent = sys.modules.get(name)
@@ -493,11 +509,33 @@ def build_module_pragma(module):
     return pragma
 
 
+def find_module_pragma(ns):
+    """
+    The pragma record for the module owning ns. Returns the bound
+    __pragma__, or seeds one from the nearest package pragma, as a load
+    would, and binds it
+
+    :param ns: a module, function, or let namespace, or a plain mapping
+    :return: the ModulePragma
+    """
+
+    while getattr(ns, 'parent', None) is not None:
+        ns = ns.parent
+
+    pragma = ns.get('__pragma__')
+    if pragma is None:
+        # the module namespace carries the module's name
+        inherited = find_package_pragma_by_name(getattr(ns, 'name', None))
+        pragma = inherited.copy() if inherited is not None else ModulePragma()
+        ns['__pragma__'] = pragma
+    return pragma
+
+
 def find_module_reader(ns):
     """
     The layout reader for the module owning ns. Returns the bound
-    __reader__, or rebuilds one from __pragma__ and binds it when the
-    load-time facet was detached
+    __reader__, or rebuilds one from the module's pragma and binds it
+    when the load-time facet was detached
 
     :param ns: a module, function, or let namespace, or a plain mapping
     :return: the LayoutReader
@@ -510,12 +548,7 @@ def find_module_reader(ns):
     if reader is not None:
         return reader
 
-    pragma = ns.get('__pragma__')
-    if pragma is None:
-        pragma = ModulePragma()
-        ns['__pragma__'] = pragma
-
-    reader = LayoutReader.from_pragma(ns, pragma=pragma)
+    reader = LayoutReader.from_pragma(ns, pragma=find_module_pragma(ns))
     ns['__reader__'] = reader
     return reader
 

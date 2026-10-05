@@ -370,24 +370,6 @@ KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
 }
 
 
-/* Map 0/-1 int result (push, binary op) to KosOpResult. */
-static inline KosOpResult kos_op_result_from_push_int(int r) {
-  return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-}
-
-
-/* Push val without auto-await (plain stack push only). */
-static inline KosOpResult kos_op_result_PUSH(
-    KosEvalState *es,
-    PyObject *val) {
-
-  if (unlikely(! val))
-    return EVAL_RAISE();
-
-  return kos_op_result_from_push_int(KosEvalState_StackPUSH(es, val));
-}
-
-
 /* KosOpResult variant of kos_op_outcome_PUSH_OR_AWAIT. */
 static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
     KosEvalState *es,

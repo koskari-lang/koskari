@@ -17,7 +17,7 @@ Tests for koskari.compile quote special form.
 
 import pytest
 
-from koskari.lib import OpCode, cons, nil
+from koskari.lib import OpCode, bracket_nil, bracket_pair, cons, nil
 
 from . import SpecialsTestCase
 
@@ -81,6 +81,48 @@ class TestCompileConsCarCdr(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str)
         result = await expr()
         self.assertEqual([2], list(result.unpack()))
+
+
+class TestCompileBracketCons(SpecialsTestCase):
+    """
+    bracket-cons and bracket-proper build bracket pairs in the VM, so a
+    binding of either name in scope does not reach the form
+    """
+
+    async def test_bracket_cons_with_tail(self):
+        expr, mod = self.compile_expr("(bracket-cons 1 2)")
+        result = await expr()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual((result.car, result.cdr), (1, 2))
+
+    async def test_bracket_cons_proper(self):
+        expr, mod = self.compile_expr(
+            "(bracket-cons 1 2 bracket-nil)", **{"bracket-nil": bracket_nil})
+        result = await expr()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual([1, 2], list(result.unpack()))
+
+    async def test_bracket_cons_emits_the_opcode(self):
+        expr, mod = self.compile_expr("(bracket-cons 1 2)")
+        code = expr.code
+        ops = [code.oparg(i)[0] for i in range(code.length())]
+        self.assertIn(OpCode.BRACKET_CONS, ops)
+
+    async def test_bracket_cons_with_a_keyword_calls_the_builtin(self):
+        expr, mod = self.compile_expr(
+            "(bracket-cons 1 *: rest)", rest=(2, bracket_nil))
+        result = await expr()
+        self.assertEqual([1, 2], list(result.unpack()))
+
+    async def test_bracket_proper(self):
+        expr, mod = self.compile_expr("(bracket-proper 1 (+ 1 1) 3)")
+        result = await expr()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual([1, 2, 3], list(result.unpack()))
+
+    async def test_bracket_proper_empty(self):
+        expr, mod = self.compile_expr("(bracket-proper)")
+        self.assertIs(await expr(), bracket_nil)
 
 
 # The end.

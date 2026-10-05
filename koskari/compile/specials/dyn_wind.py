@@ -143,18 +143,19 @@ def special_dyn_wind(
 
     before_src, body_src, after_src = _find_segments(caps, called_by)
 
-    # print(f"before_src: {before_src}")
-    # print(f"body_src: {body_src}")
-    # print(f"after_src: {after_src}")
-
     fragment = compiler.fragment(called_by.datum)
     fragment.position(called_by.position)
 
-    if before_src and after_src:
+    # an absent segment is nil from _find_segments; a falsy literal in
+    # a segment is an expression its thunk returns
+    has_before = not is_nil(before_src)
+    has_after = not is_nil(after_src)
+
+    if has_before and has_after:
         _compile_thunk(compiler, before_src, fragment)
         _compile_thunk(compiler, after_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 2)
-    elif before_src:
+    elif has_before:
         _compile_thunk(compiler, before_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 1)
     else:
@@ -162,7 +163,6 @@ def special_dyn_wind(
         _compile_thunk(compiler, after_src, fragment)
         fragment.instruction(OpCode.PUSH_WIND, 2)
 
-    # helper_begin(fragment, body_src)
     fragment.merge(compiler.full_compile(body_src))
     fragment.instruction(OpCode.POP_WIND, 0)
     return fragment

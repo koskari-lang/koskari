@@ -188,6 +188,7 @@ cppcheck:  ## Run cppcheck on koskari/lib; SARIF report written to CPPCHECK_REPO
 			--enable=warning,style,performance,portability \
 			--error-exitcode=1 \
 			--inline-suppr \
+			--library=python \
 			--suppress=missingIncludeSystem \
 			-I koskari/lib \
 			--suppressions-list=tools/cppcheck-suppressions.txt \

@@ -109,5 +109,67 @@ class TestWindOpcodes(CevalTest):
                 await make_callable(code, ns)()
         self.assertEqual(sys.getrefcount(marker), before)
 
+    async def capture_continuation(self, log):
+        """
+        A delimited continuation whose remaining region records to log
+        before it returns
+        """
+
+        from koskari.module import load_module_source_async, new_module
+
+        src = '(define k (reset (begin (shift k k) (record "region"))))'
+        mod = new_module("wind_cont")
+        vars(mod)["__file__"] = "<wind_cont>"
+        vars(mod)["record"] = log.append
+        await load_module_source_async(mod, src, layout=False)
+        return vars(mod)["k"]
+
+    async def test_push_wind_drains_a_transfer_before_the_body(self):
+        """
+        A before thunk that is a continuation arms a transfer and leaves
+        the frame as it was. The transfer runs before the wind body
+        """
+
+        log = []
+        k = await self.capture_continuation(log)
+
+        code, ns = build_expr([
+            ['VAR', 'k'],
+            ['PUSH_WIND', 1],
+            ['VAR', 'record'],
+            ['CONST', "body"],
+            ['CALL', 1],
+            ['POP_WIND', 0],
+            ['RETURN', 1],
+        ], values={'k': k, 'record': log.append})
+
+        await make_callable(code, ns)()
+        self.assertEqual(log, ["region", "body"])
+
+    async def test_pop_wind_drains_a_transfer_before_continuing(self):
+        """
+        An after thunk that is a continuation arms a transfer and leaves
+        the frame as it was. The transfer runs before the code after the
+        wind
+        """
+
+        log = []
+        k = await self.capture_continuation(log)
+
+        code, ns = build_expr([
+            ['CONST', None],
+            ['VAR', 'k'],
+            ['PUSH_WIND', 2],
+            ['CONST', None],
+            ['POP_WIND', 0],
+            ['VAR', 'record'],
+            ['CONST', "after"],
+            ['CALL', 1],
+            ['RETURN', 1],
+        ], values={'k': k, 'record': log.append})
+
+        await make_callable(code, ns)()
+        self.assertEqual(log, ["region", "after"])
+
 
 # The end.

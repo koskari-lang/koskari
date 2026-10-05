@@ -180,11 +180,26 @@ class PhaseRunnerPlugin:
             if self.failed_phase_marker is None:
                 self.failed_phase_marker = marker
 
-        # Count each nodeid once for final summary.
+        # A setup or teardown failure is an error in its own right, as
+        # pytest reports it: a test whose call passed and whose teardown
+        # failed is both a pass and an error.
+        if report.when in {"setup", "teardown"} and report.failed:
+            self.count_error += 1
+            return
+
+        # Every other outcome counts the node once: a skip raised at
+        # setup (a marker, skipif, or importorskip) or the call's result.
         if report.nodeid in self._counted_nodeids:
             return
 
-        # Normal tests: count on call.
+        if report.when == "setup" and report.skipped:
+            self._counted_nodeids.add(report.nodeid)
+            if hasattr(report, "wasxfail"):
+                self.count_xfailed += 1
+            else:
+                self.count_skipped += 1
+            return
+
         if report.when == "call":
             self._counted_nodeids.add(report.nodeid)
             if report.passed:
@@ -196,12 +211,6 @@ class PhaseRunnerPlugin:
                     self.count_xfailed += 1
                 else:
                     self.count_skipped += 1
-            return
-
-        # setup/teardown failures: count as error once.
-        if report.when in {"setup", "teardown"} and report.failed:
-            self._counted_nodeids.add(report.nodeid)
-            self.count_error += 1
 
 
     def pytest_terminal_summary(self, terminalreporter, exitstatus, config):

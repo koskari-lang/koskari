@@ -95,3 +95,27 @@ class TestMatchSelect(unittest.TestCase):
         with self.assertRaises(TypeError) as ctx:
             match_select((m0, "not-a-matcher"), (99,))
         self.assertIn("not a Matcher", str(ctx.exception))
+
+
+class TestExternKeywordsAreIgnoredByName(unittest.TestCase):
+    """
+    A keyword naming no extern of a matcher is ignored, whether or not
+    the matcher declares any externs, so one keyword set serves every
+    matcher in a selection
+    """
+
+    def test_zero_extern_matcher_ignores_keywords(self):
+        m = thaw(_frozen_literal_tuple(42))
+        self.assertTrue(m.match((42,), bogus=1).matched)
+
+    def test_select_shares_keywords_across_mixed_matchers(self):
+        from koskari.lib import symbol
+        from koskari.matcher import CAPTURE, MATCH, TYPE
+
+        plain = thaw(_frozen_literal_tuple(42))
+        typed = MATCH(CAPTURE("a", TYPE("symbol"))).build()
+        self.assertEqual(typed.externs, ("symbol",))
+        idx, result = match_select(
+            (plain, typed), (symbol("x"),), symbol=symbol)
+        self.assertEqual(idx, 1)
+        self.assertTrue(result.matched)

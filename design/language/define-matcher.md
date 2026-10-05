@@ -52,7 +52,7 @@ position:
 - **nested pattern position** — `inner` ↦ `#[x y]`, `Point[x y]`, or
   another template invocation
 - **slot-name position** — the capture name itself is a formal, so callers
-  choose binding names; this is `slot_prefix` / `BINDING_CELL` as surface
+  choose binding names; this is a slot-name parameter as surface
   syntax, and the answer to slot collisions (two uses of the same template
   in one arm collide on fixed slot names — a correct freeze-time error —
   so a repeat-use matcher parameterizes its slots)
@@ -129,7 +129,7 @@ minimally declared. The alternatives worth weighing before committing:
 - [match-pattern-language.md](../archive/match-pattern-language.md) — the case
   dialect a template body would likely be written in.
 - `koskari/matcher.py` — the Python composites this generalizes
-  (`BINDING`, `FORMALS`, `slot_prefix`, `BINDING_CELL`) and
+  (`BINDING`, `BINDINGS`, `FORMALS`, `USING`) and
   `MATCHER_REGISTRY` / `register_matcher`.
 - `koskari/compile/specials/syntax.py`, `koskari/syntax.py` — the
   `define-syntax` → `build-syntax` architecture the definition form

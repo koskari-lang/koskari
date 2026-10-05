@@ -51,7 +51,7 @@ FLOAT_RE = regex(r"^-?("
                  r"|\d+f"
                  ")$")
 DECIMAL_RE = regex(r"^-?((\d*\.\d+)|(\d+\.\d*)|\d+)d$")
-FRACTION_RE = regex(r"-?\d+/\d+")
+FRACTION_RE = regex(r"^-?\d+/\d+$")
 COMPLEX_RE = regex(r"^-?\d*\.?\d+\+\d*\.?\d*[ij]$")
 KEYWORD_RE = regex(r"^(:.+|.+:)$")
 

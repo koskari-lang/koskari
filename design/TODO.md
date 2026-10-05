@@ -21,6 +21,18 @@ investigation, gated by a real workload that shows the win:
 Ref: [archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
 (§Phase 5).
 
+### Pair opcodes fed from the constant pool (investigate)
+
+A quoted list compiles to one CONST per element and a CONS or PROPER;
+the pool holds tuples but not pairs. PROPER_CONST and
+BRACKET_PROPER_CONST would build the list from a pool tuple in one
+row, and CONS_CONST and BRACKET_CONS_CONST would join stacked values
+with a constant run and tail without pushing the constants, so a
+template's quotes and quasiquotes render down over their constant
+elements.
+
+Ref: [interpreter/pair-const-opcodes.md](interpreter/pair-const-opcodes.md).
+
 ### Electors: remaining homes
 
 A `KosThreadFn` chosen once for a site's operands (a cache slot) or an
@@ -36,7 +48,10 @@ A ref deref that answers "call this" or an awaitable instead of
 running a nested evaluator, so a read can raise, suspend and be
 captured like a call. A schema-derived row resume finishes the
 multi-slot and fused rows; RETURN and YIELD loads tail into the
-getter. Raw and plain-ref reads keep their code.
+getter. Raw and plain-ref reads keep their code. The same row resume
+carries UNPACK and the star call over a Koskari generator, collecting
+it element by element through the NEXT node instead of materialising
+it on the demand path (section 7).
 
 Ref: [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 
@@ -149,6 +164,16 @@ rule. Dead-region sweep and label GC stay last, if at all.
 
 Ref: [extent-verification.md](extent-verification.md).
 
+### Values pack as the multi-value carrier (design)
+
+`return` and `yield` pop a count into a tuple, `break` and `continue`
+carry one value, and a keyword among the values rewrites the source to
+a call of `values` by name, which a binding of that name shadows. A
+`compile/values` special and a `BUILD_VALUES` opcode put one pack at
+every delivery and every receiver.
+
+Ref: [language/values-pack.md](language/values-pack.md).
+
 ### Externs slot in NamespaceSpec (investigate)
 
 A fourth name list on `NamespaceSpec`: names a frame reads from a
@@ -159,6 +184,18 @@ from the expanding transformer. Frame-level definitions stay on the
 use-site rule.
 
 Ref: [namespace-externs.md](namespace-externs.md).
+
+### Scope declaration positions (implement)
+
+The resolution keeps a position only for the first write to a name.
+Record one for the first request, define and define-global of each
+name too, so a duplicate or conflicting scope declaration (a define
+and a define-global of one name in a frame) raises at the line of the
+earlier form and names the later one, instead of the bare message.
+
+Ref: `koskari/compile/pragma/resolution.py` (`on_declare`,
+`on_explicit_global`, `_write_positions`),
+[language/RESOLUTION-MODEL.md](language/RESOLUTION-MODEL.md).
 
 ### Resolver candidate spellings (investigate)
 
@@ -232,6 +269,16 @@ character, that the layout reader and lexer read as data.
 
 Ref: [reader-macro-triggers.md](reader-macro-triggers.md).
 
+### Bare `#` symbol policy (investigate)
+
+A `#` with nothing it prefixes reads as the symbol `#`, which is almost
+always a typo for a collection opener or `#'`. Investigate a pragma on
+the model of `compiler/stray-colon`, with `allow`, `warn` and `error`,
+applied where the bare symbol is read or compiled as a name.
+
+Ref: [PRAGMA.md](PRAGMA.md) (`compiler/stray-colon`);
+`koskari/reader/parser.py` (`_read_collection`).
+
 ---
 
 ## Import / loader
@@ -257,6 +304,17 @@ sdist `.ki`-only); loaders prefer `.kio` when both exist. See
 Ref: [interpreter/kio-format.md](interpreter/kio-format.md);
 [self-hosted-compiler-bootstrap.md](self-hosted-compiler-bootstrap.md);
 [api/import-system.md](api/import-system.md).
+
+### Module `__dict__` as a dict (investigate)
+
+The Koskari Module in `sys.modules` exposes a `ModuleNamespace` as its
+`__dict__`, which `exec` refuses, so `@dataclass`, `typing` and
+`inspect` fail on imported `.ki` modules. Options: a dict subclass that
+reads through the namespace and purges anything written into it on the
+next read, or dict-backed ItemRef bindings made invisible by dict
+version or watcher caching.
+
+Ref: [interpreter/module-dict.md](interpreter/module-dict.md).
 
 ### Import path selection
 
@@ -311,6 +369,34 @@ a retained `Context` reports `namespace` as None once the drive ends.
 Investigate a snapshot API that preserves a finished context's state
 (namespace, last frames) for later inspection.
 Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
+
+### Extents across a generator yield (investigate)
+
+A yield moves the span above the GEN off the chain intact, so a
+`dynamic-wind` or `with` inside a generator holds its state while the
+consumer runs and does not re-establish it at the resume. PARAM parks
+and unparks its cells through `kos_dyn_extent_park` / `unpark`; decide
+whether other kinds need a leave and re-enter walk without unlinking.
+Ref: [interpreter/generator-extent-park.md](interpreter/generator-extent-park.md).
+
+### Closing a delegate through `yield-from` (investigate)
+
+A throw into a generator suspended in `yield-from` reaches the
+delegate; GeneratorExit does not. It raises at the frame and the raise
+walk closes a sync generator but only marks a KosIter finished and
+drops a Python async generator, so their cleanup runs at collection,
+not at the relay's aclose. Decide whether GeneratorExit should route
+through the resume so the drive can await the delegate's close.
+Ref: [interpreter/yield-from-close.md](interpreter/yield-from-close.md).
+
+### Variadic `instance?` and `subclass?` (implement)
+
+The specials are binary, with the signature of the runtime copies
+(`isinstance`, `issubclass`): several types go in a tuple. A variadic
+form `(instance? OBJ T1 T2 ...)` needs runtime `instance?` and
+`subclass?` with the same signature bound in the bootstrap, then the
+specials, the value and truth reductions in `operator.c`, and the
+reference pages widen together.
 
 ---
 
@@ -379,6 +465,17 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 ---
 
 ## Bootstrap and reader surface
+
+### Dataclass builder in Koskari (proposed)
+
+`define-dataclass` applies the stdlib decorator, which generates the
+methods by `exec` against the module's `__dict__` and so leans on the
+module namespace relaying as a dict. A `dataclass` builtin in the
+bootstrap would collect the annotated fields, set `__dataclass_fields__`
+and `__dataclass_params__` for the stdlib helpers, and compile
+`__init__`, `__repr__`, `__eq__` and the rest as Koskari functions.
+
+Ref: [language/dataclass-builder.md](language/dataclass-builder.md).
 
 - **Reader macro helpers** — bootstrap **`set-macro-character`** /
   **`read-atom`** helpers for `examples/reader-macro/dollars.ki`, reader

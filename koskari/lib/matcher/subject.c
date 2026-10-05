@@ -1,4 +1,27 @@
-/* Included by matcher.c — subject */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. The subject adapters: the uniform view the
+  engine takes over a pair spine, a sequence or a mapping.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === subject adapters === */
 
 
@@ -155,6 +178,12 @@ static PyObject *kospair_slice(
 
 
 static void kospair_release(KosMatchSubject *s) {
+  for (Py_ssize_t i = 0; i < s->cached_length; i++) {
+    Py_DECREF(s->kp_cars[i]);
+    Py_DECREF(s->kp_tails[i]);
+  }
+  if (s->kp_tails)
+    Py_DECREF(s->kp_tails[s->cached_length]);
   Py_CLEAR(s->backing);
   PyMem_Free(s->kp_cars);
   PyMem_Free(s->kp_tails);
@@ -206,11 +235,10 @@ int KosMatchSubject_FromKosPair(
     }
   }
 
-  if (! KosNilP(cursor)) {
-    PyErr_SetString(PyExc_TypeError,
-                    "FromKosPair requires a proper list (nil-terminated)");
-    return -1;
-  }
+  /* an improper spine is a shape, not a failure: the caller decides
+     whether that is a no-match or a refusal */
+  if (! KosNilP(cursor))
+    return 1;
 
   PyObject **cars = NULL;
   PyObject **tails = NULL;
@@ -230,12 +258,19 @@ int KosMatchSubject_FromKosPair(
     return -1;
   }
 
+  /* Every cell and car is held for the life of the subject: a
+     predicate, extractor, __eq__ or getter run mid-match can cut the
+     spine or swap a car, and the engine keeps reading the list it
+     loaded. */
   cursor = pair_or_nil;
   for (Py_ssize_t i = 0; i < n; i++) {
+    Py_INCREF(cursor);
     tails[i] = cursor;
     cars[i] = KosPair_CAR(cursor);
+    Py_INCREF(cars[i]);
     cursor = KosPair_CDR(cursor);
   }
+  Py_INCREF(cursor);
   tails[n] = cursor;  /* KosNil */
 
   out->vt = &kospair_vtable;
@@ -261,8 +296,16 @@ static int subject_from_any(PyObject *value, KosMatchSubject *out) {
      fail to consume the trailing nil. Peel Datum layers so KosPair lists
      use the proper-list spine adapter. */
   value = matcher_peel_datum(value);
-  if (KosPair_Check(value) || KosNilP(value))
-    return KosMatchSubject_FromKosPair(value, out);
+  if (KosPair_Check(value) || KosNilP(value)) {
+    int r = KosMatchSubject_FromKosPair(value, out);
+
+    if (r > 0) {
+      PyErr_SetString(PyExc_TypeError,
+                      "match subject must be a proper list (nil-terminated)");
+      return -1;
+    }
+    return r;
+  }
   return KosMatchSubject_FromPySequence(value, out);
 }
 

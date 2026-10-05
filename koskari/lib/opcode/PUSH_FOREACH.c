@@ -54,12 +54,10 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
     RESULT_RAISE();
   }
 
-  KosDynForeach_ITER((KosDynForeach *) region) = iter;
   KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 0;
 
-  /* Arm the request record for the loop's lifetime; per-step drives
-     only touch the mode. */
-  Py_INCREF(iter);
+  /* Arm the request record for the loop's lifetime, handing it the
+     iterator reference; per-step drives only touch the mode. */
   kos_dyn_iter_request_bind_iter(KosDynForeach_REQ(region), iter);
 
   RESULT_NEXT(es);

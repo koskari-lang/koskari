@@ -59,6 +59,10 @@ define emit [tag value]:
 ; feature selector on its own, no search text
 (emit "feature_loops" (ids (search_examples "" feature_path: "loops/" limit: 10)))
 
+; the feature narrows before the limit cuts: "xs" is a token in a loops/
+; row and in ex-map, and only ex-map is under functions/
+(emit "xs_functions" (ids (search_examples "xs" feature_path: "functions/" limit: 1)))
+
 ; get_example resolves reference paths against the docs table
 (emit "get_refs" (item (json.loads (get_example "ex-while")) "references_resolved"))
 

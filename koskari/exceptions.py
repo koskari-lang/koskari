@@ -40,6 +40,12 @@ __all__ = (
     "ReaderEOF",
     "FormatStringSyntaxError",
     "LayoutError",
+    "CompilerError",
+    "SpecialError",
+    "FenceError",
+    "SyntaxMatchError",
+    "ParametersError",
+    "UncaughtCompilerError",
     "KoskariContinuationError",
     "KoskariPromptNotFound",
     "KoskariPromptUnreachable",
@@ -85,7 +91,10 @@ class KoskariSyntaxError(SyntaxError, KoskariException):
         if filename:
             if not location:
                 location = (1, 0)
-            super().__init__(message, (filename, *location, text))
+            # the reader's column is 0-based; SyntaxError's offset is
+            # 1-based and the traceback caret is drawn at offset - 1
+            line, col = location[0], location[1]
+            super().__init__(message, (filename, line, col + 1, text))
             self.print_file_and_line = True
         else:
             super().__init__(message)

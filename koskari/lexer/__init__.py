@@ -23,9 +23,6 @@ for editor integration (syntax highlighting, completion).
 :license: GNU General Public License v3
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 
 from .discovery import (
     collect_special_like_names_from_builtins, special_names_for_repl)

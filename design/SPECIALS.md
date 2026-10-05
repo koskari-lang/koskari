@@ -2672,24 +2672,27 @@ Examples:
 | `(is-not A B)`             | `OBJECT_IS_NOT` | `A is not B`             |
 
 
-**Type checks (COUNT, at least 2 args):**
+**Type checks (binary, exactly 2 args):**
 
 ```scheme
 (instance? OBJ TYPE)
-(instance? OBJ TYPE1 TYPE2 ...)
 (subclass? CLS BASE)
-(subclass? CLS BASE1 BASE2 ...)
 ```
 
-The opcode argument encodes the number of type arguments. With a single type
-the C handler pops value and type individually (arg=1). With multiple types it
-collects them into a tuple via `PopTail(N)` (arg=N).
+Both carry the signature of their runtime copies, `isinstance` and
+`issubclass`: the second operand is one type or a tuple of types, and
+a tuple succeeds for any of them. A third argument is a compile error.
+Each emits `OBJECT_COMPARE` with its selector and count 2; in
+condition position the pair fuses into `CHECK_COMPARE`, which reduces
+through the same binary chain as the value form. A variadic form is
+recorded in `TODO.md`: it needs runtime copies with the same signature
+first.
 
 
-| Special               | Opcode               |
-| --------------------- | -------------------- |
-| `compile/instance?`   | `OBJECT_IS_INSTANCE` |
-| `compile/subclass?`   | `OBJECT_IS_SUBCLASS` |
+| Special               | Opcode                            |
+| --------------------- | --------------------------------- |
+| `compile/instance?`   | `OBJECT_COMPARE` (`IS_INSTANCE`)  |
+| `compile/subclass?`   | `OBJECT_COMPARE` (`IS_SUBCLASS`)  |
 
 
 ---

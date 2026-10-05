@@ -51,7 +51,7 @@ def binary_read_all(source):
         with open(os.fspath(source), 'rb') as f:
             return f.read()
     raise TypeError(
-        'expected bytes, path, or binary stream, got %r' % (type(source),))
+        f'expected bytes, path, or binary stream, got {type(source)!r}')
 
 
 def binary_write_all(dest, data):
@@ -71,7 +71,7 @@ def binary_write_all(dest, data):
             f.write(data)
         return
     raise TypeError(
-        'expected path or binary stream, got %r' % (type(dest),))
+        f'expected path or binary stream, got {type(dest)!r}')
 
 
 HEADER_SIZE = struct.calcsize('<8sIIIIIQI')
@@ -593,7 +593,7 @@ class KioFile(object):
         )
         header_bytes = header.to_bytes()
         if len(header_bytes) != HEADER_SIZE:
-            raise RuntimeError('header size mismatch %s' % len(header_bytes))
+            raise RuntimeError(f'header size mismatch {len(header_bytes)}')
 
         self.header = header
         return header_bytes + bytes(body)
@@ -1086,7 +1086,7 @@ def encode_pool_record_value(val, index_of, pb=None):
             '<BIII', PoolKind.SLICE,
             index_of(val.start), index_of(val.stop), index_of(val.step))
 
-    raise TypeError('unsupported pool value %r' % (val,))
+    raise TypeError(f'unsupported pool value {val!r}')
 
 
 def encode_pool(pool_values, index_of, pb=None):
@@ -1208,7 +1208,7 @@ def decode_pool_record_at_kind(kind, buf, off, prior):
         code = code_from_record(nspec, instr, code_name, code_fn, flg)
         return FunctionSpec(name, formals, code), off
 
-    raise ValueError('unknown pool kind %s' % kind)
+    raise ValueError(f'unknown pool kind {kind}')
 
 
 def decode_pool_records(buf, off):

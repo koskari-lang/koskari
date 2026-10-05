@@ -44,18 +44,17 @@ Special forms are compile-time constructs that have no runtime representation. T
 
 - **`with`**: Single-shot context manager entry/exit
   - Syntax: `(with [name? expr] body ...)`; optional binding of enter result
-  - In Koskari the expression value is always `None` (see [interpreter/with-dyn-with.md](../interpreter/with-dyn-with.md))
+  - The expression value is the body's value, or `None` when exit swallows an exception (see [interpreter/with-dyn-with.md](../interpreter/with-dyn-with.md))
   - Sync and async managers supported (VM auto-awaits enter/exit when they return awaitables)
-  - Transfer across an active `with` is rejected at runtime
+  - A transfer leaving through an active `with` runs its exit and finishes the instance; a landed segment does not re-enter it
   - Implemented via compile/with; see [SPECIALS.md](../SPECIALS.md) §with. Opcode tests: `tests/lib/opcode/test_with.py`; special-form tests: `tests/compile/specials/test_with.py` (both cover sync and async)
 - **`dyn-with`**: Multi-shot context manager; participates in continuation transfer (wind/unwind)
-  - Same syntax as `with`; value always `None`
+  - Same syntax as `with`; the value is the body's, or `None` after a swallowed exception
 
 ### Generators and Coroutines
 
 - **`yield`**: Generator yield
-- **`yield-from`**: Delegate to another generator/coroutine
-  - Optional `send:` keyword argument
+- **`yield-from`**: Delegate to another generator/coroutine (one argument)
 - **`await`**: Await async operation
 - **`declare-async`**: Flag function/generator as coroutine/async generator
 

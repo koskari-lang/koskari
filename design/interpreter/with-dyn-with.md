@@ -65,10 +65,9 @@ dedicated `None` sentinel. See [OPCODES.md §18.1](../OPCODES.md#181-context-man
 
 ## Dynamic chain nodes
 
-Dedicated dyn node kinds:
+One dyn node kind serves both forms:
 
-- `KOS_DYN_WITH` — single-shot context manager
-- `KOS_DYN_DYN_WITH` — multi-shot context manager
+- `KOS_DYN_WITH` — context manager extent. The shot lives in `u.with.shot`: PUSH_WITH pushes it as `KOS_DYN_WITH_SHOT_SINGLE_ACTIVE`, which becomes `KOS_DYN_WITH_SHOT_SINGLE_DONE` once `__exit__` has run; PUSH_DYN_WITH pushes it as `KOS_DYN_WITH_SHOT_MULTI`.
 
 ### Node payload (minimum)
 
@@ -106,14 +105,16 @@ block for the body.
 
 ### Result value
 
-- The overall expression result is **always** `None`.
-- Any value needed from the body must be stored explicitly (e.g. `setq`) before
-  leaving.
+- The overall expression result is the body's value: POP_WITH parks it as
+  the pop's value and the unlink pushes it once exit has run.
+- When exit swallows an exception the body produced no value, and the
+  result is `None`.
 - **Exit return is never the with value.** The value returned by `exit` (or
   `__aexit__`) is used **only** for swallow logic (exception and truthy means
   swallow). The VM never leaves the exit return on the stack as the
-  with-expression value; it is consumed and then `None` is pushed. Both the
-  sync path and the async exit path (sync completion and resume) enforce this.
+  with-expression value; it is consumed and then the parked body value (or
+  `None` on a swallow) is pushed. Both the sync path and the async exit path
+  (sync completion and resume) enforce this.
 
 
 ## Enter/exit protocol and transparent async
@@ -192,7 +193,7 @@ is pushed, and the exception propagates.
    Auto-await if needed.
 2. Pop the operand stack block owned by the node.
 3. Pop the dyn node.
-4. Push `None` as the value of the `with` expression.
+4. Push the parked body value as the value of the `with` expression.
 
 **Behaviour (exception unwinding):** When leaving due to an exception inside the
 body, the runtime enters the exception path for the nearest active `with`
@@ -211,16 +212,20 @@ extent:
    - pop the dyn node
    - re-raise / propagate
 
-**Async exit — evaluator flow:** When `exit` returns an awaitable (e.g.
-`__aexit__`), the VM uses `kos_with_exit_start_await`, which steps the
-awaitable (via `push_or_await`). That helper pushes the awaitable's result
-when it completes; that value must **not** become the with-expression value.
+**Async exit — evaluator flow:** The leave (`kos_dyn_with_leave`) sets the
+node to `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` and calls `exit` through
+`KosEvalState_Call` with no resume. A value in hand is settled by
+`KosEvalState_Settle` and classified for swallow at once; a raise from
+`exit` propagates in place of the exception it was handling; anything else
+(an awaitable such as `__aexit__`'s, or an installed Koskari frame) leaves
+the node on the chain. The exit result must **not** become the
+with-expression value.
 
-- **Sync completion (r==0):** The awaitable completed in one step, so the exit
-  result was pushed. The node's leave settles it at once
+- **Sync completion:** The exit result settled in one step and was pushed. The node's leave settles it at once
   (`kos_dyn_extent_settle` pops it; a swallow leaves a SWALLOWED obligation), and the unlink
   (`kos_dyn_unlink_top`) drops the owned segment, pops the WITH node, sets
-  the frame PC to `resume_pc`, and pushes `None`.
+  the frame PC to `resume_pc`, and pushes the parked body value (`None`
+  after a swallow).
 - **Suspend:** The leave answers AWAIT; the node stays on the chain in
   `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` holding the exception it is handling
   in its obligation slot. The evaluator returns `KOS_RES_AWAIT`. The driver
@@ -228,9 +233,10 @@ when it completes; that value must **not** become the with-expression value.
   **revive** runs before the next opcode: `revive_await` pushes the send
   value, then `kos_dyn_settle_top` settles the node at `dyn_top` (pops that
   value, applies swallow) and unlinks it, which drops the segment, pops the
-  node, sets the PC, and pushes `None` (or re-raises the parked exception
-  when `__exit__` did not swallow). Execution then continues at the
-  instruction after POP_WITH with `None` as the with value.
+  node, sets the PC, and pushes the body value, `None` after a swallow (or
+  re-raises the parked exception when `__exit__` did not swallow).
+  Execution then continues at the instruction after POP_WITH with that
+  value as the with value.
 
 So the exit return is never observable as the with-expression result; it is
 only used internally for swallow and then discarded in favour of `None`.
@@ -240,7 +246,7 @@ only used internally for swallow and then discarded in favour of `None`.
 
 Same as PUSH_WITH, except:
 
-- Installs `KOS_DYN_DYN_WITH`.
+- Pushes the `KOS_DYN_WITH` node with shot `KOS_DYN_WITH_SHOT_MULTI`.
 - The node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal re-enters it when it lands the extent.
 
 
@@ -259,22 +265,21 @@ The VM always uses the Python convention:
 
 ## Continuation / non-local transfer rules
 
-### Rule 1: Single-shot `with` is a transfer barrier
+### Rule 1: Single-shot `with` exits once and is never re-entered
 
-If a continuation transfer (delimited or undelimited) would cross an active
-`KOS_DYN_WITH` node:
+A continuation transfer (delimited or undelimited) that LEAVES through an
+active `KOS_DYN_WITH` node is not refused. The goal unlinks the node with
+`KOS_XFER_EVENT_TRANSFER`, which runs `exit` in the no-exception form, as
+an exception unwind would, and the instance is finished. A transfer that
+LANDS a segment containing a single-shot `with` does not run `enter`
+again: ENTERING skips the node, and its exit-done mark is shared across
+clones, so no instance runs `exit` twice.
 
-- **Reject** the transfer.
-- Raise a dedicated runtime error (e.g. `KoskariIllegalTransferAcrossWith`).
-
-This preserves the single-shot contract and prevents resource unsafety.
-
-> **Note:** [dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md) §9.7 supersedes
-> this rule with respect to continuation **capture**: WITH nodes may be included in captured
-> chain segments (they are cloneable). The barrier applies only to **transfer** (wind/unwind
-> across an active WITH instance), not to capture of a chain that contains a WITH node.
-> Single-shot semantics are preserved because each clone creates a fresh extent instance
-> (enter runs once per instance on wind, exit once on unwind); no instance is re-entered.
+Single-shot means one `enter` and one `exit` per extent instance, not a
+barrier. WITH nodes are cloneable and may be captured in a chain segment
+([dynamic-node-unified-api.md](../archive/dynamic-node-unified-api.md)
+§9.7); each clone is a fresh instance whose own enter runs on wind and
+whose own exit runs on unwind, and no instance is re-entered.
 
 ### Rule 2: `dyn-with` participates in transfer goals
 
@@ -327,8 +332,8 @@ for other extent kinds; no special case for dyn-with.
   compiler does not need to emit separate VAR_BIND sequences.
 - The with body should compile as a normal block that ends with a `POP_*_WITH`
   at the structurally correct exit point(s).
-- Since the overall expression value is always `None`, the compiler may omit
-  carrying the body’s last value.
+- The body's last value is the expression value, so the compiler carries it
+  to POP_WITH, which parks it across the exit call.
 
 
 ## Required tests (minimal)
@@ -357,8 +362,9 @@ for other extent kinds; no special case for dyn-with.
 
 - Stack restoration for with bodies is structural (block push/pop), never
   arithmetic marking.
-- `with` is single-shot: each dynamic extent instance is entered and exited at most once. Transfer across an active WITH instance is rejected; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
+- `with` is single-shot: each dynamic extent instance is entered and exited at most once. A transfer leaving through an active WITH instance runs its exit and finishes it; a landed segment does not re-enter one; capture of a chain containing a WITH node is permitted (clone creates a fresh instance).
 - `dyn-with` is multi-shot and must wind/unwind on non-local transfer.
-- Expression value is always `None`.
+- Expression value is the body's value, or `None` when exit swallowed an
+  exception.
 - Enter failure installs no dyn node and no stack block.
 - Swallowing clears exception state and resumes normally.

@@ -24,14 +24,13 @@ convenience syntax to runtime call forms of builder functions.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import cons, nil, symbol
+from ...lib import cons, keyword, nil, symbol
 from ...matcher import (
-    BIND, BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, REPEAT, SYMBOL,
+    BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
     VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from ...syntax import parse_syntax_rules_pattern, special
 from ...types import (
     build_proper, is_pair, is_proper, is_symbol, unpack)
-from ..helpers import match1
 
 
 _sym_quote_syntax = symbol("quote-syntax")
@@ -95,8 +94,6 @@ _SPECIAL_MATCH_RULE_ROWS = repeat_capture(
         LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
         min_count=1))
 
-_MATCH_FORM_PATTERN = LIST(LITERAL_SYM("match"), VALUE("inner"))
-
 
 def _syntax_rules_row_pattern_and_template(raw_rule):
     """
@@ -107,8 +104,6 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     can also supply longer proper lists; then the
     template is the last top-level form and all preceding forms are grouped
     like :func:`koskari.reader.layouts.define_syntax._pattern_template_from_rule`.
-    A pattern column ``(match INNER)`` is unwrapped to ``INNER`` for RULE
-    lowering.
     """
 
     if not is_pair(raw_rule):
@@ -124,9 +119,6 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     else:
         pattern_src = cons(*rule_parts[:-1], nil)
         template_expr = rule_parts[-1]
-    match_m = match1(pattern_src, [_MATCH_FORM_PATTERN])
-    if match_m is not None:
-        pattern_src = match_m["inner"].datum
     return pattern_src, template_expr
 
 
@@ -150,10 +142,12 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
     Lowers to ``(build-syntax NAME-STR (parse-rule-pattern (quote-syntax PATTERN)
     (quote-syntax LITERALS-LIST)) (quote-syntax TEMPLATE) ...)`` for
     recompilation. ``NAME-STR`` is the macro name as a string. ``LITERALS-LIST``
-    is the literals list form from the source; the macro name is unioned into
-    the literal set when rules are evaluated. The built transformer is the value
-    of that expression; use ``(compile/define NAME ...)`` to bind it. Pattern
-    parsing runs when that expression is evaluated.
+    is the literals list form from the source, emitted as written; the macro
+    name is not a literal. The head of each pattern lowers to a CALLEDBY
+    capture under its own name, binding the symbol the macro was invoked as,
+    so a template may use it. The built transformer is the value of that
+    expression; use ``(compile/define NAME ...)`` to bind it. Pattern parsing
+    runs when that expression is evaluated.
     """
 
     namesym = name.datum
@@ -308,11 +302,11 @@ def special_compile_macro_match(compiler, called_by, name, rules):
         body_src = sub_res["body"].datum
 
         pattern_matcher = parse_explicit_rule_pattern(pattern_src)
-        vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(pattern_src))
         parts.append(cons(symbol("lambda"),
-                          build_proper(*vars_ordered), body_src))
+                          build_proper(*slot_formals(pattern_matcher)),
+                          body_src))
 
     return cons(symbol("build-macro"), str(namesym), *parts, nil)
 
@@ -354,7 +348,9 @@ def special_compile_special_rules(compiler, called_by, name, literals, rules):
         inner = res["pattern"].datum
         body_forms = res["body"].datum
 
-        vars_ordered = collect_pattern_variable_symbols(inner, literal_set)
+        variables = {}
+        parse_syntax_rules_pattern(inner, literal_set, inner, variables)
+        vars_ordered = variables.values()
 
         parts.append(_emit_parse_rule_pattern(inner, literal_set))
         parts.append(cons(symbol("lambda"),
@@ -399,52 +395,33 @@ def special_compile_special_match(compiler, called_by, name, rules):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
 
         pattern_matcher = parse_explicit_rule_pattern(inner)
-        vars_ordered = [symbol(n) for n in pattern_slot_names(pattern_matcher)]
 
         parts.append(_emit_parse_match_pattern(inner))
         parts.append(cons(symbol("lambda"),
-                          build_proper(compiler_formal, *vars_ordered),
+                          build_proper(compiler_formal,
+                                       *slot_formals(pattern_matcher)),
                           body_src))
 
     return cons(symbol("build-special"), str(namesym), *parts, nil)
 
 
-def collect_pattern_variable_symbols(pattern_expr, literals):
+def slot_formals(pattern_matcher):
     """
-    Pattern variables in pre-order, excluding literals and ellipsis markers.
-    Each symbol appears once (first occurrence). Used for macro-rules formals.
+    The formals an explicit-pattern arm takes for its captures: each
+    slot once, in slot-table order, as a keyword formal defaulting to
+    None. A match result is sparse, so a slot behind TAIL or an
+    unmatched ONEOF branch arrives as None, and a slot the table lists
+    once per branch (BINDINGS) is one formal
+
+    :param pattern_matcher: the lowered rule pattern
+    :return: the formals list items, keyword and default alternating
     """
 
-    seen = []
-
-    def walk(expr):
-        if expr is Ellipsis:
-            return
-
-        if is_symbol(expr):
-            if expr in literals:
-                return
-
-            if expr not in seen:
-                seen.append(expr)
-
-            return
-
-        if not is_pair(expr):
-            return
-
-        items = list(unpack(expr))
-        i = 0
-        while i < len(items):
-            if i + 1 < len(items) and items[i + 1] is Ellipsis:
-                walk(items[i])
-                i += 2
-            else:
-                walk(items[i])
-                i += 1
-
-    walk(pattern_expr)
-    return seen
+    out = []
+    for name in dict.fromkeys(pattern_slot_names(pattern_matcher)):
+        out.append(keyword(name))
+        out.append(None)
+    return out
 
 
 def parse_macro_rules_rows(name, literals_expr, raw_rules):
@@ -478,9 +455,11 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
         if not body_forms:
             raise SpecialError("macro-rules rule requires a body", raw_rule)
 
-        pattern = parse_syntax_rules_pattern(pattern_src, literals, raw_rule)
-        varsyms = collect_pattern_variable_symbols(pattern_src, literals)
-        rows.append((pattern, pattern_src, tuple(varsyms), body_forms))
+        variables = {}
+        pattern = parse_syntax_rules_pattern(
+            pattern_src, literals, raw_rule, variables)
+        rows.append(
+            (pattern, pattern_src, tuple(variables.values()), body_forms))
 
     return literals, tuple(rows)
 

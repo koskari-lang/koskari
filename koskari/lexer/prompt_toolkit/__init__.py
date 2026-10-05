@@ -20,9 +20,6 @@ Provides KoskariLexer, KoskariCompleter, and koskari_style for syntax
 highlighting and Tab completion. Requires prompt_toolkit.
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 
 from .completer import KoskariCompleter
 from .key_bindings import load_koskari_key_bindings

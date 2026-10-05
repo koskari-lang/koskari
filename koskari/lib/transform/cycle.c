@@ -15,11 +15,10 @@
    iterator is re-acquired per lap and an async original replays in
    pure C with the evaluator untouched.
 
-   That makes this the third provider that catches a source running
-   out instead of propagating it, after batched and zip-longest --
-   here exhaustion means start replaying, and only an empty buffer
-   means the cycle is empty. A source of no elements is exhausted
-   immediately rather than looping forever over nothing.
+   The provider catches a source running out instead of propagating
+   it -- here exhaustion means start replaying, and only an empty
+   buffer means the cycle is empty. A source of no elements is
+   exhausted immediately rather than looping forever over nothing.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3

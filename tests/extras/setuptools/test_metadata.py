@@ -129,15 +129,52 @@ class TestValidateHelpers(unittest.TestCase):
         self.assertTrue(caught)
         self.assertIn('install_requires', str(caught[0].message))
 
-    def test_warn_zip_safe_with_ki_package_data(self):
+    def test_dependency_check_reads_the_requirement_name(self):
+        # a specifier, an extra, or a differently cased name still names
+        # koskari; an unrelated requirement does not
+        for reqs in (['koskari>=0.1'], ['koskari[extras] ; python_version'
+                                        ' >= "3.9"'], ['Koskari'],
+                     ['requests', 'KOSKARI == 1.0']):
+            dist = FakeDist({
+                'koskari_scripts': ['koslife = koslife.cli:main'],
+            }, install_requires=reqs)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter('always')
+                warn_koskari_scripts_metadata(dist)
+            self.assertEqual([], caught, reqs)
+
         dist = FakeDist({
             'koskari_scripts': ['koslife = koslife.cli:main'],
-        }, zip_safe=True, package_data={'koslife': ['*.ki']})
+        }, install_requires=['requests'])
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter('always')
             warn_koskari_scripts_metadata(dist)
-        self.assertTrue(caught)
-        self.assertIn('zip_safe', str(caught[0].message))
+        self.assertEqual(1, len(caught))
+        self.assertIn('install_requires', str(caught[0].message))
+
+    def test_zip_safe_override_is_announced_where_it_happens(self):
+        # the plugin sets zip_safe False for declared packages; an author
+        # who asked for True hears about the override, one who did not
+        # hears nothing about zip_safe
+        dist = FakeDist({
+            'koskari_scripts': ['koslife = koslife.cli:main'],
+        }, zip_safe=True, packages=['koslife'])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            augment_koskari_packages(dist)
+        zip_warnings = [w for w in caught if 'zip_safe' in str(w.message)]
+        self.assertEqual(1, len(zip_warnings))
+        self.assertFalse(dist.zip_safe)
+
+        dist = FakeDist({
+            'koskari_scripts': ['koslife = koslife.cli:main'],
+        }, zip_safe=False, packages=['koslife'])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            augment_koskari_packages(dist)
+            warn_koskari_scripts_metadata(dist)
+        self.assertEqual(
+            [], [w for w in caught if 'zip_safe' in str(w.message)])
 
 
 class TestPackagesForModuleName(unittest.TestCase):
@@ -195,7 +232,10 @@ class TestAugmentKoskariPackages(unittest.TestCase):
             },
             packages=['koslife'],
             zip_safe=True)
-        augment_koskari_packages(dist)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            augment_koskari_packages(dist)
+        self.assertTrue(any('zip_safe' in str(w.message) for w in caught))
         self.assertEqual(dist.packages, ['koslife'])
         self.assertEqual(
             dist.package_data,

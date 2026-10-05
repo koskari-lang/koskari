@@ -176,6 +176,34 @@ class TestFormals(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(formals.defaults, {'c': 99})
 
 
+class TestFormalsConstructionErrors(unittest.IsolatedAsyncioTestCase):
+    """
+    A failure while reading a formals argument propagates from the
+    constructor instead of leaving a half-built Formals behind with the
+    error pending
+    """
+
+    async def test_sequence_whose_len_raises(self):
+        class BadList(list):
+            def __len__(self):
+                raise ValueError("no len")
+
+        with self.assertRaises(ValueError):
+            Formals(BadList(["a"]), (), (), (), None, None, None)
+
+    async def test_defaults_whose_copy_raises(self):
+        class BadDict(dict):
+            # an overridden __iter__ sends the copy through keys()
+            def __iter__(self):
+                return iter(())
+
+            def keys(self):
+                raise ValueError("no keys")
+
+        with self.assertRaises(ValueError):
+            Formals(("a",), (), (), (), None, None, BadDict(a=1))
+
+
 class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
     """
     Tests for Formals.apply() method
@@ -325,6 +353,36 @@ class TestFormalsApply(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(TypeError):
             formals.apply(ns, (1,), {"unexpected": 42})
+
+    async def test_apply_keyword_for_filled_positional_raises(self):
+        """
+        a keyword naming a formal the positionals already filled is
+        refused as multiple values, with or without a starstar formal
+        """
+
+        cases = (
+            (Formals(("x",), (), (), (), None, "kw", None, None),
+             ("x", "kw"), (1,), {"x": 2}),
+            (Formals(("x",), (), (), (), None, None, None, None),
+             ("x",), (1,), {"x": 2}),
+            (Formals(("x",), (), ("y",), (), None, None, None, None),
+             ("x", "y"), (1, 2), {"y": 3}),
+        )
+        for formals, names, args, kwds in cases:
+            ns = Namespace("f", None, names)
+            with self.assertRaisesRegex(TypeError, "multiple values"):
+                formals.apply(ns, args, kwds)
+
+    async def test_apply_keyword_naming_a_positional_only_goes_to_starstar(self):
+        """
+        as in Python, a positional-only formal's name is free for **kw
+        """
+
+        formals = Formals((), ("x",), (), (), None, "kw", None, None)
+        ns = Namespace("f", None, ("x", "kw"))
+        formals.apply(ns, (1,), {"x": 2})
+        self.assertEqual(ns.deref("x"), 1)
+        self.assertEqual(ns.deref("kw"), {"x": 2})
 
     async def test_apply_empty_star(self):
         """apply() handles empty star args"""

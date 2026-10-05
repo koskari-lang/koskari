@@ -99,6 +99,19 @@ class TestKeywordLiteralLint(unittest.TestCase):
         self.compile_src("(cond [(> x 1) 'big] [else: 'small])",
                          KeywordLiterals.ERROR)
 
+    def test_splat_in_a_reducing_operator_is_exempt(self):
+        """
+        a *: argument reroutes the reducing operator to a call; the
+        keyword is structural there and is never compiled as a value
+        """
+
+        import warnings
+
+        self.compile_src("(+ 1 *: xs)", KeywordLiterals.ERROR)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self.compile_src("(+ 1 11 *: xs)", KeywordLiterals.WARN)
+
     def test_binding_value_flagged(self):
         """a keyword bound as a value is flagged like any other"""
 

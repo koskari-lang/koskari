@@ -26,6 +26,8 @@ import koskari.builtins so the functions and their macros are present.
 """
 
 
+import sys
+import types
 import unittest
 from textwrap import dedent
 
@@ -33,7 +35,8 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.lib import Code, Expression, Module, ModuleNamespace, demand_call
-from koskari.module import load_module_source_async, new_module
+from koskari.module import (
+    find_module_reader, load_module_source_async, new_module)
 from koskari.pragma import ModulePragma
 from koskari.reader import default_reader, source_str
 
@@ -132,14 +135,14 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
 
 class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
 
-    def compile_expr(self, src_str, lineno=1, **defns):
+    def compile_expr(self, src_str, lineno=1, name="test", **defns):
         import koskari.builtins as builtins
         bltns = vars(builtins)
         if defns:
             bltns = dict(bltns)
             bltns.update(defns)
 
-        mod_ns = ModuleNamespace("test", bltns)
+        mod_ns = ModuleNamespace(name, bltns)
         module = Module(mod_ns)
         source = default_reader.read(
             source_str(dedent(src_str), __file__, line_no=lineno))
@@ -176,6 +179,23 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         self.assertIs(await expr(), rebuilt)
 
 
+    async def test_rebuilds_for_a_plain_mapping(self):
+        """
+        get-compiler takes a plain mapping as the namespace, as
+        find_module_pragma does, and names the compiler <module>
+        """
+
+        import koskari.builtins as builtins
+        ns = dict(vars(builtins))
+        compiler = demand_call(vars(builtins)['get-compiler'], ns)
+        self.assertIsInstance(compiler, Compiler)
+        self.assertEqual(compiler.name, "<module>")
+        self.assertIs(ns['__compiler__'], compiler)
+        self.assertIsInstance(ns['__pragma__'], ModulePragma)
+        self.assertIs(demand_call(vars(builtins)['get-compiler'], ns),
+                      compiler)
+
+
     async def test_walks_up_from_function_namespace(self):
         """
         (get-compiler) inside a function binds on the module, not locally
@@ -188,6 +208,54 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         ns = vars(module)
         rebuilt = await expr()
         self.assertIs(ns['__compiler__'], rebuilt)
+
+
+    async def test_rebuild_inherits_the_package_pragma_and_module_name(self):
+        """
+        without __pragma__ the rebuild seeds from the nearest package's
+        __package_pragma__ and names the compiler after the module
+        """
+
+        pkg = types.ModuleType("gcpkg")
+        pkg.__package_pragma__ = ModulePragma(
+            {"compiler/stray-colon": "error"})
+        sys.modules["gcpkg"] = pkg
+        self.addCleanup(sys.modules.pop, "gcpkg", None)
+
+        expr, module, _compiler = self.compile_expr(
+            "(get-compiler)", name="gcpkg.child")
+        ns = vars(module)
+
+        # expanding the macro bound the module's reader and pragma;
+        # drop them so the call rebuilds from nothing
+        del ns["__pragma__"]
+        del ns["__reader__"]
+        self.assertIsNone(ns.get("__pragma__"))
+
+        rebuilt = await expr()
+
+        pragma = ns["__pragma__"]
+        self.assertEqual(pragma.get("compiler/stray-colon"), "error")
+        self.assertIsNot(pragma, pkg.__package_pragma__)
+        self.assertEqual(rebuilt.name, "gcpkg.child")
+
+
+    async def test_reader_rebuild_inherits_the_package_pragma(self):
+        """
+        find_module_reader seeds a missing __pragma__ from the nearest
+        package too, since it is the fallback that runs first
+        """
+
+        pkg = types.ModuleType("gcpkg2")
+        pkg.__package_pragma__ = ModulePragma(
+            {"compiler/stray-colon": "error"})
+        sys.modules["gcpkg2"] = pkg
+        self.addCleanup(sys.modules.pop, "gcpkg2", None)
+
+        ns = ModuleNamespace("gcpkg2.child", {})
+        find_module_reader(ns)
+        self.assertEqual(
+            ns["__pragma__"].get("compiler/stray-colon"), "error")
 
 
     async def test_evaluate_after_detached_load(self):

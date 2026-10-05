@@ -253,6 +253,53 @@ static int test_context_clear_then_dealloc_releases_once(void) {
 }
 
 
+/* === Test: tp_clear leaves no pointer into the freed chain === */
+
+
+static int test_context_clear_drops_chain_caches(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame);
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+    TEST_ASSERT_NOT_NULL(KosContext_FRAME_TOP(ctx), "frame cached");
+    TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(ctx), "namespace cached");
+
+    /* what the collector does to a context in a garbage cycle: the
+       chain is freed, and the cached frame, block and namespace that
+       pointed into it must go with it, since a finalizer in the same
+       cycle can still reach the context */
+    int res = Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
+    TEST_ASSERT_EQ(res, 0, "tp_clear succeeds");
+    TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
+    TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame cache dropped");
+    TEST_ASSERT_NULL(KosContext_BLOCK(ctx), "block cache dropped");
+    TEST_ASSERT_NULL(KosContext_NAMESPACE(ctx), "namespace cache dropped");
+
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: two contexts without TLS get distinct domains === */
 
 
@@ -2088,7 +2135,7 @@ static int test_elector_declines_do_not_count_toward_demotion(void) {
     TEST_ASSERT_EQ(run_item_site(code_obj, lst, zero, NULL), (int) KOS_RES_RETURN,
                    "the first load elects the list body");
     TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot is an item slot");
-    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->u.item.election.mode, (int) KOS_ELECTOR_ELECTED,
                    "the site is elected");
     TEST_ASSERT_NOT_NULL(slot->u.item.fn.load, "the site holds a body");
 
@@ -2096,12 +2143,12 @@ static int test_elector_declines_do_not_count_toward_demotion(void) {
         TEST_ASSERT_EQ(run_item_site(code_obj, lst, far, NULL), (int) KOS_RES_RAISE,
                        "an index past the end declines and raises");
     }
-    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->u.item.election.mode, (int) KOS_ELECTOR_ELECTED,
                    "declines leave the site elected");
 
     TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, NULL), (int) KOS_RES_RAISE,
                    "a dict misses the list guard and raises KeyError generically");
-    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->u.item.election.mode, (int) KOS_ELECTOR_ELECTED,
                    "one guard miss after seven declines does not demote");
 
     Py_DECREF(far);
@@ -2140,7 +2187,7 @@ static int test_item_store_site_demotes_and_re_elects(void) {
                        "a dict misses the list guard and stores generically");
     }
     TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot stays an item slot");
-    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_MEGAMORPHIC,
+    TEST_ASSERT_EQ(slot->u.item.election.mode, (int) KOS_ELECTOR_MEGAMORPHIC,
                    "eight misses demote the site");
     TEST_ASSERT_NULL(slot->u.item.fn.store, "a demoted site holds no body");
     TEST_ASSERT_EQ(PyDict_GetItem(d, zero), val, "the dict took the value");
@@ -2161,7 +2208,7 @@ static int test_item_store_site_demotes_and_re_elects(void) {
     TEST_ASSERT_EQ(run_item_site(code_obj, d, zero, val), (int) KOS_RES_RETURN,
                    "the next execution elects again");
     TEST_ASSERT_EQ(slot->kind, (int) KOS_CACHE_ITEM, "the slot is an item slot");
-    TEST_ASSERT_EQ(slot->u.item.mode, (int) KOS_ELECTOR_ELECTED,
+    TEST_ASSERT_EQ(slot->u.item.election.mode, (int) KOS_ELECTOR_ELECTED,
                    "the dict body is elected");
 
     Py_DECREF(val);
@@ -2181,6 +2228,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
+    RUN_TEST(test_context_clear_drops_chain_caches);
     RUN_TEST(test_domain_fresh_when_no_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);

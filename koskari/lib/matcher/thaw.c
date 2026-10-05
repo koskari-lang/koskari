@@ -1,4 +1,27 @@
-/* Included by matcher.c — thaw */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. Thaw: the frozen matcher tuple to a native
+  Matcher.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === thaw: frozen tuple -> Matcher === */
 
 
@@ -206,10 +229,6 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "MATCH") == 0) {
     Py_ssize_t cnt = arity - 1;
-    if (cnt < 0) {
-      PyErr_SetString(PyExc_ValueError, "MATCH node must have arity >= 1");
-      return -1;
-    }
     uint32_t *children = NULL;
     if (cnt > 0) {
       children = PyMem_Malloc(cnt * sizeof(uint32_t));
@@ -231,10 +250,6 @@ static int thaw_node(KosMatcherBuilder *b, PyObject *t) {
 
   } else if (PyUnicode_CompareWithASCIIString(tag, "GROUP") == 0) {
     Py_ssize_t cnt = arity - 1;
-    if (cnt < 0) {
-      PyErr_SetString(PyExc_ValueError, "GROUP node must have arity >= 1");
-      return -1;
-    }
     uint32_t *children = NULL;
     if (cnt > 0) {
       children = PyMem_Malloc(cnt * sizeof(uint32_t));

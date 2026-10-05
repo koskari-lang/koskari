@@ -14,14 +14,14 @@
 */
 
 
-#ifndef KOSKARI_FEATURES_H
-#define KOSKARI_FEATURES_H
+#ifndef KOSKARI_HINTS_H
+#define KOSKARI_HINTS_H
 
 
 /**
-   features.h
+   hints.h
 
-   Feature definitions for Koskari.
+   Compiler hint and build knob defaults for Koskari.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3

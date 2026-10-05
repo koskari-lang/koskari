@@ -11,7 +11,8 @@ enter/exit run as wind/unwind steps; re-entry creates a fresh extent
 instance.
 
 **Behaviour:** Same as `with` except emits PUSH_DYN_WITH and POP_DYN_WITH.
-Expression value is always `None`. See
+The expression value is the body's value, or `None` when the exit swallows
+an exception. See
 [PUSH_DYN_WITH / POP_DYN_WITH](../vm/opcodes/kos-op-push-dyn-with.md) in the VM
 reference.
 

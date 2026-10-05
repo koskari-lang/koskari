@@ -248,7 +248,8 @@ int KosFunction_TryParkFrame(PyObject *self, KosDynFrame *frame);
    Simple-call namespace prep: copy the base namespace and bind exactly
    nargs positionals by slot index, plus the cached self-bind.  Caller
    must have matched fn->simple_arity == nargs (classification
-   guarantees plain positional formals and non-yielding code).
+   guarantees plain positional formals; yielding code classifies too
+   and takes the generator gate).
 
    :return: new namespace reference, or NULL with error set
 */

@@ -128,11 +128,8 @@ def should_omit_member(name, value):
     if value is NotImplemented:
         return True
 
-    try:
-        if value is Ellipsis:
-            return True
-    except NameError:
-        pass
+    if value is Ellipsis:
+        return True
 
     return False
 

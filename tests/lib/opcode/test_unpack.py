@@ -208,6 +208,52 @@ class TestUnpackOpcodes(CevalTest):
         self.assertIn("FAST", str(ctx.exception))
 
 
+class Mutator:
+    """
+    Its finalizer rewrites the second item of the list it watches
+    """
+
+    def __init__(self, target):
+        self.target = target
+
+    def __del__(self):
+        self.target[1] = "mutated"
+
+
+class TestUnpackReadsBeforeStoring(CevalTest):
+    """
+    The two-name unpacks take both items before either store. The first
+    store releases the slot's old value, and its finalizer may change
+    the list being unpacked; the second name still gets the original
+    item
+    """
+
+    async def test_unpack_fast_takes_both_items_before_storing(self):
+        lst = [10, 20]
+        code, ns = build_expr([
+            ["VAR", "lst"],
+            ["UNPACK_FAST", (0, 1, 0, 0)],
+            ["FAST", 0],
+            ["FAST", 1],
+            ["RETURN", 2],
+        ], local_syms=("a", "b"), values={'a': Mutator(lst), 'lst': lst})
+        result = await make_callable(code, ns)()
+        self.assertEqual(result, (10, 20))
+        self.assertEqual(lst, [10, "mutated"])
+
+    async def test_unpack_var_takes_both_items_before_storing(self):
+        lst = [10, 20]
+        code, ns = build_expr([
+            ["VAR", "lst"],
+            ["UNPACK_VAR", ("x", "y", 0, 0)],
+            ["RETURN", 0],
+        ], local_syms=("x", "y"), values={'x': Mutator(lst), 'lst': lst})
+        await make_callable(code, ns)()
+        self.assertEqual(ns.deref("x"), 10)
+        self.assertEqual(ns.deref("y"), 20)
+        self.assertEqual(lst, [10, "mutated"])
+
+
 class TestUnpackNonIterable(CevalTest):
     """
     Every UNPACK opcode raises TypeError naming the subject's type when the

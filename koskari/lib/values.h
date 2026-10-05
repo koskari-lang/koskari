@@ -64,6 +64,30 @@ extern KosEvaluatedTypeObject KosValuesType;
 PyObject *KosValues_New(PyObject *args, PyObject *kwds);
 
 
+/**
+   The value a multi-value delivery carries, as return and yield build
+   it: None for no arguments, the one argument itself, a tuple of two
+   or more, and a values instance over all of them whenever keywords
+   are present. Vectorcall shape: nargs positionals in args, followed
+   by one value per name in kwnames (NULL or empty for none).
+
+   :return: new reference, or NULL with an exception set
+*/
+PyObject *KosValues_PackVector(
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames);
+
+
+/**
+   KosValues_PackVector for the tp_call shape: a tuple of positionals
+   and a keyword dict, NULL or empty for none.
+
+   :return: new reference, or NULL with an exception set
+*/
+PyObject *KosValues_PackTuple(PyObject *args, PyObject *kwds);
+
+
 /* === unit lifecycle === */
 
 

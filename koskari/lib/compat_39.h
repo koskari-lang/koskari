@@ -126,12 +126,21 @@ typedef enum {
 
 static inline PySendResult kos_iter_send(
     PyObject *iter, PyObject *value, PyObject **result) {
-  PyObject *r = PyObject_CallMethod(iter, "send", "(O)", value);
+  PyObject *r;
+  /* as PyIter_Send: a None send on an iterator is a step of the
+     iteration protocol, so a plain iterator from __await__ needs no
+     send method; anything else goes through send */
+  if (value == Py_None && PyIter_Check(iter))
+    r = Py_TYPE(iter)->tp_iternext(iter);
+  else
+    r = PyObject_CallMethod(iter, "send", "(O)", value);
   if (r) {
     *result = r;
     return PYGEN_NEXT;
   }
-  if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+  /* an exhausted iterator may return NULL with no exception set; the
+     fetch below reads that as a completion carrying None */
+  if (PyErr_Occurred() && ! PyErr_ExceptionMatches(PyExc_StopIteration)) {
     *result = NULL;
     return PYGEN_ERROR;
   }

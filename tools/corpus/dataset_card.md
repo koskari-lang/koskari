@@ -51,7 +51,8 @@ are present. Missing stages are null.
 
 User documentation pages (Markdown) from the source repository's
 `docs/reference/`, `docs/tutorials/`, `docs/guide/`, and
-`docs/agents/` trees. One row per page. The `path` column matches the
+`docs/agents/` trees, plus the root pages `docs/quickstart.md` and
+`docs/faq.md`. One row per page. The `path` column matches the
 strings in the `corpus` config's `references` column verbatim, so a
 record's references resolve directly to their documentation content.
 
@@ -65,7 +66,7 @@ this dataset. Filter with `section == "agents"`.
 | `title` | Page title (first Markdown heading) |
 | `summary` | First paragraph, plain text |
 | `content` | Full raw Markdown of the page |
-| `section` | Parent directory (e.g. `reference/specials`) |
+| `section` | Parent directory (e.g. `reference/specials`); for a root page, its file name (e.g. `quickstart.md`) |
 | `kind` | Always `doc` |
 | `schema_version` | Corpus schema identifier at export time |
 | `git_ref` | Short git commit at export time |
@@ -112,9 +113,10 @@ the `corpus` config.
 
 ## Provenance
 
-Every row includes `corpus_id`, `schema_version`, and `git_ref` so downstream
-consumers can join back to the authoritative YAML record and the export
-revision.
+Every row includes `schema_version` and `git_ref`, so downstream consumers
+can identify the export revision. Rows of the `corpus` config also carry
+`corpus_id` to join back to the authoritative YAML record; `docs` and
+`programs` rows are keyed by `path`.
 
 ## License
 

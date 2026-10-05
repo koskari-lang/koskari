@@ -29,7 +29,7 @@ import operator
 
 from ..lib import (
     NAMESPACE_FAST_SLOT_MAX, Compare, FunctionSpec, NamespaceSpec, OpCode,
-    Operand, OpStyle, symbol)
+    Operand, OpStyle)
 
 
 OPERAND_COUNT = len(Operand)
@@ -475,17 +475,9 @@ def fuse_rule(*pattern):
     return register
 
 
-def spell_name(name):
+def fuckup_namespace_spec(nspec):
     """
-    A name lowered to its spelling; a spelling is returned unchanged
-    """
-
-    return str(name) if isinstance(name, symbol) else name
-
-
-def spell_namespace_spec(nspec):
-    """
-    The NamespaceSpec with every name lowered to its spelling
+    The NamespaceSpec with every name munged to a str
 
     :param nspec: a NamespaceSpec whose names are atoms or spellings
     :return: a NamespaceSpec of spellings
@@ -493,37 +485,40 @@ def spell_namespace_spec(nspec):
 
     return NamespaceSpec(
         nspec.name,
-        tuple(map(spell_name, nspec.local_syms)),
-        tuple(map(spell_name, nspec.closure_syms)),
-        tuple(map(spell_name, nspec.global_syms)))
+        tuple(map(str, nspec.local_syms)),
+        tuple(map(str, nspec.closure_syms)),
+        tuple(map(str, nspec.global_syms)))
 
 
-def spell_operands(rows):
+def fuckup_operands(rows):
     """
     The rows with every variable operand and inline scope's names
-    lowered to their spellings
+    lowered to their final forms, which is mostly str conversion from
+    symbols.
 
     :param rows: instruction rows whose names are atoms
     :return: a new list of rows
     """
 
-    # a fused compare row's VAR field holds a constant when its source
-    # selector says so, so only a symbol is spelled
     out = []
     for op, arg in rows:
         if op == OpCode.PUSH_NS:
             nspec, names = arg[0], arg[1]
             if names is not None:
-                names = tuple(map(spell_name, names))
-            arg = (spell_namespace_spec(nspec), names) + tuple(arg[2:])
+                names = tuple(map(str, names))
+            arg = (fuckup_namespace_spec(nspec), names, *arg[2:])
+
         elif op == OpCode.PUSH_COLLECT:
-            arg = spell_namespace_spec(arg)
+            arg = fuckup_namespace_spec(arg)
+
         elif op.style == OpStyle.VAR:
-            arg = spell_name(arg)
+            arg = str(arg)
+
         elif op.extra and OpStyle.VAR in op.extra:
             arg = tuple(
-                spell_name(v) if fk == OpStyle.VAR else v
+                str(v) if fk == OpStyle.VAR else v
                 for v, fk in zip(arg, op.extra))
+
         out.append((op, arg))
     return out
 
@@ -549,7 +544,7 @@ class ByteCodeProcessor:
         """
 
         self.fragment = fragment
-        self.instructions = spell_operands(fragment.instructions)
+        self.instructions = fuckup_operands(fragment.instructions)
 
         # the base NamespaceSpec resolved mid-pipeline; remains
         # readable after process returns, for Code construction
@@ -642,15 +637,44 @@ class ByteCodeProcessor:
         return rows
 
 
+    @squish_rule(OpCode.DUP)
+    def dup_nothing(self, op, arg, matched):
+        """
+        DUP 0 -> nothing: it copies no slot
+        """
+
+        return [] if arg == 0 else None
+
+
+    @squish_rule(OpCode.POP)
+    def pop_nothing(self, op, arg, matched):
+        """
+        POP 0 -> nothing: it drops no slot
+        """
+
+        return [] if arg == 0 else None
+
+
     @squish_rule(POP_PRIORS, OpCode.POP)
     def pop_pushed_value(self, op, arg, matched):
         """
-        CONST|DUP POP1 -> nothing: both rows vanish
+        CONST POP1 -> nothing: both rows vanish. DUP n POP m: the POP
+        drops the copies first, so POP n takes the DUP with it, and a
+        larger POP keeps the rest of its drop; a smaller POP leaves a
+        stack no single DUP gives, since DUP copies its slots in order,
+        and both rows stay
         """
 
-        if arg != 1:
+        if arg == 0:
             return None
-        return []
+        prior_op, prior_arg = matched[0]
+        if prior_op == OpCode.CONST:
+            return [] if arg == 1 else None
+        if arg == prior_arg:
+            return []
+        if arg > prior_arg:
+            return [(OpCode.POP, arg - prior_arg)]
+        return None
 
 
     @squish_rule(OpCode.CONST, OpCode.OBJECT_NOT)
@@ -758,19 +782,6 @@ class ByteCodeProcessor:
         return [(op, arg)]
 
 
-    @squish_rule(OpCode.CONST, JUMP_PRIORS, OpCode.LABEL)
-    def label_const_jump_elision(self, op, arg, matched):
-        """
-        CONST JUMP_TRUE|FALSE L LABEL L -> the label alone: the
-        conditional jump to the next instruction vanishes with its
-        constant test
-        """
-
-        if matched[1][1] != arg:
-            return None
-        return [(op, arg)]
-
-
     @squish_rule(JUMP_PRIORS, OpCode.LABEL)
     def label_dynamic_jump_elision(self, op, arg, matched):
         """
@@ -836,15 +847,12 @@ class ByteCodeProcessor:
     @squish_rule(OpCode.CONST, OpCode.VAR_INPLACE)
     def var_inplace_const_fuse(self, op, arg, matched):
         """
-        CONST VAR_INPLACE (single operand) -> the stack-free
-        VAR_INPLACE_CONST: bare operator selector, name, pooled operand
+        CONST VAR_INPLACE -> the stack-free VAR_INPLACE_CONST: the same
+        operator selector and name, with the pooled operand on the row
         """
 
-        merged = merge_opcount(arg[0])
-        if merged & 0xff != 1:
-            return None
         return [(OpCode.VAR_INPLACE_CONST,
-                 (merged >> 8, arg[1], matched[0][1], None))]
+                 (arg[0], arg[1], matched[0][1], None))]
 
 
     @fuse_rule(FEEDER, OpCode.RETURN)
@@ -1275,19 +1283,12 @@ class ByteCodeProcessor:
                 return -1
             return idx if idx < NAMESPACE_FAST_SLOT_MAX else -1
 
-        nspec = None
         for op, arg in self.instructions:
-            if op == OpCode.CONST:
-                if isinstance(arg, NamespaceSpec):
-                    nspec = arg
-
-            elif op == OpCode.PUSH_NS:
+            if op == OpCode.PUSH_NS:
                 push_nspec(arg[0])
-                nspec = None
 
             elif op == OpCode.PUSH_COLLECT:
-                push_nspec(arg if isinstance(arg, NamespaceSpec) else nspec)
-                nspec = None
+                push_nspec(arg)
 
             elif op in (OpCode.POP_NS, OpCode.POP_COLLECT):
                 pop_nspec()
@@ -1637,7 +1638,7 @@ class ByteCodeProcessor:
         # merge surviving inner FunctionSpec syms into the fragment,
         # then build the base NamespaceSpec from its buckets
         self.cpool_scan_merge()
-        self.base_nspec = spell_namespace_spec(
+        self.base_nspec = fuckup_namespace_spec(
             self.fragment.resolution.build_namespace_spec(self.fragment))
 
         if compiler.convert_fast_enabled and function_body:

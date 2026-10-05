@@ -105,6 +105,20 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIs(type(ns), Namespace)
 
 
+    async def test_global_sym_with_no_parent_is_refused(self):
+        """
+        A global sym resolves through the parent chain to the module;
+        with no parent there is nothing to resolve it in, and the
+        namespace is refused rather than built with an empty slot
+        marked as holding a reference
+        """
+
+        spec = NamespaceSpec("ns", ("a",), (), ("g",))
+        with self.assertRaises(RuntimeError):
+            spec.get_namespace(None)
+        with self.assertRaises(RuntimeError):
+            Namespace("ns", None, (), (), ("g",))
+
     async def test_empty_namespace_refuses_bind(self):
         """
         The empty namespace every native frame carries is one shared
@@ -500,6 +514,60 @@ class TestNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns.name, "<namespace>")
 
 
+    async def test_store_finalizer_sees_new_value(self):
+        """
+        store() on a raw slot points the slot at the new value before
+        releasing the old one, so a finalizer running during the release
+        that reads the same name sees the new value
+        """
+        ns = Namespace("ns", None, ('a',))
+        seen = []
+
+        class Elem:
+            def __del__(self):
+                seen.append(ns.deref('a'))
+
+        ns.store('a', [Elem()])
+        ns.store('a', "after")
+        self.assertEqual(seen, ["after"])
+
+
+class Incomparable:
+    """
+    A key whose equality raises
+    """
+
+    def __eq__(self, other):
+        raise ValueError("no compare")
+
+    __hash__ = object.__hash__
+
+
+class TestNamespaceKeyComparisonErrors(unittest.IsolatedAsyncioTestCase):
+    """
+    A key whose comparison against a fast slot's name raises propagates
+    that error from deref, store and containment, instead of matching
+    the slot with the error pending
+    """
+
+    def namespace(self):
+        ns = NamespaceSpec(None, ("x", "y"), ()).get_namespace(None)
+        ns.store("x", 1)
+        return ns
+
+    async def test_deref_propagates(self):
+        with self.assertRaises(ValueError):
+            self.namespace().deref(Incomparable())
+
+    async def test_store_propagates(self):
+        with self.assertRaises(ValueError):
+            self.namespace().store(Incomparable(), 2)
+
+    async def test_contains_propagates(self):
+        with self.assertRaises(ValueError):
+            Incomparable() in self.namespace()
+
+
 class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
     """
     Tests for the ModuleNamespace type
@@ -507,7 +575,9 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
     async def test_type(self):
         """ModuleNamespace is a subclass of Namespace"""
-        self.assertTrue(issubclass(ModuleNamespace, Namespace))
+        # a module namespace is a dict subclass, not a Namespace subtype
+        self.assertTrue(issubclass(ModuleNamespace, dict))
+        self.assertFalse(issubclass(ModuleNamespace, Namespace))
         self.assertEqual(ModuleNamespace.__name__, "ModuleNamespace")
 
 
@@ -530,17 +600,94 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(type(mn), ModuleNamespace)
         self.assertIsInstance(mn, ModuleNamespace)
-        self.assertIsInstance(mn, Namespace)
+        # a module namespace is a dict subclass, so exec and eval take
+        # it as globals; it is not a Namespace subtype
+        self.assertIsInstance(mn, dict)
+        self.assertNotIsInstance(mn, Namespace)
 
 
-    async def test_copy_rejected(self):
+    async def test_copy_is_a_plain_dict(self):
         """
-        copy() has no fast slots to duplicate on a ModuleNamespace and must
-        raise TypeError rather than track a NULL result
+        copy() on a ModuleNamespace is the dict API's copy: a plain dict
+        of the names holding a value, which exec'd code and doctest expect
         """
         mn = ModuleNamespace("mn", {})
-        with self.assertRaises(TypeError):
-            mn.copy()
+        mn['a'] = 1
+        c = mn.copy()
+        self.assertIs(type(c), dict)
+        self.assertEqual(c, {'a': 1})
+
+
+    async def test_compares_by_identity(self):
+        """
+        A module namespace is its module's state: it compares and hashes
+        by identity, so neither its storage nor its bindings make it
+        equal to a dict or to another namespace
+        """
+
+        a = ModuleNamespace("a", {})
+        a['x'] = 1
+        b = ModuleNamespace("b", {})
+        b['x'] = 1
+        self.assertEqual(a, a)
+        self.assertNotEqual(a, b)
+        self.assertNotEqual(a, {})
+        self.assertNotEqual({}, a)
+        self.assertFalse(a == {'x': 1})
+        self.assertFalse({'x': 1} == a)
+        self.assertIn(a, {a})
+        self.assertNotIn(b, {a})
+
+
+    async def test_update_reads_a_mapping_through_keys(self):
+        """
+        update and |= take a source with keys() as a mapping, the way
+        dict.update does, reading each value through __getitem__
+        """
+
+        class Keyed:
+            def __init__(self, data):
+                self.data = data
+
+            def keys(self):
+                return list(self.data)
+
+            def __getitem__(self, key):
+                return self.data[key]
+
+        ns = ModuleNamespace("m", {})
+        ns.update(Keyed({'ab': 1, 'xyz': 2}))
+        self.assertEqual((ns['ab'], ns['xyz']), (1, 2))
+        ns |= Keyed({'q': 3})
+        self.assertEqual(ns['q'], 3)
+        ns.update([('r', 4)], s=5)
+        self.assertEqual((ns['r'], ns['s']), (4, 5))
+        self.assertEqual(sorted(ns.keys()), ['ab', 'q', 'r', 's', 'xyz'])
+
+
+    async def test_update_propagates_a_source_error(self):
+        """
+        An exception raised while reading the source propagates as
+        itself and is not replaced by a pair-shape ValueError
+        """
+
+        class Broken(dict):
+            def keys(self):
+                raise RuntimeError("no keys")
+
+        class Missing:
+            def keys(self):
+                return ['a']
+
+            def __getitem__(self, key):
+                raise KeyError(key)
+
+        ns = ModuleNamespace("m", {})
+        with self.assertRaises(RuntimeError):
+            ns.update(Broken(a=1))
+        with self.assertRaises(KeyError):
+            ns.update(Missing())
+        self.assertEqual(list(ns.keys()), [])
 
 
     async def test_name_and_parent(self):
@@ -1002,6 +1149,21 @@ class TestCollectorNamespace(unittest.IsolatedAsyncioTestCase):
 
 class TestModule(unittest.IsolatedAsyncioTestCase):
     """Tests for the Module type"""
+
+    async def test_read_only_attribute_error_names_the_attribute(self):
+        """
+        Storing to or deleting a read-only module descriptor names the
+        attribute in the error, not the value
+        """
+
+        m = Module(Namespace("ns", None, ('a',)))
+        with self.assertRaises(AttributeError) as caught:
+            m.__name__ = "other"
+        self.assertIn("'__name__'", str(caught.exception))
+        self.assertNotIn("'other'", str(caught.exception))
+        with self.assertRaises(AttributeError) as caught:
+            del m.__name__
+        self.assertIn("'__name__'", str(caught.exception))
 
     async def test_create_with_namespace(self):
         """Module can be created with a Namespace"""

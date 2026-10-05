@@ -28,20 +28,23 @@ files transparently via Python's standard `import` machinery.
 
 ## Module Lifecycle
 
-**Async path**: `new_module` → `make_builtins()` → `load_module_async` (each
-expression: coroutine + await).
+**Async path**: `new_module` → `load_module_async` (each expression:
+coroutine + await).
 
-**Demand path**: `new_module` → `make_builtins_demand()` →
-`load_module_demand` (each expression: `demand_sync(expr)`).
+**Demand path**: `new_module` → `load_module_demand` (each expression:
+`demand_call(expr)`).
+
+Both paths start from the same module: `new_module` copies the public
+bindings of the loaded `koskari.builtins` module, which `koskari.bootstrap`
+assembles from the Python registry plus basics.ki.
 
 1. **new_module(name, package)**: Create a koskari `Module` with a fresh
-   `ModuleNamespace` and builtins from `make_builtins()` or
-   `make_builtins_demand()`.
+   `ModuleNamespace` whose parent bindings are copied from `koskari.builtins`.
 2. **init_module(module, filename, spec)**: Set `__file__`, `__path__` for
    packages, and `__spec__`/`__loader__` when provided.
 3. **load_module_async(module)** / **load_module_demand(module)**: Read each
    top-level expression from the source file, compile it, and run it (async:
-   coroutine + await; demand: `demand_sync(expr)`). Bindings from one
+   coroutine + await; demand: `demand_call(expr)`). Bindings from one
    expression are visible to subsequent ones.
 4. **materialize_exports(module)**: After the last expression and before the
    load facets detach, `__all__` is materialized from the feature stems that
@@ -59,10 +62,10 @@ expression: coroutine + await).
 | Component | Module | Notes |
 |-----------|--------|-------|
 | install / uninstall | `koskari.importer` | `install()`, `uninstall()`, `is_installed()` |
-| PathFinder | `koskari.importer.importlib` | `KoskariPathFinder` (class in `sys.meta_path`) |
-| Loader | `koskari.importer.importlib` | `KoskariSourceFileLoader`, `KoskariFileFinder` |
+| PathFinder | `koskari.importer` | `KoskariPathFinder` (class in `sys.meta_path`) |
+| Loader | `koskari.importer` | `KoskariSourceFileLoader`, `KoskariFileFinder` |
 | Module lifecycle | `koskari.module` | `new_module`, `init_module`, `load_module_async`, `load_module_demand`, `materialize_exports` |
-| Builtins | `koskari.importer.bootstrap` | `make_builtins()`, `make_builtins_demand()` |
+| Builtins | `koskari.builtins` | the assembled builtins module `new_module` copies from; built by `koskari.bootstrap` (`make_bootstrap()` plus the `.ki` sources) |
 
 ## Source Suffixes
 

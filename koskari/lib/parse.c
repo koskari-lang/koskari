@@ -17,11 +17,11 @@
 /**
    BaseSourceStream: native source stream for the parser
 
-   Provides efficient character-level I/O with position tracking for
-   the Koskari s-expression reader.
+   Character-level I/O with position tracking over a Python file-like
+   source, for the Koskari s-expression reader.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -592,7 +592,6 @@ static PyObject *m_bss_readline(
 
   /* scan to newline */
   Py_ssize_t scan_count = 0;
-  int found_newline = 0;
 
   while (1) {
     PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
@@ -605,16 +604,17 @@ static PyObject *m_bss_readline(
       break;
     }
 
-    const char *ch_str = PyUnicode_AsUTF8(ch);
-    scan_count++;
-
-    if (ch_str && ch_str[0] == '\n') {
-      Py_DECREF(ch);
-      found_newline = 1;
-      break;
-    }
-
+    /* the code point, read without encoding: a lone surrogate is a
+       character to scan past, not an error */
+    Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
     Py_DECREF(ch);
+
+    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred())
+      return NULL;
+
+    scan_count++;
+    if (codepoint == '\n')
+      break;
   }
 
   /* seek back to start */
@@ -626,12 +626,7 @@ static PyObject *m_bss_readline(
     return PyUnicode_FromString("");
   }
 
-  PyObject *result = KosBaseSourceStream_Read(self, scan_count);
-
-  /* if we hit a newline, the position is already updated by read */
-  (void) found_newline;
-
-  return result;
+  return KosBaseSourceStream_Read(self, scan_count);
 }
 
 

@@ -18,11 +18,11 @@
    Cons pair and nil types
 
    The pair type is a mutable cons cell with head (car) and tail (cdr)
-   slots. The nil singleton represents the empty list and serves as
-   the base type for pairs.
+   slots. The nil singleton represents the empty list and is a
+   subtype of pair.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -43,8 +43,6 @@ static PyObject *_str_nil = NULL;
 static PyObject *_str_open_paren = NULL;
 static PyObject *_str_recursive_true = NULL;
 static PyObject *_str_space = NULL;
-static PyObject *_str_quote = NULL;
-static PyObject *_str_esc_quote = NULL;
 static PyObject *_str_open_bracket = NULL;
 static PyObject *_str_close_bracket = NULL;
 static PyObject *_str_bracket_cons_paren = NULL;
@@ -65,16 +63,14 @@ static int pair_free_count = 0;
 /* === helper macros === */
 
 
+/* Store value into dest, taking a reference to it before the old
+   value is released, so a finalizer the release runs sees the slot
+   already holding the new value. */
 #define Py_ASSIGN(dest, value) {                \
-    Py_XDECREF(dest);                           \
-    dest = value;                               \
-    Py_XINCREF(dest);                           \
+    PyObject *_kos_new = (value);               \
+    Py_XINCREF(_kos_new);                       \
+    Py_XSETREF(dest, _kos_new);                 \
   }
-
-
-/* trashcan macros for deep recursion protection */
-#define CPy_TRASHCAN_BEGIN(op, dealloc) Py_TRASHCAN_BEGIN(op, dealloc)
-#define CPy_TRASHCAN_END(op) Py_TRASHCAN_END
 
 
 /* === PairIteratorType === */
@@ -330,6 +326,10 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
 
   PyList_Append(col, cons_open);
 
+  /* rest is held for the whole iteration, and the car across its
+     repr: an element's __repr__ can cut the spine or swap the car,
+     and the walk keeps reading the cells it reached */
+  Py_INCREF(rest);
   while (KosPair_IsCell(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
@@ -343,19 +343,25 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
         PyList_Append(col, _str_close_paren);
       }
       Py_DECREF(rest_id);
-      rest = NULL;
+      Py_CLEAR(rest);
       break;
 
     } else {
+      PyObject *car, *next;
+
       index += 2;
 
       tmp = PyLong_FromSize_t(index);
       PyDict_SetItem(found, rest_id, tmp);
       Py_DECREF(tmp);
+      Py_DECREF(rest_id);
 
-      tmp = PyObject_Repr(KosPair_CAR(rest));
+      car = KosPair_CAR(rest);
+      Py_INCREF(car);
+      tmp = PyObject_Repr(car);
+      Py_DECREF(car);
       if (! tmp) {
-        Py_DECREF(rest_id);
+        Py_DECREF(rest);
         Py_DECREF(col);
         Py_DECREF(found);
         return NULL;
@@ -364,13 +370,15 @@ static PyObject *pair_repr_inner(PyObject *self, PyObject *cons_open) {
       PyList_Append(col, _str_comma_space);
       Py_DECREF(tmp);
 
-      rest = KosPair_CDR(rest);
-      Py_DECREF(rest_id);
+      next = KosPair_CDR(rest);
+      Py_INCREF(next);
+      Py_SETREF(rest, next);
     }
   }
 
   if (rest) {
     tmp = PyObject_Repr(rest);
+    Py_DECREF(rest);
     if (! tmp) {
       Py_DECREF(col);
       Py_DECREF(found);
@@ -395,19 +403,6 @@ static PyObject *pair_repr(PyObject *self) {
 }
 
 
-static PyObject *sib_quoted(PyObject *u) {
-  /* quote a string for display in str() output */
-
-  PyObject *escaped = PyUnicode_Replace(u, _str_quote, _str_esc_quote, -1);
-  if (! escaped)
-    return NULL;
-
-  PyObject *result = PyUnicode_FromFormat("\"%U\"", escaped);
-  Py_DECREF(escaped);
-  return result;
-}
-
-
 /**
    The str of one element of a printed pair: a string is quoted, a
    gensym prints the symbol it spells, since str of a form is source
@@ -416,17 +411,23 @@ static PyObject *sib_quoted(PyObject *u) {
 */
 static PyObject *pair_elem_str(PyObject *elem) {
   if (PyUnicode_CheckExact(elem))
-    return sib_quoted(elem);
+    return KosUtils_QuoteStr(elem);
   if (KosGensym_Check(elem))
     return PyObject_Str(KosGensym_BASE(elem));
   return PyObject_Str(elem);
 }
 
 
-static PyObject *pair_str_inner(
+/**
+  Render a pair between open_s and close_s, each element through
+  render: str for pair_str, KosUtils_Repr for __kos_repr__. A spine
+  that loops prints its revisited cell as an ellipsis.
+*/
+static PyObject *pair_render_inner(
     PyObject *self,
     PyObject *open_s,
-    PyObject *close_s) {
+    PyObject *close_s,
+    PyObject *(*render)(PyObject *)) {
 
   PyObject *tmp = NULL;
   PyObject *col = PyList_New(0);
@@ -451,7 +452,11 @@ static PyObject *pair_str_inner(
 
   PyList_Append(col, open_s);
 
-  for (rest = self; KosPair_IsCell(rest); rest = KosPair_CDR(rest)) {
+  /* rest is held for the whole iteration, and the car across its
+     render: an element can cut the spine or swap the car while it
+     renders, and the walk keeps reading the cells it reached */
+  Py_INCREF(rest);
+  while (KosPair_IsCell(rest)) {
     rest_id = PyLong_FromVoidPtr(rest);
 
     if (PyDict_Contains(found, rest_id)) {
@@ -469,10 +474,12 @@ static PyObject *pair_str_inner(
 
       /* set rest to NULL so we don't try to close it like we would a
          normal proper or improper list */
-      rest = NULL;
+      Py_CLEAR(rest);
       break;
 
     } else {
+      PyObject *car, *next;
+
       index += 2;
 
       tmp = PyLong_FromSize_t(index);
@@ -480,8 +487,12 @@ static PyObject *pair_str_inner(
       Py_DECREF(tmp);
       Py_DECREF(rest_id);
 
-      tmp = pair_elem_str(KosPair_CAR(rest));
+      car = KosPair_CAR(rest);
+      Py_INCREF(car);
+      tmp = render(car);
+      Py_DECREF(car);
       if (! tmp) {
+        Py_DECREF(rest);
         Py_DECREF(col);
         Py_DECREF(found);
         return NULL;
@@ -491,19 +502,25 @@ static PyObject *pair_str_inner(
       Py_DECREF(tmp);
 
       PyList_Append(col, _str_space);
+
+      next = KosPair_CDR(rest);
+      Py_INCREF(next);
+      Py_SETREF(rest, next);
     }
   }
 
-  if(KosNilP(rest)) {
+  if (rest && KosNilP(rest)) {
     /* end of a proper list */
 
+    Py_DECREF(rest);
     Py_INCREF(close_s);
     PyList_SetItem(col, index, close_s);
 
   } else if (rest) {
     /* end of an improper list */
 
-    tmp = pair_elem_str(rest);
+    tmp = render(rest);
+    Py_DECREF(rest);
     if (! tmp) {
       Py_DECREF(col);
       Py_DECREF(found);
@@ -524,122 +541,41 @@ static PyObject *pair_str_inner(
 
 
 static PyObject *pair_str(PyObject *self) {
-  return pair_str_inner(self, _str_open_paren, _str_close_paren);
-}
-
-
-static PyObject *pair_kos_repr_inner(
-    PyObject *self,
-    PyObject *open_s,
-    PyObject *close_s) {
-
-  PyObject *tmp = NULL;
-  PyObject *col = PyList_New(0);
-  PyObject *found = PyDict_New();
-  size_t index = 0;
-
-  PyObject *rest = self;
-  PyObject *rest_id;
-
-  if (KosNilP(self)) {
-    /* the empty list renders as its own open/close delimiters */
-    Py_DECREF(col);
-    Py_DECREF(found);
-    return PyUnicode_Concat(open_s, close_s);
-  }
-
-  PyList_Append(col, open_s);
-
-  for (rest = self; KosPair_IsCell(rest); rest = KosPair_CDR(rest)) {
-    rest_id = PyLong_FromVoidPtr(rest);
-
-    if (PyDict_Contains(found, rest_id)) {
-      /* recursive pair detected */
-      PyList_Append(col, _str_elipsis);
-      PyList_Append(col, close_s);
-
-      if (rest != self) {
-        tmp = PyDict_GetItem(found, rest_id);
-        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, open_s);
-        PyList_Insert(col, PyLong_AsSize_t(tmp) - 1, _str_dot_space);
-        PyList_Append(col, close_s);
-      }
-      Py_DECREF(rest_id);
-
-      /* set rest to NULL so we don't try to close it like we would a
-         normal proper or improper list */
-      rest = NULL;
-      break;
-
-    } else {
-      index += 2;
-
-      tmp = PyLong_FromSize_t(index);
-      PyDict_SetItem(found, rest_id, tmp);
-      Py_DECREF(tmp);
-      Py_DECREF(rest_id);
-
-      tmp = KosUtils_Repr(KosPair_CAR(rest));
-      if (! tmp) {
-        Py_DECREF(col);
-        Py_DECREF(found);
-        return NULL;
-      }
-
-      PyList_Append(col, tmp);
-      Py_DECREF(tmp);
-
-      PyList_Append(col, _str_space);
-    }
-  }
-
-  if (KosNilP(rest)) {
-    /* end of a proper list */
-
-    Py_INCREF(close_s);
-    PyList_SetItem(col, index, close_s);
-
-  } else if (rest) {
-    /* end of an improper list */
-
-    tmp = KosUtils_Repr(rest);
-    if (! tmp) {
-      Py_DECREF(col);
-      Py_DECREF(found);
-      return NULL;
-    }
-    PyList_Append(col, _str_dot_space);
-    PyList_Append(col, tmp);
-    PyList_Append(col, close_s);
-    Py_DECREF(tmp);
-  }
-
-  tmp = PyUnicode_Join(_str_empty, col);
-  Py_DECREF(col);
-  Py_DECREF(found);
-
-  return tmp;
+  return pair_render_inner(
+      self, _str_open_paren, _str_close_paren, pair_elem_str);
 }
 
 
 static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
   (void) _unused;
-  return pair_kos_repr_inner(self, _str_open_paren, _str_close_paren);
+  return pair_render_inner(
+      self, _str_open_paren, _str_close_paren, KosUtils_Repr);
 }
 
 
 static long pair_eq(PyObject *left, PyObject *right) {
   PyObject *seen = NULL;
-  PyObject *left_id, *right_id;
+  PyObject *left_id, *right_id, *visit;
   long answer = 1;
-  void *left_seen, *right_seen;
+  int revisit;
 
   if (left == right)
     return 1;
 
-  seen = PyDict_New();
+  /* every (left, right) cell pair the walk compares, by address: the
+     pairs are finite, so a walk over two circular spines comes back to
+     one it has seen within their lengths' product and stops there,
+     whatever the periods. Remembering only each cell's latest partner
+     never repeats when the periods share no factor. */
+  seen = PySet_New(NULL);
   if (! seen)
     return -1;
+
+  /* both cells are held for the whole iteration, and both cars across
+     their comparison: an element's __eq__ can cut either spine or swap
+     a car, and the walk keeps reading the cells it reached */
+  Py_INCREF(left);
+  Py_INCREF(right);
 
   while (left != right) {
     if (KosNilP(left) && KosNilP(right)) {
@@ -672,29 +608,38 @@ static long pair_eq(PyObject *left, PyObject *right) {
        their CAR equivs and their CDR equivs */
 
     left_id = PyLong_FromVoidPtr(left);
-    right_id = PyLong_FromVoidPtr(right);
+    right_id = left_id ? PyLong_FromVoidPtr(right) : NULL;
+    visit = right_id ? PyTuple_Pack(2, left_id, right_id) : NULL;
+    Py_XDECREF(left_id);
+    Py_XDECREF(right_id);
+    if (! visit) {
+      answer = -1;
+      break;
+    }
 
-    left_seen = PyDict_GetItem(seen, left_id);
-    right_seen = PyDict_GetItem(seen, right_id);
+    revisit = PySet_Contains(seen, visit);
+    if (revisit < 0 || (! revisit && PySet_Add(seen, visit) < 0)) {
+      Py_DECREF(visit);
+      answer = -1;
+      break;
+    }
+    Py_DECREF(visit);
 
-    if ((left_seen && PyLong_AsVoidPtr(left_seen) == right) ||
-        (right_seen && PyLong_AsVoidPtr(right_seen) == left)) {
-
+    if (revisit) {
       /* we've already compared these two against one another */
-      Py_DECREF(left_id);
-      Py_DECREF(right_id);
       break;
 
     } else {
-      int eq = PyObject_RichCompareBool(KosPair_CAR(left),
-                                       KosPair_CAR(right), Py_EQ);
-      if (eq > 0) {
-        /* equal, so make note that we've compared these to each other */
-        PyDict_SetItem(seen, left_id, right_id);
-        PyDict_SetItem(seen, right_id, left_id);
-      }
-      Py_DECREF(left_id);
-      Py_DECREF(right_id);
+      PyObject *left_car = KosPair_CAR(left);
+      PyObject *right_car = KosPair_CAR(right);
+      int eq;
+
+      Py_INCREF(left_car);
+      Py_INCREF(right_car);
+      eq = PyObject_RichCompareBool(left_car, right_car, Py_EQ);
+      Py_DECREF(left_car);
+      Py_DECREF(right_car);
+
       if (eq <= 0) {
         /* not equal, or the element comparison raised (-1) */
         answer = eq;
@@ -702,10 +647,18 @@ static long pair_eq(PyObject *left, PyObject *right) {
       }
     }
 
-    left = KosPair_CDR(left);
-    right = KosPair_CDR(right);
+    {
+      PyObject *next_left = KosPair_CDR(left);
+      PyObject *next_right = KosPair_CDR(right);
+      Py_INCREF(next_left);
+      Py_INCREF(next_right);
+      Py_SETREF(left, next_left);
+      Py_SETREF(right, next_right);
+    }
   }
 
+  Py_DECREF(left);
+  Py_DECREF(right);
   Py_DECREF(seen);
   return answer;
 }
@@ -731,7 +684,7 @@ static PyObject *pair_richcomp(PyObject *self, PyObject *other, int op) {
 
 static void pair_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
-  CPy_TRASHCAN_BEGIN(self, pair_dealloc);
+  Py_TRASHCAN_BEGIN(self, pair_dealloc);
 
   Py_CLEAR(KosPair_CAR(self));
   Py_CLEAR(KosPair_CDR(self));
@@ -748,7 +701,7 @@ static void pair_dealloc(PyObject *self) {
     PyObject_GC_Del(self);
   }
 
-  CPy_TRASHCAN_END(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -846,38 +799,68 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
 }
 
 
-static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
-  PyObject *seen;
-  PyObject *tmp;
-  long length = 0;
+/**
+   Floyd's walk over the spine from head. The walk only reads cdr
+   links and runs no user code, so the borrowed cells stay put.
 
-  if (KosNilP(self)) {
-    return PyLong_FromLong(length);
-  }
+   :param head: the first cell, or any non-cell for an empty spine
+   :param mu: the number of cells before the cycle, set when cyclic
+   :param lambda: the number of cells in the cycle, set when cyclic
+   :return: 1 when the spine loops, else 0
+*/
+static int pair_spine_cycle(
+    PyObject *head,
+    Py_ssize_t *mu,
+    Py_ssize_t *lambda) {
 
-  seen = PySet_New(NULL);
+  PyObject *slow = head;
+  PyObject *fast = head;
+  Py_ssize_t n;
 
-  for(; KosPair_IsCell(self); self = KosPair_CDR(self)) {
-
-    tmp = PyLong_FromVoidPtr(self);
-
-    if (PySet_Contains(seen, tmp)) {
-      Py_DECREF(tmp);
-      self = NULL;
+  while (1) {
+    if (! KosPair_IsCell(fast))
+      return 0;
+    fast = KosPair_CDR(fast);
+    if (! KosPair_IsCell(fast))
+      return 0;
+    fast = KosPair_CDR(fast);
+    slow = KosPair_CDR(slow);
+    if (slow == fast)
       break;
-
-    } else {
-      PySet_Add(seen, tmp);
-      Py_DECREF(tmp);
-      length++;
-    }
   }
 
-  if (self && ! KosNilP(self))
+  /* from the meeting point and from head, the walks meet again where
+     the cycle starts */
+  slow = head;
+  for (n = 0; slow != fast; n++) {
+    slow = KosPair_CDR(slow);
+    fast = KosPair_CDR(fast);
+  }
+  *mu = n;
+
+  n = 1;
+  for (fast = KosPair_CDR(slow); fast != slow; fast = KosPair_CDR(fast))
+    n++;
+  *lambda = n;
+
+  return 1;
+}
+
+
+static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
+  Py_ssize_t mu, lambda;
+  Py_ssize_t length = 0;
+
+  if (pair_spine_cycle(self, &mu, &lambda))
+    return PyLong_FromSsize_t(mu + lambda);
+
+  for (; KosPair_IsCell(self); self = KosPair_CDR(self))
     length++;
 
-  Py_DECREF(seen);
-  return PyLong_FromLong(length);
+  if (! KosNilP(self))
+    length++;
+
+  return PyLong_FromSsize_t(length);
 }
 
 
@@ -915,37 +898,15 @@ PyObject *KosPair_Unpack(PyObject *pair) {
 
 
 long KosPair_IsProper(PyObject *self) {
-  if (KosNilP(self))
+  Py_ssize_t mu, lambda;
+
+  /* a recursive spine has no improper end, so it counts as proper */
+  if (pair_spine_cycle(self, &mu, &lambda))
     return 1;
 
-  PyObject *seen = PySet_New(NULL);
-  PyObject *pair_id;
-  long result = 0;
-
-  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
-    if (KosNilP(self)) {
-      result = 1;
-      break;
-    }
-
-    pair_id = PyLong_FromVoidPtr(self);
-
-    if (PySet_Contains(seen, pair_id)) {
-      /* seen it, therefore recursive */
-      Py_DECREF(pair_id);
-      result = 1;
-      break;
-
-    } else {
-      PySet_Add(seen, pair_id);
-      Py_DECREF(pair_id);
-    }
-  }
-
-  /* it's either recursive and thus proper, or the last item needs to
-     have been a nil, or it's improper */
-  Py_DECREF(seen);
-  return result || KosNilP(self);
+  for (; KosPair_IsCell(self); self = KosPair_CDR(self))
+    ;
+  return KosNilP(self);
 }
 
 
@@ -955,30 +916,9 @@ static PyObject *pair_is_proper(PyObject *self, PyObject *_noargs) {
 
 
 long KosPair_IsRecursive(PyObject *self) {
-  if (KosNilP(self))
-    return 0;
+  Py_ssize_t mu, lambda;
 
-  PyObject *seen = PySet_New(NULL);
-  PyObject *pair_id;
-  long result = 0;
-
-  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
-    pair_id = PyLong_FromVoidPtr(self);
-
-    if (PySet_Contains(seen, pair_id)) {
-      /* seen it, therefore recursive */
-      Py_DECREF(pair_id);
-      result = 1;
-      break;
-
-    } else {
-      PySet_Add(seen, pair_id);
-      Py_DECREF(pair_id);
-    }
-  }
-
-  Py_DECREF(seen);
-  return result;
+  return pair_spine_cycle(self, &mu, &lambda);
 }
 
 
@@ -988,30 +928,23 @@ static PyObject *pair_is_recursive(PyObject *self, PyObject *_noargs) {
 
 
 /**
-   Walk the cons chain from self to the last pair. Uses seen set to
-   detect cycles. Returns the last pair, or NULL if recursive. On
+   Walk the cons chain from self to the last pair. Returns the last
+   pair, or NULL with ValueError set if the spine is recursive. On
    success, *out_cdr receives the cdr of the last pair (caller does
    not take a new reference).
  */
-static KosPair *pair_find_last(PyObject *self, PyObject *seen,
-                               PyObject **out_cdr) {
+static KosPair *pair_find_last(PyObject *self, PyObject **out_cdr) {
   KosPair *last = NULL;
-  PyObject *pair_id;
+  Py_ssize_t mu, lambda;
 
-  for ( ; KosPair_IsCell(self); self = KosPair_CDR(self)) {
-    last = (KosPair *) self;
-    pair_id = PyLong_FromVoidPtr(self);
-
-    if (PySet_Contains(seen, pair_id)) {
-      Py_DECREF(pair_id);
-      PyErr_SetString(PyExc_ValueError,
-                      "cannot append/extend/splice: recursive pair");
-      return NULL;
-    }
-
-    PySet_Add(seen, pair_id);
-    Py_DECREF(pair_id);
+  if (pair_spine_cycle(self, &mu, &lambda)) {
+    PyErr_SetString(PyExc_ValueError,
+                    "cannot append/extend/splice: recursive pair");
+    return NULL;
   }
+
+  for (; KosPair_IsCell(self); self = KosPair_CDR(self))
+    last = (KosPair *) self;
 
   if (last) {
     *out_cdr = KosPair_CDR(last);
@@ -1076,7 +1009,6 @@ static PyObject *pair_iterable_to_proper_cons(PyObject *obj) {
 
 
 static PyObject *pair_append(PyObject *self, PyObject *obj) {
-  PyObject *seen;
   PyObject *last_cdr;
   KosPair *last;
   PyObject *new_pair;
@@ -1086,12 +1018,7 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  seen = PySet_New(NULL);
-  if (! seen)
-    return NULL;
-
-  last = pair_find_last(self, seen, &last_cdr);
-  Py_DECREF(seen);
+  last = pair_find_last(self, &last_cdr);
 
   if (! last)
     return NULL;
@@ -1128,7 +1055,6 @@ static void pair_splice_at_last(KosPair *last, PyObject *last_cdr,
 
 
 static PyObject *pair_extend(PyObject *self, PyObject *obj) {
-  PyObject *seen;
   PyObject *last_cdr;
   KosPair *last;
   PyObject *splice_head = NULL;
@@ -1138,12 +1064,7 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  seen = PySet_New(NULL);
-  if (! seen)
-    return NULL;
-
-  last = pair_find_last(self, seen, &last_cdr);
-  Py_DECREF(seen);
+  last = pair_find_last(self, &last_cdr);
 
   if (! last)
     return NULL;
@@ -1164,7 +1085,6 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
 
 
 static PyObject *pair_splice(PyObject *self, PyObject *obj) {
-  PyObject *seen;
   PyObject *last_cdr;
   KosPair *last;
   PyObject *splice_head = NULL;
@@ -1174,12 +1094,7 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  seen = PySet_New(NULL);
-  if (! seen)
-    return NULL;
-
-  last = pair_find_last(self, seen, &last_cdr);
-  Py_DECREF(seen);
+  last = pair_find_last(self, &last_cdr);
 
   if (! last)
     return NULL;
@@ -1200,63 +1115,97 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
 }
 
 
-static void pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
-  PyObject *pair_id;
-  KosPair *sp;
+/**
+   Walk the cells reachable from pair through cdrs and cell cars and
+   give each a position. With fill unset every cell takes pos (NULL
+   clears). With fill set a cell with no position takes pos and a cell
+   that already has one ends its branch: neither it, its car nor the
+   rest of its spine is touched, so what the reader positioned stays
+   as it was and what a macro built around it is filled in.
 
-  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
-    sp = (KosPair *) pair;
+   The walk is depth-first in the recursion's order but keeps its own
+   stack: at a cell whose car is a cell the rest of the spine is
+   pushed and the car walked first. Depth is bounded by memory, not the
+   C stack. seen holds the cells visited, by address, so a cycle ends.
 
-    pair_id = PyLong_FromVoidPtr(pair);
+   :return: 0, or -1 with PyErr set
+*/
+static int pwalk_position(
+    PyObject *pair,
+    PyObject *seen,
+    PyObject *pos,
+    int fill) {
 
-    if (PySet_Contains(seen, pair_id)) {
+  PyObject **stack = NULL;
+  Py_ssize_t depth = 0, cap = 0;
+  int res = -1;
+
+  for (;;) {
+    while (KosPair_IsCell(pair)) {
+      KosPair *sp = (KosPair *) pair;
+      PyObject *pair_id = PyLong_FromVoidPtr(pair);
+      int visited;
+
+      if (! pair_id)
+        goto done;
+      visited = PySet_Contains(seen, pair_id);
+      if (visited < 0 || (! visited && PySet_Add(seen, pair_id) < 0)) {
+        Py_DECREF(pair_id);
+        goto done;
+      }
       Py_DECREF(pair_id);
+      if (visited)
+        break;
+
+      if (fill) {
+        if (KosPair_POSITION(sp))
+          break;
+        Py_INCREF(pos);
+        KosPair_POSITION(sp) = pos;
+      } else {
+        Py_XINCREF(pos);
+        Py_XSETREF(KosPair_POSITION(sp), pos);
+      }
+
+      if (KosPair_IsCell(KosPair_CAR(sp))) {
+        if (depth == cap) {
+          Py_ssize_t ncap = cap ? cap * 2 : 64;
+          PyObject **grown = PyMem_Realloc(
+              stack, (size_t) ncap * sizeof(PyObject *));
+          if (! grown) {
+            PyErr_NoMemory();
+            goto done;
+          }
+          stack = grown;
+          cap = ncap;
+        }
+        stack[depth++] = KosPair_CDR(sp);
+        pair = KosPair_CAR(sp);
+        continue;
+      }
+
+      pair = KosPair_CDR(sp);
+    }
+
+    if (depth == 0)
       break;
-
-    } else {
-      PySet_Add(seen, pair_id);
-      Py_DECREF(pair_id);
-    }
-
-    Py_ASSIGN(KosPair_POSITION(sp), pos);
-
-    if (KosPair_IsCell(KosPair_CAR(sp))) {
-      pwalk_setpos(KosPair_CAR(sp), seen, pos);
-    }
+    pair = stack[--depth];
   }
+  res = 0;
+
+ done:
+  PyMem_Free(stack);
+  return res;
 }
 
 
-static void pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
-  PyObject *pair_id;
-  KosPair *sp;
+static int pwalk_setpos(PyObject *pair, PyObject *seen, PyObject *pos) {
+  return pwalk_position(pair, seen, pos, 0);
+}
 
-  for (; KosPair_IsCell(pair); pair = KosPair_CDR(pair)) {
-    sp = (KosPair *) pair;
 
-    pair_id = PyLong_FromVoidPtr(pair);
-
-    if (PySet_Contains(seen, pair_id)) {
-      Py_DECREF(pair_id);
-      break;
-
-    } else {
-      PySet_Add(seen, pair_id);
-      Py_DECREF(pair_id);
-    }
-
-    if (KosPair_POSITION(sp)) {
-      pos = KosPair_POSITION(sp);
-
-    } else {
-      Py_INCREF(pos);
-      KosPair_POSITION(sp) = pos;
-    }
-
-    if (KosPair_IsCell(KosPair_CAR(sp))) {
-      pwalk_fillpos(KosPair_CAR(sp), seen, pos);
-    }
-  }
+static int pwalk_fillpos(PyObject *pair, PyObject *seen, PyObject *pos) {
+  return pwalk_position(pair, seen, pos, 1);
 }
 
 
@@ -1278,8 +1227,13 @@ static PyObject *pair_clear_position(PyObject *self,
 
   if (follow) {
     PyObject *seen = PySet_New(NULL);
-    pwalk_setpos(self, seen, NULL);
+    int r;
+    if (! seen)
+      return NULL;
+    r = pwalk_setpos(self, seen, NULL);
     Py_DECREF(seen);
+    if (r < 0)
+      return NULL;
 
   } else {
     Py_CLEAR(KosPair_POSITION(self));
@@ -1302,8 +1256,13 @@ static PyObject *pair_set_position(PyObject *self,
 
   if (follow) {
     PyObject *seen = PySet_New(NULL);
-    pwalk_setpos(self, seen, position);
+    int r;
+    if (! seen)
+      return NULL;
+    r = pwalk_setpos(self, seen, position);
     Py_DECREF(seen);
+    if (r < 0)
+      return NULL;
 
   } else {
     if (pair_write_position(self, position) < 0)
@@ -1327,14 +1286,18 @@ static PyObject *pair_fill_position(PyObject *self,
 
   if (follow) {
     PyObject *seen = PySet_New(NULL);
-    pwalk_fillpos(self, seen, position);
+    int r;
+    if (! seen)
+      return NULL;
+    r = pwalk_fillpos(self, seen, position);
     Py_DECREF(seen);
+    if (r < 0)
+      return NULL;
 
-  } else {
-    if (! KosPair_POSITION(self)) {
-      Py_INCREF(position);
-      KosPair_POSITION(self) = position;
-    }
+  } else if (! KosNilP(self) && ! KosPair_POSITION(self)) {
+    /* a nil cell takes no position, as for set and clear */
+    Py_INCREF(position);
+    KosPair_POSITION(self) = position;
   }
 
   Py_RETURN_NONE;
@@ -1383,15 +1346,18 @@ static PyMethodDef pair_methods[] = {
 
   { "clear_position", (PyCFunction) pair_clear_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.clear_position(follow=True)" },
+    "P.clear_position(follow=False)" },
 
   { "set_position", (PyCFunction) pair_set_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.set_position(position, follow=True)" },
+    "P.set_position(position, follow=False)" },
 
   { "fill_position", (PyCFunction) pair_fill_position,
     METH_VARARGS|METH_KEYWORDS,
-    "P.fill_position(position, follow=True)" },
+    "P.fill_position(position, follow=False)\n"
+    "Give this cell position when it has none. With follow, do the same\n"
+    "along the cdr spine and into cell cars; a cell that already has a\n"
+    "position ends its branch, subtree included." },
 
   { "get_position", (PyCFunction) pair_get_position, METH_NOARGS,
     "P.get_position()" },
@@ -1616,7 +1582,10 @@ static PyObject *pair_alloc(PyTypeObject *type,
     pair_free_count--;
     KOS_TRACE_FL_ALLOC("pair", 1);
     Py_SET_TYPE(self, type);
-    Py_INCREF(self);
+    /* the revival CPython's own type freelists use: a refcount of one,
+       and in a debug build the reference total and trace chain the
+       dealloc gave up */
+    _Py_NewReference((PyObject *) self);
 
   } else {
     KOS_TRACE_FL_ALLOC("pair", 0);
@@ -1672,13 +1641,15 @@ static PyObject *bracket_pair_repr(PyObject *self) {
 
 
 static PyObject *bracket_pair_str(PyObject *self) {
-  return pair_str_inner(self, _str_open_bracket, _str_close_bracket);
+  return pair_render_inner(
+      self, _str_open_bracket, _str_close_bracket, pair_elem_str);
 }
 
 
 static PyObject *bracket_pair_kos_repr(PyObject *self, PyObject *_unused) {
   (void) _unused;
-  return pair_kos_repr_inner(self, _str_open_bracket, _str_close_bracket);
+  return pair_render_inner(
+      self, _str_open_bracket, _str_close_bracket, KosUtils_Repr);
 }
 
 
@@ -1735,6 +1706,18 @@ static PyObject *nil_new(PyTypeObject *type,
 static void nil_dealloc(const PyObject *self) {
   (void) self;
   ;  /* nil is statically allocated, do not free it */
+}
+
+
+/* The nil types take the pair's GC flag, traverse and clear by
+   inheritance, but their singletons are static objects with no GC
+   header in front of them: the collector's visit callbacks would read
+   the bytes before the singleton as one. tp_is_gc answering no is
+   CPython's own way for a GC type whose static instances carry no
+   header, the way static type objects do it. */
+static int nil_is_gc(PyObject *self) {
+  (void) self;
+  return 0;
 }
 
 
@@ -1824,6 +1807,7 @@ PyTypeObject KosNilType = {
   .tp_base = &KosPairType,
   .tp_new = nil_new,
   .tp_dealloc = (destructor) nil_dealloc,
+  .tp_is_gc = nil_is_gc,
 
   .tp_traverse = NULL,
   .tp_clear = NULL,
@@ -1916,6 +1900,7 @@ PyTypeObject KosBracketNilType = {
   .tp_base = &KosBracketPairType,
   .tp_new = bracket_nil_new,
   .tp_dealloc = (destructor) bracket_nil_dealloc,
+  .tp_is_gc = nil_is_gc,
 
   .tp_traverse = NULL,
   .tp_clear = NULL,
@@ -1937,37 +1922,92 @@ KosPair _KosBracketNil = {
 };
 
 
-PyObject *KosPair_Cons(PyObject *members) {
-  PyObject *seq = PySequence_Fast(members,
-                                  "cons members object must be a sequence");
+/**
+  Build a proper chain of type's cells over count borrowed items,
+  ended by nil. No count is nil itself.
+*/
+static PyObject *pair_cons_from_ptr(
+    PyTypeObject *type,
+    PyObject *nil,
+    PyObject *const *ptr,
+    Py_ssize_t count) {
+
+  if (count <= 0) {
+    Py_INCREF(nil);
+    return nil;
+  }
+
+  PyObject *result = pair_alloc(type, ptr[0], nil);
+  if (! result)
+    return NULL;
+
+  if (count == 1)
+    return result;
+
+  PyObject *work = ptr[count - 1];
+  Py_INCREF(work);
+
+  for (Py_ssize_t i = count - 2; i >= 1; i--) {
+    PyObject *tmp = pair_alloc(type, ptr[i], work);
+    Py_DECREF(work);
+    if (! tmp) {
+      Py_DECREF(result);
+      return NULL;
+    }
+    work = tmp;
+  }
+
+  KosPair_SETCDR(result, work);
+  Py_DECREF(work);
+  return result;
+}
+
+
+/**
+  Build a chain of type's cells over the members of a sequence, ended
+  by nil. msg is the TypeError text for a non-sequence.
+*/
+static PyObject *pair_cons_members(
+    PyTypeObject *type,
+    PyObject *nil,
+    PyObject *members,
+    const char *msg) {
+
+  PyObject *seq = PySequence_Fast(members, msg);
+  PyObject *result;
+
   if (! seq)
     return NULL;
 
-  Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
-  if (count == 0) {
-    Py_DECREF(seq);
-    Py_INCREF(KosNil);
-    return KosNil;
-  }
-
-  PyObject *result;
-  if (PyList_Check(seq)) {
-    PyObject **ptr = ((PyListObject *) seq)->ob_item;
-    result = KosPair_ConsFromPtr(ptr, (int) count);
-  } else {
-    PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count * sizeof(PyObject *));
-    if (! ptr) {
-      Py_DECREF(seq);
-      return NULL;
-    }
-    for (Py_ssize_t i = 0; i < count; i++)
-      ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
-    result = KosPair_ConsFromPtr(ptr, (int) count);
-    PyMem_Free(ptr);
-  }
-
+  result = pair_cons_from_ptr(
+      type, nil, PySequence_Fast_ITEMS(seq), PySequence_Fast_GET_SIZE(seq));
   Py_DECREF(seq);
   return result;
+}
+
+
+PyObject *KosPair_Cons(PyObject *members) {
+  return pair_cons_members(
+      &KosPairType, KosNil, members,
+      "cons members object must be a sequence");
+}
+
+
+PyObject *KosBracketPair_Cons(PyObject *members) {
+  return pair_cons_members(
+      &KosBracketPairType, KosBracketNil, members,
+      "bracket-cons members object must be a sequence");
+}
+
+
+PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count) {
+  return pair_cons_from_ptr(&KosPairType, KosNil, ptr, count);
+}
+
+
+PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, Py_ssize_t count) {
+  return pair_cons_from_ptr(
+      &KosBracketPairType, KosBracketNil, ptr, count);
 }
 
 
@@ -2061,106 +2101,6 @@ int KosPair_BreakRecursive(PyObject *pair) {
 }
 
 
-PyObject *KosPair_ConsFromPtr(PyObject *const *ptr, int count) {
-  if (count <= 0) {
-    Py_INCREF(KosNil);
-    return KosNil;
-  }
-
-  PyObject *result = KosPair_New(ptr[0], KosNil);
-  if (! result)
-    return NULL;
-
-  if (count == 1)
-    return result;
-
-  PyObject *work = ptr[count - 1];
-  Py_INCREF(work);
-
-  for (int i = count - 2; i >= 1; i--) {
-    PyObject *tmp = KosPair_New(ptr[i], work);
-    Py_DECREF(work);
-    if (! tmp) {
-      Py_DECREF(result);
-      return NULL;
-    }
-    work = tmp;
-  }
-
-  KosPair_SETCDR(result, work);
-  Py_DECREF(work);
-  return result;
-}
-
-
-PyObject *KosBracketPair_ConsFromPtr(PyObject *const *ptr, int count) {
-  if (count <= 0) {
-    Py_INCREF(KosBracketNil);
-    return KosBracketNil;
-  }
-
-  PyObject *result = KosBracketPair_New(ptr[0], KosBracketNil);
-  if (! result)
-    return NULL;
-
-  if (count == 1)
-    return result;
-
-  PyObject *work = ptr[count - 1];
-  Py_INCREF(work);
-
-  for (int i = count - 2; i >= 1; i--) {
-    PyObject *tmp = KosBracketPair_New(ptr[i], work);
-    Py_DECREF(work);
-    if (! tmp) {
-      Py_DECREF(result);
-      return NULL;
-    }
-    work = tmp;
-  }
-
-  KosPair_SETCDR(result, work);
-  Py_DECREF(work);
-  return result;
-}
-
-
-PyObject *KosBracketPair_Cons(PyObject *members) {
-  PyObject *seq = PySequence_Fast(members,
-                                  "bracket-cons members object must be a "
-                                  "sequence");
-  if (! seq)
-    return NULL;
-
-  Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
-  if (count == 0) {
-    Py_DECREF(seq);
-    Py_INCREF(KosBracketNil);
-    return KosBracketNil;
-  }
-
-  PyObject *result;
-  if (PyList_Check(seq)) {
-    PyObject **ptr = ((PyListObject *) seq)->ob_item;
-    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
-  } else {
-    PyObject **ptr = (PyObject **) PyMem_Malloc((size_t) count
-                                                * sizeof(PyObject *));
-    if (! ptr) {
-      Py_DECREF(seq);
-      return NULL;
-    }
-    for (Py_ssize_t i = 0; i < count; i++)
-      ptr[i] = PySequence_Fast_GET_ITEM(seq, i);
-    result = KosBracketPair_ConsFromPtr(ptr, (int) count);
-    PyMem_Free(ptr);
-  }
-
-  Py_DECREF(seq);
-  return result;
-}
-
-
 /* === module functions === */
 
 
@@ -2247,73 +2187,6 @@ static PyObject *m_setcdr(PyObject *mod, PyObject *args) {
 }
 
 
-static PyObject *m_build_unpack_pair(PyObject *mod, PyObject *seqs) {
-  Py_ssize_t count = seqs? PyTuple_GET_SIZE(seqs): 0;
-  Py_ssize_t index = 0;
-  PyObject *tmp;
-
-  if (! count) {
-    Py_INCREF(KosNil);
-    return KosNil;
-  }
-
-  PyObject *coll = PyList_New(0);
-
-  while (index < count) {
-    PyObject *item = PyTuple_GET_ITEM(seqs, index++);
-    PyObject *work;
-
-    if (KosNilP(item)) {
-      /* skip nil */
-      continue;
-
-    } else if (KosPair_IsCell(item)) {
-      work = pair_unpack(item, NULL);
-
-    } else {
-      work = PyObject_GetIter(item);
-    }
-
-    if (! work) {
-      Py_DECREF(coll);
-      return NULL;
-    }
-
-    tmp = _PyList_Extend((PyListObject *) coll, work);
-    Py_CLEAR(work);
-
-    if (! tmp) {
-      Py_DECREF(coll);
-      return NULL;
-
-    } else {
-      Py_CLEAR(tmp);
-    }
-  }
-
-  if (! PyList_GET_SIZE(coll)) {
-    /* The collection didn't net any actual elements, so let's skip
-       out early and just return nil */
-
-    Py_DECREF(coll);
-    Py_INCREF(KosNil);
-    return KosNil;
-  }
-
-  tmp = PyTuple_GET_ITEM(seqs, count - 1);
-  if (KosPair_IsProper(tmp)) {
-    if(PyList_Append(coll, KosNil)) {
-      Py_DECREF(coll);
-      return NULL;
-    }
-  }
-
-  PyObject *result = KosPair_Cons(coll);
-  Py_DECREF(coll);
-  return result;
-}
-
-
 static PyMethodDef pair_mod_methods[] = {
 
   { "cons", (PyCFunction) m_cons, METH_VARARGS,
@@ -2353,11 +2226,6 @@ static PyMethodDef pair_mod_methods[] = {
     "setcdr(P, obj) -> None\n"
     "Assigns the tail element of a koskari pair instance P to obj." },
 
-  { "build_unpack_pair", (PyCFunction) m_build_unpack_pair, METH_VARARGS,
-    "build_unpack_pair(*pair_or_seq) -> new pair\n"
-    "Creates a new koskari pair list from a collection of pair or\n"
-    "non-pair sequences." },
-
   { NULL, NULL, 0, NULL },
 };
 
@@ -2382,8 +2250,6 @@ int koskari_pair_init(PyObject *mod) {
   STR_CONST(_str_open_paren, "(");
   STR_CONST(_str_recursive_true, "recursive=True");
   STR_CONST(_str_space, " ");
-  STR_CONST(_str_quote, "\"");
-  STR_CONST(_str_esc_quote, "\\\"");
   STR_CONST(_str_open_bracket, "[");
   STR_CONST(_str_close_bracket, "]");
   STR_CONST(_str_bracket_cons_paren, "bracket-cons(");
@@ -2409,6 +2275,11 @@ int koskari_pair_init(PyObject *mod) {
 
   if (PyType_Ready(&KosBracketNilType))
     return -1;
+
+  /* the two empty-list singletons are static and never freed: a
+     reference to either moves no refcount */
+  kos_immortalize(KosNil);
+  kos_immortalize(KosBracketNil);
 
   if (KosUtils_ReprRegisterBuiltin((PyObject *) &KosPairType))
     return -1;
@@ -2466,8 +2337,6 @@ int koskari_pair_clear(PyObject *mod) {
   Py_CLEAR(_str_recursive_true);
   Py_CLEAR(_str_space);
 
-  Py_CLEAR(_str_quote);
-  Py_CLEAR(_str_esc_quote);
 
   Py_CLEAR(_str_open_bracket);
   Py_CLEAR(_str_close_bracket);

@@ -254,7 +254,7 @@ the boundary constraint.
 * `KOS_DYN_FINALLY` — finally block (handler_pc, enabled, handling_raise; owns stack block)
 * `KOS_DYN_LOOP` — while loop (break_pc, continue_pc, enabled; owns stack block)
 * `KOS_DYN_FOREACH` — for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc; owns stack block)
-  (The macro `KosDynNode_IS_REGION` matches all four of these kinds.)
+  (These four are the region kinds; each has only its own `KosDynNode_IS_*` test.)
 * `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
 * `KOS_DYN_YIELD_FROM` — yield-from delegation state (see [EVALUATOR.md](../EVALUATOR.md) §5; [archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md))

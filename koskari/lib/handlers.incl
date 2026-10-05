@@ -13,6 +13,8 @@
 #include "opcode/CDR.c"
 #include "opcode/CONS.c"
 #include "opcode/PROPER.c"
+#include "opcode/BRACKET_CONS.c"
+#include "opcode/BRACKET_PROPER.c"
 #include "opcode/PAIR_SPLICE.c"
 #include "opcode/AWAIT.c"
 #include "opcode/BREAK.c"

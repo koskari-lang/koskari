@@ -63,7 +63,7 @@ Every node leaves through **`kos_dyn_unlink_top(es, ev, allow_barrier)`**:
 | PARAM | `kos_dyn_param_wind`: bind the cells (also re-bound when a goal lands the extent) | `kos_dyn_param_unwind`: restore what they displaced |
 | WIND | before thunk (contract) | after thunk if entered (contract), then free |
 | WITH | `__enter__` (contract) | `__exit__` (contract), then free |
-| NS | (set at push) | restore the frame's namespace from `saved_ns` |
+| NS | owns the let namespace (set at push) | drop the node; the live namespace follows the chain top |
 | TRY / FINALLY | (none) | restore the handler-visible exception state a consumed raise displaced |
 | LOOP / FOREACH / COLLECT / PROMPT | (none) | drop the owned segment |
 | YIELD_FROM | (none) | close the delegate |

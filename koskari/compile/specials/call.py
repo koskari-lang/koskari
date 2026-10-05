@@ -210,8 +210,9 @@ def special_call(
 
     callable = caps["callable"].datum
 
-    use_var_path = is_symbol(callable)
-    name = str(callable) if use_var_path else None
+    is_sym = is_symbol(callable)
+    name = str(callable) if is_sym else None
+    use_var_path = is_sym and compiler.symbol_is_variable(callable)
 
     # rewriting (.foo obj args...) to
     # (compile/call-attr obj foo args...); the attribute is a label,
@@ -272,10 +273,10 @@ def special_call_attr(
 
     fragment = compiler.fragment(called_by)
 
-    # The attr call always takes the var path when obj is a symbol; the
-    # processor's promotion pass relabels tail-position attr calls onto
-    # their TAIL_CALL_*ATTR* twins after emission.
-    use_var_path = is_symbol(obj)
+    # The attr call takes the var path when obj is a symbol that reads a
+    # variable; the processor's promotion pass relabels tail-position
+    # attr calls onto their TAIL_CALL_*ATTR* twins after emission.
+    use_var_path = is_symbol(obj) and compiler.symbol_is_variable(obj)
 
     fragment.position(pos)
     if use_var_path:

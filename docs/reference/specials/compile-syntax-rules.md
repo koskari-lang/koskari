@@ -4,11 +4,16 @@
 **Syntax:** `(syntax-rules NAME LITERALS RULE ...)`
 
 **Use-case:** Lower a **`syntax-rules`**-style transformer spec to a
-**`build-syntax-rules`** call form (for recompilation). The built transformer is
+**`build-syntax`** call form (for recompilation). The built transformer is
 the **value** of that expression; bind it with **`(define NAME ...)`**.
 
-**Behaviour:** Parses literals and implicit-pattern rules, builds a
-`SyntaxRulesTransformer`, emits **`(build-syntax-rules NAME TAGGED)`**.
+**Behaviour:** Each rule row is **`(PATTERN TEMPLATE)`**. The special emits
+**`(build-syntax "NAME" (parse-rule-pattern (quote-syntax PATTERN)
+(quote-syntax LITERALS)) (quote-syntax TEMPLATE) ...)`**, one pattern and
+template pair per rule; the patterns are parsed when that expression is
+evaluated. The literals list is passed as written, and the head of each
+pattern binds the symbol the macro was invoked as, so a template may use
+it. The value is a `Syntax` whose arms are the rules in order.
 
 **Ellipsis and nesting:** A pattern variable followed by **`...`** captures zero
 or more matches. Ellipsis is **depth-aware**: a variable captured under *N*

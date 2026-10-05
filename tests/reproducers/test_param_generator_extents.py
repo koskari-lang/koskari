@@ -94,6 +94,44 @@ LIFECYCLE_SRC = """
 """
 
 
+# A Koskari consumer steps a Koskari generator on its own chain, so the
+# generator's parameterize extent swaps cells in the consumer's table.
+# The extent parks with the frozen span and returns with the install:
+# the consumer never reads the generator's binding, the generator's own
+# reads see it across suspensions, and the block exit restores what the
+# consumer had at the latest resume, not at the first.
+FLATTENED_SRC = """
+(define reporter (lambda []
+  (parameterize [[g "gen"]]
+    (yield (parameterq g "unset"))
+    (yield (parameterq g "unset")))
+  (yield (parameterq g "unset"))))
+
+(define stepped (lambda []
+  (define out #[])
+  (define it (reporter))
+  (parameterize [[g "c"]]
+    (out.append (next it))
+    (out.append (+ "in-c:" (parameterq g "unset"))))
+  (out.append (+ "after-c:" (parameterq g "unset")))
+  (out.append (next it))
+  (out.append (+ "after-2:" (parameterq g "unset")))
+  (out.append (next it))
+  (out.append (+ "after-3:" (parameterq g "unset")))
+  out))
+
+(define looped (lambda []
+  (define out #[])
+  (for-each [x (reporter)]
+    (out.append (+ x ":" (parameterq g "unset"))))
+  (out.append (+ "done:" (parameterq g "unset")))
+  out))
+
+(define stepped-results (stepped))
+(define looped-results (looped))
+"""
+
+
 class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
     """
     A generator's parameterize extents live in its own context: Python
@@ -133,6 +171,24 @@ class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["between"], "outer")
         self.assertEqual(out["exhausted"], "outer")
         self.assertEqual(out["abandoned"], "outer")
+
+
+    async def test_flattened_extent_parks_with_the_span(self):
+        """
+        A generator stepped on the consumer's chain keeps its binding for
+        its own reads, never shows it to the consumer while parked, and
+        restores the consumer's current cell when its block exits
+        """
+
+        mod = await self.load("param_gen_flattened", FLATTENED_SRC)
+        self.assertEqual(vars(mod)["stepped-results"], [
+            "gen", "in-c:c", "after-c:unset",
+            "gen", "after-2:unset",
+            "unset", "after-3:unset",
+        ])
+        self.assertEqual(vars(mod)["looped-results"], [
+            "gen:unset", "gen:unset", "unset:unset", "done:unset",
+        ])
 
 
 # The end.

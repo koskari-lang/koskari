@@ -71,7 +71,20 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   `Koskari_DemandSync`, `utils.c`); runtime match predicates and APP
   extractors (`MATCH_CASE` -> `matcher_call_extern` ->
   `Koskari_DemandSync`, `matcher/datum.c`). Tracked as a group in
-  Future.
+  Future. The demand path is forced today. The match row, the walk's
+  position moved off the C stack so the test can wait for the
+  installed call, is section 8 of
+  [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
+- **Opcodes that materialise a Koskari generator.** The UNPACK family
+  (`KosEvalState_PopUnpackSequence` -> `PySequence_Fast`,
+  `eval/eval_state.c`) and the star-call family (`kos_op_call_star` ->
+  `PySequence_Tuple`, `eval.c`) go through the generator's `tp_iter`
+  into a `KosPyIter`, a nested evaluator per element on the demand
+  path, so a generator whose body awaits fails as a sync violation
+  where `for-each` over it flattens. The demand path is forced today.
+  The collecting row, one NEXT node per element under the row resume,
+  is section 7 of
+  [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 
 ## Not expected to flatten
 
@@ -117,17 +130,12 @@ design for the group.
   `values.c:717/737`, `partial.c:479-508`).
 - **Runtime match predicates and APP extractors** (stretch). The
   `MATCH_CASE` step suspends on the call and resumes the match with the
-  delivered value, which needs the match engine's state held across the
-  call. A match entered from Python keeps the demand core.
+  delivered value, which needs the walk's position held in the engine
+  rather than on the C stack: section 8 of
+  [interpreter/resumable-reads.md](interpreter/resumable-reads.md). A
+  match entered from Python keeps the demand core.
 - **Koskari operators on Koskari dunders** (candidate). `==`, `str`,
   `len`, and the rest reach Koskari dunders through CPython slots and
   nest per call. Dispatching a Koskari dunder directly from the
   evaluator, as `kos_instance_call` does for `__call__`, would flatten
   them.
-
-### Other
-
-- **Tail calls through `Procedure` and non-flattened `Demand`.** Both
-  installs call `CallInto` with `tail_call` 0; a tail call through
-  either costs two frames per level (a code-less resume frame and the
-  callee).

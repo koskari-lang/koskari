@@ -235,16 +235,74 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
 }
 
 
+/**
+   Release the generator's chain and context without driving the body:
+   an unstarted chain is freed through the GEN node, a suspended one is
+   dissociated, and the context is dropped. The close itself belongs
+   to the finalizer, which has already run by the time clear or
+   dealloc reaches here.
+*/
+static void asyncgen_drop_state(KosPyAsyncGen *agen) {
+
+  KosDynGen *gen = (KosDynGen *) agen->gen;
+
+  if (gen && KosDynGen_ACTIVE(gen) && ! agen->started) {
+    /* never driven: the unstarted frame still carries the GEN's
+       chain-membership reference, so the chain is freed through the
+       GEN node, and the owner's reference after */
+    KosDynNode *active = (KosDynNode *) KosDynGen_ACTIVE(gen);
+    KosDynGen_ACTIVE(gen) = NULL;
+    kos_dynchain_free(active, NULL);
+    kos_dyngen_release(gen);
+    agen->gen = NULL;
+  } else if (gen && KosDynGen_ACTIVE(gen)) {
+    asyncgen_dissociate_chain(agen);
+  } else if (gen) {
+    kos_dyngen_release(gen);
+    agen->gen = NULL;
+  }
+
+  Py_CLEAR(agen->ctx);
+}
+
+
+/**
+   Finalizer: a generator dropped while suspended is closed before its
+   state is torn down, the way CPython closes an abandoned async
+   generator, so its finally blocks, with exits and wind after thunks
+   run against its frame as it was. GeneratorExit is thrown at the
+   suspension point through the same drive aclose uses, and whatever
+   comes back is swallowed there. A generator never started has
+   entered nothing, a finished or closed one has nothing left to
+   unwind, and one mid-drive belongs to that drive.
+*/
+static void asyncgen_finalize(PyObject *self) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (agen->in_progress || agen->closed || ! agen->started)
+    return;
+  if (! (agen->ctx && KosContext_DYN_TOP(agen->ctx))
+      && ! (agen->gen && KosDynGen_ACTIVE((KosDynGen *) agen->gen)))
+    return;
+
+  KosPyAsyncGen_Teardown(agen);
+  agen->closed = 1;
+}
+
+
 static void asyncgen_dealloc(PyObject *self) {
+
+  /* run the finalizer first; it may resurrect the generator, in which
+     case the dealloc is abandoned here and happens on the next drop */
+  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+    return;
 
   PyObject_GC_UnTrack(self);
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  /* demand-path close; exception-fenced, so safe mid-unwind. A live
-     (abandoned mid-await) chain is demand-driven closed first. */
-  KosPyAsyncGen_Teardown(agen);
-
+  asyncgen_drop_state(agen);
   Py_XDECREF(agen->code_name);
 
   Py_TYPE(self)->tp_free(self);
@@ -275,8 +333,7 @@ static int asyncgen_clear(PyObject *self) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   Py_CLEAR(agen->code_name);
-
-  KosPyAsyncGen_Teardown(agen);
+  asyncgen_drop_state(agen);
 
   return 0;
 }
@@ -355,9 +412,7 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen) {
 
   PyObject *it = KosContext_PY_AWAIT_ITER(agen->ctx);
   if (it) {
-    PyObject *r = PyObject_CallMethod(it, "close", NULL);
-    Py_XDECREF(r);
-    PyErr_Clear();
+    kos_iter_close(it);
     Py_CLEAR(KosContext_PY_AWAIT_ITER(agen->ctx));
   }
 
@@ -507,6 +562,12 @@ static KosIterStepResult agen_iter_drive(
 
     agen->started = 1;
 
+    /* A throw ingress primed the exception: a frame waiting on a
+       resume takes it there and throws it into its delegate; any
+       other frame raises it at the resume point as before. */
+    if (frozen && PyErr_Occurred())
+      (void) KosEvalState_ThrowIntoResume(es);
+
     /* Resume-of-frozen-yield only: the frozen install pushed the
        Py_None placeholder for the suspended yield expression; replace
        it with the sent value. A bootstrap install enters fresh code
@@ -569,9 +630,17 @@ static KosIterStepResult agen_iter_throw(
   }
 
   /* Throw ingress: prime the exception, then attach; the pending error
-     is delivered at the resume point inside the flattened drive. */
+     is delivered at the resume point inside the flattened drive. A
+     generator the drive finds spent takes no delivery: a throw into a
+     finished generator completes quietly, and EXHAUSTED carries no
+     exception. */
   PyErr_SetObject(throw_typ, throw_exc);
-  return agen_iter_drive(es, agen, NULL, out);
+  {
+    KosIterStepResult r = agen_iter_drive(es, agen, NULL, out);
+    if (r == KOS_ITER_EXHAUSTED)
+      PyErr_Clear();
+    return r;
+  }
 }
 
 
@@ -628,6 +697,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
     .tp_basicsize = sizeof(KosPyAsyncGen),
     .tp_itemsize = 0,
     .tp_dealloc = asyncgen_dealloc,
+    .tp_finalize = asyncgen_finalize,
     .tp_repr = asyncgen_repr,
     .tp_as_async = &asyncgen_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
@@ -649,7 +719,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
 };
 
 
-PyObject *KosPyAsyncGen_New(KosContext *ctx) {
+PyObject *KosPyAsyncGen_New(KosContext *ctx, KosDynGen *gen) {
 
   KosPyAsyncGen *agen = PyObject_GC_New(KosPyAsyncGen, KOS_EVALUATED_PYTYPE(KosPyAsyncGenType));
   if (! agen) {
@@ -658,6 +728,7 @@ PyObject *KosPyAsyncGen_New(KosContext *ctx) {
   }
 
   agen->ctx = ctx;
+  agen->gen = (void *) gen;
   agen->code_name = NULL;
   agen->in_progress = 0;
   agen->started = 0;

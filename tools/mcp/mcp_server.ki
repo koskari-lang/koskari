@@ -50,7 +50,7 @@ define logger (logging.getLogger "koskari.mcp")
 
 
 ;; Baked dataset layout: one parquet per view under the data directory,
-;; each written by tools/corpus/export.py as <view>/train.parquet.
+;; each written by tools/corpus/export.ki as <view>/train.parquet.
 define DATA_DIR (getenv "KOSKARI_CORPUS_DATA" "/srv/data")
 define CORPUS_VIEW "koskari-corpus"
 define DOCS_VIEW "koskari-docs"
@@ -227,10 +227,11 @@ define load-page! []:
     Load the landing page and project icon into STATE, tolerating
     their absence
 
-    Only the HTTP transports serve either, and the stdio image does
-    not ship them, so a missing file leaves the state entry None: the
-    root route falls back to a plain pointer at the MCP endpoint, and
-    the icon route answers 404.
+    Only the HTTP transports serve either, and a checkout run from
+    another directory may not have them beside the script, so a
+    missing file leaves the state entry None: the root route falls
+    back to a plain pointer at the MCP endpoint, and the icon route
+    answers 404.
     """
 
     try:
@@ -489,12 +490,25 @@ define features-under [prefix]:
     out
 
 
-define fts-search [search_text cap]:
+define searchable-table [feature_path]:
     """
-    Token-ranked corpus search over the code-bearing columns
+    The corpus rows a text search ranks: the whole table, or only the
+    rows of a feature, so the feature narrows before the limit cuts
     """
 
-    (token-search (corpus-table) search_text SEARCH_COLUMNS cap)
+    if feature_path:
+        (filter-rows-by-feature (corpus-table) feature_path)
+    else:
+        (corpus-table)
+
+
+define fts-search [search_text feature_path cap]:
+    """
+    Token-ranked corpus search over the code-bearing columns,
+    optionally narrowed to a feature
+    """
+
+    (token-search (searchable-table feature_path) search_text SEARCH_COLUMNS cap)
 
 
 define like-search [search_text feature_path cap]:
@@ -505,11 +519,7 @@ define like-search [search_text feature_path cap]:
     for-each, if, and, or, not).
     """
 
-    define rows (substring-search (corpus-table) search_text SEARCH_COLUMNS cap)
-    if feature_path:
-        (filter-rows-by-feature rows feature_path)
-    else:
-        rows
+    (substring-search (searchable-table feature_path) search_text SEARCH_COLUMNS cap)
 
 
 define search-docs-table [search_text cap table]:
@@ -674,9 +684,7 @@ define search_examples [
     define rows #[]
 
     if search_text:
-        set! rows (fts-search search_text cap)
-        when feature_path:
-            set! rows (filter-rows-by-feature rows feature_path)
+        set! rows (fts-search search_text feature_path cap)
         unless rows:
             set! rows (like-search search_text feature_path cap)
 
@@ -942,16 +950,17 @@ define serve_icon [request]:
 
 
 ;; The streamable-HTTP GET path exists to carry server-initiated
-;; messages on an existing session. This deployment is stateless
-;; (--lambda and --serve both), so that stream can never receive
-;; anything: a client that advertises SSE support in its Accept
-;; header -- most MCP clients do, even on a bare probe -- would
-;; otherwise hang on GET /mcp until the invocation times out, rather
-;; than getting an answer. mcp.custom_route cannot fix this: the SDK's
-;; /mcp route matches every method, and custom routes are appended
-;; after it, so a decorator-registered GET handler here would never
-;; be reached. Instead, run_streamable_http_with_info below builds
-;; the app directly and splices this route in ahead of the catch-all.
+;; messages on an existing session. The --lambda deployment is
+;; stateless, so there that stream can never receive anything, and
+;; under --serve a bare probe has no session either: a client that
+;; advertises SSE support in its Accept header -- most MCP clients
+;; do, even on a bare probe -- would otherwise hang on GET /mcp until
+;; the invocation times out, rather than getting an answer.
+;; mcp.custom_route cannot fix this: the SDK's /mcp route matches
+;; every method, and custom routes are appended after it, so a
+;; decorator-registered GET handler here would never be reached.
+;; Instead, run_streamable_http_with_info below builds the app
+;; directly and splices this route in ahead of the catch-all.
 
 @coroutine-fn
 define serve_mcp_info [request]:

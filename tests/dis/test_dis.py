@@ -108,15 +108,16 @@ def _make_fast_code():
 def _make_operand_code():
     """
     Code with a packed OPCOUNT arg on OBJECT_OPERAND (BIT_AND over two
-    operands) and an OPCOUNT field on a FAST_INPLACE row (ADD, count 1),
-    so the packed values render by operator name and count.
+    operands) and an OPERAND field on a FAST_INPLACE row (ADD), so the
+    packed value renders by operator name and count and the bare one by
+    operator name.
     """
     nspec = NamespaceSpec("fn", ("a", "b"), ())
     instr = (
         [OpCode.FAST, 0],
         [OpCode.FAST, 1],
         [OpCode.OBJECT_OPERAND, (4 << 8) | 2],
-        [OpCode.FAST_INPLACE, ((0 << 8) | 1, 0, 0, 0)],
+        [OpCode.FAST_INPLACE, (0, 0, 0, 0)],
         [OpCode.FAST, 0],
         [OpCode.RETURN, 1],
     )
@@ -188,7 +189,7 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertIn("OBJECT_OPERAND", text)
         self.assertIn("1026 (BIT_AND x2)", text)
         self.assertIn("FAST_INPLACE", text)
-        self.assertIn('(ADD x1, fast 0 ("a"), 0, 0)', text)
+        self.assertIn('(ADD, fast 0 ("a"), 0, 0)', text)
 
     async def test_dis_expression(self):
         """
@@ -291,7 +292,7 @@ class TestDisFunction(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Function instance:", text)
         self.assertIn("  name:", text)
         self.assertIn("  formals:", text)
-        self.assertIn("  base_ns (closures):", text)
+        self.assertIn("  closures:", text)
         self.assertIn("KosCode", text)
         self.assertIn("truthy_yus", text)
         self.assertIn("VAR", text)

@@ -26,23 +26,26 @@ from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call, special_call_attr
 from .class_ import special_class
-from .collections import special_build_list, special_list_append
+from .collections import (
+    special_build_list, special_build_tuple, special_list_append)
 from .conditionals import special_and, special_cond, special_or, special_switch
-from .context import special_dyn_with, special_parameterize, special_with
+from .context import (
+    special_dyn_with, special_parameter, special_parameterize, special_with)
 from .continuations import (
     special_await, special_call_cc, special_capture_cc, special_let_cc,
-    special_reset, special_return, special_shift)
+    special_reset, special_return, special_shift, special_yield,
+    special_yield_from)
 from .dyn_wind import special_dyn_wind
 from .exceptions import (
     special_check_exception, special_clear_exception, special_load_exception,
     special_raise, special_try)
 from .fence import special_apply_fence
 from .imports import (
-    special_import, special_import_all_from, special_import_from)
+    special_import, special_import_all_from, special_import_from, special_use)
 from .items import (
     special_del_item, special_item, special_set_item, special_take_item)
-from .lambda_ import special_lambda
-from .let import special_let
+from .lambda_ import special_function, special_lambda
+from .let import special_let, special_letrec
 from .match import special_match
 from .loops import (
     special_break, special_continue, special_for_each, special_while)
@@ -50,15 +53,16 @@ from .object import (
     special_add, special_bit_and, special_bit_invert, special_bit_left,
     special_bit_or, special_bit_right, special_bit_xor, special_dir,
     special_divmod, special_eq, special_floor_divide, special_format,
-    special_ge, special_gt, special_in, special_inplace, special_is,
-    special_is_not, special_isinstance, special_issubclass, special_iter,
-    special_le, special_len, special_lt, special_matrix_multiply,
-    special_modulo, special_multiply, special_ne, special_next, special_not,
-    special_not_in, special_power, special_repr, special_str, special_subtract,
-    special_true_divide, special_truth, special_type, special_vars)
+    special_ge, special_gt, special_in, special_inplace, special_inplace_attr,
+    special_inplace_item, special_is, special_is_not, special_isinstance,
+    special_issubclass, special_iter, special_le, special_len, special_lt,
+    special_matrix_multiply, special_modulo, special_multiply, special_ne,
+    special_next, special_nilp, special_not, special_not_in, special_power,
+    special_repr, special_str, special_subtract, special_true_divide,
+    special_truth, special_type, special_vars)
 from .pairs import (
-    special_car, special_cdr, special_cons, special_quote,
-    special_quote_syntax)
+    special_bracket_cons, special_bracket_proper, special_car, special_cdr,
+    special_cons, special_quote, special_quote_syntax)
 from .quasiquote import (
     special_quasiquote, special_quasiquote_syntax, special_unquote,
     special_unquote_splicing)
@@ -68,9 +72,10 @@ from .refs import (
 from .slots import (
     special_attr, special_del_attr, special_set_attr, special_take_attr)
 from .syntax import (
-    special_compile_macro_match, special_compile_macro_rules,
-    special_compile_special_match, special_compile_special_rules,
-    special_compile_syntax_match, special_compile_syntax_rules)
+    special_compile_bare_syntax, special_compile_macro_match,
+    special_compile_macro_rules, special_compile_special_match,
+    special_compile_special_rules, special_compile_syntax_match,
+    special_compile_syntax_rules)
 from .thunk import special_gensym_thunk
 from .variables import (
     special_define, special_define_global, special_define_values, special_delq,
@@ -83,7 +88,6 @@ __all__ = (
     "special_add",
     "special_and",
     "special_apply_fence",
-    "special_apply_layout",
     "special_await",
     "special_attr",
     "special_begin",
@@ -94,10 +98,14 @@ __all__ = (
     "special_bit_right",
     "special_bit_xor",
     "special_build_list",
+    "special_build_tuple",
     "special_import",
     "special_import_all_from",
     "special_import_from",
+    "special_use",
     "special_bindq",
+    "special_bracket_cons",
+    "special_bracket_proper",
     "special_break",
     "special_bytecode",
     "special_call",
@@ -108,7 +116,7 @@ __all__ = (
     "special_compile_macro_rules",
     "special_compile_special_match",
     "special_compile_special_rules",
-    "special_compile_syntax",
+    "special_compile_bare_syntax",
     "special_compile_syntax_match",
     "special_compile_syntax_rules",
     "special_capture_cc",
@@ -134,12 +142,15 @@ __all__ = (
     "special_floor_divide",
     "special_format",
     "special_for_each",
+    "special_function",
     "special_ge",
     "special_gensym_thunk",
     "special_globals",
     "special_gt",
     "special_in",
     "special_inplace",
+    "special_inplace_attr",
+    "special_inplace_item",
     "special_is",
     "special_is_not",
     "special_isinstance",
@@ -150,6 +161,7 @@ __all__ = (
     "special_le",
     "special_len",
     "special_let",
+    "special_letrec",
     "special_match",
     "special_list_append",
     "special_load_exception",
@@ -161,9 +173,11 @@ __all__ = (
     "special_multiply",
     "special_ne",
     "special_next",
+    "special_nilp",
     "special_not",
     "special_not_in",
     "special_or",
+    "special_parameter",
     "special_parameterize",
     "special_power",
     "special_quasiquote",
@@ -197,6 +211,8 @@ __all__ = (
     "special_vars",
     "special_while",
     "special_with",
+    "special_yield",
+    "special_yield_from",
 )
 
 

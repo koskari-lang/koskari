@@ -80,6 +80,7 @@ PyObject *KosNamespaceSpec_New(
 
 
 extern PyTypeObject KosNamespaceType;
+extern PyTypeObject KosModuleNamespaceType;
 
 
 /* Fast slots a FAST-style operand can address: the immediates are 16
@@ -110,25 +111,67 @@ static inline size_t kos_ns_raw_more_words(size_t count) {
 #define KOS_NS_FREELIST_MAX KOS_FREELIST_CAP(256)
 
 
-typedef struct KosNamespace {
-  PyObject_VAR_HEAD
-
+/**
+   The fields every namespace kind shares, at one offset in every kind:
+   past the head, which is a var-object head with the fast-slot fields
+   on a function or collector namespace and a PyDictObject on a module
+   namespace (a dict subclass, so Python's exec and eval accept it as
+   globals). KosNamespace_CORE reaches it from any kind.
+*/
+typedef struct KosNamespaceCore {
   PyObject *name;       // PyUnicodeObject
 
-  PyObject *parent;     // KosNamespace
+  PyObject *parent;     // KosNamespace of any kind
   PyObject *binds;      // PyDictObject
   PyObject *template_ns; // the namespace this one was copied from, or NULL.
-                         // When set, name, parent and fast_names are borrowed
-                         // through it (it owns them for at least as long as
-                         // this copy holds it); when NULL they are owned here.
+                         // When set, name and parent here and fast_names in
+                         // the head are borrowed through it (it owns them for
+                         // at least as long as this copy holds it); when NULL
+                         // they are owned here.
+  uint64_t fast_raw[2];  // raw-flag bits for slots 0-127; zero on a module
+} KosNamespaceCore;
 
-  size_t fast_count;       // number of fast slots
+
+/* The head of a function or collector namespace: the var-object head
+   and the fast-slot fields. */
+typedef struct KosNamespaceHead {
+  PyObject_VAR_HEAD
+
+  uint32_t fast_count;     // number of fast slots, at most
+                           // KosNamespace_FAST_SLOT_MAX
+  uint32_t fast_locals;    // the slots the scope declared itself: slots 0
+                           // to fast_locals - 1; the closure and global
+                           // captures sharing the namespace follow them
   PyObject *fast_names;    // PyTupleObject of slot names, shared across copies
-  uint64_t fast_raw[2];    // raw-flag bits for slots 0-127
   uint64_t *fast_raw_more; // bits for slots 128 and up: &fast[fast_count],
                            // inside this allocation, or NULL when unneeded
+} KosNamespaceHead;
+
+
+/* Either head, padded to the larger, so the core sits at one offset in
+   every kind. */
+typedef union KosNamespaceHeadPad {
+  KosNamespaceHead fast;
+  PyDictObject dict;
+} KosNamespaceHeadPad;
+
+
+/* A function or collector namespace. */
+typedef struct KosNamespace {
+  union {
+    KosNamespaceHead head;
+    KosNamespaceHeadPad pad;
+  } u;
+  KosNamespaceCore core;
   PyObject *fast[0];       // slot values: raw value (if raw bit set) or KosRef
 } KosNamespace;
+
+
+/* The view through which the core is reached from any kind. */
+typedef struct KosNamespaceAny {
+  KosNamespaceHeadPad head;
+  KosNamespaceCore core;
+} KosNamespaceAny;
 
 
 PyObject *KosNamespace_New(
@@ -334,35 +377,48 @@ int KosNamespace_FastBind(
     PyObject *ref);
 
 
+/* The shared core, valid on every namespace kind. */
+#define KosNamespace_CORE(ns)               \
+  (&((KosNamespaceAny *) (ns))->core)
+
 #define KosNamespace_NAME(ns)               \
-  (((KosNamespace *) ns)->name)
+  (KosNamespace_CORE(ns)->name)
 
 #define KosNamespace_PARENT(ns)             \
-  (((KosNamespace *) ns)->parent)
+  (KosNamespace_CORE(ns)->parent)
 
 #define KosNamespace_BINDS(ns)               \
-  (((KosNamespace *) ns)->binds)
+  (KosNamespace_CORE(ns)->binds)
 
 #define KosNamespace_TEMPLATE(ns)            \
-  (((KosNamespace *) ns)->template_ns)
-
-#define KosNamespace_FAST_COUNT(ns)             \
-  (((KosNamespace *) ns)->fast_count)
-
-#define KosNamespace_FAST_NAMES(ns)             \
-  (((KosNamespace *) ns)->fast_names)
+  (KosNamespace_CORE(ns)->template_ns)
 
 #define KosNamespace_FAST_RAW(ns)               \
-  (((KosNamespace *) ns)->fast_raw)
+  (KosNamespace_CORE(ns)->fast_raw)
+
+/* The fast-slot fields, valid on a function or collector namespace
+   only: a module namespace has a dict where these live. Guard with
+   KosNamespace_SupportsFast where a module namespace can arrive. */
+#define KosNamespace_FAST_COUNT(ns)             \
+  (((KosNamespace *) ns)->u.head.fast_count)
+
+#define KosNamespace_FAST_LOCALS(ns)            \
+  (((KosNamespace *) ns)->u.head.fast_locals)
+
+#define KosNamespace_FAST_NAMES(ns)             \
+  (((KosNamespace *) ns)->u.head.fast_names)
 
 #define KosNamespace_FAST_RAW_MORE(ns)          \
-  (((KosNamespace *) ns)->fast_raw_more)
+  (((KosNamespace *) ns)->u.head.fast_raw_more)
 
 #define KosNamespace_GET_FAST_VAL(ns, i)        \
   (((KosNamespace *) ns)->fast[(i)])
 
+/* Every namespace kind: the function and collector kinds derive from
+   KosNamespaceType, the module kind derives from dict. */
 #define KosNamespace_Check(obj)                                         \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosNamespaceType))
+  ((obj) && (PyType_IsSubtype((obj)->ob_type, &KosNamespaceType)       \
+             || (obj)->ob_type == &KosModuleNamespaceType))
 
 #define KosNamespace_CheckExact(obj)                    \
   ((obj) && ((obj)->ob_type == &KosNamespaceType))
@@ -542,11 +598,13 @@ KOS_OP_INLINE void KosNamespace_ResetToTemplate(PyObject *ns) {
 }
 
 
-/* === Opcode-only fast inline helpers === */
+/* === Fast-slot inline helpers === */
 /*
-   The following inlines are ONLY for use in opcode handlers where the
-   compiler guarantees the namespace type and slot index are valid.
-   Do NOT call them from public API functions or namespace.c internals.
+   The following inlines skip the type and bounds checks the public API
+   performs. The caller must already hold a namespace that supports fast
+   slots and a slot index known to be in range: the compiler establishes
+   both for opcode rows and the elector bodies, the frame builder for
+   formals binding, and the slot-map layout for its own namespace.
 */
 
 #include "ref.h"
@@ -641,6 +699,60 @@ static inline PyObject *kos_ns_fast_peek_raw(
         on_error;                                                       \
       }                                                                 \
       (var) = (var_ref);                                                \
+    }                                                                   \
+  } while (0)
+
+
+/* Turn a borrowed operand into a held one: var_ref takes a reference
+   to var when it does not own one yet. For a handler about to run
+   code that can rebind the slot var was peeked from. */
+#define KOS_NS_HOLD(var, var_ref)                                       \
+  do {                                                                  \
+    if (! (var_ref)) {                                                  \
+      Py_INCREF(var);                                                   \
+      (var_ref) = (var);                                                \
+    }                                                                   \
+  } while (0)
+
+
+/* KOS_NS_FAST_BORROW for an operand fetched after another operand was
+   borrowed. The general deref of a ref kind the peek does not read can
+   run user code (an attribute or item ref getter, a dynamic ref), and
+   that code can rebind the slot an earlier operand was peeked from.
+   The hold statement runs before that deref and holds each earlier
+   operand (KOS_NS_HOLD); the peek-hit path runs no code and holds
+   nothing. */
+#define KOS_NS_FAST_BORROW_HOLDING(var, var_ref, ns, idx, hold, on_error) \
+  do {                                                                  \
+    (var_ref) = NULL;                                                   \
+    (var) = kos_ns_fast_peek((ns), (size_t) (idx));                     \
+    if (unlikely(! (var))) {                                            \
+      hold;                                                             \
+      (var_ref) = kos_ns_fast_deref((ns), (size_t) (idx));              \
+      if (unlikely(! (var_ref))) {                                      \
+        on_error;                                                       \
+      }                                                                 \
+      (var) = (var_ref);                                                \
+    }                                                                   \
+  } while (0)
+
+
+/* An owned fast-slot read fetched after other operands were borrowed:
+   the peek-hit path takes its reference without running code; the
+   general deref path runs the hold statement first, as
+   KOS_NS_FAST_BORROW_HOLDING does. var is NULL with the error set on
+   failure, after on_error. */
+#define KOS_NS_FAST_DEREF_HOLDING(var, ns, idx, hold, on_error)         \
+  do {                                                                  \
+    (var) = kos_ns_fast_peek((ns), (size_t) (idx));                     \
+    if (likely(var)) {                                                  \
+      Py_INCREF(var);                                                   \
+    } else {                                                            \
+      hold;                                                             \
+      (var) = kos_ns_fast_deref((ns), (size_t) (idx));                  \
+      if (unlikely(! (var))) {                                          \
+        on_error;                                                       \
+      }                                                                 \
     }                                                                   \
   } while (0)
 
@@ -745,8 +857,25 @@ static inline int kos_ns_store_slotmap(
 extern PyTypeObject KosModuleNamespaceType;
 
 
+/**
+   A module namespace is a dict subclass: the dict part is scratch that
+   Python's raw dict API can write into and that the relaying slots
+   never read; the module's bindings live in the core's binds dict.
+   The core sits at the same offset as on the other kinds.
+
+   Raw writes land in the scratch and stay there: exec's __builtins__
+   insertion, STORE_GLOBAL from a global statement in exec'd code, and
+   popitem. Mirrored dunders (mdl_ns_mirror) are written there on
+   purpose. A purge is planned and not yet implemented: every relayed
+   operation would start by testing dict.ma_used, one load, and when it
+   is nonzero clear every scratch entry other than the mirrored dunders
+   and __builtins__, which on 3.9 every frame takes its builtins from.
+   A dict watcher cannot do this instead: it is told before the write
+   and must not touch the dict.
+*/
 typedef struct KosModuleNamespace {
-  KosNamespace super;
+  KosNamespaceHeadPad head;  // .dict is the live PyDictObject
+  KosNamespaceCore core;
   PyObject *builtins;  // PyDictObject
 } KosModuleNamespace;
 

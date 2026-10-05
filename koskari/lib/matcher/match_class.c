@@ -1,4 +1,26 @@
-/* Included by matcher.c — match_class */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. The CLASS and FIELD match steps.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === CLASS / FIELD matching === */
 
 
@@ -77,7 +99,7 @@ static int match_one_field(
    / namedtuple generation of it, in 3.10). Fill that one API gap
    predictably: synthesize the 3.10-equivalent tuple for a dataclass
    (its init fields, via the public dataclasses.fields) or a namedtuple
-   (_fields). Gated to < 3.10 only — on newer Pythons an absent
+   (_fields). Gated to < 3.10 only: on newer Pythons an absent
    __match_args__ on a dataclass means @dataclass(match_args=False),
    a deliberate opt-out this fallback must never override.
 
@@ -197,7 +219,7 @@ static int match_class(
       else
         return -1;
 #if PY_MINOR_VERSION < 10
-      /* 3.9: no generated __match_args__ exists anywhere — synthesize
+      /* 3.9: no generated __match_args__ exists anywhere, so synthesize
          the 3.10-equivalent for dataclasses and namedtuples. */
       match_args = synth_match_args_39(cls);
       if (! match_args && PyErr_Occurred())

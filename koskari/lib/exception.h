@@ -181,4 +181,4 @@ int KosExc_NormalizeThrowArgs(
 #endif /* KOSKARI_EXCEPTION_H */
 
 
-/* The end. */
+// The end.

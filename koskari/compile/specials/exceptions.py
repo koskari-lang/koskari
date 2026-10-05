@@ -158,7 +158,7 @@ def _collect_catches(compiler, catches):
             act_else = act
 
         else:
-            raise SpecialError("unrecognised clause keyword in try: %r" % ex, ca)
+            raise SpecialError(f"unrecognised clause keyword in try: {ex!r}", ca)
 
     return (normal_catches, act_else, act_finally)
 

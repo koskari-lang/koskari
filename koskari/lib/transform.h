@@ -24,12 +24,13 @@
 
 
 /**
-   KosTransform: the lazy KosIter provider body that map (map.c) and
-   filter (filter.c) are instances of. This unit holds everything its
-   providers share: the instance layout, one-source construction, the
-   GC and Python surfaces, the suite functions other than the step
-   itself, and the staging of a resume-carrying frame. Each provider
-   keeps only its own step and the resume chain that step arms.
+   KosTransform: the lazy KosIter provider body that every provider
+   under transform/ (map, filter, zip and the koskari.itertools set) is
+   an instance of. This unit holds everything its providers share: the
+   instance layout, one-source construction, the GC and Python
+   surfaces, the suite functions other than the step itself, and the
+   staging of a resume-carrying frame. Each provider keeps only its own
+   step and the resume chain that step arms.
 
    A provider embeds KosTransform first, sets a larger tp_basicsize,
    and chains its traverse and clear to the base's. Sources beyond the
@@ -102,9 +103,10 @@ typedef struct KosTransformSpec {
 /**
    Fill a freshly allocated one-source transform: acquire the iterator
    from iterable, resolve func's call shape when there is one (NULL or
-   None leaves the transform with no callable), and publish the view
-   over the base's own source slot. Every other field is left as
-   tp_alloc zeroed it.
+   None leaves the transform with no callable), publish the view over
+   the base's own source slot, and reset the step state (pending, cached
+   frame, context, closed and busy). The provider's own fields are left
+   to it.
 
    A provider that parses its own argument shape -- trailing bounds, a
    count -- allocates, calls this, then stores its own fields. One
@@ -182,7 +184,7 @@ KosIterStepResult kos_transform_stage(
     KosDynNode *pre_top);
 
 
-/* The suite functions other than ki_step, shared by both types. */
+/* The suite functions other than ki_step, shared by every provider. */
 KosIterStepResult kos_transform_throw(
     KosEvalState *es,
     PyObject *self,
@@ -203,7 +205,7 @@ void kos_transform_step_clear(void *state);
 KosContext *kos_transform_pyctx(PyObject *self);
 
 
-/* The GC and Python surfaces, shared by both types. */
+/* The GC and Python surfaces, shared by every provider. */
 int kos_transform_traverse(PyObject *self, visitproc visit, void *arg);
 int kos_transform_clear(PyObject *self);
 void kos_transform_dealloc(PyObject *self);
@@ -220,6 +222,7 @@ extern PyAsyncMethods kos_transform_async_methods;
 
 extern KosEvaluatedTypeObject KosMapType;
 extern KosEvaluatedTypeObject KosFilterType;
+extern KosEvaluatedTypeObject KosFilterFalseType;
 extern KosEvaluatedTypeObject KosZipType;
 extern KosEvaluatedTypeObject KosZipLongestType;
 extern KosEvaluatedTypeObject KosChainType;

@@ -27,8 +27,10 @@ import pytest
 
 from koskari.exceptions import ReaderEOF, ReaderSyntaxError
 from koskari.lib import ModuleNamespace
+from koskari.pragma import ModulePragma
 from koskari.reader import (
-    READ_EOF, IndentAwareStream, LayoutReader, default_reader, source_str)
+    READ_EOF, IndentAwareStream, LayoutReader, Reader, default_reader,
+    source_str)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -139,6 +141,16 @@ class TestReaderEOFNamesOpener(TestCase):
         with self.assertRaises(ReaderEOF) as ctx:
             self.read('f"abc {x}')
         self.assertEqual(ctx.exception.location, (1, 0))
+
+    def test_unclosed_index_bracket_points_at_its_bracket(self):
+        reader = Reader()
+        reader.reload_pragma(ModulePragma())
+        for text, column in (("(f x)[", 5), ("foo[1", 3)):
+            with self.assertRaises(ReaderEOF) as ctx:
+                reader.read(source_str(text, "<t>"))
+            self.assertEqual(ctx.exception.location, (1, column), text)
+            self.assertIn(f"'[' form opened at line 1, column {column}",
+                          ctx.exception.message)
 
 
 class TestCompleteFStringWithOpenField(TestCase):

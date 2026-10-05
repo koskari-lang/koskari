@@ -76,4 +76,29 @@ class TestWithoutPromptToolkit(unittest.TestCase):
         self.assertEqual('_input_prompt', proc.stdout.strip())
 
 
+    def test_input_prompter_prefills_the_default_through_readline(self):
+        # the continuation indent the REPL passes as default reaches the
+        # input line through readline's startup hook, which is cleared
+        # again once the line is read
+        proc = self._run(
+            'import asyncio, builtins, readline\n'
+            'calls = []\n'
+            'readline.set_startup_hook = lambda h=None: calls.append(("hook", h))\n'
+            'readline.insert_text = lambda s: calls.append(("insert", s))\n'
+            'builtins.input = lambda p: (calls.append(("input", p)), "typed")[1]\n'
+            'from koskari.cli.host import _make_repl_prompter\n'
+            'prompter = _make_repl_prompter(None, {})\n'
+            'got = asyncio.run(prompter("... ", default="  "))\n'
+            'hooks = [h for kind, h in calls if kind == "hook"]\n'
+            'hooks[0]()\n'
+            'print(repr(got))\n'
+            'print(repr([c for c in calls if c[0] != "hook"]))\n'
+            'print(repr([h is None for h in hooks]))\n')
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        got, calls, cleared = proc.stdout.strip().splitlines()
+        self.assertEqual("'typed'", got)
+        self.assertEqual("[('input', '... '), ('insert', '  ')]", calls)
+        self.assertEqual("[False, True]", cleared)
+
+
 # The end.

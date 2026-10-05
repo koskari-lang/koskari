@@ -1,4 +1,28 @@
-/* Included by dynchain.c — dyn_iter_node */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. Dispatch shared by the iteration nodes
+  (FOREACH, NEXT and the yield-from delegation): their step requests
+  and deliveries.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === Generic iteration-node dispatch === */
 
 /*
@@ -9,7 +33,7 @@
   semantics stay in dyn_next.c / dyn_foreach.c / dyn_yield_from.c.
 
   Future receiver kinds join by carrying the capability and adding a
-  delivery case here — in particular a GEN node carrying a yield-from
+  delivery case here. In particular a GEN node carrying a yield-from
   passthru field would slot in without touching the finder or the eval
   loop (see design/archive/boundary-control-reemit.md §5.2).
 */
@@ -18,8 +42,8 @@
 KosDynNode *kos_dyn_find_iter_node(KosEvalState *es) {
 
   /* Prefer dyn_top.  After the yield freeze the yielding generator's GEN
-     node has detached, so its parent — the receiver that was directly
-     driving it — sits at dyn_top and is the structurally nearest
+     node has detached, so its parent, the receiver that was directly
+     driving it, sits at dyn_top and is the structurally nearest
      receiver.  It must win: a YIELD_FROM delegating to this generator
      beats an outer FOREACH awaiting an *enclosing* generator, otherwise
      the delegate's yields are misrouted and the delegate is torn down. */
@@ -174,3 +198,6 @@ void kos_dyn_iter_node_abort(KosEvalState *es, KosDynNode *node) {
     (void) kos_dyn_unlink_yield_from(es, (KosDynYieldFrom *) node);
   }
 }
+
+
+// The end.

@@ -185,22 +185,26 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         self.assertEqual(r.captures["x"].datum, sx)
 
 
-    def test_match_wrapper_dispatches_inner(self):
+    def test_match_is_a_plain_pattern_symbol(self):
         """
-        (match INNER) uses INNER only
+        The word match carries no meaning inside a RULE pattern: at the
+        head or anywhere else it is a pattern variable like any other,
+        or a literal when listed
         """
 
-        x = symbol("x")
-        inner = build_proper(x)
-        m_sym = symbol("match")
-        wrapped = cons(m_sym, inner, nil)
-        lit = frozenset()
-        p = parse_syntax_rules_pattern(wrapped, lit, None)
+        pattern = build_proper(symbol("match"), symbol("x"))
+        p = parse_syntax_rules_pattern(pattern, frozenset(), None)
         m = Matcher.from_tuple(p.freeze())
-        r = m.match((symbol("only"),))
+        r = m.match((symbol("a"), symbol("b")))
         self.assertTrue(r.matched)
-        self.assertEqual(
-            r.captures["x"], symbol("only"))
+        self.assertEqual(r.captures["match"], symbol("a"))
+        self.assertEqual(r.captures["x"], symbol("b"))
+
+        p = parse_syntax_rules_pattern(
+            pattern, frozenset((symbol("match"),)), None)
+        m = Matcher.from_tuple(p.freeze())
+        self.assertTrue(m.match((symbol("match"), symbol("b"))).matched)
+        self.assertFalse(m.match((symbol("a"), symbol("b"))).matched)
 
 
 class TestSyntaxAdd(unittest.TestCase):

@@ -445,6 +445,26 @@ class TestTraceReport(unittest.TestCase):
             self.assertEqual(entry["count"], 0)
             self.assertEqual(entry["total_ns"], 0)
 
+    def test_clear_trace_counters_resets_opcache_when_enabled(self):
+        """
+        When KOS_TRACE_OPCACHE=1, clear zeros all opcache counters
+        """
+
+        if not lib.get_trace_report()["flags"].get("opcache"):
+            self.skipTest(
+                "KOS_TRACE_OPCACHE not enabled; rebuild with "
+                "KOS_TRACE_OPCACHE=1"
+            )
+        expr, _ = SpecialsTestCase("assertTrue").compile_expr(
+            "(begin (define s \"abc\") (s.upper) (s.upper) (s.upper))")
+        self.assertEqual(asyncio.run(expr()), "ABC")
+        before = lib.get_trace_report()["opcache"]
+        self.assertTrue(any(before.values()))
+        lib.clear_trace_counters()
+        report = lib.get_trace_report()
+        for val in report["opcache"].values():
+            self.assertEqual(val, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,7 +34,8 @@ import jsonschema
 import koskari.builtins  # noqa: F401
 from koskari import exceptions
 from koskari.compile import Compiler, CompilerMode
-from koskari.lib import car, cdr, cons, demand_call, nil, symbol
+from koskari.lib import (
+    bracket_cons, bracket_nil, car, cdr, cons, demand_call, nil, symbol)
 from koskari.module import new_module, public_vars
 from koskari.pragma import ModulePragma
 from koskari.reader import (
@@ -287,6 +288,12 @@ def parse_eval_value(text):
             inner = '[' + inner + ']'
         items = json.loads(inner)
         return cons(*items, nil) if items else nil
+    if text.startswith('bracket-list:'):
+        inner = text[13:].strip()
+        if not inner.startswith('['):
+            inner = '[' + inner + ']'
+        items = json.loads(inner)
+        return bracket_cons(*items, bracket_nil) if items else bracket_nil
     if text.startswith('improper-list:'):
         return _parse_improper_list(text[14:].strip())
     if text.startswith('"') and text.endswith('"'):

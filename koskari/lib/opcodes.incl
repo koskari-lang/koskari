@@ -31,7 +31,6 @@
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
-   :ai-assistant: Claude Opus 4.5 via Cursor
 */
 
 /*
@@ -63,6 +62,8 @@ OP(CAR, 0, COUNT)
 OP(CDR, 0, COUNT)
 OP(CONS, 0, COUNT)
 OP(PROPER, 0, COUNT)
+OP(BRACKET_CONS, 0, COUNT)
+OP(BRACKET_PROPER, 0, COUNT)
 OP(PAIR_SPLICE, 0, COUNT)
 
 // mode control - all code is async, yields flag async generators
@@ -88,7 +89,7 @@ OP(JUMP_AND, 0, LABEL)
 OP(JUMP_OR, 0, LABEL)
 
 // check jumps - jump to label if predicate does not match. The
-// the comparison check is variadic and selector-keyed: the EXTRA row
+// comparison check is variadic and selector-keyed: the EXTRA row
 // carries (CMP, COUNT, LABEL) so a chained compare over COUNT operands
 // under any KosCompare selector fuses with its jump. The arity-2 fused
 // forms absorb their operand feeders: CMPSRC packs the selector with
@@ -136,7 +137,7 @@ OP(VAR_TAKE, 0, VAR)
 OP(VAR_REF, 0, VAR)
 OP(VAR_STORE, 0, VAR)
 OP(VAR_STORE_CONST, 0, EXTRA, VAR, CONST, NOARG, NOARG)
-OP(VAR_INPLACE, 0, EXTRA, OPCOUNT, VAR, NOARG, NOARG)
+OP(VAR_INPLACE, 0, EXTRA, OPERAND, VAR, NOARG, NOARG)
 OP(VAR_INPLACE_CONST, 0, EXTRA, OPERAND, VAR, CONST, NOARG)
 OP(VAR_ATTR, 1, EXTRA, VAR, CONST, NOARG, NOARG)
 OP(VAR_ATTR_CLEAR, 0, EXTRA, VAR, CONST, NOARG, NOARG)
@@ -200,7 +201,7 @@ OP(FAST_TAKE, 0, FASTVAR)
 OP(FAST_REF, 0, FASTVAR)
 OP(FAST_STORE, 0, FASTVAR)
 OP(FAST_STORE_CONST, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)
-OP(FAST_INPLACE, 1, EXTRA, OPCOUNT, FASTVAR, NOARG, NOARG)  // cache: elector
+OP(FAST_INPLACE, 1, EXTRA, OPERAND, FASTVAR, NOARG, NOARG)  // cache: elector
 OP(FAST_INPLACE_CONST, 1, EXTRA, OPERAND, FASTVAR, CONST, NOARG)  // cache: elector
 OP(FAST_ATTR, 1, EXTRA, FASTVAR, CONST, NOARG, NOARG)
 OP(FAST_ATTR_CLEAR, 0, EXTRA, FASTVAR, CONST, NOARG, NOARG)

@@ -20,8 +20,8 @@
    Tests reference counting, push/pop operations, growth, the
    freelist, tail extraction, and deep copy for the segment API.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -539,6 +539,25 @@ static int test_seg_pop_tail_dicts(void) {
     TEST_ASSERT_SAME(PyDict_GetItem(dict, key), val, "mapped");
     TEST_ASSERT_EQ(KosSegment_LEN(seg), 0, "consumed");
     Py_DECREF(dict);
+
+    /* A failed insert (an unhashable name) leaves the segment as it
+       was, still owning every entry, for the unwind to release once */
+    {
+        PyObject *bad_name = PyList_New(0);
+        PyObject *bad_names = PyTuple_Pack(2, key, bad_name);
+        Py_ssize_t held = Py_REFCNT(val);
+        KosStack_PushRef(&seg, val);
+        KosStack_PushRef(&seg, val);
+        dict = KosStack_PopTailDictFromNames(&seg, bad_names);
+        TEST_ASSERT_NULL(dict, "unhashable name fails");
+        PyErr_Clear();
+        TEST_ASSERT_EQ(KosSegment_LEN(seg), 2, "entries still on the stack");
+        TEST_ASSERT_EQ(Py_REFCNT(val), held + 2, "entries still owned");
+        KosStack_Clear(&seg);
+        TEST_ASSERT_EQ(Py_REFCNT(val), held, "released once by the clear");
+        Py_DECREF(bad_names);
+        Py_DECREF(bad_name);
+    }
 
     Py_DECREF(names);
     Py_DECREF(key);

@@ -74,9 +74,9 @@ static int obj_op_reduce_n(
 }
 
 
-/* insn-based wrapper: count from KosOp_ARG.  Still used by the COUNT-style
-   reducing handlers that were not consolidated into OBJECT_OPERAND (e.g.
-   OBJECT_STR / KosOperator_BuildStr). */
+/* insn-based wrapper: count from KosOp_ARG.  Used by OBJECT_STR
+   (KosOperator_BuildStr), the one COUNT-style reducing handler not
+   consolidated into OBJECT_OPERAND. */
 static int obj_op_reducing(
     KosEvalState *es,
     KosOp *insn,

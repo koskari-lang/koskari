@@ -384,6 +384,21 @@ class TestWithHookShapes(SpecialsTestCase):
         self.assertEqual(mgr.calls, ["enter", ("exit", None)])
 
 
+    async def test_single_shot_exit_runs_after_grafted_clone_leaves(self):
+        """
+        A continuation invoked under an inner reset grafts a clone of the
+        with node that is never entered; the clone leaving must not mark
+        the shared exit-done fact, so the live node still runs __exit__
+        when the handler returns
+        """
+
+        mgr = PlainManager()
+        src = "(reset (with [c ctx] (shift k (reset (k 1)))))"
+        expr, _ = self.compile_expr(src, ctx=mgr)
+        self.assertEqual(await expr(), 1)
+        self.assertEqual(mgr.calls, ["enter", ("exit", None)])
+
+
     def test_throw_into_awaiting_aenter(self):
         """
         A throw at the revive of a suspended __aenter__ reaches the

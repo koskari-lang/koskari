@@ -68,9 +68,9 @@ Types are defined in the native extension `koskari.lib`; the Python module `kosk
 - `pair.append(obj)`: Mutate in place: find last cons, then add obj at the end (new cell `(last_cdr . obj)` or `(obj . nil)` if proper). Raises TypeError on nil.
 - `pair.extend(obj)`: Mutate in place: find last cons, then splice a *copy* of obj onto the end (obj may be a pair or an iterable; pairs are copied, other iterables converted to proper list).
 - `pair.splice(obj)`: Like extend but if obj is a pair, reuse it in place (shared structure); otherwise convert iterable to proper list and splice. Raises TypeError on nil.
-- `pair.clear_position(follow=False)`: Clear position on this pair; if follow true, clear along entire cdr chain
-- `pair.set_position(position, follow=False)`: Set position; if follow true, set on entire cdr chain
-- `pair.fill_position(position, follow=False)`: Set position only where unset; if follow true, walk chain and fill
+- `pair.clear_position(follow=False)`: Clear position on this pair; if follow true, clear every cell reachable through car and cdr
+- `pair.set_position(position, follow=False)`: Set position; if follow true, set on every cell reachable through car and cdr (each cell once)
+- `pair.fill_position(position, follow=False)`: Set position only where unset; if follow true, walk car and cdr and fill, stopping each branch at a cell that already has one
 - `pair.get_position()`: Return position object or None
 
 ### Nil

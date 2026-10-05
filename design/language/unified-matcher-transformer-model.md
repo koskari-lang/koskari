@@ -2,9 +2,9 @@
 
 **Status:** Architecture reference; matches the implementation. The matcher stack,
 **RULE** pattern parsing (`koskari/syntax.py`: `parse_syntax_rules_pattern`,
-`_parse_rule_pattern`), **MATCH** pattern parsing (`koskari/matcher.py`:
-`parse_explicit_rule_pattern`,
-`_lower_match_pattern_spec`), `syntax-rules` / **`macro-rules`** /
+`_syntax_pattern_specs`, `_syntax_elem_pattern`), **MATCH** pattern parsing
+(`koskari/matcher.py`: `parse_explicit_rule_pattern`,
+`_lower_spine_children`), `syntax-rules` / **`macro-rules`** /
 **`syntax-match`** / **`macro-match`** transformers, **compile-time lowering**
 (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
 `compile/macro-match` in `koskari/compile/specials/syntax.py`), **template hygiene**
@@ -38,26 +38,28 @@ type annotations on individual rules.
 
 **Nested `(match …)` inside a RULE pattern**
 
-Inside **`syntax-rules`** / **`macro-rules`** only, `parse_syntax_rules_pattern` may
-see a pattern whose car is the **`match`** symbol. That dispatch is
-**orthogonal** to the table above: it is an escape **within** the RULE pattern
-column (`(match INNER)` is lowered with the same RULE lowerer). Prefer the
-**four** top-level forms (`syntax-rules`, `macro-rules`, `syntax-match`,
-`macro-match`) for the primary RULE vs MATCH split; **MATCH** patterns are not
-embedded via a **`rule`** wrapper inside RULE columns.
+No word carries meaning inside a RULE pattern beyond the grammar: a symbol
+is a pattern variable or a listed literal, `...` is the repeat marker, and a
+list is a sub-form. The symbol **`match`** is a symbol like any other there;
+the earlier `(match INNER)` escape, an unwrap honoured at the top of a
+pattern only, is gone. The **four** top-level forms (`syntax-rules`,
+`macro-rules`, `syntax-match`, `macro-match`) carry the RULE vs MATCH split;
+**MATCH** patterns are not embedded inside RULE columns.
 
 **Completed (recent / current tree):**
 
-* `SyntaxRulesTransformer` stores ordered `segments`; each segment has
-  `literals` and `rules`.
-* `compile_impl` dispatches by segment then rule (first match wins).
-* `SyntaxRule.try_expand(...)` encapsulates the per-rule match-and-expand path.
+* `Syntax` (`koskari/syntax.py`) holds an ordered `transforms` tuple of
+  `Transform` arms: `SyntaxTransform` (template), `MacroTransform`
+  (procedure), `SpecialTransform`, and `BareTransform` for the bare arm.
+* `Syntax.compile_impl` tries the arms in order; `Transform.try_expand(compiler,
+  source_obj)` is the per-arm match-and-expand path (first match wins).
 * **Source-to-source** compile specials lower **`(syntax-rules …)`** /
-  **`(macro-rules …)`** to **`(build-syntax-rules …)`** / **`(build-macro-rules …)`**
-  without building runtime transformers solely to serialize them
-  (`parse_macro_rules_rows`, `koskari/compile/specials/syntax.py`).
-* Tagged tuple wire format unchanged; `to_tuple` currently assumes one segment
-  until a multi-segment pool format exists.
+  **`(macro-rules …)`** / **`(syntax-match …)`** / **`(macro-match …)`** to
+  **`(build-syntax …)`** / **`(build-macro …)`** forms, with `build-bare-syntax`
+  and `build-special` for the other arms, without building runtime
+  transformers solely to serialize them (`parse_macro_rules_rows`,
+  `koskari/compile/specials/syntax.py`).
+* There are no segments: one `Syntax` is one ordered table.
 
 ## Related documents
 
@@ -100,16 +102,14 @@ keyword (see [Binding name: define-syntax only](#binding-name-define-syntax-only
 ### Duck-typed transformer entry
 
 The compiler resolves the head of a form with `find_compiled` and invokes
-`compile_impl(compiler, source_obj, tc)`. Any object that provides
-`compile_impl` participates in the same path as specials and
-`SyntaxRulesTransformer` (`koskari/compile/compiler.py`: `compile_pair` →
-`compile_special`). If `compile_impl` returns a **cons tree** (not a
+`compile_impl(compiler, source_obj)` on the `Compiled` it finds. Any
+`Compiled` participates in the same path as specials and `Syntax`
+(`koskari/compile/compiler.py`: `compile_pair` → `compile_special`). If `compile_impl` returns a **cons tree** (not a
 `ByteCodeFragment`), `full_compile` re-enters compilation — that loop is the
 **macro expansion driver**.
 
-**Implication:** New transformer types (`MacroTransformer`, a refactored base) do
-not require new dispatch machinery; they **overload** `compile_impl` (and/or
-delegate to a shared implementation).
+**Implication:** New arm kinds need no dispatch machinery; they are further
+`Transform` subclasses behind the one `Syntax.compile_impl`.
 
 ### Base abstraction: one algorithm, typed workers
 
@@ -136,9 +136,9 @@ Concrete types (names indicative):
 
 | Type | Role |
 |------|------|
-| **Base / `RuleTableTransformer`** (conceptual) | Holds ordered rules; implements the match → expand loop; delegates each row to a small **strategy** object. |
-| **`SyntaxRulesTransformer`** (refactor target) | Rules whose RHS is **template expansion** (substitution, ellipsis, existing binding-symbol discovery for introduced names). |
-| **`MacroTransformer`** | Rules whose RHS is a **procedure** (expand-time lambda / bridge), fed match results per the [formal binding contract](#formal-binding-contract-macro-rules). |
+| **`Syntax`** | Holds the ordered `transforms`; implements the match → expand loop; delegates each arm to its `Transform`. |
+| **`SyntaxTransform`** | Arms whose RHS is **template expansion** (substitution, ellipsis, existing binding-symbol discovery for introduced names). |
+| **`MacroTransform`** | Arms whose RHS is a **procedure** (expand-time lambda / bridge), fed match results per the [formal binding contract](#formal-binding-contract-macro-rules). |
 
 Both are **one datatype at the protocol level**: an ordered heterogeneous table.
 Serialization (const pool / `build-syntax` family) should carry **per-rule tags**

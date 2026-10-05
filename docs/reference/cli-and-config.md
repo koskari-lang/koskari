@@ -35,6 +35,15 @@ Exactly one run target is required for script execution: `-c CMD`,
 Those forms are mutually exclusive. Remaining arguments are forwarded to the
 script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`.
 
+`--compile-kio` compiles `SRC` under the module name an import would give
+it: each directory above the file holding an `__init__.ki` or `__init__.py`
+is a package segment, and the parent package is imported first, so the
+package pragma in force and any relative import in the body are the ones a
+source load sees. A file under no package is named by its stem. The forms
+run as they compile, so a `when-main` body does not run; a file named
+`__main__.ki` outside a package builds under a synthetic name for the same
+reason.
+
 A `filename` of `-` reads the whole program from stdin, so a heredoc or a
 pipe runs the same source a file would:
 

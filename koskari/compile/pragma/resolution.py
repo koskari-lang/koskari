@@ -39,6 +39,19 @@ def _unique_append(lst, val):
         lst.append(val)
 
 
+def _in_module_scope(fragment):
+    """
+    Whether fragment compiles at module scope: it is no frame or inline
+    scope itself and none is open around it, so its declarations are
+    module bindings
+    """
+
+    if fragment.function_scope or fragment.collector_scope:
+        return False
+    compiler = fragment.compiler
+    return compiler is None or not compiler.lexical_stack
+
+
 def _spellings(fragment):
     """
     The spellings of the names a fragment declares or binds globally,
@@ -147,9 +160,6 @@ class KoskariPragma:
     """
 
     def __init__(self):
-        # Map (fragment_id, name) -> (line, col) for error reporting
-        self._write_positions = {}
-
         # Map code_id -> source fragment for validation-time position lookup
         self._code_to_fragment = {}
 
@@ -171,13 +181,8 @@ class KoskariPragma:
         Adds to requests_for_write unless already declared or global.
         """
 
-        # Store first occurrence position for validation error messages,
-        # keyed by spelling since validation reads names from a Code
-        if position is not None:
-            key = (id(fragment), str(name))
-            if key not in self._write_positions:
-                self._write_positions[key] = position
-
+        # the fragment records the position itself (write_positions)
+        # and carries it through merge, so validation reads it there
         if name not in fragment.declares and name not in fragment._request_global:
             _unique_append(fragment.requests_for_write, name)
 
@@ -185,11 +190,21 @@ class KoskariPragma:
     def on_declare(self, fragment, name, *, position=None):
         """
         Record a declaration (define, params, bindings) of name, a
-        symbol. Removes name from other buckets and adds to declares.
+        symbol. Removes name from the read and write requests and adds
+        to declares. A name the fragment already pulls from the module
+        is the local-or-global conflict, except at module scope, where
+        a declaration and a global request name the same binding
         """
 
-        for bucket in (fragment.requests, fragment.requests_for_write,
-                       fragment._request_global):
+        if name in fragment._request_global:
+            if _in_module_scope(fragment):
+                fragment._request_global.remove(name)
+            else:
+                raise CompilerError(
+                    f"{str(name)!r} cannot be both local (define)"
+                    " and global (define-global).", name)
+
+        for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
                 bucket.remove(name)
 
@@ -202,11 +217,10 @@ class KoskariPragma:
         Conflicts with local declaration; removes from requests buckets.
         """
 
-        if name in fragment.declares:
+        if name in fragment.declares and not _in_module_scope(fragment):
             raise CompilerError(
-                f"{str(name)!r} cannot be both local (define) and global"
-                " (define-global).",
-                name)
+                f"{str(name)!r} cannot be both local (define)"
+                " and global (define-global).", name)
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
@@ -367,7 +381,7 @@ class KoskariPragma:
 
         if fragment is None:
             return None
-        return self._write_positions.get((id(fragment), name))
+        return fragment.write_positions.get(name)
 
 
     def get_request_for_write_syms(self, code) -> Tuple:
@@ -477,15 +491,50 @@ class PythonPragma(KoskariPragma):
 
     def on_write(self, fragment, name, *, position=None):
         """
-        If name is in explicit-globals for current scope, treat as global.
-        Otherwise implicit local: declare on first write (Scheme-like).
+        Bind a write where the open scopes put it. A scope that already
+        declares the name, a let included, takes the write as its own
+        binding; one that declared it global makes it a global write.
+        A name no open scope declares is an implicit declaration in the
+        nearest function or class body, the only scopes Python has to
+        declare in, so a first write inside a let is a local of the
+        function, visible after the let, not a let-local.
         """
+
+        home = None
+        for scope in self._open_scopes(fragment):
+            if name in scope.declares:
+                super().on_write(fragment, name, position=position)
+                return
+            if name in scope._request_global:
+                self.on_explicit_global(fragment, name, position=position)
+                return
+            if scope.function_scope or scope.collector_scope:
+                home = scope
+                break
 
         if self._explicit_globals_stack \
            and name in self._explicit_globals_stack[-1]:
             self.on_explicit_global(fragment, name, position=position)
-        else:
+        elif home is None or home is fragment:
             self.on_declare(fragment, name, position=position)
+        else:
+            home.declare_var(name)
+            super().on_write(fragment, name, position=position)
+
+
+    @staticmethod
+    def _open_scopes(fragment):
+        """
+        The scopes a write in fragment can see, innermost first: the
+        fragment itself, then the compiler's open lexical chain
+        """
+
+        yield fragment
+        compiler = fragment.compiler
+        if compiler is not None:
+            for scope in reversed(compiler.lexical_stack):
+                if scope is not fragment:
+                    yield scope
 
 
     def on_explicit_global(self, fragment, name, *, position=None):

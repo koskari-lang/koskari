@@ -118,7 +118,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
      region remnants, the prompt itself -- and deliver the handler's
      value there, at the first instruction after POP_PROMPT. */
   goal = kos_xfer_goal_new(NULL, KosDynNode_PARENT((KosDynNode *) prompt),
-                           result, 0, prompt_pop_pc + 1, NULL, 0);
+                           result, prompt_pop_pc + 1, NULL, 0);
   Py_DECREF(result);
   if (! goal)
     RESULT_RAISE();

@@ -29,7 +29,6 @@
 #include "lib.h"
 
 
-static PyObject *iterate_str_send = NULL;
 static PyObject *iterate_str_name = NULL;
 
 
@@ -212,7 +211,9 @@ static PyTypeObject KosIterStepperType;
    Mid-await abandonment: the live chain sits on the stepper's host, so
    the provider's own close cannot reach it. Drive GeneratorExit through
    the host so finally/with cleanup runs, exception-fenced (callable
-   from dealloc mid-unwind); every outcome of the drive is swallowed.
+   from dealloc mid-unwind); the drive's own outcome is swallowed, and
+   an error from closing the pending await iterator is reported as
+   unraisable.
    Marks the provider finished-exhausted and clears the awaiting mark.
 */
 static void stepper_abandon_drive(KosIterStepper *st) {
@@ -225,9 +226,7 @@ static void stepper_abandon_drive(KosIterStepper *st) {
   {
     PyObject *it = KosContext_PY_AWAIT_ITER(st->host);
     if (it) {
-      PyObject *r = PyObject_CallMethod(it, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
+      kos_iter_close(it);
       Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
     }
   }
@@ -368,7 +367,6 @@ static PyObject *stepper_finish_yield(PyObject *val) {
 */
 static int stepper_resume_await(
     KosIterStepper *st,
-    KosIterSlots *islots,
     PyObject *send_val,
     PyObject **still,
     PyObject **hsend,
@@ -385,44 +383,33 @@ static int stepper_resume_await(
     return 0;
   }
 
-  step = PyObject_CallMethodObjArgs(
-      it, iterate_str_send, send_val ? send_val : Py_None, NULL);
-  Py_XDECREF(send_val);
-
-  if (step) {
-    *still = step;
-    return 1;
-  }
-
-  if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
-    /* the awaitable failed: deliver the exception into the provider
-       at the await point (raise-at-await shape) */
-    PyObject *tb = NULL;
-    PyErr_Fetch(httyp, htexc, &tb);
-    PyErr_NormalizeException(httyp, htexc, &tb);
-    if (*htexc && tb)
-      PyException_SetTraceback(*htexc, tb);
-    Py_XDECREF(tb);
-    Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
-    st->awaiting = 0;
-    return 0;
-  }
-
   {
-    PyObject *await_result = NULL;
-    if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-      islots->ki_finish(st->provider, 0);
+    PySendResult r = kos_iter_send(it, send_val ? send_val : Py_None, &step);
+    Py_XDECREF(send_val);
+
+    if (r == PYGEN_NEXT) {
+      *still = step;
+      return 1;
+    }
+
+    if (r == PYGEN_ERROR) {
+      /* the awaitable failed: deliver the exception into the provider
+         at the await point (raise-at-await shape) */
+      PyObject *tb = NULL;
+      PyErr_Fetch(httyp, htexc, &tb);
+      PyErr_NormalizeException(httyp, htexc, &tb);
+      if (*htexc && tb)
+        PyException_SetTraceback(*htexc, tb);
+      Py_XDECREF(tb);
+      Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
       st->awaiting = 0;
-      return -1;
+      return 0;
     }
-    if (! await_result) {
-      await_result = Py_None;
-      Py_INCREF(await_result);
-    }
+
+    /* PYGEN_RETURN: the completion, owned, never NULL */
     Py_CLEAR(KosContext_PY_AWAIT_ITER(st->host));
     st->awaiting = 0;
-    *hsend = await_result;
-    PyErr_Clear();
+    *hsend = step;
     return 0;
   }
 }
@@ -521,8 +508,8 @@ static PyObject *stepper_drive(
        the eval throw ingress. */
     if (! throw_typ) {
       PyObject *still = NULL;
-      int rr = stepper_resume_await(st, islots, send_val, &still,
-                                    &hsend, &httyp, &htexc);
+      int rr = stepper_resume_await(
+          st, send_val, &still, &hsend, &httyp, &htexc);
       send_val = NULL;
       if (rr > 0) {
         Py_XDECREF(throw_exc);
@@ -694,7 +681,9 @@ static PyObject *stepper_iternext(PyObject *self) {
 
   if (! st->provider) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "cannot reuse already awaited __anext__()/asend()");
+                    (st->is_throw || st->closing)
+                    ? "cannot reuse already awaited aclose()/athrow()"
+                    : "cannot reuse already awaited __anext__()/asend()");
     return NULL;
   }
 
@@ -702,6 +691,7 @@ static PyObject *stepper_iternext(PyObject *self) {
     PyObject *send_val = st->send_value;
     PyObject *throw_typ = st->throw_typ;
     PyObject *throw_exc = st->throw_exc;
+    PyObject *res;
     /* Durable here means generator-style: suspended state lives in
        the provider's context between steps. A provider whose durable
        context is recyclable is stateless between steps and keeps the
@@ -715,8 +705,19 @@ static PyObject *stepper_iternext(PyObject *self) {
     st->throw_typ = NULL;
     st->throw_exc = NULL;
 
-    return stepper_drive(st, islots, durable, send_val, throw_typ,
-                         throw_exc);
+    res = stepper_drive(st, islots, durable, send_val, throw_typ,
+                        throw_exc);
+    /* The step ended, in a value, exhaustion or an error: the
+       awaitable is spent, and a second await meets the guard above. A
+       mid-step await keeps the state for its resume. */
+    if (! st->awaiting) {
+      PyObject *ftyp, *fval, *ftb;
+
+      PyErr_Fetch(&ftyp, &fval, &ftb);
+      stepper_release_state(st);
+      PyErr_Restore(ftyp, fval, ftb);
+    }
+    return res;
   }
 }
 
@@ -1037,12 +1038,11 @@ static PyObject *pyiter_step(
   {
     PyObject *out = NULL;
     KosIterStepResult r;
+    int thrown = (throw_exc != NULL);
 
     if (throw_exc && ! durable) {
       r = iterate_suite_throw(&gen->host, &gen->host_owned, islots,
                               gen->provider, throw_typ, throw_exc, &out);
-      throw_typ = NULL;
-      throw_exc = NULL;
     } else {
       /* A durable provider's throw pair rides the eval ingress below. */
       r = iterate_suite_step(&gen->host, &gen->host_owned, islots,
@@ -1054,6 +1054,14 @@ static PyObject *pyiter_step(
         return out;
 
       case KOS_ITER_EXHAUSTED:
+        if (thrown) {
+          /* the provider was already finished: a throw into a finished
+             generator raises what was thrown, not StopIteration */
+          Py_XDECREF(out);
+          pyiter_release_state(gen);
+          PyErr_SetObject(throw_typ, throw_exc);
+          return NULL;
+        }
         return pyiter_finish_exhausted(gen, out);
 
       case KOS_ITER_ERROR:
@@ -1176,9 +1184,11 @@ static PyObject *pyiter_throw(PyObject *self, PyObject *args) {
     return NULL;
 
   if (! gen->provider) {
+    /* a throw into a finished generator raises what was thrown, as the
+       generator protocol does; pyiter_ki_throw answers the same way */
+    PyErr_SetObject(typ, exc);
     Py_DECREF(typ);
     Py_DECREF(exc);
-    PyErr_SetNone(PyExc_StopIteration);
     return NULL;
   }
 
@@ -1244,8 +1254,8 @@ static PyObject *pyiter_repr(PyObject *self) {
 
   if (gen->display_name)
     return PyUnicode_FromFormat(
-        "<generator object %U at %p>", gen->display_name, (void *) self);
-  return PyUnicode_FromFormat("<generator object at %p>", (void *) self);
+        "<koskari iterator %U at %p>", gen->display_name, (void *) self);
+  return PyUnicode_FromFormat("<koskari iterator at %p>", (void *) self);
 }
 
 
@@ -1430,7 +1440,6 @@ int koskari_iterate_init(PyObject *mod) {
 
   (void) mod;
 
-  STR_CONST(iterate_str_send, "send");
   STR_CONST(iterate_str_name, "__name__");
 
   if (PyType_Ready(&KosIterStepperType) ||
@@ -1443,7 +1452,6 @@ int koskari_iterate_init(PyObject *mod) {
 
 int koskari_iterate_clear(PyObject *mod) {
 
-  Py_CLEAR(iterate_str_send);
   Py_CLEAR(iterate_str_name);
 
   (void) mod;

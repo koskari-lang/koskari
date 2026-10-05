@@ -34,11 +34,16 @@ KOS_OP_HANDLER(POP_WIND) {
   if (kos_dyn_ob_park_value(top, body_result) < 0)
     RESULT_RAISE();
 
+  KosDynFrame *const caller = KosEvalState_FRAME(es);
   KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
   if (kr.kind == KOS_RES_REPROLOGUE) {
-    /* the after-thunk's frame is current; its return settles and
-       unlinks the wind */
-    RESULT_CONTINUE(es);
+    /* the after-thunk's frame is current: its return settles and
+       unlinks the wind. A transfer goal armed by the call with the frame
+       unchanged is the trampoline's to drain before anything past this
+       opcode runs. */
+    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
+      RESULT_CONTINUE(es);
+    return kr;
   }
   if (kr.kind == KOS_RES_AWAIT)
     return kr;  /* the revive settles and unlinks the wind */

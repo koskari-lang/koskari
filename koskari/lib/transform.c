@@ -15,9 +15,9 @@
 
 
 /**
-   koskari/lib/transform/transform.c
+   koskari/lib/transform.c
 
-   The shared body of the map and filter providers. See transform.h.
+   The shared body of the transform/ providers. See transform.h.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -345,6 +345,9 @@ int kos_transform_clear(PyObject *self) {
   /* a stepper mid-step on this context holds its own reference and
      finishes its drive before letting go; the last holder frees */
   Py_CLEAR(t->ctx);
+  /* a cleared transform has nothing left to step; closed makes any
+     later step report exhaustion instead of reading the freed fields */
+  t->closed = 1;
   return 0;
 }
 
@@ -440,6 +443,7 @@ static const struct {
 } transform_types[] = {
   { &KosMapType,         "KosMap",         "map" },
   { &KosFilterType,      "KosFilter",      "filter" },
+  { &KosFilterFalseType, "KosFilterFalse", "filterfalse" },
   { &KosZipType,         "KosZip",         "zip" },
   { &KosZipLongestType,  "KosZipLongest",  "zip-longest" },
   { &KosChainType,       "KosChain",       "chain" },
@@ -457,8 +461,8 @@ static const struct {
 
 /**
    Bind a provider that is a plain function rather than a type.
-   filterfalse and chain-from-iterable are the two: one is a filter
-   with a flag set, the other takes its series from an iterable.
+   chain-from-iterable is the one: a chain that takes its series from
+   an iterable.
 */
 static int transform_bind_function(PyObject *dict, PyMethodDef *def) {
 
@@ -495,8 +499,7 @@ int koskari_transform_init(PyObject *mod) {
       return -1;
   }
 
-  if (transform_bind_function(dict, &kosfilter_false_def) ||
-      transform_bind_function(dict, &koschain_from_iterable_def))
+  if (transform_bind_function(dict, &koschain_from_iterable_def))
     return -1;
 
   return 0;

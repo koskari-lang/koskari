@@ -24,8 +24,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    bracket_pair, break_recursive, build_unpack_pair, car, cdr, cons,
-    make_recursive, nil, pair, setcar, setcdr)
+    bracket_nil, bracket_pair, break_recursive, car, cdr, cons,
+    kos_repr, make_recursive, nil, pair, setcar, setcdr)
 
 
 pytestmark = pytest.mark.phase_lib
@@ -342,6 +342,41 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         p.clear_position()
         self.assertIsNone(p.get_position())
 
+    async def test_fill_position_follow_stops_at_a_positioned_branch(self):
+        """
+        fill_position adds positions where there are none; a cell that
+        already has one ends that branch, its own subtree included, and
+        the walk carries the caller's position throughout
+        """
+        inner = cons(2, 3, nil)
+        inner.set_position(("inner", 1, 1))
+        outer = cons(1, inner, 4, nil)
+        outer.fill_position(("outer", 9, 9), True)
+
+        self.assertEqual(outer.get_position(), ("outer", 9, 9))
+        self.assertEqual(cdr(cdr(outer)).get_position(), ("outer", 9, 9))
+        self.assertEqual(inner.get_position(), ("inner", 1, 1))
+        self.assertIsNone(cdr(inner).get_position())
+
+    async def test_follow_walks_a_deep_car_nesting(self):
+        """
+        The follow walks descend into cars with an explicit stack, so a
+        nesting deeper than the C stack allows is fine
+        """
+        deep = nil
+        for _ in range(200000):
+            deep = cons(deep, nil)
+        innermost = deep
+        for _ in range(199999):
+            innermost = car(innermost)
+
+        deep.set_position(("set", 1, 1), True)
+        self.assertEqual(innermost.get_position(), ("set", 1, 1))
+        deep.clear_position(True)
+        self.assertIsNone(innermost.get_position())
+        deep.fill_position(("fill", 2, 2), True)
+        self.assertEqual(innermost.get_position(), ("fill", 2, 2))
+
 
 class TestNil(unittest.IsolatedAsyncioTestCase):
     """Tests for the nil singleton"""
@@ -351,6 +386,42 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         from koskari.lib import nil as nil1
         from koskari.lib import nil as nil2
         self.assertIs(nil1, nil2)
+
+    async def test_fill_position_leaves_the_singletons_alone(self):
+        """
+        A nil cell takes no position: filling one onto nil or bracket-nil
+        changes nothing, as setting one does not
+        """
+
+        for empty in (nil, bracket_nil):
+            empty.fill_position(("stamp", 1, 1))
+            self.assertIsNone(empty.position)
+            empty.fill_position(("stamp", 1, 1), True)
+            self.assertIsNone(empty.position)
+        self.assertIsNone(cons(1, nil).cdr.position)
+
+    async def test_singletons_are_not_gc_objects(self):
+        """
+        The static singletons carry no GC header, though their types
+        inherit the pair's GC flag; the collector must never see them
+        as GC objects. A contract guard: a fault here is a read of the
+        bytes before the singleton that only a sanitizer reports
+        """
+        import gc
+        self.assertFalse(gc.is_tracked(nil))
+        self.assertFalse(gc.is_tracked(bracket_nil))
+
+    @unittest.skipIf(sys.version_info < (3, 12), "no immortal refcount")
+    async def test_singletons_are_immortal(self):
+        """
+        A reference taken to either singleton moves no refcount
+        """
+        before = (sys.getrefcount(nil), sys.getrefcount(bracket_nil))
+        held = [cons(1, nil) for _ in range(1000)]
+        held += [cons(1, bracket_nil) for _ in range(1000)]
+        self.assertEqual(
+            (sys.getrefcount(nil), sys.getrefcount(bracket_nil)), before)
+        del held
 
     async def test_repr(self):
         """repr(nil) returns 'nil'"""
@@ -517,57 +588,17 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             break_recursive(pair(0, a))
 
-
-class TestBuildUnpackPair(unittest.IsolatedAsyncioTestCase):
-    """Tests for the build_unpack_pair() function"""
-
-    async def test_empty(self):
-        """build_unpack_pair() with no args returns nil"""
-        self.assertIs(build_unpack_pair(), nil)
-
-    async def test_single_list(self):
-        """build_unpack_pair([1, 2, 3]) creates improper list (non-pair tail)"""
-        p = build_unpack_pair([1, 2, 3])
-        # Python lists are not pairs, so result is improper
-        self.assertFalse(p.is_proper())
-        self.assertEqual(list(p.unpack()), [1, 2, 3])
-
-    async def test_single_pair(self):
-        """build_unpack_pair(proper_pair) preserves proper termination"""
-        proper = cons(1, 2, 3, nil)
-        p = build_unpack_pair(proper)
+    async def test_cycle_below_the_head(self):
+        """a spine looping below the head is recursive and proper"""
+        a = pair(1, nil)
+        b = pair(2, a)
+        setcdr(a, b)
+        p = pair(0, a)
+        self.assertEqual(p.length(), 3)
         self.assertTrue(p.is_proper())
-        self.assertEqual(list(p.unpack()), [1, 2, 3])
-
-    async def test_multiple_lists(self):
-        """build_unpack_pair concatenates multiple sequences"""
-        p = build_unpack_pair([1, 2], [3, 4])
-        self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
-
-    async def test_with_pairs(self):
-        """build_unpack_pair works with pair arguments"""
-        p1 = cons(1, 2, nil)
-        p2 = cons(3, 4, nil)
-        result = build_unpack_pair(p1, p2)
-        self.assertEqual(list(result.unpack()), [1, 2, 3, 4])
-
-    async def test_skips_nil(self):
-        """build_unpack_pair skips nil arguments"""
-        p = build_unpack_pair([1, 2], nil, [3, 4])
-        self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
-
-    async def test_with_bracket_pairs(self):
-        """build_unpack_pair unpacks bracket-pair segments (PAIR_SPLICE twin)"""
-        b1 = bracket_pair(1, bracket_pair(2, nil))
-        b2 = bracket_pair(3, bracket_pair(4, nil))
-        result = build_unpack_pair(b1, b2)
-        self.assertEqual(list(result.unpack()), [1, 2, 3, 4])
-
-    async def test_preserves_improper_tail(self):
-        """build_unpack_pair preserves improper tail from last arg"""
-        improper = cons(3, 4, 5)  # improper: ends with 5, not nil
-        p = build_unpack_pair([1, 2], improper)
-        self.assertFalse(p.is_proper())
+        self.assertTrue(p.is_recursive())
+        with self.assertRaises(ValueError):
+            p.append(3)
 
 
 class TestCarCdrErrors(unittest.IsolatedAsyncioTestCase):
@@ -617,6 +648,23 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         setcdr(p2, p2)
         # Should complete without infinite recursion
         self.assertEqual(p1, p2)
+
+    async def test_eq_recursive_coprime_periods(self):
+        """
+        Circular lists whose periods share no factor still compare in
+        bounded steps: every cell pair the walk reaches is remembered,
+        so the walk stops when one comes round again
+        """
+
+        p2 = cons(1, 1, nil)
+        setcdr(cdr(p2), p2)
+        p3 = cons(1, 1, 1, nil)
+        setcdr(cdr(cdr(p3)), p3)
+        self.assertEqual(p2, p3)
+
+        q3 = cons(1, 1, 2, nil)
+        setcdr(cdr(cdr(q3)), q3)
+        self.assertNotEqual(p2, q3)
 
     async def test_copy_recursive(self):
         """copy() handles recursive pairs"""
@@ -679,6 +727,77 @@ class TestPairRenderErrors(unittest.IsolatedAsyncioTestCase):
             repr(p)
         with self.assertRaises(RecursionError):
             str(p)
+
+
+class TestPairRenderMutation(unittest.IsolatedAsyncioTestCase):
+    """
+    A walk over the spine holds the cell and the element it is
+    rendering or comparing, so an element that mutates the list from
+    its dunder cannot free what the walk still reads. The walk keeps
+    going over the cells it reached before the cut
+    """
+
+    class Cutter:
+        """
+        Rendering or comparing this element cuts the spine after the
+        head cell, dropping the only reference to every later cell
+        """
+
+        def __init__(self, head):
+            self.head = head
+
+        def __repr__(self):
+            setcdr(self.head, nil)
+            return "<cut>"
+
+        __str__ = __repr__
+
+        def __eq__(self, other):
+            setcdr(self.head, nil)
+            return True
+
+        __hash__ = None
+
+    class Swapper:
+        """
+        Rendering this element replaces it in its cell, dropping the
+        only reference to itself
+        """
+
+        def __init__(self, cell):
+            self.cell = cell
+
+        def __repr__(self):
+            setcar(self.cell, "swapped")
+            return "<swap>"
+
+        __str__ = __repr__
+
+    def cut_list(self):
+        p = cons(1, None, 3, 4, nil)
+        setcar(cdr(p), self.Cutter(p))
+        return p
+
+    async def test_repr_survives_a_spine_cut(self):
+        self.assertEqual(repr(self.cut_list()), "cons(1, <cut>, 3, 4, nil)")
+
+    async def test_str_survives_a_spine_cut(self):
+        self.assertEqual(str(self.cut_list()), "(1 <cut> 3 4)")
+
+    async def test_kos_repr_survives_a_spine_cut(self):
+        self.assertEqual(kos_repr(self.cut_list()), "(1 <cut> 3 4)")
+
+    async def test_repr_survives_a_car_swap(self):
+        p = cons(1, None, 3, nil)
+        setcar(cdr(p), self.Swapper(cdr(p)))
+        self.assertEqual(repr(p), "cons(1, <swap>, 3, nil)")
+        self.assertEqual(car(cdr(p)), "swapped")
+
+    async def test_eq_survives_a_spine_cut(self):
+        left = self.cut_list()
+        right = cons(1, "anything", 3, 4, nil)
+        self.assertTrue(left == right)
+        self.assertEqual(str(left), "(1)")
 
 
 class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):

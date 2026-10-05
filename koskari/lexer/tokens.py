@@ -25,9 +25,6 @@ first use, so importing this module does not load the bootstrap.
 :license: GNU General Public License v3
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
-
 
 from collections import namedtuple
 
@@ -337,8 +334,14 @@ def tokenize(source, filename='<string>', special_names=None):
                     start_col,
                     line, col)
                 continue
-            yield Token('dot', ch, start_line, start_col, line, col)
-            continue
+            # the reader makes DOT only of a lone '.', or of the '.'
+            # attached to a closed form or string as the attribute
+            # suffix; any other leading dot begins an atom, .5 a float
+            # and .name a symbol, which the atom path below classifies
+            attached = i >= 2 and sl[i - 2] in ')]}"'
+            if attached or _scan_atom_end(sl, i, n) == i:
+                yield Token('dot', ch, start_line, start_col, line, col)
+                continue
 
         if ch == ',':
             if i < n and sl[i] == '@':

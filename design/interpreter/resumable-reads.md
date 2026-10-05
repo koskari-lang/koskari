@@ -177,6 +177,133 @@ cache refuses it under the existing rule. The binding form must
 produce a non-raw ref, which promotes the slot as a closure capture
 does; the template reset returns it to raw at the cache store.
 
+### 7. Rows that collect: UNPACK and the star call
+
+The UNPACK family (`UNPACK`, `UNPACK_FAST`, `UNPACK_VAR`,
+`UNPACK_STAR`) and the star-call family (`CALL_STAR` and its VAR, FAST,
+ATTR and TAIL forms) materialise an iterable operand in one step,
+`PySequence_Fast` in `KosEvalState_PopUnpackSequence` and
+`PySequence_Tuple` in `kos_op_call_star`. Over a Koskari generator
+that goes through the Python iterator protocol into a `KosPyIter`,
+which runs a nested evaluator per element on the demand path: the
+same nesting a dynamic ref's getter runs today, forced the same way,
+so a generator whose body awaits fails inside the materialisation as a
+sync violation where `for-each` over it flattens. Today the demand
+path is forced, and that is the accepted behaviour until this change.
+
+The splice and splat rows are the same class: `PAIR_SPLICE` over a
+generic iterable segment, `COMBINE_ARGS`, `BUILD_LIST_EXTEND` and
+`BUILD_LIST_EXTEND_CONST` materialise through `_PyList_Extend`,
+`PySequence_InPlaceConcat` and `PySequence_Tuple`, so `` `(a ,@(gen)) ``
+and `#[*: (gen)]` run the generator on the demand path and fail the
+same way when its body awaits (probed 2026-10-04). The nested
+evaluation runs on the generator's own context, or on a host the
+adapter owns, never on the calling eval state's stack, so the operand
+pointers `PAIR_SPLICE` and `COMBINE_ARGS` hold into their segment
+across the iteration are not invalidated by it. These rows take the
+collecting shape below when it is built.
+
+The row kind carries this without a new node kind. The operand is
+one of the row's lookups; when it is a KosIter provider (the
+`KosIter_Check` gate `OBJECT_NEXT` already uses) the handler does not
+materialise it but collects it:
+
+- **the buffer is the operand stack**: the operands the row already
+  holds stay where they are, the provider among them, and each element
+  delivered is pushed above them; the row's state `k` counts the
+  elements pushed so far.
+- **each step is a NEXT node**: the handler, and then the kind's `fn`
+  after every delivery, pushes a `KOS_DYN_NEXT` node over the provider
+  and runs one `KosIterRequest_Next` against it, exactly as
+  `object_next_step` does for `(next it)`. A delivered element lands
+  through the pending slot into `fn`, which pushes it and requests the
+  next; the node self-pops after each delivery as it does today. A
+  request that continues threads into the installed frame or bounces
+  through the prologue, and the delivery arrives as a call's does.
+- **exhaustion finishes the row**: `fn` gathers the `k` elements off
+  the stack into the tuple the materialisation would have produced,
+  places it in the provider's position, and tails into
+  `kos_row_finish[op]`, which for UNPACK binds the targets and for a
+  star call builds the argument tuple and installs the call. The
+  operands under the elements are untouched throughout, so a raise in
+  the generator unwinds with the frame's operands as they were, and a
+  freeze at a yield inside the generator parks the half-collected
+  elements on the stack as any buffered row does.
+- **a raise or a capture** mid-collection behaves as for any suspended
+  row: the frame carries a resume, the frame cache refuses it, and a
+  clone of the row kind is `kos_resume_clone_shared`.
+
+What it gives: `(define-values [a b c] (gen))` and `(f *: (gen))`
+flatten for a Koskari generator, awaits inside the generator suspend
+the consumer as `for-each` lets them, and a Python iterable keeps the
+`PySequence_Fast` path unchanged. The gates of "The rule on
+performance" apply: the gate is one type check on an operand the
+handler already popped, on the cold arm where the operand is not a
+tuple or list.
+
+Two things to settle when it is built:
+
+- whether the star handler's rewrap of a TypeError into "argument
+  after `*:` must be an iterable" should stand only for a type with no
+  iteration protocol, so that an error raised while iterating, the
+  sync violation included, reaches the user as itself;
+- `UNPACK_STAR`, which needs the whole sequence before it can split
+  the tail, collects to exhaustion like the others; the count check
+  moves to the finish.
+
+### 8. MATCH_CASE: predicates and extractors
+
+A runtime `match` arm with a `(? pred)` predicate or an `(app f ...)`
+extractor calls it from inside the match walk: `MATCH_CASE` ->
+`KosMatcher_RunSlots` -> `match_node` -> `engine_test` ->
+`matcher_call_extern` -> `Koskari_DemandSync` (`matcher/datum.c`). A
+Koskari callable runs a nested evaluator per call, and one whose body
+awaits fails as a sync violation. Today the demand path is forced, and
+that is the accepted behaviour until this change.
+
+The state a resume must hold is the walk's position, and the walk
+holds it on the C stack: `match_node` recurses through `match_repeat`,
+`match_group` and the `ONEOF` alternatives, and `MatchEngine` carries
+only the captures and their change stack. So this row has one
+precondition the collecting rows do not: the walk's position moves
+off the C stack into the engine, a node index and cursor per open
+level, so that a test can return "waiting" and the walk can re-enter
+at that test with a value in hand. Nothing else about the engine
+changes; the walk is the same walk driven from a struct instead of
+from recursion.
+
+With that, the row kind carries it without a new node kind:
+
+- **the buffer is the operand stack**: the subject and the stacked
+  externs stay where `MATCH_CASE` found them, and the engine, heap
+  allocated for the suspended arm only, hangs off the row's state
+  with the slot array it was filling.
+- **the call installs as a CALL does**: when `engine_test` reaches a
+  predicate or extractor that is a Koskari callable, it does not call
+  it; it hands the callable and its argument up, and the handler
+  installs the callable through `CallInto` with the row resume. A
+  Python callable is called in place as today, so the arm that
+  matches on Python predicates pays nothing new.
+- **the delivery re-enters the test**: the kind's `fn` receives the
+  delivered value, truth-tests it for a predicate or projects it into
+  the single-element subject for an extractor, and drives the walk on
+  from that test. The walk may suspend again on the next callable; it
+  ends by tailing into the bind or the miss exactly as the handler's
+  own settle does.
+- **a raise or a capture** mid-walk behaves as for any suspended row:
+  the captures filled so far are released with the engine, the frame
+  carries a resume, the frame cache refuses it, and a clone of the row
+  kind is `kos_resume_clone_shared`.
+
+A match entered from Python (`Matcher.match`, the compiler's own use
+of the engine) keeps the demand path: there is no evaluator to
+install into.
+
+What it gives: an `async` predicate or extractor inside an `async`
+function awaits where it now raises, and every Koskari predicate call
+in a `match` runs in the frame's own evaluator instead of a nested
+context.
+
 ## Scope limits
 
 - `KosMemoizedRef` keeps the demand path: its deref writes the value
@@ -207,6 +334,13 @@ does; the template reset returns it to raw at the cache store.
   of each family with its lookup call-backed.
 - `RETURN_FAST` and `YIELD_FAST` through a getter.
 - A store through a setter that awaits.
+- `UNPACK` and `CALL_STAR` over a Koskari generator, one whose body
+  awaits, one that raises mid-way with the frame's operands intact,
+  and one captured across; `UNPACK_STAR` splitting a collected tail.
+- A `match` arm whose predicate awaits, one whose extractor awaits,
+  one whose predicate raises with the frame's operands intact, one
+  captured across, and an arm mixing Python and Koskari predicates;
+  a `ONEOF` whose first alternative suspends and then misses.
 - Reads that settle immediately; reads that suspend and resume under
   an asyncio driver and under a demand driver; a failed future raising
   at the read site; a suspended row inside a generator and inside a

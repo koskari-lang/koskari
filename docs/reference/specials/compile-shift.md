@@ -10,7 +10,10 @@ Koskari eval loop via `INVOKE_K` or `INVOKE_K_VAR`).
 
 **Behaviour:** Emits `PUSH_SHIFT 0`, declares `K` as a local variable, emits
 `VAR_STORE K` (binds the captured delimited continuation), compiles body with
-`helper_begin`, emits `POP_SHIFT 0`.
+`helper_begin`, emits `POP_SHIFT 0`. Calling `K` packs its arguments the way
+`return` does: `(k)` resumes with `None`, `(k v)` with `v`, `(k a b)` with the
+tuple `(a, b)`, and a call with keywords, `(k a x: 1)`, with a `values`
+instance over all of them.
 
 **Errors:** Capture can fail in two structurally different ways, each with its
 own exception under the `KoskariContinuationError` category (see

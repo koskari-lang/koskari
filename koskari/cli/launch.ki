@@ -298,7 +298,8 @@ define run []:
     if filename:
       set! sys.argv #[filename *: options.args]
     else:
-      set! sys.argv (list options.args)
+      ; an interactive session reports an empty argv[0], as Python does
+      set! sys.argv #["" *: options.args]
 
   when options.tweakpath:
     sys.path.insert 0 "."

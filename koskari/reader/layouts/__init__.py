@@ -16,7 +16,8 @@ koskari.reader.layouts
 
 Layout handlers for reader block syntax.
 
-Handlers register via ``koskari.stdlib.builtin`` into ``koskari.stdlib.BUILTINS``.
+Handlers register via ``koskari.bootstrap.builtin`` into its builtin
+registry.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -28,10 +29,11 @@ from ...lib import cons, keyword, nil, symbol
 from ...types import (
     fill_position, get_position, is_keyword, is_pair, is_symbol, strip_mark)
 from .basics import (
-    layout_block, layout_block_begin, layout_inline_block,
-    layout_quasiquote, layout_quasiquote_syntax, layout_quote,
-    layout_quote_syntax)
-from .classes import layout_class, layout_define_class
+    layout_block, layout_block_begin, layout_import_from,
+    layout_inline_block, layout_quasiquote, layout_quasiquote_syntax,
+    layout_quote, layout_quote_syntax)
+from .classes import (
+    layout_class, layout_define_class, layout_define_dataclass)
 from .conditionals import layout_if, layout_match, layout_switch
 from .define_syntax import (
     layout_bare_syntax, layout_macro_match, layout_macro_rules,
@@ -58,6 +60,7 @@ __all__ = (
     "layout_quasiquote_syntax",
     "layout_class",
     "layout_define_class",
+    "layout_define_dataclass",
     "layout_dyn_wind",
     "layout_if",
     "layout_match",
@@ -130,13 +133,6 @@ def reader_for(target):
     return find_module_reader(target)
 
 
-_is_block = is_block
-
-
-def _block_candidate(entry):
-    return entry if _is_block(entry) else None
-
-
 def _gather_peers(tail, declared):
     """
     Consume declared peer blocks from the head of a spine
@@ -149,8 +145,8 @@ def _gather_peers(tail, declared):
 
     peers = []
     while tail:
-        sibling = _block_candidate(tail.car)
-        if sibling is None:
+        sibling = tail.car
+        if not is_block(sibling):
             break
         if str(strip_mark(sibling.cdr.car.car)) not in declared:
             break
@@ -240,7 +236,7 @@ def apply_lines(entries, target):
     while entries:
         entry, tail = entries
 
-        if _is_block(entry):
+        if is_block(entry):
             if is_keyword(entry.cdr.car.car):
                 out.append(entry)
             else:

@@ -161,6 +161,7 @@ informal encoding:
 | `list:[1,2,3]` | Python list (from `list`, `#[…]`, or `list-each`) |
 | `tuple:(1,2,3)` | Python tuple (from `tuple`, or `#(…)`) |
 | `proper-list:(1 2 3)` | Koskari proper list (cons chain ending in nil) |
+| `bracket-list:[1 2 3]` | Koskari proper bracket list (bracket-cons chain ending in bracket-nil) |
 | `improper-list:(1 2 . 3)` | Improper list shape |
 
 ## Marked complex eval encodings

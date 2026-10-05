@@ -23,7 +23,13 @@ fidelity is the point.
 
 ---
 
-## Implementation (Current)
+## Implementation (native matcher)
+
+The Tags tables, Match Result Types and Match Result sections further down
+record the IR of the Python matcher this note was written against
+(`matcher/...` tags, results carrying `.source`, `with_specs`); the native
+matcher has none of it, and the frozen IR in [MATCHER.md](../MATCHER.md)
+supersedes those sections.
 
 The **native** matcher (`koskari.lib.Matcher`) interprets frozen matcher tuples. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
 
@@ -42,7 +48,8 @@ Compile-specific composites (e.g. **BINDINGS**, **FORMALS**) are defined in **`k
 
 ## Design Goals (Target Matcher Set)
 
-The following describes the intended unified design. Implementation may lag; see "Implementation (Current)" and the Tags tables for current state.
+The following describes the intended unified design. Implementation may lag; see "Implementation (native matcher)" for current state; the Tags tables are
+the superseded IR.
 
 ### Unified Coverage
 
@@ -403,7 +410,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### Current Specials
 
-1. Compiler dispatches to `compile_special(fragment, comp, source_obj, tc)`.
+1. Compiler dispatches to `compile_special(fragment, comp, source_obj)`, which calls `comp.compile_impl(compiler, source_obj)`.
 2. Special handler receives `source_obj` (the full form, e.g. `(compile/let ...)`).
 3. **With patterns**: Handler calls `match(tail, PATTERNS, literals)`; on success, uses bindings to compile.
 

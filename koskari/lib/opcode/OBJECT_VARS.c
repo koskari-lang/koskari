@@ -27,10 +27,14 @@ KOS_OP_HANDLER(OBJECT_VARS) {
   PyObject *d = PyObject_GetAttrString(val, "__dict__");
   Py_DECREF(val);
 
+  /* only a missing __dict__ is the caller's type error; any other
+     error from the lookup propagates as raised */
   if (unlikely(! d)) {
-    PyErr_Clear();
-    PyErr_SetString(PyExc_TypeError,
-                    "vars argument must have __dict__ attribute");
+    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+      PyErr_Clear();
+      PyErr_SetString(PyExc_TypeError,
+                      "vars() argument must have __dict__ attribute");
+    }
     RESULT_RAISE();
   }
 

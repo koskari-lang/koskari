@@ -58,27 +58,6 @@ def prompt_toolkit_style_class(tok_type):
     return KIND_TO_PROMPT_TOOLKIT.get(tok_type, 'class:koskari.symbol')
 
 
-def token_start_index(source, token):
-    """
-    Return the 0-based byte index into source for token start position
-
-    :param source: full source string
-    :param token: Token from tokenize()
-    :return: 0-based index of token.start_col on token.start_line
-    """
-
-    if token.start_line <= 1:
-        return token.start_col - 1
-    line_no = 1
-    idx = 0
-    n = len(source)
-    while line_no < token.start_line and idx < n:
-        if source[idx] == '\n':
-            line_no += 1
-        idx += 1
-    return idx + token.start_col - 1
-
-
 def pygments_token_type(tok_type):
     """
     Map a tokenize() type string to a Pygments token type
@@ -124,7 +103,6 @@ __all__ = (
     'KIND_TO_PROMPT_TOOLKIT',
     'prompt_toolkit_style_class',
     'pygments_token_type',
-    'token_start_index',
 )
 
 

@@ -22,6 +22,7 @@ koskari.launcher without importing the C extension or setuptools.
 """
 
 
+import re
 import warnings
 
 
@@ -240,18 +241,33 @@ def warn_koskari_scripts_metadata(dist):
     if not koskari_lines:
         return
 
-    install_reqs = set(getattr(dist, 'install_requires', None) or [])
-    if 'koskari' not in install_reqs:
+    install_reqs = getattr(dist, 'install_requires', None) or []
+    names = {requirement_name(req) for req in install_reqs}
+    if 'koskari' not in names:
         warnings.warn(
             "koskari_scripts declared but koskari is not in install_requires",
             stacklevel=2)
 
-    if getattr(dist, 'zip_safe', False):
-        warnings.warn(
-            "koskari_scripts with zip_safe=True may prevent .ki"
-            " discovery; setuptools plugin sets zip_safe=False when"
-            " koskari packages are discovered",
-            stacklevel=2)
+
+# the leading project name of a PEP 508 requirement string
+_REQUIREMENT_NAME = re.compile(r'\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
+
+
+def requirement_name(requirement):
+    """
+    The normalized project name a requirement string names, or None
+
+    Specifiers, extras and markers after the name are ignored, and the
+    name is compared the way package names are: lowercase, with runs of
+    dots, dashes and underscores folded to one dash
+
+    :param requirement: a requirement string such as koskari>=0.1
+    """
+
+    found = _REQUIREMENT_NAME.match(str(requirement))
+    if not found:
+        return None
+    return re.sub(r'[-_.]+', '-', found.group(1)).lower()
 
 
 def declared_packages(dist):
@@ -358,6 +374,12 @@ def augment_koskari_packages(dist):
 
     warn_undeclared_script_packages(dist)
     _ensure_package_data(dist, packages)
+
+    if getattr(dist, 'zip_safe', False):
+        warnings.warn(
+            "koskari_scripts packaging sets zip_safe=False so .ki files"
+            " stay discoverable; the declared zip_safe=True is overridden",
+            stacklevel=2)
     dist.zip_safe = False
 
 

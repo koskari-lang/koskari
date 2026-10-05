@@ -103,7 +103,6 @@ struct KosXferGoal {
   size_t restore_count;
 
   uint8_t phase;               /* KosXferGoalPhase */
-  uint8_t is_throw;            /* payload is raised at delivery */
   uint8_t is_cc_unwind;        /* delivery is a boundary raise of payload */
 };
 
@@ -123,7 +122,6 @@ KosXferGoal *kos_xfer_goal_new(
     KosDynNode *target,
     KosDynNode *seam,
     PyObject *payload,
-    int is_throw,
     uint32_t resume_pc,
     PyObject *continuation_ref,
     int is_cc_unwind);

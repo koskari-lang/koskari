@@ -45,8 +45,8 @@
    KosDynKind enumerates the types of nodes in the dynamic chain.
 
    KOS_DYN_FRAME  - Function activation record
-  KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
-  KOS_DYN_DELIM  - Delimited invoke return marker with return metadata
+   KOS_DYN_PROMPT - Delimiter for delimited continuations (reset)
+   KOS_DYN_DELIM  - Delimited invoke return marker with return metadata
    KOS_DYN_WIND   - Dynamic-wind extent with before/after hooks
    KOS_DYN_TRY - try region
    KOS_DYN_FINALLY - finally region
@@ -63,6 +63,8 @@
                        frame, or namespace of its own)
    KOS_DYN_GEN       - Generator node; intercepts handle(YIELD/RETURN/RAISE),
                        denies handle(SHIFT)
+   KOS_DYN_NEXT      - Iteration node for a standalone NEXT over a Koskari
+                       iterator, and extended FOREACH stepping
 */
 
 typedef enum KosDynKind {
@@ -166,14 +168,6 @@ typedef enum KosDynWindPhase {
 } KosDynWindPhase;
 
 
-typedef enum KosRegionStyle {
-  KOS_REGION_TRY      = 0,
-  KOS_REGION_FINALLY  = 1,
-  KOS_REGION_LOOP     = 2,
-  KOS_REGION_FOREACH  = 4,
-} KosRegionStyle;
-
-
 /* === KosIterRequest: the iteration request sidecar === */
 
 
@@ -271,16 +265,16 @@ typedef enum {
 
 
 /**
-   KosXferEvent indicates why an unwind is occurring.  Passed to
-   kos_dyn_unwind and propagated through the unwind path so nodes
-   can react appropriately (e.g. dynamic-wind after-thunk runs
-   regardless; event is for diagnostics or future use).
+   KosXferEvent says why a node is leaving the chain. Every walk and
+   unlink passes one, and kos_dyn_unlink_top acts on the node's
+   obligation by kind and event (deliver a parked value, re-raise a
+   parked exception, release, or fault), so the event decides what a
+   leaving node does with what it holds.
 */
 typedef enum KosXferEvent {
   KOS_XFER_EVENT_NONE = 0,
   KOS_XFER_EVENT_RETURN,
   KOS_XFER_EVENT_RAISE,
-  KOS_XFER_EVENT_YIELD,
   KOS_XFER_EVENT_BREAK,
   KOS_XFER_EVENT_CONTINUE,
   KOS_XFER_EVENT_SHIFT,
@@ -331,13 +325,11 @@ typedef struct KosObligation {
 
    KOS_HANDLE_PASS     - node passed through; continue walk
    KOS_HANDLE_CONSUMED - node consumed; stop walk, caller delivers to handler
-   KOS_HANDLE_DEFERRED - node deferred (e.g. async); return to caller
    KOS_HANDLE_ERROR    - error; return -1
 */
 typedef enum KosHandleResult {
   KOS_HANDLE_PASS = 0,
   KOS_HANDLE_CONSUMED,
-  KOS_HANDLE_DEFERRED,
   KOS_HANDLE_ERROR,
 } KosHandleResult;
 
@@ -496,7 +488,6 @@ struct KosDynNode {
       uint32_t continue_pc;
       uint8_t enabled;
       PyObject *result;
-      PyObject *iter;
       uint8_t exhausted;
       uint32_t iter_next_else_pc;
       KosIterRequest req;    /* in-flight ITER_NEXT step state */
@@ -702,26 +693,6 @@ struct KosContinuation {
   (((KosContinuation *)(k))->live_shift_node_id)
 
 
-/* === Hook invocation contract === */
-
-
-/**
-   Result of "run one hook invocation": done (advance step) or in progress
-   (hook suspended on await; do not advance; store awaitable/state for resume).
-*/
-#define KOS_HOOK_DONE        0
-#define KOS_HOOK_IN_PROGRESS 1
-
-
-/**
-   Signature for running one hook (or one chunk). Run the hook in es; fill
-   out_ev on suspend. Return KOS_HOOK_DONE when the hook finished, or
-   KOS_HOOK_IN_PROGRESS when it suspended on await (caller will resume later
-   with send_val/throw_exc). hook_state is opaque state for the runner.
-*/
-typedef int (*KosHookInvokeFn)(KosEvalState *es, void *hook_state);
-
-
 /* === DynNode allocation and lifecycle === */
 
 
@@ -847,12 +818,13 @@ void kos_dynwind_free(KosDynWind *wind);
 
 
 /**
-   Allocate a new region node.
+   Allocate a new region node. TRY and FINALLY take the handler pc;
+   LOOP and FOREACH take the break and continue targets.
 
    :param parent: parent node in dynamic chain
-   :param style: region type
-   :param break_pc: break/exit jump target
-   :param continue_pc: continue jump target (or 0)
+   :param handler_pc: handler jump target (TRY, FINALLY)
+   :param break_pc: break/exit jump target (LOOP, FOREACH)
+   :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
 
    :return: new region node, or NULL on error
 */
@@ -990,7 +962,7 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
 
 /**
-   Push a frame with code=NULL, ns=empty dict, stack=NULL for INSTALL to configure.
+   Push a placeholder frame with code=NULL and ns=NULL for INSTALL to configure.
 
    :return: new frame, or NULL on error
 */
@@ -999,10 +971,10 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 
 /**
    Push a frame for a native program: no code, and the namespace slot
-   holds an owned fill of the live namespace -- a native frame
-   introduces no namespace of its own, so it carries the fill like any
-   other non-introducer node and the live register stays truthful over
-   the program's extent.
+   holds an owned reference to the shared empty namespace -- a native
+   frame reads and stores no name, so the slot only keeps the live
+   register non-NULL over the program's extent, and nothing is visible
+   or storable through it.
 
    :return: new frame, or NULL on error
 */
@@ -1158,17 +1130,6 @@ int kos_dyn_teardown_gen_exhausted(KosEvalState *es);
    :return: 0 on success, -1 on error
 */
 int kos_dyn_pop_frame(KosEvalState *es);
-
-
-/**
-   Attach an existing frame to the context's dynamic chain (no allocation).
-
-   :param ctx: execution context
-   :param frame: existing frame (not freed by this module)
-
-   :return: 0 on success, -1 on error
-*/
-int kos_dyn_attach_frame(KosEvalState *es, KosDynFrame *frame);
 
 
 /**
@@ -1335,12 +1296,13 @@ KosDynWind *kos_dyn_push_wind(
 
 
 /**
-   Push a region onto the dynamic chain.
+   Push a region onto the dynamic chain. TRY and FINALLY take the
+   handler pc; LOOP and FOREACH take the break and continue targets.
 
-   :param ctx: execution context
-   :param style: region type
-   :param break_pc: break/exit jump target
-   :param continue_pc: continue jump target (or 0)
+   :param es: eval state
+   :param handler_pc: handler jump target (TRY, FINALLY)
+   :param break_pc: break/exit jump target (LOOP, FOREACH)
+   :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
 
    :return: new region, or NULL on error
 */
@@ -1440,12 +1402,6 @@ PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node);
 
 
 /**
-   True when the node's in-flight step is a parked KosIter provider
-   under the re-entry contract: the awaited value feeds back into the
-   provider's ki_step rather than delivering as the element.
-*/
-
-/**
    True when the node's in-flight step is a value graft: the next
    frame return below delivers as the step element.
 */
@@ -1517,12 +1473,19 @@ KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
 
 
 /**
-   Pop a collector scope node.
+   Pop the collector scope node at the top of the chain and hand out
+   the namespace it collected, revealed for the value stack.
 
-   :param ctx: execution context
+   :param es: eval state
    :param node: COLLECT node to pop (must be dyn_top)
+   :param out_ns: the collected namespace (new ref); untouched on error
+   :return: 0, or -1 with an exception set when node is not the top of
+     the chain or not a COLLECT node
 */
-int kos_dyn_pop_collect(KosEvalState *es, KosDynCollect *node);
+int kos_dyn_pop_collect(
+    KosEvalState *es,
+    KosDynCollect *node,
+    PyObject **out_ns);
 
 
 
@@ -1661,9 +1624,9 @@ typedef enum KosPendingReturnKind {
    node still at dyn_top for the hook to settle; EVAL_RAISE or EVAL_FATAL
    with PyErr set.
 
-   kos_dyn_unwind_to_frame and kos_dyn_unwind_to_node offer handle(event)
-   to each node before popping and cross barriers and delimiters; a node
-   that CONSUMES is an error for them. A suspension leaves the value the
+   kos_dyn_unwind_to_node offers nothing: it unlinks each node above
+   the target through kos_dyn_unlink_top with the barrier allowed, so
+   it crosses barriers and delimiters and no node can consume. A suspension leaves the value the
    caller is carrying with the caller, to park on the node whose leave
    is in flight, which is stored in *out_pending (NULL otherwise; the
    out-param itself may be NULL when the caller carries nothing). That
@@ -1685,12 +1648,6 @@ typedef enum KosPendingReturnKind {
    (CONTINUE) or popped the region and pushed result (BREAK). result is
    consumed on every answer.
 */
-KosOpResult kos_dyn_unwind_to_frame(
-    KosEvalState *es,
-    KosDynFrame *frame,
-    KosXferEvent event,
-    KosDynNode **out_pending);
-
 KosOpResult kos_dyn_unwind_to_node(
     KosEvalState *es,
     const KosDynNode *target,
@@ -1752,6 +1709,21 @@ void kos_dyn_extent_abort(KosDynNode *node);
 
 
 /**
+   park / unpark: a generator freeze moves the span above the GEN off
+   the live chain intact, and the install moves it back. A kind whose
+   effect lives outside its node (PARAM: the cells it swapped into the
+   context's table) takes that effect out at the park and puts it back
+   at the unpark, over the table as it is then. Every other kind is a
+   no-op. park cannot fail; unpark returns 0, or -1 with PyErr set and
+   the node's effect not applied.
+
+   Callers: kos_dyn_gen_freeze, kos_dyn_gen_install.
+*/
+void kos_dyn_extent_park(KosEvalState *es, KosDynNode *node);
+int kos_dyn_extent_unpark(KosEvalState *es, KosDynNode *node);
+
+
+/**
    True when node is a CONTROL_HOOK node whose enter or leave is in
    flight.
 */
@@ -1805,7 +1777,7 @@ int kos_dyn_ob_park_return(
 
 
 /**
-   Generic dispatch functions for the seven dynchain operations.  Each
+   Generic dispatch functions over the node kinds.  Each
    switches on the node's kind and invokes the appropriate per-type
    implementation directly, allowing the compiler to emit a jump table
    with inlined handlers rather than an indirect function-pointer call.
@@ -1829,8 +1801,7 @@ KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
    :param out_ev: event output (for transformed events; may be NULL)
 
    :return: KOS_HANDLE_PASS (unwind then pop), KOS_HANDLE_CONSUMED
-     (deliver to node, stop walk), KOS_HANDLE_DEFERRED, or
-     KOS_HANDLE_ERROR (-1)
+     (deliver to node, stop walk), or KOS_HANDLE_ERROR (-1)
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
                                KosXferEvent event);
@@ -1863,8 +1834,9 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
    the live registers retarget to it. A yield is not an unwind: no node
    between the frame and its GEN acts on it (no finally, no __exit__),
    so the open extents freeze with the chain and return on the next
-   install. gen is the node kos_dyn_find_gen returned for the running
-   frame.
+   install. A node whose effect lives outside itself parks it
+   (kos_dyn_extent_park) and takes it back at the install. gen is the
+   node kos_dyn_find_gen returned for the running frame.
 
    Callers: eval.c eval_event_yield.
 
@@ -1958,10 +1930,7 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
 int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 
 
-/* === Prompt lookup and continuation capture === */
-
-
-/* === Context exception stash === */
+/* === Prompt and CC lookup === */
 
 
 /**
@@ -2034,7 +2003,6 @@ void kos_continuation_free(KosContinuation *k);
    :param es: execution/eval state
    :param k: continuation to invoke
    :param value: resume value
-   :param is_throw: if nonzero, throw value as exception
 
    :return: 0 on success, -1 on error
 */
@@ -2053,7 +2021,6 @@ int kos_invoke_continuation(
    KosEvalState *es,
    KosContinuation *k,
    PyObject *value,
-   int is_throw,
    PyObject *continuation_ref);
 
 
@@ -2261,10 +2228,10 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.continue_pc)
 #define KosDynForeach_ENABLED(r)     (((KosDynNode *)(r))->u.foreach.enabled)
 #define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.result)
-#define KosDynForeach_ITER(r)        (((KosDynNode *)(r))->u.foreach.iter)
 #define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
 #define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
 #define KosDynForeach_REQ(r)         (&((KosDynNode *)(r))->u.foreach.req)
+#define KosDynForeach_ITER(r)        (KosDynForeach_REQ(r)->iter)
 
 #define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
 #define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)

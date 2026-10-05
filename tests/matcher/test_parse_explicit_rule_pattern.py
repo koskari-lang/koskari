@@ -20,10 +20,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cons, keyword, symbol
+from koskari.lib import Datum, cons, gensym, keyword, nil, symbol
 from koskari.matcher import (
-    CAPTURE, LITERAL, MATCH, REPEAT, REST, Matcher,
-    parse_explicit_rule_pattern)
+    CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, Matcher,
+    parse_explicit_rule_pattern, parse_matcher)
 from koskari.types import build_proper
 
 
@@ -60,6 +60,27 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         self.assertFalse(r2.matched)
 
 
+    def test_field_name_is_the_symbols_base(self):
+        """
+        (FIELD NAME pat) names an attribute, which has no marks to
+        carry: a template-written NAME arrives as a gensym and the
+        lookup uses its base spelling
+        """
+
+        class Point:
+            def __init__(self, x):
+                self.x = x
+
+        marked_x = gensym(symbol("x"), marks=1)
+        field = parse_matcher(build_proper(
+            symbol("FIELD"), marked_x,
+            build_proper(symbol("VALUE"), symbol("v"))))
+        m = Matcher.from_tuple(MATCH(CLASS("Point", field)).freeze())
+        r = m.match((Point(7),), Point=Point)
+        self.assertTrue(r.matched)
+        self.assertEqual(r.captures["v"], 7)
+
+
     def test_symbol_declaration(self):
         """
         (SYMBOL slot) uses registry declaration path
@@ -93,6 +114,18 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         with self.assertRaises(ValueError) as ar:
             parse_explicit_rule_pattern(bad)
         self.assertIn("proper", str(ar.exception).lower())
+
+
+    def test_empty_cell_rejected(self):
+        """
+        An empty list is an empty inline group, refused by name at the
+        top level and as a cell
+        """
+
+        for form in (nil, cons(symbol("a"), nil, nil)):
+            with self.assertRaises(ValueError) as ar:
+                parse_explicit_rule_pattern(form)
+            self.assertIn("empty", str(ar.exception).lower())
 
 
     def test_rest_min_tail_zero_binds_empty_tuple(self):

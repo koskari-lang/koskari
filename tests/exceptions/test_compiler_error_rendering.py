@@ -23,7 +23,7 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from koskari.exceptions import CompilerError
+from koskari.exceptions import CompilerError, KoskariSyntaxError
 
 
 pytestmark = pytest.mark.phase_infra
@@ -91,6 +91,29 @@ class TestCompilerErrorRendering(unittest.IsolatedAsyncioTestCase):
         self.assertIn("-> %s:2" % src.name, text)
         self.assertIn("(+ x 2)", text)
         self.assertIn("\n      ^", text)
+
+
+class TestKoskariSyntaxErrorOffset(unittest.TestCase):
+    """
+    The reader's 0-based column becomes SyntaxError's 1-based offset,
+    so the traceback caret lands under the column the reader reported
+    """
+
+    def test_offset_is_the_column_plus_one(self):
+        err = KoskariSyntaxError(
+            "mismatched", location=(1, 8), filename="<t>", text="(foo bar]")
+        self.assertEqual(err.lineno, 1)
+        self.assertEqual(err.offset, 9)
+        self.assertEqual(err.location, (1, 8))
+
+    def test_caret_sits_under_the_reported_column(self):
+        err = KoskariSyntaxError(
+            "mismatched", location=(1, 8), filename="<t>", text="(foo bar]")
+        source_line, caret_line = [
+            line for line in err.explain().splitlines()
+            if line.strip() in ("(foo bar]", "^")]
+        self.assertEqual(
+            caret_line.index("^") - source_line.index("("), 8)
 
 
 # The end.

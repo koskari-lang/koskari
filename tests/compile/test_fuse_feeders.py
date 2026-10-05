@@ -65,6 +65,13 @@ def convert_fast(base_nspec, instr):
     return proc.instructions
 
 
+def fuse_and_lower(base_nspec, instr):
+    proc = ByteCodeProcessor(make_fragment(instr))
+    proc.fuse_feeders()
+    proc.convert_fast(base_nspec)
+    return proc.instructions
+
+
 class TestFuseConstOperand(unittest.TestCase):
     """
     A binary OBJECT_OPERAND whose right operand is a constant takes the
@@ -338,8 +345,12 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
     async def test_var_var_lowers(self):
         nspec = NamespaceSpec(None, ("a", "b"), ())
         src = make_cmpsrc(LT, False, False)
-        instr = [(CCV, (src, "a", "b", "fail"))]
-        result = convert_fast(nspec, instr)
+        instr = [
+            (V, "a"),
+            (V, "b"),
+            (CC, (int(LT), 2, "fail", None)),
+        ]
+        result = fuse_and_lower(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
         ])
@@ -347,8 +358,12 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
     async def test_const_slot_passes_through(self):
         nspec = NamespaceSpec(None, ("a",), ())
         src = make_cmpsrc(LT, False, True)
-        instr = [(CCV, (src, "a", 100, "fail"))]
-        result = convert_fast(nspec, instr)
+        instr = [
+            (V, "a"),
+            (C, 100),
+            (CC, (int(LT), 2, "fail", None)),
+        ]
+        result = fuse_and_lower(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, 100, "fail")),
         ])
@@ -356,19 +371,27 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
     async def test_ineligible_name_stays_var(self):
         nspec = NamespaceSpec(None, ("a",), ())
         src = make_cmpsrc(LT, False, False)
-        instr = [(CCV, (src, "a", "elsewhere", "fail"))]
-        result = convert_fast(nspec, instr)
+        instr = [
+            (V, "a"),
+            (V, "elsewhere"),
+            (CC, (int(LT), 2, "fail", None)),
+        ]
+        result = fuse_and_lower(nspec, instr)
         self.assertEqual(result, [
             (CCV, (src, "a", "elsewhere", "fail")),
         ])
 
     async def test_const_string_never_mistaken_for_name(self):
-        # a constant that happens to spell a local name must stay a
-        # constant: the source bit, not the value, decides
+        # a constant equal to a local name must stay a constant: the
+        # source bit, not the value, decides
         nspec = NamespaceSpec(None, ("a",), ())
         src = make_cmpsrc(LT, False, True)
-        instr = [(CCV, (src, "a", "a", "fail"))]
-        result = convert_fast(nspec, instr)
+        instr = [
+            (V, "a"),
+            (C, "a"),
+            (CC, (int(LT), 2, "fail", None)),
+        ]
+        result = fuse_and_lower(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, "a", "fail")),
         ])

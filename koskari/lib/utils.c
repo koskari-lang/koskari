@@ -22,7 +22,7 @@
 static PyObject *kos_utils_repr_registry = NULL;
 
 
-/* double-quote escape for KosUtils_Repr on plain str (see pair.c sib_quoted) */
+/* double-quote escape for KosUtils_QuoteStr */
 static PyObject *_str_dq = NULL;
 static PyObject *_str_esc_dq = NULL;
 static PyObject *_str_kos_repr = NULL;
@@ -44,12 +44,12 @@ static PyObject *_str_space = NULL;
 static PyObject *_str_tuple_close = NULL;
 
 
-static PyObject *kos_utils_unicode_kos_repr(PyObject *obj) {
+PyObject *KosUtils_QuoteStr(PyObject *u) {
 
   PyObject *escaped = NULL;
   PyObject *result = NULL;
 
-  escaped = PyUnicode_Replace(obj, _str_dq, _str_esc_dq, -1);
+  escaped = PyUnicode_Replace(u, _str_dq, _str_esc_dq, -1);
   if (! escaped)
     return NULL;
 
@@ -491,7 +491,12 @@ static int kos_utils_repr_registry_dispatch(
     if (! handler)
       continue;
 
-    if (PyCFunction_Check(handler)) {
+    /* The direct call hands the object to the C body as its self,
+       which is how this module's own handlers, created with no self,
+       take it. A bound builtin has a self of its own and a body that
+       expects it, so it is called like any other callable, with the
+       object as its argument. */
+    if (PyCFunction_Check(handler) && PyCFunction_GetSelf(handler) == NULL) {
       flags = PyCFunction_GetFlags(handler);
       if ((flags & ~METH_CLASS) == METH_NOARGS) {
         meth = PyCFunction_GetFunction(handler);
@@ -530,7 +535,7 @@ PyObject *KosUtils_Repr(PyObject *obj) {
   int r;
 
   if (PyUnicode_CheckExact(obj))
-    return kos_utils_unicode_kos_repr(obj);
+    return KosUtils_QuoteStr(obj);
 
   r = kos_utils_repr_registry_dispatch(obj, &out);
   if (r != 1) {
@@ -596,16 +601,23 @@ static PyObject *list_kos_repr(PyObject *self, PyObject *_unused) {
 
   PyList_Append(col, _str_hash_list_open);
 
-  for (i = 0; i < n; i++) {
-    tmp = KosUtils_Repr(PyList_GET_ITEM(self, i));
+  /* the size is re-read each round and the item held across its
+     repr, as list_repr does: an element's repr can shrink, grow or
+     clear the list */
+  for (i = 0; i < PyList_GET_SIZE(self); i++) {
+    PyObject *item = PyList_GET_ITEM(self, i);
+
+    if (i > 0)
+      PyList_Append(col, _str_space);
+
+    Py_INCREF(item);
+    tmp = KosUtils_Repr(item);
+    Py_DECREF(item);
     if (! tmp)
       goto error;
 
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
-
-    if (i + 1 < n)
-      PyList_Append(col, _str_space);
   }
 
   PyList_Append(col, _str_list_close);
@@ -704,20 +716,30 @@ static PyObject *dict_kos_repr(PyObject *self, PyObject *_unused) {
 
   PyList_Append(col, _str_hash_dict_open);
 
+  /* key and val are held across both reprs, as dict_repr does: the
+     key's repr can delete the entry, and val would go with it */
   while (PyDict_Next(self, &pos, &key, &val)) {
     if (! first)
       PyList_Append(col, _str_space);
     first = 0;
 
+    Py_INCREF(key);
+    Py_INCREF(val);
+
     tmp = KosUtils_Repr(key);
-    if (! tmp)
+    if (! tmp) {
+      Py_DECREF(key);
+      Py_DECREF(val);
       goto error;
+    }
     PyList_Append(col, tmp);
     Py_DECREF(tmp);
 
     PyList_Append(col, _str_colon_space);
 
     tmp = KosUtils_Repr(val);
+    Py_DECREF(key);
+    Py_DECREF(val);
     if (! tmp)
       goto error;
     PyList_Append(col, tmp);

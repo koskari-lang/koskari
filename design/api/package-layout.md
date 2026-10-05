@@ -6,23 +6,23 @@ Koskari is organized by use case. Internal code and tests import only from the *
 
 ```
 koskari/
-├── __init__.py       # Minimal: docstring only, no re-exports
+├── __init__.py       # Imports koskari.importer and calls install(); exposes __version__; no re-exports
 ├── exceptions.py     # All exceptions: Koskari*, Reader*, Layout*, Compiler*, etc.
 ├── types.py          # Value types (from lib) + Python predicates/helpers
 ├── reader/           # Parser, layout block syntax, reader macros
 │   ├── __init__.py
 │   ├── parser.py     # Reader, SourceStream, reader macros, parse errors
 │   └── layouts/      # Layout decorator, LAYOUTS collector
-├── dis.py            # Disassembler for Code objects
+├── dis.ki            # Disassembler for Code objects (exports dis)
 ├── compile/          # Compiler, ByteCodeFragment, special forms
 │   ├── __init__.py
 │   ├── compiler.py   # Compiler, ByteCodeFragment
 │   ├── helpers.py # gather_formals, gather_parameters, helper_begin, …
 │   └── specials/     # Special form handlers (conditionals, imports, etc.)
-├── importer/         # Import hooks for .ki files
-│   ├── importlib.py  # KoskariPathFinder, KoskariSourceFileLoader
-│   ├── module.py     # new_module, load_module_async
-│   └── bootstrap.py  # make_builtins
+├── importer.py       # KoskariPathFinder, KoskariSourceFileLoader, install
+├── module.py         # new_module, load_module_async, load_module_demand
+├── builtins.py       # The assembled builtins module
+├── bootstrap/        # make_bootstrap (__init__.py) plus the .ki builtin sources
 ├── launcher.py       # Installed-script runtime: run_resolved_script, hosted_run
 ├── cli/              # koskari console entry (REPL, run file, compile-kio)
 ├── extras/
@@ -43,7 +43,7 @@ koskari/
 | Parsing | `koskari.reader` | `Reader`, `LayoutReader`, `SourceStream`, `source_str`, `source_open`, `default_reader` |
 | Compilation | `koskari.compile` | `Compiler`, `ByteCodeFragment`, `SPECIALS` (from compiler.py, specials/) |
 | Disassembly | `koskari.dis` | `dis`, and internal helpers |
-| Installed scripts | `koskari.launcher` | `run_resolved_script`, `run_target`, `hosted_run`, `drive_async_loop` |
+| Installed scripts | `koskari.launcher` | `run_resolved_script`, `run_target`, `hosted_run` (drives through `koskari.lib.drive_async_loop`) |
 | Packaging plugin | `koskari.extras.setuptools` | `configure_koskari_scripts`, `validate_koskari_scripts` (`metadata.py`, `plugin.py`) |
 
 ## Import policy
@@ -63,7 +63,7 @@ Tests mirror the package by use case:
 - **tests/types/** — Python type layer: `test_predicates`
 - **tests/importer/** — Import system: `test_basics`, `test_importlib`, `test_module`
 - **tests/lexer/** — Lexer and LSP tests
-- **tests/matcher/** — (removed) legacy Python matcher tests; see **tests/** for `matcher` coverage
+- **tests/matcher/** — Matcher: pattern builders, composites, case patterns, parse and layout matching
 - **tests/cli/** — CLI tests
 - **tests/extras/setuptools/** — `koskari_scripts` packaging plugin and launcher tests
 - **tests/native/** — C harness and memory tests

@@ -24,7 +24,6 @@ compile/globals, and compile/locals.
 
 
 from ...bootstrap import builtin
-from ...exceptions import CompilerError, SpecialError
 from ...hygiene import binding_atom
 from ...lib import Datum, OpCode, cons, keyword, symbol
 from ...matcher import (
@@ -385,16 +384,12 @@ def special_define_global(compiler, caps):
     called_by = caps["called-by"].datum
 
     namesym, type_expr = _define_name_type_pos_from_match(caps)
-    name = str(namesym)
 
     frag = compiler.fragment(called_by)
-    try:
-        frag.request_global(namesym)
-    except CompilerError:
-        raise SpecialError(
-            '%r cannot be both local (define) and global (define-global).'
-            % (name,),
-            called_by) from None
+    # the local-or-global conflict is judged where this fragment merges
+    # into its body, the first point at which a declaration of the
+    # same name is in view
+    frag.request_global(namesym)
 
     return emit_define_value(compiler, frag, caps, namesym, type_expr)
 

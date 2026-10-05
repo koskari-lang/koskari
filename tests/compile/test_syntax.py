@@ -34,7 +34,8 @@ from koskari.lib import (
     Module, ModuleNamespace, car, cdr, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
-    Syntax, SyntaxTransform, build_syntax, parse_syntax_rules_pattern)
+    RulePattern, Syntax, SyntaxTransform, build_syntax,
+    parse_syntax_rules_pattern)
 from koskari.types import build_proper, strip_marks, unpack
 
 
@@ -174,31 +175,6 @@ class TestSyntaxExpansion(unittest.TestCase):
 
 class TestSyntaxRulesPatternParsing(unittest.TestCase):
 
-    def test_match_pattern_equivalent_to_plain(self):
-        rule_plain = build_proper(
-            build_proper(symbol('double'), symbol('x')),
-            build_proper(symbol('+'), symbol('x'), symbol('x')),
-        )
-        rule_match = build_proper(
-            build_proper(
-                symbol('match'),
-                build_proper(symbol('double'), symbol('x')),
-            ),
-            build_proper(symbol('+'), symbol('x'), symbol('x')),
-        )
-        p0, t0 = list(unpack(rule_plain))
-        p1, t1 = list(unpack(rule_match))
-        name = symbol('double')
-        literals = frozenset({name})
-        p0_m = parse_syntax_rules_pattern(p0, literals, p0)
-        p1_m = parse_syntax_rules_pattern(p1, literals, p1)
-        t_plain = build_syntax(name, p0_m, t0)
-        t_match = build_syntax(name, p1_m, t1)
-        ex = expand(t_plain, build_proper(symbol('double'), 21))
-        assert_forms_equal(
-            self, ex, expand(t_match, build_proper(symbol('double'), 21)))
-
-
     def test_rule_pattern_explicit_value_matcher(self):
         rule_row = build_proper(
             build_proper(
@@ -223,6 +199,27 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         syn2 = build_syntax(name, pat_m, tpl)
         expanded = expand(syn2, build_proper(symbol('wrap'), 99))
         assert_forms_equal(self, expanded, build_proper(symbol('list'), 99))
+
+
+    def test_rule_pattern_records_the_variables_of_each_repeat_slot(self):
+        """
+        Lowering a pair sub-pattern under an ellipsis records the
+        variables the pair binds against its anonymous repeat slot; a
+        pattern with no such sub-pattern records nothing
+        """
+
+        name = symbol('pp')
+        literals = frozenset({name})
+        pat_form = build_proper(
+            name, build_proper(symbol('a'), symbol('b')), Ellipsis)
+        pat_m = parse_syntax_rules_pattern(pat_form, literals, pat_form)
+        self.assertIsInstance(pat_m, RulePattern)
+        self.assertEqual(list(pat_m.repeat_variables.values()), [['a', 'b']])
+
+        flat = build_proper(name, symbol('x'), Ellipsis)
+        pat_m = parse_syntax_rules_pattern(flat, literals, flat)
+        self.assertIsInstance(pat_m, RulePattern)
+        self.assertEqual(pat_m.repeat_variables, {})
 
 
     def test_single_var_pattern_binds_whole_form(self):

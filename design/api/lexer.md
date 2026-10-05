@@ -27,14 +27,16 @@ koskari/
 │   ├── __init__.py
 │   ├── parser.py          # default_layout_reader, parse helpers
 │   ├── tokens.py          # Token type, tokenize(), name sets
-│   ├── prompt_toolkit/    # optional: koskari[prompt_toolkit]
-│   │   ├── __init__.py
-│   │   ├── lexer.py       # prompt_toolkit Lexer for syntax highlighting
-│   │   └── completer.py   # (optional) REPL completer
-│   └── lsp/               # optional: koskari[lsp]
+│   └── prompt_toolkit/    # optional: koskari[repl]
 │       ├── __init__.py
-│       ├── server.py      # LSP server entry point
-│       └── handlers.py    # diagnostics, hover, completion, etc.
+│       ├── lexer.py       # prompt_toolkit Lexer for syntax highlighting
+│       └── completer.py   # (optional) REPL completer
+└── extras/
+    └── lsp/               # optional: koskari[lsp]
+        ├── __init__.py
+        ├── server.py      # LSP server entry point
+        ├── handlers.py    # diagnostics, hover, completion, etc.
+        └── utils.py
 ```
 
 ## Core Module: koskari.lexer
@@ -82,7 +84,7 @@ These provide names only; no expansion or execution.
 
 ## Optional Submodule: koskari.lexer.prompt_toolkit
 
-**Extras**: `koskari[prompt_toolkit]` adds `prompt_toolkit` as a dependency.
+**Extras**: `koskari[repl]` adds `prompt_toolkit` as a dependency.
 
 ### lexer.py
 
@@ -177,9 +179,19 @@ Others (signature help, document symbols, etc.) can be added incrementally.
 
 ```ini
 [options.extras_require]
-prompt_toolkit = ["prompt_toolkit>=3.0"]
-lsp = ["pygls>=2.0"]
-all = ["koskari[prompt_toolkit,lsp]"]
+repl =
+  prompt_toolkit>=3.0
+
+lsp =
+  pygls>=2.0
+  lsprotocol
+
+pygments =
+  pygments>=2.0
+
+sphinx =
+  sphinx>=7.0
+  pygments>=2.0
 ```
 
 Imports in optional submodules should be lazy or guarded so that `koskari.lexer` core works without them:

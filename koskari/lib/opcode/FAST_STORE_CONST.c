@@ -19,19 +19,18 @@
   Store the value into the name in the current frame namespace.
 */
 KOS_OP_HANDLER(FAST_STORE_CONST) {
+  PyObject *ns = CURRENT_NS();
+  KOS_OP_REQUIRE_NS(ns);
+  const KosExtra *row = KosOp_ROW(insn);
 
-    PyObject *ns = CURRENT_NS();
-    KOS_OP_REQUIRE_NS(ns);
-      const KosExtra *row = KosOp_ROW(insn);
+  size_t idx = (size_t) KosExtra_IMM(row, 0);
+  PyObject *val = KosExtra_OBJ(row, 1);
 
-    size_t idx = (size_t) KosExtra_IMM(row, 0);
-    PyObject *val = KosExtra_OBJ(row, 1);
+  if (unlikely(kos_ns_fast_store(ns, idx, val) < 0))
+    RESULT_RAISE();
 
-    if (unlikely(kos_ns_fast_store(ns, idx, val) < 0))
-      RESULT_RAISE();
-
-    RESULT_NEXT(es);
-  }
+  RESULT_NEXT(es);
+}
 
 
 // The end.

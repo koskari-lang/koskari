@@ -363,4 +363,54 @@ class TestHeadLoweringFusion(BareSyntaxHelpers):
         self.assertEqual(result, "a-b")
 
 
+BARE_WORD = """
+(define-syntax word (bare-syntax me "hello"))
+"""
+
+BARE_BOX = """
+(define-syntax box (bare-syntax me holder))
+"""
+
+
+class Holder:
+
+    def __init__(self):
+        self.n = 1
+
+
+class TestBareAtomInObjectPosition(BareSyntaxHelpers):
+    """
+    A lone symbol with a bare arm expands wherever a special would
+    otherwise read it as a variable: as the object of an attribute, of
+    a method call, of a call, and of an in-place attribute op
+    """
+
+    async def test_attr_of_a_bare_atom(self):
+        result = await self.run_forms(BARE_WORD, "word.upper")
+        self.assertEqual(result, "hello".upper)
+
+    async def test_method_call_on_a_bare_atom(self):
+        result = await self.run_forms(BARE_WORD, "(.upper word)")
+        self.assertEqual(result, "HELLO")
+
+    async def test_call_of_a_bare_atom(self):
+        result = await self.run_forms(
+            "(define-syntax shout (bare-syntax me str.upper))",
+            '(call shout "hello")')
+        self.assertEqual(result, "HELLO")
+
+    async def test_inplace_attr_on_a_bare_atom(self):
+        module, mod_ns, compiler = self.make_module()
+        holder = Holder()
+        mod_ns.store("holder", holder)
+        for src in (BARE_BOX, "(inplace-attr + box n 41)"):
+            source = default_reader.read(source_str(src, __file__))
+            await compiler.full_compile(source).as_expression(mod_ns)()
+        self.assertEqual(holder.n, 42)
+
+    async def test_literal_in_object_position_is_a_constant(self):
+        result = await self.run_forms("None.__class__")
+        self.assertIs(result, type(None))
+
+
 # The end.

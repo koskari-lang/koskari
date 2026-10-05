@@ -85,6 +85,22 @@ def format_field_args(field):
 
 class TestFormatStringReader(IsolatedAsyncioTestCase):
 
+    async def test_body_starting_with_shebang_is_literal_text(self):
+        """
+        The body is string text, not a script: a leading #! is kept
+        """
+
+        form = read_fstring('f"#!/usr/bin/env python"')
+        parts = fstring_parts(form)
+        self.assertEqual(parts, ["#!/usr/bin/env python"])
+
+    async def test_body_starting_with_shebang_keeps_its_field(self):
+        form = read_fstring('f"#!{x}"')
+        parts = fstring_parts(form)
+        self.assertEqual(len(parts), 2)
+        self.assertEqual(parts[0], "#!")
+        self.assertEqual(format_field_args(parts[1]), [symbol("x")])
+
     async def test_single_arg_field(self):
         form = read_fstring('f"{x}"')
         parts = fstring_parts(form)
@@ -147,6 +163,40 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
         parts = fstring_parts(form)
         self.assertEqual(format_field_args(parts[0]), [symbol("x"), "{w}"])
 
+    async def test_unary_minus_on_name_in_field(self):
+        """
+        A field reads a unary prefix the way bare source does: -x is
+        (- x), not the symbol -x
+        """
+
+        form = read_fstring_pragma('f"{-x}"')
+        args = format_field_args(fstring_parts(form)[0])
+        self.assertEqual(len(args), 1)
+        self.assertEqual(list(unpack(args[0])), [symbol("-"), symbol("x")])
+
+    async def test_unary_minus_on_dotted_name_in_field(self):
+        form = read_fstring_pragma('f"{-x.y}"')
+        args = format_field_args(fstring_parts(form)[0])
+        self.assertEqual(len(args), 1)
+        op, operand = list(unpack(args[0]))
+        self.assertEqual(op, symbol("-"))
+        self.assertEqual(
+            list(unpack(operand)), [symbol("attr"), symbol("x"), symbol("y")])
+
+    async def test_unary_prefix_keeps_the_colon_spec_in_field(self):
+        for src in ('f"{-x:04d}"', 'f"{+x:04d}"', 'f"{~x:04d}"'):
+            form = read_fstring_pragma(src)
+            args = format_field_args(fstring_parts(form)[0])
+            self.assertEqual(len(args), 2, src)
+            self.assertEqual(
+                list(unpack(args[0])), [symbol(src[3]), symbol("x")], src)
+            self.assertEqual(args[1], "04d", src)
+
+    async def test_negative_literal_in_field_stays_a_number(self):
+        form = read_fstring_pragma('f"{-1}"')
+        args = format_field_args(fstring_parts(form)[0])
+        self.assertEqual(args, [-1])
+
     async def test_bracket_suffix_attaches_in_field(self):
         # a bare index-bracket suffix in a slot must attach as a subscript,
         # not land in the format-spec position as a separate form.
@@ -192,6 +242,18 @@ class TestFormatStringReader(IsolatedAsyncioTestCase):
             list(unpack(args[0])),
             [symbol("item"), symbol("foo"), 0])
         self.assertEqual(args[1], "3d")
+
+    async def test_field_position_in_triple_quoted_string(self):
+        # the field form carries the source column of its expression;
+        # a triple-quoted opener is two characters longer than a single
+        single = fstring_parts(read_fstring('f"a {x}"'))[1]
+        triple = fstring_parts(read_fstring('f"""a {x}"""'))[1]
+        self.assertEqual(single.get_position(), (1, 5))
+        self.assertEqual(triple.get_position(), (1, 7))
+
+        # a body that opens with a quote is not an opener character
+        leading = fstring_parts(read_fstring('f""""a {x}"""'))[1]
+        self.assertEqual(leading.get_position(), (1, 8))
 
 
 class TestFormatStringEval(IsolatedAsyncioTestCase):

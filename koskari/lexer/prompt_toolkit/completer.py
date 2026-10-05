@@ -20,15 +20,8 @@ Tab completion for Koskari REPL.
 :license: GNU General Public License v3
 """
 
-# This file was entirely generated via prompt, as the basis for the
-# prompt_toolkit REPL enhancements.
 
-
-try:
-    from prompt_toolkit.completion import Completer, Completion
-except ImportError:
-    Completion = object
-    Completer = object
+from prompt_toolkit.completion import Completer, Completion
 
 from ..tokens import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES
 

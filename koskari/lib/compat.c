@@ -35,6 +35,8 @@
 
 
 static PyObject *_str_send = NULL;
+static PyObject *_str_throw = NULL;
+static PyObject *_str_close = NULL;
 static PyObject *_str_await = NULL;
 static PyObject *_str_cr_await = NULL;
 
@@ -124,6 +126,69 @@ int koskari_List_Extend(PyObject *list, PyObject *iterable) {
 }
 
 
+int kos_iter_close_or_raise(PyObject *iter) {
+
+  PyObject *meth = PyObject_GetAttr(iter, _str_close);
+  PyObject *res;
+
+  if (! meth) {
+    if (! PyErr_ExceptionMatches(PyExc_AttributeError))
+      return -1;
+    PyErr_Clear();
+    return 0;
+  }
+
+  res = PyObject_CallNoArgs(meth);
+  Py_DECREF(meth);
+  if (! res)
+    return -1;
+  Py_DECREF(res);
+  return 0;
+}
+
+
+PySendResult kos_iter_throw(PyObject *iter, PyObject *exc, PyObject **result) {
+
+  PyObject *meth;
+  PyObject *res;
+
+  *result = NULL;
+
+  if (PyErr_GivenExceptionMatches((PyObject *) Py_TYPE(exc),
+                                  PyExc_GeneratorExit)) {
+    if (kos_iter_close_or_raise(iter) < 0)
+      return PYGEN_ERROR;
+    PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
+    return PYGEN_ERROR;
+  }
+
+  meth = PyObject_GetAttr(iter, _str_throw);
+  if (! meth) {
+    if (! PyErr_ExceptionMatches(PyExc_AttributeError))
+      return PYGEN_ERROR;
+    PyErr_Clear();
+    PyErr_SetObject((PyObject *) Py_TYPE(exc), exc);
+    return PYGEN_ERROR;
+  }
+
+  res = PyObject_CallOneArg(meth, exc);
+  Py_DECREF(meth);
+  if (res) {
+    *result = res;
+    return PYGEN_NEXT;
+  }
+  if (PyErr_Occurred() && ! PyErr_ExceptionMatches(PyExc_StopIteration))
+    return PYGEN_ERROR;
+  if (PyGen_FetchStopIterationValue(result) < 0) {
+    *result = NULL;
+    return PYGEN_ERROR;
+  }
+  if (! *result)
+    *result = Py_NewRef(Py_None);
+  return PYGEN_RETURN;
+}
+
+
 #if PY_MINOR_VERSION >= 13
 /**
    Extend list with items from iterable.  Returns list (new ref) on success,
@@ -195,6 +260,41 @@ int koskari_FetchStopIterationValue(PyObject **ptr) {
 */
 int koskari_Unicode_Equal(PyObject *a, PyObject *b) {
   return a == b || PyUnicode_Compare(a, b) == 0;
+}
+
+
+/**
+   Raise the AttributeError getattr raises for a name obj lacks, with the
+   message CPython formats.  On 3.10+ the exception also carries name and
+   obj, the fields the traceback printer reads for its suggestions.  On 3.9
+   AttributeError has no such fields and only the message is set.
+*/
+void koskari_Err_SetMissingAttribute(PyObject *obj, PyObject *name) {
+#if PY_MINOR_VERSION >= 10
+  PyObject *msg = PyUnicode_FromFormat(
+      "'%.100s' object has no attribute '%U'", Py_TYPE(obj)->tp_name, name);
+  if (! msg)
+    return;
+  PyObject *args = PyTuple_Pack(1, msg);
+  Py_DECREF(msg);
+  if (! args)
+    return;
+  PyObject *kwds = Py_BuildValue("{sOsO}", "name", name, "obj", obj);
+  if (! kwds) {
+    Py_DECREF(args);
+    return;
+  }
+  PyObject *exc = PyObject_Call(PyExc_AttributeError, args, kwds);
+  Py_DECREF(args);
+  Py_DECREF(kwds);
+  if (! exc)
+    return;
+  PyErr_SetObject(PyExc_AttributeError, exc);
+  Py_DECREF(exc);
+#else
+  PyErr_Format(PyExc_AttributeError,
+      "'%.100s' object has no attribute '%U'", Py_TYPE(obj)->tp_name, name);
+#endif
 }
 
 
@@ -390,6 +490,8 @@ PyObject *koskari_Err_FormatFromCause(PyObject *exception,
 int koskari_compat_init(const PyObject *mod) {
 
   STR_CONST(_str_send, "send");
+  STR_CONST(_str_throw, "throw");
+  STR_CONST(_str_close, "close");
   STR_CONST(_str_await, "__await__");
   STR_CONST(_str_cr_await, "cr_await");
 
@@ -412,6 +514,8 @@ int koskari_compat_init(const PyObject *mod) {
 int koskari_compat_clear(PyObject *mod) {
 
   Py_CLEAR(_str_send);
+  Py_CLEAR(_str_throw);
+  Py_CLEAR(_str_close);
   Py_CLEAR(_str_await);
   Py_CLEAR(_str_cr_await);
 

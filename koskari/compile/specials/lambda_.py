@@ -27,9 +27,9 @@ from ...lib import FormalsSpec, OpCode, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORMALS, LITERAL_KW, MATCH, SYMBOL, VALUE)
 from ...syntax import special
-from ...types import is_nil
 from ..compiler import ByteCodeFragment
-from ..helpers import discover_docstring, gather_formals, helper_begin
+from ..helpers import (
+    NO_DEFAULT, discover_docstring, gather_formals, helper_begin)
 
 
 def helper_function(compiler, caps, selfref):
@@ -95,7 +95,7 @@ def helper_function(compiler, caps, selfref):
 
     defnames = list(pre_kwd)
     for k, expr in kwonly:
-        if not is_nil(expr):
+        if expr is not NO_DEFAULT:
             defnames.append(str(k))
             frag.merge(compiler.full_compile(expr))
 

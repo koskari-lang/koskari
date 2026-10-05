@@ -186,6 +186,26 @@ class TestLayoutSwitchValidation(IsolatedAsyncioTestCase):
         self.assertRaises(LayoutError, parse_layout, src)
 
 
+    async def test_switch_case_extra_header_argument(self):
+        src = """
+        switch x:
+          case [1] extra:
+            "one"
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
+    async def test_switch_case_two_condition_lists(self):
+        src = """
+        switch x:
+          case [1] [2]:
+            "one"
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
     async def test_switch_case_after_else(self):
         src = """
         switch x:
@@ -205,6 +225,29 @@ class TestLayoutSwitchValidation(IsolatedAsyncioTestCase):
             "meh"
           else:
             "more"
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
+    async def test_switch_parenthesized_clause_line_is_refused(self):
+        """
+        A switch body entry is a case or else block; a clause written as
+        a parenthesized form on a line is not one
+        """
+
+        src = """
+        switch x:
+          (case [1] "one")
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+        src = """
+        switch x:
+          case [1]:
+            "one"
+          (else "meh")
         """
 
         self.assertRaises(LayoutError, parse_layout, src)

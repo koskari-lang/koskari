@@ -1,0 +1,23 @@
+;; Item sites whose container sits in a fast slot, under a key bound to
+;; an attribute ref whose getter rebinds that slot: the row peeks the
+;; container borrowed, the key's deref runs the getter, and the site
+;; must finish the access on the container it fetched. The container
+;; has no other owner, so the rebinding drops its last reference
+;; outside the site. Tracked and Rebinder are the Python types the
+;; test passes in.
+
+(define load
+  (lambda [Tracked Rebinder]
+    (define lst (Tracked #["a" "b" "c"]))
+    (define box (Rebinder &lst))
+    (bind! kk (attr box k))
+    (item lst kk)))
+
+(define store
+  (lambda [Tracked Rebinder]
+    (define lst (Tracked #["a" "b" "c"]))
+    (define box (Rebinder &lst))
+    (bind! kk (attr box k))
+    (define v "stored")
+    (set-item lst kk v)
+    lst))

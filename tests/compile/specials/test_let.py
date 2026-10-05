@@ -18,6 +18,7 @@ Tests for koskari.compile let and letrec special forms.
 
 import pytest
 
+from koskari.exceptions import CompilerError
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -74,6 +75,36 @@ class TestLetSpecial(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, **{"+": lambda x, y: x + y})
         result = await expr()
         self.assertEqual(30, result)
+
+
+class TestLetInitScope(SpecialsTestCase):
+    """
+    A let's init expressions run before its scope opens, in the
+    enclosing scope, and they compile there too
+    """
+
+    async def test_init_lambda_cannot_write_a_let_name(self):
+        src_str = """
+        (lambda []
+          (let [[x 0]
+                [set-x (lambda [] (setq x 5))]]
+            (set-x)
+            x))
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("'x'", str(caught.exception))
+
+    async def test_init_reads_the_enclosing_binding(self):
+        src_str = """
+        (begin
+          (define x 1)
+          ((lambda []
+             (let [[x 2] [y x]]
+               y))))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(1, await expr())
 
 
 class TestLetrecSpecial(SpecialsTestCase):

@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_wind */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_WIND node: a dynamic-wind extent
+  with its before and after thunks.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynWind implementation === */
 
 
@@ -179,12 +202,10 @@ static KosOpResult kos_dyn_wind_leave(
 
     case KOS_WIND_PHASE_PRE_AFTER:
     case KOS_WIND_PHASE_PRE_BEGIN:
-      /* A thunk in flight sits in a frame above this node. If this
-         node is dyn_top, that frame is gone (it raised, or the walk
-         crossed it) and the thunk is dead: nothing to wait for and,
-         for a before-thunk, never entered. */
-      if (KosEvalState_DYN_TOP(es) != (KosDynNode *) node)
-        return EVAL_REPROLOGUE();
+      /* A thunk in flight sat in a frame above this node. The node is
+         dyn_top, so that frame is gone (it raised, or the walk crossed
+         it) and the thunk is dead: nothing to wait for and, for a
+         before-thunk, never entered. */
       KosDynWind_PHASE(node) = KOS_WIND_PHASE_POST_AFTER;
       return EVAL_NORMAL();
 
@@ -283,3 +304,4 @@ static int dynnode_traverse_wind(KosDynNode *node, visitproc visit, void *arg) {
 }
 
 
+// The end.

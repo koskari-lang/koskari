@@ -14,7 +14,12 @@
 """
 koskari.compile.helpers
 
-Compile helpers for matcher FORMALS captures (GROUP dict payload)
+Shared helpers for the special-form compilers: matching a form against
+its declared patterns, gathering formals, bindings and declarations
+from their captures, rerouting and splatting call forms, partitioning
+collection runs, emitting item access and item places, requoting
+forms, discovering docstrings, compiling begin bodies, and the
+unpacking left-hand-side helpers
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -37,6 +42,7 @@ from .compiler import ByteCodeFragment, _is_const
 
 
 __all__ = (
+    "NO_DEFAULT",
     "BINDING",
     "FORMALS",
     "BINDINGS",
@@ -104,7 +110,7 @@ _SYM_BEGIN = symbol('begin')
 _BEGIN_HEADS = (_SYM_BEGIN,)
 
 
-def match_pattern_raw(source, patterns, literals=None):
+def match_pattern_raw(source, patterns):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
     Return native ``MatchResult.captures`` on first match, else ``None``
@@ -130,35 +136,21 @@ def match_pattern_raw(source, patterns, literals=None):
     return None
 
 
-def match(
-        source,
-        patterns,
-        literals=None,
-        with_specs=False):
+def match(source, patterns):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
     Returns native ``MatchResult.captures`` on first match, else ``None``.
     """
 
-    raw = match_pattern_raw(source, patterns, literals=literals)
-    if raw is None:
-        return None
-    if with_specs:
-        return raw, {}
-    return raw
+    return match_pattern_raw(source, patterns)
 
 
-def match1(
-        value,
-        patterns,
-        literals=None,
-        with_specs=False):
+def match1(value, patterns):
     """
     Match a single element by wrapping ``cons(value, nil)``
     """
 
-    return match(cons(value, nil), patterns, literals=literals,
-                 with_specs=with_specs)
+    return match(cons(value, nil), patterns)
 
 
 _keyword_star = keyword("*")
@@ -184,7 +176,7 @@ def helper_binding(source):
     """
 
     msg = ("a binding must be in the form of (SYM EXPR) or (EXPR as: SYM),"
-           " not %s" % source)
+           f" not {source}")
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -213,7 +205,7 @@ def helper_using(source):
     """
 
     msg = ("a using must be in the form of (EXPR), (SYM EXPR),"
-           " or (EXPR as: SYM), not %s" % source)
+           f" or (EXPR as: SYM), not {source}")
 
     if not is_proper(source):
         raise SpecialError(msg, source)
@@ -276,97 +268,6 @@ def _formal_kw_tag_to_key(kw):
     return raw
 
 
-def _parse_formal_tail(tail, source):
-    """
-    Parse REST after formal name: keyword/value pairs or lone default
-    """
-
-    if is_nil(tail):
-        return {}, None
-    head = strip_mark(car(tail))
-    rest = cdr(tail)
-    if not is_keyword(head):
-        if not is_nil(rest):
-            raise SpecialError(
-                "malformed formal tail after name, not %r" % tail,
-                source)
-        return {}, head
-
-    ann = {}
-    default = None
-    cur = tail
-    while not is_nil(cur):
-        kw = strip_mark(car(cur))
-        cur = cdr(cur)
-        if not is_keyword(kw):
-            raise SpecialError(
-                "expected keyword in formal attribute list, not %r"
-                % kw,
-                source)
-        if is_nil(cur):
-            raise SpecialError(
-                "missing value for formal attribute %r" % kw,
-                source)
-        val = car(cur)
-        cur = cdr(cur)
-        key = _formal_kw_tag_to_key(kw)
-        if key == "value":
-            default = val
-        elif key == "type":
-            ann["type"] = val
-        else:
-            raise SpecialError(
-                "unknown formal attribute %r" % head,
-                source)
-    return ann, default
-
-
-def parse_formal_parameter(form, source=None):
-    """
-    Parse one formal parameter: bare symbol, or list with name and attributes
-    """
-
-    if is_symbol(form):
-        return (form, {}, None)
-    if not is_pair(form):
-        raise SpecialError(
-            "formal must be symbol or proper list, not %r" % form,
-            source)
-    if not is_proper(form):
-        raise SpecialError(
-            "formal list must be proper, not %r" % form,
-            source)
-
-    elems = tuple(unpack(form))
-    if len(elems) == 1 and is_symbol(elems[0]):
-        return (elems[0], {}, None)
-
-    _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
-    m_sv = match1(form, _sym_expr)
-    if m_sv is not None:
-        return (m_sv["name"].datum, {}, m_sv["expr"].datum)
-
-    _expr_as_name = (
-        LIST(VALUE("type_expr"), LITERAL_KW("as"), SYMBOL("name")),
-    )
-    m_as = match1(form, _expr_as_name)
-    if m_as is not None:
-        return (
-            m_as["name"].datum,
-            {"type": m_as["type_expr"].datum},
-            None)
-
-    _FORMAL_HEAD = (LIST(MATCH(SYMBOL("name"), REST("tail"))),)
-    m = match1(form, _FORMAL_HEAD)
-    if m is None:
-        raise SpecialError("invalid formal parameter form %r" % form, source)
-
-    name = m["name"].datum
-    tail = m["tail"].datum
-    ann, default = _parse_formal_tail(tail, source)
-    return (name, ann, default)
-
-
 def _parse_decl_tail(tail, source):
     """
     Parse REST after a declaration name: only keyword attributes, no value
@@ -387,12 +288,11 @@ def _parse_decl_tail(tail, source):
         cur = cdr(cur)
         if not is_keyword(kw):
             raise SpecialError(
-                "expected keyword in declaration attribute list, not %r"
-                % kw,
+                f"expected keyword in declaration attribute list, not {kw!r}",
                 source)
         if is_nil(cur):
             raise SpecialError(
-                "missing value for declaration attribute %r" % kw,
+                f"missing value for declaration attribute {kw!r}",
                 source)
         val = car(cur)
         cur = cdr(cur)
@@ -405,7 +305,7 @@ def _parse_decl_tail(tail, source):
             ann["type"] = val
         else:
             raise SpecialError(
-                "unknown declaration attribute %r" % kw,
+                f"unknown declaration attribute {kw!r}",
                 source)
     return ann
 
@@ -419,11 +319,11 @@ def parse_decl(form, source=None):
         return (form, None)
     if not is_pair(form):
         raise SpecialError(
-            "declaration must be symbol or proper list, not %r" % form,
+            f"declaration must be symbol or proper list, not {form!r}",
             source)
     if not is_proper(form):
         raise SpecialError(
-            "declaration list must be proper, not %r" % form,
+            f"declaration list must be proper, not {form!r}",
             source)
 
     elems = tuple(unpack(form))
@@ -447,7 +347,7 @@ def parse_decl(form, source=None):
     _FORMAL_HEAD = (LIST(MATCH(SYMBOL("name"), REST("tail"))),)
     m = match1(form, _FORMAL_HEAD)
     if m is None:
-        raise SpecialError("invalid declaration form %r" % form, source)
+        raise SpecialError(f"invalid declaration form {form!r}", source)
 
     name = m["name"].datum
     tail = m["tail"].datum
@@ -478,8 +378,7 @@ def gather_parameters(args, source=None):
 
     else:
         raise ParametersError(
-            "parameters must be symbol or pair, not %r"
-            % args, source)
+            f"parameters must be symbol or pair, not {args!r}", source)
 
     args_seq = []
     kwds_seq = []
@@ -518,7 +417,7 @@ def gather_parameters(args, source=None):
                 value = next(iargs, undefined)
                 if value is undefined:
                     raise ParametersError(
-                        "missing value for keyword parameter %s" % label,
+                        f"missing value for keyword parameter {label}",
                         source)
                 kwds_seq.append((str(label), value))
 
@@ -777,7 +676,7 @@ def requote(
     Rewrite a list form so each element is wrapped in ``(quote_sym ELEMENT)``.
 
     The reconstruction preserves the source's delimiter style: a bracket-pair
-    spine rebuilds via a runtime ``bracket-cons`` call (terminating with
+    spine rebuilds via the ``bracket-cons`` special (terminating with
     ``bracket-nil``), a plain pair spine via the ``cons`` special
     (the ``CONS`` opcode). Nested elements are re-quoted, so each sublist's
     own style is detected recursively.
@@ -1136,17 +1035,19 @@ def _merge_formal_annotations(annotations, name_sym, ann_bundle):
         annotations[key] = dict(ann_bundle)
 
 
-_NO_DEFAULT = object()
+# the default slot of a formal with no default: positional and
+# keyword-only alike, so a nil default, the source form (), is a value
+NO_DEFAULT = object()
 
 
 def _attrs_frames_to_ann(attr_frames: List[dict], source):
     """
     Fold formal attribute REPEAT frames into (ann dict, default or
-    _NO_DEFAULT, by_ref bool)
+    NO_DEFAULT, by_ref bool)
     """
 
     ann = {}
-    default = _NO_DEFAULT
+    default = NO_DEFAULT
     by_ref = False
     for afr in attr_frames:
         kw_cell = afr.get('kw')
@@ -1213,7 +1114,7 @@ def _gather_one_positional_frame(fr: dict, source):
     if "default" in fr:
         default_expr = fr['default'].datum
     else:
-        default_expr = _NO_DEFAULT
+        default_expr = NO_DEFAULT
 
     kw_cell = fr.get('kw')
     if kw_cell is not None:
@@ -1232,8 +1133,8 @@ def _gather_one_positional_frame(fr: dict, source):
                     f"conflicting formal annotations for {name!r}",
                     source)
             annotations[k2] = v2
-        if default2 is not _NO_DEFAULT:
-            if default_expr is not _NO_DEFAULT:
+        if default2 is not NO_DEFAULT:
+            if default_expr is not NO_DEFAULT:
                 raise SpecialError(
                     f"duplicate default for formal {name!r}",
                     source)
@@ -1315,7 +1216,7 @@ def gather_formals(formals_group, source=None):
         _merge_formal_annotations(annotations, name, ann_bundle)
         if by_ref:
             by_refs.append(str(name))
-        if default is not _NO_DEFAULT:
+        if default is not NO_DEFAULT:
             defaults.append((keyword(str(name)), default))
         else:
             positional.append(name)
@@ -1350,7 +1251,7 @@ def gather_formals(formals_group, source=None):
             name, by_ref = _strip_byref_sym(name)
             if by_ref:
                 by_refs.append(str(name))
-            kwonly.append((keyword(str(name)), nil))
+            kwonly.append((keyword(str(name)), NO_DEFAULT))
             prev_name = name
             continue
         kw = None if (v := fr.get('kw')) is None else v.datum

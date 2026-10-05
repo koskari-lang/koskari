@@ -76,7 +76,7 @@ def special_match(compiler, caps):
     value is the result. An [else: BODY...] arm always matches; with no
     else and no match the form yields None. Each arm's pattern rides in
     its own delimiter list ahead of the body and is classified by the
-    case-pattern dialect (see design/language/match-pattern-language.md).
+    case-pattern dialect (see docs/guide/match-patterns.md).
 
     A clause may carry a guard between the pattern and the body:
     [[PATTERN] when: COND BODY...] runs the body only when COND is

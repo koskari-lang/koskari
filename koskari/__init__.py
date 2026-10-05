@@ -26,8 +26,7 @@ import koskari.importer as importer
 try:
     from koskari._version import __version__
 except ImportError:
-    __version__ = 'unknown'
-    __release__ = 'dev'
+    __version__ = '0+unknown'
 
 importer.install()
 

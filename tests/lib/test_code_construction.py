@@ -79,4 +79,87 @@ class TestCodeInstructionValidation(unittest.TestCase):
         self.assertIn("instruction 2", str(caught.exception))
 
 
+class TestCountArgumentValidation(unittest.TestCase):
+    """
+    A count-style argument is an int in the 16-bit range; anything else
+    is refused instead of truncated or ignored
+    """
+
+    def test_count_over_16_bits_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CONST, 1], [OpCode.RETURN, 65536]])
+        self.assertIn("instruction 1", str(caught.exception))
+
+    def test_negative_count_rejected(self):
+        with self.assertRaises(ValueError):
+            make([[OpCode.CONST, 1], [OpCode.RETURN, -1]])
+
+    def test_non_int_count_rejected(self):
+        with self.assertRaises(TypeError):
+            make([[OpCode.CONST, 1], [OpCode.RETURN, "1"]])
+        with self.assertRaises(TypeError):
+            make([[OpCode.CONST, 1], [OpCode.RETURN, None]])
+
+    def test_count_at_16_bit_limit_builds(self):
+        code = make([[OpCode.CONST, 1], [OpCode.POP, 65535]])
+        self.assertIsInstance(code, Code)
+
+
+class TestLabelResolution(unittest.TestCase):
+
+    def test_int_label_name_equal_to_a_jump_pc_resolves(self):
+        """
+        A label is looked up by its name alone, so a label named with the
+        int that is also some jump's output pc still resolves to the pc
+        the label was defined at
+        """
+
+        code = make([
+            [OpCode.CONST, "a"],
+            [OpCode.JUMP, "L"],
+            [OpCode.LABEL, "L"],
+            [OpCode.JUMP, 1],
+            [OpCode.CONST, "x"],
+            [OpCode.RETURN, 1],
+            [OpCode.LABEL, 1],
+            [OpCode.CONST, "b"],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+        self.assertEqual(code.oparg(2)[1], 5)
+
+
+
+class TestTailCallExtentValidation(unittest.TestCase):
+    """
+    A tail call may run through the extents frame handoff can discard,
+    NS, LOOP and FOREACH, and through nothing else; the compiler never
+    emits the other shape, so a hand-assembled stream carrying it is
+    refused when the Code is built
+    """
+
+    def test_tail_call_inside_try_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            make([
+                [OpCode.PUSH_TRY, "handler"],
+                [OpCode.CONST, None],
+                [OpCode.TAIL_CALL, 1],
+                [OpCode.POP_TRY, 0],
+                [OpCode.LABEL, "handler"],
+                [OpCode.RETURN, 1],
+            ])
+        self.assertIn("non-discardable", str(caught.exception))
+        self.assertIn("TRY", str(caught.exception))
+
+    def test_tail_call_inside_loop_builds(self):
+        code = make([
+            [OpCode.PUSH_LOOP, 0],
+            [OpCode.CONST, None],
+            [OpCode.TAIL_CALL, 1],
+            [OpCode.POP_LOOP, 0],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+
+
 # The end.

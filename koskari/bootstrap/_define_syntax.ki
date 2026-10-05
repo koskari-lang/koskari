@@ -213,7 +213,8 @@ define-syntax datum:
 
 define-syntax datumq:
   """
-  Captures `expr` form in a datum, recording the source position
+  Captures `expr` quoted, as written, in a datum, recording the source
+  position
   """
 
   macro-rules [datumq]:

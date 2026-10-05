@@ -15,14 +15,15 @@
 
 
 /**
-   matcher — native low-level matcher core (Phase 1)
+   matcher -- native matcher core
 
-   Implements the tagged-node array, C-internal builder, and validator
-   for the new matcher engine. The matching engine and subject adapters
-   land in Phase 2; the frozen tagged-tuple thaw lands in Phase 3.
+   The tagged-node array, the C-internal builder and validator, the
+   matching engine with its subject adapters, the frozen tagged-tuple
+   thaw, and the Matcher, MatchResult and Datum types. The per-node
+   match steps live in the matcher/ fragments included below.
 
-   author: Christopher O'Brien <obriencj@preoccupied.net>
-   license: GNU General Public License v3
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
 */
 
 
@@ -34,6 +35,9 @@
 
 struct KosMatcherBuilder {
   KosMatchNode *nodes;
+  uint8_t *claimed;    /* per node: 1 once a chain has taken it as a
+                          child, so no later chain can; a chain's last
+                          child has no next link to show it */
   Py_ssize_t node_count;
   Py_ssize_t node_capacity;
 
@@ -56,8 +60,16 @@ static int builder_grow_nodes(KosMatcherBuilder *b, Py_ssize_t need) {
     PyErr_NoMemory();
     return -1;
   }
-
   b->nodes = nn;
+
+  uint8_t *nc = PyMem_Realloc(b->claimed, (size_t) cap);
+  if (! nc) {
+    PyErr_NoMemory();
+    return -1;
+  }
+  memset(nc + b->node_capacity, 0, (size_t) (cap - b->node_capacity));
+  b->claimed = nc;
+
   b->node_capacity = cap;
   return 0;
 }
@@ -239,6 +251,7 @@ KosMatcherBuilder *KosMatcherBuilder_New(void) {
   }
 
   b->nodes = NULL;
+  b->claimed = NULL;
   b->node_count = 0;
   b->node_capacity = 0;
   b->slots = PyList_New(0);
@@ -259,15 +272,11 @@ void KosMatcherBuilder_Free(KosMatcherBuilder *b) {
     return;
 
   PyMem_Free(b->nodes);
+  PyMem_Free(b->claimed);
   Py_XDECREF(b->slots);
   Py_XDECREF(b->externs);
   Py_XDECREF(b->consts);
   PyMem_Free(b);
-}
-
-
-Py_ssize_t KosMatcherBuilder_NodeCount(KosMatcherBuilder *b) {
-  return b ? b->node_count : 0;
 }
 
 
@@ -395,7 +404,7 @@ static int builder_validate_chain_children(
                    what, (unsigned) cidx, b->node_count);
       return -1;
     }
-    if (b->nodes[cidx].next != KOS_MATCH_NO_INDEX) {
+    if (b->claimed[cidx]) {
       PyErr_Format(PyExc_ValueError,
                    "%s child %u already participates in another chain",
                    what, (unsigned) cidx);
@@ -412,6 +421,8 @@ static int builder_validate_chain_children(
 
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[children[i]].next = children[i + 1];
+  for (Py_ssize_t i = 0; i < count; i++)
+    b->claimed[children[i]] = 1;
 
   return 0;
 }
@@ -626,7 +637,7 @@ int KosMatcherBuilder_AppendClass(
                    (unsigned) fidx);
       return -1;
     }
-    if (fn->next != KOS_MATCH_NO_INDEX) {
+    if (b->claimed[fidx]) {
       PyErr_Format(PyExc_ValueError,
                    "AppendClass child %u already participates in another "
                    "chain", (unsigned) fidx);
@@ -646,6 +657,7 @@ int KosMatcherBuilder_AppendClass(
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[fields[i]].next = fields[i + 1];
   for (Py_ssize_t i = 0; i < count; i++) {
+    b->claimed[fields[i]] = 1;
     if (b->nodes[fields[i]].as.field.field_kind
         == KOS_MATCH_FIELD_POSITIONAL)
       num_positional++;
@@ -771,7 +783,7 @@ int KosMatcherBuilder_AppendMap(
                    (unsigned) eidx);
       return -1;
     }
-    if (en->next != KOS_MATCH_NO_INDEX) {
+    if (b->claimed[eidx]) {
       PyErr_Format(PyExc_ValueError,
                    "AppendMap child %u already participates in another "
                    "chain", (unsigned) eidx);
@@ -789,6 +801,8 @@ int KosMatcherBuilder_AppendMap(
 
   for (Py_ssize_t i = 0; i + 1 < count; i++)
     b->nodes[entries[i]].next = entries[i + 1];
+  for (Py_ssize_t i = 0; i < count; i++)
+    b->claimed[entries[i]] = 1;
 
   if (builder_grow_nodes(b, 1))
     return -1;
@@ -905,8 +919,8 @@ PyObject *KosMatcherBuilder_Finalize(
     return NULL;
   }
 
-  KosMatcher *m = PyObject_NewVar(KosMatcher, &KosMatcherType,
-                                  b->node_count);
+  KosMatcher *m = PyObject_GC_NewVar(KosMatcher, &KosMatcherType,
+                                     b->node_count);
   if (! m) {
     Py_DECREF(slots_t);
     Py_DECREF(externs_t);
@@ -922,6 +936,8 @@ PyObject *KosMatcherBuilder_Finalize(
   if (b->node_count > 0)
     memcpy(m->nodes, b->nodes, b->node_count * sizeof(KosMatchNode));
 
+  PyObject_GC_Track((PyObject *) m);
+
   /* Phase B: range checks for slot/extern/const indices */
   if (validate_slot_extern_const_indices(m)) {
     Py_DECREF(m);
@@ -936,8 +952,8 @@ PyObject *KosMatcherBuilder_Finalize(
     }
   }
 
-  /* Phase B: REPEAT min-width and no-CAPTURE-in-NOT */
-  if (validate_repeat_and_not(m)) {
+  /* Phase B: subnode presence, REPEAT min-width, no-CAPTURE-in-NOT */
+  if (validate_subnodes(m)) {
     Py_DECREF(m);
     return NULL;
   }
@@ -2047,9 +2063,11 @@ static PyObject *matcher_extern_default(PyObject *name) {
    Build the extern env tuple aligned to m->externs: each name resolves
    from the provided dict first (may be NULL), then the inbuilt extern
    defaults. Unknown provided names are ignored, matching the kwargs
-   behavior of ``Matcher.match``. On success *out_env is a new tuple
-   reference, or NULL when the matcher declares no externs (provided
-   entries are then rejected). Returns 0, or -1 with an exception set.
+   behavior of ``Matcher.match``; a matcher declaring no externs ignores
+   every provided name, so one keyword set serves every matcher of a
+   selection. On success *out_env is a new tuple reference, or NULL
+   when the matcher declares no externs. Returns 0, or -1 with an
+   exception set.
 */
 static int matcher_extern_env(
     KosMatcher *m,
@@ -2058,14 +2076,8 @@ static int matcher_extern_env(
 
   *out_env = NULL;
   Py_ssize_t n = PyTuple_GET_SIZE(m->externs);
-  if (n == 0) {
-    if (provided && PyDict_GET_SIZE(provided) > 0) {
-      PyErr_SetString(PyExc_TypeError,
-                      "matcher takes no extern bindings");
-      return -1;
-    }
+  if (n == 0)
     return 0;
-  }
 
   PyObject *env = PyTuple_New(n);
   if (! env)
@@ -2168,11 +2180,10 @@ static int matcher_env_resolve(
     }
   }
 
-  if (n_ext == 0) {
-    PyErr_SetString(PyExc_TypeError,
-                    "matcher takes no extern bindings");
-    return -1;
-  }
+  /* no extern table: every provided name is ignored and the env is
+     empty, as for the kwargs path */
+  if (n_ext == 0)
+    return 0;
 
   PyObject **env = r->inline_buf;
   if (n_ext > KOS_MATCH_ENV_INLINE) {
@@ -2215,29 +2226,6 @@ static int matcher_env_resolve(
  fail:
   matcher_env_release(r);
   return -1;
-}
-
-
-int KosMatcher_RunVectorcall(
-    KosMatcher *m,
-    KosMatchSubject *subj,
-    PyObject *const *ext_values,
-    PyObject *ext_names,
-    PyObject **out_caps) {
-
-  if (! m) {
-    PyErr_SetString(PyExc_ValueError,
-                    "KosMatcher_RunVectorcall requires matcher");
-    return -1;
-  }
-
-  MatcherEnv r;
-  if (matcher_env_resolve(m, ext_values, ext_names, &r))
-    return -1;
-  int matched = KosMatcher_Run(
-      m, subj, r.env, PyTuple_GET_SIZE(m->externs), out_caps);
-  matcher_env_release(&r);
-  return matched;
 }
 
 
@@ -2369,11 +2357,25 @@ int KosMatcher_MatchSelect(
 static void matcher_dealloc(PyObject *self) {
   KosMatcher *m = (KosMatcher *) self;
 
+  PyObject_GC_UnTrack(self);
   Py_CLEAR(m->slots);
   Py_CLEAR(m->externs);
   Py_CLEAR(m->consts);
 
   Py_TYPE(self)->tp_free(self);
+}
+
+
+static int matcher_traverse(
+    PyObject *self,
+    visitproc visit,
+    void *arg) {
+
+  KosMatcher *m = (KosMatcher *) self;
+  Py_VISIT(m->slots);
+  Py_VISIT(m->externs);
+  Py_VISIT(m->consts);
+  return 0;
 }
 
 
@@ -2750,7 +2752,8 @@ PyTypeObject KosMatcherType = {
   .tp_itemsize = sizeof(KosMatchNode),
   .tp_dealloc = matcher_dealloc,
   .tp_repr = matcher_repr,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_traverse = matcher_traverse,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "Compiled native matcher (matcher)",
   .tp_methods = matcher_methods,
   .tp_getset = matcher_getset,

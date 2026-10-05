@@ -20,8 +20,8 @@
    Tests the values object creation, reference counting of args/kwds,
    and cyclic structure handling.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

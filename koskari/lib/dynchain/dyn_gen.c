@@ -1,4 +1,27 @@
-/* Included by dynchain.c — dyn_gen */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_GEN node: the generator boundary
+  that intercepts yields and denies shifts.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynGen implementation === */
 
 
@@ -45,11 +68,18 @@ static void kos_dyngen_dispose_active(KosDynGen *gen) {
 /**
    Clear owner/active; return node to freelist.
 */
+static void kos_dyngen_keepalive_release(KosDynGen *gen);
+
+
 void kos_dyngen_free(KosDynGen *gen) {
   if (! gen)
     return;
 
   kos_dyngen_dispose_active(gen);
+  /* a GEN freed with its frame abandoned on a chain (a close that
+     could not finish) still holds its keepalive; the frame is not
+     live once the GEN is gone, so the owner is released here */
+  kos_dyngen_keepalive_release(gen);
   KosDynGen_OWNER(gen) = NULL;
   kos_dynnode_return_to_freelist((KosDynNode *) gen);
 }
@@ -181,16 +211,30 @@ static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
    Resume generator: graft GEN under ctx, swap in frozen active chain, push
    None. Callers: eval when entering generator body from consumer.
 */
+/**
+   Put back what the freeze parked, outermost first, so each node's
+   record of the table beneath it is the consumer's table as it is now.
+   On a failure the nodes already unparked are parked again and the
+   span is as the freeze left it.
+*/
+static int kos_dyn_gen_unpark_span(KosEvalState *es, KosDynNode *node) {
+  if (! node)
+    return 0;
+  if (kos_dyn_gen_unpark_span(es, KosDynNode_PARENT(node)) < 0)
+    return -1;
+  if (kos_dyn_extent_unpark(es, node) < 0) {
+    for (KosDynNode *n = KosDynNode_PARENT(node); n; n = KosDynNode_PARENT(n))
+      kos_dyn_extent_park(es, n);
+    return -1;
+  }
+  return 0;
+}
+
+
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
-  KosContext *const ctx = KosEvalState_CONTEXT(es);
   KosDynNode *active;
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
-
-  if (! es || ! gen) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL es or gen for gen_install");
-    return -1;
-  }
 
   /* The demand bit is drive-state: forcibly assigned to the generator's
      frame at every entry, inherited from the frame below the splice.
@@ -204,7 +248,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",
-       (void *) ctx, (void *) gen,
+       (void *) KosEvalState_CONTEXT(es), (void *) gen,
        (void *) KosEvalState_DYN_TOP(es),
        KosEvalState_DYN_TOP(es)
            ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
@@ -217,11 +261,6 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     //   SAYF("  %p %s -> ", (void *) n,
     //        kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
-  }
-
-  if (! gen || ! ctx) {
-    PyErr_SetString(PyExc_RuntimeError, "NULL ctx or gen for gen_install");
-    return -1;
   }
 
   active = (KosDynNode *) KosDynGen_ACTIVE(gen);
@@ -245,6 +284,11 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
         active, (KosDynNode *) gen,
         invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0, count);
   }
+
+  /* What the freeze parked comes back before the splice: a refusal
+     here leaves the GEN frozen, nothing spliced. */
+  if (kos_dyn_gen_unpark_span(es, active) < 0)
+    return -1;
 
   /* The consumer's registers, restored at the next freeze. */
   kos_live_regs_capture(es, KosDynGen_HOST(gen));
@@ -484,3 +528,6 @@ static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
         arg);
   return 0;
 }
+
+
+// The end.

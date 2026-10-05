@@ -222,4 +222,27 @@ class TestLayoutMatchValidation(IsolatedAsyncioTestCase):
         self.assertRaises(LayoutError, parse_layout, src)
 
 
+    async def test_match_parenthesized_clause_line_is_refused(self):
+        """
+        A match body entry is a case or else block; a clause written as
+        a parenthesized form on a line is not one
+        """
+
+        src = """
+        match x:
+          (case 1 "one")
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+        src = """
+        match x:
+          case 1:
+            "one"
+          (else "meh")
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
 # The end.

@@ -41,10 +41,13 @@ static PyObject *str_target = NULL;
 static void delimited_continuation_dealloc(PyObject *self) {
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
 
+  KosContinuation *k = KosPyDelimitedContinuation_CAPTURED(cont);
+
   /* the captured chain's teardown can run arbitrary Python; leave the
-     collector's lists before it starts */
+     collector's lists and unlink the field before it starts */
   PyObject_GC_UnTrack(self);
-  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
+  KosPyDelimitedContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -68,9 +71,12 @@ static int delimited_continuation_traverse(
 static int delimited_continuation_clear(PyObject *self) {
 
   KosPyDelimitedContinuation *cont = (KosPyDelimitedContinuation *) self;
+  KosContinuation *k = KosPyDelimitedContinuation_CAPTURED(cont);
 
-  kos_continuation_free(KosPyDelimitedContinuation_CAPTURED(cont));
+  /* unlink before the free: its teardown can run Python that reaches
+     this wrapper */
   KosPyDelimitedContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   return 0;
 }
@@ -98,6 +104,56 @@ static PyObject *delimited_continuation_repr(PyObject *self) {
 
 
 /* === KosContinuation install slot === */
+
+
+/**
+   Raise KoskariContinuationApply carrying the owner token to deliver
+   to, the continuation, and the one-item args tuple holding the resume
+   value. Every step is checked: a failure leaves that step's own
+   exception raised instead of a half-built apply.
+
+   :return: -1 always, with an exception set
+*/
+static int continuation_raise_apply(
+    PyObject *target,
+    PyObject *continuation,
+    PyObject *resume_val) {
+
+  PyObject *exc;
+  PyObject *args_tup;
+
+  if (! KoskariContinuationApply) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "KoskariContinuationApply not initialized");
+    return -1;
+  }
+
+  exc = PyObject_CallNoArgs(KoskariContinuationApply);
+  if (! exc)
+    return -1;
+
+  if (PyObject_SetAttr(exc, str_target, target) < 0
+      || PyObject_SetAttr(exc, str_continuation, continuation) < 0) {
+    Py_DECREF(exc);
+    return -1;
+  }
+
+  args_tup = PyTuple_Pack(1, resume_val);
+  if (! args_tup) {
+    Py_DECREF(exc);
+    return -1;
+  }
+  if (PyObject_SetAttr(exc, str_args, args_tup) < 0) {
+    Py_DECREF(args_tup);
+    Py_DECREF(exc);
+    return -1;
+  }
+  Py_DECREF(args_tup);
+
+  PyErr_SetObject(KoskariContinuationApply, exc);
+  Py_DECREF(exc);
+  return -1;
+}
 
 
 /**
@@ -156,7 +212,7 @@ static KosOpResult call_call_continuation(
 
   if (KosPyDelimitedContinuation_Check(callable)
       || KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)) {
-    if (kos_invoke_continuation(es, k, resume_val, 0, callable) < 0) {
+    if (kos_invoke_continuation(es, k, resume_val, callable) < 0) {
       Py_DECREF(resume_val);
       return EVAL_RAISE();
     }
@@ -164,20 +220,8 @@ static KosOpResult call_call_continuation(
     return EVAL_NORMAL();
   }
 
-  {
-    PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
-    if (exc) {
-      PyObject_SetAttr(exc, str_target, KosContinuation_TOKEN_REF(k));
-      PyObject_SetAttr(exc, str_continuation, callable);
-      PyObject *args_tup = PyTuple_Pack(1, resume_val);
-      if (args_tup) {
-        PyObject_SetAttr(exc, str_args, args_tup);
-        Py_DECREF(args_tup);
-      }
-      PyErr_SetObject(KoskariContinuationApply, exc);
-      Py_DECREF(exc);
-    }
-  }
+  (void) continuation_raise_apply(
+      KosContinuation_TOKEN_REF(k), callable, resume_val);
   Py_DECREF(resume_val);
   return EVAL_RAISE();
 }
@@ -191,10 +235,18 @@ static KosOpResult kos_vinstall_continuation(
     PyObject *kwnames,
     int tail_call) {
 
-  (void) kwnames;
+  PyObject *resume_val;
+  KosOpResult r;
+
   (void) tail_call;
-  return call_call_continuation(es, callable,
-                                (nargs > 0) ? args[0] : Py_None);
+
+  /* the arguments pack as return's do; the resume takes its own ref */
+  resume_val = KosValues_PackVector(args, nargs, kwnames);
+  if (! resume_val)
+    return EVAL_RAISE();
+  r = call_call_continuation(es, callable, resume_val);
+  Py_DECREF(resume_val);
+  return r;
 }
 
 
@@ -244,15 +296,17 @@ PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured) {
 }
 
 
-/* === KosPyContinuation type (undelimited, for future call/cc) === */
+/* === KosPyContinuation type (undelimited, call/cc) === */
 
 
 static void continuation_dealloc(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
+  KosContinuation *k = KosPyContinuation_CAPTURED(cont);
 
   PyObject_GC_UnTrack(self);
-  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
+  KosPyContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   Py_TYPE(self)->tp_free(self);
 }
@@ -276,9 +330,12 @@ static int continuation_traverse(
 static int continuation_clear(PyObject *self) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
+  KosContinuation *k = KosPyContinuation_CAPTURED(cont);
 
-  kos_continuation_free(KosPyContinuation_CAPTURED(cont));
+  /* unlink before the free: its teardown can run Python that reaches
+     this wrapper */
   KosPyContinuation_CAPTURED(cont) = NULL;
+  kos_continuation_free(k);
 
   return 0;
 }
@@ -290,17 +347,10 @@ static PyObject *continuation_call(
     PyObject *kwds) {
 
   KosPyContinuation *cont = (KosPyContinuation *) self;
-  (void) kwds;
 
   if (! KosPyContinuation_CAPTURED(cont)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "continuation has no captured state");
-    return NULL;
-  }
-
-  if (! KoskariContinuationApply) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "KoskariContinuationApply not initialized");
     return NULL;
   }
 
@@ -325,42 +375,15 @@ static PyObject *continuation_call(
     }
   }
 
-  PyObject *resume_val = Py_None;
-  if (args && PyTuple_GET_SIZE(args) > 0)
-    resume_val = PyTuple_GET_ITEM(args, 0);
-  Py_INCREF(resume_val);
+  /* the arguments pack as return's do */
+  PyObject *resume_val = KosValues_PackTuple(args, kwds);
+  if (! resume_val)
+    return NULL;
 
-  PyObject *exc = PyObject_CallNoArgs(KoskariContinuationApply);
-  if (! exc) {
-    Py_DECREF(resume_val);
-    return NULL;
-  }
-  if (PyObject_SetAttr(
-      exc, str_target,
-      KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont))) < 0) {
-    Py_DECREF(exc);
-    Py_DECREF(resume_val);
-    return NULL;
-  }
-  if (PyObject_SetAttr(exc, str_continuation, self) < 0) {
-    Py_DECREF(exc);
-    Py_DECREF(resume_val);
-    return NULL;
-  }
-  PyObject *args_tup = PyTuple_Pack(1, resume_val);
+  (void) continuation_raise_apply(
+      KosContinuation_TOKEN_REF(KosPyContinuation_CAPTURED(cont)),
+      self, resume_val);
   Py_DECREF(resume_val);
-  if (! args_tup) {
-    Py_DECREF(exc);
-    return NULL;
-  }
-  if (PyObject_SetAttr(exc, str_args, args_tup) < 0) {
-    Py_DECREF(args_tup);
-    Py_DECREF(exc);
-    return NULL;
-  }
-  Py_DECREF(args_tup);
-  PyErr_SetObject(KoskariContinuationApply, exc);
-  Py_DECREF(exc);
   return NULL;
 }
 
@@ -399,7 +422,6 @@ KosEvaluatedTypeObject KosPyContinuationType = {
   KosPyContinuation wraps an undelimited KosContinuation (from call/cc).
 
   Python-callable: raises KoskariContinuationDead or KoskariContinuationApply.
-  Not yet instantiated (call/cc capture not implemented).
 */
 PyObject *KosPyContinuation_New(KosContinuation *captured) {
 

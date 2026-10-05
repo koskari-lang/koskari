@@ -25,6 +25,41 @@ from ...types import get_position, unpack
 from .helpers import layout
 
 
+def _class_block(reader, source, peers, head):
+    """
+    Lower a class-shaped block to (HEAD NAME SUPERS (begin BODY)).
+    SUPERS may be omitted; when missing, use nil.
+    """
+
+    if peers:
+        raise LayoutError(
+            f'{head} block does not take peers',
+            get_position(source))
+
+    header, body = source
+    header_parts = list(unpack(header))
+
+    if len(header_parts) < 2:
+        raise LayoutError(
+            f'{head} block requires a name',
+            get_position(source))
+
+    if len(header_parts) > 3:
+        raise LayoutError(
+            f'{head} block takes at most name and supers',
+            get_position(source))
+
+    name = header_parts[1]
+    supers = nil if len(header_parts) == 2 else header_parts[2]
+
+    return cons(
+        symbol(head),
+        name,
+        supers,
+        cons(symbol('begin'), reader.fold_lines(body)),
+        nil)
+
+
 @builtin('layout/class')
 @layout(symbol('layout/class'))
 def layout_class(reader, source, peers):
@@ -33,33 +68,7 @@ def layout_class(reader, source, peers):
     SUPERS may be omitted; when missing, use nil.
     """
 
-    if peers:
-        raise LayoutError(
-            'class block does not take peers',
-            get_position(source))
-
-    header, body = source
-    header_parts = list(unpack(header))
-
-    if len(header_parts) < 2:
-        raise LayoutError(
-            'class block requires a name',
-            get_position(source))
-
-    if len(header_parts) > 3:
-        raise LayoutError(
-            'class block takes at most name and supers',
-            get_position(source))
-
-    name = header_parts[1]
-    supers = nil if len(header_parts) == 2 else header_parts[2]
-
-    return cons(
-        symbol('class'),
-        name,
-        supers,
-        cons(symbol('begin'), reader.fold_lines(body)),
-        nil)
+    return _class_block(reader, source, peers, 'class')
 
 
 @builtin('layout/define-class')
@@ -70,33 +79,19 @@ def layout_define_class(reader, source, peers):
     SUPERS may be omitted; when missing, use nil.
     """
 
-    if peers:
-        raise LayoutError(
-            'define-class block does not take peers',
-            get_position(source))
+    return _class_block(reader, source, peers, 'define-class')
 
-    header, body = source
-    header_parts = list(unpack(header))
 
-    if len(header_parts) < 2:
-        raise LayoutError(
-            'define-class block requires a name',
-            get_position(source))
+@builtin('layout/define-dataclass')
+@layout(symbol('layout/define-dataclass'))
+def layout_define_dataclass(reader, source, peers):
+    """
+    Lower define-dataclass block to
+    (define-dataclass NAME SUPERS (begin BODY)). SUPERS may be omitted;
+    when missing, use nil.
+    """
 
-    if len(header_parts) > 3:
-        raise LayoutError(
-            'define-class block takes at most name and supers',
-            get_position(source))
-
-    name = header_parts[1]
-    supers = nil if len(header_parts) == 2 else header_parts[2]
-
-    return cons(
-        symbol('define-class'),
-        name,
-        supers,
-        cons(symbol('begin'), reader.fold_lines(body)),
-        nil)
+    return _class_block(reader, source, peers, 'define-dataclass')
 
 
 # The end.

@@ -83,6 +83,29 @@ class TestSymbol(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(parts[1]), "bar")
         self.assertEqual(str(parts[2]), "baz")
 
+    async def test_name_from_str_subclass_is_a_plain_str(self):
+        """
+        An atom's name is a true str: a str subclass instance, even one
+        whose __str__ returns itself, is copied, so split is str.split
+        and the subclass interns to the same symbol as the plain name
+        """
+
+        class Odd(str):
+            __str__ = lambda self: self
+
+            def split(self, *args, **kwds):
+                return 5
+
+        sym = symbol(Odd("a/b"))
+        self.assertIs(type(str(sym)), str)
+        self.assertIs(sym, symbol("a/b"))
+        parts = sym.split("/")
+        self.assertEqual(parts, [symbol("a"), symbol("b")])
+
+        kw = keyword(Odd("c/d"))
+        self.assertIs(type(str(kw)), str)
+        self.assertEqual(kw.split("/"), [keyword("c"), keyword("d")])
+
     async def test_split_interned(self):
         """split() results are interned symbols"""
         s = symbol("foo.bar")

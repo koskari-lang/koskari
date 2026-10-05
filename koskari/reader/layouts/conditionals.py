@@ -102,14 +102,14 @@ def layout_if(reader, source, peers):
 
         else:
             raise LayoutError(
-                'invalid peer for if block: %r' % (phead,),
+                f'invalid peer for if block: {phead!r}',
                 get_position(peer))
 
     return cons(symbol('cond'), *clauses, nil)
 
 
 @builtin('layout/switch')
-@layout(symbol('layout/switch'))
+@layout(symbol('layout/switch'), raw=True)
 def layout_switch(reader, source, peers):
     """
     Lower a switch block source into a flat switch form for compilation
@@ -126,9 +126,10 @@ def layout_switch(reader, source, peers):
         else:
           (print "other")
 
-    The inner case and else children are read by the default layout/block,
-    which splices body forms after the header. This handler walks the switch
-    body, validates each child shape, and emits
+    A raw layout: the case and else children arrive as block sources,
+    so each header is structurally separate from its body and a case
+    header can be held to exactly one condition list. A body entry
+    that is not a block is refused. Emits
 
     ::
       (switch VALUE
@@ -136,9 +137,11 @@ def layout_switch(reader, source, peers):
         ...
         (else: BODY...))
 
-    :param source: ((switch VALUE) . BODY) pair
+    :param source: ((switch VALUE) . BODY) pair with raw block children
     :param peers: must be empty
     """
+
+    from . import apply_lines
 
     if peers:
         raise LayoutError(
@@ -158,47 +161,60 @@ def layout_switch(reader, source, peers):
     clauses = []
     saw_else = False
 
-    for form in unpack(reader.fold_lines(body)):
-        if not is_pair(form):
+    for child in unpack(body):
+        matched = None
+        if is_block(child):
+            matched = match_block_source(block_source_from_cons(child))
+        if matched is None:
             raise LayoutError(
-                'switch body may only contain case or else clauses',
-                get_position(form) or get_position(source))
+                'switch body may only contain case or else blocks',
+                get_position(child) or get_position(source))
 
-        head = strip_mark(form.car)
-        rest_parts = list(unpack(form.cdr))
+        chead, cargs = matched['header'].datum
+        chead = strip_mark(chead)
+        cbody = reader.fold_lines(apply_lines(matched['body'].datum, reader))
 
-        if head is _symbol_case:
+        if chead is _symbol_case:
             if saw_else:
                 raise LayoutError(
                     'case cannot follow else',
-                    get_position(form))
-            if len(rest_parts) < 2:
+                    get_position(child))
+            cond_parts = list(unpack(cargs))
+            if len(cond_parts) != 1:
                 raise LayoutError(
-                    'case requires condition list and body',
-                    get_position(form))
-            if not is_pair(rest_parts[0]):
+                    'case requires exactly one condition list',
+                    get_position(child))
+            if not is_pair(cond_parts[0]):
                 raise LayoutError(
                     'case condition must be a bracketed list of values',
-                    get_position(form))
-            clauses.append(cons(*rest_parts, nil))
+                    get_position(child))
+            if is_nil(cbody):
+                raise LayoutError(
+                    'case requires a body',
+                    get_position(child))
+            clauses.append(cons(cond_parts[0], *unpack(cbody), nil))
 
-        elif head is _symbol_else:
+        elif chead is _symbol_else:
             if saw_else:
                 raise LayoutError(
                     'multiple else clauses are not allowed',
-                    get_position(form))
-            if not rest_parts:
+                    get_position(child))
+            if not is_nil(cargs):
+                raise LayoutError(
+                    'else block does not take arguments',
+                    get_position(child))
+            if is_nil(cbody):
                 raise LayoutError(
                     'else block requires a body',
-                    get_position(form))
-            clauses.append(cons(_keyword_else, *rest_parts, nil))
+                    get_position(child))
+            clauses.append(cons(_keyword_else, *unpack(cbody), nil))
             saw_else = True
 
         else:
             raise LayoutError(
-                'switch body may only contain case or else clauses, '
-                'got %r' % (head,),
-                get_position(form))
+                f'switch body may only contain case or else blocks, '
+                f'got {chead!r}',
+                get_position(child))
 
     return cons(symbol('switch'), value, *clauses, nil)
 
@@ -256,8 +272,8 @@ def layout_match(reader, source, peers):
 
     A raw layout: the case and else children arrive as block sources, so
     each case header (however many tokens) is structurally separate from
-    its body. The whole header tail becomes the clause's pattern
-    delimiter, giving
+    its body. A body entry that is not a block is refused. The whole
+    header tail becomes the clause's pattern delimiter, giving
 
     ::
 
@@ -275,7 +291,7 @@ def layout_match(reader, source, peers):
     :param peers: must be empty
     """
 
-    from . import apply_layouts, apply_lines
+    from . import apply_lines
 
     if peers:
         raise LayoutError(
@@ -296,12 +312,9 @@ def layout_match(reader, source, peers):
     saw_else = False
 
     for child in unpack(body):
-        # a case block, or a parenthesized clause form on a line
-        as_block = is_block(child)
-        if not as_block:
-            child = reader.fold_line(child)
-        matched = match_block_source(
-            block_source_from_cons(child) or child)
+        matched = None
+        if is_block(child):
+            matched = match_block_source(block_source_from_cons(child))
         if matched is None:
             raise LayoutError(
                 'match body may only contain case or else blocks',
@@ -309,11 +322,7 @@ def layout_match(reader, source, peers):
 
         chead, cargs = matched['header'].datum
         chead = strip_mark(chead)
-        cbody = matched['body'].datum
-        if as_block:
-            cbody = reader.fold_lines(apply_lines(cbody, reader))
-        else:
-            cbody = apply_layouts(cbody, reader)
+        cbody = reader.fold_lines(apply_lines(matched['body'].datum, reader))
 
         if chead is _symbol_case:
             if saw_else:

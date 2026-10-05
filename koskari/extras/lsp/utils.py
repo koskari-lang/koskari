@@ -29,9 +29,12 @@ __all__ = (
 
 def koskari_to_lsp_range(location, line_content=None):
     """
-    Convert Koskari 1-based (line, col) to LSP Range.
+    Convert a reader location to an LSP Range. The reader counts lines
+    from 1 and columns from 0, the column being the characters consumed
+    on the line before the fault; LSP counts both from 0
 
-    :param location: (line, col) 1-based, or None for line 0 char 0
+    :param location: (line, col), line 1-based and col 0-based, or None
+        for line 0 char 0
     :param line_content: optional full line string for end character
     :return: lsprotocol.types.Range
     """
@@ -42,7 +45,7 @@ def koskari_to_lsp_range(location, line_content=None):
 
     line, col = location
     line_0 = max(0, line - 1)
-    char_0 = max(0, col - 1)
+    char_0 = max(0, col)
 
     if line_content is not None:
         end_char = min(len(line_content), char_0 + 1)

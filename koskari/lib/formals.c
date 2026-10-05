@@ -21,8 +21,8 @@
    Formals combines a FormalsSpec with default values and provides
    argument application to a namespace.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -30,15 +30,22 @@
 #include "debug.h"
 
 
+/* seq becomes the tuple of its items, or NULL for None or an empty
+   sequence; a failed size or tuple read jumps to tuple_error with the
+   error set */
 #define TUPLE_OR_NULL(seq)                        \
   if (seq) {                                      \
     if (seq == Py_None) {                         \
       seq = NULL;                                 \
-    } else if (PySequence_Size(seq) <= 0) {       \
-      seq = NULL;                                 \
     } else {                                      \
-      seq = PySequence_Tuple(seq);                \
-      if (! seq) goto tuple_error;                \
+      Py_ssize_t _n = PySequence_Size(seq);       \
+      if (_n < 0) goto tuple_error;               \
+      if (_n == 0) {                              \
+        seq = NULL;                               \
+      } else {                                    \
+        seq = PySequence_Tuple(seq);              \
+        if (! seq) goto tuple_error;              \
+      }                                           \
     }                                             \
   }
 
@@ -303,7 +310,9 @@ PyObject *KosFormalsSpec_New(
   } while (0)
 
 
-static void list_unique_extend(PyObject *dst, PyObject *seq) {
+/* Append each item of seq that dst does not already hold. 0, or -1
+   with an error set when a comparison raised or the append failed. */
+static int list_unique_extend(PyObject *dst, PyObject *seq) {
   size_t l = SAFE_SIZE(seq);
   for (size_t i = 0; i < l; i++) {
     PyObject *val = PySequence_Fast_GET_ITEM(seq, i);
@@ -311,15 +320,19 @@ static void list_unique_extend(PyObject *dst, PyObject *seq) {
 
     for (size_t j = SAFE_SIZE(dst); j--; ) {
       PyObject *obj = PyList_GET_ITEM(dst, j);
-      if (Py_EQUALS(val, obj)) {
+      int same = Py_EQUALS(val, obj);
+      if (same < 0)
+        return -1;
+      if (same) {
         exists = 1;
         break;
       }
     }
 
-    if (! exists)
-      PyList_Append(dst, val);
+    if (! exists && PyList_Append(dst, val) < 0)
+      return -1;
   }
+  return 0;
 }
 
 
@@ -380,7 +393,10 @@ static PyObject *formals_nspec_impl(PyObject *pos, PyObject *pos_only,
   PyObject *glbl = NULL;
 
   if (base_nspec) {
-    list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec));
+    if (list_unique_extend(lcls, KosNamespaceSpec_LOCAL_SYMS(base_nspec)) < 0) {
+      Py_DECREF(lcls);
+      return NULL;
+    }
     name = KosNamespaceSpec_NAME(base_nspec);
     clsr = KosNamespaceSpec_CLOSURE_SYMS(base_nspec);
     glbl = KosNamespaceSpec_GLOBAL_SYMS(base_nspec);
@@ -725,8 +741,11 @@ PyObject *KosFormals_NewFull(
   Py_XINCREF(starstar);
   KosFormals_STARSTAR(self) = starstar;
 
-  if (defaults)
+  if (defaults) {
     defaults = PyDict_Copy(defaults);
+    if (! defaults)
+      goto tuple_error;
+  }
   KosFormals_DEFAULTS(self) = defaults;
 
   TUPLE_OR_NULL(by_refs);
@@ -987,6 +1006,29 @@ static int kwsource_take(KwSource *ks, PyObject *key, PyObject **out) {
       *out = ks->values[j];
       return 1;
     }
+  }
+  return 0;
+}
+
+
+/**
+   Whether an entry named key remains, without taking it: 1, 0, or -1
+   with an error set
+*/
+static int kwsource_has(KwSource *ks, PyObject *key) {
+
+  if (! ks->remaining)
+    return 0;
+
+  for (Py_ssize_t j = 0; j < ks->count; j++) {
+    if (ks->used[j])
+      continue;
+    PyObject *nm = ks->names[j];
+    if (nm == key)
+      return 1;
+    int hit = PyObject_RichCompareBool(nm, key, Py_EQ);
+    if (hit)
+      return hit;
   }
   return 0;
 }
@@ -1321,6 +1363,29 @@ static inline int formals_bind(
       PyObject *key = PyTuple_GET_ITEM(kwd_only, ikwd_only);
       return formals_type_error(namespace,
                                 "missing keyword-only argument: %S", key);
+    }
+  }
+
+  /* A keyword naming a formal the positionals already filled is a
+     second value for it, as Python reports; positional-only formals
+     are left out, their names being free for the starstar dict. The
+     runs are read from the formals again, since a run filled to its
+     end was dropped above. The scan runs only when keywords remain,
+     and the names are interned, so a hit is an identity match before
+     any comparison. */
+  if (ks->remaining) {
+    PyObject *filled[2] = { KosFormals_POS(formals), KosFormals_KWD(formals) };
+    Py_ssize_t counts[2] = { ipos, ikwd };
+    for (int r = 0; r < 2; r++) {
+      for (Py_ssize_t k = 0; filled[r] && k < counts[r]; k++) {
+        PyObject *key = PyTuple_GET_ITEM(filled[r], k);
+        int found = kwsource_has(ks, key);
+        if (found < 0)
+          return -1;
+        if (found)
+          return formals_type_error(
+              namespace, "got multiple values for argument %S", key);
+      }
     }
   }
 

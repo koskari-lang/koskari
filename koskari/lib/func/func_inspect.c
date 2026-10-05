@@ -46,33 +46,57 @@ static PyObject *kos_inspect_Parameter_empty = NULL;
 static PyObject *kos_str_return = NULL;
 
 
+/**
+   Resolve the inspect module, its Parameter and Signature classes,
+   Parameter.empty, and the interned "return" key, committing all five
+   together so the guard is only ever true for a complete set. On any
+   failure nothing is stored and the next call starts over.
+
+   :return: 0, or -1 with an exception set
+*/
 static int
 kos_inspect_load(void) {
+
+  PyObject *str_return;
+  PyObject *module;
+  PyObject *parameter = NULL;
+  PyObject *signature = NULL;
+  PyObject *empty = NULL;
 
   if (kos_inspect_Signature)
     return 0;
 
-  kos_str_return = PyUnicode_InternFromString("return");
-  if (! kos_str_return)
+  str_return = PyUnicode_InternFromString("return");
+  if (! str_return)
     return -1;
 
-  kos_inspect_module = PyImport_ImportModule("inspect");
-  if (! kos_inspect_module)
-    return -1;
+  module = PyImport_ImportModule("inspect");
+  if (! module)
+    goto fail;
 
-  kos_inspect_Parameter = PyObject_GetAttrString(kos_inspect_module,
-                                                 "Parameter");
-  kos_inspect_Signature = PyObject_GetAttrString(kos_inspect_module,
-                                                 "Signature");
-  if (! kos_inspect_Parameter || ! kos_inspect_Signature)
-    return -1;
+  parameter = PyObject_GetAttrString(module, "Parameter");
+  if (! parameter)
+    goto fail;
+  signature = PyObject_GetAttrString(module, "Signature");
+  if (! signature)
+    goto fail;
+  empty = PyObject_GetAttrString(parameter, "empty");
+  if (! empty)
+    goto fail;
 
-  kos_inspect_Parameter_empty = PyObject_GetAttrString(kos_inspect_Parameter,
-                                                       "empty");
-  if (! kos_inspect_Parameter_empty)
-    return -1;
-
+  kos_str_return = str_return;
+  kos_inspect_module = module;
+  kos_inspect_Parameter = parameter;
+  kos_inspect_Signature = signature;
+  kos_inspect_Parameter_empty = empty;
   return 0;
+
+fail:
+  Py_XDECREF(signature);
+  Py_XDECREF(parameter);
+  Py_XDECREF(module);
+  Py_DECREF(str_return);
+  return -1;
 }
 
 
@@ -663,6 +687,12 @@ kos_function_realize_annotations(KosFunction *fn) {
     }
   }
 
+  /* resolution runs Python, which may have read __annotations__ and
+     filled the cache under us: the first store wins */
+  if (fn->annotations_cache) {
+    Py_DECREF(out);
+    return fn->annotations_cache;
+  }
   fn->annotations_cache = out;
   return out;
 }

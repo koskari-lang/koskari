@@ -5,7 +5,8 @@ indent-based block syntax. Layouts are resolved at read time and transform
 block sources into s-expressions for the compiler. For special forms (compile-time
 dispatch), see [SPECIALS.md](SPECIALS.md).
 
-Layouts are registered via the `layout` decorator and collected in `LAYOUTS`.
+Layouts are registered via the `layout` decorator and bound as `layout/<head>`
+builtins; there is no separate collector.
 The `LayoutReader` resolves layout heads from a namespace (`layout/<head>`);
 handlers live in `koskari/reader/layouts/`. A **`.ki`** module can reuse an
 existing handler by binding **`layout/<head>`** to another layout name (for
@@ -420,8 +421,9 @@ else:
 ;; → (for-each [i items] (compile/call append result i) (else: "finished"))
 ```
 
-**Implementation:** `koskari/reader/layouts/loops.layout_loop` (registered as
-`layout/while` and `layout/for-each` via `add_builtin`)
+**Implementation:** `koskari/reader/layouts/loops.layout_for_each` and
+`loops.layout_while`, each registered with `@builtin` and `@layout` over the
+shared body `_layout_loop`
 
 
 ## layout/switch
@@ -498,8 +500,9 @@ clause lists consumed by `compile/match`
 children arrive as block sources, so each case header — however many
 tokens — stays structurally separate from its body. The whole header tail
 becomes the clause's pattern delimiter, which is how a multi-token
-spelling like `case x :: int:` survives as one delimiter. Case and else
-bodies are expanded with `apply_layouts`. Emits:
+spelling like `case x :: int:` survives as one delimiter. A block case or
+else body is expanded with `apply_lines` and folded; an inline body goes
+through `apply_layouts`. Emits:
 
 `(compile/match VALUE [[PATTERN...] BODY...] ... [else: BODY...])`
 
@@ -687,11 +690,12 @@ inner block of a `define-syntax` block.
 Each indented rule block has a pattern in the header and a template in the
 body. Does not accept peers.
 
-**match form:** Use `match (PATTERN):` instead of `PATTERN:` when the pattern
+**case form:** Use `case (PATTERN):` instead of `PATTERN:` when the pattern
 contains top-level keywords. Layout headers cannot parse keywords directly, but
 inside parentheses the form is read in s-expr context, so keywords are valid.
 Both styles expand to the same rule. Example: `ref (item obj name):` and
-`match (ref (item obj name)):` produce identical output.
+`case (ref (item obj name)):` produce identical output. Any other head is a
+pattern as written: `match (P):` is the pattern `(match P)`.
 
 **Syntax:**
 
@@ -699,7 +703,7 @@ Both styles expand to the same rule. Example: `ref (item obj name):` and
 syntax-rules [LIT ...]:
   PATTERN1:
     TEMPLATE1...
-  match (PATTERN-WITH-KEYWORDS):
+  case (PATTERN-WITH-KEYWORDS):
     TEMPLATE...
   PATTERN2 ARG:
     TEMPLATE2...
@@ -720,9 +724,9 @@ syntax-rules [x]:
 ;;     ((do-something-with-x y) (compile/begin (print "one arg" x y) (+ x y))))
 
 syntax-rules [item]:
-  match (ref (item obj name)):
+  case (ref (item obj name)):
     (compile/ref-item obj name)
-;; → same as ref (item obj name): ... ; use match when pattern has keywords
+;; → same as ref (item obj name): ... ; use case when pattern has keywords
 ```
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_syntax_rules`
@@ -761,7 +765,7 @@ macro-rules [LIT ...]:
 TEMPLATE)`** (no **`rule`** wrapper).
 
 **Behaviour:** Same per-rule header/body rules as `layout/syntax-rules` (including
-`match (PATTERN):` for keywords). Does not accept peers.
+`case (PATTERN):` for keywords). Does not accept peers.
 
 **Syntax:**
 
@@ -769,7 +773,7 @@ TEMPLATE)`** (no **`rule`** wrapper).
 syntax-match:
   PATTERN1:
     TEMPLATE1...
-  match (PATTERN-WITH-KEYWORDS):
+  case (PATTERN-WITH-KEYWORDS):
     TEMPLATE...
 ```
 
@@ -792,10 +796,12 @@ header (symbol or parenthesized form) then body forms.
 macro-match:
   HEAD ARGS...:
     BODY1...
-  (complex pat):
-    BODY1
-    BODY2
+  case (PATTERN-WITH-KEYWORDS):
+    BODY...
 ```
+
+A rule header must start with a symbol; a parenthesized header is not a
+block and is rejected.
 
 **Implementation:** `koskari/reader/layouts/define_syntax.layout_macro_match`
 
@@ -834,7 +840,7 @@ not accept peers.
 
 **Use-case:** Block syntax for a `bare-syntax` transformer. The header names
 the called-by slot, with an optional leading name; the body is the template,
-left unexpanded like a syntax-rules template.
+expanded like any block body (`apply_lines`, then folded) before wrapping.
 
 **Behaviour:** **`(bare-syntax SLOT TMPL)`**, or **`(bare-syntax NAME SLOT
 TMPL)`** with a leading name; a multi-form template body is wrapped in

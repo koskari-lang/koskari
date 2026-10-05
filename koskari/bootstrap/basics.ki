@@ -19,8 +19,7 @@ Portion of koskari.builtins
 
 let []:
   import-from koskari.compile Compiler
-  import-from koskari.pragma ModulePragma
-  import-from koskari.module find_package_pragma
+  import-from koskari.module find_module_pragma
 
 
   define-global get-compiler [ns]:
@@ -38,14 +37,12 @@ let []:
     when compiler:
       return compiler
 
-    define pragma (ns.get "__pragma__")
-    when (None? pragma):
-      define inherited (find_package_pragma ns)
-      set! pragma (if inherited (inherited.copy) (ModulePragma))
-      set! ns["__pragma__"] pragma
-
-    set! compiler (Compiler.from_pragma (getattr ns "__name__" "<module>") ns
-                    filename: (ns.get "__file__") pragma: pragma)
+    ;; the module namespace carries the module's name; the bound
+    ;; __name__ exists only after a loader stamped it, and a plain
+    ;; mapping has no name at all
+    set! compiler (Compiler.from_pragma (getattr ns "name" "<module>") ns
+                    filename: (ns.get "__file__")
+                    pragma: (find_module_pragma ns))
     set! ns["__compiler__"] compiler
     compiler
 

@@ -15,10 +15,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENGINE="${1:-$(which podman 2>/dev/null || which docker 2>/dev/null || echo podman)}"
 VERSION_FILTER="${2:-}"
-shift 2 2>/dev/null || true
+# shift only what was given: shift 2 with one argument shifts nothing
+# and would leave the engine as the container command
+shift $(( $# < 2 ? $# : 2 ))
 
 EXTRA_RUN_ARGS=("$@")
-if [[ -z "$EXTRA_RUN_ARGS" ]]; then
+if (( ${#EXTRA_RUN_ARGS[@]} == 0 )); then
   EXTRA_RUN_ARGS=("test")
 fi
 

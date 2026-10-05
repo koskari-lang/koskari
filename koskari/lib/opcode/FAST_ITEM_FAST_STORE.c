@@ -33,8 +33,9 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_STORE) {
   KOS_OP_REQUIRE_NS(ns);
   KOS_NS_FAST_BORROW(obj, obj_ref, ns, KosExtra_IMM(row, 0),
                      { RESULT_RAISE(); });
-  KOS_NS_FAST_BORROW(key, key_ref, ns, KosExtra_IMM(row, 1),
-                     { Py_XDECREF(obj_ref); RESULT_RAISE(); });
+  KOS_NS_FAST_BORROW_HOLDING(key, key_ref, ns, KosExtra_IMM(row, 1),
+                             { KOS_NS_HOLD(obj, obj_ref); },
+                             { Py_XDECREF(obj_ref); RESULT_RAISE(); });
 
   val = kos_stack_pop_ref_fast(bl);
   if (unlikely(! val)) {

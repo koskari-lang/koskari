@@ -337,9 +337,9 @@ typedef struct {
 struct KosMatchSubject {
   const KosMatchSubjectVTable *vt;
   PyObject *backing;     /* ref-counted backing object (tuple or pair) */
-  PyObject **kp_cars;    /* KosPair adapter only: borrowed car ptrs */
+  PyObject **kp_cars;    /* KosPair adapter only: owned car refs */
   PyObject **kp_tails;   /* KosPair adapter only: each tails[i] is the
-                            pair-or-nil at position i (borrowed) */
+                            pair-or-nil at position i (owned) */
   Py_ssize_t cached_length;
 };
 
@@ -358,8 +358,10 @@ int KosMatchSubject_FromPySequence(
    Initialize a subject from a KosPair root (or KosNil for the empty
    subject). Walks the cons spine once at construction time and caches
    per-position car and pair pointers so length/get/tail are O(1).
-   Returns 0 on success; -1 with a Python exception on failure
-   (improper list, recursive list, etc.).
+   Returns 0 on success; 1 with no exception when the spine is not a
+   proper list (improper, non-nil terminated), which is a shape the
+   caller judges; -1 with a Python exception on failure (a looping
+   spine, allocation).
  */
 int KosMatchSubject_FromKosPair(
     PyObject *pair_or_nil,
@@ -418,24 +420,6 @@ int KosMatcher_Run(
 
 
 /**
-   Vectorcall-style entry to ``KosMatcher_Run``: ``ext_values`` is a
-   borrowed value array (a stack segment works as-is) named by the
-   aligned ``ext_names`` tuple. Each extern-table entry resolves from
-   the named values first, then the matcher's inbuilt extern defaults;
-   a genuine miss raises the matcher's missing-binding TypeError. When
-   the names cover the whole extern table in order the value array is
-   used as the env directly with no allocation. Same returns as
-   ``KosMatcher_Run``.
- */
-int KosMatcher_RunVectorcall(
-    KosMatcher *matcher,
-    KosMatchSubject *subject,
-    PyObject *const *ext_values,
-    PyObject *ext_names,
-    PyObject **out_caps);
-
-
-/**
    Number of capture slots in the matcher's slot table; the length of
    the array the slot-array entries below fill.
  */
@@ -468,9 +452,14 @@ int KosMatcher_RunSlots(
 
 
 /**
-   ``KosMatcher_RunVectorcall`` with the ``KosMatcher_RunSlots``
-   result contract: same extern resolution, captures into the caller's
-   slot array.
+   Vectorcall-style entry to ``KosMatcher_RunSlots``: ``ext_values`` is
+   a borrowed value array (a stack segment works as-is) named by the
+   aligned ``ext_names`` tuple. Each extern-table entry resolves from
+   the named values first, then the matcher's inbuilt extern defaults;
+   a genuine miss raises the matcher's missing-binding TypeError. When
+   the names cover the whole extern table in order the value array is
+   used as the env directly with no allocation. Captures go into the
+   caller's slot array; same returns as ``KosMatcher_RunSlots``.
  */
 int KosMatcher_RunSlotsVectorcall(
     KosMatcher *matcher,
@@ -581,11 +570,6 @@ typedef struct KosMatcherBuilder KosMatcherBuilder;
 KosMatcherBuilder *KosMatcherBuilder_New(void);
 
 void KosMatcherBuilder_Free(KosMatcherBuilder *builder);
-
-/**
-   Number of nodes appended to the builder so far.
- */
-Py_ssize_t KosMatcherBuilder_NodeCount(KosMatcherBuilder *builder);
 
 /**
    Append a capture slot name. Returns the new slot index, or -1 on

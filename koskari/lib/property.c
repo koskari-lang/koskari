@@ -27,7 +27,7 @@
    KosProperty instances through property_copy's Py_TYPE(self) dispatch.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
-   :license: GPL v.3
+   :license: GNU General Public License v3
 */
 
 
@@ -209,6 +209,8 @@ static int kosproperty_override_doc(void) {
 
   int r = PyDict_SetItemString(KosPropertyType.tp_dict, "__doc__", descr);
   Py_DECREF(descr);
+  if (r == 0)
+    PyType_Modified(&KosPropertyType);
   return r;
 }
 

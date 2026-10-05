@@ -344,9 +344,17 @@ _FSTRING_ESCAPE_PEEK = 128
 def _decode_sub(match):
     """
     Decode a matched escape sequence
+
+    :raises ValueError: naming the escape and the codec's reason when
+        the characters after the escape prefix do not decode
     """
 
-    return decode(match.group(0), 'unicode-escape')
+    text = match.group(0)
+    try:
+        return decode(text, 'unicode-escape')
+    except UnicodeDecodeError as ude:
+        raise ValueError(
+            f"invalid escape sequence {text}: {ude.reason}") from None
 
 
 def _as_unicode(s, pattern=ESCAPE_SEQUENCE_RE):
@@ -790,6 +798,9 @@ class Reader:
         :raises ReaderSyntaxError: when the group carries no key
         """
 
+        # the stream sits on the bracket; hand its position to the pair
+        # reader as the opener, as _read does for every other trigger
+        stream.event_position = stream.position()
         index = self.read_pair(stream)
 
         keys = []
@@ -1642,7 +1653,7 @@ class Reader:
             stream.read(1)
             return self._read_quasiquote(
                 stream, fchar + peek, _symbol_quasiquote_syntax)
-        if peek not in "({[":
+        if not peek or peek not in "({[":
             return DEFER, None
 
         peek = stream.read(1)
@@ -1827,7 +1838,8 @@ class Reader:
         pos = stream.position()
         lin, col = pos
 
-        if stream.peek(3) == '"""':
+        # the first quote is consumed; two more make the opener triple
+        if stream.peek(2) == char * 2:
             col += 2
 
         # Read the body raw (escapes undecoded) so the field/literal split
@@ -1837,7 +1849,8 @@ class Reader:
         # decoded per literal chunk and per field interior in the splitter.
         _evnt, data = self._read_string(stream, char, with_escapes=False)
 
-        substream = source_str(data, stream.filename,
+        # string text, not a script: a body starting with #! is literal
+        substream = source_str(data, stream.filename, auto_skip_exec=False,
                                line_no=lin, col_no=col)
 
         fsr = FormatStringReader(self)
@@ -2308,6 +2321,62 @@ class FormatStringReader(object):
         return ''.join(parts)
 
 
+    def _read_field_expr(self, stream, opened_at=None):
+        """
+        Read the value expression of a ``{...}`` field
+
+        A delimited form reads through the general reader. A leading
+        atom is collected with ``:`` and ``}`` as extra terminators so
+        the format spec stays outside it, then suffix adjacency applies,
+        so ``{foo[0]}`` is one subscript form rather than ``[0]`` in the
+        spec position. A unary prefix the bare grammar admits (``-``,
+        ``+`` or ``~`` before a name or an opening delimiter, under
+        ``reader/unary``) wraps the operand read the same way, so
+        ``{-x:04d}`` is ``(- x)`` with its spec; ``-`` before a digit is
+        the literal's sign and stays in the atom.
+
+        :param stream: the source stream, positioned at the expression
+        :param opened_at: (line, col) of the opening ``{``
+        :return: tuple of (event, position, value)
+        """
+
+        norm = self.normal
+        position = stream.position()
+        lead = stream.peek(1)
+
+        if lead in '([{':
+            return norm._read(stream)
+
+        if lead and lead in _unary_symbols and norm.unary:
+            peek = stream.peek(2)
+            nxt = peek[1:2]
+            digit = nxt.isdigit() or (nxt == '.' and stream.peek(3)[2:3].isdigit())
+            if (nxt.isalpha() or nxt == '_' or nxt in '([{'
+                    or (digit and lead != '-')):
+                stream.read(1)
+                event, pos, child = self._read_field_expr(stream, opened_at)
+                if event is EOF:
+                    raise stream.reader_eof(
+                        opened_at=opened_at, context=f"unary {lead}")
+                if event is not VALUE:
+                    raise stream.error(f"invalid use of {lead}", pos)
+                return VALUE, position, cons(_unary_symbols[lead], child, nil)
+
+        if lead and (lead.isalpha() or lead == '_' or lead.isdigit()
+                     or lead == '-'):
+            first = stream.read(1)
+            terms = norm._terms
+            for c in ':}':
+                if c not in terms:
+                    terms = terms + c
+            expr = norm.process_atom(
+                norm._collect_atom_continuation(stream, first, terms))
+            expr = norm._dispatch_suffix_macros(stream, expr, position)
+            return VALUE, position, expr
+
+        return norm._read(stream)
+
+
     def _read_format_field(self, stream, opened_at=None):
         """
         Read one ``{...}`` f-string field
@@ -2319,28 +2388,7 @@ class FormatStringReader(object):
         norm = self.normal
 
         norm._skip_horizontal_whitespace(stream)
-        position = stream.position()
-        lead = stream.peek(1)
-
-        if lead in '([{':
-            event, pos, expr = norm._read(stream)
-        elif lead and (lead.isalpha() or lead == '_' or lead.isdigit()
-                       or lead == '-'):
-            first = stream.read(1)
-            terms = norm._terms
-            for c in ':}':
-                if c not in terms:
-                    terms = terms + c
-            expr = norm.process_atom(
-                norm._collect_atom_continuation(stream, first, terms))
-            # apply suffix adjacency (subscript, attribute, ...) before the
-            # value/format-spec split, so `{foo[0]}` reads as one subscript
-            # form rather than dropping `[0]` into the spec position.
-            expr = norm._dispatch_suffix_macros(stream, expr, position)
-            pos = position
-            event = VALUE
-        else:
-            event, pos, expr = norm._read(stream)
+        event, pos, expr = self._read_field_expr(stream, opened_at)
 
         if event is EOF:
             raise stream.reader_eof(opened_at=opened_at,
@@ -2456,6 +2504,7 @@ class FormatStringReader(object):
         pos = stream.position()
         raw = self._read_raw_field(stream, opened_at)
         substream = source_str(_as_unicode(raw) + '}', stream.filename,
+                               auto_skip_exec=False,
                                line_no=pos[0], col_no=pos[1])
         return self._read_format_field(substream, opened_at)
 

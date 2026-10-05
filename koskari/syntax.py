@@ -59,7 +59,6 @@ __all__ = (
 )
 
 
-_symbol_match = symbol("match")
 
 
 class Syntax(Compiled):
@@ -132,7 +131,8 @@ class Syntax(Compiled):
 
     def compile_impl(self, compiler, source_obj):
         """
-        Try each transform in order; first non-``None`` result wins
+        Try each transform in order; the first arm whose pattern matches
+        expands, and its result is returned as it is
 
         A non-pair source is a lone-atom use, which bypasses the matchers
         entirely and goes straight to the ``bare`` arm
@@ -258,8 +258,6 @@ class Transform(ABC):
     def __init__(self, pattern):
         """
         :param pattern: matcher pattern tree
-        :param handler: callable invoked by procedural arms; ``None`` for
-            template-only ``SyntaxTransform`` arms
         """
 
         if not isinstance(pattern, Pattern):
@@ -304,8 +302,6 @@ class SyntaxTransform(Transform):
     def __init__(self, pattern, template, pattern_src=nil):
         """
         :param pattern: matcher pattern tree
-        :param transformer: ``(compiler, **captures)`` procedure, or
-            ``nil`` / ``None`` for template-only expansion
         :param template: syntax-rules template form (often contains pattern vars)
         :param pattern_src: original RULE or MATCH pattern datum for errors
         """
@@ -318,7 +314,7 @@ class SyntaxTransform(Transform):
 
     def handle_expand(self, compiler, source, result):
         """
-        run ``transformer`` or expand ``template`` with captures
+        expand ``template`` with the captures
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
@@ -423,7 +419,9 @@ class MacroTransform(Transform):
         :return: expanded form after finalize
         """
 
-        expanded = self.handler(compiler, **result.captures)
+        expanded = self.handler(
+            compiler, **_captures_for_procedure(
+                result.captures, _repeat_variables(self.pattern)))
         return _finalize_macro_output(
             compiler, expanded, gensym.next_mark())
 
@@ -493,37 +491,113 @@ def _captures_to_bindings(captures):
     return {symbol(k): v for k, v in captures.items()}
 
 
-def _promote_repeat_frame_bindings(bindings):
+def _repeat_frames(value):
+    """
+    The per-iteration frame dicts a ``repeat_capture`` value holds, or None
+    when the value is not that shape
+
+    A Datum at the binding root is never the frame vector; that structure is
+    always a bare, non-empty list of dicts. A Datum here is one wrapped cell
+    (often a pair spine for REST or a leaf for BIND), and a flat list of
+    anything else came from elsewhere
+    """
+
+    if isinstance(value, Datum):
+        return None
+    if not (value and isinstance(value, list)):
+        return None
+    if not all(isinstance(fr, dict) for fr in value):
+        return None
+    return value
+
+
+# the anonymous slot a pair sub-pattern under an ellipsis captures into;
+# its frames are promoted onto the pair's own variables, and the slot
+# itself is never a template name or a procedure formal
+_REPEAT_SLOT_PREFIX = "_repeat"
+
+
+def _is_repeat_slot(key):
+    return str(key).startswith(_REPEAT_SLOT_PREFIX + "#")
+
+
+def _repeat_variables(pattern):
+    """
+    The variables each anonymous repeat slot of a lowered RULE pattern
+    binds; empty for a pattern of the MATCH dialect, which makes no
+    such slots
+    """
+
+    if isinstance(pattern, RulePattern):
+        return pattern.repeat_variables
+    return {}
+
+
+def _captures_for_procedure(captures, repeat_variables):
+    """
+    The keyword arguments a procedural arm's lambda takes from a match:
+    repeat frames promoted onto the pattern's variables, as the template
+    arm sees them, with the anonymous repeat slots dropped since they
+    are not formals
+
+    :param repeat_variables: the variables each anonymous repeat slot
+        binds, from the lowered pattern, so a slot matched zero times
+        still yields each of its variables as an empty list
+    """
+
+    bindings = _promote_repeat_frame_bindings(
+        _captures_to_bindings(captures), named=False,
+        repeat_variables=repeat_variables)
+    return {str(k): v for k, v in bindings.items()
+            if not _is_repeat_slot(k)}
+
+
+def _promote_repeat_frame_bindings(
+        bindings,
+        named=True,
+        repeat_variables=None):
     """
     For each ``repeat_capture`` value (bare list of per-iteration dicts),
-    copy slot columns onto top-level template keys.
+    copy slot columns onto template keys.
+
+    Each frame is promoted first, so a pair sub-pattern under a further
+    ellipsis, which the matcher captured as a nested frame vector inside
+    the frame, becomes named columns of that frame before the frames are
+    transposed. A variable under N ellipses then lands N lists deep, the
+    shape template ellipsis indexing peels one level at a time.
 
     Keys already present in ``bindings`` are left alone so outer captures and
-    the first promoted column win when names collide
+    the first promoted column win when names collide.
+
+    :param named: promote a REPEAT the pattern named as well as the
+        anonymous slots the rule dialect makes; a procedural arm passes
+        False, since a named REPEAT is a formal whose value is its frames
+    :param repeat_variables: the variables each anonymous slot binds,
+        from the lowered pattern; a slot matched zero times has no
+        frames to read them from, so it contributes an empty column for
+        each. None promotes from the frames alone
     """
 
     out = dict(bindings)
-    for v in bindings.values():
-        # Stage 1: Datum at the binding root is never repeat_capture's frame
-        # vector; that structure is always a bare list. A Datum here is one
-        # wrapped cell (often a pair spine for REST or a leaf for BIND). If we
-        # mis-classified that as repeat rows, ellipsis would see wrong shapes.
-        if isinstance(v, Datum):
+    for k, v in bindings.items():
+        if repeat_variables and _is_repeat_slot(k) \
+           and isinstance(v, list) and not v:
+            for name in repeat_variables.get(str(k), ()):
+                out.setdefault(symbol(name), [])
             continue
 
-        # Stage 2: only non-empty Python lists can be repeat_capture output.
-        if not (v and isinstance(v, list)):
+        frames = _repeat_frames(v)
+        if frames is None:
+            continue
+        if not named and not _is_repeat_slot(k):
             continue
 
-        frames = v
-        # Stage 3: repeat rows are dicts per iteration; anything else is not this
-        # transpose shape (e.g. a flat list of syntax objects from elsewhere).
-        if not all(isinstance(fr, dict) for fr in frames):
-            continue
+        frames = [_promote_repeat_frame_bindings(fr, named, repeat_variables)
+                  for fr in frames]
 
-        # Stage 4: each frame maps string slot names to one iteration's
-        # captures (often Datum-wrapped); transpose into parallel lists for
-        # template ellipsis indexing.
+        # each frame maps slot names to one iteration's captures (often
+        # Datum-wrapped); transpose into parallel lists for template
+        # ellipsis indexing
         slot_keys = set()
         for fr in frames:
             slot_keys.update(fr.keys())
@@ -625,7 +699,31 @@ def special(form_symbol, *, patterns, unpack=None):
     return deco
 
 
-def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
+class RulePattern(MATCH):
+    """
+    The lowered form of a RULE-dialect pattern: a MATCH spine that also
+    records, for each anonymous repeat slot a pair sub-pattern under an
+    ellipsis captures into, the variables that sub-pattern binds. A
+    match carries those names in the slot's frames, so a slot matched
+    zero times has no frames to read them from
+    """
+
+    def __init__(self, *children, repeat_variables=None):
+        """
+        :param children: the spine's patterns
+        :param repeat_variables: anonymous slot name to the list of
+            variable names its sub-pattern binds
+        """
+
+        super().__init__(*children)
+        self.repeat_variables = dict(repeat_variables or {})
+
+
+def parse_syntax_rules_pattern(
+        pattern_expr,
+        literals,
+        source_ctx,
+        variables=None):
     """
     Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
@@ -636,23 +734,17 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
     :param pattern_expr: koskari pattern datum
     :param literals: set, frozenset, list, or tuple of literal symbols
     :param source_ctx: value recorded in error messages
+    :param variables: a dict that, when given, receives each pattern
+        variable's name mapped to its source symbol, in the order the
+        variables are bound
     :rtype: Pattern
     """
 
     # a literal is named and matched by its bare spelling
     literals = frozenset(strip_mark(lit) for lit in literals)
 
-    if is_pair(pattern_expr):
-        head, rest = pattern_expr
-        if strip_mark(head) == _symbol_match:
-            if (not is_proper(rest)
-                    or not is_nil(rest.cdr)
-                    or is_nil(rest)):
-                raise ValueError(
-                    f"match pattern must have exactly one form: {pattern_expr!r}"
-                    f" (context {source_ctx!r})"
-                )
-            pattern_expr = rest.car
+    if variables is None:
+        variables = {}
 
     if pattern_expr is Ellipsis:
         raise TypeError(
@@ -664,13 +756,40 @@ def parse_syntax_rules_pattern(pattern_expr, literals, source_ctx):
         bare = strip_mark(pattern_expr)
         if bare in literals:
             return MATCH(LITERAL(bare))
-        return MATCH(REST(str(pattern_expr)))
+        variables[str(pattern_expr)] = pattern_expr
+        return RulePattern(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
         return MATCH(LITERAL(pattern_expr))
 
-    return MATCH(*_syntax_pattern_specs(
-        list(unpack(pattern_expr)), literals, source_ctx, set()))
+    items, tail = _spine_items(pattern_expr)
+    owners = {}
+    scope = object()
+    specs = []
+
+    # the head is the symbol the macro was invoked as: a CALLEDBY
+    # capture under the pattern's own name for it, so a template can
+    # use the invoked name; a literal head, as macro-rules and
+    # special-rules write, lowers as a literal like any element
+    head = items[0] if items else None
+    if (is_symbol(head) and strip_mark(head) not in literals
+            and not (len(items) > 1 and items[1] is Ellipsis)):
+        name = str(head)
+        owners[name] = scope
+        variables[name] = head
+        specs.append(CALLEDBY(name))
+        items = items[1:]
+
+    specs.extend(_syntax_pattern_specs(
+        items, literals, source_ctx, owners, variables, scope, tail))
+
+    # a pair sub-pattern's scope is its slot name, so the slot's
+    # variables are the names that scope owns
+    repeat_variables = {}
+    for name, owner in owners.items():
+        if isinstance(owner, str):
+            repeat_variables.setdefault(owner, []).append(name)
+    return RulePattern(*specs, repeat_variables=repeat_variables)
 
 
 @builtin("parse-match-pattern")
@@ -700,7 +819,44 @@ def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     return parse_syntax_rules_pattern(pattern_expr, lit, source_ctx)
 
 
-def _syntax_elem_pattern(pat, literals, source_ctx, seen):
+# the owner recorded for a variable bound by ``x ...`` or a dotted
+# tail: a sequence of captures, which no later binding of the name
+# can be the same as
+_REPEAT_OWNER = object()
+
+
+def _claim_repeat_variable(sym, owners, variables, source_ctx):
+    """
+    Record a variable bound by an ellipsis or a dotted tail; a name
+    already bound anywhere in the pattern is refused
+    """
+
+    name = str(sym)
+    if name in owners:
+        raise ValueError(
+            f"pattern variable {name!r} is already bound at another"
+            f" ellipsis depth (context {source_ctx!r})")
+    owners[name] = _REPEAT_OWNER
+    variables[name] = sym
+
+
+def _syntax_elem_pattern(
+        pat, literals, source_ctx, owners, variables, scope):
+    """
+    The matcher spec for one pattern element
+
+    :param owners: pattern-wide map from each bound variable name to
+        the scope that bound it: the top level's token, the slot name
+        of one pair sub-pattern under an ellipsis, or _REPEAT_OWNER for
+        an ellipsis variable
+    :param variables: pattern-wide map from each bound variable name
+        to its source symbol, in the order the variables are bound
+    :param scope: the token of the scope being parsed
+    :raises ValueError: when a variable is bound in two scopes, where
+        the second occurrence is a sequence or another iteration's
+        value and equality has no meaning
+    """
+
     if pat is Ellipsis:
         raise ValueError(
             f"invalid ellipsis placement in pattern: {pat!r}"
@@ -716,41 +872,102 @@ def _syntax_elem_pattern(pat, literals, source_ctx, seen):
         if bare in literals:
             return LITERAL(bare)
         name = str(pat)
-        if name in seen:
+        owner = owners.get(name)
+        if owner is scope:
+            # a repeat within one scope is an equality test
             return SAME(name)
-        seen.add(name)
+        if owner is not None:
+            raise ValueError(
+                f"pattern variable {name!r} is already bound at another"
+                f" ellipsis depth (context {source_ctx!r})")
+        owners[name] = scope
+        variables[name] = pat
         return BIND(name)
 
     if not is_pair(pat):
         # a keyword or other atom literal matches by its bare spelling
         return LITERAL(pat)
 
+    items, tail = _spine_items(pat)
     return FORM(MATCH(*_syntax_pattern_specs(
-        list(unpack(pat)), literals, source_ctx, seen)))
+        items, literals, source_ctx, owners, variables, scope, tail)))
 
 
-def _syntax_pattern_specs(p_items, literals, source_ctx, seen):
+def _spine_items(pattern):
+    """
+    The elements of a pattern spine and its terminator: None for a
+    proper list, otherwise the datum after the dot
+
+    :param pattern: a pair
+    :return: (items, tail)
+    """
+
+    items = []
+    cell = pattern
+    while is_pair(cell) and not is_nil(cell):
+        items.append(cell.car)
+        cell = cell.cdr
+    return items, (None if is_nil(cell) else cell)
+
+
+def _syntax_pattern_specs(
+        p_items,
+        literals,
+        source_ctx,
+        owners,
+        variables,
+        scope,
+        tail=None):
+    """
+    The matcher specs for a pattern spine's elements, and for its dotted
+    tail when it has one: a tail symbol that is not a literal binds the
+    remaining elements as a list, the REST a bare symbol pattern or a
+    leading ``x ...`` lowers to; any other tail is refused
+
+    :param owners: pattern-wide variable ownership, see
+        _syntax_elem_pattern
+    :param variables: the bound variables' source symbols, see
+        _syntax_elem_pattern
+    :param scope: the token of the scope this spine is in; a pair
+        sub-pattern under an ellipsis opens a scope of its own
+    :param tail: the datum after the dot, or None for a proper spine
+    :raises ValueError: when the dotted tail is not a pattern variable,
+        or a variable is bound in two scopes
+    """
+
     specs = []
     i = 0
     while i < len(p_items):
         if i + 1 < len(p_items) and p_items[i + 1] is Ellipsis:
             pat = p_items[i]
             if is_symbol(pat) and strip_mark(pat) not in literals:
+                name = str(pat)
+                _claim_repeat_variable(pat, owners, variables, source_ctx)
                 if i + 2 < len(p_items):
-                    specs.append(REST(str(pat)))
+                    specs.append(REST(name))
                 else:
-                    specs.append(repeat_capture(str(pat), TEST_ANY()))
+                    specs.append(repeat_capture(name, TEST_ANY()))
             else:
-                slot = str(gensym("_repeat"))
+                slot = str(gensym(_REPEAT_SLOT_PREFIX))
                 inner = _syntax_elem_pattern(
-                    pat, literals, source_ctx, set())
+                    pat, literals, source_ctx, owners, variables, slot)
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
         specs.append(_syntax_elem_pattern(
-            p_items[i], literals, source_ctx, seen))
+            p_items[i], literals, source_ctx, owners, variables, scope))
         i += 1
+
+    if tail is not None:
+        if not is_symbol(tail) or strip_mark(tail) in literals \
+           or tail is Ellipsis:
+            raise ValueError(
+                f"dotted pattern tail must be a pattern variable, got"
+                f" {tail!r} (context {source_ctx!r})")
+        name = str(tail)
+        _claim_repeat_variable(tail, owners, variables, source_ctx)
+        specs.append(REST(name))
 
     return specs
 
@@ -767,14 +984,19 @@ def _wrap_macro_handler(raw):
     return handler
 
 
-def _wrap_special_handler(raw):
+def _wrap_special_handler(raw, repeat_variables):
     """
     Adapt a Koskari procedure to SpecialTransform ``handle_expand`` calling convention
+
+    :param repeat_variables: the variables each anonymous repeat slot of
+        the arm's pattern binds, see _captures_for_procedure
     """
 
     @wraps(raw)
     def handler(compiler, source_obj, match_result):
-        return demand_call(raw, compiler, **match_result.captures)
+        return demand_call(
+            raw, compiler, **_captures_for_procedure(
+                match_result.captures, repeat_variables))
 
     return handler
 
@@ -842,7 +1064,8 @@ def build_special(name, *pattern_and_lambdas):
     for i in range(0, len(pattern_and_lambdas), 2):
         pat = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        transforms.append(SpecialTransform(pat, _wrap_special_handler(fn)))
+        transforms.append(SpecialTransform(
+            pat, _wrap_special_handler(fn, _repeat_variables(pat))))
 
     return Syntax(name, transforms)
 

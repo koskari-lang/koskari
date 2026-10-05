@@ -29,7 +29,6 @@
 #include "debug.h"
 
 
-static PyObject *coro_str_throw = NULL;
 static PyObject *coro_str_close = NULL;
 
 
@@ -58,7 +57,7 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
      one, and a drive from Python creates the wrapper's at that moment. */
   KosDynGen_ACTIVE(gen) = (KosDynNode *) frame;
 
-  PyObject *agen = KosPyAsyncGen_New(NULL);
+  PyObject *agen = KosPyAsyncGen_New(NULL, gen);
   if (! agen) {
     kos_dyngen_free(gen);
     return NULL;
@@ -67,7 +66,6 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
   Py_XINCREF(KosCode_NAME(code));
   ((KosPyAsyncGen *) agen)->code_name = KosCode_NAME(code);
   KosDynGen_OWNER(gen) = (PyObject *) agen;
-  ((KosPyAsyncGen *) agen)->gen = (void *) gen;
   kos_dyngen_acquire(gen);
   return agen;
 }
@@ -101,7 +99,6 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 
   coro->ctx = NULL;
   coro->state = KOS_CORO_NEW;
-  coro->pending_await = NULL;
   coro->in_send = 0;
   Py_INCREF(code);
   coro->code = (KosCode *) code;
@@ -119,15 +116,15 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 }
 
 
+static void coroutine_drop_record(KosCoroutine *coro);
+
+
 /**
    Build the drive context from the bound call, for the first drive from
    Python: the root frame over the program and its namespace, and a
    context over that frame starting from the creation-time snapshot. A
    no-op once built. Returns -1 with an error set.
 */
-static void coroutine_drop_record(KosCoroutine *coro);
-
-
 static int coroutine_materialize(KosCoroutine *coro) {
 
   KosDynFrame *frame;
@@ -245,7 +242,6 @@ static void coroutine_dealloc(PyObject *self) {
   KosCoroutine *const coro = (KosCoroutine *) self;
 
   Py_CLEAR(coro->ctx);
-  Py_XDECREF(coro->pending_await);
   coroutine_drop_record(coro);
 
   Py_TYPE(self)->tp_free(self);
@@ -259,7 +255,6 @@ static int coroutine_traverse(
 
   KosCoroutine *const coro = (KosCoroutine *) self;
 
-  Py_VISIT(coro->pending_await);
   Py_VISIT(coro->ctx);
   Py_VISIT(coro->code);
   Py_VISIT(coro->ns);
@@ -274,7 +269,6 @@ static int coroutine_clear(PyObject *self) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
 
-  Py_CLEAR(coro->pending_await);
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);
 
@@ -581,23 +575,17 @@ static PyObject *coroutine_throw_pair(
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
-      PyObject *result = PyObject_CallMethodObjArgs(
-          await_iter, coro_str_throw, exc, NULL);
+      PyObject *await_result = NULL;
+      PySendResult step = kos_iter_throw(await_iter, exc, &await_result);
       coro->in_send = 0;
       Py_DECREF(await_iter);
 
-      if (result) {
-        return result;
+      if (step == PYGEN_NEXT) {
+        return await_result;
       }
 
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      if (step == PYGEN_RETURN) {
         /* await_result is uniformly owned; PythonResumeSet steals it. */
-        PyObject *await_result = NULL;
-        PyGen_FetchStopIterationValue(&await_result);
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
         KosEvalState_PythonAwaitClearIter(&coro_es);
         coro->state = KOS_CORO_RUNNING;
         KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);
@@ -647,7 +635,7 @@ static PyObject *coroutine_close(PyObject *self) {
   }
 
   /* never started: nothing entered, nothing to unwind */
-  if (coro->state == KOS_CORO_NEW && ! coro->ctx) {
+  if (coro->state == KOS_CORO_NEW) {
     coroutine_drop_record(coro);
     coro->state = KOS_CORO_DONE;
     Py_RETURN_NONE;
@@ -663,12 +651,9 @@ static PyObject *coroutine_close(PyObject *self) {
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
-      PyObject *result = PyObject_CallMethodObjArgs(
-          await_iter, coro_str_close, NULL);
+      kos_iter_close(await_iter);
       coro->in_send = 0;
       Py_DECREF(await_iter);
-      Py_XDECREF(result);
-      PyErr_Clear();
       KosEvalState_PythonAwaitClearIter(&coro_es);
     }
   }
@@ -813,62 +798,24 @@ PyTypeObject KosCoroutineType = {
 };
 
 
-PyObject *KosCoroutine_New(KosContext *ctx) {
-
-  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
-  if (! coro) {
-    Py_DECREF(ctx);
-    return NULL;
-  }
-
-  coro->ctx = ctx;
-  coro->state = KOS_CORO_NEW;
-  coro->pending_await = NULL;
-  coro->in_send = 0;
-  coro->code = NULL;
-  coro->ns = NULL;
-  coro->domain = NULL;
-  coro->param_refs = NULL;
-
-  PyObject_GC_Track((PyObject *) coro);
-  return (PyObject *) coro;
-}
-
-
 int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
 
   KosCoroutine *const coro = (KosCoroutine *) self;
-  KosDynFrame *frame;
 
   if (coro->state != KOS_CORO_NEW || coro->in_send)
     return 0;
 
-  if (! coro->ctx) {
-    /* the bound call itself: the program and namespace move to the
-       caller, the snapshot is dropped -- the grafted frame runs under
-       the awaiter's dynamic state */
-    if (! coro->code)
-      return 0;
-    *code = coro->code;
-    coro->code = NULL;
-    *ns = coro->ns;
-    coro->ns = NULL;
-    Py_CLEAR(coro->domain);
-    Py_CLEAR(coro->param_refs);
-    coro->state = KOS_CORO_DONE;
-    return 1;
-  }
-
-  frame = KosContext_FRAME_TOP(coro->ctx);
-  if (! frame || ! KosDynFrame_CODE(frame))
+  /* the bound call itself: the program and namespace move to the
+     caller, the snapshot is dropped -- the grafted frame runs under
+     the awaiter's dynamic state */
+  if (! coro->code)
     return 0;
-
-  *code = KosDynFrame_CODE(frame);
-  Py_INCREF((PyObject *) *code);
-  *ns = KosDynFrame_NS(frame);
-  Py_XINCREF(*ns);
-
-  Py_CLEAR(coro->ctx);
+  *code = coro->code;
+  coro->code = NULL;
+  *ns = coro->ns;
+  coro->ns = NULL;
+  Py_CLEAR(coro->domain);
+  Py_CLEAR(coro->param_refs);
   coro->state = KOS_CORO_DONE;
   return 1;
 }
@@ -883,7 +830,6 @@ int koskari_coro_init(PyObject *mod) {
   if (! dict)
     return -1;
 
-  STR_CONST(coro_str_throw, "throw");
   STR_CONST(coro_str_close, "close");
 
   if (PyType_Ready(&KosCoroutineType))
@@ -899,7 +845,6 @@ int koskari_coro_init(PyObject *mod) {
 
 int koskari_coro_clear(PyObject *mod) {
 
-  Py_CLEAR(coro_str_throw);
   Py_CLEAR(coro_str_close);
 
   (void) mod;

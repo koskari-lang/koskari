@@ -1,4 +1,27 @@
-/* Included by matcher.c — validate */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by matcher.c. Width computation and validation of a built
+  matcher.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === width compute === */
 
 
@@ -331,9 +354,37 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
 }
 
 
-static int validate_repeat_and_not(KosMatcher *m) {
+/**
+   Subnode rules for the single-child kinds. FORM, OPTIONAL, NOT and
+   REPEAT always dispatch into their subnode, so NO_INDEX would index
+   nodes[0xFFFFFFFF]; CAPTURE and APP treat NO_INDEX as "any" and are
+   left alone. REPEAT must also consume at least one element, and NOT
+   may not capture.
+*/
+static int validate_subnodes(KosMatcher *m) {
   for (Py_ssize_t i = 0; i < Py_SIZE(m); i++) {
     KosMatchNode *const n = &m->nodes[i];
+
+    if (n->kind == KOS_MATCH_NODE_FORM &&
+        n->as.form.subnode == KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "FORM at node %zd has no subnode", i);
+      return -1;
+    }
+
+    if (n->kind == KOS_MATCH_NODE_OPTIONAL &&
+        n->as.optional.subnode == KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "OPTIONAL at node %zd has no subnode", i);
+      return -1;
+    }
+
+    if (n->kind == KOS_MATCH_NODE_NOT &&
+        n->as.not_.subnode == KOS_MATCH_NO_INDEX) {
+      PyErr_Format(PyExc_ValueError,
+                   "NOT at node %zd has no subnode", i);
+      return -1;
+    }
 
     if (n->kind == KOS_MATCH_NODE_REPEAT) {
       if (n->as.repeat.subnode == KOS_MATCH_NO_INDEX) {

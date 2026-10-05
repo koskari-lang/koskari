@@ -24,7 +24,7 @@ import sys
 import pytest
 
 from koskari.exceptions import KoskariPromptNotFound, KoskariPromptUnreachable
-from koskari.lib import DelimitedContinuation, ParamRef
+from koskari.lib import DelimitedContinuation, ParamRef, values
 from koskari.module import load_module_source_async, new_module
 from tests.dis.dis import dis
 
@@ -48,6 +48,29 @@ class TestResetShiftSpecials(SpecialsTestCase):
         expr, mod = self.compile_expr(src_str, **{'+': add_fn})
         result = await expr()
         self.assertEqual(result, 6)
+
+
+    async def test_shift_continuation_packs_arguments_like_return(self):
+        """
+        A delimited continuation packs its arguments as return does: None,
+        the one argument, a tuple, or a values instance when keywords are
+        present
+        """
+
+        cases = [
+            ("(reset (shift k (k)))", None),
+            ("(reset (shift k (k 5)))", 5),
+            ("(reset (shift k (k 5 6)))", (5, 6)),
+        ]
+        for src_str, expected in cases:
+            expr, mod = self.compile_expr(src_str)
+            self.assertEqual(await expr(), expected, src_str)
+
+        expr, mod = self.compile_expr("(reset (shift k (k 5 x: 6)))")
+        result = await expr()
+        self.assertIsInstance(result, values)
+        self.assertEqual(tuple(result), (5,))
+        self.assertEqual(result["x"], 6)
 
 
     async def test_dropped_continuation_is_untracked_during_teardown(self):

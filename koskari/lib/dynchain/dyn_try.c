@@ -1,4 +1,26 @@
-/* Included by dynchain.c — dyn_try */
+/*
+  This library is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+
+  This library is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this library; if not, see <http://www.gnu.org/licenses/>.
+*/
+
+
+/**
+  Included by dynchain.c. The KOS_DYN_TRY region node.
+
+  :author: Christopher O'Brien <obriencj@gmail.com>
+  :license: GNU General Public License v3
+*/
+
 /* === KosDynTry (try region) === */
 
 
@@ -109,3 +131,6 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
 static int dynnode_traverse_try(KosDynNode *node, visitproc visit, void *arg) {
   return KosExc_Traverse(KosDynTry_SAVED((KosDynTry *) node), visit, arg);
 }
+
+
+// The end.

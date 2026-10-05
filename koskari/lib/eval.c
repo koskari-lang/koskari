@@ -25,8 +25,10 @@
 
    Invariants:
 
-   1. Context ownership: A KosContext is owned by exactly one Python
-      wrapper (KosCoroutine or KosPyAsyncGen) during its lifetime.
+   1. Context ownership: A KosContext is a Python object held by
+      reference; every holder (coroutine, async generator, transform,
+      iteration adapter) keeps its own reference and the last one to
+      let go deallocates it. See the ownership notes in eval.h.
 
    2. Chain ownership: The dynamic chain is owned by the context.
       On continuation capture, chains are cloned for multi-shot semantics.
@@ -72,25 +74,14 @@
 #include <time.h>
 
 
-/* eval.c-local static inline helpers (not KosEvalState bodies; see eval/eval_state.c). */
-
-typedef struct {
-  PyObject *left;
-  PyObject *right;
-} KosEvalStackLR;
-
-
 /* Module-level string constants for await/send/throw/close.  Initialized
    in koskari_eval_init, cleared in koskari_eval_clear. */
-static PyObject *str_send = NULL;
-static PyObject *str_throw = NULL;
 static PyObject *str_asend = NULL;
 static PyObject *str_athrow = NULL;
 static PyObject *str_enter = NULL;
 static PyObject *str_exit = NULL;
 static PyObject *str_aenter = NULL;
 static PyObject *str_aexit = NULL;
-static PyObject *str_getattr = NULL;
 static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
 static PyObject *str_asyncio_future_blocking = NULL;
@@ -113,8 +104,12 @@ static PyObject *_import_fromlist = NULL;
 
 /* === Static forward declarations === */
 
-static void inject_eval_frame_traceback(KosContext *ctx,
-    PyObject **exc_type, PyObject **exc_val, PyObject **exc_tb);
+static void inject_eval_frame_traceback(
+    KosContext *ctx,
+    KosEvalState *es,
+    PyObject **exc_type,
+    PyObject **exc_val,
+    PyObject **exc_tb);
 
 static void kos_eval_mark_context_dead(KosContext *ctx);
 
@@ -414,49 +409,20 @@ static KosOpResult revive_await(
       PyObject *typ = typ_eff;
       PyObject *val = throw_exc;
       PyObject *tb = Py_None;
-      PyObject *res;
-      PyObject *throw_meth;
+      PyObject *res = NULL;
+      PySendResult step;
       Py_INCREF(typ);
       Py_INCREF(val);
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
-      throw_meth = PyObject_GetAttr(KosEvalState_PythonAwaitIter(es), str_throw);
-      if (! throw_meth || ! PyCallable_Check(throw_meth)) {
-        if (! throw_meth && PyErr_ExceptionMatches(PyExc_AttributeError)) {
-          PyErr_Clear();
-          PyErr_SetObject(typ_eff, throw_exc);
-        } else if (throw_meth) {
-          PyErr_Format(PyExc_TypeError,
-                       "%R object attribute throw is not callable",
-                       KosEvalState_PythonAwaitIter(es));
-        }
-        Py_XDECREF(throw_meth);
-        Py_DECREF(typ);
-        Py_DECREF(val);
-        Py_XDECREF(tb);
-        KosEvalState_PythonAwaitClearIter(es);
-        return EVAL_RAISE();
-      }
-      /* Single-arg throw(exc) avoids deprecated (typ, val, tb) on generators */
-      res = PyObject_CallOneArg(throw_meth, val);
-      Py_DECREF(throw_meth);
+      step = kos_iter_throw(KosEvalState_PythonAwaitIter(es), val, &res);
       Py_DECREF(typ);
       Py_DECREF(val);
       Py_XDECREF(tb);
-      if (res) {
-        PyErr_Clear();
+      if (step == PYGEN_NEXT)
         return EVAL_AWAIT(res);
-      }
-      if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-        PyObject *await_result = NULL;
-        if (PyGen_FetchStopIterationValue(&await_result) < 0) {
-          KosEvalState_PythonAwaitClearIter(es);
-          return EVAL_RAISE();
-        }
-        if (! await_result) {
-          await_result = Py_None;
-          Py_INCREF(await_result);
-        }
+      if (step == PYGEN_RETURN) {
+        PyObject *await_result = res;
         KosEvalState_PythonAwaitClearIter(es);
         KosEvalState_PythonResumeSet(es, await_result, KOS_RESUME_AWAIT);
         PyErr_Clear();
@@ -547,13 +513,16 @@ static KosEvalMode revive_yield(
 
   /* A frame waiting on a resume (a yield-from delegation in flight)
      took no placeholder at install and takes its delivery through the
-     pending slot; a throw raises at the frame, and the raise walk
-     disarms the resume when it unwinds the delegation's node. */
+     pending slot. A throw goes to the resume the same way, which
+     throws it into the delegate; GeneratorExit raises at the frame
+     instead, and the raise walk closes the delegate and disarms the
+     resume when it unwinds the delegation's node. */
   if (KosEvalState_FRAME(es)
       && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
     if (throw_exc != NULL) {
       PyErr_SetObject(throw_typ, throw_exc);
-      return KOS_MODE_EXCEPTION;
+      return KosEvalState_ThrowIntoResume(es)
+          ? KOS_MODE_NORMAL : KOS_MODE_EXCEPTION;
     }
     to_push = (send_val != NULL) ? send_val : Py_None;
     Py_INCREF(to_push);
@@ -734,6 +703,7 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
 
 static void inject_eval_frame_traceback(
     KosContext *ctx,
+    KosEvalState *es,
     PyObject **exc_type,
     PyObject **exc_val,
     PyObject **exc_tb) {
@@ -754,9 +724,10 @@ static void inject_eval_frame_traceback(
 
   decorate_exception_with_dynchain(ctx, *exc_val);
 
-  KosEvalState _inj_es;
-  KosEvalState_Init(&_inj_es, ctx);
-  KosDynFrame *frame_top = KosEvalState_FRAME(&_inj_es);
+  /* the raising frame: the live state's during a drive, where the
+     chain is stolen off the context; the context's own between drives */
+  KosDynFrame *frame_top = es ? KosEvalState_FRAME(es)
+                              : (KosDynFrame *) KosContext_FRAME_TOP(ctx);
   if (! frame_top || ! KosDynFrame_CODE(frame_top)) {
     return;
   }
@@ -847,7 +818,7 @@ void kos_eval_prepare_boundary_raise(
     KosEvalState_FlushLiveRegsToFrame(es);
   PyErr_Fetch(&typ, &val, &tb);
   if (typ != PyExc_GeneratorExit)
-    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
+    inject_eval_frame_traceback(ctx, es, &typ, &val, &tb);
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
   if (es)
@@ -931,7 +902,7 @@ static KosOpResult handle_continuation_apply(KosEvalState *es) {
       Py_INCREF(resume_val);
     }
 
-    if (kos_invoke_continuation(es, k, resume_val, 0, cont_obj) == 0) {
+    if (kos_invoke_continuation(es, k, resume_val, cont_obj) == 0) {
       Py_DECREF(resume_val);
       Py_DECREF(args_obj);
       Py_DECREF(typ);
@@ -971,7 +942,7 @@ own_fail:
     if (seam && ! KosDynNode_IS_GEN(seam))
       seam = NULL;
 
-    goal = kos_xfer_goal_new(NULL, seam, val, 1, (uint32_t) -1, NULL, 1);
+    goal = kos_xfer_goal_new(NULL, seam, val, (uint32_t) -1, NULL, 1);
     Py_DECREF(typ);
     Py_DECREF(val);
     if (! goal)
@@ -1438,26 +1409,6 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
 }
 
 
-/* === CALL === */
-
-
-/**
-   CALL: arg = number of positional arguments N. Stack has [callable, arg_0,
-   ..., arg_{N-1}] (callable oldest). Call callable with those args, drop
-   them, then push result or await it.
-*/
-
-
-/* === THEEND, BREAK, CONTINUE, YIELD, YIELD_FROM === */
-
-/* THEEND: no runtime implementation; hardcoded error (not a "stub" to be implemented). */
-
-/**
-   THEEND: arg unused. End-of-code sentinel; has no runtime implementation.
-   If execution reaches THEEND, raise a hardcoded unimplemented error.
-*/
-
-
 /* === NEXT, ITER_NEXT === */
 
 
@@ -1505,12 +1456,8 @@ static KosOpResult kos_eval_route_delim_return(
   {
     KosOpResult wr;
     KosDynNode *pending = NULL;
-    if (KosDynDelim_RETURN_NODE(ret_delim) != NULL)
-      wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
-                                  KOS_XFER_EVENT_SHIFT, &pending);
-    else
-      wr = kos_dyn_unwind_to_frame(es, KosDynDelim_RETURN_FRAME(ret_delim),
-                                   KOS_XFER_EVENT_SHIFT, &pending);
+    wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
+                                KOS_XFER_EVENT_SHIFT, &pending);
     if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
       /* a leave went into a thunk or onto an awaitable; val parks on
          that node and re-enters this route once the node has finished */
@@ -1720,7 +1667,9 @@ static KosOpResult kos_op_call_star(
     Py_SETREF(pos, fixed);
   }
 
-  if (kwd && ! PyDict_Check(kwd)) {
+  /* exact: a dict subclass that relays its reads, such as a module
+     namespace, is copied into a plain dict the callee reads raw */
+  if (kwd && ! PyDict_CheckExact(kwd)) {
     PyObject *fixed = PyDict_New();
     if (! fixed)
       goto done;
@@ -3339,14 +3288,6 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
 }
 
 
-/**
-  Dispatch prelude: next PC and acting PC live only on es (no heap write).
-  Code from es->code first (hot cache); if NULL, KosDynFrame_CODE (e.g. tail
-  reset cleared heap slot before es->code was updated).  On OOB, goto on_bad.
-*/
-
-
-
 /* Internal-invariant safety net. See KOS_EVAL_SAFETYNET in hints.h.
    Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
    internal misfire into a clean diagnostic while tracking down the cause. */
@@ -3747,10 +3688,6 @@ static int register_koskari_exception(
 
 int koskari_eval_init(PyObject *mod) {
 
-  PyObject *dict = PyModule_GetDict(mod);
-  if (! dict)
-    return -1;
-
   /* Initialize the import fromlist sentinel used by kos_import_module. */
   if (! _import_fromlist) {
     PyObject *star = PyUnicode_FromString("*");
@@ -3772,13 +3709,9 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_continuation, "continuation");
   STR_CONST(str_enter, "__enter__");
   STR_CONST(str_exit, "__exit__");
-  STR_CONST(str_getattr, "__getattr__");
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
-  STR_CONST(str_send, "send");
   STR_CONST(str_target, "target");
-  STR_CONST(str_throw, "throw");
-  // STR_CONST(str_getattribute, "__getattribute__");
 
   if (PyType_Ready(&KosContextType) < 0)
     return -1;
@@ -3840,12 +3773,9 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_continuation);
   Py_CLEAR(str_enter);
   Py_CLEAR(str_exit);
-  Py_CLEAR(str_getattr);
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
-  Py_CLEAR(str_send);
   Py_CLEAR(str_target);
-  Py_CLEAR(str_throw);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

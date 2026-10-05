@@ -15,9 +15,10 @@
 
 
 /**
-  CONS: arg = count. Stack (bottom to top) = first element ... tail.
-  Build (elem_0 . (elem_1 . ... (elem_{count-1} . tail))). Use
-  TailPtr, KosPair_ConsFromPtr, then Drop count and push result.
+  CONS: arg = count. Stack (bottom to top) = count items, the last of
+  them the tail. Build (item_0 . (item_1 . ... . item_{count-1})) with
+  KosPair_ConsFromPtr over the borrowed window, drop the count items, and
+  push the result; count 0 pushes nil.
 */
 KOS_OP_HANDLER(CONS) {
   size_t count = (size_t) KosOp_ARG(insn);
@@ -29,7 +30,7 @@ KOS_OP_HANDLER(CONS) {
   if (! ptr)
     RESULT_RAISE();
 
-  PyObject *result = KosPair_ConsFromPtr(ptr, (int) count);
+  PyObject *result = KosPair_ConsFromPtr(ptr, (Py_ssize_t) count);
   if (! result)
     RESULT_RAISE();
 

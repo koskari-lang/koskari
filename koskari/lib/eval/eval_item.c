@@ -68,10 +68,6 @@ typedef enum KosItemCode {
 #define KOS_ITEM_HELD 8
 
 
-/* Guard misses since the election before a site demotes. */
-#define KOS_ITEM_MISS_LIMIT 8
-
-
 /* Settle a slot with the body the classification chose, or with no
    body when nothing matched, in which case the protocol runs and the
    ticks count toward a re-election. A site with no slot only counts
@@ -84,9 +80,8 @@ static inline void kos_item_elect(KosCacheSlot *slot, KosItemBody fn) {
 
   KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_MISS);
   slot->u.item.fn = fn;
-  slot->u.item.misses = 0;
-  slot->u.item.ticks = 0;
-  slot->u.item.mode = fn.load ? KOS_ELECTOR_ELECTED : KOS_ELECTOR_MEGAMORPHIC;
+  kos_election_reset(&slot->u.item.election,
+                     fn.load ? KOS_ELECTOR_ELECTED : KOS_ELECTOR_MEGAMORPHIC);
   slot->kind = KOS_CACHE_ITEM;
 }
 
@@ -94,22 +89,11 @@ static inline void kos_item_elect(KosCacheSlot *slot, KosItemBody fn) {
 /* Count a guard miss at an elected site; at the limit the body is
    dropped and the protocol runs until the tick wrap re-elects. */
 static KOS_NOINLINE void kos_item_miss(KosCacheSlot *slot) {
-  uint8_t n;
-
   if (! slot || slot->kind != KOS_CACHE_ITEM)
     return;
 
-  KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_MISS);
-  n = (uint8_t) (slot->u.item.misses + 1);
-  if (n >= KOS_ITEM_MISS_LIMIT) {
-    KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_BYPASS);
+  if (kos_election_miss(&slot->u.item.election))
     slot->u.item.fn.load = NULL;
-    slot->u.item.misses = 0;
-    slot->u.item.ticks = 0;
-    slot->u.item.mode = KOS_ELECTOR_MEGAMORPHIC;
-    return;
-  }
-  slot->u.item.misses = n;
 }
 
 
@@ -117,7 +101,8 @@ static KOS_NOINLINE void kos_item_miss(KosCacheSlot *slot) {
    decline, or by a classification that found no body: the wrap
    empties the slot so the next execution classifies again. */
 static inline void kos_item_tick(KosCacheSlot *slot) {
-  if (slot && slot->kind == KOS_CACHE_ITEM && ++slot->u.item.ticks == 0)
+  if (slot && slot->kind == KOS_CACHE_ITEM
+      && kos_election_tick(&slot->u.item.election))
     slot->kind = KOS_CACHE_EMPTY;
 }
 
@@ -183,12 +168,13 @@ static int kos_item_dict_load(PyObject *obj, PyObject *key, PyObject **out) {
   Py_INCREF(key);
   v = PyDict_GetItemWithError(obj, key);
   if (unlikely(! v)) {
-    if (PyErr_Occurred()) {
-      Py_DECREF(key);
-      Py_DECREF(obj);
-      return KOS_ITEM_ERROR;
-    }
-    return KOS_ITEM_DECLINE | KOS_ITEM_HELD;
+    /* a missing key is the exact dict's KeyError, raised here rather
+       than by a second lookup through the protocol */
+    if (! PyErr_Occurred())
+      kos_elector_set_key_error(key);
+    Py_DECREF(key);
+    Py_DECREF(obj);
+    return KOS_ITEM_ERROR;
   }
   Py_INCREF(v);
   Py_DECREF(key);

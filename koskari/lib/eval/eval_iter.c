@@ -58,12 +58,26 @@ PyObject *kos_iter_acquire(PyObject *iterable) {
 
 
 /**
+   Report an error a close raised: there is no frame to propagate into,
+   so it goes to sys.unraisablehook as a finalizer's error does. No-op
+   when nothing is raised.
+*/
+static void iter_close_report(PyObject *iter) {
+
+  if (PyErr_Occurred())
+    PyErr_WriteUnraisable(iter);
+}
+
+
+/**
    Close an acquired iterator, best-effort and exception-fenced: a
    provider through its suite's ki_close, a sync iterator through
    close(), an async iterator through aclose() with its awaitable
    demand-driven -- an immediate completion honors the cleanup, a
    genuine suspension takes the cannot-honor fallback of closing the
-   in-flight iterator. Any pending exception is preserved.
+   in-flight iterator. A missing close method is ignored; an error the
+   close raises is reported as unraisable. Any pending exception is
+   preserved.
 */
 void kos_iter_close(PyObject *iter) {
 
@@ -79,31 +93,41 @@ void kos_iter_close(PyObject *iter) {
 
     if (KosIter_CheckSlots(iter, &islots)) {
       (void) islots->ki_close(iter);
-      PyErr_Clear();
+      iter_close_report(iter);
 
     } else if (Py_TYPE(iter)->tp_iternext) {
-      PyObject *r = PyObject_CallMethod(iter, "close", NULL);
-      Py_XDECREF(r);
-      PyErr_Clear();
+      (void) kos_iter_close_or_raise(iter);
+      iter_close_report(iter);
 
     } else {
-      PyObject *aw = PyObject_CallMethod(iter, "aclose", NULL);
+      /* Look the method up apart from calling it, so only a missing
+         aclose is ignored and an AttributeError its body raises is
+         reported like any other error. */
+      PyObject *meth = PyObject_GetAttrString(iter, "aclose");
+      PyObject *aw = NULL;
+
+      if (meth) {
+        aw = PyObject_CallNoArgs(meth);
+        Py_DECREF(meth);
+      } else if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        PyErr_Clear();
+      }
+
       if (aw) {
         PyObject *it = kos_get_awaitable(aw);
         Py_DECREF(aw);
         if (it) {
-          PyObject *step = PyObject_CallMethod(it, "send", "O", Py_None);
-          if (step) {
+          PyObject *step = NULL;
+          if (kos_iter_send(it, Py_None, &step) == PYGEN_NEXT) {
             /* Suspend attempt during close; cannot honor further --
                close the iterator so its GeneratorExit cleanup runs. */
-            Py_DECREF(step);
-            PyObject *r = PyObject_CallMethod(it, "close", NULL);
-            Py_XDECREF(r);
+            (void) kos_iter_close_or_raise(it);
           }
+          Py_XDECREF(step);
           Py_DECREF(it);
         }
       }
-      PyErr_Clear();
+      iter_close_report(iter);
     }
   }
 

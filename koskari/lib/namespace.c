@@ -19,8 +19,8 @@
 
    Namespace types for Koskari
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -36,6 +36,13 @@
 static PyObject *_namespace_str = NULL;  // "<namespace>"
 static PyObject *str_class_name = NULL;  // "__class__", interned
 static PyObject *_module_str = NULL;     // "<module>"
+
+/* The module dunders CPython reads from a module's globals with the raw
+   dict API (__name__ for a function's __module__, __package__ and
+   __spec__ for a relative import, __file__ and __loader__ for
+   tracebacks and linecache). A module namespace mirrors their values
+   into its dict storage so those raw reads see them. */
+static PyObject *mdl_mirrored_names = NULL;   // tuple of str
 
 
 // forward declarations
@@ -70,11 +77,11 @@ static size_t ns_freecount = 0;
 static void ns_init_raw_storage(KosNamespace *ns, size_t count) {
   size_t words = kos_ns_raw_more_words(count);
 
-  ns->fast_raw[0] = 0;
-  ns->fast_raw[1] = 0;
-  ns->fast_raw_more = words ? (uint64_t *) &ns->fast[count] : NULL;
+  KosNamespace_FAST_RAW(ns)[0] = 0;
+  KosNamespace_FAST_RAW(ns)[1] = 0;
+  KosNamespace_FAST_RAW_MORE(ns) = words ? (uint64_t *) &ns->fast[count] : NULL;
   if (words)
-    memset(ns->fast_raw_more, 0, words * sizeof(uint64_t));
+    memset(KosNamespace_FAST_RAW_MORE(ns), 0, words * sizeof(uint64_t));
 }
 
 
@@ -106,7 +113,10 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
     KOS_TRACE_FL_ALLOC("namespace", 1);
 
     PyObject *p = (PyObject *) ns;
-    Py_SET_REFCNT(p, 1);
+    /* the revival CPython's own type freelists use: a refcount of one,
+       and in a debug build the reference total and trace chain the
+       dealloc gave up */
+    _Py_NewReference(p);
     ns_init_raw_storage(ns, count);
     // Py_SET_TYPE(p, type);
     // Py_SET_SIZE(p, (Py_ssize_t) KOS_NS_MIN_SLOTS);
@@ -227,7 +237,8 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   // against fast_names, so no binds dict is allocated.  Raw-slot promotion
   // stays in the fast slot; only a dynamic non-slot bind lazily creates one.
   KosNamespace_BINDS(self) = NULL;
-  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_COUNT(self) = (uint32_t) count;
+  KosNamespace_FAST_LOCALS(self) = KosNamespace_FAST_LOCALS(template_ns);
 
   // Copy raw-flag bits wholesale.
   ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
@@ -691,6 +702,7 @@ static int ns_init_syms_from_nspec(
   // are set in the bitmask above.  No dict entries for locals (sentinel-free).
   PyObject *local_syms = KosNamespaceSpec_LOCAL_SYMS(nspec);
   size_t count = local_syms ? (size_t) PyTuple_GET_SIZE(local_syms) : 0;
+  KosNamespace_FAST_LOCALS(self) = (uint32_t) count;
 
   // Closures: find ref in parent chain and bind in dict + fast slot.
   // The closure slots are already not-raw in the precomputed bitmask.
@@ -718,9 +730,11 @@ static int ns_init_syms_from_nspec(
   }
 
   // Globals: find ref in module namespace and bind into the fast slot.
-  // The global slots are already not-raw in the precomputed bitmask.
+  // The global slots are already not-raw in the precomputed bitmask, so
+  // a global sym with no module to resolve it in refuses the namespace
+  // rather than leaving a slot marked as holding a Ref empty.
   PyObject *global_syms = KosNamespaceSpec_GLOBAL_SYMS(nspec);
-  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
+  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0) {
     PyObject *module_ns = find_module_in_chain(parent);
     if (! module_ns) {
       PyErr_Format(PyExc_RuntimeError,
@@ -807,7 +821,7 @@ static PyObject *ns_newfull_from_nspec(
     KosNamespace_PARENT(self) = link;
   }
   KosNamespace_BINDS(self) = binds;
-  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_COUNT(self) = (uint32_t) count;
   KosNamespace_FAST_NAMES(self) = NULL;
 
   /* closure and global syms resolve from the live parent, where the
@@ -879,7 +893,7 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
     }
   }
 
-  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0 && parent) {
+  if (global_syms && PyTuple_GET_SIZE(global_syms) > 0) {
     PyObject *module_ns = find_module_in_chain(parent);
     if (! module_ns) {
       PyErr_Format(PyExc_RuntimeError,
@@ -914,14 +928,25 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
 }
 
 
+/* The fast slot index of key, or -1: with no error set when there is
+   no slot, with the comparison's error set when a name comparison
+   raised. A caller whose key may be any object tests PyErr_Occurred on
+   a miss. */
 static int ns_fast_index(PyObject *self, PyObject *key) {
+  if (! KosNamespace_SupportsFast(self))
+    return -1;
   PyObject *names = KosNamespace_FAST_NAMES(self);
   if (! names)
     return -1;
   Py_ssize_t count = PyTuple_GET_SIZE(names);
   for (Py_ssize_t index = 0; index < count; index++) {
     PyObject *name = PyTuple_GET_ITEM(names, index);
-    if (name && Py_EQUALS(key, name))
+    if (! name)
+      continue;
+    int same = Py_EQUALS(key, name);
+    if (same < 0)
+      return -1;
+    if (same)
       return (int) index;
   }
   return -1;
@@ -936,7 +961,8 @@ static PyObject *ns_deref_loose(PyObject *self, PyObject *key,
   if (ref == Py_None) {
     int index = ns_fast_index(self, key);
     if (index < 0) {
-      PyErr_Format(PyExc_NameError, "No such reference: %S", key);
+      if (! PyErr_Occurred())
+        PyErr_Format(PyExc_NameError, "No such reference: %S", key);
       return NULL;
     }
 
@@ -1027,8 +1053,7 @@ static int ns_store_classified(
     }
 
     Py_XINCREF(val);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) index));
-    KosNamespace_GET_FAST_VAL(self, (size_t) index) = val;
+    Py_XSETREF(KosNamespace_GET_FAST_VAL(self, (size_t) index), val);
     // raw bit is already 1 when dict entry is Py_None; reaffirm it
     kos_ns_set_raw(self, (size_t) index, 1);
 
@@ -1036,6 +1061,37 @@ static int ns_store_classified(
   }
 
   return val? KosRef_Store(ref, val): KosRef_Clear(ref);
+}
+
+
+/**
+   Keep the dict storage of a module namespace in step with a binding
+   CPython reads raw: a store mirrors the value, a clear removes the
+   mirror. Only the names in mdl_mirrored_names are mirrored; every
+   other name is answered by the relaying slots. Returns 0, or -1 with
+   an exception set.
+*/
+static int mdl_ns_mirror(PyObject *self, PyObject *key, PyObject *val) {
+
+  if (! KosModuleNamespace_CheckExact(self) || ! PyUnicode_Check(key))
+    return 0;
+  if (PyUnicode_GET_LENGTH(key) < 4
+      || PyUnicode_READ_CHAR(key, 0) != '_'
+      || PyUnicode_READ_CHAR(key, 1) != '_')
+    return 0;
+
+  int hit = PySequence_Contains(mdl_mirrored_names, key);
+  if (hit <= 0)
+    return hit;
+
+  if (val)
+    return PyDict_SetItem(self, key, val);
+  if (PyDict_DelItem(self, key) < 0) {
+    if (! PyErr_ExceptionMatches(PyExc_KeyError))
+      return -1;
+    PyErr_Clear();
+  }
+  return 0;
 }
 
 
@@ -1060,7 +1116,9 @@ static int ns_store_symbol(PyObject *self, PyObject *key, PyObject *val) {
     return -1;
   }
 
-  return ns_store_classified(self, ref, index, key, val);
+  if (ns_store_classified(self, ref, index, key, val) < 0)
+    return -1;
+  return mdl_ns_mirror(self, key, val);
 }
 
 
@@ -1079,8 +1137,7 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
     return -1;
   if (fast >= 0) {
     Py_INCREF(ref);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(self, (size_t) fast));
-    KosNamespace_GET_FAST_VAL(self, (size_t) fast) = ref;
+    Py_XSETREF(KosNamespace_GET_FAST_VAL(self, (size_t) fast), ref);
     kos_ns_set_raw(self, (size_t) fast, 0);
   }
 
@@ -1134,8 +1191,9 @@ static int ns_has_value(PyObject *self, PyObject *key) {
     return PyErr_Occurred()? -1: 0;
   if (ref == Py_None) {
     int index = ns_fast_index(self, key);
-    return index >= 0 &&
-      KosNamespace_GET_FAST_VAL(self, (size_t) index) != NULL;
+    if (index < 0)
+      return PyErr_Occurred()? -1: 0;
+    return KosNamespace_GET_FAST_VAL(self, (size_t) index) != NULL;
   }
   return ! KosRef_IsEmpty(ref);
 }
@@ -1157,9 +1215,10 @@ static int ns_has_value(PyObject *self, PyObject *key) {
    a symbol evaluated here would see, through resolve().
 
    A collector namespace's mapping ranges only over the names its body
-   declared (raw fast slots and dynamic dict entries), never the closure
-   or global captures sharing the namespace; that set is what a class
-   body hands to its metaclass. */
+   declared (the fast slots below its local count, raw or bound to a
+   ref, and the dynamic dict entries), never the closure or global
+   captures sharing the namespace; that set is what a class body hands
+   to its metaclass. */
 
 
 /* Which declared names a namespace's mapping ranges over: 1 when key
@@ -1171,7 +1230,9 @@ static int ns_mapping_owns(PyObject *self, PyObject *key) {
 
   int index = ns_fast_index(self, key);
   if (index >= 0)
-    return kos_ns_is_raw(self, (size_t) index);
+    return (uint32_t) index < KosNamespace_FAST_LOCALS(self);
+  if (PyErr_Occurred())
+    return -1;
   PyObject *binds = KosNamespace_BINDS(self);
   return binds? PyDict_Contains(binds, key): 0;
 }
@@ -1185,10 +1246,11 @@ static PyObject *ns_declared_names(PyObject *self, int gathered) {
   if (! keys)
     return NULL;
 
-  PyObject *names = KosNamespace_FAST_NAMES(self);
+  PyObject *names = KosNamespace_SupportsFast(self)
+      ? KosNamespace_FAST_NAMES(self) : NULL;
   Py_ssize_t fn_count = names? PyTuple_GET_SIZE(names): 0;
   for (Py_ssize_t i = 0; i < fn_count; i++) {
-    if (gathered && ! kos_ns_is_raw(self, (size_t) i))
+    if (gathered && (uint32_t) i >= KosNamespace_FAST_LOCALS(self))
       continue;
     if (PyList_Append(keys, PyTuple_GET_ITEM(names, i)) < 0) {
       Py_DECREF(keys);
@@ -1201,8 +1263,15 @@ static PyObject *ns_declared_names(PyObject *self, int gathered) {
   PyObject *key = NULL;
   Py_ssize_t pos = 0;
   while (binds && PyDict_Next(binds, &pos, &key, NULL)) {
-    if (fn_count && ns_fast_index(self, key) >= 0)
-      continue;
+    if (fn_count) {
+      int index = ns_fast_index(self, key);
+      if (index >= 0)
+        continue;
+      if (PyErr_Occurred()) {
+        Py_DECREF(keys);
+        return NULL;
+      }
+    }
     if (PyList_Append(keys, key) < 0) {
       Py_DECREF(keys);
       return NULL;
@@ -1465,42 +1534,6 @@ static PyObject *ns_m_bind(PyObject *self, PyObject *args) {
 
   Py_RETURN_NONE;
 }
-
-
-/*
-static PyObject *ns_m_reset(PyObject *self) {
-  if (! KosNamespace_Reset(self))
-    return NULL;
-
-  Py_RETURN_NONE;
-}
-*/
-
-
-/*
-static PyObject *ns_m_get_name(PyObject *self) {
-  PyObject *name = KosNamespace_NAME(self);
-  if (name) {
-    Py_XINCREF(name);
-    return name;
-
-  } else {
-    Py_RETURN_NONE;
-  }
-}
-
-
-static PyObject *ns_m_get_parent(PyObject *self) {
-  PyObject *parent = KosNamespace_PARENT(self);
-  if (parent) {
-    Py_XINCREF(parent);
-    return parent;
-
-  } else {
-    Py_RETURN_NONE;
-  }
-}
-*/
 
 
 static PyObject *ns_m_contains(PyObject *self, PyObject *key) {
@@ -1847,10 +1880,10 @@ static PyMethodDef ns_methods[] = {
 
 
 static PyMemberDef ns_members[] = {
-  { "name", T_OBJECT, offsetof(KosNamespace, name), READONLY,
+  { "name", T_OBJECT, offsetof(KosNamespace, core.name), READONLY,
     "str; namespace name" },
 
-  { "parent", T_OBJECT, offsetof(KosNamespace, parent), READONLY,
+  { "parent", T_OBJECT, offsetof(KosNamespace, core.parent), READONLY,
     "Namespace; parent namespace" },
 
   { NULL },
@@ -1879,7 +1912,7 @@ static PyObject *ns_newfull_type(
 
   if (parent && ! KosNamespace_Check(parent)) {
     PyErr_Format(PyExc_TypeError, "Namespace parent must be Namespace,"
-                 " not %R", name);
+                 " not %R", parent);
     return NULL;
   }
 
@@ -1942,7 +1975,9 @@ static PyObject *ns_newfull_type(
 
   KosNamespace_BINDS(self) = binds;
 
-  KosNamespace_FAST_COUNT(self) = count;
+  KosNamespace_FAST_COUNT(self) = (uint32_t) count;
+  KosNamespace_FAST_LOCALS(self) =
+      local_syms ? (uint32_t) PySequence_Fast_GET_SIZE(local_syms) : 0;
   KosNamespace_FAST_NAMES(self) = NULL;
 
   if (ns_init_syms(self, parent, local_syms, closure_syms, global_syms))
@@ -2035,6 +2070,7 @@ static void ns_dealloc(PyObject *self) {
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
   KosNamespace_FAST_COUNT(self) = 0;
+  KosNamespace_FAST_LOCALS(self) = 0;
 
   // check if the namespace is valid for the freelist.
   if (Py_TYPE(self) == &KosNamespaceType &&
@@ -2081,6 +2117,7 @@ static int ns_clear(PyObject *self) {
   for (size_t i = KosNamespace_FAST_COUNT(self); i--; )
     Py_CLEAR(KosNamespace_GET_FAST_VAL(self, i));
   KosNamespace_FAST_COUNT(self) = 0;
+  KosNamespace_FAST_LOCALS(self) = 0;
 
   return 0;
 }
@@ -2105,7 +2142,6 @@ PyTypeObject KosNamespaceType = {
   .tp_as_mapping = &ns_as_mapping,
   .tp_as_sequence = &ns_seq,
   .tp_iter = ns_mapping_iter,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -2433,8 +2469,7 @@ int KosNamespace_FastStore(
 
   if (kos_ns_is_raw(namespace, index)) {
     Py_INCREF(value);
-    Py_XDECREF(KosNamespace_GET_FAST_VAL(namespace, index));
-    KosNamespace_GET_FAST_VAL(namespace, index) = value;
+    Py_XSETREF(KosNamespace_GET_FAST_VAL(namespace, index), value);
     return 0;
 
   } else {
@@ -2534,8 +2569,7 @@ int KosNamespace_FastBind(
   PyObject *name = PyTuple_GET_ITEM(names, (Py_ssize_t) index);
 
   Py_INCREF(ref);
-  Py_XDECREF(KosNamespace_GET_FAST_VAL(namespace, index));
-  KosNamespace_GET_FAST_VAL(namespace, index) = ref;
+  Py_XSETREF(KosNamespace_GET_FAST_VAL(namespace, index), ref);
   kos_ns_set_raw(namespace, index, 0);
 
   // The Ref lives in the fast slot; mirror it into binds only when present.
@@ -2563,7 +2597,6 @@ PyTypeObject KosCollectorNamespaceType = {
   .tp_methods = ns_methods,
   .tp_as_mapping = &ns_as_mapping,
   .tp_as_sequence = &ns_seq,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -2654,24 +2687,296 @@ static PyObject *mdl_ns_new(
 }
 
 
-static void mdl_ns_dealloc(PyObject *self) {
-  // SAYF("mdl_ns_dealloc(%R)", self);
-  PyObject_GC_UnTrack(self);
+/* Release the core references a module namespace owns. A module is
+   never a copy, so it owns its name and parent outright. */
+static void mdl_ns_release_core(PyObject *self) {
   Py_CLEAR(KosModuleNamespace_BUILTINS(self));
-  ns_dealloc(self);
+  Py_CLEAR(KosNamespace_NAME(self));
+  Py_CLEAR(KosNamespace_PARENT(self));
+  Py_CLEAR(KosNamespace_TEMPLATE(self));
+  Py_CLEAR(KosNamespace_BINDS(self));
+}
+
+
+static void mdl_ns_dealloc(PyObject *self) {
+  /* the dict base untracks again, which is a no-op once untracked */
+  PyObject_GC_UnTrack(self);
+  mdl_ns_release_core(self);
+  PyDict_Type.tp_dealloc(self);
 }
 
 
 static int mdl_ns_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosModuleNamespace_BUILTINS(self));
-  return ns_traverse(self, visit, arg);
+  Py_VISIT(KosNamespace_NAME(self));
+  Py_VISIT(KosNamespace_PARENT(self));
+  Py_VISIT(KosNamespace_TEMPLATE(self));
+  Py_VISIT(KosNamespace_BINDS(self));
+  return PyDict_Type.tp_traverse(self, visit, arg);
 }
 
 
 static int mdl_ns_clear(PyObject *self) {
-  Py_CLEAR(KosModuleNamespace_BUILTINS(self));
-  return ns_clear(self);
+  mdl_ns_release_core(self);
+  return PyDict_Type.tp_clear(self);
 }
+
+
+/* Construction is complete at tp_new; the dict base's tp_init would
+   otherwise run on the constructor arguments and refuse them. */
+static int mdl_ns_init(PyObject *self, PyObject *args, PyObject *kwds) {
+  (void) self;
+  (void) args;
+  (void) kwds;
+  return 0;
+}
+
+
+/* Identity hash, comparison and repr, as the other namespace kinds
+   have; the dict base would refuse the hash and print the scratch
+   dict. */
+static Py_hash_t mdl_ns_hash(PyObject *self) {
+  return PyBaseObject_Type.tp_hash(self);
+}
+
+
+/* Identity comparison to match the identity hash. The dict base would
+   compare the scratch storage, never the bindings, and it would also
+   take the reflected comparison against a plain dict, so equality and
+   inequality are answered here outright instead of left to it. */
+static PyObject *mdl_ns_richcompare(PyObject *self, PyObject *other, int op) {
+  if (op == Py_EQ)
+    return PyBool_FromLong(self == other);
+  if (op == Py_NE)
+    return PyBool_FromLong(self != other);
+  Py_RETURN_NOTIMPLEMENTED;
+}
+
+
+static PyObject *mdl_ns_repr(PyObject *self) {
+  return PyBaseObject_Type.tp_repr(self);
+}
+
+
+/* The dict methods exec'd code and the stdlib reach on a globals dict,
+   answered through the module's bindings rather than the scratch
+   storage dict's own versions would read or write. */
+
+static PyObject *mdl_ns_m_copy(PyObject *self) {
+  PyObject *out = PyDict_New();
+  if (! out)
+    return NULL;
+  /* the iter override routes PyDict_Update through the relay */
+  if (PyDict_Update(out, self) < 0) {
+    Py_DECREF(out);
+    return NULL;
+  }
+  return out;
+}
+
+
+static PyObject *mdl_ns_m_reversed(PyObject *self) {
+  PyObject *keys = ns_valued(self, NS_VALUED_KEYS);
+  if (! keys)
+    return NULL;
+  if (PyList_Reverse(keys) < 0) {
+    Py_DECREF(keys);
+    return NULL;
+  }
+  PyObject *it = PyObject_GetIter(keys);
+  Py_DECREF(keys);
+  return it;
+}
+
+
+static PyObject *mdl_ns_m_setdefault(PyObject *self, PyObject *args) {
+  PyObject *key = NULL;
+  PyObject *def = Py_None;
+
+  if (! PyArg_UnpackTuple(args, "setdefault", 1, 2, &key, &def))
+    return NULL;
+
+  PyObject *val = ns_mapping_deref(self, key);
+  if (val)
+    return val;
+  if (! PyErr_ExceptionMatches(PyExc_NameError))
+    return NULL;
+  PyErr_Clear();
+
+  if (ns_store_symbol(self, key, def) < 0)
+    return NULL;
+  Py_INCREF(def);
+  return def;
+}
+
+
+static PyObject *mdl_ns_m_pop(PyObject *self, PyObject *args) {
+  PyObject *key = NULL;
+  PyObject *def = NULL;
+
+  if (! PyArg_UnpackTuple(args, "pop", 1, 2, &key, &def))
+    return NULL;
+
+  PyObject *val = ns_mapping_deref(self, key);
+  if (! val) {
+    if (! PyErr_ExceptionMatches(PyExc_NameError))
+      return NULL;
+    PyErr_Clear();
+    if (! def) {
+      PyErr_SetObject(PyExc_KeyError, key);
+      return NULL;
+    }
+    Py_INCREF(def);
+    return def;
+  }
+  if (ns_store_symbol(self, key, NULL) < 0) {
+    Py_DECREF(val);
+    return NULL;
+  }
+  return val;
+}
+
+
+/* Store every item of src into the module's bindings by dict.update's
+   rule: a source with a keys method is a mapping, read through keys()
+   and __getitem__; anything else is an iterable of pairs. An error
+   from either read propagates. Items store as they are read, so a
+   failure partway leaves the earlier ones stored, as dict.update does. */
+static int mdl_ns_store_from(PyObject *self, PyObject *src) {
+
+  PyObject *keys = PyObject_GetAttrString(src, "keys");
+  PyObject *items;
+  Py_ssize_t n, i;
+
+  if (keys) {
+    Py_DECREF(keys);
+    items = PyMapping_Keys(src);
+    if (! items)
+      return -1;
+
+    n = PyList_GET_SIZE(items);
+    for (i = 0; i < n; i++) {
+      PyObject *key = PyList_GET_ITEM(items, i);
+      PyObject *val = PyObject_GetItem(src, key);
+      int r;
+
+      if (! val) {
+        Py_DECREF(items);
+        return -1;
+      }
+      r = ns_store_symbol(self, key, val);
+      Py_DECREF(val);
+      if (r < 0) {
+        Py_DECREF(items);
+        return -1;
+      }
+    }
+    Py_DECREF(items);
+    return 0;
+  }
+
+  if (! PyErr_ExceptionMatches(PyExc_AttributeError))
+    return -1;
+  PyErr_Clear();
+
+  items = PySequence_List(src);
+  if (! items)
+    return -1;
+
+  n = PyList_GET_SIZE(items);
+  for (i = 0; i < n; i++) {
+    PyObject *pair = PySequence_Tuple(PyList_GET_ITEM(items, i));
+    if (! pair || PyTuple_GET_SIZE(pair) != 2) {
+      Py_XDECREF(pair);
+      if (! PyErr_Occurred())
+        PyErr_SetString(PyExc_ValueError,
+                        "update sequence element is not a pair");
+      Py_DECREF(items);
+      return -1;
+    }
+    int r = ns_store_symbol(self, PyTuple_GET_ITEM(pair, 0),
+                            PyTuple_GET_ITEM(pair, 1));
+    Py_DECREF(pair);
+    if (r < 0) {
+      Py_DECREF(items);
+      return -1;
+    }
+  }
+  Py_DECREF(items);
+  return 0;
+}
+
+
+static PyObject *mdl_ns_m_update(
+    PyObject *self,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *src = NULL;
+
+  if (! PyArg_UnpackTuple(args, "update", 0, 1, &src))
+    return NULL;
+  if (src && mdl_ns_store_from(self, src) < 0)
+    return NULL;
+  if (kwds && mdl_ns_store_from(self, kwds) < 0)
+    return NULL;
+  Py_RETURN_NONE;
+}
+
+
+/* dict | other and other | dict over the bindings: a plain dict copy
+   of the module side takes part in the union. */
+static PyObject *mdl_ns_nb_or(PyObject *left, PyObject *right) {
+  PyObject *l = left;
+  PyObject *r = right;
+  PyObject *res;
+
+  if (KosModuleNamespace_CheckExact(left)) {
+    l = mdl_ns_m_copy(left);
+    if (! l)
+      return NULL;
+  } else {
+    Py_INCREF(l);
+  }
+  if (KosModuleNamespace_CheckExact(right)) {
+    r = mdl_ns_m_copy(right);
+    if (! r) {
+      Py_DECREF(l);
+      return NULL;
+    }
+  } else {
+    Py_INCREF(r);
+  }
+  res = PyNumber_Or(l, r);
+  Py_DECREF(l);
+  Py_DECREF(r);
+  return res;
+}
+
+
+static PyObject *mdl_ns_nb_ior(PyObject *self, PyObject *other) {
+  if (mdl_ns_store_from(self, other) < 0)
+    return NULL;
+  Py_INCREF(self);
+  return self;
+}
+
+
+static PyNumberMethods mdl_ns_as_number = {
+  .nb_or = mdl_ns_nb_or,
+  .nb_inplace_or = mdl_ns_nb_ior,
+};
+
+
+static PyMemberDef mdl_ns_members[] = {
+  { "name", T_OBJECT, offsetof(KosModuleNamespace, core.name), READONLY,
+    "str; namespace name" },
+
+  { "parent", T_OBJECT, offsetof(KosModuleNamespace, core.parent), READONLY,
+    "Namespace; parent namespace" },
+
+  { NULL },
+};
 
 
 static PyObject *mdl_ns_get_builtins(PyObject *self, void *_unused) {
@@ -2683,6 +2988,10 @@ static PyObject *mdl_ns_get_builtins(PyObject *self, void *_unused) {
 
 
 static PyGetSetDef mdl_ns_getset[] = {
+  { "refs", ns_get_refs, NULL,
+    "NamespaceRefs; the names bound in this namespace and their Refs",
+    NULL },
+
   { "builtins", mdl_ns_get_builtins, NULL,
     "mappingproxy; the builtins a symbol falls through to when this"
     " module holds no value for it",
@@ -2748,12 +3057,44 @@ static PyMethodDef mdl_ns_methods[] = {
     "traverses this namespace and its parents to find and return a"
     " reference, or returns None if no binding is found" },
 
-  { "copy", (PyCFunction) ns_m_copy, METH_NOARGS,
-    "NS.copy() => Namespace\n"
-    "copy the top-level namespace only (parent chain not copied)" },
+  { "raw", (PyCFunction) ns_m_raw, METH_O,
+    "NS.raw(K) => bool\n"
+    "True if the given binding is currently raw in this namespace; a"
+    " module binding never is" },
+
+  { "copy", (PyCFunction) mdl_ns_m_copy, METH_NOARGS,
+    "NS.copy() => dict\n"
+    "a plain dict of the names holding a value and their values" },
+
+  { "__reversed__", (PyCFunction) mdl_ns_m_reversed, METH_NOARGS,
+    "reversed(NS) => iterator over the names holding a value, last first" },
+
+  { "setdefault", (PyCFunction) mdl_ns_m_setdefault, METH_VARARGS,
+    "NS.setdefault(K[, default]) -> V\n"
+    "the value K holds, else bind K to default (None) and return it" },
+
+  { "pop", (PyCFunction) mdl_ns_m_pop, METH_VARARGS,
+    "NS.pop(K[, default]) -> V\n"
+    "the value K holds, emptying the binding; default, or KeyError"
+    " without one, when K holds no value" },
+
+  { "update", (PyCFunction) mdl_ns_m_update, METH_VARARGS | METH_KEYWORDS,
+    "NS.update([mapping], **kwds) => None\n"
+    "store every item into the module's bindings" },
 
   { NULL },
 };
+
+
+/* The core must sit at one offset in every kind, and the two heads
+   must be one size, so a function namespace pays nothing for the
+   module namespace being a dict. */
+_Static_assert(offsetof(KosNamespace, core) == offsetof(KosModuleNamespace, core),
+               "namespace core offset differs between kinds");
+_Static_assert(offsetof(KosNamespace, core) == offsetof(KosNamespaceAny, core),
+               "namespace core offset differs from the any-kind view");
+_Static_assert(sizeof(KosNamespaceHead) == sizeof(PyDictObject),
+               "the fast head and the dict head differ in size");
 
 
 PyTypeObject KosModuleNamespaceType = {
@@ -2763,16 +3104,26 @@ PyTypeObject KosModuleNamespaceType = {
   sizeof(KosModuleNamespace),
   0,
 
-  .tp_base = &KosNamespaceType,
+  /* a dict subclass: exec and eval take it as globals, and the
+     mapping slots and methods below relay every read to the module's
+     bindings, never to the dict storage */
+  .tp_base = &PyDict_Type,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_methods = mdl_ns_methods,
+  .tp_members = mdl_ns_members,
   .tp_getset = mdl_ns_getset,
   .tp_as_mapping = &ns_as_mapping,
+  .tp_as_sequence = &ns_seq,
+  .tp_as_number = &mdl_ns_as_number,
+  .tp_iter = ns_mapping_iter,
+  .tp_hash = mdl_ns_hash,
+  .tp_richcompare = mdl_ns_richcompare,
+  .tp_repr = mdl_ns_repr,
   .tp_new = mdl_ns_new,
+  .tp_init = mdl_ns_init,
   .tp_dealloc = mdl_ns_dealloc,
   .tp_traverse = mdl_ns_traverse,
   .tp_clear = mdl_ns_clear,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -2788,9 +3139,11 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
     return NULL;
   }
 
-  if (! PyDict_Check(builtins)) {
+  /* exact: a module namespace is a dict subclass, and the builtins
+     are read with the raw dict API, which would see only its scratch */
+  if (! PyDict_CheckExact(builtins)) {
     PyErr_Format(PyExc_TypeError, "ModuleNamespace builtins must be a"
-                 " mapping, not %R", builtins);
+                 " dict, not %R", builtins);
     return NULL;
   }
 
@@ -2798,7 +3151,15 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   if (! binds)
     return NULL;
 
-  PyObject *self = PyObject_GC_NewVar(PyObject, &KosModuleNamespaceType, 0);
+  /* the dict base allocates and initialises the dict part and tracks
+     the object from birth; the core is zero until filled here */
+  PyObject *args = PyTuple_New(0);
+  if (! args) {
+    Py_DECREF(binds);
+    return NULL;
+  }
+  PyObject *self = PyDict_Type.tp_new(&KosModuleNamespaceType, args, NULL);
+  Py_DECREF(args);
   if (! self) {
     Py_DECREF(binds);
     return NULL;
@@ -2810,15 +3171,11 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   KosNamespace_PARENT(self) = NULL;
   KosNamespace_TEMPLATE(self) = NULL;
   KosNamespace_BINDS(self) = binds;
-  KosNamespace_FAST_COUNT(self) = 0;
-  KosNamespace_FAST_NAMES(self) = NULL;
+  KosNamespace_FAST_RAW(self)[0] = 0;
+  KosNamespace_FAST_RAW(self)[1] = 0;
 
   Py_INCREF(builtins);
   KosModuleNamespace_BUILTINS(self) = builtins;
-
-  /* module namespaces are few, long-lived, and perpetually exposed;
-     track them from birth rather than lazily */
-  PyObject_GC_Track(self);
 
   // SAYF("KosModuleNamespace_New -> %R", self);
   return self;
@@ -2920,12 +3277,13 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
 
     } else {
       PyErr_Format(PyExc_AttributeError, "%R object attribute %R is read-only",
-                   self, value);
+                   self, name);
       return -1;
     }
   }
 
-  PyObject *ref = ns_claim_ref(KosModule_NAMESPACE(self), name);
+  PyObject *ns = KosModule_NAMESPACE(self);
+  PyObject *ref = ns_claim_ref(ns, name);
   if (! ref) {
     if (! PyErr_Occurred())
       PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
@@ -2933,7 +3291,9 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
     return -1;
   }
 
-  return value? KosRef_Store(ref, value): KosRef_Clear(ref);
+  if ((value? KosRef_Store(ref, value): KosRef_Clear(ref)) < 0)
+    return -1;
+  return mdl_ns_mirror(ns, name, value);
 }
 
 
@@ -2989,7 +3349,6 @@ PyTypeObject KosModuleType = {
   .tp_methods = mdl_methods,
   .tp_getattro = mdl_getattro,
   .tp_setattro = mdl_setattro,
-  // .tp_repr = ns_repr,
 };
 
 
@@ -3129,6 +3488,11 @@ int koskari_namespace_init(PyObject *mod) {
   if (! str_class_name)
     return -1;
   STR_CONST(_module_str, "<module>");
+  mdl_mirrored_names = Py_BuildValue(
+      "(sssss)", "__name__", "__package__", "__spec__", "__file__",
+      "__loader__");
+  if (! mdl_mirrored_names)
+    return -1;
 
   PyDict_SetItemString(dict, "Namespace",
                        (PyObject *) &KosNamespaceType);
@@ -3171,6 +3535,7 @@ int koskari_namespace_clear(PyObject *mod) {
   Py_CLEAR(_namespace_str);
   Py_CLEAR(str_class_name);
   Py_CLEAR(_module_str);
+  Py_CLEAR(mdl_mirrored_names);
 
   return 0;
 }

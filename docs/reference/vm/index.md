@@ -201,7 +201,7 @@ or demote tail calls when yields are present. Those happen later; see section 1.
 
 | Category | Rule |
 |----------|------|
-| Dead stack | **`KOS_OP_CONST`** or **`KOS_OP_DUP`** followed by **`KOS_OP_POP`** with **arg 1** -> drop both (omit the POP and remove the prior instruction). |
+| Dead stack | **`KOS_OP_CONST`** followed by **`KOS_OP_POP`** with **arg 1** -> drop both. **`KOS_OP_DUP`** with arg n followed by **`KOS_OP_POP`** with arg n -> drop both; with a larger POP arg m -> **`KOS_OP_POP`** with arg m - n; with a smaller POP arg both stay, since DUP copies its slots in order. **`KOS_OP_DUP`** or **`KOS_OP_POP`** with **arg 0** -> dropped. |
 | Constant fold | **`KOS_OP_OBJECT_NOT`** with prior **`KOS_OP_CONST`** -> replace the pair with a single **`KOS_OP_CONST`** whose value is **`not`** the prior constant (Python `bool` semantics for the folded value). |
 | Constant + `JUMP_TRUE` | Prior **`KOS_OP_CONST`**: if truthy, replace with **`KOS_OP_JUMP`** to the same label; if falsy, drop both (no jump). |
 | Constant + `JUMP_FALSE` | Prior **`KOS_OP_CONST`**: if the constant is falsy, unconditional **`KOS_OP_JUMP`**; if truthy, drop both. |
@@ -306,6 +306,8 @@ The opcodes by family, each linking to its section.
 | CDR | COUNT | Apply cdr **n** times (**n** >= 1); **n** = 0 invalid | [section 5.1](opcodes/kos-op-cdr.md) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [section 5.1](opcodes/kos-op-cons.md) |
 | PROPER | COUNT | Pop N values; push proper list (e_0 ... e_{N-1}) | [section 5.1](opcodes/kos-op-proper.md) |
+| BRACKET_CONS | COUNT | Pop N values; push the bracket pair chain [e_0 . ... . e_{N-1}] | [section 5.1](opcodes/kos-op-bracket-cons.md) |
+| BRACKET_PROPER | COUNT | Pop N values; push the proper bracket list [e_0 ... e_{N-1}] | [section 5.1](opcodes/kos-op-bracket-proper.md) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [section 5.1](opcodes/kos-op-pair-splice.md) |
 | AWAIT | COUNT | Suspend on awaitable; resume with value | [section 6](opcodes/kos-op-await.md) |
 | BREAK | COUNT | Jump to loop break target | [section 6](opcodes/kos-op-break.md) |
@@ -928,6 +930,24 @@ bottom to top matches push order).
 | 1     | CONST  | 1   | 1 (sym b)  | stack: [..., a, b] |
 | 2     | CONST  | 2   | 2 (sym c)  | stack: [..., a, b, c] |
 | 3     | PROPER | 3   | 3          | stack: [..., (a b c)] |
+
+### KOS_OP_BRACKET_CONS
+- **Style**: COUNT. Arg = number of values on stack (bottom = first element,
+  top = tail).
+- **Stack**: `[..., e_0, ..., e_{count-1}] -> [..., result]` where result is
+  the bracket pair chain `[e_0 . [e_1 . ... [e_{count-1}] ...]]`: the twin of
+  **CONS** over bracket pairs, built with KosBracketPair_ConsFromPtr. count 0
+  -> push bracket-nil.
+- **Use-case**: Emitted by `compile/bracket-cons` and by the quasiquote
+  compiler for a `[ ]` form with an explicit tail.
+
+### KOS_OP_BRACKET_PROPER
+- **Style**: COUNT. Arg = number of element values on stack.
+- **Stack**: `[..., e_0, ..., e_{count-1}] -> [..., result]` where result is the
+  proper bracket list `[e_0 e_1 ... e_{count-1}]`. bracket-nil is implicitly
+  appended as the tail. count 0 -> push bracket-nil directly.
+- **Use-case**: Emitted by `compile/bracket-proper` and by the quasiquote
+  compiler for the segments of a `[ ]` form; the twin of **PROPER**.
 
 ### KOS_OP_PAIR_SPLICE
 - **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
@@ -1925,8 +1945,8 @@ row: `("os.path", 0, 0, 0)`.
 
 ### KOS_OP_VAR_INPLACE
 
-- **Style**: EXTRA (OPCOUNT, VAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the variable name.
-- **Stack**: `[..., v0 .. v_{n-1}] -> [...]`. Reduce the count operands from the stack into the frame namespace binding with the operator, left to right, and store the result back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_var_inplace_operand`.
+- **Style**: EXTRA (OPERAND, VAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the variable name.
+- **Stack**: `[..., rhs] -> [...]`. Pop the one rhs and reduce it into the frame namespace binding with the operator, storing the result back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_var_inplace_operand`.
 - **Compiler form:** Emitted by **`compile/inplace`** when the target is a symbol. May lower to **FAST_INPLACE**; a single constant operand squashes into **VAR_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_INPLACE.c`
 
@@ -2424,8 +2444,8 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_FAST_INPLACE
 
-- **Style**: EXTRA (OPCOUNT, FASTVAR, NOARG, NOARG). Row a0 = operator selector in the high byte and reduce count in the low byte, a1 = the fast slot.
-- **Stack**: `[..., v0 .. v_{n-1}] -> [...]`. Reduce the count operands from the stack into the slot with the operator, left to right; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
+- **Style**: EXTRA (OPERAND, FASTVAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the fast slot.
+- **Stack**: `[..., rhs] -> [...]`. Pop the one rhs and reduce it into the slot with the operator; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
 - **Compiler form:** The lowered form of **VAR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/FAST_INPLACE.c`
 
@@ -3455,13 +3475,13 @@ Context managers (`with` / `dyn-with`) at the language level: [with](../specials
 - **Style**: CONST. Arg = constant pool index of binding name (symbol/string) or sentinel for no binding.
 - **Stack before:** `[..., mgr]`. **Stack after:** body runs in a fresh operand segment.
 - **Behaviour:** Pop `mgr`; resolve and cache enter/exit; call enter (auto-await if needed); on success bind enter result if name given; push new segment; look up WITH extent at current PC, compute `resume_pc = ext->pop_pc + 1`; push `KOS_DYN_WITH` with `resume_pc` stored on the node. On enter failure, no node or block is installed; exception propagates.
-- **Pushes:** KOS_DYN_WITH (single-shot; transfer barrier). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
+- **Pushes:** KOS_DYN_WITH (single-shot: exits once on unwind or transfer, never re-entered). Node stores `resume_pc` (instruction after POP_WITH) for use when exit swallows an exception.
 - **Invariants:** Node owns one operand segment; stack restoration is structural (segment pop), not height-mark. A WITH extent must exist at the PUSH_WITH PC; otherwise RuntimeError.
 
 ### KOS_OP_POP_WITH
 - **Style**: NOARG (argument unused in current `opcodes.incl`).
-- **Behaviour:** Call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push `None`. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push `None`; on suspend returns **`EVAL_AWAIT(awaitable)`**; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is always `None` (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
-- **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is always `None`; exit return is used only for swallow logic and is never the value seen by RETURN.
+- **Behaviour:** Park the body value; call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push the parked body value. When exit returns an awaitable: step via `kos_with_exit_start_await`; on sync completion (r==0) call `kos_complete_pending_with_exit` to consume the exit result and push the body value; on suspend returns **`EVAL_AWAIT(awaitable)`**; on resume, revive calls `kos_complete_pending_with_exit` so the with-expression value is the body's (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
+- **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is the body's value, or `None` when exit swallowed an exception; exit return is used only for swallow logic and is never the value seen by RETURN.
 ### KOS_OP_PUSH_DYN_WITH
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
 - **Stack / behaviour:** Same as PUSH_WITH except that the node is marked multi-shot (`KOS_DYN_WITH_SHOT_MULTI`) and the DYN_WITH extent supplies the pcs. The node participates in continuation transfer plans (wind/unwind on non-local transfer).
@@ -3917,19 +3937,18 @@ value is pushed (the form evaluates to None). The operator is a KosOperand
 selector dispatched through `kos_inplace_reduce` (`operator.c`), the same
 selector set as OBJECT_OPERAND / OBJECT_INPLACE.
 
-**VAR_INPLACE** -- EXTRA (OPCOUNT, VAR). Row a0 packs the operator
-selector with the operand count (count is 1 in all compiler emission: one rhs
-popped from the stack); a1 = constant pool index of the name. Stack:
-`[..., rhs] -> [...]`.
+**VAR_INPLACE** -- EXTRA (OPERAND, VAR). Row a0 is the bare operator
+selector (one rhs popped from the stack); a1 = constant pool index of the
+name. Stack: `[..., rhs] -> [...]`.
 
-**FAST_INPLACE** -- EXTRA (OPCOUNT, FASTVAR). As above with a fast
+**FAST_INPLACE** -- EXTRA (OPERAND, FASTVAR). As above with a fast
 slot. Produced by `convert_fast` lowering of the VAR form.
 
 **VAR_INPLACE_CONST** -- EXTRA (OPERAND, VAR, CONST). The compressed
 single-operand form with a constant rhs: a0 is a *bare* KosOperand selector
-(OPERAND kind -- the count is fixed at 1 by the shape), a1 the name, a2 the
-pooled operand. **Completely stack-free**: no push, no pop. Produced by
-`Compiler.compress` fusing a prior CONST into a count-1 VAR_INPLACE --
+(OPERAND kind), a1 the name, a2 the pooled operand. **Completely
+stack-free**: no push, no pop. Produced by `Compiler.compress` fusing a
+prior CONST into a VAR_INPLACE --
 the `(set! i (+ i 1))` / `incr!` loop-tail idiom. Cold handler.
 
 **FAST_INPLACE_CONST** -- EXTRA (OPERAND, FASTVAR, CONST). The

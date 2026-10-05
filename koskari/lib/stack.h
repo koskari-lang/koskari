@@ -29,8 +29,9 @@
 /**
    KosSegment is a storage-only operand stack segment.
 
-   Control flow metadata (block style, labels, enabled flag) has been
-   moved to KosDynRegion nodes in the dynamic chain. See dynchain.h.
+   Control flow metadata (handler and jump targets, enabled flag) lives
+   on the TRY, FINALLY, LOOP and FOREACH nodes of the dynamic chain, the
+   region kinds. See dynchain.h.
 
    Each segment holds a flexible array of PyObject pointers and has a
    single owner (a dynamic-chain node); no sharing.

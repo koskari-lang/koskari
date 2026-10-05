@@ -50,7 +50,7 @@ typedef struct {
 PyObject *KosPyDelimitedContinuation_New(KosContinuation *captured);
 
 
-/* === KosPyContinuation (undelimited, for future call/cc) === */
+/* === KosPyContinuation (undelimited, call/cc) === */
 
 
 /**

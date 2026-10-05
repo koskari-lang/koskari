@@ -25,8 +25,8 @@
    consumes the handle (SPENT); reuse raises RuntimeError like a
    finished coroutine.
 
-   author: Christopher O'Brien <obriencj@preoccupied.net>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@preoccupied.net>
+   :license: GNU General Public License v3
 */
 
 
@@ -34,9 +34,6 @@
 
 
 /* Method-name constants for delegation; init/cleared in unit lifecycle */
-static PyObject *str_send = NULL;
-static PyObject *str_throw = NULL;
-static PyObject *str_close = NULL;
 
 
 /* === helpers === */
@@ -151,7 +148,6 @@ static KosDefer *defer_alloc(void) {
   KosDefer *self = PyObject_GC_New(KosDefer, &KosDeferType);
   if (! self)
     return NULL;
-  PyObject_Init((PyObject *) self, &KosDeferType);
 
   /* Safe defaults: normalize overwrites on success, and dealloc after a
      normalize failure (or a payload-less adopt) must not switch on a
@@ -437,26 +433,6 @@ static void defer_spend(KosDefer *self) {
 
 
 /**
-   Method lookup distinguishing lookup-AttributeError (NULL, *err=0,
-   error cleared) from a raising descriptor (NULL, *err=1, error left
-   set), so an AttributeError raised inside a delegated body is never
-   mistaken for a missing method.
-*/
-static PyObject *defer_lookup(PyObject *obj, PyObject *name, int *err) {
-  *err = 0;
-  PyObject *meth = PyObject_GetAttr(obj, name);
-  if (! meth) {
-    if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
-      PyErr_Clear();
-    } else {
-      *err = 1;
-    }
-  }
-  return meth;
-}
-
-
-/**
    Report a completion to a caller on the iterator protocol: raise
    StopIteration(value) as a real instance, since a bare
    PyErr_SetObject(PyExc_StopIteration, value) would tuple-splat the
@@ -507,127 +483,58 @@ static void defer_raise_thrown(PyObject *typ, PyObject *val, PyObject *tb) {
 
 
 /**
-   Forward a send into the ITERATING iterator with yield-from rules:
-   use the delegate's send when present; a None send falls back to
-   tp_iternext; a non-None send without a send method is a TypeError.
-   Returns the yielded value (stay ITERATING), or NULL with the handle
-   SPENT and StopIteration (carrying the return value) or the raised
-   error set. The caller-mistake TypeError leaves the state unchanged.
+   One step of the ITERATING iterator through the send protocol, as
+   kos_iter_send steps every iterator: the am_send slot when the type
+   has one, next for a None send on an iterator, else its send method.
+   A yield stays ITERATING; a completion or failure spends the handle.
+   The inner is held across the step, since the step can spend this
+   defer from inside the inner body (a close on it), dropping u.iter's
+   reference while the step is in flight. *result is owned on RETURN
+   and NEXT, NULL on ERROR.
 */
-static PyObject *defer_forward_send_by_method(
-    KosDefer *self, PyObject *value) {
-  PyObject *iter = self->u.iter;
-  int err = 0;
-  PyObject *result;
-
-  PyObject *meth = defer_lookup(iter, str_send, &err);
-  if (meth) {
-    result = PyObject_CallOneArg(meth, value ? value : Py_None);
-    Py_DECREF(meth);
-  } else if (err) {
-    return NULL;
-  } else if (value && value != Py_None) {
-    PyErr_SetString(PyExc_TypeError,
-                    "can't send non-None value to a plain iterator");
-    return NULL;
-  } else if (! Py_TYPE(iter)->tp_iternext) {
-    PyErr_Format(PyExc_TypeError,
-                 "defer cannot drive non-iterator %s",
-                 Py_TYPE(iter)->tp_name);
-    return NULL;
-  } else {
-    result = Py_TYPE(iter)->tp_iternext(iter);
-    if (! result && ! PyErr_Occurred()) {
-      /* plain-iterator exhaustion: completion with None */
-      PyErr_SetNone(PyExc_StopIteration);
-    }
-  }
-
-  if (result)
-    return result;
-
-  /* completion (StopIteration) or failure consumes the handle */
-  defer_spend(self);
-  return NULL;
+static PySendResult defer_forward_step(
+    KosDefer *self, PyObject *value, PyObject **result) {
+  PyObject *iter = Py_NewRef(self->u.iter);
+  PySendResult r = kos_iter_send(iter, value ? value : Py_None, result);
+  Py_DECREF(iter);
+  if (r != PYGEN_NEXT)
+    defer_spend(self);
+  return r;
 }
 
 
 #if PY_MINOR_VERSION >= 10
-/* The inner iterator's am_send slot, or NULL when its type has none. */
-static inline sendfunc defer_inner_am_send(KosDefer *self) {
-  PyTypeObject *tp = Py_TYPE(self->u.iter);
-  return tp->tp_as_async ? tp->tp_as_async->am_send : NULL;
-}
-
-
 /**
-   Forward a send into the ITERATING iterator on the send protocol:
-   through the inner am_send when it has one (a generator, a coroutine,
-   another defer), else through the method protocol with its
-   StopIteration translated back to a return. Completion or failure
-   consumes the handle. *result is owned on RETURN and NEXT, NULL on
-   ERROR.
+   Forward a send into the ITERATING iterator on the send protocol.
 */
 static PySendResult defer_forward_am_send(
     KosDefer *self, PyObject *value, PyObject **result) {
-  sendfunc am_send = defer_inner_am_send(self);
-  PySendResult r;
-
-  if (am_send) {
-    /* the step can spend this defer from inside the inner body (a close
-       on it), dropping u.iter's reference while the step is in flight */
-    PyObject *iter = Py_NewRef(self->u.iter);
-    r = am_send(iter, value ? value : Py_None, result);
-    Py_DECREF(iter);
-    if (r != PYGEN_NEXT)
-      defer_spend(self);
-    return r;
-  }
-
-  *result = defer_forward_send_by_method(self, value);
-  if (*result)
-    return PYGEN_NEXT;
-  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-    if (PyGen_FetchStopIterationValue(result) < 0)
-      return PYGEN_ERROR;
-    if (! *result)
-      *result = Py_NewRef(Py_None);
-    return PYGEN_RETURN;
-  }
-  return PYGEN_ERROR;
+  return defer_forward_step(self, value, result);
 }
 #endif
 
 
 /**
    Forward a send into the ITERATING iterator for a caller on the
-   iterator protocol: the inner am_send when it has one, with a return
-   reported as StopIteration; else the method protocol.
+   iterator protocol: a return is reported as StopIteration.
 */
 static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
-#if PY_MINOR_VERSION >= 10
-  sendfunc am_send = defer_inner_am_send(self);
-  if (am_send) {
-    PyObject *result = NULL;
-    PyObject *iter = Py_NewRef(self->u.iter);  /* see defer_forward_am_send */
-    PySendResult r = am_send(iter, value ? value : Py_None, &result);
-    Py_DECREF(iter);
-    if (r == PYGEN_NEXT)
-      return result;
-    defer_spend(self);
-    if (r == PYGEN_RETURN)
-      return defer_raise_stop(result);
-    return NULL;
-  }
-#endif
-  return defer_forward_send_by_method(self, value);
+  PyObject *result = NULL;
+  PySendResult r = defer_forward_step(self, value, &result);
+
+  if (r == PYGEN_NEXT)
+    return result;
+  if (r == PYGEN_RETURN)
+    return defer_raise_stop(result);
+  return NULL;
 }
 
 
 /**
-   Forward a throw into the ITERATING iterator with yield-from rules.
-   val and tb may be NULL. Returns a yielded value (stay ITERATING), or
-   NULL with the handle SPENT and an exception set.
+   Forward a throw into the ITERATING iterator by the yield-from rule
+   kos_iter_throw applies. val and tb may be NULL. Returns a yielded
+   value (stay ITERATING), or NULL with the handle SPENT and
+   StopIteration (carrying the return value) or the raised error set.
 */
 static PyObject *defer_forward_throw(
     KosDefer *self,
@@ -635,43 +542,24 @@ static PyObject *defer_forward_throw(
     PyObject *val,
     PyObject *tb) {
 
-  PyObject *iter = self->u.iter;
-  int err = 0;
+  PyObject *cls = NULL, *exc = NULL, *result = NULL;
+  PyObject *iter;
+  PySendResult r;
 
-  PyObject *meth = defer_lookup(iter, str_throw, &err);
-  if (meth) {
-    /* CallFunctionObjArgs truncates at the first NULL, so a single-arg
-       throw forwards single-arg (avoids 3.12's three-arg deprecation) */
-    PyObject *result = PyObject_CallFunctionObjArgs(meth, typ, val, tb, NULL);
-    Py_DECREF(meth);
-    if (result)
-      return result;
-    defer_spend(self);
-    return NULL;
-  }
-
-  if (err)
+  if (KosExc_NormalizeThrow(typ, val, tb, &cls, &exc) < 0)
     return NULL;
 
-  /* No throw on the delegate: close it if the exception is
-     GeneratorExit, then raise the exception here (yield-from rules). */
-  if (PyErr_GivenExceptionMatches(typ, PyExc_GeneratorExit)) {
-    PyObject *close_meth = defer_lookup(iter, str_close, &err);
-    if (err)
-      return NULL;
-    if (close_meth) {
-      PyObject *res = PyObject_CallNoArgs(close_meth);
-      Py_DECREF(close_meth);
-      if (! res) {
-        defer_spend(self);
-        return NULL;
-      }
-      Py_DECREF(res);
-    }
-  }
+  iter = Py_NewRef(self->u.iter);  /* see defer_forward_step */
+  r = kos_iter_throw(iter, exc, &result);
+  Py_DECREF(iter);
+  Py_DECREF(cls);
+  Py_DECREF(exc);
 
+  if (r == PYGEN_NEXT)
+    return result;
   defer_spend(self);
-  defer_raise_thrown(typ, val, tb);
+  if (r == PYGEN_RETURN)
+    return defer_raise_stop(result);
   return NULL;
 }
 
@@ -825,21 +713,14 @@ static PyObject *defer_close(PyObject *self, PyObject *ignored) {
   /* Delegate close when the payload supports it; the delegate raises
      the "ignored GeneratorExit" RuntimeError itself, and errors from
      it propagate. The handle is consumed either way. */
-  int err = 0;
-  PyObject *meth = defer_lookup(target, str_close, &err);
-  if (! meth) {
+  {
+    PyObject *held = Py_NewRef(target);
+    int r = kos_iter_close_or_raise(held);
+    Py_DECREF(held);
     defer_spend(d);
-    if (err)
+    if (r < 0)
       return NULL;
-    Py_RETURN_NONE;
   }
-
-  PyObject *res = PyObject_CallNoArgs(meth);
-  Py_DECREF(meth);
-  defer_spend(d);
-  if (! res)
-    return NULL;
-  Py_DECREF(res);
   Py_RETURN_NONE;
 }
 
@@ -928,9 +809,6 @@ int koskari_defer_init(PyObject *mod) {
   if (PyType_Ready(&KosDeferType) < 0)
     return -1;
 
-  STR_CONST(str_send, "send");
-  STR_CONST(str_throw, "throw");
-  STR_CONST(str_close, "close");
 
   if (PyDict_SetItemString(dict, "defer", (PyObject *) &KosDeferType) < 0)
     return -1;
@@ -942,9 +820,6 @@ int koskari_defer_init(PyObject *mod) {
 int koskari_defer_clear(PyObject *mod) {
   (void) mod;
 
-  Py_CLEAR(str_send);
-  Py_CLEAR(str_throw);
-  Py_CLEAR(str_close);
 
   return 0;
 }

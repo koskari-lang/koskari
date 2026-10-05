@@ -20,8 +20,8 @@
    Provides common macros and utilities for testing memory management
    in Koskari's native types.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 

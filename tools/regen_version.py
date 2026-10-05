@@ -269,7 +269,7 @@ def assemble_version(version, state, now=None):
     """
     Build version metadata from release string and git state
 
-    :param release: base release from setup.cfg
+    :param version: base version string from setup.cfg
     :param state: dict from git_state
     :param now: optional datetime for dirty local segments (tests)
     :return: dict with version, release, build_kind, commit, dirty
@@ -290,12 +290,12 @@ def assemble_version(version, state, now=None):
         release = 'ga'
     else:
         build_kind = 'dev'
-        release = 'dev+' + commit
+        release = 'dev.' + commit
         if dirty:
             if now is None:
                 now = datetime.now(timezone.utc)
             stamp = now.strftime('%Y%m%dT%H%M%S')
-            release = release + '+' + stamp
+            release = release + '.' + stamp
 
     # a snapshot build stamps a dev release like 0.1.0.dev20260817 into
     # setup.cfg; the numeric triple is the leading three components and
@@ -351,11 +351,11 @@ def should_regen(root=None):
 
 def regen_version_py(root=None, dest=None):
     """
-    Regenerate koskari/_version.py when inputs differ from output
+    Regenerate koskari/_version.py from the template and the current
+    version info
 
     :param root: repository root path
     :param dest: optional output path override
-    :return: True when the file was written or updated
     """
 
     root = project_root(root)

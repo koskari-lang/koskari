@@ -22,8 +22,8 @@
    identity comparisons. A gensym is a symbol scoped by expansion
    marks, interned in the symbol table under its derived spelling.
 
-   author: Christopher O'Brien <obriencj@gmail.com>
-   license: GPL v.3
+   :author: Christopher O'Brien <obriencj@gmail.com>
+   :license: GNU General Public License v3
 */
 
 
@@ -55,13 +55,27 @@ static PyObject *atom_new(
     PyErr_SetString(PyExc_TypeError, "interned atom requires a name");
     return NULL;
 
-  } else if (! PyUnicode_CheckExact(name)) {
-    name = PyObject_Str(name);
-    if (! name)
-      return NULL;
+  } else if (PyUnicode_CheckExact(name)) {
+    Py_INCREF(name);
 
   } else {
-    Py_INCREF(name);
+    /* the name an atom keeps is a true str: it keys the intern table
+       and answers the atom's str methods, so a str subclass, or a
+       __str__ that hands one back, is copied to a plain str */
+    if (! PyUnicode_Check(name)) {
+      name = PyObject_Str(name);
+      if (! name)
+        return NULL;
+    } else {
+      Py_INCREF(name);
+    }
+    if (! PyUnicode_CheckExact(name)) {
+      PyObject *plain = PyUnicode_FromObject(name);
+      Py_DECREF(name);
+      if (! plain)
+        return NULL;
+      name = plain;
+    }
   }
 
   // name is ref'd
@@ -77,7 +91,10 @@ static PyObject *atom_new(
     KosInternedAtom_NAME(atom) = name;
 
     if (PyDict_SetItem(intern, name, (PyObject *) atom)) {
-      Py_DECREF(atom);  /* clears KosInternedAtom_NAME(atom) as well */
+      /* the key was never set: an atom with no name was never interned,
+         and its dealloc leaves the table alone */
+      Py_CLEAR(KosInternedAtom_NAME(atom));
+      Py_DECREF(atom);
       return NULL;
     }
 
@@ -123,10 +140,9 @@ static int atom_rewrap(PyObject *vals, unaryfunc conv) {
     if (! tmp)
       return -1;
 
-    if (PyList_SetItem(vals, index, tmp)) {
-      Py_DECREF(tmp);
+    /* a failed SetItem has released tmp itself */
+    if (PyList_SetItem(vals, index, tmp))
       return -1;
-    }
   }
   return 0;
 }
@@ -167,11 +183,16 @@ PyObject *KosSymbol_FromString(PyObject *name) {
 /**
    Drop a dying atom's entry from its intern table. The refcount is
    raised past zero for the duration so the dict's own decref of the
-   value does not re-enter dealloc.
+   value does not re-enter dealloc; the incref balances that decref
+   in a debug build's reference total, as the decref at interning
+   balanced the dict's incref. An atom with no name was never
+   interned (its constructor cleared the name when the table refused
+   it) and has no entry to drop.
 */
 static void atom_forget(PyObject *self, PyObject *intern) {
-  if (intern) {
-    self->ob_refcnt = 3;
+  if (intern && KosInternedAtom_NAME(self)) {
+    Py_SET_REFCNT(self, 1);
+    Py_INCREF(self);
     PyDict_DelItem(intern, KosInternedAtom_NAME(self));
   }
 }
@@ -490,11 +511,10 @@ static PyObject *gensym_intern(
   g->marks = marks;
 
   if (PyDict_SetItem(intern_syms, name, (PyObject *) g)) {
-    // dealloc deletes a key that was never set; keep the real error
-    PyObject *typ, *val, *tb;
-    PyErr_Fetch(&typ, &val, &tb);
+    // the key was never set: a gensym with no name was never interned,
+    // and its dealloc leaves the table alone
+    Py_CLEAR(KosInternedAtom_NAME(g));
     Py_DECREF(g);
-    PyErr_Restore(typ, val, tb);
     return NULL;
   }
 

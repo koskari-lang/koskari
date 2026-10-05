@@ -21,6 +21,7 @@ entry, and only the park's owner resumes it
 
 import asyncio
 import gc
+import sys
 import unittest
 import weakref
 
@@ -219,6 +220,32 @@ class TestKosMapSourceCleanup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await m.__anext__(), "1")
         self.assertIsNone(await m.aclose())
         self.assertEqual(log, ["cleaned"])
+
+    def test_suspending_cleanup_releases_yield_once(self):
+        # the source's finally suspends on an awaitable, so the close
+        # falls back to closing the source; the value it yielded keeps
+        # its references. keep holds a second reference so an
+        # over-release lowers the count instead of freeing the object.
+        token = object()
+        keep = [token]
+
+        class Park:
+            def __await__(self):
+                yield token
+
+        async def src():
+            try:
+                yield 1
+            finally:
+                await Park()
+
+        m = KosMap(str, src())
+        dgen = iter(m)
+        self.assertEqual(next(dgen), "1")
+        before = sys.getrefcount(token)
+        dgen.close()
+        self.assertEqual(sys.getrefcount(token), before)
+        self.assertEqual(keep, [token])
 
 
 class TestKosMapAbandonedMidAwait(unittest.IsolatedAsyncioTestCase):

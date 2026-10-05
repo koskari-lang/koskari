@@ -227,7 +227,23 @@ class TestObjectCompare(CevalTest):
         self.assertIs(result, True)
 
 
-    async def test_is_instance_multi_class(self):
+    async def test_is_instance_tuple_of_classes(self):
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["CONST", (str, int)],
+            ["OBJECT_COMPARE", cmpcount(IS_INSTANCE, 2)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, True)
+
+
+    async def test_is_instance_rejects_three_operands(self):
+        """
+        IS_INSTANCE is binary in the value form as in the truth form:
+        several classes travel as one tuple operand
+        """
+
         code, ns = build_expr([
             ["CONST", 5],
             ["CONST", str],
@@ -235,8 +251,8 @@ class TestObjectCompare(CevalTest):
             ["OBJECT_COMPARE", cmpcount(IS_INSTANCE, 3)],
             ["RETURN", 1],
         ])
-        result = await make_callable(code, ns)()
-        self.assertIs(result, True)
+        with self.assertRaises(TypeError):
+            await make_callable(code, ns)()
 
 
 class TestCheckCompareFast(CevalTest):
