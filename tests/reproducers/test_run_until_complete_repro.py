@@ -31,6 +31,7 @@ loop.run_until_complete, which cannot run on an already-running loop.)
 import asyncio
 import unittest
 import warnings
+from unittest import mock
 
 import pytest
 
@@ -119,6 +120,32 @@ class TestRunUntilComplete(unittest.TestCase):
             except RuntimeError:
                 pass
             asyncio.set_event_loop(None)
+
+
+    def test_default_loop_keeps_a_set_loop_where_get_event_loop_warns(self):
+        """
+        On 3.10.0-3.10.8 and 3.11.0 asyncio.get_event_loop warns whenever
+        no loop is running, a loop set as current included; that loop is
+        still the default rather than a replacement
+        """
+
+        def warning_get_event_loop():
+            warnings.warn('There is no current event loop',
+                          DeprecationWarning, stacklevel=2)
+            return asyncio.get_event_loop_policy().get_event_loop()
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            with mock.patch.object(
+                    asyncio, 'get_event_loop', warning_get_event_loop), \
+                 mock.patch.object(
+                    koskari.asyncio, '_WARNS_WITH_A_LOOP_SET', True,
+                    create=True):
+                self.assertIs(koskari.asyncio._default_loop(), loop)
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
 
 # The end.

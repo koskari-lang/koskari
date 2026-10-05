@@ -23,6 +23,7 @@ asyncio loops which specifically check for the Python coroutine type.
 
 
 import asyncio
+import sys
 import warnings
 from functools import wraps
 from json import loads as _json_loads
@@ -105,12 +106,22 @@ def run_until_complete(loop, coro):
     return loop.run_until_complete(coro)
 
 
+# asyncio.get_event_loop() on these releases warns whenever no loop is
+# running, a loop set as current included (gh-93453, fixed in 3.10.9
+# and 3.11.1); the policy still answers for the set loop there
+_WARNS_WITH_A_LOOP_SET = (
+    (3, 10, 0) <= sys.version_info[:3] < (3, 10, 9)
+    or (3, 11, 0) <= sys.version_info[:3] < (3, 11, 1))
+
+
 def _default_loop():
     """
     The current event loop, or a new one installed as current when none
     is set. Python 3.12 and 3.13 would create one implicitly with a
     DeprecationWarning and 3.14 refuses outright; the warning is raised
-    here so every version takes the same path.
+    here so every version takes the same path. On the releases whose
+    warning fires with a loop set, the policy is asked for that loop
+    before one is made
     """
 
     try:
@@ -118,9 +129,17 @@ def _default_loop():
             warnings.simplefilter("error", DeprecationWarning)
             return asyncio.get_event_loop()
     except (RuntimeError, DeprecationWarning):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop
+        pass
+
+    if _WARNS_WITH_A_LOOP_SET:
+        try:
+            return asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            pass
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop
 
 
 add_builtin("sleep", asyncio.sleep)
