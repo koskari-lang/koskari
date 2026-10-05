@@ -53,12 +53,9 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
    Clone iterator and result refs for continuation capture.
 */
 KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
-  KosDynForeach *clone = kos_dynnode_alloc();
+  KosDynForeach *clone = kos_dynnode_clone_base(node);
   if (! clone)
     return NULL;
-  kos_dynnode_init(clone, KOS_DYN_FOREACH, NULL, KosDynNode_CAPS(node));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynForeach_BREAK_PC(clone) = KosDynForeach_BREAK_PC(node);
   KosDynForeach_CONTINUE_PC(clone) = KosDynForeach_CONTINUE_PC(node);
   KosDynForeach_ENABLED(clone) = KosDynForeach_ENABLED(node);

@@ -84,13 +84,10 @@ static KosDynPrompt *kos_dynprompt_clone(KosDynPrompt *prompt) {
   if (! prompt)
     return NULL;
 
-  KosDynPrompt *clone = kos_dynnode_alloc();
+  KosDynPrompt *clone = kos_dynnode_clone_base(prompt);
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(clone, KOS_DYN_PROMPT, NULL, KosDynNode_CAPS(prompt));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(prompt) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(prompt);
   KosDynPrompt_ID(clone) = KosDynPrompt_ID(prompt);
   KosDynPrompt_POP_PC(clone) = KosDynPrompt_POP_PC(prompt);
   return clone;

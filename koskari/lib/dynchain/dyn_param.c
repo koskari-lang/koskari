@@ -100,16 +100,13 @@ static KosDynParam *kos_dynparam_clone(KosDynParam *node) {
   if (! copy)
     return NULL;
 
-  KosDynParam *clone = (KosDynParam *) kos_dynnode_alloc();
+  KosDynParam *clone = (KosDynParam *) kos_dynnode_clone_base(
+      (KosDynNode *) node);
   if (! clone) {
     Py_DECREF(copy);
     return NULL;
   }
 
-  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_PARAM, NULL,
-                   KosDynNode_CAPS(node));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynParam_BINDINGS(clone) = copy;
   KosDynParam_SAVED(clone) = NULL;
 

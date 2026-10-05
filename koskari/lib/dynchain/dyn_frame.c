@@ -74,13 +74,9 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   if (! frame)
     return NULL;
 
-  KosDynFrame *clone = kos_dynnode_alloc();
+  KosDynFrame *clone = kos_dynnode_clone_base(frame);
   if (! clone)
     return NULL;
-
-  kos_dynnode_init(clone, KOS_DYN_FRAME, NULL, KosDynNode_CAPS(frame));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(frame) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(frame);
 
   if (kos_dyn_clone_copy_segment((KosDynNode *) clone,
                                  (KosDynNode *) frame) < 0) {

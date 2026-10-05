@@ -60,10 +60,13 @@ static KosDynCollect *kos_dyncollect_clone(KosDynCollect *col_node) {
     return NULL;
 
   PyObject *ns = KosNamespace_Reveal(KosDynNode_NS((KosDynNode *) col_node));
-  KosDynCollect *clone = kos_dyncollect_new(NULL, ns);
-  if (! clone)
+  KosDynCollect *clone = (KosDynCollect *) kos_dynnode_clone_base(
+      (KosDynNode *) col_node);
+  if (! clone) {
+    Py_DECREF(ns);
     return NULL;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id((KosDynNode *) col_node);
+  }
+  KosDynNode_NS((KosDynNode *) clone) = ns;  /* owned */
   return clone;
 }
 

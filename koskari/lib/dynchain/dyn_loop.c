@@ -47,12 +47,9 @@ KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t cont
    Clone PCs, enabled, and RESULT ref for capture.
 */
 KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
-  KosDynLoop *clone = kos_dynnode_alloc();
+  KosDynLoop *clone = kos_dynnode_clone_base(node);
   if (! clone)
     return NULL;
-  kos_dynnode_init(clone, KOS_DYN_LOOP, NULL, KosDynNode_CAPS(node));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
   KosDynLoop_BREAK_PC(clone) = KosDynLoop_BREAK_PC(node);
   KosDynLoop_CONTINUE_PC(clone) = KosDynLoop_CONTINUE_PC(node);
   KosDynLoop_ENABLED(clone) = KosDynLoop_ENABLED(node);
