@@ -230,4 +230,27 @@ class TestLayoutSwitchValidation(IsolatedAsyncioTestCase):
         self.assertRaises(LayoutError, parse_layout, src)
 
 
+    async def test_switch_parenthesized_clause_line_is_refused(self):
+        """
+        A switch body entry is a case or else block; a clause written as
+        a parenthesized form on a line is not one
+        """
+
+        src = """
+        switch x:
+          (case [1] "one")
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+        src = """
+        switch x:
+          case [1]:
+            "one"
+          (else "meh")
+        """
+
+        self.assertRaises(LayoutError, parse_layout, src)
+
+
 # The end.

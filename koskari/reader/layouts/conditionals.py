@@ -128,7 +128,8 @@ def layout_switch(reader, source, peers):
 
     A raw layout: the case and else children arrive as block sources,
     so each header is structurally separate from its body and a case
-    header can be held to exactly one condition list. Emits
+    header can be held to exactly one condition list. A body entry
+    that is not a block is refused. Emits
 
     ::
       (switch VALUE
@@ -140,7 +141,7 @@ def layout_switch(reader, source, peers):
     :param peers: must be empty
     """
 
-    from . import apply_layouts, apply_lines
+    from . import apply_lines
 
     if peers:
         raise LayoutError(
@@ -161,24 +162,17 @@ def layout_switch(reader, source, peers):
     saw_else = False
 
     for child in unpack(body):
-        # a case block, or a parenthesized clause form on a line
-        as_block = is_block(child)
-        if not as_block:
-            child = reader.fold_line(child)
-        matched = match_block_source(
-            block_source_from_cons(child) or child)
+        matched = None
+        if is_block(child):
+            matched = match_block_source(block_source_from_cons(child))
         if matched is None:
             raise LayoutError(
-                'switch body may only contain case or else clauses',
+                'switch body may only contain case or else blocks',
                 get_position(child) or get_position(source))
 
         chead, cargs = matched['header'].datum
         chead = strip_mark(chead)
-        cbody = matched['body'].datum
-        if as_block:
-            cbody = reader.fold_lines(apply_lines(cbody, reader))
-        else:
-            cbody = apply_layouts(cbody, reader)
+        cbody = reader.fold_lines(apply_lines(matched['body'].datum, reader))
 
         if chead is _symbol_case:
             if saw_else:
@@ -218,7 +212,7 @@ def layout_switch(reader, source, peers):
 
         else:
             raise LayoutError(
-                f'switch body may only contain case or else clauses, '
+                f'switch body may only contain case or else blocks, '
                 f'got {chead!r}',
                 get_position(child))
 
