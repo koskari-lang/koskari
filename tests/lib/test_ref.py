@@ -37,9 +37,11 @@ pytestmark = pytest.mark.phase_lib
 
 class TestRefConstruction(unittest.IsolatedAsyncioTestCase):
     """
-    A ref is complete the moment it exists: construction takes its
-    arguments in __new__, so __new__ alone either yields a usable ref or
-    refuses, and a later __init__ call changes nothing
+    A ref is complete the moment it exists. Ref comes out of __new__
+    empty and reads its arguments in __init__, which fills or refills
+    it, so a subclass may give __init__ any shape. The other ref types
+    take their arguments in __new__, so __new__ alone either yields a
+    usable ref or refuses, and a later __init__ call changes nothing
     """
 
     async def test_new_alone_yields_a_usable_ref_or_refuses(self):
@@ -55,13 +57,42 @@ class TestRefConstruction(unittest.IsolatedAsyncioTestCase):
             DynamicRef.__new__(DynamicRef)
 
     async def test_init_after_construction_changes_nothing(self):
-        r = Ref("x", 1)
-        r.__init__("y", 2)
-        self.assertEqual(r.deref(), 1)
-        self.assertEqual(r.name, "x")
         a = AttributeRef("a", [], "append")
         a.__init__("b", {}, "keys")
         self.assertEqual(a.attr, "append")
+
+    async def test_init_refills_a_ref(self):
+        r = Ref("x", 1)
+        r.__init__("y", 2)
+        self.assertEqual(r.deref(), 2)
+        self.assertEqual(r.name, "y")
+
+    async def test_failed_init_leaves_the_ref_as_it_was(self):
+        r = Ref("x", 1)
+        with self.assertRaises(TypeError):
+            r.__init__(123)
+        self.assertEqual(r.name, "x")
+        self.assertEqual(r.deref(), 1)
+        with self.assertRaises(TypeError):
+            Ref(name="x")
+
+    async def test_subclass_may_shape_its_own_init(self):
+        class Triple(Ref):
+            def __init__(self, a, b, c):
+                super().__init__(a, b + c)
+
+        t = Triple("x", 1, 2)
+        self.assertEqual(t.name, "x")
+        self.assertEqual(t.deref(), 3)
+
+        class Bare(Ref):
+            def __init__(self, tag):
+                self.tag = tag
+
+        b = Bare("t")
+        self.assertEqual(b.tag, "t")
+        self.assertEqual(b.name, "<Ref>")
+        self.assertTrue(b.empty)
 
 class TestSymbolicRef(unittest.IsolatedAsyncioTestCase):
     """Tests for the base Ref type"""
