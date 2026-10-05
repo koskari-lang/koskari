@@ -272,8 +272,8 @@ def layout_match(reader, source, peers):
 
     A raw layout: the case and else children arrive as block sources, so
     each case header (however many tokens) is structurally separate from
-    its body. The whole header tail becomes the clause's pattern
-    delimiter, giving
+    its body. A body entry that is not a block is refused. The whole
+    header tail becomes the clause's pattern delimiter, giving
 
     ::
 
@@ -291,7 +291,7 @@ def layout_match(reader, source, peers):
     :param peers: must be empty
     """
 
-    from . import apply_layouts, apply_lines
+    from . import apply_lines
 
     if peers:
         raise LayoutError(
@@ -312,12 +312,9 @@ def layout_match(reader, source, peers):
     saw_else = False
 
     for child in unpack(body):
-        # a case block, or a parenthesized clause form on a line
-        as_block = is_block(child)
-        if not as_block:
-            child = reader.fold_line(child)
-        matched = match_block_source(
-            block_source_from_cons(child) or child)
+        matched = None
+        if is_block(child):
+            matched = match_block_source(block_source_from_cons(child))
         if matched is None:
             raise LayoutError(
                 'match body may only contain case or else blocks',
@@ -325,11 +322,7 @@ def layout_match(reader, source, peers):
 
         chead, cargs = matched['header'].datum
         chead = strip_mark(chead)
-        cbody = matched['body'].datum
-        if as_block:
-            cbody = reader.fold_lines(apply_lines(cbody, reader))
-        else:
-            cbody = apply_layouts(cbody, reader)
+        cbody = reader.fold_lines(apply_lines(matched['body'].datum, reader))
 
         if chead is _symbol_case:
             if saw_else:
