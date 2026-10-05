@@ -98,7 +98,7 @@ def splat_call_form(called_by, body):
 
     for fm in unpack(body):
         if is_keyword(fm):
-            return cons(_SYM_CALL, called_by, body)
+            return call_form_reroute(called_by, body)
 
     return None
 
@@ -905,24 +905,7 @@ def discover_docstring(body):
     :return: str or None
     """
 
-    while not is_nil(body):
-        head, tail = body
-        if isinstance(head, str):
-            return head
-
-        if is_nil(head) or not is_pair(head):
-            return None
-
-        ihead, itail = head
-        if ihead in _BEGIN_HEADS:
-            if is_nil(itail):
-                body = tail
-            else:
-                body = itail
-        else:
-            return None
-
-    return None
+    return strip_leading_docstring(body)[0]
 
 
 def helper_begin(

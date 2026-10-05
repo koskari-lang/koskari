@@ -415,46 +415,32 @@ def control_tuple_fold(op, arg, count):
     return [(op, count)]
 
 
-def squish_rule(*pattern):
+def rule_registrar(registry):
     """
-    Register a processor method as a squish rule for the form given in
-    stream order: the lookback slot specs (an opcode, or a set of
-    opcodes) followed by the trigger opcode. Candidates for a trigger
-    are tried in registration order; the first whose form matches and
-    whose rule accepts is applied. A trigger-only pattern registers a
-    fallback rule that inspects the working rows itself.
-    """
-
-    *priors, trigger = pattern
-    priors = tuple(
-        spec if isinstance(spec, frozenset) else frozenset((spec,))
-        for spec in priors)
-
-    def register(fn):
-        SQUISH_RULES.setdefault(trigger, []).append((priors, fn))
-        return fn
-    return register
-
-
-def fuse_rule(*pattern):
-    """
-    Register a processor method as a fusion rule for the form given in
-    stream order: the lookback slot specs (an opcode, or a set of
-    opcodes) followed by the trigger opcode. Candidates for a trigger
-    are tried in registration order; the first whose form matches and
-    whose rule accepts is applied. A trigger-only pattern registers a
-    fallback rule that inspects the working rows itself.
+    The decorator that registers a processor method as a rule in
+    registry for the form given in stream order: the lookback slot
+    specs (an opcode, or a set of opcodes) followed by the trigger
+    opcode. Candidates for a trigger are tried in registration order;
+    the first whose form matches and whose rule accepts is applied. A
+    trigger-only pattern registers a fallback rule that inspects the
+    working rows itself.
     """
 
-    *priors, trigger = pattern
-    priors = tuple(
-        spec if isinstance(spec, frozenset) else frozenset((spec,))
-        for spec in priors)
+    def rule(*pattern):
+        *priors, trigger = pattern
+        priors = tuple(
+            spec if isinstance(spec, frozenset) else frozenset((spec,))
+            for spec in priors)
 
-    def register(fn):
-        FUSE_RULES.setdefault(trigger, []).append((priors, fn))
-        return fn
-    return register
+        def register(fn):
+            registry.setdefault(trigger, []).append((priors, fn))
+            return fn
+        return register
+    return rule
+
+
+squish_rule = rule_registrar(SQUISH_RULES)
+fuse_rule = rule_registrar(FUSE_RULES)
 
 
 def fuckup_namespace_spec(nspec):
