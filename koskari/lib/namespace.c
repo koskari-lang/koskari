@@ -2823,19 +2823,54 @@ static PyObject *mdl_ns_m_pop(PyObject *self, PyObject *args) {
 }
 
 
-/* Store every item of a mapping, or of an iterable of pairs, into the
-   module's bindings. */
+/* Store every item of src into the module's bindings by dict.update's
+   rule: a source with a keys method is a mapping, read through keys()
+   and __getitem__; anything else is an iterable of pairs. An error
+   from either read propagates. Items store as they are read, so a
+   failure partway leaves the earlier ones stored, as dict.update does. */
 static int mdl_ns_store_from(PyObject *self, PyObject *src) {
-  PyObject *items = PyMapping_Items(src);
-  if (! items) {
-    PyErr_Clear();
-    items = PySequence_List(src);
+
+  PyObject *keys = PyObject_GetAttrString(src, "keys");
+  PyObject *items;
+  Py_ssize_t n, i;
+
+  if (keys) {
+    Py_DECREF(keys);
+    items = PyMapping_Keys(src);
     if (! items)
       return -1;
+
+    n = PyList_GET_SIZE(items);
+    for (i = 0; i < n; i++) {
+      PyObject *key = PyList_GET_ITEM(items, i);
+      PyObject *val = PyObject_GetItem(src, key);
+      int r;
+
+      if (! val) {
+        Py_DECREF(items);
+        return -1;
+      }
+      r = ns_store_symbol(self, key, val);
+      Py_DECREF(val);
+      if (r < 0) {
+        Py_DECREF(items);
+        return -1;
+      }
+    }
+    Py_DECREF(items);
+    return 0;
   }
 
-  Py_ssize_t n = PyList_GET_SIZE(items);
-  for (Py_ssize_t i = 0; i < n; i++) {
+  if (! PyErr_ExceptionMatches(PyExc_AttributeError))
+    return -1;
+  PyErr_Clear();
+
+  items = PySequence_List(src);
+  if (! items)
+    return -1;
+
+  n = PyList_GET_SIZE(items);
+  for (i = 0; i < n; i++) {
     PyObject *pair = PySequence_Tuple(PyList_GET_ITEM(items, i));
     if (! pair || PyTuple_GET_SIZE(pair) != 2) {
       Py_XDECREF(pair);

@@ -618,6 +618,57 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(c, {'a': 1})
 
 
+    async def test_update_reads_a_mapping_through_keys(self):
+        """
+        update and |= take a source with keys() as a mapping, the way
+        dict.update does, reading each value through __getitem__
+        """
+
+        class Keyed:
+            def __init__(self, data):
+                self.data = data
+
+            def keys(self):
+                return list(self.data)
+
+            def __getitem__(self, key):
+                return self.data[key]
+
+        ns = ModuleNamespace("m", {})
+        ns.update(Keyed({'ab': 1, 'xyz': 2}))
+        self.assertEqual((ns['ab'], ns['xyz']), (1, 2))
+        ns |= Keyed({'q': 3})
+        self.assertEqual(ns['q'], 3)
+        ns.update([('r', 4)], s=5)
+        self.assertEqual((ns['r'], ns['s']), (4, 5))
+        self.assertEqual(sorted(ns.keys()), ['ab', 'q', 'r', 's', 'xyz'])
+
+
+    async def test_update_propagates_a_source_error(self):
+        """
+        An exception raised while reading the source propagates as
+        itself and is not replaced by a pair-shape ValueError
+        """
+
+        class Broken(dict):
+            def keys(self):
+                raise RuntimeError("no keys")
+
+        class Missing:
+            def keys(self):
+                return ['a']
+
+            def __getitem__(self, key):
+                raise KeyError(key)
+
+        ns = ModuleNamespace("m", {})
+        with self.assertRaises(RuntimeError):
+            ns.update(Broken(a=1))
+        with self.assertRaises(KeyError):
+            ns.update(Missing())
+        self.assertEqual(list(ns.keys()), [])
+
+
     async def test_name_and_parent(self):
         """ModuleNamespace has name and no parent"""
         ns = ModuleNamespace("ns", {})
