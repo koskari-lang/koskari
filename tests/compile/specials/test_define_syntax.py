@@ -341,6 +341,88 @@ class TestCompileMacroRules(DefineSyntaxCompileHelpers):
         self.assertEqual([2, 2, 4], list(result))
 
 
+    async def test_compile_macro_rules_pair_under_ellipsis_zero_times(self):
+        """
+        A pair sub-pattern matched zero times still binds each of its
+        variables, to an empty list, the way a repeated symbol does
+        """
+
+        src_str = """
+        (define pairs
+          (macro-rules pairs []
+            [(pairs (a b) ...)
+             `(#list ,@a ,@b)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([], list(result))
+
+
+    async def test_compile_special_rules_pair_under_ellipsis_zero_times(self):
+        """
+        A special arm gets a pair sub-pattern's variables as empty lists
+        when the pair matched zero times
+        """
+
+        src_str = """
+        (define pairs
+          (special-rules pairs []
+            [(c (pairs (a b) ...))
+             `(#list ,(len a) ,(len b))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs)
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([0, 0], list(result))
+
+
+    async def test_compile_macro_rules_pair_under_two_ellipses_empty_group(self):
+        """
+        Under two ellipses, a group with no pairs contributes an empty
+        inner list for each variable, so the outer list keeps one entry
+        per group
+        """
+
+        src_str = """
+        (define pairs
+          (macro-rules pairs []
+            [(pairs ((a b) ...) ...)
+             `(#list ,(len a) ,(len (item a 1)))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/pairs': vars(mod)['pairs'],
+            '#list': build_list,
+        }
+
+        src_str = """
+        (pairs ((1 2)) ())
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual([2, 0], list(result))
+
+
 class TestMatchIsAPlainPatternSymbol(DefineSyntaxCompileHelpers):
     """
     The word match carries no meaning inside a RULE pattern, so a rule

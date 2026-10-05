@@ -420,7 +420,8 @@ class MacroTransform(Transform):
         """
 
         expanded = self.handler(
-            compiler, **_captures_for_procedure(result.captures))
+            compiler, **_captures_for_procedure(
+                result.captures, _repeat_variables(self.pattern)))
         return _finalize_macro_output(
             compiler, expanded, gensym.next_mark())
 
@@ -520,21 +521,41 @@ def _is_repeat_slot(key):
     return str(key).startswith(_REPEAT_SLOT_PREFIX + "#")
 
 
-def _captures_for_procedure(captures):
+def _repeat_variables(pattern):
+    """
+    The variables each anonymous repeat slot of a lowered RULE pattern
+    binds; empty for a pattern of the MATCH dialect, which makes no
+    such slots
+    """
+
+    if isinstance(pattern, RulePattern):
+        return pattern.repeat_variables
+    return {}
+
+
+def _captures_for_procedure(captures, repeat_variables):
     """
     The keyword arguments a procedural arm's lambda takes from a match:
     repeat frames promoted onto the pattern's variables, as the template
     arm sees them, with the anonymous repeat slots dropped since they
     are not formals
+
+    :param repeat_variables: the variables each anonymous repeat slot
+        binds, from the lowered pattern, so a slot matched zero times
+        still yields each of its variables as an empty list
     """
 
     bindings = _promote_repeat_frame_bindings(
-        _captures_to_bindings(captures), named=False)
+        _captures_to_bindings(captures), named=False,
+        repeat_variables=repeat_variables)
     return {str(k): v for k, v in bindings.items()
             if not _is_repeat_slot(k)}
 
 
-def _promote_repeat_frame_bindings(bindings, named=True):
+def _promote_repeat_frame_bindings(
+        bindings,
+        named=True,
+        repeat_variables=None):
     """
     For each ``repeat_capture`` value (bare list of per-iteration dicts),
     copy slot columns onto template keys.
@@ -551,17 +572,28 @@ def _promote_repeat_frame_bindings(bindings, named=True):
     :param named: promote a REPEAT the pattern named as well as the
         anonymous slots the rule dialect makes; a procedural arm passes
         False, since a named REPEAT is a formal whose value is its frames
+    :param repeat_variables: the variables each anonymous slot binds,
+        from the lowered pattern; a slot matched zero times has no
+        frames to read them from, so it contributes an empty column for
+        each. None promotes from the frames alone
     """
 
     out = dict(bindings)
     for k, v in bindings.items():
+        if repeat_variables and _is_repeat_slot(k) \
+           and isinstance(v, list) and not v:
+            for name in repeat_variables.get(str(k), ()):
+                out.setdefault(symbol(name), [])
+            continue
+
         frames = _repeat_frames(v)
         if frames is None:
             continue
         if not named and not _is_repeat_slot(k):
             continue
 
-        frames = [_promote_repeat_frame_bindings(fr, named) for fr in frames]
+        frames = [_promote_repeat_frame_bindings(fr, named, repeat_variables)
+                  for fr in frames]
 
         # each frame maps slot names to one iteration's captures (often
         # Datum-wrapped); transpose into parallel lists for template
@@ -667,6 +699,26 @@ def special(form_symbol, *, patterns, unpack=None):
     return deco
 
 
+class RulePattern(MATCH):
+    """
+    The lowered form of a RULE-dialect pattern: a MATCH spine that also
+    records, for each anonymous repeat slot a pair sub-pattern under an
+    ellipsis captures into, the variables that sub-pattern binds. A
+    match carries those names in the slot's frames, so a slot matched
+    zero times has no frames to read them from
+    """
+
+    def __init__(self, *children, repeat_variables=None):
+        """
+        :param children: the spine's patterns
+        :param repeat_variables: anonymous slot name to the list of
+            variable names its sub-pattern binds
+        """
+
+        super().__init__(*children)
+        self.repeat_variables = dict(repeat_variables or {})
+
+
 def parse_syntax_rules_pattern(
         pattern_expr,
         literals,
@@ -705,7 +757,7 @@ def parse_syntax_rules_pattern(
         if bare in literals:
             return MATCH(LITERAL(bare))
         variables[str(pattern_expr)] = pattern_expr
-        return MATCH(REST(str(pattern_expr)))
+        return RulePattern(REST(str(pattern_expr)))
 
     if not is_pair(pattern_expr):
         return MATCH(LITERAL(pattern_expr))
@@ -730,7 +782,14 @@ def parse_syntax_rules_pattern(
 
     specs.extend(_syntax_pattern_specs(
         items, literals, source_ctx, owners, variables, scope, tail))
-    return MATCH(*specs)
+
+    # a pair sub-pattern's scope is its slot name, so the slot's
+    # variables are the names that scope owns
+    repeat_variables = {}
+    for name, owner in owners.items():
+        if isinstance(owner, str):
+            repeat_variables.setdefault(owner, []).append(name)
+    return RulePattern(*specs, repeat_variables=repeat_variables)
 
 
 @builtin("parse-match-pattern")
@@ -787,8 +846,9 @@ def _syntax_elem_pattern(
     The matcher spec for one pattern element
 
     :param owners: pattern-wide map from each bound variable name to
-        the scope that bound it: the top level or one pair sub-pattern
-        under an ellipsis, or _REPEAT_OWNER for an ellipsis variable
+        the scope that bound it: the top level's token, the slot name
+        of one pair sub-pattern under an ellipsis, or _REPEAT_OWNER for
+        an ellipsis variable
     :param variables: pattern-wide map from each bound variable name
         to its source symbol, in the order the variables are bound
     :param scope: the token of the scope being parsed
@@ -890,7 +950,7 @@ def _syntax_pattern_specs(
             else:
                 slot = str(gensym(_REPEAT_SLOT_PREFIX))
                 inner = _syntax_elem_pattern(
-                    pat, literals, source_ctx, owners, variables, object())
+                    pat, literals, source_ctx, owners, variables, slot)
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
@@ -924,15 +984,19 @@ def _wrap_macro_handler(raw):
     return handler
 
 
-def _wrap_special_handler(raw):
+def _wrap_special_handler(raw, repeat_variables):
     """
     Adapt a Koskari procedure to SpecialTransform ``handle_expand`` calling convention
+
+    :param repeat_variables: the variables each anonymous repeat slot of
+        the arm's pattern binds, see _captures_for_procedure
     """
 
     @wraps(raw)
     def handler(compiler, source_obj, match_result):
         return demand_call(
-            raw, compiler, **_captures_for_procedure(match_result.captures))
+            raw, compiler, **_captures_for_procedure(
+                match_result.captures, repeat_variables))
 
     return handler
 
@@ -1000,7 +1064,8 @@ def build_special(name, *pattern_and_lambdas):
     for i in range(0, len(pattern_and_lambdas), 2):
         pat = pattern_and_lambdas[i]
         fn = pattern_and_lambdas[i + 1]
-        transforms.append(SpecialTransform(pat, _wrap_special_handler(fn)))
+        transforms.append(SpecialTransform(
+            pat, _wrap_special_handler(fn, _repeat_variables(pat))))
 
     return Syntax(name, transforms)
 

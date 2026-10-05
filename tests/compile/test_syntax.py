@@ -34,7 +34,8 @@ from koskari.lib import (
     Module, ModuleNamespace, car, cdr, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
-    Syntax, SyntaxTransform, build_syntax, parse_syntax_rules_pattern)
+    RulePattern, Syntax, SyntaxTransform, build_syntax,
+    parse_syntax_rules_pattern)
 from koskari.types import build_proper, strip_marks, unpack
 
 
@@ -198,6 +199,27 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         syn2 = build_syntax(name, pat_m, tpl)
         expanded = expand(syn2, build_proper(symbol('wrap'), 99))
         assert_forms_equal(self, expanded, build_proper(symbol('list'), 99))
+
+
+    def test_rule_pattern_records_the_variables_of_each_repeat_slot(self):
+        """
+        Lowering a pair sub-pattern under an ellipsis records the
+        variables the pair binds against its anonymous repeat slot; a
+        pattern with no such sub-pattern records nothing
+        """
+
+        name = symbol('pp')
+        literals = frozenset({name})
+        pat_form = build_proper(
+            name, build_proper(symbol('a'), symbol('b')), Ellipsis)
+        pat_m = parse_syntax_rules_pattern(pat_form, literals, pat_form)
+        self.assertIsInstance(pat_m, RulePattern)
+        self.assertEqual(list(pat_m.repeat_variables.values()), [['a', 'b']])
+
+        flat = build_proper(name, symbol('x'), Ellipsis)
+        pat_m = parse_syntax_rules_pattern(flat, literals, flat)
+        self.assertIsInstance(pat_m, RulePattern)
+        self.assertEqual(pat_m.repeat_variables, {})
 
 
     def test_single_var_pattern_binds_whole_form(self):
