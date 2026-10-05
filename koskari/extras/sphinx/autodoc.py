@@ -75,7 +75,26 @@ class KosFunctionDocumenter(FunctionDocumenter):
             return ''
 
 
-class KosSyntaxDocumenter(DataDocumenter):
+class KosHeadingDocumenter(DataDocumenter):
+    """
+    A binding documented under a plain reST subsection, since the py
+    domain cannot represent a name with a slash in it. Subclasses say
+    what they document and how its name and content read
+    """
+
+    def format_signature(self, **kwargs):
+        return ''
+
+
+    def add_directive_header(self, sig):
+        sourcename = self.get_sourcename()
+        name = self.format_name()
+        self.add_line('', sourcename)
+        self.add_line(name, sourcename)
+        self.add_line('~' * len(name), sourcename)
+
+
+class KosSyntaxDocumenter(KosHeadingDocumenter):
     """
     Document koskari.syntax.Syntax with accepted pattern arms
     """
@@ -98,29 +117,13 @@ class KosSyntaxDocumenter(DataDocumenter):
             return kos_name
         return super().format_name()
 
-    def format_signature(self, **kwargs):
-        return ''
-
-
-    def add_directive_header(self, sig):
-        """
-        Use a plain reST subsection; py:kosyntax cannot represent names with /
-        """
-
-        sourcename = self.get_sourcename()
-        name = self.format_name()
-        self.add_line('', sourcename)
-        self.add_line(name, sourcename)
-        self.add_line('~' * len(name), sourcename)
-
-
     def add_content(self, more_content=None):
         super().add_content(more_content)
         for line in syntax_accepts_lines(self.object):
             self.add_line(line, self.get_sourcename())
 
 
-class KosLayoutDocumenter(DataDocumenter):
+class KosLayoutDocumenter(KosHeadingDocumenter):
     """
     Document reader LayoutHandler instances with peer heads
     """
@@ -144,22 +147,6 @@ class KosLayoutDocumenter(DataDocumenter):
             if text:
                 return text
         return super().format_name()
-
-    def format_signature(self, **kwargs):
-        return ''
-
-
-    def add_directive_header(self, sig):
-        """
-        Use a plain reST subsection; py:kolayout cannot represent names with /
-        """
-
-        sourcename = self.get_sourcename()
-        name = self.format_name()
-        self.add_line('', sourcename)
-        self.add_line(name, sourcename)
-        self.add_line('~' * len(name), sourcename)
-
 
     def add_content(self, more_content=None):
         super().add_content(more_content)
