@@ -84,7 +84,7 @@ KOS_RESUME_KIND(batched_resume_fill_kind, "batched-step",
 
 
 /**
-   FILL: take elements until the batch is full, then park it as the
+   FILL: take elements until the batch is full, then deliver it as the
    step's value. Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
@@ -112,7 +112,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
     PyObject *batch = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, batch, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, batch, &t->cached_frame);
   }
 }
 
@@ -141,7 +141,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
     if (! shorter)
       return EVAL_RAISE();
 
-    return KosNativeFrame_ReturnPark(es, shorter, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, shorter, &t->cached_frame);
   }
 
   PyTuple_SET_ITEM(t->pending, b->filled, element);

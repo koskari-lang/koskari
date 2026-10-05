@@ -1992,12 +1992,12 @@ const KosThreadFn kos_op_handlers[] = {
    Complete a native frame by handing value to the eval loop's return
    machinery, which owns every delivery terminus (parent frame,
    iteration node, drive root). Clears the program slot and, when cache
-   is given, arms the frame to park itself there when the return path
-   frees it (KOS_FRAME_PARK_TO_CACHE; native_state becomes the cache
+   is given, flags the frame to be cached there when the return path
+   frees it (KOS_FRAME_RETURN_TO_CACHE; native_state becomes the cache
    slot). The caller returns this result from its handler. value is
    consumed.
 */
-KosOpResult KosNativeFrame_ReturnPark(
+KosOpResult KosNativeFrame_ReturnToCache(
     KosEvalState *es,
     PyObject *value,
     KosDynFrame **cache) {
@@ -2005,10 +2005,10 @@ KosOpResult KosNativeFrame_ReturnPark(
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
   if (cache) {
-    KosDynFrame_PARK_CACHE(frame) = (void *) cache;
-    KosDynFrame_FLAGS(frame) |= KOS_FRAME_PARK_TO_CACHE;
+    KosDynFrame_CACHE_SLOT(frame) = (void *) cache;
+    KosDynFrame_FLAGS(frame) |= KOS_FRAME_RETURN_TO_CACHE;
   } else {
-    KosDynFrame_PARK_CACHE(frame) = NULL;
+    KosDynFrame_CACHE_SLOT(frame) = NULL;
   }
 
   return EVAL_RETURN(value);
@@ -2016,10 +2016,10 @@ KosOpResult KosNativeFrame_ReturnPark(
 
 
 /**
-   Push a code-less frame, reusing a parked frame from cache when one
+   Push a code-less frame, reusing the cached frame when one
    is available. Either way the frame gets an owned fill of the live
-   namespace (kos_dyn_push_frame_native's contract): the parked frame
-   was stripped of its fill at park, so the reinstall attaches a fresh
+   namespace (kos_dyn_push_frame_native's contract): the cached frame
+   was stripped of its fill when cached, so the reinstall attaches a fresh
    one before the push publishes the frame's namespace to the live
    register. KosResumeFrame_Install sets the resume kind on it.
 */
@@ -2595,13 +2595,13 @@ KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
   {
     PyObject *fn = KosDynFrame_FN(frame);
     if (likely(fn)
-        && ! (KosDynFrame_FLAGS(frame) & KOS_FRAME_PARK_TO_CACHE)) {
-      int parked;
+        && ! (KosDynFrame_FLAGS(frame) & KOS_FRAME_RETURN_TO_CACHE)) {
+      int cached;
 
       KosDynFrame_FN(frame) = NULL;
-      parked = KosFunction_TryParkFrame(fn, frame);
+      cached = KosFunction_CacheFrame(fn, frame);
       Py_DECREF(fn);
-      if (likely(parked))
+      if (likely(cached))
         return;
     }
   }

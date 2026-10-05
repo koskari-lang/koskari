@@ -152,7 +152,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, row, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
   }
 }
 

@@ -2970,7 +2970,7 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
      introduced by another node on the chain, which reports it. Only a
      KOS_DYN_CAP_OWNS_NS node introduces one: a code frame, a let, a
      collect. A native or code-less frame carries a fill of the live
-     namespace like any other non-introducer, and a parked function
+     namespace like any other non-introducer, and a cached function
      frame keeps the cap with the namespace it still holds. */
   Py_VISIT(KosDynNode_NS(node));
   if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_OWNS_NS)) {

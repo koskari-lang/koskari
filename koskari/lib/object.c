@@ -219,7 +219,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult procedure_resume(
 
   Py_DECREF(value);
   Py_INCREF(Py_None);
-  return KosNativeFrame_ReturnPark(es, Py_None, NULL);
+  return KosNativeFrame_ReturnToCache(es, Py_None, NULL);
 }
 
 

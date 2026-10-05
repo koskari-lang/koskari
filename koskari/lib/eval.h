@@ -206,7 +206,7 @@ typedef enum KosGetNextResult {
    settled chain, so it may do anything a resume handed a value may
    do. Thread on with
    RESULT_ENTRY or RESUME_HOP to carry the step further, complete the
-   frame with KosNativeFrame_ReturnPark, or return EVAL_RAISE to
+   frame with KosNativeFrame_ReturnToCache, or return EVAL_RAISE to
    decline. Declining re-raises with the resume already disarmed, so
    the unwind proceeds exactly as it would have with no resume armed
    at all; a consumer that only propagates needs no code beyond that
@@ -578,14 +578,14 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob);
    Complete a code-less frame by handing value to the eval loop's
    return machinery, which owns every delivery terminus (parent frame,
    iteration node, drive root). When cache is given, sets the frame to
-   park itself into that caller-owned one-frame cache when the return
-   path frees it (kos_dynframe_park_inert); a NULL or occupied cache
-   frees as usual. The exception path never parks -- a frame popped by
+   be stored into that caller-owned one-frame cache when the return
+   path frees it (kos_dynframe_cache_inert); a NULL or occupied cache
+   frees as usual. The exception path never caches -- a frame popped by
    the raise walk is freed, and the cache simply stays empty for the
    next install. The caller returns this result from its resume. value
    is consumed.
 */
-KosOpResult KosNativeFrame_ReturnPark(
+KosOpResult KosNativeFrame_ReturnToCache(
     KosEvalState *es,
     PyObject *value,
     KosDynFrame **cache);
@@ -593,7 +593,7 @@ KosOpResult KosNativeFrame_ReturnPark(
 
 /**
    Push a code-less frame onto the chain for CPS resume use. When cache
-   holds a parked frame it is reinstalled in place of a fresh
+   holds a cached frame it is reinstalled in place of a fresh
    allocation and *cache is emptied. The frame carries kind and state
    from the install on, so a teardown at any point after it hands the
    kind's clear that state; the caller's later KosEvalState_Call
@@ -921,7 +921,7 @@ static inline int kos_eval_check_frame_room(
 #define KosEvalState_CODE(es) ((es)->code)
 /** The live code's instruction array. Read through the code object on
     every fetch, never cached on the state or a frame: packing a code
-    object into an arena relocates its block, and a parked frame (a
+    object into an arena relocates its block, and a frame off the chain (a
     defer, a generator, a function's cached frame) may hold the code
     across that move. */
 #define KosEvalState_OPS(es) KosCode_CODE(KosEvalState_CODE(es))
@@ -1127,11 +1127,11 @@ done:
 /**
    Push a prepared frame from the per-function cache as DYN_TOP and
    FRAME_TOP.  Code, namespace, and cleared stack are already attached
-   and the node base was normalized at park time
-   (KosFunction_TryParkFrame); this is the install half of
+   and the node base was normalized when it was cached
+   (KosFunction_CacheFrame); this is the install half of
    kos_dyn_push_frame with the node id reset, and cannot fail.
    The caller has asked kos_eval_check_frame_room for one frame before
-   binding into the parked namespace.
+   binding into the cached namespace.
 */
 KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosEvalState *es,

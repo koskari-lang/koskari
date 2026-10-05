@@ -450,8 +450,22 @@ PyObject *KosNamespace_Reveal(PyObject *ns);
 
 
 /**
+   Has ns been revealed: is a reference to it already held somewhere a
+   frame does not own? The reveal's record is the GC tracked bit, read
+   from the object's GC head. A namespace outside the collector has no
+   head to read, and the one such namespace, the static empty one, is
+   held by every native and code-less frame at once, so it is never
+   private and answers revealed. The frame cache asks this of a
+   released frame's namespace before taking the frame. Never NULL.
+*/
+static inline int KosNamespace_IsRevealed(PyObject *ns) {
+  return ! PyObject_IS_GC(ns) || kos_gc_is_tracked(ns);
+}
+
+
+/**
    Attribute the references of an untracked namespace to the holder
-   being traversed. A namespace is born untracked, so a frame or parked
+   being traversed. A namespace is born untracked, so a frame or cached
    namespace that was never revealed is invisible to the collector: the
    holder that introduced it must report what it holds. One level only:
    the parent is either revealed, and the collector visits it on its

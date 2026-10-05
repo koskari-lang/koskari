@@ -133,7 +133,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
     {
       PyObject *item = cycle_replay(c);
 
-      return KosNativeFrame_ReturnPark(es, item, &t->cached_frame);
+      return KosNativeFrame_ReturnToCache(es, item, &t->cached_frame);
     }
   }
 
@@ -141,7 +141,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
   if (! element)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnPark(es, element, &t->cached_frame);
+  return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
 }
 
 

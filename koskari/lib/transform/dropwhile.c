@@ -124,7 +124,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
 
   /* Retired predicate: every remaining element passes untested. */
   if (d->passed)
-    return KosNativeFrame_ReturnPark(es, element, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
 
   /* pending steals the element's reference and holds it across the
      call; the argument vector borrows it for the call's duration. */
@@ -168,7 +168,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
 
     d->passed = 1;
     t->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, element, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
   }
 }
 

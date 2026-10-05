@@ -16,7 +16,7 @@
 
 /**
   Included by dynchain.c. The KOS_DYN_FRAME node: function activation
-  records, their push, pop, tail reset and parking.
+  records, their push, pop, tail reset and caching.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -55,7 +55,7 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_NS(frame) = ns;  /* ownership transferred (already stole ref) */
   KosDynFrame_FLAGS(frame) = 0;
   KosDynFrame_DEPTH(frame) = 1;  /* a root until an install says otherwise */
-  KosDynFrame_PARK_CACHE(frame) = NULL;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
   KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
@@ -94,12 +94,12 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_NS(clone) = KosNamespace_Reveal(KosDynFrame_NS(frame));
 
   KosDynFrame_FLAGS(clone) = KosDynFrame_FLAGS(frame)
-      & ~KOS_FRAME_PARK_TO_CACHE;
+      & ~KOS_FRAME_RETURN_TO_CACHE;
   /* A snapshot stands where its source stood until a splice renumbers
      it (a landed template) or that position is exactly where it goes
      (the restitched handler frame). */
   KosDynFrame_DEPTH(clone) = KosDynFrame_DEPTH(frame);
-  KosDynFrame_PARK_CACHE(clone) = NULL;
+  KosDynFrame_CACHE_SLOT(clone) = NULL;
   /* clones opt out of the per-function frame cache */
   KosDynFrame_FN(clone) = NULL;
   /* borrowed unwind cache is meaningless off the source's chain */
@@ -151,8 +151,8 @@ void kos_dynframe_clear_resume(KosDynFrame *frame) {
    kos_dynnode_free, chain teardown.
 
    When the frame carries a cache-participation fn reference, offer the
-   node to the function's frame cache first; parked or not, the fn
-   reference is released here, so a parked node sits fn-less and the
+   node to the function's frame cache first; cached or not, the fn
+   reference is released here, so a cached node sits fn-less and the
    fn -> frame -> fn cycle can never form.
 */
 void kos_dynframe_free(KosDynFrame *frame) {
@@ -161,15 +161,15 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
   kos_dynframe_clear_resume(frame);
 
-  /* A completing frame set by KosNativeFrame_ReturnPark: park_cache is
+  /* A completing frame set by KosNativeFrame_ReturnToCache: cache_slot is
      the holder's cache slot; offer the frame there before the ordinary
      teardown. */
-  if (KosDynFrame_FLAGS(frame) & KOS_FRAME_PARK_TO_CACHE) {
+  if (KosDynFrame_FLAGS(frame) & KOS_FRAME_RETURN_TO_CACHE) {
     KosDynFrame **cache =
-        (KosDynFrame **) KosDynFrame_PARK_CACHE(frame);
-    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_PARK_TO_CACHE;
-    KosDynFrame_PARK_CACHE(frame) = NULL;
-    if (cache && kos_dynframe_park_inert(frame, cache))
+        (KosDynFrame **) KosDynFrame_CACHE_SLOT(frame);
+    KosDynFrame_FLAGS(frame) &= ~KOS_FRAME_RETURN_TO_CACHE;
+    KosDynFrame_CACHE_SLOT(frame) = NULL;
+    if (cache && kos_dynframe_cache_inert(frame, cache))
       return;
   }
 
@@ -177,9 +177,9 @@ void kos_dynframe_free(KosDynFrame *frame) {
     PyObject *fn = KosDynFrame_FN(frame);
     if (fn) {
       KosDynFrame_FN(frame) = NULL;
-      int parked = KosFunction_TryParkFrame(fn, frame);
+      int cached = KosFunction_CacheFrame(fn, frame);
       Py_DECREF(fn);
-      if (parked)
+      if (cached)
         return;
     }
   }
@@ -319,7 +319,7 @@ KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
    here; a frame with code or a cache-participation fn is not a
    native-program frame and takes the ordinary free instead.
 */
-int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
+int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
   if (*cache
       || KosDynFrame_CODE(frame)
@@ -328,7 +328,7 @@ int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache) {
     return 0;
 
   Py_CLEAR(KosDynFrame_NS(frame));
-  KosDynFrame_PARK_CACHE(frame) = NULL;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
   kos_dynframe_clear_resume(frame);
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
@@ -415,7 +415,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
-  KosDynFrame_PARK_CACHE(frame) = NULL;
+  KosDynFrame_CACHE_SLOT(frame) = NULL;
   kos_dynframe_clear_resume(frame);
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));

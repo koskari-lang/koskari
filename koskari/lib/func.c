@@ -206,12 +206,12 @@ static KosOpResult kos_vinstall_expression(
 /**
    Install a KosFunction call. A simple call (exact arity against plain
    positional formals, no keywords, no self-bind) binds by slot index:
-   not in tail position it takes the function's parked frame when one
+   not in tail position it takes the function's cached frame when one
    is there, else pushes a fresh one; in tail position it refills the
    caller's frame. Any other call binds through the general formals
    machine. A generator function completes in hand with its new
    AsyncGenerator. Every installed frame is tagged with the function so
-   its release can park it.
+   its release can cache it.
 */
 KosOpResult KosFunction_Install(
     KosEvalState *es,
@@ -1083,7 +1083,7 @@ static PyObject *function_new(
 }
 
 
-/** Tear down the parked frames, if any; a parked node's fn is always
+/** Tear down the cached frames, if any; a cached node's fn is always
     NULL, so this cannot re-enter the function. */
 static void func_drop_cached_frame(KosFunction *fn) {
   KosDynFrame *frame = fn->cached_frame;
@@ -1109,9 +1109,9 @@ static int function_traverse(
     int r = kos_dynnode_traverse((KosDynNode *) cached, visit, arg);
     if (r != 0)
       return r;
-    /* the parked namespace is GC-untracked (that is a park condition);
+    /* the cached namespace is GC-untracked (a condition of caching);
        kos_dynnode_traverse reports its contents through the frame node,
-       so a cycle involving a parked frame stays collectable */
+       so a cycle involving a cached frame stays collectable */
   }
   Py_VISIT(KosFunction_NAME(self));
   Py_VISIT(KosFunction_CODE(self));
@@ -1710,16 +1710,17 @@ PyObject *KosFunction_NewWithAnnotations(
 
 /**
    Offer a released frame to the function's frame cache.
-   Parks only when the cache is under its cap and the frame is provably private:
-   exact Namespace with refcount 1, GC-untracked, no binds dict, and no
-   native handler.  On park the namespace's raw slots are cleared, the
-   segment is cleared, and the node base is normalized for
-   kos_dyn_push_ready_frame.  The frame's fn field must already be
-   NULL (kos_dynframe_free clears it before offering).
+   The frame is cached only when the cache is under its cap and the
+   frame is provably private: exact Namespace with refcount 1,
+   GC-untracked, no binds dict, and no native handler.  On caching
+   the namespace's raw slots are cleared, the segment is cleared, and
+   the node base is normalized for kos_dyn_push_ready_frame.  The
+   frame's fn field must already be NULL (kos_dynframe_free clears it
+   before offering).
 
-   :return: 1 when parked (ownership taken), 0 when refused
+   :return: 1 when cached (ownership taken), 0 when refused
 */
-int KosFunction_TryParkFrame(
+int KosFunction_CacheFrame(
     PyObject *self,
     KosDynFrame *frame) {
 
@@ -1733,26 +1734,28 @@ int KosFunction_TryParkFrame(
   /* The namespace must be private to the frame. Every reference that
      can outlive the return goes through KosNamespace_Reveal or
      KosNamespace_TrackChain (locals, collect, closure templates,
-     continuation clones, snapshots), so GC tracking is the record of
-     escape; a dynamic slot-less bind is the one other visibility. The
-     frame itself is an installed FN-tagged frame: its namespace is an
-     exact template copy and its stack and resume fields are settled by
-     kos_dynframe_free before the park is offered. */
+     continuation clones, snapshots), so the reveal is the record of
+     escape (KosNamespace_IsRevealed, which also answers revealed for
+     the static empty namespace, held by every native frame at once);
+     a dynamic slot-less bind is the one other visibility. The frame
+     itself is an installed FN-tagged frame: its namespace is an exact
+     template copy and its stack and resume fields are settled by
+     kos_dynframe_free before the frame is offered. */
   ns = KosDynFrame_NS(frame);
-  if (kos_gc_is_tracked(ns) || KosNamespace_BINDS(ns) != NULL)
+  if (KosNamespace_IsRevealed(ns) || KosNamespace_BINDS(ns) != NULL)
     return 0;
 
 #if KOS_EVAL_SAFETYNET
   if (! KosNamespace_CheckExact(ns))
-    Py_FatalError("KosFunction_TryParkFrame: frame namespace is not an"
+    Py_FatalError("KosFunction_CacheFrame: frame namespace is not an"
                   " exact KosNamespace");
   if (Py_REFCNT(ns) != 1)
-    Py_FatalError("KosFunction_TryParkFrame: untracked frame namespace"
+    Py_FatalError("KosFunction_CacheFrame: untracked frame namespace"
                   " has an escaping reference");
   if (KosDynFrame_RESUME_KIND(frame))
-    Py_FatalError("KosFunction_TryParkFrame: frame carries a resume");
+    Py_FatalError("KosFunction_CacheFrame: frame carries a resume");
   if (! KosDynFrame_STACK(frame))
-    Py_FatalError("KosFunction_TryParkFrame: frame has no stack");
+    Py_FatalError("KosFunction_CacheFrame: frame has no stack");
 #endif
 
   /* Reset to the state a fresh install would produce: the template's
@@ -1764,7 +1767,7 @@ int KosFunction_TryParkFrame(
 
   /* The reset and the clear release the frame's locals and operands,
      and a finalizer among them can call this function again, taking
-     frames out of the cache or parking new ones. The head read above
+     frames out of the cache or caching new ones. The head read above
      only sized the early refusal; the link below uses the cache as it
      is now. */
   head = fn->cached_frame;
@@ -1773,7 +1776,7 @@ int KosFunction_TryParkFrame(
 
   KosDynNode_PARENT(frame) = NULL;
   KosDynNode_FLAGS(frame) = KOS_DYNF_NONE;
-  /* The parked frame keeps the namespace it introduced, so it keeps
+  /* The cached frame keeps the namespace it introduced, so it keeps
      the cap that tells the collector to look inside it. */
   KosDynNode_CAPS(frame) = KOS_DYN_CAP_OWNS_NS;
   KosDynFrame_PC(frame) = 0;

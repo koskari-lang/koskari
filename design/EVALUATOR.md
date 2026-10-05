@@ -353,7 +353,7 @@ emits from `opcodes.incl`) at finalize in the block's writable window,
 and, like the cache index, is regenerated on every load and never
 serialized; soften emits only `(op, arg)`.
 
-**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to `&KosCode_CODE(code)[pc]`, sets `acting_pc`, and pre-advances `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode; every code object ends in a `THEEND` barrier, so no per-instruction bounds check is needed (the `es->code` null check is a `KOS_EVAL_SAFETYNET` guard). The prologue runs it once to enter a chain. Inside a chain a handler threads through **`KOS_THREAD_AT(es, next)`** (`eval.h`), which takes `acting_pc` and `pc` off the record's own `pc` field and tail-calls its `fn`. A straight-line tail steps to `insn + 1`, its own record plus one, with no walk through `es->code`; a jump goes through the record's resolved `target`; a tail after a frame change or a stored pc fetches from `es->pc` through `es->code` (**`KOS_THREAD_NEXT`**). The instruction base is never cached on a frame: `pack_into` relocates the block at a quiescent point, and a parked frame (a defer, a generator, a function's cached frame) holds the code object and an integer pc across that move ([interpreter/execution-invariants.md](interpreter/execution-invariants.md) §20).
+**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to `&KosCode_CODE(code)[pc]`, sets `acting_pc`, and pre-advances `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode; every code object ends in a `THEEND` barrier, so no per-instruction bounds check is needed (the `es->code` null check is a `KOS_EVAL_SAFETYNET` guard). The prologue runs it once to enter a chain. Inside a chain a handler threads through **`KOS_THREAD_AT(es, next)`** (`eval.h`), which takes `acting_pc` and `pc` off the record's own `pc` field and tail-calls its `fn`. A straight-line tail steps to `insn + 1`, its own record plus one, with no walk through `es->code`; a jump goes through the record's resolved `target`; a tail after a frame change or a stored pc fetches from `es->pc` through `es->code` (**`KOS_THREAD_NEXT`**). The instruction base is never cached on a frame: `pack_into` relocates the block at a quiescent point, and a frame off the chain (a defer, a generator, a function's cached frame) holds the code object and an integer pc across that move ([interpreter/execution-invariants.md](interpreter/execution-invariants.md) §20).
 
 Opcode handlers have the **`KosThreadFn`** prototype: `op_NAME(KosEvalState *es, void *insn, PyObject *value)`, declared through **`KOS_OP_HANDLER`**; `insn` is the handler's own instruction (read through `KosOp_ARG` / `KosOp_CACHE`) and `value` is unused by an opcode. **`es`** carries the cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`kos_dyn_resync_after_push`** / **`kos_dyn_commit_dyn_top`** / **`kos_dyn_resync_chain`** (and **`KosEvalState_ThawFromContext`** / **`FreezeToContext`** at the invocation boundary) as summarized in section 1.5 above.
 
@@ -1179,7 +1179,7 @@ flowchart TD
         arity{"tail flag?"}
         tail["teardown discardable extents;<br/>self-tail: rebind the live namespace in place<br/>else: reset the frame, new namespace"]
         simple{"simple arity,<br/>args in the window?"}
-        steal["steal args off the block into<br/>a parked frame's namespace, or a fresh one"]
+        steal["steal args off the block into<br/>a cached frame's namespace, or a fresh one"]
         general["PrepareCallNamespaceFromVector;<br/>kos_dyn_push_frame"]
         inst["frame live at pc 0;<br/>drop window residue; FN tag holds callable"]
         coop{"eval breaker up?"}
@@ -1230,7 +1230,7 @@ flowchart TD
 
 | Path | What lands where | Threads or bounces |
 | ---- | ---------------- | ------------------ |
-| **Koskari function, plain call** | A callee frame above the caller; the caller's return address is its own saved pc. Simple-arity calls steal the arguments off the block into the namespace, reusing the function's parked frame when it has one (§8.2, frame parking); other arities build the namespace from the vector. | Threads into the callee's first instruction. Bounces only when the eval breaker is up (`kos_call_installed`, §1.6). |
+| **Koskari function, plain call** | A callee frame above the caller; the caller's return address is its own saved pc. Simple-arity calls steal the arguments off the block into the namespace, reusing the function's cached frame when it has one (§8.2, the frame cache); other arities build the namespace from the vector. | Threads into the callee's first instruction. Bounces only when the eval breaker is up (`kos_call_installed`, §1.6). |
 | **Koskari function, tail call** | The caller's own frame, reused: extents above it are torn down first, and a self-tail at simple arity rebinds the live namespace in place with no frame reset. | Threads, the same cooperation point. |
 | **Koskari generator function** | No frame: the arguments are bound and the `AsyncGenerator` is the call's value on the caller's block. The generator gate stands ahead of every install arm. | Threads. |
 | **Python callable, sync result** | The result on the caller's block. A future is pushed as a plain value; only an explicit `AWAIT` drives it. | Threads. |
@@ -1265,7 +1265,7 @@ spliced in; on refusal it sets `RecursionError` and returns -1 with the chain
 and the caller's state untouched, so the error raises into the caller's frame
 like any other exception. Sites: `kos_dyn_push_frame` (checks itself), the
 three cached-frame arms of the call core before they steal arguments into
-the parked namespace (`kos_dyn_push_ready_frame` cannot fail by contract),
+the cached namespace (`kos_dyn_push_ready_frame` cannot fail by contract),
 the code-less frame reuse, `kos_dyn_attach_frame`, `kos_invoke_continuation`
 (the template's frame count above the invoker's frame, or above the root for
 an undelimited invoke, before anything moves), and both generator installs
@@ -1336,7 +1336,7 @@ resume: a delegate's yielded awaitable is data). The kind carries the
 rest. A continuation clone copies the state through the kind's `clone`
 (`kos_resume_clone_shared` on the yield-from kinds, since the node
 clones with the chain) or refuses by the kind's name (every provider
-step kind); a frame freed, parked or reset with its resume still set
+step kind); a frame freed, cached or reset with its resume still set
 runs the kind's `clear` (`kos_transform_step_clear` on the provider
 kinds, releasing the record's busy mark and pending value); the node's
 pop and unwind clear a node resume. A bytecode frame's
@@ -1449,7 +1449,7 @@ Two paths deliver it, under different rules. A resume on the live
 frame runs from the prologue against a settled chain and may do
 anything a resume handed a value may do -- thread on with
 `RESULT_ENTRY` or `RESUME_HOP`, complete the frame with
-`KosNativeFrame_ReturnPark`, or return `EVAL_RAISE` to decline. A
+`KosNativeFrame_ReturnToCache`, or return `EVAL_RAISE` to decline. A
 resume on a frame the walk reaches above the live frame is called from
 inside the unwind and may only answer `REPROLOGUE` or `EVAL_RAISE`.
 Every provider takes the first path; the second serves a flattened
@@ -1494,16 +1494,16 @@ The second path is `raise_walk_hand_to_resume`, for the frame at
 `dyn_top` above the live frame described above. The prologue's offer
 cannot reach it, since that tests the live frame.
 
-#### Frame slots and parking
+#### Frame slots and the frame cache
 
-The frame arm carries `resume_kind`, `resume_state`, and `park_cache`;
+The frame arm carries `resume_kind`, `resume_state`, and `cache_slot`;
 the kind's name is what a capture refusal message reports. A step frame completes
-through `KosNativeFrame_ReturnPark(es, value, &cache)`, which signals
-`RETURN` and arms the frame to park itself, stripped inert, into the
+through `KosNativeFrame_ReturnToCache(es, value, &cache)`, which signals
+`RETURN` and flags the frame to be stored, stripped inert, into the
 consumer's one-frame cache when the return path frees it;
-`KosResumeFrame_Install(es, kind, &cache)` reinstalls the parked frame
+`KosResumeFrame_Install(es, kind, &cache)` reinstalls the cached frame
 for the next step in place of a fresh allocation. `kos_dynframe_free`,
-`kos_dynframe_park_inert` and `kos_dynframe_reset_for_tail` all go
+`kos_dynframe_cache_inert` and `kos_dynframe_reset_for_tail` all go
 through `kos_dynframe_clear_resume`.
 
 Python-adapter drives (`iterate.c`) host a provider's work in a durable
@@ -1675,8 +1675,8 @@ node kind. Multi-shot vs single-shot is **not** a second `KosDynKind`; it is
 `dynchain/dyn_with.c`; generic `dynchain.c` dispatches on kind and caps only.
 See [with-dyn-with.md](interpreter/with-dyn-with.md) and `dynchain.h`.
 
-- **Frame** (u.frame): code (borrowed; NULL for a code-less resume frame), pc (next instruction), acting_pc (instruction currently being executed), ns (owned), frame_flags, depth (nesting depth on the chain, §7.7), resume_kind + resume_state (a set resume receives the frame's next delivery; see §8.2), park_cache (the consumer cache a completing step frame parks into).
-  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_DEPTH, KosDynFrame_RESUME_FN, KosDynFrame_RESUME_STATE, KosDynFrame_RESUME_NAME, KosDynFrame_PARK_CACHE.
+- **Frame** (u.frame): code (borrowed; NULL for a code-less resume frame), pc (next instruction), acting_pc (instruction currently being executed), ns (owned), frame_flags, depth (nesting depth on the chain, §7.7), resume_kind + resume_state (a set resume receives the frame's next delivery; see §8.2), cache_slot (the consumer cache a completing step frame is stored into).
+  Macros: KosDynFrame_CODE, KosDynFrame_PC, KosDynFrame_ACTING_PC, KosDynFrame_STACK, KosDynFrame_NS, KosDynFrame_FLAGS, KosDynFrame_DEPTH, KosDynFrame_RESUME_FN, KosDynFrame_RESUME_STATE, KosDynFrame_RESUME_NAME, KosDynFrame_CACHE_SLOT.
 - **Prompt** (u.prompt): prompt_id; pop_pc (the region's POP_PROMPT, resolved from the PROMPT extent at push).
   Macros: KosDynPrompt_ID, KosDynPrompt_POP_PC.
 - **Wind** (u.wind): before_thunk, after_thunk, ob (`KosObligation`: the body result parked at POP_WIND, or what a walk parked while the after thunk runs), entered, phase (`KosDynWindPhase`: IDLE, PRE_BEGIN, POST_BEGIN, PRE_AFTER, POST_AFTER).

@@ -540,6 +540,39 @@ static int test_namespace_get_empty_binding_default(void) {
 }
 
 
+static int test_namespace_is_revealed(void) {
+    /*
+      A fresh namespace is not revealed; the reveal tracks it and it
+      answers revealed from then on. The static empty namespace sits
+      outside the collector and always answers revealed.
+    */
+
+    PyObject *name = PyUnicode_FromString("test");
+    PyObject *ns = KosNamespace_NewFull(name, NULL, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+
+    TEST_ASSERT_EQ(KosNamespace_IsRevealed(ns), 0,
+                   "a fresh namespace is not revealed");
+
+    PyObject *revealed = KosNamespace_Reveal(ns);
+    TEST_ASSERT_SAME(revealed, ns, "reveal returns the namespace");
+    TEST_ASSERT_EQ(KosNamespace_IsRevealed(ns), 1,
+                   "a revealed namespace answers revealed");
+    Py_DECREF(revealed);
+
+    PyObject *empty = KosNamespace_Empty();
+    TEST_ASSERT_NOT_NULL(empty, "the empty namespace");
+    TEST_ASSERT_EQ(PyObject_IS_GC(empty), 0,
+                   "the empty namespace is outside the collector");
+    TEST_ASSERT_EQ(KosNamespace_IsRevealed(empty), 1,
+                   "the empty namespace always answers revealed");
+
+    Py_DECREF(ns);
+    Py_DECREF(name);
+    return 0;
+}
+
+
 static int test_namespace_fast_index(void) {
     /*
       Test fast index lookup.
@@ -1170,6 +1203,7 @@ int run_namespace_tests(void) {
     RUN_TEST(test_namespace_get_missing_default_no_bind);
     RUN_TEST(test_namespace_get_missing_none);
     RUN_TEST(test_namespace_get_empty_binding_default);
+    RUN_TEST(test_namespace_is_revealed);
     RUN_TEST(test_namespace_fast_index);
     RUN_TEST(test_namespace_fast_store_deref);
 

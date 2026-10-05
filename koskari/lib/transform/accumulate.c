@@ -50,7 +50,7 @@ static PyObject *accumulate_fold(KosAccumulate *a, PyObject *element) {
 static KosOpResult accumulate_emit(KosEvalState *es, KosAccumulate *a) {
 
   Py_INCREF(a->total);
-  return KosNativeFrame_ReturnPark(es, a->total, &a->base.cached_frame);
+  return KosNativeFrame_ReturnToCache(es, a->total, &a->base.cached_frame);
 }
 
 

@@ -66,7 +66,7 @@ KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step",
    FETCH: walk the sources from base.idx, filing each element into the
    row. A sync source completes inside the loop; a driven one requests
    the next element and leaves, to be re-entered here by
-   zip_resume_deliver. A completed row parks as the step's value.
+   zip_resume_deliver. A completed row is delivered as the step's value.
    Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
@@ -107,7 +107,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, row, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
   }
 }
 

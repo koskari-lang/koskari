@@ -123,7 +123,7 @@ typedef enum KosDynFlags {
    KosDynNode capability bits. Generic code checks these for behavior
    instead of node type. Set at creation and copied on clone; a frame's
    OWNS_NS follows its code object and moves with it (a placeholder
-   filled with code gains it, a parked function frame keeps it).
+   filled with code gains it, a cached function frame keeps it).
 */
 #define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
 #define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
@@ -351,7 +351,7 @@ typedef enum KosHandleResult {
    function, shared by every frame that arms that function. The state
    stays per frame in the resume_state slot; the kind holds nothing that
    varies between frames. fn is the resume itself, a KosThreadFn. clear
-   runs at a teardown with no delivery coming (a frame freed or parked
+   runs at a teardown with no delivery coming (a frame freed or cached
    with the resume still armed); NULL means the state is borrowed and
    its owner cleans up. clone runs at a continuation capture and at a
    multi-shot landing; NULL means the capture refuses by name. Clean
@@ -404,10 +404,10 @@ struct KosDynNode {
          limit test at install is one load and one compare. */
       uint16_t depth;
       /* A caller-owned one-frame cache (KosDynFrame **) this frame
-         parks itself into when the return path frees it; meaningful
-         only while KOS_FRAME_PARK_TO_CACHE is set, which
-         KosNativeFrame_ReturnPark alone does. */
-      void *park_cache;
+         is stored into when the return path frees it; meaningful
+         only while KOS_FRAME_RETURN_TO_CACHE is set, which
+         KosNativeFrame_ReturnToCache alone does. */
+      void *cache_slot;
       /* CPS consumer resume (the contract is in eval.h): the kind names
          the entry to invoke on the next value staged to this frame and
          the lifecycle of the state it receives; NULL means nothing is
@@ -418,15 +418,15 @@ struct KosDynNode {
       /* Owning KosFunction (strong) when this frame participates in the
          per-function frame cache; NULL opts out (clones, placeholder,
          code-less, and generator frames never set it).  Released --
-         Py_CLEAR mandatory -- at free (after the park attempt) and at
+         Py_CLEAR mandatory -- at free (after the cache offer) and at
          tail reuse. */
       PyObject *fn;
       /* Unwind cache: the frame displaced at install (borrowed; an
          ancestor on the chain, so it outlives this frame while
          installed). Set at install only; cleared at clone and span
          detach; NULL means fall back to the chain walk. While the
-         frame is parked in its function's cache this links the next
-         parked frame instead (see KosFunction_TryParkFrame), and the
+         frame is held in its function's cache this links the next
+         cached frame instead (see KosFunction_CacheFrame), and the
          install that takes the frame back overwrites it. */
       struct KosDynNode *back_frame;
     } frame;
@@ -1019,14 +1019,14 @@ void kos_dyn_renumber_frames_counted(
 /**
    Offer a detached native-program frame to a holder's one-frame cache:
    strip it to an inert allocation -- program, state, stack contents,
-   and links all cleared, so the parked frame holds no references of
+   and links all cleared, so the cached frame holds no references of
    any kind -- and store it in *cache when the slot is empty. A holder
-   that parks frames this way cannot form a reference cycle through
-   its cache, and frees a parked frame with kos_dynframe_free.
+   that caches frames this way cannot form a reference cycle through
+   its cache, and frees a cached frame with kos_dynframe_free.
 
-   :return: 1 when parked; 0 when the caller must free the frame
+   :return: 1 when cached; 0 when the caller must free the frame
 */
-int kos_dynframe_park_inert(KosDynFrame *frame, KosDynFrame **cache);
+int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache);
 
 
 void kos_dynframe_reset_for_tail(KosDynFrame *frame);
@@ -1035,7 +1035,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame);
 /**
    Clear a resume that will get no delivery: the kind's clear, when it
    has one, releases what the state holds, then the kind and state are
-   nulled. The one rule behind free, park, tail reset and a transfer
+   nulled. The one rule behind free, cache, tail reset and a transfer
    restore writing over the live frame's resume
 */
 void kos_dynframe_clear_resume(KosDynFrame *frame);
@@ -2106,7 +2106,7 @@ uint32_t kos_dynnode_mint_id(void);
    snapshots); a node that is never captured, matched or snapshotted
    never pays for one. Zero is the unminted state: kos_dynnode_init
    leaves it so, a clone copies its source's id through this accessor,
-   and a reused parked frame is reset to it.
+   and a reused cached frame is reset to it.
 */
 static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
   uint32_t id = KosDynNode_NODE_ID(node);
@@ -2157,15 +2157,15 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
    per-context recursion limit whatever sys.setrecursionlimit says. */
 #define KOS_FRAME_DEPTH_MAX       UINT16_MAX
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
-#define KOS_FRAME_PARK_TO_CACHE   (1u << 2)  /* a completing code-less
-                                                frame: park_cache is the
+#define KOS_FRAME_RETURN_TO_CACHE   (1u << 2)  /* a completing code-less
+                                                frame: cache_slot is the
                                                 holder's cache slot
                                                 (KosDynFrame **) and free
                                                 offers the frame there
-                                                (kos_dynframe_park_inert).
+                                                (kos_dynframe_cache_inert).
                                                 Set only by
-                                                KosNativeFrame_ReturnPark */
-#define KosDynFrame_PARK_CACHE(f) (((KosDynNode *)(f))->u.frame.park_cache)
+                                                KosNativeFrame_ReturnToCache */
+#define KosDynFrame_CACHE_SLOT(f) (((KosDynNode *)(f))->u.frame.cache_slot)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
 

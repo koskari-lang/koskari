@@ -192,7 +192,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
       continue;
     }
 
-    return KosNativeFrame_ReturnPark(es, element, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
   }
 }
 
@@ -219,7 +219,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
     RESUME_HOP(&chain_resume_fetch_kind, es, c, NULL);
   }
 
-  return KosNativeFrame_ReturnPark(es, element, &t->cached_frame);
+  return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
 }
 
 

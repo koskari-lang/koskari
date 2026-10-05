@@ -19,7 +19,7 @@
 
    C-level tests for the per-frame CPS resume plumbing: the
    resume_kind/resume_state fields on KosDynFrame, the prologue's
-   delivery path, the raise walk reaching a resume, and clone/park/
+   delivery path, the raise walk reaching a resume, and clone/cache/
    tail-reset clearing. These tests set the frame fields directly,
    below the KosEvalState_Call / NextResume entries.
 
@@ -822,10 +822,10 @@ static int test_clone_refuses_step_resume_frame(void) {
 }
 
 
-/* === park_inert / reset_for_tail clear the resume triple === */
+/* === cache_inert / reset_for_tail clear the resume triple === */
 
 
-static int test_park_inert_clears_resume_triple(void) {
+static int test_cache_inert_clears_resume_triple(void) {
   KosDynFrame *cache = NULL;
 
   KosDynFrame *frame = kos_dynframe_new(NULL, NULL, NULL);
@@ -833,8 +833,8 @@ static int test_park_inert_clears_resume_triple(void) {
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) frame;
 
-  int parked = kos_dynframe_park_inert(frame, &cache);
-  TEST_ASSERT_EQ(parked, 1, "frame parks into the empty cache");
+  int cached = kos_dynframe_cache_inert(frame, &cache);
+  TEST_ASSERT_EQ(cached, 1, "frame is cached into the empty cache");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "resume_fn stripped");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_STATE(frame), "resume_state stripped");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_NAME(frame), "resume_name stripped");
@@ -975,7 +975,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_transfer_delivers_to_a_landing_frame_resume);
   RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
-  RUN_TEST(test_park_inert_clears_resume_triple);
+  RUN_TEST(test_cache_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_returns_value_in_hand);
   RUN_TEST(test_next_resume_null_pushes_and_continues);

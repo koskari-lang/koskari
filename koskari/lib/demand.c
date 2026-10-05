@@ -182,7 +182,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
   if (! value)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnPark(es, value, NULL);
+  return KosNativeFrame_ReturnToCache(es, value, NULL);
 }
 
 

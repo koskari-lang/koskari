@@ -61,7 +61,7 @@ typedef struct KosTransform {
                             -- owned, and cleared at every step
                             completion by ki_finish. State that must
                             outlive a step belongs to the provider */
-  KosDynFrame *cached_frame; /* inert frame parked between steps */
+  KosDynFrame *cached_frame; /* inert frame cached between steps */
   KosContext *ctx;       /* durable drive context (ki_pyctx), created
                             lazily; adapter-recycled, freed with the
                             transform */
@@ -253,7 +253,7 @@ KosIterStepResult kos_transform_step_abort(
 
 
 /**
-   Install the step's resume-carrying frame (from the parked cache when
+   Install the step's resume-carrying frame (from the cache when
    one is there), push value onto it when one is given, arm resume as
    the frame's resume with the transform as its state, and mark the
    step in flight. value is consumed. label names the frame for the
