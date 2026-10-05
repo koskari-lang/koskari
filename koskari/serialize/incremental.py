@@ -101,16 +101,19 @@ def module_identity(ki_path):
 
 def _module_for_build(mod_name, package):
     """
-    The module a .kio build compiles and runs in, with its parent package
-    imported first so the inherited package pragma and relative imports
-    resolve as they would in a source load
+    The module a .kio build compiles and runs in, with the package above
+    it imported first so the inherited package pragma and relative
+    imports resolve as they would in a source load. package is the
+    module's own __package__: for a package's __init__ that is the
+    module itself, and the one to import is its parent
     """
 
-    if package is not None and package != mod_name:
+    parent = mod_name.rpartition('.')[0]
+    if parent:
         try:
-            importlib.import_module(package)
+            importlib.import_module(parent)
         except ImportError as exc:
-            warn(f"parent package {package!r} of {mod_name!r} is not"
+            warn(f"parent package {parent!r} of {mod_name!r} is not"
                  f" importable ({exc}); compiling without its package"
                  " pragma")
     return new_module(mod_name, package=package, system=False)

@@ -102,7 +102,9 @@ class TestKioImporterParity(unittest.TestCase):
         pkg = os.path.join(self._tmpdir, name)
         os.mkdir(pkg)
         for fname, source in files.items():
-            with open(os.path.join(pkg, fname), 'w', encoding='utf-8') as fh:
+            path = os.path.join(pkg, fname)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as fh:
                 fh.write(source)
         return pkg
 
@@ -122,6 +124,24 @@ class TestKioImporterParity(unittest.TestCase):
         compile_ki_file_to_kio(os.path.join(pkg, 'sub.ki'),
                                os.path.join(pkg, 'sub.kio'))
         mod = importlib.import_module('kiopkg_pragma.sub')
+        self.assertEqual(mod.x, 1)
+
+
+    def test_kio_build_of_a_nested_package_init_inherits_the_package_pragma(self):
+        """
+        A nested package's own __init__ compiled to .kio is compiled
+        under the parent package's pragma, as a source load of it is
+        """
+
+        pkg = self._package('kiopkg_nested', {
+            '__init__.ki': "(package-pragma [compiler/enable-asserts False])\n",
+            'inner/__init__.ki':
+                '(assert False "kept by the default pragma")\n'
+                '(define x 1)\n',
+        })
+        compile_ki_file_to_kio(os.path.join(pkg, 'inner', '__init__.ki'),
+                               os.path.join(pkg, 'inner', '__init__.kio'))
+        mod = importlib.import_module('kiopkg_nested.inner')
         self.assertEqual(mod.x, 1)
 
 
