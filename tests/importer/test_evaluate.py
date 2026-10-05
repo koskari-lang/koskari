@@ -179,6 +179,23 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         self.assertIs(await expr(), rebuilt)
 
 
+    async def test_rebuilds_for_a_plain_mapping(self):
+        """
+        get-compiler takes a plain mapping as the namespace, as
+        find_module_pragma does, and names the compiler <module>
+        """
+
+        import koskari.builtins as builtins
+        ns = dict(vars(builtins))
+        compiler = demand_call(vars(builtins)['get-compiler'], ns)
+        self.assertIsInstance(compiler, Compiler)
+        self.assertEqual(compiler.name, "<module>")
+        self.assertIs(ns['__compiler__'], compiler)
+        self.assertIsInstance(ns['__pragma__'], ModulePragma)
+        self.assertIs(demand_call(vars(builtins)['get-compiler'], ns),
+                      compiler)
+
+
     async def test_walks_up_from_function_namespace(self):
         """
         (get-compiler) inside a function binds on the module, not locally

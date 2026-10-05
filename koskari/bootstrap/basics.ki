@@ -38,8 +38,9 @@ let []:
       return compiler
 
     ;; the module namespace carries the module's name; the bound
-    ;; __name__ exists only after a loader stamped it
-    set! compiler (Compiler.from_pragma ns.name ns
+    ;; __name__ exists only after a loader stamped it, and a plain
+    ;; mapping has no name at all
+    set! compiler (Compiler.from_pragma (getattr ns "name" "<module>") ns
                     filename: (ns.get "__file__")
                     pragma: (find_module_pragma ns))
     set! ns["__compiler__"] compiler
