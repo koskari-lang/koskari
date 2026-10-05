@@ -191,9 +191,10 @@ PyObject *KosNamespace_NewFull(
    The empty namespace: no parent, no symbols, no bindings, so a store
    through it raises NameError, and Namespace.bind refuses it. The
    fill of every native frame, which introduces no scope of its own but
-   must never leave the live namespace register NULL. One immortal
-   instance, created on first use; a borrowed reference, which holders
-   take and release like any other. NULL with PyErr set on failure.
+   must never leave the live namespace register NULL. One static
+   instance, immortal and outside the collector like the nil
+   singletons; a borrowed reference, which holders take and release
+   like any other. Never NULL.
 */
 PyObject *KosNamespace_Empty(void);
 
@@ -219,7 +220,7 @@ PyObject *KosNamespace_Copy(PyObject *template_ns);
 
    Borrowed reference, or NULL with error set
  */
-PyObject *KosNamespace_Ref(PyObject *ns, PyObject *key);
+PyObject *KosNamespace_ClaimRef(PyObject *ns, PyObject *key);
 
 
 /**
@@ -229,7 +230,7 @@ PyObject *KosNamespace_Ref(PyObject *ns, PyObject *key);
    Borrowed reference, or NULL. Does not set error if no match is found,
    but may set an error if some other failure occured in the lookup.
  */
-PyObject *KosNamespace_REF(PyObject *ns, PyObject *key);
+PyObject *KosNamespace_BorrowRef(PyObject *ns, PyObject *key);
 
 
 /**
@@ -242,10 +243,10 @@ PyObject *KosNamespace_REF(PyObject *ns, PyObject *key);
    The Py_None value is used as a sentinel to indicate that the
    namespace has the binding, but it is in fast raw mode. The
    binding's value will be lazily wrapped in a KosSymbolicRef instance
-   if accessed via KosNamespace_REF, KosNamespace_Ref, or
+   if accessed via KosNamespace_BorrowRef, KosNamespace_ClaimRef, or
    KosNamespace_FastRef
  */
-PyObject *KosNamespace_LOOSE_REF(PyObject *ns, PyObject *key);
+PyObject *KosNamespace_BorrowLooseRef(PyObject *ns, PyObject *key);
 
 
 /**
@@ -449,8 +450,22 @@ PyObject *KosNamespace_Reveal(PyObject *ns);
 
 
 /**
+   Has ns been revealed: is a reference to it already held somewhere a
+   frame does not own? The reveal's record is the GC tracked bit, read
+   from the object's GC head. A namespace outside the collector has no
+   head to read, and the one such namespace, the static empty one, is
+   held by every native and code-less frame at once, so it is never
+   private and answers revealed. The frame cache asks this of a
+   released frame's namespace before taking the frame. Never NULL.
+*/
+static inline int KosNamespace_IsRevealed(PyObject *ns) {
+  return ! PyObject_IS_GC(ns) || kos_gc_is_tracked(ns);
+}
+
+
+/**
    Attribute the references of an untracked namespace to the holder
-   being traversed. A namespace is born untracked, so a frame or parked
+   being traversed. A namespace is born untracked, so a frame or cached
    namespace that was never revealed is invisible to the collector: the
    holder that introduced it must report what it holds. One level only:
    the parent is either revealed, and the collector visits it on its

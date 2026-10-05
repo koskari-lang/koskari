@@ -154,14 +154,10 @@ int kos_dyn_next_deliver_exhausted(
 
 KosDynNext *kos_dyn_next_clone(KosDynNext *node) {
 
-  KosDynNext *clone = (KosDynNext *) kos_dynnode_alloc();
+  KosDynNext *clone = (KosDynNext *) kos_dynnode_clone_base(
+      (KosDynNode *) node);
   if (! clone)
     return NULL;
-  kos_dynnode_init(
-      (KosDynNode *) clone, KOS_DYN_NEXT, NULL, KosDynNode_CAPS((KosDynNode *) node));
-  KosDynNode_FLAGS((KosDynNode *) clone) =
-      KosDynNode_FLAGS((KosDynNode *) node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID((KosDynNode *) clone) = kos_dynnode_id((KosDynNode *) node);
   Py_XINCREF(KosDynNext_REQ(node)->iter);
   *KosDynNext_REQ(clone) = *KosDynNext_REQ(node);
   Py_XINCREF(KosDynNext_DEFAULT_VAL((KosDynNode *) node));

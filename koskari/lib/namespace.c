@@ -47,8 +47,20 @@ static PyObject *mdl_mirrored_names = NULL;   // tuple of str
 
 // forward declarations
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
-static PyObject *ns_empty = NULL;
 static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name);
+
+
+/* The empty namespace is a static object with no GC header in front
+   of it, the way the nil singletons are: never allocated, never freed,
+   and never visited by the collector (ns_is_gc answers no for it). Its
+   name, binds and names tuple are made at unit init and released at
+   unit clear. */
+static KosNamespace ns_empty_object = {
+  { .head = { PyVarObject_HEAD_INIT(&KosNamespaceType, 0) 0, 0, NULL, NULL } },
+  { NULL, NULL, NULL, NULL, { 0, 0 } },
+};
+
+#define NS_EMPTY ((PyObject *) &ns_empty_object)
 static int ns_fast_index(PyObject *self, PyObject *key);
 static PyObject *ns_newfull_from_nspec(
     PyTypeObject *type, PyObject *parent, PyObject *nspec);
@@ -153,7 +165,9 @@ static void ns_copy_raw_bits(
 
 
 void KosNamespace_TrackChain(PyObject *ns) {
-  while (likely(KosNamespace_Check(ns)) && ! PyObject_GC_IsTracked(ns)) {
+  /* the empty namespace is static and has no GC header to track */
+  while (likely(KosNamespace_Check(ns)) && PyObject_IS_GC(ns)
+         && ! PyObject_GC_IsTracked(ns)) {
     PyObject_GC_Track(ns);
     ns = (PyObject *) KosNamespace_PARENT(ns);
   }
@@ -636,12 +650,12 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
 }
 
 
-/* The creating counterpart of KosNamespace_REF. A function, collector,
+/* The creating counterpart of KosNamespace_BorrowRef. A function, collector,
    or module namespace yields the Ref bound to key; a module namespace
    creates the binding on a miss and keeps it thereafter. Used by the
    paths that request a Ref to hold on to (closure resolution, the
    explicit ref forms, attribute stores); value reads and membership
-   tests go through KosNamespace_REF, which never creates. */
+   tests go through KosNamespace_BorrowRef, which never creates. */
 static PyObject *ns_claim_ref(PyObject *namespace, PyObject *key) {
   if (KosNamespace_CheckExact(namespace)) {
     return ns_borrow_ref(namespace, key);
@@ -983,7 +997,7 @@ static PyObject *ns_deref_loose(PyObject *self, PyObject *key,
    key. Never consults builtins. New reference, or NULL with NameError
    when key is unbound or the binding is empty. */
 static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
-  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
+  PyObject *ref = KosNamespace_BorrowLooseRef(self, key);
   if (! ref) {
     if (! PyErr_Occurred())
       PyErr_Format(PyExc_NameError, "No such reference: %S", key);
@@ -998,7 +1012,7 @@ static PyObject *ns_deref_symbol(PyObject *self, PyObject *key) {
    (tier 1). Never creates a binding. New reference, or NULL with
    NameError. */
 static PyObject *ns_resolve_symbol(PyObject *self, PyObject *key) {
-  PyObject *ref = KosNamespace_LOOSE_REF(self, key);
+  PyObject *ref = KosNamespace_BorrowLooseRef(self, key);
   if (ref)
     return ns_deref_loose(self, key, ref);
   if (PyErr_Occurred())
@@ -1176,7 +1190,7 @@ static PyObject *ns_m_ref(PyObject *self, PyObject *key) {
 /* Tier 2: is key bound in this namespace. An emptied Ref and a raw
    fast slot both count. 1, 0, or -1 with an error set. */
 static int ns_is_bound(PyObject *self, PyObject *key) {
-  PyObject *const ref = KosNamespace_LOOSE_REF(self, key);
+  PyObject *const ref = KosNamespace_BorrowLooseRef(self, key);
   if (ref)
     return 1;
   return PyErr_Occurred()? -1: 0;
@@ -1186,7 +1200,7 @@ static int ns_is_bound(PyObject *self, PyObject *key) {
 /* Tier 3: does this namespace's binding for key hold a value. 1, 0,
    or -1 with an error set. */
 static int ns_has_value(PyObject *self, PyObject *key) {
-  PyObject *const ref = KosNamespace_LOOSE_REF(self, key);
+  PyObject *const ref = KosNamespace_BorrowLooseRef(self, key);
   if (! ref)
     return PyErr_Occurred()? -1: 0;
   if (ref == Py_None) {
@@ -1465,7 +1479,7 @@ static PyObject *ns_m_resolve(PyObject *self, PyObject *args) {
   PyObject *val = NULL;
   PyObject *ns = self;
   while (ns) {
-    PyObject *const ref = KosNamespace_LOOSE_REF(ns, name);
+    PyObject *const ref = KosNamespace_BorrowLooseRef(ns, name);
     if (ref) {
       val = ns_deref_loose(ns, name, ref);
       goto done;
@@ -1523,7 +1537,7 @@ static PyObject *ns_m_bind(PyObject *self, PyObject *args) {
   if (! PyArg_ParseTuple(args, "OO:Namespace.bind", &key, &ref))
     return NULL;
 
-  if (self == ns_empty) {
+  if (self == NS_EMPTY) {
     PyErr_SetString(PyExc_TypeError,
                     "the empty namespace accepts no bindings");
     return NULL;
@@ -1553,7 +1567,7 @@ static PyObject *ns_m_bound(PyObject *self, PyObject *key) {
 
 
 static PyObject *ns_m_raw(PyObject *self, PyObject *key) {
-  PyObject *const ref = KosNamespace_LOOSE_REF(self, key);
+  PyObject *const ref = KosNamespace_BorrowLooseRef(self, key);
   if (! ref) {
     PyErr_Format(PyExc_NameError, "No such reference: %S", key);
     return NULL;
@@ -1632,7 +1646,7 @@ static Py_ssize_t nsrefs_length(PyObject *self) {
 /* The Ref bound to key. A raw fast slot is wrapped in a Ref on the
    way out, as ref() would. KeyError when key is unbound. */
 static PyObject *nsrefs_getitem(PyObject *self, PyObject *key) {
-  PyObject *ref = KosNamespace_REF(KosNamespaceRefs_NS(self), key);
+  PyObject *ref = KosNamespace_BorrowRef(KosNamespaceRefs_NS(self), key);
   if (ref) {
     Py_INCREF(ref);
     return ref;
@@ -1679,7 +1693,7 @@ static PyObject *nsrefs_collect(PyObject *self, int pairs) {
   Py_ssize_t count = PyList_GET_SIZE(keys);
   for (Py_ssize_t i = 0; i < count; i++) {
     PyObject *key = PyList_GET_ITEM(keys, i);
-    PyObject *ref = KosNamespace_REF(ns, key);
+    PyObject *ref = KosNamespace_BorrowRef(ns, key);
     if (! ref) {
       if (PyErr_Occurred())
         goto fail;
@@ -2123,6 +2137,16 @@ static int ns_clear(PyObject *self) {
 }
 
 
+/* Every namespace is a GC object but the static empty one, which has
+   no GC header: the collector's visit callbacks would read the bytes
+   before it as one. tp_is_gc answering no is CPython's own way for a
+   GC type whose static instance carries no header, as the nil types
+   do it. */
+static int ns_is_gc(PyObject *self) {
+  return self != NS_EMPTY;
+}
+
+
 PyTypeObject KosNamespaceType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
@@ -2139,6 +2163,7 @@ PyTypeObject KosNamespaceType = {
   .tp_dealloc = ns_dealloc,
   .tp_traverse = ns_traverse,
   .tp_clear = ns_clear,
+  .tp_is_gc = ns_is_gc,
   .tp_as_mapping = &ns_as_mapping,
   .tp_as_sequence = &ns_seq,
   .tp_iter = ns_mapping_iter,
@@ -2168,21 +2193,11 @@ PyObject *KosNamespace_NewFull(
 
 
 PyObject *KosNamespace_Empty(void) {
-
-  if (! ns_empty) {
-    PyObject *ns = KosNamespace_NewFull(NULL, NULL, NULL, NULL, NULL);
-
-    if (! ns)
-      return NULL;
-    PyObject_GC_UnTrack(ns);
-    kos_immortalize(ns);
-    ns_empty = ns;
-  }
-  return ns_empty;
+  return NS_EMPTY;
 }
 
 
-PyObject *KosNamespace_LOOSE_REF(PyObject *namespace, PyObject *key) {
+PyObject *KosNamespace_BorrowLooseRef(PyObject *namespace, PyObject *key) {
   if (KosNamespace_CheckExact(namespace) ||
       KosCollectorNamespace_CheckExact(namespace)) {
     return ns_borrow_loose_ref(namespace, key);
@@ -2196,7 +2211,7 @@ PyObject *KosNamespace_LOOSE_REF(PyObject *namespace, PyObject *key) {
 }
 
 
-PyObject *KosNamespace_REF(PyObject *namespace, PyObject *key) {
+PyObject *KosNamespace_BorrowRef(PyObject *namespace, PyObject *key) {
   if (KosNamespace_CheckExact(namespace) ||
       KosCollectorNamespace_CheckExact(namespace)) {
     return ns_borrow_ref(namespace, key);
@@ -2210,7 +2225,7 @@ PyObject *KosNamespace_REF(PyObject *namespace, PyObject *key) {
 }
 
 
-PyObject *KosNamespace_Ref(PyObject *namespace, PyObject *key) {
+PyObject *KosNamespace_ClaimRef(PyObject *namespace, PyObject *key) {
   PyObject *result = ns_claim_ref(namespace, key);
 
   if (! result && ! PyErr_Occurred())
@@ -3245,7 +3260,7 @@ static PyObject *mdl_getattro(PyObject *self, PyObject *name) {
   /* tier 3 of the namespace only: a module's attributes are the
      values it holds, never its builtins */
   PyObject *ns = KosModule_NAMESPACE(self);
-  PyObject *ref = KosNamespace_REF(ns, name);
+  PyObject *ref = KosNamespace_BorrowRef(ns, name);
   if (ref) {
     if (KosRef_IsEmpty(ref)) {
       PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
@@ -3487,6 +3502,14 @@ int koskari_namespace_init(PyObject *mod) {
   STR_CONST(str_class_name, "__class__");
   if (! str_class_name)
     return -1;
+
+  /* the empty namespace's owned fields; the object itself is static */
+  Py_INCREF(_namespace_str);
+  KosNamespace_NAME(NS_EMPTY) = _namespace_str;
+  KosNamespace_BINDS(NS_EMPTY) = PyDict_New();
+  KosNamespace_FAST_NAMES(NS_EMPTY) = PyTuple_New(0);
+  if (! KosNamespace_BINDS(NS_EMPTY) || ! KosNamespace_FAST_NAMES(NS_EMPTY))
+    return -1;
   STR_CONST(_module_str, "<module>");
   mdl_mirrored_names = Py_BuildValue(
       "(sssss)", "__name__", "__package__", "__spec__", "__file__",
@@ -3531,7 +3554,8 @@ int koskari_namespace_clear(PyObject *mod) {
   }
   ns_freecount = 0;
 
-  Py_CLEAR(ns_empty);
+  ns_release_header(NS_EMPTY);
+  Py_CLEAR(KosNamespace_BINDS(NS_EMPTY));
   Py_CLEAR(_namespace_str);
   Py_CLEAR(str_class_name);
   Py_CLEAR(_module_str);

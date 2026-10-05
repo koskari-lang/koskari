@@ -27,16 +27,16 @@ import unittest
 import pytest
 
 from koskari.compile.helpers import (
-    FORMALS, NO_DEFAULT, gather_formals, gather_parameters,
-    match_pattern_raw)
+    FORMALS, NO_DEFAULT, gather_formals, gather_parameters)
 from koskari.exceptions import ParametersError, SpecialError
 from koskari.lib import Datum, cons, keyword, nil, symbol
+from koskari.matcher import match_pattern_raw
 
 
 pytestmark = pytest.mark.phase_compile
 
 
-class TestGatherParametersNg(unittest.TestCase):
+class TestGatherParameters(unittest.TestCase):
 
 
     def test_positional_only(self):

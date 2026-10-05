@@ -562,7 +562,7 @@ kos_annotation_ns_lookup(PyObject *ns, PyObject *name) {
       }
 
     } else {
-      PyObject *bound = KosNamespace_LOOSE_REF(ns, name);
+      PyObject *bound = KosNamespace_BorrowLooseRef(ns, name);
       if (! bound && PyErr_Occurred())
         return NULL;
       if (bound) {

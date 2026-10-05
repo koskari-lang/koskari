@@ -26,7 +26,7 @@ import pytest
 from koskari.lib import cons, keyword, nil, pair, symbol
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE,
-    FIELD, FORM, FORMALS, GROUP, KNOWN_HEADS, LIST, LITERAL, LITERAL_KW,
+    FIELD, FORM, FORMALS, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, MATCHER_REGISTRY, META_MATCHER, META_PATTERN, NOT,
     ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST, SYMBOL, TEST_ANY, TYPE,
     USING, VALUE, DatumFrame, Matcher, MatchResult, lookup_matcher,
@@ -766,15 +766,6 @@ class TestRegistry(unittest.TestCase):
         """
 
         self.assertIsNone(lookup_matcher("ZZZ_NOT_A_HEAD"))
-
-
-    def test_known_heads_constant_matches_registry(self):
-        """
-        KNOWN_HEADS snapshot is a subset of MATCHER_REGISTRY (any
-        user-registered heads added later are not in the snapshot)
-        """
-
-        self.assertTrue(KNOWN_HEADS.issubset(set(MATCHER_REGISTRY)))
 
 
     def test_register_matcher_user_factory(self):

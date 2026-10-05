@@ -21,8 +21,8 @@
    the frame with the held element or fetches again. A rejected
    element loops by a tail call into FETCH, never by C
    recursion, so an arbitrarily long run of rejects stays flat. The
-   frame is parked on the filter between steps
-   (KosNativeFrame_ReturnPark), stripped inert so the cache holds no
+   frame is cached on the filter between steps
+   (KosNativeFrame_ReturnToCache), stripped inert so the cache holds no
    references. Exhaustion and errors leave the frame as exceptions;
    the consumer's iteration node converts StopIteration per its own
    rules.
@@ -153,7 +153,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
       return EVAL_RAISE();
     }
     if (filter_keeps((KosFilter *) state, ok))
-      return KosNativeFrame_ReturnPark(es, element, &f->cached_frame);
+      return KosNativeFrame_ReturnToCache(es, element, &f->cached_frame);
 
     Py_DECREF(element);
     filter_refetch(es, f);
@@ -198,7 +198,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     PyObject *element = f->pending;
 
     f->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, element, &f->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, element, &f->cached_frame);
   }
 
   Py_CLEAR(f->pending);

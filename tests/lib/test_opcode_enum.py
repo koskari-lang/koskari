@@ -90,4 +90,69 @@ class TestOpCodeExtra(unittest.IsolatedAsyncioTestCase):
             OpCode.CALL_ATTR.extra)
 
 
+class TestOpCodeExtentFacts(unittest.IsolatedAsyncioTestCase):
+    """
+    Every member carries the extent facts the C side holds: the paired
+    pop of a push, the paired push of a pop, and whether a tail call
+    may pass through the extent a push opens
+    """
+
+
+    async def test_every_member_carries_the_attributes(self):
+        for op in OpCode:
+            self.assertIn(type(op.pop), (type(None), OpCode), op.name)
+            self.assertIn(type(op.push), (type(None), OpCode), op.name)
+            self.assertIsInstance(op.discardable, bool, op.name)
+
+
+    async def test_push_and_pop_pair_each_other(self):
+        pushes = [op for op in OpCode if op.pop is not None]
+        pops = [op for op in OpCode if op.push is not None]
+        self.assertTrue(pushes)
+        for push in pushes:
+            self.assertIs(push, push.pop.push, push.name)
+            self.assertIsNone(push.push, push.name)
+        for pop in pops:
+            self.assertIs(pop, pop.push.pop, pop.name)
+            self.assertIsNone(pop.pop, pop.name)
+
+
+    async def test_pairing_spot_check(self):
+        self.assertIs(OpCode.POP_TRY, OpCode.PUSH_TRY.pop)
+        self.assertIs(OpCode.PUSH_TRY, OpCode.POP_TRY.push)
+        self.assertIsNone(OpCode.CONST.pop)
+        self.assertIsNone(OpCode.CONST.push)
+
+
+    async def test_discardable_is_the_tail_call_set(self):
+        """
+        a tail call passes through NS, LOOP and FOREACH, whose uninstall
+        is a pure release, and through no other extent
+        """
+
+        discardable = frozenset(op for op in OpCode if op.discardable)
+        self.assertEqual(
+            frozenset((OpCode.PUSH_NS, OpCode.PUSH_LOOP,
+                       OpCode.PUSH_FOREACH)),
+            discardable)
+        self.assertFalse(OpCode.PUSH_TRY.discardable)
+        self.assertFalse(OpCode.POP_NS.discardable)
+
+
+class TestOpCodeYields(unittest.IsolatedAsyncioTestCase):
+    """
+    Every member says whether it makes a code object a generator
+    """
+
+
+    async def test_yield_rows(self):
+        yields = frozenset(op for op in OpCode if op.yields)
+        self.assertEqual(
+            frozenset((OpCode.YIELD, OpCode.YIELD_FROM, OpCode.YIELD_CONST,
+                       OpCode.YIELD_VAR, OpCode.YIELD_FAST)),
+            yields)
+        for op in OpCode:
+            self.assertIsInstance(op.yields, bool, op.name)
+
+
 # The end.

@@ -216,6 +216,40 @@ KosOpResult kos_dyn_unwind_to_node(
 
 
 /**
+   A FINALLY that consumed a control transfer takes it over: the operand
+   stack is cleared and the transfer's value pushed for the handler,
+   the pc moves to the handler, the node is disabled, and the pending
+   kind is recorded so POP_FINALLY re-issues the transfer once the body
+   is done. val is consumed. walk names the caller for the trace.
+*/
+static KosOpResult finally_take_control(
+    KosEvalState *es,
+    KosDynFinally *fin,
+    PyObject *val,
+    KosPendingReturnKind kind,
+    const char *walk) {
+
+  if (KosEvalState_StackClear(es) < 0) {
+    Py_DECREF(val);
+    return EVAL_RAISE();
+  }
+  if (KosEvalState_StackPushRef(es, val) < 0) {
+    Py_DECREF(val);
+    return EVAL_RAISE();
+  }
+  Py_DECREF(val);
+  if (KosEvalState_FRAME(es))
+    KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
+  KosDynFinally_ENABLED(fin) = 0;
+  KosDynFinally_HANDLING_CONTROL(fin) = kind;
+  if (KOS_XFER_TRACE)
+    SAYF("[xfer] %s: delivered to FINALLY, pc=%u", walk,
+         (unsigned) KosDynFinally_HANDLER_PC(fin));
+  return EVAL_REPROLOGUE();
+}
+
+
+/**
    RETURN unwind walk to frame. See dynchain.h for the contract. Caller:
    eval.c eval_event_return.
 */
@@ -252,27 +286,10 @@ KosOpResult kos_dyn_unwind_return(
     {
       KosHandleResult hr = kos_dyn_handle(es, top, KOS_XFER_EVENT_RETURN);
       if (hr == KOS_HANDLE_CONSUMED) {
-        if (KosDynNode_IS_FINALLY(top)) {
-          /* Deliver to finally block: clear stack, push value, set PC */
-          KosDynFinally *fin = (KosDynFinally *) top;
-          if (KosEvalState_StackClear(es) < 0) {
-            Py_DECREF(val);
-            return EVAL_RAISE();
-          }
-          if (KosEvalState_StackPushRef(es, val) < 0) {
-            Py_DECREF(val);
-            return EVAL_RAISE();
-          }
-          Py_DECREF(val);
-          if (KosEvalState_FRAME(es))
-            KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
-          KosDynFinally_ENABLED(fin) = 0;
-          KosDynFinally_HANDLING_CONTROL(fin) = KOS_PENDING_RETURN_FRAME;
-          if (KOS_XFER_TRACE)
-            SAYF("[xfer] unwind_return: delivered to FINALLY, pc=%u",
-                 (unsigned) KosDynFinally_HANDLER_PC(fin));
-          return EVAL_REPROLOGUE();
-        }
+        if (KosDynNode_IS_FINALLY(top))
+          return finally_take_control(es, (KosDynFinally *) top, val,
+                                      KOS_PENDING_RETURN_FRAME,
+                                      "unwind_return");
         /* Other CONSUMED (e.g. GEN) not expected for RETURN walk */
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during return walk: unexpected node");
@@ -379,28 +396,12 @@ KosOpResult kos_dyn_unwind_to_loop(
     {
       KosHandleResult hr = kos_dyn_handle(es, top, event);
       if (hr == KOS_HANDLE_CONSUMED) {
-        if (KosDynNode_IS_FINALLY(top)) {
-          KosDynFinally *fin = (KosDynFinally *) top;
-          if (KosEvalState_StackClear(es) < 0) {
-            Py_DECREF(result);
-            return EVAL_RAISE();
-          }
-          if (KosEvalState_StackPushRef(es, result) < 0) {
-            Py_DECREF(result);
-            return EVAL_RAISE();
-          }
-          Py_DECREF(result);
-          if (KosEvalState_FRAME(es))
-            KosEvalState_SET_PC(es, KosDynFinally_HANDLER_PC(fin));
-          KosDynFinally_ENABLED(fin) = 0;
-          KosDynFinally_HANDLING_CONTROL(fin) =
+        if (KosDynNode_IS_FINALLY(top))
+          return finally_take_control(
+              es, (KosDynFinally *) top, result,
               (event == KOS_XFER_EVENT_BREAK)
-                  ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
-          if (KOS_XFER_TRACE)
-            SAYF("[xfer] unwind_to_loop: delivered to FINALLY, pc=%u",
-                 (unsigned) KosDynFinally_HANDLER_PC(fin));
-          return EVAL_REPROLOGUE();
-        }
+                  ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE,
+              "unwind_to_loop");
         PyErr_SetString(PyExc_RuntimeError,
                         "handle(CONSUMED) during loop walk: unexpected node");
         Py_DECREF(result);

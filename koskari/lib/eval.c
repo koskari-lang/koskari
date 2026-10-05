@@ -128,11 +128,11 @@ static KosOpResult eval_event_yield(
 
 static KosOpResult eval_event_await(KosEvalState *es, PyObject *val);
 
-static KosOpResult eval_event_return(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_return_unwind(KosEvalState *es, PyObject *val);
 
 static KosOpResult eval_event_return_at_frame(KosEvalState *es, PyObject *val);
 
-static KosOpResult eval_event_return_ng(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_return(KosEvalState *es, PyObject *val);
 
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
         KosEvalState *es);
@@ -1312,7 +1312,7 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
     return NULL;
   }
 
-  return KosNamespace_Ref(ns, name);
+  return KosNamespace_ClaimRef(ns, name);
 }
 
 
@@ -1582,12 +1582,12 @@ KOS_OP_INLINE int kos_return_is_region(
     KosDynNode **out_child,
     KosDynNode **out_parent,
     KosDynFrame **out_ft);
-KOS_OP_INLINE KosOpResult eval_ng_plain_return(
+KOS_OP_INLINE KosOpResult eval_plain_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
     PyObject *val);
-KOS_OP_INLINE KosOpResult eval_ng_region_return(
+KOS_OP_INLINE KosOpResult eval_region_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -1757,7 +1757,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
 
   if (likely(kos_return_is_plain(es, &child, &parent))) {
     KOS_TRACE_POST_OP_WRAP(plain_return,
-        r = eval_ng_plain_return(es, child, parent, val));
+        r = eval_plain_return(es, child, parent, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_CONTINUE(es);
     if (r.kind == KOS_RES_REPROLOGUE)
@@ -1767,7 +1767,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
 
   if (kos_return_is_region(es, &child, &parent, &ft)) {
     KOS_TRACE_POST_OP_WRAP(plain_return,
-        r = eval_ng_region_return(es, child, parent, ft, val));
+        r = eval_region_return(es, child, parent, ft, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
       RESULT_CONTINUE(es);
     if (r.kind == KOS_RES_REPROLOGUE)
@@ -1791,7 +1791,7 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
      root. Its own plain case is the transition above. The arms above
      are the RETURN row's own work; from here on is the signal's. */
   KOS_TRACE_TRAMPOLINE_STEP();
-  KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, val));
+  KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(es, val));
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(es);
   if (r.kind == KOS_RES_REPROLOGUE)
@@ -1992,12 +1992,12 @@ const KosThreadFn kos_op_handlers[] = {
    Complete a native frame by handing value to the eval loop's return
    machinery, which owns every delivery terminus (parent frame,
    iteration node, drive root). Clears the program slot and, when cache
-   is given, arms the frame to park itself there when the return path
-   frees it (KOS_FRAME_PARK_TO_CACHE; native_state becomes the cache
+   is given, flags the frame to be cached there when the return path
+   frees it (KOS_FRAME_RETURN_TO_CACHE; native_state becomes the cache
    slot). The caller returns this result from its handler. value is
    consumed.
 */
-KosOpResult KosNativeFrame_ReturnPark(
+KosOpResult KosNativeFrame_ReturnToCache(
     KosEvalState *es,
     PyObject *value,
     KosDynFrame **cache) {
@@ -2005,10 +2005,10 @@ KosOpResult KosNativeFrame_ReturnPark(
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
   if (cache) {
-    KosDynFrame_PARK_CACHE(frame) = (void *) cache;
-    KosDynFrame_FLAGS(frame) |= KOS_FRAME_PARK_TO_CACHE;
+    KosDynFrame_CACHE_SLOT(frame) = (void *) cache;
+    KosDynFrame_FLAGS(frame) |= KOS_FRAME_RETURN_TO_CACHE;
   } else {
-    KosDynFrame_PARK_CACHE(frame) = NULL;
+    KosDynFrame_CACHE_SLOT(frame) = NULL;
   }
 
   return EVAL_RETURN(value);
@@ -2016,10 +2016,10 @@ KosOpResult KosNativeFrame_ReturnPark(
 
 
 /**
-   Push a code-less frame, reusing a parked frame from cache when one
+   Push a code-less frame, reusing the cached frame when one
    is available. Either way the frame gets an owned fill of the live
-   namespace (kos_dyn_push_frame_native's contract): the parked frame
-   was stripped of its fill at park, so the reinstall attaches a fresh
+   namespace (kos_dyn_push_frame_native's contract): the cached frame
+   was stripped of its fill when cached, so the reinstall attaches a fresh
    one before the push publishes the frame's namespace to the live
    register. KosResumeFrame_Install sets the resume kind on it.
 */
@@ -2493,11 +2493,11 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
 
 
 /**
-   Unwind handler.  Called from eval_event_return_ng when try/with/wind nodes
+   Unwind handler.  Called from eval_event_return when try/with/wind nodes
    sit above the frame (DYN_TOP != FRAME).  Runs the transition walk to clear
    them, then delegates to eval_event_return_at_frame.  val consumed.
 */
-static inline KosOpResult eval_event_return(
+static inline KosOpResult eval_event_return_unwind(
     KosEvalState *es,
     PyObject *val) {
 
@@ -2529,7 +2529,7 @@ static inline KosOpResult eval_event_return(
    DYN_TOP == FRAME is already established.  The single definition, shared
    by eval_event_return_at_frame and kos_return_is_plain.
 
-   eval_ng_plain_return sets es->code from the parent, pushes the value
+   eval_plain_return sets es->code from the parent, pushes the value
    and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
    conjuncts below guard that, for separate reasons: without code there
    is nothing to dispatch, and with a resume pending the prologue is
@@ -2552,7 +2552,7 @@ static inline int kos_return_parent_is_plain(KosDynNode *parent) {
    and out_parent and returns 1 when it holds.
 
    Used by the dispatch-loop fast arm to route a KOS_RES_RETURN straight
-   into eval_ng_plain_return, skipping apply_kos_op_result and the guard
+   into eval_plain_return, skipping apply_kos_op_result and the guard
    chain it would otherwise walk to reach the same place.  Stricter than
    the chain it short-circuits only in requiring a non-NULL frame, so a
    miss can never do more than fall through to the general path.
@@ -2595,13 +2595,13 @@ KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
   {
     PyObject *fn = KosDynFrame_FN(frame);
     if (likely(fn)
-        && ! (KosDynFrame_FLAGS(frame) & KOS_FRAME_PARK_TO_CACHE)) {
-      int parked;
+        && ! (KosDynFrame_FLAGS(frame) & KOS_FRAME_RETURN_TO_CACHE)) {
+      int cached;
 
       KosDynFrame_FN(frame) = NULL;
-      parked = KosFunction_TryParkFrame(fn, frame);
+      cached = KosFunction_CacheFrame(fn, frame);
       Py_DECREF(fn);
-      if (likely(parked))
+      if (likely(cached))
         return;
     }
   }
@@ -2616,7 +2616,7 @@ KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
    walk, the flush (frame is freed), and the agen iteration-node check (not
    reachable from a frame whose parent is itself a frame).  val consumed.
 */
-KOS_OP_INLINE KosOpResult eval_ng_plain_return(
+KOS_OP_INLINE KosOpResult eval_plain_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2680,7 +2680,7 @@ KOS_OP_INLINE int kos_return_is_region(
     return 0;
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
-     eval_ng_region_return will dispatch on. */
+     eval_region_return will dispatch on. */
   ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
   if (! ft
       || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
@@ -2707,7 +2707,7 @@ KOS_OP_INLINE int kos_return_is_region(
    returns react (the hook ends in kos_eval_delivery_done); a node
    without the hook dispatches directly. val consumed.
 */
-KOS_OP_INLINE KosOpResult eval_ng_region_return(
+KOS_OP_INLINE KosOpResult eval_region_return(
     KosEvalState *es,
     KosDynNode *child,
     KosDynNode *parent,
@@ -2829,7 +2829,7 @@ static KosOpResult eval_event_return_at_frame(
   if (likely(kos_return_parent_is_plain(parent))) {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(parent_return,
-        r = eval_ng_plain_return(es, child, parent, val));
+        r = eval_plain_return(es, child, parent, val));
     return r;
   }
 
@@ -2858,7 +2858,7 @@ static KosOpResult eval_event_return_at_frame(
     }
 
     PyErr_Format(PyExc_RuntimeError,
-                 "eval_event_return: unexpected gen consumer kind %u",
+                 "eval_event_return_unwind: unexpected gen consumer kind %u",
                  (unsigned) KosDynNode_KIND(consumer));
     Py_DECREF(val);
     return EVAL_FATAL();
@@ -2910,18 +2910,18 @@ static KosOpResult eval_event_return_at_frame(
 
 
 /**
-   Next-generation RETURN handler.  Guards on DYN_TOP == FRAME (no
-   try/with/wind unwind needed), then dispatches via eval_event_return_at_frame.
-   When the guard fails, the unwind walk in eval_event_return handles it and
-   converges on the same dispatch on completion.  val consumed.
+   The RETURN handler.  Guards on DYN_TOP == FRAME (no try/with/wind
+   unwind needed), then dispatches via eval_event_return_at_frame.  When
+   the guard fails, the unwind walk in eval_event_return_unwind handles
+   it and converges on the same dispatch on completion.  val consumed.
 */
-static inline KosOpResult eval_event_return_ng(
+static inline KosOpResult eval_event_return(
     KosEvalState *es,
     PyObject *val) {
 
   if (unlikely(KosEvalState_DYN_TOP(es)
                != (KosDynNode *) KosEvalState_FRAME(es)))
-    return eval_event_return(es, val);
+    return eval_event_return_unwind(es, val);
 
   return eval_event_return_at_frame(es, val);
 }
@@ -2946,12 +2946,12 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
      more, or the walk reaches the frame and delivers. */
   switch (kind) {
   case KOS_PENDING_RETURN_FRAME:
-    return eval_event_return_ng(es, val);
+    return eval_event_return(es, val);
 
   case KOS_PENDING_RETURN_DELIM:
     if (delim && kos_dyn_reaches(es, (KosDynNode *) delim)) {
       /* The route lands val at the invoke site inside the evaluator;
-         its NORMAL is a re-entry there, as eval_event_return maps it,
+         its NORMAL is a re-entry there, as eval_event_return_unwind maps it,
          never a boundary result. */
       KosOpResult rr = kos_eval_walk_outcome(
           es, kos_eval_route_delim_return(es, delim, val));
@@ -3234,7 +3234,7 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_RETURN: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return_ng(es, res.val));
+    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(es, res.val));
     return r;
   }
 

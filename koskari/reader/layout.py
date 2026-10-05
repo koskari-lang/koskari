@@ -839,6 +839,20 @@ class LayoutReader(Reader):
         return head if event is VALUE else None
 
 
+    def _skip_comment_line(self, stream):
+        """
+        Consume a comment from its semicolon through the end of its line,
+        and the newline after it when there is one
+
+        :param stream: the source stream, positioned at the semicolon
+        """
+
+        stream.read(1)
+        stream.read_until_chars('\n')
+        if stream.peek(1) == '\n':
+            stream.read(1)
+
+
     def _consume_through_blank_lines_to_peer_column(self, stream, outer_indent):
         """
         Consume the rest of the prior line (trailing whitespace and a trailing
@@ -852,30 +866,23 @@ class LayoutReader(Reader):
         :return: True if a peer header line was reached, False otherwise
         """
 
-        while stream.peek(1) in (' ', '\t'):
-            stream.read(1)
+        self._skip_horizontal_whitespace(stream)
         if stream.peek(1) == ';':
+            self._skip_comment_line(stream)
+        elif stream.peek(1) == '\n':
             stream.read(1)
-            stream.read_until_chars('\n')
-        if stream.peek(1) != '\n':
+        else:
             return False
-        stream.read(1)
 
         while True:
-            indent = 0
-            while stream.peek(1) in (' ', '\t'):
-                stream.read(1)
-                indent += 1
+            indent = len(self._skip_horizontal_whitespace(stream))
 
             pk = stream.peek(1)
             if pk == '\n':
                 stream.read(1)
                 continue
             if pk == ';':
-                stream.read(1)
-                stream.read_until_chars('\n')
-                if stream.peek(1) == '\n':
-                    stream.read(1)
+                self._skip_comment_line(stream)
                 continue
             if not pk:
                 return False
@@ -1171,10 +1178,7 @@ class LayoutReader(Reader):
                 return EOF, position, None
 
             if c == ';':
-                stream.read(1)
-                stream.read_until_chars('\n')
-                if stream.peek(1) == '\n':
-                    stream.read(1)
+                self._skip_comment_line(stream)
                 continue
 
             outer_indent = position[1]

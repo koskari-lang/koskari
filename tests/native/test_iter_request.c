@@ -19,8 +19,8 @@
 
    C-level tests for the iteration request API and the code-less
    frame helpers: iterator acquisition and close,
-   KosResumeFrame_Install with and without a parked frame, the inert
-   park, the request-next node lifecycle over a sync iterator, and
+   KosResumeFrame_Install with and without a cached frame, the inert
+   caching, the request-next node lifecycle over a sync iterator, and
    KosContext_Recycle.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
@@ -32,7 +32,7 @@
 #include "../../koskari/lib/lib.h"
 
 
-/* a kind that never delivers: the install and park tests only read
+/* a kind that never delivers: the install and cache tests only read
    its name */
 KOS_RESUME_KIND(iterreq_kind, "iterreq-test", NULL, NULL, NULL);
 
@@ -117,21 +117,21 @@ static int test_iter_close_quiet(void) {
 }
 
 
-/* === kos_dynframe_park_inert === */
+/* === kos_dynframe_cache_inert === */
 
 
-static int test_park_inert_strips_and_parks(void) {
+static int test_cache_inert_strips_and_caches(void) {
   KosDynFrame *cache = NULL;
 
   KosDynFrame *frame = kos_dynframe_new(NULL, NULL, NULL);
   TEST_ASSERT_NOT_NULL(frame, "create code-less frame");
-  KosDynFrame_PARK_CACHE(frame) = (void *) frame;
+  KosDynFrame_CACHE_SLOT(frame) = (void *) frame;
   KosDynFrame_RESUME_KIND(frame) = &iterreq_kind;
 
-  int parked = kos_dynframe_park_inert(frame, &cache);
-  TEST_ASSERT_EQ(parked, 1, "frame parks into the empty cache");
+  int cached = kos_dynframe_cache_inert(frame, &cache);
+  TEST_ASSERT_EQ(cached, 1, "frame is cached into the empty cache");
   TEST_ASSERT_SAME(cache, frame, "cache holds the frame");
-  TEST_ASSERT_NULL(KosDynFrame_PARK_CACHE(frame), "park cache stripped");
+  TEST_ASSERT_NULL(KosDynFrame_CACHE_SLOT(frame), "cache slot stripped");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_NAME(frame), "resume name stripped");
   TEST_ASSERT_NULL(KosDynNode_PARENT(frame), "parent cleared");
   TEST_ASSERT_EQ(KosDynFrame_FLAGS(frame), 0, "frame flags cleared");
@@ -139,8 +139,8 @@ static int test_park_inert_strips_and_parks(void) {
   /* an occupied cache refuses a second frame */
   KosDynFrame *other = kos_dynframe_new(NULL, NULL, NULL);
   TEST_ASSERT_NOT_NULL(other, "create second frame");
-  parked = kos_dynframe_park_inert(other, &cache);
-  TEST_ASSERT_EQ(parked, 0, "occupied cache refuses");
+  cached = kos_dynframe_cache_inert(other, &cache);
+  TEST_ASSERT_EQ(cached, 0, "occupied cache refuses");
   kos_dynframe_free(other);
 
   kos_dynframe_free(cache);
@@ -148,7 +148,7 @@ static int test_park_inert_strips_and_parks(void) {
 }
 
 
-static int test_park_inert_refuses_code(void) {
+static int test_cache_inert_refuses_code(void) {
   KosDynFrame *cache = NULL;
 
   PyObject *ns = PyDict_New();
@@ -156,16 +156,16 @@ static int test_park_inert_refuses_code(void) {
   KosDynFrame *frame = kos_dynframe_new(NULL, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "create frame with ns");
 
-  /* an ns alone is only the fill and is released by the park; a
+  /* an ns alone is only the fill and is released by the caching; a
      cache-participation fn refuses */
   Py_INCREF(Py_None);
   KosDynFrame_FN(frame) = Py_None;
-  int parked = kos_dynframe_park_inert(frame, &cache);
-  TEST_ASSERT_EQ(parked, 0, "fn-tagged frame refuses to park");
+  int cached = kos_dynframe_cache_inert(frame, &cache);
+  TEST_ASSERT_EQ(cached, 0, "fn-tagged frame is refused");
   Py_CLEAR(KosDynFrame_FN(frame));
 
-  parked = kos_dynframe_park_inert(frame, &cache);
-  TEST_ASSERT_EQ(parked, 1, "fn-less frame parks");
+  cached = kos_dynframe_cache_inert(frame, &cache);
+  TEST_ASSERT_EQ(cached, 1, "fn-less frame is cached");
   TEST_ASSERT_NULL(KosDynFrame_NS(frame), "the ns fill was released");
 
   kos_dynframe_free(cache);
@@ -214,12 +214,12 @@ static int test_native_install_fresh_and_cached(void) {
   }
   Py_DECREF(staged);
 
-  /* reinstall from a cache: the parked frame is reused */
+  /* reinstall from a cache: the cached frame is reused */
   {
     KosDynFrame *cache = NULL;
     KosDynFrame *spare = kos_dynframe_new(NULL, NULL, NULL);
     TEST_ASSERT_NOT_NULL(spare, "create spare frame");
-    TEST_ASSERT_EQ(kos_dynframe_park_inert(spare, &cache), 1, "park spare");
+    TEST_ASSERT_EQ(kos_dynframe_cache_inert(spare, &cache), 1, "cache spare");
 
     KosDynFrame *reused = KosResumeFrame_Install(
         &es, &iterreq_kind, NULL, &cache);
@@ -365,8 +365,8 @@ int run_iter_request_tests(void) {
 
   RUN_TEST(test_iter_acquire_sync);
   RUN_TEST(test_iter_close_quiet);
-  RUN_TEST(test_park_inert_strips_and_parks);
-  RUN_TEST(test_park_inert_refuses_code);
+  RUN_TEST(test_cache_inert_strips_and_caches);
+  RUN_TEST(test_cache_inert_refuses_code);
   RUN_TEST(test_native_install_fresh_and_cached);
   RUN_TEST(test_native_install_clear_sees_state);
   RUN_TEST(test_request_next_sync_lifecycle);

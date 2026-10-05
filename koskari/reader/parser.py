@@ -1722,6 +1722,31 @@ class Reader:
         return cons(*out, nil) if out else nil
 
 
+    def _read_operand(self, stream, char, context):
+        """
+        Read the form a prefix reader macro applies to
+
+        The macro character has been consumed. End of input is a reader
+        EOF opened at the macro, and anything that is not a value is an
+        invalid use of the macro
+
+        :param stream: the source stream
+        :param char: the macro character, for the message
+        :param context: what the EOF was opened for
+        :return: (position, form)
+        """
+
+        opened_at = stream.event_position
+        event, pos, child = self._read(stream)
+
+        if event is EOF:
+            raise stream.reader_eof(opened_at=opened_at, context=context)
+        if event is not VALUE:
+            raise stream.error(f"invalid use of {char}", pos)
+
+        return pos, child
+
+
     def _read_ref_call(self, stream, fchar):
         """
         Read a by-ref expression as ``(compile/ref FORM)``
@@ -1747,13 +1772,7 @@ class Reader:
         if not peek or peek.isspace() or peek == ";" or peek in ")]}":
             return DEFER, None
 
-        opened_at = stream.event_position
-        event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(opened_at=opened_at, context="ref call")
-        if event is not VALUE:
-            raise stream.error(f"invalid use of {fchar}", pos)
+        _pos, child = self._read_operand(stream, fchar, "ref call")
 
         if is_keyword(child):
             return VALUE, keyword("&" + str(child))
@@ -1810,14 +1829,7 @@ class Reader:
         elif not (nxt.isalpha() or nxt == '_' or nxt in '([{'):
             return DEFER, None
 
-        opened_at = stream.event_position
-        event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(
-                opened_at=opened_at, context=f"unary {fchar}")
-        if event is not VALUE:
-            raise stream.error(f"invalid use of {fchar}", pos)
+        _pos, child = self._read_operand(stream, fchar, f"unary {fchar}")
 
         return VALUE, cons(_unary_symbols[fchar], child, nil)
 
@@ -2024,14 +2036,7 @@ class Reader:
         :return: tuple of (VALUE, (quote expr))
         """
 
-        opened_at = stream.event_position
-        event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(opened_at=opened_at, context="quote")
-        if event is not VALUE:
-            msg = f"invalid use of {char}"
-            raise stream.error(msg, pos)
+        pos, child = self._read_operand(stream, char, "quote")
 
         # the operand's cell carries its position, as a list's cells do
         tail = cons(child, nil)
@@ -2050,16 +2055,8 @@ class Reader:
         :return: tuple of (VALUE, (quasiquote expr))
         """
 
-        opened_at = stream.event_position
         with self.temporary_event_macro(",", self._read_unquote, True):
-            event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(opened_at=opened_at,
-                                    context="quasiquote")
-        if event is not VALUE:
-            msg = f"invalid use of {char}"
-            raise stream.error(msg, pos)
+            _pos, child = self._read_operand(stream, char, "quasiquote")
 
         return VALUE, cons(head, child, nil)
 
@@ -2212,15 +2209,8 @@ class Reader:
         :return: tuple of (VALUE, (unquote expr) or (unquote-splicing expr))
         """
 
-        opened_at = stream.event_position
         with self.temporary_event_macro("@", self._read_splice, True):
-            event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(opened_at=opened_at, context="unquote")
-        if event is not VALUE:
-            msg = f"invalid use of {char}"
-            raise stream.error(msg, pos)
+            _pos, child = self._read_operand(stream, char, "unquote")
 
         # is_pair(nil) is True (nil subclasses pair), so guard the empties
         # before indexing — `,()` / `,[]` are unquotes of the empty list.
@@ -2241,15 +2231,7 @@ class Reader:
         :return: tuple of (VALUE, (splice expr))
         """
 
-        opened_at = stream.event_position
-        event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(opened_at=opened_at,
-                                    context="unquote-splicing")
-        if event is not VALUE:
-            msg = f"invalid use of {char}"
-            raise stream.error(msg, pos)
+        _pos, child = self._read_operand(stream, char, "unquote-splicing")
 
         return VALUE, cons(_symbol_splice, child, nil)
 

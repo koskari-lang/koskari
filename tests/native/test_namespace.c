@@ -243,7 +243,7 @@ static int test_namespace_ref(void) {
     KosNamespace_Store(ns, key, value);
 
     /* Get reference - converts raw to ref */
-    PyObject *ref = KosNamespace_Ref(ns, key);
+    PyObject *ref = KosNamespace_ClaimRef(ns, key);
     TEST_ASSERT_NOT_NULL(ref, "get ref");
     TEST_ASSERT(KosRef_Check(ref), "ref is a Ref");
 
@@ -288,7 +288,7 @@ static int test_namespace_bind(void) {
     TEST_ASSERT_EQ(result, 0, "bind succeeded");
 
     /* Get the ref back */
-    PyObject *bound = KosNamespace_Ref(ns, key);
+    PyObject *bound = KosNamespace_ClaimRef(ns, key);
     TEST_ASSERT_SAME(bound, ref, "bound ref is same");
 
     Py_DECREF(ref);
@@ -345,8 +345,8 @@ static int test_namespace_nested(void) {
     TEST_ASSERT_SAME(KosNamespace_PARENT(ns2), ns1, "parent is ns1");
 
     /* Child should share foo ref with parent */
-    PyObject *ref1 = KosNamespace_REF(ns1, key_foo);
-    PyObject *ref2 = KosNamespace_REF(ns2, key_foo);
+    PyObject *ref1 = KosNamespace_BorrowRef(ns1, key_foo);
+    PyObject *ref2 = KosNamespace_BorrowRef(ns2, key_foo);
     TEST_ASSERT_NOT_NULL(ref1, "parent has foo ref");
     TEST_ASSERT_NOT_NULL(ref2, "child has foo ref");
     TEST_ASSERT_SAME(ref1, ref2, "refs are same object");
@@ -382,12 +382,16 @@ static int test_namespace_get_local_no_materialize(void) {
     TEST_ASSERT_NOT_NULL(ns, "create namespace");
 
     TEST_ASSERT_EQ(KosNamespace_Store(ns, key, value), 0, "store value");
-    TEST_ASSERT_SAME(KosNamespace_LOOSE_REF(ns, key), Py_None, "binding is raw before get");
+    TEST_ASSERT_SAME(
+        KosNamespace_BorrowLooseRef(ns, key), Py_None,
+        "binding is raw before get");
 
     PyObject *retrieved = PyObject_CallMethod(ns, "get", "O", key);
     TEST_ASSERT_NOT_NULL(retrieved, "get local value");
     TEST_ASSERT_EQ(PyLong_AsLong(retrieved), 101, "value matches");
-    TEST_ASSERT_SAME(KosNamespace_LOOSE_REF(ns, key), Py_None, "binding remains raw after get");
+    TEST_ASSERT_SAME(
+        KosNamespace_BorrowLooseRef(ns, key), Py_None,
+        "binding remains raw after get");
 
     Py_DECREF(retrieved);
     Py_DECREF(ns);
@@ -468,7 +472,8 @@ static int test_namespace_get_missing_default_no_bind(void) {
     PyObject *retrieved = PyObject_CallMethod(ns, "get", "OO", key, def);
     TEST_ASSERT_NOT_NULL(retrieved, "get default on miss");
     TEST_ASSERT_SAME(retrieved, def, "returned provided default");
-    TEST_ASSERT_NULL(KosNamespace_LOOSE_REF(ns, key), "no binding created");
+    TEST_ASSERT_NULL(
+        KosNamespace_BorrowLooseRef(ns, key), "no binding created");
 
     Py_DECREF(retrieved);
     Py_DECREF(ns);
@@ -530,6 +535,39 @@ static int test_namespace_get_empty_binding_default(void) {
     Py_DECREF(def);
     Py_DECREF(local);
     Py_DECREF(key);
+    Py_DECREF(name);
+    return 0;
+}
+
+
+static int test_namespace_is_revealed(void) {
+    /*
+      A fresh namespace is not revealed; the reveal tracks it and it
+      answers revealed from then on. The static empty namespace sits
+      outside the collector and always answers revealed.
+    */
+
+    PyObject *name = PyUnicode_FromString("test");
+    PyObject *ns = KosNamespace_NewFull(name, NULL, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(ns, "create namespace");
+
+    TEST_ASSERT_EQ(KosNamespace_IsRevealed(ns), 0,
+                   "a fresh namespace is not revealed");
+
+    PyObject *revealed = KosNamespace_Reveal(ns);
+    TEST_ASSERT_SAME(revealed, ns, "reveal returns the namespace");
+    TEST_ASSERT_EQ(KosNamespace_IsRevealed(ns), 1,
+                   "a revealed namespace answers revealed");
+    Py_DECREF(revealed);
+
+    PyObject *empty = KosNamespace_Empty();
+    TEST_ASSERT_NOT_NULL(empty, "the empty namespace");
+    TEST_ASSERT_EQ(PyObject_IS_GC(empty), 0,
+                   "the empty namespace is outside the collector");
+    TEST_ASSERT_EQ(KosNamespace_IsRevealed(empty), 1,
+                   "the empty namespace always answers revealed");
+
+    Py_DECREF(ns);
     Py_DECREF(name);
     return 0;
 }
@@ -688,14 +726,14 @@ static int test_collector_blocks_closure(void) {
     TEST_ASSERT_NOT_NULL(child, "create child");
 
     /* Parent's foo ref and child's foo ref should be same (collector's local skipped) */
-    PyObject *ref_p = KosNamespace_REF(parent, key_foo);
-    PyObject *ref_child = KosNamespace_REF(child, key_foo);
+    PyObject *ref_p = KosNamespace_BorrowRef(parent, key_foo);
+    PyObject *ref_child = KosNamespace_BorrowRef(child, key_foo);
     TEST_ASSERT_NOT_NULL(ref_p, "parent has foo");
     TEST_ASSERT_NOT_NULL(ref_child, "child has foo");
     TEST_ASSERT_SAME(ref_p, ref_child, "child refs parent's foo (collector skipped)");
 
     /* Collector's foo ref should be different (it's a local binding) */
-    PyObject *ref_col = KosNamespace_REF(collector, key_foo);
+    PyObject *ref_col = KosNamespace_BorrowRef(collector, key_foo);
     TEST_ASSERT_NOT_NULL(ref_col, "collector has foo");
     TEST_ASSERT_NOT_SAME(ref_col, ref_p, "collector foo is different from parent");
 
@@ -1123,8 +1161,8 @@ static int test_namespace_nested_deep(void) {
     }
 
     /* Verify closure still works at deepest level */
-    PyObject *ref_root = KosNamespace_REF(root, sym);
-    PyObject *ref_deep = KosNamespace_REF(current, sym);
+    PyObject *ref_root = KosNamespace_BorrowRef(root, sym);
+    PyObject *ref_deep = KosNamespace_BorrowRef(current, sym);
     TEST_ASSERT_NOT_NULL(ref_root, "root has ref");
     TEST_ASSERT_NOT_NULL(ref_deep, "deep has ref");
     TEST_ASSERT_SAME(ref_root, ref_deep, "refs are same through closure");
@@ -1165,6 +1203,7 @@ int run_namespace_tests(void) {
     RUN_TEST(test_namespace_get_missing_default_no_bind);
     RUN_TEST(test_namespace_get_missing_none);
     RUN_TEST(test_namespace_get_empty_binding_default);
+    RUN_TEST(test_namespace_is_revealed);
     RUN_TEST(test_namespace_fast_index);
     RUN_TEST(test_namespace_fast_store_deref);
 

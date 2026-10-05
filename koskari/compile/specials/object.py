@@ -37,7 +37,8 @@ from ...syntax import special
 from ...types import (
     is_keyword, is_nil, is_pair, is_symbol, unpack)
 from ..helpers import (
-    const_only_expr, emit_item_place, feeder_expr, splat_call_form)
+    call_form_reroute, const_only_expr, emit_item_place, feeder_expr,
+    splat_call_form)
 from ..processor import item_inplace_arg, item_opcode
 
 
@@ -255,10 +256,8 @@ def emit_reduce_op(
 
     for fm in unpack(body):
         if is_keyword(fm):
-            if have_acc:
-                return cons(symbol("call"), head, acc, body)
-            else:
-                return cons(symbol("call"), head, body)
+            return call_form_reroute(
+                head, cons(acc, body) if have_acc else body)
 
     if have_acc:
         frag.instruction(OpCode.CONST, acc)

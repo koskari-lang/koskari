@@ -134,14 +134,11 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
       return NULL;
   }
 
-  KosDynWith *node = (KosDynWith *) kos_dynnode_alloc();
+  KosDynWith *node = (KosDynWith *) kos_dynnode_clone_base(
+      (KosDynNode *) src);
   if (! node)
     return NULL;
 
-  kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, NULL,
-                   KosDynNode_CAPS(src));
-  KosDynNode_FLAGS(node) = KosDynNode_FLAGS(src) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(node) = kos_dynnode_id(src);
   KosDynWith_MGR(node) = KosDynWith_MGR(src);
   Py_XINCREF(KosDynWith_MGR(node));
   KosDynWith_ENTER(node) = KosDynWith_ENTER(src);

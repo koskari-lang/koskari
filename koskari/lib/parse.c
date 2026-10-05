@@ -356,6 +356,117 @@ static PyObject *m_bss_position(PyObject *self, PyObject *_noargs) {
 }
 
 
+/* === the scan === */
+
+
+/* How a scan stop test answers for one character. */
+enum bss_scan_verdict {
+  BSS_SCAN_GO = 0,    /* the character is part of the span; go on */
+  BSS_SCAN_STOP,      /* the span ends before this character */
+  BSS_SCAN_TAKE,      /* the span ends after this character */
+};
+
+typedef int (*bss_scan_stop)(PyObject *ch, void *ctx);
+
+
+/**
+   The one scan shape under the readers: pull characters from the
+   stream one at a time until the stop test ends the span or the
+   stream does, seek back to where the scan began, and read the span
+   as one str. stop sees each character as the one-character str the
+   stream returned and answers a bss_scan_verdict, or -1 with PyErr
+   set. Inlined into each of its three callers, where the stop test
+   is a constant, so each reader keeps the loop it had: the test is a
+   direct call there, not one through this pointer.
+
+   :return: the span as a new str, empty at EOF or an immediate stop;
+            NULL with PyErr set
+*/
+KOS_OP_INLINE PyObject *bss_scan(
+    PyObject *self,
+    bss_scan_stop stop,
+    void *ctx) {
+
+
+  KosBaseSourceStream *s = (KosBaseSourceStream *) self;
+  Py_ssize_t start_pos;
+  Py_ssize_t scan_count = 0;
+
+  if (bss_require_stream(s))
+    return NULL;
+
+  start_pos = stream_tell(s->stream);
+  if (start_pos < 0)
+    return NULL;
+
+  while (1) {
+    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one,
+                                              NULL);
+    int verdict;
+
+    if (! ch)
+      return NULL;
+
+    if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
+      /* EOF reached */
+      Py_DECREF(ch);
+      break;
+    }
+
+    verdict = stop(ch, ctx);
+    Py_DECREF(ch);
+    if (verdict < 0)
+      return NULL;
+    if (verdict == BSS_SCAN_STOP)
+      break;
+
+    scan_count++;
+    if (verdict == BSS_SCAN_TAKE)
+      break;
+  }
+
+  if (stream_seek(s->stream, start_pos) < 0)
+    return NULL;
+
+  if (scan_count == 0)
+    return PyUnicode_FromString("");
+
+  return KosBaseSourceStream_Read(self, scan_count);
+}
+
+
+/* The code point of a one-character str, read without encoding: a
+   lone surrogate is a character to scan past, not an error.
+
+   :return: 0, or -1 with PyErr set */
+static int bss_scan_codepoint(PyObject *ch, Py_UCS4 *out) {
+
+  Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
+
+  if (codepoint == (Py_UCS4) -1 && PyErr_Occurred())
+    return -1;
+  *out = codepoint;
+  return 0;
+}
+
+
+typedef struct {
+  KosCharPredicate pred;
+  void *context;
+} PredStopContext;
+
+
+KOS_OP_INLINE int pred_stop(PyObject *ch, void *ctx) {
+
+  PredStopContext *c = (PredStopContext *) ctx;
+  Py_UCS4 codepoint;
+
+  if (bss_scan_codepoint(ch, &codepoint))
+    return -1;
+  return c->pred(codepoint, c->context) ? BSS_SCAN_STOP : BSS_SCAN_GO;
+}
+
+
 PyObject *KosBaseSourceStream_ReadUntilPred(
     PyObject *self,
     KosCharPredicate pred,
@@ -368,53 +479,25 @@ PyObject *KosBaseSourceStream_ReadUntilPred(
      skip_whitespace, and read_until.
   */
 
-  KosBaseSourceStream *s = (KosBaseSourceStream *) self;
-  if (bss_require_stream(s))
-    return NULL;
+  PredStopContext ctx = { pred, context };
 
-  /* save starting position */
-  Py_ssize_t start_pos = stream_tell(s->stream);
-  if (start_pos < 0)
-    return NULL;
+  return bss_scan(self, pred_stop, &ctx);
+}
 
-  /* scan character by character */
-  Py_ssize_t scan_count = 0;
 
-  while (1) {
-    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
-    if (! ch)
-      return NULL;
+KOS_OP_INLINE int testf_stop(PyObject *ch, void *ctx) {
 
-    if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
-      /* EOF reached */
-      Py_DECREF(ch);
-      break;
-    }
+  PyObject *result = PyObject_CallFunctionObjArgs((PyObject *) ctx, ch, NULL);
+  int is_truthy;
 
-    /* get the Unicode code point */
-    Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
-    Py_DECREF(ch);
+  if (! result)
+    return -1;
 
-    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred())
-      return NULL;
-
-    /* check predicate */
-    if (pred(codepoint, context))
-      break;
-
-    scan_count++;
-  }
-
-  /* seek back to start */
-  if (stream_seek(s->stream, start_pos) < 0)
-    return NULL;
-
-  /* read the counted characters */
-  if (scan_count == 0) {
-    return PyUnicode_FromString("");
-  }
-
-  return KosBaseSourceStream_Read(self, scan_count);
+  is_truthy = PyObject_IsTrue(result);
+  Py_DECREF(result);
+  if (is_truthy < 0)
+    return -1;
+  return is_truthy ? BSS_SCAN_STOP : BSS_SCAN_GO;
 }
 
 
@@ -429,63 +512,12 @@ PyObject *KosBaseSourceStream_ReadUntil(
      The terminating character is not consumed.
   */
 
-  KosBaseSourceStream *s = (KosBaseSourceStream *) self;
-  if (bss_require_stream(s))
-    return NULL;
-
   if (! PyCallable_Check(testf)) {
     PyErr_SetString(PyExc_TypeError, "testf must be callable");
     return NULL;
   }
 
-  /* save starting position */
-  Py_ssize_t start_pos = stream_tell(s->stream);
-  if (start_pos < 0)
-    return NULL;
-
-  /* scan character by character */
-  Py_ssize_t scan_count = 0;
-
-  while (1) {
-    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
-    if (! ch)
-      return NULL;
-
-    if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
-      /* EOF reached */
-      Py_DECREF(ch);
-      break;
-    }
-
-    /* call the test function with the character */
-    PyObject *result = PyObject_CallFunctionObjArgs(testf, ch, NULL);
-    Py_DECREF(ch);
-
-    if (! result)
-      return NULL;
-
-    int is_truthy = PyObject_IsTrue(result);
-    Py_DECREF(result);
-
-    if (is_truthy < 0)
-      return NULL;
-
-    if (is_truthy)
-      break;
-
-    scan_count++;
-  }
-
-  /* seek back to start */
-  if (stream_seek(s->stream, start_pos) < 0)
-    return NULL;
-
-  /* read the counted characters */
-  if (scan_count == 0) {
-    return PyUnicode_FromString("");
-  }
-
-  return KosBaseSourceStream_Read(self, scan_count);
+  return bss_scan(self, testf_stop, testf);
 }
 
 
@@ -574,59 +606,26 @@ static PyObject *m_bss_skip_whitespace(PyObject *self, PyObject *_noargs) {
 }
 
 
+KOS_OP_INLINE int newline_stop(PyObject *ch, void *ctx) {
+
+  Py_UCS4 codepoint;
+
+  (void) ctx;
+
+  if (bss_scan_codepoint(ch, &codepoint))
+    return -1;
+  return codepoint == '\n' ? BSS_SCAN_TAKE : BSS_SCAN_GO;
+}
+
+
 static PyObject *m_bss_readline(
     PyObject *self,
     PyObject *_noargs) {
   /**
-     Read a line from the stream.
+     Read a line from the stream, the newline included.
   */
 
-  KosBaseSourceStream *s = (KosBaseSourceStream *) self;
-  if (bss_require_stream(s))
-    return NULL;
-
-  /* save starting position */
-  Py_ssize_t start_pos = stream_tell(s->stream);
-  if (start_pos < 0)
-    return NULL;
-
-  /* scan to newline */
-  Py_ssize_t scan_count = 0;
-
-  while (1) {
-    PyObject *ch = PyObject_CallMethodObjArgs(s->stream, _str_read, _long_one, NULL);
-    if (! ch)
-      return NULL;
-
-    if (! PyUnicode_Check(ch) || PyUnicode_GET_LENGTH(ch) == 0) {
-      /* EOF reached */
-      Py_DECREF(ch);
-      break;
-    }
-
-    /* the code point, read without encoding: a lone surrogate is a
-       character to scan past, not an error */
-    Py_UCS4 codepoint = PyUnicode_ReadChar(ch, 0);
-    Py_DECREF(ch);
-
-    if (codepoint == (Py_UCS4) -1 && PyErr_Occurred())
-      return NULL;
-
-    scan_count++;
-    if (codepoint == '\n')
-      break;
-  }
-
-  /* seek back to start */
-  if (stream_seek(s->stream, start_pos) < 0)
-    return NULL;
-
-  /* read the counted characters */
-  if (scan_count == 0) {
-    return PyUnicode_FromString("");
-  }
-
-  return KosBaseSourceStream_Read(self, scan_count);
+  return bss_scan(self, newline_stop, NULL);
 }
 
 

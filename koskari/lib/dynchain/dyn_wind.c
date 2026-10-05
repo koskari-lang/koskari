@@ -71,13 +71,10 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
     return NULL;
   }
 
-  KosDynWind *clone = kos_dynnode_alloc();
+  KosDynWind *clone = kos_dynnode_clone_base(wind);
   if (! clone)
     return NULL;
 
-  kos_dynnode_init(clone, KOS_DYN_WIND, NULL, KosDynNode_CAPS(wind));
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(wind) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(wind);
   KosDynWind_BEFORE_THUNK(clone) = KosDynWind_BEFORE_THUNK(wind);
   if (KosDynWind_BEFORE_THUNK(clone))
     Py_INCREF(KosDynWind_BEFORE_THUNK(clone));

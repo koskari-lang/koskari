@@ -31,15 +31,6 @@
 #define COMPRESS_SELECTOR 1
 
 
-typedef struct KosCompress {
-  KosTransform base;
-  PyObject *srcs;     /* 2-tuple of acquired iterators; the storage the
-                         base's sources view points into */
-  uint8_t all_sync;   /* neither source needs the evaluator */
-  uint8_t sync_mask;  /* bit i: source i steps through tp_iternext */
-} KosCompress;
-
-
 /**
    Is the data element kept? The selector is consumed either way.
 */
@@ -87,7 +78,7 @@ KOS_RESUME_KIND(compress_resume_fetch_kind, "compress-step",
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
-  KosCompress *c = (KosCompress *) state;
+  KosTransformMulti *c = (KosTransformMulti *) state;
   KosTransform *t = &c->base;
 
   (void) value;
@@ -129,7 +120,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
         PyObject *kept = t->pending;
 
         t->pending = NULL;
-        return KosNativeFrame_ReturnPark(es, kept, &t->cached_frame);
+        return KosNativeFrame_ReturnToCache(es, kept, &t->cached_frame);
       }
       Py_CLEAR(t->pending);
     }
@@ -144,7 +135,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
     KosEvalState *es, void *state, PyObject *element) {
 
-  KosCompress *c = (KosCompress *) state;
+  KosTransformMulti *c = (KosTransformMulti *) state;
   KosTransform *t = &c->base;
 
   if (! element)
@@ -167,7 +158,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
       PyObject *kept = t->pending;
 
       t->pending = NULL;
-      return KosNativeFrame_ReturnPark(es, kept, &t->cached_frame);
+      return KosNativeFrame_ReturnToCache(es, kept, &t->cached_frame);
     }
     Py_CLEAR(t->pending);
   }
@@ -185,7 +176,7 @@ static KosIterStepResult compress_iter_step(
     PyObject *send_val,
     PyObject **out) {
 
-  KosCompress *c = (KosCompress *) self;
+  KosTransformMulti *c = (KosTransformMulti *) self;
   KosTransform *t = &c->base;
   KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
   KosIterStepResult early;
@@ -251,9 +242,7 @@ static PyObject *koscompress_new(
 
   PyObject *data = NULL;
   PyObject *selectors = NULL;
-  PyObject *srcs;
-  KosCompress *c;
-  Py_ssize_t i;
+  KosTransformMulti *c;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "compress takes no keyword arguments");
@@ -263,96 +252,17 @@ static PyObject *koscompress_new(
   if (! PyArg_UnpackTuple(args, "compress", 2, 2, &data, &selectors))
     return NULL;
 
-  srcs = PyTuple_New(2);
-  if (! srcs)
+  c = (KosTransformMulti *) type->tp_alloc(type, 0);
+  if (! c)
     return NULL;
 
-  {
-    PyObject *given[2] = { data, selectors };
-
-    for (i = 0; i < 2; i++) {
-      PyObject *source = kos_iter_acquire(given[i]);
-
-      if (! source) {
-        Py_DECREF(srcs);
-        return NULL;
-      }
-      PyTuple_SET_ITEM(srcs, i, source);
-    }
-  }
-
-  c = (KosCompress *) type->tp_alloc(type, 0);
-  if (! c) {
-    Py_DECREF(srcs);
+  /* the two arguments are the two sources, data first */
+  if (kos_transform_init_multi(c, args)) {
+    Py_DECREF(c);
     return NULL;
   }
-
-  c->srcs = srcs;
-  c->sync_mask = 0;
-  c->all_sync = 1;
-
-  for (i = 0; i < 2; i++) {
-    if (KosIter_CheckSync(PyTuple_GET_ITEM(srcs, i)))
-      c->sync_mask |= (uint8_t) (1u << i);
-    else
-      c->all_sync = 0;
-  }
-
-  c->base.fn.cs_callable = NULL;
-  c->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
-
-  c->base.source = NULL;
-  c->base.sources = PySequence_Fast_ITEMS(srcs);
-  c->base.nsrc = 2;
-  c->base.idx = COMPRESS_DATA;
-
-  c->base.pending = NULL;
-  c->base.cached_frame = NULL;
-  c->base.ctx = NULL;
-  c->base.src_sync = 0;
-  c->base.closed = 0;
-  c->base.busy = 0;
 
   return (PyObject *) c;
-}
-
-
-static int koscompress_traverse(PyObject *self, visitproc visit, void *arg) {
-
-  KosCompress *c = (KosCompress *) self;
-
-  Py_VISIT(c->srcs);
-  return kos_transform_traverse(self, visit, arg);
-}
-
-
-/**
-   Retract the view before the storage it points into goes: tp_clear
-   runs while the object is still alive, and the base reads the view
-   whenever it closes.
-*/
-static int koscompress_clear(PyObject *self) {
-
-  KosCompress *c = (KosCompress *) self;
-
-  c->base.sources = NULL;
-  c->base.nsrc = 0;
-  Py_CLEAR(c->srcs);
-
-  return kos_transform_clear(self);
-}
-
-
-static void koscompress_dealloc(PyObject *self) {
-
-  KosCompress *c = (KosCompress *) self;
-
-  PyObject_GC_UnTrack(self);
-  c->base.sources = NULL;
-  c->base.nsrc = 0;
-  Py_CLEAR(c->srcs);
-
-  kos_transform_dealloc(self);
 }
 
 
@@ -361,17 +271,17 @@ KosEvaluatedTypeObject KosCompressType = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
     .tp_name = "koskari.lib.compress",
-    .tp_basicsize = sizeof(KosCompress),
+    .tp_basicsize = sizeof(KosTransformMulti),
     .tp_itemsize = 0,
-    .tp_dealloc = koscompress_dealloc,
+    .tp_dealloc = kos_transform_multi_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "KosCompress(data, selectors) - native lazy compress; "
               "iterable both asynchronously (ambient await, "
               "koskari-flattened) and synchronously (demand path)",
-    .tp_traverse = koscompress_traverse,
-    .tp_clear = koscompress_clear,
+    .tp_traverse = kos_transform_multi_traverse,
+    .tp_clear = kos_transform_multi_clear,
     .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koscompress_new,

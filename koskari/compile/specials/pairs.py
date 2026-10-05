@@ -23,11 +23,11 @@ compile/cons.
 
 
 from ...bootstrap import builtin
-from ...lib import OpCode, cons, symbol
+from ...lib import OpCode, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
-from ...types import is_keyword, is_nil, is_pair, strip_mark
-from ..helpers import requote
+from ...types import is_nil, is_pair, strip_mark
+from ..helpers import requote, splat_call_form
 
 
 _ONE_PATTERNS = [
@@ -145,13 +145,12 @@ def special_cons(compiler, called_by, exprs):
     body = exprs.datum
     forms = list(body.unpack())
 
-    for fm in forms:
-        if is_keyword(fm):
-            # a keyword among the arguments makes this the cons
-            # function applied to complex arguments instead
-            rewritten = cons(symbol("call"), called_by.datum, body)
-            rewritten.cdr.set_position(called_by.position)
-            return rewritten
+    # a keyword among the arguments makes this the cons function
+    # applied to complex arguments instead
+    rewritten = splat_call_form(called_by.datum, body)
+    if rewritten is not None:
+        rewritten.cdr.set_position(called_by.position)
+        return rewritten
 
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)
@@ -177,13 +176,12 @@ def special_bracket_cons(compiler, called_by, exprs):
     body = exprs.datum
     forms = list(body.unpack())
 
-    for fm in forms:
-        if is_keyword(fm):
-            # a keyword among the arguments makes this the bracket-cons
-            # function applied to complex arguments instead
-            rewritten = cons(symbol("call"), called_by.datum, body)
-            rewritten.cdr.set_position(called_by.position)
-            return rewritten
+    # a keyword among the arguments makes this the bracket-cons
+    # function applied to complex arguments instead
+    rewritten = splat_call_form(called_by.datum, body)
+    if rewritten is not None:
+        rewritten.cdr.set_position(called_by.position)
+        return rewritten
 
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)

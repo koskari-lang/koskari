@@ -61,7 +61,7 @@ typedef struct KosTransform {
                             -- owned, and cleared at every step
                             completion by ki_finish. State that must
                             outlive a step belongs to the provider */
-  KosDynFrame *cached_frame; /* inert frame parked between steps */
+  KosDynFrame *cached_frame; /* inert frame cached between steps */
   KosContext *ctx;       /* durable drive context (ki_pyctx), created
                             lazily; adapter-recycled, freed with the
                             transform */
@@ -124,6 +124,81 @@ int kos_transform_init_one(
 
 
 /**
+   Fill a freshly allocated transform whose sources live in storage
+   the provider owns: no callable, the base's own source slot empty,
+   the view published over that storage, and the step state reset as
+   kos_transform_init_one does. The provider acquires into its storage
+   before or after this call as it likes; the view is only read once
+   the transform steps or closes.
+
+   :param t: freshly allocated, zeroed
+   :param sources: the view, nsrc slots the provider keeps alive until
+                   it retracts the view
+   :param nsrc: entries in the view
+*/
+void kos_transform_init_view(
+    KosTransform *t,
+    PyObject **sources,
+    uint16_t nsrc);
+
+
+/**
+   The shape of a provider over several sources acquired together
+   (zip, zip-longest, compress): the base, the tuple that holds the
+   acquired iterators and that the base's view points into, and the
+   cache of which of them step through tp_iternext alone. A provider
+   with fields of its own embeds this first and chains its traverse,
+   clear and dealloc to the multi ones, as a one-source provider
+   chains to the base's.
+*/
+typedef struct KosTransformMulti {
+  KosTransform base;
+  PyObject *srcs;      /* tuple of acquired iterators; the storage the
+                          base's sources view points into */
+  uint32_t sync_mask;  /* bit i: source i steps through tp_iternext
+                          alone. A cache, not a limit -- sources past
+                          32 are checked live rather than capping the
+                          arity */
+  uint8_t all_sync;    /* no source needs the evaluator */
+} KosTransformMulti;
+
+
+/**
+   Fill a freshly allocated multi-source transform: acquire every
+   iterable of the tuple into the srcs tuple, build the sync cache,
+   and publish the view over the tuple's items.
+
+   :param m: freshly allocated, zeroed
+   :param iterables: borrowed tuple, at most UINT16_MAX long
+   :return: 0, or -1 with PyErr set
+*/
+int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables);
+
+
+/**
+   Does source i step through tp_iternext alone? Cached in the mask
+   for the first 32, resolved live beyond it. Only for a slot still
+   holding an iterator.
+*/
+static inline int kos_transform_multi_sync(KosTransformMulti *m, uint16_t i) {
+
+  if (i < 32)
+    return (int) ((m->sync_mask >> i) & 1u);
+
+  return KosIter_CheckSync(m->base.sources[i]);
+}
+
+
+/* The GC and dealloc of a multi-source provider: the view is
+   retracted before the storage it points into goes, since tp_clear
+   runs while the object is still alive and the base reads the view
+   whenever it closes. */
+int kos_transform_multi_traverse(PyObject *self, visitproc visit, void *arg);
+int kos_transform_multi_clear(PyObject *self);
+void kos_transform_multi_dealloc(PyObject *self);
+
+
+/**
    tp_new body for a one-source provider: KIND(func, iterable) when the
    spec declares a callable, KIND(iterable) otherwise. The iterator is
    acquired eagerly with the PUSH_FOREACH preference order: a KosIter
@@ -155,6 +230,15 @@ int kos_transform_step_ready(
 
 
 /**
+   Is the pending exception a source running out? A provider that
+   carries on past one source's end (chain, cycle, batched,
+   zip-longest) asks this of a NULL delivery before handling it; any
+   other exception, or none, propagates.
+*/
+int kos_transform_source_spent(void);
+
+
+/**
    Undo a partially installed step before reporting KOS_ITER_ERROR:
    release the held element and pop everything pushed since the step
    began (the program frame, a failed call's prepped frame), so the
@@ -169,7 +253,7 @@ KosIterStepResult kos_transform_step_abort(
 
 
 /**
-   Install the step's resume-carrying frame (from the parked cache when
+   Install the step's resume-carrying frame (from the cache when
    one is there), push value onto it when one is given, arm resume as
    the frame's resume with the transform as its state, and mark the
    step in flight. value is consumed. label names the frame for the

@@ -6,9 +6,10 @@
 
    KosZip: a native lazy zip over N sources, duck-typed against
    builtins.zip, implemented as a KosIter provider on the shared
-   transform body (transform.c). A multi-source provider: the
-   acquired iterators live in a tuple this unit owns, published to the
-   base through the sources view so the base closes them without
+   transform body (transform.c). A multi-source provider on the
+   shared KosTransformMulti shape, with no fields of its own: the
+   acquired iterators live in the tuple that shape owns, published to
+   the base through the sources view so the base closes them without
    knowing where they are kept.
 
    The fast path is pure C: when every source steps through
@@ -31,31 +32,6 @@
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
 */
-
-
-typedef struct KosZip {
-  KosTransform base;
-  PyObject *srcs;      /* tuple of acquired iterators; the storage the
-                          base's sources view points into */
-  uint32_t sync_mask;  /* bit i: source i steps through tp_iternext
-                          alone. A cache, not a limit -- sources past
-                          32 are checked live rather than capping the
-                          arity */
-  uint8_t all_sync;    /* no source needs the evaluator */
-} KosZip;
-
-
-/**
-   Does source i step through tp_iternext alone? Cached in the mask
-   for the first 32, resolved live beyond it.
-*/
-static inline int zip_sync(KosZip *z, uint16_t i) {
-
-  if (i < 32)
-    return (int) ((z->sync_mask >> i) & 1u);
-
-  return KosIter_CheckSync(z->base.sources[i]);
-}
 
 
 /* === the step's CPS resumes ===
@@ -90,13 +66,13 @@ KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step",
    FETCH: walk the sources from base.idx, filing each element into the
    row. A sync source completes inside the loop; a driven one requests
    the next element and leaves, to be re-entered here by
-   zip_resume_deliver. A completed row parks as the step's value.
+   zip_resume_deliver. A completed row is delivered as the step's value.
    Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
-  KosZip *z = (KosZip *) state;
+  KosTransformMulti *z = (KosTransformMulti *) state;
   KosTransform *t = &z->base;
 
   (void) value;
@@ -107,7 +83,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
   while (t->idx < t->nsrc) {
     PyObject *element;
 
-    if (! zip_sync(z, t->idx)) {
+    if (! kos_transform_multi_sync(z, t->idx)) {
       KosOpResult r = KosEvalState_NextResume(
           es, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
       RESULT_ENTRY(es, r, &zip_resume_deliver_kind, z);
@@ -131,7 +107,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, row, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
   }
 }
 
@@ -144,7 +120,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
     KosEvalState *es, void *state, PyObject *element) {
 
-  KosZip *z = (KosZip *) state;
+  KosTransformMulti *z = (KosTransformMulti *) state;
   KosTransform *t = &z->base;
 
   if (! element)
@@ -166,7 +142,7 @@ static KosIterStepResult zip_iter_step(
     PyObject *send_val,
     PyObject **out) {
 
-  KosZip *z = (KosZip *) self;
+  KosTransformMulti *z = (KosTransformMulti *) self;
   KosTransform *t = &z->base;
   KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
   KosIterStepResult early;
@@ -235,109 +211,28 @@ static PyObject *koszip_new(
     PyObject *args,
     PyObject *kwds) {
 
-  Py_ssize_t n = PyTuple_GET_SIZE(args);
-  PyObject *srcs;
-  KosZip *z;
-  Py_ssize_t i;
+  KosTransformMulti *z;
 
   if (kwds && PyDict_Size(kwds)) {
     PyErr_SetString(PyExc_TypeError, "zip takes no keyword arguments");
     return NULL;
   }
 
-  if (n > UINT16_MAX) {
+  if (PyTuple_GET_SIZE(args) > UINT16_MAX) {
     PyErr_SetString(PyExc_TypeError, "zip takes at most 65535 iterables");
     return NULL;
   }
 
-  srcs = PyTuple_New(n);
-  if (! srcs)
+  z = (KosTransformMulti *) type->tp_alloc(type, 0);
+  if (! z)
     return NULL;
 
-  for (i = 0; i < n; i++) {
-    PyObject *source = kos_iter_acquire(PyTuple_GET_ITEM(args, i));
-
-    if (! source) {
-      Py_DECREF(srcs);
-      return NULL;
-    }
-    PyTuple_SET_ITEM(srcs, i, source);
-  }
-
-  z = (KosZip *) type->tp_alloc(type, 0);
-  if (! z) {
-    Py_DECREF(srcs);
+  if (kos_transform_init_multi(z, args)) {
+    Py_DECREF(z);
     return NULL;
   }
-
-  z->srcs = srcs;
-  z->sync_mask = 0;
-  z->all_sync = 1;
-
-  for (i = 0; i < n; i++) {
-    if (KosIter_CheckSync(PyTuple_GET_ITEM(srcs, i))) {
-      if (i < 32)
-        z->sync_mask |= (uint32_t) 1u << i;
-    } else {
-      z->all_sync = 0;
-    }
-  }
-
-  z->base.fn.cs_callable = NULL;
-  z->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
-
-  z->base.source = NULL;
-  z->base.sources = n ? PySequence_Fast_ITEMS(srcs) : NULL;
-  z->base.nsrc = (uint16_t) n;
-  z->base.idx = 0;
-
-  z->base.pending = NULL;
-  z->base.cached_frame = NULL;
-  z->base.ctx = NULL;
-  z->base.src_sync = 0;
-  z->base.closed = 0;
-  z->base.busy = 0;
 
   return (PyObject *) z;
-}
-
-
-static int koszip_traverse(PyObject *self, visitproc visit, void *arg) {
-
-  KosZip *z = (KosZip *) self;
-
-  Py_VISIT(z->srcs);
-  return kos_transform_traverse(self, visit, arg);
-}
-
-
-/**
-   Retract the view before the storage it points into goes: tp_clear
-   runs while the object is still alive, and the base reads the view
-   whenever it closes.
-*/
-static int koszip_clear(PyObject *self) {
-
-  KosZip *z = (KosZip *) self;
-
-  z->base.sources = NULL;
-  z->base.nsrc = 0;
-  Py_CLEAR(z->srcs);
-
-  return kos_transform_clear(self);
-}
-
-
-static void koszip_dealloc(PyObject *self) {
-
-  KosZip *z = (KosZip *) self;
-
-  PyObject_GC_UnTrack(self);
-  z->base.sources = NULL;
-  z->base.nsrc = 0;
-  Py_CLEAR(z->srcs);
-
-  kos_transform_dealloc(self);
 }
 
 
@@ -346,17 +241,17 @@ KosEvaluatedTypeObject KosZipType = {
     PyVarObject_HEAD_INIT(NULL, 0)
 
     .tp_name = "koskari.lib.zip",
-    .tp_basicsize = sizeof(KosZip),
+    .tp_basicsize = sizeof(KosTransformMulti),
     .tp_itemsize = 0,
-    .tp_dealloc = koszip_dealloc,
+    .tp_dealloc = kos_transform_multi_dealloc,
     .tp_repr = kos_transform_repr,
     .tp_as_async = &kos_transform_async_methods,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "KosZip(*iterables) - native lazy zip; iterable both "
               "asynchronously (ambient await, koskari-flattened) and "
               "synchronously (demand path)",
-    .tp_traverse = koszip_traverse,
-    .tp_clear = koszip_clear,
+    .tp_traverse = kos_transform_multi_traverse,
+    .tp_clear = kos_transform_multi_clear,
     .tp_iter = KosIterAdapt_PyIter,
     .tp_methods = kos_transform_methods,
     .tp_new = koszip_new,

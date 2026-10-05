@@ -766,12 +766,7 @@ def intern_instruction_args(pb, instructions):
 
     for op, arg in instructions:
         op = op if isinstance(op, OpCode) else OpCode(op)
-        st = op.style
-        if st == OpStyle.CONST:
-            intern_for_pool(pb, arg)
-        elif st == OpStyle.VAR:
-            intern_for_pool(pb, arg)
-        elif st == OpStyle.EXTRA:
+        if op.style in (OpStyle.CONST, OpStyle.VAR, OpStyle.EXTRA):
             intern_for_pool(pb, arg)
 
 
@@ -828,12 +823,7 @@ def encode_instruction(op, arg, pool_index_of):
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.LABEL_ID, 0, lid)
 
-    if st == OpStyle.CONST:
-        idx = pool_index_of(arg)
-        return struct.pack(
-            '<HBBI', op_int, InstructionArgKind.POOL_INDEX, 0, idx)
-
-    if st == OpStyle.VAR:
+    if st in (OpStyle.CONST, OpStyle.VAR, OpStyle.EXTRA):
         idx = pool_index_of(arg)
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.POOL_INDEX, 0, idx)
@@ -843,19 +833,9 @@ def encode_instruction(op, arg, pool_index_of):
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.LABEL_ID, 0, lid)
 
-    if st == OpStyle.EXTRA:
-        idx = pool_index_of(arg)
-        return struct.pack(
-            '<HBBI', op_int, InstructionArgKind.POOL_INDEX, 0, idx)
-
-    if st in (OpStyle.NOARG,):
+    if st == OpStyle.NOARG:
         return struct.pack(
             '<HBBI', op_int, InstructionArgKind.NONE, 0, 0)
-
-    if st in (OpStyle.COUNT, OpStyle.PAIR_COUNT,
-              OpStyle.STAR, OpStyle.FASTVAR):
-        return struct.pack(
-            '<HBBI', op_int, InstructionArgKind.U32, 0, int(arg) & 0xFFFFFFFF)
 
     return struct.pack(
         '<HBBI', op_int, InstructionArgKind.U32, 0, int(arg) & 0xFFFFFFFF)
@@ -869,7 +849,6 @@ def decode_instruction(buf, off, pool_list):
     op_int, arg_kind, _pad, arg_val = struct.unpack_from('<HBBI', buf, off)
     off += INSTRUCTION_SIZE
     op = OpCode(op_int)
-    st = op.style
 
     if op == OpCode.POSITION:
         line = (arg_val >> 16) & 0xFFFF
@@ -880,21 +859,13 @@ def decode_instruction(buf, off, pool_list):
         return (op, label_name_from_id(arg_val)), off
 
     if arg_kind == InstructionArgKind.POOL_INDEX:
-        val = pool_list[arg_val]
-        if st == OpStyle.EXTRA:
-            return (op, val), off
-        return (op, val), off
+        return (op, pool_list[arg_val]), off
 
     if arg_kind == InstructionArgKind.LABEL_ID:
         return (op, label_name_from_id(arg_val)), off
 
     if arg_kind == InstructionArgKind.NONE:
         return (op, 0), off
-
-    if arg_kind == InstructionArgKind.U32:
-        if st == OpStyle.FASTVAR:
-            return (op, arg_val), off
-        return (op, arg_val), off
 
     return (op, arg_val), off
 

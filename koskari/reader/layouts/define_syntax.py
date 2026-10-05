@@ -23,10 +23,9 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 
 
 from ...bootstrap import builtin
-from ...compile.helpers import match1
 from ...exceptions import LayoutError
 from ...lib import cons, nil, symbol
-from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL
+from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL, match1
 from ...types import get_position, is_nil, is_pair, unpack
 from .helpers import (
     block_source_from_cons, is_block, layout, match_block_source)

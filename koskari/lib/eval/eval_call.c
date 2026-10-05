@@ -544,7 +544,7 @@ KosOpResult KosEvalState_SettleInto(
 /**
    True when the live frame's namespace is provably private, so a
    self-tail call may rebind it in place.  Mirrors the privacy test in
-   KosFunction_TryParkFrame: a captured, revealed, or dynamically
+   KosFunction_CacheFrame: a captured, revealed, or dynamically
    extended namespace stays live-visible and takes the ordinary
    namespace rebuild instead.
 */
@@ -769,7 +769,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
            releases it.  Hold it (and thereby code) across the reset,
            then transfer the reference into the FN tag -- the reset
            cleared the previous one -- so a following self-tail can
-           rebind in place and release can attempt the park.  An owned
+           rebind in place and release can offer it to the cache.  An owned
            caller reference serves as the hold and transfers directly. */
         if (! (flags & KOS_CALL_CALLABLE_OWNED))
           Py_INCREF(callable);
@@ -818,8 +818,8 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         }
 
         if (likely(cached)) {
-          /* Cache hit: steal-bind into the parked namespace first -- on
-             failure nothing is stolen and the frame stays parked. */
+          /* Cache hit: steal-bind into the cached namespace first -- on
+             failure nothing is stolen and the frame stays cached. */
           if (unlikely(KosFormals_SimpleStealApplyBlock(
                   KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
             goto fail;
@@ -845,7 +845,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         window -= (size_t) nargs;
 
         /* Cache miss: install as usual, then tag the frame for the
-           park attempt at release. */
+           cache offer at release. */
         {
           KosDynFrame *frame = kos_dyn_push_frame_unchecked(
               es, code, frame_ns);
@@ -1050,7 +1050,7 @@ static inline KosOpResult kos_call_invoke_body(
 
 /**
    The frame-cache hit of a window call, taken in the handler before the
-   call core: an exact KosFunction at simple arity with a frame parked
+   call core: an exact KosFunction at simple arity with a frame cached
    on it steal-binds the block tail into that frame's namespace (slot 0
    from self_arg when one is given), pushes the frame ready, and tags
    it with the owned callable reference. Any other shape returns 0 with
@@ -1095,7 +1095,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
     return -1;
 
   /* Steal-bind first: on failure nothing is stolen and the frame stays
-     parked. */
+     cached. */
   if (self_arg
       ? unlikely(KosFormals_SimpleStealApplySelfBlock(
             KosDynFrame_NS(cached), self_arg, self_owned,
@@ -1117,7 +1117,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
    Install a simple-arity KosFunction call whose receiver arrives out of
    band (unbound method resolution): fast slot 0 binds from self_arg and
    the window's arg span steal-binds into slots 1..nargs, through the
-   parked frame when one is available.  The caller has already
+   cached frame when one is available.  The caller has already
    classified the callable -- exact KosFunction, simple arity nargs + 2,
    no self-bind, no kwnames -- and the window holds the args at the
    block tail.  Mirrors the two steal-bind arms of the simple-call
@@ -1140,8 +1140,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
     goto fail;
 
   if (likely(cached)) {
-    /* Cache hit: steal-bind into the parked namespace first -- on
-       failure nothing is stolen and the frame stays parked. */
+    /* Cache hit: steal-bind into the cached namespace first -- on
+       failure nothing is stolen and the frame stays cached. */
     if (unlikely(KosFormals_SimpleStealApplySelfBlock(
             KosDynFrame_NS(cached), self_arg, 0, *caller_slot, nargs) < 0)) {
       goto fail;
@@ -1166,8 +1166,8 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
   }
   window -= (size_t) nargs;
 
-  /* Cache miss: install as usual, then tag the frame for the park
-     attempt at release. */
+  /* Cache miss: install as usual, then tag the frame for the cache
+     offer at release. */
   {
     KosDynFrame *frame = kos_dyn_push_frame_unchecked(es, code, frame_ns);
     if (unlikely(! frame))
@@ -1196,7 +1196,7 @@ fail:
    the window accounting is untouched by the injection (self never lives
    on the caller's stack).  An unbound-method call that fits the simple
    steal-bind classification skips the buffer entirely and routes
-   through kos_call_invoke_self_steal, keeping the parked-frame path
+   through kos_call_invoke_self_steal, keeping the cached-frame path
    reachable.  See the block comment above for the window sequencing
    contract.
 */

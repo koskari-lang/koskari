@@ -20,6 +20,10 @@ layout_heads:
   - macro-match
   - macro-rules
   - match
+  - quasiquote
+  - quasiquote-syntax
+  - quote
+  - quote-syntax
   - reset
   - shift
   - special-match
@@ -75,17 +79,27 @@ constants:
 # regenerate koskari-mode.el after edits.
 # Keep entries aligned when adding or renaming.
 list_head_specials:
+  - "#list"
+  - "#list-append"
+  - "#str"
+  - "#tuple"
+  - "None?"
   - abs
+  - active-pragma
   - aiter
   - all?
   - and
   - any?
   - apply
+  - apply-fence
   - apply-layout
   - apply-layouts
+  - assert
   - attr
   - attr*
   - await
+  - bare-control-word
+  - bare-syntax
   - begin
   - bind!
   - bindq
@@ -95,6 +109,7 @@ list_head_specials:
   - bool?
   - bracket-cons
   - bracket-nil
+  - bracket-proper
   - bracket-splice
   - break
   - build-macro
@@ -142,6 +157,7 @@ list_head_specials:
   - decimal?
   - declare-exports
   - decorate
+  - decorate-subject
   - decr!
   - default!
   - defer
@@ -151,6 +167,8 @@ list_head_specials:
   - define-coroutine
   - define-dataclass
   - define-demanding
+  - define-environ
+  - define-fence
   - define-global
   - define-parameter
   - define-syntax
@@ -194,6 +212,7 @@ list_head_specials:
   - ge?
   - gensym
   - gensym-thunk
+  - get-compiler
   - getattr
   - getattr*
   - getitem*
@@ -275,6 +294,7 @@ list_head_specials:
   - open
   - or
   - ord
+  - package-pragma
   - pair
   - pair?
   - parameter
@@ -286,6 +306,7 @@ list_head_specials:
   - parse-rule-patternq
   - partial
   - partial?
+  - pass
   - pragma
   - print
   - proper?
@@ -294,7 +315,9 @@ list_head_specials:
   - py-help
   - py-repr
   - quasiquote
+  - quasiquote-syntax
   - quote
+  - quote-syntax
   - raise
   - range
   - range?
@@ -354,6 +377,7 @@ list_head_specials:
   - unpack
   - unquote
   - unquote-splicing
+  - use
   - values
   - values?
   - vars

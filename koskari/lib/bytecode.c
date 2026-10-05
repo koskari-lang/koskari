@@ -116,7 +116,9 @@ const char *kos_opcode_name(KosOpCode op) {
 static inline int is_push_op(KosOpCode op);
 static inline int is_pop_op(KosOpCode op);
 static inline KosOpCode pop_for_push(KosOpCode push_op);
+static inline KosOpCode push_for_pop(KosOpCode pop_op);
 static inline KosExtentKind kind_for_push(KosOpCode push_op);
+static inline int discardable_for_push(KosOpCode push_op);
 
 
 /* === Extra operand schema === */
@@ -2187,24 +2189,31 @@ typedef struct {
   KosOpCode push_op;
   KosOpCode pop_op;
   KosExtentKind kind;
+  int discardable;   /* a tail call may pass through the extent: its
+                        uninstall is a pure release, so frame handoff
+                        drops it without running its POP_* row */
 } ExtentOpPair;
 
 
-/* PUSH_* -> POP_* and extent kind; source of truth for extent op classification */
+/* PUSH_* -> POP_*, extent kind and discardability; the source of truth
+   for extent op classification. The OpCode enum carries these facts to
+   the compiler (decorate_opcode), so the compiler's tables derive from
+   this one. The runtime teardown (kos_dyn_teardown_to_frame) holds the
+   discardable set once more, keyed by node kind. */
 static const ExtentOpPair extent_pairs[] = {
-  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY },
-  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP },
-  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY },
-  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT },
-  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT },
-  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC },
-  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH },
-  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH },
-  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS },
-  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT },
-  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND },
-  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH },
-  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM },
+  { KOS_OP_PUSH_TRY,      KOS_OP_POP_TRY,      KOS_EXT_TRY,      0 },
+  { KOS_OP_PUSH_LOOP,     KOS_OP_POP_LOOP,     KOS_EXT_LOOP,     1 },
+  { KOS_OP_PUSH_FINALLY,  KOS_OP_POP_FINALLY,  KOS_EXT_FINALLY,  0 },
+  { KOS_OP_PUSH_PROMPT,   KOS_OP_POP_PROMPT,   KOS_EXT_PROMPT,   0 },
+  { KOS_OP_PUSH_SHIFT,    KOS_OP_POP_SHIFT,    KOS_EXT_SHIFT,    0 },
+  { KOS_OP_PUSH_CC,       KOS_OP_POP_CC,       KOS_EXT_CC,       0 },
+  { KOS_OP_PUSH_WITH,     KOS_OP_POP_WITH,     KOS_EXT_WITH,     0 },
+  { KOS_OP_PUSH_DYN_WITH, KOS_OP_POP_DYN_WITH, KOS_EXT_DYN_WITH, 0 },
+  { KOS_OP_PUSH_NS,       KOS_OP_POP_NS,       KOS_EXT_NS,       1 },
+  { KOS_OP_PUSH_COLLECT,  KOS_OP_POP_COLLECT,  KOS_EXT_COLLECT,  0 },
+  { KOS_OP_PUSH_WIND,     KOS_OP_POP_WIND,     KOS_EXT_WIND,     0 },
+  { KOS_OP_PUSH_FOREACH,  KOS_OP_POP_FOREACH,  KOS_EXT_FOREACH,  1 },
+  { KOS_OP_PUSH_PARAM,    KOS_OP_POP_PARAM,    KOS_EXT_PARAM,    0 },
 };
 
 
@@ -2245,6 +2254,28 @@ static inline KosOpCode pop_for_push(KosOpCode push_op) {
 }
 
 
+static inline KosOpCode push_for_pop(KosOpCode pop_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].pop_op == pop_op) {
+      return extent_pairs[i].push_op;
+    }
+  }
+  return KOS_OP_NOOP;
+}
+
+
+static inline int discardable_for_push(KosOpCode push_op) {
+
+  for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
+    if (extent_pairs[i].push_op == push_op) {
+      return extent_pairs[i].discardable;
+    }
+  }
+  return 0;
+}
+
+
 static inline KosExtentKind kind_for_push(KosOpCode push_op) {
 
   for (size_t i = 0; i < N_EXTENT_PAIRS; i++) {
@@ -2265,17 +2296,13 @@ typedef struct {
 
 
 /**
-   Validate extent structure (push/pop matching) without allocating.
-   Catches POP with no PUSH, extent mismatch, unclosed extent.
-   Call when extent_count == 0 to reject code that has POP_* but no PUSH_*.
-*/
-/**
    Refuse a TAIL_CALL family row nested in an extent frame handoff
    cannot discard. The tail call tears down the extents open above the
-   frame; NS, LOOP and FOREACH uninstall by pure release, every other
-   kind has uninstall behavior that must run, so the compiler's promoter
-   never puts a tail call inside one and a hand-assembled stream that
-   does is refused here, the same set the runtime teardown holds.
+   frame; the pairs table marks the kinds that uninstall by pure
+   release, every other kind has uninstall behavior that must run, so
+   the compiler's promoter never puts a tail call inside one and a
+   hand-assembled stream that does is refused here, the same set the
+   runtime teardown holds.
 
    :return: 0 when pc is not a tail call or sits only in discardable
      extents, -1 with ValueError set otherwise
@@ -2289,8 +2316,7 @@ static int validate_tail_call_extents(
 
   for (uint32_t i = 0; i < stack_top; i++) {
     KosOpCode push = stack[i].push_op;
-    if (push == KOS_OP_PUSH_NS || push == KOS_OP_PUSH_LOOP
-        || push == KOS_OP_PUSH_FOREACH)
+    if (discardable_for_push(push))
       continue;
     PyErr_Format(PyExc_ValueError,
                  "TAIL_CALL at pc %u inside a non-discardable %s extent"
@@ -2302,61 +2328,19 @@ static int validate_tail_call_extents(
 }
 
 
-static int validate_extents(KosOp *code, uint32_t code_len) {
-
-  ExtentStackEntry stack[DERIVE_EXTENT_STACK_MAX];
-  uint32_t stack_top = 0;
-
-  /* Simulate PUSH/POP stack; error on POP with empty stack or mismatch */
-  for (uint32_t pc = 0; pc < code_len; pc++) {
-    KosOpCode op = (KosOpCode) code[pc].op;
-
-    if (validate_tail_call_extents(op, pc, stack, stack_top))
-      return -1;
-
-    if (is_push_op(op)) {
-      /* PUSH: push onto stack */
-      if (stack_top >= DERIVE_EXTENT_STACK_MAX) {
-        PyErr_SetString(PyExc_RuntimeError, "extent nesting too deep");
-        return -1;
-      }
-      stack[stack_top].push_pc = pc;
-      stack[stack_top].push_op = op;
-      stack_top++;
-    }
-    else if (is_pop_op(op)) {
-      /* POP: must match top of stack */
-      if (stack_top == 0) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "POP at pc %u with no matching PUSH", pc);
-        return -1;
-      }
-      KosOpCode expected_pop = pop_for_push(stack[stack_top - 1].push_op);
-      if (op != expected_pop) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "extent mismatch at pc %u: expected %d, got %d",
-                     pc, (int) expected_pop, (int) op);
-        return -1;
-      }
-      stack_top--;
-    }
-  }
-
-  if (stack_top != 0) {
-    PyErr_Format(PyExc_RuntimeError, "unclosed extent at pc %u",
-                 stack[stack_top - 1].push_pc);
-    return -1;
-  }
-
-  return 0;
-}
-
-
 /**
-   Fill extent table and top_extent_id from instruction stream. Walk code;
-   on PUSH_* allocate extent descriptor, push onto stack; on POP_* close
-   extent, propagate top_extent_id to all pcs inside the block.
-   Call when extent_count > 0; buffers are pre-allocated in unified block.
+   Walk the instruction stream matching each PUSH_* with its POP_*, and
+   fill the extent table and top_extent_id as it goes: on PUSH_* a
+   descriptor is allocated and pushed, on POP_* the extent closes and
+   its id is propagated to every pc inside the block. A tail call
+   inside an extent frame handoff cannot discard, a POP_* with no
+   PUSH_*, a mismatched pair, nesting past the stack limit and an
+   extent left open at the end are refused.
+
+   With NULL outputs the walk validates alone, so a stream with no
+   PUSH_* (extent_count 0, no buffers allocated) still has its POP_*
+   rows refused. The buffers, when given, sit pre-allocated in the
+   unified block.
 */
 static int derive_extents_fill(
     KosOp *code,
@@ -2370,8 +2354,10 @@ static int derive_extents_fill(
   uint32_t extent_idx = 0;
 
   /* Initialize all pcs to "no extent" */
-  for (uint32_t i = 0; i < code_len; i++) {
-    top_extent_id_out[i] = KOS_EXTENT_NONE;
+  if (top_extent_id_out) {
+    for (uint32_t i = 0; i < code_len; i++) {
+      top_extent_id_out[i] = KOS_EXTENT_NONE;
+    }
   }
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
@@ -2391,22 +2377,24 @@ static int derive_extents_fill(
         return -1;
       }
 
-      /* Build extent descriptor; parent is current stack top */
-      uint32_t parent_id = KOS_EXTENT_NONE;
-      if (stack_top > 0) {
-        parent_id = stack[stack_top - 1].extent_id;
-      }
+      if (extents_out) {
+        /* Build extent descriptor; parent is current stack top */
+        uint32_t parent_id = KOS_EXTENT_NONE;
+        if (stack_top > 0) {
+          parent_id = stack[stack_top - 1].extent_id;
+        }
 
-      KosExtentDesc *e = &extents_out[extent_idx];
-      e->kind = kind_for_push(op);
-      e->push_pc = pc;
-      e->pop_pc = 0;
-      e->parent_extent_id = parent_id;
+        KosExtentDesc *e = &extents_out[extent_idx];
+        e->kind = kind_for_push(op);
+        e->push_pc = pc;
+        e->pop_pc = 0;
+        e->parent_extent_id = parent_id;
+        top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
+      }
 
       stack[stack_top].push_pc = pc;
       stack[stack_top].extent_id = extent_idx;
       stack[stack_top].push_op = op;
-      top_extent_id_out[pc] = (uint16_t) extent_idx;  /* PUSH pc is inside */
       stack_top++;
       extent_idx++;
     }
@@ -2425,22 +2413,16 @@ static int derive_extents_fill(
         return -1;
       }
 
-      uint32_t eid = stack[stack_top - 1].extent_id;
-      extents_out[eid].pop_pc = pc;
+      if (extents_out) {
+        uint32_t eid = stack[stack_top - 1].extent_id;
+        extents_out[eid].pop_pc = pc;
 
-      /* Sanity: push must precede pop */
-      if (extents_out[eid].push_pc >= extents_out[eid].pop_pc) {
-        PyErr_Format(PyExc_RuntimeError,
-                     "invalid extent range: push_pc %u >= pop_pc %u",
-                     extents_out[eid].push_pc, extents_out[eid].pop_pc);
-        return -1;
-      }
-
-      /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
-      uint32_t enter_pc = extents_out[eid].push_pc + 1;
-      for (uint32_t j = enter_pc; j < pc; j++) {
-        if (top_extent_id_out[j] == KOS_EXTENT_NONE) {
-          top_extent_id_out[j] = (uint16_t) eid;
+        /* Propagate extent id to all pcs inside [push_pc+1, pop_pc) */
+        uint32_t enter_pc = extents_out[eid].push_pc + 1;
+        for (uint32_t j = enter_pc; j < pc; j++) {
+          if (top_extent_id_out[j] == KOS_EXTENT_NONE) {
+            top_extent_id_out[j] = (uint16_t) eid;
+          }
         }
       }
 
@@ -2886,7 +2868,7 @@ static int validate_fast_slots(
       extra_len, extent_count).
    2. Allocate: single block for all regions (page-aligned when protect).
    3. Emit: write instructions, positions, cpool, extra into block.
-   4. Finalize: derive_extents_fill or validate_extents; validate jumps;
+   4. Finalize: derive_extents_fill; validate jumps;
       with protect, mprotect(PROT_READ) and set KOS_CODE_PROTECTED; set
       KosCode fields.
 
@@ -2971,16 +2953,12 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   code_collect_clear(&coll);
   Py_DECREF(instr_fast);
 
-  /* Phase 4: Finalize — fill extent table, validate, seal */
-  if (extent_count > 0) {
-    if (derive_extents_fill(code, code_len, extents, extent_count,
-                            top_extent_id))
-      goto reject;
-  }
-  else if (validate_extents(code, code_len)) {
-    /* No PUSH_* but has POP_*: reject malformed bytecode */
+  /* Phase 4: Finalize — fill extent table, validate, seal. The
+     buffers are NULL when no PUSH_* was counted, and the walk then
+     validates alone, refusing a stray POP_*. */
+  if (derive_extents_fill(code, code_len, extents, extent_count,
+                          top_extent_id))
     goto reject;
-  }
 
   if (extents && top_extent_id &&
       validate_jump_locality(code, code_len, extra, extra_len, extents,
@@ -3760,41 +3738,81 @@ static PyObject *opstyle_schema(PyObject *styles, KosExtraSchema ex) {
 
 
 /**
-   Attach the ``style`` and ``extra`` attributes to one opcode member.
-   ``style`` is an OpStyle member; ``extra`` is the field schema of an
-   EXTRA opcode, or an empty tuple for every other style, so consumers
-   can test it for truth and iterate it without a presence check.
+   The OpCode member for an opcode, or None for KOS_OP_NOOP, which the
+   extent pair lookups return for an opcode outside the table.
 
+   :param opcodes: the OpCode IntEnum
+   :return: new reference, or NULL with an exception set
+*/
+static PyObject *opcode_member_or_none(PyObject *opcodes, KosOpCode op) {
+
+  if (op == KOS_OP_NOOP)
+    Py_RETURN_NONE;
+  return PyObject_CallFunction(opcodes, "i", (int) op);
+}
+
+
+/**
+   Set one attribute on an opcode member, consuming value.
+
+   :return: 0 on success, -1 with an exception set
+*/
+static int set_opcode_attr(PyObject *member, const char *name,
+    PyObject *value) {
+
+  int rc;
+
+  if (! value)
+    return -1;
+  rc = PyObject_SetAttrString(member, name, value);
+  Py_DECREF(value);
+  return rc ? -1 : 0;
+}
+
+
+/**
+   Attach the attributes every opcode member carries, so consumers can
+   read each without a presence check: ``style`` is an OpStyle member;
+   ``extra`` is the field schema of an EXTRA opcode, or an empty tuple
+   for every other style; ``yields`` says whether the row makes a code
+   object a generator; ``pop`` is the paired POP_* member of a PUSH_*
+   row and ``push`` the paired PUSH_* member of a POP_* row, None
+   otherwise; ``discardable`` says whether a tail call may pass through
+   the extent a PUSH_* row opens, False for every other row. The extent
+   facts come from extent_pairs, so the compiler's tables derive from
+   the one classification the validator and extent derivation use.
+
+   :param opcodes: the OpCode IntEnum
    :param styles: the OpStyle IntEnum
    :return: 0 on success, -1 with an exception set
 */
-static int decorate_opcode(PyObject *member, PyObject *styles,
-    KosOpCode op) {
+static int decorate_opcode(PyObject *member, PyObject *opcodes,
+    PyObject *styles, KosOpCode op) {
 
   KosOpStyle style = opcode_styles[op].style;
-
-  PyObject *sty = opstyle_member(styles, style);
-  if (! sty)
-    return -1;
-
-  int rc = PyObject_SetAttrString(member, "style", sty);
-  Py_DECREF(sty);
-  if (rc)
-    return -1;
-
   PyObject *extra;
+
+  if (set_opcode_attr(member, "style", opstyle_member(styles, style)))
+    return -1;
+
   if (style == KOSTYLE_EXTRA) {
     extra = opstyle_schema(styles, opcode_styles[op].extra);
   } else {
     extra = PyTuple_New(0);
   }
-  if (! extra)
+  if (set_opcode_attr(member, "extra", extra))
     return -1;
 
-  rc = PyObject_SetAttrString(member, "extra", extra);
-  Py_DECREF(extra);
-
-  return rc ? -1 : 0;
+  if (set_opcode_attr(member, "yields", PyBool_FromLong(kos_op_yields(op))))
+    return -1;
+  if (set_opcode_attr(member, "pop",
+                      opcode_member_or_none(opcodes, pop_for_push(op))))
+    return -1;
+  if (set_opcode_attr(member, "push",
+                      opcode_member_or_none(opcodes, push_for_pop(op))))
+    return -1;
+  return set_opcode_attr(member, "discardable",
+                         PyBool_FromLong(discardable_for_push(op)));
 }
 
 
@@ -3813,7 +3831,8 @@ static PyObject *create_opcode_enum(PyObject *styles) {
   if (! res)
     return NULL;
 
-  /* Attach style and extra schema to each opcode */
+  /* Attach the style, extra schema, yield and extent facts to each
+     opcode; every member exists by now, so a pair can name its twin */
   for (KosOpCode op = 0; op <= KOS_OP_THEEND; op++) {
     PyObject *member = PyObject_GetAttrString(res, opcode_names[op]);
     if (! member) {
@@ -3821,7 +3840,7 @@ static PyObject *create_opcode_enum(PyObject *styles) {
       return NULL;
     }
 
-    int rc = decorate_opcode(member, styles, op);
+    int rc = decorate_opcode(member, res, styles, op);
     Py_DECREF(member);
     if (rc) {
       Py_DECREF(res);

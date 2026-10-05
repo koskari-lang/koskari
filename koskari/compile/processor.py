@@ -139,10 +139,9 @@ POP_PRIORS = frozenset((OpCode.CONST, OpCode.DUP))
 FEEDER = frozenset((OpCode.VAR, OpCode.CONST))
 VAR_FEEDER = frozenset((OpCode.VAR,))
 
-# the rows that make a code object a generator
-YIELD_OPS = frozenset((
-    OpCode.YIELD, OpCode.YIELD_FROM, OpCode.YIELD_CONST, OpCode.YIELD_VAR,
-    OpCode.YIELD_FAST))
+# the rows that make a code object a generator, as the C side
+# classifies them (kos_op_yields, carried on the OpCode members)
+YIELD_OPS = frozenset(op for op in OpCode if op.yields)
 CONST_FEEDER = frozenset((OpCode.CONST,))
 
 
@@ -367,31 +366,14 @@ PACK_SHAPES = {
 # Extent classification for tail-call promotion, by the uninstall
 # principle: an extent whose uninstall behavior must run after the
 # call cannot be tail-called through. Discardable extents (True) are
-# safely dropped by frame handoff.
+# safely dropped by frame handoff. Both tables derive from the extent
+# pairs the C side holds (bytecode.c extent_pairs, carried on the
+# OpCode members), the same classification its validator applies.
 EXTENT_DISCARDABLE = {
-    OpCode.PUSH_NS: True,
-    OpCode.PUSH_LOOP: True,
-    OpCode.PUSH_FOREACH: True,
-    OpCode.PUSH_COLLECT: False,
-    OpCode.PUSH_TRY: False,
-    OpCode.PUSH_FINALLY: False,
-    OpCode.PUSH_WITH: False,
-    OpCode.PUSH_DYN_WITH: False,
-    OpCode.PUSH_WIND: False,
-    OpCode.PUSH_PROMPT: False,
-    OpCode.PUSH_SHIFT: False,
-    OpCode.PUSH_CC: False,
-    OpCode.PUSH_PARAM: False,
-}
+    op: op.discardable for op in OpCode if op.pop is not None}
 
 
-EXTENT_POPS = frozenset((
-    OpCode.POP_NS, OpCode.POP_LOOP, OpCode.POP_FOREACH,
-    OpCode.POP_COLLECT, OpCode.POP_TRY, OpCode.POP_FINALLY,
-    OpCode.POP_WITH, OpCode.POP_DYN_WITH, OpCode.POP_WIND,
-    OpCode.POP_PROMPT, OpCode.POP_SHIFT, OpCode.POP_CC,
-    OpCode.POP_PARAM,
-))
+EXTENT_POPS = frozenset(op for op in OpCode if op.push is not None)
 
 
 # rows the tail-call route reads through on its way to RETURN 1
@@ -433,46 +415,32 @@ def control_tuple_fold(op, arg, count):
     return [(op, count)]
 
 
-def squish_rule(*pattern):
+def rule_registrar(registry):
     """
-    Register a processor method as a squish rule for the form given in
-    stream order: the lookback slot specs (an opcode, or a set of
-    opcodes) followed by the trigger opcode. Candidates for a trigger
-    are tried in registration order; the first whose form matches and
-    whose rule accepts is applied. A trigger-only pattern registers a
-    fallback rule that inspects the working rows itself.
-    """
-
-    *priors, trigger = pattern
-    priors = tuple(
-        spec if isinstance(spec, frozenset) else frozenset((spec,))
-        for spec in priors)
-
-    def register(fn):
-        SQUISH_RULES.setdefault(trigger, []).append((priors, fn))
-        return fn
-    return register
-
-
-def fuse_rule(*pattern):
-    """
-    Register a processor method as a fusion rule for the form given in
-    stream order: the lookback slot specs (an opcode, or a set of
-    opcodes) followed by the trigger opcode. Candidates for a trigger
-    are tried in registration order; the first whose form matches and
-    whose rule accepts is applied. A trigger-only pattern registers a
-    fallback rule that inspects the working rows itself.
+    The decorator that registers a processor method as a rule in
+    registry for the form given in stream order: the lookback slot
+    specs (an opcode, or a set of opcodes) followed by the trigger
+    opcode. Candidates for a trigger are tried in registration order;
+    the first whose form matches and whose rule accepts is applied. A
+    trigger-only pattern registers a fallback rule that inspects the
+    working rows itself.
     """
 
-    *priors, trigger = pattern
-    priors = tuple(
-        spec if isinstance(spec, frozenset) else frozenset((spec,))
-        for spec in priors)
+    def rule(*pattern):
+        *priors, trigger = pattern
+        priors = tuple(
+            spec if isinstance(spec, frozenset) else frozenset((spec,))
+            for spec in priors)
 
-    def register(fn):
-        FUSE_RULES.setdefault(trigger, []).append((priors, fn))
-        return fn
-    return register
+        def register(fn):
+            registry.setdefault(trigger, []).append((priors, fn))
+            return fn
+        return register
+    return rule
+
+
+squish_rule = rule_registrar(SQUISH_RULES)
+fuse_rule = rule_registrar(FUSE_RULES)
 
 
 def fuckup_namespace_spec(nspec):

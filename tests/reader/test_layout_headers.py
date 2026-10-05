@@ -11,9 +11,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 """
-tests.reader.test_layout_ng
+tests.reader.test_layout_headers
 
-Pass 1: strict layout_ng header semantics TDD.
+Strict layout header semantics.
 """
 
 from textwrap import dedent
@@ -35,7 +35,7 @@ from koskari.reader import (
 pytestmark = pytest.mark.phase_infra
 
 
-def parse_layout_ng(src_str, **defns):
+def read_layout(src_str, **defns):
     builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
     reader = LayoutReader(builtins)
@@ -44,7 +44,7 @@ def parse_layout_ng(src_str, **defns):
     return reader.read(stream)
 
 
-def parse_layout_ng_mode(src_str, **reader_kwargs):
+def read_layout_mode(src_str, **reader_kwargs):
     builtins = dict(_BUILTIN_REGISTRY)
     reader = LayoutReader(builtins, **reader_kwargs)
     stream = IndentAwareStream.from_source(
@@ -52,7 +52,7 @@ def parse_layout_ng_mode(src_str, **reader_kwargs):
     return reader.read(stream)
 
 
-class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
+class TestLayoutStrictHeaders(IsolatedAsyncioTestCase):
 
     async def test_missing_trailing_colon_is_error(self):
         src = """
@@ -66,7 +66,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
                         nil,
                         nil)
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_begin_colon_is_header(self):
@@ -82,7 +82,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
              symbol("y"))
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_begin_without_colon_is_symbol_only(self):
@@ -91,7 +91,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
           x
         """
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, symbol('begin'))
 
     async def test_head_comment_disappears_from_commit_decision(self):
@@ -100,7 +100,7 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
           x
         """
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, symbol('begin'))
 
     async def test_committing_to_header_requires_structural_colon(self):
@@ -113,11 +113,11 @@ class TestLayoutNgStrictHeaders(IsolatedAsyncioTestCase):
                         cons(symbol('x'), nil),
                         nil)
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
 
-class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
+class TestLayoutReaderParity(IsolatedAsyncioTestCase):
 
     async def test_simple_block(self):
         src = """
@@ -132,7 +132,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_header_colon_terminator_with_comment_after(self):
@@ -148,7 +148,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_keyword_atoms_at_depth0_in_header_args(self):
@@ -165,7 +165,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_keyword_colon_not_structural_when_followed_by_token(self):
@@ -182,7 +182,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_trailing_keyword(self):
@@ -198,7 +198,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_crlf_header_terminator(self):
@@ -211,7 +211,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_keyword_inside_brackets_does_not_terminate(self):
@@ -227,7 +227,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
              )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_try_except_only(self):
@@ -242,7 +242,7 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
         except_clause = cons(cons(symbol('Exception'), nil), symbol('y'), nil)
         expected = cons(symbol('try'), try_body, except_clause, nil)
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_try_full_block(self):
@@ -269,11 +269,11 @@ class TestLayoutNgReaderParity(IsolatedAsyncioTestCase):
             finally_clause,
             nil)
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
 
-class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
+class TestLayoutHeaderNestingParity(IsolatedAsyncioTestCase):
 
     async def test_block_header_s_expr_spanning_lines(self):
         src = """
@@ -290,7 +290,7 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
             )
         )
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_block_header_keyword_inside_brackets(self):
@@ -304,7 +304,7 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
              ((symbol('foo'),), keyword('as'), symbol('x')),
              symbol('y')))
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
     async def test_block_header_keyword_inside_parens(self):
@@ -318,68 +318,68 @@ class TestLayoutNgHeaderNestingParity(IsolatedAsyncioTestCase):
              (symbol('foo'), keyword('as'), symbol('x')),
              symbol('y')))
 
-        result = parse_layout_ng(src)
+        result = read_layout(src)
         self.assertEqual(result, expected)
 
 
 class TestLayoutCallSemantics(IsolatedAsyncioTestCase):
 
     async def test_single_symbol_line_is_value(self):
-        result = parse_layout_ng('foo')
+        result = read_layout('foo')
         self.assertEqual(result, symbol('foo'))
 
 
     async def test_symbol_headed_line_with_args_becomes_call(self):
-        result = parse_layout_ng('foo x y')
+        result = read_layout('foo x y')
         self.assertEqual(result, cons(symbol('foo'), symbol('x'), symbol('y'), nil))
 
 
     async def test_explicit_list_form_remains_call(self):
-        result = parse_layout_ng('(foo)')
+        result = read_layout('(foo)')
         self.assertEqual(result, cons(symbol('foo'), nil))
 
 
     async def test_single_symbol_value_without_dot(self):
-        result = parse_layout_ng('x')
+        result = read_layout('x')
         self.assertEqual(result, symbol('x'))
 
 
     async def test_parenthesized_expr_without_dot(self):
-        result = parse_layout_ng('(foo x)')
+        result = read_layout('(foo x)')
         self.assertEqual(result, cons(symbol('foo'), symbol('x'), nil))
 
 
     async def test_bare_dot_is_invalid(self):
         with self.assertRaises(ReaderSyntaxError):
-            parse_layout_ng('.')
+            read_layout('.')
 
 
     async def test_multi_symbol_line_is_implicit_call(self):
-        result = parse_layout_ng('foo bar')
+        result = read_layout('foo bar')
         self.assertEqual(result, cons(symbol('foo'), symbol('bar'), nil))
 
 
     async def test_pair_head_line_with_arg_becomes_call(self):
-        result = parse_layout_ng('(foo bar) 123')
+        result = read_layout('(foo bar) 123')
         self.assertEqual(
             result,
             cons(cons(symbol('foo'), symbol('bar'), nil), 123, nil))
 
 
     async def test_pair_head_line_with_multiple_args_becomes_call(self):
-        result = parse_layout_ng('(get-callee) a b')
+        result = read_layout('(get-callee) a b')
         self.assertEqual(
             result,
             cons(cons(symbol('get-callee'), nil), symbol('a'), symbol('b'), nil))
 
 
     async def test_number_head_line_implicit_fold(self):
-        result = parse_layout_ng('123 456')
+        result = read_layout('123 456')
         self.assertEqual(result, cons(123, 456, nil))
 
 
     async def test_string_head_line_implicit_fold(self):
-        result = parse_layout_ng('"x" 1')
+        result = read_layout('"x" 1')
         self.assertEqual(result, cons('x', 1, nil))
 
 
@@ -452,12 +452,12 @@ class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
 class TestLayoutCompatibilityModes(TestCase):
 
     def test_disable_implicit_calls_preserves_bare_symbol(self):
-        result = parse_layout_ng_mode('begin', layout_implicit_calls=False)
+        result = read_layout_mode('begin', layout_implicit_calls=False)
         self.assertEqual(result, symbol('begin'))
 
 
     def test_disable_layout_mode_bypasses_layout_block_parsing(self):
-        result = parse_layout_ng_mode('foo x:\n  y\n', layout_enabled=False)
+        result = read_layout_mode('foo x:\n  y\n', layout_enabled=False)
         self.assertEqual(result, symbol('foo'))
 
 
@@ -476,7 +476,7 @@ class TestLayoutReaderWhitespace(TestCase):
             )
         """
 
-        result = parse_layout_ng_mode(src, layout_enabled=True)
+        result = read_layout_mode(src, layout_enabled=True)
         self.assertEqual(result, pycons(
             (symbol('SomeWords'),
              symbol('foo'),
@@ -502,7 +502,7 @@ class TestLayoutReaderWhitespace(TestCase):
             )
         """
 
-        result = parse_layout_ng_mode(src, layout_enabled=True)
+        result = read_layout_mode(src, layout_enabled=True)
         expected = pycons(
             (symbol('SomeWords'),
              (symbol('vals'),
@@ -535,7 +535,7 @@ class TestLayoutReaderWhitespace(TestCase):
             )
         """
 
-        result = parse_layout_ng_mode(src, layout_enabled=True)
+        result = read_layout_mode(src, layout_enabled=True)
         expected = pycons(
             (symbol('SomeWords'),
              (symbol('vals'),

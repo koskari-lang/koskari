@@ -110,15 +110,9 @@ static int dynnode_to_dict_yield_from(KosDynNode *node, PyObject *data) {
 */
 static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
 
-  KosDynYieldFrom *clone = kos_dynnode_alloc();
+  KosDynYieldFrom *clone = kos_dynnode_clone_base((KosDynNode *) node);
   if (! clone)
     return NULL;
-
-  kos_dynnode_init((KosDynNode *) clone, KOS_DYN_YIELD_FROM, NULL,
-                   KosDynNode_CAPS(node));
-
-  KosDynNode_FLAGS(clone) = KosDynNode_FLAGS(node) | KOS_DYNF_CLONED;
-  KosDynNode_NODE_ID(clone) = kos_dynnode_id(node);
 
   KosDynYieldFrom_DELEGATE(clone) = KosDynYieldFrom_DELEGATE(node);
   Py_XINCREF(KosDynYieldFrom_DELEGATE(clone));

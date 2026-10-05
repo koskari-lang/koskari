@@ -29,33 +29,13 @@
 
 
 typedef struct KosZipLongest {
-  KosTransform base;
-  PyObject *srcs;      /* tuple of acquired iterators; the storage the
-                          base's sources view points into. A spent
-                          source's slot is cleared to NULL in place --
-                          the tuple is private to this object and its
-                          item block never moves */
+  KosTransformMulti multi;  /* a spent source's slot in multi.srcs is
+                               cleared to NULL in place -- the tuple is
+                               private to this object and its item
+                               block never moves */
   PyObject *fill;      /* value standing in for a spent source */
-  uint32_t sync_mask;  /* bit i: source i steps through tp_iternext
-                          alone. A cache, not a limit -- sources past
-                          32 are checked live */
   uint16_t live;       /* sources not yet spent */
-  uint8_t all_sync;    /* no source needs the evaluator */
 } KosZipLongest;
-
-
-/**
-   Does source i step through tp_iternext alone? Cached in the mask
-   for the first 32, resolved live beyond it. Only called for a slot
-   still holding an iterator.
-*/
-static inline int zip_longest_sync(KosZipLongest *z, uint16_t i) {
-
-  if (i < 32)
-    return (int) ((z->sync_mask >> i) & 1u);
-
-  return KosIter_CheckSync(z->base.sources[i]);
-}
 
 
 /**
@@ -67,9 +47,9 @@ static inline int zip_longest_sync(KosZipLongest *z, uint16_t i) {
 */
 static int zip_longest_retire(KosZipLongest *z, uint16_t i) {
 
-  PyObject *spent = z->base.sources[i];
+  PyObject *spent = z->multi.base.sources[i];
 
-  z->base.sources[i] = NULL;
+  z->multi.base.sources[i] = NULL;
   Py_XDECREF(spent);
   z->live--;
 
@@ -83,7 +63,7 @@ static int zip_longest_retire(KosZipLongest *z, uint16_t i) {
 static void zip_longest_fill(KosZipLongest *z, uint16_t i) {
 
   Py_INCREF(z->fill);
-  PyTuple_SET_ITEM(z->base.pending, (Py_ssize_t) i, z->fill);
+  PyTuple_SET_ITEM(z->multi.base.pending, (Py_ssize_t) i, z->fill);
 }
 
 
@@ -126,7 +106,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     KosEvalState *es, void *state, PyObject *value) {
 
   KosZipLongest *z = (KosZipLongest *) state;
-  KosTransform *t = &z->base;
+  KosTransform *t = &z->multi.base;
 
   (void) value;
 
@@ -142,7 +122,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
       continue;
     }
 
-    if (! zip_longest_sync(z, t->idx)) {
+    if (! kos_transform_multi_sync(&z->multi, t->idx)) {
       KosOpResult r = KosEvalState_NextResume(
           es, t->sources[t->idx], NULL, &zip_longest_resume_deliver_kind, z);
       RESULT_ENTRY(es, r, &zip_longest_resume_deliver_kind, z);
@@ -172,7 +152,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnPark(es, row, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
   }
 }
 
@@ -188,11 +168,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
     KosEvalState *es, void *state, PyObject *element) {
 
   KosZipLongest *z = (KosZipLongest *) state;
-  KosTransform *t = &z->base;
+  KosTransform *t = &z->multi.base;
 
   if (! element) {
-    if (! PyErr_Occurred() ||
-        ! PyErr_ExceptionMatches(PyExc_StopIteration))
+    if (! kos_transform_source_spent())
       return EVAL_RAISE();
 
     if (! zip_longest_retire(z, t->idx))
@@ -222,7 +201,7 @@ static KosIterStepResult zip_longest_iter_step(
     PyObject **out) {
 
   KosZipLongest *z = (KosZipLongest *) self;
-  KosTransform *t = &z->base;
+  KosTransform *t = &z->multi.base;
   KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
   KosIterStepResult early;
   PyObject *row;
@@ -241,7 +220,7 @@ static KosIterStepResult zip_longest_iter_step(
   if (! row)
     return KOS_ITER_ERROR;
 
-  if (z->all_sync) {
+  if (z->multi.all_sync) {
     uint16_t i;
 
     t->pending = row;  /* steals; zip_longest_fill files into it */
@@ -307,9 +286,7 @@ static PyObject *koszip_longest_new(
 
   Py_ssize_t n = PyTuple_GET_SIZE(args);
   PyObject *fill = Py_None;
-  PyObject *srcs;
   KosZipLongest *z;
-  Py_ssize_t i;
 
   if (kwds && PyDict_Size(kwds)) {
     if (PyDict_Size(kwds) != 1)
@@ -329,56 +306,18 @@ static PyObject *koszip_longest_new(
     return NULL;
   }
 
-  srcs = PyTuple_New(n);
-  if (! srcs)
-    return NULL;
-
-  for (i = 0; i < n; i++) {
-    PyObject *source = kos_iter_acquire(PyTuple_GET_ITEM(args, i));
-
-    if (! source) {
-      Py_DECREF(srcs);
-      return NULL;
-    }
-    PyTuple_SET_ITEM(srcs, i, source);
-  }
-
   z = (KosZipLongest *) type->tp_alloc(type, 0);
-  if (! z) {
-    Py_DECREF(srcs);
+  if (! z)
+    return NULL;
+
+  if (kos_transform_init_multi(&z->multi, args)) {
+    Py_DECREF(z);
     return NULL;
   }
 
-  z->srcs = srcs;
   Py_INCREF(fill);
   z->fill = fill;
-  z->sync_mask = 0;
-  z->all_sync = 1;
   z->live = (uint16_t) n;
-
-  for (i = 0; i < n; i++) {
-    if (KosIter_CheckSync(PyTuple_GET_ITEM(srcs, i))) {
-      if (i < 32)
-        z->sync_mask |= (uint32_t) 1u << i;
-    } else {
-      z->all_sync = 0;
-    }
-  }
-
-  z->base.fn.cs_callable = NULL;
-  z->base.fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
-
-  z->base.source = NULL;
-  z->base.sources = n ? PySequence_Fast_ITEMS(srcs) : NULL;
-  z->base.nsrc = (uint16_t) n;
-  z->base.idx = 0;
-
-  z->base.pending = NULL;
-  z->base.cached_frame = NULL;
-  z->base.ctx = NULL;
-  z->base.src_sync = 0;
-  z->base.closed = 0;
-  z->base.busy = 0;
 
   return (PyObject *) z;
 
@@ -396,28 +335,19 @@ static int koszip_longest_traverse(
 
   KosZipLongest *z = (KosZipLongest *) self;
 
-  Py_VISIT(z->srcs);
   Py_VISIT(z->fill);
-  return kos_transform_traverse(self, visit, arg);
+  return kos_transform_multi_traverse(self, visit, arg);
 }
 
 
-/**
-   Retract the view before the storage it points into goes: tp_clear
-   runs while the object is still alive, and the base reads the view
-   whenever it closes.
-*/
 static int koszip_longest_clear(PyObject *self) {
 
   KosZipLongest *z = (KosZipLongest *) self;
 
-  z->base.sources = NULL;
-  z->base.nsrc = 0;
   z->live = 0;
-  Py_CLEAR(z->srcs);
   Py_CLEAR(z->fill);
 
-  return kos_transform_clear(self);
+  return kos_transform_multi_clear(self);
 }
 
 
@@ -426,12 +356,9 @@ static void koszip_longest_dealloc(PyObject *self) {
   KosZipLongest *z = (KosZipLongest *) self;
 
   PyObject_GC_UnTrack(self);
-  z->base.sources = NULL;
-  z->base.nsrc = 0;
-  Py_CLEAR(z->srcs);
   Py_CLEAR(z->fill);
 
-  kos_transform_dealloc(self);
+  kos_transform_multi_dealloc(self);
 }
 
 

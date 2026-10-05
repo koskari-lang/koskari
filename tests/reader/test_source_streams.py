@@ -12,14 +12,14 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.reader.test_parse_ng
+tests.reader.test_source_streams
 
 Unit tests for the koskari.reader stream layer and reader.
 
-Tests focus on the new interface contracts introduced in parser_ng:
+The stream interface contracts:
 - IndentAwareStream.dedented
 - IndentAwareStream as a proper SourceStream subclass (not a wrapper)
-- Reader and LayoutReader behaviour through the new streams
+- Reader and LayoutReader behaviour through the streams
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -58,12 +58,12 @@ def _indent_stream(text, max_indent=None, line_no=1, col_no=0):
                              max_indent=max_indent)
 
 
-def _parse_ng(src_str):
+def _parse(src_str):
     stream = source_str(src_str, '<test>')
     return default_reader.read(stream)
 
 
-def _parse_layout_ng(src_str, **defns):
+def _parse_layout(src_str, **defns):
     builtins = dict(_BUILTIN_REGISTRY)
     builtins.update(defns)
     reader = LayoutReader(builtins)
@@ -227,38 +227,38 @@ class TestIndentAwareStreamDedented(IsolatedAsyncioTestCase):
 # ===========================================================================
 
 
-class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
+class TestReaderWithSourceStream(IsolatedAsyncioTestCase):
 
     async def test_read_symbol(self):
-        result = _parse_ng("hello")
+        result = _parse("hello")
         self.assertIs(result, symbol("hello"))
 
     async def test_read_integer(self):
-        self.assertEqual(_parse_ng("42"), 42)
+        self.assertEqual(_parse("42"), 42)
 
     async def test_read_string(self):
-        self.assertEqual(_parse_ng('"hello"'), "hello")
+        self.assertEqual(_parse('"hello"'), "hello")
 
     async def test_read_list(self):
-        result = _parse_ng("(a b c)")
+        result = _parse("(a b c)")
         self.assertEqual(result, cons(symbol("a"), symbol("b"), symbol("c"), nil))
 
     async def test_read_quote(self):
-        result = _parse_ng("'foo")
+        result = _parse("'foo")
         self.assertEqual(result, cons(symbol("quote"), symbol("foo"), nil))
 
     async def test_read_quasiquote(self):
-        result = _parse_ng("`foo")
+        result = _parse("`foo")
         self.assertEqual(result, cons(symbol("quasiquote"), symbol("foo"), nil))
 
     async def test_read_ref_atom(self):
-        result = _parse_ng("&foo")
+        result = _parse("&foo")
         self.assertEqual(
             result,
             cons(symbol("ref"), symbol("foo"), nil))
 
     async def test_read_ref_atom_dotted(self):
-        result = _parse_ng("&foo.bar")
+        result = _parse("&foo.bar")
         expected = cons(
             symbol("ref"),
             cons(symbol("attr"), symbol("foo"), symbol("bar"), nil),
@@ -266,12 +266,12 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
     async def test_read_ref_atom_bare_ampersand(self):
-        result = _parse_ng("(& 8 1)")
+        result = _parse("(& 8 1)")
         expected = cons(symbol("&"), 8, 1, nil)
         self.assertEqual(result, expected)
 
     async def test_read_ref_atom_dotted_multi(self):
-        result = _parse_ng("&foo.bar.baz")
+        result = _parse("&foo.bar.baz")
         expected = cons(
             symbol("ref"),
             cons(
@@ -283,7 +283,7 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
     async def test_read_ref_call(self):
-        result = _parse_ng("&(item foo 12)")
+        result = _parse("&(item foo 12)")
         expected = cons(
             symbol("ref"),
             cons(symbol("item"), symbol("foo"), 12, nil),
@@ -291,7 +291,7 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
     async def test_read_ref_call_layout(self):
-        result = _parse_layout_ng("&(item foo 12)")
+        result = _parse_layout("&(item foo 12)")
         expected = cons(
             symbol("ref"),
             cons(symbol("item"), symbol("foo"), 12, nil),
@@ -308,13 +308,13 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
         self.assertEqual(second, cons(symbol("foo"), nil))
 
     async def test_read_dotted_attr_atom(self):
-        result = _parse_ng("foo.bar")
+        result = _parse("foo.bar")
         self.assertEqual(
             result,
             cons(symbol("attr"), symbol("foo"), symbol("bar"), nil))
 
     async def test_read_dotted_attr_atom_multi(self):
-        result = _parse_ng("obj.foo.bar")
+        result = _parse("obj.foo.bar")
         expected = cons(
             symbol("attr"),
             cons(symbol("attr"), symbol("obj"), symbol("foo"), nil),
@@ -323,14 +323,14 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
     async def test_read_eof_returns_sentinel(self):
-        self.assertIs(_parse_ng(""), READ_EOF)
+        self.assertIs(_parse(""), READ_EOF)
 
     async def test_read_comment_skipped(self):
-        result = _parse_ng("; comment\nhello")
+        result = _parse("; comment\nhello")
         self.assertIs(result, symbol("hello"))
 
     async def test_read_keyword(self):
-        result = _parse_ng(":x")
+        result = _parse(":x")
         self.assertIs(result, keyword("x"))
 
 
@@ -339,7 +339,7 @@ class TestReaderWithSourceStreamNg(IsolatedAsyncioTestCase):
 # ===========================================================================
 
 
-class TestLayoutReaderNg(IsolatedAsyncioTestCase):
+class TestLayoutReaderWithSourceStream(IsolatedAsyncioTestCase):
 
     async def test_simple_block(self):
         src = """
@@ -350,7 +350,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
             (symbol('foo'),
              symbol('x'),
              symbol('y')))
-        result = _parse_layout_ng(src)
+        result = _parse_layout(src)
         self.assertEqual(result, expected)
 
     async def test_if_else_block(self):
@@ -365,7 +365,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
              (symbol('x'), 1),
              (keyword('else'), 2))
         )
-        result = _parse_layout_ng(src)
+        result = _parse_layout(src)
         self.assertEqual(result, expected)
 
     async def test_nested_blocks(self):
@@ -381,7 +381,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
               symbol('y'),
               symbol('z')))
         )
-        result = _parse_layout_ng(src)
+        result = _parse_layout(src)
         self.assertEqual(result, expected)
 
     async def test_colon_no_space(self):
@@ -393,8 +393,8 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
         unknown x :
           (print x)
         """
-        result_a = _parse_layout_ng(src_a)
-        result_b = _parse_layout_ng(src_b)
+        result_a = _parse_layout(src_a)
+        result_b = _parse_layout(src_b)
         self.assertEqual(result_a, result_b)
 
     async def test_quote_block(self):
@@ -410,7 +410,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
               (symbol("begin"),),
               (symbol("foo"),), (symbol("bar"),)))
         )
-        result = _parse_layout_ng(src)
+        result = _parse_layout(src)
         self.assertEqual(result, expected)
 
     async def test_begin_colon_shorthand(self):
@@ -424,7 +424,7 @@ class TestLayoutReaderNg(IsolatedAsyncioTestCase):
              symbol("x"),
              symbol("y"))
         )
-        result = _parse_layout_ng(src)
+        result = _parse_layout(src)
         self.assertEqual(result, expected)
 
     async def test_plain_stream_is_refused(self):

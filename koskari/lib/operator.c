@@ -223,126 +223,6 @@ KOS_OP_INLINE PyObject *op_add(PyObject *const *args, size_t count) {
 }
 
 
-KOS_OP_INLINE PyObject *op_subtract(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_subtract(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Subtract(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("-", num_fast_subtract, NULL, PyNumber_Subtract,
-                     PyNumber_Negative, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_multiply(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_multiply(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Multiply(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("*", num_fast_multiply, NULL, PyNumber_Multiply, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_modulo(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_modulo(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Remainder(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("%", num_fast_modulo, NULL, PyNumber_Remainder, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_bit_and(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_and(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_And(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("&", long_fast_bit_and, NULL, PyNumber_And, NULL, args,
-                     count);
-}
-
-
-KOS_OP_INLINE PyObject *op_bit_or(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_or(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Or(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("|", long_fast_bit_or, NULL, PyNumber_Or, NULL, args,
-                     count);
-}
-
-
-KOS_OP_INLINE PyObject *op_bit_xor(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_xor(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Xor(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("^", long_fast_bit_xor, NULL, PyNumber_Xor, NULL, args,
-                     count);
-}
-
-
-KOS_OP_INLINE PyObject *op_bit_left(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_left(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Lshift(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("<<", long_fast_bit_left, NULL, PyNumber_Lshift, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_bit_right(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_right(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_Rshift(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow(">>", long_fast_bit_right, NULL, PyNumber_Rshift, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_true_divide(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_true_divide(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_TrueDivide(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("/", num_fast_true_divide, NULL, PyNumber_TrueDivide,
-                     NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_floor_divide(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_floor_divide(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_FloorDivide(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("//", num_fast_floor_divide, NULL, PyNumber_FloorDivide,
-                     NULL, args, count);
-}
-
-
 KOS_OP_INLINE PyObject *op_matrix_multiply(
     PyObject *const *args, size_t count) {
   if (likely(count == 2))
@@ -382,134 +262,6 @@ KOS_OP_INLINE PyObject *op_inplace_add(PyObject *const *args, size_t count) {
 }
 
 
-KOS_OP_INLINE PyObject *op_inplace_subtract(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_subtract(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceSubtract(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("-=", num_fast_subtract, NULL, PyNumber_InPlaceSubtract,
-                     NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_multiply(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_multiply(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceMultiply(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("*=", num_fast_multiply, NULL, PyNumber_InPlaceMultiply,
-                     NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_modulo(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_modulo(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceRemainder(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("%=", num_fast_modulo, NULL, PyNumber_InPlaceRemainder,
-                     NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_bit_and(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_and(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceAnd(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("&=", long_fast_bit_and, NULL, PyNumber_InPlaceAnd, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_bit_or(PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_or(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceOr(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("|=", long_fast_bit_or, NULL, PyNumber_InPlaceOr, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_bit_xor(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_xor(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceXor(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("^=", long_fast_bit_xor, NULL, PyNumber_InPlaceXor, NULL,
-                     args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_bit_left(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_left(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceLshift(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("<<=", long_fast_bit_left, NULL, PyNumber_InPlaceLshift,
-                     NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_bit_right(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (long_fast_bit_right(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceRshift(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow(">>=", long_fast_bit_right, NULL, PyNumber_InPlaceRshift,
-                     NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_true_divide(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_true_divide(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceTrueDivide(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("/=", num_fast_true_divide, NULL,
-                     PyNumber_InPlaceTrueDivide, NULL, args, count);
-}
-
-
-KOS_OP_INLINE PyObject *op_inplace_floor_divide(
-    PyObject *const *args, size_t count) {
-  if (likely(count == 2)) {
-    PyObject *out = NULL;
-    if (num_fast_floor_divide(args[0], args[1], NULL, &out) == 0)
-      out = PyNumber_InPlaceFloorDivide(args[0], args[1]);
-    return out;
-  }
-  return reduce_slow("//=", num_fast_floor_divide, NULL,
-                     PyNumber_InPlaceFloorDivide, NULL, args, count);
-}
-
-
 KOS_OP_INLINE PyObject *op_inplace_matrix_multiply(
     PyObject *const *args, size_t count) {
   if (likely(count == 2))
@@ -532,6 +284,55 @@ KOS_OP_INLINE PyObject *op_inplace_power(PyObject *const *args, size_t count) {
     out = PyNumber_InPlacePower(args[0], args[1], Py_None);
   return out;
 }
+
+
+/* The twenty cores with nothing of their own beyond their PyLong fast
+   path, their PyNumber slot, and (for the reducing form) the unary slot
+   of the arity-1 edge. Each expansion is its own function, as the six
+   written out above are: add and += carry the exact-str arm, @ and @=
+   have no fast path, and ** and **= are not reduces. */
+#define OP_CORE(fname, name, longfast, slot, solo)                      \
+  KOS_OP_INLINE PyObject *fname(PyObject *const *args, size_t count) {  \
+    if (likely(count == 2)) {                                           \
+      PyObject *out = NULL;                                             \
+      if (longfast(args[0], args[1], NULL, &out) == 0)                  \
+        out = slot(args[0], args[1]);                                   \
+      return out;                                                       \
+    }                                                                   \
+    return reduce_slow(name, longfast, NULL, slot, solo, args, count);  \
+  }
+
+
+OP_CORE(op_subtract,
+        "-", num_fast_subtract, PyNumber_Subtract, PyNumber_Negative)
+OP_CORE(op_multiply, "*", num_fast_multiply, PyNumber_Multiply, NULL)
+OP_CORE(op_modulo, "%", num_fast_modulo, PyNumber_Remainder, NULL)
+OP_CORE(op_bit_and, "&", long_fast_bit_and, PyNumber_And, NULL)
+OP_CORE(op_bit_or, "|", long_fast_bit_or, PyNumber_Or, NULL)
+OP_CORE(op_bit_xor, "^", long_fast_bit_xor, PyNumber_Xor, NULL)
+OP_CORE(op_bit_left, "<<", long_fast_bit_left, PyNumber_Lshift, NULL)
+OP_CORE(op_bit_right, ">>", long_fast_bit_right, PyNumber_Rshift, NULL)
+OP_CORE(op_true_divide, "/", num_fast_true_divide, PyNumber_TrueDivide, NULL)
+OP_CORE(op_floor_divide,
+        "//", num_fast_floor_divide, PyNumber_FloorDivide, NULL)
+
+OP_CORE(op_inplace_subtract,
+        "-=", num_fast_subtract, PyNumber_InPlaceSubtract, NULL)
+OP_CORE(op_inplace_multiply,
+        "*=", num_fast_multiply, PyNumber_InPlaceMultiply, NULL)
+OP_CORE(op_inplace_modulo,
+        "%=", num_fast_modulo, PyNumber_InPlaceRemainder, NULL)
+OP_CORE(op_inplace_bit_and, "&=", long_fast_bit_and, PyNumber_InPlaceAnd, NULL)
+OP_CORE(op_inplace_bit_or, "|=", long_fast_bit_or, PyNumber_InPlaceOr, NULL)
+OP_CORE(op_inplace_bit_xor, "^=", long_fast_bit_xor, PyNumber_InPlaceXor, NULL)
+OP_CORE(op_inplace_bit_left,
+        "<<=", long_fast_bit_left, PyNumber_InPlaceLshift, NULL)
+OP_CORE(op_inplace_bit_right,
+        ">>=", long_fast_bit_right, PyNumber_InPlaceRshift, NULL)
+OP_CORE(op_inplace_true_divide,
+        "/=", num_fast_true_divide, PyNumber_InPlaceTrueDivide, NULL)
+OP_CORE(op_inplace_floor_divide,
+        "//=", num_fast_floor_divide, PyNumber_InPlaceFloorDivide, NULL)
 
 
 /* === Runtime operator exports === */
@@ -685,18 +486,19 @@ PyObject *kos_inplace_reduce(
 /* === Comparison dispatch === */
 
 
-/* Display names for the richcompare selectors, indexed by KosCompare
-   ordinal (== Py_LT..Py_GE). */
-static const char *compare_names[] = {
+/* Display names for the comparison selectors, indexed by KosCompare
+   ordinal; the first six are the richcompare ordinals Py_LT..Py_GE. */
+static const char *compare_names[KOS_COMPARE_COUNT] = {
   "<", "<=", "==", "!=", ">", ">=",
+  "is", "is-not", "in", "not-in", "instance?", "subclass?",
 };
 
 
 /* Arity-2 guard shared by the extended comparison selectors. */
 static int compare_require_2(KosCompare sel, size_t count) {
   if (count != 2) {
-    PyErr_Format(PyExc_TypeError, "comparison selector %i requires 2"
-                 " positional arguments", (int) sel);
+    PyErr_Format(PyExc_TypeError, "%s requires 2 positional arguments",
+                 compare_names[sel]);
     return -1;
   }
   return 0;
@@ -774,40 +576,12 @@ PyObject *kos_compare_reduce(
 
 
 PyObject *KosOperator_In(PyObject *const *values, size_t count) {
-
-  if (count != 2) {
-    PyErr_SetString(PyExc_TypeError, "in requires 2"
-                    " positional arguments");
-    return NULL;
-  }
-
-  int res = PySequence_Contains(values[1], values[0]);
-  if (res < 0) {
-    return NULL;
-  } else if (res) {
-    Py_RETURN_TRUE;
-  } else {
-    Py_RETURN_FALSE;
-  }
+  return kos_compare_reduce(KOS_COMPARE_IN, values, count);
 }
 
 
 PyObject *KosOperator_NotIn(PyObject *const *values, size_t count) {
-
-  if (count != 2) {
-    PyErr_SetString(PyExc_TypeError, "not-in requires 2"
-                    " positional arguments");
-    return NULL;
-  }
-
-  int res = PySequence_Contains(values[1], values[0]);
-  if (res < 0) {
-    return NULL;
-  } else if (res) {
-    Py_RETURN_FALSE;
-  } else {
-    Py_RETURN_TRUE;
-  }
+  return kos_compare_reduce(KOS_COMPARE_NOT_IN, values, count);
 }
 
 
