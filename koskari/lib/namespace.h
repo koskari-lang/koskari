@@ -191,9 +191,10 @@ PyObject *KosNamespace_NewFull(
    The empty namespace: no parent, no symbols, no bindings, so a store
    through it raises NameError, and Namespace.bind refuses it. The
    fill of every native frame, which introduces no scope of its own but
-   must never leave the live namespace register NULL. One immortal
-   instance, created on first use; a borrowed reference, which holders
-   take and release like any other. NULL with PyErr set on failure.
+   must never leave the live namespace register NULL. One static
+   instance, immortal and outside the collector like the nil
+   singletons; a borrowed reference, which holders take and release
+   like any other. Never NULL.
 */
 PyObject *KosNamespace_Empty(void);
 
