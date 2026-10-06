@@ -126,4 +126,64 @@ class TestInplaceInvokeOperands(SpecialsTestCase):
         self.assertEqual(42, await self.evaluate(src))
 
 
+
+class TestCaptureInsideResumedSlice(SpecialsTestCase):
+    """
+    An undelimited continuation captured inside a slice an in-place
+    invoke resumed carries the shift handler's pending work: re-entering
+    it after the region has finished runs the slice to its end, then the
+    handler's remainder, and delivers where the region's value went
+    """
+
+    async def test_reentry_replays_the_handler_remainder(self):
+        src = """
+        ((lambda []
+          (define st (call make_state))
+          (define r (reset
+                      (call add 100
+                            (shift d (call add 1000 (call d 1)))
+                            (call/cc (lambda [k] (call stash st k) 0)))))
+          (call note st r)
+          (cond [(call once st) ((call saved st) 5)])
+          r))
+        """
+
+        class State:
+            def __init__(self):
+                self.k = None
+                self.seen = []
+                self.fired = False
+
+        def once(st):
+            if st.fired:
+                return False
+            st.fired = True
+            return True
+
+        expr, _mod = self.compile_expr(
+            src, add=lambda *a: sum(a),
+            make_state=State,
+            stash=lambda st, k: setattr(st, "k", k),
+            saved=lambda st: st.k,
+            note=lambda st, r: st.seen.append(r),
+            once=once)
+        result = await expr()
+        self.assertEqual(1106, result)
+
+
+class TestCaptureLeavesNoCallee(SpecialsTestCase):
+    """
+    call/cc sets its callee aside for the capture, so a continuation
+    invoked in argument position delivers its value where the call/cc
+    form stood and the earlier operands are what they were
+    """
+
+    async def test_invoke_in_argument_position(self):
+        src = """
+        (call g 1 (call/cc (lambda [k] (call k 10) 99)) 3)
+        """
+        expr, _mod = self.compile_expr(src, g=lambda *a: a)
+        self.assertEqual((1, 10, 3), await expr())
+
+
 # The end.

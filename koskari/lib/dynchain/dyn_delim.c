@@ -65,17 +65,41 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
   if (! clone)
     return NULL;
 
-  /* RETURN_FRAME is a borrow of a live frame on the chain, here as in
-     the original. A delim that owns its frame, a held handler snapshot
-     under KOS_DYNF_HOLDS_RETURN_FRAME, exists only in INPLACE mode,
-     and kos_dyn_clone_segment links around every INPLACE delim, so this
-     clone never meets one; the flag is masked off so a clone can never
-     claim to own a frame it merely points at. */
-  KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
+  /* An INPLACE delim inside a captured segment carries the shift
+     handler's remainder: the stashed span is cloned with it, so a
+     landing of the template can restitch and run that remainder, and a
+     handler snapshot the delim owns (KOS_DYNF_HOLDS_RETURN_FRAME) is
+     cloned and owned by the clone in turn. A borrowed return frame is
+     copied as is; kos_dyn_remap_delim_frames points it at the frame's
+     clone when the segment holds one. */
   KosDynDelim_MODE(clone) = KosDynDelim_MODE(delim);
   KosDynDelim_RETURN_CHAIN(clone) = NULL;
   KosDynDelim_RETURN_PC(clone) = KosDynDelim_RETURN_PC(delim);
   KosDynDelim_RETURN_FRAME_NODE(clone) = KosDynDelim_RETURN_FRAME_NODE(delim);
+  if (KosDynDelim_MODE(delim) == KOS_DYN_DELIM_MODE_INPLACE) {
+    if (KosDynDelim_RETURN_CHAIN(delim)) {
+      KosDynDelim_RETURN_CHAIN(clone) =
+          kos_dyn_clone_segment(KosDynDelim_RETURN_CHAIN(delim), NULL);
+      if (! KosDynDelim_RETURN_CHAIN(clone)) {
+        KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
+        KosDynDelim_RETURN_FRAME_NODE(clone) = NULL;
+        kos_dyndelim_free(clone);
+        return NULL;
+      }
+    }
+    if (KosDynNode_FLAGS(clone) & KOS_DYNF_HOLDS_RETURN_FRAME) {
+      KosDynFrame *snapshot = kos_dynframe_clone(KosDynDelim_RETURN_FRAME(delim));
+      if (! snapshot) {
+        KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
+        KosDynDelim_RETURN_FRAME_NODE(clone) = NULL;
+        kos_dyndelim_free(clone);
+        return NULL;
+      }
+      KosDynDelim_RETURN_FRAME_NODE(clone) = (KosDynNode *) snapshot;
+    }
+  } else {
+    KosDynNode_FLAGS(clone) &= ~KOS_DYNF_HOLDS_RETURN_FRAME;
+  }
   /* RETURN_NODE is a self-reference meaning "unwind to me", so copying it
      verbatim leaves the clone pointing at the original -- a pointer out of
      a cloned template and into the live chain, the same hazard

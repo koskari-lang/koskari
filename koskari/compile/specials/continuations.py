@@ -68,7 +68,9 @@ def special_call_cc(compiler, called_by, expr):
     fragment.position(called_by.position)
     fragment.instruction(OpCode.PUSH_CC, 0)
     fragment.merge(compiler.full_compile(expr.datum))
-    fragment.instruction(OpCode.CAPTURE_CC, 0)
+    # the callee is set aside for the capture, so the continuation's
+    # stack holds the form's enclosing operands and nothing of its own
+    fragment.instruction(OpCode.CAPTURE_CC, 1)
     fragment.instruction(OpCode.CALL, 1)
     fragment.instruction(OpCode.POP_CC, 0)
 

@@ -1,8 +1,12 @@
 # KOS_OP_CAPTURE_CC
-- **Style**: NOARG.
+- **Style**: COUNT, 0 or 1.
 - **Stack**: Captures the continuation of the CC dynamic extent (from current pc
   until the extent is exited at POP_CC); pushes it (KosPyContinuation) onto
-  stack. Stack effect: `[...] → [..., continuation]`. Invoking the continuation
+  stack. With arg 0 (`let/cc`) the stack effect is `[...] → [..., continuation]`.
+  With arg 1 (`call/cc`) the callee on TOS is set aside for the capture and put
+  back beneath the continuation, `[..., fn] → [..., fn, continuation]`, so the
+  captured stack holds the form's enclosing operands and not the callee; the
+  CALL 1 that follows applies fn to the continuation. Invoking the continuation
   is a non-local jump to the POP_CC opcode with a value pushed onto the stack.
 - **Example:** See the PUSH_CC disassembly table: at index 1, CAPTURE_CC pushes
   the continuation. Invoking it (e.g. CALL 1 with 42) jumps to POP_CC (index 4)

@@ -588,7 +588,7 @@ The opcodes by family, each linking to its section.
 | POP_SHIFT | NOARG | Return from shift block without invoking k | [section 20](opcodes/kos-op-pop-shift.md) |
 | POP_PROMPT | NOARG | Pop prompt | [section 20](opcodes/kos-op-pop-prompt.md) |
 | PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [section 21](opcodes/kos-op-push-cc.md) |
-| CAPTURE_CC | NOARG | Capture the CC extent's continuation and push it | [section 21](opcodes/kos-op-capture-cc.md) |
+| CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [section 21](opcodes/kos-op-capture-cc.md) |
 | POP_CC | NOARG | Pop the CC block; also the landing site when a captured continuation is invoked | [section 21](opcodes/kos-op-pop-cc.md) |
 | PUSH_WIND | COUNT | Pop the before (and after) thunks, push the wind extent, run before | [section 22](opcodes/kos-op-push-wind.md) |
 | POP_WIND | NOARG | Pop the body result and the wind node, run the after thunk, deliver the result | [section 22](opcodes/kos-op-pop-wind.md) |
@@ -4085,10 +4085,14 @@ PUSH_CC resume target).
 
 ### KOS_OP_CAPTURE_CC
 
-- **Style**: NOARG.
+- **Style**: COUNT, 0 or 1.
 - **Stack**: Captures the continuation of the CC dynamic extent (from current pc
   until the extent is exited at POP_CC); pushes it (KosPyContinuation) onto
-  stack. Stack effect: `[...] -> [..., continuation]`. Invoking the continuation
+  stack. With arg 0 (`let/cc`) the stack effect is `[...] -> [..., continuation]`.
+  With arg 1 (`call/cc`) the callee on TOS is set aside for the capture and put
+  back beneath the continuation, `[..., fn] -> [..., fn, continuation]`, so the
+  captured stack holds the form's enclosing operands and not the callee; the
+  CALL 1 that follows applies fn to the continuation. Invoking the continuation
   is a non-local jump to the POP_CC opcode with a value pushed onto the stack.
 - **Example:** See the PUSH_CC disassembly table: at index 1, CAPTURE_CC pushes
   the continuation. Invoking it (e.g. CALL 1 with 42) jumps to POP_CC (index 4)

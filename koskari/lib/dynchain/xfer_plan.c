@@ -357,6 +357,40 @@ int kos_invoke_continuation(
   if (target && tmpl_stop)
     kos_chain_detach_template(target, tmpl_stop);
 
+  /* An INPLACE delim in the landed segment whose handler frame is not
+     in the segment resumes into the live frame of that id, shared at
+     or below the seam. */
+  for (KosDynNode *node = target; node; node = KosDynNode_PARENT(node)) {
+    if (! KosDynNode_IS_DELIM(node)
+        || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
+        || (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME))
+      continue;
+    KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
+    if (! want)
+      continue;
+    int inside = 0;
+    for (KosDynNode *cand = target; cand; cand = KosDynNode_PARENT(cand)) {
+      if (cand == want) {
+        inside = 1;
+        break;
+      }
+    }
+    if (inside)
+      continue;
+    KosDynNode *live = seam;
+    while (live && ! (KosDynNode_IS_FRAME(live)
+                      && kos_dynnode_id(live) == kos_dynnode_id(want)))
+      live = KosDynNode_PARENT(live);
+    if (! live) {
+      kos_dynchain_free(target, NULL);
+      PyErr_SetString(PyExc_RuntimeError,
+                      "continuation: the frame a resumed shift handler"
+                      " returns into is no longer live");
+      return -1;
+    }
+    KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) = live;
+  }
+
   if (is_delimited) {
     KosDynDelim *ret_delim = kos_dyn_push_delim(
         es,

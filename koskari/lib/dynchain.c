@@ -1133,6 +1133,40 @@ void kos_dynchain_free(KosDynNode *node, const KosDynNode *stop) {
    the clone's innermost parent set to stop. Used for continuation capture and
    INSTALL/PUSH segments. On failure, frees partial clone.
 */
+/**
+   An INPLACE delim inside a cloned segment (an undelimited capture
+   taken inside a slice an in-place invoke resumed) borrows the frame
+   its handler resumes in. When that frame's clone is in the same
+   segment, the delim clone takes the clone, so the template refers to
+   itself and not into the live chain; a frame outside the segment is
+   left for the caller to resolve against the live chain by id (the
+   landing does). An owned handler snapshot is cloned with the delim
+   and needs no remap.
+*/
+static void kos_dyn_remap_delim_frames(KosDynNode *chain, KosDynNode *stop) {
+
+  for (KosDynNode *node = chain; node && node != stop;
+       node = KosDynNode_PARENT(node)) {
+    if (! KosDynNode_IS_DELIM(node)
+        || KosDynDelim_MODE((KosDynDelim *) node) != KOS_DYN_DELIM_MODE_INPLACE
+        || (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME))
+      continue;
+
+    KosDynNode *want = KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node);
+    if (! want)
+      continue;
+    for (KosDynNode *cand = chain; cand && cand != stop;
+         cand = KosDynNode_PARENT(cand)) {
+      if (KosDynNode_IS_FRAME(cand)
+          && kos_dynnode_id(cand) == kos_dynnode_id(want)) {
+        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node) = cand;
+        break;
+      }
+    }
+  }
+}
+
+
 KosDynNode *kos_dyn_clone_segment(
     KosDynNode *top,
     KosDynNode *stop) {
@@ -1147,21 +1181,6 @@ KosDynNode *kos_dyn_clone_segment(
 
   KosDynNode *node = top;
   while (node && node != stop) {
-    /* An INPLACE delim is transient invoke bookkeeping -- it marks that a
-       resume is in flight against a live prompt -- not part of the
-       delimited region a template represents. Cloning one puts an
-       invoke marker into a segment whose whole purpose is to be
-       instantiated fresh per invoke, and the copy then competes with the
-       live original for POP_PROMPT's attention. Link around it. */
-    if (KosDynNode_IS_DELIM(node)
-        && KosDynDelim_MODE((KosDynDelim *) node)
-           == KOS_DYN_DELIM_MODE_INPLACE) {
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] clone_segment skipping INPLACE delim %p",
-             (void *) node);
-      node = KosDynNode_PARENT(node);
-      continue;
-    }
     if (KOS_XFER_TRACE)
       SAYF("[xfer] clone_segment cloning node %p kind=%u",
            (void *) node, (unsigned) KosDynNode_KIND(node));
@@ -1188,6 +1207,7 @@ KosDynNode *kos_dyn_clone_segment(
     cloned_prev->parent = stop;
   }
 
+  kos_dyn_remap_delim_frames(cloned_top, stop);
   return cloned_top;
 }
 

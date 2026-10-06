@@ -420,7 +420,7 @@ OP(POP_SHIFT, 0, NOARG)           // pop shift block; return from handler withou
 // undelimited continuation (call/cc) block
 OP(PUSH_CC, 1, NOARG)             // cache: extent close pc
 OP(POP_CC, 0, NOARG)              // pop CC block from dynamic chain
-OP(CAPTURE_CC, 0, NOARG)          // capture undelimited continuation, push on stack
+OP(CAPTURE_CC, 0, COUNT)          // capture undelimited continuation, push on stack; 1 = set the callee on TOS aside first
 
 // dynamic wind control
 OP(PUSH_WIND, 0, COUNT)           // arg = 1 (before only) or 2 (both); stack: [..., before, after]
