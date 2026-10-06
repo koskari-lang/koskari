@@ -1397,15 +1397,20 @@ static void engine_rollback(MatchEngine *e, Py_ssize_t snapshot) {
 
 
 /**
-   Drop rollback bookkeeping refs without mutating capture dicts.
+   Commit the changes above snapshot: drop their rollback records
+   without undoing them, releasing the references each held.
 
    Each engine_set_slot records Py_INCREF(dict) and possibly Py_INCREF(old
-   value) so engine_rollback can undo. When the overall match finishes
-   without unwinding to snapshot zero, those extra refs must be released
-   or the capture dicts (and their entries) leak.
+   value) so engine_rollback can undo. A finished match commits from
+   snapshot zero, or the capture dicts (and their entries) leak. A
+   GROUP commits its own records on success: its frame is complete and
+   private to whoever holds it, so a later rollback must discard the
+   frame through the parent's record, never empty it in place.
 */
-static void engine_discard_pending_change_refs(MatchEngine *e) {
-  while (e->change_count > 0) {
+static void engine_discard_pending_change_refs(
+    MatchEngine *e,
+    Py_ssize_t snapshot) {
+  while (e->change_count > snapshot) {
     e->change_count--;
     DictChange *c = &e->change_stack[e->change_count];
     Py_XDECREF(c->old_value);
@@ -1871,7 +1876,7 @@ static int matcher_run_core(
   if (r == 1 && cursor == subj->vt->length(subj))
     matched = 1;
 
-  engine_discard_pending_change_refs(e);
+  engine_discard_pending_change_refs(e, 0);
   if (e->change_stack != e->change_inline)
     PyMem_Free(e->change_stack);
   e->change_stack = e->change_inline;

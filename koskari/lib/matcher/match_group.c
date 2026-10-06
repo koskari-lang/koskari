@@ -88,6 +88,11 @@ static int match_group(
     Py_DECREF(sub);
     return -1;
   }
+
+  /* The frame is complete: its records would let a rollback past this
+     point empty it while a harvested row still holds it. Backtracking
+     drops the frame whole through the record the caller adds. */
+  engine_discard_pending_change_refs(e, snap);
   *out_sub = sub;
   return 1;
 }
