@@ -84,6 +84,7 @@ static PyObject *str_aenter = NULL;
 static PyObject *str_aexit = NULL;
 static PyObject *str_name = NULL;
 static PyObject *str_package = NULL;
+static PyObject *str_empty = NULL;   /* "" : the name of a dots-only import */
 static PyObject *str_asyncio_future_blocking = NULL;
 
 /* KoskariContinuationApply payload attributes (see cont.c raise sites) */
@@ -1407,6 +1408,10 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
    fromlist returns the root package while still importing the full
    dotted chain, matching a plain Python "import foo.bar".
 
+   A bare relative import (dots alone) names the enclosing package at
+   that level: the compiler emits None for it, and the import machinery
+   takes the empty string, as Python's own "from .. import x" passes.
+
    :param es: eval state (supplies frame globals for relative anchors)
    :param name: module name str, or Py_None for a bare relative import
    :param level: number of leading dots; 0 = absolute
@@ -1423,7 +1428,7 @@ static PyObject *kos_import_module(
   PyObject *globals_dict = NULL;
 
   if (name == Py_None)
-    name = NULL;
+    name = level > 0 ? str_empty : NULL;
 
   if (level > 0) {
     PyObject *globals_ns = KosEvalState_GlobalsNamespace(es);
@@ -3805,6 +3810,7 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_exit, "__exit__");
   STR_CONST(str_name, "__name__");
   STR_CONST(str_package, "__package__");
+  STR_CONST(str_empty, "");
   STR_CONST(str_target, "target");
 
   if (PyType_Ready(&KosContextType) < 0)
@@ -3869,6 +3875,7 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_exit);
   Py_CLEAR(str_name);
   Py_CLEAR(str_package);
+  Py_CLEAR(str_empty);
   Py_CLEAR(str_target);
 
   /* Null out exception type pointers (module dict owns the refs) */
