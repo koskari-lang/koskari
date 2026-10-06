@@ -308,6 +308,10 @@ class KoskariPragma:
         satisfied = set(nspec.local_syms)
         satisfied.update(nspec.global_syms)
         for ancestor in self._code_ancestors.get(id(code), ()):
+            # a class body's declarations are not visible to its
+            # methods, so they satisfy nothing a method writes
+            if ancestor.collector_scope:
+                continue
             satisfied.update(_spellings(ancestor))
 
         source_frag = self._code_to_fragment.get(id(code))
@@ -361,10 +365,13 @@ class KoskariPragma:
         """
 
         # the inner Code spells its names; each becomes the symbol under
-        # that spelling as it enters the outer fragment
+        # that spelling as it enters the outer fragment. A class body's
+        # own declarations are not visible to the functions defined in
+        # it, so the body captures the name from its enclosing scope
+        # even when it declares the same name itself.
         for name in inner_nspec.closure_syms:
             sym = symbol(name)
-            if sym not in fragment.declares:
+            if fragment.collector_scope or sym not in fragment.declares:
                 _unique_append(fragment.requests, sym)
 
         for name in (inner_write_syms or ()):

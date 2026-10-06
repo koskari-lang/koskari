@@ -650,6 +650,34 @@ static PyObject *ns_borrow_ref(PyObject *namespace, PyObject *key) {
 }
 
 
+/* The cell a class body holds for a name of its enclosing scope: a
+   collector's slots past its locals are the closure and global refs
+   its spec resolved at construction. They are not the body's own
+   bindings, so a method may close over them; the body reaches the
+   enclosing function's cells only through them, since the stored
+   parent link skips the call frame. The body may declare the same
+   name itself, so the search starts past the locals. Borrowed, or
+   NULL for a name the body did not capture (with the error set when
+   a key comparison failed). */
+static PyObject *ns_collector_captured_ref(
+    PyObject *namespace,
+    PyObject *key) {
+  PyObject *names = KosNamespace_FAST_NAMES(namespace);
+  if (! names)
+    return NULL;
+  Py_ssize_t count = PyTuple_GET_SIZE(names);
+  for (Py_ssize_t index = KosNamespace_FAST_LOCALS(namespace);
+       index < count; index++) {
+    int same = Py_EQUALS(key, PyTuple_GET_ITEM(names, index));
+    if (same < 0)
+      return NULL;
+    if (same)
+      return KosNamespace_GET_FAST_VAL(namespace, (size_t) index);
+  }
+  return NULL;
+}
+
+
 /* The creating counterpart of KosNamespace_BorrowRef. A function, collector,
    or module namespace yields the Ref bound to key; a module namespace
    creates the binding on a miss and keeps it thereafter. Used by the
@@ -668,6 +696,9 @@ static PyObject *ns_claim_ref(PyObject *namespace, PyObject *key) {
        cell that outlives the body (see KosNamespace_FindRef). */
     if (PyUnicode_Equal(key, str_class_name))
       return ns_borrow_ref(namespace, key);
+    PyObject *captured = ns_collector_captured_ref(namespace, key);
+    if (captured || PyErr_Occurred())
+      return captured;
     PyObject *found = NULL;
     if (KosNamespace_FindRef(KosNamespace_PARENT(namespace), key, &found) < 0)
       return NULL;
@@ -2265,18 +2296,22 @@ int KosNamespace_FindRef(PyObject *namespace, PyObject *key,
        (super) expansion does) close over that slot here, and
        kos_build_class fills it with the class object once the metaclass
        returns. This is CPython's __class__ cell and __classcell__
-       protocol; no other name may cross this boundary. */
+       protocol; no other name may cross this boundary. A cell the body
+       captured from its enclosing scope is that scope's, not the
+       body's, and passes through. */
+    PyObject *seek;
     if (! KosCollectorNamespace_Check(namespace)
-        || PyUnicode_Equal(key, str_class_name)) {
+        || PyUnicode_Equal(key, str_class_name))
+      seek = ns_claim_ref(namespace, key);
+    else
+      seek = ns_collector_captured_ref(namespace, key);
 
-      PyObject *seek = ns_claim_ref(namespace, key);
-      if (! seek) {
-        if (PyErr_Occurred())
-          return -1;
-      } else {
-        *found = seek;
-        return 0;
-      }
+    if (! seek) {
+      if (PyErr_Occurred())
+        return -1;
+    } else {
+      *found = seek;
+      return 0;
     }
 
     namespace = KosNamespace_PARENT(namespace);

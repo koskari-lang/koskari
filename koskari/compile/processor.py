@@ -443,6 +443,27 @@ squish_rule = rule_registrar(SQUISH_RULES)
 fuse_rule = rule_registrar(FUSE_RULES)
 
 
+def merge_function_constant_needs(fragment, instructions):
+    """
+    Merge the closure and write needs of every completed function
+    constant in instructions into fragment, so a scope that encloses
+    the function captures what it closes over. A function constant
+    whose Code is not yet complete has nothing to merge
+    """
+
+    reso = fragment.resolution
+    for op, arg in instructions:
+        if op == OpCode.CONST and isinstance(arg, FunctionSpec):
+            code = arg.code
+            if code is None:
+                continue
+            nspec = code.namespace_spec
+            if nspec is None:
+                continue
+            request_for_write_syms = reso.get_request_for_write_syms(code)
+            reso.cpool_merge(fragment, nspec, request_for_write_syms)
+
+
 def fuckup_namespace_spec(nspec):
     """
     The NamespaceSpec with every name munged to a str
@@ -1545,18 +1566,7 @@ class ByteCodeProcessor:
         request_for_write_syms into the fragment
         """
 
-        fragment = self.fragment
-        reso = fragment.resolution
-        for op, arg in self.instructions:
-            if op == OpCode.CONST and isinstance(arg, FunctionSpec):
-                code = arg.code
-                if code is None:
-                    continue
-                nspec = code.namespace_spec
-                if nspec is None:
-                    continue
-                request_for_write_syms = reso.get_request_for_write_syms(code)
-                reso.cpool_merge(fragment, nspec, request_for_write_syms)
+        merge_function_constant_needs(self.fragment, self.instructions)
 
 
     def process(self, function_body=False):

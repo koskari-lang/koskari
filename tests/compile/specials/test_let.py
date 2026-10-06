@@ -144,3 +144,93 @@ class TestLetrecSpecial(SpecialsTestCase):
 
 
 # The end.
+
+
+class TestInlineScopeClosures(SpecialsTestCase):
+    """
+    A function constant built inside a let or class body within a
+    function reads and writes the enclosing function's locals, not a
+    module global of the same name
+    """
+
+    async def test_lambda_in_let_reads_the_function_local(self):
+        src_str = """
+        (begin
+          (define a "module")
+          ((lambda [a]
+             (let [[b 1]]
+               ((lambda [] a))))
+           "argument"))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual("argument", await expr())
+
+
+    async def test_lambda_in_let_writes_the_function_local(self):
+        src_str = """
+        (begin
+          (define a "module")
+          (define f
+            (lambda [a]
+              (let [[b 1]]
+                ((lambda [] (setq a "written")))
+                a)))
+          #[(f "argument") a])
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual(["written", "module"], await expr())
+
+
+    async def test_lambda_in_nested_lets_reads_the_function_local(self):
+        src_str = """
+        (begin
+          (define a "module")
+          ((lambda [a]
+             (let [[b 1]]
+               (let [[c 2]]
+                 ((lambda [] a)))))
+           "argument"))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual("argument", await expr())
+
+
+    async def test_lambda_in_letrec_reads_the_function_local(self):
+        src_str = """
+        (begin
+          (define a "module")
+          ((lambda [a]
+             (letrec [[get (lambda [] a)]]
+               (get)))
+           "argument"))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual("argument", await expr())
+
+
+    async def test_method_in_class_body_reads_the_function_local(self):
+        src_str = """
+        (begin
+          (define a "module")
+          ((lambda [a]
+             (define K
+               (class K ()
+                 (define get (lambda [self] a))))
+             ((attr (K) get)))
+           "argument"))
+        """
+        expr, mod = self.compile_expr(src_str)
+        self.assertEqual("argument", await expr())
+
+
+    async def test_method_in_class_body_names_its_own_class(self):
+        src_str = """
+        (begin
+          ((lambda []
+             (define K
+               (class K ()
+                 (define make (lambda [self] (K)))))
+             (type ((attr (K) make))))))
+        """
+        expr, mod = self.compile_expr(src_str, type=type)
+        self.assertEqual("K", (await expr()).__name__)

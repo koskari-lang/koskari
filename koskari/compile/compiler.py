@@ -39,7 +39,7 @@ from ..types import (
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)
-from .processor import ByteCodeProcessor
+from .processor import ByteCodeProcessor, merge_function_constant_needs
 
 
 class Compiled(ABC):
@@ -443,6 +443,10 @@ class ByteCodeFragment:
                 child.declare_var(name)
 
             yield child
+            # a function built inside the scope closes over its names
+            # through the scope's namespace, so the scope must capture
+            # them before its spec is built
+            merge_function_constant_needs(child, child.instructions)
             nspec = child.as_namespace_spec()
             child.resolution.register_scope_fragment(
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
@@ -489,6 +493,7 @@ class ByteCodeFragment:
         child.collector_scope = True
         with compiler.resolution_scope(child):
             yield child
+            merge_function_constant_needs(child, child.instructions)
             nspec = child.as_namespace_spec()
             child.resolution.register_scope_fragment(
                 child, tuple(f for f in compiler.lexical_stack if f is not child))
