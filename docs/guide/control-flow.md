@@ -120,7 +120,9 @@ define found:
 ```
 
 Both are calls, `(break)` and `(continue)`, and both have a bare form on
-a layout line.
+a layout line. Inside a loop's `else:` clause the loop has already
+finished, so a `break` or `continue` written there belongs to the
+enclosing loop, as in Python; with no enclosing loop it is an error.
 
 ## Comprehensions
 

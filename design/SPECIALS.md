@@ -860,9 +860,11 @@ from an `else:` peer; see `layout/while` in [LAYOUTS.md](LAYOUTS.md).
 target is the first instruction after PUSH_LOOP. Compiles TEST; on false,
 jumps to the loop exit label. Compiles the body with `helper_begin`, then
 CONTINUE 1 back to the test. On normal exit (test false), when an else body is
-present, emits CLEAR_LOOP, compiles ELSEBODY, then BREAK 1 so the else result
-reaches the parent stack before POP_LOOP. User `compile/break` jumps to the
-break target with its value and does not run the else clause.
+present, emits CLEAR_LOOP, compiles ELSEBODY, then POP_LOOP, which delivers
+the else result from the region's stack. The region is disabled while the
+else body runs, so a `compile/break` or `compile/continue` written there
+belongs to the enclosing loop. User `compile/break` from the body jumps to
+the break target with its value and does not run the else clause.
 
 **Examples:**
 
@@ -907,13 +909,13 @@ else label on exhaustion. The value is stored with VAR_STORE into the binding
 name. The body is compiled with `helper_begin`; CONTINUE 0 resets the stack
 block and jumps back to ITER_NEXT.
 
-On exhaustion, CLEAR_FOREACH marks natural exit. When an else body is present, its
-result is compiled and then BREAK 1 is emitted: this pops the FOREACH region,
-pushes the else result directly to the parent stack, and jumps to after_pop —
-so the else value arrives cleanly without any temporary variable. When there is
-no else body, POP_FOREACH falls through to after_pop and pushes the region's None.
-User `compile/break` also jumps to after_pop with its value already on the
-parent stack.
+On exhaustion, CLEAR_FOREACH marks natural exit and disables the region.
+When an else body is present, it is compiled next and POP_FOREACH delivers
+its value from the region's stack; a `compile/break` or `compile/continue`
+written in the else body belongs to the enclosing loop, since this one has
+finished. When there is no else body, POP_FOREACH pushes the region's result
+(None unless a `compile/continue` set one). User `compile/break` from the
+body jumps to after_pop with its value already on the parent stack.
 
 **Examples:**
 

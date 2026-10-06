@@ -108,7 +108,7 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - **Bracket-pairs**: `bracket-pair` (and the `bracket-nil` singleton) is a `pair` subtype the reader produces from `[ ]` source forms. It is value-equal to and structurally interchangeable with an ordinary pair — `[ ]` is **not** a vector or array literal — and exists only to record that the source used brackets. By default the compiler treats it exactly like a pair (a non-empty head-position list compiles to a call either way). The `( )` = call / `[ ]` = data split is a convention; the marker lets an opt-in compiler check act on it (see §10 and the `reader/brackets` / `compiler/call-brackets` pragmas). Implemented in `koskari/lib/pair.c`; gating in `koskari/compile/pragma/bracket.py` and the `compile_pair` chokepoint.
 
-- **Namespace**: Lexical scope container; `NamespaceSpec` describes layout. `ModuleNamespace` is module-level with builtins fallback. `CollectorNamespace` blocks closure capture. Implemented in `koskari/lib/namespace.c`.
+- **Namespace**: Lexical scope container; `NamespaceSpec` describes layout. `ModuleNamespace` is module-level with builtins fallback. `CollectorNamespace` blocks closure capture of its own bindings; the cells it captured from the enclosing scope pass through to methods. Implemented in `koskari/lib/namespace.c`.
 
 - **Refs**: Mutable reference cells. Variants: `Ref`, `AttributeRef`, `ItemRef`, `DynamicRef`, `ConstantRef`, `MemoizedRef`. Used for shared state in closures and by-name binding. Implemented in `koskari/lib/ref.c`.
 

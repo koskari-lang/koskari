@@ -1480,7 +1480,14 @@ which is why `map`, `filter`, `zip`, `starmap`, `dropwhile`, `islice`,
 and `pairwise` need no code for failure: their NULL branches return
 `EVAL_RAISE`, and the failure reaches the step's consumer through its
 iteration node, which owns the conversion (a raised `StopIteration` is
-exhaustion). A provider that must act on its source running out handles
+exhaustion). That conversion is for a provider's source running out; a
+`StopIteration` or `StopAsyncIteration` escaping a generator body never
+reaches an iteration node as itself, because the raise walk converts it
+to `RuntimeError` with the original as cause where it crosses the
+generator's GEN node (`kos_dyn_gen_convert_escaping_stop`, PEP 479 and
+PEP 525), ahead of the flattened consumer, the Python iterator adapter
+and the async-generator stepper alike; `coroutine_settle` does the same
+for a coroutine. A provider that must act on its source running out handles
 that NULL instead -- `batched` completes its frame with the short final
 batch, `zip-longest` files the fill value and hops back into its row
 walk, which its position on a settled chain makes legal.

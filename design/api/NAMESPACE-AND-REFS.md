@@ -17,7 +17,7 @@ This document summarizes the Koskari/Sibilant model of **Namespace** (lexical sc
 | **Namespace** | Base lexical scope. Has a parent, optional name, and a map of bindings. |
 | **NamespaceSpec** | Layout descriptor: `ns_name`, `local_syms`, `closure_syms`, `global_syms`, with the fast-slot name tuple and raw bitmap precomputed. Describes what a namespace will hold before it is created. |
 | **ModuleNamespace** | Module-level scope. Has a `builtins` dict for fallback lookup. Each .ki module gets one. |
-| **CollectorNamespace** | Like Namespace but its bindings are values the class dict copies out, so `FindRef` and ref requests skip it (except for `__class__`) and resolve from the enclosing scope. Used for class member collection. |
+| **CollectorNamespace** | Like Namespace but its bindings are values the class dict copies out, so `FindRef` and ref requests skip its own bindings (except for `__class__`) and resolve from the enclosing scope. The cells it captured from that scope at construction (the slots past its locals, named by its spec's `closure_syms` and `global_syms`) do pass through, which is how a method reaches the enclosing function's variables when the stored parent link has skipped the call frame; the body captures such a name even when it declares the same name itself. Used for class member collection. |
 | **Module** | Object whose attributes are backed by lookups in a Namespace. Has `__dict__` = the underlying Namespace. |
 
 ### Key API (C)

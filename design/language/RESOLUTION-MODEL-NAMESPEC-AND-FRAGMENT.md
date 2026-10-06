@@ -77,7 +77,7 @@ When `fragment.merge(other)` runs, the outer fragment adopts:
 |-------|------|---------|------------------|-------------|
 | `name` | str or None | Scope identity | — | Optional display |
 | `local_syms` | tuple | Names declared in this scope | Validation (satisfied set) | ns_init_syms: allocate fast slots |
-| `closure_syms` | tuple | Names from enclosing scope(s) | Cpool merge (propagate to parent) | ns_init_syms: resolve from parent, allocate fast slots |
+| `closure_syms` | tuple | Names from enclosing scope(s) | Cpool merge (propagate to parent); an inline scope (let, class body) merges the needs of the function constants compiled inside it before its own spec is built | ns_init_syms: resolve from parent, allocate fast slots |
 | `global_syms` | tuple | Names from module (define-global) | Validation (satisfied set) | ns_init_syms: resolve from module |
 
 Request-for-write is not on NamespaceSpec. The pragma tracks `request_for_write_syms` by Code id via `get_request_for_write_syms(code)`. NamespaceSpec is a pure runtime descriptor: `KosNamespace_FromSpec` and `ns_init_syms` use only `local_syms`, `closure_syms`, and `global_syms`.
@@ -87,7 +87,7 @@ Request-for-write is not on NamespaceSpec. The pragma tracks `request_for_write_
 Built by `ByteCodeFragment.as_namespace_spec()` (via pragma):
 
 - `local_syms` = `tuple(declares)`
-- `closure_syms` = unique union of `requests` and `requests_for_write`, excluding `_request_global`
+- `closure_syms` = unique union of `requests` and `requests_for_write`, excluding `_request_global`. For a let or class scope, `merge_function_constant_needs` first folds every completed function constant's `closure_syms` and write syms into the scope's requests (`child_namespace`, `collector_namespace`), since a function built inside the scope reaches the enclosing function's cells only through the scope's namespace: the stored parent link skips the call frame. A collector scope takes the name even when it declares it, because its own bindings are never visible to its methods.
 - `global_syms` = `tuple(_request_global)`
 
 The names are atoms until the processor spells them; a Code's NamespaceSpec holds spellings.
@@ -256,8 +256,8 @@ between the current Code and nested functions; they contribute their
 - **Structure:** Uses `collector_namespace` context manager. No values; names are declared empty and filled during body execution.
 - **Child fragment:** Receives `declare_var` for each name. Body compiles into child.
 - **collector_namespace exit:** Emits PUSH_COLLECT nspec (child's NamespaceSpec), child.instructions, POP_COLLECT. The nspec is the oparg; no CONST for values.
-- **NamespaceSpec:** Same fields as PUSH_NS. `local_syms` from declares; `closure_syms` from propagated requests; `global_syms` from request_global.
-- **Runtime:** CollectorNamespace created from nspec. Parent resolution same as PUSH_NS. POP_COLLECT pushes the collected namespace onto the stack.
+- **NamespaceSpec:** Same fields as PUSH_NS. `local_syms` from declares; `closure_syms` from propagated requests and from the function constants in the body, a name the body also declares included; `global_syms` from request_global.
+- **Runtime:** CollectorNamespace created from nspec. Parent resolution same as PUSH_NS. A method's capture skips the body's own bindings and takes the captured cells past the locals (`ns_collector_captured_ref`). Write validation of a method does not count the class body's declarations as satisfying. POP_COLLECT pushes the collected namespace onto the stack.
 
 ---
 

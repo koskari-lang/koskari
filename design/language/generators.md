@@ -31,6 +31,11 @@ Generators are created when a function contains `yield` or `yield-from`:
 - **State preservation**: Generator state preserved between yields
 - **Exception handling**: Exceptions can be sent into generator via `.throw()`
 - **Cleanup**: Generator cleanup via `.close()`
+- **PEP 479 / PEP 525**: a `StopIteration` or `StopAsyncIteration` escaping
+  the body becomes `RuntimeError("generator raised ...")` with the original
+  as `__cause__`, on every consumer (Python `next`, `async for`, Koskari
+  `for-each`); a coroutine body's `StopIteration` becomes
+  `RuntimeError("coroutine raised StopIteration")`. Settled 2026-10-06.
 
 ## From sibilant-ceval
 

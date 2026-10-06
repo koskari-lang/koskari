@@ -3760,9 +3760,8 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_LOOP {#kos_op_clear_loop}
 
 - **Style**: NOARG.
-- **Stack**: No stack effect. Disables the top LOOP region (sets `enabled` to 0) and clears the loop segment. Used on normal exit from a while-loop body (before POP_LOOP), or on iterator exhaustion in patterns that only use LOOP extents.
+- **Stack**: Clears the loop segment. Disables the top LOOP region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP. Use CLEAR_FOREACH for FOREACH extents.
-- **Example:** On `break` from a while loop: CLEAR_LOOP (and possibly CLEAR_TRY) then jump to break_pc; POP_LOOP at target.
 - **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
 
 ---
@@ -3770,7 +3769,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_FOREACH {#kos_op_clear_foreach}
 
 - **Style**: NOARG.
-- **Stack**: No stack effect. Disables the top FOREACH region (sets `enabled` to 0) and clears the loop segment. Used when a for-each iterator is exhausted naturally (before POP_FOREACH).
+- **Stack**: Clears the loop segment. Disables the top FOREACH region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH. Use CLEAR_LOOP for LOOP extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_FOREACH.c`
 
@@ -3803,7 +3802,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_POP_LOOP {#kos_op_pop_loop}
 
 - **Style**: NOARG.
-- **Stack**: Drop the region's segment (no promotion); pop LOOP region; push loop result from the region (stored on the region, not from the block).
+- **Stack**: Pop LOOP region and drop its segment; push the loop result. An enabled region delivers the result stored on the region; a region CLEAR_LOOP disabled ran its else clause, and the clause's value, the top of the region's stack, is the result. A disabled region with an empty stack is a pop underrun.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP (paired with PUSH_LOOP).
 - **Implementation**: `koskari/lib/opcode/POP_LOOP.c`
 
@@ -3812,7 +3811,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_POP_FOREACH {#kos_op_pop_foreach}
 
 - **Style**: NOARG.
-- **Stack**: Drop the region's segment (no promotion); pop FOREACH region; push loop result from the region (stored on the region, not from the block). When no BREAK or CONTINUE set a result, push `None`.
+- **Stack**: Pop FOREACH region and drop its segment; push the loop result. An enabled region delivers the result stored on the region, or `None` when no CONTINUE set one; a region CLEAR_FOREACH disabled ran its else clause, and the clause's value, the top of the region's stack, is the result. A disabled region with an empty stack is a pop underrun.
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH (paired with PUSH_FOREACH).
 - **Implementation**: `koskari/lib/opcode/POP_FOREACH.c`
 

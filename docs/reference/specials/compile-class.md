@@ -7,7 +7,11 @@
   position tuple); **not** a compile-time binding target for this special
 - **SUPERS**: list of superclass expressions and optional `meta: Metaclass` keyword
 - **BODY**: forms compiled in sequence inside the CollectorNamespace (e.g.
-  `compile/define` for class attributes and methods)
+  `compile/define` for class attributes and methods). A method closes over
+  the variables of the function the class is defined in, never over the
+  body's own names: a name the body binds is a class attribute, and a
+  method that mentions it reads the enclosing scope's binding of that name
+  (or fails with NameError), as in Python.
 
 **Use-case:** Create a Koskari class via PUSH_COLLECT/POP_COLLECT/BUILD_CLASS and
 run the body in a CollectorNamespace. The **value of the form** is the new class
