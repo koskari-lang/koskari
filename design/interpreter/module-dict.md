@@ -1,6 +1,9 @@
 # A Koskari module's `__dict__`
 
-Status: open (investigate). Recorded 2026-10-01.
+Status: resolved. Recorded 2026-10-01; the dict contract was met when
+`ModuleNamespace` became a dict subclass with the mapping methods
+answering tier 3 and a dict body holding the mirrored dunders, and the
+module type became a `types.ModuleType` on 2026-10-06 (below).
 
 ## The constraint
 
@@ -22,10 +25,24 @@ which is not a dict, so `@dataclass` in an imported `.ki` file fails at
 import (`tox -qe churn -- field` showed it). The identity fix stays;
 the dict contract has to be met on top of it.
 
-`ModuleNamespace` cannot be a dict subclass: it is a variable-size
-object with its own header and a flexible slot array, and cannot also
-carry a `PyDictObject` body. Its `binds` dict holds `Ref` cells, not
-values, so it cannot be exposed as the dict either.
+`ModuleNamespace` is now a dict subclass: the dict body is a real
+`PyDictObject` that holds only the mirrored dunders (`__name__`,
+`__package__`, `__spec__`, `__file__`, `__loader__`, `__doc__`), kept
+in step by `mdl_ns_mirror`, and the mapping methods answer tier 3 from
+the refs. A C caller that reads the body with `PyDict_GetItem` sees the
+mirrored names only; the attribute and mapping protocols see every
+binding.
+
+`Module` is a `types.ModuleType` subclass with no field of its own: the
+namespace sits in the base's dict slot (`PyModule_Type.tp_dictoffset`),
+so `isinstance(mod, types.ModuleType)`, `inspect.ismodule`, `doctest`,
+`pydoc`, `inspect.getfile` and `PyModule_GetDict` all work, and the
+base's dealloc, traverse, clear and repr serve. Attribute access stays
+Koskari's getattro/setattro over the namespace; the base's `__init__`
+is masked by a no-op since the namespace is the module's whole state.
+An `AttributeError` names the module by name, never by repr: the
+base's repr goes through importlib, which reads attributes, and a repr
+inside the error text would recurse.
 
 ## Tried and set aside: an in-place snapshot dict
 

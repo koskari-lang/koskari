@@ -920,11 +920,9 @@ PyObject *KosModuleNamespace_New(
 extern PyTypeObject KosModuleType;
 
 
-typedef struct KosModule {
-  PyObject_VAR_HEAD
-
-  PyObject *ns;         // KosNamespace
-} KosModule;
+/* A Module is a types.ModuleType whose dict slot holds its Koskari
+   namespace: the module object carries no field of its own, and the
+   namespace is read through PyModule_Type's dict offset. */
 
 
 /**
@@ -938,7 +936,7 @@ PyObject *KosModule_New(PyObject *namespace);
 
 
 #define KosModule_NAMESPACE(mdl)                \
-  (((KosModule *) mdl)->ns)
+  (*(PyObject **) ((char *) (mdl) + PyModule_Type.tp_dictoffset))
 
 #define KosModule_CheckExact(obj)     \
   ((obj) && ((obj)->ob_type == &KosModuleType))

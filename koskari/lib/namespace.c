@@ -3360,16 +3360,16 @@ static PyObject *mdl_getattro(PyObject *self, PyObject *name) {
     if (empty < 0)
       return NULL;
     if (empty) {
-      PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
-                   self, name);
+      PyErr_Format(PyExc_AttributeError, "module %R has no attribute %R",
+                   KosNamespace_NAME(KosModule_NAMESPACE(self)), name);
       return NULL;
     }
     return KosRef_Deref(ref);
   }
 
   if (! PyErr_Occurred())
-    PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
-                 self, name);
+    PyErr_Format(PyExc_AttributeError, "module %R has no attribute %R",
+                 KosNamespace_NAME(KosModule_NAMESPACE(self)), name);
   return NULL;
 }
 
@@ -3388,8 +3388,8 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
       return fun(descr, self, value);
 
     } else {
-      PyErr_Format(PyExc_AttributeError, "%R object attribute %R is read-only",
-                   self, name);
+      PyErr_Format(PyExc_AttributeError, "module %R attribute %R is read-only",
+                   KosNamespace_NAME(KosModule_NAMESPACE(self)), name);
       return -1;
     }
   }
@@ -3401,14 +3401,24 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
       : ns_claim_ref(ns, name);
   if (! ref) {
     if (! PyErr_Occurred())
-      PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
-                   self, name);
+      PyErr_Format(PyExc_AttributeError, "module %R has no attribute %R",
+                   KosNamespace_NAME(KosModule_NAMESPACE(self)), name);
     return -1;
   }
 
   if ((value? KosRef_Store(ref, value): KosRef_Clear(ref)) < 0)
     return -1;
   return mdl_ns_mirror(ns, name, value);
+}
+
+
+/* The base's __init__ takes (name, doc) and makes a fresh dict; the
+   namespace given to new is the whole of the module's state. */
+static int mdl_init(PyObject *self, PyObject *args, PyObject *kwds) {
+  (void) self;
+  (void) args;
+  (void) kwds;
+  return 0;
 }
 
 
@@ -3429,37 +3439,24 @@ static PyObject *mdl_new(PyTypeObject *type,
 }
 
 
-static void mdl_dealloc(PyObject *self) {
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(KosModule_NAMESPACE(self));
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static int mdl_traverse(PyObject *self, visitproc visit, void *arg) {
-  Py_VISIT(KosModule_NAMESPACE(self));
-  return 0;
-}
-
-
-static int mdl_clear(PyObject *self) {
-  Py_CLEAR(KosModule_NAMESPACE(self));
-  return 0;
-}
-
-
+/* A types.ModuleType whose dict slot holds the Koskari namespace, so
+   the stdlib's module tools (inspect, doctest, pydoc, pickle) take it
+   for a module and the base's dealloc, traverse, clear and repr serve.
+   Attribute access stays Koskari's: tier 3 of the namespace, never the
+   dict body, which holds only the mirrored dunders. The size is the
+   base's: no field of our own. */
 PyTypeObject KosModuleType = {
   PyVarObject_HEAD_INIT(NULL, 0)
 
   "koskari.lib.Module",
-  sizeof(KosModule),
+  0,
   0,
 
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_base = &PyModule_Type,
+  /* GC flag, traverse and clear come from the base together */
+  .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_new = mdl_new,
-  .tp_dealloc = mdl_dealloc,
-  .tp_traverse = mdl_traverse,
-  .tp_clear = mdl_clear,
+  .tp_init = mdl_init,
   .tp_getset = mdl_getset,
   .tp_methods = mdl_methods,
   .tp_getattro = mdl_getattro,
@@ -3477,13 +3474,17 @@ PyObject *KosModule_New(PyObject *namespace) {
     return NULL;
   }
 
-  PyObject *self = PyObject_GC_New(PyObject, &KosModuleType);
+  /* the base's new leaves the dict slot empty; the namespace fills it */
+  PyObject *args = PyTuple_New(0);
+  if (! args)
+    return NULL;
+  PyObject *self = PyModule_Type.tp_new(&KosModuleType, args, NULL);
+  Py_DECREF(args);
   if (! self)
     return NULL;
 
   Py_INCREF(namespace);
-  KosModule_NAMESPACE(self) = namespace;
-  PyObject_GC_Track(self);
+  Py_XSETREF(KosModule_NAMESPACE(self), namespace);
 
   return self;
 }
@@ -3612,8 +3613,8 @@ int koskari_namespace_init(PyObject *mod) {
     return -1;
   STR_CONST(_module_str, "<module>");
   mdl_mirrored_names = Py_BuildValue(
-      "(sssss)", "__name__", "__package__", "__spec__", "__file__",
-      "__loader__");
+      "(ssssss)", "__name__", "__package__", "__spec__", "__file__",
+      "__loader__", "__doc__");
   if (! mdl_mirrored_names)
     return -1;
 
