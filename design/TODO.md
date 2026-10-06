@@ -78,7 +78,7 @@ Ref: [interpreter/result-destinations.md](interpreter/result-destinations.md).
 ### Trailing defaults fast path (design discussion)
 
 A function with defaults only at the tail takes the general formals
-machine on every call and never reuses its parked frame; 18 cycles per
+machine on every call and never reuses its cached frame; 18 cycles per
 call over the simple path, every call in the tree kernel. A min..max
 arity classification with a default vector; default modes decide it.
 
@@ -374,10 +374,11 @@ Ref: [interpreter/demand-flattening.md](interpreter/demand-flattening.md).
 
 A yield moves the span above the GEN off the chain intact, so a
 `dynamic-wind` or `with` inside a generator holds its state while the
-consumer runs and does not re-establish it at the resume. PARAM parks
-and unparks its cells through `kos_dyn_extent_park` / `unpark`; decide
-whether other kinds need a leave and re-enter walk without unlinking.
-Ref: [interpreter/generator-extent-park.md](interpreter/generator-extent-park.md).
+consumer runs and does not re-establish it at the resume. PARAM restores
+its cells in `kos_dyn_extent_freeze` and re-enters them in
+`kos_dyn_extent_install`; decide whether other kinds need a leave and
+re-enter walk without unlinking.
+Ref: [interpreter/generator-extent-freeze.md](interpreter/generator-extent-freeze.md).
 
 ### Closing a delegate through `yield-from` (investigate)
 

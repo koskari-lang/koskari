@@ -16,9 +16,9 @@ tests.reproducers.test_foreach_pyaiter_await
 
 Defect reproducer, RED until fixed: koskari for-each over a python
 async iterator must treat StopAsyncIteration surfacing from a step
-parked on its await as end-of-iteration. ITER_NEXT's in-flight
+suspended on its await as end-of-iteration. ITER_NEXT's in-flight
 receiver machinery (the FOREACH step phase and iter-boundary
-capability) is armed only for flattened koskari generators; a python
+capability) is enabled only for flattened koskari generators; a python
 async iterator that suspends and then exhausts propagates
 StopAsyncIteration out of the loop instead of branching to the loop
 exit. Steps that exhaust synchronously (eagerly, without suspending)

@@ -42,7 +42,7 @@ Thunks and `__enter__`/`__exit__` bodies are ordinary frames in the same
 `koskari_eval` loop. When one returns into the node (a frame return that
 delivers into a non-frame parent) or its awaitable revives,
 **`kos_dyn_settle_top(es, &out_return)`** settles the node, and when what
-settled was a leave, unlinks it (unless a transfer goal is parked on that
+settled was a leave, unlinks it (unless a transfer goal is waiting on that
 node, in which case the goal's drive does).
 
 ---
@@ -52,7 +52,7 @@ node, in which case the goal's drive does).
 Every node leaves through **`kos_dyn_unlink_top(es, ev, allow_barrier)`**:
 
 1. A `CONTROL_HOOK` node is asked to leave; any answer but NORMAL returns
-   with the node still on the chain, and the caller parks and asks again.
+   with the node still on the chain, and the caller waits and asks again.
 2. The synchronous per-kind teardown runs.
 3. The node's obligation is detached.
 4. The parent becomes `dyn_top`; the node is freed.
@@ -79,10 +79,10 @@ RAISE; 1 crosses it.
 A WIND or WITH owns one **`KosObligation`** slot (`kos_dyn_node_ob`): what
 the node owes when it is unlinked.
 
-| Kind | What it holds | Who parks it |
+| Kind | What it holds | Who stores it |
 |---|---|---|
 | `KOS_OB_VALUE` | the body value at `POP_WIND` or `POP_WITH` | the pop opcode |
-| `KOS_OB_EXCEPTION` | the exception `__exit__` is handling, or one parked while the after thunk runs | the raise walk, `POP_WITH` on a raise |
+| `KOS_OB_EXCEPTION` | the exception `__exit__` is handling, or one stored while the after thunk runs | the raise walk, `POP_WITH` on a raise |
 | `KOS_OB_RETURN` | a return, break, or continue value crossing a leave in flight, with its path and delimiter bookmark | the return and loop walks |
 | `KOS_OB_SWALLOWED` | nothing: `__exit__` consumed the raise and None stands in for the body value | the with's exit classification |
 
@@ -110,14 +110,14 @@ raise. The GC traverses the slot through the node.
 2. **Unwind walks** (`kos_dyn_unwind_return` / `_to_frame` / `_to_node` /
    `_to_loop` / `_raise`, `dyn_walk.c`): unlink node by node with the walk's
    event; a node whose leave is in flight stops the walk (reported through
-   `out_pending`), and the settle resumes it. The raise walk parks its
+   `out_pending`), and the settle resumes it. The raise walk stores its
    exception on a wind before running the after thunk; the return walk
-   parks the value.
+   stores the value.
 3. **Transfer goals** (`xfer_goal.c`): LEAVING unlinks with
    `KOS_XFER_EVENT_TRANSFER` down to the seam; ENTERING asks
    `kos_dyn_extent_enter` of each landed `CONTROL_HOOK` node outermost
-   first. A leave or enter that answers REPROLOGUE or AWAIT parks the goal.
-   See [EVALUATOR.md §6](../EVALUATOR.md).
+   first. After a leave or enter that answers REPROLOGUE or AWAIT the goal
+   waits on that node. See [EVALUATOR.md §6](../EVALUATOR.md).
 
 Suspension inside a thunk is ordinary: the thunk's own AWAIT reaches the
 driver, the revive continues the thunk, and its eventual return settles the

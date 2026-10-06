@@ -9,14 +9,14 @@ would take, and the questions the discussion has to settle.
 A function is "simple" when its formals are exact positionals with no
 defaults, star, or keywords: `KosFunction_SIMPLE_ARITY1` holds the
 arity plus one, and a call with that many arguments steal-binds the
-block straight into a parked frame's namespace
+block straight into a cached frame's namespace
 (`KosFormals_SimpleStealApplyBlock`, `kos_dyn_push_ready_frame`).
 
 A function with one trailing default, `[depth x: 1]`, is not simple.
 Every call takes the general formals machine: a fresh namespace from
 the template, `KosFormals_VectorApplyFast`, and a frame that is tagged
 for the cache at return but never taken from it, because every consumer
-of a parked frame requires simple arity (brainstorm item 1.6). The
+of a cached frame requires simple arity (brainstorm item 1.6). The
 `mc_dflt` microbenchmark measures the difference at 18 cycles per call
 over the simple path. The `tree` churn kernel takes this path on every
 call; estimated 2-4% there, about 20% per call for such functions.
@@ -32,11 +32,11 @@ no star and no keyword-only. Record on the function:
 
 A call with `min <= nargs <= max` and no keyword names steal-binds the
 `nargs` block references into slots `0 .. nargs-1`, fills slots
-`nargs .. max-1` from the vector, and continues on the parked-frame path
+`nargs .. max-1` from the vector, and continues on the cached-frame path
 the simple call already uses. Slots filled from the vector are raw
-slots, so `KosNamespace_ResetToTemplate` clears them at the park like
-any other local. A call with keyword names, or outside the range, keeps
-the general path.
+slots, so `KosNamespace_ResetToTemplate` clears them when the frame is
+cached, like any other local. A call with keyword names, or outside the
+range, keeps the general path.
 
 The hit test today compares `simple_arity1`, `bind_self_state`, and the
 code's yield flag at several sites (`kos_call_cached_frame_install`,
@@ -63,7 +63,7 @@ one field and belongs with this change.
    there, as the simple test does.
 3. **Where the vector lives.** On the KosFunction as a tuple, or as
    the trailing slots of the template namespace already holding the
-   default values (the template is copied per call today; a parked
+   default values (the template is copied per call today; a cached
    frame's reset would then have to restore rather than clear those
    slots). The second stores the fact once, but changes what
    `ResetToTemplate` means for a default slot.

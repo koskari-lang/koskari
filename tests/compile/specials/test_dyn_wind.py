@@ -721,7 +721,7 @@ class TestDynWindRaiseUnwind(SpecialsTestCase):
     async def test_after_thunk_runs_on_exception_unwind(self):
         """
         An exception unwinding through a dyn-wind extent runs the after
-        thunk exactly once (parked on the wind while the thunk runs)
+        thunk exactly once (stored on the wind while the thunk runs)
         before the enclosing handler catches it.
         """
 

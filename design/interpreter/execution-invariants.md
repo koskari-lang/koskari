@@ -279,7 +279,7 @@ the boundary constraint.
   invoked via `kos_callable_call`, not Python callables.
 * Thunks run as normal frames in the eval loop; when a thunk returns into
   its WIND, `kos_dyn_settle_top` advances the node, and the walk or transfer
-  goal that was parked on it continues.
+  goal that was waiting on it continues.
 * Thunks capture lexical context via closure.
 * **Local jumps and wind/unwind are distinct**: local jumps do *not* invoke
   wind/unwind handlers; continuation transfer *does* invoke them.
@@ -312,8 +312,8 @@ continuation capture and avoids special hook machinery.
 * Continuation application is a **transfer goal**: a record of where control
   is going (seam, target, payload), never of what to do.
 * The driver derives its next step from the live chain on every pass, so a
-  chain that moved while the goal was parked is its input, never a hazard.
-* A goal parked on a node (its thunk or `__exit__` is running, or it awaits)
+  chain that moved while the goal was waiting is its input, never a hazard.
+* A goal waiting on a node (its thunk or `__exit__` is running, or it awaits)
   acts again only when `dyn_top` is where it was when the node fired.
 * Landing is total: splice, resume pc, and the freeing of outer goals on an
   undelimited landing happen in one synchronous step.
@@ -345,7 +345,7 @@ continuation capture and avoids special hook machinery.
   block (a jump's target, an EXTRA's row, a row's LABEL target); the
   fill pass re-derives them after the move.
 * Nothing that outlives the quiescent point may hold a pointer into a
-  block. Frames, continuations, defers, and parked frames hold the code
+  block. Frames, continuations, defers, and cached frames hold the code
   object and an integer pc; a handler holds its own record only for its
   own execution, and a resume's state never names a record.
 * The instruction base is therefore never cached on a frame; the

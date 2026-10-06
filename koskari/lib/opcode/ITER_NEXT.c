@@ -16,7 +16,7 @@
 
 /**
   ITER_NEXT: region-based loop step; arg = else PC. One iteration
-  request against the FOREACH node's armed record -- provider, python
+  request against the FOREACH node's request on record -- provider, python
   async, and sync iterators all step through KosIterRequest_Next.
   Branch to else_pc on exhaustion. Must be inside PUSH_FOREACH block.
   Auto-await.
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
     RESULT_RAISE();
   }
 
-  /* The else pc is armed before the step so a delivery or a raise-walk
+  /* The else pc is recorded before the step so a delivery or a raise-walk
      exhaustion conversion lands on the right resume point. */
   KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
       KosOp_ARG(insn);
@@ -52,7 +52,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
       case KOS_IREQ_CONTINUES: {
         /* A frame the install left current is threaded into only when
            it can be: a code-less native frame takes the entry
-           sequence, and a frame parked inside a yield-from runs that
+           sequence, and a frame suspended inside a yield-from runs that
            node's phase resume first. */
         RESULT_RELAY(es, kos_iter_installed(es));
       }

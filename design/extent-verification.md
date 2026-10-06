@@ -71,18 +71,18 @@ with authority.
 ## Open question: CLEAR semantics
 
 `CLEAR_TRY`, `CLEAR_FINALLY`, `CLEAR_LOOP`, and `CLEAR_FOREACH`
-disarm a node at runtime without popping it. Neither the extent
+disable a node at runtime without popping it. Neither the extent
 derivation nor the promotion pass gives them any meaning today: the
 static extent runs [push_pc, pop_pc] regardless, and the pass keeps
 denying promotion through a cleared try. Two consistent readings:
 
 - **Close**: a CLEAR ends the extent's obligations, so a tail call
   after `CLEAR_TRY` but before `POP_TRY` could legally promote (the
-  handler is disarmed; only the node's memory remains, and the tail
+  handler is disabled; only the node's memory remains, and the tail
   drop could release it). This buys promotion coverage for the
   try-body-tail shape at the cost of teaching all three layers that
   CLEAR downgrades a kind to discardable.
-- **Restart**: a CLEAR is an arming boundary within a live extent
+- **Restart**: a CLEAR re-enables the node within a live extent
   (the loop forms reuse it per iteration), so it says nothing about
   obligations and the conservative deny stands.
 

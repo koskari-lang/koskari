@@ -16,9 +16,9 @@ tests.reproducers.test_with_return_poll
 
 A return out of a with block installs the manager's __exit__ through
 the native call entry. That install is a cooperation point, and when
-the eval breaker is up it reports so. The unwind walk must still park
+the eval breaker is up it reports so. The unwind walk must still store
 the return on the with node so the value is delivered once __exit__
-finishes. The signal is armed from inside the body, so the install is
+finishes. The signal is raised from inside the body, so the install is
 the first cooperation point that sees it.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

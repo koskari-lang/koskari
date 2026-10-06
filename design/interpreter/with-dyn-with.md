@@ -105,14 +105,14 @@ block for the body.
 
 ### Result value
 
-- The overall expression result is the body's value: POP_WITH parks it as
-  the pop's value and the unlink pushes it once exit has run.
+- The overall expression result is the body's value: POP_WITH stores it on
+  the node as the pop's value and the unlink pushes it once exit has run.
 - When exit swallows an exception the body produced no value, and the
   result is `None`.
 - **Exit return is never the with value.** The value returned by `exit` (or
   `__aexit__`) is used **only** for swallow logic (exception and truthy means
   swallow). The VM never leaves the exit return on the stack as the
-  with-expression value; it is consumed and then the parked body value (or
+  with-expression value; it is consumed and then the stored body value (or
   `None` on a swallow) is pushed. Both the sync path and the async exit path
   (sync completion and resume) enforce this.
 
@@ -193,7 +193,7 @@ is pushed, and the exception propagates.
    Auto-await if needed.
 2. Pop the operand stack block owned by the node.
 3. Pop the dyn node.
-4. Push the parked body value as the value of the `with` expression.
+4. Push the stored body value as the value of the `with` expression.
 
 **Behaviour (exception unwinding):** When leaving due to an exception inside the
 body, the runtime enters the exception path for the nearest active `with`
@@ -224,7 +224,7 @@ with-expression value.
 - **Sync completion:** The exit result settled in one step and was pushed. The node's leave settles it at once
   (`kos_dyn_extent_settle` pops it; a swallow leaves a SWALLOWED obligation), and the unlink
   (`kos_dyn_unlink_top`) drops the owned segment, pops the WITH node, sets
-  the frame PC to `resume_pc`, and pushes the parked body value (`None`
+  the frame PC to `resume_pc`, and pushes the stored body value (`None`
   after a swallow).
 - **Suspend:** The leave answers AWAIT; the node stays on the chain in
   `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` holding the exception it is handling
@@ -234,7 +234,7 @@ with-expression value.
   value, then `kos_dyn_settle_top` settles the node at `dyn_top` (pops that
   value, applies swallow) and unlinks it, which drops the segment, pops the
   node, sets the PC, and pushes the body value, `None` after a swallow (or
-  re-raises the parked exception when `__exit__` did not swallow).
+  re-raises the stored exception when `__exit__` did not swallow).
   Execution then continues at the instruction after POP_WITH with that
   value as the with value.
 
@@ -291,9 +291,9 @@ it, ENTERING runs `enter` and re-binds `name` if present. A single-shot
 shared across clones, so no instance runs `__exit__` twice.
 
 **Suspension:** `enter` / `exit` may suspend (auto-await). The leave or
-enter answers AWAIT, the goal parks on the node, the driver receives
+enter answers AWAIT, the goal waits on the node, the driver receives
 `KOS_RES_AWAIT`, and on the next `koskari_eval` the revive settles the node
-and the prologue's goal drive continues from where it parked. See
+and the prologue's goal drive continues from the node it waited on. See
 [extent-wind-unwind.md](extent-wind-unwind.md) for the contract and
 [EVALUATOR.md §6](../EVALUATOR.md) for the driver.
 
@@ -333,7 +333,7 @@ for other extent kinds; no special case for dyn-with.
 - The with body should compile as a normal block that ends with a `POP_*_WITH`
   at the structurally correct exit point(s).
 - The body's last value is the expression value, so the compiler carries it
-  to POP_WITH, which parks it across the exit call.
+  to POP_WITH, which stores it on the node across the exit call.
 
 
 ## Required tests (minimal)

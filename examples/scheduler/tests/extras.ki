@@ -39,7 +39,7 @@ define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
 
     define hide-module [self name]:
         """
-        Make `name` unimportable for the duration of one test by parking
+        Make `name` unimportable for the duration of one test by stashing
         None under it in sys.modules -- which is what the import machinery
         itself treats as "halted", so the failure is a real ImportError
         raised from the real import, not a stubbed one.

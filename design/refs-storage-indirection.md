@@ -4,7 +4,7 @@
 
 Proposed. Single combined work item: a focused user-doc page on refs, a
 relocation of the by-ref material out of the functions tutorial, supporting
-corpus entries, and unit tests that pin the example cases.
+corpus entries, and unit tests that check the example cases.
 
 ## Summary
 
@@ -68,7 +68,7 @@ capability over exactly one slot.
    `101`, list slot mutated, etc.) and asserting the failure mode when a value
    is passed instead of a ref. Likely alongside
    [tests/importer/test_byref_formals.py](../tests/importer/test_byref_formals.py)
-   or a new `tests/reproducers/` scenario so the documented examples are pinned.
+   or a new `tests/reproducers/` scenario so the documented examples are tested.
 
 ## Design notes
 

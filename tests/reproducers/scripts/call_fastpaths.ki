@@ -13,7 +13,7 @@
 
 ;; Kernels for the call and return fast paths: self-tail in-place
 ;; namespace rebind, plain returns delivered into loop / let / foreach
-;; extents, and unbound method calls through the parked-frame steal.
+;; extents, and unbound method calls through the cached-frame steal.
 
 
 ;; Self-tail at simple arity: after the first promoted hop the frame's
@@ -77,7 +77,7 @@ define-class Counter []:
 
 
 ;; Unbound method calls at simple arity: the self-steal route with the
-;; parked frame.
+;; cached frame.
 
 define bump_loop [c n]:
     define i 0

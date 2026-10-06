@@ -265,7 +265,7 @@ unless a strong human-factors reason appears.
 
 ### Formal binding contract (`macro-rules`)
 
-The specification must pin down:
+The specification must state:
 
 * **Which names are formals** — Pattern variables only; literals and the macro
   name do not become parameters.

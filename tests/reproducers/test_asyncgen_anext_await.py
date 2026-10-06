@@ -14,10 +14,10 @@
 """
 tests.reproducers.test_asyncgen_anext_await
 
-Regression pins for the anext await-suspension underrun: a Python-side
-__anext__ drive of a koskari async generator must handle a step that
-suspends on an await. Previously any anext step containing an await
-failed with "stack pop underrun" because the resume path re-entered the
+Regression tests for the anext await-suspension underrun: a
+Python-side __anext__ drive of a koskari async generator must handle a
+step that suspends on an await. Previously any anext step containing
+an awaitfailed with "stack pop underrun" because the resume path re-entered the
 evaluator as if no await were pending; flattened and demand consumption
 were unaffected.
 
@@ -103,8 +103,8 @@ class TestAsyncGenAnextAwait(unittest.IsolatedAsyncioTestCase):
         """
         a KosPyIter step, then anext on the same agen: the async
         drive's step awaits and completes -- the demand bit was forced
-        off at the async install (the alternation pin previously blocked
-        by this defect)
+        off at the async install (the alternation test previously
+        blocked by this defect)
         """
 
         mod = await self.load("agaw_alternation")
@@ -114,22 +114,23 @@ class TestAsyncGenAnextAwait(unittest.IsolatedAsyncioTestCase):
 
     async def test_mid_await_reentry_guarded(self):
         """
-        while a step is parked on its await, the generator is in use: a
-        second anext is refused instead of corrupting the parked step
+        while a step is suspended on its await, the generator is in use:
+        a second anext is refused instead of corrupting the suspended
+        step
         """
 
         mod = await self.load("agaw_guard")
         agen = vars(mod)["g-yield-then-await"]()
         self.assertEqual(await agen.__anext__(), "one")
 
-        # park the second step on its await
+        # suspend the second step on its await
         task = asyncio.ensure_future(agen.__anext__())
         await asyncio.sleep(0)
 
         with self.assertRaises(RuntimeError):
             await agen.__anext__()
 
-        # the parked step is undisturbed and completes
+        # the suspended step is undisturbed and completes
         self.assertEqual(await task, "two")
 
 

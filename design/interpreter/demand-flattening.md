@@ -129,7 +129,7 @@ a tuple and dict for `demand_sync_ex`, which nested an eval, or refused
 the callable (D4).
 
 **D3. No call-or-install entry for a non-resume context.** Fixed in the
-working tree. `KosEvalState_CallResult` arms its resume on the current
+working tree. `KosEvalState_CallResult` sets its resume on the current
 frame (`eval/eval_call.c:290`, `:318-335`); inside an install slot that
 is the calling bytecode frame, and the return fast paths assume only
 code-less frames carry resumes (`eval.c:2539-2548`). Each wrapper
@@ -228,8 +228,8 @@ through `kos_eval_route_delim_return` (`eval.c:~1488`). Two faults:
   is live, before the resync.
 - The route resumed dispatch (`NORMAL`) at the invoker's pc; a code-less
   invoker has none. It now returns `REPROLOGUE` for a code-less invoker,
-  and the prologue delivers the value on the frame's stack to its armed
-  resume, as a callee's return reaches it. No type handles continuations.
+  and the prologue delivers the value on the frame's stack to the resume
+  set on it, as a callee's return reaches it. No type handles continuations.
 
 Before: `(reset (* 2 (shift k (+ ((demand k) 1) ((demand k) 2)))))`
 segfaulted; `(#list ((demand k) 1) ((demand k) 2))` gave `2`; `for-each`
@@ -300,11 +300,11 @@ Committed as WIP (`8d59c673`):
   fast-slot refusal, `Py_LeaveRecursiveCall()` before the context
   release.
 - `eval.h`, `eval/eval_call.c`: `KosEvalState_CallInto`. Pushes a
-  code-less frame with no resume armed, ORs `frame_flags` into it, calls
+  code-less frame with no resume set, ORs `frame_flags` into it, calls
   through `KosEvalState_CallResult` with the resume, and stages a value
   back in hand for the resume (REPROLOGUE). It never reports RETURN. The
-  frame starts unarmed: an armed frame makes `KosEvalState_Call` turn
-  NORMAL into REPROLOGUE (`eval/eval_call.c:199-201`,
+  frame starts with no resume set: a frame with one set makes
+  `KosEvalState_Call` turn NORMAL into REPROLOGUE (`eval/eval_call.c:199-201`,
   `callable_promote_normal` `callable.c:73`), which `CallResult` reads
   as an installed callee, skipping settling.
 - `object.c`: `procedure_resume` / `procedure_resume_kind` (drop the
@@ -559,7 +559,7 @@ tail position.
 - A KosCallable: the boundary's one context and eval state;
   `CallInto(&es, callable, args, nargs, kwnames, &demand_resume_kind,
   NULL, KOS_FRAME_DEMAND)`; freeze on every path. `RAISE` / `FATAL`
-  fail. `AWAIT` clears the parked await iterator
+  fail. `AWAIT` clears the stored await iterator
   (`KosEvalState_PythonAwaitClearIter`, as `eval_event_await` does at
   `eval.c:2482`), sets `KoskariSyncViolation`, and fails. `NORMAL` /
   `REPROLOGUE`: run `koskari_eval`; its RETURN goes to

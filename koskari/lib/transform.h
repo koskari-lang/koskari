@@ -254,7 +254,7 @@ KosIterStepResult kos_transform_step_abort(
 
 /**
    Install the step's resume-carrying frame (from the cache when
-   one is there), push value onto it when one is given, arm resume as
+   one is there), push value onto it when one is given, set resume as
    the frame's resume with the transform as its state, and mark the
    step in flight. value is consumed. label names the frame for the
    capture-refusal message. Returns KOS_ITER_INSTALLED_VALUE, or aborts

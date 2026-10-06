@@ -359,7 +359,7 @@ async def make_builtins():
 
     # one seal for the whole assembly: the shared compiler's registry
     # spans every file, so everything packs into a single arena and
-    # code a later file displaced is dropped rather than pinned. No
+    # code a later file displaced is dropped rather than stored. No
     # gc.collect() here: a displaced definition caught in a reference
     # cycle would be swept in, wasting only its bytes in an arena that
     # is permanently resident anyway (measured: currently none are)

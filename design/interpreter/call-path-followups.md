@@ -6,9 +6,9 @@ scratch files. Each entry names the evidence, the shape of the change,
 and what would gate it. The rule learned while closing the inlining
 item applies to all of them: fold helpers into the out-of-line call
 cores freely, but do not grow the RETURN and CALL handlers or the
-preserve-none trampolines with loop bodies; a fully inlined frame park
-in `kos_return_deliver` cost the method kernel instructions per cycle
-at equal instruction counts.
+preserve-none trampolines with loop bodies; inlining all of the frame
+caching into `kos_return_deliver` cost the method kernel instructions
+per cycle at equal instruction counts.
 
 ## Tail calls to a different function
 
@@ -16,7 +16,7 @@ TAIL_CALL_FAST averages 95 ns against CALL_FAST at 45 plus RETURN at
 28. The non-self arm builds a namespace with
 `SimpleCallNamespaceFromVector`, increfing every argument, then
 `kos_dynframe_reset_for_tail` decrefs them in the block clear. Shape:
-steal-bind from the block into the callee's parked frame, park the
+steal-bind from the block into the callee's cached frame, cache the
 caller's frame, push the callee's ready frame. The self-tail in-place
 arm already runs without namespace allocation (`call_tail_inplace` is
 zero on the kernels because none self-tail-calls). Helps mutual
@@ -36,10 +36,11 @@ range test in [trailing-defaults.md](trailing-defaults.md).
 
 ## ResetToTemplate word at a time
 
-`KosNamespace_ResetToTemplate` runs on every park and self-tail, one
-raw-bit test per slot. Walk the set bits of the template's raw words
-with `ctz`, then copy the raw words. About 1% on binary_trees. It is
-inlined into the park (commit a9cd0612), so its size counts there.
+`KosNamespace_ResetToTemplate` runs every time a frame is cached and
+on every self-tail, one raw-bit test per slot. Walk the set bits of the
+template's raw words with `ctz`, then copy the raw words. About 1% on
+binary_trees. It is inlined where the frame is cached (commit
+a9cd0612), so its size counts there.
 
 ## Frame push and pop bookkeeping
 
@@ -47,7 +48,7 @@ inlined into the park (commit a9cd0612), so its size counts there.
 registers; `kos_eval_check_frame_room` reads the depth again;
 `kos_return_is_plain` re-derives "parent is a plain code frame" from
 five loads per return. Pass the depth once; a "plain parent" flag set
-at push and invalidated where a resume is armed. 1-2%; moderate risk
+at push and invalidated where a resume is set. 1-2%; moderate risk
 around continuations, which re-parent frames.
 
 ## Hot and cold split in handlers

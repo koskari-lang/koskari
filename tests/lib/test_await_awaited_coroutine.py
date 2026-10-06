@@ -32,9 +32,9 @@ from koskari.module import load_module_source_async, new_module
 pytestmark = pytest.mark.phase_lib
 
 
-class Parker:
+class Suspender:
     def __await__(self):
-        yield "parked"
+        yield "suspended"
         return "woken"
 
 
@@ -55,14 +55,14 @@ class TestAwaitAwaitedCoroutine(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
 
         async def inner():
-            return await Parker()
+            return await Suspender()
 
         async def outer(c):
             return await c
 
         c = inner()
         first = outer(c)
-        self.assertEqual(first.send(None), "parked")
+        self.assertEqual(first.send(None), "suspended")
         self.assertIsNotNone(c.cr_await)
 
         second = mod["waiter"](c)
@@ -79,10 +79,10 @@ class TestAwaitAwaitedCoroutine(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
 
         async def inner():
-            return await Parker()
+            return await Suspender()
 
         coro = mod["waiter"](inner())
-        self.assertEqual(coro.send(None), "parked")
+        self.assertEqual(coro.send(None), "suspended")
         with self.assertRaises(StopIteration) as done:
             coro.send(None)
         self.assertEqual(done.exception.value, "woken")

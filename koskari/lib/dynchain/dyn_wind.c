@@ -60,7 +60,7 @@ KosDynWind *kos_dynwind_clone(KosDynWind *wind) {
   if (! wind)
     return NULL;
 
-  /* A thunk in flight, or a value, exception or return parked for its
+  /* A thunk in flight, or a value, exception or return stored for its
      completion, belongs to this node's one run and to no template. */
   if (KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_BEGIN
       || KosDynWind_PHASE(wind) == KOS_WIND_PHASE_PRE_AFTER

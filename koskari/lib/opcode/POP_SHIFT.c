@@ -122,9 +122,9 @@ KOS_OP_HANDLER(POP_SHIFT) {
   Py_DECREF(result);
   if (! goal)
     RESULT_RAISE();
-  SAYF("[POP_SHIFT] goal armed: resume_pc=%u (first instr after POP_PROMPT)",
+  SAYF("[POP_SHIFT] goal active: resume_pc=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));
-  kos_xfer_goal_arm(es, goal);
+  kos_xfer_goal_push(es, goal);
 
   RESULT_REPROLOGUE(es);
 }

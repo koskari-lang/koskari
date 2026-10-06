@@ -19,7 +19,7 @@ The evaluator tests the interpreter's eval breaker at its cooperation
 points -- a loop's back-edge, a frame install, a resume hop, and every
 re-entry through the prologue -- so a signal raised while Koskari code
 runs interrupts any stretch that cycles through one of them. Each test
-arms the interrupt from inside the running code and then runs such a
+raises the interrupt from inside the running code and then runs such a
 stretch: a tight counting loop, a tail-recursive loop, and a deep
 non-tail recursion. The Koskari code catches the interrupt itself, so
 a signal the evaluator failed to poll would
@@ -115,7 +115,7 @@ class TestSignalPoll(SpecialsTestCase):
         back-edge and its argument window lives on the let's segment,
         so the call core's tail arm declines it and the install runs
         through the call slot; that install is still a cooperation
-        point. The signal is armed from a C builtin partway through, so
+        point. The signal is raised from a C builtin partway through, so
         no Python frame can take it first
         """
 
@@ -143,7 +143,7 @@ class TestSignalPoll(SpecialsTestCase):
     async def test_deep_recursion_through_call(self):
         """
         Deep non-tail recursion through Call sees the signal. The
-        signal is armed from a C builtin at depth 500, so the install
+        signal is raised from a C builtin at depth 500, so the install
         that takes it is the five hundred and first, not the first
         """
 

@@ -125,7 +125,7 @@ static void islice_advance(KosISlice *s) {
 /**
    SKIP: discard elements until the source reaches the next wanted
    position, then fetch the one to emit. Always entered with a NULL
-   value. Armed only from the step's driven-source branch, and
+   value. Set only from the step's driven-source branch, and
    re-entered only from islice_resume_discard, so src_sync is 0 on
    every entry: every fetch here is a request. A sync source never
    reaches this resume -- it slices whole inside the step.

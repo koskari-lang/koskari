@@ -18,10 +18,10 @@ A frame install is a cooperation point: with the eval breaker up it
 answers POLL so the handler polls before the callee's first
 instruction. The native call entries used by the demand path and by
 the native providers must translate that answer, since their callers
-read it as a call outcome. Each test arms a signal from inside Koskari
-with a handler that returns, then runs a call whose callee has a rest
-parameter, which takes the generic install arm: Python's sorted calling
-a demand-wrapped key with no Koskari install between, and a native
+read it as a call outcome. Each test raises a signal from inside
+Koskari with a handler that returns, then runs a call whose callee has
+a rest parameter, which takes the generic install arm: Python's sorted
+callinga demand-wrapped key with no Koskari install between, and a native
 filter stepped by a for-each, whose step is reached through the
 prologue and so polls first. Each checks the value and that the
 handler ran by the loop after it

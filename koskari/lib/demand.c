@@ -191,11 +191,11 @@ KOS_RESUME_KIND(demand_resume_kind, "demand",
 
 
 /**
-   The drive context for one boundary call: the wrapper's parked host
-   when there is one, taken out of the park before anything else runs
+   The drive context for one boundary call: the wrapper's cached host
+   when there is one, taken out of the cache before anything else runs
    so no other call can see it, and refreshed to the dynamic state in
    force at this call; otherwise a fresh context. host is NULL when
-   there is no wrapper to park on. New reference.
+   there is no wrapper to cache on. New reference.
 */
 static KosContext *demand_acquire_host(KosContext **host) {
 
@@ -213,9 +213,9 @@ static KosContext *demand_acquire_host(KosContext **host) {
 
 
 /**
-   Return the drive context after the call: recycled, it stays parked
-   or takes the empty park; one the recycle cannot account for, or
-   with nowhere to park, is released. Consumes ctx.
+   Return the drive context after the call: recycled, it stays cached
+   or takes the empty cache; one the recycle cannot account for, or
+   with nowhere to be cached, is released. Consumes ctx.
 */
 static void demand_release_host(KosContext **host, KosContext *ctx) {
 
@@ -228,7 +228,7 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
     return;
   }
   if (! *host) {
-    /* the park holds nothing of the finished call: the next acquire's
+    /* the cache holds nothing of the finished call: the next acquire's
        snapshot sets both again */
     Py_CLEAR(KosContext_DOMAIN(ctx));
     Py_CLEAR(KosContext_PARAM_REFS(ctx));
@@ -241,7 +241,7 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
 
 /**
    Run a KosCallable to completion from the Python boundary: record the
-   call on the drive context (the wrapper's parked host, or a fresh
+   call on the drive context (the wrapper's cached host, or a fresh
    one), and koskari_eval installs it at entry through
    KosEvalState_CallInto from a code-less root frame marked
    KOS_FRAME_DEMAND, which is the caller frame every install delivers

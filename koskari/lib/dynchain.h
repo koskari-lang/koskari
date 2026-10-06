@@ -150,7 +150,7 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_OWNS_NS                 (1u << 11)
 
 /* This kind carries an obligation slot (KosObligation): what it owes
-   when it is unlinked -- a body value, an exception parked while its
+   when it is unlinked -- a body value, an exception stored while its
    after thunk or __exit__ runs, or a return crossing a leave in flight.
    kos_dyn_node_ob is the generic accessor behind this cap. */
 #define KOS_DYN_CAP_HOLDS_OBLIGATION         (1u << 12)
@@ -174,7 +174,7 @@ typedef enum KosDynWindPhase {
 /**
    Wake events a requestor can receive: request completions only. The
    sidecar consumes machinery-internal traffic (awaited values,
-   provider parks, mediated source yields) itself.
+   provider suspensions, mediated source yields) itself.
 */
 typedef enum {
   KOS_IWAKE_VALUE = 0,  /* the requested element arrived */
@@ -187,7 +187,7 @@ typedef enum {
     delivery machinery -- sites and providers never read them */
 #define KOS_IREQ_IDLE         0u
 #define KOS_IREQ_INSTALLED    1u  /* provider's own frames are in-eval */
-#define KOS_IREQ_AWAITING_PY  2u  /* parked python async step; the
+#define KOS_IREQ_AWAITING_PY  2u  /* suspended python async step; the
                                      awaited completion is the element */
 #define KOS_IREQ_GRAFT_VALUE  3u  /* value graft: the next frame return
                                      below is the element */
@@ -223,7 +223,8 @@ typedef struct KosLiveRegs {
    mode from here and nowhere else.
 */
 typedef struct KosIterRequest {
-  PyObject *iter;       /* stepped iterator; strong ref while armed */
+  PyObject *iter;       /* stepped iterator; strong ref while the
+                           request is set */
   struct KosIterSlots *islots; /* iter's provider suite when iter is a
                                   KosIter provider, else NULL; bound with
                                   iter through kos_dyn_iter_request_bind_iter,
@@ -267,8 +268,8 @@ typedef enum {
 /**
    KosXferEvent says why a node is leaving the chain. Every walk and
    unlink passes one, and kos_dyn_unlink_top acts on the node's
-   obligation by kind and event (deliver a parked value, re-raise a
-   parked exception, release, or fault), so the event decides what a
+   obligation by kind and event (deliver a stored value, re-raise a
+   stored exception, release, or fault), so the event decides what a
    leaving node does with what it holds.
 */
 typedef enum KosXferEvent {
@@ -288,7 +289,7 @@ typedef enum KosXferEvent {
 /**
    What a WIND or WITH node holds for after its leave completes: a value
    waiting for the revealed block, an exception waiting to resume
-   propagating, or a return waiting to resume. Parked by the walk that
+   propagating, or a return waiting to resume. Stored by the walk that
    stopped at the node (or by the node's own leave), released by the
    unlink once the node is gone, and discarded with the node when a
    raise or a transfer tears it down. One slot: a node never holds two,
@@ -348,14 +349,15 @@ typedef enum KosHandleResult {
 
 /**
    The behaviour of a frame's resume, one static record per resume
-   function, shared by every frame that arms that function. The state
-   stays per frame in the resume_state slot; the kind holds nothing that
-   varies between frames. fn is the resume itself, a KosThreadFn. clear
-   runs at a teardown with no delivery coming (a frame freed or cached
-   with the resume still armed); NULL means the state is borrowed and
-   its owner cleans up. clone runs at a continuation capture and at a
-   multi-shot landing; NULL means the capture refuses by name. Clean
-   completion is the owner's business as ever.
+   function, shared by every frame that sets that function as its
+   resume. The state stays per frame in the resume_state slot; the kind
+   holds nothing that varies between frames. fn is the resume itself, a
+   KosThreadFn. clear runs at a teardown with no delivery coming (a
+   frame freed or cached with the resume still set); NULL means the
+   state is borrowed and its owner cleans up. clone runs at a
+   continuation capture and at a multi-shot landing; NULL means the
+   capture refuses by name. Clean completion is the owner's business as
+   ever.
 */
 typedef struct KosResumeKind {
   const char *name;
@@ -410,8 +412,8 @@ struct KosDynNode {
       void *cache_slot;
       /* CPS consumer resume (the contract is in eval.h): the kind names
          the entry to invoke on the next value staged to this frame and
-         the lifecycle of the state it receives; NULL means nothing is
-         armed. Set and cleared together with the state. The kind's
+         the lifecycle of the state it receives; NULL means no resume is
+         set. Set and cleared together with the state. The kind's
          name is what a capture-refusal message reports. */
       const KosResumeKind *resume_kind;
       void *resume_state;
@@ -462,7 +464,7 @@ struct KosDynNode {
       PyObject *before_thunk;  /* callable (owned) or NULL */
       PyObject *after_thunk;   /* callable (owned) or NULL */
       KosObligation ob;        /* the body result at POP_WIND, or what a
-                                  walk parked while the after-thunk runs */
+                                  walk stored while the after-thunk runs */
       uint8_t entered;
       uint8_t phase;          /* KosDynWindPhase; WIND_IDLE until thunk invoked */
     } wind;
@@ -476,7 +478,7 @@ struct KosDynNode {
       uint32_t handler_pc;
       uint8_t enabled;
       uint8_t handling_raise;
-      uint8_t handling_control;  /* KosPendingReturnKind parked here */
+      uint8_t handling_control;  /* KosPendingReturnKind stored here */
       uint8_t exc_saved;      /* as for try_ */
       KosExcState saved;      /* handler-visible state before this region */
       KosExcState handling;   /* the raise being propagated through the body */
@@ -504,13 +506,13 @@ struct KosDynNode {
          so no guard. Set by the YIELD_FROM handler, which owns the four
          bodies. See design/interpreter/electors.md. */
       void *drive;
-      /* KosThreadFn: the phase resume armed on the delegating frame for
+      /* KosThreadFn: the phase resume set on the delegating frame for
          the delegation's current suspension (the send that answers an
          emitted yield, an awaited result, a flattened inner yield), run
          by the prologue's delivery step with what arrived; NULL while
-         the drive runs. The disarm on pop and unwind compares against
+         the drive runs. The clear on pop and unwind compares against
          it. resume_emit is the inner-yield phase, set beside drive at
-         push so the node's own delivery code can arm it. */
+         push so the node's own delivery code can set it. */
       void *resume;
       void *resume_emit;
     } yield_from;
@@ -533,7 +535,7 @@ struct KosDynNode {
       PyObject *name;      /* binding name or NULL (owned) */
       uint32_t resume_pc;  /* pc after the with body (pop_pc + 1) */
       KosObligation ob;    /* the exception __exit__ is handling, or what
-                              a walk parked while __exit__ runs */
+                              a walk stored while __exit__ runs */
     } with;
     struct {
       /* shift: marker delimiting the handler body; owns no block, so
@@ -1408,8 +1410,8 @@ int kos_dyn_iter_node_value_mode(KosDynNode *node);
 
 
 /**
-   The iterator object a parked iteration node is stepping (borrowed): the
-   FOREACH iter or the NEXT node's object.
+   The iterator object an iteration node's request is stepping
+   (borrowed): the FOREACH iter or the NEXT node's object.
 */
 PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node);
 
@@ -1559,8 +1561,8 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
 
    1. A KOS_DYN_CAP_CONTROL_HOOK node is asked to leave
       (kos_dyn_extent_leave); any answer but NORMAL returns unchanged,
-      with the node still on the chain -- the caller parks and asks
-      again later.
+      with the node still on the chain -- the caller stores what it
+      carries and asks again later.
    2. The synchronous per-kind teardown runs (PARAM restore, YIELD_FROM
       close, TRY/FINALLY exception-state restore).
    3. The node's obligation is detached.
@@ -1603,7 +1605,7 @@ static inline KosOpResult kos_dyn_pop_top_allow_barrier(
 
 
 /**
-   Which return path a parked pending return re-enters once the node
+   Which return path a stored pending return re-enters once the node
    whose leave thunk suspended the unwind walk has finished.
 */
 typedef enum KosPendingReturnKind {
@@ -1626,20 +1628,21 @@ typedef enum KosPendingReturnKind {
 
    kos_dyn_unwind_to_node offers nothing: it unlinks each node above
    the target through kos_dyn_unlink_top with the barrier allowed, so
-   it crosses barriers and delimiters and no node can consume. A suspension leaves the value the
-   caller is carrying with the caller, to park on the node whose leave
-   is in flight, which is stored in *out_pending (NULL otherwise; the
-   out-param itself may be NULL when the caller carries nothing). That
-   node is not dyn_top when the leave installed a frame.
+   it crosses barriers and delimiters and no node can consume. A
+   suspension leaves the value the caller is carrying with the caller,
+   to store on the node whose leave is in flight, which is stored in
+   *out_pending (NULL otherwise; the out-param itself may be NULL when
+   the caller carries nothing). That node is not dyn_top when the leave
+   installed a frame.
 
    kos_dyn_unwind_return is the RETURN walk. It offers handle(RETURN): a
    FINALLY consumes the return, taking val onto its block and branching
    to its handler, and the walk answers EVAL_REPROLOGUE. A live DELIM
    invoke bookmark stops the walk: it is left at dyn_top, stored in
    *took, and the walk answers EVAL_NORMAL with val still the caller's to
-   route. A suspension parks val on the in-flight node as a RETURN
+   route. A suspension stores val on the in-flight node as a RETURN
    obligation carrying the given kind before answering; the loop walk
-   parks a break or continue the same way. val is consumed on every
+   stores a break or continue the same way. val is consumed on every
    answer but EVAL_NORMAL.
 
    kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
@@ -1725,18 +1728,18 @@ void kos_dyn_extent_abort(KosDynNode *node);
 
 
 /**
-   park / unpark: a generator freeze moves the span above the GEN off
+   freeze / install: a generator freeze moves the span above the GEN off
    the live chain intact, and the install moves it back. A kind whose
    effect lives outside its node (PARAM: the cells it swapped into the
-   context's table) takes that effect out at the park and puts it back
-   at the unpark, over the table as it is then. Every other kind is a
-   no-op. park cannot fail; unpark returns 0, or -1 with PyErr set and
-   the node's effect not applied.
+   context's table) takes that effect out at the freeze and puts it back
+   at the install, over the table as it is then. Every other kind is a
+   no-op. freeze cannot fail; install returns 0, or -1 with PyErr set
+   and the node's effect not applied.
 
    Callers: kos_dyn_gen_freeze, kos_dyn_gen_install.
 */
-void kos_dyn_extent_park(KosEvalState *es, KosDynNode *node);
-int kos_dyn_extent_unpark(KosEvalState *es, KosDynNode *node);
+void kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node);
+int kos_dyn_extent_install(KosEvalState *es, KosDynNode *node);
 
 
 /**
@@ -1754,12 +1757,12 @@ int kos_dyn_extent_in_flight(const KosDynNode *node);
    frame return delivers into a non-frame node, and at an await revive
    with the awaited value already on the block.
 
-   A parked return the unlink detaches is handed back in *out_return
+   A stored return the unlink detaches is handed back in *out_return
    (kind KOS_OB_RETURN, owning its value) for the caller to resume
    through KosEval_ResumeReturn; the caller passes it in empty.
 
    :return: EVAL_NORMAL, or the unlink's result: EVAL_RAISE with the
-     parked exception re-raised, or a settle failure
+     stored exception re-raised, or a settle failure
 */
 KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return);
 
@@ -1774,18 +1777,18 @@ void kos_dyn_ob_clear(KosObligation *ob);
 int kos_dyn_ob_traverse(KosObligation *ob, visitproc visit, void *arg);
 
 /**
-   Park on node. Each consumes what it is given, on failure as well; the
+   Store on node. Each consumes what it is given, on failure as well; the
    slot must be empty, and node must carry one (see kos_dyn_node_ob).
 
    :return: 0, or -1 with PyErr set
 */
-int kos_dyn_ob_park_value(KosDynNode *node, PyObject *val);
-int kos_dyn_ob_park_exception(
+int kos_dyn_ob_store_value(KosDynNode *node, PyObject *val);
+int kos_dyn_ob_store_exception(
     KosDynNode *node,
     PyObject *typ,
     PyObject *val,
     PyObject *tb);
-int kos_dyn_ob_park_return(
+int kos_dyn_ob_store_return(
     KosDynNode *node,
     PyObject *val,
     uint8_t path,
@@ -1857,8 +1860,8 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
    the live registers retarget to it. A yield is not an unwind: no node
    between the frame and its GEN acts on it (no finally, no __exit__),
    so the open extents freeze with the chain and return on the next
-   install. A node whose effect lives outside itself parks it
-   (kos_dyn_extent_park) and takes it back at the install. gen is the
+   install. A node whose effect lives outside itself takes it out
+   (kos_dyn_extent_freeze) and puts it back at the install. gen is the
    node kos_dyn_find_gen returned for the running frame.
 
    Callers: eval.c eval_event_yield.
@@ -1873,21 +1876,21 @@ KosDynNode *kos_dyn_clone(KosDynNode *node);
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
 
 /**
-   Clear the node's phase resume from the live frame when it is armed
+   Clear the node's phase resume from the live frame when it is set
    there: the delegation is ending (finished, or unwound by a raise),
    and the frame threads on from its pc. Idempotent.
 */
 /**
-   Arm resume, a KosThreadFn, as the node's phase resume on the live
+   Set resume, a KosThreadFn, as the node's phase resume on the live
    frame: the frame's next delivery runs it instead of an instruction.
    Every suspension of the delegation ends in this.
 */
-void kos_dyn_yield_from_arm(
+void kos_dyn_yield_from_set_resume(
     KosEvalState *es,
     KosDynYieldFrom *node,
     const KosResumeKind *resume);
 
-void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node);
+void kos_dyn_yield_from_clear_resume(KosEvalState *es, KosDynYieldFrom *node);
 
 /**
    Close the delegate of a YIELD_FROM dyn node (on unwind or error).
@@ -2023,7 +2026,7 @@ void kos_continuation_free(KosContinuation *k);
 /**
    Invoke a captured continuation.
 
-   Arms a transfer goal from the current position to the continuation's
+   Pushes a transfer goal from the current position to the continuation's
    captured chain and schedules execution.
 
    :param es: execution/eval state
@@ -2352,10 +2355,10 @@ static inline void kos_dyn_iter_request_set_mode(
 
 
 /**
-   Arm a iteration node's request: record the stepped iterator (strong
+   Set a iteration node's request: record the stepped iterator (strong
    ref) and the in-flight mode
 */
-static inline void kos_dyn_iter_request_arm(
+static inline void kos_dyn_iter_request_set(
     KosDynNode *node, PyObject *iter, uint8_t mode) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);

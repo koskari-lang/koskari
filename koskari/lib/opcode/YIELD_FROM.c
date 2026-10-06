@@ -205,7 +205,7 @@ KOS_RESUME_KIND(yield_from_resume_send_kind, "yield-from",
 
 /**
   Yield value (owned, consumed) out of the delegating generator as this
-  generator's own yield: arm the send resume for the value that answers
+  generator's own yield: set the send resume for the value that answers
   it and return EVAL_YIELD. Nothing is left on the operand stack.
 */
 static KOS_NOINLINE KosOpResult yield_from_yield_value(
@@ -220,7 +220,7 @@ static KOS_NOINLINE KosOpResult yield_from_yield_value(
     generator; the await-shaped suspension below keeps its deny.
   */
 
-  kos_dyn_yield_from_arm(es, yf, &yield_from_resume_send_kind);
+  kos_dyn_yield_from_set_resume(es, yf, &yield_from_resume_send_kind);
   SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_RES_YIELD\n",
        (void *) KosEvalState_CurrentNode(es), (void *) KosEvalState_FRAME(es),
        (void *) payload);
@@ -502,7 +502,7 @@ static KosOpResult yield_from_drive_py_async(
       return EVAL_RAISE();
     }
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
-    kos_dyn_yield_from_arm(es, yf, &yield_from_resume_await_kind);
+    kos_dyn_yield_from_set_resume(es, yf, &yield_from_resume_await_kind);
     KosEvalState_FlushLiveRegsToFrame(es);
     KosEvalState_MarkDeadAfterYield(es);
     return EVAL_AWAIT(yielded);
@@ -523,7 +523,7 @@ static KosOpResult yield_from_drive_py_async(
 /**
   Drive one step of a KosIter provider delegate through its iter
   suite: close, throw(StopAsyncIteration), send, and stepping. The
-  suite never parks -- installed work runs flattened in the same
+  suite never suspends -- installed work runs flattened in the same
   koskari_eval and delivers at this node's request record.
 */
 static KosOpResult yield_from_drive_kos_iter(
@@ -563,7 +563,7 @@ static KosOpResult yield_from_drive_kos_iter(
     switch (tr) {
       case KOS_ITER_INSTALLED:
       case KOS_ITER_INSTALLED_VALUE: {
-        kos_dyn_iter_request_arm(
+        kos_dyn_iter_request_set(
             (KosDynNode *) yf, delegate,
             (tr == KOS_ITER_INSTALLED) ? KOS_IREQ_INSTALLED
                                        : KOS_IREQ_GRAFT_VALUE);
@@ -600,7 +600,7 @@ static KosOpResult yield_from_drive_kos_iter(
     switch (sr) {
       case KOS_ITER_INSTALLED:
       case KOS_ITER_INSTALLED_VALUE:
-        kos_dyn_iter_request_arm(
+        kos_dyn_iter_request_set(
             (KosDynNode *) yf, delegate,
             (sr == KOS_ITER_INSTALLED) ? KOS_IREQ_INSTALLED
                                        : KOS_IREQ_GRAFT_VALUE);
@@ -682,7 +682,7 @@ static KosThreadFn yield_from_drive_for_kind(uint8_t kind) {
 
 
 /*
-  One resume per suspension of the delegation, armed on the delegating
+  One resume per suspension of the delegation, set on the delegating
   frame by the suspension that knows which delivery answers it, and run
   by the prologue's delivery step with what arrived. Each consumes the
   delivery into the node's pending action and tail-calls the drive the
@@ -852,9 +852,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
   (delegate, kind), push the yield_from node with the drive its kind
   elects, and tail-call the drive for the first step. Every later
   delivery to this frame while the delegation is in flight runs the
-  phase resume its suspension armed, never this handler: the pc stays past the
-  instruction, and the drive continues there when the delegate is
-  exhausted.
+  phase resume its suspension set, never this handler: the pc stays
+  past the instruction, and the drive continues there when the delegate
+  is exhausted.
 */
 KOS_OP_HANDLER(YIELD_FROM) {
   KosDynNode *dyn_top = KosEvalState_CurrentNode(es);

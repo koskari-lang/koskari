@@ -212,7 +212,7 @@ class TestPackInto(unittest.TestCase):
         with self.assertRaises(TypeError):
             c.pack_into(object())
 
-    def test_lifetime_pinning(self):
+    def test_arena_lives_until_last_member_dies(self):
         """
         The arena lives until the last packed member dies
         """

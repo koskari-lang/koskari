@@ -58,7 +58,7 @@ KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
 /**
    FETCH: request the next source element. Always entered with a NULL
    value -- either cold, from the driven-source install, or from
-   pairwise_resume_deliver after the fetch that primed the pair. Armed
+   pairwise_resume_deliver after the fetch that primed the pair. Set
    only from the step's driven-source branch, so src_sync is 0 on every
    entry: every fetch here is a request. A sync source never reaches
    this resume -- it steps whole inside the step.

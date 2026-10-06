@@ -137,7 +137,7 @@ KosContext *KosContext_NewFromSnapshot(
 
 
 /**
-   Replace a parked context's domain and parameterize cells with the
+   Replace a cached context's domain and parameterize cells with the
    snapshot in force now, so a context reused across boundary calls
    sees the dynamic state of each call. Returns -1 with an error set.
 */
@@ -244,7 +244,7 @@ static void context_dealloc(PyObject *self) {
 /**
    Make a context reusable after a completion at its root: drop the
    finished frame chain and clear the completion residue. A context
-   with an armed transfer goal is left untouched -- the caller frees
+   with an active transfer goal is left untouched -- the caller frees
    it instead.
 */
 int KosContext_Recycle(KosContext *ctx) {
@@ -273,7 +273,7 @@ int KosContext_Recycle(KosContext *ctx) {
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
   /* residue of the finished run that the next one must not inherit:
-     an unconsumed entry call, an armed throw injection, and the
+     an unconsumed entry call, a pending throw injection, and the
      handler-visible exception state */
   KosContext_ENTRY_CALL(ctx) = NULL;
   KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
@@ -322,7 +322,7 @@ static int context_traverse(PyObject *self, visitproc visit, void *arg) {
   if (res)
     return res;
 
-  /* the active goal and every parked outer behind it */
+  /* the active goal and every waiting outer behind it */
   for (; goal; goal = KosXferGoal_OUTER(goal)) {
     res = kos_xfer_goal_traverse(goal, visit, arg);
     if (res)

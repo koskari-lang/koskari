@@ -307,7 +307,7 @@ static PyObject *snapshot_stack_to_list(KosSegment *stack) {
 }
 
 
-/* === Context exception stash (parked propagation state) === */
+/* === Context exception stash (stored propagation state) === */
 
 
 /**
@@ -808,14 +808,14 @@ static KosObligation *kos_dyn_ob_slot_for(KosDynNode *node) {
 
   if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_HOLDS_OBLIGATION)) {
     PyErr_Format(PyExc_SystemError,
-                 "obligation parked on a %s node, which carries none",
+                 "obligation stored on a %s node, which carries none",
                  kos_dynnode_kind_name(KosDynNode_KIND(node)));
     return NULL;
   }
   ob = kos_dyn_node_ob(node);
   if (ob->kind != KOS_OB_NONE) {
     PyErr_Format(PyExc_SystemError,
-                 "obligation parked on a %s node already holding one",
+                 "obligation stored on a %s node already holding one",
                  kos_dynnode_kind_name(KosDynNode_KIND(node)));
     return NULL;
   }
@@ -823,7 +823,7 @@ static KosObligation *kos_dyn_ob_slot_for(KosDynNode *node) {
 }
 
 
-int kos_dyn_ob_park_value(KosDynNode *node, PyObject *val) {
+int kos_dyn_ob_store_value(KosDynNode *node, PyObject *val) {
   KosObligation *ob = kos_dyn_ob_slot_for(node);
 
   if (! ob) {
@@ -836,7 +836,7 @@ int kos_dyn_ob_park_value(KosDynNode *node, PyObject *val) {
 }
 
 
-int kos_dyn_ob_park_exception(
+int kos_dyn_ob_store_exception(
     KosDynNode *node,
     PyObject *typ,
     PyObject *val,
@@ -861,7 +861,7 @@ int kos_dyn_ob_park_exception(
 }
 
 
-int kos_dyn_ob_park_return(
+int kos_dyn_ob_store_return(
     KosDynNode *node,
     PyObject *val,
     uint8_t path,
@@ -882,9 +882,9 @@ int kos_dyn_ob_park_return(
 
 
 /**
-   Resume a parked exception's propagation. With another exception
-   already in flight (PyErr set) the parked one has been superseded and
-   becomes its __context__; otherwise the parked one is raised again.
+   Resume a stored exception's propagation. With another exception
+   already in flight (PyErr set) the stored one has been superseded and
+   becomes its __context__; otherwise the stored one is raised again.
    The obligation is released either way.
 
    :return: EVAL_RAISE
@@ -946,7 +946,7 @@ KosOpResult kos_dyn_extent_leave(
 }
 
 
-void kos_dyn_extent_park(KosEvalState *es, KosDynNode *node) {
+void kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node) {
 
   /* A yield moves the node intact, so a kind whose effect is the node
      rides the span as it is: a WITH's __enter__ and a WIND's before
@@ -963,7 +963,7 @@ void kos_dyn_extent_park(KosEvalState *es, KosDynNode *node) {
 }
 
 
-int kos_dyn_extent_unpark(KosEvalState *es, KosDynNode *node) {
+int kos_dyn_extent_install(KosEvalState *es, KosDynNode *node) {
 
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
@@ -1850,7 +1850,7 @@ void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top) {
 
 /**
    kos_dyn_unlink_top with a slot for a detached RETURN obligation: the
-   hook passes one, so a return parked on the node it settled resumes
+   hook passes one, so a return stored on the node it settled resumes
    through the caller; every other caller passes NULL and a RETURN
    under KOS_XFER_EVENT_NONE is a fault.
 */
@@ -1865,7 +1865,7 @@ static KosOpResult kos_dyn_unlink_top_take(
   KosObligation ob;
 
   /* detached state, acted on once the node is gone */
-  PyObject *deliver = NULL;   /* a parked VALUE: a body value */
+  PyObject *deliver = NULL;   /* a stored VALUE: a body value */
 
   ob.kind = KOS_OB_NONE;
 
@@ -1919,7 +1919,7 @@ static KosOpResult kos_dyn_unlink_top_take(
       if (! out_return) {
         kos_dyn_ob_clear(&ob);
         PyErr_SetString(PyExc_SystemError,
-                        "a parked return was unlinked with no one to"
+                        "a stored return was unlinked with no one to"
                         " resume it");
         return EVAL_RAISE();
       }
@@ -2088,8 +2088,8 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
 
     if (kos_dyn_iter_node_value_mode(node)) {
       /* A non-protocol error escaping a value-grafted invoke: release
-         the provider's busy mark and disarm before the raise passes to
-         the consumer's own handlers. */
+         the provider's busy mark and finish the request before the
+         raise passes to the consumer's own handlers. */
       kos_dyn_iter_request_finish(node, 0);
       kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
     }
@@ -2301,7 +2301,7 @@ int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node) {
                     "YIELD_FROM node is not at top of chain");
     return -1;
   }
-  kos_dyn_yield_from_disarm(es, node);
+  kos_dyn_yield_from_clear_resume(es, node);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 

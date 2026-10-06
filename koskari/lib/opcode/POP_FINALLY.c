@@ -42,7 +42,7 @@ KOS_OP_HANDLER(POP_FINALLY) {
     RESULT_REPROLOGUE(es);
   }
 
-  /* A control transfer parked here by an unwind walk resumes as itself
+  /* A control transfer stored here by an unwind walk resumes as itself
      once the region is gone; the finally body ran for its side effects
      only. Without this the promoted value would just sit on the parent
      stack, and only a trailing RETURN would carry it out. */

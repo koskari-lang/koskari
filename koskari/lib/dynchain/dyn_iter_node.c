@@ -154,7 +154,7 @@ PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node) {
   if (! req)
     return PyExc_StopIteration;
 
-  /* A parked python async step ends its iteration with
+  /* A suspended python async step ends its iteration with
      StopAsyncIteration; installed provider frames and value grafts
      end with StopIteration. */
   if (req->mode == KOS_IREQ_AWAITING_PY)

@@ -132,7 +132,7 @@ static KosOpResult kos_call_dispatch(
     int tail_call);
 
 
-static KosOpResult kos_call_result_arm(
+static KosOpResult kos_call_result_deliver(
     KosEvalState *es,
     KosDynFrame *caller,
     KosOpResult r,
@@ -182,7 +182,7 @@ KOS_NOINLINE KosOpResult KosEvalState_CallMethod(
                         tail_call);
   if (inj != small)
     PyMem_Free(inj);
-  return kos_call_result_arm(es, caller, r, resume, state);
+  return kos_call_result_deliver(es, caller, r, resume, state);
 }
 
 
@@ -286,9 +286,9 @@ static KosOpResult kos_call_push(
 
 /**
    A CPS entry's value-in-hand outcome: settled, report RETURN with
-   val and arm nothing -- the calling resume tail-calls resume with
+   val and set no resume -- the calling resume tail-calls resume with
    it; not yet settled, settle one step through KosEvalState_SettleStage
-   and arm resume on caller for the trip that delivers it. val is
+   and set resume on caller for the trip that delivers it. val is
    consumed.
 */
 static KosOpResult kos_entry_value(
@@ -321,13 +321,13 @@ static KosOpResult kos_entry_value(
 /**
    The resume arm shared by the CPS entries: hand a dispatch outcome to
    resume. A value in hand goes to kos_entry_value; an installed
-   callee, a resume armed on a code-less frame the install pushed, or
+   callee, a resume set on a code-less frame the install pushed, or
    an await from such a frame leaves caller's own frame unchanged and
-   still reachable, so resume is armed on it for the eventual
+   still reachable, so resume is set on it for the eventual
    delivery; RAISE and FATAL relay untouched. With resume NULL the
    outcome relays as is.
 */
-static KosOpResult kos_call_result_arm(
+static KosOpResult kos_call_result_deliver(
     KosEvalState *es,
     KosDynFrame *caller,
     KosOpResult r,
@@ -384,7 +384,7 @@ KosOpResult KosEvalState_Call(
                           tail_call);
   }
 
-  return kos_call_result_arm(es, caller, r, resume, state);
+  return kos_call_result_deliver(es, caller, r, resume, state);
 }
 
 
@@ -393,7 +393,7 @@ KosOpResult KosEvalState_Call(
    installs one for bytecode: a tail call tears down to the live frame,
    resets it, and refills it as a native frame; otherwise a native
    frame is pushed. Either way the frame carries the empty namespace,
-   the resume armed, and frame_flags. Returns the frame, or NULL with
+   the resume set, and frame_flags. Returns the frame, or NULL with
    PyErr set.
 */
 KosDynFrame *KosEvalState_InstallNativeFrame(
@@ -708,7 +708,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         /* Discardable extents open above the frame (a tail call from
            inside let / loop / foreach) uninstall now: the reused frame
            never reaches their POP_* rows.  The window is unaffected --
-           the guard above pins it to the frame's own block. */
+           the guard above keeps it in the frame's own block. */
         if (unlikely(kos_dyn_teardown_to_frame(es, frame) < 0))
           goto fail;
 
@@ -1365,7 +1365,7 @@ KosOpResult KosEvalState_CallArgs(
   (void) KosCallable_CheckSlots(callable, &slots);
   r = kos_call_dispatch_args(es, slots, callable, args_tuple, kwds_dict,
                              tail_call);
-  return kos_call_result_arm(es, caller, r, resume, state);
+  return kos_call_result_deliver(es, caller, r, resume, state);
 }
 
 

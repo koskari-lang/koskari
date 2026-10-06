@@ -14,12 +14,13 @@
 """
 tests.reproducers.test_kosmap_graft
 
-Pins for the KosMap in-eval invoke graft: a koskari function mapped
+Tests for the KosMap in-eval invoke graft: a koskari function mapped
 over a source and consumed by koskari for-each runs in the consumer's
-evaluator -- the function frame grafts above the armed iterator
-boundary and its return delivers as the element, with no coroutine at
-any step. Covers the demand drive, the asyncio drive, awaits inside the
-mapped function, error propagation, and the map-function StopIteration
+evaluator -- the function frame grafts above the iterator boundary
+with its request set and its return delivers as the element, with no
+coroutine at any step. Covers the demand drive, the asyncio drive,
+awaits inside the mapped function, error propagation, and the
+map-function StopIteration
 exhaustion parity with builtins.map.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

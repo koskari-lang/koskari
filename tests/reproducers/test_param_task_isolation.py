@@ -176,8 +176,8 @@ class TestParamTaskIsolation(unittest.IsolatedAsyncioTestCase):
 
     async def test_handshake_interleave_deterministic(self):
         """
-        Event handshake pins the schedule: B binds and reads while A is
-        parked mid-extent; A still reads its own binding on resume
+        Event handshake fixes the schedule: B binds and reads while A is
+        suspended mid-extent; A still reads its own binding on resume
         """
 
         mod = await self.load("param_iso_handshake", HANDSHAKE_SRC)

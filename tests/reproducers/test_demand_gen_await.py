@@ -159,7 +159,7 @@ class TestDemandGenAwait(unittest.IsolatedAsyncioTestCase):
         and the violation raises out
         """
 
-        # Direct demand->async alternation on one agen (pinning the
+        # Direct demand->async alternation on one agen (checking the
         # forced-off polarity) lives in
         # test_asyncgen_anext_await.py::test_demand_then_async_alternation.
         mod = await self.load("dga_resumed")

@@ -88,8 +88,8 @@ define filled_value []:
 
 ;; The same providers driven inside a delimited extent, and through an
 ;; invoked continuation. A catching provider takes no callable, so no
-;; user code runs inside its step and no transfer can be armed while
-;; its exhaustion arrives; these pin that the extents make no
+;; user code runs inside its step and no transfer goal can be pushed
+;; while its exhaustion arrives; these check that the extents make no
 ;; difference to what it produces.
 
 

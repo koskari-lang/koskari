@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for KosMap park ownership: a parked map refuses every fresh
-entry, and only the park's owner resumes it
+Tests for KosMap suspension ownership: a suspended map refuses every
+fresh entry, and only the suspension's owner resumes it
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -34,13 +34,13 @@ from tests.lib.opcode import build_expr
 pytestmark = pytest.mark.phase_lib
 
 
-class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
+class TestKosMapSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
     """
-    While a map step is parked on an awaitable, concurrent entries are
+    While a map step is suspended on an awaitable, concurrent entries are
     refused rather than being misread as the awaited result
     """
 
-    def make_parked(self):
+    def make_suspended(self):
         release = asyncio.Event()
 
         async def slow(x):
@@ -50,7 +50,7 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         return KosMap(slow, [1, 2]), release
 
     async def test_concurrent_anext_refused(self):
-        m, release = self.make_parked()
+        m, release = self.make_suspended()
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
@@ -61,7 +61,7 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, 2)
 
     async def test_concurrent_asend_value_refused(self):
-        m, release = self.make_parked()
+        m, release = self.make_suspended()
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
@@ -72,8 +72,8 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         release.set()
         self.assertEqual(await first, 2)
 
-    async def test_parked_step_resumes_cleanly(self):
-        m, release = self.make_parked()
+    async def test_suspended_step_resumes_cleanly(self):
+        m, release = self.make_suspended()
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
         release.set()
@@ -83,7 +83,7 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
             await m.__anext__()
 
     async def test_concurrent_athrow_refused(self):
-        m, release = self.make_parked()
+        m, release = self.make_suspended()
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
@@ -94,7 +94,7 @@ class TestKosMapParkOwnership(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, 2)
 
     async def test_concurrent_aclose_refused(self):
-        m, release = self.make_parked()
+        m, release = self.make_suspended()
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
@@ -229,7 +229,7 @@ class TestKosMapSourceCleanup(unittest.IsolatedAsyncioTestCase):
         token = object()
         keep = [token]
 
-        class Park:
+        class Suspend:
             def __await__(self):
                 yield token
 
@@ -237,7 +237,7 @@ class TestKosMapSourceCleanup(unittest.IsolatedAsyncioTestCase):
             try:
                 yield 1
             finally:
-                await Park()
+                await Suspend()
 
         m = KosMap(str, src())
         dgen = iter(m)
@@ -256,7 +256,7 @@ class TestKosMapAbandonedMidAwait(unittest.IsolatedAsyncioTestCase):
     stays uncollectable
     """
 
-    async def test_cycle_with_parked_step_collects_and_closes(self):
+    async def test_cycle_with_suspended_step_collects_and_closes(self):
         marks = []
 
         async def slow(x):
@@ -271,20 +271,20 @@ class TestKosMapAbandonedMidAwait(unittest.IsolatedAsyncioTestCase):
 
         m = KosMap(slow, [1, 2])
         step = m.__anext__().__await__()
-        # drive the step until it parks on the future
-        parked = step.send(None)
+        # drive the step until it suspends on the future
+        suspended = step.send(None)
         # the future the map's context awaits now refers back to the
         # step, closing the cycle: step -> map -> context -> slow ->
         # future -> step
-        parked.back_edge = step
+        suspended.back_edge = step
 
         # a leaf hanging off the cycle: it dies with the cycle and can
         # be watched, where the map and the step cannot be weakly held
         class Canary:
             pass
 
-        parked.canary = Canary()
-        canary_ref = weakref.ref(parked.canary)
+        suspended.canary = Canary()
+        canary_ref = weakref.ref(suspended.canary)
 
         # a second cycle holding the step, made after the map so the
         # collector clears the map first and the step outlives the
@@ -292,7 +292,7 @@ class TestKosMapAbandonedMidAwait(unittest.IsolatedAsyncioTestCase):
         keeper = [step]
         keeper.append(keeper)
 
-        del m, step, parked, keeper
+        del m, step, suspended, keeper
         gc.collect()
 
         self.assertIsNone(canary_ref())

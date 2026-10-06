@@ -310,7 +310,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
     async def test_redefinition_not_packed(self):
         """
         code a later load displaced is dead by seal time and never
-        packed, unlike per-load sealing which would pin it
+        packed, unlike per-load sealing which would keep it
         """
 
         module = new_module("deferred")

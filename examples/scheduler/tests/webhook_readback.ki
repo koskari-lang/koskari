@@ -46,7 +46,7 @@ define-class TestWebhookReadback [WebhookReadbackTestCase]:
         define resp (self.http.post "/webhook/slow" json: #{"n": 7})
         define runid (item (resp.json) "run_id")
 
-        ;; still parked on the gate: the read-back sees it open
+        ;; still waiting on the gate: the read-back sees it open
         define open-resp (self.http.get f"/webhook/slow/{runid}")
         (self.assertEqual open-resp.status_code 200)
         (self.assertEqual (item (open-resp.json) "status") "running")

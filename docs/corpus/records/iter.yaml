@@ -1391,7 +1391,7 @@ tags:
   - comprehension
   - filter
   - iterate
-notes: the keyword-clause spelling of the filter; equivalent to the whole-body (when ...) form, which expands into it. The expansion's accumulator is a gensym, so the full expand string is not pinned here.
+notes: the keyword-clause spelling of the filter; equivalent to the whole-body (when ...) form, which expands into it. The expansion's accumulator is a gensym, so the full expand string is not recorded here.
 ---
 id: iter-list-each-nested-when-no-compose-001
 feature: macro/compile/list-each

@@ -16,11 +16,11 @@ tests.reproducers.test_transform_over_yield_from
 
 Defect reproducer, RED until fixed: a transform stepping a koskari
 generator that delegates with yield-from must deliver every value the
-delegate produces. A generator parked inside yield-from carries the
+delegate produces. A generator suspended inside yield-from carries the
 node's phase resume, and the install has to bounce through the
 prologue so that resume runs. KosEvalState_NextResume decided on code
 alone where every other consumer of the same outcome also requires no
-armed resume, so it threaded straight into the frame, the delivery
+resume set, so it threaded straight into the frame, the delivery
 never happened, and the step reported exhaustion. The loop simply
 ended early, with no error.
 
@@ -107,7 +107,7 @@ class TestTransformOverYieldFrom(unittest.IsolatedAsyncioTestCase):
 
     async def test_stepped_delegating_generator_through_map(self):
         """
-        a generator already parked inside its yield-from delivers its
+        a generator already suspended inside its yield-from delivers its
         remaining values through map
         """
 

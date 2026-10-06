@@ -50,11 +50,11 @@ SRC = """
 
 @types.coroutine
 def one_step():
-    yield "parked"
+    yield "suspended"
     return "woken"
 
 
-class Parker:
+class Suspender:
     def __await__(self):
         return one_step()
 
@@ -70,9 +70,9 @@ class TestContextToken(unittest.IsolatedAsyncioTestCase):
     async def test_continuation_dead_while_suspended_then_applies_on_resume(self):
         mod = await self.load()
         box = [None]
-        coro = mod["run"](box, Parker())
+        coro = mod["run"](box, Suspender())
 
-        self.assertEqual(coro.send(None), "parked")
+        self.assertEqual(coro.send(None), "suspended")
         self.assertIsNotNone(box[0])
 
         with self.assertRaises(lib.KoskariContinuationDead):

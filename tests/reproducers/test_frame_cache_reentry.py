@@ -12,11 +12,11 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.reproducers.test_frame_park_reentry
+tests.reproducers.test_frame_cache_reentry
 
-Parking a returned frame clears its locals, which can run a finalizer
+Caching a returned frame clears its locals, which can run a finalizer
 that calls the same function again and takes frames out of the cache.
-The park must link the frame to the cache as it is after that, not as
+The frame must be linked into the cache as it is after that, not as
 it was before.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -44,7 +44,7 @@ SRC = """
 """
 
 
-class TestFrameParkReentry(unittest.IsolatedAsyncioTestCase):
+class TestFrameCacheReentry(unittest.IsolatedAsyncioTestCase):
 
     async def load(self):
         module = new_module("frame_park_reentry")
@@ -52,7 +52,7 @@ class TestFrameParkReentry(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 
-    async def test_finalizer_reentering_the_function_during_the_park(self):
+    async def test_finalizer_reentering_the_function_during_the_cache(self):
         mod = await self.load()
         fn = mod["fn"]
         seen = []
@@ -61,11 +61,11 @@ class TestFrameParkReentry(unittest.IsolatedAsyncioTestCase):
             def __del__(self):
                 seen.append(fn(1, None).demand()().demand())
 
-        # two live activations park two frames
+        # two live activations cache two frames
         self.assertIsNone(await fn(2, None))
-        # the parked frame's only reference to the D instance dies at
-        # the park; its finalizer calls fn from Python and takes a
-        # cached frame, returning a closure that escapes
+        # the cached frame's only reference to the D instance dies when
+        # the frame is cached; its finalizer calls fn from Python and
+        # takes a cached frame, returning a closure that escapes
         self.assertIsNone(await mod["call_with"](D))
         gc.collect()
         self.assertEqual(seen, [1])

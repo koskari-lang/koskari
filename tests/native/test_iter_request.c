@@ -347,9 +347,9 @@ static int test_context_recycle(void) {
   TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
   TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame_top cleared");
 
-  /* an armed transfer goal refuses the recycle */
+  /* an active transfer goal refuses the recycle */
   KosContext_GOAL(ctx) = (KosXferGoal *) ctx;  /* sentinel */
-  TEST_ASSERT_EQ(KosContext_Recycle(ctx), -1, "armed goal refuses");
+  TEST_ASSERT_EQ(KosContext_Recycle(ctx), -1, "active goal refuses");
   KosContext_GOAL(ctx) = NULL;
 
   Py_DECREF(ctx);

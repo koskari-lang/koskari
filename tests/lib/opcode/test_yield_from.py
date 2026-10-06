@@ -823,7 +823,7 @@ class TestYieldFromKosIterProvider(CevalTest):
     """
     YIELD_FROM over a KosIter provider that steps in place instead of
     grafting frames (KosMap): elements re-emit as the delegating
-    generator's own yields, true suspensions park PC-stable, and
+    generator's own yields, true suspensions keep the PC stable, and
     exhaustion completes the delegation
     """
 
@@ -852,7 +852,7 @@ class TestYieldFromKosIterProvider(CevalTest):
         with self.assertRaises(StopAsyncIteration):
             await anext(agen)
 
-    async def test_yield_from_map_parked_step(self):
+    async def test_yield_from_map_suspended_step(self):
         """
         map over an async function suspends the yield-from step on the
         function's awaitable and resumes with its result

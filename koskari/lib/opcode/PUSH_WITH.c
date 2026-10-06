@@ -74,7 +74,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
      Do not touch the pc here -- the current frame is now the callee's,
      so threading on runs it; this frame's pc already sits past
      PUSH_WITH, so the with body runs once the callee returns and its
-     return settles the node. A plan armed by the install is the
+     return settles the node. A goal pushed by the install is the
      prologue's to drain. */
   if (wr.kind != KOS_RES_NORMAL) {
     if (wr.kind == KOS_RES_REPROLOGUE

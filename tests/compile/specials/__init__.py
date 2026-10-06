@@ -48,14 +48,14 @@ def _register_specials(ns, specials):
     ns.store("#dict", build_dict)
 
 
-class Park:
+class Suspend:
     """
     An awaitable that yields once, then completes on the next send
     """
 
     def __await__(self):
         yield self
-        return "parked"
+        return "suspended"
 
 
 class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):

@@ -3,7 +3,8 @@
 - All automated tests live under `tests/`.
 - Do not use typing annotations in test modules.
 - Tests exist to reveal defects. A failing test is useful evidence and must
-  never be muted, skipped, xfailed, or pinned to the broken output.
+  never be muted, skipped, xfailed, or rewritten to match the broken
+  output.
 - Never adjust fixtures, mocks, or assertions to mask a genuine failure.
   Skipping a test is a failure, not a resolution.
 - When a test fails, diagnose it and report the failure here in chat with

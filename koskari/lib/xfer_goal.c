@@ -56,7 +56,7 @@ KosXferGoal *kos_xfer_goal_new(
   goal->seam_id = seam ? kos_dynnode_id(seam) : 0;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  goal->park_top = NULL;
+  goal->wait_top = NULL;
   goal->payload = Py_XNewRef(payload);
   goal->continuation_ref = Py_XNewRef(continuation_ref);
   goal->resume_pc = resume_pc;
@@ -237,7 +237,7 @@ static int goal_apply_restore(KosEvalState *es, KosXferGoal *goal) {
 }
 
 
-void kos_xfer_goal_arm(KosEvalState *es, KosXferGoal *goal) {
+void kos_xfer_goal_push(KosEvalState *es, KosXferGoal *goal) {
 
   goal->outer = KosEvalState_GOAL(es);
   KosEvalState_GOAL(es) = goal;
@@ -270,7 +270,7 @@ int kos_xfer_goal_will_drive(KosEvalState *es) {
 
   if (! goal)
     return 0;
-  return ! goal->frontier || KosEvalState_DYN_TOP(es) == goal->park_top;
+  return ! goal->frontier || KosEvalState_DYN_TOP(es) == goal->wait_top;
 }
 
 
@@ -291,7 +291,7 @@ void kos_xfer_goal_resume_after_finally(KosEvalState *es) {
     return;
   goal->frontier = NULL;
   goal->frontier_id = 0;
-  goal->park_top = NULL;
+  goal->wait_top = NULL;
 }
 
 
@@ -314,16 +314,16 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
 
 /**
-   Park the goal on node: its thunk or awaitable is in flight, and the
-   driver does nothing until dyn_top is park_top again. A FINALLY waits
+   Make the goal wait on node: its thunk or awaitable is in flight, and the
+   driver does nothing until dyn_top is wait_top again. A FINALLY waits
    with a NULL top: its body runs in the frame below it, so POP_FINALLY
-   resumes the goal in place of a return to park_top.
+   resumes the goal in place of a return to wait_top.
 */
-static void goal_park(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
+static void goal_wait(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
 
   goal->frontier = node;
   goal->frontier_id = kos_dynnode_id(node);
-  goal->park_top = top;
+  goal->wait_top = top;
 }
 
 
@@ -368,11 +368,11 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
     if (KosDynNode_IS_FINALLY(top)
         && KosDynFinally_ENABLED((KosDynFinally *) top)) {
       /* The finally body runs in this frame with the region still at
-         dyn_top, so no park_top can mark its end: POP_FINALLY resumes
+         dyn_top, so no wait_top can mark its end: POP_FINALLY resumes
          the goal once the region is gone, and the drive continues here. */
       r = kos_dyn_finally_take_transfer(es, (KosDynFinally *) top);
       if (r.kind == KOS_RES_REPROLOGUE)
-        goal_park(goal, top, NULL);
+        goal_wait(goal, top, NULL);
       return r;
     }
 
@@ -380,7 +380,7 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
     if (r.kind == KOS_RES_NORMAL)
       continue;
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
-      goal_park(goal, top, top);
+      goal_wait(goal, top, top);
     return r;
   }
   return EVAL_NORMAL();
@@ -405,7 +405,7 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
       bottom = KosDynNode_PARENT(bottom);
     KosDynNode_PARENT(bottom) = goal->seam;
     /* The clone's frames carry capture-time depths; the invoke checked
-       that they fit above the seam before arming. */
+       that they fit above the seam before the push. */
     kos_dyn_renumber_frames(goal->target, goal->seam,
         kos_dyn_frame_depth_at(goal->seam));
     KosEvalState_DYN_TOP(es) = goal->target;
@@ -426,8 +426,8 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
   if (goal->resume_pc != (uint32_t) -1 && KosEvalState_FRAME(es))
     KosEvalState_SET_PC(es, goal->resume_pc);
 
-  /* Retire every parked outer whose frontier LEAVING unlinked. An
-     outer is parked on a node whose thunk this transfer started from;
+  /* Retire every waiting outer whose frontier LEAVING unlinked. An
+     outer waits on a node whose thunk this transfer started from;
      if that node left the chain, the extent the outer was moving
      through no longer exists, and resuming it later would act on
      whatever node came to occupy the same address. With a NULL seam
@@ -438,7 +438,7 @@ static KosOpResult goal_land(KosEvalState *es, KosXferGoal *goal) {
 
     while (*link) {
       KosXferGoal *outer = *link;
-      /* An outer is parked by construction; one with no frontier has
+      /* An outer waits by construction; one with no frontier has
          no place to resume from and would stall, so it goes too. */
       int gone = ! goal->seam
           || ! outer->frontier
@@ -521,7 +521,7 @@ static KosOpResult goal_enter(KosEvalState *es, KosXferGoal *goal) {
     if (r.kind == KOS_RES_NORMAL)
       continue;
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT)
-      goal_park(goal, node, before);
+      goal_wait(goal, node, before);
     out = r;
     break;
   }
@@ -534,8 +534,8 @@ static KosOpResult goal_enter(KosEvalState *es, KosXferGoal *goal) {
 
 /**
    DELIVERING: push the payload, stage it for the landing frame's
-   resume, arm it as a throw, or raise it at the boundary; then retire
-   the goal. A landing frame that carries a resume was waiting on a
+   resume, set it as a pending throw, or raise it at the boundary; then
+   retire the goal. A landing frame that carries a resume was waiting on a
    delivery when it was captured, and the restore put that resume back
    through its kind's clone: the payload is that delivery, staged in
    the pending slot for the prologue pass that follows the drive.
@@ -548,7 +548,7 @@ static KosOpResult goal_deliver(
   KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (goal->is_cc_unwind) {
-    /* the signal leaves this context: every goal, parked outers
+    /* the signal leaves this context: every goal, waiting outers
        included, is void with it */
     PyErr_SetObject((PyObject *) Py_TYPE(goal->payload), goal->payload);
     kos_eval_prepare_boundary_raise(ctx, es);
@@ -589,11 +589,11 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary) {
     KosOpResult r;
 
     if (goal->frontier) {
-      /* Waiting on a thunk. Its frame installs above park_top, so any
-         boundary event while it runs finds dyn_top above park_top; the
-         first one that finds dyn_top at park_top is its return, or the
+      /* Waiting on a thunk. Its frame installs above wait_top, so any
+         boundary event while it runs finds dyn_top above wait_top; the
+         first one that finds dyn_top at wait_top is its return, or the
          revive of its awaitable with the value on the block. */
-      if (KosEvalState_DYN_TOP(es) != goal->park_top)
+      if (KosEvalState_DYN_TOP(es) != goal->wait_top)
         return EVAL_NORMAL();
 #if KOS_EVAL_SAFETYNET
       if (! kos_dyn_reaches(es, goal->frontier)
@@ -607,7 +607,7 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary) {
         return EVAL_RAISE();
       goal->frontier = NULL;
       goal->frontier_id = 0;
-      goal->park_top = NULL;
+      goal->wait_top = NULL;
     }
 
     switch (goal->phase) {

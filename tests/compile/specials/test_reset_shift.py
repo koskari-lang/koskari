@@ -88,7 +88,7 @@ class TestResetShiftSpecials(SpecialsTestCase):
                 seen.extend(
                     o for o in gc.get_objects() if id(o) in dying)
 
-        # the sentinel is parked on the captured operand stack, and k is
+        # the sentinel is stored on the captured operand stack, and k is
         # bound only in the module namespace, so the continuation dies
         # by refcount rather than by cycle collection
         src = "(define k (reset (#tuple (call make_sentinel) (shift k k))))"
@@ -709,7 +709,7 @@ class TestShiftCaptureErrors(SpecialsTestCase):
 class TestDelimitedReturnAcrossLeave(SpecialsTestCase):
     """
     A delimited return that meets an after thunk on its way to the
-    invoke site parks on the wind and finishes once the thunk returns,
+    invoke site waits on the wind and finishes once the thunk returns,
     landing the value at the invoke site inside the evaluator; it must
     never surface at the boundary as a bare result.
     """

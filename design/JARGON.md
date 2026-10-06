@@ -197,16 +197,6 @@ aside while the after thunk or `__exit__` runs, or a RETURN crossing a
 leave in flight. Released at unlink by kind and by event. Reference:
 EVALUATOR.md §6.3, interpreter/extent-wind-unwind.md.
 
-## park (parked obligation, parked goal)
-
-Two uses. An obligation is parked on a node while its after thunk or
-`__exit__` runs (the raise walk parks the exception, the return walk
-the value). A transfer goal is parked on a node whose leave or enter
-handed control to a thunk frame or an awaitable; it acts again only
-when `dyn_top` is back where it was. Reference: EVALUATOR.md §4.4, §6.2.
-Do not use "park" for iteration or await suspension; say "suspended" or
-name the mechanism.
-
 ## provider
 
 A KosIter provider: a type whose `kos_iter` suite carries `ki_step`,
@@ -228,6 +218,14 @@ them. Reference: EVALUATOR.md §8.2.
 A form the compiler handles structurally rather than as a call
 (`koskari/compile/specials/`). Contrast macros, which rewrite forms
 before compilation.
+
+## stored obligation
+
+An obligation stored on a WIND or WITH node while its after thunk or
+`__exit__` runs: the raise walk stores the exception, the return walk
+the value. Reference: EVALUATOR.md §4.4, §6.3. Iteration and await
+suspension are not stored obligations; say "suspended" or name the
+mechanism.
 
 ## suite
 
@@ -255,9 +253,17 @@ and the whole chain is replaced. Reference: EVALUATOR.md §6.2, §6.4.
 
 ## transfer goal
 
-The record a continuation invoke arms and the evaluator's prologue
+The record a continuation invoke pushes and the evaluator's prologue
 drives to move execution between chains: where control is going (seam,
 target clone, payload, resume pc), never what to do. The driver
 re-derives LEAVING, LANDING, ENTERING, and DELIVERING from the live
 chain on every pass. Replaced the transfer plan's precomputed step list.
 Reference: EVALUATOR.md §6.
+
+## waiting goal
+
+A transfer goal waiting on a node whose leave or enter is in flight:
+the node's thunk frame or awaitable is running, and the goal acts
+again only when `dyn_top` is back where it was. Reference:
+EVALUATOR.md §6.2. Iteration and await suspension are "suspended",
+not waiting.

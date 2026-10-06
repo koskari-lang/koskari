@@ -20,7 +20,7 @@ exception). Uses PUSH_DYN_WITH/POP_DYN_WITH. Participates in transfer plans.
 
 import pytest
 
-from . import Park, SpecialsTestCase
+from . import Suspend, SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials
@@ -191,7 +191,7 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
 
             async def __aexit__(self, typ, val, tb):
                 events.append("aexit-start")
-                await Park()
+                await Suspend()
                 events.append("aexit-done")
                 return False
 
@@ -201,8 +201,9 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
     async def test_shift_result_delivery_awaits_exit(self):
         """
         a shift body completing inside a dyn-with whose __aexit__
-        suspends parks the transfer; the second send finishes __aexit__
-        and delivers the shift result to the reset
+        suspends leaves the transfer waiting on the node; the second
+        send finishes __aexit__ and delivers the shift result to the
+        reset
         """
 
         events = []
@@ -217,7 +218,7 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
         fn = await expr()
 
         coro = fn()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         self.assertEqual(events, ["aenter", "aexit-start"])
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
@@ -227,8 +228,8 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
 
     async def test_abandoned_mid_transfer_collects(self):
         """
-        a coroutine parked in a transfer's __aexit__ that refers back to
-        itself through the manager is a cycle, and is collected
+        a coroutine suspended in a transfer's __aexit__ that refers back
+        to itself through the manager is a cycle, and is collected
         """
 
         import gc
@@ -246,7 +247,7 @@ class TestDynWithShiftSuspendedExit(SpecialsTestCase):
         fn = await expr()
 
         coro = fn()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         mgr = [m for m in gc.get_referrers(Mgr) if isinstance(m, Mgr)][0]
         mgr.coro = coro
         alive = weakref.ref(mgr)

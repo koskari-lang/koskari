@@ -14,7 +14,7 @@
 */
 
 /**
-   POP_WITH: arg unused. Park TOS (the body value) on the with node and
+   POP_WITH: arg unused. Store TOS (the body value) on the with node and
    unlink it: __exit__ runs (auto-awaited when it returns an awaitable),
    the node leaves the chain, and the unlink delivers the body value to
    the revealed block. POP_DYN_WITH is this handler under another name.
@@ -46,7 +46,7 @@ KOS_OP_HANDLER(POP_WITH) {
     if (seg && KosSegment_LEN(seg)) {
       PyObject *body_result = KosEvalState_StackPopRef(es);
 
-      if (! body_result || kos_dyn_ob_park_value(top, body_result) < 0)
+      if (! body_result || kos_dyn_ob_store_value(top, body_result) < 0)
         RESULT_RAISE();
     }
   }
@@ -68,7 +68,7 @@ KOS_OP_HANDLER(POP_WITH) {
      run. The node stays on the chain and the pc alone (the current frame
      is the callee's, so threading on runs it): the callee's return
      settles and unlinks the node and sets the pc past this opcode. A
-     plan armed by the install is the prologue's to drain. */
+     goal pushed by the install is the prologue's to drain. */
   if (kr.kind == KOS_RES_REPROLOGUE) {
     if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
       RESULT_CONTINUE(es);

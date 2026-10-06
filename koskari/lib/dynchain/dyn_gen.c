@@ -212,19 +212,19 @@ static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
    None. Callers: eval when entering generator body from consumer.
 */
 /**
-   Put back what the freeze parked, outermost first, so each node's
+   Put back what the freeze took out, outermost first, so each node's
    record of the table beneath it is the consumer's table as it is now.
-   On a failure the nodes already unparked are parked again and the
+   On a failure the nodes already installed are frozen again and the
    span is as the freeze left it.
 */
-static int kos_dyn_gen_unpark_span(KosEvalState *es, KosDynNode *node) {
+static int kos_dyn_gen_install_span(KosEvalState *es, KosDynNode *node) {
   if (! node)
     return 0;
-  if (kos_dyn_gen_unpark_span(es, KosDynNode_PARENT(node)) < 0)
+  if (kos_dyn_gen_install_span(es, KosDynNode_PARENT(node)) < 0)
     return -1;
-  if (kos_dyn_extent_unpark(es, node) < 0) {
+  if (kos_dyn_extent_install(es, node) < 0) {
     for (KosDynNode *n = KosDynNode_PARENT(node); n; n = KosDynNode_PARENT(n))
-      kos_dyn_extent_park(es, n);
+      kos_dyn_extent_freeze(es, n);
     return -1;
   }
   return 0;
@@ -285,9 +285,9 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
         invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0, count);
   }
 
-  /* What the freeze parked comes back before the splice: a refusal
+  /* What the freeze took out comes back before the splice: a refusal
      here leaves the GEN frozen, nothing spliced. */
-  if (kos_dyn_gen_unpark_span(es, active) < 0)
+  if (kos_dyn_gen_install_span(es, active) < 0)
     return -1;
 
   /* The consumer's registers, restored at the next freeze. */

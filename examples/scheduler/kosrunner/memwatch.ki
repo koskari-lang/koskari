@@ -109,7 +109,7 @@ define _snapshot-report [top]:
     Log the `top` allocation sites whose retained bytes have moved the
     most since the previous sample, ranked like the census by the size
     of the move in either direction. Does nothing unless tracemalloc is
-    tracing -- arm it by starting the process with
+    tracing -- enable it by starting the process with
     PYTHONTRACEMALLOC=<frames>. Only per-line statistics survive
     between samples; holding the Snapshot would hand the next
     take_snapshot millions of its own blocks to trace, tripling the

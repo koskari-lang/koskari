@@ -87,7 +87,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   /* REPROLOGUE means one of two things. Either the thunk is a Koskari
      function whose frame is now the current frame: continue from es->pc
      runs it, and its return settles the wind. Or the call left work for
-     the trampoline (a transfer goal armed by the callee): return so the
+     the trampoline (a transfer goal pushed by the callee): return so the
      trampoline drains it first. Continuing in that second case would
      run the wind body before the transfer it was meant to make. */
   if (wr.kind == KOS_RES_REPROLOGUE) {

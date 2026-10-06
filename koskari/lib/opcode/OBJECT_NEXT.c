@@ -67,7 +67,7 @@ static KosOpResult object_next_step(
       case KOS_IREQ_CONTINUES: {
         /* A frame the install left current is threaded into only when
            it can be: a code-less native frame takes the entry
-           sequence, and a frame parked inside a yield-from runs that
+           sequence, and a frame suspended inside a yield-from runs that
            node's phase resume first. */
         return kos_iter_installed(es);
       }
@@ -113,10 +113,10 @@ static KosOpResult object_next_step(
       return EVAL_RAISE();
 
     case GET_NEXT_SUSPEND:
-      /* The step is parked on its await: arm the NEXT node to
+      /* The step is suspended on its await: push the NEXT node to
          carry the arity contract across the suspension. The awaited
          value revives through the iteration node (revive_await election);
-         StopAsyncIteration from the parked step converts to exhaustion
+         StopAsyncIteration from the suspended step converts to exhaustion
          at the raise walk. Nothing rides the operand stack. */
       if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
         Py_DECREF(iter);

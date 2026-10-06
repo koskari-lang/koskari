@@ -61,7 +61,7 @@ define-class TestWebhookReply [SchedulerAsyncTestCase]:
         define runid (item body "run_id")
         (self.assertTrue runid)
 
-        ;; the background task is parked on the gate: the run is still open
+        ;; the background task is waiting on the gate: the run is still open
         define row (self.js.store.get-run runid)
         (self.assertEqual (item row "status") "running")
 

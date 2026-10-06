@@ -4,7 +4,7 @@ This directory contains the reset/shift exercise sweep: a matrix of
 delimited-continuation shapes run as standalone Koskari programs, each
 verified against the value the Danvy/Filinski reduction gives. It is a
 diagnostic tool, invoked explicitly like the native tests; pytest does
-not collect it, and the phased suite pins the same semantics through
+not collect it, and the phased suite checks the same semantics through
 `tests/reproducers/` instead.
 
 ## Why subprocess isolation

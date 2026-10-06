@@ -192,7 +192,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
     async def test_deref_before_store_returns_default(self):
         """
         deref before any store returns default; after store returns stored
-        value. A bare same-key ref pins that "returns the default" means
+        value. A bare same-key ref checks that "returns the default" means
         unbound rather than bound to that value.
         """
 

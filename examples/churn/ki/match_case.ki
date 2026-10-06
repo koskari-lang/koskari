@@ -2,7 +2,7 @@
 ;; rotating mix of subjects: class patterns, sequence destructuring with
 ;; rest, mapping lookup, guarded and typed captures, string atoms, and an
 ;; else arm. Paired with the Python-native match statement in
-;; py/match_case.py, so the cross-check pins koskari's match semantics
+;; py/match_case.py, so the cross-check checks koskari's match semantics
 ;; against PEP 634 directly.
 
 import-from dataclasses dataclass

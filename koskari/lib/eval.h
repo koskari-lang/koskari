@@ -48,7 +48,7 @@
 */
 typedef enum KosOpResultKind {
   KOS_RES_NORMAL = 0,      /* continue to next opcode */
-  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or goal armed) */
+  KOS_RES_REPROLOGUE,      /* restart prologue (PyErr set, or goal active) */
   KOS_RES_YIELD,           /* generator yielded val */
   KOS_RES_AWAIT,           /* suspend on awaitable val */
   KOS_RES_RETURN,          /* return val (needs walk+pop via eval_event_return) */
@@ -207,8 +207,8 @@ typedef enum KosGetNextResult {
    do. Thread on with
    RESULT_ENTRY or RESUME_HOP to carry the step further, complete the
    frame with KosNativeFrame_ReturnToCache, or return EVAL_RAISE to
-   decline. Declining re-raises with the resume already disarmed, so
-   the unwind proceeds exactly as it would have with no resume armed
+   decline. Declining re-raises with the resume already cleared, so
+   the unwind proceeds exactly as it would have with no resume set
    at all; a consumer that only propagates needs no code beyond that
    one line.
 
@@ -225,8 +225,8 @@ typedef enum KosGetNextResult {
    answer REPROLOGUE or EVAL_RAISE -- never thread on, since a chain
    run inside the walk would hand it a signal it cannot apply. A
    resume cannot tell the two paths apart from its own code, so a
-   consumer that could be armed on either must keep to the narrower
-   rule. Every KosIter provider arms on the live frame only.
+   consumer that could be set on either must keep to the narrower
+   rule. Every KosIter provider sets its resume on the live frame only.
 
    Returns a KosOpResult naming the next signal to the loop: another
    CPS entry call, EVAL_RETURN, EVAL_RAISE, EVAL_AWAIT, or
@@ -450,7 +450,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 #define RESULT_FAIL()   return EVAL_FATAL()
 
 /* RESULT_REPROLOGUE(es): the handler left prologue work behind (an
-   armed goal, a restored exception); tail into the prologue. The
+   active goal, a restored exception); tail into the prologue. The
    trampoline slot is stepped here as the loop stepped it on a raw
    REPROLOGUE, since the prologue itself does not step. */
 #define RESULT_REPROLOGUE(es)                                           \
@@ -493,9 +493,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
    RESULT_ENTRY(es, r, resume, state): end a resume with the outcome r
    of a CPS entry (KosEvalState_Call, KosEvalState_NextResume)
    it called with that same resume. NORMAL means a callee frame is
-   installed and current with resume armed on the caller: thread into
+   installed and current with resume set on the caller: thread into
    its first instruction. RETURN means the settled value is in hand
-   and nothing is armed: tail-call resume with it now. Anything else
+   and no resume is set: tail-call resume with it now. Anything else
    (a suspension, a bounce the entry had to take, a failure) returns
    to the trampoline as it stands. The calling resume must have the
    KosThreadFn prototype and must run any Py_DECREF it owes before
@@ -565,7 +565,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
 
 /**
-   Resume a return that parked on a node whose leave went asynchronous,
+   Resume a return stored on a node whose leave went asynchronous,
    now that the node has left the chain: re-enter the return path the
    obligation names with its value. ob is a KOS_OB_RETURN obligation
    handed back by kos_dyn_settle_top; it is consumed. The answer has
@@ -630,16 +630,16 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    resume instead of making the caller interpret KosIterRequestStatus
    by hand. Like KosEvalState_Call, the entry reports what
    happened and the calling resume ends in RESULT_ENTRY: a delivered
-   element that is settled reports RETURN with it, nothing armed (the
+   element that is settled reports RETURN with it, no resume set (the
    resume is tail-called with it); one that needs settling settles one
-   step, arms resume, and reports REPROLOGUE or AWAIT; an in-flight
-   CONTINUES arms resume and reports NORMAL when the install left a
+   step, sets resume, and reports REPROLOGUE or AWAIT; an in-flight
+   CONTINUES sets resume and reports NORMAL when the install left a
    bytecode frame current (thread into it) or REPROLOGUE otherwise; an
-   awaitable in-flight (EXIT) arms resume and reports EVAL_AWAIT, and
-   the AWAITED revive delivers into it. Exhaustion arms resume and
+   awaitable in-flight (EXIT) sets resume and reports EVAL_AWAIT, and
+   the AWAITED revive delivers into it. Exhaustion sets resume and
    raises StopIteration, which reaches resume through the raise walk
    like an in-flight source's failure does; a request that fails
-   outright reports RAISE with nothing armed. send_val is accepted for
+   outright reports RAISE with no resume set. send_val is accepted for
    a future Send entry point; unused today. Caller must have a current
    frame.
 
@@ -673,7 +673,7 @@ KosOpResult KosEvalState_NextResume(
   The frame_top field is a cached pointer to the topmost FRAME node
   for fast access during normal execution.
 
-  The goal field is the active transfer goal, or NULL; parked outer
+  The goal field is the active transfer goal, or NULL; waiting outer
   goals hang off it.
 
   Ownership and lifecycle:
@@ -736,7 +736,7 @@ struct KosContext {
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
 
-  /* The active transfer goal, or NULL; parked outer goals hang off it */
+  /* The active transfer goal, or NULL; waiting outer goals hang off it */
   KosXferGoal *goal;
 
   /* --- Python bridge: await/yield suspend and resume --- */
@@ -1253,7 +1253,7 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
   A context deallocates with its last reference. Deallocation frees
   the dynamic chain, walking every node and running kind-specific free
   logic (including Py_DECREF on Python objects held by dyn nodes), which
-  can invoke arbitrary Python code via destructors, and frees the armed
+  can invoke arbitrary Python code via destructors, and frees the active
   transfer goal and its outers and the await, resume, inject, domain,
   and parameter state. It does not start koskari_eval or execute
   bytecode: a holder that owes the extent protocol a close drive runs
@@ -1266,10 +1266,10 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
    finished frame chain with the frozen block and namespace derived
    from it, and clear the completion residue -- dead and running
    flags, suspension tag, in-flight await iterator, resume inject,
-   armed throw injection, and the handler-visible exception state.
+   pending throw injection, and the handler-visible exception state.
    The token, domain, and parameter cells stay: they are the context's
    identity. A context holding state this reset cannot account for (an
-   armed transfer goal) is left untouched and the caller releases it
+   active transfer goal) is left untouched and the caller releases it
    instead.
 
    :return: 0 recycled; -1 the context cannot be recycled
@@ -1336,7 +1336,7 @@ void kos_iter_close(PyObject *iter);
 
 
 /**
-   One iteration request against a iteration node's armed record: the
+   One iteration request against a iteration node's request on record: the
    single site API for stepping the node's iterator over all three
    protocols. send_val borrowed; *fast_out new ref on
    DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
@@ -1390,7 +1390,7 @@ KosOpResult koskari_eval(
 
 /**
    Route the raised exception to the current frame's resume when one is
-   armed: a delegation in flight takes it as its pending throw and throws
+   set: a delegation in flight takes it as its pending throw and throws
    it into the delegate, so a delegate that catches it answers with its
    next value, as CPython's yield from does. GeneratorExit is not routed;
    a close closes the delegate through the raise walk instead.
@@ -1398,7 +1398,7 @@ KosOpResult koskari_eval(
    Callers: revive_yield, the flattened generator throw ingress.
 
    :return: 1 when the exception was taken and staged for the resume,
-       0 when no resume is armed or the exception is GeneratorExit and
+       0 when no resume is set or the exception is GeneratorExit and
        it stays raised for the frame
 */
 int KosEvalState_ThrowIntoResume(KosEvalState *es);
@@ -1482,14 +1482,14 @@ KosOpResult KosEvalState_InstallCallFrame(
 
    With resume set, the entry reports what happened and leaves the
    next hop to the calling resume, which ends in RESULT_ENTRY: an
-   installed callee arms resume on the caller's frame and reports
+   installed callee sets resume on the caller's frame and reports
    NORMAL (the callee is current; thread into it, and its return
    delivers by tail call into resume); a value settled in hand --
    a synchronous RETURN, or a plain callable's result -- reports
-   RETURN with the value, nothing armed (tail-call resume with it);
-   a value that still needs settling settles one step, arms resume,
+   RETURN with the value, no resume set (tail-call resume with it);
+   a value that still needs settling settles one step, sets resume,
    and reports REPROLOGUE or AWAIT for the trampoline to deliver on a
-   later trip; a call whose own result needed awaiting arms resume and
+   later trip; a call whose own result needed awaiting sets resume and
    reports AWAIT. RAISE / FATAL relay untouched -- the failure reaches
    resume through the raise walk instead. Caller must have a current
    frame. A tail call replaces that frame, so it has no caller to
@@ -1518,7 +1518,7 @@ KosOpResult KosEvalState_Call(
    place of code and a namespace, with frame_flags ORed in. A tail
    call reuses the live frame, as InstallCallFrame does for bytecode.
    Otherwise a native frame is pushed. The frame carries the empty
-   namespace. The resume is armed here, before the caller makes its
+   namespace. The resume is set here, before the caller makes its
    call, so a failure raised while this frame is current is delivered
    to the resume as NULL. Returns the frame, or NULL with PyErr set.
 */

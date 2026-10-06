@@ -9,7 +9,7 @@ node, and `kos_yieldfrom_close_delegate` (`dynchain/dyn_yield_from.c`)
 closes what it can without awaiting. That last step is where the
 delegate kinds part ways.
 
-**See also:** [generator-extent-park.md](generator-extent-park.md)
+**See also:** [generator-extent-freeze.md](generator-extent-freeze.md)
 (the other yield-time question), [extent-wind-unwind.md](extent-wind-unwind.md),
 [demand-flattening.md](demand-flattening.md).
 

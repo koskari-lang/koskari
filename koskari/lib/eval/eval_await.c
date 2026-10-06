@@ -128,7 +128,7 @@ static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
   if (! kos_eval_in_demand(es))
     return 0;
 
-  /* The eager step parked the __await__ iterator for a resumption
+  /* The eager step stored the __await__ iterator for a resumption
      that is now refused; nothing will drive it again. */
   KosEvalState_PythonAwaitClearIter(es);
   kos_demand_set_sync_violation(msg);
@@ -208,7 +208,7 @@ static inline KosOpResult push_or_fuse(
    set. A fresh Koskari coroutine, or a Defer delegating to one under
    an explicit await, is installed as a call frame on the running
    chain. Any other awaitable is eagerly stepped to its result, or
-   suspends with the iterator parked on the context. NORMAL with *out
+   suspends with the iterator stored on the context. NORMAL with *out
    the settled value (new reference), REPROLOGUE with a callee
    installed whose return delivers the value, AWAIT with the yielded
    value, or RAISE. val is consumed.

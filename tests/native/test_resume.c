@@ -124,7 +124,7 @@ static KOS_PRESERVE_NONE KosOpResult stage_via_dispatch(
 }
 
 
-/* DISPATCH arms the resume, stages the value in the pending slot and
+/* DISPATCH sets the resume, stages the value in the pending slot and
    tails into the prologue, which takes the slot and delivers it in the
    same thread; the resume's terminal result on a root frame comes
    back as the prologue's result. */
@@ -196,7 +196,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
               || KosEvalState_StackLen(&es) == 0,
               "the frame stack was not touched");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame),
-                   "nothing armed: the caller tail-calls the resume itself");
+                   "no resume set: the caller tail-calls the resume itself");
   TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
 
   Py_DECREF(r.val);
@@ -297,7 +297,7 @@ static int test_return_into_resume_parent(void) {
 /* === kos_eval_prologue: the threaded re-entry === */
 
 
-/* Nothing staged, pending, or armed: the prologue threads into the
+/* Nothing staged, pending, or set: the prologue threads into the
    frame's instruction stream, here a body returning the constant 42,
    and the root return is the prologue's result. */
 static int test_prologue_idle_threads_into_code(void) {
@@ -341,7 +341,7 @@ static int test_prologue_idle_threads_into_code(void) {
 }
 
 
-/* A resume armed on the frame with a value staged in the slot: the
+/* A resume set on the frame with a value staged in the slot: the
    prologue takes the slot and delivers it. */
 static int test_prologue_delivers_staged(void) {
   KosContext *ctx = KosContext_New(NULL);
@@ -663,7 +663,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosDynFrame_RESUME_KIND(live) = &resume_recording_kind;
   KosDynFrame_RESUME_STATE(live) = &prior;
 
-  kos_xfer_goal_arm(&es, goal);
+  kos_xfer_goal_push(&es, goal);
   {
     int boundary = 0;
     KosOpResult r = kos_xfer_goal_drive(&es, &boundary);
@@ -722,7 +722,7 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
                                         (uint32_t) -1, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
 
-  kos_xfer_goal_arm(&es, goal);
+  kos_xfer_goal_push(&es, goal);
   {
     int boundary = 0;
     KosOpResult r = kos_xfer_goal_drive(&es, &boundary);

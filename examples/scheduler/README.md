@@ -792,7 +792,7 @@ enumerates types, so this is the whole recipe:
    needed. If `start` spawns a long-lived background task, hand it to
    `watch-task` (`job: self`): a task nobody retrieves the exception from
    dies silently, leaving the job reporting itself healthy while doing
-   nothing, and pinning its traceback for the life of the process.
+   nothing, and storing its traceback for the life of the process.
 3. Define `config/<type>` (construct the dataclass, bind the name, run the
    `&-'default/<type>` guard) with the `()`-sentinel unnamed case. Write the
    slot as `-'default/<type>` wherever it appears, so it is the shared module

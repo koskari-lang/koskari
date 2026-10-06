@@ -33,9 +33,9 @@ from koskari.module import load_module_source_async, new_module
 pytestmark = pytest.mark.phase_lib
 
 
-class Parker:
+class Suspender:
     def __await__(self):
-        yield "parked"
+        yield "suspended"
         return "woken"
 
 
@@ -51,7 +51,7 @@ class Reenter:
 
     def __await__(self):
         try:
-            yield "parked"
+            yield "suspended"
         finally:
             try:
                 self.action(self.holder["coro"])
@@ -80,7 +80,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
         holder = {}
 
         async def inner():
-            await Parker()
+            await Suspender()
             try:
                 holder["coro"].close()
             except RuntimeError:
@@ -89,7 +89,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
 
         coro = mod["waiter"](inner())
         holder["coro"] = coro
-        self.assertEqual(coro.send(None), "parked")
+        self.assertEqual(coro.send(None), "suspended")
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
         self.assertEqual(caught.exception.value, "refused")
@@ -100,7 +100,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
         holder = {}
 
         async def inner():
-            await Parker()
+            await Suspender()
             try:
                 holder["coro"].send(None)
             except RuntimeError:
@@ -109,7 +109,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
 
         coro = mod["waiter"](inner())
         holder["coro"] = coro
-        self.assertEqual(coro.send(None), "parked")
+        self.assertEqual(coro.send(None), "suspended")
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
         self.assertEqual(caught.exception.value, "refused")
@@ -120,7 +120,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
 
         async def inner():
             try:
-                await Parker()
+                await Suspender()
             except KeyError:
                 pass
             try:
@@ -131,7 +131,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
 
         coro = mod["waiter"](inner())
         holder["coro"] = coro
-        self.assertEqual(coro.send(None), "parked")
+        self.assertEqual(coro.send(None), "suspended")
         with self.assertRaises(StopIteration) as caught:
             coro.throw(KeyError("k"))
         self.assertEqual(caught.exception.value, "refused")
@@ -143,7 +143,7 @@ class TestCoroutineCloseFromAwait(unittest.IsolatedAsyncioTestCase):
 
         coro = mod["waiter"](Reenter(action, holder, outcome))
         holder["coro"] = coro
-        self.assertEqual(coro.send(None), "parked")
+        self.assertEqual(coro.send(None), "suspended")
         self.assertIsNone(coro.close())
         self.assertEqual(outcome, {"nested": "refused"})
         self.assertIn("done", repr(coro))

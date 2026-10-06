@@ -125,7 +125,7 @@ class TestWhileSpecial(SpecialsTestCase):
 class TestLoopTransferAcrossLeave(SpecialsTestCase):
     """
     A break or continue crossing a with or dyn-wind whose leave hands
-    control to a frame or an awaitable parks on that node and finishes
+    control to a frame or an awaitable waits on that node and finishes
     once the leave settles. The loops are bounded by a counter so a
     dropped transfer shows as the wrong result instead of a hang.
     """

@@ -37,7 +37,7 @@ typedef struct {
   PyObject *wrapped;
   vectorcallfunc vectorcall;
   KosContext *host;   /* the drive context boundary calls reuse; NULL
-                         until the first one parks it, and detached
+                         until the first one caches it, and detached
                          while a call runs */
 } KosDemandObject;
 

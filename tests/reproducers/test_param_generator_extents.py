@@ -20,8 +20,9 @@ so a parameterize extent persists across the generator's suspensions and
 undoes when its block exits or the generator is exhausted. Because an
 async generator owns its context (cells forked at creation, like a
 defer), that whole lifecycle plays out in the generator's private table:
-the driver's view is never touched, even while the generator is parked
-mid-extent, and an abandoned generator takes its table with it.
+the driver's view is never touched, even while the generator is
+suspended mid-extent, and an abandoned generator takes its table with
+it.
 
 The extent-safe suspension methodology remains delimited continuations
 (shift/reset), whose transfer plans unwind and rewind PARAM extents per
@@ -42,7 +43,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 # The generator reports its own view of `g` at each step; the driver
-# reads its own view while the generator is parked mid-extent.
+# reads its own view while the generator is suspended mid-extent.
 REPORTER_SRC = """
 (define reporter (lambda []
   (parameterize [[g "gen-binding"]]
@@ -96,7 +97,7 @@ LIFECYCLE_SRC = """
 
 # A Koskari consumer steps a Koskari generator on its own chain, so the
 # generator's parameterize extent swaps cells in the consumer's table.
-# The extent parks with the frozen span and returns with the install:
+# The extent is frozen with its span and returns with the install:
 # the consumer never reads the generator's binding, the generator's own
 # reads see it across suspensions, and the block exit restores what the
 # consumer had at the latest resume, not at the first.
@@ -148,8 +149,8 @@ class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
         """
         yield does not unwind the generator's extent (its own reads see
         the binding across suspensions; the block exit undoes it), and
-        the driver's view is never touched while the generator is parked
-        mid-extent
+        the driver's view is never touched while the generator is
+        suspended mid-extent
         """
 
         mod = await self.load("param_gen_reporter", REPORTER_SRC)
@@ -173,11 +174,11 @@ class TestParamGeneratorExtents(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["abandoned"], "outer")
 
 
-    async def test_flattened_extent_parks_with_the_span(self):
+    async def test_flattened_extent_freezes_with_the_span(self):
         """
         A generator stepped on the consumer's chain keeps its binding for
-        its own reads, never shows it to the consumer while parked, and
-        restores the consumer's current cell when its block exits
+        its own reads, never shows it to the consumer while suspended,
+        and restores the consumer's current cell when its block exits
         """
 
         mod = await self.load("param_gen_flattened", FLATTENED_SRC)

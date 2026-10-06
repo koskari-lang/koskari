@@ -1,4 +1,4 @@
-# Extents across a generator yield: park today, wind/unwind later?
+# Extents across a generator yield: freeze/install today, wind/unwind later?
 
 A generator freeze moves the span above the GEN off the live chain as
 it is and the install moves it back. Nothing between the frame and the
@@ -17,21 +17,21 @@ steps a Koskari generator on its own chain).
 A flattened generator runs on its consumer's context. Its `parameterize`
 swaps cells into the consumer's parameter table, and the frozen span
 used to leave those cells behind: the consumer read the generator's
-binding while it was parked, and when the generator's block later
+binding while the span was frozen, and when the generator's block later
 exited it wrote back the cell it had recorded at its first install,
 long after the consumer's own `parameterize` had popped. The adapter
 path never showed this because an async generator drive owns a
 context of its own.
 
 The fix is a pair of per-kind hooks beside the extent contract,
-`kos_dyn_extent_park` at the freeze and `kos_dyn_extent_unpark` at the
-install (`dynchain.c`). PARAM is the only kind with a body: park
-restores the cells it displaced, innermost first; unpark re-enters
+`kos_dyn_extent_freeze` at the freeze and `kos_dyn_extent_install` at the
+install (`dynchain.c`). PARAM is the only kind with a body: the freeze
+restores the cells it displaced, innermost first; the install re-enters
 them outermost first over the table as it is at that resume, so the
 record each node keeps of what sits beneath it is current. A failed
-unpark parks what it had done and the GEN stays frozen. Every other
-kind is a no-op, and the two switches are where a further kind would
-go.
+install restores what it had re-entered and the GEN stays frozen. Every
+other kind is a no-op, and the two switches are where a further kind
+would go.
 
 ## The wider question
 
@@ -60,15 +60,15 @@ rebuilding them:
 - **Opt-in.** A node declares that it wants the walk (a capability,
   much as `KOS_DYN_CAP_NEEDS_INSTALL_WIND` already marks the nodes a
   transfer goal re-enters), and only spans holding one pay for it.
-  PARAM is then the first such node and the park/unpark hooks become
-  the general leave/re-enter.
+  PARAM is then the first such node and the freeze/install hooks
+  become the general leave/re-enter.
 
 ## What the walk would be
 
 The transfer goals already know how to leave and re-enter a span of
 extents in order (`xfer_goal.c`, LEAVING then ENTERING), with a thunk
 or a manager call able to suspend and resume the walk. A generator
-yield would arm the same kind of walk over the frozen span, with two
+yield would start the same kind of walk over the frozen span, with two
 differences: the nodes are never unlinked, and the walk ends by
 completing the freeze rather than delivering a value. The resume is
 the mirror. Whether the goal machinery fits as it stands or the yield
@@ -94,6 +94,6 @@ needs its own walker is the first thing to find out.
 
 ## Status
 
-Investigate. PARAM is fixed through the park/unpark hooks; nothing
+Investigate. PARAM is fixed through the freeze/install hooks; nothing
 else changes until the walk is designed. `design/TODO.md` carries the
 stub.

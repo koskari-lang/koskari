@@ -15,10 +15,11 @@
 tests.reproducers.test_yield_from_mediated
 
 A koskari generator that yield-froms a KosMap whose own source is a
-koskari generator: the map's step arms the YIELD_FROM boundary for
-mediated delivery, and the deliveries must reach the provider through
-the boundary. Also covers an error escaping the mapped function under
-yield-from: the error propagates and the map is left reusable
+koskari generator: the map's step sets the request on the YIELD_FROM
+boundary for mediated delivery, and the deliveries must reach the
+provider through the boundary. Also covers an error escaping the
+mapped function under yield-from: the error propagates and the map is
+left reusable
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

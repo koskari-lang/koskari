@@ -111,7 +111,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src) {
   if (! src)
     return NULL;
   /* A pending node has an __enter__ or __exit__ in flight, which no
-     template can carry; nor can what was parked for its completion. */
+     template can carry; nor can what was stored for its completion. */
   if (KosDynWith_ENTER_PENDING(src) || KosDynWith_EXIT_PENDING(src)
       || KosDynWith_OB(src)->kind != KOS_OB_NONE) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -310,7 +310,7 @@ static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
 
 
 /**
-   Classify __exit__'s result against the triple parked on the node. A
+   Classify __exit__'s result against the triple stored on the node. A
    truthy result against an exception swallows it: the triple is
    released and the node now owes None in its place. Any other outcome
    leaves the triple where it is for the unlink to re-raise. Returns -1
@@ -330,7 +330,7 @@ static int kos_dyn_with_classify_exit(
     if (swallow < 0) {
       /* the result's truth test raised: that exception supersedes the
          handled one, as a raising __exit__ does; the node keeps its
-         pending phase and parked triple for the raise walk */
+         pending phase and stored triple for the raise walk */
       Py_DECREF(result);
       return -1;
     }
@@ -435,13 +435,13 @@ static KosOpResult kos_dyn_with_leave(
   PyObject *exit_fn = KosDynWith_EXIT(node);
   KosObligation *ob = KosDynWith_OB(node);
 
-  /* The exception in flight parks on the node as the obligation __exit__
+  /* The exception in flight is stored on the node as the obligation __exit__
      is handling: __exit__ may suspend, and the unlink re-raises it. A
      normal exit passes None three times. */
   if (PyErr_Occurred()) {
     PyObject *typ = NULL, *val = NULL, *tb = NULL;
     PyErr_Fetch(&typ, &val, &tb);
-    if (kos_dyn_ob_park_exception((KosDynNode *) node, typ, val, tb) < 0)
+    if (kos_dyn_ob_store_exception((KosDynNode *) node, typ, val, tb) < 0)
       return EVAL_RAISE();
   }
 
@@ -524,7 +524,7 @@ static int kos_dyn_with_settle(KosEvalState *es, KosDynWith *node) {
    with nothing to take.
 */
 static void kos_dyn_with_abort_impl(KosDynWith *node) {
-  /* what was parked stays for the unlink to chain or discard */
+  /* what was stored stays for the unlink to chain or discard */
   kos_dyn_with_shot_after_exit_done(node);
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
 }

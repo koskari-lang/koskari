@@ -28,7 +28,7 @@ import sys
 
 import pytest
 
-from . import Park, SpecialsTestCase
+from . import Suspend, SpecialsTestCase
 
 
 pytestmark = pytest.mark.phase_specials
@@ -71,16 +71,17 @@ class Unraisables:
 
 class TestCoroutineFinalize(SpecialsTestCase):
 
-    def park_in(self, src_str, **defns):
+    def suspend_in(self, src_str, **defns):
         """
         compile src_str to a function of no arguments, start its
-        coroutine, and park it at the first await; returns the coroutine
+        coroutine, and suspend it at the first await; returns the
+        coroutine
         """
 
-        expr, mod = self.compile_expr(src_str, park=Park, **defns)
+        expr, mod = self.compile_expr(src_str, suspend=Suspend, **defns)
         fn = self.run_sync(expr)
         coro = fn()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         return coro
 
     def run_sync(self, expr):
@@ -92,11 +93,11 @@ class TestCoroutineFinalize(SpecialsTestCase):
         src = """
         (lambda []
           (try
-            (call park)
+            (call suspend)
             (finally: (call record "finally"))))
         """
         with Unraisables() as reports:
-            coro = self.park_in(src, record=log.append)
+            coro = self.suspend_in(src, record=log.append)
             self.assertEqual(log, [])
             del coro
         self.assertEqual(log, ["finally"])
@@ -107,10 +108,10 @@ class TestCoroutineFinalize(SpecialsTestCase):
         src = """
         (lambda []
           (with [(cm)]
-            (call park)))
+            (call suspend)))
         """
         with Unraisables() as reports:
-            coro = self.park_in(src, cm=lambda: Recorder(log))
+            coro = self.suspend_in(src, cm=lambda: Recorder(log))
             self.assertEqual(log, ["enter"])
             del coro
         self.assertEqual(log, ["enter", ("exit", "GeneratorExit")])
@@ -122,11 +123,11 @@ class TestCoroutineFinalize(SpecialsTestCase):
         (lambda []
           (dyn-wind
             (call record "before")
-            (call park)
+            (call suspend)
             (call record "after")))
         """
         with Unraisables() as reports:
-            coro = self.park_in(src, record=log.append)
+            coro = self.suspend_in(src, record=log.append)
             self.assertEqual(log, ["before"])
             del coro
         self.assertEqual(log, ["before", "after"])
@@ -139,12 +140,13 @@ class TestCoroutineFinalize(SpecialsTestCase):
           (try
             (with [(cm)]
               (try
-                (call park)
+                (call suspend)
                 (finally: (call record "inner"))))
             (finally: (call record "outer"))))
         """
         with Unraisables() as reports:
-            coro = self.park_in(src, record=log.append, cm=lambda: Recorder(log))
+            coro = self.suspend_in(
+                src, record=log.append, cm=lambda: Recorder(log))
             del coro
         self.assertEqual(
             log, ["enter", "inner", ("exit", "GeneratorExit"), "outer"])
@@ -155,10 +157,10 @@ class TestCoroutineFinalize(SpecialsTestCase):
         src = """
         (lambda []
           (try
-            (call park)
+            (call suspend)
             (finally: (call record "finally"))))
         """
-        coro = self.park_in(src, record=log.append)
+        coro = self.suspend_in(src, record=log.append)
 
         class Box:
             pass
@@ -182,15 +184,15 @@ class TestCoroutineFinalize(SpecialsTestCase):
         (lambda []
           (try
             (try
-              (call park)
+              (call suspend)
               (finally:
                 (call record "inner-start")
-                (call park)
+                (call suspend)
                 (call record "inner-end")))
             (finally: (call record "outer"))))
         """
         with Unraisables() as reports:
-            coro = self.park_in(src, record=log.append)
+            coro = self.suspend_in(src, record=log.append)
             del coro
         self.assertEqual(log, ["inner-start", "outer"])
         self.assertEqual(len(reports.seen), 1)
@@ -206,11 +208,11 @@ class TestCoroutineFinalize(SpecialsTestCase):
         src = """
         (lambda []
           (try
-            (call park)
+            (call suspend)
             (finally: (call record "finally") (call boom))))
         """
         with Unraisables() as reports:
-            coro = self.park_in(src, record=log.append, boom=boom)
+            coro = self.suspend_in(src, record=log.append, boom=boom)
             del coro
         self.assertEqual(log, ["finally"])
         self.assertEqual(len(reports.seen), 1)
@@ -221,7 +223,7 @@ class TestCoroutineFinalize(SpecialsTestCase):
 
         async def inner():
             try:
-                await Park()
+                await Suspend()
             finally:
                 log.append("inner-closed")
 
@@ -232,7 +234,7 @@ class TestCoroutineFinalize(SpecialsTestCase):
         expr, mod = self.compile_expr(src, inner=inner)
         fn = self.run_sync(expr)
         coro = fn()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         with Unraisables() as reports:
             del coro
         self.assertEqual(log, ["inner-closed"])

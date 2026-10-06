@@ -422,7 +422,7 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
 
     def test_denied_await_releases_the_awaited_iterator(self):
         """
-        The eager step parks the __await__ iterator on the context
+        The eager step caches the __await__ iterator on the context
         before suspending. Denying that suspension abandons it, so it
         must be released there rather than left for teardown. The
         handler runs inside the same context and reports what it sees.

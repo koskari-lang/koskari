@@ -60,7 +60,7 @@
    - NORMAL / POLL: a callee frame is installed and current, pushed by
      the install (KosEvalState_InstallCallFrame), and the call's result
      arrives by that frame's return.
-   - REPROLOGUE / AWAIT: the install pushed a code-less frame and armed
+   - REPROLOGUE / AWAIT: the install pushed a code-less frame and set
      a resume on it (KosEvalState_CallInto); the resume delivers.
    - RAISE: error, PyErr set.
 
@@ -110,15 +110,15 @@ typedef struct KosCallSlots {
    non-INSTALLED outcome the provider has fully undone its own partial
    state. A provider whose step needs its own suspensions or
    sub-iteration runs them under a CPS resume frame (the resume
-   contract is in eval.h); the suite itself never parks.
+   contract is in eval.h); the suite itself never suspends.
 */
 typedef enum {
   KOS_ITER_VALUE = 0,   /* *out: the element (new ref) */
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
   KOS_ITER_INSTALLED,   /* spliced own frames; deferred delivery */
   KOS_ITER_INSTALLED_VALUE, /* spliced a frame whose return IS the
-                               element: the site arms its iteration node in
-                               value mode */
+                               element: the site sets its iteration node's
+                               request to value mode */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 

@@ -14,9 +14,9 @@
 """
 tests.lib.test_frame_cache
 
-A function's parked frames: a frame reused from the cache shows no
+A function's cached frames: a frame reused from the cache shows no
 binding from its earlier life, recursion deeper and shallower than the
-cache serves the same answers, the collector walks every parked frame,
+cache serves the same answers, the collector walks every cached frame,
 and a function freed with a full cache frees them all.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -82,7 +82,7 @@ class TestFrameCache(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod["fib"](15), 610)
         self.assertEqual(await mod["fib"](15), 610)
 
-    async def test_collector_walks_every_parked_frame(self):
+    async def test_collector_walks_every_cached_frame(self):
         mod = await self.load()
         payload = object()
         self.assertIs(await mod["holder"](payload, 12), payload)

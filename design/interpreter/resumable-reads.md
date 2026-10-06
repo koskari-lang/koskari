@@ -227,7 +227,7 @@ materialise it but collects it:
   star call builds the argument tuple and installs the call. The
   operands under the elements are untouched throughout, so a raise in
   the generator unwinds with the frame's operands as they were, and a
-  freeze at a yield inside the generator parks the half-collected
+  freeze at a yield inside the generator keeps the half-collected
   elements on the stack as any buffered row does.
 - **a raise or a capture** mid-collection behaves as for any suspended
   row: the frame carries a resume, the frame cache refuses it, and a

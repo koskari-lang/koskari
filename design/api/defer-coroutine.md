@@ -96,9 +96,9 @@ A `DeferCoroutine` has no **PENDING** state. Construction runs the call and norm
 
 * **ITERATING(iter)**
 
-  * The handle has been armed (`__await__` or a first `send`/`throw` on
-    a DELEGATING defer) and holds the iterator obtained from
-    `inner.__await__()`. Drives forward to it with yield-from rules.
+  * The handle has started its delegation (`__await__` or a first
+    `send`/`throw` on a DELEGATING defer) and holds the iterator obtained
+    from `inner.__await__()`. Drives forward to it with yield-from rules.
 
 * **SPENT**
 
@@ -138,9 +138,9 @@ concrete type, stays False). asyncio's strict surfaces
 (`asyncio.create_task`, `asyncio.run`, `run_coroutine_threadsafe`)
 accept a defer directly, and `Task.get_coro()` is the defer itself.
 
-* `__await__`: arms a DELEGATING handle (DELEGATING -> ITERATING; on
-  failure it stays DELEGATING and the error propagates) and returns
-  **self**. DONE and ITERATING also return self. SPENT/MOVED_FROM raise
+* `__await__`: starts a DELEGATING handle's delegation (DELEGATING ->
+  ITERATING; on failure it stays DELEGATING and the error propagates) and
+  returns **self**. DONE and ITERATING also return self. SPENT/MOVED_FROM raise
   RuntimeError. `tp_iternext` exists (send(None) semantics) so
   CPython's GET_AWAITABLE iterator check passes; there is deliberately
   NO `tp_iter`, so `iter(d)` and koskari iteration constructs reject
@@ -148,17 +148,17 @@ accept a defer directly, and `Task.get_coro()` is the defer itself.
   rejects defers alongside coroutines (YIELD_FROM.c).
 * `send(v)`: DONE consumes -- v must be None (else the just-started
   TypeError), raises `StopIteration(value)` built as a real instance,
-  transitions SPENT. DELEGATING arms lazily, then forwards like
-  ITERATING: use the delegate's `send` when present; a None send falls
-  back to `tp_iternext`; a non-None send without a send method is a
-  TypeError (state unchanged). Completion (StopIteration) or any raise
-  from the delegate consumes the handle (SPENT) and propagates.
+  transitions SPENT. DELEGATING starts its delegation lazily, then
+  forwards like ITERATING: use the delegate's `send` when present; a
+  None send falls back to `tp_iternext`; a non-None send without a send
+  method is a TypeError (state unchanged). Completion (StopIteration) or
+  any raise from the delegate consumes the handle (SPENT) and propagates.
 * `throw(typ[, val[, tb]])`: DONE drops the value, goes SPENT, and
-  raises. DELEGATING arms lazily, then forwards to the delegate's
-  `throw` (single-arg calls forward single-arg). A throw-less delegate
-  follows yield-from rules: on GeneratorExit its `close` is called
-  first; either way the handle goes SPENT and the exception raises at
-  the defer. SPENT/MOVED_FROM raise the reuse RuntimeError.
+  raises. DELEGATING starts its delegation lazily, then forwards to the
+  delegate's `throw` (single-arg calls forward single-arg). A throw-less
+  delegate follows yield-from rules: on GeneratorExit its `close` is
+  called first; either way the handle goes SPENT and the exception
+  raises at the defer. SPENT/MOVED_FROM raise the reuse RuntimeError.
 * `close()`: quiet no-op on SPENT/MOVED_FROM; consumes DONE. For
   DELEGATING/ITERATING it delegates to the payload's `close` when
   present (an unstarted inner coroutine closes without the
@@ -219,10 +219,10 @@ If donor `r` is:
 ## Integration with `AWAIT` opcode
 
 The AWAIT opcode treats a defer as a generic awaitable: it calls
-`PyObject_GetAwaitable`, which lands in `__await__`, arms the handle,
-and returns the defer itself as the drive target. The eval's ordinary
-eager-step machinery then drives it via `send`, which forwards into the
-held iterator. No defer-specific opcode support exists or is needed.
+`PyObject_GetAwaitable`, which lands in `__await__`, starts the handle's
+delegation, and returns the defer itself as the drive target. The eval's
+ordinary eager-step machinery then drives it via `send`, which forwards
+into the held iterator. No defer-specific opcode support exists or is needed.
 
 ### Important constraint
 
@@ -243,7 +243,7 @@ The construction-time invocation must not pass through a path that performs impl
   * `iter` while iterating, or
   * `value` while DONE (until the first drive consumes it).
 
-SPENT and MOVED_FROM hold nothing. This prevents pinning argument graphs
+SPENT and MOVED_FROM hold nothing. This prevents holding argument graphs
 after the eager call completes, and releases the payload at completion.
 
 ---

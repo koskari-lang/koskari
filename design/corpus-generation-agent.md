@@ -32,7 +32,7 @@ worktree branch once a batch is done and verified.
 The agent operates in a dedicated git worktree, not the live development tree.
 This buys two things specific to a long background run:
 
-- **A drift-free oracle.** The worktree is a pinned snapshot of the
+- **A drift-free oracle.** The worktree is a snapshot of the
   implementation. The agent only ever writes YAML records (never C or `.ki`
   source), so the built extension it validates against stays stable for the
   whole session — entries are verified against one coherent implementation

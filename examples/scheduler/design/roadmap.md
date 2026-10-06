@@ -348,7 +348,7 @@ documented "for production gitops" note, not built here.
   ([nginx/10-htpasswd.sh](../nginx/10-htpasswd.sh) via `openssl passwd`), so no
   hash is committed -- the repo holds only the literal `ADMIN` placeholder, which
   reads as a demo default, not a leaked secret. `.env.example` documents it.
-- Parked for later: per-webhook trigger UUID as a bearer-ish token in the job
+- Deferred: per-webhook trigger UUID as a bearer-ish token in the job
   description, as minimal auth for the open webhook surface. (Promoted to a real
   requirement in Phase 5 as R1.)
 

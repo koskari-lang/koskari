@@ -142,7 +142,7 @@ class TestParameterizeSpecial(SpecialsTestCase):
         made in one application is visible in the next application, rather
         than each application restarting from the declared binding.
 
-        Pins the Racket-cell semantics of
+        Checks the Racket-cell semantics of
         design/archive/domain-task-isolation.md D4: PARAM node clones
         copy cell pointers, so every INSTALL re-enters the same cell.
         """

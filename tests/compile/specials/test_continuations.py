@@ -283,13 +283,13 @@ class TestUndelimitedSeam(SpecialsTestCase):
 
 class TestNestedUndelimitedVoidsOuter(SpecialsTestCase):
     """
-    A goal parked on a wind's after thunk is void once an inner
+    A goal waiting on a wind's after thunk is void once an inner
     undelimited invoke from that thunk unlinks the wind: the extent the
     outer was moving through is gone, so the outer must not resume on a
     later node that happens to sit where the wind was.
     """
 
-    async def test_after_thunk_invoke_voids_the_parked_outer(self):
+    async def test_after_thunk_invoke_voids_the_waiting_outer(self):
         """
         the body invokes k; leaving runs the after thunk, which invokes
         k again; the second landing wins and the first never delivers.
@@ -323,9 +323,9 @@ class TestNestedUndelimitedVoidsOuter(SpecialsTestCase):
         self.assertEqual(result, 12)
 
 
-    async def test_after_thunk_invoke_voids_outer_parked_on_dyn_with(self):
+    async def test_after_thunk_invoke_voids_outer_waiting_on_dyn_with(self):
         """
-        same shape with the outer parked on a dyn-with __exit__
+        same shape with the outer waiting on a dyn-with __exit__
         """
 
         seen = []
@@ -365,9 +365,9 @@ class TestNestedUndelimitedVoidsOuter(SpecialsTestCase):
         self.assertEqual(seen, ["enter", "exit"])
 
 
-class TestParkedGoalThunkDeliveries(SpecialsTestCase):
+class TestWaitingGoalThunkDeliveries(SpecialsTestCase):
     """
-    While a goal is parked on a wind's after thunk, the thunk is ordinary
+    While a goal waits on a wind's after thunk, the thunk is ordinary
     code: a native map over an async function that completes without
     suspending stages each result for the evaluator, and those staged
     deliveries must reach their resumes, not be cleared for a goal that

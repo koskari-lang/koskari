@@ -141,7 +141,8 @@ class TestAwaitForeignException(SpecialsTestCase):
 
     def test_cancellation_runs_finally(self):
         """
-        Cancelling a coroutine parked on a foreign awaitable runs finally
+        Cancelling a coroutine suspended on a foreign awaitable runs
+        finally
         """
 
         events = []

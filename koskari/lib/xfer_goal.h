@@ -26,17 +26,17 @@
    Four phases. LEAVING unlinks from dyn_top down to the seam. LANDING
    splices the target segment onto the seam and installs the resume pc.
    ENTERING runs the extent contract's enter for each node of the landed
-   segment, outermost first. DELIVERING pushes the payload, or arms the
-   throw, and retires the goal.
+   segment, outermost first. DELIVERING pushes the payload, or sets the
+   pending throw, and retires the goal.
 
    A leave or enter that hands control to a thunk frame or an awaitable
-   parks the goal: the driver records the node it is waiting on and
+   makes the goal wait: the driver records the node it is waiting on and
    dyn_top as it was at the firing, and does nothing until dyn_top is
    that again, which means the thunk's frame came and went. Everything
    above belongs to the thunk.
 
-   Goals nest: a continuation invoked from inside a thunk arms an inner
-   goal while the outer stays parked. A landing voids every outer goal
+   Goals nest: a continuation invoked from inside a thunk pushes an inner
+   goal while the outer stays waiting. A landing voids every outer goal
    whose frontier the inner's LEAVING unlinked, since the extent it was
    moving through is gone; with a NULL seam that is every outer. A raise
    frees the whole stack; the chain a walk left behind is a chain to
@@ -85,7 +85,7 @@ typedef struct KosXferRestore {
 
 
 struct KosXferGoal {
-  KosXferGoal *outer;          /* parked enclosing goal, or NULL */
+  KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
 
   KosDynNode *target;          /* owned clone to land, NULL until landed
                                   or when there is nothing to land */
@@ -94,7 +94,7 @@ struct KosXferGoal {
   uint32_t seam_id;
   KosDynNode *frontier;        /* node whose thunk we wait on, or NULL */
   uint32_t frontier_id;
-  KosDynNode *park_top;        /* dyn_top as it was when frontier fired */
+  KosDynNode *wait_top;        /* dyn_top as it was when frontier fired */
 
   PyObject *payload;           /* owned: the value, or the exception */
   PyObject *continuation_ref;  /* owned, or NULL: keeps the wrapper alive */
@@ -149,9 +149,9 @@ int kos_xfer_goal_capture_restore(
 
 
 /**
-   Make goal the active goal, parking whatever was active as its outer.
+   Make goal the active goal; whatever was active waits as its outer.
 */
-void kos_xfer_goal_arm(KosEvalState *es, KosXferGoal *goal);
+void kos_xfer_goal_push(KosEvalState *es, KosXferGoal *goal);
 
 
 /**
@@ -169,7 +169,7 @@ void kos_xfer_goal_abandon_all(KosEvalState *es);
      must return to the driver as it stands (a foreign cc-unwind's
      signal, already prepared as a boundary raise), 0 otherwise
    :return: EVAL_NORMAL when no goal remains or the active goal is
-     parked; EVAL_REPROLOGUE when a leave or enter installed a frame;
+     waiting; EVAL_REPROLOGUE when a leave or enter installed a frame;
      EVAL_AWAIT with the awaitable when one suspended; EVAL_RAISE with
      PyErr set when a step failed, or on a boundary raise
 */
@@ -177,7 +177,7 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary);
 
 
 /**
-   1 when the active goal is parked on node.
+   1 when the active goal waits on node.
 */
 int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node);
 
@@ -190,9 +190,9 @@ int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node);
 void kos_xfer_goal_resume_after_finally(KosEvalState *es);
 
 /**
-   1 when a goal is armed and the next drive will act on it: it is not
-   parked, or the thunk it parked on has returned (dyn_top is back at
-   park_top). A parked goal whose thunk is still running is dormant, and
+   1 when a goal is active and the next drive will act on it: it is not
+   waiting, or the thunk it waits on has returned (dyn_top is back at
+   wait_top). A waiting goal whose thunk is still running is dormant, and
    the code in that thunk owns the evaluator's staged deliveries.
 */
 int kos_xfer_goal_will_drive(KosEvalState *es);

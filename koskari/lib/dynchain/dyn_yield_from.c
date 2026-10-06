@@ -178,7 +178,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
   }
   kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
   KosEvalState_PENDING_VALUE(es) = inner_val;
-  kos_dyn_yield_from_arm(es, yf, KosDynYieldFrom_RESUME_EMIT(yf));
+  kos_dyn_yield_from_set_resume(es, yf, KosDynYieldFrom_RESUME_EMIT(yf));
   return 0;
 }
 
@@ -239,12 +239,12 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
     return kos_dyn_pop_yield_from(es, yf);
   }
 
-  /* Disarm before the splice: kos_dyn_resync_chain below retargets
-     the live frame to the nearest FRAME from dyn_top, and the disarm
-     only clears the frame it finds live. Running it afterwards misses
-     a delegating frame buried below that point and leaves a live
-     resume pointer on it. */
-  kos_dyn_yield_from_disarm(es, yf);
+  /* Clear the resume before the splice: kos_dyn_resync_chain below
+     retargets the live frame to the nearest FRAME from dyn_top, and
+     the clear only reaches the frame it finds live. Running it
+     afterwards misses a delegating frame buried below that point and
+     leaves a live resume pointer on it. */
+  kos_dyn_yield_from_clear_resume(es, yf);
 
   p = KosDynNode_PARENT(node);
   for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
@@ -319,13 +319,13 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 */
 void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
   if (node) {
-    kos_dyn_yield_from_disarm(es, node);
+    kos_dyn_yield_from_clear_resume(es, node);
     kos_yieldfrom_close_delegate(node);
   }
 }
 
 
-void kos_dyn_yield_from_arm(
+void kos_dyn_yield_from_set_resume(
     KosEvalState *es,
     KosDynYieldFrom *node,
     const KosResumeKind *resume) {
@@ -338,7 +338,7 @@ void kos_dyn_yield_from_arm(
 }
 
 
-void kos_dyn_yield_from_disarm(KosEvalState *es, KosDynYieldFrom *node) {
+void kos_dyn_yield_from_clear_resume(KosEvalState *es, KosDynYieldFrom *node) {
   KosDynFrame *frame = KosEvalState_FRAME(es);
 
   if (frame && node

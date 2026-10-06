@@ -86,13 +86,13 @@ class TestKosFilterBasics(unittest.IsolatedAsyncioTestCase):
             list(f)
 
 
-class TestKosFilterParkOwnership(unittest.IsolatedAsyncioTestCase):
+class TestKosFilterSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
     """
-    While a filter step is parked on an awaitable verdict, concurrent
+    While a filter step is suspended on an awaitable verdict, concurrent
     entries are refused rather than being misread as the awaited result
     """
 
-    def make_parked(self):
+    def make_suspended(self):
         release = asyncio.Event()
 
         async def slow(x):
@@ -102,7 +102,7 @@ class TestKosFilterParkOwnership(unittest.IsolatedAsyncioTestCase):
         return KosFilter(slow, [1, 2]), release
 
     async def test_concurrent_anext_refused(self):
-        f, release = self.make_parked()
+        f, release = self.make_suspended()
         first = asyncio.ensure_future(f.__anext__())
         await asyncio.sleep(0)
 
@@ -113,7 +113,7 @@ class TestKosFilterParkOwnership(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, 2)
 
     async def test_concurrent_athrow_refused(self):
-        f, release = self.make_parked()
+        f, release = self.make_suspended()
         first = asyncio.ensure_future(f.__anext__())
         await asyncio.sleep(0)
 
@@ -124,7 +124,7 @@ class TestKosFilterParkOwnership(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, 2)
 
     async def test_concurrent_aclose_refused(self):
-        f, release = self.make_parked()
+        f, release = self.make_suspended()
         first = asyncio.ensure_future(f.__anext__())
         await asyncio.sleep(0)
 

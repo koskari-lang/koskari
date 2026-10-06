@@ -1057,11 +1057,11 @@ bottom to top matches push order).
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, and arm a phase resume on the node. Each resume drives one step of the delegate (or handles a send/throw/close inject) and arms the next; the opcode itself is not re-entered. On completion: pop the dyn node and continue at the next instruction with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
+- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, and set a phase resume on the node. Each resume drives one step of the delegate (or handles a send/throw/close inject) and sets the next; the opcode itself is not re-entered. On completion: pop the dyn node and continue at the next instruction with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
 - **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic chain node `KOS_DYN_YIELD_FROM`, which holds the delegate, its kind, and pending action/arg for send/throw/close and for resume-from-await.
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Yielded values are never re-awaited; they are emitted as yields only.
-- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The node stays armed, one resume succeeding the next, until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
+- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The node keeps a resume set, one succeeding the next, until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
 - **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize and classify, the four per-kind drives -- sync iter, sync gen, Python async, Koskari iter -- selected once and stored on the node, yield emission, void finish, and the send/await/emit resume phases that take a transfer plan's throw injection before delivery) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
 - **Design**: [design/archive/yield-from-execution-model.md](archive/yield-from-execution-model.md) (archived narrative; see [EVALUATOR.md](EVALUATOR.md) §5)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
@@ -1071,7 +1071,7 @@ bottom to top matches push order).
 | index | opcode   | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
 | 0     | CONST   | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
-| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, arm resume; each resume drives the delegate; on exhaust: pop node, nothing pushed |
+| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, set resume; each resume drives the delegate; on exhaust: pop node, nothing pushed |
 | 2     | RETURN  | 1   | 1        | |
 
 
@@ -3600,7 +3600,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_POP_WITH {#kos_op_pop_with}
 
 - **Style**: NOARG (or COUNT per existing opcodes.incl; design assumes no arg).
-- **Behaviour:** Park the body value as the pop's value; call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push the parked body value. The pop is `kos_dyn_unlink_top`: the node's leave calls exit; when exit returns an awaitable the leave answers AWAIT and the node stays in `KOS_WITH_PHASE_PENDING_EXIT_AWAIT`; on resume, revive settles it (`kos_dyn_settle_top`) and the unlink finishes by pushing the body value (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
+- **Behaviour:** Store the body value on the node as the pop's value; call exit (no-exception form); auto-await if needed; pop the owned segment; pop dyn node; push the stored body value. The pop is `kos_dyn_unlink_top`: the node's leave calls exit; when exit returns an awaitable the leave answers AWAIT and the node stays in `KOS_WITH_PHASE_PENDING_EXIT_AWAIT`; on resume, revive settles it (`kos_dyn_settle_top`) and the unlink finishes by pushing the body value (exit return is never left on stack). On exception unwind (via no-region path or dyn_pop_top_with): call exit(exc_info); if swallow then clear exception, pop block, pop node, push `None`, set frame PC to `KosDynWith_RESUME_PC(node)` (the instruction after POP_WITH), resume; else pop block, pop node, re-raise.
 - **Invariants:** Top of chain must be KOS_DYN_WITH. With-expression value is the body's value, or `None` when exit swallowed an exception; exit return is used only for swallow logic and is never the value seen by RETURN.
 - **Covered by:** `tests/lib/opcode/test_with.py`, `tests/compile/specials/test_with.py` (sync and async).
 
@@ -4213,7 +4213,7 @@ the paired DELIM bookmark to the invoke site.
 ### KOS_OP_POP_SHIFT
 
 - **Style**: NOARG.
-- **Stack**: Pops TOS as result and resolves the delimiter by the instance id recorded on the SHIFT node -- never by chain position or the current code object's extent tree. Live reset: arms a transfer goal with no target whose seam is the prompt's parent; LEAVING unlinks through the SHIFT and the PROMPT (crossing the barrier), DELIVERING pushes the result onto the outer frame's stack, and execution resumes at the pop_pc the prompt recorded at push, + 1. Invocation prompt (created by a k-invoke; no POP_PROMPT pairs with it): the result is the value of that k-invocation and is delivered at the invoke site through the paired DELIM bookmark below the prompt.
+- **Stack**: Pops TOS as result and resolves the delimiter by the instance id recorded on the SHIFT node -- never by chain position or the current code object's extent tree. Live reset: pushes a transfer goal with no target whose seam is the prompt's parent; LEAVING unlinks through the SHIFT and the PROMPT (crossing the barrier), DELIVERING pushes the result onto the outer frame's stack, and execution resumes at the pop_pc the prompt recorded at push, + 1. Invocation prompt (created by a k-invoke; no POP_PROMPT pairs with it): the result is the value of that k-invocation and is delivered at the invoke site through the paired DELIM bookmark below the prompt.
 - **Invariants**: Must be inside a PUSH_SHIFT extent. The resolved prompt carries everything the resume needs; no extent lookup happens at pop time.
 - **Compiler form:** No argument.
 
@@ -4321,7 +4321,7 @@ The extent contract and the single unlink site are described in [interpreter/ext
 ### KOS_OP_POP_WIND
 
 - **Style**: NOARG.
-- **Stack**: Parks TOS (the body result) on the wind node as a VALUE obligation (`kos_dyn_ob_park_value`) and unlinks it (`kos_dyn_unlink_top`): the leave runs the after thunk (if entered and non-null) as a normal frame, and the unlink delivers the body result to the revealed segment once the thunk has returned and settled (or at once when there is none). Answers REPROLOGUE while the thunk's frame is current, AWAIT when its call suspended.
+- **Stack**: Stores TOS (the body result) on the wind node as a VALUE obligation (`kos_dyn_ob_store_value`) and unlinks it (`kos_dyn_unlink_top`): the leave runs the after thunk (if entered and non-null) as a normal frame, and the unlink delivers the body result to the revealed segment once the thunk has returned and settled (or at once when there is none). Answers REPROLOGUE while the thunk's frame is current, AWAIT when its call suspended.
 - **Invariants**: Dyn top must be KOS_DYN_WIND; otherwise RuntimeError.
 
 

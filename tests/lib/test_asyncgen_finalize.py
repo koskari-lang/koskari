@@ -91,7 +91,7 @@ class TestAsyncGenFinalize(unittest.IsolatedAsyncioTestCase):
 
     async def suspended(self, log, box):
         """
-        A generator parked at its yield inside try/finally, with box as
+        A generator suspended at its yield inside try/finally, with box as
         its first argument; the finally reads box
         """
 

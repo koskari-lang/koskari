@@ -41,11 +41,11 @@ pytestmark = pytest.mark.phase_lib
 
 @types.coroutine
 def one_step():
-    yield "parked"
+    yield "suspended"
     return "woken"
 
 
-class Parker:
+class Suspender:
     def __await__(self):
         return one_step()
 
@@ -111,7 +111,7 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
 
     async def test_unstarted_coroutine_throw_raises_without_running(self):
         mod = await self.load()
-        coro = mod["guarded"](Parker())
+        coro = mod["guarded"](Suspender())
         with self.assertRaises(ValueError):
             coro.throw(ValueError("early"))
         self.assertEqual(mod["finally_box"], [])

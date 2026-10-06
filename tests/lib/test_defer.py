@@ -496,7 +496,7 @@ class TestDeferCoroutineProtocol(unittest.IsolatedAsyncioTestCase):
 
     def test_send_lazily_starts_delegation(self):
         """
-        send on a DELEGATING defer arms the iterator and forwards
+        send on a DELEGATING defer starts the iterator and forwards
         """
 
         async def work():

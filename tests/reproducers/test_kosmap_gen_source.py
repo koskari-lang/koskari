@@ -14,7 +14,7 @@
 """
 tests.reproducers.test_kosmap_gen_source
 
-Pins for the flattened KosMap fetch over a koskari generator source:
+Tests for the flattened KosMap fetch over a koskari generator source:
 the generator installs onto the driving evaluator and its yields,
 suspensions, and completion arrive through the iteration nodes.
 Covers the

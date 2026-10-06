@@ -353,7 +353,7 @@ class TestHookReach(unittest.TestCase):
         class_fn = Distribution.__dict__['parse_config_files']
         first = Distribution({'name': 'first', 'version': '0'})
         configure_koskari_scripts(first)
-        # a repeat arms nothing further
+        # a repeat enables nothing further
         configure_koskari_scripts(first)
         second = Distribution({'name': 'second', 'version': '0'})
         self.assertIs(Distribution.__dict__['parse_config_files'], class_fn)

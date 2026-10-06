@@ -124,7 +124,7 @@ Those records are schema-validated but **not** run through read/expand/compile/e
 verification (unlike `verify.error`, which asserts a pipeline failure).
 
 **Exception:** invalid records may also include **`verify.read`** (or other
-stages) when the point is to pin the **surprising successful parse** while
+stages) when the point is to record the **surprising successful parse** while
 `verify.invalid` explains why the source must not be used. The harness skips
 only the `invalid` key; other verify stages still run.
 

@@ -126,8 +126,9 @@ class TestWindOpcodes(CevalTest):
 
     async def test_push_wind_drains_a_transfer_before_the_body(self):
         """
-        A before thunk that is a continuation arms a transfer and leaves
-        the frame as it was. The transfer runs before the wind body
+        A before thunk that is a continuation pushes a transfer goal and
+        leaves the frame as it was. The transfer runs before the wind
+        body
         """
 
         log = []
@@ -148,9 +149,9 @@ class TestWindOpcodes(CevalTest):
 
     async def test_pop_wind_drains_a_transfer_before_continuing(self):
         """
-        An after thunk that is a continuation arms a transfer and leaves
-        the frame as it was. The transfer runs before the code after the
-        wind
+        An after thunk that is a continuation pushes a transfer goal and
+        leaves the frame as it was. The transfer runs before the code
+        after the wind
         """
 
         log = []

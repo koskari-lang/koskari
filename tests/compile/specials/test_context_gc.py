@@ -16,9 +16,9 @@ A suspended evaluation context reports everything it holds to the
 collector
 
 A return that unwinds through a dyn-wind whose after thunk suspends on
-a Python awaitable parks the coroutine with the return value pending on
-its context. That value must be visible to the collector, or a cycle
-through it never collects.
+a Python awaitable suspends the coroutine with the return value pending
+on its context. That value must be visible to the collector, or a
+cycle through it never collects.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,7 +28,7 @@ through it never collects.
 import gc
 import weakref
 
-from . import Park, SpecialsTestCase
+from . import Suspend, SpecialsTestCase
 
 import pytest
 
@@ -44,7 +44,7 @@ class TestSuspendedContextCollection(SpecialsTestCase):
 
     async def test_pending_return_value_is_visible_to_the_collector(self):
         """
-        a coroutine parked in an after thunk while returning a value
+        a coroutine suspended in an after thunk while returning a value
         that refers back to the coroutine is a cycle, and is collected
         """
 
@@ -52,20 +52,20 @@ class TestSuspendedContextCollection(SpecialsTestCase):
         (lambda [box]
           (dyn-wind []
             (return box)
-            (call park)))
+            (call suspend)))
         """
-        expr, mod = self.compile_expr(src_str, park=Park)
+        expr, mod = self.compile_expr(src_str, suspend=Suspend)
         fn = await expr()
 
         box = Box()
         coro = fn(box)
-        parked = coro.send(None)
-        self.assertIsInstance(parked, Park)
+        suspended = coro.send(None)
+        self.assertIsInstance(suspended, Suspend)
 
         box.coro = coro
         alive = weakref.ref(box)
 
-        del box, coro, parked, fn, expr, mod
+        del box, coro, suspended, fn, expr, mod
         gc.collect()
         self.assertIsNone(alive())
 
@@ -80,14 +80,14 @@ class TestSuspendedContextCollection(SpecialsTestCase):
         (lambda [box]
           (dyn-wind []
             (return box)
-            (call park)))
+            (call suspend)))
         """
-        expr, mod = self.compile_expr(src_str, park=Park)
+        expr, mod = self.compile_expr(src_str, suspend=Suspend)
         fn = await expr()
 
         box = Box()
         coro = fn(box)
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
         self.assertIs(caught.exception.value, box)
@@ -95,7 +95,7 @@ class TestSuspendedContextCollection(SpecialsTestCase):
 
     async def test_return_value_survives_nested_suspended_after_thunks(self):
         """
-        a return through two winds whose after thunks both suspend parks
+        a return through two winds whose after thunks both suspend waits
         twice and still delivers the returned value
         """
 
@@ -104,16 +104,16 @@ class TestSuspendedContextCollection(SpecialsTestCase):
           (dyn-wind []
             (dyn-wind []
               (return box)
-              (call park))
-            (call park)))
+              (call suspend))
+            (call suspend)))
         """
-        expr, mod = self.compile_expr(src_str, park=Park)
+        expr, mod = self.compile_expr(src_str, suspend=Suspend)
         fn = await expr()
 
         box = Box()
         coro = fn(box)
-        self.assertIsInstance(coro.send(None), Park)
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
+        self.assertIsInstance(coro.send(None), Suspend)
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
         self.assertIs(caught.exception.value, box)
@@ -124,27 +124,27 @@ class TestSuspendedNamespaceAttribution(SpecialsTestCase):
     async def test_object_bound_in_suspended_scopes_survives_collection(self):
         """
         an object bound in a let inside a dyn-wind body, with the
-        coroutine parked in that body, is held by the frame's namespace,
-        the let's, and the wind's fill of the let's; the collector must
-        see each reference once, so a live external reference keeps the
-        object alive across a collection
+        coroutine suspended in that body, is held by the frame's
+        namespace, the let's, and the wind's fill of the let's; the
+        collector must see each reference once, so a live external
+        reference keeps the object alive across a collection
         """
 
         src_str = """
         (lambda [box]
           (let [[held box]]
             (dyn-wind []
-              (begin (call park) held)
+              (begin (call suspend) held)
               nil)))
         """
-        expr, mod = self.compile_expr(src_str, park=Park)
+        expr, mod = self.compile_expr(src_str, suspend=Suspend)
         fn = await expr()
 
         box = Box()
         box.tag = "still here"
         alive = weakref.ref(box)
         coro = fn(box)
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
 
         gc.collect()
         self.assertIsNotNone(alive())
@@ -165,17 +165,17 @@ class TestSuspendedNamespaceAttribution(SpecialsTestCase):
         """
 
         src_str = """
-        (lambda [seq] (for-each [x (map park seq)] x))
+        (lambda [seq] (for-each [x (map suspend seq)] x))
         """
         from koskari.lib import KosMap
 
         expr, mod = self.compile_expr(
-            src_str, park=lambda x: Park(), map=KosMap)
+            src_str, suspend=lambda x: Suspend(), map=KosMap)
         fn = await expr()
 
         xs = [1, 2, 3]
         coro = fn(xs)
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
 
         xs.append(coro)
         del coro
@@ -183,31 +183,31 @@ class TestSuspendedNamespaceAttribution(SpecialsTestCase):
         self.assertEqual(xs[:3], [1, 2, 3])
 
         coro = xs.pop()
-        parks = 0
+        suspensions = 0
         while True:
             try:
-                self.assertIsInstance(coro.send(None), Park)
-                parks += 1
+                self.assertIsInstance(coro.send(None), Suspend)
+                suspensions += 1
             except StopIteration:
                 break
-        self.assertGreaterEqual(parks, 1)
+        self.assertGreaterEqual(suspensions, 1)
 
 
 class TestCapturedScopeAttribution(SpecialsTestCase):
     """
     A continuation template shares the let namespace of the scope it was
-    captured in with the live chain. With the coroutine parked in that
-    let, the collector reaches the namespace from both holders and must
-    see its references once. The let sits at expression level so it is
-    a real scope (inside a function it would be fast slots).
+    captured in with the live chain. With the coroutine suspended in
+    that let, the collector reaches the namespace from both holders and
+    must see its references once. The let sits at expression level so
+    it is a real scope (inside a function it would be fast slots).
     """
 
     async def test_captured_let_scope_is_reported_once(self):
         """
-        capture under a let and park in it. The template's clone and the
-        live chain share the let's namespace; the collector must reach
-        the list bound there through that namespace alone, once, and the
-        coroutine must resume intact after a collection
+        capture under a let and suspend in it. The template's clone and
+        the live chain share the let's namespace; the collector must
+        reach the list bound there through that namespace alone, once,
+        and the coroutine must resume intact after a collection
         """
 
         src_str = """
@@ -215,16 +215,16 @@ class TestCapturedScopeAttribution(SpecialsTestCase):
           (begin
             (let/cc k (setq saved k))
             (call stash acc)
-            (call park)
+            (call suspend)
             (acc.append 1)
             acc))
         """
         stashed = []
         expr, mod = self.compile_expr(
-            src_str, park=Park, stash=stashed.append)
+            src_str, suspend=Suspend, stash=stashed.append)
 
         coro = expr()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         acc = stashed.pop()
 
         holders = [type(r).__name__ for r in gc.get_referrers(acc)]
@@ -243,7 +243,8 @@ class TestCapturedScopeAttribution(SpecialsTestCase):
         """
         the continuation outlives the let: once the let has exited, the
         template's clone is the only holder of that namespace; a
-        collection while parked must leave it intact for a later invoke
+        collection while suspended must leave it intact for a later
+        invoke
         """
 
         src_str = """
@@ -255,18 +256,18 @@ class TestCapturedScopeAttribution(SpecialsTestCase):
                 (setq n (+ n 1))
                 (acc.append n)
                 (call record (list acc))))
-            (call park)
+            (call suspend)
             (cond ((< n 2) (call saved 0)) (else: nil))
             n))
         """
         log = []
         expr, mod = self.compile_expr(
-            src_str, park=Park, record=log.append, list=list)
+            src_str, suspend=Suspend, record=log.append, list=list)
 
         coro = expr()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         gc.collect()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         gc.collect()
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
@@ -279,7 +280,7 @@ class TestObligationsAcrossSuspension(SpecialsTestCase):
     async def test_raise_survives_suspended_after_thunk(self):
         """
         an exception unwinding through a dyn-wind whose after thunk
-        suspends is parked on the wind and propagates once the thunk
+        suspends is stored on the wind and propagates once the thunk
         completes
         """
 
@@ -287,21 +288,22 @@ class TestObligationsAcrossSuspension(SpecialsTestCase):
         (lambda []
           (dyn-wind []
             (raise (call ValueError "body"))
-            (call park)))
+            (call suspend)))
         """
-        expr, mod = self.compile_expr(src_str, park=Park, ValueError=ValueError)
+        expr, mod = self.compile_expr(
+            src_str, suspend=Suspend, ValueError=ValueError)
         fn = await expr()
 
         coro = fn()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         with self.assertRaises(ValueError) as caught:
             coro.send(None)
         self.assertEqual(str(caught.exception), "body")
 
 
-    async def test_raising_after_thunk_voids_the_parked_return(self):
+    async def test_raising_after_thunk_voids_the_stored_return(self):
         """
-        a return parked on a dyn-wind whose after thunk then raises is
+        a return stored on a dyn-wind whose after thunk then raises is
         discarded; the thunk's exception propagates to the handler
         """
 
@@ -310,14 +312,15 @@ class TestObligationsAcrossSuspension(SpecialsTestCase):
           (try
             (dyn-wind []
               (return 1)
-              (begin (call park) (raise (call ValueError "after"))))
+              (begin (call suspend) (raise (call ValueError "after"))))
             ([ValueError] "caught")))
         """
-        expr, mod = self.compile_expr(src_str, park=Park, ValueError=ValueError)
+        expr, mod = self.compile_expr(
+            src_str, suspend=Suspend, ValueError=ValueError)
         fn = await expr()
 
         coro = fn()
-        self.assertIsInstance(coro.send(None), Park)
+        self.assertIsInstance(coro.send(None), Suspend)
         with self.assertRaises(StopIteration) as caught:
             coro.send(None)
         self.assertEqual(caught.exception.value, "caught")

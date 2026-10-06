@@ -86,7 +86,7 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   /* An effect a node holds outside itself leaves with it, innermost
      first; the install puts it back. */
   for (KosDynNode *n = ctx_active; n; n = KosDynNode_PARENT(n))
-    kos_dyn_extent_park(es, n);
+    kos_dyn_extent_freeze(es, n);
   /* The GEN's namespace fill is the consumer's live namespace stamped
      at the install; the next install stamps it again from that
      consumer's registers. Holding it across the freeze would keep the
@@ -202,7 +202,7 @@ KosOpResult kos_dyn_unwind_to_node(
     r = kos_dyn_unlink_top(es, event, 1);
     if (r.kind == KOS_RES_NORMAL)
       continue;
-    /* the node's leave is in flight: the caller parks what it carries
+    /* the node's leave is in flight: the caller stores what it carries
        on it, and that resumes once the node has left the chain */
     if (out_pending
         && (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT))
@@ -320,9 +320,9 @@ KosOpResult kos_dyn_unwind_return(
     if (r.kind == KOS_RES_NORMAL)
       continue;
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
-      /* The node's leave started and will suspend; val parks on the node
+      /* The node's leave started and will suspend; val is stored on the node
          and the return resumes once the node has left the chain. */
-      if (kos_dyn_ob_park_return(top, val, (uint8_t) kind, NULL) < 0) {
+      if (kos_dyn_ob_store_return(top, val, (uint8_t) kind, NULL) < 0) {
         Py_XDECREF(r.val);
         return EVAL_RAISE();
       }
@@ -442,13 +442,13 @@ KosOpResult kos_dyn_unwind_to_loop(
     if (r.kind == KOS_RES_NORMAL)
       continue;
     if (r.kind == KOS_RES_REPROLOGUE || r.kind == KOS_RES_AWAIT) {
-      /* The node's leave started and will suspend: result parks on
+      /* The node's leave started and will suspend: result is stored on
          the node with the event as its path, and the walk resumes
          from here once the node has left the chain, as a return does. */
       uint8_t path = (event == KOS_XFER_EVENT_BREAK)
           ? KOS_PENDING_RETURN_BREAK : KOS_PENDING_RETURN_CONTINUE;
 
-      if (kos_dyn_ob_park_return(top, result, path, NULL) < 0) {
+      if (kos_dyn_ob_store_return(top, result, path, NULL) < 0) {
         Py_XDECREF(r.val);
         return EVAL_RAISE();
       }
@@ -507,11 +507,11 @@ KosOpResult kos_dyn_unwind_to_loop(
 
 
 /**
-   Hand the pending exception to the CPS resume armed on a frame the
+   Hand the pending exception to the CPS resume set on a frame the
    walk reached at dyn_top above the live frame -- a flattened
    delegation whose resume the prologue's own delivery cannot reach,
    since that tests the live frame. A plain call with NULL, the resume
-   disarmed first as the delivery step disarms it. The resume handles
+   cleared first as the delivery step clears it. The resume handles
    the exception (REPROLOGUE, once it has arranged the frame's
    continuation) or propagates it with EVAL_RAISE, in which case the
    walk goes on to pop the frame.
@@ -631,7 +631,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       /* A code-less step frame's resume has already seen this
          exception: process_raise hands it to the prologue, which
          delivers it as a NULL against a settled chain, and the walk
-         only runs once that resume declined and disarmed itself. */
+         only runs once that resume declined and cleared itself. */
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosEvalState_DYN_TOP(es));
@@ -845,12 +845,12 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
       int top_handles_exceptions =
           (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS));
       /* A wind about to fire its after-thunk runs it clean: the
-         exception in flight is held here and parked on the node once
+         exception in flight is held here and stored on the node once
          the thunk has started. A wind (or with) whose thunk is dead is
          aborted by the unlink and never fires, so the exception stays
          pending for the unlink to chain what the node was holding. A
          with fires __exit__ with the exception as its argument and
-         parks it itself. */
+         stores it itself. */
       int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
           || top_is_barrier
           || (top_is_wind && ! kos_dyn_extent_in_flight(top));
@@ -862,10 +862,10 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
         if (top_is_wind
             && (pop_res.kind == KOS_RES_REPROLOGUE
                 || pop_res.kind == KOS_RES_AWAIT)) {
-          /* After-thunk started: park the exception on the wind so the
+          /* After-thunk started: store the exception on the wind so the
              thunk runs with no pending error; the unlink re-raises it
              once the thunk completes. */
-          if (kos_dyn_ob_park_exception(top, saved_exc_typ, saved_exc_val,
+          if (kos_dyn_ob_store_exception(top, saved_exc_typ, saved_exc_val,
                                         saved_exc_tb) < 0) {
             Py_XDECREF(pop_res.val);
             return EVAL_FATAL();

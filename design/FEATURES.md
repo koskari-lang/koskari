@@ -211,9 +211,9 @@ Both invoke the same idempotent **`configure_koskari_scripts`**.
 - **Delimited**: `compile/reset`, `compile/shift`; **INVOKE_K** / graft model ([interpreter/callcc.md](interpreter/callcc.md)).
 - **Undelimited**: `compile/call/cc`, `compile/let/cc`, `compile/capture/cc`; Python invoke via **`KoskariContinuationApply`**.
 - **Dynamic wind**: `compile/dyn-wind`; **PUSH_WIND** / **POP_WIND** on transfer.
-- **Transfer goals (done):** a continuation invoke arms a goal recording
+- **Transfer goals (done):** a continuation invoke pushes a goal recording
   where control is going; the prologue re-derives each step from the live
-  chain, parks while a thunk or `__exit__` runs, nests when a thunk invokes
+  chain, waits while a thunk or `__exit__` runs, nests when a thunk invokes
   another continuation, and frees every goal on a failed step before the
   raise walks the chain as it stands. See [EVALUATOR.md §6](EVALUATOR.md)
   and [archive/transfer-plan-rework.md](archive/transfer-plan-rework.md);
@@ -236,7 +236,7 @@ Items below are **done** in koskari-ng unless noted in [TODO.md](TODO.md).
 **Utilities (C)** — `apply`, `reapply`, `identity`, `constantly`, collection builders, `build_str`.
 
 **Evaluator core** -- `KosContext`, dynamic chain (`KosDynNode`), transfer goals
-(parked across thunks and awaits, nested on a thunk's invoke, freed on a
+(waiting across thunks and awaits, nested on a thunk's invoke, freed on a
 failed step before **`try_local`**), the extent contract and obligations, `koskari_eval`, coroutine/async-gen
 wrappers, GC hooks.
 

@@ -157,12 +157,12 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
 
 
 /**
-  Drive the armed transfer goal as far as the chain allows and route its
+  Drive the active transfer goal as far as the chain allows and route its
   answer: a step failure enters the raise ingress, an awaitable is tagged
   for the driver, and a foreign cc-unwind's boundary raise goes back as
   it stands.
 
-  :return: EVAL_NORMAL when no goal remains or the goal is parked;
+  :return: EVAL_NORMAL when no goal remains or the goal is waiting;
            EVAL_REPROLOGUE when a leave or enter installed a frame;
            EVAL_AWAIT / EVAL_RAISE / EVAL_FATAL otherwise
 */

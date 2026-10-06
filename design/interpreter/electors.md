@@ -2,7 +2,7 @@
 
 **Status:** The node-style home is built on YIELD_FROM (commits
 d5b29ddc, f4719b9a, b9a116a0): the drive elected onto the node at push,
-one phase resume per suspension armed on the delegating frame, and the
+one phase resume per suspension set on the delegating frame, and the
 handler running once per delegation with the pc never rolled back. On
 the yieldfrom kernel over five samples that is 19.8% fewer cycles and
 42% fewer branch misses for 3.6% more instructions. The delivery
@@ -160,7 +160,7 @@ consumed when its value lands. An elector is chosen when an operand's shape
 or an extent's kind is learned and consumed when the site or node next runs.
 They share one prototype, so they compose freely under the musttail rules:
 
-- an elector can end in `RESULT_ENTRY`, arming a resume for the value it
+- an elector can end in `RESULT_ENTRY`, setting a resume for the value it
   requested (a call elector on a KosCallable suite);
 - a resume can end in a `TAILCALL` to an elector (a send delivery into a
   YIELD_FROM node hops to that node's drive);
@@ -293,7 +293,7 @@ on. An elector threads on itself. Electors, one per arm of
 `kos_call_invoke_impl`:
 
 - exact non-yielding `KosFunction`, simple arity, steal-bind, with the
-  parked-frame hit as its first branch;
+  cached-frame hit as its first branch;
 - `KosFunction` generator function (agen construction, the window drops
   first);
 - plain Python vectorcall with a non-awaitable result, which today walks
@@ -403,15 +403,15 @@ touch the instruction stream: the frame's `resume_kind` / `resume_state`
 pair. A node-style resume sets that pair to a phase kind and the node
 as its state. The opcode then runs once per node, and every later delivery
 lands on the phase function, which reads its node, does the phase's work,
-and either arms the next phase or threads on past the opcode.
+and either sets the next phase's resume or threads on past the opcode.
 
 That distinguishes two kinds of resume state, which the capture rule must
 tell apart. A step resume's state (map, filter) is owned by the step object
 and cannot be replayed, so `kos_dynframe_clone` refuses by name. A node
 resume needs no stored state: the node it serves is `dyn_top` above the
-frame, so it is armed with `resume_state` NULL, and that NULL is the
+frame, so it is set with `resume_state` NULL, and that NULL is the
 discriminator. The clone copies such a resume, the delivery step hands
-it its value raw, and the node's pop and unwind disarm it. A bytecode
+it its value raw, and the node's pop and unwind clear it. A bytecode
 frame's delivery is always the pending slot, never its operand stack,
 which is what lets a frame with live operands carry a resume at all.
 
@@ -423,7 +423,7 @@ axes were folded into one 766-line handler. The kind axis (`KOS_YF_SYNC_ITER`, `
 re-entry at the ladder near the handler's end; it becomes `drive`, elected
 in `yield_from_normalize`. The phase axis (`EMIT`, inject-throw,
 `EXPECT_SEND`, `EXPECT_AWAIT`, `DRIVING`) is re-derived from node state on
-every re-entry; each phase becomes a resume armed on the frame with the
+every re-entry; each phase becomes a resume set on the frame with the
 node as state. The handler shrinks to: pop the subexpression, normalize,
 push the node, elect `drive`, tail-call it. The four drive bodies and the
 phase resumes are shared out-of-line functions.
@@ -433,8 +433,8 @@ phase resumes are shared out-of-line functions.
 request record's mode (`INSTALLED`, `GRAFT_VALUE`, `AWAITING_PY`) is a
 phase machine consulted at revive. `step` is elected when
 `kos_dyn_iter_request_bind_iter` binds the iterator; the mode transitions
-become the resume armed for the delivery. `ITER_NEXT` becomes: find the
-region, arm the else pc, tail-call `step`.
+become the resume set for the delivery. `ITER_NEXT` becomes: find the
+region, record the else pc, tail-call `step`.
 
 **FRAME return**. `RETURN` classifies its parent on every execution:
 `kos_return_is_plain`, `kos_return_is_region`, `kos_return_is_resume`, each
@@ -450,12 +450,12 @@ re-derived per delivery is the phase: `PUSH_WITH` handles the async-enter
 revive and the KosCallable-enter install as two distinct continuations
 through `kos_dynnode_on_control_returned`; `POP_WITH` rolls the pc back on
 an async exit and consults `EXIT_PENDING` on a KosCallable exit. Those are
-two node resumes (enter-settled, exit-settled) armed at wind and unwind.
+two node resumes (enter-settled, exit-settled) set at wind and unwind.
 
 **GEN node**. A send or throw into a suspended generator is classified by
 the prologue's inject step (`py_resume_inject`) at re-entry, before the
 instruction after `YIELD` runs. The generator's receive is a node resume
-by construction: the inject step becomes the phase function armed when
+by construction: the inject step becomes the phase function set when
 the generator suspends.
 
 **WIND**. `PUSH_WIND` / `POP_WIND` call the before and after thunks and

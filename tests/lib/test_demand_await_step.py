@@ -34,9 +34,9 @@ from koskari.lib import KoskariSyncViolation, demand
 pytestmark = pytest.mark.phase_lib
 
 
-class Parker:
+class Suspender:
     def __await__(self):
-        yield "parked"
+        yield "suspended"
         return "woken"
 
 
@@ -50,7 +50,7 @@ class TestDemandAwaitStep(unittest.TestCase):
 
     def test_suspension_is_refused(self):
         async def suspends():
-            await Parker()
+            await Suspender()
             return 7
 
         with self.assertRaises(KoskariSyncViolation):
@@ -59,7 +59,7 @@ class TestDemandAwaitStep(unittest.TestCase):
     def test_callee_may_catch_the_refusal(self):
         async def falls_back():
             try:
-                await Parker()
+                await Suspender()
             except KoskariSyncViolation:
                 return "fallback"
             return "woken"
@@ -68,14 +68,14 @@ class TestDemandAwaitStep(unittest.TestCase):
 
     def test_coroutine_awaited_elsewhere_is_refused(self):
         async def inner():
-            return await Parker()
+            return await Suspender()
 
         async def outer(c):
             return await c
 
         c = inner()
         first = outer(c)
-        self.assertEqual(first.send(None), "parked")
+        self.assertEqual(first.send(None), "suspended")
 
         with self.assertRaises(RuntimeError) as caught:
             demand(lambda: c)()

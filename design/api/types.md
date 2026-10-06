@@ -287,9 +287,9 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
   - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, enabled)
   - `KOS_DYN_FOREACH`: for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc)
 - `KosXferGoal` (`xfer_goal.h`): where a continuation transfer is going (seam,
-  target clone, payload, resume pc, parked frontier, outer goal); the
+  target clone, payload, resume pc, the frontier it waits on, outer goal); the
   evaluator's prologue drives it, re-deriving each step from the live chain.
-- `KosObligation`: the slot a WIND or WITH owes at unlink (value, parked
+- `KosObligation`: the slot a WIND or WITH owes at unlink (value, stored
   exception, or return in flight).
 
 ### Not Migrating

@@ -924,7 +924,7 @@ tags:
   - await
   - async
   - python-interop
-notes: "create-task schedules the deferred body and returns the Task HANDLE. Tasks and Futures are excluded from implicit auto-await, so binding or returning one does NOT wait for it -- an un-awaited (asyncio.gather ...) waits for nothing. Explicit (await t) resolves the handle; (await (asyncio.gather *: tasks)) drains many. Passing a defer consumes it (the Task owns its single shot). Needs a running event loop, which the corpus eval harness does not provide -- hence no eval pin."
+notes: "create-task schedules the deferred body and returns the Task HANDLE. Tasks and Futures are excluded from implicit auto-await, so binding or returning one does NOT wait for it -- an un-awaited (asyncio.gather ...) waits for nothing. Explicit (await t) resolves the handle; (await (asyncio.gather *: tasks)) drains many. Passing a defer consumes it (the Task owns its single shot). Needs a running event loop, which the corpus eval harness does not provide -- hence no eval check."
 ---
 id: function-decorate-let-private-state-001
 feature: layout/decorate

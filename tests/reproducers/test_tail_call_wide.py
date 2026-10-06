@@ -19,12 +19,12 @@ A tail call that the call core cannot install itself goes through the
 callee's install slot after the caller's frame is popped or reset.
 When the argument window is wide enough to live in a heap segment
 rather than an inline one, and the frame it sits on is freed rather
-than parked, the storage the arguments were read from is gone before
+than cached, the storage the arguments were read from is gone before
 the callee binds them, so the callee must be handed a vector that
 outlives the frame. Each case here makes such a call with 20 arguments
 from a function whose namespace a closure has captured, so its frame
-cannot park in the function's cache. Correct results here are only
-proof under ASan, where a read from the freed segment faults.
+cannot be cached. Correct results here are only proof under ASan,
+where a read from the freed segment faults.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

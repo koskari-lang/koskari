@@ -98,7 +98,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  /* Armed only from the step's driven-source branch, and re-entered
+  /* Set only from the step's driven-source branch, and re-entered
      only from batched_resume_deliver, so src_sync is 0 on every entry:
      every fetch here is a request. A sync source never reaches this
      resume -- it fills its whole batch inside the step. */

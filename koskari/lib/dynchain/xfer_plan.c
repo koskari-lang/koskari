@@ -31,7 +31,7 @@
    shift nodes are both still on the current chain (pointer + node_id
    match), the shift node lies above the prompt, no barrier node (foreign
    DELIM, GEN, NEXT, PROMPT) sits between dyn_top and the shift node,
-   and no transfer goal is armed. Returns 1 when in-place invoke
+   and no transfer goal is active. Returns 1 when in-place invoke
    applies, 0 otherwise (fall back to the PUSH path).
 
    On success, *out_nested_frame is the first FRAME between the SHIFT and
@@ -276,7 +276,7 @@ static int kos_delimited_invoke_inplace(
 
 /**
    Invoke k with value. Delimited with the capture-time reset live
-   in ancestry: in-place resume (no goal). Otherwise arms a transfer goal:
+   in ancestry: in-place resume (no goal). Otherwise pushes a transfer goal:
    for a delimited k the caller stays on the chain and a fresh clone of the
    template lands on a DELIM bookmark; for an undelimited k the chain is
    replaced. Callers: callable invoke, apply paths.
@@ -431,7 +431,7 @@ int kos_invoke_continuation(
       kos_xfer_goal_free(goal);
       return -1;
     }
-    kos_xfer_goal_arm(es, goal);
+    kos_xfer_goal_push(es, goal);
   }
   return 0;
 }

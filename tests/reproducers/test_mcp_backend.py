@@ -15,11 +15,11 @@
 Full-stack test for the baked, in-memory corpus MCP backend.
 
 Stages synthetic parquet views the way ``make mcp-data`` would, then drives
-every tool in ``tools/mcp/mcp_server.ki`` through the koskari host and pins
-the observable contract: token ranking, the substring fallback, feature and
-polarity filtering, wrong-usage demotion, reference resolution, doc/program
-routing, and miss messages. Deterministic and offline -- no network and no
-dependency on the real corpus snapshot.
+every tool in ``tools/mcp/mcp_server.ki`` through the koskari host and
+checks the observable contract: token ranking, the substring fallback,
+feature and polarity filtering, wrong-usage demotion, reference
+resolution, doc/program routing, and miss messages. Deterministic and
+offline -- no network and no dependency on the real corpus snapshot.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

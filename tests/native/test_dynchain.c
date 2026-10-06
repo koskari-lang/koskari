@@ -418,19 +418,19 @@ static int test_dynwith_free_exc_unconditional(void) {
     TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
 
     KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
-    /* an exception parked on the node resumes propagating when the node
+    /* an exception stored on the node resumes propagating when the node
        is unlinked normally: the pop answers -1 with it pending, and the
        three references end up owned by the error indicator */
-    TEST_ASSERT(kos_dyn_ob_park_exception(
+    TEST_ASSERT(kos_dyn_ob_store_exception(
         (KosDynNode *) with_node,
         Py_NewRef(PyExc_ValueError),
-        PyUnicode_FromString("parked"),
+        PyUnicode_FromString("suspended"),
         NULL) == 0,
-        "park exception on WITH");
+        "store exception on WITH");
 
     TEST_ASSERT(kos_dyn_pop_with(&es, with_node) == -1,
-        "pop WITH re-raises the parked exception");
-    TEST_ASSERT(PyErr_Occurred() != NULL, "parked exception pending");
+        "pop WITH re-raises the stored exception");
+    TEST_ASSERT(PyErr_Occurred() != NULL, "stored exception pending");
     PyErr_Clear();
 
     KosEvalState_FreezeToContext(&es);

@@ -194,7 +194,7 @@ verify:
   #   error:   "<ExceptionType: message>"  — read/compile-time failure (asserted)
   #   invalid: "<prose: why it's wrong>"   — runtime (eval) failure or semantic
   #                                          gotcha; not run, so also keep a
-  #                                          verify.read to pin the parse
+  #                                          verify.read to record the parse
 references:
   - reference/specials/compile-<name>.md   # flatten the feature path with a
                                            # dash, e.g. special/compile/cond ->

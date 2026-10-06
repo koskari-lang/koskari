@@ -107,7 +107,7 @@ class TestActivePragma(ActivePragmaCase):
 
 
     async def test_assert_setting_does_not_cross_contaminate(self):
-        # a module that disables asserts must not disarm assert in any
+        # a module that disables asserts must not disable assert in any
         # other module: each expansion answers for the pragma of the
         # module being compiled
         self.write_ki('ki_ap_quiet', """

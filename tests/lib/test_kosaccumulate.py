@@ -243,7 +243,7 @@ class TestKosAccumulateTeardown(unittest.IsolatedAsyncioTestCase):
         a = KosAccumulate([1, 2, 3], slow)
 
         # the first element primes the total and is emitted with no
-        # fold at all, so it is the second step that can park
+        # fold at all, so it is the second step that can suspend
         self.assertEqual(await a.__anext__(), 1)
 
         second = asyncio.ensure_future(a.__anext__())

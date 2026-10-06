@@ -31,10 +31,10 @@ define TOKEN-HEADER "X-Kosrunner-Token"
 define-dataclass WebhookConfig [ServerConfig]:
     """
     Config for a webhook route's shared server (host, port, prefix). An
-    optional `token` arms the machine-door guard: when set, a caller must
-    present it in the X-Kosrunner-Token header or be turned away with a
-    401. Left unset the route stays open, so existing webhooks are
-    unchanged.
+    optional `token` enables the machine-door guard: when set, a caller
+    must present it in the X-Kosrunner-Token header or be turned away
+    with a 401. Left unset the route stays open, so existing webhooks
+    are unchanged.
 
     `wait` picks the reply model. The default (True) awaits the handler and
     returns its result. Set it False for a background run: the route replies

@@ -8,7 +8,7 @@ emit-C-and-invoke-a-compiler direction record archived at
 **See also:** [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md) (phase 2 defines
 the musttail handler form this design compiles ahead of time),
 [../archive/cps-consumer-api.md](../archive/cps-consumer-api.md) (the resume contract a
-stencil chain's suspension points arm into), [../archive/bytecode-finalization.md](../archive/bytecode-finalization.md)
+stencil chain's suspension points set their resumes under), [../archive/bytecode-finalization.md](../archive/bytecode-finalization.md)
 (the finalize pipeline this lowering extends), [../OPCODES.md](../OPCODES.md),
 `tools/opimpl.py`.
 
@@ -163,12 +163,12 @@ entries native code uses.
 
 Stenciling does not add a second resume mechanism. A stencil chain's call
 and await sites are ordinary `KosEvalState_Call` / `KosEvalState_NextResume`
-invocations, arming the resume on the frame exactly as an interpreted
+invocations, setting the resume on the frame exactly as an interpreted
 handler would; the trampoline never invokes a resume on the native code's
 own C stack any more than it invokes one on the interpreter's, for the
 same reason (a synchronous CPS loop must cost constant stack, not
 constant-plus-one-native-frame). When the delivered value arrives, the
-frame's armed resume re-enters at `native_buf + offsets[pc]` the same way
+resume set on the frame re-enters at `native_buf + offsets[pc]` the same way
 any other resumption does. The consequence: once CPS consumer API adoption
 reaches its "bytecode's builtin resume" phase, that phase and this
 document's finalize lowering are the same piece of work, entered from

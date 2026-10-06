@@ -16,7 +16,7 @@ tests.reproducers.test_call_fastpaths
 
 Full-stack reproducers for the call and return fast paths: self-tail
 in-place namespace rebind, plain returns delivered into loop / let /
-foreach extents, unbound method calls through the parked-frame steal,
+foreach extents, unbound method calls through the cached-frame steal,
 and method-cache shadow detection after the receiver type's shared keys
 gain the method's name or the instance materializes a dict-only shadow
 

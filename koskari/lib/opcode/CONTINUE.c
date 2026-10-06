@@ -100,9 +100,9 @@ KOS_OP_HANDLER(CONTINUE) {
         RESULT_NEXT_POLL(es);
       }
 
-      /* As ITER_NEXT: else pc armed before the step, and the live pcs
-         placed as a dispatch of that row would place them, so a
-         suspended step resumes past it. */
+      /* As ITER_NEXT: the else pc is recorded before the step, and the
+         live pcs placed as a dispatch of that row would place them, so
+         a suspended step resumes past it. */
       KosDynForeach_ITER_NEXT_ELSE_PC(region) = KosOp_ARG(step);
       KosEvalState_ACTING_PC(es) = cpc;
       KosEvalState_SET_PC(es, cpc + 1u);

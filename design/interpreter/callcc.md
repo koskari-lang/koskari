@@ -158,7 +158,7 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
    SHIFT nodes are still on the chain (pointer + node_id ancestry match from
    dyn_top), the SHIFT lies above the prompt, no barrier (foreign
    DELIM/GEN/NEXT/PROMPT) sits between dyn_top and the SHIFT node, no
-   transfer goal is armed, the invoke is not a throw, and the live slice has
+   transfer goal is active, the invoke is not a throw, and the live slice has
    not already been consumed: `kos_delimited_invoke_inplace` detaches the
    invoke span (dyn_top through the SHIFT node) onto a
    **`KOS_DYN_DELIM_MODE_INPLACE`** delim inserted directly above the live
@@ -198,7 +198,7 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
    template. When the slice reaches `POP_PROMPT` (delimited), the return
    walk hands the delim back and the value lands at the invoke site.
 
-4. **Arm a goal** (`kos_xfer_goal_new` + `kos_xfer_goal_arm`) with the clone
+4. **Push a goal** (`kos_xfer_goal_new` + `kos_xfer_goal_push`) with the clone
    as target and the value (or exception, `is_throw`) as payload; answer
    REPROLOGUE. The evaluator's prologue drives it (§ Transfer goal).
 
@@ -206,7 +206,7 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
 
 A continuation applied from a context that does not own it (a different
 evaluator token) reaches `process_raise` as a `KoskariContinuationApply`
-signal. `handle_continuation_apply` arms a **cc-unwind goal**: no target, the
+signal. `handle_continuation_apply` pushes a **cc-unwind goal**: no target, the
 seam is the root GEN (the driver boundary) when the chain is a generator's,
 otherwise NULL, and `is_cc_unwind` is set. LEAVING runs every extent's leave
 with `KOS_XFER_EVENT_TRANSFER` (after thunks, `__exit__`s and `finally`
@@ -227,17 +227,17 @@ typedef enum KosXferGoalPhase {
   KOS_GOAL_LEAVING,     /* unlink dyn_top down to the seam */
   KOS_GOAL_LANDING,     /* splice the target on the seam, set the resume pc */
   KOS_GOAL_ENTERING,    /* enter each landed node, outermost first */
-  KOS_GOAL_DELIVERING,  /* push the payload or arm the throw; retire */
+  KOS_GOAL_DELIVERING,  /* push the payload or set the throw slots; retire */
 } KosXferGoalPhase;
 
 struct KosXferGoal {
-  KosXferGoal *outer;          /* parked enclosing goal, or NULL */
+  KosXferGoal *outer;          /* waiting enclosing goal, or NULL */
   KosDynNode *target;          /* owned clone to land; NULL once landed */
   KosDynNode *seam;            /* borrowed; NULL means the root */
   uint32_t seam_id;
   KosDynNode *frontier;        /* node whose thunk we wait on, or NULL */
   uint32_t frontier_id;
-  KosDynNode *park_top;        /* dyn_top as it was when frontier fired */
+  KosDynNode *wait_top;        /* dyn_top as it was when frontier fired */
   PyObject *payload;
   PyObject *continuation_ref;
   uint32_t resume_pc;
@@ -261,7 +261,7 @@ struct KosXferGoal {
    unlinked but handed the transfer (`kos_dyn_finally_take_transfer`):
    its body runs in its own frame with the region still at dyn_top,
    disabled and marked `KOS_PENDING_RETURN_TRANSFER`, the goal waiting
-   on it with a NULL `park_top`; `POP_FINALLY` resumes the goal before
+   on it with a NULL `wait_top`; `POP_FINALLY` resumes the goal before
    the region leaves and the next prologue continues LEAVING from the
    new dyn_top. Nothing at or below the seam leaves. The seam
    is the lowest common ancestor of the live chain and the template,
@@ -287,17 +287,17 @@ re-enters, matching Scheme's `dynamic-wind`.
 
 A thunk or `__exit__` run by LEAVING or ENTERING is an ordinary frame. When
 its call installs a frame (REPROLOGUE) or suspends (AWAIT), the goal
-**parks** on that node with `park_top = dyn_top`, and the driver does
-nothing until `dyn_top` is `park_top` again, which means the thunk's frame
-came and went. Everything above `park_top` belongs to the thunk:
+**waits** on that node with `wait_top = dyn_top`, and the driver does
+nothing until `dyn_top` is `wait_top` again, which means the thunk's frame
+came and went. Everything above `wait_top` belongs to the thunk:
 
-1. A continuation invoked from inside the thunk arms an **inner goal** whose
-   `outer` is the parked one.
-2. The inner goal drives on the chain above `park_top`; a delimited inner
+1. A continuation invoked from inside the thunk pushes an **inner goal**
+   whose `outer` is the waiting one.
+2. The inner goal drives on the chain above `wait_top`; a delimited inner
    invoke returns its reset's value to the thunk, which then returns.
 3. The thunk's return settles the node (`kos_dyn_settle_top`); dyn_top is
-   `park_top` again and the drive resumes the outer goal where it left off.
-4. An inner landing whose LEAVING unlinked the node the outer was parked on frees the outer goal along with that extent.
+   `wait_top` again and the drive resumes the outer goal where it left off.
+4. An inner landing whose LEAVING unlinked the node the outer was waiting on frees the outer goal along with that extent.
 
 A step that raises enters `process_raise`, which frees the whole goal stack
 (`kos_xfer_goal_abandon_all`) and raises through the chain as the driver
@@ -322,7 +322,7 @@ Before/after thunks are null-arity Koskari callables invoked through the
 extent contract (`kos_dyn_extent_enter` / `kos_dyn_extent_leave` on the WIND
 node). They run as normal frames; when a thunk returns into the WIND,
 `kos_dyn_settle_top` advances the node's phase, a finished leave unlinks it,
-and a walk or a transfer goal that was parked on it continues.
+and a walk or a transfer goal that was waiting on it continues.
 
 ### Thunk Ordering
 
@@ -373,8 +373,8 @@ It does NOT contain:
 Wrapper `tp_traverse` implementations walk all reachable PyObjects:
 - Frame chain: namespace, stack values
 - Continuation: captured chain
-- Context: await iterator, exception inject slots, the armed transfer goal (target clone, payload, continuation reference, and each parked outer goal)
-- Node obligations: a WIND or WITH's parked body value, exception, or return
+- Context: await iterator, exception inject slots, the active transfer goal (target clone, payload, continuation reference, and each waiting outer goal)
+- Node obligations: a WIND or WITH's stored body value, exception, or return
 
 ## Opcodes
 

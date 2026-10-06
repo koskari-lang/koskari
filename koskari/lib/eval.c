@@ -49,7 +49,7 @@
       KoskariContinuationApply exception targets a different eval context
       (foreign token), process_raise intercepts it via
       handle_continuation_apply.  The exception is cleared and a
-      cc-unwind goal is armed: it leaves every extent in the current
+      cc-unwind goal is pushed: it leaves every extent in the current
       context down to its root (running their exits with no active
       exception) and then delivers the exception as a boundary raise.
       The eval loop exits with KOS_RES_RAISE, propagating the exception
@@ -201,7 +201,7 @@ static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
 
 
 /**
-   One iteration request against a iteration node's armed record: the
+   One iteration request against a iteration node's request on record: the
    single site API for "give me the next element of this thing". A
    KosIter provider drives through its suite (graft-capable, mode
    updates recorded); a sync iterator steps through tp_iternext; a
@@ -234,8 +234,8 @@ KosIterRequestStatus KosIterRequest_Next(
   if (islots) {
     PyObject *out = NULL;
 
-    /* Armed before the step: an INSTALLED outcome delivers through the
-       iteration node, and deliveries can elect it mid-step. */
+    /* The mode is set before the step: an INSTALLED outcome delivers
+       through the iteration node, and deliveries can elect it mid-step. */
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_INSTALLED);
 
     switch (islots->ki_step(es, iter, send_val, &out)) {
@@ -262,8 +262,8 @@ KosIterRequestStatus KosIterRequest_Next(
         /* A StopIteration ending a provider step is that provider's
            exhaustion -- builtins.map truncation parity for a mapped
            function's StopIteration included. Converting here keeps
-           the semantics the raise walk applies at armed nodes, which
-           the mode reset above would otherwise bypass. */
+           the semantics the raise walk applies at nodes with a request
+           set, which the mode reset above would otherwise bypass. */
         if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
           PyObject *payload = NULL;
           if (PyGen_FetchStopIterationValue(&payload) < 0)
@@ -290,7 +290,7 @@ KosIterRequestStatus KosIterRequest_Next(
         return KOS_IREQ_EXHAUSTED;
 
       case GET_NEXT_SUSPEND:
-        /* Parked python async step: the awaited completion IS the
+        /* Suspended python async step: the awaited completion IS the
            element, delivered through the iteration node at revive. */
         kos_dyn_iter_request_set_mode(node, KOS_IREQ_AWAITING_PY);
         *fast_out = _await;
@@ -446,8 +446,8 @@ static KosOpResult revive_await(
   if (to_push != NULL && KosEvalState_FRAME(es)) {
     KosDynNode *node = kos_dyn_find_iter_node(es);
     if (node && kos_dyn_iter_node_awaiting_py(node)) {
-      /* The pending await belongs to the armed iteration node: a python
-         async step's awaited result IS the element. */
+      /* The pending await belongs to the iteration node whose request is
+         set: a python async step's awaited result IS the element. */
       KosOpResult dr;
 
       if (! owned)
@@ -481,7 +481,7 @@ static KosOpResult revive_await(
     Py_DECREF(to_push);
   {
     /* the awaited value may complete a node's pending leave; a return
-       parked on that node is handed back for the entry phase to resume */
+       stored on that node is handed back for the entry phase to resume */
     KosOpResult sr = kos_dyn_settle_top(es, out_return);
     if (sr.kind != KOS_RES_NORMAL)
       return sr;
@@ -515,7 +515,7 @@ static KosEvalMode revive_yield(
      took no placeholder at install and takes its delivery through the
      pending slot. A throw goes to the resume the same way, which
      throws it into the delegate; GeneratorExit raises at the frame
-     instead, and the raise walk closes the delegate and disarms the
+     instead, and the raise walk closes the delegate and clears the
      resume when it unwinds the delegation's node. */
   if (KosEvalState_FRAME(es)
       && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
@@ -832,10 +832,10 @@ void kos_eval_prepare_boundary_raise(
 
    Own-token path: the continuation targets this eval context.  Extract the
    continuation and resume value, clear PyErr, and call
-   kos_invoke_continuation to arm a transfer goal.
+   kos_invoke_continuation to push a transfer goal.
 
    Foreign-token path: the continuation targets a different eval context.
-   Fetch and clear PyErr and arm a cc-unwind goal that leaves every local
+   Fetch and clear PyErr and push a cc-unwind goal that leaves every local
    extent down to the context's root and then delivers the exception as
    a boundary raise, so the eval loop exits with KOS_RES_RAISE and the
    exception propagates upward to the owning context.
@@ -947,7 +947,7 @@ own_fail:
     Py_DECREF(val);
     if (! goal)
       return EVAL_RAISE();
-    kos_xfer_goal_arm(es, goal);
+    kos_xfer_goal_push(es, goal);
   }
   return EVAL_REPROLOGUE();
 }
@@ -967,11 +967,11 @@ own_fail:
                        EVAL_RAISE
      2. cc test      - PyErr_ExceptionMatches(KoskariContinuationApply),
                        exactly once
-     3. nest abandon - kos_xfer_goal_abandon_all when a goal is armed
+     3. nest abandon - kos_xfer_goal_abandon_all when a goal is active
                        AND the exception is not a continuation signal
      4. cc dispatch  - continuation signal: handle_continuation_apply
                        (own token: invoke; foreign: cc-unwind goal);
-                       REPROLOGUE re-enters the loop with a goal armed
+                       REPROLOGUE re-enters the loop with a goal active
      5. agen clear   - clear_kos_agen_iter_node_on_error before the
                        exception can escape an async-gen node step
      6. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
@@ -1025,7 +1025,7 @@ static KosOpResult process_raise(KosEvalState *es) {
      rather than delivering here is what puts every raise ingress on
      that one path: this entry is reached straight from
      apply_kos_op_result, never through the prologue. It terminates
-     because the delivery disarms the resume. */
+     because the delivery clears the resume. */
   if (KosEvalState_FRAME(es)
       && ! KosDynFrame_CODE(KosEvalState_FRAME(es))
       && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
@@ -1459,9 +1459,9 @@ static KosOpResult kos_eval_route_delim_return(
     wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
                                 KOS_XFER_EVENT_SHIFT, &pending);
     if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
-      /* a leave went into a thunk or onto an awaitable; val parks on
+      /* a leave went into a thunk or onto an awaitable; val is stored on
          that node and re-enters this route once the node has finished */
-      if (kos_dyn_ob_park_return(pending, val, KOS_PENDING_RETURN_DELIM,
+      if (kos_dyn_ob_store_return(pending, val, KOS_PENDING_RETURN_DELIM,
                                  (KosDynNode *) ret_delim) < 0) {
         Py_XDECREF(wr.val);
         return EVAL_RAISE();
@@ -1490,8 +1490,8 @@ static KosOpResult kos_eval_route_delim_return(
 
   /* Both finishes leave val on the invoking frame's stack. A code-less
      invoker (a resume frame that called the continuation) has no pc to
-     continue at: the prologue delivers the value on its stack to its
-     armed resume, the way a callee's return reaches it. */
+     continue at: the prologue delivers the value on its stack to the
+     resume set on it, the way a callee's return reaches it. */
   if (! KosEvalState_CODE(es))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
@@ -1538,7 +1538,7 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
    The signal that ends an in-eval delivery (a control-returned hook, a
    flattened generator's yield landing on its consumer). The delivery
    left a plain bytecode frame current with nothing staged, no error,
-   and no plan armed: DISPATCH, so the trampoline threads from es->pc
+   and no goal active: DISPATCH, so the trampoline threads from es->pc
    without a prologue pass, and a handler that ran the delivery itself
    threads on directly. Anything else (a value staged for a resume, a
    codeless frame, a plan) is the prologue's to deliver.
@@ -2142,9 +2142,9 @@ KosOpResult KosEvalState_NextResume(
 
     case KOS_IREQ_CONTINUES: {
       /* A frame the install left current is threaded into only when
-         it can be: a frame parked inside a yield-from carries that
+         it can be: a frame suspended inside a yield-from carries that
          node's phase resume, and the prologue has to run it before
-         anything else. With a resume of our own, it is armed on the
+         anything else. With a resume of our own, it is set on the
          calling frame for the delivery either way. */
       if (resume) {
         KosDynFrame_RESUME_KIND(frame) = resume;
@@ -2162,9 +2162,9 @@ KosOpResult KosEvalState_NextResume(
 
     case KOS_IREQ_EXHAUSTED:
       /* With a resume, exhaustion reaches it the way an in-flight
-         source's does and the way any failed delivery does: armed on
+         source's does and the way any failed delivery does: set on
          the frame with StopIteration pending, for the prologue to
-         deliver as a NULL. Nothing is armed without one, and the
+         deliver as a NULL. No resume is set without one, and the
          raise crosses the frame. */
       PyErr_SetNone(PyExc_StopIteration);
       if (! resume)
@@ -2336,7 +2336,7 @@ static KosOpResult eval_phase_entry(
   }
 
   /* The revive completed a node whose leave had a return, break, or
-     continue parked on it (a wind whose after thunk tail-called the
+     continue stored on it (a wind whose after thunk tail-called the
      awaitable has no frame to return through). With that node gone,
      the transfer continues instead of the frame's bytecode. The answer has been through the ingress:
      a RAISE or an AWAIT is terminal, anything else goes on to dispatch. */
@@ -2379,10 +2379,10 @@ static KosOpResult eval_phase_entry(
 /**
    Phase 2: transfer goal drive.
 
-   Drives the armed transfer goal as far as the chain allows.  When no frame and no
-   hook remain after draining, emits a terminal RETURN(None) and marks
-   the context dead.  Abandonment outcomes from the unified RAISE ingress
-   (AWAIT / RAISE / FATAL) are terminal here.
+   Drives the active transfer goal as far as the chain allows.  When no
+   frame and no hook remain after draining, emits a terminal RETURN(None)
+   and marks the context dead.  Abandonment outcomes from the unified
+   RAISE ingress (AWAIT / RAISE / FATAL) are terminal here.
 
    :return: EVAL_NORMAL when the dispatch loop should start;
             terminal KosOpResult when eval should stop.
@@ -2490,7 +2490,7 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
     KosContext_FLAGS(KosEvalState_CONTEXT(es)) &= ~KOS_CTX_DEAD;
     KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_RUNNING;
 
-    /* The eager step parked the __await__ iterator for a resumption
+    /* The eager step stored the __await__ iterator for a resumption
        that is now refused; nothing will drive it again. */
     KosEvalState_PythonAwaitClearIter(es);
     kos_demand_set_sync_violation(
@@ -2521,7 +2521,7 @@ static inline KosOpResult eval_event_return_unwind(
   KosOpResult unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), val,
                                           KOS_PENDING_RETURN_FRAME, &took);
 
-  /* a FINALLY took the return, a leave is in flight with val parked, or
+  /* a FINALLY took the return, a leave is in flight with val stored, or
      a leave raised; the walk consumed val on each */
   if (unw.kind != KOS_RES_NORMAL)
     return kos_eval_walk_outcome(es, unw);
@@ -2655,7 +2655,7 @@ KOS_OP_INLINE KosOpResult eval_plain_return(
 
   /* No control-returned hook: parent (now dyn_top) is a frame, and a
      WITH beneath it is parent's own extent, pending or not, whose hook
-     runs when parent itself returns. No PyErr is set, no plan is armed,
+     runs when parent itself returns. No PyErr is set, no goal is active,
      and parent has no resume (the case-1 guard), so the trampoline can
      thread directly -- no prologue re-entry. */
   return EVAL_DISPATCH();
@@ -2880,10 +2880,10 @@ static KosOpResult eval_event_return_at_frame(
     return EVAL_FATAL();
   }
 
-  /* Case 2b: value-graft parent — an iteration node armed in value
-     mode: the returning frame is a provider's grafted invoke, and its
-     return value is the step element, delivered through the iteration node
-     (push, disarm, ki_finish). */
+  /* Case 2b: value-graft parent — an iteration node whose request is in
+     value mode: the returning frame is a provider's grafted invoke, and
+     its return value is the step element, delivered through the
+     iteration node (push, mode reset, ki_finish). */
   if (parent
       && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER)
       && kos_dyn_iter_node_value_mode(parent)) {
@@ -2944,7 +2944,7 @@ static inline KosOpResult eval_event_return(
 
 
 /**
-   Resume a return that was parked on a node whose leave went
+   Resume a return that was stored on a node whose leave went
    asynchronous, now that the node is gone. See eval.h.
 */
 KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
@@ -2958,7 +2958,7 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
   ob->u.ret.delim = NULL;
 
   /* The node is gone, so the walk from the returning frame continues
-     past it: further nodes may suspend again and park the value once
+     past it: further nodes may suspend again and store the value once
      more, or the walk reaches the frame and delivers. */
   switch (kind) {
   case KOS_PENDING_RETURN_FRAME:
@@ -3031,7 +3031,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
     return rs;
   }
 
-  /* The unlink handed back a return that was parked on the node it
+  /* The unlink handed back a return that was stored on the node it
      settled: the node is gone, so the return continues from there. */
   if (resume_return.kind == KOS_OB_RETURN)
     return KosEval_ResumeReturn(es, &resume_return);
@@ -3110,8 +3110,8 @@ static KosOpResult eval_step_drain_goal(KosEvalState *es) {
 
    A failed delivery arrives the same way: NULL with PyErr set, staged
    by nobody, routed here by the prologue's resume offer once
-   process_raise declined to walk past a code-less armed frame. The
-   resume may handle it or return EVAL_RAISE to decline, which
+   process_raise declined to walk past a code-less frame with a resume
+   set. The resume may handle it or return EVAL_RAISE to decline, which
    re-raises with the resume already cleared above. The one failure
    that does not come through here is a resume frame the walk reaches
    above the live frame; dyn_walk.c calls that one directly.
@@ -3384,7 +3384,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     /* Slim bounce: a staged delivery with no pending exception and no
        goal about to drive goes straight to its resume. The two checks
        below exist for chain surgery, which a staged handoff performs
-       none of. A goal parked on a running thunk is dormant: the thunk's
+       none of. A goal waiting on a running thunk is dormant: the thunk's
        own deliveries go through here like anyone else's. */
     if (KosEvalState_PENDING_VALUE(es)
         && ! kos_xfer_goal_will_drive(es)
@@ -3396,17 +3396,17 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     }
 
     /* A failed delivery reaches its consumer the way a successful one
-       does. A code-less step frame with an armed resume takes the
+       does. A code-less step frame with a resume set takes the
        pending exception as a NULL delivery, on a settled chain, where
        threading on is legal. Declining re-raises with the resume
-       already disarmed by the delivery, so the walk below unwinds as
+       already cleared by the delivery, so the walk below unwinds as
        it always did, and this cannot loop.
 
        A frame carrying bytecode is left alone: its resume is a
        yield-from phase resume, which reads a NULL delivery as a send
        of None. A goal in play is routed past this offer and through
        the phase below, whose process_raise abandons the goal stack
-       and then bounces straight back here with nothing armed -- so a
+       and then bounces straight back here with no goal active -- so a
        transfer still reaches abandon first, and the offer still
        fires. */
     if (PyErr_Occurred()
@@ -3438,7 +3438,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        goal lands, and the goal's own delivery is the one the landing
        frame expects. Drop the stale slot ahead of a drive so it can
        neither shadow that delivery nor reach a resume it was never
-       meant for. Only ahead of a drive: while the goal is parked on a
+       meant for. Only ahead of a drive: while the goal waits on a
        running thunk the slot belongs to the thunk's code. */
     if (kos_xfer_goal_will_drive(es))
       Py_CLEAR(KosEvalState_PENDING_VALUE(es));
@@ -3609,7 +3609,7 @@ KosOpResult koskari_eval(
     }
   }
 
-  /* The Python resume slot is armed by a driver before an await revive
+  /* The Python resume slot is set by a driver before an await revive
      and taken by the revive; an entry that skipped the revive (an await
      iterator still pending) clears it here, so the trampoline and the
      chain never touch it. */

@@ -726,7 +726,7 @@ static PyObject *defer_close(PyObject *self, PyObject *ignored) {
 
 
 /**
-   defer.__await__(): return self as the drivable iterator, arming the
+   defer.__await__(): return self as the drivable iterator, starting the
    delegation (DELEGATING -> ITERATING) if needed. Reuse raises.
 */
 static PyObject *defer_await(PyObject *self) {
