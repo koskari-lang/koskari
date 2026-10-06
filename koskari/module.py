@@ -166,7 +166,7 @@ def compile_top_level(compiler, reader, source_stream):
 
     docstr = None
     while True:
-        source_expr = reader.read(stream)
+        source_expr, position = reader.read_and_position(stream)
         if source_expr is READ_EOF:
             return
 
@@ -176,7 +176,7 @@ def compile_top_level(compiler, reader, source_stream):
                 source_expr = cons(
                     symbol('define'), symbol('__doc__'), source_expr, nil)
 
-        fragment = compiler.compile_expression(source_expr)
+        fragment = compiler.compile_expression(source_expr, position)
         yield compiler.complete(
             fragment, mode=CompilerMode.EXPRESSION, is_root=True)
 

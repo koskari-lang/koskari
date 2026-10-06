@@ -126,16 +126,16 @@ define eval_expression [compiler source ns]:
 
   define stream (IndentAwareStream.from_source (source_str source "<stdin>"))
 
-  define source_expr:
+  define-values [source_expr position]:
     try:
-      reader.read stream
+      reader.read_and_position stream
     except [ReaderEOF]:
       return _INCOMPLETE
 
   when (is? source_expr READ_EOF):
     return _INCOMPLETE
 
-  define fragment (compiler.compile_expression source_expr)
+  define fragment (compiler.compile_expression source_expr position)
   (fragment.as_expression ns)
 
 

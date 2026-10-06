@@ -1266,6 +1266,22 @@ class LayoutReader(Reader):
         :raises TypeError: when reader_stream is not an IndentAwareStream
         """
 
+        value, _pos = self.read_and_position(reader_stream)
+        return value
+
+
+    def read_and_position(self, reader_stream):
+        """
+        Read a single layout form and return it with the position it
+        started at, as Reader.read_and_position does: a form that is an
+        atom carries no position of its own, and this is where the
+        compiler learns its line
+
+        :return: a tuple of (value, position) where position is (line,
+            col); value is READ_EOF at EOF
+        :raises TypeError: when reader_stream is not an IndentAwareStream
+        """
+
         if not isinstance(reader_stream, IndentAwareStream):
             raise TypeError(
                 "LayoutReader.read needs an IndentAwareStream; make one"
@@ -1277,15 +1293,15 @@ class LayoutReader(Reader):
             self._check_indent(reader_stream, pos, 0)
 
         if event is LINE:
-            return self.fold_line(value)
+            return self.fold_line(value), pos
         elif event is BLOCK:
-            return apply_layout(value, self)
+            return apply_layout(value, self), pos
         elif event is BLOCKS:
-            return apply_layouts(value, self).car
+            return apply_layouts(value, self).car, pos
         elif event is VALUE:
-            return value
+            return value, pos
         elif event is EOF:
-            return READ_EOF
+            return READ_EOF, pos
         else:
             raise reader_stream.error('invalid syntax', pos)
 

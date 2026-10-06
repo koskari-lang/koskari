@@ -965,7 +965,7 @@ class Compiler:
                 form)
 
 
-    def compile_expression(self, source_obj):
+    def compile_expression(self, source_obj, position=None):
         """
         Compile one top-level source expression: the entry point for the
         places a compilation turn starts -- the module loaders, the REPL,
@@ -978,6 +978,8 @@ class Compiler:
         directly and never rebinds.
 
         :param source_obj: top-level source form
+        :param position: where the reader found the form, for a form
+            that carries no position of its own (an atom)
         :return: compiled ByteCodeFragment
         """
 
@@ -986,7 +988,7 @@ class Compiler:
         saved, self.lexical_stack = self.lexical_stack, []
         try:
             with parameterize(**{ACTIVE_PRAGMA_PARAM: self.pragma}):
-                return self.full_compile(source_obj)
+                return self.full_compile(source_obj, position=position)
         finally:
             self.lexical_stack = saved
 
@@ -1030,11 +1032,25 @@ class Compiler:
 
 
     def compile_const(self, fragment, value, position=None):
+        self.position_atom(fragment, position)
         fragment.instruction(OpCode.CONST, value)
         return fragment
 
 
+    def position_atom(self, fragment, position):
+        """
+        An atom carries no position; when it is the whole of what the
+        fragment holds so far, the position threaded from the reader
+        names its line
+        """
+
+        if position and not fragment.instructions:
+            fragment.position(position)
+
+
     def compile_symbol(self, fragment, sym, position=None):
+
+        self.position_atom(fragment, position)
 
         bare = sym.base
         if bare is not sym:
