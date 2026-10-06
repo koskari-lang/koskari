@@ -34,7 +34,7 @@
    by construction (3.12 and later); before 3.12 the size word is zero
    exactly for zero. */
 static inline int kos_long_is_zero(PyObject *v) {
-#if PY_VERSION_HEX >= 0x030C0000
+#if PY_MINOR_VERSION >= 12
   return PyUnstable_Long_IsCompact((PyLongObject *) v)
       && PyUnstable_Long_CompactValue((PyLongObject *) v) == 0;
 #else
@@ -78,7 +78,7 @@ static inline int kos_object_not(PyObject *v) {
    digit build goes through the conversion below. */
 #if PyLong_SHIFT == 30
 # define KOS_LONG_INLINE_DIGITS 1
-# if PY_VERSION_HEX >= 0x030C0000
+# if PY_MINOR_VERSION >= 12
 #  define KOS_LONG_NDIGITS(lo) \
    ((size_t) ((lo)->long_value.lv_tag >> _PyLong_NON_SIZE_BITS))
 #  define KOS_LONG_NEGATIVE(lo) \
@@ -240,7 +240,7 @@ KOS_OP_INLINE void kos_long_write(PyObject *v, long long res) {
     digits[1] = (digit) ((mag >> PyLong_SHIFT) & PyLong_MASK);
   if (n > 2)
     digits[2] = (digit) (mag >> (2 * PyLong_SHIFT));
-# if PY_VERSION_HEX >= 0x030C0000
+# if PY_MINOR_VERSION >= 12
   {
     uintptr_t flags = lo->long_value.lv_tag
         & ((((uintptr_t) 1) << _PyLong_NON_SIZE_BITS) - 1)
@@ -727,7 +727,7 @@ static inline int str_fast_join(
 
     if (! PyUnicode_CheckExact(s))
       return 0;
-#if PY_VERSION_HEX < 0x030c0000
+#if PY_MINOR_VERSION < 12
     if (unlikely(PyUnicode_READY(s) < 0))
       return -1;
 #endif
