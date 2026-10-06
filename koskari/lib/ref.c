@@ -240,9 +240,11 @@ static int sym_ref_clear(PyObject *self) {
 
 static void sym_ref_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, sym_ref_dealloc);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosSymbolicRef_VALUE(self));
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -480,10 +482,12 @@ static int attr_ref_clear(PyObject *self) {
 
 static void attr_ref_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, attr_ref_dealloc);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosAttributeRef_OBJ(self));
   Py_CLEAR(KosAttributeRef_ATTR(self));
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -703,10 +707,12 @@ static int item_ref_clear(PyObject *self) {
 
 static void item_ref_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, item_ref_dealloc);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosItemRef_OBJ(self));
   Py_CLEAR(KosItemRef_KEY(self));
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -923,12 +929,14 @@ static int dyn_ref_clear(PyObject *self) {
 
 static void dyn_ref_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, dyn_ref_dealloc);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosDynamicRef_GETFN(self));
   Py_CLEAR(KosDynamicRef_SETFN(self));
   Py_CLEAR(KosDynamicRef_DELFN(self));
   Py_CLEAR(KosDynamicRef_EMPTYFN(self));
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -1168,10 +1176,12 @@ static int memo_ref_clear(PyObject *self) {
 
 static void memo_ref_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, memo_ref_dealloc);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosSymbolicRef_VALUE(self));
   Py_CLEAR(KosMemoizedRef_GETFN(self));
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
@@ -1567,9 +1577,11 @@ static int param_ref_clear(PyObject *self) {
 
 static void param_ref_dealloc(PyObject *self) {
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, param_ref_dealloc);
   Py_CLEAR(KosRef_NAME(self));
   Py_CLEAR(KosParamRef_DEFAULT(self));
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 

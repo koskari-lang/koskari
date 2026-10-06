@@ -1147,6 +1147,7 @@ static int function_clear(PyObject *self) {
 static void function_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, function_dealloc);
   func_drop_cached_frame((KosFunction *) self);
   Py_CLEAR(KosFunction_NAME(self));
   Py_CLEAR(KosFunction_CODE(self));
@@ -1161,6 +1162,7 @@ static void function_dealloc(PyObject *self) {
   Py_CLEAR(((KosFunction *) self)->qualname_override);
   Py_CLEAR(((KosFunction *) self)->module_override);
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 

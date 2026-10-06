@@ -85,8 +85,10 @@ static int constantly_clear(PyObject *self) {
 static void constantly_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
+  Py_TRASHCAN_BEGIN(self, constantly_dealloc);
   Py_CLEAR(((KosConstantly *) self)->value);
   Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 

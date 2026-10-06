@@ -2109,6 +2109,10 @@ static void ns_dealloc(PyObject *self) {
   if (kos_gc_is_tracked(self))
     PyObject_GC_UnTrack(self);
 
+  /* a chain of closures releases one namespace per link through its
+     cells; the trashcan keeps that off the C stack */
+  Py_TRASHCAN_BEGIN(self, ns_dealloc);
+
   ns_release_header(self);
   Py_CLEAR(KosNamespace_BINDS(self));
 
@@ -2117,24 +2121,26 @@ static void ns_dealloc(PyObject *self) {
   KosNamespace_FAST_COUNT(self) = 0;
   KosNamespace_FAST_LOCALS(self) = 0;
 
-  // check if the namespace is valid for the freelist.
-  if (Py_TYPE(self) == &KosNamespaceType &&
-      Py_SIZE(self) == (Py_ssize_t) KOS_NS_MIN_SLOTS) {
+  // a plain namespace of the minimum size goes to the freelist while
+  // it has room; everything else is freed
+  if (Py_TYPE(self) == &KosNamespaceType
+      && Py_SIZE(self) == (Py_ssize_t) KOS_NS_MIN_SLOTS
+      && ns_freecount < KOS_NS_FREELIST_MAX) {
+    KosNamespace_FAST_RAW(self)[0] = 0;
+    KosNamespace_FAST_RAW(self)[1] = 0;
+    KosNamespace_PARENT(self) = (PyObject *) ns_freelist;
+    ns_freelist = (KosNamespace *) self;
+    ns_freecount++;
+    KOS_TRACE_FL_RETURN("namespace", 0);
 
-    // if the freelist is not full, add the namespace to the freelist.
-    if (ns_freecount < KOS_NS_FREELIST_MAX) {
-      KosNamespace_FAST_RAW(self)[0] = 0;
-      KosNamespace_FAST_RAW(self)[1] = 0;
-      KosNamespace_PARENT(self) = (PyObject *) ns_freelist;
-      ns_freelist = (KosNamespace *) self;
-      ns_freecount++;
-      KOS_TRACE_FL_RETURN("namespace", 0);
-      return;
-    }
-    KOS_TRACE_FL_RETURN("namespace", 1);
+  } else {
+    if (Py_TYPE(self) == &KosNamespaceType
+        && Py_SIZE(self) == (Py_ssize_t) KOS_NS_MIN_SLOTS)
+      KOS_TRACE_FL_RETURN("namespace", 1);
+    Py_TYPE(self)->tp_free(self);
   }
 
-  Py_TYPE(self)->tp_free(self);
+  Py_TRASHCAN_END;
 }
 
 
