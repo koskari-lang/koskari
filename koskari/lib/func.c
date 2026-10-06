@@ -703,8 +703,15 @@ static PyObject *function_get_closures(PyObject *self, void *closure) {
     if (kos_ns_is_raw(ns, i))
       continue;
     ref = KosNamespace_GET_FAST_VAL(ns, i);
-    if (! ref || KosRef_IsEmpty(ref))
+    if (! ref)
       continue;
+    {
+      int empty = KosRef_IsEmpty(ref);
+      if (empty < 0)
+        goto fail;
+      if (empty)
+        continue;
+    }
     value = KosRef_Deref(ref);
     if (! value)
       goto fail;

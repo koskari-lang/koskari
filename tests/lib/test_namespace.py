@@ -25,8 +25,9 @@ from operator import itemgetter
 import pytest
 
 from koskari.lib import (
-    CollectorNamespace, Domain, Module, ModuleNamespace, Namespace,
-    NamespaceSpec, Ref, demand)
+    CollectorNamespace, Domain, DynamicRef, Module, ModuleNamespace,
+    Namespace, NamespaceSpec, Ref, demand)
+from koskari.module import load_module_source_async, new_module
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -830,6 +831,32 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertIn('b', mod)
         self.assertIn('b', mod.refs)
         self.assertIs(mod.ref('b'), r)
+
+
+    async def test_empty_test_error_propagates(self):
+        """
+        An error raised by a ref's emptiness test reaches the caller of
+        the membership test, the attribute read, and a function's
+        closures view, in place of a false answer
+        """
+        def boom():
+            raise ValueError("empty probe failed")
+
+        mod = new_module("probe_empty")
+        ns = vars(mod)
+        ns.bind("x", DynamicRef("x", lambda: 42, None, None, boom))
+
+        with self.assertRaises(ValueError):
+            "x" in ns
+        with self.assertRaises(ValueError):
+            getattr(mod, "x")
+        with self.assertRaises(ValueError):
+            hasattr(mod, "x")
+
+        await load_module_source_async(
+            mod, "(define reader (lambda [] x))", layout=False)
+        with self.assertRaises(ValueError):
+            ns["reader"].closures
 
 
     async def test_nested_with_namespace(self):

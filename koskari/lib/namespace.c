@@ -1254,7 +1254,11 @@ static int ns_has_value(PyObject *self, PyObject *key) {
       return PyErr_Occurred()? -1: 0;
     return KosNamespace_GET_FAST_VAL(self, (size_t) index) != NULL;
   }
-  return ! KosRef_IsEmpty(ref);
+
+  int empty = KosRef_IsEmpty(ref);
+  if (empty < 0)
+    return -1;
+  return ! empty;
 }
 
 
@@ -3352,7 +3356,10 @@ static PyObject *mdl_getattro(PyObject *self, PyObject *name) {
   PyObject *ns = KosModule_NAMESPACE(self);
   PyObject *ref = KosNamespace_BorrowRef(ns, name);
   if (ref) {
-    if (KosRef_IsEmpty(ref)) {
+    int empty = KosRef_IsEmpty(ref);
+    if (empty < 0)
+      return NULL;
+    if (empty) {
       PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",
                    self, name);
       return NULL;
