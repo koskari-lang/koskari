@@ -40,6 +40,18 @@ returns `EVAL_YIELD(val)`, `SUSPENSION_EVENT = YIELD` is set, and
 `koskari_eval` returns `KOS_RES_YIELD`. On resume, `revive_yield` pushes
 `send_val` onto the stack.
 
+A `StopIteration` or `StopAsyncIteration` that escapes a generator's
+body is not the generator's own end signal. As in Python (PEP 479, PEP
+525), it leaves the generator as `RuntimeError("generator raised
+StopIteration")` or `RuntimeError("generator raised
+StopAsyncIteration")`, with the original exception as `__cause__`, on
+every surface: a Python `next` or `list`, a Python `async for`, and a
+Koskari `for-each` over the same generator. A function awaited from
+Python that raises `StopIteration` likewise raises
+`RuntimeError("coroutine raised StopIteration")`. A generator ends
+normally only by returning; an unguarded `(next it)` in its body that
+runs out is an error, not the end of the generator.
+
 **Examples:**
 
 ```koskari

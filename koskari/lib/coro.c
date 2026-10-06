@@ -316,6 +316,11 @@ static int coroutine_settle(
 
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
+      /* PEP 479: a StopIteration escaping the body is not a return;
+         its value would otherwise read as the await's result. */
+      if (PyErr_ExceptionMatches(PyExc_StopIteration))
+        _PyErr_FormatFromCause(PyExc_RuntimeError,
+                               "coroutine raised StopIteration");
       coro->state = KOS_CORO_DONE;
       return -1;
 

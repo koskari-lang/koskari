@@ -24,13 +24,11 @@ with a mislocated traceback.
 
 Fixed semantics (Python's): an exception in a generator propagates into
 the consumer at the iteration point, catchable there; the generator is
-finished by the exception. One protocol judgment sits with the iterating
-boundary itself: a StopIteration arriving from its in-flight flattened
-step is consumed as end-of-iteration (the same classification the
-Python-iterator step path makes), so the pre-479 leak idiom ends the
-loop normally instead of propagating. Boundary-driven generators are
-unchanged -- their raise exits the context to the Python driver, which
-translates it.
+finished by the exception. A StopIteration escaping the body is not the
+loop's end signal: it becomes a RuntimeError with the StopIteration as
+its cause (PEP 479) before it reaches the consumer. Boundary-driven
+generators are unchanged -- their raise exits the context to the Python
+driver, which translates it.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -115,16 +113,17 @@ class TestGenRaisePropagation(unittest.IsolatedAsyncioTestCase):
         result = await vars(mod)["catch-boom"]()
         self.assertEqual(result, ["caught", [1, 2]])
 
-    async def test_leaked_stopiteration_ends_iteration(self):
+    async def test_leaked_stopiteration_becomes_runtime_error(self):
         """
-        a StopIteration leaked from the body (pre-479 idiom) is consumed
-        by the iterating boundary as end-of-iteration: the loop completes
-        normally with the values yielded before the leak
+        a StopIteration leaked from the body is not the loop's end
+        signal: it reaches the consumer as RuntimeError (PEP 479), so
+        the consumer's except StopIteration does not take it
         """
 
         mod = await self.load("grp_leak")
-        result = await vars(mod)["catch-leak"]()
-        self.assertEqual(result, ["completed", [0, 1, 2]])
+        with self.assertRaises(RuntimeError) as caught:
+            await vars(mod)["catch-leak"]()
+        self.assertIsInstance(caught.exception.__cause__, StopIteration)
 
     async def test_uncaught_raise_reaches_python(self):
         """

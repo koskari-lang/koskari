@@ -543,6 +543,24 @@ static KosOpResult raise_walk_hand_to_resume(
 
 
 /**
+   PEP 479 and PEP 525 at a generator's boundary: a StopIteration or
+   StopAsyncIteration escaping the body is not the protocol's own end
+   signal, so it becomes a RuntimeError with the original as its
+   cause before any consumer -- the flattened iteration node, the
+   Python iterator adapter, the async-generator stepper -- can read it
+   as exhaustion. Any other pending exception passes untouched.
+*/
+static void kos_dyn_gen_convert_escaping_stop(void) {
+  if (PyErr_ExceptionMatches(PyExc_StopIteration))
+    _PyErr_FormatFromCause(PyExc_RuntimeError,
+                           "generator raised StopIteration");
+  else if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration))
+    _PyErr_FormatFromCause(PyExc_RuntimeError,
+                           "generator raised StopAsyncIteration");
+}
+
+
+/**
    RAISE unwind walk. See dynchain.h for the contract. Walks dyn_top down
    toward the innermost frame, offering handle(RAISE) then popping until a
    TRY or FINALLY consumes (jump to handler) or no handler remains, crossing
@@ -599,6 +617,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
         if (! parent)
           break;
         if (KosDynNode_IS_GEN(parent)) {
+          kos_dyn_gen_convert_escaping_stop();
           if (! KosDynNode_PARENT(parent))
             /* Adapter-driven generator: the GEN is the context root and
                the raise exits to the Python driver, which translates it
@@ -682,6 +701,7 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
 
       if (hr == KOS_HANDLE_CONSUMED) {
         if (KosDynNode_IS_GEN(top)) {
+          kos_dyn_gen_convert_escaping_stop();
           if (! KosDynNode_PARENT(top)) {
             /* Adapter-driven generator: the GEN is the context root and
                the raise exits to the Python driver, which translates it. */
