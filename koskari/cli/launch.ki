@@ -28,7 +28,8 @@ command runs.
 import sys
 
 import-from argparse ArgumentParser REMAINDER
-import-from os.path basename
+import-from os getcwd
+import-from os.path abspath basename dirname
 
 import-from .host version_line
 import-from .repl repl
@@ -301,8 +302,14 @@ define run []:
       ; an interactive session reports an empty argv[0], as Python does
       set! sys.argv #["" *: options.args]
 
+  ; sys.path[0] is the script's directory for a script, the working
+  ; directory for -c, - and the REPL, as for python; absolute, so a
+  ; later chdir does not move it
   when options.tweakpath:
-    sys.path.insert 0 "."
+    if (and filename (not (equal? filename "-"))):
+      sys.path.insert 0 (dirname (abspath filename))
+    else:
+      sys.path.insert 0 (getcwd)
 
   define mod (new_module "__main__")
   define interactive_param (ParamRef "*interactive*")

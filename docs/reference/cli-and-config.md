@@ -21,7 +21,7 @@ for example, `koskari app.ki 20 -- --verbose` sets `sys.argv` to
 | `-h`, `--help` | Show the usage message, then exit |
 | `--version` | Print Koskari and Python version information, then exit |
 | `-q`, `--quiet` | Suppress the REPL startup version banner |
-| `--no-tweak-path` | Do not add the current directory to `sys.path` |
+| `--no-tweak-path` | Do not put the script's directory (the working directory for `-c`, `-` and the REPL) first on `sys.path` |
 | `--histfile PATH` | REPL readline/prompt_toolkit history file |
 | `--repl-full-trace` | Show REPL infrastructure frames in runtime error tracebacks |
 | `-i`, `--interactive` | Enter interactive mode after executing the given script |

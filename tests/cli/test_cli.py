@@ -555,6 +555,46 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertIn('42', out)
 
 
+    async def test_main_script_directory_on_path(self):
+        """
+        A script run from elsewhere imports the .ki beside it: its own
+        directory is sys.path[0], as Python puts a script's directory
+        there, and the entry is absolute
+        """
+
+        prev_path = sys.path[:]
+        with tempfile.TemporaryDirectory() as tmp:
+            sub = os.path.join(tmp, 'sub')
+            os.makedirs(sub)
+            with open(os.path.join(sub, 'helper.ki'), 'w') as fh:
+                fh.write("define VALUE 42\n")
+            with open(os.path.join(sub, 'app.ki'), 'w') as fh:
+                fh.write("import sys\n"
+                         "print \"path0\" sys.path[0]\n"
+                         "import helper\n"
+                         "print helper.VALUE\n")
+            try:
+                code, out = await self._capture_main(
+                    os.path.join(sub, 'app.ki'))
+            finally:
+                sys.path[:] = prev_path
+                sys.modules.pop('helper', None)
+        self.assertEqual(0, code, out)
+        self.assertIn(f"path0 {sub}", out)
+        self.assertIn("42", out)
+
+
+    async def test_main_command_has_working_directory_on_path(self):
+        prev_path = sys.path[:]
+        try:
+            code, out = await self._capture_main(
+                '-c', '(import sys) (print "path0" sys.path[0])')
+        finally:
+            sys.path[:] = prev_path
+        self.assertEqual(0, code, out)
+        self.assertIn(f"path0 {os.getcwd()}", out)
+
+
     async def test_main_compile_kio_then_execute_kio_branches(self):
         """
         A program with an if/else compiles to .kio and the .kio runs
