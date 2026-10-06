@@ -917,6 +917,10 @@ class Compiler:
                 else:
                     self.check_rewrite_cycle(seen, res)
                     seen.append(res)
+                # a rewrite built without a position is compiled under
+                # the position of the form it replaced
+                if is_pair(res):
+                    position = get_position(res) or position
                 res = self.compile(res, position=position)
             return res
         finally:
@@ -1009,7 +1013,8 @@ class Compiler:
                 self.check_keyword_literal(source_obj)
             dispatch = self.compile_const
         else:
-            raise CompilerError("Unsupported source object", source_obj)
+            raise CompilerError("Unsupported source object", source_obj,
+                                position=position, filename=self.filename)
 
         try:
             # every dispatch returns the fragment it emitted into or a

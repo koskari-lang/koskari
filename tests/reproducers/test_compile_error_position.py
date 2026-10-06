@@ -127,6 +127,34 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
         self.assert_located(err, 8)
 
 
+    async def test_unsupported_macro_output(self):
+        err = await self.error_for(
+            "define-syntax o:\n"
+            "    macro-rules []:\n"
+            "        case (o rest ...):\n"
+            "            `(#tuple . ,rest)\n"
+            "\n"
+            "define f []:\n"
+            "    print \"before\"\n"
+            "    o 1 2\n")
+        self.assertIn("Unsupported source object", str(err))
+        self.assert_located(err, 8)
+
+
+    async def test_unsupported_macro_output_object(self):
+        err = await self.error_for(
+            "define-syntax o:\n"
+            "    macro-rules []:\n"
+            "        case (o):\n"
+            "            (object)\n"
+            "\n"
+            "define f []:\n"
+            "    print \"before\"\n"
+            "    (o)\n")
+        self.assertIn("Unsupported source object", str(err))
+        self.assert_located(err, 8)
+
+
     async def test_innermost_enclosing_form(self):
         err = await self.error_for(
             "define g []:\n"
