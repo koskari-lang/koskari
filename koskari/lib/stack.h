@@ -73,6 +73,13 @@ struct KosSegment {
 
 #define KOS_SEGMENT_INLINE_SLOTS 8
 
+/* The most slots a heap segment grows to. A single instruction's
+   operand run can never exceed it: the Code finalizer refuses a count
+   above it, so the runtime guard in KosStack_Grow answers only what a
+   count cannot see (nested expression depth, hand-built bytecode that
+   pushes without popping). */
+#define KOS_SEGMENT_MAX_SLOTS 1024
+
 
 /**
    Embedded segment storage: a KosSegment header immediately followed

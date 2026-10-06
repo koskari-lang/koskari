@@ -1841,6 +1841,19 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                      " outside 0..%u", i, b, (unsigned) UINT16_MAX);
         goto failure;
       }
+
+      /* An operand count no segment can hold is refused here rather
+         than at the push that would overflow it: a COUNT names that
+         many operands, a PAIR_COUNT twice as many. */
+      if (style == KOSTYLE_COUNT || style == KOSTYLE_PAIR_COUNT) {
+        long slots = (style == KOSTYLE_PAIR_COUNT) ? val * 2 : val;
+        if (slots > KOS_SEGMENT_MAX_SLOTS) {
+          PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
+                       " names more operands than a segment holds (%u)",
+                       i, b, (unsigned) KOS_SEGMENT_MAX_SLOTS);
+          goto failure;
+        }
+      }
     }
 
     di++;

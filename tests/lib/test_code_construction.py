@@ -100,9 +100,27 @@ class TestCountArgumentValidation(unittest.TestCase):
         with self.assertRaises(TypeError):
             make([[OpCode.CONST, 1], [OpCode.RETURN, None]])
 
-    def test_count_at_16_bit_limit_builds(self):
-        code = make([[OpCode.CONST, 1], [OpCode.POP, 65535]])
+    def test_count_at_the_segment_limit_builds(self):
+        code = make([[OpCode.CONST, 1], [OpCode.POP, 1024]])
         self.assertIsInstance(code, Code)
+
+    def test_count_over_the_segment_limit_rejected(self):
+        """
+        An operand segment holds at most 1024 slots, so a count no
+        segment could satisfy is refused at construction
+        """
+
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CONST, 1], [OpCode.POP, 1025]])
+        self.assertIn("1024", str(caught.exception))
+        with self.assertRaises(ValueError):
+            make([[OpCode.CONST, 1], [OpCode.CALL, 1025]])
+
+    def test_pair_count_over_half_the_segment_limit_rejected(self):
+        code = make([[OpCode.CONST, 1], [OpCode.BUILD_KWDS, 512]])
+        self.assertIsInstance(code, Code)
+        with self.assertRaises(ValueError):
+            make([[OpCode.CONST, 1], [OpCode.BUILD_KWDS, 513]])
 
 
 class TestLabelResolution(unittest.TestCase):

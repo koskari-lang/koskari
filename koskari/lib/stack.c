@@ -43,7 +43,7 @@
 
 
 #define BLOCK_NEW_SIZE 16
-#define BLOCK_MAX_SIZE 256
+#define BLOCK_MAX_SIZE KOS_SEGMENT_MAX_SLOTS
 
 #define BLOCK_MAX_FREE KOS_FREELIST_CAP(256)
 
@@ -122,8 +122,8 @@ static KosSegment *KosStack_Grow(KosSegment *self) {
   size_t max = self->max * 2;
 
   /* stack starts 16, then doubles each grow up to the BLOCK_MAX_SIZE.
-     Anything past that is considered an error, indicating there's
-     some problem in the bytecode that is endlessly growing the stack */
+     The finalizer keeps any one instruction's operand count within it,
+     so growth past it means bytecode that pushes without popping. */
   if (max > BLOCK_MAX_SIZE) {
     PyErr_SetString(PyExc_RuntimeError, "segment cannot grow over limit");
     return NULL;
