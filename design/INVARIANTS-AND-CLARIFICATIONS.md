@@ -221,7 +221,6 @@ These are **commitments**: they must hold for correct behavior. They are elabora
 
 - Remaining opcode handlers: see [OPCODES.md](OPCODES.md) §1.6 for stub opcodes.
 - Compiler: `koskari.compile` contains a substantially complete compiler (Compiler, ByteCodeFragment, specials package covering begin, bytecode, call, conditionals, continuations, context/with/parameterize, exceptions/try, items, lambda, let, loops, object protocol, pairs/quote/quasiquote, slots/attrs, variables, imports). The full end-to-end pipeline (macro expansion, optimization passes) is not yet complete. Module loading integration is implemented; see `design/api/import-system.md`.
-- Traceback integration with Koskari frames.
 
 ---
 

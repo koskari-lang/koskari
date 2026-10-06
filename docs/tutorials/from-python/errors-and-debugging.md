@@ -105,6 +105,16 @@ Python stack. The REPL trims its own frames; `--repl-full-trace` shows
 them.
 :::
 
+:::{dialogue}
+Does a handler see those frames?
++++
+Yes. Inside an `except` clause, `e.__traceback__` holds an entry for
+every Koskari frame the exception crossed and for the frame of the
+handler, at the line that was executing, so `traceback.format_exc()`,
+`logging.exception(...)` and `raise Other() from e` show Koskari source
+lines. An exception that escapes to Python carries the same entries.
+:::
+
 ## Finding the problem
 
 :::{dialogue}

@@ -586,7 +586,39 @@ static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
   Py_XDECREF(col_o);
   Py_XDECREF(pc_o);
   PyDict_SetItemString(meta, "crossed", crossed ? Py_True : Py_False);
+  {
+    PyObject *id_o = PyLong_FromUnsignedLong(
+        (unsigned long) kos_dynnode_id((KosDynNode *) frame));
+    if (id_o) {
+      PyDict_SetItemString(meta, "frame", id_o);
+      Py_DECREF(id_o);
+    }
+  }
   return meta;
+}
+
+
+/**
+   1 when record already holds an entry for frame: a handler's entry
+   recorded the frame when it caught the exception, and a re-raise
+   out of that handler crosses the same frame. Python keeps the
+   original entry for a re-raised exception too.
+*/
+static int dynchain_record_has_frame(PyObject *record, KosDynFrame *frame) {
+
+  uint32_t id = kos_dynnode_id((KosDynNode *) frame);
+
+  for (Py_ssize_t i = 0; i < PyList_GET_SIZE(record); i++) {
+    PyObject *entry = PyList_GET_ITEM(record, i);
+    PyObject *id_o;
+
+    if (! PyDict_Check(entry))
+      continue;
+    id_o = PyDict_GetItemString(entry, "frame");
+    if (id_o && PyLong_AsUnsignedLong(id_o) == id)
+      return 1;
+  }
+  return 0;
 }
 
 
@@ -637,6 +669,8 @@ static void decorate_exception_with_dynchain(
       if (! KosDynNode_IS_FRAME(node)) {
         continue;
       }
+      if (dynchain_record_has_frame(frames, (KosDynFrame *) node))
+        continue;
       PyObject *meta = dynchain_frame_meta((KosDynFrame *) node, 0);
       if (! meta) {
         PyErr_Clear();
@@ -681,7 +715,14 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
       Py_DECREF(frames);
       frames = PyList_New(0);
     }
-    if (frames) {
+
+    if (! frames) {
+      PyErr_Clear();
+    } else if (dynchain_record_has_frame(frames, KosEvalState_FRAME(es))) {
+      /* a handler in this frame recorded it when it caught the
+         exception; the re-raise crossing it adds nothing */
+      Py_DECREF(frames);
+    } else {
       PyObject *meta = dynchain_frame_meta(KosEvalState_FRAME(es), 1);
       if (meta) {
         PyList_Append(frames, meta);
@@ -692,12 +733,102 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
         PyErr_Clear();
       }
       Py_DECREF(frames);
-    } else {
-      PyErr_Clear();
     }
   }
 
   PyErr_Restore(typ, val, tb);
+}
+
+
+/**
+   One traceback entry per recorded frame: an empty code object naming
+   the file, the function and the line the frame was executing, a
+   frame over it, and PyTraceBack_Here. Entries go in innermost first,
+   and each goes in ahead of the ones before, so the printed order is
+   the outermost frame first, as for Python frames. A record entry
+   with no file (the code-less root of a demand drive) adds nothing.
+   The frame's globals carry the whole record as __koskari_trace__.
+*/
+static PyFrameObject *frame_for_record(PyObject *entry, PyObject *record) {
+
+  PyObject *filename = PyDict_GetItemString(entry, "filename");
+  PyObject *name = PyDict_GetItemString(entry, "name");
+  PyObject *line_o = PyDict_GetItemString(entry, "line");
+  if (! filename || ! PyUnicode_Check(filename) || ! line_o)
+    return NULL;
+  if (! name || ! PyUnicode_Check(name))
+    name = Py_None;
+
+  PyCodeObject *code = PyCode_NewEmpty(
+      PyUnicode_AsUTF8(filename),
+      name == Py_None ? "<module>" : PyUnicode_AsUTF8(name),
+      (int) PyLong_AsLong(line_o));
+  if (! code)
+    return NULL;
+
+  PyObject *globals = PyDict_New();
+  if (! globals) {
+    Py_DECREF(code);
+    return NULL;
+  }
+  PyObject *modname = PyUnicode_FromString("koskari.native");
+  if (modname) {
+    PyDict_SetItemString(globals, "__name__", modname);
+    Py_DECREF(modname);
+  }
+  PyDict_SetItemString(globals, "__koskari_trace__", record);
+
+  PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), code, globals,
+                                       NULL);
+  Py_DECREF(globals);
+  Py_DECREF(code);
+  return pyframe;
+}
+
+
+void kos_eval_inject_recorded_frames(
+    PyObject **exc_type,
+    PyObject **exc_val,
+    PyObject **exc_tb) {
+
+  PyObject *record;
+
+  if (! exc_val || ! *exc_val)
+    return;
+  record = PyObject_GetAttrString(*exc_val, "__koskari_dynchain__");
+  if (! record) {
+    PyErr_Clear();
+    return;
+  }
+  if (! PyList_Check(record)) {
+    Py_DECREF(record);
+    return;
+  }
+
+  for (Py_ssize_t i = 0; i < PyList_GET_SIZE(record); i++) {
+    PyObject *entry = PyList_GET_ITEM(record, i);
+    PyFrameObject *pyframe;
+
+    if (! PyDict_Check(entry)
+        || PyDict_GetItemString(entry, "traced") == Py_True)
+      continue;
+    PyDict_SetItemString(entry, "traced", Py_True);
+
+    /* the triple stays in hand while the frame is built, so a failure
+       there cannot displace the exception being decorated */
+    pyframe = frame_for_record(entry, record);
+    if (! pyframe) {
+      PyErr_Clear();
+      continue;
+    }
+
+    PyErr_Restore(*exc_type, *exc_val, *exc_tb);
+    if (PyTraceBack_Here(pyframe) < 0)
+      PyErr_Clear();
+    Py_DECREF(pyframe);
+    PyErr_Fetch(exc_type, exc_val, exc_tb);
+  }
+  Py_DECREF(record);
 }
 
 
@@ -723,60 +854,7 @@ static void inject_eval_frame_traceback(
   #endif
 
   decorate_exception_with_dynchain(ctx, *exc_val);
-
-  /* the raising frame: the live state's during a drive, where the
-     chain is stolen off the context; the context's own between drives */
-  KosDynFrame *frame_top = es ? KosEvalState_FRAME(es)
-                              : (KosDynFrame *) KosContext_FRAME_TOP(ctx);
-  if (! frame_top || ! KosDynFrame_CODE(frame_top)) {
-    return;
-  }
-
-  PyCodeObject *faux = KosCode_Faux((PyObject *) KosDynFrame_CODE(frame_top));
-  if (! faux) {
-    PyErr_Clear();
-    return;
-  }
-
-  PyObject *globals = PyDict_New();
-  if (! globals) {
-    PyErr_Clear();
-    return;
-  }
-  PyObject *modname = PyUnicode_FromString("koskari.native");
-  if (modname) {
-    PyDict_SetItemString(globals, "__name__", modname);
-    Py_DECREF(modname);
-  }
-  PyObject *trace_data = PyObject_GetAttrString(*exc_val, "__koskari_dynchain__");
-  if (trace_data) {
-    PyDict_SetItemString(globals, "__koskari_trace__", trace_data);
-    Py_DECREF(trace_data);
-  } else {
-    PyErr_Clear();
-  }
-
-  PyFrameObject *pyframe = PyFrame_New(PyThreadState_Get(), faux, globals, NULL);
-  Py_DECREF(globals);
-  if (! pyframe) {
-    SAY("[eval] inject_eval_frame_traceback: PyFrame_New failed\n");
-    PyErr_Clear();
-    return;
-  }
-
-  PyErr_Restore(*exc_type, *exc_val, *exc_tb);
-  *exc_type = NULL;
-  *exc_val = NULL;
-  *exc_tb = NULL;
-
-  if (PyTraceBack_Here(pyframe) < 0) {
-    SAY("[eval] inject_eval_frame_traceback: PyTraceBack_Here failed\n");
-    PyErr_Clear();
-  }
-  Py_DECREF(pyframe);
-
-  SAY("[eval] inject_eval_frame_traceback: PyTraceBack_Here succeeded\n");
-  PyErr_Fetch(exc_type, exc_val, exc_tb);
+  kos_eval_inject_recorded_frames(exc_type, exc_val, exc_tb);
 
   /* PyTraceBack_Here updates the thread-state traceback only; the exception
      value's __traceback__ is not updated. Attach the extended chain to the

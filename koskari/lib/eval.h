@@ -1675,6 +1675,21 @@ void kos_eval_note_crossed_frame(KosEvalState *es);
 
 
 /**
+   Give the exception a Python traceback entry for every frame in its
+   __koskari_dynchain__ record that has none yet, innermost first.
+   Called with the fetched triple at an eval boundary, and at a
+   Koskari handler's entry so the handler's e.__traceback__ holds the
+   Koskari frames the raise crossed. Entries are marked traced in the
+   record, so a frame is never injected twice. Best-effort: a failure
+   leaves the triple as it was.
+*/
+void kos_eval_inject_recorded_frames(
+    PyObject **exc_type,
+    PyObject **exc_val,
+    PyObject **exc_tb);
+
+
+/**
    The pc that closes a region push's extent (the POP_* row), for the
    pushes whose target is not an instruction argument. Read from the
    site's cache slot once it is filled; the first execution resolves it

@@ -794,7 +794,14 @@ KosOpResult kos_dyn_unwind_raise(KosEvalState *es) {
              region nested in the finally body must not disturb. */
           KosExcState raised;
           KosExc_Init(&raised);
+          /* The handler reads e.__traceback__: give the exception a
+             traceback entry for every Koskari frame the raise crossed
+             and for this frame at the raising pc, as the boundary does
+             when an exception leaves to Python. */
+          kos_eval_note_crossed_frame(es);
           KosExc_TakeRaised(&raised);
+          kos_eval_inject_recorded_frames(&raised.type, &raised.value,
+                                          &raised.tb);
           if (KosDynNode_IS_TRY(region)) {
             KosExc_Fetch(KosDynTry_SAVED((KosDynTry *) region));
             KosDynTry_EXC_SAVED((KosDynTry *) region) = 1;

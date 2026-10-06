@@ -1,0 +1,42 @@
+;; Frames for tests.reproducers.test_python_traceback_frames: a
+;; two-deep failing call reached through a plain function, a demand
+;; function, and from inside Koskari handlers.
+
+import json
+import traceback
+
+define inner [x]:
+    define a 1
+    define b 2
+    define c (/ x 0)
+    return c
+
+define outer [z]:
+    define q 1
+    define w 2
+    define r (inner z)
+    return (+ r 1)
+
+define-demanding douter [z]:
+    define q 1
+    define r (inner z)
+    return (+ r 1)
+
+define handler_frames [thunk]:
+    try:
+        (thunk)
+    except [e Exception]:
+        #(e.__traceback__
+          (traceback.format_exc))
+
+define python_raise []:
+    define v (json.loads "{bad")
+    v
+
+define c_raise []:
+    define v (int "x")
+    v
+
+define koskari_raise []:
+    define v (ValueError "boom")
+    raise v
