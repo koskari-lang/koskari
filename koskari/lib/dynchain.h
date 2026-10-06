@@ -1802,6 +1802,13 @@ KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
    :return: KOS_HANDLE_PASS (unwind then pop), KOS_HANDLE_CONSUMED
      (deliver to node, stop walk), or KOS_HANDLE_ERROR (-1)
 */
+/**
+   Whether a live node is still in the phase its template clone recorded
+   at capture; the seam of an undelimited invoke stops below a node that
+   has moved on. Kinds without a phase match on identity.
+*/
+int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl);
+
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
                                KosXferEvent event);
 
@@ -2006,8 +2013,9 @@ void kos_continuation_free(KosContinuation *k);
    :return: 0 on success, -1 on error
 */
 /**
-   The lowest common ancestor of the live chain and a template segment
-   (matched by node id from the roots): *out_live on the chain,
+   The lowest common ancestor of the live chain and a template segment,
+   matched from the roots by node id and by phase (a live node that has
+   moved on since the capture ends the match): *out_live on the chain,
    *out_tmpl its counterpart; both NULL when the roots differ.
 */
 int kos_chain_common_ancestor(

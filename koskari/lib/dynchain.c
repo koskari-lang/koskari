@@ -1978,6 +1978,64 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
 
 
 /**
+   Whether a live node is still in the phase its template clone
+   recorded at capture. Identity says the two are one region; phase
+   says the region is still where the capture left it. A TRY running
+   its handler, a FINALLY handling a raise, a WIND inside a thunk, a
+   loop whose else clause has started, a for-each with a step in flight
+   (the iteration cap), or a WITH past its body is not the state the
+   continuation describes, so an invoke leaves it and lands the
+   template's copy instead. Kinds with no phase match on identity.
+   Callers: kos_chain_common_ancestor.
+*/
+int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
+
+  if (KosDynNode_CAPS(live) != KosDynNode_CAPS(tmpl))
+    return 0;
+
+  switch (KosDynNode_KIND(live)) {
+    case KOS_DYN_TRY:
+      return KosDynTry_ENABLED(live) == KosDynTry_ENABLED(tmpl)
+          && KosDynTry_EXC_SAVED(live) == KosDynTry_EXC_SAVED(tmpl);
+
+    case KOS_DYN_FINALLY:
+      return KosDynFinally_ENABLED(live) == KosDynFinally_ENABLED(tmpl)
+          && KosDynFinally_HANDLING_RAISE(live)
+             == KosDynFinally_HANDLING_RAISE(tmpl)
+          && KosDynFinally_HANDLING_CONTROL(live)
+             == KosDynFinally_HANDLING_CONTROL(tmpl)
+          && KosDynFinally_EXC_SAVED(live) == KosDynFinally_EXC_SAVED(tmpl);
+
+    case KOS_DYN_LOOP:
+      return KosDynLoop_ENABLED(live) == KosDynLoop_ENABLED(tmpl);
+
+    case KOS_DYN_FOREACH:
+      return KosDynForeach_ENABLED(live) == KosDynForeach_ENABLED(tmpl)
+          && KosDynForeach_EXHAUSTED(live) == KosDynForeach_EXHAUSTED(tmpl);
+
+    case KOS_DYN_WIND:
+      /* a template WIND is always idle (its clone resets the phase, to
+         be entered by the landing's replay); the live one matches only
+         while its body runs */
+      return KosDynWind_ENTERED(live)
+          && KosDynWind_PHASE(live) == KOS_WIND_PHASE_POST_BEGIN;
+
+    case KOS_DYN_WITH:
+      /* likewise always idle as a template; the live one matches while
+         its body runs: entered, no enter or exit in flight or awaited,
+         and a single-shot exit not yet run */
+      return KosDynWith_ENTERED(live)
+          && KosDynWith_PHASE(live) == KOS_WITH_PHASE_IDLE
+          && KosDynWith_OB(live)->kind == KOS_OB_NONE
+          && ! kos_dyn_with_single_exit_done((KosDynWith *) live);
+
+    default:
+      return 1;
+  }
+}
+
+
+/**
    Offer a control transit to dyn_top without unlinking: PASS, CONSUMED,
    DEFERRED, or ERROR. Central dispatch for exception/return/yield/shift
    semantics (TRY/FINALLY except/finally PCs, GEN node, PROMPT shift).

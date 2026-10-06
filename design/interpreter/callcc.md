@@ -254,11 +254,19 @@ struct KosXferGoal {
 5. `POP_PROMPT` in the slice returns through the DELIM to the invoke site.
 
 **Undelimited landing** (call/cc):
-1. LEAVING: unlink from dyn_top down to the seam (the lowest common
-   ancestor) through `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER`:
-   `after` thunks and `__exit__`s above the seam run, innermost first;
-   obligations the nodes held are dropped. Nothing at or below the seam
-   leaves.
+1. LEAVING: unlink from dyn_top down to the seam through
+   `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER`: `after` thunks
+   and `__exit__`s above the seam run, innermost first; obligations the
+   nodes held are dropped. Nothing at or below the seam leaves. The seam
+   is the lowest common ancestor of the live chain and the template,
+   matched from the roots by node id and by phase
+   (`kos_dyn_node_same_phase`): a live node that has moved on since the
+   capture -- a TRY running its handler, a FINALLY handling a raise, a
+   WIND or WITH outside its body, a loop in its else clause, a for-each
+   with a step in flight -- is not the state the continuation describes,
+   so the match stops below it, the transfer leaves it, and the
+   template's copy of it lands fresh with the enter replay that implies
+   (a `before` thunk runs again on re-entry, as dynamic-wind requires).
 2. LANDING: restore the captured operand stacks of the shared nodes from the
    seam down to its frame (and that frame's registers), then splice the
    clone onto the seam. When the seam is NULL (the chains share no node)

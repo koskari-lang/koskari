@@ -312,8 +312,10 @@ int kos_invoke_continuation(
       (KosContinuation_PROMPT_ID(k) != KOS_PROMPT_ID_UNDELIMITED);
 
   /* Undelimited: the seam is the lowest common ancestor of the live
-     chain and the template, so nothing at or below it leaves or
-     re-enters, and only the template above its counterpart lands. */
+     chain and the template, matched by node id and by phase, so
+     nothing at or below it leaves or re-enters, and only the template
+     above its counterpart lands; a live node that has moved on since
+     the capture sits above the seam and is left and re-entered. */
   KosDynNode *seam = NULL;
   KosDynNode *tmpl_stop = NULL;
   if (! is_delimited
@@ -447,7 +449,8 @@ int kos_chain_common_ancestor(
     tmpl_arr[--i] = node;
 
   for (i = 0; i < n_live && i < n_tmpl; i++) {
-    if (kos_dynnode_id(live_arr[i]) != kos_dynnode_id(tmpl_arr[i]))
+    if (kos_dynnode_id(live_arr[i]) != kos_dynnode_id(tmpl_arr[i])
+        || ! kos_dyn_node_same_phase(live_arr[i], tmpl_arr[i]))
       break;
     *out_live = live_arr[i];
     *out_tmpl = tmpl_arr[i];
