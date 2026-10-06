@@ -2227,6 +2227,17 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.break_pc)
 #define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.continue_pc)
 #define KosDynForeach_ENABLED(r)     (((KosDynNode *)(r))->u.foreach.enabled)
+
+/* Whether node is a LOOP or FOREACH region that is still running its
+   body: a region whose else clause has started is disabled and no
+   longer answers a break or continue. */
+static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
+  if (KosDynNode_IS_LOOP(node))
+    return KosDynLoop_ENABLED(node);
+  if (KosDynNode_IS_FOREACH(node))
+    return KosDynForeach_ENABLED(node);
+  return 0;
+}
 #define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.result)
 #define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
 #define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)

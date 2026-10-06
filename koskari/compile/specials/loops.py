@@ -63,10 +63,12 @@ def special_while(compiler, _while, test, body):
 
     fragment.instruction(OpCode.LABEL, loop_exit)
 
+    # the else body runs with the region disabled, so a break or
+    # continue written in it belongs to the enclosing loop; its value is
+    # left on the region's stack for POP_LOOP to deliver
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_LOOP, 0)
         helper_begin(fragment, elsebody)
-        fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_LOOP, 0)
 
@@ -137,7 +139,6 @@ def special_for_each(compiler, caps):
     if has_elsebody:
         fragment.instruction(OpCode.CLEAR_FOREACH, 0)
         helper_begin(fragment, elsebody)
-        fragment.instruction(OpCode.BREAK, 1)
 
     fragment.instruction(OpCode.POP_FOREACH, 0)
 

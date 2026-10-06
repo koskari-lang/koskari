@@ -294,7 +294,6 @@ class TestKoskariIterKoskariGenerator(CevalTest):
             ["VAR_STORE", "total"],
             ["CONTINUE", 0],
             ["LABEL", "else_lbl"],
-            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
             ["POP_FOREACH", 0],
             ["POP", 1],

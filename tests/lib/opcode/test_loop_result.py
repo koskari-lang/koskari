@@ -162,7 +162,27 @@ class TestLoopResultOpcodes(CevalTest):
 
     async def test_pop_foreach_returns_none_when_no_break(self):
         """
-        POP_FOREACH pushes None when no BREAK/CONTINUE set a result
+        POP_FOREACH pushes None when no CONTINUE set a result
+        """
+
+        code, ns = build_expr([
+            ["CONST", []],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["POP_FOREACH", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsNone(result)
+
+
+    async def test_pop_foreach_after_clear_takes_the_else_value(self):
+        """
+        A region CLEAR_FOREACH disabled ran its else clause; POP_FOREACH
+        delivers the value the clause left on the region's stack
         """
 
         code, ns = build_expr([
@@ -173,12 +193,33 @@ class TestLoopResultOpcodes(CevalTest):
             ["RETURN", 1],
             ["LABEL", "else_lbl"],
             ["CLEAR_FOREACH", 0],
-            ["LABEL", "break_lbl"],
+            ["CONST", "else"],
             ["POP_FOREACH", 0],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
-        self.assertIsNone(result)
+        self.assertEqual(result, "else")
+
+
+    async def test_pop_foreach_after_clear_with_no_value_underruns(self):
+        """
+        A disabled region with nothing on its stack is a pop underrun,
+        as it is for BREAK and CONTINUE
+        """
+
+        code, ns = build_expr([
+            ["CONST", []],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT", "else_lbl"],
+            ["CONST", -1],
+            ["RETURN", 1],
+            ["LABEL", "else_lbl"],
+            ["CLEAR_FOREACH", 0],
+            ["POP_FOREACH", 0],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(RuntimeError):
+            await make_callable(code, ns)()
 
 
     async def test_foreach_break_with_value(self):

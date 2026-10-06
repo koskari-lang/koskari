@@ -1,6 +1,6 @@
 # KOS_OP_POP_LOOP
 - **Style**: NOARG.
-- **Stack**: Drop the region's segment (no promotion); pop LOOP region; push loop result from the region (stored on the region, not from the block).
+- **Stack**: Pop LOOP region and drop its segment; push the loop result. An enabled region delivers the result stored on the region; a region CLEAR_LOOP disabled ran its else clause, and the clause's value, the top of the region's stack, is the result.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP (paired with PUSH_LOOP).
 - **Implementation**: `koskari/lib/opcode/POP_LOOP.c`
 

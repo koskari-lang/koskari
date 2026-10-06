@@ -20,13 +20,13 @@ else label on exhaustion. The value is stored with VAR_STORE into the binding
 name. The body is compiled with `helper_begin`; CONTINUE 0 resets the stack
 block and jumps back to ITER_NEXT.
 
-On exhaustion, CLEAR_FOREACH marks natural exit. When an else body is present, its
-result is compiled and then BREAK 1 is emitted: this pops the FOREACH region,
-pushes the else result directly to the parent stack, and jumps to after_pop --
-so the else value arrives without a temporary variable. When there is
-no else body, POP_FOREACH falls through to after_pop and pushes the region's None.
-User `compile/break` also jumps to after_pop with its value already on the
-parent stack.
+On exhaustion, CLEAR_FOREACH marks natural exit and disables the region.
+When an else body is present, it is compiled next and POP_FOREACH delivers
+its value from the region's stack; a `compile/break` or `compile/continue`
+written in the else body belongs to the enclosing loop, since this one has
+finished. When there is no else body, POP_FOREACH pushes the region's result
+(None unless a `compile/continue` set one). User `compile/break` from the
+body jumps to after_pop with its value already on the parent stack.
 
 **Examples:**
 

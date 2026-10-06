@@ -14,8 +14,10 @@
 */
 
 /**
-   POP_LOOP: arg unused. Pop LOOP region, drop its segment, push
-   KosDynLoop_RESULT to the operand stack as the loop expression result.
+   POP_LOOP: arg unused. Pop LOOP region, drop its segment, push the loop
+   expression result to the operand stack. An enabled region delivers
+   KosDynLoop_RESULT; a region CLEAR_LOOP disabled ran its else clause,
+   whose value is the top of the region's stack.
 */
 
 KOS_OP_HANDLER(POP_LOOP) {
@@ -27,8 +29,17 @@ KOS_OP_HANDLER(POP_LOOP) {
   }
 
   KosDynLoop *loop = (KosDynLoop *) region;
-  PyObject *result = KosDynLoop_RESULT(loop);
-  Py_INCREF(result);
+  PyObject *result;
+  if (KosDynLoop_ENABLED(loop)) {
+    result = KosDynLoop_RESULT(loop);
+    Py_INCREF(result);
+  } else {
+    result = KosEvalState_StackPopRef(es);
+    if (unlikely(! result)) {
+      PyErr_SetString(PyExc_RuntimeError, "POP_LOOP pop underrun");
+      RESULT_RAISE();
+    }
+  }
 
   if (unlikely(kos_dyn_pop_loop(es, loop) < 0)) {
     Py_DECREF(result);

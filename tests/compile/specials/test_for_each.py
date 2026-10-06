@@ -176,3 +176,82 @@ class TestForEachSpecial(SpecialsTestCase):
 
 
 # The end.
+
+
+class TestLoopElseTransfers(SpecialsTestCase):
+    """
+    A break or continue inside a loop's else clause belongs to the
+    enclosing loop: the loop whose else is running has finished
+    """
+
+    async def test_break_in_foreach_else_exits_the_outer_loop(self):
+        col = []
+        src = """
+        (for-each [i outer]
+          (for-each [j inner]
+            None
+            [else: (break)])
+          (call append col i))
+        """
+        expr, mod = self.compile_expr(
+            src, outer=range(3), inner=range(2), col=col, append=_append)
+        await expr()
+        self.assertEqual(col, [])
+
+
+    async def test_continue_in_foreach_else_continues_the_outer_loop(self):
+        col = []
+        src = """
+        (for-each [i outer]
+          (for-each [j inner]
+            None
+            [else: (continue)])
+          (call append col i))
+        """
+        expr, mod = self.compile_expr(
+            src, outer=range(3), inner=range(2), col=col, append=_append)
+        await expr()
+        self.assertEqual(col, [])
+
+
+    async def test_break_in_while_else_exits_the_outer_loop(self):
+        col = []
+        src = """
+        (for-each [i outer]
+          (while (call lt i 0)
+            None
+            [else: (break)])
+          (call append col i))
+        """
+        expr, mod = self.compile_expr(
+            src, outer=range(3), col=col, append=_append,
+            lt=lambda a, b: a < b)
+        await expr()
+        self.assertEqual(col, [])
+
+
+    async def test_continue_in_while_else_continues_the_outer_loop(self):
+        col = []
+        src = """
+        (for-each [i outer]
+          (while (call lt i 0)
+            None
+            [else: (continue)])
+          (call append col i))
+        """
+        expr, mod = self.compile_expr(
+            src, outer=range(3), col=col, append=_append,
+            lt=lambda a, b: a < b)
+        await expr()
+        self.assertEqual(col, [])
+
+
+    async def test_break_in_else_with_no_outer_loop_raises(self):
+        src = """
+        (for-each [i inner]
+          None
+          [else: (break)])
+        """
+        expr, mod = self.compile_expr(src, inner=range(2))
+        with self.assertRaises(RuntimeError):
+            await expr()

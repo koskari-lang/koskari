@@ -15,8 +15,10 @@
 
 /**
    POP_FOREACH: arg unused. Pop FOREACH region, drop its segment, push
-   KosDynForeach_RESULT to the operand stack as the loop expression result.
-   When region result is NULL, push None.
+   the loop expression result to the operand stack. An enabled region
+   delivers KosDynForeach_RESULT, or None when that is unset; a region
+   CLEAR_FOREACH disabled ran its else clause, whose value is the top of
+   the region's stack.
 */
 
 KOS_OP_HANDLER(POP_FOREACH) {
@@ -28,10 +30,19 @@ KOS_OP_HANDLER(POP_FOREACH) {
   }
 
   KosDynForeach *fe = (KosDynForeach *) region;
-  PyObject *result = KosDynForeach_RESULT(fe);
-  if (! result)
-    result = Py_None;
-  Py_INCREF(result);
+  PyObject *result;
+  if (KosDynForeach_ENABLED(fe)) {
+    result = KosDynForeach_RESULT(fe);
+    if (! result)
+      result = Py_None;
+    Py_INCREF(result);
+  } else {
+    result = KosEvalState_StackPopRef(es);
+    if (unlikely(! result)) {
+      PyErr_SetString(PyExc_RuntimeError, "POP_FOREACH pop underrun");
+      RESULT_RAISE();
+    }
+  }
 
   if (unlikely(kos_dyn_pop_foreach(es, fe) < 0)) {
     Py_DECREF(result);

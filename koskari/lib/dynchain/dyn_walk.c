@@ -329,14 +329,17 @@ KosOpResult kos_dyn_unwind_return(
 
 
 /**
-   Find the nearest LOOP or FOREACH from dyn_top. Read-only; never sets
-   PyErr. Callers: opcode/ITER_NEXT.c and kos_dyn_unwind_to_loop serving
+   Find the nearest enabled LOOP or FOREACH from dyn_top. A loop whose
+   else clause is running has been disabled by CLEAR_LOOP or
+   CLEAR_FOREACH and is finished: a break or continue issued there
+   belongs to the loop enclosing it. Read-only; never sets PyErr.
+   Callers: opcode/ITER_NEXT.c and kos_dyn_unwind_to_loop serving
    BREAK/CONTINUE.
 */
 KosDynNode *kos_dyn_find_loop(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
   while (node) {
-    if (KosDynNode_IS_LOOP(node) || KosDynNode_IS_FOREACH(node))
+    if (kos_dyn_loop_is_enabled(node))
       return node;
     node = KosDynNode_PARENT(node);
   }

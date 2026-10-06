@@ -245,7 +245,6 @@ class TestNextOpcodes(CevalTest):
             ["VAR_STORE", "count"],
             ["JUMP", "loop_head"],
             ["LABEL", "else_lbl"],
-            ["CLEAR_FOREACH", 0],
             ["LABEL", "break_lbl"],
             ["POP_FOREACH", 0],
             ["POP", 1],
