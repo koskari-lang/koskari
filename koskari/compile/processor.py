@@ -1625,7 +1625,13 @@ class ByteCodeProcessor:
         # combine runs of consecutive bare CONST, VAR, FAST
         self.pack_runs()
 
-        return self.instructions
+        # a fusion that ended the stream re-emitted the POSITION it
+        # stepped over for instructions that never came
+        rows = self.instructions
+        while rows and rows[-1][0] is OpCode.POSITION:
+            rows.pop()
+
+        return rows
 
 
 # The end.

@@ -1624,6 +1624,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
   }
   coll->code_len = di + 1;
 
+  /* A POSITION after the last instruction names nothing: its entry
+     would sit at the THEEND slot, which code_emit never visits, and
+     the zero-filled slot it left in the table would break the binary
+     search for the final run. */
+  if (coll->pos_count > 0
+      && coll->pos_entries[coll->pos_count - 1].index == (uint16_t) di) {
+    coll->pos_count--;
+  }
+
   /* Pass 2: Intern constants (identity-based dedup) and build extra rows.
      Walk input again; for each surviving instruction, process CONST/VAR/EXTRA
      into cpool_list and extra_rows. LABEL-style opcodes store pc->name in
