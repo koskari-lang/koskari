@@ -7,11 +7,16 @@
 | `(decorate [] FN)` | `FN` |
 | `(decorate [D ...] (define NAME FORMALS BODY ...))` | `(define NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (define-class NAME SUPERS BODY ...))` | `(define NAME (decorate [D ...] (class NAME SUPERS (begin BODY ...))))` |
+| `(decorate [D ...] (define-global NAME FORMALS BODY ...))` | `(define-global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
+| `(decorate [D ...] (define-demanding NAME FORMALS BODY ...))` | `(define NAME (decorate [D ...] (demand (function NAME FORMALS BODY ...))))` |
+| `(decorate [D ...] (define-coroutine NAME FORMALS BODY ...))` | `(define NAME (decorate [D ...] (coroutine-fn (function NAME FORMALS BODY ...))))` |
+| `(decorate [D ...] (define-dataclass NAME SUPERS MEMBERS ...))` | `(define NAME (decorate [D ...] (dataclass (class NAME SUPERS ...))))` followed by the `NAME?` predicate |
 | `(decorate [D REST ...] FN)` | `(decorate-subject D (decorate [REST ...] FN))` |
 
 **Behaviour:** What `@` lines read to, and usable directly. The name of
-a `define` or `define-class` subject is hoisted out so the decorated
-value is what gets bound; then the decorator list folds through
+a `define`, `define-class`, `define-global`, `define-demanding`,
+`define-coroutine` or `define-dataclass` subject is hoisted out so the
+decorated value is what gets bound; then the decorator list folds through
 [`decorate-subject`](compile-decorate-subject.md) one decorator per
 step, outermost first, so `@d1` over `@d2` over a definition applies as
 `(d1 (d2 ...))`, as in Python.

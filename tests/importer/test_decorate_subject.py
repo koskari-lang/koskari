@@ -149,6 +149,70 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(7, await expr())
 
 
+    async def test_define_demanding_binds_decorated_value(self):
+        """
+        A decorated define-demanding binds the decorator's result,
+        applied to the demand wrapper, under its name
+        """
+
+        src = """
+        (begin
+          (define seen #[])
+          (define tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
+          (decorate [tag] (define-demanding cached [n] n))
+          (#list seen cached))
+        """
+        expr, _mod = self.compile_expr(src)
+        seen, cached = await expr()
+        self.assertEqual(["demand"], seen)
+        self.assertEqual("DECORATED", cached)
+
+
+    async def test_define_coroutine_binds_decorated_value(self):
+        src = """
+        (begin
+          (define seen #[])
+          (define tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
+          (decorate [tag] (define-coroutine co [n] n))
+          (#list seen co))
+        """
+        expr, _mod = self.compile_expr(src)
+        seen, co = await expr()
+        self.assertEqual(["function"], seen)
+        self.assertEqual("DECORATED", co)
+
+
+    async def test_define_dataclass_binds_decorated_value(self):
+        src = """
+        (begin
+          (define seen #[])
+          (define tag (lambda [x] (begin (seen.append (type x).__name__) x)))
+          (decorate [tag] (define-dataclass DC [] (define x :: int 0)))
+          (#list seen DC (DC? (DC)) (DC? 1)))
+        """
+        expr, _mod = self.compile_expr(src)
+        seen, dc, is_dc, is_int = await expr()
+        self.assertEqual(["type"], seen)
+        self.assertEqual("DC", dc.__name__)
+        self.assertEqual(0, dc().x)
+        self.assertTrue(is_dc)
+        self.assertFalse(is_int)
+
+
+    async def test_define_global_binds_decorated_value(self):
+        src = """
+        (begin
+          (define seen #[])
+          (define tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
+          (decorate [tag] (define-global gl [n] n))
+          (#list seen gl))
+        """
+        expr, _mod = self.compile_expr(src)
+        seen, gl = await expr()
+        self.assertEqual(["function"], seen)
+        self.assertEqual("DECORATED", gl)
+
+
     async def test_let_arm_closes_over_definition(self):
         """
         A body-less let grafts around the function, giving a private

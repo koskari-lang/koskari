@@ -81,9 +81,10 @@ s-expression spelling works with the pragma off.
 [`compile/decorate`](../reference/macros/compile-decorate.md) does two
 jobs.
 
-Name hoisting: when the subject is a `define` or `define-class`, the
-name moves outside the decoration so the decorated value is what gets
-bound:
+Name hoisting: when the subject is a `define`, `define-class`,
+`define-global`, `define-demanding`, `define-coroutine` or
+`define-dataclass`, the name moves outside the decoration so the
+decorated value is what gets bound:
 
 ```koskari
 (decorate [d1] (define foo [x] x))

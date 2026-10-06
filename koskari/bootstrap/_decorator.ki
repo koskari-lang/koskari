@@ -84,7 +84,8 @@ define-syntax decorate:
   `decorate-subject`, outermost decorator first.
   """
 
-  syntax-rules [define-class define]:
+  syntax-rules [define-class define define-global define-demanding
+                define-coroutine define-dataclass]:
     case (decorate [] fn):
       fn
 
@@ -93,6 +94,28 @@ define-syntax decorate:
 
     case (decorate [decorators ...] (define name formals body ...)):
       define name (decorate [decorators ...] (function name formals body ...))
+
+    ;; each define-* form binds its name to a value built from the
+    ;; function or class it declares; the decorators wrap that value
+    case (decorate [decorators ...] (define-global name formals body ...)):
+      define-global name (decorate [decorators ...] (function name formals body ...))
+
+    case (decorate [decorators ...] (define-demanding name formals body ...)):
+      define name (decorate [decorators ...] (demand (function name formals body ...)))
+
+    case (decorate [decorators ...] (define-coroutine name formals body ...)):
+      define name (decorate [decorators ...] (coroutine-fn (function name formals body ...)))
+
+    case (decorate [decorators ...] (define-dataclass name supers members ...)):
+      begin:
+        define name:
+          decorate [decorators ...]:
+            let []:
+              import-from dataclasses dataclass
+              @dataclass
+              class name supers:
+                (begin members ...)
+        create-instance-check name
 
     case (decorate [d rest ...] fn):
       decorate-subject d (decorate [rest ...] fn)
