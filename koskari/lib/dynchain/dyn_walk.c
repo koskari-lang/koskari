@@ -332,15 +332,23 @@ KosOpResult kos_dyn_unwind_return(
    Find the nearest enabled LOOP or FOREACH from dyn_top. A loop whose
    else clause is running has been disabled by CLEAR_LOOP or
    CLEAR_FOREACH and is finished: a break or continue issued there
-   belongs to the loop enclosing it. Read-only; never sets PyErr.
-   Callers: opcode/ITER_NEXT.c and kos_dyn_unwind_to_loop serving
-   BREAK/CONTINUE.
+   belongs to the loop enclosing it. A live delimited-invoke bookmark
+   ends the search: the resumed slice above it is the continuation's
+   body, and a loop below it (the one around the reset, or one in the
+   shift handler) is outside that body, as a return or a raise in the
+   slice is delivered to the (k ...) call site and not past it.
+   Read-only; never sets PyErr. Callers: opcode/ITER_NEXT.c and
+   kos_dyn_unwind_to_loop serving BREAK/CONTINUE.
 */
 KosDynNode *kos_dyn_find_loop(KosEvalState *es) {
   KosDynNode *node = KosEvalState_DYN_TOP(es);
   while (node) {
     if (kos_dyn_loop_is_enabled(node))
       return node;
+    if (KosDynNode_IS_DELIM(node)
+        && KosDynDelim_RETURN_FRAME((KosDynDelim *) node) != NULL
+        && KosDynDelim_RETURN_PC((KosDynDelim *) node) != (uint32_t) -1)
+      return NULL;
     node = KosDynNode_PARENT(node);
   }
   return NULL;
@@ -416,7 +424,10 @@ KosOpResult kos_dyn_unwind_to_loop(
       }
     }
 
-    r = kos_dyn_unlink_top(es, event, 0);
+    /* The loop lies under the current frame, so every node between
+       is the frame's own: a reset's PROMPT and a SHIFT leave like any
+       other node, as they do for the return walk. */
+    r = kos_dyn_unlink_top(es, event, 1);
 
     if (r.kind == KOS_RES_NORMAL)
       continue;

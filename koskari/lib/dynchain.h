@@ -1642,7 +1642,8 @@ typedef enum KosPendingReturnKind {
    answer but EVAL_NORMAL.
 
    kos_dyn_unwind_to_loop serves BREAK and CONTINUE: it finds the
-   innermost loop region in the current frame, pops to it, and on
+   innermost loop region in the current frame, pops to it crossing any
+   PROMPT or SHIFT between (the region is the frame's own), and on
    EVAL_NORMAL has set the pc and either stored result on the region
    (CONTINUE) or popped the region and pushed result (BREAK). result is
    consumed on every answer.
@@ -1883,14 +1884,17 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
-   Find the innermost LOOP or FOREACH region on the dynamic chain, walking
-   from dyn_top toward root.  Read-only; never sets PyErr.
+   Find the innermost enabled LOOP or FOREACH region on the dynamic
+   chain, walking from dyn_top toward root. A live delimited-invoke
+   bookmark ends the walk: the resumed slice above it has no loop of
+   its own. Read-only; never sets PyErr.
 
    Callers: opcode/ITER_NEXT.c, kos_dyn_unwind_to_loop.
 
    :param es: eval state
 
-   :return: the topmost LOOP or FOREACH region, or NULL if none found
+   :return: the topmost enabled LOOP or FOREACH region, or NULL if the
+     walk reaches the root or a live bookmark first
  */
 KosDynNode *kos_dyn_find_loop(KosEvalState *es);
 

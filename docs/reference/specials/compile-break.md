@@ -14,6 +14,11 @@ bare symbol always expands, `break` can never name a variable.
 
 **Behaviour:** Compiles optional VAL (or pushes None), emits BREAK with count
 0 or 1. Runtime unwinds to the loop's break target and pushes the result.
+The target is the innermost loop of the same function, through any
+[`reset`](compile-reset.md) or `shift` handler between the `break` and the
+loop. Inside a resumed delimited continuation the slice is the
+continuation's body: a `break` there reaches only a loop opened inside the
+slice, and with none it raises `RuntimeError("break outside loop")`.
 
 **Examples:**
 
