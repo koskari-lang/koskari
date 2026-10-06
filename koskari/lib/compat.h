@@ -85,12 +85,12 @@ static inline void kos_immortalize(PyObject *obj) {
    above replicate the layout that reaches it, in one of two shapes:
 
    - KOS_BREAKER_WORD(tstate), 3.13 and later: a bit set on the thread
-     state. The two bits acted on are KOS_BREAKER_GIL_DROP and
-     KOS_BREAKER_SIGNALS; the rest (pending calls, async exception, GC
-     scheduled, stop requests) only Python's loop can service and are
-     masked out.
+     state, with the bits named KOS_BREAKER_GIL_DROP,
+     KOS_BREAKER_SIGNALS and KOS_BREAKER_GC_SCHEDULED. Which of them
+     the evaluator services, and how, is the evaluator's decision
+     (KOS_BREAKER_MASK and kos_eval_poll_now in eval.h / eval.c).
    - KOS_CEVAL_STATE(interp), before 3.13: the interpreter's ceval
-     state, whose eval_breaker is one aggregate int tested whole, with
+     state, whose eval_breaker is one aggregate int, with
      gil_drop_request beside it.
 
    A version defining neither gets a word that always reads up, so
@@ -100,8 +100,6 @@ static inline void kos_immortalize(PyObject *obj) {
 #if defined(KOS_BREAKER_WORD)
 
 typedef uintptr_t KosBreakerWord;
-# define KOS_BREAKER_MASK \
-  ((KosBreakerWord) (KOS_BREAKER_GIL_DROP | KOS_BREAKER_SIGNALS))
 
 /* The address of this thread's eval breaker; NULL without a thread state */
 static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
@@ -123,7 +121,6 @@ static inline int koskari_gil_drop_requested(void) {
 #elif defined(KOS_CEVAL_STATE)
 
 typedef int KosBreakerWord;
-# define KOS_BREAKER_MASK ((KosBreakerWord) ~0)
 
 /* The address of the interpreter's eval breaker; NULL without a thread */
 static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
@@ -145,7 +142,6 @@ static inline int koskari_gil_drop_requested(void) {
 #else
 
 typedef int KosBreakerWord;
-# define KOS_BREAKER_MASK ((KosBreakerWord) ~0)
 # define KOS_BREAKER_UNMAPPED 1
 
 #endif

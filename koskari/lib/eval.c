@@ -1849,21 +1849,37 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
 }
 
 
-/* The poll itself. Another thread waiting on the GIL has already
-   outlasted the interpreter's switch interval, so yield it now, as
-   Python's own loop would; then take any pending signal.
+/* The poll itself: what Python's own loop does at a cooperation point,
+   in the order it does it. Another thread waiting on the GIL has
+   already outlasted the interpreter's switch interval, so yield it
+   now; then take any pending signal and pending call.
    Py_MakePendingCalls is the public entry that runs the interpreter's
    own signal handling, which is what clears the breaker's signal
    input: PyErr_CheckSignals alone would leave it up and every later
    cooperation point polling. A signal it raises is left set for the
    prologue's pending-exception step, which drops any staged delivery
-   before the raise walk. */
+   before the raise walk.
+
+   The cyclic collector differs by version. Through 3.11 the allocator
+   runs a scheduled collection itself. From 3.12 the interpreter only
+   schedules it, on the breaker, and runs it from its own loop or from
+   PyErr_CheckSignals, whose first act is to run a scheduled collection
+   on this thread (and, on 3.12, to recompute the aggregate word, which
+   otherwise stays up and keeps every cooperation point polling). The
+   signals were taken just above, so that call finds none; it is
+   skipped when a handler already raised, so nothing runs on top of
+   the pending exception. */
 static void kos_eval_poll_now(void) {
   if (koskari_gil_drop_requested()) {
     Py_BEGIN_ALLOW_THREADS
     Py_END_ALLOW_THREADS
   }
   Py_MakePendingCalls();
+
+#if PY_MINOR_VERSION >= 12
+  if (! PyErr_Occurred())
+    PyErr_CheckSignals();
+#endif
 }
 
 

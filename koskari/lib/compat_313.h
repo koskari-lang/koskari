@@ -142,6 +142,7 @@ typedef struct {
   (((KosThreadState313 *) (tstate))->eval_breaker)
 #define KOS_BREAKER_GIL_DROP (1U << 0)  /* _PY_GIL_DROP_REQUEST_BIT */
 #define KOS_BREAKER_SIGNALS  (1U << 1)  /* _PY_SIGNALS_PENDING_BIT */
+#define KOS_BREAKER_GC_SCHEDULED (1U << 4)  /* _PY_GC_SCHEDULED_BIT */
 
 
 /* === GC tracked test === */

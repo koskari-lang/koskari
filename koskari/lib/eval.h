@@ -857,9 +857,25 @@ struct KosEvalState {
 
 #define KosEvalState_BREAKER(es) ((es)->breaker)
 
+/* The breaker bits the evaluator services. From 3.13 the word is per
+   thread and the bits are named: another thread wants the GIL, a
+   signal is pending, or the interpreter has scheduled a collection,
+   which from 3.12 runs only from its own loop or from
+   PyErr_CheckSignals, so a Koskari stretch has to answer it. The other
+   bits (pending calls, async exception, stop requests) are Python's
+   loop's. Before 3.13 the word is one aggregate the interpreter
+   recomputes, tested whole. */
+#if defined(KOS_BREAKER_WORD)
+# define KOS_BREAKER_MASK                                               \
+  ((KosBreakerWord) (KOS_BREAKER_GIL_DROP | KOS_BREAKER_SIGNALS          \
+                     | KOS_BREAKER_GC_SCHEDULED))
+#else
+# define KOS_BREAKER_MASK ((KosBreakerWord) ~0)
+#endif
+
 /* The eval breaker test at a cooperation point: one load, one branch.
-   Up means another thread wants the GIL or a signal is pending, and the
-   trampoline's poll section answers both before threading resumes. */
+   Up means a bit of KOS_BREAKER_MASK is set, and the trampoline's poll
+   section (kos_eval_poll) answers it before threading resumes. */
 #define KOS_EVAL_BREAKER_UP(es)                                         \
   unlikely((*KosEvalState_BREAKER(es) & KOS_BREAKER_MASK) != 0)
 
