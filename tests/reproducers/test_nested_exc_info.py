@@ -111,6 +111,33 @@ class TestNestedExcInfo(SpecialsTestCase):
         self.assertEqual("outer", await self._run(src))
 
 
+    async def test_bare_raise_caught_in_handler_then_raised_again(self):
+        """
+        A bare raise does not clear the handled exception: the nested
+        try that catches the re-raise saves and restores the handler's
+        state, so the handler still sees it and can raise it again
+        """
+
+        src = """
+        (begin
+          (define seen (list))
+          (try
+            (try
+              (throw (ValueError "outer"))
+              ([e ValueError]
+                (try
+                  (raise)
+                  ([e2 ValueError] (seen.append (handled))))
+                (seen.append (handled))
+                (raise)))
+            ([e ValueError] (seen.append (str e)))
+            ([e RuntimeError] (seen.append "reraise lost")))
+          seen)
+        """
+        self.assertEqual(["ValueError", "ValueError", "outer"],
+                         await self._run(src, list=list))
+
+
     async def test_handled_exception_after_nested_try_in_handler(self):
         src = """
         (begin

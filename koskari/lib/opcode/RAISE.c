@@ -32,8 +32,9 @@ KOS_OP_HANDLER(RAISE) {
       RESULT_RAISE();
     }
 
+    /* The handled state stays as it is: it belongs to the region that
+       caught the exception, which gives it back when it leaves. */
     PyErr_Restore(typ, val, tb);
-    PyErr_SetExcInfo(NULL, NULL, NULL);
 
   } else if (n == 1) {
     PyObject *exc = KosEvalState_StackPopRef(es);
