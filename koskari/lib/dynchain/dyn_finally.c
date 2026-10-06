@@ -41,6 +41,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynFinally_HANDLING_RAISE(node) = 0;
   KosDynFinally_HANDLING_CONTROL(node) = 0;
   KosDynFinally_EXC_SAVED(node) = 0;
+  KosDynFinally_EXC_FROZEN(node) = 0;
   KosExc_Init(KosDynFinally_SAVED(node));
   KosExc_Init(KosDynFinally_HANDLING(node));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
@@ -60,6 +61,7 @@ KosDynFinally *kos_dynfinally_clone(KosDynFinally *node) {
   KosDynFinally_HANDLING_RAISE(clone) = KosDynFinally_HANDLING_RAISE(node);
   KosDynFinally_HANDLING_CONTROL(clone) = KosDynFinally_HANDLING_CONTROL(node);
   KosDynFinally_EXC_SAVED(clone) = KosDynFinally_EXC_SAVED(node);
+  KosDynFinally_EXC_FROZEN(clone) = KosDynFinally_EXC_FROZEN(node);
   KosExc_Init(KosDynFinally_SAVED(clone));
   KosExc_Copy(KosDynFinally_SAVED(clone), KosDynFinally_SAVED(node));
   KosExc_Init(KosDynFinally_HANDLING(clone));

@@ -472,6 +472,8 @@ struct KosDynNode {
       uint32_t handler_pc;
       uint8_t enabled;
       uint8_t exc_saved;      /* consumed a raise: saved is what it displaced */
+      uint8_t exc_frozen;     /* in a frozen span: saved is the region's own
+                                 handled exception, taken off the thread */
       KosExcState saved;      /* handler-visible state before this region */
     } try_;
     struct {
@@ -480,6 +482,7 @@ struct KosDynNode {
       uint8_t handling_raise;
       uint8_t handling_control;  /* KosPendingReturnKind stored here */
       uint8_t exc_saved;      /* as for try_ */
+      uint8_t exc_frozen;     /* as for try_ */
       KosExcState saved;      /* handler-visible state before this region */
       KosExcState handling;   /* the raise being propagated through the body */
     } finally_;
@@ -2241,12 +2244,14 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynTry_HANDLER_PC(r)      (((KosDynNode *)(r))->u.try_.handler_pc)
 #define KosDynTry_ENABLED(r)         (((KosDynNode *)(r))->u.try_.enabled)
 #define KosDynTry_EXC_SAVED(r)       (((KosDynNode *)(r))->u.try_.exc_saved)
+#define KosDynTry_EXC_FROZEN(r)      (((KosDynNode *)(r))->u.try_.exc_frozen)
 #define KosDynTry_SAVED(r)           (&((KosDynNode *)(r))->u.try_.saved)
 #define KosDynFinally_HANDLER_PC(r)  (((KosDynNode *)(r))->u.finally_.handler_pc)
 #define KosDynFinally_ENABLED(r)     (((KosDynNode *)(r))->u.finally_.enabled)
 #define KosDynFinally_HANDLING_RAISE(r) (((KosDynNode *)(r))->u.finally_.handling_raise)
 #define KosDynFinally_HANDLING_CONTROL(r) (((KosDynNode *)(r))->u.finally_.handling_control)
 #define KosDynFinally_EXC_SAVED(r)   (((KosDynNode *)(r))->u.finally_.exc_saved)
+#define KosDynFinally_EXC_FROZEN(r)  (((KosDynNode *)(r))->u.finally_.exc_frozen)
 #define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)
 #define KosDynFinally_HANDLING(r)    (&((KosDynNode *)(r))->u.finally_.handling)
 #define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)

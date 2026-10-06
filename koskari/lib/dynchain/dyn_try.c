@@ -39,6 +39,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
   KosDynTry_EXC_SAVED(node) = 0;
+  KosDynTry_EXC_FROZEN(node) = 0;
   KosExc_Init(KosDynTry_SAVED(node));
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
@@ -55,6 +56,7 @@ KosDynTry *kos_dyntry_clone(KosDynTry *node) {
   KosDynTry_HANDLER_PC(clone) = KosDynTry_HANDLER_PC(node);
   KosDynTry_ENABLED(clone) = KosDynTry_ENABLED(node);
   KosDynTry_EXC_SAVED(clone) = KosDynTry_EXC_SAVED(node);
+  KosDynTry_EXC_FROZEN(clone) = KosDynTry_EXC_FROZEN(node);
   KosExc_Init(KosDynTry_SAVED(clone));
   KosExc_Copy(KosDynTry_SAVED(clone), KosDynTry_SAVED(node));
   return clone;

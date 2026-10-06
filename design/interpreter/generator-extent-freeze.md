@@ -25,11 +25,28 @@ context of its own.
 
 The fix is a pair of per-kind hooks beside the extent contract,
 `kos_dyn_extent_freeze` at the freeze and `kos_dyn_extent_install` at the
-install (`dynchain.c`). PARAM is the only kind with a body: the freeze
+install (`dynchain.c`). Two kinds have a body. PARAM: the freeze
 restores the cells it displaced, innermost first; the install re-enters
 them outermost first over the table as it is at that resume, so the
 record each node keeps of what sits beneath it is current. A failed
-install restores what it had re-entered and the GEN stays frozen. Every
+install restores what it had re-entered and the GEN stays frozen.
+
+TRY and FINALLY are the same shape over the thread's handler-visible
+exception (`sys.exc_info`). A region that consumed a raise has its
+exception installed on the thread and what it displaced in `saved`;
+a yield inside the handler used to leave the generator's exception
+visible to the consumer, and the region later gave back the consumer's
+state as of the run in which the raise was consumed. The freeze takes
+the region's own exception off the thread into `saved` and puts the
+displaced one back, innermost first, with `exc_frozen` set; the install
+moves the own exception out, fetches the current handler-visible state
+into `saved`, and installs the own one, outermost first. This is
+CPython's per-level pop and push of `exc_info` at a generator's yield
+and resume. An adapter-driven install runs before `koskari_eval` has
+swapped the context's handler-visible state onto the thread, so there
+the exchange is with `KosContext_EXC_INFO`, which that swap installs.
+A region with no consumed raise does nothing, so a generator with no
+handled exception of its own sees the consumer's, as in Python. Every
 other kind is a no-op, and the two switches are where a further kind
 would go.
 
@@ -40,8 +57,9 @@ after thunks exist to ensure a state on entry and exit of the extent:
 a lock, a redirected stream, a mode. Across a yield the state stays
 as the before-thunk left it while the consumer runs, and the resume
 does not re-establish it. A `with` whose manager guards a resource is
-the same case with different spelling. PARAM was fixed because its
-effect is data the runtime owns and can move; a thunk's effect is not.
+the same case with different spelling. PARAM, TRY and FINALLY were
+fixed because their effect is data the runtime owns and can move; a
+thunk's effect is not.
 
 So the question is whether yield and resume should run a leave and a
 re-enter over the span, without popping the nodes and without

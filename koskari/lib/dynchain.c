@@ -946,16 +946,105 @@ KosOpResult kos_dyn_extent_leave(
 }
 
 
+/**
+   The region's exception slots: saved, and the flags that say what it
+   holds. A TRY and a FINALLY keep them in the same shape.
+*/
+static void kos_dyn_region_exc_slots(
+    KosDynNode *node,
+    uint8_t **exc_saved,
+    uint8_t **exc_frozen,
+    KosExcState **saved) {
+
+  if (KosDynNode_IS_TRY(node)) {
+    *exc_saved = &KosDynTry_EXC_SAVED((KosDynTry *) node);
+    *exc_frozen = &KosDynTry_EXC_FROZEN((KosDynTry *) node);
+    *saved = KosDynTry_SAVED((KosDynTry *) node);
+  } else {
+    *exc_saved = &KosDynFinally_EXC_SAVED((KosDynFinally *) node);
+    *exc_frozen = &KosDynFinally_EXC_FROZEN((KosDynFinally *) node);
+    *saved = KosDynFinally_SAVED((KosDynFinally *) node);
+  }
+}
+
+
+/**
+   A region that consumed a raise has its handled exception on the
+   thread and what it displaced in saved. Freezing the span takes the
+   region's own exception off the thread into saved and puts the
+   displaced one back, innermost first, so the consumer sees its own
+   handled exception while the generator is suspended, as CPython pops
+   a generator's exc_info at a yield.
+*/
+static void kos_dyn_region_exc_freeze(KosDynNode *node) {
+  uint8_t *exc_saved, *exc_frozen;
+  KosExcState *saved;
+  KosExcState own;
+
+  kos_dyn_region_exc_slots(node, &exc_saved, &exc_frozen, &saved);
+  if (! *exc_saved || *exc_frozen)
+    return;
+
+  KosExc_Init(&own);
+  KosExc_Fetch(&own);
+  KosExc_Install(saved);
+  KosExc_Move(saved, &own);
+  *exc_frozen = 1;
+}
+
+
+/**
+   The reverse, outermost first: saved takes the handler-visible state
+   as it is now (the consumer's current handled exception, or the
+   exception of the region outside this one, just put back), and the
+   region's own exception becomes handler-visible again. The region
+   later leaves by giving back a current state, not the one it
+   displaced in an earlier run.
+
+   Under a consumer the exchange is with the thread. An adapter-driven
+   install (no frame below the generator) runs before koskari_eval has
+   swapped the context's handler-visible state onto the thread, so the
+   exchange is with the context's slot, which that swap then installs.
+*/
+static void kos_dyn_region_exc_install(KosEvalState *es, KosDynNode *node) {
+  uint8_t *exc_saved, *exc_frozen;
+  KosExcState *saved;
+  KosExcState own;
+
+  kos_dyn_region_exc_slots(node, &exc_saved, &exc_frozen, &saved);
+  if (! *exc_frozen)
+    return;
+
+  KosExc_Init(&own);
+  KosExc_Move(&own, saved);
+  if (KosEvalState_FRAME(es)) {
+    KosExc_Fetch(saved);
+    KosExc_Install(&own);
+  } else {
+    KosExcState *slot = KosContext_EXC_INFO(KosEvalState_CONTEXT(es));
+
+    KosExc_Move(saved, slot);
+    KosExc_Move(slot, &own);
+  }
+  *exc_frozen = 0;
+}
+
+
 void kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node) {
 
   /* A yield moves the node intact, so a kind whose effect is the node
      rides the span as it is: a WITH's __enter__ and a WIND's before
      thunk stay done. PARAM's effect is the cells it swapped into the
      context's table, which the consumer shares; that leaves with the
-     node. */
+     node. A TRY's or FINALLY's effect is the handled exception it
+     installed on the thread, which the consumer shares the same way. */
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(es, (KosDynParam *) node);
+      break;
+    case KOS_DYN_TRY:
+    case KOS_DYN_FINALLY:
+      kos_dyn_region_exc_freeze(node);
       break;
     default:
       break;
@@ -968,6 +1057,10 @@ int kos_dyn_extent_install(KosEvalState *es, KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       return kos_dyn_param_wind(es, (KosDynParam *) node);
+    case KOS_DYN_TRY:
+    case KOS_DYN_FINALLY:
+      kos_dyn_region_exc_install(es, node);
+      return 0;
     default:
       return 0;
   }
