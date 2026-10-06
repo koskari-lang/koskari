@@ -435,15 +435,21 @@ def source_open(filename, auto_skip_exec=True):
     """
     Context manager to open a file as a SourceStream
 
+    The file is read whole and closed before the stream is handed out,
+    so the module body runs with no file open: text appended to the
+    file while it runs is not executed, a fork does not split the read
+    position, and the native stream's tell and seek are index
+    operations on the text rather than a text-wrapper's decoder replay.
+    Newlines are normalized as for a string source.
+
     :param filename: path to the file to open
     :param auto_skip_exec: if True, skip any #! line at the start
     :yields: SourceStream for the file
     """
 
     with open(filename, "rt") as fs:
-        reader = SourceStream(fs, filename=filename,
-                              auto_skip_exec=auto_skip_exec)
-        yield reader
+        text = fs.read()
+    yield source_str(text, filename, auto_skip_exec=auto_skip_exec)
 
 
 def source_str(src, filename, auto_skip_exec=True, line_no=1, col_no=0):
