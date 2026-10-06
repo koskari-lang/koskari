@@ -176,25 +176,28 @@ static int test_seg_grow(void) {
 
 static int test_seg_grow_limit(void) {
     /*
-      A segment holds up to 256 values; the 257th push errors.
+      A segment holds up to KOS_SEGMENT_MAX_SLOTS values; the push after
+      the last slot errors.
     */
     KosSegment *seg = KosStack_NewEmpty();
     TEST_ASSERT_NOT_NULL(seg, "create segment");
 
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < KOS_SEGMENT_MAX_SLOTS; i++) {
         PyObject *val = PyLong_FromLong(20000 + i);
         TEST_ASSERT_NOT_NULL(val, "create value");
         int result = KosStack_PushRef(&seg, val);
         Py_DECREF(val);
         TEST_ASSERT_EQ(result, 0, "push succeeded");
     }
-    TEST_ASSERT_EQ(KosSegment_LEN(seg), 256, "len is 256");
-    TEST_ASSERT_EQ(KosSegment_MAX(seg), 256, "max is 256");
+    TEST_ASSERT_EQ(KosSegment_LEN(seg), KOS_SEGMENT_MAX_SLOTS,
+                   "len is the slot limit");
+    TEST_ASSERT_EQ(KosSegment_MAX(seg), KOS_SEGMENT_MAX_SLOTS,
+                   "max is the slot limit");
 
     PyObject *extra = PyLong_FromLong(TEST_VAL_1);
     TEST_ASSERT_NOT_NULL(extra, "create value");
     int result = KosStack_PushRef(&seg, extra);
-    TEST_ASSERT_EQ(result, -1, "257th push fails");
+    TEST_ASSERT_EQ(result, -1, "push past the slot limit fails");
     TEST_ASSERT(PyErr_Occurred() != NULL, "error set");
     PyErr_Clear();
     Py_DECREF(extra);

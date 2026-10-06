@@ -53,8 +53,9 @@ extern TestContext test_ctx;
 
 #define TEST_ASSERT(cond, msg) do {                                     \
     if (!(cond)) {                                                      \
-        fprintf(stderr, "  FAIL: %s\n", (msg));                         \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("  FAIL: %s\n", (msg));                                  \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         return -1;                                                      \
     }                                                                   \
 } while(0)
@@ -62,9 +63,10 @@ extern TestContext test_ctx;
 
 #define TEST_ASSERT_EQ(a, b, msg) do {                                  \
     if ((a) != (b)) {                                                   \
-        fprintf(stderr, "  FAIL: %s (expected %ld, got %ld)\n",         \
+        printf("  FAIL: %s (expected %ld, got %ld)\n",                  \
                 (msg), (long)(b), (long)(a));                           \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         return -1;                                                      \
     }                                                                   \
 } while(0)
@@ -72,10 +74,12 @@ extern TestContext test_ctx;
 
 #define TEST_ASSERT_NOT_NULL(ptr, msg) do {                             \
     if ((ptr) == NULL) {                                                \
-        fprintf(stderr, "  FAIL: %s (got NULL)\n", (msg));              \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("  FAIL: %s (got NULL)\n", (msg));                       \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         if (PyErr_Occurred()) {                                         \
             PyErr_Print();                                              \
+            fflush(stderr);                                             \
         }                                                               \
         return -1;                                                      \
     }                                                                   \
@@ -84,8 +88,9 @@ extern TestContext test_ctx;
 
 #define TEST_ASSERT_NULL(ptr, msg) do {                                 \
     if ((ptr) != NULL) {                                                \
-        fprintf(stderr, "  FAIL: %s (expected NULL)\n", (msg));         \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("  FAIL: %s (expected NULL)\n", (msg));                  \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         return -1;                                                      \
     }                                                                   \
 } while(0)
@@ -94,9 +99,10 @@ extern TestContext test_ctx;
 #define TEST_ASSERT_REFCNT(obj, expected, msg) do {                     \
     Py_ssize_t _refcnt = Py_REFCNT(obj);                                \
     if (_refcnt != (expected)) {                                        \
-        fprintf(stderr, "  FAIL: %s (refcount: expected %ld, got %ld)\n", \
+        printf("  FAIL: %s (refcount: expected %ld, got %ld)\n",        \
                 (msg), (long)(expected), (long)_refcnt);                \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         return -1;                                                      \
     }                                                                   \
 } while(0)
@@ -104,8 +110,9 @@ extern TestContext test_ctx;
 
 #define TEST_ASSERT_SAME(a, b, msg) do {                                \
     if ((void *)(a) != (void *)(b)) {                                   \
-        fprintf(stderr, "  FAIL: %s (objects not identical)\n", (msg)); \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("  FAIL: %s (objects not identical)\n", (msg));          \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         return -1;                                                      \
     }                                                                   \
 } while(0)
@@ -113,9 +120,10 @@ extern TestContext test_ctx;
 
 #define TEST_ASSERT_NOT_SAME(a, b, msg) do {                            \
     if ((void *)(a) == (void *)(b)) {                                   \
-        fprintf(stderr, "  FAIL: %s (objects should not be identical)\n", \
+        printf("  FAIL: %s (objects should not be identical)\n",        \
                 (msg));                                                 \
-        fprintf(stderr, "        at %s:%d\n", __FILE__, __LINE__);      \
+        printf("        at %s:%d\n", __FILE__, __LINE__);               \
+        fflush(stdout);                                                 \
         return -1;                                                      \
     }                                                                   \
 } while(0)

@@ -440,12 +440,18 @@ static int test_dynwith_free_exc_unconditional(void) {
 }
 
 
-static int test_dyndelim_clone_no_chain_alias(void) {
+static int test_dyndelim_clone_owns_chain_copy(void) {
+    /*
+      A DELIM clone carries a copy of the owned RETURN_CHAIN, never the
+      original: a captured in-place invoke resumes over its own copy of
+      the handler span, and freeing either DELIM leaves the other whole.
+    */
 
     PyObject *ns;
     KosDynFrame *inner;
     KosDynDelim *delim;
     KosDynNode *clone;
+    KosDynNode *chain_copy;
 
     ns = PyDict_New();
     TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -459,8 +465,12 @@ static int test_dyndelim_clone_no_chain_alias(void) {
 
     clone = kos_dyn_clone((KosDynNode *) delim);
     TEST_ASSERT_NOT_NULL(clone, "clone DELIM");
-    TEST_ASSERT_NULL(KosDynDelim_RETURN_CHAIN((KosDynDelim *) clone),
-                     "clone does not alias RETURN_CHAIN");
+    chain_copy = KosDynDelim_RETURN_CHAIN((KosDynDelim *) clone);
+    TEST_ASSERT_NOT_NULL(chain_copy, "clone carries a RETURN_CHAIN");
+    TEST_ASSERT(chain_copy != (KosDynNode *) inner,
+                "clone's RETURN_CHAIN is a copy, not the original");
+    TEST_ASSERT(KosDynNode_IS_FRAME(chain_copy),
+                "the copy is the same kind of node");
 
     kos_dyndelim_free(delim);
     kos_dyndelim_free((KosDynDelim *) clone);
@@ -528,7 +538,7 @@ int run_dynchain_tests(void) {
     RUN_TEST(test_dyngen_bootstrap_no_active);
     RUN_TEST(test_dynyieldfrom_pop_closes_delegate);
     RUN_TEST(test_dynwith_free_exc_unconditional);
-    RUN_TEST(test_dyndelim_clone_no_chain_alias);
+    RUN_TEST(test_dyndelim_clone_owns_chain_copy);
     RUN_TEST(test_dynforeach_free_with_iter);
 
     return 0;
