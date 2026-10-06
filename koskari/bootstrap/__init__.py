@@ -261,7 +261,7 @@ def make_bootstrap():
     _bind('open', open)
     _bind('ord', ord)
     _bind('print', print)
-    _bind('py-help', help)
+    # _bind('py-help', help)  # help comes from site; absent under python -S
     _bind('py-repr', repr)
     _bind('reversed', reversed)
     _bind('round', round)
