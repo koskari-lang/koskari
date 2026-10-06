@@ -168,7 +168,7 @@ def special_list_append(compiler, caps):
         if not is_symbol(sym):
             raise SpecialError("#list-append name must be a symbol", caps.source)
 
-        pos = caps["sym"].position
+        pos = caps["sym"].position or caps["called-by"].position
         frag.request_for_write(sym, position=pos)
         if not is_pair(expr):
             frag.position(pos)

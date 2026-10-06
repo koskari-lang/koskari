@@ -607,9 +607,11 @@ class Resolver:
         :param fragment: the fragment being completed
         """
 
-        for bucket in (fragment.requests, fragment.requests_for_write,
-                       fragment._request_global):
-            self.resolve_bucket(bucket)
+        self.resolve_bucket(fragment.requests)
+        self.resolve_bucket(fragment.requests_for_write,
+                            positions=fragment.write_positions)
+        self.resolve_bucket(fragment._request_global,
+                            positions=fragment.declare_positions)
 
         # a name resolved to the fragment's own declaration or global is
         # no request, as the intake of a written name already ensures
@@ -627,25 +629,35 @@ class Resolver:
             scopes.extend(declared_spellings(f) for f in reversed(inner))
             for bucket in (scope.requests_for_write,
                            scope.propagated_writes):
-                self.resolve_bucket(bucket, scopes)
+                self.resolve_bucket(bucket, scopes,
+                                    positions=scope.write_positions)
 
         fragment.rewrite_vars(self.choose)
 
 
-    def resolve_bucket(self, bucket, scopes=()):
+    def resolve_bucket(self, bucket, scopes=(), positions=None):
         """
         Replace each name in bucket with its choice, in place, keeping
-        the first of any names that choose the same binding
+        the first of any names that choose the same binding. A source
+        position recorded under a name moves with it to the chosen
+        name, so a diagnostic raised after the names have settled
+        still finds the line the request came from
 
         :param bucket: a list of atoms
         :param scopes: spelling sets of the inline scopes open around
             the names, innermost first
+        :param positions: the fragment's position record for this
+            bucket, keyed by atom, or None
         """
 
         seen = set()
         out = []
         for sym in bucket:
             chosen = self.choose(sym, scopes)
+            if positions is not None and chosen is not sym:
+                pos = positions.get(sym)
+                if pos is not None:
+                    positions.setdefault(chosen, pos)
             if chosen not in seen:
                 seen.add(chosen)
                 out.append(chosen)

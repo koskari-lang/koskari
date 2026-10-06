@@ -21,7 +21,7 @@ import pytest
 
 from koskari.compile.pragma import KoskariPragma, ResolutionMode
 from koskari.exceptions import CompilerError
-from koskari.lib import FunctionSpec
+from koskari.lib import FunctionSpec, symbol
 
 from . import SpecialsTestCase
 
@@ -286,7 +286,7 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
             'setter should close over x')
         self.assertEqual(
             set(pragma.get_request_for_write_syms(setter)),
-            {'x'},
+            {symbol('x')},
             'setter writes to x')
 
 

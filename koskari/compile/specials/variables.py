@@ -89,7 +89,9 @@ def special_setq(compiler, caps):
     """
 
     symatom = caps["sym"].datum
-    pos = caps["sym"].position
+    # a symbol read under a layout block carries no position of its
+    # own; the form's names the line
+    pos = caps["sym"].position or caps["called-by"].position
     expr = caps["expr"].datum
 
     frag = compiler.fragment(caps["called-by"].datum)
@@ -382,6 +384,7 @@ def special_define_global(compiler, caps):
     """
 
     called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     namesym, type_expr = _define_name_type_pos_from_match(caps)
 
@@ -389,7 +392,7 @@ def special_define_global(compiler, caps):
     # the local-or-global conflict is judged where this fragment merges
     # into its body, the first point at which a declaration of the
     # same name is in view
-    frag.request_global(namesym)
+    frag.request_global(namesym, position=pos)
 
     return emit_define_value(compiler, frag, caps, namesym, type_expr)
 

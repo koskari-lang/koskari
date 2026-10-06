@@ -138,17 +138,19 @@ class ResolutionPragma(Protocol):
         ...
 
 
-    def get_write_position(self, fragment, name: str) -> Optional[Tuple]:
+    def get_write_position(self, fragment, name) -> Optional[Tuple]:
         """
-        Return (line, col) for the first write to name in fragment, or None
+        Return (line, col) for the first write to name, an atom, in
+        fragment, or None
         """
         ...
 
 
     def get_request_for_write_syms(self, code) -> Tuple:
         """
-        Return names that require write capability for the given Code.
-        Compile-time only; tracked by pragma keyed by Code id.
+        Return the atoms that require write capability for the given
+        Code, as the fragment settled them. Compile-time only; tracked
+        by pragma keyed by Code id.
         """
         ...
 
@@ -202,7 +204,9 @@ class KoskariPragma:
             else:
                 raise CompilerError(
                     f"{str(name)!r} cannot be both local (define)"
-                    " and global (define-global).", name)
+                    " and global (define-global).", name,
+                    position=position
+                    or fragment.declare_positions.get(name))
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
@@ -220,7 +224,9 @@ class KoskariPragma:
         if name in fragment.declares and not _in_module_scope(fragment):
             raise CompilerError(
                 f"{str(name)!r} cannot be both local (define)"
-                " and global (define-global).", name)
+                " and global (define-global).", name,
+                position=position
+                or fragment.declare_positions.get(name))
 
         for bucket in (fragment.requests, fragment.requests_for_write):
             if name in bucket:
@@ -318,8 +324,9 @@ class KoskariPragma:
 
         if not is_root:
             for name in self.get_request_for_write_syms(code):
-                if name not in satisfied:
-                    self._raise_unsatisfied_write(source_frag, name)
+                if str(name) not in satisfied:
+                    self._raise_unsatisfied_write(
+                        source_frag, name, code.filename)
 
         # the let and class bodies compiled inline into this function:
         # their writes originate there and are checked against the scope
@@ -333,7 +340,8 @@ class KoskariPragma:
                     if name in scope.propagated_writes:
                         continue
                     if str(name) not in scope_satisfied:
-                        self._raise_unsatisfied_write(scope, str(name))
+                        self._raise_unsatisfied_write(
+                            scope, name, code.filename)
 
         # Recurse into nested function Codes; the pool is only how they
         # are found, each carries its own recorded ancestry
@@ -342,14 +350,15 @@ class KoskariPragma:
                 self.validate_tree(const.code, (), mode, is_root=False)
 
 
-    def _raise_unsatisfied_write(self, fragment, name):
+    def _raise_unsatisfied_write(self, fragment, name, filename=None):
         pos = self.get_write_position(fragment, name)
         raise CompilerError(
-            f"Cannot write to {name!r}: not declared in this scope"
+            f"Cannot write to {str(name)!r}: not declared in this scope"
             " or any enclosing scope. Use define for a local or"
             " define-global for a global.",
             name,
-            position=pos)
+            position=pos,
+            filename=filename)
 
 
     def cpool_merge(self, fragment, inner_nspec, inner_write_syms):
@@ -364,26 +373,27 @@ class KoskariPragma:
         outer's own.
         """
 
-        # the inner Code spells its names; each becomes the symbol under
-        # that spelling as it enters the outer fragment. A class body's
-        # own declarations are not visible to the functions defined in
-        # it, so the body captures the name from its enclosing scope
-        # even when it declares the same name itself.
+        # the inner Code records its closure names as str; each becomes
+        # the symbol of that name as it enters the outer fragment, while
+        # its write names are the atoms the inner fragment settled. A
+        # class body's own declarations are not visible to the functions
+        # defined in it, so the body captures the name from its
+        # enclosing scope even when it declares the same name itself.
         for name in inner_nspec.closure_syms:
             sym = symbol(name)
             if fragment.collector_scope or sym not in fragment.declares:
                 _unique_append(fragment.requests, sym)
 
-        for name in (inner_write_syms or ()):
-            sym = symbol(name)
+        for sym in (inner_write_syms or ()):
             if sym not in fragment.requests_for_write:
                 _unique_append(fragment.propagated_writes, sym)
             self.on_write(fragment, sym)
 
 
-    def get_write_position(self, fragment, name: str) -> Optional[Tuple]:
+    def get_write_position(self, fragment, name) -> Optional[Tuple]:
         """
-        Return (line, col) for first write to name in fragment, or None
+        Return (line, col) for the first write to name, an atom, in
+        fragment, or None
         """
 
         if fragment is None:
@@ -393,8 +403,9 @@ class KoskariPragma:
 
     def get_request_for_write_syms(self, code) -> Tuple:
         """
-        Return names that require write capability for the given Code.
-        Compile-time only; tracked by pragma keyed by Code id.
+        Return the atoms that require write capability for the given
+        Code, as the fragment settled them. Compile-time only; tracked
+        by pragma keyed by Code id.
         """
 
         return self._code_request_for_write.get(id(code), ())
@@ -409,7 +420,7 @@ class KoskariPragma:
 
         self._code_to_fragment[id(code)] = fragment
         self._code_request_for_write[id(code)] = tuple(
-            str(n) for n in fragment.requests_for_write
+            n for n in fragment.requests_for_write
             if n not in fragment.propagated_writes)
         self._code_ancestors[id(code)] = tuple(ancestors)
 

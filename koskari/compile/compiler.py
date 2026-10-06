@@ -157,6 +157,7 @@ class ByteCodeFragment:
         # str spelling, carried along by merge so the fragment that is
         # validated can locate the write that fails
         self.write_positions = {}
+        self.declare_positions = {}
 
         # write requests copied up from inner Codes at completion; they
         # are validated where they originate, so the validator skips
@@ -224,7 +225,7 @@ class ByteCodeFragment:
         if var_name.base is not var_name:
             self.note_mark(var_name)
         if position is not None:
-            self.write_positions.setdefault(str(var_name), position)
+            self.write_positions.setdefault(var_name, position)
         self.resolution.on_write(self, var_name, position=position)
 
 
@@ -240,6 +241,8 @@ class ByteCodeFragment:
             raise TypeError(f"expected a symbol, not {var_name!r}")
         if var_name.base is not var_name:
             self.note_mark(var_name)
+        if position is not None:
+            self.declare_positions.setdefault(var_name, position)
         self.resolution.on_explicit_global(self, var_name, position=position)
 
 
@@ -255,6 +258,8 @@ class ByteCodeFragment:
 
         if not isinstance(var_name, symbol):
             raise TypeError(f"expected a symbol, not {var_name!r}")
+        if position is not None:
+            self.declare_positions.setdefault(var_name, position)
         self.resolution.on_declare(self, var_name, position=position)
         if type_expr is not None:
             self.annotation_bindings.append((str(var_name), type_expr))
@@ -391,14 +396,16 @@ class ByteCodeFragment:
         """
 
         for name in other.declares:
-            self.declare_var(name)
+            self.declare_var(
+                name, position=other.declare_positions.get(name))
         for name in other.requests:
             self.request_var(name)
         for name in other.requests_for_write:
             self.request_for_write(
-                name, position=other.write_positions.get(str(name)))
+                name, position=other.write_positions.get(name))
         for name in other._request_global:
-            self.request_global(name)
+            self.request_global(
+                name, position=other.declare_positions.get(name))
         self.annotation_bindings.extend(other.annotation_bindings)
         if other.marked:
             self.marked = True
@@ -1008,7 +1015,12 @@ class Compiler:
             # is that form when a special or macro expands to the
             # constant None, and compiles as such on the next pass
             return dispatch(fragment, source_obj, position)
-        except CompilerError:
+        except CompilerError as ex:
+            # the innermost compile_expr sees the error first, so a
+            # position taken here is the innermost enclosing form's
+            if is_pair(source_obj):
+                position = get_position(source_obj) or position
+            ex.attach_position(position, self.filename)
             raise
         except Exception as ex:
             from ..exceptions import KoskariSyntaxError

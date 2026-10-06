@@ -176,6 +176,40 @@ class CompilerError(KoskariException):
         self.filename = filename or self._filename_from_source(source)
 
 
+    def attach_position(self, position=None, filename=None):
+        """
+        Fill in a position and a filename the raise site did not have:
+        the innermost enclosing form's position and the compiler's file.
+        What the error already carries is kept
+        """
+
+        if self.position is None and position is not None:
+            self.position = position
+            self.line, self.column = self._normalize_position(position)
+        if self.filename is None and filename is not None:
+            self.filename = filename
+
+
+    def _format_location(self):
+        """
+        The caret-annotated source line when the file can be read, else
+        the file and position as text, else None
+        """
+
+        source_line = self._format_source_line()
+        if source_line is not None:
+            return source_line
+        if self.line is None:
+            return None
+
+        where = str(self.line)
+        if self.column is not None:
+            where = f"{where}:{self.column}"
+        if self.filename:
+            return f"-> {self.filename}:{where}"
+        return f"-> line {where}"
+
+
     @staticmethod
     def _position_from_source(source):
         """
@@ -315,9 +349,9 @@ class CompilerError(KoskariException):
                 lines.append(f"  form: {kos_repr(self.source)}")
             except Exception:
                 lines.append("  form: <unrenderable source>")
-        source_line = self._format_source_line()
-        if source_line is not None:
-            lines.append(source_line)
+        location = self._format_location()
+        if location is not None:
+            lines.append(location)
         return "\n".join(lines) + "\n"
 
 
@@ -410,9 +444,9 @@ class SyntaxMatchError(SpecialError):
             lines.append("  accepts:")
             for pat in self.patterns:
                 lines.append(f"    {format_accept_pattern(pat, self.source)}")
-        source_line = self._format_source_line()
-        if source_line is not None:
-            lines.append(source_line)
+        location = self._format_location()
+        if location is not None:
+            lines.append(location)
         return "\n".join(lines) + "\n"
 
 

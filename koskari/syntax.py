@@ -189,7 +189,12 @@ class Syntax(Compiled):
             )
 
         tf = self.transforms[idx]
-        return tf.handle_expand(compiler, source_obj, result)
+        expansion = tf.handle_expand(compiler, source_obj, result)
+        if is_pair(expansion):
+            # a template arm builds its output with no position; the
+            # form it expands names the line, as for the bare path
+            fill_position(expansion, get_position(source_obj))
+        return expansion
 
 
     def __add__(self, other):
