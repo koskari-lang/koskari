@@ -218,6 +218,13 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(err.strip())
 
 
+    async def test_layout_error_prints_one_line(self):
+        _, err = await self._run_repl(['try:', '  1', ''])
+        self.assertIn('LayoutError', err)
+        self.assertIn('line 1', err)
+        self.assertNotIn('Traceback', err)
+
+
     async def test_eof_exits_cleanly(self):
         out, err = await self._run_repl([])
         # no exception; banner suppressed by quiet

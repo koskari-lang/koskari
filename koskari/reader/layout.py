@@ -1292,13 +1292,24 @@ class LayoutReader(Reader):
         if event is not EOF and self.layout_enabled:
             self._check_indent(reader_stream, pos, 0)
 
-        if event is LINE:
-            return self.fold_line(value), pos
-        elif event is BLOCK:
-            return apply_layout(value, self), pos
-        elif event is BLOCKS:
-            return apply_layouts(value, self).car, pos
-        elif event is VALUE:
+        try:
+            if event is LINE:
+                return self.fold_line(value), pos
+            elif event is BLOCK:
+                return apply_layout(value, self), pos
+            elif event is BLOCKS:
+                return apply_layouts(value, self).car, pos
+        except LayoutError as err:
+            # a layout handler knows its position at best; the stream
+            # knows the file and the text, and the block's start stands
+            # in for a raw layout that read a form carrying no position
+            if not err.filename:
+                location = err.location or pos
+                err.locate(reader_stream.filename, location,
+                           reader_stream._source_line(location[0]))
+            raise
+
+        if event is VALUE:
             return value, pos
         elif event is EOF:
             return READ_EOF, pos

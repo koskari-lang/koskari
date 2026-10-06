@@ -36,7 +36,7 @@ import-from .host:
 import-from ..exceptions:
   format_code_boundary_exception format_exception_with_koskari_trace
   apply_sys_last_exc CompilerError UncaughtCompilerError
-  ReaderEOF ReaderSyntaxError
+  ReaderEOF ReaderError
 import-from ..reader IndentAwareStream source_str READ_EOF
 import-from ..module init_module build_module_load_facets find_module_reader
 import-from ..lib kos_repr
@@ -258,10 +258,8 @@ define repl [
       (stderr.flush)
       break
 
-    except [ReaderSyntaxError as: e]:
-      define ename (type e).__name__
-      define emsg e.message
-      print f"{ename}: {emsg}" file: stderr
+    except [ReaderError as: e]:
+      print (e.explain) end: "" file: stderr
       (stderr.flush)
       set! buffer ""
       set! prompt ">>> "

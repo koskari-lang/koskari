@@ -88,21 +88,35 @@ class KoskariSyntaxError(SyntaxError, KoskariException):
 
     def __init__(self, message, location=None, filename=None, text=None):
 
-        if filename:
-            if not location:
-                location = (1, 0)
-            # the reader's column is 0-based; SyntaxError's offset is
-            # 1-based and the traceback caret is drawn at offset - 1
-            line, col = location[0], location[1]
-            super().__init__(message, (filename, line, col + 1, text))
-            self.print_file_and_line = True
-        else:
-            super().__init__(message)
-
+        super().__init__(message)
         self.message = message
         self.location = location
         self.filename = filename
         self.text = text
+        if filename:
+            self.locate(filename, location, text)
+
+
+    def locate(self, filename, location=None, text=None):
+        """
+        Give the error the file, position and source text that name
+        where it happened, the way SyntaxError prints them. Fills what
+        the raise site did not have: a location or text the error
+        already carries is kept
+        """
+
+        location = self.location or location or (1, 0)
+        text = self.text if self.text is not None else text
+        # the reader's column is 0-based; SyntaxError's offset is
+        # 1-based and the traceback caret is drawn at offset - 1
+        line, col = location[0], location[1]
+        self.args = (self.message, (filename, line, col + 1, text))
+        self.filename = filename
+        self.lineno = line
+        self.offset = col + 1
+        self.text = text
+        self.location = location
+        self.print_file_and_line = True
 
 
     def explain(self):
