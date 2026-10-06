@@ -323,7 +323,8 @@ class SyntaxTransform(Transform):
         """
 
         bindings = _captures_to_bindings(result.captures)
-        bindings = _promote_repeat_frame_bindings(bindings)
+        bindings = _promote_repeat_frame_bindings(
+            bindings, repeat_variables=_repeat_variables(self.pattern))
 
         subst = expand_template_with_hygiene(
             self.template, bindings, gensym.next_mark())

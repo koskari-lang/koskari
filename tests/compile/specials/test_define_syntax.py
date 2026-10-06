@@ -212,6 +212,37 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
             [[(1, 2), (3, 4)], [(5, 6)]], [list(g) for g in result])
 
 
+    async def test_compile_syntax_rules_empty_group_keeps_sibling_columns(self):
+        """
+        A group that matches its inner ellipsis zero times contributes an
+        empty column; the other groups keep their pairs
+        """
+
+        src_str = """
+        (define groups
+          (syntax-rules groups [#list #tuple]
+            [(groups (g (k v) ...) ...)
+             (#list (#tuple 'g (#list (#tuple 'k v) ...)) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {
+            'compile/groups': vars(mod)['groups'],
+            '#list': build_list,
+            '#tuple': build_tuple,
+        }
+
+        src_str = """
+        (groups (a (x 1) (y 2)) (b) (c (z 3)))
+        """
+        expr, mod = self.compile_expr(src_str, **defn)
+        result = await expr()
+        self.assertEqual(
+            [("a", [("x", 1), ("y", 2)]), ("b", []), ("c", [("z", 3)])],
+            [(str(g), [(str(k), v) for k, v in pairs])
+             for g, pairs in result])
+
+
     async def test_compile_syntax_rules_no_matching_rule_raises(self):
         src_str = """
         (define only-one
