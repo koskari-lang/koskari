@@ -303,6 +303,41 @@ static KOS_NOINLINE int yield_from_throw_stop_async_finish(
 
 
 /**
+  Throw the pending exception into a sync delegate, per PEP 380: a
+  GeneratorExit closes the delegate and re-raises; a delegate with a
+  throw method receives the exception and may yield on, return, or let
+  it propagate; one without gets it raised at the yield-from point,
+  where the delegating generator's own handlers take it.
+*/
+static KosOpResult yield_from_throw_sync(
+    KosEvalState *es,
+    KosDynYieldFrom *yf,
+    PyObject *delegate) {
+
+  PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
+  if (! exc) {
+    PyErr_SetString(PyExc_SystemError,
+                    "yield-from throw with no exception");
+    return EVAL_RAISE();
+  }
+  PyObject *res = NULL;
+  PySendResult r = kos_iter_throw(delegate, exc, &res);
+
+  if (r == PYGEN_NEXT) {
+    yield_from_clear_pending(yf);
+    return yield_from_yield_value(es, yf, res);
+  }
+  if (r == PYGEN_RETURN) {
+    Py_DECREF(res);
+    return yield_from_finish(es, yf);
+  }
+  /* The delegate let it propagate, or raised in its place: it lands
+     here and the raise walk retires the node. */
+  return EVAL_RAISE();
+}
+
+
+/**
   Drive one step of a sync-iterator delegate (PyIter_Next). On a yielded
   value returns EVAL_YIELD; on exhaustion returns EVAL_NORMAL; on error
   returns EVAL_RAISE.
@@ -314,7 +349,7 @@ static KosOpResult yield_from_drive_sync_iter(
     uint8_t action) {
 
   if (action == KOS_YF_THROW)
-    yield_from_clear_pending(yf);
+    return yield_from_throw_sync(es, yf, delegate);
 
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf) != Py_None) {
     PyErr_SetString(PyExc_TypeError,
@@ -356,28 +391,8 @@ static KosOpResult yield_from_drive_sync_gen(
   if (action == KOS_YF_SEND && KosDynYieldFrom_PENDING_ARG(yf))
     send_val = KosDynYieldFrom_PENDING_ARG(yf);
 
-  if (action == KOS_YF_THROW) {
-    PyObject *exc = KosDynYieldFrom_PENDING_ARG(yf);
-    if (! exc) {
-      PyErr_SetString(PyExc_SystemError,
-                      "yield-from throw with no exception");
-      return EVAL_RAISE();
-    }
-    PyObject *res = NULL;
-    PySendResult r = kos_iter_throw(delegate, exc, &res);
-
-    if (r == PYGEN_NEXT) {
-      yield_from_clear_pending(yf);
-      return yield_from_yield_value(es, yf, res);
-    }
-    if (r == PYGEN_RETURN) {
-      Py_DECREF(res);
-      return yield_from_finish(es, yf);
-    }
-    /* The delegate let it propagate, or raised in its place: it lands
-       here and the raise walk retires the node. */
-    return EVAL_RAISE();
-  }
+  if (action == KOS_YF_THROW)
+    return yield_from_throw_sync(es, yf, delegate);
 
   {
     PyObject *res = NULL;

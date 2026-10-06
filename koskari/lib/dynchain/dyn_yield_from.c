@@ -275,9 +275,9 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 
   switch (kind) {
   case KOS_YF_SYNC_ITER:
-    break;
-
   case KOS_YF_SYNC_GEN:
+    /* PEP 380: a delegate with a close method is closed; one without
+       is left alone. */
     kos_iter_close(delegate);
     break;
 
@@ -298,9 +298,13 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
     break;
 
   case KOS_YF_KOS_ITER: {
+    /* Close the delegate, not merely mark it finished: its finally and
+       __exit__ bodies run in the same synchronous teardown a direct
+       close takes, and a mark alone would have its finalizer skip
+       them. */
     KosIterSlots *islots;
     if (KosIter_CheckSlots(delegate, &islots))
-      islots->ki_finish(delegate, 1);
+      islots->ki_close(delegate);
     break;
   }
 
