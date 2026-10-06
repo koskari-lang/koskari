@@ -82,8 +82,8 @@ def _rule_row(reader, rule_source, layout_body=False):
     Lower one raw rule block to ``(pattern . template-forms...)``
 
     :param reader: the LayoutReader expanding the source
-    :param rule_source: one rule's :block: entry
-    :param layout_body: expand nested :block: forms in a parenthesized
+    :param rule_source: one rule's :#block: entry
+    :param layout_body: expand nested :#block: forms in a parenthesized
         rule's template; a block rule's body is always expanded
     :return: one rule row cons
     """
@@ -134,7 +134,7 @@ def _rule_rows(reader, parent_body, layout_body=False):
 
     :param reader: the LayoutReader expanding the source
     :param parent_body: the entries following the transformer header
-    :param layout_body: expand nested :block: forms in each rule body
+    :param layout_body: expand nested :#block: forms in each rule body
     :return: list of rule row cons forms
     """
 
@@ -155,7 +155,7 @@ def _lower_rules(reader, source, peers, head_sym, head_patterns,
     :param head_sym: emitted form head symbol
     :param head_patterns: matcher patterns for the block header
     :param with_literals: whether the header includes a literals list
-    :param layout_body: expand nested :block: forms in each rule body
+    :param layout_body: expand nested :#block: forms in each rule body
     :return: lowered transformer form
     """
 

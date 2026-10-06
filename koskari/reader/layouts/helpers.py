@@ -27,12 +27,12 @@ from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST, match1
 from ...types import is_pair, is_symbol
 
 
-_keyword_block = keyword(':block:')
+_keyword_block = keyword('#block')
 
 
 def is_block(form):
     """
-    True when form is a ``:block:`` cons
+    True when form is a ``:#block:`` cons
     """
 
     return form and is_pair(form) and form.car is _keyword_block
@@ -41,7 +41,7 @@ def is_block(form):
 _BLOCK_SOURCE_PATTERN = MATCH(LIST(BIND('header'), REST('body')))
 
 _BLOCK_CONS_PATTERN = MATCH(
-    LIST(LITERAL_KW(':block:'), BIND('header'), REST('body')))
+    LIST(LITERAL_KW('#block'), BIND('header'), REST('body')))
 
 
 def _valid_block_header(header):
@@ -71,7 +71,7 @@ def match_block_source(form):
 
 def match_block_cons(form):
     """
-    Match a ``:block:`` cons ``(:block: (head . args) entry...)``
+    Match a ``:#block:`` cons ``(:#block: (head . args) entry...)``
 
     :param form: candidate runtime or quote block form
     :return: match result with ``header`` and ``body`` slots, or None
@@ -88,9 +88,9 @@ def match_block_cons(form):
 
 def block_source_from_cons(form):
     """
-    The pass-one block source of a ``:block:`` cons, which is its cdr
+    The pass-one block source of a ``:#block:`` cons, which is its cdr
 
-    :param form: ``(:block: (head . args) entry...)`` cons
+    :param form: ``(:#block: (head . args) entry...)`` cons
     :return: ``((head . args) . entries...)`` or None
     """
 

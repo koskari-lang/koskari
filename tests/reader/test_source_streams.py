@@ -403,7 +403,7 @@ class TestLayoutReaderWithSourceStream(IsolatedAsyncioTestCase):
           foo
           bar
         """
-        _kw_block = keyword(':block:')
+        _kw_block = keyword('#block')
         expected = pycons(
             (symbol("quote"),
              (_kw_block,

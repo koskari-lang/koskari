@@ -251,7 +251,7 @@ def layout_quote(reader, source, peers):
     """
     Unbox a synthetic quote layout block to ``(compile/quote INNER-BLOCK)``
 
-    INNER-BLOCK is the raw ``:block:`` from the quoted form, not layout-expanded
+    INNER-BLOCK is the raw ``:#block:`` from the quoted form, not layout-expanded
     """
 
     return _unbox_compile_layout(
@@ -265,7 +265,7 @@ def layout_quasiquote(reader, source, peers):
     Unbox a synthetic quasiquote layout block to
     ``(compile/quasiquote INNER-BLOCK)``
 
-    INNER-BLOCK is the raw ``:block:`` from the quasiquoted form
+    INNER-BLOCK is the raw ``:#block:`` from the quasiquoted form
     """
 
     return _unbox_compile_layout(

@@ -211,10 +211,46 @@ class TestKeywordBlocks(TestCase):
         """
         expected = pycons(
             (symbol('quote'),
-             (keyword(':block:'), (symbol('print'),),
-              (keyword(':block:'), (keyword('file:'),),
+             (keyword('#block'), (symbol('print'),),
+              (keyword('#block'), (keyword('file:'),),
                (symbol('x'),)))))
         self.assertEqual(parse_layout(src), expected)
 
 
 # The end.
+
+
+class TestMarkerNamedKeywordLines(TestCase):
+    """
+    The block and splice markers of the layout IR are the keywords
+    #block: and #splice:, so a keyword argument named block: or splice:
+    on a body line is an ordinary keyword line
+    """
+
+    def test_block_keyword_line_is_an_argument(self):
+        src = """
+        f 1:
+          block: False
+        """
+        expected = pycons((symbol('f'), 1, keyword('block:'), False))
+        self.assertEqual(parse_layout(src), expected)
+
+
+    def test_splice_keyword_line_is_an_argument(self):
+        src = """
+        f 1:
+          splice: True
+        """
+        expected = pycons((symbol('f'), 1, keyword('splice:'), True))
+        self.assertEqual(parse_layout(src), expected)
+
+
+    def test_quoted_list_headed_by_block_keyword_is_data(self):
+        src = """
+        list:
+          '(block: (a) (b c))
+        """
+        quoted = (symbol('quote'),
+                  (keyword('block:'), (symbol('a'),), (symbol('b'), symbol('c'))))
+        expected = pycons((symbol('list'), quoted))
+        self.assertEqual(parse_layout(src), expected)

@@ -13,7 +13,7 @@ flattens a list into the surrounding list.
 - ``EXPR` -> `(quasiquote EXPR)`
 - `,EXPR` -> `(unquote EXPR)` (only valid inside a quasiquote body)
 - `,@EXPR` -> `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- `` `HEAD: BODY `` -> `(quasiquote (block: (HEAD) ...))`; see
+- `` `HEAD: BODY `` -> `(quasiquote (#block: (HEAD) ...))`; see
   [Block quasiquote](compile-quasiquote-block.md)
 
 **Behaviour:** One argument required. The result is the argument rebuilt as

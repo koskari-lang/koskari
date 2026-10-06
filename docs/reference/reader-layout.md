@@ -9,7 +9,7 @@ see [Koskari and s-expressions](../guide/layout-and-s-expressions.md).
 The layout reader (`LayoutReader`) is the default reader for Koskari
 modules. It accepts indentation-based blocks and lines at delimiter
 depth 0, embeds ordinary s-expressions inside `(`, `[`, and `{`, and
-parses colon blocks as `block:` conses and expands them through
+parses colon blocks as `#block:` conses and expands them through
 layout handlers (`layout/<head>`) into list forms for the compiler.
 
 Reading is strict: malformed layout or punctuation fails before evaluation.
@@ -134,7 +134,7 @@ if x:
   y
 ```
 
-Sub-blocks may appear in the body. Each is parsed as a `block:` cons.
+Sub-blocks may appear in the body. Each is parsed as a `#block:` cons.
 Peer heads declared for the sub-block's layout (for example `else` after nested
 `if`) are gathered on the same spine and expanded together when the enclosing
 block is expanded.
@@ -220,12 +220,12 @@ Parsing and layout expansion are separate steps.
 
 ### Parse
 
-A colon block is read as a `block:` cons: the header's elements as one
+A colon block is read as a `#block:` cons: the header's elements as one
 list, then one entry per body line, each entry either a line, the list of the
 elements the reader saw on it, or a nested block:
 
 ```
-(block: (HEAD ARG ...) ENTRY ...)
+(#block: (HEAD ARG ...) ENTRY ...)
 ENTRY ::= LINE | BLOCK
 LINE  ::= (ELEMENT ...)
 ```
@@ -240,14 +240,14 @@ foo:
   bar:
     y
   (else: x)
-;; (block: (foo) (else: x) (block: (bar) (y)) ((else: x)))
+;; (#block: (foo) (else: x) (#block: (bar) (y)) ((else: x)))
 ```
 
 Stream-collected peer blocks (when the layout declares peer heads) form a spine
-of `block:` conses that are expanded as one unit.
+of `#block:` conses that are expanded as one unit.
 
 Block quote and quasiquote prefixes (`'head:` and `` `head: ``, and their
-mark-keeping forms `#'head:` and `` #`head: ``) read raw `block:` conses in
+mark-keeping forms `#'head:` and `` #`head: ``) read raw `#block:` conses in
 the header and body without expanding nested layout. They are wrapped for
 `layout/quote`, `layout/quasiquote`, `layout/quote-syntax`, and
 `layout/quasiquote-syntax` to lower at expansion time.

@@ -597,7 +597,7 @@ class LayoutReader(Reader):
         block entry lowers through its layout to its form.
 
         :param entry: a line, a proper cons list of elements, never
-            empty, or a :block: cons
+            empty, or a :#block: cons
         :return: the entry's form
         :raises LayoutError: several elements with implicit calls off
         """
@@ -768,7 +768,7 @@ class LayoutReader(Reader):
         :param stream: an IndentAwareStream
         :param outer_indent: column that ends the block body on dedent
         :return: list of body entries: a line, the proper cons list of
-            the elements the reader saw on it, or a nested :block: cons
+            the elements the reader saw on it, or a nested :#block: cons
         """
 
         body = []
@@ -899,7 +899,7 @@ class LayoutReader(Reader):
         :param outer_indent: column of the enclosing block head
         :param layout_obj: LayoutHandler whose peers attribute lists allowed
             peer head symbols
-        :return: list of (:block: ...) conses, one per peer block
+        :return: list of (:#block: ...) conses, one per peer block
         """
 
         declared = tuple(layout_obj.peers or ())
@@ -930,13 +930,13 @@ class LayoutReader(Reader):
 
     def _build_block(self, stream, outer_indent, head, args):
         """
-        Build the raw :block: cons structure: (:block: (head . args) entry...)
+        Build the raw :#block: cons structure: (:#block: (head . args) entry...)
 
         :param stream: source stream positioned after the block header colon
         :param outer_indent: column of the block head line
         :param head: the block head symbol
         :param args: list of forms between head and colon
-        :return: (:block: (head . args) entry...) cons with position set
+        :return: (:#block: (head . args) entry...) cons with position set
         """
 
         pos = stream.position()
@@ -950,18 +950,18 @@ class LayoutReader(Reader):
 
     def read_block(self, stream, outer_indent, head=None, args=None):
         """
-        Read a block as a :block: cons without invoking layout handlers
+        Read a block as a :#block: cons without invoking layout handlers
 
         Used when :attr:`_block_mode` is set (quote/quasiquote inner blocks).
         Sets _block_mode for the duration of the body read so nested colons
-        also produce raw :block: conses.
+        also produce raw :#block: conses.
 
         :param stream: the source stream, positioned after the header colon
             and its trailing whitespace
         :param outer_indent: column of the block head line
         :param head: block head symbol if already read by the caller
         :param args: header argument forms if already read by the caller
-        :return: (:block: (head . args) entry...) cons
+        :return: (:#block: (head . args) entry...) cons
         """
 
         if head is None:
@@ -977,7 +977,7 @@ class LayoutReader(Reader):
 
     def _read_block_with_peers(self, stream, outer_indent, head, args):
         """
-        Read a primary :block: and any stream-collected peer :block: conses
+        Read a primary :#block: and any stream-collected peer :#block: conses
 
         :param stream: source stream positioned after the header colon
         :param outer_indent: column of the block head line
@@ -1000,12 +1000,12 @@ class LayoutReader(Reader):
         """
         Block-macro handler for the ' prefix
 
-        Reads the block header and body, then wraps the raw :block: cons in a
-        synthetic (:block: (quote) INNER) for layout/quote to unbox
+        Reads the block header and body, then wraps the raw :#block: cons in a
+        synthetic (:#block: (quote) INNER) for layout/quote to unbox
 
         :param stream: the source stream, positioned after the ' character
         :param outer_indent: column of the block head line
-        :return: synthetic (:block: (quote) INNER) cons
+        :return: synthetic (:#block: (quote) INNER) cons
         """
 
         head, args, _ = self.read_block_header(stream)
@@ -1023,11 +1023,11 @@ class LayoutReader(Reader):
 
         Installs the , and ,@ unquote reader macros for the duration of
         the header and body read so that unquote sites are recognised.
-        Wraps the raw :block: cons in a synthetic (:block: (quasiquote) INNER)
+        Wraps the raw :#block: cons in a synthetic (:#block: (quasiquote) INNER)
 
         :param stream: the source stream, positioned after the ` character
         :param outer_indent: column of the block head line
-        :return: synthetic (:block: (quasiquote) INNER) cons
+        :return: synthetic (:#block: (quasiquote) INNER) cons
         """
 
         with self.temporary_event_macro(",", self._read_unquote, True):
@@ -1048,7 +1048,7 @@ class LayoutReader(Reader):
         form is wanted, in :meth:`read` for a top-level line and in the
         layout handlers for the lines of a body. Inside a quoted or
         quasiquoted block a line holding only an unquote-splicing form is
-        returned as ``(:splice: FORM)``, so the filled forms spread into
+        returned as ``(:#splice: FORM)``, so the filled forms spread into
         lines of their own when the block is expanded.
 
         :param values: non-empty list of values collected on the line
@@ -1156,8 +1156,8 @@ class LayoutReader(Reader):
         ``COLON`` (horizontal whitespace only between tokens). Empty lines are
         skipped. At ``LINE_END`` returns ``LINE`` with the elements as a
         proper list, unfolded. At ``COLON``, returns
-        ``BLOCK`` for a single :block: cons, or ``BLOCKS`` for a primary
-        :block: plus stream-collected peer :block: conses on a spine.
+        ``BLOCK`` for a single :#block: cons, or ``BLOCKS`` for a primary
+        :#block: plus stream-collected peer :#block: conses on a spine.
         Expansion is deferred to :meth:`read`.
 
         :param stream: source stream positioned at the start of the next form

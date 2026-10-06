@@ -34,7 +34,7 @@ from koskari.reader.stream import IndentAwareStream
 
 pytestmark = pytest.mark.phase_infra
 
-_keyword_block = keyword(':block:')
+_keyword_block = keyword('#block')
 
 
 def read_layout_form(src_str):

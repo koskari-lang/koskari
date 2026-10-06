@@ -15,7 +15,7 @@ are imported as any Python module is.
 | [`get-compiler`](get-compiler.md) | The compiler that owns a namespace, for compiling into that module |
 | [`macroexpand`](macroexpand.md) | Expand a form until its head is no longer a macro |
 | [`macroexpand-1`](macroexpand-1.md) | One expansion step |
-| [`apply-layouts`](block-quasiquote-and-block-layout-expansion.md) | Expand a `block:` cons through the layout handlers at run time, for filled quasiquote blocks |
+| [`apply-layouts`](block-quasiquote-and-block-layout-expansion.md) | Expand a `#block:` cons through the layout handlers at run time, for filled quasiquote blocks |
 | [`help`](help.md) | Documentation for a binding, through the pager |
 
 ## Values and access

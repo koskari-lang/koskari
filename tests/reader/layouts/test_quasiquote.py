@@ -34,7 +34,7 @@ from .. import parse_layout
 
 pytestmark = pytest.mark.phase_infra
 
-_keyword_block = keyword(':block:')
+_keyword_block = keyword('#block')
 
 
 class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
@@ -135,14 +135,14 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
             ,@hello
         """
 
-        _kw_block = keyword(':block:')
+        _kw_block = keyword('#block')
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
            (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
-             (keyword(':splice:'),
+             (keyword('#splice'),
               (symbol("unquote-splicing"), symbol("hello")))))))
 
         result = parse_layout(src)
@@ -159,14 +159,14 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
             ,@hello
         """
 
-        _kw_block = keyword(':block:')
+        _kw_block = keyword('#block')
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
            (symbol("quasiquote-syntax"),
             (_kw_block,
              (symbol("begin"),),
-             (keyword(':splice:'),
+             (keyword('#splice'),
               (symbol("unquote-splicing"), symbol("hello")))))))
 
         result = parse_layout(src)
@@ -180,7 +180,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
             hello
         """
 
-        _kw_block = keyword(':block:')
+        _kw_block = keyword('#block')
 
         expected = pycons(
           (symbol("define"), symbol("get-name"), nil,
@@ -211,7 +211,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
     async def test_quote_block_with_peers(self):
         """
         A quasiquote-block whose body contains if/else sibling sub-blocks.
-        Both sub-blocks appear as :block: siblings in the outer body.
+        Both sub-blocks appear as :#block: siblings in the outer body.
         Unquote sites in sub-block headers and bodies are parsed correctly.
         """
 
@@ -224,7 +224,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
               ,fallback
         """
 
-        _kw_block = keyword(':block:')
+        _kw_block = keyword('#block')
 
         expected = pycons(
           (symbol("define"), symbol("get-cond"), nil,
@@ -253,7 +253,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
 
     async def test_simple_quote_block(self):
         """
-        A leading ' before a block head reads the block as a :block: cons
+        A leading ' before a block head reads the block as a :#block: cons
         wrapped in quote-block
         """
 
@@ -279,7 +279,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
 
     async def test_quote_block_empty_body(self):
         """
-        A quoted block with no body produces a :block: with nil body list
+        A quoted block with no body produces a :#block: with nil body list
         """
 
         src = """
@@ -308,7 +308,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
 
     async def test_quote_block_nested_sub_block(self):
         """
-        Sub-blocks inside a quoted block become nested :block: cons nodes
+        Sub-blocks inside a quoted block become nested :#block: cons nodes
         rather than being expanded through layout handlers
         """
 

@@ -167,7 +167,7 @@ Seven prefixes wrap the form that follows them:
 
 In layout mode the four quoting prefixes also take a block head: `'head:`,
 `` `head: ``, `#'head:`, and `` #`head: `` quote the indented block as its
-`block:` cons; see [Reader and layout syntax](reader-layout.md).
+`#block:` cons; see [Reader and layout syntax](reader-layout.md).
 
 `,` and `,@` are meaningful only inside a quasiquote. `-'form` writes `form`
 raw: in a macro template it is emitted unmarked, and `-'-'form` nests one level

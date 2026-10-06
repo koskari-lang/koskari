@@ -15,7 +15,7 @@
 tests.reader.layouts.test_apply_layout_runtime
 
 Unit and integration tests for koskari.reader.layouts.apply_layout and
-apply_layouts — runtime expansion of :block: cons structures through layout
+apply_layouts — runtime expansion of :#block: cons structures through layout
 handlers, mirroring scenarios formerly covered via compile/apply-layout.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
@@ -39,14 +39,14 @@ from tests.compile.specials import _register_specials
 pytestmark = pytest.mark.phase_infra
 
 
-_keyword_block = keyword(':block:')
-_keyword_splice = keyword(':splice:')
+_keyword_block = keyword('#block')
+_keyword_splice = keyword('#splice')
 _symbol_compile_begin = symbol('begin')
 
 
 def _make_block(head_args_tuple, body_tuple):
     """
-    Build a :block: cons from Python tuples.
+    Build a :#block: cons from Python tuples.
 
     head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
     body_tuple is a tuple of body forms, each becoming a one-element
@@ -107,13 +107,13 @@ class ApplyLayoutRuntimeTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def eval_apply_layouts_spine_as_begin(self, spine, mod_ns, compiler, ns):
         """
-        Expand a spine of :block: nodes and evaluate the results in order.
+        Expand a spine of :#block: nodes and evaluate the results in order.
 
         apply_layouts yields a proper list of sibling source forms; the
         compiler requires a single expression root, so the list is wrapped
         in compile/begin.
 
-        :param spine: proper list of :block: cons nodes
+        :param spine: proper list of :#block: cons nodes
         :param mod_ns: module namespace for Expression closure
         :param compiler: Compiler tied to the module
         :param ns: layout handler lookup namespace
@@ -141,7 +141,7 @@ class TestApplyLayoutPassthrough(ApplyLayoutRuntimeTestCase):
 
     def test_apply_layout_non_block_returns_same_object(self):
         """
-        Non-:block: pairs are returned unchanged
+        Non-:#block: pairs are returned unchanged
         """
 
         _, _, _, ns = self.make_ns_and_compiler()
@@ -160,7 +160,7 @@ class TestApplyLayoutPassthrough(ApplyLayoutRuntimeTestCase):
 
     def test_apply_layouts_passes_through_non_block_atom(self):
         """
-        A non-:block: form on the spine is copied through unchanged
+        A non-:#block: form on the spine is copied through unchanged
         """
 
         _, _, _, ns = self.make_ns_and_compiler()
@@ -171,7 +171,7 @@ class TestApplyLayoutPassthrough(ApplyLayoutRuntimeTestCase):
 
     def test_missing_layout_block_raises(self):
         """
-        Expanding a :block: requires layout/block in the namespace
+        Expanding a :#block: requires layout/block in the namespace
         """
 
         block = _make_block((symbol('begin'),), (42,))
@@ -186,7 +186,7 @@ class TestApplyLayoutBeginRuntime(ApplyLayoutRuntimeTestCase):
 
     async def test_begin_block_runs_body(self):
         """
-        (:block: (begin) (42)) expands and evaluates to 42
+        (:#block: (begin) (42)) expands and evaluates to 42
         """
 
         block = _make_block((symbol('begin'),), (42,))
@@ -198,7 +198,7 @@ class TestApplyLayoutBeginRuntime(ApplyLayoutRuntimeTestCase):
 
     async def test_begin_block_last_value(self):
         """
-        (:block: (begin) (1 2 3)) evaluates to 3 (last expression)
+        (:#block: (begin) (1 2 3)) evaluates to 3 (last expression)
         """
 
         block = _make_block(
@@ -217,7 +217,7 @@ class TestApplyLayoutIfRuntime(ApplyLayoutRuntimeTestCase):
 
     async def test_if_block_no_peers_true(self):
         """
-        (:block: (if True) (99)) with no peer evaluates to 99 when condition is True
+        (:#block: (if True) (99)) with no peer evaluates to 99 when condition is True
         """
 
         block = _make_block(
@@ -231,7 +231,7 @@ class TestApplyLayoutIfRuntime(ApplyLayoutRuntimeTestCase):
 
     async def test_if_block_no_peers_false(self):
         """
-        (:block: (if False) (99)) with no peer evaluates to None when False
+        (:#block: (if False) (99)) with no peer evaluates to None when False
         """
 
         block = _make_block(
@@ -307,7 +307,7 @@ class TestApplyLayoutFallbackRuntime(ApplyLayoutRuntimeTestCase):
 
     async def test_unknown_head_uses_layout_block(self):
         """
-        (:block: (myfn arg) (body)) expands via layout/block to myfn(arg, body)
+        (:#block: (myfn arg) (body)) expands via layout/block to myfn(arg, body)
         """
 
         block = _make_block(
@@ -324,12 +324,12 @@ class TestApplyLayoutFallbackRuntime(ApplyLayoutRuntimeTestCase):
 
 class TestApplyLayoutNestedRuntime(ApplyLayoutRuntimeTestCase):
     """
-    Nested :block: elements in body lists expand depth-first
+    Nested :#block: elements in body lists expand depth-first
     """
 
     async def test_nested_begin_in_begin(self):
         """
-        Inner (:block: (begin) (42)) expands inside outer begin
+        Inner (:#block: (begin) (42)) expands inside outer begin
         """
 
         inner = _make_block((symbol('begin'),), (42,))

@@ -106,8 +106,8 @@ _DICT_SPLIT_MATCHER = repeat_capture("pairs", ONEOF(
     MATCH(KEYWORD("kw"), BIND("val")),
 )).build()
 
-_keyword_block = keyword(":block:")
-_keyword_splice = keyword(":splice:")
+_keyword_block = keyword("#block")
+_keyword_splice = keyword("#splice")
 _keyword_fence_filename = keyword("filename")
 _keyword_fence_line = keyword("line")
 _keyword_fence_col = keyword("col")

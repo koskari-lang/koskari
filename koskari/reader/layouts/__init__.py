@@ -112,8 +112,8 @@ def find_layout(ns, name):
     return _find_layout(ns, "layout/" + name)
 
 
-_keyword_block = keyword(':block:')
-_keyword_splice = keyword(':splice:')
+_keyword_block = keyword('#block')
+_keyword_splice = keyword('#splice')
 _symbol_begin = symbol('begin')
 
 
@@ -161,9 +161,9 @@ def _gather_peers(tail, declared):
 
 def _lower_block(form, tail, reader):
     """
-    Expand one :block: cons through its layout handler
+    Expand one :#block: cons through its layout handler
 
-    :param form: the ``(:block: header entry ...)`` cons
+    :param form: the ``(:#block: header entry ...)`` cons
     :param tail: the spine after it, from which declared peers are taken
     :param reader: the LayoutReader expanding this source
     :return: (lowered form, remaining tail)
@@ -217,11 +217,11 @@ def apply_lines(entries, target):
     Expand the sub-blocks of a body
 
     A body is a proper list of entries, each a line, the proper list of
-    the elements the reader saw on it, or a nested :block: cons. A
+    the elements the reader saw on it, or a nested :#block: cons. A
     sub-block whose head is not a keyword is lowered in place into a
     one-element line holding its form, taking declared peer blocks from
     the entries that follow it. A sub-block whose head is a keyword is
-    left as it is for the handler. A ``(:splice: FORM ...)`` line, left
+    left as it is for the handler. A ``(:#splice: FORM ...)`` line, left
     by a filled quasiquote block, spreads into one line per form. Any
     other element of a line that is a pair is walked for embedded blocks
 
@@ -273,7 +273,7 @@ def apply_lines(entries, target):
 @builtin('apply-layouts')
 def apply_layouts(blocks, target):
     """
-    Walk a proper cons spine of forms and expand each :block: through the
+    Walk a proper cons spine of forms and expand each :#block: through the
     layout handler namespace. Declared peer blocks are consumed from the cdr
     spine after each primary block; other forms are kept unchanged
 
@@ -312,7 +312,7 @@ def apply_layouts(blocks, target):
 def apply_layout(block, target):
     """
     Apply a layout handler to a single block of form
-    ```(:block: (HEAD ARG ...) ENTRY ...)```
+    ```(:#block: (HEAD ARG ...) ENTRY ...)```
 
     :param block: the block to apply the layout handler to
     :param target: a LayoutReader or a namespace whose module owns one

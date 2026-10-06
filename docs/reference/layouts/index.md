@@ -42,12 +42,12 @@ peer do not break the spine.
 
 ## Blocks as data
 
-An indented block is first read as a `block:` cons, the header's
+An indented block is first read as a `#block:` cons, the header's
 elements as one list and then one entry per body line:
 
 ```text
-(block: (HEAD ARG ...) ENTRY ...)
-ENTRY ::= (ELEMENT ...) | (block: ...)
+(#block: (HEAD ARG ...) ENTRY ...)
+ENTRY ::= (ELEMENT ...) | (#block: ...)
 ```
 
 `LayoutReader.read()` expands those conses through `apply_layout` for a
@@ -57,7 +57,7 @@ invoking the handler as `read(reader, source, peers)`. The handler calls
 the elements directly where it does not, which is how the default block
 handler turns a keyword line into a keyword argument.
 
-Quoted and quasiquoted blocks keep the `block:` structure as data,
+Quoted and quasiquoted blocks keep the `#block:` structure as data,
 through `layout/quote` and `layout/quasiquote`, or `layout/quote-syntax`
 and `layout/quasiquote-syntax` for the `#'head:` and `` #`head: ``
 prefixes that keep hygiene marks, and a macro template

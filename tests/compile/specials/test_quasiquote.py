@@ -481,13 +481,13 @@ from koskari.reader.layouts import apply_layout as _apply_layout_macro
 from koskari.types import is_pair
 
 
-_keyword_block = _kw_type(':block:')
-_keyword_splice = _kw_type(':splice:')
+_keyword_block = _kw_type('#block')
+_keyword_splice = _kw_type('#splice')
 
 
 def _make_block(head_args_tuple, body_tuple):
     """
-    Build a :block: cons from Python tuples.
+    Build a :#block: cons from Python tuples.
 
     head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
     body_tuple is a tuple of body forms, each becoming a one-element
@@ -515,15 +515,15 @@ def _splice_line(form):
     The line the reader gives a lone ,@FORM in a deferred block
     """
 
-    return cons(_kw_type(':splice:'), form, nil)
+    return cons(_kw_type('#splice'), form, nil)
 
 
 class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     """
     Base for quasiquote-block tests.
 
-    quasiquote-block rewrites to quasiquote on the raw :block:
-    cons. When compiled and run, it produces a :block: cons with all unquote
+    quasiquote-block rewrites to quasiquote on the raw :#block:
+    cons. When compiled and run, it produces a :#block: cons with all unquote
     slots filled in — the same shape the reader uses for blocks, without an
     embedded layout wrapper in the datum. Macro expansion applies
     koskari.reader.layouts.apply_layout to such output; these tests mirror
@@ -548,12 +548,12 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def compile_cons_to_source(self, source, **defns):
         """
-        Compile a cons source form and run it to obtain the filled :block:
+        Compile a cons source form and run it to obtain the filled :#block:
         cons produced by quasiquote-block (via quasiquote).
 
         :param source: a cons to compile (typically quasiquote-block ...)
         :param defns: name->value bindings placed in the module namespace
-        :return: (intermediate :block: cons, module, mod_ns, compiler)
+        :return: (intermediate :#block: cons, module, mod_ns, compiler)
         """
 
         module, mod_ns, compiler = self.make_module(**defns)
@@ -566,14 +566,14 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
     async def compile_layout_src_to_source(self, src_str, **defns):
         """
         Read a layout-syntax source string, compile it, and run it to obtain
-        the filled :block: cons produced by quasiquote-block.
+        the filled :#block: cons produced by quasiquote-block.
 
         Uses a LayoutReader with all layout handlers registered so block syntax
         (e.g. `begin: ...) is correctly parsed.
 
         :param src_str: koskari layout source containing a quasiquote-block form
         :param defns: name->value bindings placed in the module namespace
-        :return: (intermediate :block: cons, module, mod_ns, compiler)
+        :return: (intermediate :#block: cons, module, mod_ns, compiler)
         """
 
         module, mod_ns, compiler = self.make_module(**defns)
@@ -590,10 +590,10 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def run_source(self, intermediate, module, mod_ns, compiler):
         """
-        Compile and run the second phase: expand :block: through layouts
+        Compile and run the second phase: expand :#block: through layouts
         (as macro output does via apply_layout), then evaluate.
 
-        :param intermediate: the :block: cons from the first phase
+        :param intermediate: the :#block: cons from the first phase
         :param module: the module with specials and layouts registered
         :param mod_ns: the module namespace
         :param compiler: the compiler to reuse
@@ -608,13 +608,13 @@ class QuasiquoteBlockTestCase(unittest.IsolatedAsyncioTestCase):
 
 class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
     """
-    Type-1 tests: verify the shape of the intermediate :block: cons produced
+    Type-1 tests: verify the shape of the intermediate :#block: cons produced
     by running compiled quasiquote-block code (unquote slots filled).
     """
 
     async def test_static_begin_block_shape(self):
         """
-        Static block with no unquotes produces (:block: (begin) (42))
+        Static block with no unquotes produces (:#block: (begin) (42))
         """
 
         block = _make_block((symbol('begin'),), (42,))
@@ -653,7 +653,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
     async def test_unquote_splicing_slot_filled(self):
         """
         A ,@forms unquote-splicing site on its own line is spliced into
-        that line's :splice: marker in the intermediate source cons
+        that line's :#splice: marker in the intermediate source cons
         """
 
         splice = cons(symbol('unquote-splicing'), symbol('forms'), nil)
@@ -669,14 +669,14 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         splice_line, rest = entries
         self.assertIs(rest, nil)
         self.assertEqual(
-            splice_line, cons(_kw_type(':splice:'), 10, 20, nil))
+            splice_line, cons(_kw_type('#splice'), 10, 20, nil))
 
 
 class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
     """
     Type-2 tests: two-phase compile of quasiquote-block forms.
 
-    Phase 1 compiles and runs the quasiquote-block, producing a :block: cons
+    Phase 1 compiles and runs the quasiquote-block, producing a :#block: cons
     with slots filled. Phase 2 runs koskari.reader.layouts.apply_layout,
     then compiles and runs to obtain the final value.
     """
@@ -757,7 +757,7 @@ class TestQuasiquoteBlockTwoPhase(QuasiquoteBlockTestCase):
 class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
     """
     Full-stack integration tests: read layout source via the default reader,
-    compile, run (producing the filled :block: cons), then apply_layout plus
+    compile, run (producing the filled :#block: cons), then apply_layout plus
     compile+run again to obtain the final value.
     """
 
