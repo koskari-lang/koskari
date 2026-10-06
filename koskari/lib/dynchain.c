@@ -2064,7 +2064,8 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
 
    TRY: CONSUMED when RAISE, enabled, PyErr set, and extent has except_pc.
    FINALLY: CONSUMED when RAISE, RETURN, BREAK or CONTINUE and finally
-   enabled.
+   enabled. A TRANSFER never comes here: the goal's LEAVING hands an
+   enabled FINALLY the transfer itself (kos_dyn_finally_take_transfer).
 */
 KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
                                KosXferEvent event) {

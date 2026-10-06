@@ -249,6 +249,16 @@ static KosOpResult finally_take_control(
 }
 
 
+KosOpResult kos_dyn_finally_take_transfer(
+    KosEvalState *es,
+    KosDynFinally *fin) {
+
+  Py_INCREF(Py_None);
+  return finally_take_control(es, fin, Py_None,
+                              KOS_PENDING_RETURN_TRANSFER, "goal_leave");
+}
+
+
 /**
    RETURN unwind walk to frame. See dynchain.h for the contract. Caller:
    eval.c eval_event_return.

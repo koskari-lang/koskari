@@ -282,6 +282,19 @@ int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node) {
 }
 
 
+void kos_xfer_goal_resume_after_finally(KosEvalState *es) {
+
+  KosXferGoal *goal = KosEvalState_GOAL(es);
+
+  if (! goal || ! goal->frontier
+      || ! KosDynNode_IS_FINALLY(goal->frontier))
+    return;
+  goal->frontier = NULL;
+  goal->frontier_id = 0;
+  goal->park_top = NULL;
+}
+
+
 int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
   Py_VISIT(goal->payload);
@@ -302,7 +315,9 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
 
 /**
    Park the goal on node: its thunk or awaitable is in flight, and the
-   driver does nothing until dyn_top is park_top again.
+   driver does nothing until dyn_top is park_top again. A FINALLY waits
+   with a NULL top: its body runs in the frame below it, so POP_FINALLY
+   resumes the goal in place of a return to park_top.
 */
 static void goal_park(KosXferGoal *goal, KosDynNode *node, KosDynNode *top) {
 
@@ -349,6 +364,16 @@ static KosOpResult goal_leave(KosEvalState *es, KosXferGoal *goal) {
       }
       kos_dyn_finish_flattened_gen(es, (KosDynGen *) top);
       continue;
+    }
+    if (KosDynNode_IS_FINALLY(top)
+        && KosDynFinally_ENABLED((KosDynFinally *) top)) {
+      /* The finally body runs in this frame with the region still at
+         dyn_top, so no park_top can mark its end: POP_FINALLY resumes
+         the goal once the region is gone, and the drive continues here. */
+      r = kos_dyn_finally_take_transfer(es, (KosDynFinally *) top);
+      if (r.kind == KOS_RES_REPROLOGUE)
+        goal_park(goal, top, NULL);
+      return r;
     }
 
     r = kos_dyn_unlink_top(es, KOS_XFER_EVENT_TRANSFER, 1);

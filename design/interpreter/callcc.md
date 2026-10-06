@@ -209,8 +209,8 @@ evaluator token) reaches `process_raise` as a `KoskariContinuationApply`
 signal. `handle_continuation_apply` arms a **cc-unwind goal**: no target, the
 seam is the root GEN (the driver boundary) when the chain is a generator's,
 otherwise NULL, and `is_cc_unwind` is set. LEAVING runs every extent's leave
-with `KOS_XFER_EVENT_TRANSFER` (after thunks and `__exit__`s see no active
-exception); DELIVERING then raises the stored signal as a **boundary raise**
+with `KOS_XFER_EVENT_TRANSFER` (after thunks, `__exit__`s and `finally`
+bodies see no active exception); DELIVERING then raises the stored signal as a **boundary raise**
 (`kos_eval_prepare_boundary_raise`), frees every goal, and reports it through
 `kos_xfer_goal_drive`'s `out_boundary` so the drain returns it to the driver
 as it stands, never through `try_local`. The owning context catches the
@@ -257,7 +257,13 @@ struct KosXferGoal {
 1. LEAVING: unlink from dyn_top down to the seam through
    `kos_dyn_unlink_top` with `KOS_XFER_EVENT_TRANSFER`: `after` thunks
    and `__exit__`s above the seam run, innermost first; obligations the
-   nodes held are dropped. Nothing at or below the seam leaves. The seam
+   nodes held are dropped. An enabled FINALLY above the seam is not
+   unlinked but handed the transfer (`kos_dyn_finally_take_transfer`):
+   its body runs in its own frame with the region still at dyn_top,
+   disabled and marked `KOS_PENDING_RETURN_TRANSFER`, the goal waiting
+   on it with a NULL `park_top`; `POP_FINALLY` resumes the goal before
+   the region leaves and the next prologue continues LEAVING from the
+   new dyn_top. Nothing at or below the seam leaves. The seam
    is the lowest common ancestor of the live chain and the template,
    matched from the roots by node id and by phase
    (`kos_dyn_node_same_phase`): a live node that has moved on since the

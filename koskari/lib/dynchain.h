@@ -1612,6 +1612,7 @@ typedef enum KosPendingReturnKind {
   KOS_PENDING_RETURN_DELIM,     /* routed to a delimited-invoke bookmark */
   KOS_PENDING_RETURN_BREAK,     /* a loop's BREAK, value in hand */
   KOS_PENDING_RETURN_CONTINUE,  /* a loop's CONTINUE, value in hand */
+  KOS_PENDING_RETURN_TRANSFER,  /* a transfer goal waiting on a FINALLY body */
 } KosPendingReturnKind;
 
 
@@ -1665,6 +1666,21 @@ KosOpResult kos_dyn_unwind_to_loop(
     KosEvalState *es,
     KosXferEvent event,
     PyObject *result);
+
+
+/**
+   Hand a transfer leaving the chain to the enabled FINALLY at dyn_top:
+   its body runs for its side effects with None as the region value,
+   the region stays at dyn_top disabled with HANDLING_CONTROL set to
+   KOS_PENDING_RETURN_TRANSFER, and POP_FINALLY resumes the transfer
+   once the region is gone. The caller sets the goal to wait on the
+   region. Caller: xfer_goal.c goal_leave.
+
+   :return: EVAL_REPROLOGUE, or EVAL_RAISE with PyErr set
+*/
+KosOpResult kos_dyn_finally_take_transfer(
+    KosEvalState *es,
+    KosDynFinally *fin);
 
 
 /**

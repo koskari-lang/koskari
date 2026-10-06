@@ -181,6 +181,14 @@ KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary);
 */
 int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node);
 
+
+/**
+   The FINALLY body the active goal waited on has run: clear the wait
+   ahead of that region leaving the chain, so the next drive continues
+   LEAVING from the new dyn_top. Caller: opcode/POP_FINALLY.c.
+*/
+void kos_xfer_goal_resume_after_finally(KosEvalState *es);
+
 /**
    1 when a goal is armed and the next drive will act on it: it is not
    parked, or the thunk it parked on has returned (dyn_top is back at
