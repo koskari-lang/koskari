@@ -220,7 +220,12 @@ def _as_fraction(s):
     :return: a cons list representing the fraction form
     """
 
-    frac = fraction(s)
+    try:
+        frac = fraction(s)
+    except ZeroDivisionError:
+        # the reader turns a ValueError from an atom into a positioned
+        # syntax error; a zero denominator is one
+        raise ValueError(f"fraction with zero denominator: {s}") from None
     return cons(_symbol_fraction, frac.numerator, frac.denominator, nil)
 
 

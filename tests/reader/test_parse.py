@@ -217,6 +217,17 @@ class TestFraction(IsolatedAsyncioTestCase):
         col = parse_source(src)
         self.assertEqual(col, cons(symbol("fraction"), -1, 2, nil))
 
+    async def test_zero_denominator_is_a_syntax_error(self):
+        for src in ("1/0", "-3/0"):
+            with self.assertRaises(ReaderSyntaxError) as caught:
+                parse_source(src)
+            self.assertIn("zero denominator", str(caught.exception))
+            self.assertEqual(1, caught.exception.lineno)
+
+    async def test_zero_denominator_dict_key(self):
+        with self.assertRaises(ReaderSyntaxError):
+            parse_source("#{1/0: 1}")
+
 
 class TestDecimal(IsolatedAsyncioTestCase):
 
