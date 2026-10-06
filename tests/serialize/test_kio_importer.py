@@ -29,6 +29,7 @@ import unittest
 import pytest
 
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
+from koskari.lib import FunctionSpec
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
 
@@ -160,6 +161,21 @@ class TestKioImporterParity(unittest.TestCase):
                                os.path.join(pkg, 'rel.kio'))
         mod = importlib.import_module('kiopkg_rel.rel')
         self.assertEqual(mod.y, 42)
+
+
+    def test_kio_holds_plain_code_names(self):
+        """
+        A function a macro template names (each, inside dict-each) is
+        serialized under its plain code name, with no expansion mark:
+        the name a traceback and __name__ show
+        """
+        src = ("define h [words]:\n"
+               "    dict-each [w words] key: w value: (len w)\n")
+        ki, kio = self._both('plain_names', src)
+        for mod in (ki, kio):
+            inner = [c for c in mod.h.code.constants_pool
+                     if isinstance(c, FunctionSpec)]
+            self.assertEqual(['each'], [c.code.name for c in inner])
 
 
     def test_docstring_via_kio_matches_ki(self):

@@ -884,6 +884,10 @@ class Compiler:
         reso = self._resolution_instance
         if reso is None:
             reso = self._resolution_pragma_class()
+        # a code is named by the plain name: a symbol's expansion mark
+        # belongs to its binding, never to the text
+        if is_symbol(name):
+            name = name.base
         return ByteCodeFragment(
             self, str(name), self.filename, resolution=reso)
 

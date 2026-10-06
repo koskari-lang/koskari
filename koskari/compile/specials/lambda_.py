@@ -56,7 +56,10 @@ def helper_function(compiler, caps, selfref):
 
     body_src = caps["body"].datum
 
-    proper_name = str(named) if named else None
+    # the binding keeps the symbol as given, mark and all; the code and
+    # the function are named by the plain name, which is what reaches a
+    # traceback, __name__, and the .kio
+    proper_name = str(named.base) if named else None
     fragment_name = proper_name or "<lambda>"
 
     # the formals declare as symbols and the FormalsSpec spells them; a

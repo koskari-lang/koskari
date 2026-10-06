@@ -56,6 +56,25 @@ class TestLambdaNamed(SpecialsTestCase):
                       "named lambda repr should show proper name")
 
 
+    async def test_marked_name_gives_a_plain_code_name(self):
+        """
+        A lambda a template names carries the expansion mark on its
+        binding symbol only: the code is named by the plain name
+        """
+        src = """
+        (define mk
+          (syntax-rules mk []
+            [(mk) (lambda each [] 1)]))
+        """
+        expr, mod = self.compile_expr(src)
+        await expr()
+        defn = {'compile/mk': vars(mod)['mk']}
+        expr, mod = self.compile_expr("(mk)", **defn)
+        fn = await expr()
+        self.assertEqual("each", fn.code.name)
+        self.assertEqual("each", fn.__name__)
+
+
     async def test_named_lambda_identity(self):
         src = "(lambda fact [n] n)"
         expr, mod = self.compile_expr(src)
