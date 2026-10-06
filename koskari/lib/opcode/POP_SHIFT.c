@@ -14,8 +14,8 @@
 */
 
 /**
-   POP_SHIFT: Take TOS as result, unwind the SHIFT node (a transparent
-   bookmark with no segment of its own) and the PROMPT, then deliver
+   POP_SHIFT: Take TOS as result, unwind the SHIFT node (which owned the
+   handler body's operands) and the PROMPT, then deliver
    the result as the region's value.  The delimiter is resolved by the instance the shift captured
    against; an invocation prompt delivers through its paired DELIM at the
    invoke site, a live reset resumes past its POP_PROMPT (the pop_pc the

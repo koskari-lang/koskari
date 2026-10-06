@@ -450,9 +450,8 @@ struct KosDynNode {
          above the prompt so the handler has a frame to resume in. */
       KosDynNode *frame;
       KosDynNode *node;
-      /* INPLACE only: displaced resume-frame state (stack owned) and
-         the invoke-site acting pc for extent lookups after restitch */
-      KosSegment *saved_stack;
+      /* INPLACE only: the invoke-site pc and acting pc, restored at
+         restitch (slice execution overwrites both) */
       uint32_t saved_pc;
       uint32_t saved_acting_pc;
     } delim;
@@ -2184,7 +2183,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
    return walk now stops naturally at any DELIM with a live bookmark. */
 #define KOS_DYN_DELIM_MODE_POP_PROMPT 2u
 /* In-place (Path A) delimited return: chain stashes the detached invoke
-   span; saved_stack/saved_pc hold the resume frame's displaced state. */
+   span; saved_pc/saved_acting_pc hold the invoke-site pcs. */
 #define KOS_DYN_DELIM_MODE_INPLACE    3u
 
 #define KosDynDelim_MODE(d)        (((KosDynNode *)(d))->u.delim.mode)
@@ -2193,7 +2192,6 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynDelim_RETURN_FRAME_NODE(d) (((KosDynNode *)(d))->u.delim.frame)
 #define KosDynDelim_RETURN_FRAME(d) ((KosDynFrame *) (KosDynDelim_RETURN_FRAME_NODE(d)))
 #define KosDynDelim_RETURN_NODE(d)  (((KosDynNode *)(d))->u.delim.node)
-#define KosDynDelim_SAVED_STACK(d) (((KosDynNode *)(d))->u.delim.saved_stack)
 #define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
 #define KosDynDelim_SAVED_ACTING_PC(d) \
   (((KosDynNode *)(d))->u.delim.saved_acting_pc)

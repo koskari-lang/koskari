@@ -48,7 +48,6 @@ KosDynDelim *kos_dyndelim_new(
   KosDynDelim_RETURN_PC(delim) = pc;
   KosDynDelim_RETURN_FRAME_NODE(delim) = (KosDynNode *) frame;
   KosDynDelim_RETURN_NODE(delim) = node;
-  KosDynDelim_SAVED_STACK(delim) = NULL;
   KosDynDelim_SAVED_PC(delim) = 0;
   KosDynDelim_SAVED_ACTING_PC(delim) = 0;
   return delim;
@@ -88,7 +87,6 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
       (KosDynDelim_RETURN_NODE(delim) == (KosDynNode *) delim)
           ? (KosDynNode *) clone
           : KosDynDelim_RETURN_NODE(delim);
-  KosDynDelim_SAVED_STACK(clone) = NULL;
   KosDynDelim_SAVED_PC(clone) = KosDynDelim_SAVED_PC(delim);
   KosDynDelim_SAVED_ACTING_PC(clone) = KosDynDelim_SAVED_ACTING_PC(delim);
   return clone;
@@ -107,11 +105,6 @@ void kos_dyndelim_free(KosDynDelim *delim) {
   if (KosDynDelim_RETURN_CHAIN(delim)) {
     kos_dynchain_free(KosDynDelim_RETURN_CHAIN(delim), NULL);
     KosDynDelim_RETURN_CHAIN(delim) = NULL;
-  }
-
-  if (KosDynDelim_SAVED_STACK(delim)) {
-    KosStack_Release(KosDynDelim_SAVED_STACK(delim));
-    KosDynDelim_SAVED_STACK(delim) = NULL;
   }
 
   if (KosDynNode_FLAGS((KosDynNode *) delim)
@@ -142,9 +135,6 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
           : 0) < 0)
     return -1;
   if (snapshot_set_uint(data, "saved_pc", KosDynDelim_SAVED_PC(delim)) < 0)
-    return -1;
-  if (snapshot_set_int(data, "has_saved_stack",
-      KosDynDelim_SAVED_STACK(delim) ? 1 : 0) < 0)
     return -1;
   return 0;
 }
@@ -205,20 +195,13 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
 
 
 /**
-   GC traverse a KOS_DYN_DELIM: visit owned return chain, displaced
-   stack payloads, and a held yoyo return-address snapshot -- the
-   snapshot's code, namespace, and operand references have no other
-   owner between invoke and restitch.
+   GC traverse a KOS_DYN_DELIM: visit the owned return chain and a held
+   yoyo return-address snapshot -- the snapshot's code, namespace, and
+   operand references have no other owner between invoke and restitch.
 */
 static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) {
   KosDynNode *chain = KosDynDelim_RETURN_CHAIN((KosDynDelim *) node);
-  KosSegment *saved = KosDynDelim_SAVED_STACK((KosDynDelim *) node);
 
-  if (saved) {
-    int tr = KosStack_Traverse(saved, visit, arg);
-    if (tr != 0)
-      return tr;
-  }
   if (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME) {
     int tr = kos_dynnode_traverse(
         KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node), visit, arg);

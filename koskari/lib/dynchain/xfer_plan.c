@@ -100,10 +100,16 @@ static int kos_delimited_inplace_ready(
 /**
    In-place (Path A) delimited invoke: detach the invoke span (dyn_top down
    through the live SHIFT node) onto an INPLACE DELIM inserted directly
-   above the live prompt, displace the resume frame's stack/pc with the
-   captured resume state, and continue on the live chain. No transfer plan,
-   no clone, no wind replay; live extents unwind exactly once as the slice
-   runs to POP_PROMPT, which restitches via
+   above the live prompt, set the resume frame's pc to the captured
+   resume pc, and continue on the live chain. The region's operands are
+   where capture left them: on the live prompt and the region nodes
+   between it and the shift, untouched by the handler, whose own
+   operands sit on the SHIFT node in the stashed span. The invocation
+   prompt that stands in for the live prompt under the slice takes a
+   copy of the prompt's operands, so the slice resumes over them and
+   the live prompt keeps its own for the handler's return. No transfer
+   plan, no clone, no wind replay; live extents unwind exactly once as
+   the slice runs to POP_PROMPT, which restitches via
    kos_dyn_finish_inplace_pop_return. Borrows value.
 */
 static int kos_delimited_invoke_inplace(
@@ -117,7 +123,6 @@ static int kos_delimited_invoke_inplace(
   KosDynNode *span_top = KosEvalState_DYN_TOP(es);
   KosDynNode *slice_top = KosDynNode_PARENT(shift);
   KosDynFrame *resume_frame;
-  KosSegment *resume_stack;
   KosDynDelim *delim;
   KosDynFrame *return_frame;
   uint32_t return_pc;
@@ -147,14 +152,6 @@ static int kos_delimited_invoke_inplace(
     resume_frame = (KosDynFrame *) node;
   }
 
-  resume_stack = KosContinuation_RESUME_STACK(k)
-      ? KosStack_DeepCopy(KosContinuation_RESUME_STACK(k)) : NULL;
-  if (! resume_stack && KosContinuation_RESUME_STACK(k)) {
-    if (! PyErr_Occurred())
-      PyErr_NoMemory();
-    return -1;
-  }
-
   KosEvalState_FlushLiveRegsToFrame(es);
   return_frame = KosEvalState_FRAME(es);
   return_pc = return_frame ? KosEvalState_PC(es) : (uint32_t) -1;
@@ -167,8 +164,6 @@ static int kos_delimited_invoke_inplace(
   if (handler_nested && return_frame) {
     KosDynFrame *tmpl = kos_dynframe_clone(return_frame);
     if (! tmpl) {
-      if (resume_stack)
-        KosStack_Release(resume_stack);
       if (! PyErr_Occurred())
         PyErr_NoMemory();
       return -1;
@@ -187,8 +182,6 @@ static int kos_delimited_invoke_inplace(
        ours to free. */
     if (handler_nested)
       kos_dynframe_free(return_frame);
-    if (resume_stack)
-      KosStack_Release(resume_stack);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
@@ -213,8 +206,20 @@ static int kos_delimited_invoke_inplace(
   if (! invocation_prompt) {
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
-    if (resume_stack)
-      KosStack_Release(resume_stack);
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return -1;
+  }
+
+  /* The one step that can fail comes first, before the chain is
+     touched: the invocation prompt takes a copy of the region's pending
+     operands from the live prompt. A failure here leaves the chain as
+     it was. */
+  if (kos_dyn_clone_copy_segment((KosDynNode *) invocation_prompt,
+                                 prompt) < 0) {
+    kos_dynprompt_free(invocation_prompt);
+    KosDynNode_PARENT((KosDynNode *) delim) = NULL;
+    kos_dyndelim_free(delim);
     if (! PyErr_Occurred())
       PyErr_NoMemory();
     return -1;
@@ -226,29 +231,6 @@ static int kos_delimited_invoke_inplace(
          (void *) span_top, (void *) shift, (void *) prompt,
          (void *) resume_frame, (unsigned) return_pc);
   #endif
-
-  /* The one step that can fail comes first, before the chain is
-     touched: the displaced segment is stored away from its node until
-     restitch, and an inline segment cannot leave its node, so detach
-     spills it to a heap segment. A failure here leaves the chain as
-     it was. */
-  {
-    KosSegment *displaced = KosStack_Detach(KosDynFrame_STACK(resume_frame));
-    if (! displaced && KosDynFrame_STACK(resume_frame)) {
-      /* Nothing on the chain points at the delim or the invocation
-         prompt yet, so both are ours to free; the delim's free takes
-         the handler snapshot it holds. */
-      kos_dynprompt_free(invocation_prompt);
-      KosDynNode_PARENT((KosDynNode *) delim) = NULL;
-      kos_dyndelim_free(delim);
-      if (resume_stack)
-        KosStack_Release(resume_stack);
-      return -1;
-    }
-    KosDynDelim_SAVED_STACK(delim) = displaced;
-    if (displaced)
-      KosSegment_BACK(displaced) = NULL;
-  }
 
   /* Detach the invoke span and stash it on the delim. Its segments'
    * unwind-cache back links die with the detach. */
@@ -271,14 +253,11 @@ static int kos_delimited_invoke_inplace(
     kos_dyn_clear_unwind_caches(slice_top, (KosDynNode *) invocation_prompt);
   }
 
-  /* Displace the resume frame's live state with the captured resume
-   * state; the delim owns the displaced stack, detached above, until
-   * restitch. The invoke-site acting pc is saved for extent lookups
-   * after restitch (slice execution overwrites the frame's acting
-   * pc). */
+  /* Point the resume frame at the captured resume pc; the invoke-site
+   * pc and acting pc are saved for the restitch (slice execution
+   * overwrites both). */
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
-  KosDynFrame_STACK(resume_frame) = resume_stack;
   KosDynFrame_PC(resume_frame) = KosContinuation_RESUME_PC(k);
 
   KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;

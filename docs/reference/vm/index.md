@@ -80,8 +80,8 @@ indexes the frame's local slots directly.
   - `KOS_DYN_PARAM` -- parameter bindings for a parameterize extent.
   - `KOS_DYN_WITH` -- context manager (`with` and `dyn-with`). Single-shot
     versus multi-shot is a field on the node, not a second kind.
-  - `KOS_DYN_SHIFT` -- shift handler bookmark. Transparent: no segment,
-    frame, or namespace of its own.
+  - `KOS_DYN_SHIFT` -- shift handler bookmark. Owns the handler body's
+    operand segment; no frame or namespace of its own.
   - `KOS_DYN_GEN` -- generator node. Intercepts yield, return, and raise,
     and denies shift.
   - `KOS_DYN_NEXT` -- iteration node for a standalone `OBJECT_NEXT` over a
@@ -3990,8 +3990,8 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_PUSH_SHIFT
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
-- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT is a transparent bookmark with no segment of its own; the PROMPT's segment stays active throughout.
-- **Pushes:** KOS_DYN_SHIFT (transparent bookmark: no segment of its own, no handlers).
+- **Stack**: Captures the continuation: one walk from the top of the dynamic chain locates the nearest matching prompt while offering handle(SHIFT) to each node crossed (a generator boundary denies). The captured continuation is the delimited region with the shift expression as its hole -- a cloned chain segment, so a shift hosted in a callee captures through the calling frames up to the prompt. Pushes a SHIFT marker recording the captured prompt's instance, pushes the captured continuation on stack, and enters the shift block in place; no unwinding happens at capture. SHIFT owns the segment the shift body's operands go on; the PROMPT's segment keeps the region's pending operands for the continuation to resume over.
+- **Pushes:** KOS_DYN_SHIFT (bookmark for the shift body: owns its operand segment, no handlers).
 - **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies handle(SHIFT) (a generator boundary) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `prompt_id` and `operation`.
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.

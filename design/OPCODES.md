@@ -4197,8 +4197,8 @@ the paired DELIM bookmark to the invoke site.
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Stack**: Captures the continuation: one walk from `dyn_top` locates the nearest matching prompt while offering `handle(SHIFT)` to each node crossed (GEN denies -- a shift cannot cross a generator boundary). Clones the chain segment from `dyn_top` through the prompt and its owning FRAME (including heritage nodes such as WIND); a capture bounded at an *invocation* prompt stops at the prompt and appends a compressed baseline frame instead. Prompt clones in the template are falsified -- fresh instance node_id plus KOS_DYNF_INVOCATION, with in-template SHIFT records remapped -- so grafted instances never collide with the live original. Pushes a KOS_DYN_SHIFT marker recording the captured prompt's node_id, pushes the captured continuation wrapper on stack, and enters the shift block. Does **not** peel nodes above the prompt.
-- **Pushes:** KOS_DYN_SHIFT (transparent bookmark recording the captured prompt instance: no segment of its own, no handlers).
-- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. Stack block is owned by PROMPT, not SHIFT.
+- **Pushes:** KOS_DYN_SHIFT (bookmark recording the captured prompt instance; owns the handler body's operand segment, no handlers).
+- **Invariants**: Extent KOS_EXT_SHIFT pairs with POP_SHIFT. The region's operands stay on the PROMPT's block; the handler body's go on the SHIFT's, so an in-place invoke finds each where it belongs.
 - **Errors**: A walk that exhausts the chain without meeting a matching prompt raises `KoskariPromptNotFound`; a node that denies `handle(SHIFT)` (GEN) raises `KoskariPromptUnreachable` with the denying boundary recorded. Both carry `prompt_id` and `operation` (see `koskari.exceptions`, [archive/continuation-capture-errors.md](archive/continuation-capture-errors.md)).
 - **Compiler form:** Pre-compile arg may be prompt id value/symbol; post-compile arg = pool index.
 

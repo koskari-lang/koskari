@@ -26,7 +26,12 @@
 
 
 /**
-   Marker for shift handler extent (no frame). Callers: kos_dyn_push_shift.
+   Marker for shift handler extent (no frame). Owns the handler body's
+   operand segment: the region's own pending operands stay on the
+   prompt and the region nodes below, as they were at capture, so an
+   in-place invoke of the continuation runs the slice over them and
+   finds the handler's operands waiting on this node when it returns.
+   Callers: kos_dyn_push_shift.
 */
 static KosDynShift *kos_dynshift_new(
     KosDynNode *parent,
@@ -37,6 +42,7 @@ static KosDynShift *kos_dynshift_new(
 
   kos_dynnode_init((KosDynNode *) shift, KOS_DYN_SHIFT, parent, 0);
   KosDynShift_PROMPT_NODE_ID(shift) = prompt_node_id;
+  kos_dynnode_use_inline_segment((KosDynNode *) shift);
   return shift;
 }
 

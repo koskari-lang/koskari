@@ -51,10 +51,10 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
 /**
    Allocate a fresh invocation-prompt instance for an in-place delimited
    invoke: the delimiter the resumed slice runs under, per Danvy/Filinski
-   (k = lambda x. <E[x]> -- every invocation re-delimits). Owns NO stack
-   block: the slice's operands live in the displaced resume frame below,
-   and the marker only provides the prompt instance that captures inside
-   the slice bound at and POP_SHIFT resolves to. No pop_pc either --
+   (k = lambda x. <E[x]> -- every invocation re-delimits). Born without
+   a stack block; the in-place invoke gives it a copy of the live
+   prompt's pending operands, so the slice resumes over the region's
+   own operands and POP_SHIFT resolves to this instance. No pop_pc --
    completion routes through the paired DELIM (KOS_DYNF_INVOCATION),
    never through a POP_PROMPT resume. Its own node id, not the live prompt's.
    Callers: kos_delimited_invoke_inplace.

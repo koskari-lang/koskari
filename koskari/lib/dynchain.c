@@ -513,27 +513,6 @@ static void kos_dyn_debug_check_walk(
 
 
 /**
-   Recompute a node's segment back link in place: the enclosing owning
-   slot is the first stack owner below the node. For segments restored
-   to their node after displacement (delim stash), whose install-time
-   link cannot be trusted across the restitch.
-*/
-static void kos_dyn_reslot_segment_back(KosDynNode *node) {
-
-  KosSegment **slot = NULL;
-
-  for (KosDynNode *p = KosDynNode_PARENT(node); p; p = KosDynNode_PARENT(p)) {
-    if (KosDynNode_STACK(p)) {
-      slot = &KosDynNode_STACK(p);
-      break;
-    }
-  }
-
-  KosSegment_BACK(KosDynNode_STACK(node)) = slot;
-}
-
-
-/**
    Clear every unwind cache -- segment back links and frame back
    links -- on nodes in [from, stop), walking parent links. Call
    whenever a span of nodes is detached from (or re-spliced into) the
@@ -3200,22 +3179,10 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
     resume_frame = (KosDynFrame *) node;
   }
 
-  /* Drop the spent slice stack; restore the displaced invoke-time state.
-     The restored segment's install-time back link predates the
-     displacement; the chain below may have been restitched since, so
-     clear it and let the walk answer. */
-  {
-    KosSegment *spent = KosDynFrame_STACK(resume_frame);
-    KosDynFrame_STACK(resume_frame) = KosDynDelim_SAVED_STACK(delim);
-    if (KosDynFrame_STACK(resume_frame))
-      /* the install-time link predates the displacement; recompute
-         the enclosing slot at the restored position */
-      kos_dyn_reslot_segment_back((KosDynNode *) resume_frame);
-    KosDynDelim_SAVED_STACK(delim) = NULL;
-    KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
-    if (spent)
-      KosStack_Release(spent);
-  }
+  /* Restore the invoke-site pc. The frame's operand segment was never
+     displaced: the slice ran over the invocation prompt's copy of the
+     region's operands, which went with that node. */
+  KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
 
   /* POP_PROMPT runs in the resume frame, so the live registers still
      hold the spent slice's pc: load the restored state into them, or

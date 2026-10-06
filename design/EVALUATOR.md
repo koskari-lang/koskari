@@ -806,8 +806,8 @@ Four distinct carriers, each with one job:
   writes it) -- never a cross-suspension or cross-context stash.
 - **Node handler state** -- what a node needs to do its own job stays in
   the node payload: WITH's exc triple for `__exit__` arguments and
-  `normal_exit`, FINALLY's `handling_raise`, DELIM's `saved_stack` /
-  `saved_pc` resume fields.
+  `normal_exit`, FINALLY's `handling_raise`, DELIM's `saved_pc` /
+  `saved_acting_pc` resume fields.
 
 ---
 

@@ -162,12 +162,21 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
    not already been consumed: `kos_delimited_invoke_inplace` detaches the
    invoke span (dyn_top through the SHIFT node) onto a
    **`KOS_DYN_DELIM_MODE_INPLACE`** delim inserted directly above the live
-   prompt, displaces the resume frame's stack/pc with the captured resume
-   state, and continues on the live chain: no clone, no goal, no enter
-   replay. Only the first invoke runs in place; re-invokes fall through to
-   the landing path (multi-shot). The slice's `POP_PROMPT` restitches the
-   stashed span (`kos_dyn_inplace_restitch`); an exception raised in the
-   slice restitches likewise and continues the raise from the invoke site.
+   prompt, puts an invocation prompt where the live prompt stood under
+   the slice, sets the resume frame's pc to the captured resume pc, and
+   continues on the live chain: no clone, no goal, no enter replay. The
+   operands are already in place: the region's pending operands sit on
+   the live prompt and the region nodes between it and the shift, as
+   capture left them, and the handler's operands sit on the SHIFT node
+   (which owns its own segment) inside the stashed span. The invocation
+   prompt takes a copy of the live prompt's operands, so the slice
+   resumes over the region's own operands and the live prompt keeps its
+   own for the handler's return; the frame's segment is never touched.
+   Only the first invoke runs in place; re-invokes fall through to the
+   landing path (multi-shot). The slice's `POP_PROMPT` restitches the
+   stashed span and restores the invoke-site pc
+   (`kos_dyn_inplace_restitch`); an exception raised in the slice
+   restitches likewise and continues the raise from the invoke site.
 
 1. **Seam**: a delimited invoke pushes a **`KOS_DYN_DELIM`** in
    `KOS_DYN_DELIM_MODE_POP_PROMPT` at dyn_top as the seam. An undelimited
