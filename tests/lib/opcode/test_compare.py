@@ -32,6 +32,7 @@ pytestmark = pytest.mark.phase_lib
 
 LT = int(Compare.LT)
 EQ = int(Compare.EQ)
+NE = int(Compare.NE)
 IS = int(Compare.IS)
 IS_NOT = int(Compare.IS_NOT)
 IN = int(Compare.IN)
@@ -173,6 +174,79 @@ class TestCheckCompare(CevalTest):
         ])
         with self.assertRaises(TypeError):
             await make_callable(code, ns)()
+
+
+class TestCheckCompareIdentity(CevalTest):
+    """
+    A branch-position == or != calls the operands' __eq__ / __ne__ even
+    when both sides are one object, as the value form and Python do: a
+    NaN is not equal to itself, and a type may answer False for itself
+    """
+
+    NAN = float("nan")
+
+    class Never:
+        def __eq__(self, other):
+            return False
+
+        def __ne__(self, other):
+            return True
+
+    def check(self, sel, value):
+        return build_expr([
+            ["CONST", value],
+            ["CONST", value],
+            ["CHECK_COMPARE", (sel, 2, "fail", 0)],
+            ["CONST", "held"],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", "failed"],
+            ["RETURN", 1],
+        ])
+
+
+    async def test_eq_nan_fails(self):
+        code, ns = self.check(EQ, self.NAN)
+        self.assertEqual(await make_callable(code, ns)(), "failed")
+
+
+    async def test_ne_nan_holds(self):
+        code, ns = self.check(NE, self.NAN)
+        self.assertEqual(await make_callable(code, ns)(), "held")
+
+
+    async def test_eq_asks_the_type(self):
+        code, ns = self.check(EQ, self.Never())
+        self.assertEqual(await make_callable(code, ns)(), "failed")
+
+
+    async def test_ne_asks_the_type(self):
+        code, ns = self.check(NE, self.Never())
+        self.assertEqual(await make_callable(code, ns)(), "held")
+
+
+    async def test_fast_eq_nan_fails(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_FAST", (cmpsrc(EQ, False, False), 0, 0, "fail")],
+            ["CONST", "held"],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", "failed"],
+            ["RETURN", 1],
+        ], local_syms=("a",), values={"a": self.NAN})
+        self.assertEqual(await make_callable(code, ns)(), "failed")
+
+
+    async def test_var_ne_nan_holds(self):
+        code, ns = build_expr([
+            ["CHECK_COMPARE_VAR", (cmpsrc(NE, False, False), "a", "a", "fail")],
+            ["CONST", "held"],
+            ["RETURN", 1],
+            ["LABEL", "fail"],
+            ["CONST", "failed"],
+            ["RETURN", 1],
+        ], values={"a": self.NAN})
+        self.assertEqual(await make_callable(code, ns)(), "held")
 
 
 class TestObjectCompare(CevalTest):

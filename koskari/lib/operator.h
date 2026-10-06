@@ -884,8 +884,11 @@ static inline int kos_ll_compare(
    Py_LT..Py_GE ordinal, passed through untranslated -- so the dispatch
    loop's check path keeps the pre-unification inlining.  Exact-int
    pairs settle on the trichotomy bit-test without touching the
-   richcompare machinery; identity implies value equality for ints, so
-   the shortcut PyObject_RichCompareBool takes on EQ/NE is preserved. */
+   richcompare machinery.  Every other pair takes the full richcompare
+   and the truth of its result, not PyObject_RichCompareBool, whose
+   identity shortcut answers EQ and NE by pointer before the type is
+   asked; a branch must ask, as the value form and Python do, so a NaN
+   is unequal to itself and a type may answer for its own identity. */
 static inline int kos_compare_chain(
     KosCompare sel,
     PyObject *const *args,
@@ -897,10 +900,21 @@ static inline int kos_compare_chain(
       PyObject *l = args[i - 1];
       PyObject *r = args[i];
       long long a, b;
-      if (likely(kos_as_ll2(l, r, &a, &b)))
+      if (likely(kos_as_ll2(l, r, &a, &b))) {
         res = kos_ll_compare(sel, a, b);
-      else
-        res = PyObject_RichCompareBool(l, r, (int) sel);
+      } else {
+        PyObject *truth = PyObject_RichCompare(l, r, (int) sel);
+        if (! truth)
+          return -1;
+        if (truth == Py_True)
+          res = 1;
+        else if (truth == Py_False)
+          res = 0;
+        else
+          res = PyObject_IsTrue(truth);
+        Py_DECREF(truth);
+      }
+
       if (res <= 0)
         break;
     }
