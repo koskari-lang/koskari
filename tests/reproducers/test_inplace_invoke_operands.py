@@ -102,6 +102,23 @@ class TestInplaceInvokeOperands(SpecialsTestCase):
         self.assertEqual(17, await self.evaluate(src))
 
 
+    async def test_escape_from_the_resumed_slice_abandons_the_handler(self):
+        """
+        A let/cc escape captured in the region and invoked from inside
+        the resumed slice delivers to the let/cc point: the shift
+        handler's pending work is abandoned with the stashed span
+        """
+
+        src = """
+        (reset
+          (call add 100
+            (let/cc esc
+              (call add 1 (shift d (call add 1000 (call d 1))))
+              (call esc 5))))
+        """
+        self.assertEqual(105, await self.evaluate(src))
+
+
     async def test_handler_that_never_invokes(self):
         src = """
         (reset (call add 1 (shift k 42)))
