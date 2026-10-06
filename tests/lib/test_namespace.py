@@ -761,6 +761,77 @@ class TestModuleNamespace(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mod.builtins['a'], 123)
 
 
+    async def test_builtin_ref_is_not_a_module_binding(self):
+        """
+        ref() over a builtin name hands out a ref holding the builtin
+        and leaves the name unbound in the module: the value side does
+        not see it, and neither does the refs view
+        """
+        mod = ModuleNamespace("mod", {'b': 987})
+
+        r = mod.ref('b')
+        self.assertEqual(r.deref(), 987)
+        self.assertIs(mod.ref('b'), r)
+
+        self.assertNotIn('b', mod)
+        self.assertIsNone(mod.get('b'))
+        self.assertNotIn('b', list(mod.keys()))
+        self.assertNotIn('b', mod.refs)
+        self.assertFalse(mod.bound('b'))
+
+
+    async def test_function_reading_a_builtin_does_not_bind_it(self):
+        """
+        A function namespace closing over a builtin name reads the
+        builtin through the module's builtin ref and binds nothing in
+        the module
+        """
+        mod = ModuleNamespace("mod", {'b': 987})
+        fn = Namespace("fn", mod, (), ('b',), ())
+
+        self.assertEqual(fn.deref('b'), 987)
+        self.assertNotIn('b', mod)
+        self.assertFalse(mod.bound('b'))
+
+
+    async def test_explicit_global_declares_a_module_binding(self):
+        """
+        A function naming a builtin as an explicit global (define-global)
+        declares it in the module: the builtin ref taken before becomes
+        the module's binding, bound at once and valued when stored
+        """
+        mod = ModuleNamespace("mod", {'b': 987})
+        r = mod.ref('b')
+        fn = Namespace("fn", mod, (), (), ('b',))
+
+        self.assertTrue(mod.bound('b'))
+        self.assertIs(mod.ref('b'), r)
+        self.assertEqual(fn.deref('b'), 987)
+
+        fn.store('b', 5)
+        self.assertEqual(r.deref(), 5)
+        self.assertEqual(mod.deref('b'), 5)
+        self.assertIn('b', mod)
+
+
+    async def test_store_promotes_builtin_ref_to_binding(self):
+        """
+        Storing the name in the module gives the module's value to
+        every holder of the ref taken before, and the name is a module
+        binding from then on
+        """
+        mod = ModuleNamespace("mod", {'b': 987})
+        fn = Namespace("fn", mod, (), ('b',), ())
+        r = mod.ref('b')
+
+        mod.store('b', 1)
+        self.assertEqual(r.deref(), 1)
+        self.assertEqual(fn.deref('b'), 1)
+        self.assertIn('b', mod)
+        self.assertIn('b', mod.refs)
+        self.assertIs(mod.ref('b'), r)
+
+
     async def test_nested_with_namespace(self):
         """ModuleNamespace works as parent for Namespace"""
         ns1 = ModuleNamespace("ns1", {})

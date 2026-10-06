@@ -891,7 +891,11 @@ extern PyTypeObject KosModuleNamespaceType;
 typedef struct KosModuleNamespace {
   KosNamespaceHeadPad head;  // .dict is the live PyDictObject
   KosNamespaceCore core;
-  PyObject *builtins;  // PyDictObject
+  PyObject *builtins;      // PyDictObject: the module's builtin values
+  PyObject *builtin_refs;  // PyDictObject: name -> Ref seeded with the
+                           // builtin, handed to functions and ref()
+                           // callers; apart from BINDS until the module
+                           // binds the name itself
 } KosModuleNamespace;
 
 
@@ -902,6 +906,9 @@ PyObject *KosModuleNamespace_New(
 
 #define KosModuleNamespace_BUILTINS(mdl)        \
   (((KosModuleNamespace *) mdl)->builtins)
+
+#define KosModuleNamespace_BUILTIN_REFS(mdl)    \
+  (((KosModuleNamespace *) mdl)->builtin_refs)
 
 #define KosModuleNamespace_CheckExact(obj)     \
   ((obj) && ((obj)->ob_type == &KosModuleNamespaceType))

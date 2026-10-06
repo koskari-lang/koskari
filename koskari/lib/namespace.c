@@ -47,6 +47,7 @@ static PyObject *mdl_mirrored_names = NULL;   // tuple of str
 
 // forward declarations
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name);
+static PyObject *mdl_ns_claim_binding(PyObject *self, PyObject *name);
 static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name);
 
 
@@ -791,7 +792,9 @@ static int ns_init_syms_from_nspec(
     for (size_t i = 0; i < target; i++) {
       PyObject *ref_name = PyTuple_GET_ITEM(global_syms, i);
 
-      PyObject *ref = mdl_ns_borrow_ref(module_ns, ref_name);
+      /* an explicit global declares a module binding: the module binds
+         the name now, and a builtin ref of that name becomes it */
+      PyObject *ref = mdl_ns_claim_binding(module_ns, ref_name);
       if (! ref) {
         PyErr_Format(PyExc_NameError, "No such reference in module: %S",
                      ref_name);
@@ -949,7 +952,9 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
     size_t target = PySequence_Fast_GET_SIZE(global_syms);
     for (size_t i = 0; i < target; i++) {
       PyObject *ref_name = PySequence_Fast_GET_ITEM(global_syms, i);
-      PyObject *ref = mdl_ns_borrow_ref(module_ns, ref_name);
+      /* an explicit global declares a module binding: the module binds
+         the name now, and a builtin ref of that name becomes it */
+      PyObject *ref = mdl_ns_claim_binding(module_ns, ref_name);
       if (! ref) {
         PyErr_Format(PyExc_NameError, "No such reference in module: %S",
                      ref_name);
@@ -1076,7 +1081,7 @@ static PyObject *ns_loose_ref_index(
 
   *out_index = -1;
   if (KosModuleNamespace_CheckExact(self))
-    return mdl_ns_borrow_ref(self, key);
+    return mdl_ns_claim_binding(self, key);
   return NULL;
 }
 
@@ -1200,6 +1205,15 @@ static int ns_bind_ref(PyObject *self, PyObject *key, PyObject *ref) {
   }
 
   int res = PyDict_SetItem(binds, key, ref);
+  if (res == 0 && KosModuleNamespace_CheckExact(self)) {
+    /* the module binds the name now; a builtin ref of that name is
+       no longer what ref lookups answer with */
+    if (PyDict_DelItem(KosModuleNamespace_BUILTIN_REFS(self), key) < 0) {
+      if (! PyErr_ExceptionMatches(PyExc_KeyError))
+        return -1;
+      PyErr_Clear();
+    }
+  }
   SAYF("ns_bind_ref -> %i", res);
   return res;
 }
@@ -2691,33 +2705,58 @@ static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name) {
 }
 
 
-/* The Ref bound to name, created on a miss and kept in BINDS from then
-   on, seeded with the builtin of that name if there is one. This is the
-   creating lookup behind ns_claim_ref, global binding at namespace
-   init, and stores. Value reads and membership tests peek BINDS and
-   then the builtins dict directly, and leave nothing behind. */
+/* The Ref for name, created on a miss. A name the module binds lives
+   in BINDS. A name the module does not bind but the builtins hold
+   gets a ref seeded with the builtin, kept in BUILTIN_REFS: functions
+   and ref() callers share it, and the value side (membership, item
+   reads, dir, attributes, the star-import scan) reads BINDS only and
+   never sees it. A name in neither gets an empty ref in BINDS. This is
+   the lookup behind ns_claim_ref, global binding at namespace init,
+   and FindRef; a store goes through mdl_ns_claim_binding. */
 static PyObject *mdl_ns_borrow_ref(PyObject *self, PyObject *name) {
 
   PyObject *res = PyDict_GetItem(KosNamespace_BINDS(self), name);
+  if (res)
+    return res;
 
-  if (! res) {
-    PyObject *blt = KosModuleNamespace_BUILTINS(self);
-    PyObject *val = NULL;
-    if (blt)
-      val = PyDict_GetItem(blt, name);
+  PyObject *brefs = KosModuleNamespace_BUILTIN_REFS(self);
+  res = PyDict_GetItem(brefs, name);
+  if (res)
+    return res;
 
-    res = KosRef_New(name, val);
-    if (! res)
-      return NULL;
+  PyObject *blt = KosModuleNamespace_BUILTINS(self);
+  PyObject *val = blt ? PyDict_GetItem(blt, name) : NULL;
+  PyObject *home = val ? brefs : KosNamespace_BINDS(self);
 
-    if (PyDict_SetItem(KosNamespace_BINDS(self), name, res) < 0) {
-      Py_DECREF(res);
-      return NULL;
-    }
+  res = KosRef_New(name, val);
+  if (! res)
+    return NULL;
+  if (PyDict_SetItem(home, name, res) < 0) {
     Py_DECREF(res);
+    return NULL;
   }
+  Py_DECREF(res);
+  return res;
+}
 
-  // SAYF("mdl_ns_borrow_ref -> %R", res);
+
+/* The Ref a store or bind in the module writes through: as
+   mdl_ns_borrow_ref, and a ref found among the builtin refs moves to
+   BINDS first, so the name is a module binding from then on and every
+   holder of that ref sees the module's value. */
+static PyObject *mdl_ns_claim_binding(PyObject *self, PyObject *name) {
+
+  PyObject *res = mdl_ns_borrow_ref(self, name);
+  if (! res)
+    return NULL;
+
+  PyObject *brefs = KosModuleNamespace_BUILTIN_REFS(self);
+  if (PyDict_GetItem(brefs, name) == res) {
+    if (PyDict_SetItem(KosNamespace_BINDS(self), name, res) < 0)
+      return NULL;
+    if (PyDict_DelItem(brefs, name) < 0)
+      return NULL;
+  }
   return res;
 }
 
@@ -2747,6 +2786,7 @@ static PyObject *mdl_ns_new(
    never a copy, so it owns its name and parent outright. */
 static void mdl_ns_release_core(PyObject *self) {
   Py_CLEAR(KosModuleNamespace_BUILTINS(self));
+  Py_CLEAR(KosModuleNamespace_BUILTIN_REFS(self));
   Py_CLEAR(KosNamespace_NAME(self));
   Py_CLEAR(KosNamespace_PARENT(self));
   Py_CLEAR(KosNamespace_TEMPLATE(self));
@@ -2764,6 +2804,7 @@ static void mdl_ns_dealloc(PyObject *self) {
 
 static int mdl_ns_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosModuleNamespace_BUILTINS(self));
+  Py_VISIT(KosModuleNamespace_BUILTIN_REFS(self));
   Py_VISIT(KosNamespace_NAME(self));
   Py_VISIT(KosNamespace_PARENT(self));
   Py_VISIT(KosNamespace_TEMPLATE(self));
@@ -3206,18 +3247,25 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
   PyObject *binds = PyDict_New();
   if (! binds)
     return NULL;
+  PyObject *builtin_refs = PyDict_New();
+  if (! builtin_refs) {
+    Py_DECREF(binds);
+    return NULL;
+  }
 
   /* the dict base allocates and initialises the dict part and tracks
      the object from birth; the core is zero until filled here */
   PyObject *args = PyTuple_New(0);
   if (! args) {
     Py_DECREF(binds);
+    Py_DECREF(builtin_refs);
     return NULL;
   }
   PyObject *self = PyDict_Type.tp_new(&KosModuleNamespaceType, args, NULL);
   Py_DECREF(args);
   if (! self) {
     Py_DECREF(binds);
+    Py_DECREF(builtin_refs);
     return NULL;
   }
 
@@ -3232,6 +3280,7 @@ PyObject *KosModuleNamespace_New(PyObject *name, PyObject *builtins) {
 
   Py_INCREF(builtins);
   KosModuleNamespace_BUILTINS(self) = builtins;
+  KosModuleNamespace_BUILTIN_REFS(self) = builtin_refs;
 
   // SAYF("KosModuleNamespace_New -> %R", self);
   return self;
@@ -3339,7 +3388,10 @@ static int mdl_setattro(PyObject *self, PyObject *name, PyObject *value) {
   }
 
   PyObject *ns = KosModule_NAMESPACE(self);
-  PyObject *ref = ns_claim_ref(ns, name);
+  /* an attribute store binds the name in the module */
+  PyObject *ref = KosModuleNamespace_CheckExact(ns)
+      ? mdl_ns_claim_binding(ns, name)
+      : ns_claim_ref(ns, name);
   if (! ref) {
     if (! PyErr_Occurred())
       PyErr_Format(PyExc_AttributeError, "%R object has no attribute %R",

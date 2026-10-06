@@ -88,12 +88,19 @@ keeps them apart.
 Tier 2 is append-only. A name once bound is never unbound, only emptied,
 because closures may already hold its ref. `del ns[name]` and
 `ns.clear(name)` empty the ref; afterwards `name in ns` is false while
-`name in ns.refs` stays true. `ns.ref(name)` on a module namespace binds
-a fresh ref when the name is missing, so a request for a ref is the one
-read that creates. The new ref starts out holding the builtin of that
-name when there is one, and empty otherwise. That copy is the module's
-own: storing through it changes the name inside this module only, and
-later changes to the builtins are not seen through it.
+`name in ns.refs` stays true. `ns.ref(name)` on a module namespace
+creates a ref when the name is missing, so a request for a ref is the
+one read that creates. For a name the builtins hold, the ref starts out
+holding that builtin and lives apart from the module's bindings: a
+function that reads `max` shares that ref, while `"max" in ns`,
+`ns.refs`, `ns.bound("max")`, `dir(module)` and a star import do not
+report it. The name becomes a module binding when the module binds it,
+by a `define`, a store, a `define-global` in one of its functions, or an
+attribute store on the module, and the same ref then carries the
+module's value to every holder. For any other missing name the new ref
+is empty and bound at once. A builtin's ref is the module's own:
+storing through it changes the name inside this module only, and later
+changes to the builtins are not seen through it.
 
 The mapping protocol never reaches tier 1. A builtin is not `in` a module
 namespace, `ns[name]` raises `KeyError` for it, and `ns.get(name)`
