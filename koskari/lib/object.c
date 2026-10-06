@@ -46,6 +46,8 @@ static PyObject *str_call_name = NULL;
 static PyObject *str_func_name = NULL;
 static PyObject *str_class_name = NULL;
 static PyObject *str_iter_name = NULL;
+static PyObject *str_mro_entries = NULL;
+static PyObject *str_orig_bases = NULL;
 
 
 /**
@@ -599,6 +601,92 @@ static int demand_wrap_namespace(PyObject *ns_dict) {
 }
 
 
+/* === MRO entry resolution === */
+
+
+/**
+   The bases the metaclass receives: each base that is not a type but
+   defines __mro_entries__ is replaced by the tuple that method returns
+   for the bases as written, as CPython's __build_class__ does before
+   it calculates the metaclass (Generic[T], NamedTuple, TypedDict).
+   Returns a new reference to bases itself when nothing changed, so the
+   caller can tell whether to record __orig_bases__.
+*/
+static PyObject *resolve_mro_entries(PyObject *bases) {
+
+  Py_ssize_t n = PyTuple_GET_SIZE(bases);
+  PyObject *out = NULL;   /* built on the first substitution */
+
+  for (Py_ssize_t i = 0; i < n; i++) {
+    PyObject *base = PyTuple_GET_ITEM(bases, i);
+    PyObject *meth;
+    PyObject *entries;
+
+    if (PyType_Check(base)) {
+      if (out && PyList_Append(out, base) < 0)
+        goto fail;
+      continue;
+    }
+
+    meth = PyObject_GetAttr(base, str_mro_entries);
+    if (! meth) {
+      if (! PyErr_ExceptionMatches(PyExc_AttributeError))
+        goto fail;
+      PyErr_Clear();
+      if (out && PyList_Append(out, base) < 0)
+        goto fail;
+      continue;
+    }
+
+    entries = PyObject_CallOneArg(meth, bases);
+    Py_DECREF(meth);
+    if (! entries)
+      goto fail;
+    if (! PyTuple_Check(entries)) {
+      Py_DECREF(entries);
+      PyErr_SetString(PyExc_TypeError,
+                      "__mro_entries__ must return a tuple");
+      goto fail;
+    }
+
+    if (! out) {
+      out = PyList_New(0);
+      if (! out) {
+        Py_DECREF(entries);
+        goto fail;
+      }
+      for (Py_ssize_t j = 0; j < i; j++) {
+        if (PyList_Append(out, PyTuple_GET_ITEM(bases, j)) < 0) {
+          Py_DECREF(entries);
+          goto fail;
+        }
+      }
+    }
+    for (Py_ssize_t j = 0; j < PyTuple_GET_SIZE(entries); j++) {
+      if (PyList_Append(out, PyTuple_GET_ITEM(entries, j)) < 0) {
+        Py_DECREF(entries);
+        goto fail;
+      }
+    }
+    Py_DECREF(entries);
+  }
+
+  if (! out) {
+    Py_INCREF(bases);
+    return bases;
+  }
+  {
+    PyObject *resolved = PyList_AsTuple(out);
+    Py_DECREF(out);
+    return resolved;
+  }
+
+ fail:
+  Py_XDECREF(out);
+  return NULL;
+}
+
+
 /* === Metaclass resolution === */
 
 
@@ -787,6 +875,24 @@ PyObject *kos_build_class(
     return NULL;
   }
 
+  {
+    PyObject *resolved = resolve_mro_entries(bases_tuple);
+    if (! resolved) {
+      Py_DECREF(ns_dict);
+      Py_DECREF(bases_tuple);
+      return NULL;
+    }
+    if (resolved != bases_tuple
+        && PyDict_SetItem(ns_dict, str_orig_bases, bases_tuple) < 0) {
+      Py_DECREF(resolved);
+      Py_DECREF(ns_dict);
+      Py_DECREF(bases_tuple);
+      return NULL;
+    }
+    Py_DECREF(bases_tuple);
+    bases_tuple = resolved;
+  }
+
   PyObject *metaclass = resolve_metaclass(bases_tuple, metaclass_or_null);
   if (! metaclass) {
     Py_DECREF(ns_dict);
@@ -884,8 +990,10 @@ int koskari_object_init(PyObject *mod) {
   STR_CONST(str_func_name, "__func__");
   STR_CONST(str_class_name, "__class__");
   STR_CONST(str_iter_name, "__iter__");
+  STR_CONST(str_mro_entries, "__mro_entries__");
+  STR_CONST(str_orig_bases, "__orig_bases__");
   if (! str_call_name || ! str_func_name || ! str_class_name
-      || ! str_iter_name)
+      || ! str_iter_name || ! str_mro_entries || ! str_orig_bases)
     return -1;
 
   if (intern_name_list(procedure_dunders, procedure_names) < 0
@@ -907,6 +1015,8 @@ int koskari_object_init(PyObject *mod) {
 int koskari_object_clear(PyObject *mod) {
 
   Py_CLEAR(str_call_name);
+  Py_CLEAR(str_mro_entries);
+  Py_CLEAR(str_orig_bases);
   Py_CLEAR(str_func_name);
   Py_CLEAR(str_class_name);
   Py_CLEAR(str_iter_name);
