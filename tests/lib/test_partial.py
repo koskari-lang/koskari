@@ -376,6 +376,25 @@ class TestKosPartialDispatch(unittest.TestCase):
         self.assertEqual(kwargs, {"b": "B", "c": 2})
 
 
+    def test_non_dict_state_dict_refused(self):
+        """
+        The fourth state element becomes the instance __dict__, so
+        __setstate__ refuses one that is neither None nor a dict and
+        leaves the partial as it was
+        """
+
+        kp = KosPartial(max, 1)
+        kp.tag = "kept"
+        with self.assertRaises(TypeError):
+            kp.__setstate__((min, (2,), {}, 99999))
+        self.assertIs(kp.func, max)
+        self.assertEqual((1,), kp.args)
+        self.assertEqual("kept", kp.tag)
+        kp.__setstate__((min, (2,), {}, {"tag": "set"}))
+        self.assertIs(kp.func, min)
+        self.assertEqual("set", kp.tag)
+
+
     def test_non_str_bound_key_refused(self):
         """
         A non-str key reaching the bound keywords is refused: at

@@ -396,7 +396,8 @@ static PyObject *kospartial_setstate(PyObject *self, PyObject *state) {
   PyObject *d = PyTuple_GET_ITEM(state, 3);
 
   if (! PyCallable_Check(func) || ! PyTuple_Check(fnargs)
-      || (kw != Py_None && ! PyDict_Check(kw))) {
+      || (kw != Py_None && ! PyDict_Check(kw))
+      || (d != Py_None && ! PyDict_Check(d))) {
     PyErr_SetString(PyExc_TypeError, "invalid KosPartial state");
     return NULL;
   }
