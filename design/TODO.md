@@ -399,6 +399,16 @@ form `(instance? OBJ T1 T2 ...)` needs runtime `instance?` and
 specials, the value and truth reductions in `operator.c`, and the
 reference pages widen together.
 
+### Traceback creation: frames between the catch points (investigate)
+
+A raise records the whole dynchain on the exception, and every faux
+frame injected for it carries that whole record as `__koskari_trace__`,
+so a CLI traceback prints the chain once per frame and shows the
+launchpad. The record must hold only the frames between the raise
+point and the catch point, and a frame must carry only its own entry.
+
+Ref: [EVALUATOR.md](EVALUATOR.md) (§4.3 Traceback Injection).
+
 ---
 
 ## Recorded proposals (evaluate / implement)
