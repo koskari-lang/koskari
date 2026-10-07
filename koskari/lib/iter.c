@@ -130,8 +130,15 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
     switch (res.kind) {
       case KOS_RES_RAISE:
       case KOS_RES_FATAL:
-        /* RAISE means PyErr is set; clear it (GeneratorExit/StopIteration = success) */
-        PyErr_Clear();
+        /* GeneratorExit or StopIteration coming back is the close
+           completing; anything else is what the cleanup raised, and
+           is reported as a finalizer's error is. */
+        if (PyErr_ExceptionMatches(PyExc_GeneratorExit)
+            || PyErr_ExceptionMatches(PyExc_StopIteration)
+            || PyErr_ExceptionMatches(PyExc_StopAsyncIteration))
+          PyErr_Clear();
+        else
+          PyErr_WriteUnraisable((PyObject *) agen);
         goto primary_success;
       case KOS_RES_RETURN:
         Py_XDECREF(res.val);
