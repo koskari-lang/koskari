@@ -193,6 +193,35 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         self.assertEqual(result, 3)
 
 
+    async def test_special_head_compiles_once_per_level(self):
+        # a head whose own head is a special (lambda) is not a lowering
+        # candidate: it reaches the call path raw and compiles once, so
+        # ((lambda [] ...)) nested n deep completes n inner codes plus
+        # the expression's own, never 2^(n+1) - 1
+        module, mod_ns, compiler = self.make_module()
+        src = "1"
+        depth = 8
+        for _ in range(depth):
+            src = f"((lambda [] {src}))"
+        source = default_reader.read(source_str(src, __file__))
+
+        completions = []
+        orig = Compiler.complete
+
+        def counting(self_, *args, **kwargs):
+            completions.append(1)
+            return orig(self_, *args, **kwargs)
+
+        Compiler.complete = counting
+        try:
+            fragment = compiler.full_compile(source)
+            expr = fragment.as_expression(mod_ns)
+        finally:
+            Compiler.complete = orig
+        self.assertEqual(1, await expr())
+        self.assertEqual(depth + 1, len(completions))
+
+
     async def test_method_call_heads_unaffected(self):
         # the natural method-call spelling: the dot suffix reads as an
         # attr head, which reaches the call path raw and routes to

@@ -1224,23 +1224,12 @@ class Compiler:
             if head.base is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
-        elif is_pair(head):
-            # expansion is legal in operator position: when the head is
-            # itself a form whose own head is a syntax, attempt to lower
-            # it. A successful lowering re-emits this form with the new
-            # head for a fresh dispatch; a failed attempt commits nothing
-            # and the raw head flows to the call path below.
-            lowered = self.lower_head(head, position=pos or position)
-            if lowered is not None:
-                ret = cons(lowered, tail)
-                fill_position(ret, pos or position)
-                return ret
-
         # Re-emit as an explicit call form with the head left as raw
         # source. Compiling the head here would destroy forms that
         # compile/call's patterns need to see (eg. a (compile/attr obj
-        # name) head routing to compile/call-attr); the special compiles
-        # the callable itself when no pattern claims it.
+        # name) head routing to compile/call-attr); a pair head no
+        # pattern claims is lowered by the special's generic arm, through
+        # lower_head, once the routing arms have had their chance.
         reemitted = cons(_symbol_call, head, tail)
         fill_position(reemitted, pos or position)
         return reemitted
@@ -1248,21 +1237,23 @@ class Compiler:
 
     def lower_head(self, form, position=None):
         """
-        Attempt to lower a form found in operator position.
+        Attempt to lower a form found in operator position. Caller:
+        compile/call's generic arm, for a callee no routing arm claimed.
 
         The attempt nests through arbitrarily deep pair heads: each level
         resolves its own head, and only a form whose innermost head names
         a syntax is attempted at all. A syntax whose expansion yields a
         source form succeeds, reconstructing each enclosing level around
-        the result; a non-syntax head, or an expansion that compiles to
-        bytecode, fails the whole attempt. Failure commits nothing -- the
-        discarded fragment was never merged -- so the caller's raw form
-        flows to the call path untouched.
+        the result, and the caller re-dispatches the call with the new
+        head; one that compiles to bytecode succeeds with that fragment,
+        which the caller takes as the callee compiled, so the head is
+        never compiled twice. A non-syntax head fails the whole attempt,
+        committing nothing.
 
         :param form: the pair found in operator position
         :param position: enclosing source position threaded to diagnostics
-        :return: the lowered replacement form, or None when the attempt
-            fails
+        :return: the lowered replacement form, a fragment the head
+            compiled to, or None when the attempt fails
         """
 
         head = form.car
@@ -1282,10 +1273,10 @@ class Compiler:
         if comp is None:
             return None
 
-        res = comp.compile_impl(self, form)
-        if res is None or isinstance(res, ByteCodeFragment):
-            return None
-        return res
+        # a head that compiles to bytecode is kept as that fragment and
+        # becomes the callee: compiling it again from the raw head would
+        # double the work at every nesting level
+        return comp.compile_impl(self, form)
 
 
     def compile_special(self, fragment, comp, source_obj):

@@ -55,19 +55,22 @@ implemented in `Compiler` (`compile_symbol`, `compile_pair`, `lower_head`):
   `SyntaxMatchError`. Bare arms are template-only; the called-by symbol is
   the sole capture, carried with the caller-threaded source position.
 
-- **Pair heads** (`Compiler.lower_head`). When a form's head is itself a
-  form, the compiler attempts to lower it: attempts nest through arbitrary
-  depth, and only a head whose innermost head names a syntax is attempted
-  at all. An expansion yielding *source* succeeds — each enclosing level is
-  reconstructed around it (positions filled) and the whole form re-enters
-  compilation from the top, so an expansion landing on a symbol becomes a
-  fresh syntax use with the tail as its arguments. A non-syntax head, or an
-  expansion that compiles to bytecode, fails the entire attempt with
-  nothing committed (the scratch fragment is never merged), and the raw
-  head flows to `compile/call` untouched — preserving the `(attr …)` head
-  patterns and their `CALL_ATTR` fusion. Failure semantics are
-  all-or-nothing per attempt; successes restart, so no partial rewrites
-  ever mix with a failure.
+- **Pair heads** (`Compiler.lower_head`, run from `compile/call`'s
+  generic arm). A form whose head is itself a form is re-emitted as
+  `(call head tail...)` with the head raw, so `compile/call`'s routing
+  arms see it first — the `(attr …)` head patterns and their `CALL_ATTR`
+  fusion. When no routing arm claims the callee, the generic arm attempts
+  to lower it: attempts nest through arbitrary depth, and only a head
+  whose innermost head names a syntax is attempted at all. An expansion
+  yielding *source* succeeds — each enclosing level is reconstructed
+  around it (positions filled) and the call is re-dispatched with the new
+  head, so an expansion landing on a symbol becomes a fresh syntax use
+  with the tail as its arguments. A head that compiles to bytecode
+  succeeds with that fragment, which the generic arm merges as the callee:
+  the head is compiled once, never discarded and compiled again from the
+  raw form (which doubled the work at every nesting level of
+  `((lambda [] …))`). A non-syntax head fails the attempt with nothing
+  committed, and the callee compiles as any other.
 
   Interlocking rule: **`begin` of a single form is that form** — the
   `compile/begin` special returns a one-form body for recompilation, and
