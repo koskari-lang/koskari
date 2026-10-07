@@ -27,7 +27,7 @@ import sys
 from importlib.abc import FileLoader
 from importlib.machinery import FileFinder, PathFinder
 from os import getcwd, stat
-from os.path import exists
+from os.path import basename, exists
 
 
 __all__ = (
@@ -152,6 +152,23 @@ class KoskariSourceFileLoader(FileLoader):
             if source is not None:
                 return source
         return filename
+
+
+    def get_code(self, fullname):
+        """
+        A Koskari module has no Python code object, so runpy and
+        python -m stop here instead of compiling the source as Python
+        """
+
+        path = self.get_filename(fullname)
+        raise ImportError(
+            f"{fullname} is a Koskari module; run it with koskari {path}",
+            name=fullname, path=path)
+
+
+    def is_package(self, fullname):
+        stem = basename(self.get_filename(fullname)).rsplit('.', 1)[0]
+        return stem == '__init__'
 
 
     def get_source(self, fullname):
