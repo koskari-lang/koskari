@@ -8,9 +8,12 @@ to BINDING and evaluating BODY on each iteration. Supports `compile/break` and
 `compile/continue` inside the body. An optional trailing **`[else: ELSEBODY...]`**
 keyword clause runs only when the iterator is exhausted naturally (i.e. not via
 `compile/break`); its value becomes the loop's expression value. Without an
-else clause the loop evaluates to `None`. In block syntax, the same clause comes
-from an `else:` peer; see [layout/while](../layouts/layout-while.md) (shared
-`layout_loop` handler for `for-each` and `while`).
+else clause the loop's value is the value of its last iteration: the body's
+last form, or the value given to `compile/continue`; `None` when the
+sequence was empty. `(break VAL)` makes VAL the loop's value. In block
+syntax, the same clause comes from an `else:` peer; see
+[layout/while](../layouts/layout-while.md) (shared `layout_loop` handler for
+`for-each` and `while`).
 
 **Behaviour:** Emits CONST None (default loop result), compiles EXPR (the
 iterable), then PUSH_FOREACH whose break target is set to a label after

@@ -7,8 +7,11 @@
 and `compile/continue` inside the body. An optional `[else: ELSEBODY...]` clause
 runs only when the loop exits because TEST is false (i.e. not via
 `compile/break`); its value becomes the loop's expression value. Without an
-else clause the loop evaluates to `None`. In block syntax, the same clause comes
-from an `else:` peer; see [layout/while](../layouts/layout-while.md).
+else clause the loop's value is the value of its last iteration: the body's
+last form, or the value given to `compile/continue`; `None` when the body
+never ran. `(break VAL)` makes VAL the loop's value. In block syntax, the
+same clause comes from an `else:` peer; see
+[layout/while](../layouts/layout-while.md).
 
 **Behaviour:** Emits PUSH_LOOP (break target after POP_LOOP). The continue
 target is the first instruction after PUSH_LOOP. Compiles TEST; on false,
