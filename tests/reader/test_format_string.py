@@ -26,7 +26,8 @@ import pytest
 
 from koskari.lib import keyword, symbol
 from koskari.pragma import ModulePragma
-from koskari.reader import Reader, source_str
+from koskari.reader import DEFER, Reader, source_str
+from koskari.reader.parser import VALUE
 from koskari.types import unpack
 
 
@@ -276,6 +277,46 @@ class TestFormatStringEval(IsolatedAsyncioTestCase):
             format=format,
             rules="04d")
         self.assertEqual(await expr(), "0042")
+
+    async def test_prefixed_string_field(self):
+        # a field that opens with a string-prefix letter before a quote
+        # is that literal, not the symbol f/r/b with the string as spec
+        from tests.compile.specials import SpecialsTestCase
+
+        case = SpecialsTestCase()
+        case.setUp()
+        src = '''f"""value: {b"x"} {f"{x}"} {b:x}"""'''
+        expr, mod = case.compile_expr(src, format=format, x=5, b=255)
+        self.assertEqual(await expr(), "value: b'x' 5 ff")
+
+    async def test_field_string_literals_own_their_escapes(self):
+        # the field is source: a string literal inside it decodes its
+        # own escapes, and a raw one keeps them, as outside an f-string
+        from tests.compile.specials import SpecialsTestCase
+
+        case = SpecialsTestCase()
+        case.setUp()
+        src = '''f"""[{r"\\n"}] [{"\\n"}]"""'''
+        expr, mod = case.compile_expr(src, format=format)
+        self.assertEqual(await expr(), "[\\n] [\n]")
+
+    async def test_user_reader_macro_in_field(self):
+        # a reader macro registered on a letter runs at the start of a
+        # field as it runs anywhere else
+        reader = Reader()
+
+        def read_q(stream, c):
+            if stream.peek(1) != '!':
+                return (DEFER, None)
+            stream.read(1)
+            return (VALUE, 42)
+
+        reader.add_event_macro('q', read_q, False)
+        form = reader.read(source_str('f"{q!} {q}"', '<unittest>'))
+        parts = list(unpack(form))
+        self.assertEqual(symbol('#str'), parts[0])
+        self.assertEqual([42], list(unpack(parts[1]))[1:])
+        self.assertEqual([symbol('q')], list(unpack(parts[3]))[1:])
 
 
 # The end.

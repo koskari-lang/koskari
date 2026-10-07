@@ -527,6 +527,28 @@ class Reader:
             raise reader_stream.error("invalid syntax", pos)
 
 
+    @contextmanager
+    def terminators_extended(self, chars):
+        """
+        Read with extra atom terminators in force at this level: the
+        atom collector takes the terminator string at each call, so an
+        atom read under this context stops at ``chars`` too, while a
+        delimited form read inside it (``_read_pair``) reads its
+        contents with the base terminators. Nests, restoring the
+        previous set on exit
+
+        :param chars: the characters to add
+        """
+
+        saved = self._terms
+        self._terms = self._base_terms + ''.join(
+            c for c in chars if c not in self._base_terms)
+        try:
+            yield
+        finally:
+            self._terms = saved
+
+
     def _sync_terms_from_macros(self):
         """
         Recompute ``terminating`` and ``_terms`` from stacked macros plus base
@@ -540,6 +562,7 @@ class Reader:
                     extra.add(c)
         self.terminating = set(_BASE_TERMINATORS) | extra
         self._terms = "".join(sorted(self.terminating))
+        self._base_terms = self._terms
 
 
     def _atom_boundary_split(self, stream, c, atom_prefix):
@@ -1560,46 +1583,55 @@ class Reader:
         result = empty
         work = result
 
-        with stream.suspend_indent():
-            while True:
-                event, position, value = self._read(stream)
+        # the contents read with the base terminators: an extension in
+        # force outside (an f-string field's ``:`` and ``}``) applies to
+        # that level, not to a keyword or atom inside this form
+        saved_terms = self._terms
+        self._terms = self._base_terms
 
-                if event is CLOSE_PAIR:
-                    break
-
-                elif event is DOT:
-                    if result is empty:
-                        raise stream.error("invalid dotted list", position)
-
-                    dot_position = position
-
+        try:
+            with stream.suspend_indent():
+                while True:
                     event, position, value = self._read(stream)
-                    if event is not VALUE:
-                        raise stream.error("invalid list syntax", position)
-                    else:
-                        setcdr(work, value)
 
-                    event, position, value = self._read(stream)
-                    if event is not CLOSE_PAIR:
-                        raise stream.error("invalid use of dot in list",
-                                           dot_position)
-                    else:
+                    if event is CLOSE_PAIR:
                         break
 
-                elif event is EOF:
-                    raise stream.reader_eof(opened_at=opened_at,
-                                            context=f"{char!r} form")
+                    elif event is DOT:
+                        if result is empty:
+                            raise stream.error("invalid dotted list", position)
 
-                elif result is empty:
-                    result = make_cell(value, empty)
-                    result.set_position(position)
-                    work = result
+                        dot_position = position
 
-                else:
-                    new_work = make_cell(value, empty)
-                    new_work.set_position(position)
-                    setcdr(work, new_work)
-                    work = new_work
+                        event, position, value = self._read(stream)
+                        if event is not VALUE:
+                            raise stream.error("invalid list syntax", position)
+                        else:
+                            setcdr(work, value)
+
+                        event, position, value = self._read(stream)
+                        if event is not CLOSE_PAIR:
+                            raise stream.error("invalid use of dot in list",
+                                               dot_position)
+                        else:
+                            break
+
+                    elif event is EOF:
+                        raise stream.reader_eof(opened_at=opened_at,
+                                                context=f"{char!r} form")
+
+                    elif result is empty:
+                        result = make_cell(value, empty)
+                        result.set_position(position)
+                        work = result
+
+                    else:
+                        new_work = make_cell(value, empty)
+                        new_work.set_position(position)
+                        setcdr(work, new_work)
+                        work = new_work
+        finally:
+            self._terms = saved_terms
 
         if closer and value != closer:
             raise stream.error("mismatched open and close characters",
@@ -2258,6 +2290,34 @@ class Reader:
 # ===========================================================================
 
 
+def _field_source(raw):
+    """
+    The source text of an f-string field: raw as read, with the escape
+    of the f-string's own quote, ``\\"``, turned back into ``"``. Every
+    other backslash stays for the reader that reads the field
+
+    :param raw: the field text as _read_raw_field returned it
+    """
+
+    out = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        c = raw[i]
+        if c == '\\' and i + 1 < n:
+            nxt = raw[i + 1]
+            if nxt == '"':
+                out.append(nxt)
+            else:
+                out.append(c)
+                out.append(nxt)
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
 class FormatStringReader(object):
     """
     Reader for parsing the interior of format strings
@@ -2312,56 +2372,20 @@ class FormatStringReader(object):
         """
         Read the value expression of a ``{...}`` field
 
-        A delimited form reads through the general reader. A leading
-        atom is collected with ``:`` and ``}`` as extra terminators so
-        the format spec stays outside it, then suffix adjacency applies,
-        so ``{foo[0]}`` is one subscript form rather than ``[0]`` in the
-        spec position. A unary prefix the bare grammar admits (``-``,
-        ``+`` or ``~`` before a name or an opening delimiter, under
-        ``reader/unary``) wraps the operand read the same way, so
-        ``{-x:04d}`` is ``(- x)`` with its spec; ``-`` before a digit is
-        the literal's sign and stays in the atom.
+        The field is source, and the reader reads it: delimited forms,
+        every reader macro, the unary prefixes under ``reader/unary``,
+        atoms, and the suffix macros, as anywhere else. The field's own
+        terminators, ``:`` and ``}``, are in force for the read so the
+        format spec stays outside an atom and ``{foo[0]}`` is one
+        subscript form rather than ``[0]`` in the spec position.
 
         :param stream: the source stream, positioned at the expression
         :param opened_at: (line, col) of the opening ``{``
         :return: tuple of (event, position, value)
         """
 
-        norm = self.normal
-        position = stream.position()
-        lead = stream.peek(1)
-
-        if lead in '([{':
-            return norm._read(stream)
-
-        if lead and lead in _unary_symbols and norm.unary:
-            peek = stream.peek(2)
-            nxt = peek[1:2]
-            digit = nxt.isdigit() or (nxt == '.' and stream.peek(3)[2:3].isdigit())
-            if (nxt.isalpha() or nxt == '_' or nxt in '([{'
-                    or (digit and lead != '-')):
-                stream.read(1)
-                event, pos, child = self._read_field_expr(stream, opened_at)
-                if event is EOF:
-                    raise stream.reader_eof(
-                        opened_at=opened_at, context=f"unary {lead}")
-                if event is not VALUE:
-                    raise stream.error(f"invalid use of {lead}", pos)
-                return VALUE, position, cons(_unary_symbols[lead], child, nil)
-
-        if lead and (lead.isalpha() or lead == '_' or lead.isdigit()
-                     or lead == '-'):
-            first = stream.read(1)
-            terms = norm._terms
-            for c in ':}':
-                if c not in terms:
-                    terms = terms + c
-            expr = norm.process_atom(
-                norm._collect_atom_continuation(stream, first, terms))
-            expr = norm._dispatch_suffix_macros(stream, expr, position)
-            return VALUE, position, expr
-
-        return norm._read(stream)
+        with self.normal.terminators_extended(':}'):
+            return self.normal._read(stream)
 
 
     def _read_format_field(self, stream, opened_at=None):
@@ -2480,7 +2504,7 @@ class FormatStringReader(object):
 
     def _read_field(self, stream, opened_at=None):
         """
-        Read one ``{...}`` field: extract its raw text, decode, and parse
+        Read one ``{...}`` field: extract its raw text and read it
 
         :param stream: the source stream, positioned after the opening ``{``
         :param opened_at: (line, col) of the opening ``{``, named when the
@@ -2490,7 +2514,13 @@ class FormatStringReader(object):
 
         pos = stream.position()
         raw = self._read_raw_field(stream, opened_at)
-        substream = source_str(_as_unicode(raw) + '}', stream.filename,
+        # the field is source: a string literal inside it decodes its
+        # own escapes when the reader reads it, and a raw one keeps them.
+        # The one escape that is the f-string's own is the quote it
+        # opened with: in a single-quoted f-string an inner string can
+        # only be written \"...\", since the body read ends at the first
+        # unescaped quote, and that backslash comes off here
+        substream = source_str(_field_source(raw) + '}', stream.filename,
                                auto_skip_exec=False,
                                line_no=pos[0], col_no=pos[1])
         return self._read_format_field(substream, opened_at)
