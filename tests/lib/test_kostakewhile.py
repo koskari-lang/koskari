@@ -219,4 +219,40 @@ class TestKosTakeWhileTeardown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, 1)
 
 
+class ReenteringSource:
+    """
+    A source whose first element steps the adapter consuming it
+    """
+
+    def __init__(self):
+        self.n = 0
+        self.it = None
+        self.inner = None
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.n += 1
+        if self.n == 1:
+            try:
+                next(self.it)
+            except BaseException as exc:
+                self.inner = exc
+        return self.n
+
+
+class TestKosTakeWhileReentry(unittest.TestCase):
+
+    def test_reentrant_next_on_a_running_adapter_is_refused(self):
+        src = ReenteringSource()
+        it = iter(KosTakeWhile(lambda x: x % 2, src))
+        src.it = it
+        self.assertEqual(1, next(it))
+        self.assertIsInstance(src.inner, ValueError)
+        self.assertIn("already executing", str(src.inner))
+        with self.assertRaises(StopIteration):
+            next(it)
+
+
 # The end.

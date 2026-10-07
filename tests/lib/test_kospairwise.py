@@ -208,4 +208,38 @@ class TestKosPairwiseTeardown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, ('A', 'B'))
 
 
+class ReenteringSource:
+    """
+    A source whose second element steps the pairwise consuming it,
+    and which is exhausted by that inner step
+    """
+
+    def __init__(self):
+        self.n = 0
+        self.pw = None
+        self.inner = None
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.n += 1
+        if self.n == 2:
+            self.inner = next(self.pw)
+            return "b"
+        if self.n >= 3:
+            raise StopIteration
+        return self.n
+
+
+class TestKosPairwiseReentry(unittest.TestCase):
+
+    def test_source_that_reenters_the_pairwise_is_refused(self):
+        src = ReenteringSource()
+        pw = iter(KosPairwise(src))
+        src.pw = pw
+        with self.assertRaises(ValueError):
+            next(pw)
+
+
 # The end.

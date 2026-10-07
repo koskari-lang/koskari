@@ -58,12 +58,12 @@ static int zip_longest_retire(KosZipLongest *z, uint16_t i) {
 
 
 /**
-   File the fill value at position i of the row under construction.
+   File the fill value at position i of row.
 */
-static void zip_longest_fill(KosZipLongest *z, uint16_t i) {
+static void zip_longest_fill(KosZipLongest *z, PyObject *row, uint16_t i) {
 
   Py_INCREF(z->fill);
-  PyTuple_SET_ITEM(z->multi.base.pending, (Py_ssize_t) i, z->fill);
+  PyTuple_SET_ITEM(row, (Py_ssize_t) i, z->fill);
 }
 
 
@@ -117,7 +117,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     PyObject *element;
 
     if (! t->sources[t->idx]) {
-      zip_longest_fill(z, t->idx);
+      zip_longest_fill(z, t->pending, t->idx);
       t->idx++;
       continue;
     }
@@ -139,7 +139,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
       }
-      zip_longest_fill(z, t->idx);
+      zip_longest_fill(z, t->pending, t->idx);
       t->idx++;
       continue;
     }
@@ -178,7 +178,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
       return EVAL_RAISE();  /* the StopIteration already pending ends it */
 
     PyErr_Clear();
-    zip_longest_fill(z, t->idx);
+    zip_longest_fill(z, t->pending, t->idx);
     t->idx++;
 
     RESUME_HOP(&zip_longest_resume_fetch_kind, es, z, NULL);
@@ -223,37 +223,37 @@ static KosIterStepResult zip_longest_iter_step(
   if (z->multi.all_sync) {
     uint16_t i;
 
-    t->pending = row;  /* steals; zip_longest_fill files into it */
-
+    /* The row stays local: a fetch runs a source's __next__, which may
+       step this zip-longest again, and an inner step would hand out
+       and clear a row kept in t->pending. */
     for (i = 0; i < t->nsrc; i++) {
       PyObject *element;
 
       if (! t->sources[i]) {
-        zip_longest_fill(z, i);
+        zip_longest_fill(z, row, i);
         continue;
       }
 
       element = PyIter_Next(t->sources[i]);
       if (! element) {
         if (PyErr_Occurred()) {
-          Py_CLEAR(t->pending);
+          Py_DECREF(row);
           return KOS_ITER_ERROR;
         }
         if (! zip_longest_retire(z, i)) {
-          Py_CLEAR(t->pending);
+          Py_DECREF(row);
           t->closed = 1;
           *out = NULL;
           return KOS_ITER_EXHAUSTED;
         }
-        zip_longest_fill(z, i);
+        zip_longest_fill(z, row, i);
         continue;
       }
 
-      PyTuple_SET_ITEM(t->pending, (Py_ssize_t) i, element);
+      PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
     }
 
-    *out = t->pending;
-    t->pending = NULL;
+    *out = row;
     return KOS_ITER_VALUE;
   }
 

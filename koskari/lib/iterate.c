@@ -201,6 +201,8 @@ typedef struct {
                              (yield is the element, return is
                              exhaustion), 1 value graft (the frame
                              return is the element) */
+  int running;            /* a drive is on the C stack: a re-entrant
+                             drive or close from the body is refused */
 } KosIterStepper;
 
 
@@ -687,6 +689,14 @@ static PyObject *stepper_iternext(PyObject *self) {
     return NULL;
   }
 
+  /* The body being driven can reach this stepper and drive it again;
+     refused as CPython refuses a running generator, before anything
+     the outer drive still uses could be released. */
+  if (st->running) {
+    PyErr_SetString(PyExc_ValueError, "generator already executing");
+    return NULL;
+  }
+
   {
     PyObject *send_val = st->send_value;
     PyObject *throw_typ = st->throw_typ;
@@ -705,8 +715,10 @@ static PyObject *stepper_iternext(PyObject *self) {
     st->throw_typ = NULL;
     st->throw_exc = NULL;
 
+    st->running = 1;
     res = stepper_drive(st, islots, durable, send_val, throw_typ,
                         throw_exc);
+    st->running = 0;
     /* The step ended, in a value, exhaustion or an error: the
        awaitable is spent, and a second await meets the guard above. A
        mid-step await keeps the state for its resume. */
@@ -759,6 +771,13 @@ static PyObject *stepper_throw(PyObject *self, PyObject *args) {
 static PyObject *stepper_close(PyObject *self) {
 
   KosIterStepper *st = (KosIterStepper *) self;
+
+  /* A close from the body this stepper is driving: refused before the
+     state the outer drive still uses is released. */
+  if (st->running) {
+    PyErr_SetString(PyExc_ValueError, "generator already executing");
+    return NULL;
+  }
 
   /* Close cascades are terminal (loop shutdown, task destruction, GC
      of an abandoned chain), so closing a step's awaitable closes the
@@ -858,6 +877,7 @@ static PyObject *stepper_new_ex(
   }
   st->host = NULL;
   st->host_owned = 0;
+  st->running = 0;
 
   Py_XINCREF(send_value);
   st->send_value = send_value;
@@ -897,6 +917,8 @@ typedef struct {
                               (see iterate_acquire_host) */
   int host_owned;          /* host is adapter-owned: recycled between
                               steps, not the provider's durable one */
+  int running;             /* a step is on the C stack: a re-entrant
+                              step or close from the body is refused */
   PyObject *display_name;  /* provider __name__ for repr; may be NULL */
 } KosPyIter;
 
@@ -1016,7 +1038,7 @@ static PyObject *pyiter_finish_exhausted(
    iterable after other errors. send_val and the throw pair are
    borrowed.
 */
-static PyObject *pyiter_step(
+static PyObject *pyiter_step_run(
     KosPyIter *gen,
     PyObject *send_val,
     PyObject *throw_typ,
@@ -1025,11 +1047,6 @@ static PyObject *pyiter_step(
   KosIterSlots *islots = gen->islots;
   int durable;
   int drive_mode = 0;   /* 1: value graft (frame return is element) */
-
-  if (! gen->provider) {
-    PyErr_SetNone(PyExc_StopIteration);
-    return NULL;
-  }
 
   durable = (islots->ki_pyctx
              && ! islots->ki_pyctx_recyclable
@@ -1157,6 +1174,38 @@ static PyObject *pyiter_step(
 }
 
 
+/**
+   The step entry: a finished adapter raises StopIteration, and a step
+   from inside the step being run -- the body reaching its own adapter
+   through next, send, throw or close -- is refused as CPython refuses
+   a running generator, before an inner exhaustion or close could
+   release the provider and host the outer step is still driving.
+*/
+static PyObject *pyiter_step(
+    KosPyIter *gen,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
+
+  PyObject *res;
+
+  if (! gen->provider) {
+    PyErr_SetNone(PyExc_StopIteration);
+    return NULL;
+  }
+
+  if (gen->running) {
+    PyErr_SetString(PyExc_ValueError, "generator already executing");
+    return NULL;
+  }
+
+  gen->running = 1;
+  res = pyiter_step_run(gen, send_val, throw_typ, throw_exc);
+  gen->running = 0;
+  return res;
+}
+
+
 static PyObject *pyiter_iternext(PyObject *self) {
 
   return pyiter_step((KosPyIter *) self, NULL, NULL, NULL);
@@ -1207,6 +1256,13 @@ static PyObject *pyiter_close(PyObject *self, PyObject *ignored) {
 
   if (! gen->provider)
     Py_RETURN_NONE;
+
+  /* A close from the body being stepped: refused before the state the
+     outer step still uses is released. */
+  if (gen->running) {
+    PyErr_SetString(PyExc_ValueError, "generator already executing");
+    return NULL;
+  }
 
   /* Generator close semantics: throw GeneratorExit through the drive.
      A body that yields in response has ignored the close; a return or
@@ -1426,6 +1482,7 @@ PyObject *KosIterAdapt_PyIter(PyObject *self) {
   gen->islots = islots;
   gen->host = NULL;
   gen->host_owned = 0;
+  gen->running = 0;
   gen->display_name = iterate_display_name(self);
 
   PyObject_GC_Track((PyObject *) gen);

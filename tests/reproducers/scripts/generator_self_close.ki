@@ -1,0 +1,10 @@
+;; Generators for tests.reproducers.test_generator_self_close: bodies
+;; that call close on the iterator, or the awaitable, driving them.
+
+define g [box]:
+    (yield 1)
+    try:
+        (box[0].close)
+    except [e BaseException]:
+        box.append (repr e)
+    (yield 2)

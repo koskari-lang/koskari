@@ -265,4 +265,34 @@ class TestKosZipLongestTeardown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await first, (1, 3))
 
 
+class ReenteringSource:
+    """
+    A source whose first element steps the zip-longest consuming it
+    """
+
+    def __init__(self):
+        self.n = 0
+        self.z = None
+        self.inner = None
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.n += 1
+        if self.n == 1:
+            self.inner = next(self.z)
+        return self.n
+
+
+class TestKosZipLongestReentry(unittest.TestCase):
+
+    def test_source_that_reenters_the_zip_longest_is_refused(self):
+        src = ReenteringSource()
+        z = iter(KosZipLongest(src, [10, 20]))
+        src.z = z
+        with self.assertRaises(ValueError):
+            next(z)
+
+
 # The end.

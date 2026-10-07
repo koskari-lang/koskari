@@ -158,8 +158,15 @@ static KosIterStepResult pairwise_iter_step(
       }
     }
 
+    /* The fetch runs the source's __next__, which may step this
+       pairwise again; an inner step that exhausts the source clears
+       p->held, so this step pairs from its own reference to it. */
+    PyObject *held = p->held;
+    Py_INCREF(held);
+
     element = PyIter_Next(t->source);
     if (! element) {
+      Py_DECREF(held);
       if (PyErr_Occurred())
         return KOS_ITER_ERROR;
       Py_CLEAR(p->held);
@@ -168,14 +175,14 @@ static KosIterStepResult pairwise_iter_step(
       return KOS_ITER_EXHAUSTED;
     }
 
-    row = PyTuple_Pack(2, p->held, element);
+    row = PyTuple_Pack(2, held, element);
+    Py_DECREF(held);
     if (! row) {
       Py_DECREF(element);
       return KOS_ITER_ERROR;
     }
 
-    Py_DECREF(p->held);
-    p->held = element;  /* steals */
+    Py_XSETREF(p->held, element);  /* steals */
 
     *out = row;
     return KOS_ITER_VALUE;
