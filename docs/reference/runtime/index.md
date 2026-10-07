@@ -37,13 +37,16 @@ are imported as any Python module is.
 | [`koskari.asyncio`](../api/koskari-asyncio.md) | `run-process` and `ProcessResult`, the subprocess pair behind the bash fence |
 | [`koskari.assets`](koskari-assets.md) | The packaged icon, as SVG or PNG bytes or a filesystem path |
 
-The Python builtins are bound as well, under their Python names: `len`,
-`print`, `sorted`, `zip`, `enumerate`, and the rest, with the natives
-`map`, `filter`, and `partial` replacing their Python namesakes, which
-remain as `py-map`, `py-filter`, and `functools.partial`. The predicates
-use a `?` suffix: `instance?`, `subclass?`, `callable?`, `None?`,
-`nil?`. The full list with signatures is the
-[`koskari.builtins`](../api/koskari-builtins.md) API page.
+A chosen set of the Python builtins is bound as well, under their
+Python names: `len`, `print`, `sorted`, `enumerate`, `hex`, `bytearray`,
+`NotImplemented`, and every exception type, with the natives `map`,
+`filter`, and `partial` replacing their Python namesakes, which remain
+as `py-map`, `py-filter`, and `functools.partial`. The predicates use a
+`?` suffix: `instance?`, `subclass?`, `callable?`, `None?`, `nil?`. The
+full list with signatures is the
+[`koskari.builtins`](../api/koskari-builtins.md) API page; a Python
+builtin outside it, such as `pow` or `eval`, is reached through
+`(import builtins)`.
 
 ```{toctree}
 :maxdepth: 1
