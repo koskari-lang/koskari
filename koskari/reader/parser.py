@@ -707,6 +707,12 @@ class Reader:
                 self._skip_horizontal_whitespace(stream)
 
             position = stream.position()
+            # inside a block the whitespace skip stops at a dedent and
+            # consumes nothing: that is the end of what this read may
+            # take, as the end of input is, and a prefix macro waiting
+            # for its operand reports the EOF it opened
+            if stream.dedented:
+                return EOF, position, None
             c = stream.read()
             if not c:
                 return EOF, position, None
