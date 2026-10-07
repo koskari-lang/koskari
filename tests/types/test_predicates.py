@@ -58,6 +58,22 @@ class TestTypePredicate(unittest.IsolatedAsyncioTestCase):
         pred = TypePredicate("int?", int)
         self.assertFalse(pred("hello"))
 
+    async def test_predicate_over_type_itself(self):
+        """
+        A predicate over type answers for classes, as isinstance does:
+        type's own __instancecheck__ sits in its dict and must be
+        bound through the metaclass like every other type's
+        """
+        pred = TypePredicate("type?", type)
+        self.assertTrue(pred(int))
+        self.assertTrue(pred(type))
+        self.assertFalse(pred(5))
+
+        from koskari.bootstrap import make_bootstrap
+        is_type = make_bootstrap()["type?"]
+        self.assertTrue(is_type(int))
+        self.assertFalse(is_type(5))
+
     async def test_repr(self):
         """TypePredicate has a descriptive repr"""
         pred = TypePredicate("int?", int)

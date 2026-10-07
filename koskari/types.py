@@ -92,7 +92,12 @@ class TypePredicate(partial):
     """
 
     def __new__(cls, name, typeobj):
-        obj = partial.__new__(cls, typeobj.__instancecheck__)
+        # bound through the metaclass, as isinstance binds it: for type
+        # itself the attribute lookup finds the descriptor in type's
+        # own dict and hands it back unbound
+        meta = type(typeobj)
+        check = meta.__instancecheck__.__get__(typeobj, meta)
+        obj = partial.__new__(cls, check)
         obj.__name__ = name or (typeobj.__name__ + "?")
         return obj
 
