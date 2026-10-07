@@ -51,6 +51,28 @@ static int match_form(
       return gate;
   }
 
+  /* PEP 634 tests the length before any element is read: a length the
+     inner node's width bounds cannot fit is a no-match before the
+     snapshot is built. A pair spine is left to the spine walk, which
+     counts it. */
+  if (! (KosPair_Check(peeled) || KosNilP(peeled))) {
+    const KosMatchNode *inner = &e->m->nodes[n->as.form.subnode];
+    Py_ssize_t have;
+
+    if (PyList_CheckExact(peeled) || PyTuple_CheckExact(peeled)) {
+      have = Py_SIZE(peeled);
+    } else {
+      have = PyObject_Length(peeled);
+      if (have < 0)
+        return -1;
+    }
+
+    if (have < (Py_ssize_t) inner->min_width
+        || (inner->max_width != KOS_MATCH_UNBOUNDED
+            && have > (Py_ssize_t) inner->max_width))
+      return 0;
+  }
+
   /* The gate accepted the element, so a failed build is a real error
      from reading a Python sequence or walking a looping spine, and it
      propagates. An improper pair spine is a shape: no match. */

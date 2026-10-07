@@ -81,5 +81,26 @@ class TestUnpackSequences(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await mod["pair_sum"](shared), 30)
         self.assertEqual(shared, (10, 20))
 
+    async def test_over_long_iterator_is_not_drained(self):
+        mod = await self.load()
+        pulls = []
+
+        def counting():
+            for n in range(8):
+                pulls.append(n)
+                yield n
+            raise AssertionError("drained past the arity check")
+
+        with self.assertRaises(ValueError) as caught:
+            await mod["pair_sum"](counting())
+        self.assertIn("expected 2 elements, got more", str(caught.exception))
+        self.assertEqual(3, len(pulls))
+
+    async def test_short_iterator_reports_the_count(self):
+        mod = await self.load()
+        with self.assertRaises(ValueError) as caught:
+            await mod["pair_sum"](iter([1]))
+        self.assertIn("expected 2 elements, got 1", str(caught.exception))
+
 
 # The end.

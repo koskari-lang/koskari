@@ -710,13 +710,12 @@ not documented here until they are added to the enum.
 - **Stack**: `[..., raw] -> [..., v_{n-1}, ..., v_1, v_0]` where `v_i` is the
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
-  first). Implementation: pop TOS, `PySequence_List(raw)` (new list), require
-  `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
-  then `Py_DECREF(seq)`.
-- **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
-  realization.
-- **Errors**: `ValueError` if length != `n`; `TypeError` or other error if
-  `PySequence_List` fails.
+  first). A tuple or list is read in place; any other iterable is pulled for
+  `n` items plus one, so an over-long iterable is refused at its extra item
+  and never drained.
+- **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty iterable.
+- **Errors**: `ValueError` if the count is not `n`; `TypeError` when TOS is
+  not iterable.
 - **Compiler form:** Pre-compile / post-compile arg = `n` (uint16).
 
 **Example:** Unpack `(1, 2, 3)` so TOS is `1`, then return three values (stack

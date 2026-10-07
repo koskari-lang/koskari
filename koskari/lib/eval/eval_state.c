@@ -252,6 +252,64 @@ int KosEvalState_ParentStackPUSH(KosEvalState *es, PyObject *val) {
 }
 
 
+/* Exactly need items from an iterable into a new tuple. One pull past
+   need refuses an over-long iterable at its extra item instead of
+   draining it. */
+static PyObject *unpack_exact_pull(
+    PyObject *raw,
+    Py_ssize_t need,
+    const char *who) {
+
+  PyObject *it = PyObject_GetIter(raw);
+  if (unlikely(! it)) {
+    if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+      PyErr_Format(PyExc_TypeError,
+                   "%s: cannot unpack non-iterable %.100s object",
+                   who, Py_TYPE(raw)->tp_name);
+    }
+    return NULL;
+  }
+
+  PyObject *seq = PyTuple_New(need);
+  if (unlikely(! seq)) {
+    Py_DECREF(it);
+    return NULL;
+  }
+
+  Py_ssize_t got = 0;
+  while (got < need) {
+    PyObject *item = PyIter_Next(it);
+    if (! item) {
+      Py_DECREF(it);
+      Py_DECREF(seq);
+      if (! PyErr_Occurred()) {
+        PyErr_Format(PyExc_ValueError,
+                     "%s: expected %zd elements, got %zd",
+                     who, need, got);
+      }
+      return NULL;
+    }
+    PyTuple_SET_ITEM(seq, got, item);
+    got++;
+  }
+
+  PyObject *extra = PyIter_Next(it);
+  Py_DECREF(it);
+  if (extra) {
+    Py_DECREF(extra);
+    Py_DECREF(seq);
+    PyErr_Format(PyExc_ValueError,
+                 "%s: expected %zd elements, got more", who, need);
+    return NULL;
+  }
+  if (unlikely(PyErr_Occurred())) {
+    Py_DECREF(seq);
+    return NULL;
+  }
+  return seq;
+}
+
+
 PyObject *KosEvalState_PopUnpackSequence(
     KosEvalState *es,
     Py_ssize_t need,
@@ -267,6 +325,10 @@ PyObject *KosEvalState_PopUnpackSequence(
      reference instead of asking libpython to hand it back */
   if (PyTuple_CheckExact(raw) || PyList_CheckExact(raw)) {
     seq = raw;
+  } else if (exact) {
+    seq = unpack_exact_pull(raw, need, who);
+    Py_DECREF(raw);
+    return seq;
   } else {
     seq = PySequence_Fast(raw, "");
     if (unlikely(! seq)) {
