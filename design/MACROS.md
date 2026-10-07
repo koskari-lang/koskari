@@ -561,7 +561,7 @@ variables the filter case false-matches any single-form call body.
 **Syntax:** **`(list-each [BINDING SEQ] BODY)`** (with optional **`when:`** /
 **`unless:`** clauses).
 
-**Behaviour:** **`define col (#list)`**; **`for-each`** with **`#list-append`**; return **`(takeq col)`** (clears gensym accumulator slot).
+**Behaviour:** **`let [[col (#list)]]`** around a **`for-each`** with **`#list-append`**, returning **`col`**. The accumulator is a `let` binder, not a `define`, because a template `define` in a class body declares the class attribute of its base name (`binding_atom`): the attribute `col` was overwritten and then taken, and nested `list-each` forms in a body shared it. A `let` binder is not projected, and its cell dies with the form.
 
 **Whole-body filter:** a **BODY** that is a single **`(when …)`** or
 **`(unless …)`** form is a filter — it rewrites to the matching

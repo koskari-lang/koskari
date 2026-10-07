@@ -141,4 +141,53 @@ class TestListEachFilter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([0, 2, 4], result)
 
 
+
+
+class TestListEachAccumulator(TestListEachFilter):
+    """
+    The list-each accumulator is the form's own: in a class body it is
+    no attribute of the class, and nested list-each forms each have
+    their own
+    """
+
+    async def test_class_body_keeps_its_col_attribute(self):
+        src = """
+        (begin
+          (define-class Table []
+            (define col "name")
+            (define widths (list-each [w #[3 5]] (* w 2))))
+          #(Table.widths (getattr Table "col" "<deleted>")))
+        """
+        self.assertEqual(([6, 10], "name"), await self._eval(src))
+
+
+    async def test_nested_in_class_body(self):
+        src = """
+        (begin
+          (define-class Grid []
+            (define cells (list-each [x #[1 2]]
+                            (list-each [y #[10 20]] (+ x y)))))
+          Grid.cells)
+        """
+        self.assertEqual([[11, 21], [12, 22]], await self._eval(src))
+
+
+    async def test_nested_at_module_level(self):
+        src = """
+        (list-each [x #[1 2]] (list-each [y #[10 20]] (+ x y)))
+        """
+        self.assertEqual([[11, 21], [12, 22]], await self._eval(src))
+
+
+    async def test_filter_arms_in_class_body(self):
+        src = """
+        (begin
+          (define-class F []
+            (define odds (list-each [x (range 0 6)] (when (& x 1) x)))
+            (define evens (list-each [x (range 0 6)] (unless (& x 1) x))))
+          #(F.odds F.evens))
+        """
+        self.assertEqual(([1, 3, 5], [0, 2, 4]), await self._eval(src))
+
+
 # The end.
