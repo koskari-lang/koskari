@@ -206,5 +206,46 @@ class TestFastSlotsAgainstTheFrame(unittest.IsolatedAsyncioTestCase):
                   [OpCode.CONST, 1], [OpCode.RETURN, 1]])
         self.assertIn("JUMP", str(caught.exception))
 
+    def test_handler_into_a_nested_block_is_refused(self):
+        inner = NamespaceSpec("inner", ("q", "r", "s"), ())
+        with self.assertRaises(RuntimeError) as caught:
+            make([[OpCode.PUSH_TRY, "handler"],
+                  [OpCode.PUSH_NS, (inner, None, 0, 0)],
+                  [OpCode.LABEL, "handler"],
+                  [OpCode.CONST, "x"], [OpCode.FAST_STORE, 2],
+                  [OpCode.POP_NS, 0],
+                  [OpCode.POP_TRY, 0],
+                  [OpCode.CONST, 1], [OpCode.RETURN, 1]])
+        self.assertIn("JUMP", str(caught.exception))
+
+    def test_handler_after_the_pop_is_refused(self):
+        with self.assertRaises(RuntimeError) as caught:
+            make([[OpCode.PUSH_TRY, "handler"],
+                  [OpCode.CONST, 1],
+                  [OpCode.POP_TRY, 0],
+                  [OpCode.RETURN, 1],
+                  [OpCode.LABEL, "handler"],
+                  [OpCode.CONST, 2], [OpCode.RETURN, 1]])
+        self.assertIn("JUMP", str(caught.exception))
+
+    def test_handler_inside_its_own_block_builds(self):
+        code = make([[OpCode.PUSH_TRY, "handler"],
+                     [OpCode.CONST, 1],
+                     [OpCode.JUMP, "end"],
+                     [OpCode.LABEL, "handler"],
+                     [OpCode.CONST, 2],
+                     [OpCode.LABEL, "end"],
+                     [OpCode.POP_TRY, 0],
+                     [OpCode.RETURN, 1]])
+        self.assertIsInstance(code, Code)
+
+    def test_handler_at_its_own_pop_builds(self):
+        code = make([[OpCode.PUSH_FINALLY, "cleanup"],
+                     [OpCode.CONST, 1],
+                     [OpCode.LABEL, "cleanup"],
+                     [OpCode.POP_FINALLY, 0],
+                     [OpCode.RETURN, 1]])
+        self.assertIsInstance(code, Code)
+
 
 # The end.

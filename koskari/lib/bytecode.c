@@ -2531,9 +2531,10 @@ static int derive_extents_fill(
    A KOSTYLE_LABEL opcode keeps its destination in the instruction arg.
    An EXTRA one keeps the arg as a row index and the destination in a
    LABEL field of that row, resolved to a KosOp during emit; the same
-   scan collect_label_map makes. PUSH_* handler targets are excluded:
-   they may legitimately leave the block. No PUSH_* is EXTRA-with-LABEL,
-   so the exclusion belongs only to the LABEL arm.
+   scan collect_label_map makes. A PUSH_TRY or PUSH_FINALLY handler
+   label is a destination too: the raise walk unwinds to the push's
+   region and jumps there, so it is held to the push's own extent like
+   any jump from inside it.
 
    :param out: receives up to 4 destination pcs
    :return: how many destinations were written
@@ -2550,8 +2551,6 @@ static int jump_targets(
   int n = 0;
 
   if (st == KOSTYLE_LABEL) {
-    if (is_push_op(op))
-      return 0;
     out[0] = code[src_pc].arg;
     return 1;
   }
@@ -2582,7 +2581,8 @@ static int jump_targets(
 /**
    Validate JUMP locality: all jump targets must be inside the source block
    or at the block's pop_pc (leaving). Called after derive_extents.
-   Only applies to control-flow jump opcodes, not PUSH_*.
+   Applies to control-flow jumps and to PUSH_TRY/PUSH_FINALLY handler
+   labels, whose source block is the push's own extent.
 */
 /* Whether pc is the POP of some extent */
 static int jump_target_is_pop(
@@ -2611,9 +2611,9 @@ static int validate_jump_locality(
     return 0;
   }
 
-  /* For each control-flow jump, target must be inside or at boundary of
-     source extent. PUSH_* handler args may jump out; JUMP/JUMP_TRUE etc
-     must stay local. */
+  /* For each jump, the target must be inside or at the boundary of the
+     source extent. A PUSH pc carries its own extent's id, so a handler
+     label is held to the handler's own block. */
   for (uint32_t src_pc = 0; src_pc < code_len; src_pc++) {
     uint32_t targets[4];
     int n_targets = jump_targets(code, src_pc, extra, extra_len, targets);

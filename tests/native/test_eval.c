@@ -1835,8 +1835,9 @@ static int test_eval_yield_throw_resume(void) {
 
 static int test_eval_yield_throw_caught(void) {
     /*
-      Bytecode: PUSH_TRY(6), CONST 42, DUP 1, YIELD 1, POP_TRY, RETURN 1,
-                LABEL(6), EXCEPTION, POP 1, CONST 55, POP_TRY, RETURN 1.
+      Bytecode: PUSH_TRY(5), CONST 42, DUP 1, YIELD 1, JUMP 9,
+                LABEL(5), EXCEPTION, POP 1, CONST 55,
+                LABEL(9), POP_TRY, RETURN 1.
       First eval (NULL, NULL): KOS_RES_YIELD(42); TRY region stays live.
       Second eval (NULL, throw_exc): eval_phase_entry calls
       try_local_exception_handler, which finds the TRY region and redirects
@@ -1845,29 +1846,31 @@ static int test_eval_yield_throw_caught(void) {
     */
     PyObject *forty_two = PyLong_FromLong(42);
     PyObject *fifty_five = PyLong_FromLong(55);
-    PyObject *label_6 = PyLong_FromLong(6);
+    PyObject *label_5 = PyLong_FromLong(5);
+    PyObject *label_9 = PyLong_FromLong(9);
 
     /*
-      One PUSH_TRY and one POP_TRY (on the normal path).  The handler
-      does not POP_TRY — try_local_exception_handler already disabled the
-      region; the context is released after RETURN.
+      The handler sits inside the TRY extent, as the compiler places it,
+      and both paths leave through the one POP_TRY.
     */
-    PyObject *instr = PyList_New(11);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 6));
+    PyObject *instr = PyList_New(12);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 5));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, forty_two));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_DUP, 1));
     PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_YIELD, 1));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_TRY, 0));
-    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
-    PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_LABEL, label_6));
-    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_EXCEPTION, 0));
-    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_POP, 1));
-    PyList_SET_ITEM(instr, 9, make_instr(KOS_OP_CONST, fifty_five));
-    PyList_SET_ITEM(instr, 10, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_JUMP, 9));
+    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_5));
+    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 8, make_instr(KOS_OP_CONST, fifty_five));
+    PyList_SET_ITEM(instr, 9, make_instr(KOS_OP_LABEL, label_9));
+    PyList_SET_ITEM(instr, 10, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 11, make_instr_int(KOS_OP_RETURN, 1));
 
     Py_DECREF(forty_two);
     Py_DECREF(fifty_five);
-    Py_DECREF(label_6);
+    Py_DECREF(label_5);
+    Py_DECREF(label_9);
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;
@@ -1911,8 +1914,9 @@ static int test_eval_yield_throw_caught(void) {
 
 static int test_eval_opcode_error_caught_by_try(void) {
     /*
-      Bytecode: PUSH_TRY(4), YIELD 1, POP_TRY, RETURN 0,
-                LABEL(4), EXCEPTION, POP 1, CONST 77, POP_TRY, RETURN 1.
+      Bytecode: PUSH_TRY(3), YIELD 1, JUMP 7,
+                LABEL(3), EXCEPTION, POP 1, CONST 77,
+                LABEL(7), POP_TRY, RETURN 1.
       YIELD 1 with empty stack returns op_res=-1 with PyErr set.
       eval_phase_post_opcode detects PyErr and calls try_local_exception_handler,
       which finds the TRY region and redirects to the handler =>
@@ -1920,26 +1924,28 @@ static int test_eval_opcode_error_caught_by_try(void) {
       This exercises the exception path inside eval_phase_post_opcode directly.
     */
     PyObject *seventy_seven = PyLong_FromLong(77);
-    PyObject *label_4 = PyLong_FromLong(4);
+    PyObject *label_3 = PyLong_FromLong(3);
+    PyObject *label_7 = PyLong_FromLong(7);
 
     /*
-      One PUSH_TRY and one POP_TRY (on the normal path).  The handler
-      does not POP_TRY — the region is disabled by try_local_exception_handler;
-      the context is released after RETURN.
+      The handler sits inside the TRY extent, as the compiler places it,
+      and both paths leave through the one POP_TRY.
     */
-    PyObject *instr = PyList_New(9);
-    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 4));
+    PyObject *instr = PyList_New(10);
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_PUSH_TRY, 3));
     PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
-    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_POP_TRY, 0));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 0));
-    PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_LABEL, label_4));
-    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_EXCEPTION, 0));
-    PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_POP, 1));
-    PyList_SET_ITEM(instr, 7, make_instr(KOS_OP_CONST, seventy_seven));
-    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_RETURN, 1));
+    PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_JUMP, 7));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, label_3));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_EXCEPTION, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_POP, 1));
+    PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_CONST, seventy_seven));
+    PyList_SET_ITEM(instr, 7, make_instr(KOS_OP_LABEL, label_7));
+    PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_RETURN, 1));
 
     Py_DECREF(seventy_seven);
-    Py_DECREF(label_4);
+    Py_DECREF(label_3);
+    Py_DECREF(label_7);
 
     PyObject *code_obj = NULL;
     KosContext *ctx = NULL;

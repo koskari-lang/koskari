@@ -558,9 +558,9 @@ static int test_code_extent_derivation(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_PUSH_TRY, label_h));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CONST, 1));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_POP_TRY, 0));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
-    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_h));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, label_h));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code with TRY");
@@ -606,9 +606,9 @@ static int test_code_extent_find(void) {
     PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_CONST, 0));
     PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_PUSH_TRY, label_h));
     PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CONST, 1));
-    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_POP_TRY, 0));
-    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_RETURN, 1));
-    PyList_SET_ITEM(instr, 5, make_instr(KOS_OP_LABEL, label_h));
+    PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_LABEL, label_h));
+    PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_POP_TRY, 0));
+    PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_RETURN, 1));
 
     PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code, "create Code");

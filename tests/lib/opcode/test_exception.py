@@ -146,9 +146,9 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_TRY", "skip"],
             ["CONST", 1],
             ["CLEAR_TRY", 0],
+            ["LABEL", "skip"],
             ["POP_TRY", 0],
             ["POP", 1],
-            ["LABEL", "skip"],
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -165,10 +165,9 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_FINALLY", "fin"],
             ["CONST", 42],
             ["CLEAR_FINALLY", 0],
+            ["LABEL", "fin"],
             ["POP_FINALLY", 0],
             ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "fin"],
         ])
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
@@ -291,9 +290,9 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_TRY", "skip"],
             ["CONST", 1],
             ["CLEAR_TRY", 0],
+            ["LABEL", "skip"],
             ["POP_TRY", 0],
             ["POP", 1],
-            ["LABEL", "skip"],
             ["CONST", 42],
             ["RETURN", 1],
         ])
@@ -310,10 +309,9 @@ class TestExceptionOpcodes(CevalTest):
             ["PUSH_FINALLY", "fin"],
             ["CONST", 42],
             ["CLEAR_FINALLY", 0],
+            ["LABEL", "fin"],
             ["POP_FINALLY", 0],
             ["RETURN", 1],
-            ["NOOP", 0],
-            ["LABEL", "fin"],
         ])
         result = await make_callable(code, ns)()
         self.assertEqual(result, 42)
