@@ -30,22 +30,22 @@ define-syntax each:
       (each [binding seq] unless: condition body ...)
 
     case (each [binding seq] when: condition body):
-      ((lambda each [] (for-each [binding seq]
-         (when condition (yield body)))))
+      ((lambda each [source] (for-each [binding source]
+         (when condition (yield body)))) seq)
 
     case (each [binding seq] when: condition body ...):
       (each [binding seq] when: condition (begin body ...))
 
     case (each [binding seq] unless: condition body):
-      ((lambda each [] (for-each [binding seq]
-         (unless condition (yield body)))))
+      ((lambda each [source] (for-each [binding source]
+         (unless condition (yield body)))) seq)
 
     case (each [binding seq] unless: condition body ...):
       (each [binding seq] unless: condition (begin body ...))
 
     case (each [binding seq] body):
-      ((lambda each [] (for-each [binding seq]
-         (yield body))))
+      ((lambda each [source] (for-each [binding source]
+         (yield body))) seq)
 
     case (each [binding seq] body ...):
       (each [binding seq] (begin body ...))
