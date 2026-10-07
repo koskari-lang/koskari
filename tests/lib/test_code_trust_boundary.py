@@ -30,8 +30,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Code, Expression, FormalsSpec, Function, NamespaceSpec, OpCode, Operand,
-    Ref)
+    Code, Compare, Expression, FormalsSpec, Function, NamespaceSpec, OpCode,
+    Operand, Ref)
 from koskari.module import load_module_source_async, new_module
 from tests.lib.opcode import opcount
 
@@ -123,6 +123,36 @@ class TestOperandRanges(unittest.TestCase):
         make([[OpCode.CONST, 1], [OpCode.CONST, 2],
               [OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 2)],
               [OpCode.RETURN, 1]])
+
+    def test_compare_selector_past_the_comparisons_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CONST, 1],
+                  [OpCode.OBJECT_COMPARE_VAR, (len(Compare), 0, "x", 0)],
+                  [OpCode.RETURN, 1]])
+        self.assertIn("instruction 1", str(caught.exception))
+        make([[OpCode.CONST, 1],
+              [OpCode.OBJECT_COMPARE_VAR, (Compare.LT, 0, "x", 0)],
+              [OpCode.RETURN, 1]])
+
+    def test_operand_selector_past_the_operators_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CONST, 1],
+                  [OpCode.VAR_INPLACE, (len(Operand), "x", None, None)],
+                  [OpCode.RETURN, 1]])
+        self.assertIn("instruction 1", str(caught.exception))
+        make([[OpCode.CONST, 1],
+              [OpCode.VAR_INPLACE, (Operand.ADD, "x", None, None)],
+              [OpCode.RETURN, 1]])
+
+    def test_compare_source_selector_past_the_comparisons_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            make([[OpCode.CHECK_COMPARE_VAR, (0x0f, "a", "b", "out")],
+                  [OpCode.LABEL, "out"],
+                  [OpCode.CONST, 1], [OpCode.RETURN, 1]])
+        self.assertIn("instruction 0", str(caught.exception))
+        make([[OpCode.CHECK_COMPARE_VAR, (Compare.LT, "a", "b", "out")],
+              [OpCode.LABEL, "out"],
+              [OpCode.CONST, 1], [OpCode.RETURN, 1]])
 
     def test_position_outside_16_bits_is_refused(self):
         with self.assertRaises(ValueError):

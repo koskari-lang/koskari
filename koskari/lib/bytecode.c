@@ -1688,14 +1688,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
       KosExtraSchema schema = kos_opcode_extra_schema(op);
       if (! PyTuple_Check(b)) {
         PyErr_Format(PyExc_RuntimeError,
-                     "EXTRA opcode expects tuple argument, got %R", b);
+                     "Code instruction %zd EXTRA opcode expects tuple"
+                     " argument, got %R", i, b);
         goto failure;
       }
       Py_ssize_t tlen = PyTuple_GET_SIZE(b);
       if (tlen < 4) {
         PyErr_Format(PyExc_RuntimeError,
-                     "EXTRA opcode tuple must have 4 elements, got %zd",
-                     tlen);
+                     "Code instruction %zd EXTRA opcode tuple must have 4"
+                     " elements, got %zd", i, tlen);
         goto failure;
       }
 
@@ -1706,7 +1707,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         PyObject *srcv = PyTuple_GET_ITEM(b, 0);
         if (! PyLong_Check(srcv)) {
           PyErr_Format(PyExc_RuntimeError,
-                       "CMPSRC field expects int, got %R", srcv);
+                       "Code instruction %zd CMPSRC field expects int,"
+                       " got %R", i, srcv);
           goto failure;
         }
         schema = extra_row_schema(op, (uint32_t) PyLong_AsLong(srcv));
@@ -1797,19 +1799,34 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
             || fk == KOSTYLE_CMPSRC || fk == KOSTYLE_OPERAND) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
-                         "EXTRA field expects int, got %R", elem);
+                         "Code instruction %zd EXTRA field %d expects int,"
+                         " got %R", i, slot, elem);
             goto failure;
           }
           long val = PyLong_AsLong(elem);
           if (val < 0 || val > 65535) {
             PyErr_Format(PyExc_RuntimeError,
-                         "EXTRA field value out of range: %ld", val);
+                         "Code instruction %zd EXTRA field %d value out of"
+                         " range: %ld", i, slot, val);
             goto failure;
           }
-          if (fk == KOSTYLE_OPCOUNT
-              && KosOpCount_TYPE((uint16_t) val) >= KOS_OPERAND_COUNT) {
+
+          /* A selector names an operator or comparison; one past the
+             table is refused here rather than at dispatch. */
+          if ((fk == KOSTYLE_OPCOUNT
+               && KosOpCount_TYPE((uint16_t) val) >= KOS_OPERAND_COUNT)
+              || (fk == KOSTYLE_OPERAND && val >= KOS_OPERAND_COUNT)) {
             PyErr_Format(PyExc_ValueError,
-                         "EXTRA field %R names no operator", elem);
+                         "Code instruction %zd EXTRA field %d %R names no"
+                         " operator", i, slot, elem);
+            goto failure;
+          }
+          if ((fk == KOSTYLE_CMP && val >= KOS_COMPARE_COUNT)
+              || (fk == KOSTYLE_CMPSRC
+                  && KosCmpSrc_SEL((uint16_t) val) >= KOS_COMPARE_COUNT)) {
+            PyErr_Format(PyExc_ValueError,
+                         "Code instruction %zd EXTRA field %d %R names no"
+                         " comparison", i, slot, elem);
             goto failure;
           }
           uint16_t v = (uint16_t) val;
