@@ -28,12 +28,14 @@ uniform and well-defined.
 
 
 from codecs import decode
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
 from decimal import Decimal as decimal
 from fractions import Fraction as fraction
 from functools import partial
 from re import UNICODE, VERBOSE
 from re import compile as regex
+from typing import Callable, Optional
 
 from ..exceptions import FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError
 from ..lib import (
@@ -124,6 +126,8 @@ COLON = keyword("colon")
 LINE_END = keyword("line-end")
 LINE = keyword("line")
 DEFER = keyword("defer")
+OPEN = keyword("open")
+PREFIX = keyword("prefix")
 
 _BASE_TERMINATORS = frozenset("\n\r\t ")
 
@@ -391,6 +395,77 @@ class Atom(str):
 # ===========================================================================
 
 
+@dataclass
+class Open:
+    """
+    What an open-delimiter macro hands the form driver: the reader
+    whose macros read the contents, the closer to expect, the opening
+    character, where it stood, a function applied to the finished list,
+    and a context manager held over the body
+    """
+
+    reader: "Reader"
+    closer: Optional[str]
+    char: str
+    opened_at: tuple
+    wrap: Optional[Callable] = None
+    manager: Optional[object] = None
+    bare: bool = False
+
+
+@dataclass
+class Prefix:
+    """
+    What a prefix macro hands the form driver: the reader whose macros
+    read the operand, the function that builds the form from the
+    operand and its position, the macro text for messages, the EOF
+    context, where the macro stood, and a context manager held until
+    the operand completes
+    """
+
+    reader: "Reader"
+    build: Callable
+    char: str
+    context: str
+    opened_at: tuple
+    manager: Optional[object] = None
+    position: tuple = field(init=False)
+    exits: Optional[ExitStack] = field(init=False, default=None)
+
+    def __post_init__(self):
+        self.position = self.opened_at
+        if self.manager is not None:
+            self.exits = ExitStack()
+            self.exits.enter_context(self.manager)
+
+
+FORM_NO_TAIL = 0
+FORM_TAIL_WANTED = 1
+FORM_TAIL_SET = 2
+
+
+@dataclass
+class Form:
+    """
+    One form open on the form driver's stack: its list so far
+    """
+
+    open: Open
+    position: tuple
+    empty: object
+    make_cell: Callable
+    result: object = field(init=False)
+    work: object = field(init=False)
+    state: int = FORM_NO_TAIL
+    dot_position: Optional[tuple] = None
+    prefixes: list = field(default_factory=list)
+    exits: ExitStack = field(default_factory=ExitStack)
+
+    def __post_init__(self):
+        self.result = self.empty
+        self.work = self.empty
+
+
 class Reader:
     """
     S-expression reader with configurable reader macros and atom patterns
@@ -473,7 +548,8 @@ class Reader:
         :raises ReaderSyntaxError: on syntax errors
         """
 
-        event, pos, value = self._read(reader_stream)
+        with self.nesting_guard(reader_stream):
+            event, pos, value = self._read(reader_stream)
 
         if event is VALUE:
             return value
@@ -481,6 +557,19 @@ class Reader:
             return READ_EOF
         else:
             raise reader_stream.error("invalid syntax", pos)
+
+
+    @contextmanager
+    def nesting_guard(self, stream):
+        """
+        Report recursion that runs out as a positioned reader error, at
+        the point the read had reached
+        """
+
+        try:
+            yield
+        except RecursionError:
+            raise stream.error("form nested too deeply") from None
 
 
     def read_atom(self, reader_stream):
@@ -494,7 +583,8 @@ class Reader:
         :raises ReaderSyntaxError: on syntax errors
         """
 
-        event, pos, value = self._read(reader_stream, raw=True)
+        with self.nesting_guard(reader_stream):
+            event, pos, value = self._read(reader_stream, raw=True)
 
         if event is VALUE:
             return value
@@ -516,7 +606,8 @@ class Reader:
         :raises ReaderSyntaxError: on syntax errors
         """
 
-        event, pos, value = self._read(reader_stream)
+        with self.nesting_guard(reader_stream):
+            event, pos, value = self._read(reader_stream)
 
         if event is VALUE:
             return value, pos
@@ -688,9 +779,10 @@ class Reader:
         return ''.join(consumed)
 
 
-    def _read(self, stream, raw=False, vertical_ws=True):
+    def read_event(self, stream, raw=False, vertical_ws=True):
         """
-        Internal read implementation
+        Read one event: a complete atom or value, or what a delimiter or
+        prefix macro reports for the driver to carry on with
 
         :param stream: the source stream
         :param raw: if True, return atoms without processing
@@ -744,6 +836,259 @@ class Reader:
             value = self._dispatch_suffix_macros(stream, value, position)
 
         return event, position, value
+
+
+    def _read(self, stream, raw=False, vertical_ws=True, initial=None):
+        """
+        Read one complete form
+
+        Lists and prefixed forms are built here on an explicit stack,
+        from the OPEN and PREFIX events their macros report, so nesting
+        depth is bounded by memory and not by the Python call depth. An
+        event that completes nothing at the top level is returned as it
+        came, for the caller to judge.
+
+        :param stream: the source stream
+        :param raw: if True, return a top-level atom without processing
+        :param vertical_ws: if True (default), skip all whitespace
+            including newlines before the first token; if False, skip
+            only horizontal whitespace (layout header tails and
+            logical-line reads)
+        :param initial: an open list or a prefix to start inside of:
+            read_pair's list, or a record another reader's driver hands
+            over for this reader to complete
+        :return: tuple of (event, position, value)
+        """
+
+        forms = []
+        prefixes = []
+        if isinstance(initial, Open):
+            forms.append(self.open_form(stream, initial, initial.opened_at))
+        elif isinstance(initial, Prefix):
+            prefixes.append(initial)
+
+        with ExitStack() as abandon:
+            abandon.callback(self.abandon_forms, forms, prefixes)
+            return self.drive_forms(stream, forms, prefixes, raw, vertical_ws)
+
+
+    def drive_forms(self, stream, forms, prefixes, raw, vertical_ws):
+        """
+        The form driver's loop: one event at a time until the outermost
+        form completes or an event the caller must judge arrives
+
+        :param forms: the stack of open forms, innermost last
+        :param prefixes: the prefixes waiting at the outermost level
+        :return: tuple of (event, position, value)
+        """
+
+        while True:
+            outermost = not forms and not prefixes
+            event, position, value = self.read_event(
+                stream,
+                raw=raw if outermost else False,
+                vertical_ws=vertical_ws if outermost else True)
+
+            # a layout reader's bridge macros are bound to its inner
+            # s-expression reader: what they open is read to its end
+            # by that reader's driver, with its macros and terminators
+            if (event is OPEN or event is PREFIX) \
+                    and value.reader is not self:
+                if event is PREFIX:
+                    value.position = position
+                event, position, value = value.reader._read(
+                    stream, initial=value)
+
+            if event is OPEN:
+                forms.append(self.open_form(stream, value, position))
+                continue
+
+            pending = forms[-1].prefixes if forms else prefixes
+
+            if event is PREFIX:
+                value.position = position
+                pending.append(value)
+                continue
+
+            if event is EOF:
+                if not forms and not pending:
+                    return event, position, value
+                raise self.eof_error(stream, forms, pending)
+
+            if pending and event is not VALUE:
+                raise stream.error(
+                    f"invalid use of {pending[-1].char}", position)
+
+            if forms and event is CLOSE_PAIR:
+                form = forms.pop()
+                position, value = self.close_form(
+                    stream, form, position, value)
+                if form.open.bare and not forms:
+                    return VALUE, position, value
+                pending = forms[-1].prefixes if forms else prefixes
+            elif forms and event is DOT:
+                self.form_dot(stream, forms[-1], position)
+                continue
+            elif not forms and not pending:
+                return event, position, value
+
+            position, value = self.apply_prefixes(
+                stream, pending, position, value)
+            if not forms:
+                return VALUE, position, value
+            self.form_append(stream, forms[-1], value, position)
+
+
+    def apply_prefixes(self, stream, pending, position, value):
+        """
+        Wrap a completed value in the prefixes waiting for it, innermost
+        first, each wrapped form taking its prefix's position and its
+        own suffix macros
+
+        :return: (position, value) of the outermost wrapped form
+        """
+
+        while pending:
+            p = pending.pop()
+            value = p.build(value, position)
+            if p.exits is not None:
+                p.exits.close()
+            position = p.position
+            if is_pair(value):
+                value.set_position(position)
+            value = self._dispatch_suffix_macros(stream, value, position)
+        return position, value
+
+
+    def eof_error(self, stream, forms, pending):
+        """
+        The error for input ending with a prefix or a form still open:
+        the innermost one reports
+        """
+
+        if pending:
+            p = pending[-1]
+            return stream.reader_eof(opened_at=p.opened_at, context=p.context)
+        return self.form_eof(stream, forms[-1])
+
+
+    @staticmethod
+    def abandon_forms(forms, prefixes):
+        """
+        Release what the open forms and waiting prefixes hold, innermost
+        first; after a completed read there is nothing left to release
+        """
+
+        for form in reversed(forms):
+            for p in reversed(form.prefixes):
+                if p.exits is not None:
+                    p.exits.close()
+            form.exits.close()
+        for p in reversed(prefixes):
+            if p.exits is not None:
+                p.exits.close()
+
+
+    def open_form(self, stream, open_, position):
+        """
+        Enter an open list: its own cell kind, the base terminators,
+        indentation suspended, and the macro its opener holds
+        """
+
+        if open_.char == "[" and self.bracket_pairs:
+            form = Form(open_, position, bracket_nil, bracket_pair)
+        else:
+            form = Form(open_, position, nil, pair)
+
+        # the contents read with the base terminators: an extension in
+        # force outside (an f-string field's ``:`` and ``}``) applies to
+        # that level, not to a keyword or atom inside this form
+        form.exits.callback(setattr, self, '_terms', self._terms)
+        self._terms = self._base_terms
+        if open_.manager is not None:
+            form.exits.enter_context(open_.manager)
+        form.exits.enter_context(stream.suspend_indent())
+        return form
+
+
+    def form_eof(self, stream, form):
+        """
+        The error for input ending inside an open list
+        """
+
+        if form.state is FORM_TAIL_WANTED:
+            return stream.error("invalid list syntax", stream.position())
+        if form.state is FORM_TAIL_SET:
+            return stream.error("invalid use of dot in list",
+                                form.dot_position)
+        return stream.reader_eof(opened_at=form.open.opened_at,
+                                 context=f"{form.open.char!r} form")
+
+
+    def form_dot(self, stream, form, position):
+        """
+        A dot inside an open list: the next value is the tail
+        """
+
+        if form.result is form.empty:
+            raise stream.error("invalid dotted list", position)
+        if form.state is FORM_TAIL_WANTED:
+            raise stream.error("invalid list syntax", position)
+        if form.state is FORM_TAIL_SET:
+            raise stream.error("invalid use of dot in list",
+                               form.dot_position)
+        form.dot_position = position
+        form.state = FORM_TAIL_WANTED
+
+
+    def form_append(self, stream, form, value, position):
+        """
+        A completed value inside an open list
+        """
+
+        if form.state is FORM_TAIL_SET:
+            raise stream.error("invalid use of dot in list",
+                               form.dot_position)
+        if form.state is FORM_TAIL_WANTED:
+            setcdr(form.work, value)
+            form.state = FORM_TAIL_SET
+            return
+
+        cell = form.make_cell(value, form.empty)
+        cell.set_position(position)
+        if form.result is form.empty:
+            form.result = cell
+        else:
+            setcdr(form.work, cell)
+        form.work = cell
+
+
+    def close_form(self, stream, form, position, closechar):
+        """
+        Close an open list at its closing delimiter and hand back the
+        finished value with the position of its opener
+        """
+
+        if form.state is FORM_TAIL_WANTED:
+            raise stream.error("invalid list syntax", position)
+        if form.open.closer and closechar != form.open.closer:
+            raise stream.error("mismatched open and close characters",
+                               position)
+
+        form.exits.close()
+        result = form.result
+        if form.open.bare:
+            return form.position, result
+
+        if form.open.wrap is not None:
+            try:
+                result = form.open.wrap(result)
+            except ValueError as ve:
+                raise stream.error(ve.args[0], form.position) from None
+        if is_pair(result):
+            result.set_position(form.position)
+        result = self._dispatch_suffix_macros(stream, result, form.position)
+        return form.position, result
 
 
     def _dispatch_suffix_macros(self, stream, value, position):
@@ -1557,13 +1902,15 @@ class Reader:
                 i = "{[(".index(openchar)
                 closechar = "}])"[i]
 
-        _event, result = self._read_pair(closechar, stream, openchar)
+        opened = Open(self, closechar, openchar, stream.event_position,
+                      bare=True)
+        _event, _pos, result = self._read(stream, initial=opened)
         return result
 
 
     def _read_pair(self, closer, stream, char):
         """
-        Internal pair reading implementation
+        Open a pair (list) for the form driver
 
         ``[`` builds bracket-pair cells terminated by bracket-nil; ``(``
         (and ``{``) build plain pairs terminated by nil. The two flavors
@@ -1573,76 +1920,10 @@ class Reader:
         :param closer: the expected closing character
         :param stream: the source stream
         :param char: the opening character
-        :return: tuple of (event, value)
+        :return: tuple of (OPEN, open record)
         """
 
-        opened_at = stream.event_position
-
-        if char == "[" and self.bracket_pairs:
-            empty = bracket_nil
-            make_cell = bracket_pair
-        else:
-            empty = nil
-            make_cell = pair
-
-        result = empty
-        work = result
-
-        # the contents read with the base terminators: an extension in
-        # force outside (an f-string field's ``:`` and ``}``) applies to
-        # that level, not to a keyword or atom inside this form
-        saved_terms = self._terms
-        self._terms = self._base_terms
-
-        try:
-            with stream.suspend_indent():
-                while True:
-                    event, position, value = self._read(stream)
-
-                    if event is CLOSE_PAIR:
-                        break
-
-                    elif event is DOT:
-                        if result is empty:
-                            raise stream.error("invalid dotted list", position)
-
-                        dot_position = position
-
-                        event, position, value = self._read(stream)
-                        if event is not VALUE:
-                            raise stream.error("invalid list syntax", position)
-                        else:
-                            setcdr(work, value)
-
-                        event, position, value = self._read(stream)
-                        if event is not CLOSE_PAIR:
-                            raise stream.error("invalid use of dot in list",
-                                               dot_position)
-                        else:
-                            break
-
-                    elif event is EOF:
-                        raise stream.reader_eof(opened_at=opened_at,
-                                                context=f"{char!r} form")
-
-                    elif result is empty:
-                        result = make_cell(value, empty)
-                        result.set_position(position)
-                        work = result
-
-                    else:
-                        new_work = make_cell(value, empty)
-                        new_work.set_position(position)
-                        setcdr(work, new_work)
-                        work = new_work
-        finally:
-            self._terms = saved_terms
-
-        if closer and value != closer:
-            raise stream.error("mismatched open and close characters",
-                               position)
-
-        return VALUE, result
+        return OPEN, Open(self, closer, char, stream.event_position)
 
 
     def _read_thunk(self, closer, stream, char):
@@ -1652,17 +1933,16 @@ class Reader:
         :param closer: the expected closing character
         :param stream: the source stream
         :param char: the opening character
-        :return: tuple of (event, value)
+        :return: tuple of (OPEN, open record)
         """
 
-        event, result = self._read_pair(closer, stream, char)
-
-        if event is VALUE:
+        def wrap(result):
             new_result = cons(_symbol_gensym_thunk, result)
             new_result.set_position(result.get_position())
-            result = new_result
+            return new_result
 
-        return event, result
+        return OPEN, Open(self, closer, char, stream.event_position,
+                          wrap=wrap)
 
 
     def _close_pair(self, stream, char):
@@ -1706,17 +1986,17 @@ class Reader:
 
         pos = stream.position()
 
-        with self.temporary_event_macro(closer, self._close_pair, True):
-            event, result = self._read_pair(closer, stream, peek)
-
-        if event is VALUE:
+        def wrap(result):
             if name == "#dict":
                 result = self._split_dict_keywords(result)
             new_result = cons(symbol(name), result)
             new_result.set_position(pos)
-            result = new_result
+            return new_result
 
-        return event, result
+        return OPEN, Open(
+            self, closer, peek, stream.event_position, wrap=wrap,
+            manager=self.temporary_event_macro(
+                closer, self._close_pair, True))
 
 
     def _split_dict_keywords(self, body):
@@ -1743,50 +2023,25 @@ class Reader:
             return body
 
         out = []
-        for frame in matched.captures.get("pairs", ()):
-            if "splat" in frame:
+        for form in matched.captures.get("pairs", ()):
+            if "splat" in form:
                 out.append(_keyword_starstar)
-                out.append(frame["splat"].datum)
+                out.append(form["splat"].datum)
                 continue
 
-            if "kw" in frame:
-                keycap = frame["kw"]
+            if "kw" in form:
+                keycap = form["kw"]
                 key = self.process_atom(str(keycap.datum))
             else:
-                keycap = frame["key"]
+                keycap = form["key"]
                 key = keycap.datum
 
-            entry = cons(_symbol_tuple, key, frame["val"].datum, nil)
+            entry = cons(_symbol_tuple, key, form["val"].datum, nil)
             if keycap.position:
                 entry.set_position(keycap.position)
             out.append(entry)
 
         return cons(*out, nil) if out else nil
-
-
-    def _read_operand(self, stream, char, context):
-        """
-        Read the form a prefix reader macro applies to
-
-        The macro character has been consumed. End of input is a reader
-        EOF opened at the macro, and anything that is not a value is an
-        invalid use of the macro
-
-        :param stream: the source stream
-        :param char: the macro character, for the message
-        :param context: what the EOF was opened for
-        :return: (position, form)
-        """
-
-        opened_at = stream.event_position
-        event, pos, child = self._read(stream)
-
-        if event is EOF:
-            raise stream.reader_eof(opened_at=opened_at, context=context)
-        if event is not VALUE:
-            raise stream.error(f"invalid use of {char}", pos)
-
-        return pos, child
 
 
     def _read_ref_call(self, stream, fchar):
@@ -1814,12 +2069,15 @@ class Reader:
         if not peek or peek.isspace() or peek == ";" or peek in ")]}":
             return DEFER, None
 
-        _pos, child = self._read_operand(stream, fchar, "ref call")
+        return PREFIX, Prefix(self, self.ref_called, fchar, "ref call",
+                              stream.event_position)
 
+
+    @staticmethod
+    def ref_called(child, pos):
         if is_keyword(child):
-            return VALUE, keyword("&" + str(child))
-
-        return VALUE, cons(_symbol_ref, child, nil)
+            return keyword("&" + str(child))
+        return cons(_symbol_ref, child, nil)
 
 
     def _unary_enabled(self, stream, char, value):
@@ -1871,9 +2129,11 @@ class Reader:
         elif not (nxt.isalpha() or nxt == '_' or nxt in '([{'):
             return DEFER, None
 
-        _pos, child = self._read_operand(stream, fchar, f"unary {fchar}")
+        def build(child, pos):
+            return cons(_unary_symbols[fchar], child, nil)
 
-        return VALUE, cons(_unary_symbols[fchar], child, nil)
+        return PREFIX, Prefix(self, build, fchar, f"unary {fchar}",
+                              stream.event_position)
 
 
     def _read_fstring(self, stream, fchar):
@@ -2075,15 +2335,18 @@ class Reader:
         :param char: the quote character
         :param head: the symbol heading the read form, ``quote`` or
             ``quote-syntax``
-        :return: tuple of (VALUE, (quote expr))
+        :return: tuple of (PREFIX, prefix record)
         """
 
-        pos, child = self._read_operand(stream, char, "quote")
+        def build(child, pos):
+            # the operand's cell carries its position, as a list's
+            # cells do
+            tail = cons(child, nil)
+            tail.set_position(pos)
+            return cons(head, tail)
 
-        # the operand's cell carries its position, as a list's cells do
-        tail = cons(child, nil)
-        tail.set_position(pos)
-        return VALUE, cons(head, tail)
+        return PREFIX, Prefix(self, build, char, "quote",
+                              stream.event_position)
 
 
     def _read_quasiquote(self, stream, char, head=_symbol_quasiquote):
@@ -2094,13 +2357,16 @@ class Reader:
         :param char: the backquote character
         :param head: the symbol heading the read form, ``quasiquote`` or
             ``quasiquote-syntax``
-        :return: tuple of (VALUE, (quasiquote expr))
+        :return: tuple of (PREFIX, prefix record)
         """
 
-        with self.temporary_event_macro(",", self._read_unquote, True):
-            _pos, child = self._read_operand(stream, char, "quasiquote")
+        def build(child, pos):
+            return cons(head, child, nil)
 
-        return VALUE, cons(head, child, nil)
+        return PREFIX, Prefix(
+            self, build, char, "quasiquote", stream.event_position,
+            manager=self.temporary_event_macro(
+                ",", self._read_unquote, True))
 
 
     def _fence_predicate(self, stream, c, atom_prefix):
@@ -2253,17 +2519,19 @@ class Reader:
 
         :param stream: the source stream
         :param char: the comma character
-        :return: tuple of (VALUE, (unquote expr) or (unquote-splicing expr))
+        :return: tuple of (PREFIX, prefix record)
         """
 
         if stream.peek(1) == '@':
             stream.read(1)
-            _pos, child = self._read_operand(
-                stream, char + '@', "unquote-splicing")
-            return VALUE, cons(_symbol_unquote_splicing, child, nil)
+            return PREFIX, Prefix(
+                self,
+                lambda child, pos: cons(_symbol_unquote_splicing, child, nil),
+                char + '@', "unquote-splicing", stream.event_position)
 
-        _pos, child = self._read_operand(stream, char, "unquote")
-        return VALUE, cons(_symbol_unquote, child, nil)
+        return PREFIX, Prefix(
+            self, lambda child, pos: cons(_symbol_unquote, child, nil),
+            char, "unquote", stream.event_position)
 
 
     def _read_comment(self, stream, char):

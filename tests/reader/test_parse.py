@@ -27,7 +27,9 @@ import pytest
 
 from koskari.exceptions import ReaderSyntaxError
 from koskari.lib import BaseSourceStream, car, cdr, cons, keyword, nil, symbol
-from koskari.reader import READ_EOF, default_reader, source_str
+from koskari.types import is_pair
+from koskari.reader import (
+    READ_EOF, IndentAwareStream, LayoutReader, default_reader, source_str)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -1031,6 +1033,53 @@ class TestBaseSourceStreamUninitialized(TestCase):
             s.peek()
         with self.assertRaises(ValueError):
             s.mark()
+
+
+class TestDeepNesting(TestCase):
+    """
+    Nesting depth is bounded by memory, not by Python's recursion
+    limit; what still recurses fails with a positioned reader error
+    """
+
+    DEPTH = 5000
+
+    def test_deep_parentheses_read(self):
+        form = parse_source("(" * self.DEPTH + "x" + ")" * self.DEPTH)
+        depth = 0
+        while is_pair(form):
+            form = car(form)
+            depth += 1
+        self.assertEqual(self.DEPTH, depth)
+        self.assertEqual(symbol("x"), form)
+
+    def test_deep_brackets_read(self):
+        form = parse_source("[" * self.DEPTH + "x" + "]" * self.DEPTH)
+        depth = 0
+        while is_pair(form):
+            form = car(form)
+            depth += 1
+        self.assertEqual(self.DEPTH, depth)
+
+    def test_deep_quotes_read(self):
+        form = parse_source("'" * self.DEPTH + "x")
+        depth = 0
+        while is_pair(form):
+            self.assertEqual(symbol("quote"), car(form))
+            form = car(cdr(form))
+            depth += 1
+        self.assertEqual(self.DEPTH, depth)
+        self.assertEqual(symbol("x"), form)
+
+    def test_deep_layout_block_is_a_positioned_error(self):
+        lines = [" " * (2 * i) + "a:" for i in range(self.DEPTH)]
+        lines.append(" " * (2 * self.DEPTH) + "x")
+        reader = LayoutReader({})
+        stream = IndentAwareStream.from_source(
+            source_str("\n".join(lines), "<unittest>"))
+        with self.assertRaises(ReaderSyntaxError) as caught:
+            reader.read(stream)
+        self.assertIn("nested too deeply", str(caught.exception))
+        self.assertIsNotNone(caught.exception.location)
 
 
 # The end.

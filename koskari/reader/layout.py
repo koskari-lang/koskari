@@ -1287,7 +1287,8 @@ class LayoutReader(Reader):
                 "LayoutReader.read needs an IndentAwareStream; make one"
                 " with IndentAwareStream.from_source")
 
-        event, pos, value = self.read_form(reader_stream)
+        with self.nesting_guard(reader_stream):
+            event, pos, value = self.read_form(reader_stream)
 
         if event is not EOF and self.layout_enabled:
             self._check_indent(reader_stream, pos, 0)
