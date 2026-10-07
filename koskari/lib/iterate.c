@@ -68,7 +68,7 @@ static int iterate_acquire_host(
     KosIterSlots *islots,
     PyObject *provider,
     KosContext **host,
-    int *owned) {
+    uint8_t *owned) {
 
   if (*host)
     return 0;
@@ -93,7 +93,7 @@ static int iterate_acquire_host(
 
 static KosIterStepResult iterate_suite_step(
     KosContext **host,
-    int *host_owned,
+    uint8_t *host_owned,
     KosIterSlots *islots,
     PyObject *provider,
     PyObject *send_val,
@@ -117,7 +117,7 @@ static KosIterStepResult iterate_suite_step(
 
 static KosIterStepResult iterate_suite_throw(
     KosContext **host,
-    int *host_owned,
+    uint8_t *host_owned,
     KosIterSlots *islots,
     PyObject *provider,
     PyObject *throw_typ,
@@ -152,7 +152,7 @@ static KosIterStepResult iterate_suite_throw(
 static void iterate_reset_host(
     KosIterSlots *islots,
     KosContext **host,
-    int *owned) {
+    uint8_t *owned) {
 
   KosContext *ctx = *host;
 
@@ -187,23 +187,29 @@ typedef struct {
   KosIterSlots *islots;   /* provider's suite; resolved once (static) */
   KosContext *host;       /* drive context, a reference of our own
                              (see iterate_acquire_host) */
-  int host_owned;         /* host is adapter-owned: recycled between
-                             steps, not the provider's durable one */
   PyObject *send_value;   /* value to send into the provider */
-  int is_throw;           /* first drive delivers the throw pair */
-  int closing;            /* aclose result mapping at terminal outcomes */
   PyObject *throw_typ;
   PyObject *throw_exc;
-  int awaiting;           /* mid-step await in flight: this stepper owns
+
+  /* the yes/no state, a byte each, after the pointers: the object
+     stays within one cache line. TODO: is_throw, closing, awaiting,
+     running and started describe one lifecycle (primed, running,
+     awaiting, spent) and belong in a state enumeration or a flags
+     byte; host_owned and drive_mode are the two independent bits. */
+  uint8_t host_owned;     /* host is adapter-owned: recycled between
+                             steps, not the provider's durable one */
+  uint8_t is_throw;       /* first drive delivers the throw pair */
+  uint8_t closing;        /* aclose result mapping at terminal outcomes */
+  uint8_t awaiting;       /* mid-step await in flight: this stepper owns
                              the provider's busy mark and resumes by
                              driving host->py_await_iter */
-  int drive_mode;         /* in-flight host work: 0 provider-flavor
+  uint8_t drive_mode;     /* in-flight host work: 0 provider-flavor
                              (yield is the element, return is
                              exhaustion), 1 value graft (the frame
                              return is the element) */
-  int running;            /* a drive is on the C stack: a re-entrant
+  uint8_t running;        /* a drive is on the C stack: a re-entrant
                              drive or close from the body is refused */
-  int started;            /* the first drive has run: a send now feeds
+  uint8_t started;        /* the first drive has run: a send now feeds
                              the step in flight, not the primed state */
 } KosIterStepper;
 
@@ -941,11 +947,11 @@ typedef struct {
   KosIterSlots *islots;    /* provider's suite; resolved once (static) */
   KosContext *host;        /* drive context, a reference of our own
                               (see iterate_acquire_host) */
-  int host_owned;          /* host is adapter-owned: recycled between
-                              steps, not the provider's durable one */
-  int running;             /* a step is on the C stack: a re-entrant
-                              step or close from the body is refused */
   PyObject *display_name;  /* provider __name__ for repr; may be NULL */
+  uint8_t host_owned;      /* host is adapter-owned: recycled between
+                              steps, not the provider's durable one */
+  uint8_t running;         /* a step is on the C stack: a re-entrant
+                              step or close from the body is refused */
 } KosPyIter;
 
 
