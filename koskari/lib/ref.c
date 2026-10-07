@@ -136,7 +136,35 @@ static PyObject *sym_ref_m_deref(PyObject *self) {
 }
 
 
+/**
+   Ref's own store, clear and __init__ are method descriptors every ref
+   kind inherits, so Ref.clear(attr_ref) reaches them unbound on a kind
+   that keeps its object, not a value, in the shared field, and would
+   null what that kind reads. Each accepts self only when its first
+   static type is Ref, or one of the kinds whose body is shared on
+   purpose. Returns 1 when the method applies, else 0 with TypeError
+   set.
+*/
+static int sym_ref_method_applies(PyObject *self, const char *method,
+                                  int shared_kinds) {
+  PyTypeObject *tp = Py_TYPE(self);
+  while (tp->tp_flags & Py_TPFLAGS_HEAPTYPE)
+    tp = tp->tp_base;
+
+  if (tp == &KosRefType)
+    return 1;
+  if (shared_kinds && (tp == &KosWeakRefType || tp == &KosMemoizedRefType))
+    return 1;
+
+  PyErr_Format(PyExc_TypeError, "Ref.%s does not apply to %s",
+               method, Py_TYPE(self)->tp_name);
+  return 0;
+}
+
+
 static PyObject *sym_ref_m_store(PyObject *self, PyObject *value) {
+  if (! sym_ref_method_applies(self, "store", 0))
+    return NULL;
   Py_XINCREF(value);
   Py_XSETREF(KosSymbolicRef_VALUE(self), value);
   Py_RETURN_NONE;
@@ -144,6 +172,8 @@ static PyObject *sym_ref_m_store(PyObject *self, PyObject *value) {
 
 
 static PyObject *sym_ref_m_clear(PyObject *self) {
+  if (! sym_ref_method_applies(self, "clear", 1))
+    return NULL;
   Py_CLEAR(KosSymbolicRef_VALUE(self));
   Py_RETURN_NONE;
 }
@@ -218,6 +248,9 @@ static int sym_ref_tp_init(PyObject *self, PyObject *args, PyObject *kwds) {
   }
 
   if (! PyArg_ParseTuple(args, "|OO:Ref", &name, &val))
+    return -1;
+
+  if (! sym_ref_method_applies(self, "__init__", 0))
     return -1;
 
   return sym_ref_init(self, name, val);

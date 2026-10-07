@@ -900,9 +900,9 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
   KosNamespace_FAST_NAMES(self) = fast_names;
 
   if (local_syms) {
-    size_t target = PySequence_Fast_GET_SIZE(local_syms);
+    size_t target = PyTuple_GET_SIZE(local_syms);
     for (size_t i = 0; i < target; i++) {
-      PyObject *ref_name = PySequence_Fast_GET_ITEM(local_syms, i);
+      PyObject *ref_name = PyTuple_GET_ITEM(local_syms, i);
 
       // No dict entry for locals — ns_borrow_loose_ref synthesizes Py_None.
       KosNamespace_GET_FAST_VAL(self, count) = NULL;
@@ -915,9 +915,9 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
   }
 
   if (closure_syms) {
-    size_t target = PySequence_Fast_GET_SIZE(closure_syms);
+    size_t target = PyTuple_GET_SIZE(closure_syms);
     for (size_t i = 0; i < target; i++) {
-      PyObject *ref_name = PySequence_Fast_GET_ITEM(closure_syms, i);
+      PyObject *ref_name = PyTuple_GET_ITEM(closure_syms, i);
       PyObject *ref = NULL;
 
       if (KosNamespace_FindRef(parent, ref_name, &ref))
@@ -949,9 +949,9 @@ static int ns_init_syms(PyObject *self, PyObject *parent,
       return -1;
     }
 
-    size_t target = PySequence_Fast_GET_SIZE(global_syms);
+    size_t target = PyTuple_GET_SIZE(global_syms);
     for (size_t i = 0; i < target; i++) {
-      PyObject *ref_name = PySequence_Fast_GET_ITEM(global_syms, i);
+      PyObject *ref_name = PyTuple_GET_ITEM(global_syms, i);
       /* an explicit global declares a module binding: the module binds
          the name now, and a builtin ref of that name becomes it */
       PyObject *ref = mdl_ns_claim_binding(module_ns, ref_name);
@@ -1953,6 +1953,26 @@ static PyMemberDef ns_members[] = {
 };
 
 
+/* A tuple copy of a symbol sequence, every element an exact str.
+   NULL with TypeError otherwise. */
+static PyObject *ns_symbols_tuple(PyObject *syms) {
+  PyObject *tuple = PySequence_Tuple(syms);
+  if (! tuple)
+    return NULL;
+
+  for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(tuple); i++) {
+    PyObject *sym = PyTuple_GET_ITEM(tuple, i);
+    if (! PyUnicode_CheckExact(sym)) {
+      PyErr_Format(PyExc_TypeError, "Namespace symbol must be str, not %R",
+                   sym);
+      Py_DECREF(tuple);
+      return NULL;
+    }
+  }
+  return tuple;
+}
+
+
 static PyObject *ns_newfull_type(
     PyTypeObject *type,
     PyObject *name,
@@ -1981,36 +2001,35 @@ static PyObject *ns_newfull_type(
 
   size_t count = 0;
 
+  /* each list is copied, so the walk below owns what it indexes, and
+     holds exact str only, so no key comparison runs user code */
   if (local_syms) {
-    local_syms = PySequence_Fast(local_syms, "local_syms must"
-                                 " be a sequence");
+    local_syms = ns_symbols_tuple(local_syms);
     if (! local_syms)
       return NULL;
 
-    count += PySequence_Fast_GET_SIZE(local_syms);
+    count += PyTuple_GET_SIZE(local_syms);
   }
 
   if (closure_syms) {
-    closure_syms = PySequence_Fast(closure_syms, "closure_syms must"
-                                   " be a sequence");
+    closure_syms = ns_symbols_tuple(closure_syms);
     if (! closure_syms) {
       Py_XDECREF(local_syms);
       return NULL;
     }
 
-    count += PySequence_Fast_GET_SIZE(closure_syms);
+    count += PyTuple_GET_SIZE(closure_syms);
   }
 
   if (global_syms) {
-    global_syms = PySequence_Fast(global_syms, "global_syms must"
-                                  " be a sequence");
+    global_syms = ns_symbols_tuple(global_syms);
     if (! global_syms) {
       Py_XDECREF(local_syms);
       Py_XDECREF(closure_syms);
       return NULL;
     }
 
-    count += PySequence_Fast_GET_SIZE(global_syms);
+    count += PyTuple_GET_SIZE(global_syms);
   }
 
   PyObject *binds = PyDict_New();
@@ -2040,7 +2059,7 @@ static PyObject *ns_newfull_type(
 
   KosNamespace_FAST_COUNT(self) = (uint32_t) count;
   KosNamespace_FAST_LOCALS(self) =
-      local_syms ? (uint32_t) PySequence_Fast_GET_SIZE(local_syms) : 0;
+      local_syms ? (uint32_t) PyTuple_GET_SIZE(local_syms) : 0;
   KosNamespace_FAST_NAMES(self) = NULL;
 
   if (ns_init_syms(self, parent, local_syms, closure_syms, global_syms))

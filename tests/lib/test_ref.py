@@ -768,4 +768,46 @@ class TestRefTypeHierarchy(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(r, Ref)
 
 
+class TestRefBaseMethodsOnSubclasses(unittest.IsolatedAsyncioTestCase):
+    """
+    The methods Ref itself defines apply to the kinds that share its
+    value field; called unbound on any other kind they raise
+    """
+
+    async def test_base_clear_rejects_an_attribute_ref(self):
+        obj = Obj()
+        obj.x = 1
+        r = AttributeRef("n", obj, "x")
+        with self.assertRaises(TypeError):
+            Ref.clear(r)
+        self.assertEqual(1, r.deref())
+
+    async def test_base_store_rejects_a_constant_ref(self):
+        r = ConstantRef("c", 1)
+        with self.assertRaises(TypeError):
+            Ref.store(r, 2)
+        self.assertEqual(1, r.deref())
+
+    async def test_base_init_rejects_an_item_ref(self):
+        r = ItemRef("n", {"k": 1}, "k")
+        with self.assertRaises(TypeError):
+            Ref.__init__(r, "n", 5)
+        self.assertEqual(1, r.deref())
+
+    async def test_base_methods_apply_to_a_ref(self):
+        r = Ref("n", 1)
+        Ref.store(r, 2)
+        self.assertEqual(2, r.deref())
+        Ref.clear(r)
+        self.assertTrue(r.empty)
+        Ref.__init__(r, "n", 3)
+        self.assertEqual(3, r.deref())
+
+    async def test_base_clear_applies_to_a_weak_ref(self):
+        obj = Obj()
+        r = WeakRef(None, obj)
+        Ref.clear(r)
+        self.assertTrue(r.empty)
+
+
 # The end.

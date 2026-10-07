@@ -1515,4 +1515,38 @@ class TestRefOperationsUnderRebind(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, mod.v)
 
 
+class TestNamespaceConstructorSymbols(unittest.IsolatedAsyncioTestCase):
+    """
+    The symbol lists given to Namespace hold str only, and the
+    constructor walks its own copy of them
+    """
+
+    async def test_a_key_whose_eq_mutates_the_list_is_refused(self):
+        parent = Namespace("p", None, ["x", "y"])
+        closures = []
+
+        class Evil:
+            def __hash__(self):
+                return hash("x")
+
+            def __eq__(self, other):
+                closures.clear()
+                return other == "x"
+
+        closures.extend([Evil(), "y", "y", "y"])
+        with self.assertRaises(TypeError):
+            Namespace("c", parent, [], closures)
+
+    async def test_a_non_str_symbol_is_refused(self):
+        with self.assertRaises(TypeError):
+            Namespace("c", None, [1])
+        with self.assertRaises(TypeError):
+            Namespace("c", None, [], [], [b"g"])
+
+    async def test_str_symbols_in_any_sequence_construct(self):
+        parent = Namespace("p", None, ["x"])
+        ns = Namespace("c", parent, ("a", "b"), iter(["x"]))
+        self.assertEqual(["a", "b", "x"], list(ns.refs.keys()))
+
+
 # The end.
