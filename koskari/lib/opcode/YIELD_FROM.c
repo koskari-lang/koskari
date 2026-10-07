@@ -257,19 +257,16 @@ static void yield_from_discard_stop_iteration_value(void) {
 
 /**
   Active StopAsyncIteration ends the delegation: consume the raised
-  exception, discard its value, pop the yield-from node.
+  exception, its value with it, pop the yield-from node.
 */
 static KOS_NOINLINE KosOpResult yield_from_finish_stop_async(
     KosEvalState *es,
     KosDynYieldFrom *yf) {
 
   PyObject *exc = PyErr_GetRaisedException();
-  PyObject *final_val = StopAsyncIteration_VALUE(exc);
-  Py_XINCREF(final_val);
   Py_DECREF(exc);
 
   kos_dyn_pop_yield_from(es, yf);
-  Py_XDECREF(final_val);
 
   return EVAL_NORMAL();
 }
@@ -291,13 +288,8 @@ static KOS_NOINLINE int yield_from_throw_stop_async_finish(
   if (! exc || ! PyObject_IsInstance(exc, (PyObject *) PyExc_StopAsyncIteration))
     return 0;
 
-  {
-    PyObject *final_val = StopAsyncIteration_VALUE(exc);
-    Py_XINCREF(final_val);
-    yield_from_clear_pending(yf);
-    kos_dyn_pop_yield_from(es, yf);
-    Py_XDECREF(final_val);
-  }
+  yield_from_clear_pending(yf);
+  kos_dyn_pop_yield_from(es, yf);
   return 1;
 }
 

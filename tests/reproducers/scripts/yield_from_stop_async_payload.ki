@@ -1,0 +1,9 @@
+;; Delegation for tests.reproducers.test_yield_from_stop_async_payload:
+;; a generator delegating to an async iterator the test supplies, which
+;; ends with a StopAsyncIteration carrying a payload.
+
+define deleg [source]:
+    (yield-from source)
+
+define run [source]:
+    list-each [x (deleg source)] x
