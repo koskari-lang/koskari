@@ -96,16 +96,19 @@ extern KosPair _KosBracketNil;
 
 #define KosPair_CDR(p) (((KosPair *) (p))->tail)
 
+/* Both stores take the new value and set the slot before the old
+   value is released, so a finalizer the release runs sees the slot
+   already holding the new value. */
 #define KosPair_SETCAR(p, v) {                  \
-    Py_XDECREF(KosPair_CAR(p));                 \
-    KosPair_CAR(p) = (v);                       \
-    Py_XINCREF(KosPair_CAR(p));                 \
+    PyObject *_kos_new = (v);                   \
+    Py_XINCREF(_kos_new);                       \
+    Py_XSETREF(KosPair_CAR(p), _kos_new);       \
   }
 
 #define KosPair_SETCDR(p, v) {                  \
-    Py_XDECREF(KosPair_CDR(p));                 \
-    KosPair_CDR(p) = (v);                       \
-    Py_XINCREF(KosPair_CDR(p));                 \
+    PyObject *_kos_new = (v);                   \
+    Py_XINCREF(_kos_new);                       \
+    Py_XSETREF(KosPair_CDR(p), _kos_new);       \
   }
 
 #define KosPair_POSITION(p) (((KosPair *)(p))->position)

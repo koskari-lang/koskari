@@ -1064,11 +1064,6 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  last = pair_find_last(self, &last_cdr);
-
-  if (! last)
-    return NULL;
-
   if (KosPair_IsCell(obj)) {
     splice_head = pair_copy(obj, NULL);
   } else {
@@ -1077,6 +1072,14 @@ static PyObject *pair_extend(PyObject *self, PyObject *obj) {
 
   if (! splice_head)
     return NULL;
+
+  /* the iterable has run; only now is the spine's last cell found */
+  last = pair_find_last(self, &last_cdr);
+
+  if (! last) {
+    Py_DECREF(splice_head);
+    return NULL;
+  }
 
   pair_splice_at_last(last, last_cdr, splice_head);
   Py_DECREF(splice_head);
@@ -1094,11 +1097,6 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
     return NULL;
   }
 
-  last = pair_find_last(self, &last_cdr);
-
-  if (! last)
-    return NULL;
-
   if (KosPair_IsCell(obj)) {
     Py_INCREF(obj);
     splice_head = obj;
@@ -1108,6 +1106,14 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
 
   if (! splice_head)
     return NULL;
+
+  /* the iterable has run; only now is the spine's last cell found */
+  last = pair_find_last(self, &last_cdr);
+
+  if (! last) {
+    Py_DECREF(splice_head);
+    return NULL;
+  }
 
   pair_splice_at_last(last, last_cdr, splice_head);
   Py_DECREF(splice_head);
@@ -1128,6 +1134,10 @@ static PyObject *pair_splice(PyObject *self, PyObject *obj) {
    pushed and the car walked first. Depth is bounded by memory, not the
    C stack. seen holds the cells visited, by address, so a cycle ends.
 
+   The walk owns a reference to the cell it is at and to every cell on
+   its stack: releasing a cell's old position runs finalizers, and one
+   that cuts the spine must not free a cell the walk still holds.
+
    :return: 0, or -1 with PyErr set
 */
 static int pwalk_position(
@@ -1140,10 +1150,12 @@ static int pwalk_position(
   Py_ssize_t depth = 0, cap = 0;
   int res = -1;
 
+  Py_INCREF(pair);
   for (;;) {
     while (KosPair_IsCell(pair)) {
       KosPair *sp = (KosPair *) pair;
       PyObject *pair_id = PyLong_FromVoidPtr(pair);
+      PyObject *next;
       int visited;
 
       if (! pair_id)
@@ -1179,21 +1191,31 @@ static int pwalk_position(
           stack = grown;
           cap = ncap;
         }
-        stack[depth++] = KosPair_CDR(sp);
-        pair = KosPair_CAR(sp);
-        continue;
+        next = KosPair_CDR(sp);
+        Py_INCREF(next);
+        stack[depth++] = next;
+        next = KosPair_CAR(sp);
+      } else {
+        next = KosPair_CDR(sp);
       }
 
-      pair = KosPair_CDR(sp);
+      Py_INCREF(next);
+      Py_SETREF(pair, next);
     }
 
-    if (depth == 0)
+    Py_DECREF(pair);
+    if (depth == 0) {
+      pair = NULL;
       break;
+    }
     pair = stack[--depth];
   }
   res = 0;
 
  done:
+  Py_XDECREF(pair);
+  while (depth > 0)
+    Py_DECREF(stack[--depth]);
   PyMem_Free(stack);
   return res;
 }

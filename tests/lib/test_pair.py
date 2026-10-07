@@ -957,6 +957,88 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
             p.splice(cons(2, nil))
 
 
+class TestPairMutationUnderFinalizers(unittest.IsolatedAsyncioTestCase):
+    """
+    A finalizer or an iterable that runs during a pair mutation sees the
+    pair in a consistent state and cannot free the cells being written
+    """
+
+    async def test_setcdr_finalizer_reading_the_slot(self):
+        seen = []
+
+        class X:
+            def __del__(self):
+                seen.append(p[1])
+
+        p = cons(1, X(), nil)
+        p[1] = nil
+        a = cons('a', nil)
+        b = cons('b', nil)
+        self.assertIs(seen[0], nil)
+        self.assertIsNot(a, b)
+        self.assertEqual(repr(a), "cons('a', nil)")
+        self.assertEqual(repr(b), "cons('b', nil)")
+
+    async def test_setcar_finalizer_reading_the_slot(self):
+        seen = []
+
+        class X:
+            def __del__(self):
+                seen.append(p[0])
+
+        p = cons([X()], nil)
+        p[0] = 1
+        self.assertEqual(seen, [1])
+        self.assertEqual(repr(p), "cons(1, nil)")
+
+    async def test_extend_with_an_iterable_that_cuts_the_spine(self):
+        p = cons(1, 2, 3, nil)
+        keep = []
+
+        def gen():
+            p[1] = nil
+            keep.append(cons('a', nil))
+            keep.append(cons('b', nil))
+            yield 7
+            yield 8
+
+        p.extend(gen())
+        self.assertEqual(repr(p), "cons(1, 7, 8, nil)")
+        self.assertEqual(repr(keep[0]), "cons('a', nil)")
+        self.assertEqual(repr(keep[1]), "cons('b', nil)")
+
+    async def test_splice_with_an_iterable_that_cuts_the_spine(self):
+        p = cons(1, 2, 3, nil)
+        keep = []
+
+        class Cut:
+            def __iter__(self):
+                p[1] = nil
+                keep.append(cons('a', nil))
+                keep.append(cons('b', nil))
+                return iter((7, 8))
+
+        p.splice(Cut())
+        self.assertEqual(repr(p), "cons(1, 7, 8, nil)")
+        self.assertEqual(repr(keep[0]), "cons('a', nil)")
+        self.assertEqual(repr(keep[1]), "cons('b', nil)")
+
+    async def test_set_position_follow_with_a_finalizer_that_cuts_the_spine(self):
+        class Pos:
+            def __del__(self):
+                p[1] = nil
+
+        p = cons(1, 2, 3, 4, nil)
+        p.cdr.set_position(Pos())
+        newpos = ("file", 1, 2)
+        before = sys.getrefcount(newpos)
+        p.set_position(newpos, follow=True)
+        self.assertEqual(repr(p), "cons(1, nil)")
+        self.assertEqual(sys.getrefcount(newpos) - before, 1)
+        del p
+        self.assertEqual(sys.getrefcount(newpos) - before, 0)
+
+
 class TestPairNilDistinct(unittest.IsolatedAsyncioTestCase):
     """Tests that pair and nil have proper type relationship"""
 
