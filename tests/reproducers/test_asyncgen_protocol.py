@@ -753,4 +753,86 @@ class TestDemandGenParity(unittest.TestCase):
         self.assertEqual(actual, expected)
 
 
+def step(awaitable, value=None):
+    """
+    Drive an asend/athrow/aclose awaitable by its send method, as a
+    hand-written driver or a forwarding wrapper does, into a comparable
+    (kind, payload) pair.
+    """
+
+    try:
+        return ("yielded", awaitable.send(value))
+    except StopIteration as exc:
+        return ("stop", exc.value)
+    except BaseException as exc:
+        return ("raise", type(exc).__name__, str(exc))
+
+
+class TestAwaitableSendParity(unittest.IsolatedAsyncioTestCase):
+    """
+    A first send(None) to an asend or athrow awaitable starts it with
+    the value or the exception it was primed with, as CPython's does; a
+    non-None first send replaces an asend's value and is refused by an
+    athrow's or aclose's.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import asyncio
+
+        async def load():
+            module = new_module("asyncgen_send_parity")
+            vars(module)["__file__"] = "<asyncgen_send_parity>"
+            await load_module_source_async(module, SRC)
+            return module
+
+        cls.module = asyncio.run(load())
+
+
+    def kos(self, name, *args):
+        return vars(self.module)[name](*args)
+
+
+    def parity(self, python_gen, koskari_name, scenario):
+        self.assertEqual(scenario(self.kos(koskari_name)),
+                         scenario(python_gen))
+
+
+    def test_asend_value_survives_a_none_send(self):
+        def scenario(agen):
+            return [step(agen.asend(None)), step(agen.asend("sent value"))]
+
+        self.parity(p_echo(), "g-echo", scenario)
+
+
+    def test_non_none_send_replaces_the_asend_value(self):
+        def scenario(agen):
+            return [step(agen.asend(None)), step(agen.asend("primed"), 5)]
+
+        self.parity(p_echo(), "g-echo", scenario)
+
+
+    def test_athrow_pair_survives_a_none_send(self):
+        def scenario(agen):
+            return [step(agen.asend(None)),
+                    step(agen.athrow(ValueError("v")))]
+
+        self.parity(p_catches(), "g-catches", scenario)
+
+
+    def test_non_none_send_to_athrow_is_refused(self):
+        def scenario(agen):
+            return [step(agen.asend(None)),
+                    step(agen.athrow(ValueError("v")), 1)]
+
+        self.parity(p_catches(), "g-catches", scenario)
+
+
+    def test_aclose_runs_the_finally_under_a_none_send(self):
+        def scenario(agen):
+            return [step(agen.asend(None)), step(agen.aclose())]
+
+        self.parity(p_echo(), "g-echo", scenario)
+
+
 # The end.

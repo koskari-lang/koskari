@@ -203,6 +203,8 @@ typedef struct {
                              return is the element) */
   int running;            /* a drive is on the C stack: a re-entrant
                              drive or close from the body is refused */
+  int started;            /* the first drive has run: a send now feeds
+                             the step in flight, not the primed state */
 } KosIterStepper;
 
 
@@ -716,6 +718,7 @@ static PyObject *stepper_iternext(PyObject *self) {
     st->throw_exc = NULL;
 
     st->running = 1;
+    st->started = 1;
     res = stepper_drive(st, islots, durable, send_val, throw_typ,
                         throw_exc);
     st->running = 0;
@@ -734,9 +737,31 @@ static PyObject *stepper_iternext(PyObject *self) {
 }
 
 
+/**
+   The coroutine protocol's send. Before the first drive the stepper
+   holds what asend, athrow or aclose primed it with, and the starting
+   send(None) leaves that in place, as CPython's awaitables do: an
+   asend takes a non-None value in place of its own, while an athrow
+   or aclose refuses one. After the first drive a send feeds the await
+   in flight.
+*/
 static PyObject *stepper_send(PyObject *self, PyObject *value) {
 
   KosIterStepper *st = (KosIterStepper *) self;
+
+  if (! st->started) {
+    if (st->is_throw) {
+      if (value && value != Py_None) {
+        PyErr_SetString(PyExc_RuntimeError,
+                        "can't send non-None value to a just-started"
+                        " coroutine");
+        return NULL;
+      }
+      return stepper_iternext(self);
+    }
+    if (! value || value == Py_None)
+      return stepper_iternext(self);
+  }
 
   Py_XINCREF(value);
   Py_CLEAR(st->send_value);
@@ -878,6 +903,7 @@ static PyObject *stepper_new_ex(
   st->host = NULL;
   st->host_owned = 0;
   st->running = 0;
+  st->started = 0;
 
   Py_XINCREF(send_value);
   st->send_value = send_value;
