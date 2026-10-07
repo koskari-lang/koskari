@@ -878,11 +878,12 @@ PyObject *KosUtils_GetAttrStar(
   Py_ssize_t count = 0;
   Py_ssize_t i = 0;
 
-  attrlist = PySequence_Fast(attrlist, "attrlist must be a sequence");
+  /* an owned, immutable copy: a lookup may mutate the caller's list */
+  attrlist = PySequence_Tuple(attrlist);
   if (! attrlist)
     return NULL;
 
-  count = PySequence_Fast_GET_SIZE(attrlist);
+  count = PyTuple_GET_SIZE(attrlist);
   if (! count) {
     Py_DECREF(attrlist);
     PyErr_SetString(PyExc_ValueError, "attrlist is empty");
@@ -892,7 +893,7 @@ PyObject *KosUtils_GetAttrStar(
   Py_INCREF(element);
 
   for (i = 0; i < count; i++) {
-    PyObject *name = PySequence_Fast_GET_ITEM(attrlist, i);
+    PyObject *name = PyTuple_GET_ITEM(attrlist, i);
     PyObject *val = PyObject_GetAttr(element, name);
 
     if (! val) {
@@ -923,11 +924,12 @@ PyObject *KosUtils_HasAttrStar(
   Py_ssize_t count = 0;
   Py_ssize_t i = 0;
 
-  attrlist = PySequence_Fast(attrlist, "attrlist must be a sequence");
+  /* an owned, immutable copy: a lookup may mutate the caller's list */
+  attrlist = PySequence_Tuple(attrlist);
   if (! attrlist)
     return NULL;
 
-  count = PySequence_Fast_GET_SIZE(attrlist);
+  count = PyTuple_GET_SIZE(attrlist);
   if (! count) {
     Py_DECREF(attrlist);
     PyErr_SetString(PyExc_ValueError, "attrlist is empty");
@@ -937,7 +939,7 @@ PyObject *KosUtils_HasAttrStar(
   Py_INCREF(element);
 
   for (i = 0; i < count; i++) {
-    PyObject *name = PySequence_Fast_GET_ITEM(attrlist, i);
+    PyObject *name = PyTuple_GET_ITEM(attrlist, i);
     PyObject *val = PyObject_GetAttr(element, name);
 
     if (! val) {
@@ -969,11 +971,12 @@ PyObject *KosUtils_GetItemStar(
   Py_ssize_t count = 0;
   Py_ssize_t i = 0;
 
-  keylist = PySequence_Fast(keylist, "keylist must be a sequence");
+  /* an owned, immutable copy: a lookup may mutate the caller's list */
+  keylist = PySequence_Tuple(keylist);
   if (! keylist)
     return NULL;
 
-  count = PySequence_Fast_GET_SIZE(keylist);
+  count = PyTuple_GET_SIZE(keylist);
   if (! count) {
     Py_DECREF(keylist);
     PyErr_SetString(PyExc_ValueError, "keylist is empty");
@@ -983,7 +986,7 @@ PyObject *KosUtils_GetItemStar(
   Py_INCREF(element);
 
   for (i = 0; i < count; i++) {
-    PyObject *key = PySequence_Fast_GET_ITEM(keylist, i);
+    PyObject *key = PyTuple_GET_ITEM(keylist, i);
     PyObject *val = PyObject_GetItem(element, key);
 
     if (! val) {
@@ -1014,11 +1017,12 @@ PyObject *KosUtils_HasItemStar(
   Py_ssize_t count = 0;
   Py_ssize_t i = 0;
 
-  keylist = PySequence_Fast(keylist, "keylist must be a sequence");
+  /* an owned, immutable copy: a lookup may mutate the caller's list */
+  keylist = PySequence_Tuple(keylist);
   if (! keylist)
     return NULL;
 
-  count = PySequence_Fast_GET_SIZE(keylist);
+  count = PyTuple_GET_SIZE(keylist);
   if (! count) {
     Py_DECREF(keylist);
     PyErr_SetString(PyExc_ValueError, "keylist is empty");
@@ -1028,7 +1032,7 @@ PyObject *KosUtils_HasItemStar(
   Py_INCREF(element);
 
   for (i = 0; i < count; i++) {
-    PyObject *key = PySequence_Fast_GET_ITEM(keylist, i);
+    PyObject *key = PyTuple_GET_ITEM(keylist, i);
     PyObject *val = PyObject_GetItem(element, key);
 
     if (! val) {

@@ -932,4 +932,62 @@ class TestHasItemStar(unittest.TestCase):
         self.assertFalse(lib.hasitem_star(Bad(), ['boom']))
 
 
+class TestStarWalksOwnTheirNames(unittest.TestCase):
+    """
+    A lookup reached during a star walk may mutate the list the walk
+    was given; the walk continues over the names it was given
+    """
+
+    def _attr_subject(self, names):
+        seen = []
+
+        class X:
+            def __getattr__(self, name):
+                seen.append(name)
+                names.clear()
+                return self
+
+        return X(), seen
+
+
+    def _item_subject(self, keys):
+        seen = []
+
+        class X:
+            def __getitem__(self, key):
+                seen.append(key)
+                del keys[1:]
+                return self
+
+        return X(), seen
+
+
+    def test_getattr_star_over_a_list_cleared_by_the_lookup(self):
+        names = ['a', 'b', 'c']
+        subject, seen = self._attr_subject(names)
+        self.assertIs(lib.getattr_star(subject, names), subject)
+        self.assertEqual(['a', 'b', 'c'], seen)
+
+
+    def test_hasattr_star_over_a_list_cleared_by_the_lookup(self):
+        names = ['a', 'b', 'c']
+        subject, seen = self._attr_subject(names)
+        self.assertTrue(lib.hasattr_star(subject, names))
+        self.assertEqual(['a', 'b', 'c'], seen)
+
+
+    def test_getitem_star_over_a_list_truncated_by_the_lookup(self):
+        keys = ['a', 'b', 'c']
+        subject, seen = self._item_subject(keys)
+        self.assertIs(lib.getitem_star(subject, keys), subject)
+        self.assertEqual(['a', 'b', 'c'], seen)
+
+
+    def test_hasitem_star_over_a_list_truncated_by_the_lookup(self):
+        keys = ['a', 'b', 'c']
+        subject, seen = self._item_subject(keys)
+        self.assertTrue(lib.hasitem_star(subject, keys))
+        self.assertEqual(['a', 'b', 'c'], seen)
+
+
 # The end.
