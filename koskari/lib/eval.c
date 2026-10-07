@@ -749,6 +749,7 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
    the outermost frame first, as for Python frames. A record entry
    with no file (the code-less root of a demand drive) adds nothing.
    The frame's globals carry the whole record as __koskari_trace__.
+   The extended chain is attached to the value as its __traceback__.
 */
 static PyFrameObject *frame_for_record(PyObject *entry, PyObject *record) {
 
@@ -830,6 +831,13 @@ void kos_eval_inject_recorded_frames(
     PyErr_Fetch(exc_type, exc_val, exc_tb);
   }
   Py_DECREF(record);
+
+  /* PyTraceBack_Here extends the thread-state traceback only. The
+     value's __traceback__, which a handler and coro.c's PyErr_SetObject
+     read, is attached here; before 3.12 PyErr_Restore leaves it alone. */
+  if (*exc_tb && PyExceptionInstance_Check(*exc_val)
+      && PyObject_SetAttrString(*exc_val, "__traceback__", *exc_tb) < 0)
+    PyErr_Clear();
 }
 
 
@@ -856,14 +864,6 @@ static void inject_eval_frame_traceback(
 
   decorate_exception_with_dynchain(ctx, *exc_val);
   kos_eval_inject_recorded_frames(exc_type, exc_val, exc_tb);
-
-  /* PyTraceBack_Here updates the thread-state traceback only; the exception
-     value's __traceback__ is not updated. Attach the extended chain to the
-     value so it survives PyErr_SetObject in coro.c (which uses value as-is). */
-  if (*exc_val && *exc_tb && PyExceptionInstance_Check(*exc_val)) {
-    if (PyObject_SetAttrString(*exc_val, "__traceback__", *exc_tb) < 0)
-      PyErr_Clear();
-  }
 }
 
 
