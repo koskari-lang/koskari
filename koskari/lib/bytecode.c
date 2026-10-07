@@ -331,7 +331,8 @@ static PyObject *soften_extra_tuple(
     if (fk == KOSTYLE_NOARG) {
       items[slot] = PyLong_FromLong(0);
 
-    } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR) {
+    } else if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR
+               || fk == KOSTYLE_VAR) {
       PyObject *v = KosExtra_OBJ(row, slot);
       Py_INCREF(v);
       items[slot] = v;
@@ -763,22 +764,46 @@ static PyMemberDef code_members[] = {
 /* === KosCode methods === */
 
 
-static PyObject *code_m_constant(PyObject *self, PyObject *index) {
+/**
+   Read a Python-side index for the accessors below: a Py_ssize_t, so
+   the bound check and the access share one width. -1 with IndexError
+   when the int is negative or does not fit, TypeError when it is not
+   an int.
+*/
+static Py_ssize_t code_accessor_index(PyObject *index, const char *what) {
 
   if (! PyLong_Check(index)) {
-    PyErr_Format(PyExc_TypeError, "Code constants pool index must be"
-                 " int, not %R", index);
-    return NULL;
+    PyErr_Format(PyExc_TypeError, "Code %s index must be int, not %R",
+                 what, index);
+    return -1;
   }
 
-  long i = PyLong_AsLong(index);
+  Py_ssize_t i = PyLong_AsSsize_t(index);
   if (i < 0) {
+    if (i == -1 && PyErr_Occurred())
+      PyErr_Clear();
+    PyErr_Format(PyExc_IndexError, "Code %s index out of bounds: %R",
+                 what, index);
+    return -1;
+  }
+
+  return i;
+}
+
+
+static PyObject *code_m_constant(PyObject *self, PyObject *index) {
+
+  Py_ssize_t i = code_accessor_index(index, "constants pool");
+  if (i < 0)
+    return NULL;
+
+  if ((size_t) i >= KosCode_CPOOL_LEN(self)) {
     PyErr_Format(PyExc_IndexError, "Code constants pool index out"
-                 " of bounds: %ld", i);
+                 " of bounds: %zd", i);
     return NULL;
   }
 
-  PyObject *res = KosCode_GetConstant(self, (uint32_t) i);
+  PyObject *res = KosCode_GET_CONST(self, (uint32_t) i);
   Py_XINCREF(res);
   return res;
 }
@@ -822,18 +847,13 @@ static PyObject *op_as_tuple(KosOp op) {
 
 static PyObject *code_m_oparg(PyObject *self, PyObject *index) {
 
-  if (! PyLong_Check(index)) {
-    PyErr_Format(PyExc_TypeError, "Code oparg index must be int,"
-                 " not %R", index);
+  Py_ssize_t i = code_accessor_index(index, "oparg");
+  if (i < 0)
     return NULL;
-  }
 
-  long i = PyLong_AsLong(index);
-  uint32_t l = code_visible_len(self);
-
-  if (i < 0 || (uint32_t) i >= l) {
+  if ((size_t) i >= code_visible_len(self)) {
     PyErr_Format(PyExc_IndexError, "Code oparg index out of"
-                 " bounds: %ld", i);
+                 " bounds: %zd", i);
     return NULL;
   }
 
@@ -849,18 +869,13 @@ static PyObject *code_m_length(PyObject *self) {
 
 static PyObject *code_m_position(PyObject *self, PyObject *index) {
 
-  if (! PyLong_Check(index)) {
-    PyErr_Format(PyExc_TypeError, "Code position index must be int,"
-                 " not %R", index);
+  Py_ssize_t i = code_accessor_index(index, "position");
+  if (i < 0)
     return NULL;
-  }
 
-  long i = PyLong_AsLong(index);
-  uint32_t l = code_visible_len(self);
-
-  if (i < 0 || (uint32_t) i >= l) {
+  if ((size_t) i >= code_visible_len(self)) {
     PyErr_Format(PyExc_IndexError, "Code position index out of"
-                 " bounds: %ld", i);
+                 " bounds: %zd", i);
     return NULL;
   }
 
@@ -966,7 +981,7 @@ static int extra_row_indices(PyObject *self, uint32_t eidx, uint16_t out[4]) {
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = schema_field(schema, slot);
 
-    if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR) {
+    if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR) {
       PyObject *obj = KosExtra_OBJ(row, slot);
       uint32_t cpool_len = KosCode_CPOOL_LEN(self);
       uint32_t ci = 0;
@@ -1453,6 +1468,31 @@ static int collect_label(
 
 
 /**
+   One line or column of a POSITION entry: an int in the 16-bit range
+   the record stores, refused rather than truncated. Returns -1 with
+   the error set.
+*/
+static int position_field(PyObject *tmp, PyObject *entry, uint16_t *out) {
+
+  if (! PyLong_Check(tmp)) {
+    PyErr_Format(PyExc_RuntimeError, "Invalid position entry %R", entry);
+    return -1;
+  }
+
+  long val = PyLong_AsLong(tmp);
+  if ((val == -1 && PyErr_Occurred()) || val < 0 || val > UINT16_MAX) {
+    PyErr_Clear();
+    PyErr_Format(PyExc_ValueError, "position entry %R is outside 0..%u",
+                 entry, (unsigned) UINT16_MAX);
+    return -1;
+  }
+
+  *out = (uint16_t) val;
+  return 0;
+}
+
+
+/**
    Parse POSITION instruction arg: (line, col) or (line,) or (line, col, extra).
    Extracts line and col into out params. Returns -1 on invalid format.
 */
@@ -1473,27 +1513,18 @@ static int unpack_position(
   if (PyTuple_GET_SIZE(entry) > 1) {
 
     tmp = PyTuple_GET_ITEM(entry, offset++);
-    if (! PyLong_Check(tmp)) {
-      PyErr_Format(PyExc_RuntimeError, "Invalid position entry %R", entry);
+    if (position_field(tmp, entry, line))
       goto failure;
-    }
-    *line = (uint16_t) PyLong_AsLong(tmp);
 
     tmp = PyTuple_GET_ITEM(entry, offset++);
-    if (! PyLong_Check(tmp)) {
-      PyErr_Format(PyExc_RuntimeError, "Invalid position entry %R", entry);
+    if (position_field(tmp, entry, col))
       goto failure;
-    }
-    *col = (uint16_t) PyLong_AsLong(tmp);
 
   } else if (PyTuple_GET_SIZE(entry)) {
 
     tmp = PyTuple_GET_ITEM(entry, offset++);
-    if (! PyLong_Check(tmp)) {
-      PyErr_Format(PyExc_RuntimeError, "Invalid position entry %R", entry);
+    if (position_field(tmp, entry, line))
       goto failure;
-    }
-    *line = (uint16_t) PyLong_AsLong(tmp);
   }
 
   Py_DECREF(entry);
@@ -1689,8 +1720,16 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         if (fk == KOSTYLE_NOARG) {
           continue;
         }
-        /* CONST: intern value, store cpool index in row slot */
-        if (fk == KOSTYLE_CONST) {
+        /* CONST, ATTR: intern value, store cpool index in row slot.
+           An ATTR field's constant is handed to the method cache and
+           the type lookup as a str, so it is one here. */
+        if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR) {
+          if (fk == KOSTYLE_ATTR && ! PyUnicode_CheckExact(elem)) {
+            PyErr_Format(PyExc_TypeError, "Code instruction %zd attribute"
+                         " name must be str, not %.100s",
+                         i, Py_TYPE(elem)->tp_name);
+            goto failure;
+          }
           int idx = intern_const(coll, elem);
           if (idx < 0) {
             goto failure;
@@ -1767,6 +1806,12 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
                          "EXTRA field value out of range: %ld", val);
             goto failure;
           }
+          if (fk == KOSTYLE_OPCOUNT
+              && KosOpCount_TYPE((uint16_t) val) >= KOS_OPERAND_COUNT) {
+            PyErr_Format(PyExc_ValueError,
+                         "EXTRA field %R names no operator", elem);
+            goto failure;
+          }
           uint16_t v = (uint16_t) val;
           if (slot == 0) {
             row.a0 = v;
@@ -1837,7 +1882,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
        Refuse anything emit could not store as given; NOARG ignores its
        arg. */
     if (style == KOSTYLE_COUNT || style == KOSTYLE_PAIR_COUNT
-        || style == KOSTYLE_STAR || style == KOSTYLE_FASTVAR) {
+        || style == KOSTYLE_STAR || style == KOSTYLE_FASTVAR
+        || style == KOSTYLE_OPCOUNT || style == KOSTYLE_CMPCOUNT) {
       if (! PyLong_Check(b)) {
         PyErr_Format(PyExc_TypeError, "Code instruction %zd argument must be"
                      " an int, not %.100s", i, Py_TYPE(b)->tp_name);
@@ -1848,6 +1894,21 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         PyErr_Clear();
         PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R is"
                      " outside 0..%u", i, b, (unsigned) UINT16_MAX);
+        goto failure;
+      }
+
+      /* A packed selector names an operator or comparison; one past
+         the table is refused here rather than at dispatch. */
+      if (style == KOSTYLE_OPCOUNT
+          && KosOpCount_TYPE((uint16_t) val) >= KOS_OPERAND_COUNT) {
+        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
+                     " names no operator", i, b);
+        goto failure;
+      }
+      if (style == KOSTYLE_CMPCOUNT
+          && KosCmpCount_SEL((uint16_t) val) >= KOS_COMPARE_COUNT) {
+        PyErr_Format(PyExc_ValueError, "Code instruction %zd argument %R"
+                     " names no comparison", i, b);
         goto failure;
       }
 
@@ -2034,7 +2095,7 @@ static void resolve_extra_row(
   for (int slot = 0; slot < 4; slot++) {
     KosOpStyle fk = schema_field(schema, slot);
 
-    if (fk == KOSTYLE_CONST || fk == KOSTYLE_VAR)
+    if (fk == KOSTYLE_CONST || fk == KOSTYLE_ATTR || fk == KOSTYLE_VAR)
       out->f[slot].obj = PyList_GET_ITEM(coll->cpool_list, idx[slot]);
     else
       out->f[slot].imm = idx[slot];
@@ -2116,7 +2177,8 @@ static int code_emit(
     } else if (style == KOSTYLE_NOARG) {
       code[di].arg = 0;
     } else {
-      /* COUNT, PAIR_COUNT, STAR, FASTVAR: collect checked the range */
+      /* COUNT, PAIR_COUNT, STAR, FASTVAR, OPCOUNT, CMPCOUNT: collect
+         checked the range */
       code[di].arg = (uint16_t) PyLong_AsLong(b);
     }
 
@@ -2522,6 +2584,20 @@ static int jump_targets(
    or at the block's pop_pc (leaving). Called after derive_extents.
    Only applies to control-flow jump opcodes, not PUSH_*.
 */
+/* Whether pc is the POP of some extent */
+static int jump_target_is_pop(
+    const KosExtentDesc *extents,
+    uint32_t extent_len,
+    uint32_t pc) {
+
+  for (uint32_t i = 0; i < extent_len; i++) {
+    if (extents[i].pop_pc == pc)
+      return 1;
+  }
+  return 0;
+}
+
+
 static int validate_jump_locality(
     const KosOp *code,
     uint32_t code_len,
@@ -2547,13 +2623,9 @@ static int validate_jump_locality(
     }
 
     uint32_t eid = top_extent_id[src_pc];
-    if (eid == KOS_EXTENT_NONE || eid >= extent_len) {
+    if (eid != KOS_EXTENT_NONE && eid >= extent_len) {
       continue;
     }
-
-    const KosExtentDesc *const e = &extents[eid];
-    uint32_t enter_pc = e->push_pc + 1;
-    uint32_t pop_pc = e->pop_pc;
 
     for (int k = 0; k < n_targets; k++) {
       uint32_t t = targets[k];
@@ -2565,17 +2637,44 @@ static int validate_jump_locality(
         return -1;
       }
 
-      if (enter_pc <= t && t < pop_pc) {
+      /* The extent whose body holds the target: a PUSH pc carries its
+         own extent's id but runs the push, so it belongs to the
+         enclosing one. A target in a block the source is not in would
+         run the body with its push skipped, and the FAST slots of a
+         PUSH_NS body were validated against a namespace that never
+         got pushed. */
+      uint32_t holder = top_extent_id[t];
+      if (holder != KOS_EXTENT_NONE && t == extents[holder].push_pc)
+        holder = extents[holder].parent_extent_id;
+
+      /* A POP pc carries the parent's id, so a nested block's POP
+         would read as the parent's body; it pops the source's own
+         block only when it is the source's own POP. */
+      if (eid != KOS_EXTENT_NONE && t == extents[eid].pop_pc)
         continue;
-      }
-      if (t == pop_pc) {
-        continue;
+      if (jump_target_is_pop(extents, extent_len, t)) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "JUMP at pc %u to pc %u: target is another block's"
+                     " POP", src_pc, t);
+        return -1;
       }
 
-      PyErr_Format(PyExc_RuntimeError,
-                   "non-local JUMP at pc %u to pc %u: target outside block"
-                   " [%u, %u)",
-                   src_pc, t, enter_pc, pop_pc);
+      if (holder == eid)
+        continue;
+
+      if (eid == KOS_EXTENT_NONE) {
+        PyErr_Format(PyExc_RuntimeError,
+                     "JUMP at pc %u to pc %u enters block [%u, %u) past"
+                     " its push",
+                     src_pc, t, extents[holder].push_pc + 1,
+                     extents[holder].pop_pc);
+      } else {
+        PyErr_Format(PyExc_RuntimeError,
+                     "non-local JUMP at pc %u to pc %u: target outside block"
+                     " [%u, %u)",
+                     src_pc, t, extents[eid].push_pc + 1,
+                     extents[eid].pop_pc);
+      }
       return -1;
     }
   }
@@ -2778,8 +2877,11 @@ static int validate_fast_slots(
                      (unsigned) code[i].arg, (unsigned) active);
         return -1;
       }
-      if (depth == 0)
+      if (depth == 0) {
         KosCode_FLAGS(self) |= KOS_CODE_USES_FAST;
+        if ((uint32_t) code[i].arg + 1 > KosCode_FAST_NEED(self))
+          KosCode_FAST_NEED(self) = (uint32_t) code[i].arg + 1;
+      }
     } else if (st == KOSTYLE_EXTRA) {
       /* Walk schema: only slots tagged FASTVAR are checked */
       uint16_t eidx = code[i].arg;
@@ -2808,8 +2910,11 @@ static int validate_fast_slots(
           return -1;
         }
 
-        if (depth == 0)
+        if (depth == 0) {
           KosCode_FLAGS(self) |= KOS_CODE_USES_FAST;
+          if ((uint32_t) KosExtra_IMM(row, slot) + 1 > KosCode_FAST_NEED(self))
+            KosCode_FAST_NEED(self) = (uint32_t) KosExtra_IMM(row, slot) + 1;
+        }
       }
     }
 
@@ -3387,6 +3492,7 @@ PyObject *KosCode_New(
 
   ((KosCode *) self)->weakreflist = NULL;
   KosCode_ARENA(self) = NULL;
+  KosCode_FAST_NEED(self) = 0;
 
   /* Record the cache gate so code_emit assigns slots only when enabled. */
   KosCode_FLAGS(self) = cache ? KOS_CODE_CACHE : 0;
@@ -3700,6 +3806,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, PAIR_COUNT);
   int_enum(enum_dict, KOSTYLE_, STAR);
   int_enum(enum_dict, KOSTYLE_, CONST);
+  int_enum(enum_dict, KOSTYLE_, ATTR);
   int_enum(enum_dict, KOSTYLE_, VAR);
   int_enum(enum_dict, KOSTYLE_, FASTVAR);
   int_enum(enum_dict, KOSTYLE_, OPCOUNT);

@@ -329,10 +329,10 @@ define _format_arg [code op_style arg cpool local_names closure_names
         define parts:
           list-each [[val fk] (zip ext schema)]:
             switch fk:
-              case [OpStyle.CONST OpStyle.VAR]:
+              case [OpStyle.CONST OpStyle.ATTR OpStyle.VAR]:
                 if (and (<= 0 val) (< val (len cpool))):
                   define prefix:
-                    (if (equal? fk OpStyle.CONST) "c" "v")
+                    (if (equal? fk OpStyle.VAR) "v" "c")
 
                   define cval cpool[val]
                   define inner:

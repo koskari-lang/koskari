@@ -85,7 +85,7 @@ class TestOpCodeExtra(unittest.IsolatedAsyncioTestCase):
         """CALL_ATTR indexes a row of (attr name, argument count)"""
 
         self.assertEqual(
-            (OpStyle.CONST, OpStyle.COUNT,
+            (OpStyle.ATTR, OpStyle.COUNT,
              OpStyle.NOARG, OpStyle.NOARG),
             OpCode.CALL_ATTR.extra)
 

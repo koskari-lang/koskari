@@ -297,7 +297,9 @@ class ByteCodeFragment:
         """
 
         if linecol:
-            line, col = linecol[:2]
+            # the position record stores 16-bit line and column; a
+            # source past either saturates rather than wrapping
+            line, col = (min(n, 65535) for n in linecol[:2])
             self.instruction(OpCode.POSITION, (line, col, extra))
 
 

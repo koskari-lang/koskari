@@ -45,7 +45,8 @@ KosOpResult KosEvalState_InstallCallFrame(
   if (tail_call) {
     KosDynFrame *frame = KosEvalState_FRAME(es);
 
-    if (kos_dyn_teardown_to_frame(es, frame) < 0) {
+    if (kos_dyn_teardown_to_frame(es, frame) < 0
+        || kos_code_fits_namespace(code, ns) < 0) {
       Py_DECREF(ns);
       return EVAL_RAISE();
     }
@@ -764,6 +765,10 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         }
         if (unlikely(! frame_ns))
           goto fail;
+        if (unlikely(kos_code_fits_namespace(code, frame_ns) < 0)) {
+          Py_DECREF(frame_ns);
+          goto fail;
+        }
 
         /* The callable is window-resident: the reset's block-clear
            releases it.  Hold it (and thereby code) across the reset,

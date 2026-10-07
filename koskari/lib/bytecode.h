@@ -69,6 +69,11 @@ typedef enum KosOpStyle {
   /** opcode argument is a constant pool index */
   KOSTYLE_CONST,
 
+  /** field is a constant pool index whose constant is an attribute
+      name: a str, which finalize requires, since the method cache and
+      the type lookup read it as one */
+  KOSTYLE_ATTR,
+
   /** opcode argument is a variable name (stored in cpool) */
   KOSTYLE_VAR,
 
@@ -666,6 +671,9 @@ struct KosCode {
   PyObject *nspec;      /* namespace spec (KosNamespaceSpec) */
 
   uint32_t flags;       /* KosCodeFlag bitfield */
+  uint32_t fast_need;   /* fast slots the root namespace must hold: the
+                           highest root-scope FAST index plus one, 0
+                           when the root scope uses none */
   size_t allocation;    /* total mmap allocation size */
 
   uint32_t code_len;    /* instruction count */
@@ -860,6 +868,9 @@ uint8_t kos_opcode_cache_count(KosOpCode op);
 
 #define KosCode_USES_FAST(c)                    \
   (KosCode_FLAGS(c) & KOS_CODE_USES_FAST)
+
+#define KosCode_FAST_NEED(c)                    \
+  (((KosCode *) c)->fast_need)
 
 #define KosCode_PROTECTED(c)                    \
   (KosCode_FLAGS(c) & KOS_CODE_PROTECTED)

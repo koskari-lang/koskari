@@ -957,6 +957,16 @@ void kos_dyn_resync_chain(KosEvalState *es);
 */
 KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
 
+/**
+   Whether ns can be the namespace a frame runs code in: a code whose
+   root scope uses fast slots needs a function or collector namespace
+   holding every slot it names (KosCode_FAST_NEED). The code's own spec
+   was validated at finalize; this is the namespace that actually runs,
+   which an Expression, a Function whose formals dedup, or a hand-built
+   frame can make smaller. Returns 0, or -1 with RuntimeError set.
+*/
+int kos_code_fits_namespace(KosCode *code, PyObject *ns);
+
 /* kos_dyn_push_frame without the frame-room check; the caller has run
    kos_eval_check_frame_room for one frame already. */
 KosDynFrame *kos_dyn_push_frame_unchecked(

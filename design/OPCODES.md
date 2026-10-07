@@ -56,6 +56,10 @@ linking from design notes, PRs, or other docs.
 - **pc**: Instruction index (program counter) into the code array.
 - **TOS**: Top of stack; rightmost element in stack notation.
 - **cpool**: Constant pool; the read-only array of constants in a KosCode (`cpool[i]`).
+- **ATTR** (field kind): A constant pool index whose constant is an attribute
+  name. Declared on the name field of every `*_ATTR` row in `opcodes.incl`;
+  finalize requires the constant to be a str, since the method cache and the
+  type lookup read it as one. Otherwise handled as CONST.
 - **extent**: A statically described block (stored in the code object's extent
   table) with kind `KosExtentKind` (KOS_EXT_TRY, KOS_EXT_LOOP, KOS_EXT_FOREACH,
   KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
@@ -96,9 +100,18 @@ Unless specified otherwise for an opcode:
 - Execution obeys the invariants in [interpreter/execution-invariants.md](interpreter/execution-invariants.md).
 - Extent and location metadata are as in [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md).
 - **Jump locality**: Control-flow jump opcodes (JUMP, JUMP_FALSE, JUMP_TRUE,
-  JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*) may only target a pc inside the current
-  extent or at its `pop_pc` (leaving the block). See [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md)
+  JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*) may only target a pc whose innermost
+  extent is the source's own (a nested PUSH pc counts as the enclosing
+  extent's) or the source extent's `pop_pc` (leaving the block). A target
+  inside a block the source is not in, or another block's POP, is refused at
+  Code construction. See [archive/bytecode-metadata-tables.md](archive/bytecode-metadata-tables.md)
   § "Jump Legality and Locality".
+- **Fast slots and the frame namespace**: finalize validates FAST indices
+  against the Code's own NamespaceSpec and records the root scope's slot need
+  (`KosCode_FAST_NEED`); the frame install (`kos_code_fits_namespace`) refuses
+  a namespace that does not support fast slots or holds fewer than that, so
+  an Expression over a smaller namespace or a Function whose formals dedup
+  raise RuntimeError instead of indexing past the namespace.
 
 The **Invariants** bullets per opcode (and this section) form the **contract**:
 the evaluator must preserve them, and the compiler must produce code that
@@ -1476,7 +1489,7 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 
 ### KOS_OP_SWITCH_EQ_VAR_ATTR
 
-- **Style**: EXTRA. Schema `(LABEL, VAR, CONST, NOARG)`.
+- **Style**: EXTRA. Schema `(LABEL, VAR, ATTR, NOARG)`.
 - **Stack**: `[..., s]`. Resolve `obj = frame_ns_deref(var_name)` from `a1`,
   `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
   - **Match**: pop `s`; `pc = a0`.
@@ -1486,7 +1499,7 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 
 ### KOS_OP_SWITCH_EQ_FAST_ATTR
 
-- **Style**: EXTRA. Schema `(LABEL, FASTVAR, CONST, NOARG)`.
+- **Style**: EXTRA. Schema `(LABEL, FASTVAR, ATTR, NOARG)`.
 - **Stack**: `[..., s]`. Resolve `obj = KosNamespace_FastDeref(ns, a1)`,
   `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
   - **Match**: pop `s`; `pc = a0`.
@@ -1970,7 +1983,7 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 ### 12.1 Attribute access on variables (VAR_ATTR_*)
 
-These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
+These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), ATTR (attr name).
 
 - **Compiler form:** Emitted by attr/del-attr/take-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
 
@@ -2012,7 +2025,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_VAR_ATTR_INPLACE {#kos_op_var_attr_inplace}
 
-- **Style**: EXTRA (OPCOUNT, VAR, CONST, NOARG). Row a0 = operator selector and count, a1 = the object name, a2 = the attribute name.
+- **Style**: EXTRA (OPCOUNT, VAR, ATTR, NOARG). Row a0 = operator selector and count, a1 = the object name, a2 = the attribute name.
 - **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Resolve the object by name, reduce obj.attr in place with the count values left to right, store it back; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_inplace_reduce`.
 - **Compiler form:** Emitted by **`compile/inplace-attr`** when OBJ is a symbol. May lower to **FAST_ATTR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/VAR_ATTR_INPLACE.c`
@@ -2494,7 +2507,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### 13.1 Attribute access on fast locals (FAST_ATTR_*)
 
-These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via `KosNamespace_FastDeref(ns, slot)`. Each uses EXTRA schema: FASTVAR (slot), CONST (attr name).
+These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the fast local slot. The object is not on the stack; it is resolved via `KosNamespace_FastDeref(ns, slot)`. Each uses EXTRA schema: FASTVAR (slot), ATTR (attr name).
 
 - **Compiler form:** Emitted when VAR_ATTR_* is lowered (name has fixed slot).
 
@@ -2532,7 +2545,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_FAST_ATTR_INPLACE {#kos_op_fast_attr_inplace}
 
-- **Style**: EXTRA (OPCOUNT, FASTVAR, CONST, NOARG). Row a0 = operator selector and count, a1 = the object's fast slot, a2 = the attribute name.
+- **Style**: EXTRA (OPCOUNT, FASTVAR, ATTR, NOARG). Row a0 = operator selector and count, a1 = the object's fast slot, a2 = the attribute name.
 - **Stack**: `[..., v0 .. v_{n-1}] → [...]`. Read the object from its slot, reduce obj.attr in place with the count values left to right, store it back; pushes nothing. Hot: prologue only, tail-calling the body the elector slot holds, which guards through the field slot and reads, computes, and stores through its location; an empty elector slot or an ungated site takes the electing function, and the generic path runs `kos_attr_inplace_cached` through the field slot.
 - **Compiler form:** The lowered form of **VAR_ATTR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/FAST_ATTR_INPLACE.c`
@@ -2879,7 +2892,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_ATTR_INPLACE {#kos_op_attr_inplace}
 
-- **Style**: EXTRA (OPCOUNT, CONST, NOARG, NOARG). Row a0 = operator selector and count, a1 = the attribute name.
+- **Style**: EXTRA (OPCOUNT, ATTR, NOARG, NOARG). Row a0 = operator selector and count, a1 = the attribute name.
 - **Stack**: `[..., obj, v0 .. v_{n-1}] → [...]`. Reduce obj.attr in place with the count values left to right, store it back, drop the object and the values; pushes nothing (the special appends CONST None). The operator switch lives in the shared `kos_inplace_reduce`.
 - **Compiler form:** Emitted by **`compile/inplace-attr`** when OBJ is an expression.
 - **Implementation**: `koskari/lib/opcode/ATTR_INPLACE.c`
@@ -3307,7 +3320,7 @@ popped.
 
 ### KOS_OP_CALL_ATTR {#kos_op_call_attr}
 
-- **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG.
+- **Style**: EXTRA. Schema: ATTR (attr name), COUNT (npos), NOARG, NOARG.
 - **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] → [..., result]`. Attr name from constant pool (EXTRA row). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
 - **Invariants**: Stack has at least 1 + N elements (obj, N args). Resolved attribute must be callable or TypeError.
 - **Design**: [design/archive/attr-lookup-cache.md](archive/attr-lookup-cache.md)
@@ -3341,7 +3354,7 @@ popped.
 
 ### KOS_OP_CALL_ATTR_NAMES {#kos_op_call_attr_names}
 
-- **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG.
+- **Style**: EXTRA. Schema: ATTR (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG.
 - **Stack**: `[..., obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Resolve `obj.name` via `kos_resolve_named_attr`; then call like CALL_NAMES. The kwarg names tuple and attr name are in the constant pool (EXTRA row), not on the stack.
 - **Compiler form:** Emitted by `compile/call-attr` when the call has keyword arguments and no `*:` or `**:`.
 
@@ -3349,7 +3362,7 @@ popped.
 
 ### KOS_OP_CALL_FAST_ATTR {#kos_op_call_fast_attr}
 
-- **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (npos), NOARG.
+- **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), ATTR (attr name), COUNT (npos), NOARG.
 - **Stack**: `[..., arg_0, ..., arg_{N-1}] → [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound function) `obj` is passed to `kos_call_invoke` as `self_arg` and the core prepends it; when `send_self=1` only the `N` args go.
 - **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): `obj` is an owned deref from the fast slot (`kos_ns_fast_deref` increfs); the handler releases it after the core returns, on every path, same discipline as `KOS_OP_CALL_VAR_ATTR`.
 - **Compiler form:** The `convert_fast` lowering of **CALL_VAR_ATTR**; never emitted by a special.
@@ -3358,7 +3371,7 @@ popped.
 
 ### KOS_OP_CALL_VAR_ATTR {#kos_op_call_var_attr}
 
-- **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (npos), NOARG.
+- **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), ATTR (attr name), COUNT (npos), NOARG.
 - **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(es, var_name)` (owned reference); the handler releases it with `Py_DECREF(obj)` on every exit path.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, then `kos_call_invoke` with `obj` as `self_arg` when `send_self=0`).
 - **Compiler form:** Emitted by `compile/call-attr` when the receiver is a symbol that reads a variable and the call has only positional arguments. Lowers to **CALL_FAST_ATTR**.
@@ -3367,7 +3380,7 @@ popped.
 
 ### KOS_OP_CALL_FAST_ATTR_NAMES {#kos_op_call_fast_attr_names}
 
-- **Style**: EXTRA. Schema: FASTVAR (slot index for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
+- **Style**: EXTRA. Schema: FASTVAR (slot index for obj), ATTR (attr name), CONST (kwarg names tuple), COUNT (npos).
 - **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] → [..., result]`. Obj is loaded from fast slot `a0` via `KosNamespace_FastDeref`; not on stack. One fewer element than CALL_ATTR_NAMES. Resolve and call like CALL_ATTR_NAMES. When `send_self=0` (unbound function) `obj` goes to `kos_call_invoke` as `self_arg`; when `send_self=1` only the args go.
 - **Compiler form:** The `convert_fast` lowering of **CALL_VAR_ATTR_NAMES**; never emitted by a special.
 
@@ -3375,7 +3388,7 @@ popped.
 
 ### KOS_OP_CALL_VAR_ATTR_NAMES {#kos_op_call_var_attr_names}
 
-- **Style**: EXTRA. Schema: VAR (name/cpool for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
+- **Style**: EXTRA. Schema: VAR (name/cpool for obj), ATTR (attr name), CONST (kwarg names tuple), COUNT (npos).
 - **Stack**: Same as CALL_FAST_ATTR_NAMES. Obj is loaded from frame namespace by name (`frame_ns_deref`) instead of fast slot.
 - **Compiler form:** Emitted by `compile/call-attr` for a variable receiver with keyword arguments and no `*:` or `**:`. Lowers to **CALL_FAST_ATTR_NAMES**.
 
@@ -3383,7 +3396,7 @@ popped.
 
 ### KOS_OP_CALL_ATTR_STAR {#kos_op_call_attr_star}
 
-- **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
+- **Style**: EXTRA. Schema: ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
 - **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom … TOS): opa=0 → `[obj]`; opa=1 → `[obj, pos]` (pos = *args); opa=2 → `[obj, kwd]` (kwd = **kwargs); opa=3 → `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). `kos_op_call_star` resolves obj.name through the row's cache, prepends `obj` to the positional tuple when the resolution asks for it, and calls through the shared core.
 - **Invariants**: attr name in constant pool. opa bits: 1 = has *args, 2 = has **kwargs.
 
@@ -3391,7 +3404,7 @@ popped.
 
 ### KOS_OP_CALL_VAR_ATTR_STAR {#kos_op_call_var_attr_star}
 
-- **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
+- **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
 - **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(es, var_name)` (owned reference, stolen by `kos_op_call_star`). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `kos_op_call_star` resolves, prepends `obj` to the tuple args when the resolution asks for it, and calls through the shared core.
 - **Invariants**: `var_name` and attr name in constant pool; same opa bit meanings as CALL_ATTR_STAR.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR_STAR.c): Parallel to CALL_ATTR_STAR with VAR receiver semantics (see [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr)).
@@ -3401,7 +3414,7 @@ popped.
 
 ### KOS_OP_CALL_FAST_ATTR_STAR {#kos_op_call_fast_attr_star}
 
-- **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (opa bitflags), NOARG.
+- **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), ATTR (attr name), COUNT (opa bitflags), NOARG.
 - **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` comes from `KosNamespace_FastDeref(ns, slot)` (slot `a0`); requires `KosNamespace_SupportsFast`. Pop/resolve/call semantics match CALL_ATTR_STAR. `obj` is an owned deref stolen by `kos_op_call_star`, which releases it; the handler holds nothing after the call.
 - **Invariants**: Same opa and tuple/`pos` rules as CALL_ATTR_STAR; fast slot must be in range and bound.
 - **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR_STAR.c): Parallel to CALL_FAST_ATTR / CALL_ATTR_STAR.
@@ -3442,7 +3455,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_ATTR {#kos_op_tail_call_attr}
 
-- **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG. One cache slot (attr resolution).
+- **Style**: EXTRA. Schema: ATTR (attr name), COUNT (npos), NOARG, NOARG. One cache slot (attr resolution).
 - **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. Resolve `obj.name` via `kos_resolve_named_attr`, then call in tail position: the caller's frame is reused rather than a new frame pushed (`KOS_CALL_TAIL` through `kos_call_invoke`; an exact non-yielding KosFunction takes the bind-before-reset subpath, every other callable class takes the core's general tail path).
 - **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL_ATTR in function-body code; never emitted by a special.
 
@@ -3450,7 +3463,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_ATTR_NAMES {#kos_op_tail_call_attr_names}
 
-- **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG. One cache slot.
+- **Style**: EXTRA. Schema: ATTR (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG. One cache slot.
 - **Stack**: Same layout as CALL_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
 - **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_NAMES; never emitted by a special.
 
@@ -3458,7 +3471,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_ATTR_STAR {#kos_op_tail_call_attr_star}
 
-- **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
+- **Style**: EXTRA. Schema: ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
 - **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_STAR; never emitted by a special.
 
@@ -3490,7 +3503,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_VAR_ATTR {#kos_op_tail_call_var_attr}
 
-- **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
+- **Style**: EXTRA. Schema: VAR (name for obj), ATTR (attr name), COUNT (npos), NOARG. One cache slot.
 - **Stack**: Same layout as CALL_VAR_ATTR: args only; obj is loaded from the frame namespace by name (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR; lowers to TAIL_CALL_FAST_ATTR.
 
@@ -3498,7 +3511,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_VAR_ATTR_NAMES {#kos_op_tail_call_var_attr_names}
 
-- **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
+- **Style**: EXTRA. Schema: VAR (name for obj), ATTR (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
 - **Stack**: Same layout as CALL_VAR_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_NAMES; lowers to TAIL_CALL_FAST_ATTR_NAMES.
 
@@ -3506,7 +3519,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_VAR_ATTR_STAR {#kos_op_tail_call_var_attr_star}
 
-- **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
+- **Style**: EXTRA. Schema: VAR (name for obj), ATTR (attr name), COUNT (opa bitflags), NOARG. One cache slot.
 - **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_STAR; lowers to TAIL_CALL_FAST_ATTR_STAR.
 
@@ -3538,7 +3551,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_FAST_ATTR {#kos_op_tail_call_fast_attr}
 
-- **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
+- **Style**: EXTRA. Schema: FASTVAR (slot for obj), ATTR (attr name), COUNT (npos), NOARG. One cache slot.
 - **Stack**: Same layout as CALL_FAST_ATTR: args only; obj is loaded from the fast local slot (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
@@ -3546,7 +3559,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_FAST_ATTR_NAMES {#kos_op_tail_call_fast_attr_names}
 
-- **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
+- **Style**: EXTRA. Schema: FASTVAR (slot for obj), ATTR (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
 - **Stack**: Same layout as CALL_FAST_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_NAMES; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
@@ -3554,7 +3567,7 @@ popped.
 
 ### KOS_OP_TAIL_CALL_FAST_ATTR_STAR {#kos_op_tail_call_fast_attr_star}
 
-- **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
+- **Style**: EXTRA. Schema: FASTVAR (slot for obj), ATTR (attr name), COUNT (opa bitflags), NOARG. One cache slot.
 - **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 

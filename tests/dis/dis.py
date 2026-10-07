@@ -231,7 +231,7 @@ def _format_arg(
             parts = []
             for val, fk in ((a0, schema[0]), (a1, schema[1]),
                             (a2, schema[2]), (a3, schema[3])):
-                if fk == OpStyle.CONST or fk == OpStyle.VAR:
+                if fk in (OpStyle.CONST, OpStyle.ATTR, OpStyle.VAR):
                     if 0 <= val < len(cpool):
                         cval = cpool[val]
                         if fk == OpStyle.CONST and isinstance(
@@ -240,7 +240,7 @@ def _format_arg(
                         else:
                             inner = _format_constant(cval)
                         parts.append('%s#%d (%s)' % (
-                            'c' if fk == OpStyle.CONST else 'v',
+                            'v' if fk == OpStyle.VAR else 'c',
                             val, inner))
                     else:
                         parts.append('%d' % val)

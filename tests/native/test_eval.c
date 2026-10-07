@@ -1338,9 +1338,11 @@ static int test_eval_call_zero_args(void) {
 
 static int test_eval_fast_on_dict_ns(void) {
     /*
-      Code with FAST opcodes sets KOS_CODE_USES_FAST; koskari_eval checks
-      the flag at entry and raises RuntimeError before any opcode runs when
-      the namespace is not a fast-capable KosNamespace (e.g. a plain dict).
+      Code with FAST opcodes sets KOS_CODE_USES_FAST; the frame install
+      (kos_dynframe_new, through kos_code_fits_namespace) refuses a
+      namespace that is not a fast-capable KosNamespace (e.g. a plain
+      dict) with RuntimeError, before a context exists and any opcode
+      runs.
     */
 
     PyObject *name = PyUnicode_FromString("test");
@@ -1376,19 +1378,11 @@ static int test_eval_fast_on_dict_ns(void) {
     TEST_ASSERT_NOT_NULL(ns, "create ns");
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-    KosContext *ctx = KosContext_New(frame);
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
-
-    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(frame == NULL, "frame install refused");
     TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
                 "exception is RuntimeError");
     PyErr_Clear();
 
-    Py_DECREF(ctx);
     Py_DECREF(code_obj);
 
     return 0;

@@ -208,9 +208,14 @@ Definitions:
 
 Rules:
 
-* A `JUMP` may target any `t` inside the source block.
+* A `JUMP` may target any `t` inside the source block whose `block_top(t)` is
+  `src_block` itself; a nested block's PUSH pc counts as `src_block` (the push
+  runs), its body does not.
 * A `JUMP` may also target `t == src_block.pop_pc` to **leave the block** via the POP gateway.
-* (Optional) A `JUMP` may target `t == src_block.enter_pc` to "re-enter at boundary" if you want to permit tight loop patterns without a dedicated opcode.
+* A `JUMP` may not target another block's `pop_pc`: a POP pc carries the
+  enclosing block's id, and a nested block's POP would pop the source's node.
+* A `JUMP` may not target a pc inside a block the source is not in (a jump
+  into a block past its push), from the root or from an enclosing block.
 * A `JUMP` may not target a pc whose `block_top(t)` differs from `src_block`, except as allowed above.
 
 This ensures cleanup correctness because leaving a block is always expressed as "go to POP," and POP is the single transition point.

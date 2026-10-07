@@ -25,6 +25,30 @@
 /* === KosDynFrame implementation === */
 
 
+int kos_code_fits_namespace(KosCode *code, PyObject *ns) {
+
+  if (! KosCode_USES_FAST(code))
+    return 0;
+
+  if (! ns || ! KosNamespace_SupportsFast(ns)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "code %R uses fast slots but namespace %R does not"
+                 " support them", KosCode_NAME(code), ns ? ns : Py_None);
+    return -1;
+  }
+
+  if (KosNamespace_FAST_COUNT(ns) < KosCode_FAST_NEED(code)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "code %R needs %u fast slots; namespace %R has %zu",
+                 KosCode_NAME(code), (unsigned) KosCode_FAST_NEED(code),
+                 ns, (size_t) KosNamespace_FAST_COUNT(ns));
+    return -1;
+  }
+
+  return 0;
+}
+
+
 /**
   Allocate a FRAME node: code and namespace attached, operand segment
   aimed at the embedded inline storage. Frame takes a strong reference
@@ -47,7 +71,14 @@ KosDynFrame *kos_dynframe_new(
      any non-introducer node does, and must not report it as its own. */
   kos_dynnode_init(frame, KOS_DYN_FRAME, parent,
                    code ? KOS_DYN_CAP_OWNS_NS : 0);
-  Py_XINCREF(code);
+  if (code) {
+    if (kos_code_fits_namespace(code, ns) < 0) {
+      Py_XDECREF(ns);
+      kos_dynnode_return_to_freelist(frame);
+      return NULL;
+    }
+    Py_INCREF(code);
+  }
   KosDynFrame_CODE(frame) = code;  /* owned */
   KosDynFrame_PC(frame) = 0;
   KosDynFrame_ACTING_PC(frame) = 0;
