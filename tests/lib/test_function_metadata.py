@@ -167,6 +167,41 @@ class TestBoundMethodDelegation(unittest.TestCase):
             bm.__doc__ = "nope"
 
 
+class TestBoundMethodEquality(unittest.TestCase):
+    """
+    Two bindings of one function to one object are one method: equal,
+    hashed alike, found as a list member and a dict key
+    """
+
+    def test_same_function_and_self_are_equal(self):
+        fn = make_fn(name="method_fn")
+        obj = object()
+        a = fn.__get__(obj, object)
+        b = fn.__get__(obj, object)
+        self.assertIsNot(a, b)
+        self.assertEqual(a, b)
+        self.assertFalse(a != b)
+        self.assertEqual(hash(a), hash(b))
+        self.assertIn(a, [b])
+        self.assertEqual({a: 1}[b], 1)
+
+    def test_other_self_or_function_is_unequal(self):
+        fn = make_fn(name="method_fn")
+        other_fn = make_fn(name="other_fn")
+        obj = object()
+        a = fn.__get__(obj, object)
+        self.assertNotEqual(a, fn.__get__(object(), object))
+        self.assertNotEqual(a, other_fn.__get__(obj, object))
+
+    def test_other_types_and_ordering(self):
+        fn = make_fn(name="method_fn")
+        a = fn.__get__(object(), object)
+        self.assertFalse(a == fn)
+        self.assertTrue(a != 7)
+        with self.assertRaises(TypeError):
+            a < a
+
+
 CLOSURE_SRC = """
 (define outer (lambda [v]
   (define mk (lambda [] (define x v) (lambda [] x)))

@@ -154,4 +154,8 @@ static inline PySendResult kos_iter_send(
 }
 
 
+/* Py_HashPointer is public from 3.13; before that the private name */
+#define koskari_HashPointer _Py_HashPointer
+
+
 // The end.

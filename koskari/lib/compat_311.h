@@ -196,4 +196,8 @@ static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
 #define kos_iter_send PyIter_Send
 
 
+/* Py_HashPointer is public from 3.13; before that the private name */
+#define koskari_HashPointer _Py_HashPointer
+
+
 // The end.

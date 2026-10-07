@@ -916,6 +916,42 @@ static PyObject *boundmethod_repr(PyObject *self) {
 
 
 /**
+   Equality as CPython's method: __func__ by equality, then __self__
+   by identity. Only == and != are answered.
+*/
+static PyObject *boundmethod_richcompare(
+    PyObject *a,
+    PyObject *b,
+    int op) {
+
+  if ((op != Py_EQ && op != Py_NE) || ! KosBoundMethod_CheckExact(b))
+    Py_RETURN_NOTIMPLEMENTED;
+
+  int eq = PyObject_RichCompareBool(
+      KosBoundMethod_FUNC(a), KosBoundMethod_FUNC(b), Py_EQ);
+  if (eq < 0)
+    return NULL;
+  if (eq)
+    eq = KosBoundMethod_SELF(a) == KosBoundMethod_SELF(b);
+
+  if (op == Py_NE)
+    eq = ! eq;
+  if (eq)
+    Py_RETURN_TRUE;
+  Py_RETURN_FALSE;
+}
+
+
+static Py_hash_t boundmethod_hash(PyObject *self) {
+  Py_hash_t y = PyObject_Hash(KosBoundMethod_FUNC(self));
+  if (y == -1)
+    return -1;
+  Py_hash_t x = koskari_HashPointer(KosBoundMethod_SELF(self)) ^ y;
+  return x == -1 ? -2 : x;
+}
+
+
+/**
    kc_pycall worker: prepend self and follow the wrapped callable
    through the generic iteration-node entry.
 */
@@ -955,10 +991,12 @@ KosEvaluatedTypeObject KosBoundMethodType = {
     .tp_traverse = boundmethod_traverse,
     .tp_clear = boundmethod_clear,
     .tp_repr = boundmethod_repr,
+    .tp_hash = boundmethod_hash,
     .tp_call = KosCallAdapt_CallAsync,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
               " self to call arguments.",
+    .tp_richcompare = boundmethod_richcompare,
     .tp_members = boundmethod_members,
     .tp_getset = boundmethod_getsets,
     .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
