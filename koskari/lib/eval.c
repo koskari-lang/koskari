@@ -1750,9 +1750,13 @@ static KosOpResult kos_op_call_star(
     Py_SETREF(pos, fixed);
   }
 
-  /* exact: a dict subclass that relays its reads, such as a module
-     namespace, is copied into a plain dict the callee reads raw */
-  if (kwd && ! PyDict_CheckExact(kwd)) {
+  /* The keywords are copied into a fresh plain dict, as Python's
+     f(**d) does: the callee reads it raw, and the copy holds the keys
+     and values for the call whatever the caller's mapping does
+     meanwhile -- binding a keyword by name compares the keys, and a
+     key's __eq__ may mutate the mapping it came from. Keys of any
+     type pass, as the dict literal's splat is this call. */
+  if (kwd) {
     PyObject *fixed = PyDict_New();
     if (! fixed)
       goto done;
