@@ -145,6 +145,19 @@ class TestDefineInlineTypedValue(SpecialsTestCase):
         self.assertEqual(100, result)
 
 
+    async def test_define_inline_typed_value_is_a_call(self):
+        # a value that would read as a formals list, (dict) or (max 1 2),
+        # is the stored expression: a typed function needs a body
+        src_str = """
+        (begin
+          (define b :: dict (dict))
+          (define a :: int (maxi 1 2))
+          #(a b))
+        """
+        expr, mod = self.compile_expr(src_str, dict=dict, maxi=max)
+        self.assertEqual((2, {}), await expr())
+
+
 class TestDefineAnnotationBindings(SpecialsTestCase):
 
     def compile_fragment(self, src_str, lineno=1, **defns):

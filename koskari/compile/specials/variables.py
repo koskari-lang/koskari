@@ -27,8 +27,8 @@ from ...bootstrap import builtin
 from ...hygiene import binding_atom
 from ...lib import Datum, OpCode, cons, keyword, symbol
 from ...matcher import (
-    BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, REST,
-    SYMBOL, VALUE)
+    BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, SYMBOL,
+    VALUE)
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import (
@@ -269,20 +269,22 @@ def emit_define_value(compiler, frag, caps, namesym, type_expr):
 
 
 _DEFINE_INLINE_PATTERNS = [
+    # a typed function has a body; a value that reads as a formals list,
+    # (dict) or (field ...), with nothing after it is the value arm's
     MATCH(
         CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("::"),
         VALUE("return_type"),
         FORMALS("formals"),
-        REST("body")),
+        BODY("body")),
     MATCH(
         CALLEDBY(),
         DEFINE("name"),
         LITERAL_KW("type:"),
         VALUE("return_type"),
         FORMALS("formals"),
-        REST("body")),
+        BODY("body")),
     MATCH(
         CALLEDBY(),
         DEFINE("name"),
