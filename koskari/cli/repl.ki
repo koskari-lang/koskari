@@ -111,13 +111,13 @@ define-syntax incomplete?:
       (is? result _INCOMPLETE)
 
 
-define eval_expression [compiler source ns]:
+define read_buffer [ns source]:
   """
-  Read and compile one REPL form from source.
+  Read every form in a REPL buffer.
 
-  Returns _INCOMPLETE when the reader needs more input, otherwise a
-  zero-argument compiled expression to be awaited via the boundary shim.
-  Reader- and compile-phase errors propagate to the caller.
+  Returns _INCOMPLETE when the reader needs more input for any form,
+  otherwise a list of (source_expr, position) pairs in buffer order.
+  Reader errors propagate to the caller.
   """
 
   ;; the session's reader, rebuilt from its pragma when detached, so
@@ -126,14 +126,27 @@ define eval_expression [compiler source ns]:
 
   define stream (IndentAwareStream.from_source (source_str source "<stdin>"))
 
-  define-values [source_expr position]:
-    try:
-      reader.read_and_position stream
-    except [ReaderEOF]:
-      return _INCOMPLETE
+  define forms #[]
+  while True:
+    define-values [source_expr position]:
+      try:
+        reader.read_and_position stream
+      except [ReaderEOF]:
+        return _INCOMPLETE
 
-  when (is? source_expr READ_EOF):
-    return _INCOMPLETE
+    when (is? source_expr READ_EOF):
+      break
+
+    forms.append #(source_expr position)
+
+  (if forms forms _INCOMPLETE)
+
+
+define eval_expression [compiler source_expr position ns]:
+  """
+  Compile one REPL form into a zero-argument expression to be awaited
+  via the boundary shim.  Compile-phase errors propagate to the caller.
+  """
 
   define fragment (compiler.compile_expression source_expr position)
   (fragment.as_expression ns)
@@ -229,23 +242,26 @@ define repl [
         continue
 
     try:
-      define expr (eval_expression compiler buffer ns)
+      define forms (read_buffer ns buffer)
 
-      if (incomplete? expr):
+      if (incomplete? forms):
         set! prompt "... "
         continue
-
-      ;; No explicit await here: the call boundary already auto-awaits
-      ;; the shim coroutine, and an explicit await would collapse a
-      ;; defer handle returned by the user form.
-      define result (_await_user_form expr)
 
       set! buffer ""
       set! prompt ">>> "
 
-      set! ns["_"] result
-      unless (None? result):
-        print (kos_repr result) file: stdout
+      for-each [[source_expr position] forms]:
+        define expr (eval_expression compiler source_expr position ns)
+
+        ;; No explicit await here: the call boundary already auto-awaits
+        ;; the shim coroutine, and an explicit await would collapse a
+        ;; defer handle returned by the user form.
+        define result (_await_user_form expr)
+
+        set! ns["_"] result
+        unless (None? result):
+          print (kos_repr result) file: stdout
 
     except [KeyboardInterrupt]:
       print "" file: stderr

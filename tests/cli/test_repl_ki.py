@@ -98,12 +98,12 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         repl = _repl()
         mod = new_module('replprobe')
         init_module(mod, '<stdin>')
-        compiler, _ = build_module_load_facets(mod, filename='<stdin>')
+        build_module_load_facets(mod, filename='<stdin>')
         ns = vars(mod)
         pragma = ns['__pragma__']
         del ns['__reader__']
 
-        await repl.eval_expression(compiler, '1', ns)
+        await repl.read_buffer(ns, '1')
 
         reader = ns.get('__reader__')
         self.assertIsNotNone(reader)
@@ -160,6 +160,27 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
     async def test_multiple_expressions_accumulate_state(self):
         out, _ = await self._run_repl(['(define x 5)', '(* x x)'])
         self.assertIn('25', out)
+
+
+    async def test_form_after_a_block_body_runs(self):
+        out, err = await self._run_repl([
+            'if True:', '  (define a 1)', '(+ a 1)', '(+ a 2)'])
+        self.assertNotIn('Error', err)
+        self.assertEqual(['2', '3'], out.split())
+
+
+    async def test_buffer_forms_run_in_order_and_last_is_underscore(self):
+        out, err = await self._run_repl([
+            'if True:', '  7', '(+ 1 2)', '(+ _ 10)'])
+        self.assertNotIn('Error', err)
+        self.assertEqual(['7', '3', '13'], out.split())
+
+
+    async def test_forms_before_an_incomplete_tail_wait_for_it(self):
+        out, err = await self._run_repl([
+            'if True:', '  7', '(+ 1', '2)'])
+        self.assertNotIn('Error', err)
+        self.assertEqual(['7', '3'], out.split())
 
 
     async def test_decorator_surface_enabled(self):
