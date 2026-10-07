@@ -1336,7 +1336,8 @@ static int engine_set_slot(
     ch->old_value = e->root_slots[slot];
     e->change_count++;
     e->root_slots[slot] = value;
-    kos_datum_annotate_binding(value, name);
+    if (subject_boxes_captures(e->subj))
+      kos_datum_annotate_binding(value, name);
     return 0;
   }
 
@@ -1359,7 +1360,11 @@ static int engine_set_slot(
     Py_DECREF(value);
     return -1;
   }
-  kos_datum_annotate_binding(value, name);
+  /* only a spine subject's captures are boxed in Datum; a tuple, list
+     or single-value subject's capture is the user's own object and is
+     not walked */
+  if (subject_boxes_captures(e->subj))
+    kos_datum_annotate_binding(value, name);
   Py_DECREF(value);
   return 0;
 }
@@ -1700,7 +1705,7 @@ static int matcher_mapping_gate(PyObject *peeled) {
 #include "matcher/match_app.c"
 
 
-static int match_node(
+static int match_node_kind(
     MatchEngine *e,
     uint32_t node_idx,
     Py_ssize_t *cursor,
@@ -1828,6 +1833,28 @@ static int match_node(
                  "unknown matcher node kind: %u", (unsigned) n->kind);
     return -1;
   }
+}
+
+
+/**
+   Match one node at the cursor: 1 matched, 0 did not, -1 with an
+   error set. The walk recurses on the C stack once per level of
+   pattern nesting, under the interpreter's recursion guard, so a
+   pattern nested past the limit raises RecursionError.
+*/
+static int match_node(
+    MatchEngine *e,
+    uint32_t node_idx,
+    Py_ssize_t *cursor,
+    uint32_t trailing_min) {
+
+  int r;
+
+  if (Py_EnterRecursiveCall(" while matching"))
+    return -1;
+  r = match_node_kind(e, node_idx, cursor, trailing_min);
+  Py_LeaveRecursiveCall();
+  return r;
 }
 
 

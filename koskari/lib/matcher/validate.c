@@ -291,7 +291,10 @@ static int validate_slot_extern_const_indices(KosMatcher *m) {
 /* === REPEAT min-width and CAPTURE-in-NOT validation === */
 
 
-static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
+static int has_capture_in_subtree(KosMatcher *m, uint32_t idx);
+
+
+static int has_capture_in_kind(KosMatcher *m, uint32_t idx) {
   if (idx == KOS_MATCH_NO_INDEX)
     return 0;
 
@@ -316,8 +319,9 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
     for (uint32_t cidx = n->as.match.first_child;
          cidx != KOS_MATCH_NO_INDEX;
          cidx = m->nodes[cidx].next) {
-      if (has_capture_in_subtree(m, cidx))
-        return 1;
+      int r = has_capture_in_subtree(m, cidx);
+      if (r)
+        return r;
     }
     return 0;
 
@@ -325,8 +329,9 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
     for (uint32_t cidx = n->as.group.first_child;
          cidx != KOS_MATCH_NO_INDEX;
          cidx = m->nodes[cidx].next) {
-      if (has_capture_in_subtree(m, cidx))
-        return 1;
+      int r = has_capture_in_subtree(m, cidx);
+      if (r)
+        return r;
     }
     return 0;
 
@@ -334,8 +339,9 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
     for (uint32_t cidx = n->as.oneof.first_branch;
          cidx != KOS_MATCH_NO_INDEX;
          cidx = m->nodes[cidx].next) {
-      if (has_capture_in_subtree(m, cidx))
-        return 1;
+      int r = has_capture_in_subtree(m, cidx);
+      if (r)
+        return r;
     }
     return 0;
 
@@ -351,6 +357,22 @@ static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
   default:
     return 0;
   }
+}
+
+
+/**
+   Whether a CAPTURE sits anywhere under idx: 1, 0, or -1 with
+   RecursionError set when the pattern nests past the interpreter's
+   limit (the walk recurses once per level).
+*/
+static int has_capture_in_subtree(KosMatcher *m, uint32_t idx) {
+  int r;
+
+  if (Py_EnterRecursiveCall(" while validating a matcher"))
+    return -1;
+  r = has_capture_in_kind(m, idx);
+  Py_LeaveRecursiveCall();
+  return r;
 }
 
 
@@ -402,9 +424,12 @@ static int validate_subnodes(KosMatcher *m) {
       }
     }
 
-    if (n->kind == KOS_MATCH_NODE_NOT) {
-      if (n->as.not_.subnode != KOS_MATCH_NO_INDEX &&
-          has_capture_in_subtree(m, n->as.not_.subnode)) {
+    if (n->kind == KOS_MATCH_NODE_NOT
+        && n->as.not_.subnode != KOS_MATCH_NO_INDEX) {
+      int captures = has_capture_in_subtree(m, n->as.not_.subnode);
+      if (captures < 0)
+        return -1;
+      if (captures) {
         PyErr_Format(PyExc_ValueError,
                      "NOT at node %zd contains a CAPTURE in its subtree",
                      i);
@@ -481,7 +506,10 @@ static int chunklist_push(ChunkList *cl, BranchChunk c) {
    CAPTURE, OPTIONAL, GROUP). FORM/ONEOF/REPEAT/NOT introduce sub-branch
    boundaries and are not descended.
 */
-static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
+static int subtree_has_rest(KosMatcher *m, uint32_t idx);
+
+
+static int kind_has_rest(KosMatcher *m, uint32_t idx) {
   if (idx == KOS_MATCH_NO_INDEX)
     return 0;
 
@@ -501,8 +529,9 @@ static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
     for (uint32_t cidx = n->as.match.first_child;
          cidx != KOS_MATCH_NO_INDEX;
          cidx = m->nodes[cidx].next) {
-      if (subtree_has_rest(m, cidx))
-        return 1;
+      int r = subtree_has_rest(m, cidx);
+      if (r)
+        return r;
     }
     return 0;
 
@@ -510,8 +539,9 @@ static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
     for (uint32_t cidx = n->as.group.first_child;
          cidx != KOS_MATCH_NO_INDEX;
          cidx = m->nodes[cidx].next) {
-      if (subtree_has_rest(m, cidx))
-        return 1;
+      int r = subtree_has_rest(m, cidx);
+      if (r)
+        return r;
     }
     return 0;
 
@@ -521,7 +551,26 @@ static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
 }
 
 
-static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
+/**
+   Whether a REST sits under idx on the same branch: 1, 0, or -1 with
+   RecursionError set when the pattern nests past the interpreter's
+   limit.
+*/
+static int subtree_has_rest(KosMatcher *m, uint32_t idx) {
+  int r;
+
+  if (Py_EnterRecursiveCall(" while validating a matcher"))
+    return -1;
+  r = kind_has_rest(m, idx);
+  Py_LeaveRecursiveCall();
+  return r;
+}
+
+
+static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl);
+
+
+static int collect_kind_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
   if (idx == KOS_MATCH_NO_INDEX)
     return 0;
 
@@ -585,8 +634,11 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
        so any post-OPTIONAL nodes are validated against the deterministic
        suffix rule). */
     int has_rest = 0;
-    if (n->as.optional.subnode != KOS_MATCH_NO_INDEX)
+    if (n->as.optional.subnode != KOS_MATCH_NO_INDEX) {
       has_rest = subtree_has_rest(m, n->as.optional.subnode);
+      if (has_rest < 0)
+        return -1;
+    }
     c.min = 0;
     c.max = n->max_width;
     c.is_rest = has_rest;
@@ -611,6 +663,21 @@ static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
                  (unsigned) n->kind);
     return -1;
   }
+}
+
+
+/**
+   Push the chunks of the branch at idx: 0, or -1 with an error set,
+   RecursionError when the pattern nests past the interpreter's limit.
+*/
+static int collect_chunks(KosMatcher *m, uint32_t idx, ChunkList *cl) {
+  int r;
+
+  if (Py_EnterRecursiveCall(" while validating a matcher"))
+    return -1;
+  r = collect_kind_chunks(m, idx, cl);
+  Py_LeaveRecursiveCall();
+  return r;
 }
 
 

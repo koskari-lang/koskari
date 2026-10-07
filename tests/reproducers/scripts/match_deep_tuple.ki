@@ -1,0 +1,25 @@
+;; Captures for tests.reproducers.test_match_deep_tuple: a raw tuple
+;; subject nested deeper than the C stack would carry, and a tuple
+;; holding a Datum the user positioned.
+
+import-from koskari.lib Datum
+
+define build [depth]:
+    define stack #()
+    for-each [i (range depth)]:
+        set! stack #(i stack)
+    stack
+
+define peek [s]:
+    match s:
+        case #[top rest]:
+            top
+        else:
+            None
+
+define capture_pair [s]:
+    match s:
+        case #[first second]:
+            second
+        else:
+            None

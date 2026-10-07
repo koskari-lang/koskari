@@ -273,10 +273,20 @@ static PyObject *kos_datum_new(
 }
 
 
+static void kos_datum_set_binding(KosDatum *d, PyObject *name) {
+  Py_INCREF(name);
+  PyObject *old_b = d->binding;
+  d->binding = name;
+  Py_DECREF(old_b);
+}
+
+
 /**
-   Set KosDatum.binding to slot name (in-place). Recurse into tuples of
-   Datum (slice captures). ``name`` is the capture key (borrowed ok;
-   we incref when storing).
+   Set KosDatum.binding to slot name (in-place): a Datum, or the Datum
+   elements of a tuple of them (a slice capture). The engine boxes a
+   capture from a spine subject one level deep at most, so the walk
+   goes no deeper. ``name`` is the capture key (borrowed ok; we incref
+   when storing).
 */
 static void kos_datum_annotate_binding(PyObject *value, PyObject *name) {
   Py_ssize_t i;
@@ -285,17 +295,16 @@ static void kos_datum_annotate_binding(PyObject *value, PyObject *name) {
   if (! value || ! name)
     return;
   if (KosDatum_Check(value)) {
-    KosDatum *d = (KosDatum *) value;
-    Py_INCREF(name);
-    PyObject *old_b = d->binding;
-    d->binding = name;
-    Py_DECREF(old_b);
+    kos_datum_set_binding((KosDatum *) value, name);
     return;
   }
   if (PyTuple_Check(value)) {
     n = PyTuple_GET_SIZE(value);
-    for (i = 0; i < n; i++)
-      kos_datum_annotate_binding(PyTuple_GET_ITEM(value, i), name);
+    for (i = 0; i < n; i++) {
+      PyObject *item = PyTuple_GET_ITEM(value, i);
+      if (KosDatum_Check(item))
+        kos_datum_set_binding((KosDatum *) item, name);
+    }
   }
 }
 
