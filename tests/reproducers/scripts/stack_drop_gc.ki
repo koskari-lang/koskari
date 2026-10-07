@@ -1,0 +1,7 @@
+;; Calls for tests.reproducers.test_stack_drop_gc: a plain Python call
+;; whose argument window is dropped after the call returns, with an
+;; argument whose finalizer runs during that drop.
+
+define run [noop make]:
+    (noop (make) (object))
+    None

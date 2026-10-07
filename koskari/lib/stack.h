@@ -404,10 +404,12 @@ static inline int kos_stack_drop_noerr_fast(
 
   KosSegment *s = *block;
   if (likely(s && count <= s->len)) {
+    /* len is lowered first: a finalizer the release runs may collect,
+       and the traversal must not visit the slots being released */
     size_t len = s->len;
+    s->len = len - count;
     while (count--)
       Py_DECREF(s->objs[--len]);
-    s->len = len;
     return 0;
   }
   return KosStack_DropNoErr(block, count);
@@ -457,9 +459,9 @@ static inline void kos_stack_clear_fast(KosSegment **block) {
   KosSegment *s = *block;
   size_t len = s->len;
 
+  s->len = 0;
   while (len)
     Py_DECREF(s->objs[--len]);
-  s->len = 0;
 }
 
 #endif  /* KOS_STACK_TRACE */

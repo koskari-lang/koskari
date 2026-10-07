@@ -147,11 +147,14 @@ int KosStack_Clear(KosSegment **block) {
   if (! s->len)
     return 0;
 
-  for (size_t i = s->len; i--; ) {
+  /* len is lowered before the release: a finalizer may collect, and
+     the traversal must not visit the slots being released */
+  size_t len = KosSegment_LEN(s);
+  KosSegment_LEN(s) = 0;
+
+  for (size_t i = len; i--; ) {
     Py_DECREF(s->objs[i]);
   }
-
-  KosSegment_LEN(s) = 0;
 
   return 0;
 }
@@ -160,14 +163,16 @@ int KosStack_Clear(KosSegment **block) {
 void KosStack_Release(KosSegment *self) {
   SAYF("KosStack_Release(%p)", (void *) self);
 
-  for (size_t i = self->len; i--; ) {
+  size_t len = KosSegment_LEN(self);
+  KosSegment_LEN(self) = 0;
+
+  for (size_t i = len; i--; ) {
     Py_DECREF(self->objs[i]);
   }
 
   /* Inline segments are embedded in their owning node: release the
      contents only; the storage lives and dies with the node. */
   if (KosSegment_IS_INLINE(self)) {
-    KosSegment_LEN(self) = 0;
     KosSegment_BACK(self) = NULL;
     SAY(" inline segment, contents released");
     return;
@@ -182,8 +187,6 @@ void KosStack_Release(KosSegment *self) {
     SAY(" grown segment, dealloced");
   } else if (block_freecount < BLOCK_MAX_FREE) {
     KOS_TRACE_FL_RETURN("stack_block", 0);
-    KosSegment_LEN(self) = 0;
-
     block_freecount += 1;
     KosSegment_BACK(self) = (KosSegment **) block_freelist;
     block_freelist = self;
@@ -466,10 +469,10 @@ int KosStack_Drop(KosSegment **self, size_t count) {
     return -1;
   }
 
+  s->len = len - count;
   while (count--) {
     Py_DECREF(s->objs[--len]);
   }
-  s->len = len;
 
   *self = s;
   return 0;
@@ -492,10 +495,10 @@ int KosStack_DropNoErr(KosSegment **self, size_t count) {
     res = -1;
   }
 
+  s->len = len - count;
   while (count--) {
     Py_DECREF(s->objs[--len]);
   }
-  s->len = len;
 
   *self = s;
   return res;
