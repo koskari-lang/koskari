@@ -25,8 +25,8 @@ from operator import itemgetter
 import pytest
 
 from koskari.lib import (
-    CollectorNamespace, Domain, DynamicRef, Module, ModuleNamespace,
-    Namespace, NamespaceSpec, Ref, demand)
+    AttributeRef, CollectorNamespace, Domain, DynamicRef, ItemRef, Module,
+    ModuleNamespace, Namespace, NamespaceSpec, Ref, demand)
 from koskari.module import load_module_source_async, new_module
 from tests import make_callable
 from tests.lib.opcode import build_expr
@@ -1452,6 +1452,67 @@ class TestModule(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(TypeError):
             Module({})
+
+
+class TestRefOperationsUnderRebind(unittest.IsolatedAsyncioTestCase):
+    """
+    A ref operation that runs user code keeps the ref alive while that
+    code rebinds the name the ref was found under
+    """
+
+    def setUp(self):
+        self.ns = Namespace("n", None, ["v"])
+
+    def rebinding_key(self):
+        ns = self.ns
+
+        class K:
+            def __hash__(self):
+                ns.bind("v", Ref("v", 1))
+                junk = [dict() for _ in range(64)]
+                del junk
+                return 1
+
+        return K()
+
+    async def test_item_ref_whose_key_rebinds_the_name(self):
+        self.ns.bind("v", ItemRef("v", {}, self.rebinding_key()))
+        with self.assertRaises(KeyError):
+            self.ns["v"]
+        self.assertEqual(1, self.ns["v"])
+
+    async def test_attribute_ref_whose_object_rebinds_the_name(self):
+        ns = self.ns
+
+        class Obj:
+            def __getattribute__(self, name):
+                ns.bind("v", Ref("v", 1))
+                junk = [dict() for _ in range(64)]
+                del junk
+                raise AttributeError(name)
+
+            def __getattr__(self, name):
+                return ("fallback", name)
+
+        ns.bind("v", AttributeRef("v", Obj(), "field"))
+        self.assertEqual(("fallback", "field"), ns["v"])
+        self.assertEqual(1, ns["v"])
+
+    async def test_module_attribute_through_an_item_ref_whose_key_rebinds(self):
+        mod = new_module("rebind_mod")
+        ns = vars(mod)
+
+        class K:
+            def __hash__(self):
+                ns.bind("v", Ref("v", 1))
+                junk = [dict() for _ in range(64)]
+                del junk
+                return 1
+
+        ns.bind("v", ItemRef("v", {}, K()))
+        with self.assertRaises(AttributeError):
+            mod.v
+        self.assertEqual(1, mod.v)
 
 
 # The end.

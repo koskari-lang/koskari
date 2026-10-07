@@ -2602,14 +2602,16 @@ PyObject *KosNamespace_FastTake(PyObject *namespace, size_t index) {
     return value;
 
   } else {
+    /* Pathological case guarded by the INCREF/DECREF pair: the deref
+       runs user code (a key's __hash__, an object's __getattribute__)
+       that can rebind this very slot, freeing the ref the clear below
+       would then be called on. */
     PyObject *ref = KosNamespace_GET_FAST_VAL(namespace, index);
+    Py_INCREF(ref);
     PyObject *value = KosRef_Deref(ref);
-    if (! value)
-      return NULL;
-    if (KosRef_Clear(ref) < 0) {
-      Py_DECREF(value);
-      return NULL;
-    }
+    if (value && KosRef_Clear(ref) < 0)
+      Py_CLEAR(value);
+    Py_DECREF(ref);
     return value;
   }
 }
@@ -3356,15 +3358,21 @@ static PyObject *mdl_getattro(PyObject *self, PyObject *name) {
   PyObject *ns = KosModule_NAMESPACE(self);
   PyObject *ref = KosNamespace_BorrowRef(ns, name);
   if (ref) {
+    /* Pathological case guarded by the INCREF/DECREF pair: the empty
+       check runs user code (a key's __hash__, an object's
+       __getattribute__) that can rebind this very name, freeing the
+       ref the deref below would then be called on. */
+    PyObject *value = NULL;
+    Py_INCREF(ref);
     int empty = KosRef_IsEmpty(ref);
-    if (empty < 0)
-      return NULL;
-    if (empty) {
+    if (empty > 0) {
       PyErr_Format(PyExc_AttributeError, "module %R has no attribute %R",
                    KosNamespace_NAME(KosModule_NAMESPACE(self)), name);
-      return NULL;
+    } else if (empty == 0) {
+      value = KosRef_Deref(ref);
     }
-    return KosRef_Deref(ref);
+    Py_DECREF(ref);
+    return value;
   }
 
   if (! PyErr_Occurred())

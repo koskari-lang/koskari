@@ -705,14 +705,24 @@ static PyObject *function_get_closures(PyObject *self, void *closure) {
     ref = KosNamespace_GET_FAST_VAL(ns, i);
     if (! ref)
       continue;
+    /* Pathological case guarded by the INCREF/DECREF pair: the empty
+       check runs user code (a key's __hash__, an object's
+       __getattribute__) that can rebind this very slot, freeing the
+       ref the deref below would then be called on. */
+    Py_INCREF(ref);
     {
       int empty = KosRef_IsEmpty(ref);
-      if (empty < 0)
+      if (empty < 0) {
+        Py_DECREF(ref);
         goto fail;
-      if (empty)
+      }
+      if (empty) {
+        Py_DECREF(ref);
         continue;
+      }
     }
     value = KosRef_Deref(ref);
+    Py_DECREF(ref);
     if (! value)
       goto fail;
     if (PyDict_SetItem(out, PyTuple_GET_ITEM(names, i), value) < 0) {

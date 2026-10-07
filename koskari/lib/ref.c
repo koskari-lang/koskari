@@ -1636,28 +1636,42 @@ PyObject *KosRef_Deref(PyObject *self) {
     }
     PyErr_Format(PyExc_NameError, "Empty reference: %S", KosRef_NAME(self));
     return NULL;
+  }
 
-  } else if (tp == &KosMemoizedRefType) {
-    return memo_ref_m_deref(self);
+  /* Pathological case guarded by the INCREF/DECREF pair: self is
+     usually borrowed from a namespace slot, and the arms below run
+     user code (a key's __hash__, an object's __getattribute__, a
+     dynamic getter) that can rebind that very slot. The slot held the
+     only reference to self, and self the only references to its
+     object and key, so without the hold the lookup in progress would
+     continue on freed memory. */
+  PyObject *res;
+  Py_INCREF(self);
+
+  if (tp == &KosMemoizedRefType) {
+    res = memo_ref_m_deref(self);
 
   } else if (tp == &KosAttributeRefType) {
-    return attr_ref_m_deref(self);
+    res = attr_ref_m_deref(self);
 
   } else if (tp == &KosItemRefType) {
-    return item_ref_m_deref(self);
+    res = item_ref_m_deref(self);
 
   } else if (tp == &KosDynamicRefType) {
-    return dyn_ref_m_deref(self);
+    res = dyn_ref_m_deref(self);
 
   } else if (tp == &KosWeakRefType) {
-    return weak_ref_m_deref(self);
+    res = weak_ref_m_deref(self);
 
   } else if (tp == &KosParamRefType) {
-    return param_ref_m_deref(self);
+    res = param_ref_m_deref(self);
 
   } else {
-    return PyObject_CallMethodObjArgs(self, _str_deref, NULL);
+    res = PyObject_CallMethodObjArgs(self, _str_deref, NULL);
   }
+
+  Py_DECREF(self);
+  return res;
 }
 
 
@@ -1672,6 +1686,10 @@ int KosRef_Store(PyObject *self, PyObject *value) {
     Py_XSETREF(KosSymbolicRef_VALUE(self), value);
     return 0;
   }
+
+  /* as for KosRef_Deref: a store running user code that rebinds the
+     slot self was borrowed from would free self mid-store */
+  Py_INCREF(self);
 
   if (tp == &KosConstantRefType ||
              tp == &KosMemoizedRefType) {
@@ -1696,6 +1714,7 @@ int KosRef_Store(PyObject *self, PyObject *value) {
     res = PyObject_CallMethodObjArgs(self, _str_store, value, NULL);
   }
 
+  Py_DECREF(self);
   if (res) {
     Py_DECREF(res);
     return 0;
@@ -1709,6 +1728,10 @@ int KosRef_Store(PyObject *self, PyObject *value) {
 int KosRef_Clear(PyObject *self) {
   PyObject *res = NULL;
   PyTypeObject *const tp = self->ob_type;
+
+  /* as for KosRef_Deref: a clear running user code that rebinds the
+     slot self was borrowed from would free self mid-clear */
+  Py_INCREF(self);
 
   if (tp == &KosRefType ||
       tp == &KosWeakRefType ||
@@ -1734,6 +1757,7 @@ int KosRef_Clear(PyObject *self) {
     res = PyObject_CallMethodObjArgs(self, _str_clear, NULL);
   }
 
+  Py_DECREF(self);
   if (res) {
     Py_DECREF(res);
     return 0;
@@ -1747,6 +1771,10 @@ int KosRef_Clear(PyObject *self) {
 int KosRef_IsEmpty(PyObject *self) {
   PyObject *res = NULL;
   PyTypeObject *const tp = self->ob_type;
+
+  /* as for KosRef_Deref: an empty check running user code that
+     rebinds the slot self was borrowed from would free self mid-check */
+  Py_INCREF(self);
 
   if (tp == &KosRefType ||
       tp == &KosConstantRefType ||
@@ -1772,6 +1800,7 @@ int KosRef_IsEmpty(PyObject *self) {
     res = PyObject_GetAttr(self, _str_empty);
   }
 
+  Py_DECREF(self);
   int ret = -1;
   if (res) {
     ret = PyObject_IsTrue(res);
