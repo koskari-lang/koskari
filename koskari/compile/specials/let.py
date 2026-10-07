@@ -94,10 +94,12 @@ def special_let(
     body = caps["body"].datum
 
     if name:
+        # cons of nil alone is the one-element list (()), so a binding
+        # list with nothing in it is nil itself
         return cons(_sym_call,
                     cons(_sym_lambda,
                          name,
-                         cons(*args, nil),
+                         cons(*args, nil) if args else nil,
                          body),
                     *vals,
                     nil)

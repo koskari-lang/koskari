@@ -77,6 +77,23 @@ class TestLetSpecial(SpecialsTestCase):
         self.assertEqual(30, result)
 
 
+    async def test_named_let_no_bindings(self):
+        # (let loop [] ...body) -> ((lambda loop [] ...body)): a loop
+        # that re-enters itself with no arguments
+        src_str = """
+        (let loop []
+          (cond [(lt (size seen) 3) (begin (note seen) (loop))]
+                [else: (size seen)]))
+        """
+        seen = []
+        expr, mod = self.compile_expr(
+            src_str, seen=seen, size=len,
+            lt=lambda a, b: a < b, note=lambda s: s.append(1))
+        result = await expr()
+        self.assertEqual(3, result)
+        self.assertEqual([1, 1, 1], seen)
+
+
 class TestLetInitScope(SpecialsTestCase):
     """
     A let's init expressions run before its scope opens, in the
