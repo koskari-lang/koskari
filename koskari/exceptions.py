@@ -546,7 +546,7 @@ class CodeBoundary(Exception):
 _FRAME_SUMMARY_HAS_COLUMNS = sys.version_info >= (3, 11)
 
 
-def _render_koskari_dynchain(trace_data):
+def _render_koskari_dynchain(trace_data, exclude_files=()):
     """
     Render dynchain metadata attached to synthetic koskari native frames
 
@@ -561,6 +561,7 @@ def _render_koskari_dynchain(trace_data):
     silently skipped.
 
     :param trace_data: iterable of dict-like frame metadata
+    :param exclude_files: filenames whose entries are left out
     :return: list[str] of traceback-formatted lines
     """
 
@@ -573,6 +574,8 @@ def _render_koskari_dynchain(trace_data):
     summaries = []
     for frame in frames:
         if not isinstance(frame, dict):
+            continue
+        if frame.get('filename') in exclude_files:
             continue
 
         line = frame.get('line') or None
@@ -641,7 +644,7 @@ def _find_dynchain_in_chain(exc_val):
     return None
 
 
-def _filter_infrastructure_tb(tb, infrastructure_modules):
+def _filter_infrastructure_tb(tb, infrastructure_modules, infrastructure_files=()):
     """
     Remove infrastructure frames from a traceback
 
@@ -658,6 +661,7 @@ def _filter_infrastructure_tb(tb, infrastructure_modules):
 
     :param tb: traceback object (root of chain)
     :param infrastructure_modules: frozenset of __name__ values to drop
+    :param infrastructure_files: code filenames to drop
     :return: filtered traceback, or None when nothing survives filtering
     """
 
@@ -668,7 +672,8 @@ def _filter_infrastructure_tb(tb, infrastructure_modules):
     while current is not None:
         frame = current.tb_frame
         mod = frame.f_globals.get('__name__', '')
-        if mod not in infrastructure_modules:
+        if mod not in infrastructure_modules \
+                and frame.f_code.co_filename not in infrastructure_files:
             filtered.append(current)
         current = current.tb_next
     if not filtered:
@@ -679,16 +684,24 @@ def _filter_infrastructure_tb(tb, infrastructure_modules):
     return filtered[0]
 
 
-def format_exception_with_koskari_trace(exc_type, exc_val, tb, chain_root=None):
+def format_exception_with_koskari_trace(
+        exc_type,
+        exc_val,
+        tb,
+        chain_root=None,
+        exclude_files=()):
     """
-    Format an exception traceback, interleaving koskari native dynchain data
+    Format an exception traceback, rendering the koskari native dynchain
 
-    Interleaves after synthetic native frames that carry __koskari_trace__ in
-    globals.  Falls back to exc_val.__koskari_dynchain__ when no such frame
-    exists.  When chain_root is given, searches that exception chain for
-    dynchain.
+    A synthetic native frame carries the whole dynchain record as
+    __koskari_trace__ and is itself one entry of it, so the record is
+    rendered once, where the first such frame stands, and the frames
+    themselves are not listed again.  Falls back to
+    exc_val.__koskari_dynchain__ when no such frame exists.  When
+    chain_root is given, searches that exception chain for dynchain.
 
     :param chain_root: optional exception to walk for dynchain
+    :param exclude_files: filenames left out of the rendered dynchain
     :return: list[str], matching traceback.format_exception style
     """
 
@@ -697,7 +710,7 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb, chain_root=None):
         trace_data = _find_dynchain_in_chain(
             chain_root if chain_root is not None else exc_val)
         if trace_data is not None:
-            fallback = _render_koskari_dynchain(trace_data)
+            fallback = _render_koskari_dynchain(trace_data, exclude_files)
         if fallback:
             out = ["Traceback (most recent call last):\n"]
             out.extend(fallback)
@@ -715,7 +728,7 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb, chain_root=None):
     trace_data = _find_dynchain_in_chain(
         chain_root if chain_root is not None else exc_val)
     if not found_dynchain and trace_data is not None:
-        fallback_dynchain = _render_koskari_dynchain(trace_data)
+        fallback_dynchain = _render_koskari_dynchain(trace_data, exclude_files)
 
     if not found_dynchain and not fallback_dynchain:
         return traceback.format_exception(exc_type, exc_val, tb)
@@ -724,10 +737,14 @@ def format_exception_with_koskari_trace(exc_type, exc_val, tb, chain_root=None):
     extracted = traceback.extract_tb(tb)
     walked = list(traceback.walk_tb(tb))
 
+    rendered_dynchain = False
     for summary, (frame, _lineno) in zip(extracted, walked):
-        out.extend(traceback.format_list([summary]))
         trace_data = frame.f_globals.get('__koskari_trace__')
-        out.extend(_render_koskari_dynchain(trace_data))
+        if trace_data is None:
+            out.extend(traceback.format_list([summary]))
+        elif not rendered_dynchain:
+            out.extend(_render_koskari_dynchain(trace_data, exclude_files))
+            rendered_dynchain = True
 
     if fallback_dynchain:
         out.extend(fallback_dynchain)
@@ -842,8 +859,13 @@ def format_run_exception(
             and not isinstance(exc_val, UncaughtCompilerError):
         return [exc_val.explain()], None
 
+    files = ()
     if not full_trace:
-        filtered = _filter_infrastructure_tb(tb, infrastructure_modules)
+        # the launchpad is Koskari code, so its frame and its dynchain
+        # entry are dropped by file, not by module name
+        files = _launchpad_files()
+        filtered = _filter_infrastructure_tb(
+            tb, infrastructure_modules, files)
         if filtered is not None:
             tb = filtered
         elif _find_dynchain_in_chain(exc_val) is not None:
@@ -853,8 +875,18 @@ def format_run_exception(
             tb = None
 
     lines = format_exception_with_koskari_trace(
-        type(exc_val), exc_val, tb, chain_root=exc_val)
+        type(exc_val), exc_val, tb, chain_root=exc_val, exclude_files=files)
     return lines, tb
+
+
+def _launchpad_files():
+    """
+    The file of the CLI launchpad module, when it is loaded
+    """
+
+    launch = sys.modules.get('koskari.cli.launch')
+    path = getattr(launch, '__file__', None)
+    return (path,) if path else ()
 
 
 def apply_sys_last_exc(exc_type, exc_val, tb=None):

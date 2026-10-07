@@ -71,5 +71,12 @@ class TestTracebackFrameInjection(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<tb_inject>", text)
         self.assertIn("boom", text)
 
+    async def test_formatter_renders_each_frame_once(self):
+        exc = await self.raise_it()
+        text = "".join(format_exception_with_koskari_trace(
+            type(exc), exc, exc.__traceback__))
+        self.assertEqual(1, text.count("Koskari dynchain"), text)
+        self.assertEqual(1, text.count("in boom"), text)
+
 
 # The end.

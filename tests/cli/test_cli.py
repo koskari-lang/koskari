@@ -543,6 +543,33 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         return await loop.run_in_executor(None, run)
 
 
+    async def test_main_script_error_prints_each_user_frame_once(self):
+        """
+        An uncaught script error prints the user frames once, as one
+        dynchain block, and never the launchpad's own frame
+        """
+
+        def run():
+            captured = io.StringIO()
+            orig = sys.stderr
+            sys.stderr = captured
+            try:
+                return (main(['koskari', _script('divide_by_zero.ki')]),
+                        captured.getvalue())
+            finally:
+                sys.stderr = orig
+
+        loop = asyncio.get_running_loop()
+        code, err = await loop.run_in_executor(None, run)
+        self.assertEqual(1, code, err)
+        self.assertNotIn('launch.ki', err)
+        self.assertEqual(1, err.count('Koskari dynchain'), err)
+        self.assertEqual(1, err.count('line 7, in __main__'), err)
+        self.assertEqual(1, err.count('line 2, in f'), err)
+        self.assertTrue(err.rstrip().endswith(
+            'ZeroDivisionError: division by zero'), err)
+
+
     async def test_main_run_hello_exits_zero(self):
         code, out = await self._capture_main(_script('hello.ki'))
         self.assertEqual(0, code)
