@@ -200,7 +200,21 @@ def _slice_bindings(bindings, controlling, index):
     return sub
 
 
-def expand_template_with_hygiene(template, bindings, mark=None):
+def _is_ellipsis_escape(template):
+    """
+    (... TEMPLATE): the escape that transcribes TEMPLATE with every
+    ellipsis in it taken literally, so a template can write a macro
+    """
+
+    return (not is_nil(template)
+            and template.car is Ellipsis
+            and is_pair(template.cdr)
+            and not is_nil(template.cdr)
+            and is_nil(template.cdr.cdr))
+
+
+def expand_template_with_hygiene(
+        template, bindings, mark=None, literal_ellipsis=False):
     """
     Substitute pattern bindings into a template and mark the symbols
     the template itself introduces
@@ -209,7 +223,11 @@ def expand_template_with_hygiene(template, bindings, mark=None):
     ellipses carries N nested repeat sequences, and each template ``...`` peels
     exactly one dimension (see :func:`_slice_bindings`). A variable referenced
     under fewer ellipses than its rank still carries an unconsumed sequence at
-    use site and raises, rather than splicing a raw column into the output
+    use site and raises, rather than splicing a raw column into the output.
+    An ellipsis after an element that names no pattern variable with a
+    repeat dimension raises too: it would transcribe to nothing. A literal
+    ellipsis is written through the escape ``(... TEMPLATE)``, under which
+    every ellipsis transcribes as itself
 
     :param template: template form (pairs, symbols, or opaque atoms)
     :param bindings: dict from pattern variable symbol to capture value
@@ -218,6 +236,7 @@ def expand_template_with_hygiene(template, bindings, mark=None):
         an unexpanded binding reference unchanged
     :param mark: the expansion mark to box template atoms with, or None
         to substitute without marking
+    :param literal_ellipsis: inside an escape: ellipses are elements
     """
 
     if is_symbol(template):
@@ -241,6 +260,10 @@ def expand_template_with_hygiene(template, bindings, mark=None):
     if _is_datumq_directive(template):
         return _datumq_directive(template)
 
+    if not literal_ellipsis and _is_ellipsis_escape(template):
+        return expand_template_with_hygiene(
+            template.cdr.car, bindings, mark, literal_ellipsis=True)
+
     # the spine's elements, and a dotted template's terminator apart
     # from them so it stays the terminator
     items = []
@@ -248,7 +271,8 @@ def expand_template_with_hygiene(template, bindings, mark=None):
     while is_pair(cell) and not is_nil(cell):
         items.append(cell.car)
         cell = cell.cdr
-    tail = expand_template_with_hygiene(cell, bindings, mark) \
+    tail = expand_template_with_hygiene(
+        cell, bindings, mark, literal_ellipsis) \
         if not is_nil(cell) else None
 
     out = []
@@ -256,10 +280,11 @@ def expand_template_with_hygiene(template, bindings, mark=None):
     while i < len(items):
         elem = items[i]
 
-        rep = (i + 1 < len(items) and items[i + 1] is Ellipsis)
+        rep = (not literal_ellipsis
+               and i + 1 < len(items) and items[i + 1] is Ellipsis)
         if not rep:
-            out.append(
-                expand_template_with_hygiene(elem, bindings, mark))
+            out.append(expand_template_with_hygiene(
+                elem, bindings, mark, literal_ellipsis))
             i += 1
             continue
 
@@ -275,6 +300,10 @@ def expand_template_with_hygiene(template, bindings, mark=None):
             continue
 
         controlling = _controlling_seqs(elem, bindings)
+        if not controlling:
+            raise CompilerError(
+                "template ellipsis follows no pattern variable; write a"
+                " literal ellipsis as (... ...)", elem)
         count = _ellipsis_count(controlling, elem)
         for rep_i in range(count):
             sub = _slice_bindings(bindings, controlling, rep_i)

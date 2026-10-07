@@ -37,9 +37,25 @@ them back, but the template is read by the layout reader first, so a line
 holding only `body ...` reads as the call `(body ...)`. A dotted pattern
 written in s-expression form, `(m a . rest)`, binds `rest` to the
 remaining forms as a list, and a dotted template `(f a . rest)` splices
-that list back; the tail after the dot must be a pattern variable. And a macro and
-its first use must be in separate compilation units, because the macro is
-registered when its defining form finishes compiling.
+that list back; the tail after the dot must be a pattern variable. A
+template ellipsis must follow an element that names a pattern variable
+captured under an ellipsis; one that follows anything else is a compile
+error, never an empty expansion. A literal ellipsis is written through
+the escape `(... TEMPLATE)`, inside which every `...` is an element of
+the output; this is Scheme's escape (R7RS `syntax-rules`), and it is how
+a macro writes a macro:
+
+```koskari
+define-syntax def-lister:
+  syntax-rules []:
+    case (def-lister name):
+      (define-syntax name
+        (... (syntax-rules [] [(name args ...) (#list args ...)])))
+```
+
+And a macro and its first use must be in separate compilation units,
+because the macro is registered when its defining form finishes
+compiling.
 [Macros](../tutorials/from-python/macros-and-dsls.md) works both rules
 through an example.
 

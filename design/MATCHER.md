@@ -278,7 +278,13 @@ different name by the process that loads it.
 - A template arm scopes every template-literal symbol while it transcribes
   (`expand_template_with_hygiene(template, bindings, mark)`). Keywords pass
   through unchanged. Substituted captures are spliced in as their `Datum`,
-  unmarked.
+  unmarked. A template `elem ...` repeats once per element of the repeat
+  sequences the element names; an element naming none raises
+  `CompilerError` (it would transcribe to nothing). The escape
+  `(... TEMPLATE)` transcribes `TEMPLATE` with every ellipsis as an
+  element of the output, so an outer template can hold an inner
+  `syntax-rules` whole; the escape itself is consumed, and a nested
+  escape inside it is literal too.
 - A procedural arm's output is scoped after the handler returns
   (`mark_expansion`): every symbol outside a `Datum`. A `Datum` the
   handler built, or spliced from a capture, is left alone.

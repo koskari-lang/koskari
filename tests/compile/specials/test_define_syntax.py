@@ -914,4 +914,60 @@ class TestExpansionCycleGuard(DefineSyntaxCompileHelpers):
         self.assertEqual(42, result)
 
 
+class TestTemplateEllipsisEscape(DefineSyntaxCompileHelpers):
+    """
+    A template writes a literal ellipsis as (... TEMPLATE): everything
+    inside transcribes with its ellipses untouched, so a macro can
+    define a macro. An ellipsis that follows an element naming no
+    pattern variable is an error, never an empty expansion
+    """
+
+    async def test_macro_defining_macro_keeps_inner_ellipses(self):
+        src_str = """
+        (define def-lister
+          (syntax-rules def-lister []
+            [(def-lister name)
+             (define name
+               (... (syntax-rules name []
+                      [(name args ...) (#list args ...)])))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/def-lister': vars(mod)['def-lister']}
+
+        expr, mod = self.compile_expr("(def-lister lst)", **defn)
+        await expr()
+        defn['compile/lst'] = vars(mod)['lst']
+
+        expr, mod = self.compile_expr("#((lst) (lst 1 2 3))", **defn)
+        self.assertEqual(([], [1, 2, 3]), await expr())
+
+
+    async def test_escaped_ellipsis_alone(self):
+        src_str = """
+        (define dots
+          (syntax-rules dots []
+            [(dots) (quote (... ...))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/dots': vars(mod)['dots']}
+        expr, mod = self.compile_expr("(dots)", **defn)
+        self.assertIs(Ellipsis, await expr())
+
+
+    async def test_uncontrolled_ellipsis_is_an_error(self):
+        src_str = """
+        (define bad
+          (syntax-rules bad []
+            [(bad b) (#list (b 1) ...)]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/bad': vars(mod)['bad']}
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr("(bad x)", **defn)
+        self.assertIn("ellipsis", str(caught.exception))
+
+
 # The end.
