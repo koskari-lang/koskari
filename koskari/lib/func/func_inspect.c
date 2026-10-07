@@ -44,13 +44,15 @@ static PyObject *kos_inspect_Parameter = NULL;
 static PyObject *kos_inspect_Signature = NULL;
 static PyObject *kos_inspect_Parameter_empty = NULL;
 static PyObject *kos_str_return = NULL;
+static PyObject *kos_str_placeholder = NULL;
 
 
 /**
    Resolve the inspect module, its Parameter and Signature classes,
-   Parameter.empty, and the interned "return" key, committing all five
-   together so the guard is only ever true for a complete set. On any
-   failure nothing is stored and the next call starts over.
+   Parameter.empty, the interned "return" key and the "_" placeholder,
+   committing all six together so the guard is only ever true for a
+   complete set. On any failure nothing is stored and the next call
+   starts over.
 
    :return: 0, or -1 with an exception set
 */
@@ -58,7 +60,8 @@ static int
 kos_inspect_load(void) {
 
   PyObject *str_return;
-  PyObject *module;
+  PyObject *str_placeholder = NULL;
+  PyObject *module = NULL;
   PyObject *parameter = NULL;
   PyObject *signature = NULL;
   PyObject *empty = NULL;
@@ -69,6 +72,9 @@ kos_inspect_load(void) {
   str_return = PyUnicode_InternFromString("return");
   if (! str_return)
     return -1;
+  str_placeholder = PyUnicode_InternFromString("_");
+  if (! str_placeholder)
+    goto fail;
 
   module = PyImport_ImportModule("inspect");
   if (! module)
@@ -85,6 +91,7 @@ kos_inspect_load(void) {
     goto fail;
 
   kos_str_return = str_return;
+  kos_str_placeholder = str_placeholder;
   kos_inspect_module = module;
   kos_inspect_Parameter = parameter;
   kos_inspect_Signature = signature;
@@ -95,6 +102,7 @@ fail:
   Py_XDECREF(signature);
   Py_XDECREF(parameter);
   Py_XDECREF(module);
+  Py_XDECREF(str_placeholder);
   Py_DECREF(str_return);
   return -1;
 }
@@ -223,6 +231,23 @@ kos_append_inspect_parameter(
   }
 
   PyObject *param = PyObject_Call(kos_inspect_Parameter, args, kwargs);
+  if (! param && PyErr_ExceptionMatches(PyExc_ValueError)) {
+    /* inspect.Parameter admits only a Python identifier as a name.
+       The boundary binds the formal's own name, dashes and all, so
+       the Parameter is built under a placeholder and its name slot
+       is set to the real one; kind, default and annotation keep
+       their validation. */
+    PyErr_Clear();
+    PyObject *placeholder = PyTuple_Pack(2, kos_str_placeholder,
+                                        PyTuple_GET_ITEM(args, 1));
+    if (placeholder) {
+      param = PyObject_Call(kos_inspect_Parameter, placeholder, kwargs);
+      Py_DECREF(placeholder);
+    }
+    if (param && PyObject_SetAttrString(param, "_name",
+                                        PyTuple_GET_ITEM(args, 0)) < 0)
+      Py_CLEAR(param);
+  }
   Py_DECREF(args);
   Py_DECREF(kwargs);
   if (! param)

@@ -162,6 +162,20 @@ class TestInspectKosFunction(unittest.TestCase):
         self.assertIs(sig.parameters['kwargs'].kind,
                       inspect.Parameter.VAR_KEYWORD)
 
+    def test_signature_keeps_dashed_names(self):
+        # the boundary binds the dashed name, so the Signature carries it
+        code, base_ns = build_expr([["CONST", 42], ["RETURN", 1]])
+        fspec = FormalsSpec(('my-arg',), None, ('other-arg',))
+        fn = code.function(fspec(), base_ns)
+        sig = inspect.signature(fn)
+        self.assertEqual(list(sig.parameters.keys()),
+                         ['my-arg', 'other-arg'])
+        self.assertEqual(str(sig), '(my-arg, other-arg)')
+        self.assertEqual(sig.bind(1, 2).arguments,
+                         {'my-arg': 1, 'other-arg': 2})
+        bound = sig.bind(**{'other-arg': 2, 'my-arg': 1})
+        self.assertEqual(bound.arguments, {'my-arg': 1, 'other-arg': 2})
+
     def test_signature_pos_only_fallback_rebuild(self):
         # pos-only names sort after the POSITIONAL_OR_KEYWORD group in
         # the first build attempt, which inspect.Signature rejects; the
