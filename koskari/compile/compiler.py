@@ -587,6 +587,10 @@ class Compiler:
         # position of the innermost form compiled so far, for attributing
         # diagnostics about source objects that carry no position
         self._last_position = None
+        # (head form, fragment) from the latest lowering attempt that
+        # compiled its head to bytecode, taken by the next compile of
+        # that head
+        self._compiled_head = None
 
         # weakrefs to every Code minted through complete(), in
         # definition order; the live remainder at seal() time is the
@@ -895,6 +899,14 @@ class Compiler:
     def compile(self, source_obj, *, position=None):
         if isinstance(source_obj, ByteCodeFragment):
             return source_obj
+
+        # a head the lowering attempt compiled: the call path compiles
+        # the same object next, and takes the fragment in its place
+        if self._compiled_head is not None \
+                and self._compiled_head[0] is source_obj:
+            fragment = self._compiled_head[1]
+            self._compiled_head = None
+            return fragment
 
         tmp = self._resolution_instance is None
         if tmp:
@@ -1224,12 +1236,27 @@ class Compiler:
             if head.base is _symbol_call:
                 raise CompilerError("compile/call not found", source_obj)
 
+        elif is_pair(head):
+            # expansion is legal in operator position: when the head is
+            # itself a form whose own head is a syntax, attempt to lower
+            # it. A successful lowering re-emits this form with the new
+            # head for a fresh dispatch; a failed attempt commits nothing
+            # and the raw head flows to the call path below. A head that
+            # compiled to bytecode is remembered, so the call path's
+            # compile of the same head answers with that fragment.
+            lowered = self.lower_head(head, position=pos or position)
+            if isinstance(lowered, ByteCodeFragment):
+                self._compiled_head = (head, lowered)
+            elif lowered is not None:
+                ret = cons(lowered, tail)
+                fill_position(ret, pos or position)
+                return ret
+
         # Re-emit as an explicit call form with the head left as raw
         # source. Compiling the head here would destroy forms that
         # compile/call's patterns need to see (eg. a (compile/attr obj
-        # name) head routing to compile/call-attr); a pair head no
-        # pattern claims is lowered by the special's generic arm, through
-        # lower_head, once the routing arms have had their chance.
+        # name) head routing to compile/call-attr); the special compiles
+        # the callable itself when no pattern claims it.
         reemitted = cons(_symbol_call, head, tail)
         fill_position(reemitted, pos or position)
         return reemitted
@@ -1238,17 +1265,17 @@ class Compiler:
     def lower_head(self, form, position=None):
         """
         Attempt to lower a form found in operator position. Caller:
-        compile/call's generic arm, for a callee no routing arm claimed.
+        compile_pair.
 
         The attempt nests through arbitrarily deep pair heads: each level
         resolves its own head, and only a form whose innermost head names
         a syntax is attempted at all. A syntax whose expansion yields a
         source form succeeds, reconstructing each enclosing level around
-        the result, and the caller re-dispatches the call with the new
-        head; one that compiles to bytecode succeeds with that fragment,
-        which the caller takes as the callee compiled, so the head is
-        never compiled twice. A non-syntax head fails the whole attempt,
-        committing nothing.
+        the result; one that compiles to bytecode answers with that
+        fragment, which the caller remembers against the head so the
+        call path's compile of the same head is that fragment and the
+        head is never compiled twice. A non-syntax head fails the whole
+        attempt, committing nothing.
 
         :param form: the pair found in operator position
         :param position: enclosing source position threaded to diagnostics

@@ -25,7 +25,7 @@ from ...bootstrap import builtin
 from ...lib import OpCode, cons, nil, symbol
 from ...matcher import BODY, CALLEDBY, LIST, LITERAL_SYM, MATCH, SYMBOL, VALUE
 from ...syntax import special
-from ...types import fill_position, is_pair, is_symbol
+from ...types import fill_position, is_symbol
 from ..compiler import ByteCodeFragment, Compiler
 from ..helpers import gather_parameters
 
@@ -224,20 +224,6 @@ def special_call(
             obj, symbol(str(callable.base)[1:]), rest)
         fill_position(rewritten, pos)
         return rewritten
-
-    # expansion is legal in operator position: a pair callee whose own
-    # head is a syntax lowers here, once the routing arms above have had
-    # their chance at the raw form. An expansion to a source form
-    # re-dispatches the call with the new head, which may itself be a
-    # syntax; a head that compiled to bytecode is the callee, compiled
-    if is_pair(callable):
-        lowered = compiler.lower_head(callable, position=pos)
-        if isinstance(lowered, ByteCodeFragment):
-            callable = lowered
-        elif lowered is not None:
-            rewritten = cons(lowered, rest)
-            fill_position(rewritten, pos)
-            return rewritten
 
     fragment = compiler.fragment(called_by)
     if use_var_path:
