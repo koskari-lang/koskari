@@ -436,6 +436,30 @@ class TestQuoted(IsolatedAsyncioTestCase):
             nil)
         self.assertEqual(col, exp)
 
+    async def test_unquote_operand_keeps_splice_and_at(self):
+        # splicing is the @ right after the comma and nothing else: a
+        # call to a function named splice is a call, an @ operator form
+        # or an @ inside an atom in the operand reads as written
+        def unquoted(src):
+            # the comma macro is in force inside a quasiquote only
+            form = parse_source("`(" + src + ")")
+            return cdr(form).car.car
+
+        self.assertEqual(
+            unquoted(",(splice xs)"),
+            cons(symbol("unquote"),
+                 cons(symbol("splice"), symbol("xs"), nil), nil))
+        self.assertEqual(
+            unquoted(",(@ M N)"),
+            cons(symbol("unquote"),
+                 cons(symbol("@"), symbol("M"), symbol("N"), nil), nil))
+        self.assertEqual(
+            unquoted(",foo@bar"),
+            cons(symbol("unquote"), symbol("foo@bar"), nil))
+        self.assertEqual(
+            unquoted(",@xs"),
+            cons(symbol("unquote-splicing"), symbol("xs"), nil))
+
     async def test_quote_syntax_prefix(self):
         src = """
         #'foo

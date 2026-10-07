@@ -89,7 +89,6 @@ _symbol_decorate = symbol("decorate")
 _symbol_ref = symbol("ref")
 _unary_symbols = {c: symbol(c) for c in "-+~"}
 _symbol_refq = symbol("refq")
-_symbol_splice = symbol("splice")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
 _symbol_apply_fence = symbol("apply-fence")
@@ -2239,38 +2238,26 @@ class Reader:
 
     def _read_unquote(self, stream, char):
         """
-        Read an unquoted expression (,expr)
+        Read an unquoted expression: ,expr or ,@expr
+
+        Splicing is the ``@`` right after the comma and nothing else; the
+        operand reads as any form does, so a call to a function named
+        splice, an ``@`` operator form, or an ``@`` inside an atom in the
+        operand reads as written
 
         :param stream: the source stream
         :param char: the comma character
         :return: tuple of (VALUE, (unquote expr) or (unquote-splicing expr))
         """
 
-        with self.temporary_event_macro("@", self._read_splice, True):
-            _pos, child = self._read_operand(stream, char, "unquote")
+        if stream.peek(1) == '@':
+            stream.read(1)
+            _pos, child = self._read_operand(
+                stream, char + '@', "unquote-splicing")
+            return VALUE, cons(_symbol_unquote_splicing, child, nil)
 
-        # is_pair(nil) is True (nil subclasses pair), so guard the empties
-        # before indexing — `,()` / `,[]` are unquotes of the empty list.
-        if is_pair(child) and not is_nil(child) and child[0] is _symbol_splice:
-            value = cons(_symbol_unquote_splicing, child[1])
-        else:
-            value = cons(_symbol_unquote, child, nil)
-
-        return VALUE, value
-
-
-    def _read_splice(self, stream, char):
-        """
-        Read a splice expression (@expr inside unquote)
-
-        :param stream: the source stream
-        :param char: the '@' character
-        :return: tuple of (VALUE, (splice expr))
-        """
-
-        _pos, child = self._read_operand(stream, char, "unquote-splicing")
-
-        return VALUE, cons(_symbol_splice, child, nil)
+        _pos, child = self._read_operand(stream, char, "unquote")
+        return VALUE, cons(_symbol_unquote, child, nil)
 
 
     def _read_comment(self, stream, char):
