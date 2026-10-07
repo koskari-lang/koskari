@@ -195,6 +195,7 @@ def make_bootstrap():
 
     # Python standard types available by default
     _ty('bool', bool)
+    _ty('bytearray', bytearray)
     _ty('bytes', bytes)
     _ty('classmethod', classmethod)
     _ty('complex', complex)
@@ -205,6 +206,7 @@ def make_bootstrap():
     _ty('frozenset', frozenset)
     _ty('int', int)
     _ty('list', list)
+    _ty('memoryview', memoryview)
     _ty('object', object)
     _ty('property', KosProperty)
     _ty('range', range)
@@ -238,7 +240,6 @@ def make_bootstrap():
     _bind('any?', any)
     _bind('ascii', ascii)
     _bind('bin', bin)
-    _bind('bytearray', bytearray)
     _bind('callable?', callable)
     _bind('chr', chr)
     _bind('dir', dir)
@@ -260,7 +261,6 @@ def make_bootstrap():
     _bind('len', len)
     _ty('py-map', map)
     _bind('max', max)
-    _bind('memoryview', memoryview)
     _bind('min', min)
     _bind('next', next)
     _bind('NotImplemented', NotImplemented)
