@@ -100,11 +100,13 @@ static PyObject *instance_dict_get(PyObject *obj) {
 
 
 /**
-   Peek at an instance attribute: the stored value (borrowed) or NULL, with
-   no side effects and no error state. A values-mode instance is read in
-   place -- every attribute of such an instance lives at a shared-keys
-   index, so absence from the keys is absence from the instance. Otherwise
-   the (never materialized) instance dict is consulted.
+   Peek at an instance attribute: the stored value (borrowed) or NULL. A
+   values-mode instance is read in place -- every attribute of such an
+   instance lives at a shared-keys index, so absence from the keys is
+   absence from the instance -- and that read runs no code. Otherwise
+   the (never materialized) instance dict is consulted, and a non-str
+   key there with the name's hash runs its __eq__: a NULL result with
+   an error set is that probe's exception, which the caller reports.
 */
 static PyObject *instance_attr_peek(PyObject *obj, PyObject *name) {
 #if PY_MINOR_VERSION >= 11
@@ -130,7 +132,7 @@ static PyObject *instance_attr_peek(PyObject *obj, PyObject *name) {
   PyObject *dict = instance_dict_get(obj);
   if (! dict)
     return NULL;
-  return PyDict_GetItem(dict, name);
+  return PyDict_GetItemWithError(dict, name);
 }
 
 
@@ -220,7 +222,13 @@ static int resolve_named_attr_slow(
     return 1;
   }
 
-  PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
+  /* The class attribute is held for the whole resolution: the instance
+     dict probe below can run a key's __eq__, and one that drops the
+     attribute from the class would free it under us, as CPython's
+     generic lookup guards against too. */
+  PyObject *descr = PyType_Lookup(tp, name);
+  Py_XINCREF(descr);
+  int res = -1;
 
   /* Data descriptor with a getter: overrides instance dict; __get__ runs
      per access. Not cached in this version -- its __get__ may run
@@ -228,11 +236,12 @@ static int resolve_named_attr_slow(
      through to the instance dict and the plain class attribute arm, as
      PyObject_GenericGetAttr does. */
   if (descr && descr_is_data(descr) && Py_TYPE(descr)->tp_descr_get) {
-    PyObject *res = Py_TYPE(descr)->tp_descr_get(descr, obj, (PyObject *) tp);
-    if (! res)
-      return -1;
-    *out = res;
-    return 1;
+    PyObject *val = Py_TYPE(descr)->tp_descr_get(descr, obj, (PyObject *) tp);
+    if (val) {
+      *out = val;
+      res = 1;
+    }
+    goto done;
   }
 
   /* Instance attribute: the value is stored directly, no descriptor. */
@@ -242,8 +251,11 @@ static int resolve_named_attr_slow(
       Py_INCREF(val);
       *out = val;
       *mode = KOS_METHOD_INSTANCE_DICT;
-      return 1;
+      res = 1;
+      goto done;
     }
+    if (PyErr_Occurred())
+      goto done;
   }
 
   /* Non-data descriptor / class attribute. */
@@ -256,27 +268,33 @@ static int resolve_named_attr_slow(
       *out = descr;
       *mode = KOS_METHOD_DIRECT_METHOD_GUARDED;
       *cache_descr = descr;
-      return 0;
+      res = 0;
+      goto done;
     }
     if (Py_TYPE(descr)->tp_descr_get != NULL) {
       /* Method descriptor / classmethod / staticmethod: __get__ runs.
          Return the result but do not cache (mode stays GENERIC_LOOKUP). */
-      PyObject *res = Py_TYPE(descr)->tp_descr_get(descr, obj, (PyObject *) tp);
-      if (! res)
-        return -1;
-      *out = res;
-      return 1;
+      PyObject *val = Py_TYPE(descr)->tp_descr_get(descr, obj, (PyObject *) tp);
+      if (val) {
+        *out = val;
+        res = 1;
+      }
+      goto done;
     }
     /* Plain class attribute, no __get__: return as-is; safe to cache. */
     Py_INCREF(descr);
     *out = descr;
     *mode = KOS_METHOD_DIRECT_OBJECT_GUARDED;
     *cache_descr = descr;
-    return 1;
+    res = 1;
+    goto done;
   }
 
   koskari_Err_SetMissingAttribute(obj, name);
-  return -1;
+
+ done:
+  Py_XDECREF(descr);
+  return res;
 }
 
 
@@ -389,8 +407,12 @@ static int method_slot_hit(
   switch (slot->u.method.mode) {
   case KOS_METHOD_DIRECT_OBJECT_GUARDED:
   case KOS_METHOD_DIRECT_METHOD_GUARDED: {
-    /* An instance attribute may shadow the class attribute. */
+    /* An instance attribute may shadow the class attribute. The probe
+       can run a key's __eq__, and one that re-runs this site with a
+       receiver of another type clears the slot: the slot's descr is
+       held before the probe. */
     int shadowed;
+    Py_INCREF(descr);
 
 #if PY_MINOR_VERSION >= 11
     int active = 0;
@@ -410,13 +432,14 @@ static int method_slot_hit(
     shadowed = instance_attr_peek(obj, name) != NULL;
 #endif
 
-    if (shadowed)
-      return KOS_CACHE_HIT_FALL;
+    if (shadowed || PyErr_Occurred()) {
+      Py_DECREF(descr);
+      return PyErr_Occurred() ? -1 : KOS_CACHE_HIT_FALL;
+    }
     /* The mode recorded the classification at resolution: a method
        descriptor is returned unbound with the receiver sent, a plain
        class attribute as is (cached DIRECT never holds a __get__
-       descr). */
-    Py_INCREF(descr);
+       descr). The reference taken above is the caller's. */
     *out = descr;
     return slot->u.method.mode == KOS_METHOD_DIRECT_METHOD_GUARDED ? 0 : 1;
   }
@@ -445,6 +468,8 @@ static int method_slot_hit(
       *out = val;
       return 1;
     }
+    if (PyErr_Occurred())
+      return -1;
     return KOS_CACHE_HIT_FALL;   /* value gone -> slow */
   }
   case KOS_METHOD_DATA_DESCRIPTOR:
@@ -630,7 +655,13 @@ static KosFieldMode resolve_attr_location_slow(
      (property, ...) computes per access and stays GENERIC. */
   PyObject *descr = PyType_Lookup(tp, name);   /* borrowed */
   if (descr && descr_is_data(descr)) {
-    if (Py_IS_TYPE(descr, &PyMemberDescr_Type)) {
+    /* The member's offset describes the layout of the descriptor's own
+       type; a member of some other class installed as an attribute of
+       this one passes the lookup but not member_get's own check, so
+       only a receiver type that is a subtype of d_type takes the
+       offset. */
+    if (Py_IS_TYPE(descr, &PyMemberDescr_Type)
+        && PyType_IsSubtype(tp, PyDescr_TYPE(descr))) {
       PyMemberDef *m = ((PyMemberDescrObject *) descr)->d_member;
       if (m->type == KOS_T_OBJECT_EX && ! (m->flags & KOS_READONLY)
           && m->offset > 0 && m->offset <= (Py_ssize_t) UINT32_MAX) {

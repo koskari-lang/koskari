@@ -1,0 +1,6 @@
+;; Call site for tests.reproducers.test_method_cache_dict_key_eq: a
+;; method call through a cached site, on receivers whose instance dict
+;; holds keys that run code when probed.
+
+define call_m [o]:
+    (o.m)
