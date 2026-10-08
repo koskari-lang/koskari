@@ -456,6 +456,24 @@ class TestKosReprRegistry(unittest.TestCase):
             kos_repr_unregister(Listy)
 
 
+    def test_builtin_handler_refuses_another_type(self):
+        """
+        A container handler taken from the snapshot and registered under
+        another type raises TypeError instead of reading the object as a
+        container, and called bare it raises the same
+        """
+
+        handler = kos_repr_registry_snapshot()[list]
+        kos_repr_register(bytes, handler)
+        try:
+            with self.assertRaises(TypeError):
+                kos_repr(b"not a list")
+        finally:
+            kos_repr_unregister(bytes)
+        with self.assertRaises(TypeError):
+            handler()
+
+
     def test_unregister_restores_repr(self):
         """
         after unregister, default repr path is used

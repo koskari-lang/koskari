@@ -576,6 +576,22 @@ PyObject *KosUtils_Repr(PyObject *obj) {
 }
 
 
+/* The container handlers are registered self-less and take the object
+   as their self; one taken from the registry snapshot can be registered
+   under another type or called bare, so each checks what it was given. */
+static int kos_repr_handler_takes(
+    PyObject *self,
+    PyTypeObject *type,
+    const char *handler) {
+
+  if (self && PyObject_TypeCheck(self, type))
+    return 1;
+  PyErr_Format(PyExc_TypeError, "%s takes a %s, not %s", handler,
+               type->tp_name, self ? Py_TYPE(self)->tp_name : "nothing");
+  return 0;
+}
+
+
 static PyObject *list_kos_repr(PyObject *self, PyObject *_unused) {
 
   PyObject *col = NULL;
@@ -583,6 +599,9 @@ static PyObject *list_kos_repr(PyObject *self, PyObject *_unused) {
   Py_ssize_t i, n;
 
   (void) _unused;
+
+  if (! kos_repr_handler_takes(self, &PyList_Type, "list_kos_repr"))
+    return NULL;
 
   if (Py_ReprEnter(self) != 0) {
     PyErr_Clear();
@@ -644,6 +663,9 @@ static PyObject *tuple_kos_repr(PyObject *self, PyObject *_unused) {
 
   (void) _unused;
 
+  if (! kos_repr_handler_takes(self, &PyTuple_Type, "tuple_kos_repr"))
+    return NULL;
+
   if (Py_ReprEnter(self) != 0) {
     PyErr_Clear();
     Py_INCREF(_str_hash_tuple_cycle);
@@ -697,6 +719,9 @@ static PyObject *dict_kos_repr(PyObject *self, PyObject *_unused) {
   PyObject *val = NULL;
   Py_ssize_t pos = 0;
   int first = 1;
+
+  if (! kos_repr_handler_takes(self, &PyDict_Type, "dict_kos_repr"))
+    return NULL;
 
   (void) _unused;
 
