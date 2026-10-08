@@ -24,6 +24,7 @@ compiled from; loading a .kio lives in koskari.module.
 
 import importlib
 import os
+import sys
 from warnings import warn
 
 from ..lib import demand_call
@@ -69,14 +70,17 @@ def _is_package_dir(directory):
 def module_identity(ki_path):
     """
     The dotted module name and parent package name an import of ki_path
-    would give it: every directory above the file that holds an
-    __init__.ki or __init__.py is a package segment, and an __init__
-    file names the package itself. A file under no package is named by
-    its stem alone, unless that stem is __main__, which would run a
-    when-main body at build; it gets the synthetic name instead
+    would give it, and the directory an import would search: every
+    directory above the file that holds an __init__.ki or __init__.py
+    is a package segment, and an __init__ file names the package
+    itself. A file under no package is named by its stem alone, unless
+    that stem is __main__, which would run a when-main body at build;
+    it gets the synthetic name instead
 
     :param ki_path: path to the source file
-    :return: (name, package) with package None outside any package
+    :return: (name, package, directory) with package None outside any
+        package, and directory the one above the package root, or the
+        file's own outside any package
     """
 
     directory, filename = os.path.split(os.path.abspath(ki_path))
@@ -91,12 +95,13 @@ def module_identity(ki_path):
 
     if stem == '__init__':
         if not parts:
-            return SYNTHETIC_MODULE_NAME, None
+            return SYNTHETIC_MODULE_NAME, None, directory
         name = '.'.join(parts)
-        return name, name
+        return name, name, directory
     if not parts:
-        return (SYNTHETIC_MODULE_NAME if stem == '__main__' else stem), None
-    return '.'.join(parts + [stem]), '.'.join(parts)
+        name = SYNTHETIC_MODULE_NAME if stem == '__main__' else stem
+        return name, None, directory
+    return '.'.join(parts + [stem]), '.'.join(parts), directory
 
 
 def _module_for_build(mod_name, package):
@@ -129,10 +134,12 @@ def compile_ki_file_to_kio(
     and write a single .kio containing one CODEP body per form.
 
     The module is compiled under the name an import of ``ki_path`` would
-    give it (:func:`module_identity`), with its parent package imported
-    first, so the package pragma in force and a relative import in the
-    body are the ones a source load sees. ``mod_name`` overrides the
-    derived name; its parent package is the part before the last dot.
+    give it (:func:`module_identity`), with the directory above its
+    package root on ``sys.path`` for the build and its parent package
+    imported first, so the package pragma in force and a relative import
+    in the body are the ones a source load sees. ``mod_name`` overrides
+    the derived name; its parent package is the part before the last
+    dot, and no directory is added for it.
 
     Source bytes are always read from ``ki_path``. Each body stores a
     ``filename`` string used when the .kio is loaded so ``Code.filename`` and
@@ -152,17 +159,26 @@ def compile_ki_file_to_kio(
     """
 
     display = source_filename if source_filename is not None else ki_path
+    search = None
 
     if mod_name is None:
-        mod_name, package = module_identity(ki_path)
+        mod_name, package, directory = module_identity(ki_path)
+        if directory not in sys.path:
+            search = directory
     else:
         package = mod_name.rpartition('.')[0] or None
 
-    mod = _module_for_build(mod_name, package)
-    init_module(mod, ki_path, spec=None)
+    if search is not None:
+        sys.path.insert(0, search)
+    try:
+        mod = _module_for_build(mod_name, package)
+        init_module(mod, ki_path, spec=None)
 
-    with source_open(ki_path) as source_stream:
-        bodies = compile_top_level_to_codes(mod, display, source_stream)
+        with source_open(ki_path) as source_stream:
+            bodies = compile_top_level_to_codes(mod, display, source_stream)
+    finally:
+        if search is not None and sys.path and sys.path[0] == search:
+            del sys.path[0]
 
     # stamped from the source as it was compiled, so a loader can tell
     # this file apart from one left behind by an older copy of the .ki

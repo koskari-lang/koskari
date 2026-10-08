@@ -30,6 +30,7 @@ import pytest
 
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
 from koskari.lib import FunctionSpec
+from koskari.serialize.codex import KioFile
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
 
@@ -161,6 +162,38 @@ class TestKioImporterParity(unittest.TestCase):
                                os.path.join(pkg, 'rel.kio'))
         mod = importlib.import_module('kiopkg_rel.rel')
         self.assertEqual(mod.y, 42)
+
+
+    def test_kio_build_finds_the_package_from_any_working_directory(self):
+        """
+        A submodule's relative import resolves at build when neither the
+        working directory nor sys.path holds the package root's parent:
+        the build puts that directory on the path itself
+        """
+
+        import warnings
+
+        root = os.path.join(self._tmpdir, 'elsewhere')
+        os.mkdir(root)
+        pkg = os.path.join(root, 'kiopkg_far')
+        os.mkdir(pkg)
+        for fname, source in {
+                '__init__.ki': "",
+                'helper.ki': "(define helper 41)\n",
+                'rel.ki': "(import-from .helper helper)\n"
+                          "(define y (+ helper 1))\n"}.items():
+            with open(os.path.join(pkg, fname), 'w', encoding='utf-8') as fh:
+                fh.write(source)
+        self.assertNotIn(root, sys.path)
+
+        before = list(sys.path)
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            compile_ki_file_to_kio(os.path.join(pkg, 'rel.ki'),
+                                   os.path.join(pkg, 'rel.kio'))
+        self.assertEqual(before, sys.path)
+        self.assertEqual(2, len(KioFile.read(
+            os.path.join(pkg, 'rel.kio')).codes))
 
 
     def test_kio_holds_plain_code_names(self):

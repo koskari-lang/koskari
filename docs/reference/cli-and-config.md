@@ -37,7 +37,8 @@ script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`.
 
 `--compile-kio` compiles `SRC` under the module name an import would give
 it: each directory above the file holding an `__init__.ki` or `__init__.py`
-is a package segment, and the parent package is imported first, so the
+is a package segment, the directory above the package root is on the
+import path for the build, and the parent package is imported first, so the
 package pragma in force and any relative import in the body are the ones a
 source load sees. A file under no package is named by its stem. The forms
 run as they compile, so a `when-main` body does not run; a file named
