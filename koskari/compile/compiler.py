@@ -1356,8 +1356,11 @@ class Compiler:
         # promotion, deriving the pass settings from this compiler
         # through the fragment; the base NamespaceSpec it resolves
         # mid-pipeline stays readable for Code construction below
-        proc = ByteCodeProcessor(fragment)
-        instr = proc.process(mode == CompilerMode.FUNCTION)
+        try:
+            proc = ByteCodeProcessor(fragment)
+            instr = proc.process(mode == CompilerMode.FUNCTION)
+        except (ValueError, OverflowError) as ex:
+            raise self.limit_error(fragment, ex) from ex
         base_nspec = proc.base_nspec
 
         # Resolve filename for Code metadata
@@ -1377,8 +1380,11 @@ class Compiler:
             cache = self.cache_expression
 
         # Build Code and register with pragma for position lookup on errors
-        code = Code(base_nspec, instr, fragment.name, filename,
-                    protect=self.protect_code, cache=cache)
+        try:
+            code = Code(base_nspec, instr, fragment.name, filename,
+                        protect=self.protect_code, cache=cache)
+        except (ValueError, OverflowError) as ex:
+            raise self.limit_error(fragment, ex) from ex
         if fragment.doc is not None:
             code.extras['doc'] = fragment.doc
         reso.register_code_fragment(code, fragment, ancestors)
@@ -1399,6 +1405,21 @@ class Compiler:
         self._minted.append(weakref.ref(code))
 
         return code
+
+
+    def limit_error(self, fragment, ex):
+        """
+        A size the processor or the finalizer refused, reported as a
+        compiler error at the fragment's first recorded position
+        """
+
+        position = None
+        for op, arg in fragment.instructions:
+            if op is OpCode.POSITION:
+                position = tuple(arg[:2])
+                break
+        return CompilerError(str(ex), position=position,
+                             filename=self.filename)
 
 
     def complete_function(self, fragment, ancestors):

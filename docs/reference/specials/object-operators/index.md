@@ -72,7 +72,9 @@ True
 ## Arithmetic and bitwise operators
 
 Each emits `OBJECT_OPERAND` with the matching selector. The reducible forms
-take any number of operands and fold left to right.
+take any number of operands and fold left to right. A form with more than
+255 operands, or a chained comparison that wide, compiles as a call of the
+operator's runtime binding, which folds the same way.
 
 | Form | Does | Example |
 | ---- | ---- | ------- |

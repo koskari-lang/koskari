@@ -27,7 +27,9 @@ not, repr, truth, iter, ~,
 
 import pytest
 
-from koskari.exceptions import SpecialError, SyntaxMatchError
+import koskari.lib
+from koskari.exceptions import (
+    CompilerError, SpecialError, SyntaxMatchError, UncaughtCompilerError)
 from koskari.lib import Compare, OpCode, Operand, OpStyle
 from tests import SlowAIter
 from tests.dis.dis import dis
@@ -1370,6 +1372,54 @@ class TestObjectFormat(SpecialsTestCase):
         self.assertEqual(
             OpStyle.COUNT,
             OpCode.OBJECT_STR.style)
+
+
+class TestOperandLimits(SpecialsTestCase):
+    """
+    Past the 255 operands an OPCOUNT or CMPCOUNT row can count, a
+    reducing operator or a chained comparison compiles as a call of
+    the operator's runtime binding; a limit the finalizer refuses is
+    reported as a positioned compiler error
+    """
+
+    WIDE = 300
+
+    def wide(self, head):
+        names = [f"a{i}" for i in range(self.WIDE)]
+        return "(" + head + " " + " ".join(names) + ")", names
+
+    async def test_wide_reduce_is_a_call(self):
+        src, names = self.wide("+")
+        values = {n: 1 for n in names}
+        values["+"] = getattr(koskari.lib, "+")
+        code = self.compile_to_code(src, **values)
+        self.assertTrue(self.call_ops(code))
+        self.assertNotIn(OpCode.OBJECT_OPERAND, [op for op, _ in _ops(code)])
+        expr, mod = self.compile_expr(src, **values)
+        self.assertEqual(self.WIDE, await expr())
+
+    async def test_wide_compare_is_a_call(self):
+        src, names = self.wide("<")
+        values = {n: i for i, n in enumerate(names)}
+        values["<"] = getattr(koskari.lib, "<")
+        code = self.compile_to_code(src, **values)
+        self.assertTrue(self.call_ops(code))
+        self.assertIsNone(_find_compare(code, Compare.LT))
+        expr, mod = self.compile_expr(src, **values)
+        self.assertTrue(await expr())
+        values[names[-1]] = -1
+        expr, mod = self.compile_expr(src, **values)
+        self.assertFalse(await expr())
+
+    async def test_finalizer_limit_is_a_positioned_compiler_error(self):
+        src = "b0"
+        for i in reversed(range(70)):
+            src = f"(let [[b{i} {i}]] {src})"
+        src = f"(lambda [] {src})"
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_to_code(src)
+        self.assertNotIsInstance(caught.exception, UncaughtCompilerError)
+        self.assertIsNotNone(caught.exception.position)
 
 
 # The end.

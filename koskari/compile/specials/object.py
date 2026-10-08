@@ -176,6 +176,23 @@ def _reduce_fold(py_fold, compiler, body):
     return (current, have_acc, acc, pending)
 
 
+# the count byte of an OPCOUNT or CMPCOUNT row; a wider form compiles
+# as a call of the operator's runtime binding, which folds the same way
+OPERAND_LIMIT = 0xff
+
+
+def operand_count(body):
+    """
+    How many operands a source argument list holds
+    """
+
+    count = 0
+    while not is_nil(body):
+        _, body = body
+        count += 1
+    return count
+
+
 def emit_reduce_op(
         compiler,
         called_by,
@@ -218,6 +235,9 @@ def emit_reduce_op(
     head = called_by.datum
     pos = called_by.position
     body = args.datum
+
+    if operand_count(body) > OPERAND_LIMIT:
+        return call_form_reroute(head, body)
 
     frag = compiler.fragment(head)
 
@@ -440,6 +460,8 @@ def emit_chain_compare(compiler, caps, sel):
     call_form = splat_call_form(head, body)
     if call_form is not None:
         return call_form
+    if operand_count(body) > OPERAND_LIMIT:
+        return call_form_reroute(head, body)
 
     frag = compiler.fragment(head)
     frag.position(called_by.position)
