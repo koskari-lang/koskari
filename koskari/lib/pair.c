@@ -733,10 +733,24 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
 
   /* records of the IDs of originals to instances of the new copies */
   PyObject *seen = PyDict_New();
+  if (! seen)
+    return NULL;
 
-  for (; KosPair_IsCell(self); self = KosPair_CDR(self)) {
+  /* The source cell is held for each step: the allocations below can
+     run a collection on 3.9-3.11, and a finalizer there can cut the
+     source chain under the walk. The chain's own link is followed
+     before the hold is released. */
+  Py_INCREF(self);
+  while (KosPair_IsCell(self)) {
+    PyObject *next;
 
     PyObject *self_id = PyLong_FromVoidPtr(self);
+    if (! self_id) {
+      Py_DECREF(self);
+      Py_DECREF(seen);
+      Py_XDECREF(result);
+      return NULL;
+    }
 
     tmp = PyDict_GetItem(seen, self_id);
     if (tmp) {
@@ -757,6 +771,8 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
       tmp = KosPair_New(KosPair_CAR(self), KosNil);
     }
     if (! tmp) {
+      Py_DECREF(self_id);
+      Py_DECREF(self);
       Py_DECREF(seen);
       Py_XDECREF(result);
       return NULL;
@@ -782,6 +798,11 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
        the reference from creation so each cell ends with one owner. */
     last = tmp;
     Py_DECREF(tmp);
+
+    next = KosPair_CDR(self);
+    Py_INCREF(next);
+    Py_DECREF(self);
+    self = next;
   }
 
   /* done with loop, don't need the seen dict anymore. */
@@ -791,6 +812,7 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
      would have been cleared */
   if (last)
     KosPair_SETCDR(last, self);
+  Py_DECREF(self);
 
   if (! result)
     PyErr_SetString(PyExc_TypeError, "expected pair");
@@ -1023,17 +1045,27 @@ static PyObject *pair_append(PyObject *self, PyObject *obj) {
   if (! last)
     return NULL;
 
+  /* the last cell and its cdr are the chain's own references; the
+     allocation can run a collection on 3.9-3.11, where a finalizer
+     can cut the chain, so both are held across it */
+  Py_INCREF(last);
+  Py_INCREF(last_cdr);
+
   if (KosNilP(last_cdr)) {
     new_pair = KosPair_New(obj, KosNil);
   } else {
     new_pair = KosPair_New(last_cdr, obj);
   }
 
+  if (new_pair) {
+    KosPair_SETCDR(last, new_pair);
+    Py_DECREF(new_pair);
+  }
+  Py_DECREF(last_cdr);
+  Py_DECREF(last);
+
   if (! new_pair)
     return NULL;
-
-  KosPair_SETCDR(last, new_pair);
-  Py_DECREF(new_pair);
   Py_RETURN_NONE;
 }
 
@@ -1987,7 +2019,11 @@ static PyObject *pair_cons_from_ptr(
 
 /**
   Build a chain of type's cells over the members of a sequence, ended
-  by nil. msg is the TypeError text for a non-sequence.
+  by nil. msg is the TypeError text for a non-sequence. The members are
+  read from a tuple: a tuple argument as it is, anything else copied
+  into one, so the item array cannot move or shrink under the
+  allocations, which on 3.9-3.11 can run a collection whose finalizers
+  may touch a list argument.
 */
 static PyObject *pair_cons_members(
     PyTypeObject *type,
@@ -1995,14 +2031,19 @@ static PyObject *pair_cons_members(
     PyObject *members,
     const char *msg) {
 
-  PyObject *seq = PySequence_Fast(members, msg);
+  PyObject *seq = PySequence_Tuple(members);
   PyObject *result;
 
-  if (! seq)
+  if (! seq) {
+    if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+      PyErr_Clear();
+      PyErr_SetString(PyExc_TypeError, msg);
+    }
     return NULL;
+  }
 
   result = pair_cons_from_ptr(
-      type, nil, PySequence_Fast_ITEMS(seq), PySequence_Fast_GET_SIZE(seq));
+      type, nil, &PyTuple_GET_ITEM(seq, 0), PyTuple_GET_SIZE(seq));
   Py_DECREF(seq);
   return result;
 }
