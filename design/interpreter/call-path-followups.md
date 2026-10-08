@@ -34,13 +34,13 @@ does not yield and `bind_self_state == 2`, recomputed where
 `bind_self_state` resolves. About 3-5 cycles per call. Belongs with the
 range test in [trailing-defaults.md](trailing-defaults.md).
 
-## ResetToTemplate word at a time
+## ResetToTemplate word at a time (implemented)
 
 `KosNamespace_ResetToTemplate` runs every time a frame is cached and
-on every self-tail, one raw-bit test per slot. Walk the set bits of the
-template's raw words with `ctz`, then copy the raw words. About 1% on
-binary_trees. It is inlined where the frame is cached (commit
-a9cd0612), so its size counts there.
+on every self-tail. It clears the locals prefix, the only slots a
+template holds raw, and copies the template's raw words back; no bit
+is tested. It is inlined where the frame is cached (commit a9cd0612),
+so its size counts there.
 
 ## Frame push and pop bookkeeping
 

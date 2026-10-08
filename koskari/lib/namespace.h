@@ -100,6 +100,21 @@ static inline size_t kos_ns_raw_more_words(size_t count) {
       : 0;
 }
 
+
+/* Copy the raw-flag bits for count slots from one holder to another:
+   the two inline words, then the overflow words when count needs them. */
+static inline void kos_ns_copy_raw_bits(
+    uint64_t *dst, uint64_t *dst_more,
+    const uint64_t *src, const uint64_t *src_more,
+    size_t count) {
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+  size_t words = kos_ns_raw_more_words(count);
+  if (words)
+    memcpy(dst_more, src_more, words * sizeof(uint64_t));
+}
+
 /* Minimum allocation size for freelisted KosNamespace objects.  All
    namespaces with fast_count <= this value share one pool.  Tune by
    reading KOS_TRACE_FREELIST alloc_misses at runtime. */
@@ -595,24 +610,29 @@ static inline void kos_ns_set_raw(PyObject *ns, size_t idx, int raw) {
 
 /**
   Restore a call namespace to the state KosNamespace_Copy produced from
-  its template: every slot the template holds raw is emptied and marked
-  raw again. That releases a raw local, and also a cell a closure
-  promoted the slot to during the call, which the closure keeps alone.
-  Slots the template holds as refs (closure and global cells) are left
-  as they are. Used by the per-function frame cache when a frame is
-  stored, and by the self-tail rebind.
+  its template: every local slot is emptied, then the template's raw
+  words are copied back. The locals are the prefix 0..FAST_LOCALS-1,
+  the only slots a template holds raw: the spec sets those bits and
+  nothing writes a template's bits afterward. Emptying releases a raw
+  local, and also a cell a closure promoted the slot to during the
+  call, which the closure keeps alone; the word copy marks the slot
+  raw again. Slots the template holds as refs (closure and global
+  cells) are not visited. Used by the per-function frame cache when a
+  frame is stored, and by the self-tail rebind.
 */
 KOS_OP_INLINE void KosNamespace_ResetToTemplate(PyObject *ns) {
 
   PyObject *template_ns = KosNamespace_TEMPLATE(ns);
-  size_t count = KosNamespace_FAST_COUNT(ns);
+  size_t locals = KosNamespace_FAST_LOCALS(ns);
 
-  for (size_t i = 0; i < count; i++) {
-    if (kos_ns_is_raw(template_ns, i)) {
-      Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
-      kos_ns_set_raw(ns, i, 1);
-    }
-  }
+  for (size_t i = 0; i < locals; i++)
+    Py_CLEAR(KosNamespace_GET_FAST_VAL(ns, i));
+
+  kos_ns_copy_raw_bits(KosNamespace_FAST_RAW(ns),
+                       KosNamespace_FAST_RAW_MORE(ns),
+                       KosNamespace_FAST_RAW(template_ns),
+                       KosNamespace_FAST_RAW_MORE(template_ns),
+                       KosNamespace_FAST_COUNT(ns));
 }
 
 

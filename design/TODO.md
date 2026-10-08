@@ -96,10 +96,10 @@ Ref: [interpreter/trailing-defaults.md](interpreter/trailing-defaults.md).
 
 ### Call-path follow-ups (measured, not taken)
 
-Tail calls to a different function, the installable arity field, ResetToTemplate word
-at a time, frame bookkeeping, hot/cold handler splits, dispatch and
-stack indirection, node and function layouts, and the KosOp.fn elector
-quickening decision. Each with its measurement and gate.
+Tail calls to a different function, the installable arity field, frame
+bookkeeping, hot/cold handler splits, dispatch and stack indirection,
+node and function layouts, and the KosOp.fn elector quickening
+decision. Each with its measurement and gate.
 
 Ref: [interpreter/call-path-followups.md](interpreter/call-path-followups.md).
 

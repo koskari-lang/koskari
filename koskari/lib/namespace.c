@@ -150,21 +150,6 @@ static PyObject *ns_alloc(PyTypeObject *type, size_t count) {
 }
 
 
-/* Copy the raw-flag bits for count slots from one holder to another:
-   the two inline words, then the overflow words when count needs them. */
-static void ns_copy_raw_bits(
-    uint64_t *dst, uint64_t *dst_more,
-    const uint64_t *src, const uint64_t *src_more,
-    size_t count) {
-
-  dst[0] = src[0];
-  dst[1] = src[1];
-  size_t words = kos_ns_raw_more_words(count);
-  if (words)
-    memcpy(dst_more, src_more, words * sizeof(uint64_t));
-}
-
-
 void KosNamespace_TrackChain(PyObject *ns) {
   /* the empty namespace is static and has no GC header to track */
   while (likely(KosNamespace_Check(ns)) && PyObject_IS_GC(ns)
@@ -256,11 +241,11 @@ PyObject *KosNamespace_Copy(PyObject *template_ns) {
   KosNamespace_FAST_LOCALS(self) = KosNamespace_FAST_LOCALS(template_ns);
 
   // Copy raw-flag bits wholesale.
-  ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
-                   KosNamespace_FAST_RAW_MORE(self),
-                   KosNamespace_FAST_RAW(template_ns),
-                   KosNamespace_FAST_RAW_MORE(template_ns),
-                   count);
+  kos_ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
+                       KosNamespace_FAST_RAW_MORE(self),
+                       KosNamespace_FAST_RAW(template_ns),
+                       KosNamespace_FAST_RAW_MORE(template_ns),
+                       count);
 
   // Only non-raw (closure/global) slots carry a Ref to copy; raw local slots
   // are already NULL from ns_alloc, so skip them.  The Ref lives in the fast
@@ -738,11 +723,11 @@ static int ns_init_syms_from_nspec(
   PyObject *fn = KosNamespaceSpec_FAST_NAMES(nspec);
   Py_XINCREF(fn);
   KosNamespace_FAST_NAMES(self) = fn;
-  ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
-                   KosNamespace_FAST_RAW_MORE(self),
-                   KosNamespaceSpec_FAST_RAW(nspec),
-                   KosNamespaceSpec_FAST_RAW_MORE(nspec),
-                   fn ? (size_t) PyTuple_GET_SIZE(fn) : 0);
+  kos_ns_copy_raw_bits(KosNamespace_FAST_RAW(self),
+                       KosNamespace_FAST_RAW_MORE(self),
+                       KosNamespaceSpec_FAST_RAW(nspec),
+                       KosNamespaceSpec_FAST_RAW_MORE(nspec),
+                       fn ? (size_t) PyTuple_GET_SIZE(fn) : 0);
 
   // Local slots are already NULL (zeroed before this call) and their raw bits
   // are set in the bitmask above.  No dict entries for locals (sentinel-free).
