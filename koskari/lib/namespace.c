@@ -56,12 +56,12 @@ static PyObject *mdl_ns_builtin(PyObject *self, PyObject *name);
    and never visited by the collector (ns_is_gc answers no for it). Its
    name, binds and names tuple are made at unit init and released at
    unit clear. */
-static KosNamespace ns_empty_object = {
+KosNamespace kos_ns_empty_object = {
   { .head = { PyVarObject_HEAD_INIT(&KosNamespaceType, 0) 0, 0, NULL, NULL } },
   { NULL, NULL, NULL, NULL, { 0, 0 } },
 };
 
-#define NS_EMPTY ((PyObject *) &ns_empty_object)
+#define NS_EMPTY ((PyObject *) &kos_ns_empty_object)
 static int ns_fast_index(PyObject *self, PyObject *key);
 static PyObject *ns_newfull_from_nspec(
     PyTypeObject *type, PyObject *parent, PyObject *nspec);

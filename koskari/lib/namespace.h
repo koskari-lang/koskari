@@ -194,8 +194,10 @@ PyObject *KosNamespace_NewFull(
    must never leave the live namespace register NULL. One static
    instance, immortal and outside the collector like the nil
    singletons; a borrowed reference, which holders take and release
-   like any other. Never NULL.
+   like any other. Never NULL. The object itself is visible so the
+   reveal predicate can compare against its address.
 */
+extern KosNamespace kos_ns_empty_object;
 PyObject *KosNamespace_Empty(void);
 
 
@@ -455,11 +457,12 @@ PyObject *KosNamespace_Reveal(PyObject *ns);
    from the object's GC head. A namespace outside the collector has no
    head to read, and the one such namespace, the static empty one, is
    held by every native and code-less frame at once, so it is never
-   private and answers revealed. The frame cache asks this of a
-   released frame's namespace before taking the frame. Never NULL.
+   private and answers revealed; its address is the test, not the
+   type's tp_is_gc. The frame cache asks this of a released frame's
+   namespace before taking the frame. Never NULL.
 */
 static inline int KosNamespace_IsRevealed(PyObject *ns) {
-  return ! PyObject_IS_GC(ns) || kos_gc_is_tracked(ns);
+  return ns == (PyObject *) &kos_ns_empty_object || kos_gc_is_tracked(ns);
 }
 
 
