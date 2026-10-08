@@ -157,6 +157,9 @@ class LayoutReader(Reader):
             predicate=self._layout_colon_predicate)
 
         self._header_scan = False
+        # True while the first form of a layout line is read: the block
+        # quote prefixes open a block only from there
+        self._line_start = False
 
 
     @property
@@ -239,9 +242,9 @@ class LayoutReader(Reader):
                          predicate=reader._unary_enabled)
             sm_level('-', reader._read_datumq, False,
                      predicate=reader._datumq_follows)
-
-        self.add_event_macro("'", inner._read_quote, True)
-        self.add_event_macro("`", inner._read_quasiquote, True)
+            sm_level("'", reader._read_quote, True)
+            sm_level("`", reader._read_quasiquote, True)
+            sm_level('#', reader._read_syntax_quote, False)
 
         self.add_layout_event_macro(
             "'",
@@ -413,6 +416,20 @@ class LayoutReader(Reader):
             self._header_scan = old
 
 
+    @contextmanager
+    def _line_start_mode(self, first):
+        """
+        Record whether the form being read is the first of its line, for
+        the block quote predicates
+        """
+        old = self._line_start
+        self._line_start = first
+        try:
+            yield
+        finally:
+            self._line_start = old
+
+
     def _layout_colon_predicate(self, stream, c, atom_prefix):
         """
         Gate ``:`` dispatch and predicated atom boundaries for layout headers.
@@ -448,8 +465,11 @@ class LayoutReader(Reader):
 
     def _layout_block_quote_predicate(self, stream, c, atom_prefix):
         """
-        Allow layout raw-block quote and quasiquote when this line has a
-        structural block colon and the head does not open with a delimiter.
+        Allow layout raw-block quote and quasiquote when the prefix is the
+        first element of its line, the line has a structural block colon
+        and the head does not open with a delimiter. Anywhere else on a
+        line the prefix quotes the next form, and the line's colon belongs
+        to the line's own head.
 
         :param stream: source stream positioned after the prefix character
         :param c: the prefix character
@@ -458,7 +478,7 @@ class LayoutReader(Reader):
 
         if atom_prefix is not None:
             return True
-        if not self.layout_enabled:
+        if not self.layout_enabled or not self._line_start:
             return False
         nxt = stream.peek(1)
         if not nxt or nxt in '([{':
@@ -506,7 +526,7 @@ class LayoutReader(Reader):
         :param atom_prefix: atom boundary context; always None here
         """
 
-        if not self.layout_enabled:
+        if not self.layout_enabled or not self._line_start:
             return False
         nxt = stream.peek(2)
         if len(nxt) < 2 or nxt[0] not in "'`" or nxt[1] in '([{':
@@ -663,7 +683,7 @@ class LayoutReader(Reader):
             stream.dedented = dedented
 
 
-    def _read_header_form(self, stream):
+    def _read_header_form(self, stream, first=False):
         """
         Read one header token or report logical line end.
 
@@ -671,13 +691,14 @@ class LayoutReader(Reader):
         boundary.
 
         :param stream: the source stream
+        :param first: whether this is the first form of its line
         :return: ``(LINE_END, pos, None)`` or the result of ``_read``
         """
 
         peek = stream.peek(1)
         if not peek or peek in '\n\r' or peek == ';':
             return LINE_END, stream.position(), None
-        with self._header_mode():
+        with self._header_mode(), self._line_start_mode(first):
             return super()._read(stream, vertical_ws=False)
 
 
@@ -715,7 +736,7 @@ class LayoutReader(Reader):
         :raises ReaderSyntaxError: on EOF or missing colon
         """
 
-        with self._header_mode():
+        with self._header_mode(), self._line_start_mode(True):
             event, pos, head = super()._read(stream)
 
         if event is COLON:
@@ -1198,7 +1219,8 @@ class LayoutReader(Reader):
                 if stream.dedented:
                     return EOF, stream.position(), None
 
-                event, pos, value = self._read_header_form(stream)
+                event, pos, value = self._read_header_form(
+                    stream, first=not values)
                 if event is BLOCK or event is BLOCKS:
                     return event, pos, value
 

@@ -1672,6 +1672,7 @@ class Reader:
         sm('b', self._read_bstring, False)
 
         sm('#', self._read_collection, False)
+        sm('#', self._read_syntax_quote, False)
         sm('&', self._read_ref_call, False)
         for c in "-+~":
             sm(c, self._read_unary, False, predicate=self._unary_enabled)
@@ -1957,10 +1958,10 @@ class Reader:
         return CLOSE_PAIR, char
 
 
-    def _read_collection(self, stream, fchar):
+    def _read_syntax_quote(self, stream, fchar):
         """
-        Read a collection literal (#(...), #[...], #{...}), or the
-        quote-syntax and quasiquote-syntax prefixes (#'form, #`form)
+        Read the quote-syntax and quasiquote-syntax prefixes (#'form,
+        #`form); any other character after the # defers
 
         :param stream: the source stream
         :param fchar: the '#' character
@@ -1975,6 +1976,19 @@ class Reader:
             stream.read(1)
             return self._read_quasiquote(
                 stream, fchar + peek, _symbol_quasiquote_syntax)
+        return DEFER, None
+
+
+    def _read_collection(self, stream, fchar):
+        """
+        Read a collection literal (#(...), #[...], #{...})
+
+        :param stream: the source stream
+        :param fchar: the '#' character
+        :return: tuple of (event, value)
+        """
+
+        peek = stream.peek(1)
         if not peek or peek not in "({[":
             return DEFER, None
 

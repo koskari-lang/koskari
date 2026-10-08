@@ -248,7 +248,11 @@ of `#block:` conses that are expanded as one unit.
 
 Block quote and quasiquote prefixes (`'head:` and `` `head: ``, and their
 mark-keeping forms `#'head:` and `` #`head: ``) read raw `#block:` conses in
-the header and body without expanding nested layout. They are wrapped for
+the header and body without expanding nested layout. The prefix opens a
+block only as the first element of its line; anywhere else on a line it
+quotes the next form, and the line's colon belongs to the line's own head,
+so `case 'north:` is a `case` block over the quoted symbol. They are wrapped
+for
 `layout/quote`, `layout/quasiquote`, `layout/quote-syntax`, and
 `layout/quasiquote-syntax` to lower at expansion time.
 

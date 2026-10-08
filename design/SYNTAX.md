@@ -509,9 +509,9 @@ header arguments—i.e. an implicit **block** shape analogous to that implicit
 
 ### Block-macro prefix forms
 
-When `'`, `` ` ``, `#'`, or `` #` `` appears at depth 0 and a colon follows
-somewhere on the same line at depth 0, the prefix introduces a block-macro
-form. Otherwise the prefix is treated as a plain `<quote-form>`,
+When `'`, `` ` ``, `#'`, or `` #` `` is the first element of a line at depth
+0 and a structural colon follows on the same line, the prefix introduces a
+block-macro form. Anywhere else the prefix is treated as a plain `<quote-form>`,
 `<quasiquote-form>`, `<quote-syntax-form>`, or `<quasiquote-syntax-form>`.
 
 ```bnf

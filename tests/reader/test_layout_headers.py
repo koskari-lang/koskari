@@ -449,6 +449,41 @@ class TestQuoteBlockHeaderScan(IsolatedAsyncioTestCase):
         self.assertEqual(read_layout(src), expected)
 
 
+class TestQuotePrefixMidLine(IsolatedAsyncioTestCase):
+    """
+    A block quote prefix opens a quote block only as the first element
+    of its line; elsewhere it quotes the next form and the line's colon
+    is the line's own block colon
+    """
+
+    async def test_quoted_argument_on_a_block_header(self):
+        src = "case 'north:\n  (print 1)\n"
+        result = read_layout(src, **{'layout/case': None})
+        expected = pycons(
+            (symbol('case'),
+             (symbol('quote'), symbol('north')),
+             (symbol('print'), 1)))
+        self.assertEqual(result, expected)
+
+
+    async def test_elements_before_the_prefix_are_kept(self):
+        src = "show 1 'tag:\n  body\n"
+        expected = pycons(
+            (symbol('show'), 1,
+             (symbol('quote'), symbol('tag')),
+             symbol('body')))
+        self.assertEqual(read_layout(src), expected)
+
+
+    async def test_sharp_quote_argument_on_a_block_header(self):
+        src = "show #'tag:\n  body\n"
+        expected = pycons(
+            (symbol('show'),
+             (symbol('quote-syntax'), symbol('tag')),
+             symbol('body')))
+        self.assertEqual(read_layout(src), expected)
+
+
 class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
 
     async def test_one_line_pair_plus_paren_folds_like_cons_of_parts(self):
