@@ -362,7 +362,12 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     KosEvalState_Init(&es, ctx);
     KosEvalState_ThawFromContext(&es);
 
-    tuple = PyTuple_Pack(1, PyLong_FromLong(100001));
+    {
+        PyObject *item = PyLong_FromLong(100001);
+        TEST_ASSERT_NOT_NULL(item, "create item");
+        tuple = PyTuple_Pack(1, item);
+        Py_DECREF(item);
+    }
     TEST_ASSERT_NOT_NULL(tuple, "create tuple");
     delegate = PyObject_GetIter(tuple);
     Py_DECREF(tuple);
@@ -377,6 +382,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     TEST_ASSERT_EQ(Py_REFCNT(delegate), rc_before, "delegate refcount restored");
 
     KosEvalState_FreezeToContext(&es);
+    Py_DECREF(delegate);
     Py_DECREF(ctx);
 
     return 0;

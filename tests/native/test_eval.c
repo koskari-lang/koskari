@@ -429,6 +429,10 @@ static int test_eval_try_except_catch(void) {
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
+    /* the instructions took their own references */
+    Py_DECREF(exc_inst);
+    Py_DECREF(forty_two);
+    Py_DECREF(label_3);
     Py_DECREF(instr);
     Py_DECREF(nspec);
 
@@ -492,6 +496,9 @@ static int test_eval_try_finally_rerase(void) {
     PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
     TEST_ASSERT_NOT_NULL(code_obj, "create Code");
 
+    /* the instructions took their own references */
+    Py_DECREF(exc_inst);
+    Py_DECREF(label_3);
     Py_DECREF(instr);
     Py_DECREF(nspec);
 

@@ -31,6 +31,8 @@ LABEL maintainer="obriencj@gmail.com" \
 # - python3-devel: Python headers for extension building
 # - python3-pip: for the tox install below
 # - valgrind: memory error detector
+# - python3's debuginfo: libpython frames resolve to names under
+#   Valgrind, so the suppressions keyed on CPython functions match
 RUN dnf install -y \
     clang \
     lld \
@@ -38,6 +40,8 @@ RUN dnf install -y \
     python3-devel \
     python3-pip \
     valgrind \
+    dnf-plugins-core \
+    && dnf debuginfo-install -y python3 \
     && dnf clean all
 
 # tox drives the full-suite sanitizer modes (suite-asan,

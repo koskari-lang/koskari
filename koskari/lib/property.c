@@ -44,7 +44,8 @@ static PyObject *property_type_ref = NULL;
 static PyTypeObject *base_property_type = NULL;
 
 /* storage for runtime-discovered __doc__ member descriptor (filled at init) */
-static PyMemberDef kosproperty_doc_member;
+/* the writable __doc__ member and its terminator, filled at init */
+static PyMemberDef kosproperty_members[2];
 
 
 /* === accessor wrapping === */
@@ -170,48 +171,35 @@ PyTypeObject KosPropertyType = {
 
 
 /**
-   Inspect base_property_type->tp_members for a READONLY "__doc__" entry.
-   If found, inject a readwrite member descriptor at the same struct offset
-   into KosPropertyType.tp_dict, shadowing the inherited read-only one.
-
-   Python 3.12 stores prop_doc as T_OBJECT | READONLY in property.tp_members.
-   property_init_impl uses PyObject_SetAttr(self, "__doc__", ...) for subclass
-   instances; without this override that call raises AttributeError.
+   The base property stores its doc as a read-only member, and its init
+   writes the doc through PyObject_SetAttr on a subclass instance, which
+   that member refuses. KosProperty declares a writable member of its
+   own at the same offset, so PyType_Ready makes the descriptor that
+   shadows the inherited one. The offset is the base's at run time, so
+   the member table is filled here before the type is readied; a second
+   init finds the type ready and leaves it alone.
 */
-static int kosproperty_override_doc(void) {
-
-  if (! base_property_type->tp_members)
-    return 0;
+static int kosproperty_declare_doc_member(void) {
 
   PyMemberDef *m;
+
+  if (KosPropertyType.tp_members || ! base_property_type->tp_members)
+    return 0;
+
   for (m = base_property_type->tp_members; m->name; m++) {
     if (strcmp(m->name, "__doc__") == 0)
       break;
   }
-
   if (! m->name)
     return 0;  /* not in base tp_members; nothing to shadow */
 
-  /* Inject a readwrite member descriptor at the same offset into our own
-     tp_dict.  This shadows whatever entry (readonly member or getter-only
-     getset) property placed in its dict for __doc__, so that
-     property_init_impl's PyObject_SetAttr(self, "__doc__", ...) call
-     succeeds for KosProperty subclass instances. */
-  kosproperty_doc_member.name   = "__doc__";
-  kosproperty_doc_member.type   = T_OBJECT;
-  kosproperty_doc_member.offset = m->offset;
-  kosproperty_doc_member.flags  = 0;
-  kosproperty_doc_member.doc    = NULL;
-
-  PyObject *descr = PyDescr_NewMember(&KosPropertyType, &kosproperty_doc_member);
-  if (! descr)
-    return -1;
-
-  int r = PyDict_SetItemString(KosPropertyType.tp_dict, "__doc__", descr);
-  Py_DECREF(descr);
-  if (r == 0)
-    PyType_Modified(&KosPropertyType);
-  return r;
+  kosproperty_members[0].name   = "__doc__";
+  kosproperty_members[0].type   = T_OBJECT;
+  kosproperty_members[0].offset = m->offset;
+  kosproperty_members[0].flags  = 0;
+  kosproperty_members[0].doc    = NULL;
+  KosPropertyType.tp_members = kosproperty_members;
+  return 0;
 }
 
 
@@ -235,10 +223,9 @@ int koskari_property_init(PyObject *mod) {
   base_property_type = (PyTypeObject *) property_type_ref;
   KosPropertyType.tp_base = base_property_type;
 
-  if (PyType_Ready(&KosPropertyType) < 0)
+  if (kosproperty_declare_doc_member() < 0)
     return -1;
-
-  if (kosproperty_override_doc() < 0)
+  if (PyType_Ready(&KosPropertyType) < 0)
     return -1;
 
   PyObject *dict = PyModule_GetDict(mod);
