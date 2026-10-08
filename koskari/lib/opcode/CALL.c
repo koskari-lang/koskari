@@ -33,9 +33,9 @@ KOS_OP_HANDLER(CALL) {
 
   SAYF("CALL: callable=%R", ptr[0]);
 
-  RESULT_RELAY(es, kos_call_invoke(
-      es, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
-      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE | tail));
+  RESULT_RELAY(es, kos_call_invoke_from_handler(
+      es, tail, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE));
 }
 
 

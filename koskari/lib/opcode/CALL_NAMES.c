@@ -51,11 +51,10 @@ KOS_OP_HANDLER(CALL_NAMES) {
     RESULT_RAISE();
   }
 
-  KosOpResult r = kos_call_invoke(es, ptr[0], NULL,
-                                  total ? ptr + 1 : NULL, npos,
-                                  nkwds ? names : NULL,
-                                  KOS_CALL_ARGV_WINDOW | tail
-                                  | KOS_CALL_WINDOW_CALLABLE);
+  KosOpResult r = kos_call_invoke_from_handler(
+      es, tail, ptr[0], NULL, total ? ptr + 1 : NULL, npos,
+      nkwds ? names : NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE);
   Py_DECREF(names);
   RESULT_RELAY(es, r);
 }

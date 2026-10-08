@@ -58,15 +58,15 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
      under-slot, dropped with the window but not passed. */
   KosOpResult r;
   if (send_self == 0) {
-    r = kos_call_invoke(es, resolved, NULL, ptr, npos + 1,
-                        nkwds ? names : NULL,
-                        KOS_CALL_ARGV_WINDOW | tail | KOS_CALL_CALLABLE_OWNED);
+    r = kos_call_invoke_from_handler(
+        es, tail, resolved, NULL, ptr, npos + 1, nkwds ? names : NULL,
+        KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
   } else {
-    r = kos_call_invoke(es, resolved, NULL,
-                        (total > 0) ? &ptr[1] : NULL, npos,
-                        nkwds ? names : NULL,
-                        KOS_CALL_ARGV_WINDOW | tail | KOS_CALL_WINDOW_UNDER
-                        | KOS_CALL_CALLABLE_OWNED);
+    r = kos_call_invoke_from_handler(
+        es, tail, resolved, NULL, (total > 0) ? &ptr[1] : NULL, npos,
+        nkwds ? names : NULL,
+        KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
+        | KOS_CALL_CALLABLE_OWNED);
   }
   RESULT_RELAY(es, r);
 }

@@ -85,10 +85,9 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
 
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
      resolution injects obj as self via the core's prepend. */
-  KosOpResult r = kos_call_invoke(es, resolved, self_arg,
-                                  argv, (Py_ssize_t) n, NULL,
-                                  KOS_CALL_ARGV_WINDOW | tail
-                                  | KOS_CALL_CALLABLE_OWNED);
+  KosOpResult r = kos_call_invoke_from_handler(
+      es, tail, resolved, self_arg, argv, (Py_ssize_t) n, NULL,
+      KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
   RESULT_RELAY(es, r);
 }

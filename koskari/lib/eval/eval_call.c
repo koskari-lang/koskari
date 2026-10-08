@@ -629,7 +629,7 @@ static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
 }
 
 
-static inline KosOpResult kos_call_invoke(
+KOS_OP_INLINE KosOpResult kos_call_invoke(
         KosEvalState *es,
         PyObject *callable,
         PyObject *self_arg,
@@ -1001,7 +1001,7 @@ static KOS_NOINLINE KosOpResult kos_call_body_any(
 }
 
 
-static inline KosOpResult kos_call_invoke_body(
+KOS_OP_INLINE KosOpResult kos_call_invoke_body(
         KosEvalState *es,
         KosSegment **caller_slot,
         size_t window,
@@ -1205,7 +1205,7 @@ fail:
    reachable.  See the block comment above for the window sequencing
    contract.
 */
-static inline KosOpResult kos_call_invoke(
+KOS_OP_INLINE KosOpResult kos_call_invoke(
         KosEvalState *es,
         PyObject *callable,
         PyObject *self_arg,
@@ -1269,6 +1269,31 @@ static inline KosOpResult kos_call_invoke(
       PyMem_Free(pre);
     return r;
   }
+}
+
+
+/**
+   The handler entry.  A CALL handler learns whether it is running as
+   the TAIL_CALL twin from the opcode, so its tail word is a runtime
+   value; splitting on it here hands kos_call_invoke a literal flags
+   word on each arm, and the body dispatch folds to a direct call in
+   both.
+*/
+KOS_OP_INLINE KosOpResult kos_call_invoke_from_handler(
+        KosEvalState *es,
+        unsigned tail,
+        PyObject *callable,
+        PyObject *self_arg,
+        PyObject *const *argv,
+        Py_ssize_t nargs,
+        PyObject *kwnames,
+        unsigned flags) {
+
+  if (unlikely(tail))
+    return kos_call_invoke(es, callable, self_arg, argv, nargs, kwnames,
+                           flags | KOS_CALL_TAIL);
+  return kos_call_invoke(es, callable, self_arg, argv, nargs, kwnames,
+                         flags);
 }
 
 
