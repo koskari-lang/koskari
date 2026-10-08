@@ -2905,7 +2905,8 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 ### KOS_OP_ATTR
 
 - **Style**: CONST. Arg = constant pool index of attribute name (post-compile).
-- **Stack**: `[..., obj] → [..., obj, value]`. Get attribute; push value.
+- **Stack**: `[..., obj] → [..., value]`. Get attribute; the value replaces the object.
+- **Cache**: one field slot; a `__slots__` member or an inline instance value is read directly on a hit, as FAST_ATTR does.
 - **Invariants**: TOS is the object. Name in constant pool.
 - **Compiler form:** Pre-compile arg = attribute name (string); post-compile arg = pool index.
 
@@ -2914,7 +2915,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | index | opcode | arg | arg view   | comment |
 |------:|--------|-----|------------|---------|
 | 0     | VAR    | 0   | 0 ('obj')  | stack: [..., obj] |
-| 1     | ATTR   | 1   | 1 ('name') | stack: [..., obj, value] |
+| 1     | ATTR   | 1   | 1 ('name') | stack: [..., value] |
 | 2     | RETURN | 1   | 1          | |
 
 ---
@@ -2922,7 +2923,8 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 ### KOS_OP_ATTR_STORE
 
 - **Style**: CONST. Arg = constant pool index of attribute name.
-- **Stack**: `[..., obj, value] → [..., obj]`. Pop value, set attribute on obj.
+- **Stack**: `[..., obj, value] → [...]`. Set attribute on obj; pop both.
+- **Cache**: one field slot; a `__slots__` member or an inline instance value is written directly on a hit, as FAST_ATTR_STORE does.
 - **Invariants**: Below TOS is object; name in pool.
 
 **Example:** Set obj.x = TOS. Pool: 0 = "x".
@@ -2931,7 +2933,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 |------:|------------|-----|----------|---------|
 | 0     | VAR        | 0   | 0 ('obj')| stack: [..., obj] |
 | 1     | CONST      | 1   | 1 (10)   | stack: [..., obj, 10] |
-| 2     | ATTR_STORE | 2   | 2 ('x')  | obj.x = 10; stack: [..., obj] |
+| 2     | ATTR_STORE | 2   | 2 ('x')  | obj.x = 10; stack: [...] |
 
 ---
 

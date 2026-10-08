@@ -255,11 +255,11 @@ OP(RETURN_FAST, 0, FASTVAR)
 OP(YIELD_FAST, 0, FASTVAR)
 
 // object attribute access
-OP(ATTR, 0, CONST)
+OP(ATTR, 1, CONST)  // cache: field
 OP(ATTR_CLEAR, 0, CONST)
 OP(ATTR_TAKE, 0, CONST)
 OP(ATTR_REF, 0, CONST)
-OP(ATTR_STORE, 0, CONST)
+OP(ATTR_STORE, 1, CONST)  // cache: field
 OP(ATTR_INPLACE, 1, EXTRA, OPCOUNT, ATTR, NOARG, NOARG)
 
 // object item indexing: object on the stack, key on the stack,

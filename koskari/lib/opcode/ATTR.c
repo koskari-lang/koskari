@@ -14,20 +14,53 @@
 */
 
 /**
-   ATTR: arg = constant index (name). Push getattr(TOS, name).
+   ATTR: arg = constant index (name). Replace TOS with getattr(TOS, name).
+
+   Carries one per-site field cache, as FAST_ATTR does: a SLOT hit reads
+   the __slots__ member, an INSTANCE_VALUE hit the inline attribute
+   value, both directly, and the value replaces the receiver in place.
+   The receiver comes off the stack rather than a named local, so the
+   site may be polymorphic; the field cache degrades to its megamorphic
+   bypass when it is.
 */
 
 KOS_OP_HANDLER(ATTR) {
   KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
-  PyObject *obj = KosEvalState_StackPopRef(es);
-  if (! obj)
+  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+
+  if (unlikely(! tail))
     RESULT_RAISE();
+  PyObject *obj = tail[0];
+
+  /* The resolve runs type lookups and no user code, so nothing between
+     the peek and the read can rebind the receiver. */
+  if (slot) {
+    uint32_t off;
+    KosFieldMode m = kos_resolve_attr_location(obj, name, slot, &off);
+    PyObject *hit = NULL;
+    if (m == KOS_FIELD_SLOT)
+      hit = field_slot_load(obj, off);
+#if PY_MINOR_VERSION >= 11
+    else if (m == KOS_FIELD_INSTANCE_VALUE)
+      hit = field_instance_value_load(obj, off);
+#endif
+    if (hit) {
+      Py_INCREF(hit);
+      kos_elector_replace_top(bl, hit);
+      RESULT_NEXT(es);
+    }
+  }
+
+  /* Generic path: getattr may run anything, so the receiver stays on
+     the stack across it; a raise leaves it for the unwind to release. */
   PyObject *val = PyObject_GetAttr(obj, name);
-  Py_DECREF(obj);
   if (! val)
     RESULT_RAISE();
-  RESULT_STEAL(es, val);
+  kos_elector_replace_top(bl, val);
+  RESULT_NEXT(es);
 }
 
 
