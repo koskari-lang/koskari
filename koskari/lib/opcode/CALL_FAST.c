@@ -17,8 +17,9 @@
 /**
   CALL_FAST and TAIL_CALL_FAST: arg = extra index. Schema FASTVAR (slot), COUNT
   (arg count). Call callable from fast local slot. Stack [arg_0, ...,
-  arg_{N-1}]. Prologue only: deref the callable, take the borrowed argv window,
-  and delegate to kos_call_invoke (which owns the window drop). A TAIL_CALL
+  arg_{N-1}]. Prologue only: deref the callable, try the cached frame, else
+  take the borrowed argv window and delegate to kos_call_invoke (which owns
+  the window drop). A TAIL_CALL
   instruction reaches this same handler and adds the tail bit, which the core
   turns into a frame reset instead of a push.
 */
@@ -35,17 +36,10 @@ KOS_OP_HANDLER(CALL_FAST) {
   if (unlikely(! callable))
     RESULT_RAISE();
 
-  PyObject *const *argv = NULL;
-  if (n) {
-    argv = KosEvalState_StackTailPtr(es, n);
-    if (unlikely(! argv)) {
-      Py_DECREF(callable);
-      RESULT_RAISE();
-    }
-  }
-
   /* Frame-cache hit, installed here; the tail twin reuses the live
-     frame and never consults the cache. */
+     frame and never consults the cache. The arm binds from the block
+     itself, so the window pointer is taken only for the general call
+     below. */
   if (! tail) {
     KosOpResult r;
     int taken = kos_call_cached_frame_install(
@@ -56,6 +50,15 @@ KOS_OP_HANDLER(CALL_FAST) {
     if (unlikely(taken < 0)) {
       if (n)
         kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), n);
+      Py_DECREF(callable);
+      RESULT_RAISE();
+    }
+  }
+
+  PyObject *const *argv = NULL;
+  if (n) {
+    argv = KosEvalState_StackTailPtr(es, n);
+    if (unlikely(! argv)) {
       Py_DECREF(callable);
       RESULT_RAISE();
     }

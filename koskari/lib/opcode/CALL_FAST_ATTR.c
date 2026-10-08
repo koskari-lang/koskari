@@ -37,15 +37,6 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   if (! obj)
     RESULT_RAISE();
 
-  PyObject *const *argv = NULL;
-  if (n > 0) {
-    argv = KosEvalState_StackTailPtr(es, (size_t) n);
-    if (! argv) {
-      Py_DECREF(obj);
-      RESULT_RAISE();
-    }
-  }
-
   /* Per-site cache: this opcode requests one slot (opcodes.incl). The index
      is unset when the site got no slot (cache gated off for the code object).
      The resolver treats a NULL slot as an uncached lookup. */
@@ -83,8 +74,20 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     }
   }
 
-  /* Prologue only: kos_call_invoke owns the window drop; an unbound
-     resolution injects obj as self via the core's prepend. */
+  /* Prologue only: the window pointer is taken here, past the cached
+     arm that binds from the block itself; kos_call_invoke owns the
+     window drop; an unbound resolution injects obj as self via the
+     core's prepend. */
+  PyObject *const *argv = NULL;
+  if (n > 0) {
+    argv = KosEvalState_StackTailPtr(es, (size_t) n);
+    if (unlikely(! argv)) {
+      Py_DECREF(resolved);
+      Py_DECREF(obj);
+      RESULT_RAISE();
+    }
+  }
+
   KosOpResult r = kos_call_invoke_from_handler(
       es, tail, resolved, self_arg, argv, (Py_ssize_t) n, NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
