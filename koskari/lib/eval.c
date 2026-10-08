@@ -92,6 +92,17 @@ static PyObject *str_args = NULL;
 static PyObject *str_continuation = NULL;
 static PyObject *str_target = NULL;
 
+/* The exception's frame record attribute and its entries' keys (see
+   dynchain_frame_meta) */
+static PyObject *str_dynchain = NULL;
+static PyObject *str_rec_name = NULL;
+static PyObject *str_rec_filename = NULL;
+static PyObject *str_rec_line = NULL;
+static PyObject *str_rec_col = NULL;
+static PyObject *str_rec_pc = NULL;
+static PyObject *str_rec_crossed = NULL;
+static PyObject *str_rec_frame = NULL;
+
 
 /*
   Sentinel fromlist for the import opcodes (see kos_import_module).
@@ -573,25 +584,25 @@ static PyObject *dynchain_frame_meta(KosDynFrame *frame, int crossed) {
   PyObject *name = code ? KosCode_NAME(code) : Py_None;
   PyObject *filename = code ? KosCode_FILENAME(code) : Py_None;
 
-  PyDict_SetItemString(meta, "name", name ? name : Py_None);
-  PyDict_SetItemString(meta, "filename", filename ? filename : Py_None);
+  PyDict_SetItem(meta, str_rec_name, name ? name : Py_None);
+  PyDict_SetItem(meta, str_rec_filename, filename ? filename : Py_None);
   PyObject *line_o = PyLong_FromUnsignedLong((unsigned long) line);
   PyObject *col_o = PyLong_FromUnsignedLong((unsigned long) col);
   PyObject *pc_o = PyLong_FromUnsignedLong((unsigned long) pc);
   if (line_o && col_o && pc_o) {
-    PyDict_SetItemString(meta, "line", line_o);
-    PyDict_SetItemString(meta, "col", col_o);
-    PyDict_SetItemString(meta, "pc", pc_o);
+    PyDict_SetItem(meta, str_rec_line, line_o);
+    PyDict_SetItem(meta, str_rec_col, col_o);
+    PyDict_SetItem(meta, str_rec_pc, pc_o);
   }
   Py_XDECREF(line_o);
   Py_XDECREF(col_o);
   Py_XDECREF(pc_o);
-  PyDict_SetItemString(meta, "crossed", crossed ? Py_True : Py_False);
+  PyDict_SetItem(meta, str_rec_crossed, crossed ? Py_True : Py_False);
   {
     PyObject *id_o = PyLong_FromUnsignedLong(
         (unsigned long) kos_dynnode_id((KosDynNode *) frame));
     if (id_o) {
-      PyDict_SetItemString(meta, "frame", id_o);
+      PyDict_SetItem(meta, str_rec_frame, id_o);
       Py_DECREF(id_o);
     }
   }
@@ -615,9 +626,11 @@ static int dynchain_record_has_frame(PyObject *record, KosDynFrame *frame) {
 
     if (! PyDict_Check(entry))
       continue;
-    id_o = PyDict_GetItemString(entry, "frame");
+    id_o = PyDict_GetItemWithError(entry, str_rec_frame);
     if (id_o && PyLong_AsUnsignedLong(id_o) == id)
       return 1;
+    if (! id_o && PyErr_Occurred())
+      PyErr_Clear();
   }
   return 0;
 }
@@ -644,11 +657,11 @@ static void decorate_exception_with_dynchain(
      can still be on this context's live chain, so appending the live
      chain below cannot duplicate them. */
   {
-    PyObject *prior = PyObject_GetAttrString(exc_val,
-                                             "__koskari_dynchain__");
-    if (! prior) {
+    PyObject *prior = NULL;
+
+    if (PyObject_GetOptionalAttr(exc_val, str_dynchain, &prior) < 0) {
       PyErr_Clear();
-    } else {
+    } else if (prior) {
       if (PyList_Check(prior)) {
         for (Py_ssize_t i = 0; i < PyList_GET_SIZE(prior); i++) {
           PyObject *meta = PyList_GET_ITEM(prior, i);
@@ -682,7 +695,7 @@ static void decorate_exception_with_dynchain(
     }
   }
 
-  if (PyObject_SetAttrString(exc_val, "__koskari_dynchain__", frames) < 0) {
+  if (PyObject_SetAttr(exc_val, str_dynchain, frames) < 0) {
     PyErr_Clear();
   }
 
@@ -708,13 +721,16 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
   PyErr_NormalizeException(&typ, &val, &tb);
 
   if (val && PyExceptionInstance_Check(val)) {
-    PyObject *frames = PyObject_GetAttrString(val, "__koskari_dynchain__");
-    if (! frames) {
+    PyObject *frames = NULL;
+    int fresh = 0;
+
+    if (PyObject_GetOptionalAttr(val, str_dynchain, &frames) < 0)
       PyErr_Clear();
+    if (frames && ! PyList_Check(frames))
+      Py_CLEAR(frames);
+    if (! frames) {
       frames = PyList_New(0);
-    } else if (! PyList_Check(frames)) {
-      Py_DECREF(frames);
-      frames = PyList_New(0);
+      fresh = 1;
     }
 
     if (! frames) {
@@ -728,7 +744,8 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
       if (meta) {
         PyList_Append(frames, meta);
         Py_DECREF(meta);
-        if (PyObject_SetAttrString(val, "__koskari_dynchain__", frames) < 0)
+        /* a list the exception already held was appended in place */
+        if (fresh && PyObject_SetAttr(val, str_dynchain, frames) < 0)
           PyErr_Clear();
       } else {
         PyErr_Clear();
@@ -3816,6 +3833,14 @@ int koskari_eval_init(PyObject *mod) {
   STR_CONST(str_package, "__package__");
   STR_CONST(str_empty, "");
   STR_CONST(str_target, "target");
+  STR_CONST(str_dynchain, "__koskari_dynchain__");
+  STR_CONST(str_rec_name, "name");
+  STR_CONST(str_rec_filename, "filename");
+  STR_CONST(str_rec_line, "line");
+  STR_CONST(str_rec_col, "col");
+  STR_CONST(str_rec_pc, "pc");
+  STR_CONST(str_rec_crossed, "crossed");
+  STR_CONST(str_rec_frame, "frame");
 
   if (PyType_Ready(&KosContextType) < 0)
     return -1;
@@ -3881,6 +3906,14 @@ int koskari_eval_clear(PyObject *mod) {
   Py_CLEAR(str_package);
   Py_CLEAR(str_empty);
   Py_CLEAR(str_target);
+  Py_CLEAR(str_dynchain);
+  Py_CLEAR(str_rec_name);
+  Py_CLEAR(str_rec_filename);
+  Py_CLEAR(str_rec_line);
+  Py_CLEAR(str_rec_col);
+  Py_CLEAR(str_rec_pc);
+  Py_CLEAR(str_rec_crossed);
+  Py_CLEAR(str_rec_frame);
 
   /* Null out exception type pointers (module dict owns the refs) */
   KoskariContinuationDead = NULL;

@@ -21,6 +21,11 @@
 /* PyUnicode_Equal public from 3.14 */
 #define PyUnicode_Equal koskari_Unicode_Equal
 
+/* PyObject_GetOptionalAttr public from 3.13; the private form has the
+   same contract: 1 and *result set on a hit, 0 and NULL when the
+   attribute is absent with no error raised, -1 with an error set */
+#define PyObject_GetOptionalAttr _PyObject_LookupAttr
+
 
 /* === Inline-values instance attributes (3.12) === */
 
