@@ -122,8 +122,10 @@ static inline PyObject *kos_managed_dict_peek(PyObject *obj) {
 */
 
 
-/* struct _ceval_state and struct _is prefixes (gc_opaque spans struct
-   _gc_runtime_state):
+/* struct _ceval_state, struct _gc_runtime_state with the two records
+   it holds, and the struct _is prefix, field for field with their own
+   types so the layout is the compiler's arithmetic at any pointer
+   width:
    https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_ceval_state.h
    https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_interp.h
    https://github.com/python/cpython/blob/v3.12.0/Include/internal/pycore_gc.h */
@@ -140,6 +142,34 @@ typedef struct {
 } KosPyThreads312;
 
 typedef struct {
+  uintptr_t head[2];     /* PyGC_Head */
+  int threshold;
+  int count;
+} KosGcGeneration312;
+
+typedef struct {
+  Py_ssize_t collections;
+  Py_ssize_t collected;
+  Py_ssize_t uncollectable;
+} KosGcGenerationStats312;
+
+typedef struct {
+  PyObject *trash_delete_later;
+  int trash_delete_nesting;
+  int enabled;
+  int debug;
+  KosGcGeneration312 generations[3];
+  void *generation0;
+  KosGcGeneration312 permanent_generation;
+  KosGcGenerationStats312 generation_stats[3];
+  int collecting;
+  PyObject *garbage;
+  PyObject *callbacks;
+  Py_ssize_t long_lived_total;
+  Py_ssize_t long_lived_pending;
+} KosGcRuntimeState312;
+
+typedef struct {
   PyInterpreterState *next;
   int64_t id;
   int64_t id_refcount;
@@ -152,7 +182,7 @@ typedef struct {
   KosPyThreads312 threads;
   void *runtime;
   uintptr_t _finalizing;
-  unsigned char gc_opaque[240];
+  KosGcRuntimeState312 gc;
   PyObject *sysdict;
   PyObject *builtins;
   KosCevalState312 ceval;
