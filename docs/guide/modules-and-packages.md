@@ -56,14 +56,12 @@ with its runtime sibling.
 
 ## How the import hook works
 
-Importing `koskari` installs a meta-path finder ahead of CPython's. That finder
-recognizes the `.ki` and `.kio` extensions; when it locates such a source file it
-loads it as a module and copies the module's names onto the Python module object,
-so `(import-from mymod thing)` and `from mymod import thing` both work. When the
-finder is asked for a directory that has no `__init__`, it steps
-aside and lets CPython's own machinery produce an implicit namespace package.
-That single deferral is why a bare directory of `.ki` files is importable with no
-ceremony.
+Importing `koskari` teaches Python's import system the `.ki` and `.kio`
+extensions. A file with either extension imports as an ordinary Python
+module: `(import-from mymod thing)` and `from mymod import thing` read the
+same names, and an attribute set from Koskari or from Python is seen by
+both. A directory with no `__init__` is a namespace package, as it is for
+Python, so a bare directory of `.ki` files imports with no ceremony.
 
 The hook is normally active because Koskari installs a site `*.pth` bootstrap.
 In environments where that is not present (some editable installs, some embedded
