@@ -1,18 +1,8 @@
 # KOS_OP_CALL_ATTR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG.
-- **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] → [..., result]`. Attr name from constant pool (EXTRA row). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
+- **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] → [..., result]`. Attr name from constant pool (EXTRA row). `obj.name` is resolved as an attribute read would resolve it, then invoked. An unbound plain function found on the class is called as `fn(obj, *args)`; a bound method, an instance-dict callable or a descriptor's result is called as `callable(*args)`.
 - **Invariants**: Stack has at least 1 + N elements (obj, N args). Resolved attribute must be callable or TypeError.
-**Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
-
-- **Stack arrangement**: `ptr = KosStack_TailPtr(*stack, count)` where `count = n + 1`. Index layout: `ptr[0]` = obj, `ptr[1..count-1]` = positional args. Attr name from `KosCode_GetConstant(code, row.a0)`. Stack is consumed via `KosStackSteal_Tail` (KosCallable path) or `KosStack_DropNoErr` (plain Python path).
-
-- **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound class method -- caller invokes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. -- caller invokes `callable(*args)`).
-
-- **Invocation paths**:
-  - **KosCallable** (KosFunction, KosBoundMethod, etc.): `KosStackSteal_Tail(&steal, count, stack)` to own args; if `send_self == 0` then `args = &steal.vals[1]`, `nargs = n + 1`; else `args = (n > 0) ? &steal.vals[2] : NULL`, `nargs = n`. Then `KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0)`; `KosStackSteal_Free(&steal)`.
-  - **Plain Python**: `PyObject_Vectorcall(resolved, ...)` with same arg layout; then `kos_push_or_await(ctx, out_ev, result)`.
-
-- **Implemented functions** (eval.c): `kos_resolve_named_attr` (static; full resolution, cache placeholder for Phase 3); `is_plain_instance_method` (KosFunction/PyFunction); `descr_is_data` (tp_descr_set != NULL); `instance_dict_get` (via `_PyObject_GetDictPtr`). Invocation: `KosContext_Call`, `kos_push_or_await`, `KosStackSteal_Tail` / `KosStackSteal_Free` (stack.h/stack.c).
+- **Receiver**: the resolution decides whether `obj` is passed: an unbound plain function from the class gets it as the first argument; anything else is called with the arguments alone. A Koskari callable runs in the evaluator; any other callable is called and its result pushed, awaited when awaitable.
 
 **Example:** `"hello".upper()` (0 args). Pool: 0 = "upper", 1 = "hello". EXTRA row 0: a0 = cpool index of "upper", a1 = 0 (npos).
 

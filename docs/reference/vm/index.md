@@ -313,8 +313,8 @@ The opcodes by family, each linking to its section.
 | BREAK | COUNT | Jump to loop break target | [section 6](opcodes/kos-op-break.md) |
 | CONTINUE | COUNT | Jump to loop continue target | [section 6](opcodes/kos-op-continue.md) |
 | RAISE | COUNT | Pop N, raise exception | [section 6](opcodes/kos-op-raise.md) |
-| RETURN | COUNT | Pop return value; `EVAL_RETURN(val)` -> **`eval_event_return`**; **`KOS_RES_RETURN`** at driver boundary | [section 6](opcodes/kos-op-return.md) |
-| YIELD | COUNT | Pop value; `EVAL_YIELD(val)` -> **`apply_kos_op_result`** -> **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [section 6](opcodes/kos-op-yield.md) |
+| RETURN | COUNT | Pop the return value and deliver it to the frame's parent or the host | [section 6](opcodes/kos-op-return.md) |
+| YIELD | COUNT | Pop the value and suspend the frame, delivering it to the consumer | [section 6](opcodes/kos-op-yield.md) |
 | RETURN_CONST | CONST | Return the pooled constant; the `CONST` + `RETURN 1` fusion | [section 6](opcodes/kos-op-return-const.md) |
 | YIELD_CONST | CONST | Yield the pooled constant; the `CONST` + `YIELD 1` fusion | [section 6](opcodes/kos-op-yield-const.md) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [section 6](opcodes/kos-op-yield-from.md) |
@@ -1041,16 +1041,16 @@ bottom to top matches push order).
 ### KOS_OP_RETURN
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
-- **Stack**: Pops the return value(s) per `arg`. The opcode returns **`EVAL_RETURN(val)`**; **`apply_kos_op_result`** routes to **`eval_event_return`**, which runs **`kos_dyn_unwind_return`**, **`kos_dyn_pop_frame`**, iterator-boundary delivery, native-handler delivery, or stack push onto the caller, then **`kos_dynnode_on_control_returned`**. **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**. **Delimited** continuation returns use **`KosEvalState_KReturnDelimited`** in the opcode.
+- **Stack**: Pops the return value(s) per `arg`. The returning frame's dynamic extent unwinds, finally blocks and wind thunks included, and the frame is popped. The value goes where the frame's parent expects it: pushed onto a calling Koskari frame, delivered to the iterator or native handler driving the frame, or handed back to the host when the frame is the outermost one or a generator's. A return across a delimited continuation boundary delivers to that boundary.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
-- **See also**: [compile/return](../specials/compile-return.md); **`koskari/lib/opcode/RETURN.c`**.
+- **See also**: [compile/return](../specials/compile-return.md).
 
 **Example:** Return TOS (arg = 1). Pool: 0 = 42.
 
 | index | opcode | arg | arg view | comment |
 |------:|--------|-----|----------|---------|
 | 0     | CONST  | 0   | 0 (42)   | stack: [..., 42] |
-| 1     | RETURN | 1   | 1        | return 42 (`eval_event_return` or in-loop parent push) |
+| 1     | RETURN | 1   | 1        | return 42 to the caller |
 
 ---
 
@@ -1482,12 +1482,11 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 ### KOS_OP_SWITCH_EQ_VAR
 
 - **Style**: EXTRA. Schema `(LABEL, VAR, NOARG, NOARG)`.
-- **Stack**: `[..., s]`. Resolve `rhs = frame_ns_deref(var_name)` from `a1`,
-  then compare `s == rhs` with `Py_EQ`.
+- **Stack**: `[..., s]`. Read `rhs` from the frame namespace by the name in `a1`,
+  then compare `s == rhs`.
   - **Match**: pop `s`; `pc = a0`.
   - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", "name", 0, 0)` pre-compile.
-- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR.c`
 
 ### KOS_OP_SWITCH_EQ_FAST
 
@@ -1502,12 +1501,11 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 ### KOS_OP_SWITCH_EQ_VAR_ATTR
 
 - **Style**: EXTRA. Schema `(LABEL, VAR, CONST, NOARG)`.
-- **Stack**: `[..., s]`. Resolve `obj = frame_ns_deref(var_name)` from `a1`,
-  `rhs = getattr(obj, attr_name)` from `a2`, then compare `s == rhs`.
+- **Stack**: `[..., s]`. Read `obj` from the frame namespace by the name in `a1`, then
+  `rhs = getattr(obj, attr_name)` with the name in `a2`, then compare `s == rhs`.
   - **Match**: pop `s`; `pc = a0`.
   - **Mismatch**: fall through; stack unchanged.
 - **Compiler form:** tuple arg `("label", "obj_name", "attr_name", 0)` pre-compile.
-- **Implementation**: `koskari/lib/opcode/SWITCH_EQ_VAR_ATTR.c`
 
 ### KOS_OP_SWITCH_EQ_FAST_ATTR
 
@@ -1958,7 +1956,7 @@ row: `("os.path", 0, 0, 0)`.
 
 ### 12.1 Attribute access on variables (VAR_ATTR_*)
 
-These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is resolved via `frame_ns_deref(var_name)`. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
+These opcodes perform attribute get, set, clear, take, or reference on an object fetched from the frame namespace by name. The object is not on the stack; it is read from the frame namespace by name. Each uses EXTRA schema: VAR (obj name), CONST (attr name).
 
 - **Compiler form:** Emitted by attr/del-attr/take-attr/set-attr specials when the object expression is a symbol (variable reference). May be lowered to FAST_ATTR_* when the name has a fixed slot.
 
@@ -3170,7 +3168,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ### KOS_OP_CALL_VAR
 - **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
-- **Stack**: `[..., pos_0, ..., pos_{N-1}] -> [..., result]`. Callable is loaded from frame namespace by name (`frame_ns_deref`); not on stack. KosCallable: steal args then KosContext_Call. Plain Python: TailPtr + PyObject_Vectorcall + DropNoErr.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}] -> [..., result]`. The callee is read from the frame namespace by name and is not on the stack. A Koskari callable runs in the evaluator with the arguments taken from the stack; any other callable is called with them and its result pushed, awaited when awaitable.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
@@ -3198,7 +3196,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ### KOS_OP_CALL_VAR_STAR
 - **Style**: EXTRA. Schema: VAR (name cpool idx), STAR (bitflags: 1 = *args, 2 = **kwargs), NOARG, NOARG.
-- **Stack**: Same as CALL_STAR minus callable. `[..., pos, kwd]` or subsets per flags. Callable from namespace by name. Pop per flags, ensure pos is tuple, call via KosContext_CallArgs.
+- **Stack**: Same as CALL_STAR minus callable. `[..., pos, kwd]` or subsets per flags. The callee is read from the frame namespace by name. The operands present are popped per the flags, `pos` is made a tuple, and the callee is called with them.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
@@ -3212,20 +3210,10 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ### KOS_OP_CALL_ATTR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG.
-- **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] -> [..., result]`. Attr name from constant pool (EXTRA row). Resolve `obj.name` via `kos_resolve_named_attr`; then invoke. Unbound class method (plain PyFunction/KosFunction from MRO): call `fn(obj, *args)`. Bound or instance-dict callable: call `callable(*args)`. Resolver return: -1 err, 0 = send self, 1 = omit self.
+- **Stack**: `[..., obj, arg_0, ..., arg_{N-1}] -> [..., result]`. Attr name from constant pool (EXTRA row). `obj.name` is resolved as an attribute read would resolve it, then invoked. An unbound plain function found on the class is called as `fn(obj, *args)`; a bound method, an instance-dict callable or a descriptor's result is called as `callable(*args)`.
 - **Invariants**: Stack has at least 1 + N elements (obj, N args). Resolved attribute must be callable or TypeError.
 
-**Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval.c):
-
-- **Stack arrangement**: `ptr = KosStack_TailPtr(*stack, count)` where `count = n + 1`. Index layout: `ptr[0]` = obj, `ptr[1..count-1]` = positional args. Attr name from `KosCode_GetConstant(code, row.a0)`. Stack is consumed via `KosStackSteal_Tail` (KosCallable path) or `KosStack_DropNoErr` (plain Python path).
-
-- **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound class method -- caller invokes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. -- caller invokes `callable(*args)`).
-
-- **Invocation paths**:
-  - **KosCallable** (KosFunction, KosBoundMethod, etc.): `KosStackSteal_Tail(&steal, count, stack)` to own args; if `send_self == 0` then `args = &steal.vals[1]`, `nargs = n + 1`; else `args = (n > 0) ? &steal.vals[2] : NULL`, `nargs = n`. Then `KosContext_Call(ctx, out_ev, resolved, args, nargs, NULL, 0)`; `KosStackSteal_Free(&steal)`.
-  - **Plain Python**: `PyObject_Vectorcall(resolved, ...)` with same arg layout; then `kos_push_or_await(ctx, out_ev, result)`.
-
-- **Implemented functions** (eval.c): `kos_resolve_named_attr` (static; full resolution, cache placeholder for Phase 3); `is_plain_instance_method` (KosFunction/PyFunction); `descr_is_data` (tp_descr_set != NULL); `instance_dict_get` (via `_PyObject_GetDictPtr`). Invocation: `KosContext_Call`, `kos_push_or_await`, `KosStackSteal_Tail` / `KosStackSteal_Free` (stack.h/stack.c).
+- **Receiver**: the resolution decides whether `obj` is passed: an unbound plain function from the class gets it as the first argument; anything else is called with the arguments alone. A Koskari callable runs in the evaluator; any other callable is called and its result pushed, awaited when awaitable.
 
 **Example:** `"hello".upper()` (0 args). Pool: 0 = "upper", 1 = "hello". EXTRA row 0: a0 = cpool index of "upper", a1 = 0 (npos).
 
@@ -3248,62 +3236,60 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ### KOS_OP_CALL_ATTR_NAMES
 - **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG.
-- **Stack**: `[..., obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] -> [..., result]`. Resolve `obj.name` via `kos_resolve_named_attr`; then call like CALL_NAMES. The kwarg names tuple and attr name are in the constant pool (EXTRA row), not on the stack.
+- **Stack**: `[..., obj, pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] -> [..., result]`. `obj.name` resolves as CALL_ATTR describes; the call then proceeds like CALL_NAMES. The kwarg names tuple and attr name are in the constant pool (EXTRA row), not on the stack.
 - **Compiler form:** Emitted by `compile/call-attr` when the call has keyword arguments and no `*:` or `**:`.
 
 ---
 
 ### KOS_OP_CALL_FAST_ATTR
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (npos), NOARG.
-- **Stack**: `[..., arg_0, ..., arg_{N-1}] -> [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is loaded from the current frame namespace via `KosNamespace_FastDeref` (slot `a0`). Requires a namespace that supports fast locals (`KosNamespace_SupportsFast`). When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend `obj` to the stolen args; when `send_self=1`, uses `KosStackSteal_Tail` for `N` args only.
-- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR.c): `obj` is an owned deref from the fast slot (`kos_ns_fast_deref` increfs); the handler releases it on every path, same discipline as `KOS_OP_CALL_VAR_ATTR`.
+- **Stack**: `[..., arg_0, ..., arg_{N-1}] -> [..., result]`. Same resolution and invocation rules as [`KOS_OP_CALL_ATTR`](#kos_op_call_attr), but `obj` is **not** on the stack: it is read from the current frame's fast slot `a0`, so the frame must have fast locals. An unbound function found on the class receives `obj` as its first argument; any other callable receives the `N` arguments alone.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
 ### KOS_OP_CALL_VAR_ATTR
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (npos), NOARG.
-- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(ctx, var_name)` (owned reference); the handler balances refcounts with `Py_DECREF(obj)` on exit paths.
-- **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, KosCallable vs plain Python, `TailPrepend` when `send_self=0`).
+- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is read from the frame namespace by name.
+- **Behaviour**: otherwise as `KOS_OP_CALL_FAST_ATTR` and `KOS_OP_CALL_ATTR`: the same resolution, the same receiver rule, a Koskari callable run in the evaluator and any other called with its result pushed.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
 ### KOS_OP_CALL_FAST_ATTR_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot index for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
-- **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] -> [..., result]`. Obj is loaded from fast slot `a0` via `KosNamespace_FastDeref`; not on stack. One fewer element than CALL_ATTR_NAMES. Resolve and call like CALL_ATTR_NAMES. When `send_self=0` (unbound method), uses `KosStackSteal_TailPrepend` to prepend obj to args; when `send_self=1`, uses `KosStackSteal_Tail`.
+- **Stack**: `[..., pos_0, ..., pos_{N-1}, kwd_val_0, ..., kwd_val_{M-1}] -> [..., result]`. `obj` is read from fast slot `a0` and is not on the stack, one fewer element than CALL_ATTR_NAMES. Resolution and the call proceed as CALL_ATTR_NAMES describes: an unbound function found on the class receives `obj` first, any other callable the arguments alone.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
 ### KOS_OP_CALL_VAR_ATTR_NAMES
 - **Style**: EXTRA. Schema: VAR (name/cpool for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos).
-- **Stack**: Same as CALL_FAST_ATTR_NAMES. Obj is loaded from frame namespace by name (`frame_ns_deref`) instead of fast slot.
+- **Stack**: Same as CALL_FAST_ATTR_NAMES. `obj` is read from the frame namespace by name instead of a fast slot.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
 ### KOS_OP_CALL_ATTR_STAR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG.
-- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom ... TOS): opa=0 -> `[obj]`; opa=1 -> `[obj, pos]` (pos = *args); opa=2 -> `[obj, kwd]` (kwd = **kwargs); opa=3 -> `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is ensured to be a tuple (coerced via PySequence_Tuple if needed). Resolve obj.name via `kos_resolve_named_attr`; when `send_self=0`, prepend `obj` to the positional tuple before the call. Call via `KosContext_CallArgs`.
+- **Stack**: `obj.name(*args, **kwargs)`. Stack layout per opa flags (bottom ... TOS): opa=0 -> `[obj]`; opa=1 -> `[obj, pos]` (pos = *args); opa=2 -> `[obj, kwd]` (kwd = **kwargs); opa=3 -> `[obj, pos, kwd]`. Pop in reverse order (kwd then pos then obj when both star forms are present). `pos` is made a tuple when it is another sequence. `obj.name` resolves as CALL_ATTR describes; `obj` is prepended to the positional tuple when the attribute is an unbound function, and the callee is called with the tuple and the keywords.
 - **Invariants**: attr name in constant pool. opa bits: 1 = has *args, 2 = has **kwargs.
 
 ---
 
 ### KOS_OP_CALL_VAR_ATTR_STAR
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
-- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(ctx, var_name)` (owned reference; handler decrements on exit paths). Stack layout per opa (bottom ... TOS): opa=0 -> `[]`; opa=1 -> `[pos]`; opa=2 -> `[kwd]`; opa=3 -> `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; resolve via `kos_resolve_named_attr`, prepend `obj` to tuple args when `send_self=0`, call via `KosContext_CallArgs`.
+- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is read from the frame namespace by name. Stack layout per opa (bottom ... TOS): opa=0 -> `[]`; opa=1 -> `[pos]`; opa=2 -> `[kwd]`; opa=3 -> `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `obj.name` resolves as CALL_ATTR describes, `obj` is prepended to the positional tuple when the attribute is an unbound function, and the callee is called with the tuple and the keywords.
 - **Invariants**: `var_name` and attr name in constant pool; same opa bit meanings as CALL_ATTR_STAR.
-- **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR_STAR.c): Parallel to CALL_ATTR_STAR with VAR receiver semantics (see [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr)).
+- **See also**: [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr) for the receiver read by name.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
 
 ### KOS_OP_CALL_FAST_ATTR_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot index for `obj`), CONST (attr name), COUNT (opa bitflags), NOARG.
-- **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` comes from `KosNamespace_FastDeref(ns, slot)` (slot `a0`); requires `KosNamespace_SupportsFast`. Pop/resolve/call semantics match CALL_ATTR_STAR. Same refcount convention as [`KOS_OP_CALL_FAST_ATTR`](#kos_op_call_fast_attr): no `Py_DECREF(obj)` on control paths (contrast [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star)).
+- **Stack**: Same stack layout and `opa` behavior as [`KOS_OP_CALL_VAR_ATTR_STAR`](#kos_op_call_var_attr_star). `obj` is read from fast slot `a0`, so the frame must have fast locals. Pop, resolution and the call match CALL_ATTR_STAR.
 - **Invariants**: Same opa and tuple/`pos` rules as CALL_ATTR_STAR; fast slot must be in range and bound.
-- **Implementation** (koskari/lib/opcode/CALL_FAST_ATTR_STAR.c): Parallel to CALL_FAST_ATTR / CALL_ATTR_STAR.
 - **Compiler form:** Not emitted by the compiler; available for manual bytecode construction.
 
 ---
@@ -3311,7 +3297,7 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 ### KOS_OP_TAIL_CALL
 
 - **Style**: COUNT. Arg = number of positional arguments.
-- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. Extracts args via PopTailPtr (small counts) or PopTail (large) before branching; opcode owns storage, DECREFs at end. For KosCallable: tail install recycles the frame. For Plain Python: `kos_dyn_pop_frame` when parent exists, then PyObject_Vectorcall, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing (triggers **`kos_dynnode_on_control_returned`** for wind thunks).
+- **Stack**: Same as CALL: `[..., callable, arg_1, ..., arg_n]`. The arguments are taken off the stack before the callee is examined. A Koskari callable takes over the current frame; any other callable is called after the current frame is dropped, when it has a parent, and its result goes to the caller. Control then continues in the frame now on top, running any wind thunks on the way.
 - **Execution model**: When the callable is a KosExpression or KosFunction, the VM replaces the current frame (tail install). For all other callable types, the opcode drops the current frame when parent exists, calls the callable, and pushes the result.
 - **Invariants**: Stack has at least 1 + arg elements. KosExpression allows no arguments (arg must be 0); otherwise TypeError.
 - **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL in function-body code; never emitted by a special.
@@ -3327,19 +3313,19 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ### KOS_OP_TAIL_CALL_NAMES
 - **Style**: COUNT. Arg = N (number of positional arguments).
-- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. Extracts via PopTailPtr (small) or PopTail (large); opcode owns storage, DECREFs at end. KosCallable: kos_callable_tail_vcall. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Vectorcall, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing.
+- **Stack**: Same layout as CALL_NAMES: `[..., callable, pos_0, ..., pos_{N-1}, val_0, ..., val_{M-1}, names_tuple]`. The arguments and the names tuple are taken off the stack before the callee is examined; the call then proceeds as TAIL_CALL describes, with the keywords bound by name.
 
 ---
 
 ### KOS_OP_TAIL_CALL_STAR
 - **Style**: STAR. Arg = bitflags (1 = has *args, 2 = has **kwargs).
-- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and ensure_tuple as CALL_STAR. KosCallable: kos_callable_tail_call. Plain Python: kos_dyn_pop_frame when parent exists, PyObject_Call, kos_push_or_await. Returns **`EVAL_CONTROL_RETURNED()`** when continuing. Same replace-frame semantics as TAIL_CALL.
+- **Stack**: Same layout as CALL_STAR: `[..., callable, pos, kwd]`. Pop order and the tuple coercion as CALL_STAR; the call then proceeds as TAIL_CALL describes, with `pos` and `kwd` spread.
 
 ---
 
 ### KOS_OP_TAIL_CALL_ATTR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (npos), NOARG, NOARG. One cache slot (attr resolution).
-- **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. Resolve `obj.name` via `kos_resolve_named_attr`, then call in tail position: the caller's frame is reused rather than a new frame pushed (`KOS_CALL_TAIL` through `kos_call_invoke`; an exact non-yielding KosFunction takes the bind-before-reset subpath, every other callable class spills and keeps `KosEvalState_Call`'s tail semantics).
+- **Stack**: Same layout as CALL_ATTR: `[..., obj, arg_0, ..., arg_{N-1}]`. `obj.name` resolves as CALL_ATTR describes, then the call is made in tail position: a Koskari function takes over the caller's frame rather than a new frame being pushed, and any other callable is called as TAIL_CALL describes.
 - **Compiler form:** Produced by the processor's `promote_tail_calls` pass relabeling a tail-position CALL_ATTR in function-body code; never emitted by a special.
 
 ---
