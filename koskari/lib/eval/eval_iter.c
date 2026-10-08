@@ -265,6 +265,23 @@ static inline KosGetNextResult op_get_next_from_iter(
    there is exhaustion. The async arm is the eager __anext__ step.
    Providers never reach here; their suite steps them.
 */
+/* A sync step returned NULL: a StopIteration or a clean NULL is
+   exhaustion, any other error propagates. had_next is 0 when the type
+   lost its tp_iternext since the bind classified it. */
+static KOS_NOINLINE KosGetNextResult op_get_next_sync_ended(int had_next) {
+
+  if (PyErr_Occurred()) {
+    if (! PyErr_ExceptionMatches(PyExc_StopIteration))
+      return GET_NEXT_ERROR;
+    PyErr_Clear();
+  } else if (unlikely(! had_next)) {
+    PyErr_SetString(PyExc_TypeError, "not an iterator");
+    return GET_NEXT_ERROR;
+  }
+  return GET_NEXT_EXHAUSTED;
+}
+
+
 static inline KosGetNextResult op_get_next_from_bound(
     KosEvalState *es,
     uint8_t kind,
@@ -279,15 +296,7 @@ static inline KosGetNextResult op_get_next_from_bound(
       *result_out = n;
       return GET_NEXT_VALUE;
     }
-    if (PyErr_Occurred()) {
-      if (! PyErr_ExceptionMatches(PyExc_StopIteration))
-        return GET_NEXT_ERROR;
-      PyErr_Clear();
-    } else if (unlikely(! next)) {
-      PyErr_SetString(PyExc_TypeError, "not an iterator");
-      return GET_NEXT_ERROR;
-    }
-    return GET_NEXT_EXHAUSTED;
+    return op_get_next_sync_ended(next != NULL);
   }
 
   if (kind == KOS_IREQ_KIND_PY_ASYNC) {
@@ -312,6 +321,52 @@ static inline KosGetNextResult op_get_next_from_bound(
 
   PyErr_SetString(PyExc_TypeError, "not an iterator");
   return GET_NEXT_ERROR;
+}
+
+
+/**
+   The step the FOREACH handlers take.  A sync iterator steps through
+   tp_iternext in the handler itself; every other kind steps through
+   KosIterRequest_Next.  The bind guarantees a sync kind carries no
+   provider suite, so the request mode is untouched on this arm.  On
+   DELIVERED *fast_out is the element (new ref), else NULL.
+*/
+KOS_OP_INLINE KosIterRequestStatus kos_foreach_request_next(
+    KosEvalState *es,
+    KosDynNode *region,
+    PyObject **fast_out) {
+
+  KosIterRequest *req = KosDynForeach_REQ(region);
+
+  if (likely(req->kind == KOS_IREQ_KIND_PY_SYNC)) {
+    PyObject *iter = req->iter;
+    iternextfunc next = Py_TYPE(iter)->tp_iternext;
+    PyObject *n;
+
+#if KOS_EVAL_SAFETYNET
+    {
+      KosIterSlots *fresh = NULL;
+      if (req->islots || KosIter_CheckSlots(iter, &fresh)) {
+        PyErr_SetString(PyExc_SystemError,
+                        "sync iteration request carries a provider suite");
+        *fast_out = NULL;
+        return KOS_IREQ_ERROR;
+      }
+    }
+#endif
+
+    n = likely(next) ? next(iter) : NULL;
+    if (likely(n)) {
+      *fast_out = n;
+      return KOS_IREQ_DELIVERED;
+    }
+    *fast_out = NULL;
+    if (op_get_next_sync_ended(next != NULL) == GET_NEXT_ERROR)
+      return KOS_IREQ_ERROR;
+    return KOS_IREQ_EXHAUSTED;
+  }
+
+  return KosIterRequest_Next(es, region, NULL, fast_out);
 }
 
 

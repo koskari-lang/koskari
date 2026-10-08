@@ -108,7 +108,7 @@ KOS_OP_HANDLER(CONTINUE) {
       KosEvalState_ACTING_PC(es) = cpc;
       KosEvalState_SET_PC(es, cpc + 1u);
 
-      switch (KosIterRequest_Next(es, region, NULL, &out)) {
+      switch (kos_foreach_request_next(es, region, &out)) {
         case KOS_IREQ_DELIVERED:
           if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
             RESULT_RAISE();

@@ -16,10 +16,10 @@
 
 /**
   ITER_NEXT: region-based loop step; arg = else PC. One iteration
-  request against the FOREACH node's request on record -- provider, python
-  async, and sync iterators all step through KosIterRequest_Next.
-  Branch to else_pc on exhaustion. Must be inside PUSH_FOREACH block.
-  Auto-await.
+  request against the FOREACH node's request on record -- a sync
+  iterator steps through tp_iternext here, a provider or a python async
+  iterator through KosIterRequest_Next. Branch to else_pc on
+  exhaustion. Must be inside PUSH_FOREACH block. Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
   KOS_SYNC_PC(es, insn);
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
   {
     PyObject *out = NULL;
 
-    switch (KosIterRequest_Next(es, region, NULL, &out)) {
+    switch (kos_foreach_request_next(es, region, &out)) {
       case KOS_IREQ_DELIVERED:
         if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
           RESULT_RAISE();
