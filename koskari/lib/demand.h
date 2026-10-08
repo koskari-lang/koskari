@@ -96,6 +96,20 @@ int Koskari_DemandSyncVector(
 
 
 /**
+   A Demand wrapper, or a subtype, called from Python: the demand core
+   over the vector on the wrapped callable, driving the context the
+   wrapper caches. args holds nargsf positionals (vectorcall-encoded)
+   then one value per kwnames entry. New reference, or NULL with PyErr
+   set; TypeError when the wrapper holds nothing.
+*/
+PyObject *KosDemand_CallVector(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames);
+
+
+/**
    Set KoskariSyncViolation on PyErr with msg as the message string.
 
    Called from eval guard sites (kos_eval_demand_deny_suspend) to raise the

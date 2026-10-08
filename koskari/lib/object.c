@@ -156,9 +156,10 @@ static PyObject *demand_names[COUNT_OF(demand_dunders)];
 
 
 /**
-   The Python vectorcall entry: the demand core over the vector, result
-   discarded. A method-descriptor call from CPython (slot_tp_init)
-   arrives here unbound with self first in args.
+   The Python vectorcall entry: the Demand call over the vector, on the
+   context this wrapper caches, result discarded. A method-descriptor
+   call from CPython (slot_tp_init) arrives here unbound with self
+   first in args.
 */
 static PyObject *procedure_vectorcall(
     PyObject *self,
@@ -166,20 +167,10 @@ static PyObject *procedure_vectorcall(
     size_t nargsf,
     PyObject *kwnames) {
 
-  PyObject *wrapped = KosDemand_GetWrapped(self);
-  PyObject *result = NULL;
+  PyObject *result = KosDemand_CallVector(self, args, nargsf, kwnames);
 
-  if (! wrapped) {
-    PyErr_SetString(PyExc_TypeError, "Procedure object is not initialized");
+  if (! result)
     return NULL;
-  }
-  if (kwnames && ! PyTuple_GET_SIZE(kwnames))
-    kwnames = NULL;
-
-  if (Koskari_DemandSyncVector(wrapped, args, PyVectorcall_NARGS(nargsf),
-                               kwnames, &result) < 0)
-    return NULL;
-
   Py_DECREF(result);
   Py_RETURN_NONE;
 }

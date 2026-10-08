@@ -382,13 +382,7 @@ int Koskari_DemandSyncVector(
 /* === KosDemand (wrapper) === */
 
 
-/**
-   The Python vectorcall entry, and the type's tp_call through
-   PyVectorcall_Call: the demand core over the vector on the wrapped
-   callable. A method-descriptor call from CPython arrives here unbound
-   with self first in args.
-*/
-static PyObject *demand_vectorcall(
+PyObject *KosDemand_CallVector(
     PyObject *self,
     PyObject *const *args,
     size_t nargsf,
@@ -397,13 +391,29 @@ static PyObject *demand_vectorcall(
   PyObject *wrapped = KosDemand_GetWrapped(self);
 
   if (! wrapped) {
-    PyErr_SetString(PyExc_TypeError, "Demand object is not initialized");
+    PyErr_Format(PyExc_TypeError, "%s object is not initialized",
+                 Py_TYPE(self)->tp_name);
     return NULL;
   }
   if (kwnames && ! PyTuple_GET_SIZE(kwnames))
     kwnames = NULL;
   return demand_sync_vector(wrapped, args, PyVectorcall_NARGS(nargsf),
                             kwnames, &((KosDemandObject *) self)->host);
+}
+
+
+/**
+   The Python vectorcall entry, and the type's tp_call through
+   PyVectorcall_Call. A method-descriptor call from CPython arrives
+   here unbound with self first in args.
+*/
+static PyObject *demand_vectorcall(
+    PyObject *self,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  return KosDemand_CallVector(self, args, nargsf, kwnames);
 }
 
 
