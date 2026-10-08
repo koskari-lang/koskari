@@ -218,14 +218,13 @@ define repl [
       break
 
     except [KeyboardInterrupt]:
-      print "" file: stderr
+      ; as Python's REPL: report, drop the pending lines, prompt again;
+      ; only EOF ends the session
+      print "\nKeyboardInterrupt" file: stderr
       (stderr.flush)
-      if (buffer.strip):
-        set! buffer ""
-        set! prompt ">>> "
-        continue
-      else:
-        break
+      set! buffer ""
+      set! prompt ">>> "
+      continue
 
     incr! buffer (if buffer (+ "\n" line) line)
 

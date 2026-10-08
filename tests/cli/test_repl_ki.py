@@ -252,6 +252,36 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual('', err.strip())
 
 
+    async def test_interrupt_at_prompt_keeps_the_session(self):
+        """
+        A KeyboardInterrupt raised while reading at the prompt reports
+        itself and returns to the prompt with the session's bindings
+        intact; only EOF ends the session
+        """
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        steps = iter(['(define x 5)', KeyboardInterrupt(), 'x'])
+
+        def prompter(prompt, **kwargs):
+            try:
+                step = next(steps)
+            except StopIteration:
+                raise EOFError
+            if isinstance(step, BaseException):
+                raise step
+            return step
+
+        await _repl().repl(
+            new_module('__main__'),
+            prompter=prompter,
+            stdout=stdout,
+            stderr=stderr,
+            quiet=True)
+        self.assertIn('KeyboardInterrupt', stderr.getvalue())
+        self.assertEqual('5', stdout.getvalue().strip())
+
+
     async def test_quiet_suppresses_startup_banner(self):
         out, _ = await self._run_repl([], quiet=True)
         for line in startup_lines():
