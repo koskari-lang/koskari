@@ -57,11 +57,6 @@ static void kos_dyn_stamp_span(
     KosDynFrame *rft,
     KosSegment **rbl,
     PyObject *rns);
-static void kos_dyn_restamp_span(
-    KosDynNode *from,
-    KosDynNode *stop,
-    const KosLiveRegs *base);
-
 static void kos_dyn_resync_apply(
     KosEvalState *es,
     KosDynFrame *ft,
@@ -514,11 +509,15 @@ static void kos_dyn_debug_check_walk(
 
 /**
    Clear every unwind cache -- segment back links and frame back
-   links -- on nodes in [from, stop), walking parent links. Call
-   whenever a span of nodes is detached from (or re-spliced into) the
-   live chain: the caches were recorded against the chain shape at
-   install time and a moved span cannot trust them. Over-clearing is
-   always safe -- a NULL cache falls back to the chain walk.
+   links -- on nodes in [from, stop), walking parent links. Call when
+   a span of nodes is re-spliced into the live chain at a place other
+   than where it was stamped: the caches were recorded against the
+   chain shape at install time. A frozen GEN span is the exception:
+   its interior links name nodes of the same span, which travel with
+   it, so the freeze keeps them and kos_dyn_gen_install rewrites only
+   the bottom frame's two, the ones that name the consumer.
+   Over-clearing is always safe -- a NULL cache falls back to the
+   chain walk.
 */
 static void kos_dyn_clear_unwind_caches(KosDynNode *from, KosDynNode *stop) {
   for (KosDynNode *n = from; n && n != stop; n = KosDynNode_PARENT(n)) {
@@ -976,20 +975,21 @@ static void kos_dyn_region_exc_slots(
    handled exception while the generator is suspended, as CPython pops
    a generator's exc_info at a yield.
 */
-static void kos_dyn_region_exc_freeze(KosDynNode *node) {
+static int kos_dyn_region_exc_freeze(KosDynNode *node) {
   uint8_t *exc_saved, *exc_frozen;
   KosExcState *saved;
   KosExcState own;
 
   kos_dyn_region_exc_slots(node, &exc_saved, &exc_frozen, &saved);
   if (! *exc_saved || *exc_frozen)
-    return;
+    return 0;
 
   KosExc_Init(&own);
   KosExc_Fetch(&own);
   KosExc_Install(saved);
   KosExc_Move(saved, &own);
   *exc_frozen = 1;
+  return 1;
 }
 
 
@@ -1030,7 +1030,7 @@ static void kos_dyn_region_exc_install(KosEvalState *es, KosDynNode *node) {
 }
 
 
-void kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node) {
+int kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node) {
 
   /* A yield moves the node intact, so a kind whose effect is the node
      rides the span as it is: a WITH's __enter__ and a WIND's before
@@ -1041,13 +1041,12 @@ void kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node) {
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(es, (KosDynParam *) node);
-      break;
+      return 1;
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
-      kos_dyn_region_exc_freeze(node);
-      break;
+      return kos_dyn_region_exc_freeze(node);
     default:
-      break;
+      return 0;
   }
 }
 
@@ -1798,57 +1797,6 @@ static void kos_dyn_stamp_span(
       rbl = &KosDynNode_STACK(n);
     }
   }
-}
-
-
-/**
-   Restamp the unwind caches of a span just spliced back onto the
-   chain: the nodes from from down to stop, both included, with the
-   facts live at stop's parent supplied by the caller (a resync of
-   that parent derives the same three). The prefix restamp's scan for
-   stamped evidence and its walk for the base facts are skipped; the
-   caller knows the span's ends and holds the facts. Callers:
-   kos_dyn_gen_install, where the consumer's registers recorded at the
-   install are those facts.
-*/
-static void kos_dyn_restamp_span(
-    KosDynNode *from,
-    KosDynNode *stop,
-    const KosLiveRegs *base) {
-
-  KosDynNode *fixed[KOS_RESTAMP_FIXED];
-  KosDynNode **span = fixed;
-  size_t cap = KOS_RESTAMP_FIXED;
-  size_t len = 0;
-  KosDynNode *node;
-
-  for (node = from; node; node = KosDynNode_PARENT(node)) {
-    if (len == cap) {
-      size_t ncap = cap * 2;
-      KosDynNode **grown;
-      if (span == fixed) {
-        grown = PyMem_Malloc(ncap * sizeof(KosDynNode *));
-        if (grown)
-          memcpy(grown, span, len * sizeof(KosDynNode *));
-      } else {
-        grown = PyMem_Realloc(span, ncap * sizeof(KosDynNode *));
-      }
-      if (! grown)
-        goto out;
-      span = grown;
-      cap = ncap;
-    }
-    span[len++] = node;
-    if (node == stop)
-      break;
-  }
-
-  kos_dyn_stamp_span(span, len, (KosDynFrame *) base->frame, base->block,
-                     base->ns);
-
-out:
-  if (span != fixed)
-    PyMem_Free(span);
 }
 
 

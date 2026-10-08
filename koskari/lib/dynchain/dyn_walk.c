@@ -80,13 +80,24 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   KosDynGen_ACTIVE(gen) = ctx_active;
   kos_live_regs_capture(es, KosDynGen_FROZEN(gen));
 
-  /* The frozen span leaves the live chain; its segments' unwind-cache
-     back links cannot survive the detach. */
-  kos_dyn_clear_unwind_caches(ctx_active, NULL);
   /* An effect a node holds outside itself leaves with it, innermost
-     first; the install puts it back. */
-  for (KosDynNode *n = ctx_active; n; n = KosDynNode_PARENT(n))
-    kos_dyn_extent_freeze(es, n);
+     first; the install puts it back, and only when one left. The
+     span's interior unwind caches stay: they name nodes of this same
+     span. The frame count serves the install's room check. */
+  {
+    unsigned nframes = 0;
+    int installs = 0;
+
+    for (KosDynNode *n = ctx_active; n; n = KosDynNode_PARENT(n)) {
+      nframes += KosDynNode_IS_FRAME(n) ? 1u : 0u;
+      installs |= kos_dyn_extent_freeze(es, n);
+    }
+    KosDynGen_NFRAMES(gen) = (uint16_t) nframes;
+    if (installs)
+      KosDynNode_FLAGS(gen) |= KOS_DYNF_GEN_INSTALLS;
+    else
+      KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_INSTALLS;
+  }
   /* The GEN's namespace fill is the consumer's live namespace stamped
      at the install; the next install stamps it again from that
      consumer's registers. Holding it across the freeze would keep the

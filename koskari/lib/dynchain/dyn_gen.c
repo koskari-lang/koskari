@@ -39,6 +39,8 @@ KosDynGen *kos_dyngen_new(PyObject *owner) {
   KosDynGen_OWNER(gen) = owner;  /* borrowed */
   KosDynGen_ACTIVE(gen) = NULL;
   KosDynGen_REFCOUNT(gen) = 1;
+  KosDynGen_NFRAMES(gen) = 0;
+  KosDynGen_BASE_DEPTH(gen) = UINT16_MAX;
   *KosDynGen_HOST(gen) = (KosLiveRegs) { 0 };
   *KosDynGen_FROZEN(gen) = (KosLiveRegs) { 0 };
   return gen;
@@ -224,7 +226,7 @@ static int kos_dyn_gen_install_span(KosEvalState *es, KosDynNode *node) {
     return -1;
   if (kos_dyn_extent_install(es, node) < 0) {
     for (KosDynNode *n = KosDynNode_PARENT(node); n; n = KosDynNode_PARENT(n))
-      kos_dyn_extent_freeze(es, n);
+      (void) kos_dyn_extent_freeze(es, n);
     return -1;
   }
   return 0;
@@ -272,26 +274,54 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
   /* The resumed frames sit above the consumer's frame; a resume that
      would not fit raises RecursionError at the request, as Python's
-     next() does, with the generator left suspended. One count serves
-     the room check and the renumber, and the invoker frame in hand is
-     the base depth. */
+     next() does, with the generator left suspended. The freeze
+     counted the frames; the invoker frame in hand is the base depth,
+     and the numbering stands while it is the one of the last install. */
   {
-    unsigned count = kos_dyn_frame_count(active, (KosDynNode *) gen);
+    unsigned count = KosDynGen_NFRAMES(gen);
+    unsigned base = invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0;
 
     if (kos_eval_check_frame_room(es, invoker_frame, count) < 0)
       return -1;
-    kos_dyn_renumber_frames_counted(
-        active, (KosDynNode *) gen,
-        invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0, count);
+    if (base != KosDynGen_BASE_DEPTH(gen)) {
+      kos_dyn_renumber_frames_counted(active, (KosDynNode *) gen, base,
+                                      count);
+      KosDynGen_BASE_DEPTH(gen) = (uint16_t) base;
+    }
   }
 
   /* What the freeze took out comes back before the splice: a refusal
      here leaves the GEN frozen, nothing spliced. */
-  if (kos_dyn_gen_install_span(es, active) < 0)
-    return -1;
+  if (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_INSTALLS) {
+    if (kos_dyn_gen_install_span(es, active) < 0)
+      return -1;
+    KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_INSTALLS;
+  }
 
   /* The consumer's registers, restored at the next freeze. */
   kos_live_regs_capture(es, KosDynGen_HOST(gen));
+
+  /* The span kept its interior unwind caches across the freeze; the
+     two on its bottom frame name the consumer, and are rewritten from
+     the registers just recorded. The GEN's own namespace fill is the
+     consumer's live namespace, dropped at the freeze. Done before
+     either splice path below: stamps never overwrite, so a stale link
+     here would survive the rebuild. */
+  {
+    KosDynNode *bottom = KosDynGen_FROZEN(gen)->frame
+        ? (KosDynNode *) KosDynGen_FROZEN(gen)->frame
+        : active;
+
+    while (KosDynNode_PARENT(bottom) != (KosDynNode *) gen)
+      bottom = KosDynNode_PARENT(bottom);
+    if (KosDynNode_IS_FRAME(bottom))
+      KosDynFrame_BACK_FRAME(bottom) =
+          (KosDynNode *) KosDynGen_HOST(gen)->frame;
+    if (KosDynNode_STACK(bottom))
+      KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
+    if (! KosDynNode_NS(gen))
+      KosDynNode_NS(gen) = Py_XNewRef(KosDynGen_HOST(gen)->ns);
+  }
 
   /* 1. GEN's parent = current ctx's active node */
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
@@ -309,12 +339,8 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
      stale registers; the same holds for host.top at the freeze. */
   if (KosDynGen_FROZEN(gen)->top == active && KosDynGen_FROZEN(gen)->frame) {
     /* The registers the freeze recorded for this very head: apply
-       them, then restamp the spliced span's unwind caches, which the
-       freeze cleared, from the consumer's registers just recorded:
-       they are the facts live at the GEN's parent. Same outcome as
-       the rebuild without its find walk or the restamp's scan. */
+       them. Same outcome as the rebuild without its find walk. */
     kos_live_regs_apply(es, KosDynGen_FROZEN(gen));
-    kos_dyn_restamp_span(active, (KosDynNode *) gen, KosDynGen_HOST(gen));
   } else {
     kos_dyn_commit_dyn_top(es, active);
   }

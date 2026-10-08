@@ -156,7 +156,7 @@ These fields mirror the live frame, operand-segment slot, and namespace for opco
 | --------- | ---- |
 | **`kos_dyn_resync_after_push(es, new_node)`** | O(1) update after a single-node push: frame nodes replace all live fields; other nodes update only what they carry. Stamps the pushed node's unwind caches (segment `back` = displaced owning slot; frames also record `back_frame` = displaced frame). |
 | **`kos_dyn_resync_after_pop(es, removed, new_top)`** | O(1) update after `kos_dyn_commit_dyn_top` pops a single head: block from the removed segment's `back` (or the surviving owner), namespace read from the survivor's `ns`, frame from `back_frame`. Under **`KOS_EVAL_SAFETYNET=1`** a counted chain-walk fallback backs every cache; default builds trust the cache model and fail fast on violation. |
-| **`kos_dyn_resync_chain(es)`** | Full walk from **`dyn_top`** when incremental retarget does not apply (xfer INSTALL/PUSH, splices, gen freeze/thaw, bootstrap). Finishes by **restamping** the contiguous unstamped prefix at the top of the chain -- spliced spans arrive with cleared caches -- so subsequent pops stay O(1). |
+| **`kos_dyn_resync_chain(es)`** | Full walk from **`dyn_top`** when incremental retarget does not apply (xfer INSTALL/PUSH, splices, gen freeze/thaw, bootstrap). Finishes by **restamping** the contiguous unstamped prefix at the top of the chain -- a spliced span arrives with cleared caches, a frozen GEN span with only its bottom frame's rewritten -- so subsequent pops stay O(1). |
 
 Optional **`KOS_DEBUG_PATCH_DYN_CACHES`**: cross-check every cache answer (push retarget vs full rebuild; pop-side caches vs the walk) and raise on drift.
 
@@ -1815,7 +1815,10 @@ Rules (landed; archived proposals
 4. **Node-owned snapshots** -- continuation capture and transfer goals clone or
    land nodes together with their owned **`stack`** segments; clones are
    born with cleared caches, and every splice ends in
-   **`kos_dyn_resync_chain`**, which restamps the spliced prefix.
+   **`kos_dyn_resync_chain`**, which restamps the spliced prefix. A frozen
+   GEN span is the exception: its interior caches name nodes of the same
+   span and survive the freeze, and **`kos_dyn_gen_install`** rewrites only
+   the bottom frame's two, which name the consumer.
 5. **The cache model is authoritative** -- chain-walk fallbacks behind the
    caches are compiled only under **`KOS_EVAL_SAFETYNET=1`** (counted, for
    diagnostics); default builds trust the caches and fail fast on a model

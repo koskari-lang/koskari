@@ -116,6 +116,8 @@ typedef enum KosDynFlags {
                                    re-parents the frame onto the chain.
                                    Traversal and teardown must cover it
                                    while held */
+  KOS_DYNF_GEN_INSTALLS = 0x20,  /* GEN: a node of the frozen span holds an
+                                   effect the install puts back */
 } KosDynFlags;
 
 
@@ -425,8 +427,10 @@ struct KosDynNode {
       PyObject *fn;
       /* Unwind cache: the frame displaced at install (borrowed; an
          ancestor on the chain, so it outlives this frame while
-         installed). Set at install only; cleared at clone and span
-         detach; NULL means fall back to the chain walk. While the
+         installed). Set at install only; cleared at clone and at the
+         restitch of a stashed span; a frozen GEN span keeps it, and
+         the install rewrites the span's bottom frame's. NULL means
+         fall back to the chain walk. While the
          frame is held in its function's cache this links the next
          cached frame instead (see KosFunction_CacheFrame), and the
          install that takes the frame back overwrites it. */
@@ -552,7 +556,12 @@ struct KosDynNode {
     struct {
       PyObject *owner;     /* owning generator object (borrowed) or NULL */
       struct KosDynNode *active; /* suspended frame when released; NULL when running */
-      uintptr_t refcount;  /* reference count; init 1; release decrements; free when 0 */
+      uint32_t refcount;   /* reference count; init 1; release decrements; free when 0 */
+      uint16_t nframes;    /* frames in the frozen span, counted at the
+                              freeze for the install's room check */
+      uint16_t base_depth; /* consumer depth the span's frames are
+                              numbered for; UINT16_MAX until the first
+                              frozen install */
       /* Register snapshots for the flattened step cycle. host is the
          consumer's registers taken at install, restored at freeze while
          the GEN's parent is still host.top. frozen is the generator's
@@ -1746,12 +1755,13 @@ void kos_dyn_extent_abort(KosDynNode *node);
    effect lives outside its node (PARAM: the cells it swapped into the
    context's table) takes that effect out at the freeze and puts it back
    at the install, over the table as it is then. Every other kind is a
-   no-op. freeze cannot fail; install returns 0, or -1 with PyErr set
-   and the node's effect not applied.
+   no-op. freeze cannot fail and returns 1 when it took an effect out
+   that the install must put back, else 0; install returns 0, or -1
+   with PyErr set and the node's effect not applied.
 
    Callers: kos_dyn_gen_freeze, kos_dyn_gen_install.
 */
-void kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node);
+int kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node);
 int kos_dyn_extent_install(KosEvalState *es, KosDynNode *node);
 
 
@@ -2180,6 +2190,8 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
 #define KosDynGen_REFCOUNT(n)     (((KosDynNode *)(n))->u.gen.refcount)
+#define KosDynGen_NFRAMES(n)      (((KosDynNode *)(n))->u.gen.nframes)
+#define KosDynGen_BASE_DEPTH(n)   (((KosDynNode *)(n))->u.gen.base_depth)
 #define KosDynGen_HOST(n)         (&((KosDynNode *)(n))->u.gen.host)
 #define KosDynGen_FROZEN(n)       (&((KosDynNode *)(n))->u.gen.frozen)
 /** a GEN with a parent is flattened: its yields deliver to a consumer
