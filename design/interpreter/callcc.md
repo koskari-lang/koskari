@@ -174,7 +174,9 @@ int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
    own for the handler's return; the frame's segment is never touched.
    Only the first invoke runs in place; re-invokes fall through to the
    landing path (multi-shot). The slice's `POP_PROMPT` restitches the
-   stashed span and restores the invoke-site pc
+   stashed span and restores the invoke-site pc and the resume the
+   frame carried into the invoke, both displaced onto the delimiter
+   while the slice runs in that frame
    (`kos_dyn_inplace_restitch`); an exception raised in the slice
    restitches likewise and continues the raise from the invoke site.
 

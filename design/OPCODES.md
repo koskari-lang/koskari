@@ -281,7 +281,7 @@ When adding or changing an opcode:
 - [5. Constants](#5-constants) — CONST, CONST2, CONST3, CONST4
 - [5.1 Pair construction and access](#51-pair-construction-and-access) — CAR, CDR, CONS, PROPER, PAIR_SPLICE, NILP
 - [6. Mode control](#6-mode-control) — AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, RETURN_CONST, YIELD_CONST, YIELD_FROM
-- [7. Iteration](#7-iteration) — ITER_NEXT, NEXT
+- [7. Iteration](#7-iteration) — ITER_NEXT, ITER_NEXT_STORE_VAR, ITER_NEXT_STORE_FAST, NEXT
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
@@ -339,6 +339,8 @@ When adding or changing an opcode:
 | YIELD_CONST | CONST | Yield the pooled constant; the `CONST` + `YIELD 1` fusion | [§6](#kos_op_yield_const) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
+| ITER_NEXT_STORE_VAR | EXTRA | Next from region iterator stored under the name; else jump; the `ITER_NEXT` + `VAR_STORE` fusion | [§7](#kos_op_iter_next_store_var) |
+| ITER_NEXT_STORE_FAST | EXTRA | Next from region iterator stored into the fast slot; else jump | [§7](#kos_op_iter_next_store_fast) |
 | OBJECT_NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_object_next) |
 | VAR_NEXT | EXTRA | Fused VAR + OBJECT_NEXT: step the named iterator; count 2 pops a default for exhaustion | [§12](#kos_op_var_next) |
 | FAST_NEXT | EXTRA | As VAR_NEXT, with the iterator loaded from its fast slot | [§13](#kos_op_fast_next) |
@@ -1202,6 +1204,44 @@ bottom to top matches push order).
 | 4     | JUMP     | 2   | 2 (-> 2) | loop back |
 | 5     | POP_FOREACH | 0 | 0        | push loop result (None if unset) |
 | 6     | LABEL    | —   | —        | else (exhausted) |
+
+---
+
+### KOS_OP_ITER_NEXT_STORE_FAST
+- **Style**: EXTRA. Fields: FASTVAR (slot), LABEL (else branch pc, post-compile).
+- **Stack**: Uses region iterator (PUSH_FOREACH). If next available: store the element into the fast slot, stack unchanged; else jump to the label. Auto-await if the iterator is async: a deferred element is stored into the slot when it arrives.
+- **Invariants**: Must be inside a PUSH_FOREACH extent. The label must be local. The slot must be a fast slot of the current frame namespace.
+- **Compiler form:** Produced by the processor from `ITER_NEXT` followed by `VAR_STORE`, as `ITER_NEXT_STORE_VAR`, then lowered to this opcode when the name has a fast slot. The for-each special's binding form compiles to it.
+
+**Example:** For-each body: next from the region iterator into slot 0; if exhausted jump to 5.
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 0     | CONST    | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
+| 1     | PUSH_FOREACH | 0 | 0        | push region; iterator from iterable |
+| 2     | ITER_NEXT_STORE_FAST | 0 | (0, -> 5) | next from region into slot 0; if exhausted -> pc=5. stack unchanged |
+| 3     | CONTINUE | 0   | 0        | back to the step |
+| 4     | POP_FOREACH | 0 | 0        | push loop result (None if unset) |
+| 5     | LABEL    | —   | —        | else (exhausted) |
+
+---
+
+### KOS_OP_ITER_NEXT_STORE_VAR
+- **Style**: EXTRA. Fields: VAR (name), LABEL (else branch pc, post-compile).
+- **Stack**: Uses region iterator (PUSH_FOREACH). If next available: store the element under the name in the current frame namespace, stack unchanged; else jump to the label. Auto-await if the iterator is async: a deferred element is stored under the name when it arrives.
+- **Invariants**: Must be inside a PUSH_FOREACH extent. The label must be local.
+- **Compiler form:** Produced by the processor from `ITER_NEXT` followed by `VAR_STORE`. A name with a fast slot lowers the opcode to `ITER_NEXT_STORE_FAST`; this form remains where the name has none, such as a module-level loop.
+
+**Example:** Module-level for-each: next from the region iterator into `x`; if exhausted jump to 5.
+
+| index | opcode   | arg | arg view | comment |
+|------:|----------|-----|----------|---------|
+| 0     | CONST    | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
+| 1     | PUSH_FOREACH | 0 | 0        | push region; iterator from iterable |
+| 2     | ITER_NEXT_STORE_VAR | 0 | (x, -> 5) | next from region into x; if exhausted -> pc=5. stack unchanged |
+| 3     | CONTINUE | 0   | 0        | back to the step |
+| 4     | POP_FOREACH | 0 | 0        | push loop result (None if unset) |
+| 5     | LABEL    | —   | —        | else (exhausted) |
 
 ---
 

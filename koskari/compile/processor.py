@@ -332,6 +332,7 @@ def build_var_to_fast():
     var_to_fast[OpCode.VAR_OPERAND_VAR] = OpCode.FAST_OPERAND_FAST
     var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
     var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
+    var_to_fast[OpCode.ITER_NEXT_STORE_VAR] = OpCode.ITER_NEXT_STORE_FAST
 
     return var_to_fast
 
@@ -783,6 +784,17 @@ class ByteCodeProcessor:
         if matched[0][1] != arg:
             return None
         return [(OpCode.POP, 1), (op, arg)]
+
+
+    @squish_rule(OpCode.ITER_NEXT, OpCode.VAR_STORE)
+    def iter_next_store_fuse(self, op, arg, matched):
+        """
+        ITER_NEXT L VAR_STORE name -> ITER_NEXT_STORE_VAR: the for-each
+        step delivers its element straight into the name; the fast
+        pass lowers the row to ITER_NEXT_STORE_FAST
+        """
+
+        return [(OpCode.ITER_NEXT_STORE_VAR, (arg, matched[0][1], None, None))]
 
 
     @squish_rule(OpCode.CONST, OpCode.RETURN)

@@ -18,8 +18,12 @@ Tests for PUSH_FOREACH, ITER_NEXT opcodes.
 :license: GNU General Public License v3
 """
 
+import unittest
+
 import pytest
 
+from koskari.lib import OpCode
+from koskari.module import load_module_source_async, new_module
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -423,6 +427,183 @@ class TestForeachOpcodes(CevalTest):
             ["RETURN", 1],
         ], values={"last": None})
         self.assertEqual(await make_callable(code, ns)(), 30)
+
+
+class TestIterNextStoreOpcodes(CevalTest):
+    """
+    ITER_NEXT_STORE_FAST and ITER_NEXT_STORE_VAR step the region
+    iterator and store the element instead of pushing it
+    """
+
+    async def test_store_fast_sums_a_list(self):
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["FAST_STORE", 1],
+            ["CONST", [1, 2, 3, 4]],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT_STORE_FAST", (0, "else_lbl", None, None)],
+            ["FAST", 1],
+            ["FAST", 0],
+            ["OBJECT_ADD", 2],
+            ["FAST_STORE", 1],
+            ["CONTINUE", 0],
+            ["LABEL", "else_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["FAST", 1],
+            ["RETURN", 1],
+        ], local_syms=("x", "total"))
+        self.assertEqual(await make_callable(code, ns)(), 10)
+
+
+    async def test_store_fast_leaves_the_stack_alone(self):
+        code, ns = build_expr([
+            ["CONST", "below"],
+            ["CONST", [7]],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT_STORE_FAST", (0, "else_lbl", None, None)],
+            ["BREAK", 0],
+            ["LABEL", "else_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["FAST", 0],
+            ["RETURN", 1],
+        ], local_syms=("x",))
+        self.assertEqual(await make_callable(code, ns)(), 7)
+
+
+    async def test_store_var_stores_by_name(self):
+        code, ns = build_expr([
+            ["CONST", [5, 6]],
+            ["PUSH_FOREACH", 0],
+            ["ITER_NEXT_STORE_VAR", ("x", "else_lbl", None, None)],
+            ["BREAK", 0],
+            ["LABEL", "else_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "x"],
+            ["RETURN", 1],
+        ], values={"x": None})
+        self.assertEqual(await make_callable(code, ns)(), 5)
+
+
+    async def test_store_fast_outside_foreach_fails(self):
+        try:
+            code, ns = build_expr([
+                ["CONST", [10]],
+                ["ITER_NEXT_STORE_FAST", (0, "else_lbl", None, None)],
+                ["RETURN", 0],
+                ["LABEL", "else_lbl"],
+                ["RETURN", 0],
+            ], local_syms=("x",))
+        except RuntimeError as e:
+            self.assertIn("ITER_NEXT", str(e))
+            self.assertIn("PUSH_FOREACH", str(e))
+            return
+        with self.assertRaises(RuntimeError) as cm:
+            await make_callable(code, ns)()
+        self.assertIn("PUSH_FOREACH", str(cm.exception))
+
+
+FUSED_SRC = """
+(define total [items]
+  (define acc 0)
+  (for-each [x items]
+    (set! acc (+ acc x)))
+  acc)
+
+(define gen [n]
+  (define i 0)
+  (while (< i n)
+    (yield i)
+    (set! i (+ i 1))))
+
+(define total-gen [n]
+  (define acc 0)
+  (for-each [x (gen n)]
+    (set! acc (+ acc x)))
+  acc)
+
+(define total-second [it]
+  (define acc 0)
+  (for-each [x it]
+    (set! acc (+ acc (item x 1))))
+  acc)
+
+(define collect-k [choices]
+  (reset
+    (+ 100 (shift k
+             (let [[out (#list)]]
+               (for-each [c choices]
+                 (out.append (call k c)))
+               out)))))
+
+(define module-acc 0)
+(for-each [x #[1 2 3]]
+  (set! module-acc (+ module-acc x)))
+"""
+
+
+class AsyncCounter:
+    def __init__(self, n):
+        self.i = 0
+        self.n = n
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self.i >= self.n:
+            raise StopAsyncIteration
+        self.i += 1
+        return ("async", self.i)
+
+
+def opcodes_of(fn):
+    code = fn.code
+    return [OpCode(code.oparg(i)[0]) for i in range(code.length())]
+
+
+class TestIterNextStoreFromSource(unittest.IsolatedAsyncioTestCase):
+    """
+    A for-each binding compiles to the fused step, and the element lands
+    in the slot on every delivery path: a sync iterator, a Koskari
+    generator, a Python async iterator, a continuation resumed inside
+    the loop, and a module-level loop with no fast slot
+    """
+
+    async def load(self):
+        module = new_module("foreach_store_fused")
+        vars(module)["__file__"] = "<foreach_store_fused>"
+        await load_module_source_async(module, FUSED_SRC, layout=False)
+        return vars(module)
+
+    async def test_binding_compiles_to_the_fused_step(self):
+        mod = await self.load()
+        ops = opcodes_of(mod["total"])
+        self.assertIn(OpCode.ITER_NEXT_STORE_FAST, ops)
+        self.assertNotIn(OpCode.ITER_NEXT, ops)
+        self.assertNotIn(OpCode.FAST_STORE, ops[ops.index(OpCode.PUSH_FOREACH):])
+
+    async def test_sync_iterator(self):
+        mod = await self.load()
+        self.assertEqual(await mod["total"]([1, 2, 3, 4]), 10)
+
+    async def test_koskari_generator(self):
+        mod = await self.load()
+        self.assertEqual(await mod["total-gen"](5), 10)
+
+    async def test_python_async_iterator(self):
+        mod = await self.load()
+        self.assertEqual(await mod["total-second"](AsyncCounter(4)), 10)
+
+    async def test_continuation_resumed_inside_the_loop(self):
+        mod = await self.load()
+        self.assertEqual(await mod["collect-k"]([1, 2, 3]), [101, 102, 103])
+
+    async def test_module_level_loop(self):
+        mod = await self.load()
+        self.assertEqual(mod["module-acc"], 6)
 
 
 # The end.

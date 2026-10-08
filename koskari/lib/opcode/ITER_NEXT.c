@@ -33,8 +33,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
 
   /* The else pc is recorded before the step so a delivery or a raise-walk
      exhaustion conversion lands on the right resume point. */
-  KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) region) =
-      KosOp_ARG(insn);
+  kos_foreach_record_else(region, insn);
 
   {
     PyObject *out = NULL;

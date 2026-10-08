@@ -453,6 +453,12 @@ OP(OBJECT_OPERAND_FAST, 1, EXTRA, OPERAND, FASTVAR, NOARG, NOARG)  // stack OP f
 OP(VAR_OPERAND_VAR, 0, EXTRA, OPERAND, VAR, VAR, NOARG)  // var OP var
 OP(FAST_OPERAND_FAST, 1, EXTRA, OPERAND, FASTVAR, FASTVAR, NOARG)  // fast OP fast; cache: elector
 
+// the for-each step with its element store: the region's next element
+// stored under the row's name or into its fast slot, else jump; the
+// ITER_NEXT + VAR_STORE fusion, lowered to the FAST twin
+OP(ITER_NEXT_STORE_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
+OP(ITER_NEXT_STORE_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
+
 // THEEND must always be last
 OP(THEEND, 0, NOARG)
 

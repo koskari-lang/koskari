@@ -70,6 +70,28 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arg, ("other", "upper", (), 0))
 
 
+    async def test_iter_next_store_var_lowers_to_fast(self):
+        """
+        ITER_NEXT_STORE_VAR with a local name lowers to
+        ITER_NEXT_STORE_FAST carrying the slot and the label
+        """
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [(OpCode.ITER_NEXT_STORE_VAR, ("x", "L1", None, None))]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(
+            result, [(OpCode.ITER_NEXT_STORE_FAST, (0, "L1", None, None))])
+
+
+    async def test_iter_next_store_var_without_slot_stays(self):
+        """
+        ITER_NEXT_STORE_VAR with a name outside the scope stays as it is
+        """
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [(OpCode.ITER_NEXT_STORE_VAR, ("y", "L1", None, None))]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(result, instr)
+
+
     async def test_simple_var_opcode_still_works(self):
         """
         Scalar VAR opcode converts to FAST when name is in findex

@@ -50,6 +50,8 @@ KosDynDelim *kos_dyndelim_new(
   KosDynDelim_RETURN_NODE(delim) = node;
   KosDynDelim_SAVED_PC(delim) = 0;
   KosDynDelim_SAVED_ACTING_PC(delim) = 0;
+  KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
+  KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
   return delim;
 }
 
@@ -113,6 +115,26 @@ static KosDynDelim *kos_dyndelim_clone(KosDynDelim *delim) {
           : KosDynDelim_RETURN_NODE(delim);
   KosDynDelim_SAVED_PC(clone) = KosDynDelim_SAVED_PC(delim);
   KosDynDelim_SAVED_ACTING_PC(clone) = KosDynDelim_SAVED_ACTING_PC(delim);
+
+  /* A displaced resume follows the rule a frame clone applies to its
+     own: the kind's clone carries the state, and a kind without one
+     refuses the capture by name. */
+  KosDynDelim_SAVED_RESUME_KIND(clone) = NULL;
+  KosDynDelim_SAVED_RESUME_STATE(clone) = NULL;
+  if (KosDynDelim_SAVED_RESUME_KIND(delim)) {
+    const KosResumeKind *kind = KosDynDelim_SAVED_RESUME_KIND(delim);
+
+    if (! kind->clone) {
+      PyErr_Format(PyExc_RuntimeError,
+                   "cannot capture a frame whose resume is %s",
+                   kind->name ? kind->name : "?");
+      kos_dyndelim_free(clone);
+      return NULL;
+    }
+    KosDynDelim_SAVED_RESUME_KIND(clone) = kind;
+    KosDynDelim_SAVED_RESUME_STATE(clone) =
+        kind->clone(KosDynDelim_SAVED_RESUME_STATE(delim));
+  }
   return clone;
 }
 
@@ -135,6 +157,16 @@ void kos_dyndelim_free(KosDynDelim *delim) {
       & KOS_DYNF_HOLDS_RETURN_FRAME) {
     kos_dynframe_free(KosDynDelim_RETURN_FRAME(delim));
     KosDynDelim_RETURN_FRAME_NODE(delim) = NULL;
+  }
+
+  /* a displaced resume freed with the delimiter gets no delivery */
+  if (KosDynDelim_SAVED_RESUME_KIND(delim)) {
+    const KosResumeKind *kind = KosDynDelim_SAVED_RESUME_KIND(delim);
+
+    if (kind->clear)
+      kind->clear(KosDynDelim_SAVED_RESUME_STATE(delim));
+    KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
+    KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
   }
 
   kos_dynnode_return_to_freelist(delim);

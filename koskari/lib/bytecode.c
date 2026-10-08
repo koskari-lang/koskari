@@ -2701,8 +2701,8 @@ static int validate_jump_locality(
 
 
 /**
-   Validate ITER_NEXT is only used inside a PUSH_FOREACH block extent.
-   Called after derive_extents.
+   Validate ITER_NEXT and its STORE twins are only used inside a
+   PUSH_FOREACH block extent. Called after derive_extents.
 */
 static int validate_iter_next_in_foreach(
     const KosOp *code,
@@ -2715,9 +2715,11 @@ static int validate_iter_next_in_foreach(
     return 0;
   }
 
-  /* ITER_NEXT must be inside a PUSH_FOREACH; walk parent chain to find */
+  /* the step must be inside a PUSH_FOREACH; walk parent chain to find */
   for (uint32_t pc = 0; pc < code_len; pc++) {
-    if ((KosOpCode) code[pc].op != KOS_OP_ITER_NEXT) {
+    KosOpCode op = (KosOpCode) code[pc].op;
+    if (op != KOS_OP_ITER_NEXT && op != KOS_OP_ITER_NEXT_STORE_VAR
+        && op != KOS_OP_ITER_NEXT_STORE_FAST) {
       continue;
     }
     uint32_t eid = top_extent_id[pc];

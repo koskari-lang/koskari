@@ -2028,6 +2028,9 @@ static KosOpResult kos_dyn_uninstall_handler(KosEvalState *es, KosDynNode *node,
     case KOS_DYN_YIELD_FROM:
       kos_dyn_yieldfrom_unwind(es, (KosDynYieldFrom *) node);
       return EVAL_NORMAL();
+    case KOS_DYN_FOREACH:
+      kos_dyn_foreach_unwind(es, (KosDynForeach *) node);
+      return EVAL_NORMAL();
     case KOS_DYN_TRY:
     case KOS_DYN_FINALLY:
       kos_dyn_region_leave_exc(node);
@@ -3299,10 +3302,15 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim) {
     resume_frame = (KosDynFrame *) node;
   }
 
-  /* Restore the invoke-site pc. The frame's operand segment was never
-     displaced: the slice ran over the invocation prompt's copy of the
-     region's operands, which went with that node. */
+  /* Restore the invoke-site pc, and the resume the frame carried into
+     the invoke. The frame's operand segment was never displaced: the
+     slice ran over the invocation prompt's copy of the region's
+     operands, which went with that node. */
   KosDynFrame_PC(resume_frame) = KosDynDelim_SAVED_PC(delim);
+  KosDynFrame_RESUME_KIND(resume_frame) = KosDynDelim_SAVED_RESUME_KIND(delim);
+  KosDynFrame_RESUME_STATE(resume_frame) = KosDynDelim_SAVED_RESUME_STATE(delim);
+  KosDynDelim_SAVED_RESUME_KIND(delim) = NULL;
+  KosDynDelim_SAVED_RESUME_STATE(delim) = NULL;
 
   /* POP_PROMPT runs in the resume frame, so the live registers still
      hold the spent slice's pc: load the restored state into them, or

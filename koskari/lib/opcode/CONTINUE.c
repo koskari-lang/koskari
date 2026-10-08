@@ -56,10 +56,10 @@ KOS_OP_HANDLER(CONTINUE) {
      runs here directly. The proof is the register invariant: FRAME is
      the first frame node below DYN_TOP, so a region at DYN_TOP has it
      as its nearest frame ancestor. A FOREACH region's continue target
-     is its ITER_NEXT row; the step runs here as well, with the region
-     in hand, so the back-edge is one dispatch. Anything above the
-     region takes the walk, where the offer and the suspension handling
-     live. */
+     is its step row, ITER_NEXT or a STORE twin; the step runs here as
+     well, with the region in hand, so the back-edge is one dispatch.
+     Anything above the region takes the walk, where the offer and the
+     suspension handling live. */
   {
     KosDynNode *region = KosEvalState_DYN_TOP(es);
     KosDynFrame *frame = KosEvalState_FRAME(es);
@@ -96,33 +96,37 @@ KOS_OP_HANDLER(CONTINUE) {
       continue_store_result(&KosDynForeach_RESULT(region), result);
       kos_stack_clear_fast(KosEvalState_BLOCK(es));
 
-      if (unlikely(KosOp_OP(step) != KOS_OP_ITER_NEXT)) {
+      if (unlikely(KosOp_OP(step) != KOS_OP_ITER_NEXT
+                   && KosOp_OP(step) != KOS_OP_ITER_NEXT_STORE_FAST
+                   && KosOp_OP(step) != KOS_OP_ITER_NEXT_STORE_VAR)) {
         KosEvalState_SET_PC(es, cpc);
         RESULT_NEXT_POLL(es);
       }
 
-      /* As ITER_NEXT: the else pc is recorded before the step, and the
-         live pcs placed as a dispatch of that row would place them, so
-         a suspended step resumes past it. */
-      KosDynForeach_ITER_NEXT_ELSE_PC(region) = KosOp_ARG(step);
+      /* As the step instruction: its else pc is recorded before the
+         step, and the live pcs placed as a dispatch of it would place
+         them, so a suspended step resumes past it. */
+      kos_foreach_record_else(region, step);
       KosEvalState_ACTING_PC(es) = cpc;
       KosEvalState_SET_PC(es, cpc + 1u);
 
       switch (kos_foreach_request_next(es, region, &out)) {
         case KOS_IREQ_DELIVERED:
-          if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
+          if (unlikely(kos_foreach_deliver_in_hand(es, step, out) < 0))
             RESULT_RAISE();
           RESULT_NEXT_POLL(es);
 
         case KOS_IREQ_EXHAUSTED:
           Py_XDECREF(out);
           KosDynForeach_EXHAUSTED(region) = 1;
-          RESULT_JUMP_AT(es, KosOp_TARGET(step));
+          RESULT_JUMP_AT(es, kos_foreach_step_else(step));
 
         case KOS_IREQ_CONTINUES:
+          kos_foreach_defer_step(frame, step);
           RESULT_RELAY(es, kos_iter_installed(es));
 
         case KOS_IREQ_EXIT:
+          kos_foreach_defer_step(frame, step);
           RESULT_AWAIT(es, out);
 
         case KOS_IREQ_ERROR:

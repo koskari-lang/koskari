@@ -460,6 +460,11 @@ struct KosDynNode {
          restitch (slice execution overwrites both) */
       uint32_t saved_pc;
       uint32_t saved_acting_pc;
+      /* the borrowed resume frame's own resume, displaced with its pcs
+         while the slice runs in that frame and restored at the
+         restitch; NULL kind when the frame carried none */
+      const KosResumeKind *saved_resume_kind;
+      void *saved_resume_state;
     } delim;
     struct {
       uint32_t resume_pc;  /* pc after POP_CC */
@@ -1349,6 +1354,23 @@ int kos_dyn_next_deliver_exhausted(
     KosEvalState *es,
     KosDynNext *next,
     PyObject *val);
+
+/**
+   The resume an ITER_NEXT_STORE_* step sets on its frame when the step
+   defers (a Koskari generator installed, an async step awaited): the
+   element is staged for it instead of pushed, and it stores the
+   element where the step instruction names. Defined in
+   eval/eval_iter.c; the node clears it at exhaustion and at its own
+   teardown.
+*/
+extern const KosResumeKind kos_foreach_store_resume_kind;
+
+/* Clear the store resume from the live frame when it is set there. */
+void kos_dyn_foreach_clear_store_resume(KosEvalState *es);
+
+/* Uninstall hook: the store resume goes with the node. Callers:
+   kos_dyn_uninstall_handler. */
+void kos_dyn_foreach_unwind(KosEvalState *es, KosDynForeach *node);
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
     KosEvalState *es, KosDynForeach *fe, PyObject *val);
@@ -2251,6 +2273,10 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynDelim_SAVED_PC(d)    (((KosDynNode *)(d))->u.delim.saved_pc)
 #define KosDynDelim_SAVED_ACTING_PC(d) \
   (((KosDynNode *)(d))->u.delim.saved_acting_pc)
+#define KosDynDelim_SAVED_RESUME_KIND(d) \
+  (((KosDynNode *)(d))->u.delim.saved_resume_kind)
+#define KosDynDelim_SAVED_RESUME_STATE(d) \
+  (((KosDynNode *)(d))->u.delim.saved_resume_state)
 
 #define KosDynCC_RESUME_PC(c)     (((KosDynNode *)(c))->u.cc.resume_pc)
 

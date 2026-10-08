@@ -558,4 +558,40 @@ class TestCompareConstFold(unittest.TestCase):
         self.assertIn((OpCode.JUMP, "L1"), out)
 
 
+class TestIterNextStoreFusion(unittest.TestCase):
+    """
+    ITER_NEXT followed by VAR_STORE fuses into ITER_NEXT_STORE_VAR
+    carrying the name and the else label
+    """
+
+    def test_iter_next_var_store_fuses(self):
+        out = squish_ops([
+            (OpCode.ITER_NEXT, "L1"),
+            (OpCode.VAR_STORE, "x"),
+            (OpCode.CONST, None),
+            (OpCode.LABEL, "L1"),
+        ])
+        self.assertEqual(
+            out[:1], [(OpCode.ITER_NEXT_STORE_VAR, ("x", "L1", None, None))])
+
+    def test_iter_next_with_position_between_fuses(self):
+        out = squish_ops([
+            (OpCode.ITER_NEXT, "L1"),
+            (OpCode.POSITION, (3, 0)),
+            (OpCode.VAR_STORE, "x"),
+            (OpCode.LABEL, "L1"),
+        ])
+        ops = [op for op, _ in out]
+        self.assertIn(OpCode.ITER_NEXT_STORE_VAR, ops)
+        self.assertNotIn(OpCode.VAR_STORE, ops)
+
+    def test_iter_next_other_consumer_stays(self):
+        out = squish_ops([
+            (OpCode.ITER_NEXT, "L1"),
+            (OpCode.POP, 1),
+            (OpCode.LABEL, "L1"),
+        ])
+        self.assertEqual(out[:2], [(OpCode.ITER_NEXT, "L1"), (OpCode.POP, 1)])
+
+
 # The end.

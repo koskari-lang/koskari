@@ -132,6 +132,7 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
     PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
     return -1;
   }
+  kos_dyn_foreach_clear_store_resume(es);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
@@ -143,13 +144,46 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
 }
 
 
+void kos_dyn_foreach_clear_store_resume(KosEvalState *es) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  if (frame
+      && KosDynFrame_RESUME_KIND(frame) == &kos_foreach_store_resume_kind) {
+    KosDynFrame_RESUME_KIND(frame) = NULL;
+    KosDynFrame_RESUME_STATE(frame) = NULL;
+  }
+}
+
+
+void kos_dyn_foreach_unwind(KosEvalState *es, KosDynForeach *node) {
+  (void) node;
+  kos_dyn_foreach_clear_store_resume(es);
+}
+
+
+/**
+   A deferred element lands as the resumed frame expects, the frame
+   being live again by the time it arrives: staged for the resume a
+   STORE step set, else pushed. Consumes val, failure included.
+*/
+static int foreach_deliver_deferred(KosEvalState *es, PyObject *val) {
+  KosDynFrame *frame = KosEvalState_FRAME(es);
+
+  if (frame && KosDynFrame_RESUME_KIND(frame)) {
+    KosEvalState_StageDelivery(es, val);
+    return 0;
+  }
+  return KosEvalState_StackPUSH(es, val);
+}
+
+
 int kos_dyn_foreach_deliver_yield_kos_agen(
     KosEvalState *es,
     KosDynForeach *fe,
     PyObject *val) {
 
-  if (KosEvalState_StackPUSH(es, val) < 0)
-    return -1;  /* the push consumed val, failure included */
+  if (foreach_deliver_deferred(es, val) < 0)
+    return -1;
 
   kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 0);
   kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
@@ -170,6 +204,8 @@ int kos_dyn_foreach_deliver_exhausted(
 
   kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 1);
 
+  /* no element is coming: a store resume the step set goes with it */
+  kos_dyn_foreach_clear_store_resume(es);
   KosDynForeach_EXHAUSTED(fe) = 1;
   KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
   kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);

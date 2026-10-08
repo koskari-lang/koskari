@@ -255,9 +255,16 @@ static int kos_delimited_invoke_inplace(
 
   /* Point the resume frame at the captured resume pc; the invoke-site
    * pc and acting pc are saved for the restitch (slice execution
-   * overwrites both). */
+   * overwrites both). A resume the frame carries, waiting on a
+   * delivery the invoke site will receive later, is displaced with
+   * them: the frame runs the slice now, and the prologue would offer
+   * the resume cold. */
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
   KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
+  KosDynDelim_SAVED_RESUME_KIND(delim) = KosDynFrame_RESUME_KIND(resume_frame);
+  KosDynDelim_SAVED_RESUME_STATE(delim) = KosDynFrame_RESUME_STATE(resume_frame);
+  KosDynFrame_RESUME_KIND(resume_frame) = NULL;
+  KosDynFrame_RESUME_STATE(resume_frame) = NULL;
   KosDynFrame_PC(resume_frame) = KosContinuation_RESUME_PC(k);
 
   KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;
