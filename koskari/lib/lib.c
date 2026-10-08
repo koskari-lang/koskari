@@ -114,7 +114,7 @@ static PyObject *build_flags_new(void) {
 /* === module lifecycle === */
 
 
-static int koskari_lib_init(PyObject *mod) {
+int koskari_lib_init(PyObject *mod) {
   if (! mod)
     return -1;
 
@@ -173,10 +173,13 @@ static int koskari_lib_init(PyObject *mod) {
 }
 
 
-/* The module object PyInit_lib made, whose statics these are. A
-   single-phase module has one set of statics for the process, while
-   each legacy subinterpreter that imports it holds its own module
-   object over them; only the owner's collection clears them. A host
+/* The first module object PyInit_lib made, whose statics these are. A
+   single-phase module has one set of statics for the process, while a
+   re-import after a collection or an import from a legacy
+   subinterpreter runs PyInit_lib again over them: the guarded unit
+   inits rebuild only what a clear emptied, and the newcomer shares the
+   statics without taking them over. Only the owner's teardown, through
+   m_clear on a cycle or m_free on a plain dealloc, clears them. A host
    that fills a module of its own, as the native test harness does,
    names no owner and clears as it always did. Borrowed: the owner is
    the module being cleared. */
@@ -295,6 +298,14 @@ int koskari_lib_clear(PyObject *mod) {
 }
 
 
+static void koskari_lib_free(void *mod) {
+  /* A dealloc outside a cycle never ran m_clear; the error state of a
+     failed clear has nowhere to go from a destructor. */
+  if (koskari_lib_clear((PyObject *) mod) < 0)
+    PyErr_WriteUnraisable((PyObject *) mod);
+}
+
+
 /* === module definition === */
 
 
@@ -302,12 +313,14 @@ static struct PyModuleDef libmod = {
   .m_base = PyModuleDef_HEAD_INIT,
   .m_name = "koskari.lib",
   .m_doc = "Native extension module for Koskari",
-  .m_size = -1,
+  /* 0, not -1: the module keeps no per-module state, and its init may
+     run again, which is what a re-import after a collection needs */
+  .m_size = 0,
   .m_methods = libmod_methods,
   .m_slots = NULL,
   .m_traverse = NULL,
   .m_clear = koskari_lib_clear,
-  .m_free = NULL,
+  .m_free = koskari_lib_free,
 };
 
 
@@ -321,7 +334,8 @@ PyMODINIT_FUNC PyInit_lib(void) {
     return NULL;
   }
 
-  lib_owner = mod;
+  if (! lib_owner)
+    lib_owner = mod;
   return mod;
 }
 

@@ -55,16 +55,17 @@ static int initialize_types(void) {
       Initialize our native types directly.
 
       Since we statically link the library code into the test harness,
-      we call the initialization functions directly rather than importing
-      the Python module (which would load a second copy of the code).
+      we run the library's own init over a module of our own rather than
+      importing the Python module (which would load a second copy of the
+      code). The init is the one PyInit_lib runs, so the suites exercise
+      the statics as the module path leaves them.
     */
 
-    /* Create a dummy module for initialization */
     static struct PyModuleDef testmod = {
         .m_base = PyModuleDef_HEAD_INIT,
         .m_name = "_koskari_test",
         .m_doc = "Test module for koskari types",
-        .m_size = -1,
+        .m_size = 0,
     };
 
     kos_lib_module = PyModule_Create(&testmod);
@@ -76,140 +77,11 @@ static int initialize_types(void) {
         return -1;
     }
 
-    /* Initialize compat first */
-    if (koskari_compat_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize compat\n");
-        return -1;
-    }
-
-    /* Initialize atom types (symbol, keyword) */
-    if (koskari_atom_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize atom types\n");
-        return -1;
-    }
-
-    /* Initialize the arena type */
-    if (koskari_arena_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize arena type\n");
-        return -1;
-    }
-
-    /* Initialize pair types (pair, nil) */
-    if (koskari_pair_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize pair types\n");
-        return -1;
-    }
-
-    /* Initialize ref types */
-    if (koskari_ref_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize ref types\n");
-        return -1;
-    }
-
-    /* Initialize namespace types */
-    if (koskari_namespace_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize namespace types\n");
-        return -1;
-    }
-
-    /* Initialize bytecode types */
-    if (koskari_bytecode_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize bytecode types\n");
-        return -1;
-    }
-
-    /* Initialize formals types */
-    if (koskari_formals_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize formals types\n");
-        return -1;
-    }
-
-    /* Initialize values types */
-    if (koskari_values_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize values types\n");
-        return -1;
-    }
-
-    /* Initialize stack types */
-    if (koskari_stack_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize stack types\n");
-        return -1;
-    }
-
-    /* Initialize dynchain types */
-    if (koskari_dynchain_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize dynchain types\n");
-        return -1;
-    }
-
-    /* Initialize domain types (must precede eval: KosContext_New uses KosDomain) */
-    if (koskari_domain_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize domain types\n");
-        return -1;
-    }
-
-    /* Initialize callable, sync, object (object needs both; Procedure
-       subclasses Demand and BUILD_CLASS demand-wraps namespaces) */
-    if (koskari_callable_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize callable\n");
-        return -1;
-    }
-    if (koskari_demand_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize sync\n");
-        return -1;
-    }
-    if (koskari_property_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize property\n");
-        return -1;
-    }
-    if (koskari_partial_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize partial\n");
-        return -1;
-    }
-    if (koskari_object_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize object\n");
-        return -1;
-    }
-
-    /* Initialize eval types */
-    if (koskari_eval_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize eval types\n");
-        return -1;
-    }
-
-    /* Initialize func types (Expression, FunctionSpec, Function) */
-    if (koskari_func_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize func types\n");
-        return -1;
-    }
-
-    /* Initialize coro types (Coroutine) */
-    if (koskari_coro_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize coro types\n");
-        return -1;
-    }
-
-    /* Initialize cont types (DelimitedContinuation, Continuation) */
-    if (koskari_cont_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize cont types\n");
-        return -1;
-    }
-
-    /* Initialize iter types (AsyncGenerator, etc.) */
-    if (koskari_iter_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize iter types\n");
-        return -1;
-    }
-
-    /* Initialize the KosIter drive (step awaitables, iterator adapters) */
-    if (koskari_iterate_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize iterate types\n");
-        return -1;
-    }
-
-    /* Initialize matcher types (matcher) */
-    if (koskari_matcher_init(kos_lib_module)) {
-        fprintf(stderr, "Failed to initialize matcher types\n");
+    if (koskari_lib_init(kos_lib_module)) {
+        fprintf(stderr, "Failed to initialize koskari.lib\n");
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+        }
         return -1;
     }
 
@@ -227,6 +99,14 @@ static void cleanup(void) {
         Py_XDECREF(kos_lib_module);
         kos_lib_module = NULL;
     }
+
+    /* The last exception a suite's handler caught is still the thread's
+       handled exception, holding its traceback and the frames injected
+       into it; release it and collect what it kept alive, so the leak
+       report at finalization shows our residue and not that state. */
+    PyErr_Clear();
+    PyErr_SetHandledException(NULL);
+    PyGC_Collect();
 
     if (Py_IsInitialized()) {
         Py_Finalize();
@@ -293,6 +173,8 @@ int main(int argc, char *argv[]) {
     run_resume_tests();
     run_breaker_tests();
     run_domain_tests();
+    /* last: it clears and rebuilds the statics every suite above used */
+    run_lifecycle_tests();
 
     /* Future units:
     run_tco_tests();

@@ -187,14 +187,22 @@ PyObject *KosSymbol_FromString(PyObject *name) {
    in a debug build's reference total, as the decref at interning
    balanced the dict's incref. An atom with no name was never
    interned (its constructor cleared the name when the table refused
-   it) and has no entry to drop.
+   it) and has no entry to drop. An atom that outlived its table, one
+   a module clear released, finds the current table mapping its name
+   to nothing or to a newer atom, and leaves that table alone.
 */
 static void atom_forget(PyObject *self, PyObject *intern) {
-  if (intern && KosInternedAtom_NAME(self)) {
-    Py_SET_REFCNT(self, 1);
-    Py_INCREF(self);
-    PyDict_DelItem(intern, KosInternedAtom_NAME(self));
+  PyObject *name = KosInternedAtom_NAME(self);
+
+  if (! intern || ! name)
+    return;
+  if (PyDict_GetItemWithError(intern, name) != self) {
+    PyErr_Clear();
+    return;
   }
+  Py_SET_REFCNT(self, 1);
+  Py_INCREF(self);
+  PyDict_DelItem(intern, name);
 }
 
 

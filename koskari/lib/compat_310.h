@@ -28,6 +28,20 @@
    attribute is absent with no error raised, -1 with an error set */
 #define PyObject_GetOptionalAttr _PyObject_LookupAttr
 
+/* PyErr_SetHandledException added in 3.11: the three-part setter it
+   replaced steals one reference per part */
+__attribute__((always_inline))
+static inline void PyErr_SetHandledException(PyObject *exc) {
+  if (! exc) {
+    PyErr_SetExcInfo(NULL, NULL, NULL);
+    return;
+  }
+  Py_INCREF(Py_TYPE(exc));
+  Py_INCREF(exc);
+  PyErr_SetExcInfo((PyObject *) Py_TYPE(exc), exc,
+                   PyException_GetTraceback(exc));
+}
+
 
 
 /* === The eval breaker === */

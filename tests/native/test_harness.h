@@ -181,6 +181,7 @@ int run_iter_request_tests(void);
 int run_resume_tests(void);
 int run_breaker_tests(void);
 int run_domain_tests(void);
+int run_lifecycle_tests(void);
 
 /* Future units:
 int run_tco_tests(void);

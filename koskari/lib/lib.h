@@ -103,6 +103,12 @@ struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
   Units can get the module dict via PyModule_GetDict(mod).
 */
 
+/** Call every unit init over mod: the process statics are created where
+    a clear left them empty and left alone where they stand, and the
+    module dict is filled. Re-runnable; PyInit_lib and a re-import both
+    call it. */
+int koskari_lib_init(PyObject *mod);
+
 /** Call all unit clear functions and clear the module dict. Use before
     releasing the module (e.g. in test harness teardown). */
 int koskari_lib_clear(PyObject *mod);
