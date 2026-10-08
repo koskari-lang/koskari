@@ -173,9 +173,23 @@ static int koskari_lib_init(PyObject *mod) {
 }
 
 
+/* The module object PyInit_lib made, whose statics these are. A
+   single-phase module has one set of statics for the process, while
+   each legacy subinterpreter that imports it holds its own module
+   object over them; only the owner's collection clears them. A host
+   that fills a module of its own, as the native test harness does,
+   names no owner and clears as it always did. Borrowed: the owner is
+   the module being cleared. */
+static PyObject *lib_owner = NULL;
+
+
 int koskari_lib_clear(PyObject *mod) {
   if (! mod)
     return -1;
+
+  if (lib_owner && mod != lib_owner)
+    return 0;
+  lib_owner = NULL;
 
   PyObject *const dict = PyModule_GetDict(mod);
   if (! dict)
@@ -307,6 +321,7 @@ PyMODINIT_FUNC PyInit_lib(void) {
     return NULL;
   }
 
+  lib_owner = mod;
   return mod;
 }
 

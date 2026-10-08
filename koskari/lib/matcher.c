@@ -2953,6 +2953,14 @@ int koskari_matcher_init(PyObject *mod) {
 int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(kos_matcher_extern_defaults);
+#if KOS_MATCHER_DEFAULTS_WATCHER
+  /* the watcher id is the interpreter's; a later initialisation
+     registers afresh instead of watching through a stale id */
+  if (kos_matcher_defaults_watcher >= 0) {
+    PyDict_ClearWatcher(kos_matcher_defaults_watcher);
+    kos_matcher_defaults_watcher = -1;
+  }
+#endif
   Py_CLEAR(kos_match_args_name);
   Py_CLEAR(kos_class_name);
   Py_CLEAR(kos_object_class_descr);
