@@ -257,6 +257,42 @@ static int kos_asyncio_shutdown_loop(PyObject *loop) {
 /* === unit methods === */
 
 
+/* The asyncio callables the driver uses, looked up on the first drive
+   rather than at init so a process that never drives a loop never
+   imports asyncio. A clear releases them and the next drive looks
+   them up again. */
+static int kos_asyncio_lookup(void) {
+
+  PyObject *asyncio;
+
+  if (asyncio_new_event_loop)
+    return 0;
+
+  asyncio = PyImport_ImportModule("asyncio");
+  if (! asyncio)
+    return -1;
+
+  asyncio_new_event_loop = kos_asyncio_get_callable(asyncio, "new_event_loop");
+  asyncio_set_event_loop = kos_asyncio_get_callable(asyncio, "set_event_loop");
+  asyncio_all_tasks = kos_asyncio_get_callable(asyncio, "all_tasks");
+  asyncio_gather = kos_asyncio_get_callable(asyncio, "gather");
+
+  Py_DECREF(asyncio);
+
+  if (! asyncio_new_event_loop ||
+      ! asyncio_set_event_loop ||
+      ! asyncio_all_tasks ||
+      ! asyncio_gather) {
+    Py_CLEAR(asyncio_new_event_loop);
+    Py_CLEAR(asyncio_set_event_loop);
+    Py_CLEAR(asyncio_all_tasks);
+    Py_CLEAR(asyncio_gather);
+    return -1;
+  }
+  return 0;
+}
+
+
 PyObject *kos_drive_async_loop(PyObject *coro) {
 
   PyObject *result = NULL;
@@ -267,11 +303,8 @@ PyObject *kos_drive_async_loop(PyObject *coro) {
     return NULL;
   }
 
-  if (! asyncio_new_event_loop) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "asyncio loop driver is not initialized");
+  if (kos_asyncio_lookup() < 0)
     return NULL;
-  }
 
   loop = KOS_ASYNCIO_NEW_EVENT_LOOP();
   if (! loop)
@@ -339,8 +372,6 @@ static PyMethodDef async_loop_methods[] = {
 
 int koskari_async_loop_init(PyObject *mod) {
 
-  PyObject *asyncio = NULL;
-
   if (! mod)
     return -1;
 
@@ -349,25 +380,6 @@ int koskari_async_loop_init(PyObject *mod) {
   STR_CONST(str_shutdown_asyncgens, "shutdown_asyncgens");
   STR_CONST(str_shutdown_default_executor, "shutdown_default_executor");
   STR_CONST(str_close, "close");
-
-  asyncio = PyImport_ImportModule("asyncio");
-  if (! asyncio)
-    return -1;
-
-  asyncio_new_event_loop = kos_asyncio_get_callable(asyncio, "new_event_loop");
-  asyncio_set_event_loop = kos_asyncio_get_callable(asyncio, "set_event_loop");
-  asyncio_all_tasks = kos_asyncio_get_callable(asyncio, "all_tasks");
-  asyncio_gather = kos_asyncio_get_callable(asyncio, "gather");
-
-  Py_DECREF(asyncio);
-
-  if (! asyncio_new_event_loop ||
-      ! asyncio_set_event_loop ||
-      ! asyncio_all_tasks ||
-      ! asyncio_gather) {
-    koskari_async_loop_clear(mod);
-    return -1;
-  }
 
   for (PyMethodDef *mdef = async_loop_methods; mdef->ml_name; mdef++) {
     PyObject *func = PyCFunction_New(mdef, mod);
