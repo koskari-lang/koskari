@@ -1137,7 +1137,18 @@ static PyObject *memo_ref_m_deref(PyObject *self) {
     PyObject *fn = KosMemoizedRef_GETFN(self);
     if (fn) {
       val = PyObject_CallObject(fn, NULL);
-      KosMemoizedRef_VALUE(self) = val;
+      if (! val)
+        return NULL;
+
+      /* the getter may have dereferenced this ref itself, storing a
+         value in the inner call; that one stands, and this result is
+         released in its favour */
+      if (KosMemoizedRef_VALUE(self)) {
+        Py_DECREF(val);
+        val = KosMemoizedRef_VALUE(self);
+      } else {
+        KosMemoizedRef_VALUE(self) = val;
+      }
 
     } else {
       PyErr_Format(PyExc_AttributeError,

@@ -18,7 +18,9 @@ Unit tests for reference types
 :license: GNU General Public License v3
 """
 
+import gc
 import unittest
+import weakref
 from itertools import count
 from unittest.mock import Mock
 
@@ -590,6 +592,37 @@ class TestMemoizedRef(unittest.IsolatedAsyncioTestCase):
         """MemoizedRef is empty before first deref"""
         r = MemoizedRef(None, lambda: 42)
         self.assertTrue(r.empty)
+
+    async def test_reentrant_getter_keeps_the_first_value(self):
+        """
+        A getter that derefs its own ref stores a value in the inner
+        call; the outer call keeps that one and releases its own
+        """
+
+        class Value:
+            pass
+
+        made = []
+        holder = []
+
+        def getter():
+            value = Value()
+            made.append(weakref.ref(value))
+            if len(made) == 1:
+                holder.append(r.deref())
+            return value
+
+        r = MemoizedRef(None, getter)
+        outer = r.deref()
+        self.assertEqual(2, len(made))
+        self.assertIs(outer, holder[0])
+        self.assertIs(outer, r.deref())
+
+        del outer
+        holder.clear()
+        del r
+        gc.collect()
+        self.assertEqual([None, None], [w() for w in made])
 
     async def test_deref_calls_getfn_once(self):
         """deref() calls getfn only once and caches result"""
