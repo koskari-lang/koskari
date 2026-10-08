@@ -407,6 +407,48 @@ class TestLayoutLineEvents(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+class TestQuoteBlockHeaderScan(IsolatedAsyncioTestCase):
+    """
+    The scan that decides whether a quote-prefixed line opens a block
+    reads past string literals and bracketed comments on the header
+    """
+
+    async def test_string_on_the_header_does_not_hide_the_block_colon(self):
+        for literal in ('"s:"', '"("', '"x ; y"'):
+            with self.subTest(literal=literal):
+                src = f"'a {literal} :\n  d\n"
+                expected = cons(
+                    symbol('quote'),
+                    cons(keyword('#block'),
+                         cons(symbol('a'), literal[1:-1], nil),
+                         cons(symbol('d'), nil),
+                         nil),
+                    nil)
+                self.assertEqual(read_layout(src), expected)
+
+
+    async def test_colon_inside_a_triple_string_is_not_structural(self):
+        src = "'a \"\"\"s:\n\"\"\" d\n"
+        expected = cons(
+            cons(symbol('quote'), symbol('a'), nil),
+            "s:\n",
+            symbol('d'),
+            nil)
+        self.assertEqual(read_layout(src), expected)
+
+
+    async def test_bracketed_comment_on_the_header_does_not_count(self):
+        src = "'a (x ; )\n   y) :\n  d\n"
+        expected = cons(
+            symbol('quote'),
+            cons(keyword('#block'),
+                 cons(symbol('a'), cons(symbol('x'), symbol('y'), nil), nil),
+                 cons(symbol('d'), nil),
+                 nil),
+            nil)
+        self.assertEqual(read_layout(src), expected)
+
+
 class TestLayoutLineOrientedRead(IsolatedAsyncioTestCase):
 
     async def test_one_line_pair_plus_paren_folds_like_cons_of_parts(self):

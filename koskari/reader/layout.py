@@ -32,7 +32,7 @@ import warnings
 from contextlib import contextmanager
 from functools import partial
 
-from ..exceptions import LayoutError
+from ..exceptions import LayoutError, ReaderError
 from ..lib import Module, cons, nil, symbol
 from ..types import get_position, is_nil, is_pair
 from .layouts import apply_layout, apply_layouts, find_layout, is_block
@@ -511,7 +511,7 @@ class LayoutReader(Reader):
         nxt = stream.peek(2)
         if len(nxt) < 2 or nxt[0] not in "'`" or nxt[1] in '([{':
             return False
-        return self._structural_colon_before_line_end(stream)
+        return self._structural_colon_before_line_end(stream, prefix=1)
 
 
     def _layout_syntax_quote_block_reader_macro(self, stream, c):
@@ -633,35 +633,34 @@ class LayoutReader(Reader):
             *(self.fold_line(entry) for entry in entries.unpack()), nil)
 
 
-    def _structural_colon_before_line_end(self, stream):
+    def _structural_colon_before_line_end(self, stream, prefix=0):
         """
         True if the current layout line contains a structural header colon.
 
-        Speculatively scans from the stream position until a structural
-        header ``:`` is found or the logical line ends (a newline or comment
-        at delimiter depth 0), tracking delimiter depth. Newlines enclosed in
-        brackets do not end the scan. The stream is left unchanged.
+        Reads the header forms speculatively, through the same macro table
+        and header mode the block header read uses, until a structural
+        ``:`` or the logical line end, so strings, comments and brackets
+        on the header count exactly as that read counts them. A reader
+        error on the way, an unterminated string for one, is no block. The
+        stream is left unchanged.
 
         :param stream: the source stream
+        :param prefix: characters of block prefix still ahead of the head,
+            stepped over so the read starts at the head form
         :return: whether a structural ``:`` exists on this line
         """
 
-        with stream.speculate():
-            depth = 0
-            while True:
-                stream.read_until_chars("([{)]}:;\r\n")
-                ch = stream.read(1)
-                if not ch:
-                    return False
-                if depth == 0 and ch in ';\r\n':
-                    return False
-                if ch in '([{':
-                    depth += 1
-                elif ch in ')]}':
-                    depth -= 1
-                elif ch == ':' and depth == 0:
-                    if self._rest_after_colon_is_structural(stream.peek_line()):
-                        return True
+        dedented = stream.dedented
+        try:
+            with stream.speculate():
+                if prefix:
+                    stream.read(prefix)
+                _args, found_colon = self._read_header_args(stream)
+                return found_colon
+        except ReaderError:
+            return False
+        finally:
+            stream.dedented = dedented
 
 
     def _read_header_form(self, stream):
