@@ -2838,11 +2838,11 @@ static int namespace_spec_fast_slot_limit(
    Called after emit when ``code`` and ``extra`` are fully materialized so we
    can validate both scalar FAST opcodes and FAST slots embedded in EXTRA rows
    (CALL_FAST-style operands). Mirrors ``Compiler.convert_fast``: walk the
-   instruction stream in order, track pending ``NamespaceSpec`` from ``CONST``
-   (for ``PUSH_COLLECT`` fallback), read ``PUSH_NS`` nspec from the EXTRA row,
-   push/pop slot limits on ``PUSH_NS`` / ``PUSH_COLLECT`` / ``POP_NS`` /
-   ``POP_COLLECT``. The active limit is the root ``Code`` NamespaceSpec when
-   the namespace stack is empty, else the innermost pushed extent.
+   instruction stream in order, read the ``PUSH_NS`` nspec from the EXTRA row
+   and the ``PUSH_COLLECT`` nspec from its operand, push/pop slot limits on
+   ``PUSH_NS`` / ``PUSH_COLLECT`` / ``POP_NS`` / ``POP_COLLECT``. The active
+   limit is the root ``Code`` NamespaceSpec when the namespace stack is
+   empty, else the innermost pushed extent.
 
    :param self: partially built KosCode (needs ``namespace_spec`` set)
    :param code: emitted instruction array, length ``code_len``
@@ -2871,8 +2871,6 @@ static int validate_fast_slots(
 
   uint32_t ns_stack[DERIVE_EXTENT_STACK_MAX];
   int depth = 0;
-  /* Borrowed ref: last CONST NamespaceSpec (for PUSH_COLLECT fallback) */
-  PyObject *pending = NULL;
 
   for (uint32_t i = 0; i < code_len; i++) {
     KosOpCode op = (KosOpCode) code[i].op;
@@ -2936,17 +2934,7 @@ static int validate_fast_slots(
     }
 
     /* Advance namespace stack (mirror Compiler.convert_fast) */
-    if (op == KOS_OP_CONST && st == KOSTYLE_CONST) {
-      if (code[i].arg >= cpool_len) {
-        PyErr_SetString(PyExc_RuntimeError,
-                        "CONST operand index out of bounds");
-        return -1;
-      }
-      PyObject *val = cpool[code[i].arg];
-      if (KosNamespaceSpec_CheckExact(val)) {
-        pending = val;
-      }
-    } else if (op == KOS_OP_PUSH_NS) {
+    if (op == KOS_OP_PUSH_NS) {
       /* Nspec cpool index is extra row a0 (schema CONST, CONST, NOARG, NOARG). */
       uint16_t eidx = code[i].arg;
       if (eidx >= extra_len) {
@@ -2965,9 +2953,10 @@ static int validate_fast_slots(
         }
         ns_stack[depth++] = lim;
       }
-      pending = NULL;
     } else if (op == KOS_OP_PUSH_COLLECT) {
-      /* Operand is cpool index of NamespaceSpec, or fall back to pending */
+      /* Operand is the cpool index of the NamespaceSpec; the handler
+         raises on anything else before the body runs, so a non-spec
+         operand pushes no limit here. */
       PyObject *ns = NULL;
       if (code[i].arg < cpool_len) {
         PyObject *v = cpool[code[i].arg];
@@ -2975,10 +2964,7 @@ static int validate_fast_slots(
           ns = v;
         }
       }
-      if (! ns) {
-        ns = pending;
-      }
-      if (ns && KosNamespaceSpec_CheckExact(ns)) {
+      if (ns) {
         uint32_t lim = 0;
         if (namespace_spec_fast_slot_limit(ns, &lim)) {
           return -1;
@@ -2989,7 +2975,6 @@ static int validate_fast_slots(
         }
         ns_stack[depth++] = lim;
       }
-      pending = NULL;
     } else if (op == KOS_OP_POP_NS || op == KOS_OP_POP_COLLECT) {
       /* Do not error on underflow; extent validation reports POP without PUSH */
       if (depth > 0) {
