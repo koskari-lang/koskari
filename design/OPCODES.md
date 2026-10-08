@@ -297,7 +297,7 @@ When adding or changing an opcode:
 - [17. Calls](#17-calls) — CALL, CALL_NAMES, CALL_STAR, CALL_ATTR*, TAIL_*
 - [18. Block control](#18-block-control) — PUSH_FOREACH, PUSH_LOOP, PUSH_NS, PUSH_COLLECT, PUSH_TRY, PUSH_FINALLY, CLEAR_*, POP_*
 - [18.1 Context managers (with / dyn-with)](#181-context-managers-with--dyn-with) — PUSH_WITH, POP_WITH, PUSH_DYN_WITH, POP_DYN_WITH
-- [19. Object protocol](#19-object-protocol) — OBJECT_COMPARE family, OBJECT_OPERAND, OBJECT_INPLACE, and the general OBJECT_* opcodes
+- [19. Object protocol](#19-object-protocol) — OBJECT_COMPARE family, OBJECT_OPERAND and its named-operand fusions, OBJECT_INPLACE, and the general OBJECT_* opcodes
 - [20. Delimited continuations](#20-delimited-continuations) — PUSH_PROMPT, PUSH_SHIFT, POP_SHIFT, POP_PROMPT
 - [21. Undelimited continuations (call/cc)](#21-undelimited-continuations-callcc) — PUSH_CC, POP_CC, CAPTURE_CC
 - [22. Dynamic wind](#22-dynamic-wind) — PUSH_WIND, POP_WIND
@@ -318,9 +318,6 @@ When adding or changing an opcode:
 | UNPACK_VAR | EXTRA | STORE seq[0], seq[1] into two VAR names | [§4](#kos_op_unpack_var) |
 | UNPACK_FAST | EXTRA | STORE seq[0], seq[1] into two fast slots | [§4](#kos_op_unpack_fast) |
 | CONST | CONST | Push constant from pool | [§5](#kos_op_const) |
-| CONST2 | EXTRA | Push two constants in row order | [§5](#kos_op_const2) |
-| CONST3 | EXTRA | Push three constants in row order | [§5](#kos_op_const3) |
-| CONST4 | EXTRA | Push four constants in row order | [§5](#kos_op_const4) |
 | CAR | COUNT | Apply car **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_car) |
 | CDR | COUNT | Apply cdr **n** times (**n** ≥ 1); **n** = 0 invalid | [§5.1](#kos_op_cdr) |
 | CONS | COUNT | Pop N values; push (e_0 . ... . e_{N-1}) | [§5.1](#kos_op_cons) |
@@ -330,14 +327,21 @@ When adding or changing an opcode:
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [§5.1](#kos_op_pair_splice) |
 | NILP | NOARG | Pop TOS; push True when it is an empty-list singleton | [§5.1](#kos_op_nilp) |
 | AWAIT | COUNT | Suspend on awaitable; resume with value | [§6](#kos_op_await) |
+| CONST2 | EXTRA | Push two constants in row order | [§5](#kos_op_const2) |
+| CONST3 | EXTRA | Push three constants in row order | [§5](#kos_op_const3) |
+| CONST4 | EXTRA | Push four constants in row order | [§5](#kos_op_const4) |
 | BREAK | COUNT | Jump to loop break target | [§6](#kos_op_break) |
 | CONTINUE | COUNT | Jump to loop continue target | [§6](#kos_op_continue) |
 | RAISE | COUNT | Pop N, raise exception | [§6](#kos_op_raise) |
 | RETURN | COUNT | Pop return value; threads the plain, extent, and resume-parent shapes itself, else `EVAL_RETURN(val)` → **`eval_event_return`** (unwind/pop/delivery); **`KOS_RES_RETURN`** at driver boundary | [§6](#kos_op_return) |
 | YIELD | COUNT | Pop value; `EVAL_YIELD(val)` → **`apply_kos_op_result`** → **`eval_event_yield`** (walk/freeze, optional boundary deliver) | [§6](#kos_op_yield) |
+| RETURN_CONST | CONST | Return the pooled constant; the `CONST` + `RETURN 1` fusion | [§6](#kos_op_return_const) |
+| YIELD_CONST | CONST | Yield the pooled constant; the `CONST` + `YIELD 1` fusion | [§6](#kos_op_yield_const) |
 | YIELD_FROM | NOARG | Delegate to sub-iterator/gen; PC-stable; send/throw/close | [§6](#kos_op_yield_from) |
 | ITER_NEXT | LABEL | Next from region iterator; else jump | [§7](#kos_op_iter_next) |
 | OBJECT_NEXT | COUNT | Stack-based next (1 or 2 args) | [§7](#kos_op_object_next) |
+| VAR_NEXT | EXTRA | Fused VAR + OBJECT_NEXT: step the named iterator; count 2 pops a default for exhaustion | [§12](#kos_op_var_next) |
+| FAST_NEXT | EXTRA | As VAR_NEXT, with the iterator loaded from its fast slot | [§13](#kos_op_fast_next) |
 | JUMP | LABEL | Unconditional jump to pc | [§8](#kos_op_jump) |
 | JUMP_FALSE | LABEL | Jump if TOS false | [§8](#kos_op_jump_false) |
 | JUMP_TRUE | LABEL | Jump if TOS true | [§8](#kos_op_jump_true) |
@@ -369,40 +373,21 @@ When adding or changing an opcode:
 | VAR3 | EXTRA | Load three names, push in row order | [§12](#kos_op_var3) |
 | VAR4 | EXTRA | Load four names, push in row order | [§12](#kos_op_var4) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
+| VAR_CLEAR | VAR | Delete the name from the namespace; no stack effect | [§12](#kos_op_var_clear) |
 | VAR_TAKE | VAR | Deref name, clear binding, push value (errors if empty) | [§12](#kos_op_var_take) |
+| VAR_REF | VAR | Push a reference to the named variable | [§12](#kos_op_var_ref) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
 | VAR_STORE_CONST | EXTRA | STORE: write constant into name (no stack) | [§12](#kos_op_var_store_const) |
-| FAST | FASTVAR | Load from slot | [§13](#kos_op_fast) |
-| FAST2 | EXTRA | Load two slots, push in row order | [§13](#kos_op_fast2) |
-| FAST3 | EXTRA | Load three slots, push in row order | [§13](#kos_op_fast3) |
-| FAST4 | EXTRA | Load four slots, push in row order | [§13](#kos_op_fast4) |
-| FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
-| FAST_TAKE | FASTVAR | Deref slot, clear, push value (errors if empty) | [§13](#kos_op_fast_take) |
-| FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
-| FAST_STORE_CONST | EXTRA | STORE: write constant into slot (no stack) | [§13](#kos_op_fast_store_const) |
-| ATTR | CONST | Get attribute | [§14](#kos_op_attr) |
-| ATTR_TAKE | CONST | Get attribute, delete it, push value | [§14](#kos_op_attr_take) |
-| ATTR_STORE | CONST | Set attribute | [§14](#kos_op_attr_store) |
-| ITEM | NOARG | Get item; object on the stack, key on the stack | [§15](#kos_op_item) |
-| ITEM_CLEAR | NOARG | Delete item; object on the stack, key on the stack | [§15](#kos_op_item_clear) |
-| ITEM_TAKE | NOARG | Take item; object on the stack, key on the stack | [§15](#kos_op_item_take) |
-| ITEM_REF | NOARG | Item reference; object on the stack, key on the stack | [§15](#kos_op_item_ref) |
-| ITEM_STORE | NOARG | Set item; object on the stack, key on the stack | [§15](#kos_op_item_store) |
-| ITEM_STORE_CONST | CONST | Set item to a constant; object on the stack, key on the stack | [§15](#kos_op_item_store_const) |
+| VAR_INPLACE | EXTRA | Augmented assignment through the namespace: deref the name, reduce with the popped rhs, store back | [§12](#kos_op_var_inplace) |
+| VAR_INPLACE_CONST | EXTRA | Augmented assignment through the namespace with a constant rhs; no stack effect | [§12](#kos_op_var_inplace_const) |
+| VAR_ATTR | EXTRA | Get attribute; object loaded from the namespace by name | [§12](#kos_op_var_attr) |
+| VAR_ATTR_STORE | EXTRA | Set attribute; object from the namespace | [§12](#kos_op_var_attr_store) |
+| VAR_ATTR_CLEAR | EXTRA | Delete attribute; object from the namespace | [§12](#kos_op_var_attr_clear) |
+| VAR_ATTR_TAKE | EXTRA | Get attribute, delete it, push the value; object from the namespace | [§12](#kos_op_var_attr_take) |
+| VAR_ATTR_REF | EXTRA | Push attribute reference; object from the namespace | [§12](#kos_op_var_attr_ref) |
+| VAR_ATTR_INPLACE | EXTRA | Reduce obj.attr in place with the count values and store it back; object from the namespace | [§12](#kos_op_var_attr_inplace) |
 | ITEM_STORE_VAR | VAR | Set item; object on the stack, key on the stack, value by name | [§12](#kos_op_item_store_var) |
-| ITEM_STORE_FAST | FASTVAR | Set item; object on the stack, key on the stack, value from a fast slot | [§13](#kos_op_item_store_fast) |
-| ITEM_INPLACE | OPCOUNT | Reduce item in place; object on the stack, key on the stack | [§15](#kos_op_item_inplace) |
-| ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key on the stack | [§15](#kos_op_item_inplace_const) |
-| ITEM_CONST | CONST | Get item; object on the stack, constant key | [§15](#kos_op_item_const) |
-| ITEM_CONST_CLEAR | CONST | Delete item; object on the stack, constant key | [§15](#kos_op_item_const_clear) |
-| ITEM_CONST_TAKE | CONST | Take item; object on the stack, constant key | [§15](#kos_op_item_const_take) |
-| ITEM_CONST_REF | CONST | Item reference; object on the stack, constant key | [§15](#kos_op_item_const_ref) |
-| ITEM_CONST_STORE | CONST | Set item; object on the stack, constant key | [§15](#kos_op_item_const_store) |
-| ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, constant key | [§15](#kos_op_item_const_store_const) |
 | ITEM_CONST_STORE_VAR | EXTRA | Set item; object on the stack, constant key, value by name | [§12](#kos_op_item_const_store_var) |
-| ITEM_CONST_STORE_FAST | EXTRA | Set item; object on the stack, constant key, value from a fast slot | [§13](#kos_op_item_const_store_fast) |
-| ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object on the stack, constant key | [§15](#kos_op_item_const_inplace) |
-| ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, constant key | [§15](#kos_op_item_const_inplace_const) |
 | ITEM_VAR | VAR | Get item; object on the stack, key by name | [§12](#kos_op_item_var) |
 | ITEM_VAR_CLEAR | VAR | Delete item; object on the stack, key by name | [§12](#kos_op_item_var_clear) |
 | ITEM_VAR_TAKE | VAR | Take item; object on the stack, key by name | [§12](#kos_op_item_var_take) |
@@ -412,15 +397,6 @@ When adding or changing an opcode:
 | ITEM_VAR_STORE_VAR | EXTRA | Set item; object on the stack, key by name, value by name | [§12](#kos_op_item_var_store_var) |
 | ITEM_VAR_INPLACE | EXTRA | Reduce item in place; object on the stack, key by name | [§12](#kos_op_item_var_inplace) |
 | ITEM_VAR_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key by name | [§12](#kos_op_item_var_inplace_const) |
-| ITEM_FAST | FASTVAR | Get item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast) |
-| ITEM_FAST_CLEAR | FASTVAR | Delete item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_clear) |
-| ITEM_FAST_TAKE | FASTVAR | Take item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_take) |
-| ITEM_FAST_REF | FASTVAR | Item reference; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_ref) |
-| ITEM_FAST_STORE | FASTVAR | Set item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_store) |
-| ITEM_FAST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_store_const) |
-| ITEM_FAST_STORE_FAST | EXTRA | Set item; object on the stack, key from a fast slot, value from a fast slot | [§13](#kos_op_item_fast_store_fast) |
-| ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_inplace) |
-| ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_inplace_const) |
 | VAR_ITEM | VAR | Get item; object by name, key on the stack | [§12](#kos_op_var_item) |
 | VAR_ITEM_CLEAR | VAR | Delete item; object by name, key on the stack | [§12](#kos_op_var_item_clear) |
 | VAR_ITEM_TAKE | VAR | Take item; object by name, key on the stack | [§12](#kos_op_var_item_take) |
@@ -448,6 +424,35 @@ When adding or changing an opcode:
 | VAR_ITEM_VAR_STORE_VAR | EXTRA | Set item; object by name, key by name, value by name | [§12](#kos_op_var_item_var_store_var) |
 | VAR_ITEM_VAR_INPLACE | EXTRA | Reduce item in place; object by name, key by name | [§12](#kos_op_var_item_var_inplace) |
 | VAR_ITEM_VAR_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object by name, key by name | [§12](#kos_op_var_item_var_inplace_const) |
+| FAST | FASTVAR | Load from slot | [§13](#kos_op_fast) |
+| FAST2 | EXTRA | Load two slots, push in row order | [§13](#kos_op_fast2) |
+| FAST3 | EXTRA | Load three slots, push in row order | [§13](#kos_op_fast3) |
+| FAST4 | EXTRA | Load four slots, push in row order | [§13](#kos_op_fast4) |
+| FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
+| FAST_CLEAR | FASTVAR | Clear the slot; no stack effect | [§13](#kos_op_fast_clear) |
+| FAST_TAKE | FASTVAR | Deref slot, clear, push value (errors if empty) | [§13](#kos_op_fast_take) |
+| FAST_REF | FASTVAR | Push a reference to the slot | [§13](#kos_op_fast_ref) |
+| FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
+| FAST_STORE_CONST | EXTRA | STORE: write constant into slot (no stack) | [§13](#kos_op_fast_store_const) |
+| FAST_INPLACE | EXTRA | Augmented assignment on a slot: deref, reduce with the popped rhs, store back | [§13](#kos_op_fast_inplace) |
+| FAST_INPLACE_CONST | EXTRA | Augmented assignment on a slot with a constant rhs; no stack effect | [§13](#kos_op_fast_inplace_const) |
+| FAST_ATTR | EXTRA | Get attribute; object from a fast slot | [§13](#kos_op_fast_attr) |
+| FAST_ATTR_STORE | EXTRA | Set attribute; object from a fast slot | [§13](#kos_op_fast_attr_store) |
+| FAST_ATTR_CLEAR | EXTRA | Delete attribute; object from a fast slot | [§13](#kos_op_fast_attr_clear) |
+| FAST_ATTR_TAKE | EXTRA | Get attribute, delete it, push the value; object from a fast slot | [§13](#kos_op_fast_attr_take) |
+| FAST_ATTR_REF | EXTRA | Push attribute reference; object from a fast slot | [§13](#kos_op_fast_attr_ref) |
+| FAST_ATTR_INPLACE | EXTRA | Reduce obj.attr in place with the count values and store it back; object from a fast slot | [§13](#kos_op_fast_attr_inplace) |
+| ITEM_STORE_FAST | FASTVAR | Set item; object on the stack, key on the stack, value from a fast slot | [§13](#kos_op_item_store_fast) |
+| ITEM_CONST_STORE_FAST | EXTRA | Set item; object on the stack, constant key, value from a fast slot | [§13](#kos_op_item_const_store_fast) |
+| ITEM_FAST | FASTVAR | Get item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast) |
+| ITEM_FAST_CLEAR | FASTVAR | Delete item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_clear) |
+| ITEM_FAST_TAKE | FASTVAR | Take item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_take) |
+| ITEM_FAST_REF | FASTVAR | Item reference; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_ref) |
+| ITEM_FAST_STORE | FASTVAR | Set item; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_store) |
+| ITEM_FAST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_store_const) |
+| ITEM_FAST_STORE_FAST | EXTRA | Set item; object on the stack, key from a fast slot, value from a fast slot | [§13](#kos_op_item_fast_store_fast) |
+| ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_inplace) |
+| ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key from a fast slot | [§13](#kos_op_item_fast_inplace_const) |
 | FAST_ITEM | FASTVAR | Get item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item) |
 | FAST_ITEM_CLEAR | FASTVAR | Delete item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_clear) |
 | FAST_ITEM_TAKE | FASTVAR | Take item; object from a fast slot, key on the stack | [§13](#kos_op_fast_item_take) |
@@ -475,8 +480,43 @@ When adding or changing an opcode:
 | FAST_ITEM_FAST_STORE_FAST | EXTRA | Set item; object from a fast slot, key from a fast slot, value from a fast slot | [§13](#kos_op_fast_item_fast_store_fast) |
 | FAST_ITEM_FAST_INPLACE | EXTRA | Reduce item in place; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_inplace) |
 | FAST_ITEM_FAST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object from a fast slot, key from a fast slot | [§13](#kos_op_fast_item_fast_inplace_const) |
+| ATTR | CONST | Get attribute | [§14](#kos_op_attr) |
+| ATTR_STORE | CONST | Set attribute | [§14](#kos_op_attr_store) |
+| ATTR_CLEAR | CONST | Delete attribute | [§14](#kos_op_attr_clear) |
+| ATTR_TAKE | CONST | Get attribute, delete it, push value | [§14](#kos_op_attr_take) |
+| ATTR_REF | CONST | Push attribute reference | [§14](#kos_op_attr_ref) |
+| ATTR_INPLACE | EXTRA | Reduce obj.attr in place with the count values and store it back; pushes nothing | [§14](#kos_op_attr_inplace) |
+| ITEM | NOARG | Get item; object on the stack, key on the stack | [§15](#kos_op_item) |
+| ITEM_CLEAR | NOARG | Delete item; object on the stack, key on the stack | [§15](#kos_op_item_clear) |
+| ITEM_TAKE | NOARG | Take item; object on the stack, key on the stack | [§15](#kos_op_item_take) |
+| ITEM_REF | NOARG | Item reference; object on the stack, key on the stack | [§15](#kos_op_item_ref) |
+| ITEM_STORE | NOARG | Set item; object on the stack, key on the stack | [§15](#kos_op_item_store) |
+| ITEM_STORE_CONST | CONST | Set item to a constant; object on the stack, key on the stack | [§15](#kos_op_item_store_const) |
+| ITEM_INPLACE | OPCOUNT | Reduce item in place; object on the stack, key on the stack | [§15](#kos_op_item_inplace) |
+| ITEM_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, key on the stack | [§15](#kos_op_item_inplace_const) |
+| ITEM_CONST | CONST | Get item; object on the stack, constant key | [§15](#kos_op_item_const) |
+| ITEM_CONST_CLEAR | CONST | Delete item; object on the stack, constant key | [§15](#kos_op_item_const_clear) |
+| ITEM_CONST_TAKE | CONST | Take item; object on the stack, constant key | [§15](#kos_op_item_const_take) |
+| ITEM_CONST_REF | CONST | Item reference; object on the stack, constant key | [§15](#kos_op_item_const_ref) |
+| ITEM_CONST_STORE | CONST | Set item; object on the stack, constant key | [§15](#kos_op_item_const_store) |
+| ITEM_CONST_STORE_CONST | EXTRA | Set item to a constant; object on the stack, constant key | [§15](#kos_op_item_const_store_const) |
+| ITEM_CONST_INPLACE | EXTRA | Reduce item in place; object on the stack, constant key | [§15](#kos_op_item_const_inplace) |
+| ITEM_CONST_INPLACE_CONST | EXTRA | Reduce item in place by a constant; object on the stack, constant key | [§15](#kos_op_item_const_inplace_const) |
 | DEREF | NOARG | Pop Ref, call ref.deref(), push result | [§15.1](#kos_op_deref) |
+| BUILD_ARGS | COUNT | Pop N elements and push a tuple of them | [§16](#kos_op_build_args) |
+| BUILD_LIST | COUNT | Pop N elements into a new list and push it | [§16](#kos_op_build_list) |
+| BUILD_LIST_CONST | CONST | Push a fresh list built from the pooled sequence | [§16](#kos_op_build_list_const) |
+| VAR_LIST_APPEND | VAR | Append TOS to the list bound to the named variable, in place | [§16](#kos_op_var_list_append) |
+| FAST_LIST_APPEND | FASTVAR | Fast-slot form of VAR_LIST_APPEND | [§16](#kos_op_fast_list_append) |
+| BUILD_LIST_APPEND | COUNT | Append the top N values to the list beneath them, in place; leave the list | [§16](#kos_op_build_list_append) |
+| BUILD_LIST_APPEND_CONST | CONST | Append the pooled value to the TOS list, in place | [§16](#kos_op_build_list_append_const) |
+| BUILD_LIST_EXTEND | NOARG | Extend the list in place from the TOS iterable; leave the list | [§16](#kos_op_build_list_extend) |
+| BUILD_LIST_EXTEND_CONST | CONST | Extend the TOS list in place from the pooled sequence | [§16](#kos_op_build_list_extend_const) |
 | BUILD_FUNCTION | EXTRA | Build function from spec, with keyword defaults and annotations from names tuples | [§16](#kos_op_build_function) |
+| BUILD_KWDS | PAIR_COUNT | Pop 2N elements as key/value pairs and push a dict | [§16](#kos_op_build_kwds) |
+| BUILD_KWDS_NAMES | CONST | Pop N values, pair them with the pooled names tuple, push a dict | [§16](#kos_op_build_kwds_names) |
+| COMBINE_ARGS | COUNT | Concatenate the M sequences into a single tuple | [§16](#kos_op_combine_args) |
+| COMBINE_KWDS | COUNT | Merge the M dicts, later entries winning on a key clash | [§16](#kos_op_combine_kwds) |
 | CALL | COUNT | Call with N positional args | [§17](#kos_op_call) |
 | CALL_NAMES | COUNT | Call with keyword names on stack | [§17](#kos_op_call_names) |
 | CALL_STAR | STAR | Call with *args and/or **kwargs | [§17](#kos_op_call_star) |
@@ -514,20 +554,74 @@ When adding or changing an opcode:
 | TAIL_CALL_FAST_ATTR_NAMES | EXTRA | Tail call obj.name with keyword args; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_names) |
 | TAIL_CALL_FAST_ATTR_STAR | EXTRA | Tail call obj.name with *args/**kwargs; obj from fast slot | [§17](#kos_op_tail_call_fast_attr_star) |
 | PUSH_FOREACH | NOARG | Push foreach region; break target from extent table | [§18](#kos_op_push_foreach) |
-| PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
-| POP_FOREACH | NOARG | Pop foreach region; push loop result | [§18](#kos_op_pop_foreach) |
-| POP_LOOP | NOARG | Pop loop region; push loop result | [§18](#kos_op_pop_loop) |
-| CLEAR_LOOP | NOARG | Disable top LOOP region (before POP_LOOP) | [§18](#kos_op_clear_loop) |
-| CLEAR_FOREACH | NOARG | Disable top FOREACH region (before POP_FOREACH) | [§18](#kos_op_clear_foreach) |
-| PUSH_NS | EXTRA | Push namespace scope (nspec + names in extra row) | [§18](#kos_op_push_ns) |
+| PUSH_WITH | CONST | Pop the manager, call enter, bind the result, push a single-shot WITH node and a fresh segment | [§18](#kos_op_push_with) |
+| POP_WITH | NOARG | Call exit, pop the owned segment and the node, push None | [§18](#kos_op_pop_with) |
+| PUSH_DYN_WITH | CONST | As PUSH_WITH, with a multi-shot node that takes part in continuation transfer plans | [§18](#kos_op_push_dyn_with) |
+| POP_DYN_WITH | NOARG | As POP_WITH, for the multi-shot node | [§18](#kos_op_pop_dyn_with) |
 | PUSH_COLLECT | CONST | Push collector namespace scope | [§18](#kos_op_push_collect) |
 | POP_COLLECT | NOARG | Pop collect scope, push ns | [§18](#kos_op_pop_collect) |
 | BUILD_CLASS | NOARG | Consume pos+ns, call metaclass | [§18](#kos_op_build_class) |
+| PUSH_LOOP | NOARG | Push loop region; break target from extent table | [§18](#kos_op_push_loop) |
+| PUSH_NS | EXTRA | Push namespace scope (nspec + names in extra row) | [§18](#kos_op_push_ns) |
 | PUSH_TRY | LABEL | Push try region | [§18](#kos_op_push_try) |
+| PUSH_FINALLY | LABEL | Push finally region and its segment | [§18](#kos_op_push_finally) |
+| CLEAR_FINALLY | NOARG | Disable the top FINALLY region on non-local exit; POP_FINALLY still runs at the target | [§18](#kos_op_clear_finally) |
+| CLEAR_LOOP | NOARG | Disable top LOOP region (before POP_LOOP) | [§18](#kos_op_clear_loop) |
+| CLEAR_FOREACH | NOARG | Disable top FOREACH region (before POP_FOREACH) | [§18](#kos_op_clear_foreach) |
+| CLEAR_TRY | NOARG | Disable the top TRY region on non-local exit; POP_TRY still drops the segment | [§18](#kos_op_clear_try) |
+| POP_TRY | NOARG | Promote the one value on the try segment, drop the segment, pop the region | [§18](#kos_op_pop_try) |
+| POP_FINALLY | NOARG | As POP_TRY, for the finally segment | [§18](#kos_op_pop_finally) |
+| POP_LOOP | NOARG | Pop loop region; push loop result | [§18](#kos_op_pop_loop) |
+| POP_FOREACH | NOARG | Pop foreach region; push loop result | [§18](#kos_op_pop_foreach) |
+| POP_NS | NOARG | Pop the NS scope; the revealed node's namespace becomes active and leftover values are delivered to its segment | [§18](#kos_op_pop_ns) |
+| OBJECT_COMPARE | CMPCOUNT | Chain-compare N stack values under the packed selector and push the result | [§19](#kos_op_object_compare) |
+| OBJECT_COMPARE_VAR | EXTRA | The ternary bounds idiom with the middle operand resolved by name | [§19](#kos_op_object_compare_var) |
+| OBJECT_COMPARE_FAST | EXTRA | The ternary bounds idiom with the middle operand from a fast slot | [§19](#kos_op_object_compare_fast) |
+| OBJECT_OPERAND | OPCOUNT | Reduce the N operands left to right under the operator | [§19](#kos_op_object_operand) |
+| OBJECT_OPERAND_CONST | EXTRA | The stack top under the operator with a pooled right operand | [§19](#kos_op_object_operand_const) |
+| VAR_OPERAND_CONST | EXTRA | A named left operand and a pooled right operand under the operator, the result pushed | [§19](#kos_op_var_operand_const) |
+| FAST_OPERAND_CONST | EXTRA | A fast-slot left operand and a pooled right operand under the operator, the result pushed | [§19](#kos_op_fast_operand_const) |
+| OBJECT_OPERAND_VAR | EXTRA | The stack top under the operator with a named right operand | [§19](#kos_op_object_operand_var) |
+| OBJECT_OPERAND_FAST | EXTRA | The stack top under the operator with a fast-slot right operand | [§19](#kos_op_object_operand_fast) |
+| VAR_OPERAND_VAR | EXTRA | Two named operands under the operator, the result pushed | [§19](#kos_op_var_operand_var) |
+| FAST_OPERAND_FAST | EXTRA | Two fast-slot operands under the operator, the result pushed | [§19](#kos_op_fast_operand_fast) |
+| OBJECT_INPLACE | OPCOUNT | In-place reduce the N operands left to right, through the `PyNumber_InPlace*` family | [§19](#kos_op_object_inplace) |
+| OBJECT_BIT_INVERT | NOARG | Pop TOS, push its bitwise inverse | [§19](#kos_op_object_bit_invert) |
+| OBJECT_DIR | NOARG | Pop TOS, push `dir(TOS)` | [§19](#kos_op_object_dir) |
+| OBJECT_DIVMOD | COUNT | Pop right then left, push `divmod(left, right)` | [§19](#kos_op_object_divmod) |
+| OBJECT_ITER | NOARG | Acquire an iterator over either protocol; a Koskari async generator passes through as itself | [§19](#kos_op_object_iter) |
+| VAR_ITER | VAR | Fused VAR + OBJECT_ITER: push the named iterable's iterator | [§12](#kos_op_var_iter) |
+| FAST_ITER | FASTVAR | As VAR_ITER, with the iterable loaded from its fast slot | [§13](#kos_op_fast_iter) |
+| OBJECT_LEN | NOARG | Pop TOS, push `len(TOS)` | [§19](#kos_op_object_len) |
+| OBJECT_NOT | NOARG | Pop TOS, push its logical negation | [§19](#kos_op_object_not) |
+| OBJECT_REPR | NOARG | Pop TOS, push `repr(TOS)` | [§19](#kos_op_object_repr) |
+| OBJECT_STR | COUNT | Build a string from the top N values (f-string assembly) | [§19](#kos_op_object_str) |
+| OBJECT_FORMAT | COUNT | Format the object; arg 2 takes the rules from the stack, arg 1 uses none | [§19](#kos_op_object_format) |
+| OBJECT_FORMAT_CONST | CONST | Format the object with format rules from the pool | [§19](#kos_op_object_format_const) |
+| VAR_FORMAT | VAR | Fused VAR + OBJECT_FORMAT: push `format(obj)` for the named object | [§12](#kos_op_var_format) |
+| VAR_FORMAT_CONST | EXTRA | Fused VAR + OBJECT_FORMAT_CONST: format the named object with pooled rules | [§12](#kos_op_var_format_const) |
+| RETURN_VAR | VAR | Return the name's value; the `VAR` + `RETURN 1` fusion | [§12](#kos_op_return_var) |
+| YIELD_VAR | VAR | Yield the name's value; the `VAR` + `YIELD 1` fusion | [§12](#kos_op_yield_var) |
+| FAST_FORMAT | FASTVAR | As VAR_FORMAT, with the object loaded from its fast slot | [§13](#kos_op_fast_format) |
+| FAST_FORMAT_CONST | EXTRA | As VAR_FORMAT_CONST, with the object loaded from its fast slot | [§13](#kos_op_fast_format_const) |
+| RETURN_FAST | FASTVAR | Return the slot's value; lowering of RETURN_VAR | [§13](#kos_op_return_fast) |
+| YIELD_FAST | FASTVAR | Yield the slot's value; lowering of YIELD_VAR | [§13](#kos_op_yield_fast) |
+| OBJECT_TRUTH | NOARG | Pop TOS, push its truth value | [§19](#kos_op_object_truth) |
+| OBJECT_TYPE | NOARG | Pop TOS, push `type(TOS)` | [§19](#kos_op_object_type) |
+| OBJECT_VARS | NOARG | Pop TOS, push its `__dict__` | [§19](#kos_op_object_vars) |
 | PUSH_PROMPT | CONST | Push prompt (delimited cont.) | [§20](#kos_op_push_prompt) |
 | PUSH_SHIFT | CONST | Capture continuation, enter shift block | [§20](#kos_op_push_shift) |
 | POP_SHIFT | NOARG | Return from shift block without invoking k | [§20](#kos_op_pop_shift) |
 | POP_PROMPT | NOARG | Pop prompt | [§20](#kos_op_pop_prompt) |
+| PUSH_CC | NOARG | Push an undelimited continuation block onto the dynamic chain | [§21](#kos_op_push_cc) |
+| POP_CC | NOARG | Pop the CC block; also the landing site when a captured continuation is invoked | [§21](#kos_op_pop_cc) |
+| CAPTURE_CC | COUNT | Capture the CC extent's continuation and push it; 1 sets the callee on TOS aside for the capture | [§21](#kos_op_capture_cc) |
+| PUSH_WIND | COUNT | Pop the before (and after) thunks, push the wind extent, run before | [§22](#kos_op_push_wind) |
+| POP_WIND | NOARG | Pop the body result and the wind node, run the after thunk, deliver the result | [§22](#kos_op_pop_wind) |
+| PUSH_PARAM | CONST | Pop N values, bind them to the pooled names, enter the parameterize extent | [§23](#kos_op_push_param) |
+| POP_PARAM | NOARG | Pop the param extent and restore the cells it displaced | [§23](#kos_op_pop_param) |
+| PARAM | EXTRA | Read a parameter by name; count 1 supplies a stacked default, count 0 raises NameError on a miss | [§23](#kos_op_param) |
+| PARAM_CONST | EXTRA | Read a parameter by name with a pooled default; never raises for an unbound name | [§23](#kos_op_param_const) |
 | THEEND | NOARG | Unreachable; no runtime | [§24](#kos_op_theend) |
 
 **Completeness:** Every member of the `KosOpCode` enum in `koskari/lib/opcodes.incl` has a dedicated `### KOS_OP_*` heading in this document (some sections group related opcodes under one narrative first, then list each name). Search for `### KOS_OP_` to enumerate. Design-only or future opcodes belong in design notes, not here, until they are added to `opcodes.incl`.
@@ -3850,7 +3944,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 Object protocol opcodes: single Python operation on TOS (and optionally below); pop operands, push result. All **Implemented** unless noted.
 
 - **Comparisons and predicates**: OBJECT_COMPARE (CMPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, selector-keyed (KosCompare packs with the count); the fused OBJECT_COMPARE_VAR / OBJECT_COMPARE_FAST carry the ternary bounds idiom with no stack inputs.
-- **Numeric**: OBJECT_OPERAND (OPCOUNT) — one opcode for every arithmetic and bitwise operator; the arg packs the KosOperand selector with the operand count, and the site elects a specialized body.
+- **Numeric**: OBJECT_OPERAND (OPCOUNT) — one opcode for every arithmetic and bitwise operator; the arg packs the KosOperand selector with the operand count, and the site elects a specialized body. At a count of two the compress pipeline fuses a CONST or VAR feeder on either side into OBJECT_OPERAND_CONST, VAR_OPERAND_CONST, OBJECT_OPERAND_VAR and VAR_OPERAND_VAR; the fast pass lowers the named ones to FAST_OPERAND_CONST, OBJECT_OPERAND_FAST and FAST_OPERAND_FAST when the name has a slot.
 - **Numeric, in-place**: OBJECT_INPLACE (OPCOUNT) — stack `[..., a1, a2, ... aN] → [..., result]`, `N >= 2`, reducing left-to-right via the `PyNumber_InPlace*` API (POWER is strictly binary); used by the inplace-item and inplace-attr special forms.
 - **General**: OBJECT_ITER, OBJECT_LEN, OBJECT_NOT, OBJECT_REPR, OBJECT_STR, OBJECT_FORMAT, OBJECT_FORMAT_CONST, OBJECT_TYPE, OBJECT_DIR, OBJECT_VARS, OBJECT_TRUTH, OBJECT_DIVMOD, OBJECT_BIT_INVERT.
 
@@ -3940,6 +4034,103 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Compiler form:** Emitted by the operator specials in
   `compile/specials/object.py`; the selector is a KosOperand name.
 - **Implementation**: `koskari/lib/opcode/OBJECT_OPERAND.c`
+
+### KOS_OP_OBJECT_OPERAND_CONST {#kos_op_object_operand_const}
+
+- **Style**: EXTRA (OPERAND, CONST, NOARG, NOARG). Row a0 = the bare
+  operator selector, a1 = the right operand, a pool constant.
+- **Stack**: `[..., left] → [..., result]`. Apply the operator to the stack
+  top and the constant and replace the top with the result.
+- **Semantics**: Elected like OBJECT_OPERAND. The handler is a prologue
+  that tail-calls the site's elected body, else the electing function;
+  the int and float bodies carry their own guards and hand a miss to the
+  generic body (`eval/eval_electors.c`).
+- **Compiler form:** Folded by the compress pipeline from `CONST k,
+  OBJECT_OPERAND` at a count of two.
+- **Implementation**: `koskari/lib/opcode/OBJECT_OPERAND_CONST.c`
+
+### KOS_OP_VAR_OPERAND_CONST {#kos_op_var_operand_const}
+
+- **Style**: EXTRA (OPERAND, VAR, CONST, NOARG). Row a0 = the bare operator
+  selector, a1 = the left operand's name, a2 = the right operand, a pool
+  constant.
+- **Stack**: `[...] → [..., result]`. Resolve the name through the frame
+  namespace, apply the operator to the value and the constant, and push
+  the result.
+- **Semantics**: No cache slot; the handler syncs the pc, dereferences the
+  name and reduces through the shared two-operand path. Lowered to
+  FAST_OPERAND_CONST by the fast pass when the name has a slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR x, CONST k,
+  OBJECT_OPERAND` at a count of two, ahead of the one-feeder rules so a
+  site with both feeders takes the row naming both.
+- **Implementation**: `koskari/lib/opcode/VAR_OPERAND_CONST.c`
+
+### KOS_OP_FAST_OPERAND_CONST {#kos_op_fast_operand_const}
+
+- **Style**: EXTRA (OPERAND, FASTVAR, CONST, NOARG). Row a0 = the bare
+  operator selector, a1 = the left operand's fast slot, a2 = the right
+  operand, a pool constant.
+- **Stack**: `[...] → [..., result]`. Apply the operator to the slot's value
+  and the constant and push the result; the slot is untouched.
+- **Semantics**: Elected like OBJECT_OPERAND, with the same prologue and
+  body set as OBJECT_OPERAND_CONST.
+- **Compiler form:** Lowered from VAR_OPERAND_CONST by the fast pass.
+- **Implementation**: `koskari/lib/opcode/FAST_OPERAND_CONST.c`
+
+### KOS_OP_OBJECT_OPERAND_VAR {#kos_op_object_operand_var}
+
+- **Style**: EXTRA (OPERAND, VAR, NOARG, NOARG). Row a0 = the bare operator
+  selector, a1 = the right operand's name.
+- **Stack**: `[..., left] → [..., result]`. Resolve the name through the
+  frame namespace, apply the operator to the stack top and the resolved
+  value, and replace the top with the result.
+- **Semantics**: No cache slot; the handler syncs the pc, dereferences the
+  name and reduces through the shared two-operand path. Lowered to
+  OBJECT_OPERAND_FAST by the fast pass when the name has a slot.
+- **Compiler form:** Folded by the compress pipeline from `VAR y,
+  OBJECT_OPERAND` at a count of two, after the CONST rules so a site with
+  a constant keeps its CONST opcode.
+- **Implementation**: `koskari/lib/opcode/OBJECT_OPERAND_VAR.c`
+
+### KOS_OP_OBJECT_OPERAND_FAST {#kos_op_object_operand_fast}
+
+- **Style**: EXTRA (OPERAND, FASTVAR, NOARG, NOARG). Row a0 = the bare
+  operator selector, a1 = the right operand's fast slot.
+- **Stack**: `[..., left] → [..., result]`. Apply the operator to the stack
+  top and the slot's value and replace the top with the result; the slot
+  is untouched.
+- **Semantics**: Elected like OBJECT_OPERAND. The handler is a prologue
+  that tail-calls the site's elected body, else the electing function;
+  the int and float bodies carry their own guards and hand a miss to the
+  generic body (`eval/eval_electors.c`).
+- **Compiler form:** Lowered from OBJECT_OPERAND_VAR by the fast pass.
+- **Implementation**: `koskari/lib/opcode/OBJECT_OPERAND_FAST.c`
+
+### KOS_OP_VAR_OPERAND_VAR {#kos_op_var_operand_var}
+
+- **Style**: EXTRA (OPERAND, VAR, VAR, NOARG). Row a0 = the bare operator
+  selector, a1 = the left name, a2 = the right name.
+- **Stack**: `[...] → [..., result]`. Resolve both names through the frame
+  namespace, left first, apply the operator and push the result.
+- **Semantics**: No cache slot; the handler syncs the pc, dereferences
+  both names and reduces through the shared two-operand path. Lowered to
+  FAST_OPERAND_FAST by the fast pass when both names have slots.
+- **Compiler form:** Folded by the compress pipeline from `VAR x, VAR y,
+  OBJECT_OPERAND` at a count of two, after the CONST rules and ahead of
+  the one-name rule so both names ride the row. A site of three or more
+  names stays OBJECT_OPERAND behind a packed load.
+- **Implementation**: `koskari/lib/opcode/VAR_OPERAND_VAR.c`
+
+### KOS_OP_FAST_OPERAND_FAST {#kos_op_fast_operand_fast}
+
+- **Style**: EXTRA (OPERAND, FASTVAR, FASTVAR, NOARG). Row a0 = the bare
+  operator selector, a1 = the left fast slot, a2 = the right fast slot.
+- **Stack**: `[...] → [..., result]`. Apply the operator to the two slots'
+  values and push the result; both slots are untouched.
+- **Semantics**: Elected like OBJECT_OPERAND, with the same prologue and
+  body set as OBJECT_OPERAND_FAST.
+- **Compiler form:** Lowered from VAR_OPERAND_VAR by the fast pass.
+- **Implementation**: `koskari/lib/opcode/FAST_OPERAND_FAST.c`
 
 ### KOS_OP_OBJECT_INPLACE {#kos_op_object_inplace}
 

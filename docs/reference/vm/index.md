@@ -569,6 +569,10 @@ The opcodes by family, each linking to its section.
 | OBJECT_COMPARE_VAR | EXTRA | The ternary bounds idiom with the middle operand resolved by name | [section 19](opcodes/kos-op-object-compare-var.md) |
 | OBJECT_COMPARE_FAST | EXTRA | The ternary bounds idiom with the middle operand from a fast slot | [section 19](opcodes/kos-op-object-compare-fast.md) |
 | OBJECT_OPERAND | OPCOUNT | Reduce the N operands left to right under the operator | [section 19](opcodes/kos-op-object-operand.md) |
+| OBJECT_OPERAND_VAR | EXTRA | The stack top under the operator with a named right operand | [section 19](opcodes/kos-op-object-operand.md) |
+| OBJECT_OPERAND_FAST | EXTRA | The stack top under the operator with a fast-slot right operand | [section 19](opcodes/kos-op-object-operand.md) |
+| VAR_OPERAND_VAR | EXTRA | Two named operands under the operator, the result pushed | [section 19](opcodes/kos-op-object-operand.md) |
+| FAST_OPERAND_FAST | EXTRA | Two fast-slot operands under the operator, the result pushed | [section 19](opcodes/kos-op-object-operand.md) |
 | OBJECT_INPLACE | OPCOUNT | In-place reduce the N operands left to right, through the `PyNumber_InPlace*` family | [section 19](opcodes/kos-op-object-inplace.md) |
 | OBJECT_BIT_INVERT | NOARG | Pop TOS, push its bitwise inverse | [section 19](opcodes/kos-op-object-bit-invert.md) |
 | OBJECT_DIR | NOARG | Pop TOS, push `dir(TOS)` | [section 19](opcodes/kos-op-object-dir.md) |

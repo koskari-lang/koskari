@@ -328,6 +328,8 @@ def build_var_to_fast():
     var_to_fast[OpCode.SWITCH_EQ_VAR] = OpCode.SWITCH_EQ_FAST
     var_to_fast[OpCode.SWITCH_EQ_VAR_ATTR] = OpCode.SWITCH_EQ_FAST_ATTR
     var_to_fast[OpCode.OBJECT_COMPARE_VAR] = OpCode.OBJECT_COMPARE_FAST
+    var_to_fast[OpCode.OBJECT_OPERAND_VAR] = OpCode.OBJECT_OPERAND_FAST
+    var_to_fast[OpCode.VAR_OPERAND_VAR] = OpCode.FAST_OPERAND_FAST
     var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
     var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
 
@@ -893,6 +895,38 @@ class ByteCodeProcessor:
         if merged & 0xff != 2:
             return None
         return [(OpCode.OBJECT_OPERAND_CONST,
+                 (merged >> 8, matched[0][1], None, None))]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.VAR, OpCode.OBJECT_OPERAND)
+    def fuse_var_operand_var(self, op, arg, matched):
+        """
+        VAR x, VAR y, OBJECT_OPERAND (count 2) -> VAR_OPERAND_VAR: the
+        operator as a bare selector and both names; the fast pass
+        lowers it to FAST_OPERAND_FAST. Registered after the CONST
+        rules so a site with a constant keeps its CONST opcode, and
+        ahead of the one-name rule so both names ride the row
+        """
+
+        merged = merge_opcount(arg)
+        if merged & 0xff != 2:
+            return None
+        return [(OpCode.VAR_OPERAND_VAR,
+                 (merged >> 8, matched[0][1], matched[1][1], None))]
+
+
+    @fuse_rule(OpCode.VAR, OpCode.OBJECT_OPERAND)
+    def fuse_operand_var(self, op, arg, matched):
+        """
+        VAR y, OBJECT_OPERAND (count 2) -> OBJECT_OPERAND_VAR: the left
+        operand stays on the stack, the right name rides the row; the
+        fast pass lowers it to OBJECT_OPERAND_FAST
+        """
+
+        merged = merge_opcount(arg)
+        if merged & 0xff != 2:
+            return None
+        return [(OpCode.OBJECT_OPERAND_VAR,
                  (merged >> 8, matched[0][1], None, None))]
 
 

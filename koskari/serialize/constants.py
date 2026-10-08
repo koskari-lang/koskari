@@ -75,8 +75,11 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # renumbering every opcode after them.
 # MINOR bumped: VAR_INPLACE and FAST_INPLACE rows carry a bare OPERAND
 # selector in a0 instead of an OPCOUNT whose count was always 1.
+# MINOR bumped: OBJECT_OPERAND_VAR, OBJECT_OPERAND_FAST, VAR_OPERAND_VAR
+# and FAST_OPERAND_FAST inserted after FAST_OPERAND_CONST, renumbering
+# THEEND.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 21
+BYTECODE_ABI_MINOR = 22
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

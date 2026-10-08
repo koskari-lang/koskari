@@ -94,14 +94,29 @@ class TestFuseConstOperand(unittest.TestCase):
         instr = [(V, "a"), (C, 3), (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 3))]
         self.assertEqual(fuse_ops(instr), instr)
 
-    def test_two_var_operand_stays(self):
-        instr = [(V, "a"), (V, "b"), (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 2))]
-        self.assertEqual(fuse_ops(instr), instr)
+    def test_two_var_operand_fuses(self):
+        out = fuse_ops([(V, "a"), (V, "b"), (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 2))])
+        self.assertEqual(out, [
+            (OpCode.VAR_OPERAND_VAR, (int(Operand.ADD), "a", "b", None))])
 
-    def test_const_var_operand_keeps_the_stack_form(self):
+    def test_stack_var_operand_fuses(self):
+        out = fuse_ops([(OpCode.CALL, 0), (V, "b"),
+                        (OpCode.OBJECT_OPERAND, opcount(Operand.MULTIPLY, 2))])
+        self.assertEqual(out, [
+            (OpCode.CALL, 0),
+            (OpCode.OBJECT_OPERAND_VAR, (int(Operand.MULTIPLY), "b", None, None))])
+
+    def test_const_var_operand_keeps_the_constant_load(self):
         # a constant left operand has no row of its own; the constant
-        # is loaded and the site stays OBJECT_OPERAND
-        instr = [(C, 3), (V, "a"), (OpCode.OBJECT_OPERAND, opcount(Operand.SUBTRACT, 2))]
+        # is loaded and the right name rides the row
+        out = fuse_ops([(C, 3), (V, "a"), (OpCode.OBJECT_OPERAND, opcount(Operand.SUBTRACT, 2))])
+        self.assertEqual(out, [
+            (C, 3),
+            (OpCode.OBJECT_OPERAND_VAR, (int(Operand.SUBTRACT), "a", None, None))])
+
+    def test_three_var_operand_site_stays(self):
+        instr = [(V, "a"), (V, "b"), (V, "c"),
+                 (OpCode.OBJECT_OPERAND, opcount(Operand.ADD, 3))]
         self.assertEqual(fuse_ops(instr), instr)
 
     def test_var_operand_const_lowers_to_fast(self):
@@ -114,6 +129,19 @@ class TestFuseConstOperand(unittest.TestCase):
             (OpCode.VAR_OPERAND_CONST, (int(Operand.ADD), "b", 3, None))])
         self.assertEqual(out, [
             (OpCode.VAR_OPERAND_CONST, (int(Operand.ADD), "b", 3, None))])
+
+    def test_var_operand_var_lowers_to_fast(self):
+        nspec = NamespaceSpec("fn", ("a", "b"), ())
+        out = convert_fast(nspec, [
+            (OpCode.VAR_OPERAND_VAR, (int(Operand.ADD), "a", "b", None)),
+            (OpCode.OBJECT_OPERAND_VAR, (int(Operand.ADD), "b", None, None))])
+        self.assertEqual(out, [
+            (OpCode.FAST_OPERAND_FAST, (int(Operand.ADD), 0, 1, None)),
+            (OpCode.OBJECT_OPERAND_FAST, (int(Operand.ADD), 1, None, None))])
+        out = convert_fast(nspec, [
+            (OpCode.VAR_OPERAND_VAR, (int(Operand.ADD), "a", "c", None))])
+        self.assertEqual(out, [
+            (OpCode.VAR_OPERAND_VAR, (int(Operand.ADD), "a", "c", None))])
 
 
 class TestFuseControlFeeders(unittest.TestCase):

@@ -310,6 +310,10 @@
 #include "opcode/OBJECT_OPERAND_CONST.c"
 #include "opcode/VAR_OPERAND_CONST.c"
 #include "opcode/FAST_OPERAND_CONST.c"
+#include "opcode/OBJECT_OPERAND_VAR.c"
+#include "opcode/OBJECT_OPERAND_FAST.c"
+#include "opcode/VAR_OPERAND_VAR.c"
+#include "opcode/FAST_OPERAND_FAST.c"
 #include "opcode/THEEND.c"
 
 /* The end. */
