@@ -22,6 +22,7 @@
 */
 
 KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t src = KosExtra_IMM(row, 0);
 

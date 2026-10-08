@@ -20,6 +20,7 @@
   current frame's namespace and push PyObject_Format(obj, rules).
 */
 KOS_OP_HANDLER(VAR_FORMAT_CONST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

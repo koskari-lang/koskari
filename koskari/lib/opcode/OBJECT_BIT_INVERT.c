@@ -18,6 +18,7 @@
    OBJECT_BIT_INVERT: pop TOS, call PyNumber_Invert, push result.
 */
 KOS_OP_HANDLER(OBJECT_BIT_INVERT) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

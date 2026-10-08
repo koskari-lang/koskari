@@ -18,6 +18,7 @@
   OBJECT_NOT: pop TOS, call PyObject_Not, push Py_True/Py_False.
 */
 KOS_OP_HANDLER(OBJECT_NOT) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

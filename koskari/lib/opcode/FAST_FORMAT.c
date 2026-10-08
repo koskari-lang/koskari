@@ -19,6 +19,7 @@
   PyObject_Format(obj, NULL) where obj is the fast local's value.
 */
 KOS_OP_HANDLER(FAST_FORMAT) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 

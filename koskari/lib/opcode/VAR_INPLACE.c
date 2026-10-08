@@ -22,6 +22,7 @@
 */
 
 KOS_OP_HANDLER(VAR_INPLACE) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);

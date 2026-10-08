@@ -353,7 +353,7 @@ emits from `opcodes.incl`) at finalize in the block's writable window,
 and, like the cache index, is regenerated on every load and never
 serialized; soften emits only `(op, arg)`.
 
-**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to `&KosCode_CODE(code)[pc]`, sets `acting_pc`, and pre-advances `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode; every code object ends in a `THEEND` barrier, so no per-instruction bounds check is needed (the `es->code` null check is a `KOS_EVAL_SAFETYNET` guard). The prologue runs it once to enter a chain. Inside a chain a handler threads through **`KOS_THREAD_AT(es, next)`** (`eval.h`), which takes `acting_pc` and `pc` off the record's own `pc` field and tail-calls its `fn`. A straight-line tail steps to `insn + 1`, its own record plus one, with no walk through `es->code`; a jump goes through the record's resolved `target`; a tail after a frame change or a stored pc fetches from `es->pc` through `es->code` (**`KOS_THREAD_NEXT`**). The instruction base is never cached on a frame: `pack_into` relocates the block at a quiescent point, and a frame off the chain (a defer, a generator, a function's cached frame) holds the code object and an integer pc across that move ([interpreter/execution-invariants.md](interpreter/execution-invariants.md) §20).
+**`KOS_EVAL_PREPARE_NEXT_INSN`** (macro in `eval.c`) sets a local **`KosOp *insn`** to `&KosCode_CODE(code)[pc]`, sets `acting_pc`, and pre-advances `pc`. It assumes a valid frame, in-range `pc`, and valid bytecode; every code object ends in a `THEEND` barrier, so no per-instruction bounds check is needed (the `es->code` null check is a `KOS_EVAL_SAFETYNET` guard). The prologue runs it once to enter a chain. Inside a chain a handler threads through **`KOS_THREAD_AT(es, next)`** (`eval.h`), a bare tail call of the record's `fn`; the live `acting_pc` and `pc` are set by the handler itself, through **`KOS_SYNC_PC(es, insn)`** at its head, from its own record's `pc` field (the sync rule, below). A straight-line tail steps to `insn + 1`, its own record plus one, with no walk through `es->code`; a jump goes through the record's resolved `target`; a tail after a frame change or a stored pc fetches from `es->pc` through `es->code` (**`KOS_THREAD_NEXT`**). The instruction base is never cached on a frame: `pack_into` relocates the block at a quiescent point, and a frame off the chain (a defer, a generator, a function's cached frame) holds the code object and an integer pc across that move ([interpreter/execution-invariants.md](interpreter/execution-invariants.md) §20).
 
 Opcode handlers have the **`KosThreadFn`** prototype: `op_NAME(KosEvalState *es, void *insn, PyObject *value)`, declared through **`KOS_OP_HANDLER`**; `insn` is the handler's own instruction (read through `KosOp_ARG` / `KosOp_CACHE`) and `value` is unused by an opcode. **`es`** carries the cached **`frame`**, **`code`**, operand-stack **`block`**, and live **`pc`** / **`acting_pc`** registers for the eval slice, aligned with **`KosEvalState_CONTEXT(es)`** via **`kos_dyn_resync_after_push`** / **`kos_dyn_commit_dyn_top`** / **`kos_dyn_resync_chain`** (and **`KosEvalState_ThawFromContext`** / **`FreezeToContext`** at the invocation boundary) as summarized in section 1.5 above.
 
@@ -436,13 +436,36 @@ A handler ends in one of the **`RESULT_*`** macros (`eval.h`):
 | `RESULT_PUSH(es, val)` | Push a borrowed value, then continue; a failed push leaves the value with the caller. |
 | `RESULT_STEAL(es, val)` | Push an owned value (consumed on failure too; NULL raises), then continue. |
 | `RESULT_RELAY(es, r)` | End with a helper's result: NORMAL and DISPATCH continue at `es->pc` (a callee's first instruction after an install, the next instruction after a push); POLL tails into `kos_eval_poll`; RAISE, AWAIT, RETURN, YIELD and CONTROL_RETURNED tail into their event's thread function; REPROLOGUE tails into the prologue; FATAL returns. Used by the call handlers, the NEXT handlers, AWAIT, and the delimited-return sites. |
-| `RESULT_RAISE()` | Tail into `kos_eval_raise`, the raise walk; `PyErr` is set. |
+| `RESULT_RAISE()` | Tail into `kos_eval_raise`, the raise walk; `PyErr` is set. For a handler that synced at its head. |
+| `RESULT_RAISE_AT(es, insn)` | `KOS_SYNC_PC` from the handler's record, then the same tail. For a handler that did not sync; `RESULT_PUSH` and `RESULT_STEAL` raise this way. |
 | `RESULT_RETURN(es, val)` / `RESULT_AWAIT(es, val)` | Tail into `kos_return_deliver` / `kos_eval_await` with the owned value. |
 | `RESULT_FAIL()` | Return `EVAL_FATAL`: the one crossing back to `koskari_eval` a handler makes itself. |
 
 **`KOS_THREAD_AT`** and **`KOS_THREAD_NEXT`** are bare fetches and tail
 calls. The macros read the handler's own record through the name `insn`,
-which `KOS_OP_HANDLER` and `KOS_ELECTOR` declare. The cooperation
+which `KOS_OP_HANDLER` and `KOS_ELECTOR` declare.
+
+**The sync rule.** The dispatch tail stores nothing: `es->acting_pc`
+and `es->pc` are set by the handler, with `KOS_SYNC_PC(es, insn)` as
+its first statement, and are stale while a handler that skips it runs.
+The fields are read by a frame install or return, a yield or await, an
+extent push or pop that records a resume pc, a continuation capture or
+transfer, the breaker poll, the raise walk, the frame flush
+(`KosEvalState_FlushLiveRegsToFrame`) and the end-of-code bounds
+reporter. A handler that can reach any of those while it runs syncs at
+its head. A handler that hands `es` to nothing but a stack push, pop,
+drop or duplicate, or a namespace slot read or store, skips the sync,
+and every raise it makes goes through `RESULT_RAISE_AT`, which syncs
+first; a Python callback it runs that re-enters Koskari does so on its
+own context and never reads this one's pc. As applied: the no-sync set
+is FAST, CONST, FAST_STORE, POP, DUP, JUMP, JUMP_FALSE, JUMP_TRUE,
+NOOP, LABEL, POSITION, the elector dispatch handlers (a cache-slot read
+and a tail call into the elected body), and the elected int, float and
+comparison bodies in `eval_electors.c`; every other handler and elector
+body syncs. The rule admits more: any handler whose helpers reach none
+of the readers can be moved to the no-sync set once its raise sites,
+including a helper result relayed through `RESULT_RELAY`, sync on the
+error path. The cooperation
 points (§1.6) are the handlers that close a cycle: `CONTINUE` ends in
 **`RESULT_NEXT_POLL`**, which tails into **`kos_eval_poll`** instead of
 threading when the eval breaker is up, and the poll threads again from

@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_KWDS) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *built = KosEvalState_StackPopTailDict(es, (size_t) opa);
 

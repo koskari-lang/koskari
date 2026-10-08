@@ -19,6 +19,7 @@
   current frame's namespace to the outermost parent (not dyn_top or let scope).
 */
 KOS_OP_HANDLER(GLOBALS) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = KosEvalState_GlobalsNamespace(es);
 
   if (unlikely(! ns)) {

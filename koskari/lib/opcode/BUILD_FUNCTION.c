@@ -28,6 +28,7 @@
   push the result.
 */
 KOS_OP_HANDLER(BUILD_FUNCTION) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *defnames = KosExtra_OBJ(row, 0);

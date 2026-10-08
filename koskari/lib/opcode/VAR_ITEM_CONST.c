@@ -21,6 +21,7 @@
   (eval/eval_item.c) with no slot; the cold twin of the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_CONST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key = KosExtra_OBJ(row, 1);

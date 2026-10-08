@@ -21,6 +21,7 @@
   slot.
 */
 KOS_OP_HANDLER(FAST_ITEM) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;

@@ -19,6 +19,7 @@
   dispatch; push result. Fails if TOS has no deref handler.
 */
 KOS_OP_HANDLER(DEREF) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *ref = KosEvalState_StackPopRef(es);

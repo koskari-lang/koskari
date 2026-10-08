@@ -254,6 +254,7 @@ static KOS_NOINLINE KosThreadFn kos_elector_generic_of(void *insn) {
    reduce out of line.
 */
 KOS_ELECTOR(operand_generic) {
+  KOS_SYNC_PC(es, insn);
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   int count = (int) KosOpCount_COUNT(arg);
@@ -269,6 +270,7 @@ KOS_ELECTOR(operand_generic) {
    OBJECT_INPLACE without an election: the in-place reduce out of line.
 */
 KOS_ELECTOR(inplace_generic) {
+  KOS_SYNC_PC(es, insn);
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   int count = (int) KosOpCount_COUNT(arg);
@@ -285,6 +287,7 @@ KOS_ELECTOR(inplace_generic) {
    the in-place reduce.
 */
 KOS_ELECTOR(fast_inplace_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   size_t idx = (size_t) KosExtra_IMM(row, 1);
@@ -302,6 +305,7 @@ KOS_ELECTOR(fast_inplace_generic) {
    the top.
 */
 KOS_ELECTOR(operand_const_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);
@@ -327,6 +331,7 @@ KOS_ELECTOR(operand_const_generic) {
    constant through the operator's reduce, the result pushed.
 */
 KOS_ELECTOR(fast_operand_const_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   PyObject *pair[2];
@@ -351,6 +356,7 @@ KOS_ELECTOR(fast_operand_const_generic) {
    through the in-place reduce.
 */
 KOS_ELECTOR(fast_inplace_const_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   size_t idx = (size_t) KosExtra_IMM(row, 1);
@@ -369,6 +375,7 @@ KOS_ELECTOR(fast_inplace_const_generic) {
    this execution.
 */
 KOS_ELECTOR(miss) {
+  KOS_SYNC_PC(es, insn);
   KosThreadFn generic = kos_elector_generic_of(insn);
 
   kos_elector_miss(kos_elector_slot_of(insn), generic);
@@ -469,7 +476,7 @@ KOS_ELECTOR(miss) {
     if (unlikely(kos_ir_rc_ <= 0)) {                                    \
       RELEASE;                                                          \
       if (kos_ir_rc_ < 0)                                               \
-        RESULT_RAISE();                                                 \
+        RESULT_RAISE_AT(es, insn);                                      \
       TAILCALL(kos_elector_generic_of(insn), es, insn, value);          \
     }                                                                   \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
@@ -497,7 +504,7 @@ KOS_ELECTOR(miss) {
                                                                         \
     KOS_ELECTOR_PAIR_SAFETYNET(insn);                                   \
     if (unlikely(! args))                                               \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     if (unlikely(! KOS_##KIND##_GUARD(args[0], args[1])))               \
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(args[0], args[1], kos_elector_generic_of(insn)); \
@@ -547,7 +554,7 @@ KOS_ELECTOR(miss) {
     acc = kos_ns_fast_peek_raw(ns, idx, &raw);                          \
     rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     if (unlikely(! acc || ! KOS_##KIND##_CHECK(acc)                     \
                  || (RHS_GUARDED && ! KOS_##KIND##_CHECK(rhs))))        \
       TAILCALL(el_miss, es, insn, value);                               \
@@ -563,7 +570,7 @@ KOS_ELECTOR(miss) {
       DROP;                                                             \
     }                                                                   \
     if (out != acc && unlikely(kos_ns_fast_store_steal(ns, idx, out) < 0)) \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -665,7 +672,7 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
     int rc;                                                             \
                                                                         \
     if (unlikely(! args))                                               \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     for (size_t i = 0; i < count; i++) {                                \
       if (unlikely(! KOS_##KIND##_CHECK(args[i])))                      \
         TAILCALL(el_miss, es, insn, value);                             \
@@ -682,14 +689,14 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
                                                                         \
     rc = KOS_##KIND##_MATERIALISE(res, args[0], NULL, &out);            \
     if (unlikely(rc < 0))                                               \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);                          \
     if (out == args[0]) {                                               \
       kos_stack_drop_noerr_fast(bl, count - 1);                         \
     } else {                                                            \
       kos_stack_drop_noerr_fast(bl, count);                             \
       if (unlikely(kos_stack_push_steal_fast(bl, out) < 0))             \
-        RESULT_RAISE();                                                 \
+        RESULT_RAISE_AT(es, insn);                                      \
     }                                                                   \
     RESULT_NEXT(es);                                                    \
   }
@@ -754,7 +761,7 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
     PyObject *out;                                                      \
                                                                         \
     if (unlikely(! top))                                                \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     if (unlikely(! KOS_##KIND##_CHECK(top[0])))                         \
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT_CONST(top[0], rhs, kos_elector_generic_of(insn)); \
@@ -790,7 +797,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, NULL, out); \
     if (unlikely(kos_stack_push_steal_fast(KosEvalState_BLOCK(es), out) < 0)) \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     RESULT_NEXT(es);                                                    \
   }
 
@@ -815,6 +822,7 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_OPERAND_CONST_BODY, fast_operand_const)
    item protocol holds it.
 */
 KOS_ELECTOR(fast_item_const_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   PyObject *obj;
@@ -835,6 +843,7 @@ KOS_ELECTOR(fast_item_const_generic) {
 
 #define KOS_FAST_ITEM_CONST_SEQ_BODY(NAME, CHECK, SIZE, GET)             \
   KOS_ELECTOR(fast_item_const_##NAME) {                                 \
+    KOS_SYNC_PC(es, insn);                                              \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     PyObject *obj;                                                      \
@@ -879,6 +888,7 @@ static void kos_elector_set_key_error(PyObject *key) {
    the exact dict's KeyError, raised here rather than by a second
    lookup through the protocol. */
 KOS_ELECTOR(fast_item_const_dict) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   PyObject *obj;
@@ -919,6 +929,7 @@ KOS_ELECTOR(fast_item_const_dict) {
 
 
 KOS_ELECTOR(pair_str_add) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);
   PyObject *out;
@@ -943,6 +954,7 @@ KOS_ELECTOR(pair_str_add) {
 /* The join body: every operand of the run an exact str, or a miss;
    one allocation replaces the run. */
 KOS_ELECTOR(pair_str_join) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   size_t count = KosOpCount_COUNT(KosOp_ARG(insn));
   PyObject *const *args = kos_stack_tail_ptr_fast(*bl, count);
@@ -971,6 +983,7 @@ KOS_ELECTOR(pair_str_join) {
    append concatenates. */
 #define KOS_SLOT_STR_ELECTOR(FAMILY, RHS, RHS_GUARDED, DROP)            \
   KOS_ELECTOR(FAMILY##_str_add) {                                       \
+    KOS_SYNC_PC(es, insn);                                              \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
@@ -1021,6 +1034,7 @@ KOS_SLOT_STR_ELECTOR(
    under the selector, drop them, jump on failure.
 */
 KOS_ELECTOR(check_compare_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   size_t count = (size_t) KosExtra_IMM(row, 1);
   PyObject *const *args;
@@ -1052,6 +1066,7 @@ KOS_ELECTOR(check_compare_generic) {
    under the selector and push the result.
 */
 KOS_ELECTOR(object_compare_generic) {
+  KOS_SYNC_PC(es, insn);
   uint16_t arg = KosOp_ARG(insn);
   size_t count = (size_t) KosCmpCount_COUNT(arg);
   PyObject *const *args;
@@ -1092,7 +1107,7 @@ KOS_ELECTOR(object_compare_generic) {
     int held;                                                           \
                                                                         \
     if (unlikely(! args))                                               \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT(es, insn);                                        \
     if (unlikely(! KOS_##KIND##_GUARD(args[0], args[1])))               \
       TAILCALL(el_miss, es, insn, value);                               \
     KOS_##KIND##_EXTRACT(args[0], args[1], el_##FAMILY##_generic);      \
@@ -1225,6 +1240,7 @@ KOS_OP_INLINE PyObject **kos_field_direct_addr(
    reducing obj.attr in place through the field cache.
 */
 KOS_ELECTOR(fast_attr_inplace_generic) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
@@ -1305,6 +1321,7 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
    the result's home, the store. */
 #define KOS_ATTR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)             \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
+    KOS_SYNC_PC(es, insn);                                              \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *rhs, *acc, *out;                                          \
     PyObject **addr;                                                    \
@@ -1333,6 +1350,7 @@ KOS_NUMERIC_ELECTORS(KOS_ATTR_ELECTOR, fast_attr_inplace)
    does not keep.
 */
 KOS_ELECTOR(fast_attr_inplace_str_add) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *rhs, *acc, *out;
   PyObject **addr;
@@ -1395,6 +1413,7 @@ static inline KosThreadFn kos_elector_fast_attr_inplace_classify(
    generic body and tries again every 256 executions like the rest.
 */
 KOS_ELECTOR(fast_attr_inplace_elect) {
+  KOS_SYNC_PC(es, insn);
   KosCacheSlot *slot = KosOp_SLOT(insn);
   KosThreadFn fn = kos_elector_fast_attr_inplace_classify(es, insn);
 
@@ -1535,6 +1554,7 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
    body classified or the generic body, and dispatch. */
 #define KOS_ELECTOR_ELECT(FAMILY, CLASSIFY)                             \
   KOS_ELECTOR(FAMILY##_elect) {                                         \
+    KOS_SYNC_PC(es, insn);                                              \
     KosThreadFn fn = CLASSIFY(es, insn);                                \
                                                                         \
     if (! fn)                                                           \
@@ -1675,6 +1695,7 @@ static inline int kos_item_const_index(
 /* --- ITEM_CONST: the object on the stack top, the result in its place --- */
 
 KOS_ELECTOR(item_const_generic) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *out;
@@ -1691,6 +1712,7 @@ KOS_ELECTOR(item_const_generic) {
 
 #define KOS_ITEM_CONST_SEQ_BODY(NAME, CHECK, SIZE, GET)                 \
   KOS_ELECTOR(item_const_##NAME) {                                      \
+    KOS_SYNC_PC(es, insn);                                              \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);            \
     Py_ssize_t i;                                                       \
@@ -1716,6 +1738,7 @@ KOS_ITEM_CONST_SEQ_BODY(tuple, PyTuple_CheckExact, PyTuple_GET_SIZE,
                         PyTuple_GET_ITEM)
 
 KOS_ELECTOR(item_const_dict) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *v;
@@ -1757,6 +1780,7 @@ KOS_ELECTOR(item_const_dict) {
 #define KOS_ITEM_CONST_STORE_BODIES(FAMILY, NEED, KEY, OBJ_STMT, VAL_STMT, \
                                     OBJ_HOLD, SETTLE)                   \
   KOS_ELECTOR(FAMILY##_list) {                                          \
+    KOS_SYNC_PC(es, insn);                                              \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
@@ -1782,6 +1806,7 @@ KOS_ELECTOR(item_const_dict) {
     RESULT_NEXT(es);                                                    \
   }                                                                     \
   KOS_ELECTOR(FAMILY##_dict) {                                          \
+    KOS_SYNC_PC(es, insn);                                              \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \
@@ -1818,6 +1843,7 @@ KOS_ELECTOR(item_const_dict) {
 #define KOS_ITEM_CONST_STORE_GENERIC(FAMILY, NEED, KEY, OBJ_STMT,       \
                                      VAL_STMT, SETTLE)                  \
   KOS_ELECTOR(FAMILY##_generic) {                                       \
+    KOS_SYNC_PC(es, insn);                                              \
     const KosExtra *row = KosOp_ROW(insn);                              \
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     KosSegment **bl = KosEvalState_BLOCK(es);                           \

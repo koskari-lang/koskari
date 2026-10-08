@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_COMPARE_VAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ops[3];

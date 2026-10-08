@@ -23,6 +23,7 @@
    turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_VAR_ATTR) {
+  KOS_SYNC_PC(es, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   unsigned n = KosExtra_IMM(row, 2);

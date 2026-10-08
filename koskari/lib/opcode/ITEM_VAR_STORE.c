@@ -22,6 +22,7 @@
   the FAST row.
 */
 KOS_OP_HANDLER(ITEM_VAR_STORE) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
   PyObject *obj;

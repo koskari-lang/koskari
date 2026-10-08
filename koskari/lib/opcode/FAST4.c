@@ -22,6 +22,7 @@
   failed value included by the push itself.
 */
 KOS_OP_HANDLER(FAST4) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

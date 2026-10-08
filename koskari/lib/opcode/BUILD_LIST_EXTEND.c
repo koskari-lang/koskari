@@ -24,6 +24,7 @@
   a list.
 */
 KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
+  KOS_SYNC_PC(es, insn);
 
   PyObject *iterable = KosEvalState_StackPopRef(es);
   if (unlikely(! iterable))

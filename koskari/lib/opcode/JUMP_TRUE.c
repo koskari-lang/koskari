@@ -20,13 +20,13 @@
 KOS_OP_HANDLER(JUMP_TRUE) {
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
 
   int res = kos_object_truth(val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
 
   if (res)
     RESULT_JUMP_AT(es, KosOp_TARGET(insn));

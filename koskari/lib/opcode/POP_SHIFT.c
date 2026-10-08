@@ -23,6 +23,7 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
+  KOS_SYNC_PC(es, insn);
   PyObject *result;
   uint32_t prompt_pop_pc;
   KosDynPrompt *prompt = NULL;

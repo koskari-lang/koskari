@@ -19,6 +19,7 @@
    JUMP_FALSE into a single CHECK_NIL.
 */
 KOS_OP_HANDLER(NILP) {
+  KOS_SYNC_PC(es, insn);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (! val) RESULT_RAISE();
   PyObject *res = (KosNilP(val) ? Py_True : Py_False);

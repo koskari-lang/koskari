@@ -21,6 +21,7 @@
   raises with nothing pushed.
 */
 KOS_OP_HANDLER(VAR2) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

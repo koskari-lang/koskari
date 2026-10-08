@@ -21,6 +21,7 @@
   The access runs through kos_item_clear (eval/eval_item.c).
 */
 KOS_OP_HANDLER(VAR_ITEM_VAR_CLEAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key;

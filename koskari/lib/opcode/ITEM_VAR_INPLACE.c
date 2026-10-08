@@ -23,6 +23,7 @@
   slot; the cold twin of the FAST row.
 */
 KOS_OP_HANDLER(ITEM_VAR_INPLACE) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;

@@ -19,6 +19,7 @@
   f-string) and push the result.
 */
 KOS_OP_HANDLER(OBJECT_STR) {
+  KOS_SYNC_PC(es, insn);
   if (unlikely(obj_op_reducing(es, insn, KosOperator_BuildStr) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);

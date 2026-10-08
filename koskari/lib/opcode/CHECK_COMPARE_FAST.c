@@ -21,6 +21,7 @@
   is set), compare under the selector, jump to LABEL on failure.
 */
 KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t src = KosExtra_IMM(row, 0);
   PyObject *ns = CURRENT_NS();

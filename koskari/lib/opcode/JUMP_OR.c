@@ -19,6 +19,7 @@
   stack and jump; else pop and continue.
 */
 KOS_OP_HANDLER(JUMP_OR) {
+  KOS_SYNC_PC(es, insn);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
     RESULT_RAISE();

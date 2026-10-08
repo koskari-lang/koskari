@@ -396,19 +396,28 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
    the macro.
 */
 
-/* Thread into next, a record of the live frame's code: acting_pc and
-   pc come off the record, then a tail call. A bare jump; the eval
+/* The live pc fields set from a handler's own record: acting_pc is
+   the record, pc the one after it. A handler that hands es to anything
+   beyond a stack push or pop syncs at its head, so every helper, the
+   raise walk and the frame flush read a current pc; a handler that
+   hands es to nothing else skips it, and its raises go through
+   RESULT_RAISE_AT, which syncs first. */
+#define KOS_SYNC_PC(es, insn)                                           \
+  do {                                                                  \
+    uint32_t kos_sp_ = KosOp_PC(insn);                                  \
+    (es)->acting_pc = kos_sp_;                                          \
+    (es)->pc = kos_sp_ + 1u;                                            \
+  } while (0)
+
+/* Thread into next, a record of the live frame's code: a bare tail
+   call, the pc fields left to the handler (KOS_SYNC_PC). The eval
    breaker is tested at the cooperation points (RESULT_NEXT_POLL, a
    frame install, RESUME_HOP, the prologue), not here. */
 #define KOS_THREAD_AT(es, next)                                         \
   do {                                                                  \
-    KosEvalState *kos_thr_es_ = (es);                                   \
     KosOp *kos_thr_next_ = (next);                                      \
-    uint32_t kos_thr_pc_ = kos_thr_next_->pc;                           \
-    kos_thr_es_->acting_pc = kos_thr_pc_;                               \
-    kos_thr_es_->pc = kos_thr_pc_ + 1u;                                 \
     KOS_TRACE_THREAD_STEP(kos_thr_next_->op);                           \
-    TAILCALL(kos_thr_next_->fn, kos_thr_es_, kos_thr_next_, NULL);      \
+    TAILCALL(kos_thr_next_->fn, (es), kos_thr_next_, NULL);             \
   } while (0)
 
 /* Thread into the handler at es->pc: the fetch the trampoline does.
@@ -428,7 +437,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 #define RESULT_PUSH(es, val)                                            \
   do {                                                                  \
     if (unlikely(KosEvalState_StackPushRef((es), (val)) < 0))           \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT((es), insn);                                      \
     RESULT_NEXT(es);                                                    \
   } while (0)
 
@@ -436,9 +445,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
   do {                                                                  \
     PyObject *kos_rs_val_ = (val);                                      \
     if (unlikely(! kos_rs_val_))                                        \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT((es), insn);                                      \
     if (unlikely(KosEvalState_StackPUSH((es), kos_rs_val_) < 0))        \
-      RESULT_RAISE();                                                   \
+      RESULT_RAISE_AT((es), insn);                                      \
     RESULT_NEXT(es);                                                    \
   } while (0)
 
@@ -447,6 +456,14 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
    helper without that prototype returns EVAL_RAISE() instead and its
    handler's RESULT_RELAY makes the same tail call. */
 #define RESULT_RAISE()  TAILCALL(kos_eval_raise, es, NULL, NULL)
+
+/* RESULT_RAISE_AT(es, insn): the raise from a handler that did not
+   sync at its head; the pc fields are set from its record first. */
+#define RESULT_RAISE_AT(es, insn)                                       \
+  do {                                                                  \
+    KOS_SYNC_PC((es), (insn));                                          \
+    TAILCALL(kos_eval_raise, (es), NULL, NULL);                         \
+  } while (0)
 #define RESULT_FAIL()   return EVAL_FATAL()
 
 /* RESULT_REPROLOGUE(es): the handler left prologue work behind (an

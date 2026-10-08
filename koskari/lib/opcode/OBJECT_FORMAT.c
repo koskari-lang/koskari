@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_FORMAT) {
+  KOS_SYNC_PC(es, insn);
   int opa = (int) KosOp_ARG(insn);
   PyObject *obj = NULL;
   PyObject *rules = NULL;

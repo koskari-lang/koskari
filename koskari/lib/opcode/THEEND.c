@@ -24,6 +24,7 @@
   are its only source.
 */
 KOS_OP_HANDLER(THEEND) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
   kos_eval_report_pc_bounds_error(es);
   RESULT_FAIL();

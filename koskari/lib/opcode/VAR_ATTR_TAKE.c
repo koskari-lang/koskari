@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_TAKE) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *var_name = KosExtra_OBJ(row, 0);

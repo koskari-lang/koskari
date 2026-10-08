@@ -22,6 +22,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
+  KOS_SYNC_PC(es, insn);
   uint32_t prompt_id;
   uint32_t pop_pc;
 

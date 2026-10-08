@@ -19,6 +19,7 @@
   len == n, push n elements so index 0 is TOS (push indices n-1 .. 0).
 */
 KOS_OP_HANDLER(UNPACK) {
+  KOS_SYNC_PC(es, insn);
   Py_ssize_t n = (Py_ssize_t) KosOp_ARG(insn);
 
   PyObject *seq = KosEvalState_PopUnpackSequence(es, n, 1, "UNPACK");

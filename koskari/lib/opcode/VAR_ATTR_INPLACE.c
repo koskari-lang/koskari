@@ -29,6 +29,7 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_INPLACE) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));

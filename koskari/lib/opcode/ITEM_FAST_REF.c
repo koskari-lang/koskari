@@ -20,6 +20,7 @@
   access runs through kos_item_ref (eval/eval_item.c).
 */
 KOS_OP_HANDLER(ITEM_FAST_REF) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;

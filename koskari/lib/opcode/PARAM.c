@@ -23,6 +23,7 @@
   Creates nothing in either store.
 */
 KOS_OP_HANDLER(PARAM) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

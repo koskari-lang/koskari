@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(EXCEPTION_CLEAR) {
+  KOS_SYNC_PC(es, insn);
   PyErr_Clear();
   PyErr_SetExcInfo(NULL, NULL, NULL);
   (void) insn;

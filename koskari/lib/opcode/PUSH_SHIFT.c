@@ -24,6 +24,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
+  KOS_SYNC_PC(es, insn);
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   uint32_t resume_pc;

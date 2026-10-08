@@ -20,6 +20,7 @@
   list.
 */
 KOS_OP_HANDLER(FAST_LIST_APPEND) {
+  KOS_SYNC_PC(es, insn);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);

@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_CC) {
+  KOS_SYNC_PC(es, insn);
   /* the continuation resumes after the POP_CC closing the extent */
   uint32_t pop_pc;
   if (kos_site_extent_close(es, insn, KOS_EXT_CC, "PUSH_CC", &pop_pc) < 0)

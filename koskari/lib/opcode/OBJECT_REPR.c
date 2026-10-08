@@ -18,6 +18,7 @@
   OBJECT_REPR: pop TOS, call PyObject_Repr, push result.
 */
 KOS_OP_HANDLER(OBJECT_REPR) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

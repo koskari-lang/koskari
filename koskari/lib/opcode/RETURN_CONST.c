@@ -21,6 +21,7 @@
   the popped value.  Stack unchanged.
 */
 KOS_OP_HANDLER(RETURN_CONST) {
+  KOS_SYNC_PC(es, insn);
   PyObject *val = KosOp_OBJ(insn);
   Py_INCREF(val);
   TAILCALL(kos_return_deliver, es, insn, val);

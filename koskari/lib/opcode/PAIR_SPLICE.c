@@ -74,6 +74,7 @@ static int pair_splice_extend(PyObject *coll, PyObject *item) {
   unquote-splicing results into the final list.
 */
 KOS_OP_HANDLER(PAIR_SPLICE) {
+  KOS_SYNC_PC(es, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (count == 0)

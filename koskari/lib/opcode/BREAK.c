@@ -21,6 +21,7 @@
   expression value. Raises RuntimeError if no LOOP/FOREACH region on chain.
 */
 KOS_OP_HANDLER(BREAK) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 

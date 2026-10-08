@@ -20,6 +20,7 @@
   over bracket pairs. count 0 pushes bracket-nil.
 */
 KOS_OP_HANDLER(BRACKET_CONS) {
+  KOS_SYNC_PC(es, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (count == 0)

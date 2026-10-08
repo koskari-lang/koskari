@@ -22,6 +22,7 @@
   StopIteration, auto-await.
 */
 KOS_OP_HANDLER(VAR_NEXT) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
   if (unlikely(n != 1 && n != 2)) {

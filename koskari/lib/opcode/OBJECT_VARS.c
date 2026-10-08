@@ -18,6 +18,7 @@
   OBJECT_VARS: arg unused. Pop TOS, push getattr(TOS, "__dict__").
 */
 KOS_OP_HANDLER(OBJECT_VARS) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

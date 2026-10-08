@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
+  KOS_SYNC_PC(es, insn);
   PyObject *names = KosOp_OBJ(insn);
 
   if (! PyTuple_CheckExact(names)) {

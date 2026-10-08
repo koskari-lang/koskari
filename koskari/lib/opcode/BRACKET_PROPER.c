@@ -21,6 +21,7 @@
   count + 1 slots. count 0 pushes bracket-nil.
 */
 KOS_OP_HANDLER(BRACKET_PROPER) {
+  KOS_SYNC_PC(es, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (unlikely(KosEvalState_StackPushRef(es, KosBracketNil)))

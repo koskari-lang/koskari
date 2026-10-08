@@ -57,6 +57,7 @@ static int kos_use_stem_is_literal(const char *stem) {
 
 
 KOS_OP_HANDLER(IMPORT_USE) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

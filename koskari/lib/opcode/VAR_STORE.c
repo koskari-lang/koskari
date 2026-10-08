@@ -19,6 +19,7 @@
   the current frame namespace.
 */
 KOS_OP_HANDLER(VAR_STORE) {
+  KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = KosEvalState_StackPopRef(es);

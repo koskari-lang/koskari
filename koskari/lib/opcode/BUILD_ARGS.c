@@ -20,6 +20,7 @@
   Pop n elements and push a tuple of them.
 */
 KOS_OP_HANDLER(BUILD_ARGS) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *built = KosEvalState_StackPopTail(es, (size_t) opa);
 

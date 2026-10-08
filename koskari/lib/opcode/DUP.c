@@ -23,11 +23,11 @@ KOS_OP_HANDLER(DUP) {
   if (unlikely(opa < 0)) {
     PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
                  " argument count: %i", opa);
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
   }
 
   if (unlikely(KosEvalState_StackDuplicate(es, (size_t) opa) < 0))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
 
   RESULT_NEXT(es);
 }

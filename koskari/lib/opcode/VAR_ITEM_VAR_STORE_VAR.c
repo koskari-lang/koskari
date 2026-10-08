@@ -23,6 +23,7 @@
   twin of the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_VAR_STORE_VAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key;

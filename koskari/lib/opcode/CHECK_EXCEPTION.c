@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
+  KOS_SYNC_PC(es, insn);
 
   PyObject *match = KosEvalState_StackPopRef(es);
   if (! match)

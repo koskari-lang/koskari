@@ -21,6 +21,7 @@
   runs through kos_item_ref (eval/eval_item.c).
 */
 KOS_OP_HANDLER(VAR_ITEM_CONST_REF) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key = KosExtra_OBJ(row, 1);

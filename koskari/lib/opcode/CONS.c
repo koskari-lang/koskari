@@ -21,6 +21,7 @@
   push the result; count 0 pushes nil.
 */
 KOS_OP_HANDLER(CONS) {
+  KOS_SYNC_PC(es, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (count == 0)

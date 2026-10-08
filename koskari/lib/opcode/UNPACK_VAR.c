@@ -20,6 +20,7 @@
   seq[1] into the two names (VAR_STORE semantics).
 */
 KOS_OP_HANDLER(UNPACK_VAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name0 = KosExtra_OBJ(row, 0);
   PyObject *name1 = KosExtra_OBJ(row, 1);

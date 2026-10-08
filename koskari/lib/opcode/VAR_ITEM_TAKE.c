@@ -20,6 +20,7 @@
   obj[key]. The access runs through kos_item_take (eval/eval_item.c).
 */
 KOS_OP_HANDLER(VAR_ITEM_TAKE) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
   PyObject *obj;

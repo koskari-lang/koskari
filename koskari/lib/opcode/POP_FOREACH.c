@@ -22,6 +22,7 @@
 */
 
 KOS_OP_HANDLER(POP_FOREACH) {
+  KOS_SYNC_PC(es, insn);
   KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,

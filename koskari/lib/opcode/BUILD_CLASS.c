@@ -21,6 +21,7 @@
    metaclass resolution, prepare, namespace merge); pushes resulting class.
 */
 KOS_OP_HANDLER(BUILD_CLASS) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *ns = KosEvalState_StackPopRef(es);

@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(SWITCH_EQ) {
+  KOS_SYNC_PC(es, insn);
   PyObject *const *tail = KosEvalState_StackTailPtr(es, 2);
   if (unlikely(! tail))
     RESULT_RAISE();

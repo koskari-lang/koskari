@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(COMBINE_ARGS) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
 
   if (opa == 0) {

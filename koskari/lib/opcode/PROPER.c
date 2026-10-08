@@ -21,6 +21,7 @@
   requiring an explicit CONST nil before the CONS.
 */
 KOS_OP_HANDLER(PROPER) {
+  KOS_SYNC_PC(es, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   /* Push nil onto the stack as the implicit proper tail. */

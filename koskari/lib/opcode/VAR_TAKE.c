@@ -19,6 +19,7 @@
   push value.
 */
 KOS_OP_HANDLER(VAR_TAKE) {
+  KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_take(es, name);

@@ -18,6 +18,7 @@
    FAST_TAKE: arg = slot index. Deref and clear fast slot, push value.
 */
 KOS_OP_HANDLER(FAST_TAKE) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 

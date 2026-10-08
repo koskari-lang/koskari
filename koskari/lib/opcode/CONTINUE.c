@@ -32,6 +32,7 @@ static inline void continue_store_result(PyObject **home, PyObject *result) {
   no LOOP/FOREACH region on the chain.
 */
 KOS_OP_HANDLER(CONTINUE) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;   /* NULL stands for None until it is needed */
 

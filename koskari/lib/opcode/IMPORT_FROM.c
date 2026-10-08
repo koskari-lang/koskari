@@ -137,6 +137,7 @@ static PyObject *kos_import_from_member(
   exceptions propagate.
 */
 KOS_OP_HANDLER(IMPORT_FROM) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

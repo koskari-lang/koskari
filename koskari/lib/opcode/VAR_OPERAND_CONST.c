@@ -22,6 +22,7 @@
 */
 
 KOS_OP_HANDLER(VAR_OPERAND_CONST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name = KosExtra_OBJ(row, 1);
   PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */

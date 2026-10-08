@@ -23,6 +23,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_LIST_CONST) {
+  KOS_SYNC_PC(es, insn);
   PyObject *seq = KosOp_OBJ(insn);
 
   PyObject *built = PySequence_List(seq);

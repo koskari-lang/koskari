@@ -19,6 +19,7 @@
   Set the current exception; control will transfer to a handler by the eval loop.
 */
 KOS_OP_HANDLER(RAISE) {
+  KOS_SYNC_PC(es, insn);
   unsigned n = KosOp_ARG(insn);
 
   if (n == 0) {

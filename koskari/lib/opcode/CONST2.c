@@ -20,6 +20,7 @@
   finalize, so the handler only pushes.
 */
 KOS_OP_HANDLER(CONST2) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *a = KosExtra_OBJ(row, 0);

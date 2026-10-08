@@ -19,6 +19,7 @@
   Store the value into the name in the current frame namespace.
 */
 KOS_OP_HANDLER(VAR_STORE_CONST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);

@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(VAR_CLEAR) {
+  KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
   if (frame_ns_clear(es, name) < 0)
     RESULT_RAISE();

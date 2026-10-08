@@ -20,6 +20,7 @@
   nothing. The access runs through kos_item_clear (eval/eval_item.c).
 */
 KOS_OP_HANDLER(ITEM_VAR_CLEAR) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
   PyObject *obj;

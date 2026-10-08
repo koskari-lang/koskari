@@ -21,6 +21,7 @@
   prefix (left-1 .. 0) so first prefix is TOS.
 */
 KOS_OP_HANDLER(UNPACK_STAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   unsigned left = KosExtra_IMM(row, 0);
   unsigned right = KosExtra_IMM(row, 1);

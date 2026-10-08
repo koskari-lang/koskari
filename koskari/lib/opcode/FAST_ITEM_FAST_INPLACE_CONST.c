@@ -23,6 +23,7 @@
   site's one KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE_CONST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);

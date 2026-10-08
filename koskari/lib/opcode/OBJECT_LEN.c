@@ -18,6 +18,7 @@
   OBJECT_LEN: arg unused. Pop TOS, push len(TOS) as an integer.
 */
 KOS_OP_HANDLER(OBJECT_LEN) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

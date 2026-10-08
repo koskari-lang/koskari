@@ -20,6 +20,7 @@
   runs through kos_item_clear (eval/eval_item.c).
 */
 KOS_OP_HANDLER(FAST_ITEM_CLEAR) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;

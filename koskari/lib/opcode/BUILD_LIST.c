@@ -20,6 +20,7 @@
   Pop n elements into a new list and push it.
 */
 KOS_OP_HANDLER(BUILD_LIST) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   size_t count = (size_t) opa;
 

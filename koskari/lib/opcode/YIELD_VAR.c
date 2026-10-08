@@ -22,6 +22,7 @@
   yielding.  Stack unchanged.
 */
 KOS_OP_HANDLER(YIELD_VAR) {
+  KOS_SYNC_PC(es, insn);
   PyObject *val = frame_ns_deref(es, KosOp_OBJ(insn));
   if (unlikely(! val))
     RESULT_RAISE();

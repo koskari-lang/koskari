@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_WIND) {
+  KOS_SYNC_PC(es, insn);
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */

@@ -20,6 +20,7 @@
   revealed to the cyclic collector here.
 */
 KOS_OP_HANDLER(LOCALS) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = KosEvalState_RevealNamespace(es);
   RESULT_STEAL(es, ns);
 }

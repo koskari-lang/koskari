@@ -149,6 +149,7 @@ static KosOpResult object_next_step(
 */
 
 KOS_OP_HANDLER(OBJECT_NEXT) {
+  KOS_SYNC_PC(es, insn);
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "OBJECT_NEXT arg must be 1 or 2, got %u", n);

@@ -18,6 +18,7 @@
    POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS and pop the NS node.
 */
 KOS_OP_HANDLER(POP_NS) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   KosDynNode *top = KosEvalState_CurrentNode(es);

@@ -21,6 +21,7 @@
   to RETURN_FAST when the name has a fast slot.  Stack unchanged.
 */
 KOS_OP_HANDLER(RETURN_VAR) {
+  KOS_SYNC_PC(es, insn);
   PyObject *val = frame_ns_deref(es, KosOp_OBJ(insn));
   if (unlikely(! val))
     RESULT_RAISE();

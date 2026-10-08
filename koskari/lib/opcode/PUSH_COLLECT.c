@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_COLLECT) {
+  KOS_SYNC_PC(es, insn);
   PyObject *nspec = KosOp_OBJ(insn);
   PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;

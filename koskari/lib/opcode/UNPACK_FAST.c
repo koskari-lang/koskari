@@ -20,6 +20,7 @@
   and seq[1].
 */
 KOS_OP_HANDLER(UNPACK_FAST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   size_t idx0 = (size_t) KosExtra_IMM(row, 0);
   size_t idx1 = (size_t) KosExtra_IMM(row, 1);

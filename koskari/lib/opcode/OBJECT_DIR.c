@@ -18,6 +18,7 @@
   OBJECT_DIR: pop TOS, call PyObject_Dir, push result.
 */
 KOS_OP_HANDLER(OBJECT_DIR) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

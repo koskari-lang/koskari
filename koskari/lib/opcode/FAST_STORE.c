@@ -24,11 +24,11 @@ KOS_OP_HANDLER(FAST_STORE) {
 
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
 
   size_t idx = (size_t) KosOp_ARG(insn);
   if (unlikely(kos_ns_fast_store_steal(ns, idx, val) < 0))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
 
   RESULT_NEXT(es);
 }

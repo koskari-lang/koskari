@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_WIND) {
+  KOS_SYNC_PC(es, insn);
   KosDynNode *top = KosEvalState_CurrentNode(es);
   if (! top || ! KosDynNode_IS_WIND(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");

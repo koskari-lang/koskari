@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_DYN_WITH) {
+  KOS_SYNC_PC(es, insn);
   PyObject *mgr = KosEvalState_StackPopRef(es);
   if (! mgr)
     RESULT_RAISE();

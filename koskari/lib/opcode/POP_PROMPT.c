@@ -20,6 +20,7 @@
 */
 
 KOS_OP_HANDLER(POP_PROMPT) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   /* Return bookmark: PUSH-graft (POP_PROMPT) or in-place (INPLACE)

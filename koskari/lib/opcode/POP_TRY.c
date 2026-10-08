@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_TRY) {
+  KOS_SYNC_PC(es, insn);
 
   KosDynNode *top = KosEvalState_CurrentNode(es);
 

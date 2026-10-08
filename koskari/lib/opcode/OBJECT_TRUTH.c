@@ -18,6 +18,7 @@
   OBJECT_TRUTH: pop TOS, call PyObject_IsTrue, push Py_True/Py_False.
 */
 KOS_OP_HANDLER(OBJECT_TRUTH) {
+  KOS_SYNC_PC(es, insn);
   (void) insn;
 
   PyObject *val = KosEvalState_StackPopRef(es);

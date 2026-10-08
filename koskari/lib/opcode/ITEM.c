@@ -20,6 +20,7 @@
   (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(ITEM) {
+  KOS_SYNC_PC(es, insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;
   PyObject *obj;

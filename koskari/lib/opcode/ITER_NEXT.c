@@ -22,6 +22,7 @@
   Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
+  KOS_SYNC_PC(es, insn);
   KosDynNode *region = kos_dyn_find_loop(es);
 
   if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {

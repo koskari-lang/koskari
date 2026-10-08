@@ -21,6 +21,7 @@
   Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 KOS_OP_HANDLER(YIELD) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 

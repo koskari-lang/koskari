@@ -106,6 +106,7 @@ static int match_case_bind(
 
 
 KOS_OP_HANDLER(MATCH_CASE) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ns = CURRENT_NS();

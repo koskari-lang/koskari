@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(EXCEPTION) {
+  KOS_SYNC_PC(es, insn);
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_GetExcInfo(&typ, &val, &tb);
 

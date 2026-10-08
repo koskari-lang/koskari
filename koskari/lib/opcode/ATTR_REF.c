@@ -18,6 +18,7 @@
 */
 
 KOS_OP_HANDLER(ATTR_REF) {
+  KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
   PyObject *obj = KosEvalState_StackPopRef(es);
   if (! obj)

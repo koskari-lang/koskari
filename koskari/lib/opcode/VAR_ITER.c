@@ -20,6 +20,7 @@
   iterator, acquired uniformly over both protocols (kos_iter_acquire).
 */
 KOS_OP_HANDLER(VAR_ITER) {
+  KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *val = frame_ns_deref(es, name);

@@ -20,6 +20,7 @@
   JUMP_FALSE.
 */
 KOS_OP_HANDLER(CHECK_NIL) {
+  KOS_SYNC_PC(es, insn);
   PyObject *val = KosEvalState_StackPopRef(es);
   if (unlikely(! val))
     RESULT_RAISE();

@@ -23,6 +23,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *nspec = NULL;
   PyObject *names = NULL;

@@ -21,6 +21,7 @@
   kos_item_clear (eval/eval_item.c).
 */
 KOS_OP_HANDLER(FAST_ITEM_FAST_CLEAR) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = KosEvalState_NAMESPACE(es);
   PyObject *obj, *obj_ref;

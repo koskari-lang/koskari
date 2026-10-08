@@ -21,6 +21,7 @@
   and no py_await_iter.
 */
 KOS_OP_HANDLER(AWAIT) {
+  KOS_SYNC_PC(es, insn);
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u)

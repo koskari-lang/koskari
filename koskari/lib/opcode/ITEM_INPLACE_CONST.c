@@ -23,6 +23,7 @@
   KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(ITEM_INPLACE_CONST) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosSegment **bl = KosEvalState_BLOCK(es);
   PyObject *const *tail;

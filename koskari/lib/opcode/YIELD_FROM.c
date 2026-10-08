@@ -849,6 +849,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
   is exhausted.
 */
 KOS_OP_HANDLER(YIELD_FROM) {
+  KOS_SYNC_PC(es, insn);
   KosDynNode *dyn_top = KosEvalState_CurrentNode(es);
   PyObject *subexpr;
   PyObject *delegate = NULL;

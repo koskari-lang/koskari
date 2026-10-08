@@ -18,6 +18,7 @@
   FAST_REF: arg = slot index. Push reference to fast slot.
 */
 KOS_OP_HANDLER(FAST_REF) {
+  KOS_SYNC_PC(es, insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 

@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
+  KOS_SYNC_PC(es, insn);
   PyObject *rules = KosOp_OBJ(insn);
   PyObject *obj;
   PyObject *res;

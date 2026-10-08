@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(VAR_BIND) {
+  KOS_SYNC_PC(es, insn);
 
   PyObject *name = KosOp_OBJ(insn);
 

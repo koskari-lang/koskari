@@ -19,6 +19,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_TRY) {
+  KOS_SYNC_PC(es, insn);
   KosDynNode *const region = (KosDynNode *) kos_dyn_push_try(es, KosOp_ARG(insn));
   if (! region) {
     PyErr_NoMemory();

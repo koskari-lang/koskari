@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
+  KOS_SYNC_PC(es, insn);
   uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
   uint32_t pop_pc;
 

@@ -25,6 +25,7 @@
 */
 
 KOS_OP_HANDLER(CAPTURE_CC) {
+  KOS_SYNC_PC(es, insn);
   KosContinuation *k = NULL;
   PyObject *fn = NULL;
 

@@ -18,6 +18,7 @@
   VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 KOS_OP_HANDLER(VAR_REF) {
+  KOS_SYNC_PC(es, insn);
   PyObject *name = KosOp_OBJ(insn);
 
   PyObject *ref = frame_ns_ref(es, name);

@@ -21,6 +21,7 @@
 */
 
 KOS_OP_HANDLER(POP_LOOP) {
+  KOS_SYNC_PC(es, insn);
   KosDynNode *region = KosEvalState_CurrentNode(es);
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,

@@ -23,6 +23,7 @@
   pending wind thunk.
 */
 KOS_OP_HANDLER(CALL) {
+  KOS_SYNC_PC(es, insn);
   unsigned n = KosOp_ARG(insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
 

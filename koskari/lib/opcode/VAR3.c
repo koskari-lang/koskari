@@ -22,6 +22,7 @@
   holds, the failed value included by the push itself.
 */
 KOS_OP_HANDLER(VAR3) {
+  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name;
 

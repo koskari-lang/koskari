@@ -20,6 +20,7 @@
   KOS_RES_RETURN at the driver boundary.
 */
 KOS_OP_HANDLER(RETURN) {
+  KOS_SYNC_PC(es, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 

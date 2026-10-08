@@ -20,6 +20,7 @@
   a list.
 */
 KOS_OP_HANDLER(VAR_LIST_APPEND) {
+  KOS_SYNC_PC(es, insn);
 
   PyObject *name = KosOp_OBJ(insn);
 

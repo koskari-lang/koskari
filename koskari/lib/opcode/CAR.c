@@ -20,6 +20,7 @@
   intermediate is not a pair or is nil.
 */
 KOS_OP_HANDLER(CAR) {
+  KOS_SYNC_PC(es, insn);
   int opa = (int) KosOp_ARG(insn);
   if (unlikely(opa <= 0)) {
     PyErr_Format(PyExc_RuntimeError, "CAR invoked with invalid"

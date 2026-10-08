@@ -21,6 +21,7 @@
    tail bit, which the core turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_VAR_STAR) {
+  KOS_SYNC_PC(es, insn);
   int tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn));
   const KosExtra *row = KosOp_ROW(insn);
 
