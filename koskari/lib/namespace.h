@@ -721,6 +721,32 @@ static inline PyObject *kos_ns_fast_peek_raw(
 }
 
 
+/**
+   kos_ns_fast_peek with home set when the value's holder may be
+   written in place: a raw slot, or a plain ref, which alone holds its
+   value. A constant ref's value is read but never a home: its store
+   refuses, and a result written into its value would bypass that.
+*/
+static inline PyObject *kos_ns_fast_peek_home(
+    PyObject *ns, size_t idx, int *home) {
+
+  PyObject *slot = KosNamespace_GET_FAST_VAL(ns, idx);
+  *home = kos_ns_is_raw(ns, idx);
+  if (*home)
+    return slot;
+  if (slot) {
+    PyTypeObject *tp = Py_TYPE(slot);
+    if (tp == &KosRefType) {
+      *home = 1;
+      return KosSymbolicRef_VALUE(slot);
+    }
+    if (tp == &KosConstantRefType)
+      return KosSymbolicRef_VALUE(slot);
+  }
+  return NULL;
+}
+
+
 /* Bind var to the fast slot's value, borrowed on a peek hit. On a
    miss (an empty slot, or a ref kind the peek does not read) bind
    var_ref to the owned general deref, which raises NameError for an
@@ -819,13 +845,25 @@ static inline int kos_ns_fast_store_steal(
     size_t idx,
     PyObject *val) {
 
+  PyObject *slot = KosNamespace_GET_FAST_VAL(ns, idx);
+
   if (kos_ns_is_raw(ns, idx)) {
-    PyObject *old = KosNamespace_GET_FAST_VAL(ns, idx);
     KosNamespace_GET_FAST_VAL(ns, idx) = val;
+    Py_XDECREF(slot);
+    return 0;
+  }
+
+  /* a plain ref takes the reference as a raw slot does; the store
+     arm of every other ref kind runs code and keeps its own */
+  if (likely(Py_TYPE(slot) == &KosRefType)) {
+    PyObject *old = KosSymbolicRef_VALUE(slot);
+    KosSymbolicRef_VALUE(slot) = val;
     Py_XDECREF(old);
     return 0;
-  } else {
-    int res = KosRef_Store(KosNamespace_GET_FAST_VAL(ns, idx), val);
+  }
+
+  {
+    int res = KosRef_Store(slot, val);
     Py_DECREF(val);
     return res;
   }

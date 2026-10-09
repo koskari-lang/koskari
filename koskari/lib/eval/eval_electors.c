@@ -598,14 +598,15 @@ KOS_ELECTOR(miss) {
    fast slot: the guard is the kind's check on the peeked slot value
    and, when RHS_GUARDED, on the operand the family supplies (RHS,
    borrowed; a pool constant's type was fixed at the election). The
-   accumulator is offered as the result's home when the slot is raw
-   and its only owner: the result is written into it and no store
-   follows. A ref slot's value is never written: its store may refuse
-   (a constant ref), so the result is stolen into the slot through the
-   ref, as it is into a raw slot the value is shared with. Either way
-   the family's operand release (DROP) runs first. A slot the peek
-   cannot read (empty, or a ref kind that needs the general deref) is
-   a miss; the generic body raises or resolves it. */
+   accumulator is offered as the result's home when its holder is a
+   raw slot or a plain ref and that holder is its only owner: the
+   result is written into it and no store follows. A constant ref's
+   value is never written, since its store refuses; the result is
+   stolen into the slot through the ref, as it is into a raw slot the
+   value is shared with. Either way the family's operand release
+   (DROP) runs first. A slot the peek cannot read (empty, or a ref
+   kind that needs the general deref) is a miss; the generic body
+   raises or resolves it. */
 #define KOS_SLOT_ELECTOR(FAMILY, KIND, kind, NAME, RHS, RHS_GUARDED,    \
                          EXTRACT, DROP)                                 \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
@@ -614,12 +615,12 @@ KOS_ELECTOR(miss) {
     PyObject *ns = KosEvalState_NAMESPACE(es);                          \
     PyObject *acc;                                                      \
     PyObject *rhs;                                                      \
-    int raw;                                                            \
+    int home;                                                           \
     KOS_##KIND##_VARS;                                                  \
     PyObject *out;                                                      \
                                                                         \
     KOS_OP_REQUIRE_NS(ns);                                              \
-    acc = kos_ns_fast_peek_raw(ns, idx, &raw);                          \
+    acc = kos_ns_fast_peek_home(ns, idx, &home);                        \
     rhs = (RHS);                                                        \
     if (unlikely(! rhs))                                                \
       RESULT_RAISE_AT(es, insn);                                        \
@@ -629,7 +630,7 @@ KOS_ELECTOR(miss) {
     EXTRACT(acc, rhs, kos_elector_generic_of(insn));                    \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b,                   \
-                       raw ? acc : NULL, RHS_GUARDED ? rhs : NULL, out); \
+                       home ? acc : NULL, RHS_GUARDED ? rhs : NULL, out); \
     if (RHS_GUARDED && out == rhs) {                                    \
       /* the result lives in the stack top: its reference moves to the \
          slot below instead of being dropped */                         \

@@ -91,14 +91,17 @@ as the in-place home whenever its refcount was one, and the peek
 reads through a constant ref as well as a raw slot, so `incr!` on a
 `bind! x (constant ...)` name rewrote the constant's digits and never
 reached the store that raises; a result is now written in place only
-when the slot is raw. The same review dropped the attribute bodies'
-unreachable setattr arm (the head now takes the location's address
-and the store swaps the result into it), collapsed the int and float
-twins of every body into one macro per family parameterised on an
-operand kind, with byte-identical code, and added fold bodies:
-OBJECT_OPERAND and OBJECT_INPLACE sites of three or more operands of
-one kind fold the run in C, decline to the generic body before
-anything is materialised, and materialise once, into the first
+when the holder is a raw slot or a plain ref, never a constant ref,
+and a plain ref takes a stolen result as a raw slot does, without the
+general store's refcount round trip. The same review dropped the
+attribute bodies' unreachable setattr arm (the head now takes the
+location's address and the store swaps the result into it),
+collapsed the int and float twins of every body into one macro per
+family parameterised on an operand kind, with byte-identical code,
+and added fold bodies: OBJECT_OPERAND and OBJECT_INPLACE sites of
+three or more operands of one kind fold the run in C, decline to the
+generic body before anything is materialised, and materialise once,
+into the first
 operand when the stack alone owns it; the reduce fold behind the
 runtime operators offers its accumulator for reuse the same way.
 The fold covers the operators the compiler emits runs for, since a
