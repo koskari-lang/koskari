@@ -193,10 +193,14 @@ extern KosEvaluatedTypeObject KosEvaluatedType;
 
 /**
    Is the type an evaluated one? Answered by walking tp_base, which
-   reaches the evaluated base whenever it is a base at all: a layout
-   conflict refuses any class that would put it elsewhere in the mro.
-   A plain builtin's walk is two loads and two compares, so the test
-   serves the per-element paths that classify an iterator.
+   reaches the evaluated base whenever it is a base at all. The marker
+   type is not a base type and is not exported, so a class reaches it
+   only through a static adopter; that adopter is the solid base of
+   any class built on it, so it is the class's tp_base, and a second
+   base with a layout of its own is refused as a layout conflict.
+   KosEvaluated_Resolve walks the same chain and relies on the same
+   facts. A plain builtin's walk is two loads and two compares, so
+   the test serves the per-element paths that classify an iterator.
 */
 static inline int KosEvaluated_CheckType(PyTypeObject *t) {
 
