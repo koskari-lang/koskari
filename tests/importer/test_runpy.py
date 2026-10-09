@@ -70,8 +70,7 @@ class TestRunpy(unittest.TestCase):
             runpy.run_module('kimod')
         message = str(caught.exception)
         self.assertIn("kimod is a Koskari module", message)
-        self.assertIn("run it with koskari ", message)
-        self.assertTrue(message.endswith('kimod.ki'))
+        self.assertIn("run it with koskari -m kimod", message)
 
 
     def test_is_package_answers_from_the_file_name(self):

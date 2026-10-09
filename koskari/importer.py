@@ -162,7 +162,7 @@ class KoskariSourceFileLoader(FileLoader):
 
         path = self.get_filename(fullname)
         raise ImportError(
-            f"{fullname} is a Koskari module; run it with koskari {path}",
+            f"{fullname} is a Koskari module; run it with koskari -m {fullname}",
             name=fullname, path=path)
 
 

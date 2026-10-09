@@ -5,7 +5,7 @@ The `koskari` command runs scripts and the REPL.
 ## Usage
 
 ```
-koskari [options] [-c CMD | filename | -] [args ...] [-- args ...]
+koskari [options] [-c CMD | -m MODULE | filename | -] [args ...] [-- args ...]
 ```
 
 When running a script, use `--` before arguments that look like options
@@ -21,19 +21,33 @@ for example, `koskari app.ki 20 -- --verbose` sets `sys.argv` to
 | `-h`, `--help` | Show the usage message, then exit |
 | `--version` | Print Koskari and Python version information, then exit |
 | `-q`, `--quiet` | Suppress the REPL startup version banner |
-| `--no-tweak-path` | Do not put the script's directory (the working directory for `-c`, `-` and the REPL) first on `sys.path` |
+| `--no-tweak-path` | Do not put the script's directory (the working directory for `-m`, `-c`, `-` and the REPL) first on `sys.path` |
 | `--histfile PATH` | REPL readline/prompt_toolkit history file |
 | `--repl-full-trace` | Show REPL infrastructure frames in runtime error tracebacks |
 | `-i`, `--interactive` | Enter interactive mode after executing the given script |
 | `-c CMD`, `--command CMD` | Evaluate s-expressions from CMD, then exit |
+| `-m MODULE`, `--module MODULE` | Run the named module as `__main__`, then exit; a package name runs its `__main__` submodule |
 | `--compile-kio OUT SRC` | Compile `SRC` `.ki` to `.kio` at `OUT`, then exit |
 | `--compile-kio-source-name PATH` | Logical `.ki` path stored in the `.kio` for tracebacks; defaults to the input path |
 | `--execute-kio SRC` | Run `SRC` as a precompiled `.kio` |
 
-Exactly one run target is required for script execution: `-c CMD`,
+Exactly one run target is required for script execution: `-c CMD`, `-m MODULE`,
 `--compile-kio OUT SRC`, `--execute-kio SRC`, or positional `filename`.
 Those forms are mutually exclusive. Remaining arguments are forwarded to the
-script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`.
+script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`; with `-m`, it is the
+path of the module's file.
+
+`-m MODULE` finds the module through the import machinery with the working
+directory first on `sys.path`, as `python -m` does, and runs it as
+`__main__` with `__package__` set to its parent package, so a relative
+import in the module resolves. A package name runs its `__main__`
+submodule. A module whose `.kio` is current beside its source runs from the
+`.kio`. Arguments after the module name, or after `--`, are forwarded
+unchanged:
+
+```
+koskari -m tools.tools -- selftest
+```
 
 `--compile-kio` compiles `SRC` under the module name an import would give
 it: each directory above the file holding an `__init__.ki` or `__init__.py`

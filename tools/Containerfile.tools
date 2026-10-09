@@ -10,7 +10,7 @@
 #
 # Run (repository bind-mounted at /work):
 #   podman run --rm -v ./:/work:Z koskari-tools:local \
-#     tools/tools.ki -- selftest
+#     -m tools.tools -- selftest
 #
 # author: Christopher O'Brien <obriencj@gmail.com>
 # license: GPL v.3

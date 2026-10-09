@@ -28,11 +28,13 @@ command runs.
 import sys
 
 import-from argparse ArgumentParser REMAINDER
+import-from importlib.util find_spec
 import-from os getcwd
 import-from os.path abspath basename dirname
 
 import-from .host version_line
 import-from .repl repl
+import-from ..importer source_for_stale_kio
 import-from ..lib ParamRef
 import-from ..module:
   new_module init_module
@@ -49,7 +51,8 @@ define run_file [
     mod
     filename
     execute_kio: False
-    interactive: False]:
+    interactive: False
+    spec: None]:
   """
   Load and execute a koskari source file into mod.
 
@@ -61,9 +64,11 @@ define run_file [
   :param execute_kio: when True, load precompiled .kio bodies
   :param interactive: when True, retain load facets for the ongoing
       session (the module still seals on completion)
+  :param spec: the module spec a -m run found the file through, bound
+      as __spec__ so relative imports resolve from its parent package
   """
 
-  init_module mod filename
+  init_module mod filename spec: spec
 
   if execute_kio:
     load_module_kio_async mod
@@ -98,6 +103,55 @@ define run_command [
   (load_module_source_async mod command
     detach: (not interactive)
     layout: layout)
+
+
+; === Module execution ===
+
+
+define main_module_spec [name]:
+  """
+  The spec of the module -m runs: the named module, or the __main__
+  submodule when the name is a package, found through the import
+  machinery as python -m finds it.
+
+  :param name: dotted module name
+  :return: ModuleSpec with a Koskari loader
+  :raises ImportError: when the name resolves to nothing, to a package
+      without a __main__, or to a module that is not Koskari source
+  """
+
+  define spec (find_spec name)
+  when (None? spec):
+    raise (ImportError f"No module named {name}")
+
+  unless (None? spec.submodule_search_locations):
+    set! spec (find_spec f"{name}.__main__")
+    when (None? spec):
+      raise (ImportError
+        f"No module named {name}.__main__; '{name}' is a package and cannot be directly executed")
+
+  when (None? (getattr spec.loader "exec_module_async" None)):
+    raise (ImportError
+      f"{spec.name} is not a Koskari module; run it with python -m {spec.name}")
+
+  return spec
+
+
+define main_module_file [spec]:
+  """
+  The file a -m run executes: the spec's origin, unless that is a .kio
+  that has fallen behind its sibling .ki
+
+  :param spec: ModuleSpec from main_module_spec
+  :return: path to the .ki or .kio to run
+  """
+
+  define filename spec.origin
+  when (filename.endswith ".kio"):
+    define source (source_for_stale_kio filename)
+    unless (None? source):
+      set! filename source
+  return filename
 
 
 ; === Argument parsing ===
@@ -156,6 +210,14 @@ define resolve_cli_target [parser options]:
   define rest (list options.rest)
 
   when options.command:
+    set! options.filename None
+    when (and rest (equal? rest[0] "--")):
+      set! rest (item-slice rest 1)
+    set! options.args rest
+    set! options.execute_kio False
+    return options
+
+  when options.module:
     set! options.filename None
     when (and rest (equal? rest[0] "--")):
       set! rest (item-slice rest 1)
@@ -234,6 +296,10 @@ define option_parser [name]:
     dest: "command" metavar: "CMD" default: None
     help: "S-expressions evaluated as a string, then exit; for a layout program use - to read stdin")
 
+  (target.add_argument "-m" "--module"
+    dest: "module" metavar: "MODULE" default: None
+    help: "Run the named module as __main__ with the current directory first on sys.path, then exit")
+
   (target.add_argument "--compile-kio"
     dest: "compile_kio" nargs: 2 metavar: #("OUT" "SRC") default: None
     help: "Compile SRC .ki to OUT as .kio, then exit")
@@ -292,6 +358,27 @@ define run []:
       source_filename: options.compile_kio_source_name)
     return 0
 
+  ; sys.path[0] is the script's directory for a script, the working
+  ; directory for -m, -c, - and the REPL, as for python; absolute, so a
+  ; later chdir does not move it
+  when options.tweakpath:
+    if (and filename (not (equal? filename "-"))):
+      sys.path.insert 0 (dirname (abspath filename))
+    else:
+      sys.path.insert 0 (getcwd)
+
+  ; -m names its file through the import machinery, so the path is
+  ; settled first; the module runs as a script of that file
+  define spec None
+  when options.module:
+    try:
+      set! spec (main_module_spec options.module)
+    except [ImportError as: e]:
+      print f"{(basename name)}: {e}" file: sys.stderr
+      return 1
+    set! filename (main_module_file spec)
+    set! options.execute_kio (filename.endswith ".kio")
+
   ; Present the run target to the executed program as sys.argv.
   if command:
     set! sys.argv #["-c" *: options.args]
@@ -302,16 +389,8 @@ define run []:
       ; an interactive session reports an empty argv[0], as Python does
       set! sys.argv #["" *: options.args]
 
-  ; sys.path[0] is the script's directory for a script, the working
-  ; directory for -c, - and the REPL, as for python; absolute, so a
-  ; later chdir does not move it
-  when options.tweakpath:
-    if (and filename (not (equal? filename "-"))):
-      sys.path.insert 0 (dirname (abspath filename))
-    else:
-      sys.path.insert 0 (getcwd)
-
-  define mod (new_module "__main__")
+  define mod (new_module "__main__"
+    package: (if spec spec.parent None))
   define interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
@@ -332,7 +411,8 @@ define run []:
   elif filename:
     (run_file mod filename
       execute_kio: options.execute_kio
-      interactive: options.interactive)
+      interactive: options.interactive
+      spec: spec)
     unless options.interactive:
       return 0
 

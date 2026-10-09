@@ -47,9 +47,6 @@ import-from pathlib Path
 define _HERE ((Path __file__).resolve)
 define REPO_ROOT _HERE.parents[2]
 
-when (not-in? (str REPO_ROOT) sys.path):
-    sys.path.insert 0 (str REPO_ROOT)
-
 
 ; Importing the runner triggers the koskari bootstrap (the warmup cost
 ; that justifies one shared script rather than three).

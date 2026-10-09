@@ -31,7 +31,7 @@ session. The PR's `make test` is the authoritative final check.
 **Smoke test before generating.** Confirm the toolchain end to end:
 
 ```
-uv run python -B -m koskari tools/corpus/quick.ki -- verify --all '(cond [True 100])'
+uv run python -B -m koskari -m tools.corpus.quick -- verify --all '(cond [True 100])'
 # -> {"read": "(cond [True 100])", "expand": "(cond [True 100])", "eval": "100"}
 ```
 
@@ -40,7 +40,7 @@ uv run python -B -m koskari tools/corpus/quick.ki -- verify --all '(cond [True 1
 All commands run as:
 
 ```
-uv run python -B -m koskari tools/corpus/quick.ki -- <subcommand>
+uv run python -B -m koskari -m tools.corpus.quick -- <subcommand>
 ```
 
 The `--` is required: the koskari CLI rejects option-like tokens before it and

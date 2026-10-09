@@ -52,21 +52,21 @@ EDITOR_REGEN := tools/editor_tokens/regen.ki
 
 editors/textmate/syntaxes/koskari.tmLanguage.json: $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $(EDITOR_REGEN)
 	@echo "Re-generating koskari.tmLanguage.json..."
-	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $@
+	@$(TOOLS_RUN) -m tools.tools -- editors $(EDITOR_SPEC) editors/textmate/syntaxes/koskari.tmLanguage.json.j2 $@
 
 # Canonical tree-sitter highlight queries (shared by Helix and Neovim).
 editors/tree-sitter/queries/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
 	@echo "Re-generating tree-sitter highlights.scm..."
-	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
+	@$(TOOLS_RUN) -m tools.tools -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
 
 # Zed needs the queries inside its own extension dir; same template, same output.
 editors/zed/languages/koskari/highlights.scm: $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $(EDITOR_REGEN)
 	@echo "Re-generating Zed highlights.scm..."
-	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
+	@$(TOOLS_RUN) -m tools.tools -- editors $(EDITOR_SPEC) editors/tree-sitter/queries/highlights.scm.j2 $@
 
 editors/emacs/koskari-mode.el: $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $(EDITOR_REGEN)
 	@echo "Re-generating koskari-mode.el..."
-	@$(TOOLS_RUN) tools/tools.ki -- editors $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $@
+	@$(TOOLS_RUN) -m tools.tools -- editors $(EDITOR_SPEC) editors/emacs/koskari-mode.el.j2 $@
 
 TREE_SITTER_IMAGE ?= docker.io/library/node:22-slim
 
@@ -367,7 +367,7 @@ corpus-parquet-all:  ## Export all corpus views to build/corpus/datasets/
 # (see build-tools) rather than a dedicated image.
 corpus-parquet-container:  ## Run corpus export in the tools container; writes to build/corpus/datasets/
 	@mkdir -p $(BUILD_DIR)/corpus/datasets
-	@$(TOOLS_RUN) tools/tools.ki -- corpus --all-views \
+	@$(TOOLS_RUN) -m tools.tools -- corpus --all-views \
 	  --output-base /work/$(BUILD_DIR)/corpus/datasets
 
 
@@ -397,9 +397,10 @@ build-mcp-container: build-container build-mcp  ## Build koskari:local then the 
 run-mcp:  ## Run MCP server on stdio (manual smoke test; use -i, no -t)
 	@$(CONTAINER_ENGINE) run -i --rm $(MCP_IMAGE):local
 
-run-mcp-web: ## Serve the landing page and stateless /mcp at localhost:8080
+run-mcp-web: ## Serve the landing page and /mcp over HTTP at localhost:8080
 	@echo "Serving http://localhost:8080/ -- ctrl-c to stop"
-	@$(CONTAINER_ENGINE) run --rm --network host $(MCP_IMAGE):lambda
+	@$(CONTAINER_ENGINE) run --rm --network host $(MCP_IMAGE):local \
+	  mcp_server.ki -- --serve --host 127.0.0.1 --port 8080
 
 
 ##@ Developer Tools
@@ -417,7 +418,7 @@ build-tools:  ## Build koskari developer tools container (requires koskari:local
 build-tools-container: build-container build-tools  ## Build koskari:local then the tools container
 
 run-tools-selftest:  ## Smoke test the tools dispatcher in the container
-	@$(TOOLS_RUN) tools/tools.ki -- selftest
+	@$(TOOLS_RUN) -m tools.tools -- selftest
 
 
 ##@ Code Quality

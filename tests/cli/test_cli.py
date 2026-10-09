@@ -72,6 +72,7 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
     async def test_defaults(self):
         opts = await self._parse()
         self.assertIsNone(opts.filename)
+        self.assertIsNone(opts.module)
         self.assertEqual([], opts.args)
         self.assertTrue(opts.tweakpath)
         self.assertFalse(opts.interactive)
@@ -183,6 +184,31 @@ class TestOptionParser(unittest.IsolatedAsyncioTestCase):
         opts = await self._parse('-c', '(print 1)', '--', 'arg1')
         self.assertEqual('(print 1)', opts.command)
         self.assertEqual(['arg1'], opts.args)
+
+
+    async def test_module_short(self):
+        opts = await self._parse('-m', 'pkg.mod')
+        self.assertEqual('pkg.mod', opts.module)
+        self.assertIsNone(opts.filename)
+        self.assertEqual([], opts.args)
+
+
+    async def test_module_long_forwards_args(self):
+        opts = await self._parse('--module', 'pkg.mod', 'arg1', 'arg2')
+        self.assertEqual('pkg.mod', opts.module)
+        self.assertEqual(['arg1', 'arg2'], opts.args)
+
+
+    async def test_module_strips_leading_double_dash(self):
+        opts = await self._parse('-m', 'pkg.mod', '--', '--flag', 'x')
+        self.assertEqual('pkg.mod', opts.module)
+        self.assertEqual(['--flag', 'x'], opts.args)
+
+
+    async def test_module_conflicts_with_command(self):
+        parser = await _launch().option_parser('koskari')
+        with self.assertRaises(SystemExit):
+            parser.parse_args(['-m', 'pkg.mod', '-c', '(print 1)'])
 
 
     async def test_script_rest_after_double_dash(self):
@@ -620,6 +646,125 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             sys.path[:] = prev_path
         self.assertEqual(0, code, out)
         self.assertIn(f"path0 {os.getcwd()}", out)
+
+
+    async def _run_module_in(self, tmp, top, *argv):
+        """
+        Run main from tmp as the working directory, restoring the
+        working directory, sys.path and sys.argv afterward and dropping
+        the top-level module named top, and its submodules, from
+        sys.modules.
+
+        Returns (exit_code, stdout_text, sys.argv as the run left it).
+        """
+
+        prev_cwd = os.getcwd()
+        prev_path = sys.path[:]
+        prev_argv = sys.argv
+        os.chdir(tmp)
+        try:
+            code, out = await self._capture_main(*argv)
+            argv_after = list(sys.argv)
+        finally:
+            os.chdir(prev_cwd)
+            sys.path[:] = prev_path
+            sys.argv = prev_argv
+            for name in list(sys.modules):
+                if name == top or name.startswith(top + '.'):
+                    del sys.modules[name]
+        return code, out, argv_after
+
+
+    async def test_main_module_runs_package_module_as_main(self):
+        """
+        -m finds a package's module from the working directory, runs it
+        as __main__ under its package so a relative import resolves,
+        and names the module's file as sys.argv[0]
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'mpkg')
+            os.makedirs(pkg)
+            with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+                fh.write("define PKG_VALUE 7\n")
+            with open(os.path.join(pkg, 'helper.ki'), 'w') as fh:
+                fh.write("define VALUE 42\n")
+            with open(os.path.join(pkg, 'app.ki'), 'w') as fh:
+                fh.write("import sys\n"
+                         "import-from .helper VALUE\n"
+                         "print \"name\" __name__\n"
+                         "print \"package\" __package__\n"
+                         "print \"path0\" sys.path[0]\n"
+                         "print \"value\" VALUE\n"
+                         "print \"args\" (item-slice sys.argv 1)\n")
+            code, out, argv = await self._run_module_in(
+                tmp, 'mpkg', '-m', 'mpkg.app', '--', 'one', '--two')
+            self.assertEqual(0, code, out)
+            self.assertIn("name __main__", out)
+            self.assertIn("package mpkg", out)
+            self.assertIn(f"path0 {os.path.realpath(tmp)}", out)
+            self.assertIn("value 42", out)
+            self.assertIn("args ['one', '--two']", out)
+            self.assertEqual(
+                os.path.join(os.path.realpath(tmp), 'mpkg', 'app.ki'),
+                argv[0])
+
+
+    async def test_main_module_package_runs_its_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'mpkg')
+            os.makedirs(pkg)
+            with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+                fh.write("define PKG_VALUE 7\n")
+            with open(os.path.join(pkg, 'helper.ki'), 'w') as fh:
+                fh.write("define VALUE 42\n")
+            with open(os.path.join(pkg, '__main__.ki'), 'w') as fh:
+                fh.write("import-from .helper VALUE\n"
+                         "print \"main\" __name__ VALUE\n")
+            code, out, _argv = await self._run_module_in(
+                tmp, 'mpkg', '-m', 'mpkg')
+            self.assertEqual(0, code, out)
+            self.assertIn("main __main__ 42", out)
+
+
+    async def test_main_module_runs_current_kio(self):
+        """
+        A module whose .kio is current beside its source runs from the
+        .kio
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, 'kmod.ki')
+            with open(src, 'w') as fh:
+                fh.write("print \"file\" __file__\n")
+            code, out, _argv = await self._run_module_in(
+                tmp, 'kmod',
+                '--compile-kio', os.path.join(tmp, 'kmod.kio'), src)
+            self.assertEqual(0, code, out)
+            code, out, _argv = await self._run_module_in(
+                tmp, 'kmod', '-m', 'kmod')
+            self.assertEqual(0, code, out)
+            self.assertIn("file ", out)
+            self.assertTrue(out.strip().endswith('kmod.kio'), out)
+
+
+    async def test_main_module_missing_reports_and_exits_one(self):
+        def run():
+            captured = io.StringIO()
+            orig = sys.stderr
+            prev_path = sys.path[:]
+            sys.stderr = captured
+            try:
+                return main(['koskari', '-m', 'no_such_module_here']), \
+                    captured.getvalue()
+            finally:
+                sys.stderr = orig
+                sys.path[:] = prev_path
+
+        loop = asyncio.get_running_loop()
+        code, err = await loop.run_in_executor(None, run)
+        self.assertEqual(1, code)
+        self.assertIn("No module named no_such_module_here", err)
 
 
     async def test_main_compile_kio_then_execute_kio_branches(self):

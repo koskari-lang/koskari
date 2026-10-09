@@ -33,7 +33,7 @@ Run from the repository root:
 
     tox -qe opgrams
     tox -qe opgrams -- --group churn --top 30
-    uv run python -B -m koskari tools/tools.ki -- opgrams --group churn --dis
+    uv run python -B -m koskari -m tools.tools -- opgrams --group churn --dis
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3

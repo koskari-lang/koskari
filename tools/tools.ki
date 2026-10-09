@@ -19,10 +19,10 @@ tools, so that the same command line works under either substrate:
 
   container (artifact generators, repository bind-mounted at /work)
     podman run --rm -v ./:/work:Z koskari-tools:local \\
-      tools/tools.ki -- selftest
+      -m tools.tools -- selftest
 
   local venv (introspection tools, sees the working-tree build)
-    uv run python -B -m koskari tools/tools.ki -- selftest
+    uv run python -B -m koskari -m tools.tools -- selftest
 
 Note the ``--`` in both forms. The koskari CLI rejects option-like
 tokens before it, forwarding everything after it to the script verbatim.
