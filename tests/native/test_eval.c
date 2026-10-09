@@ -2227,11 +2227,204 @@ static int test_item_store_site_demotes_and_re_elects(void) {
 }
 
 
+/* === frame cache: only a function a call arm can serve fills it === */
+
+
+/* A function over code that returns 0, with the given formals; the
+   parent namespace is the test spec's. Returns a new reference. */
+static PyObject *make_function_with_formals(PyObject *formals) {
+
+  PyObject *nspec = create_test_nspec();
+  if (! nspec)
+    return NULL;
+
+  PyObject *instr = PyList_New(1);
+  if (! instr) {
+    Py_DECREF(nspec);
+    return NULL;
+  }
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_RETURN, 0));
+
+  PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(instr);
+  PyObject *parent = code ? KosNamespace_FromSpec(nspec, NULL) : NULL;
+  Py_DECREF(nspec);
+  if (! code || ! parent) {
+    Py_XDECREF(code);
+    Py_XDECREF(parent);
+    return NULL;
+  }
+
+  PyObject *fn = KosFunction_NewFromFormals(code, formals, parent);
+  Py_DECREF(code);
+  Py_DECREF(parent);
+  return fn;
+}
+
+
+/* The frame a return offers: the function's prepared call namespace
+   for one positional argument, in a fresh node. */
+static KosDynFrame *make_offered_frame(PyObject *fn) {
+
+  PyObject *arg = PyLong_FromLong(1);
+  if (! arg)
+    return NULL;
+  PyObject *argv[1] = { arg };
+  PyObject *ns = KosFunction_PrepareCallNamespaceFromVector(fn, argv, 1, NULL);
+  Py_DECREF(arg);
+  if (! ns)
+    return NULL;
+  return kos_dynframe_new(NULL, (KosCode *) KosFunction_CODE(fn), ns);
+}
+
+
+static int test_cache_frame_refuses_function_no_arm_serves(void) {
+    /*
+      KosFunction_CacheFrame takes a frame only from a function whose
+      simple arity is set: a function with star formals has simple
+      arity 0, so no call arm could ever take its cached frame, and
+      the offer refuses it. A plain positional function of the same
+      shape is cached, so the refusal is the arity's doing.
+    */
+    PyObject *pos = Py_BuildValue("(s)", "a");
+    TEST_ASSERT_NOT_NULL(pos, "pos tuple");
+    PyObject *star = PyUnicode_FromString("rest");
+    TEST_ASSERT_NOT_NULL(star, "star name");
+
+    PyObject *plain_formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
+                                                 NULL, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(plain_formals, "plain formals");
+    PyObject *star_formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
+                                                star, NULL, NULL, NULL);
+    TEST_ASSERT_NOT_NULL(star_formals, "star formals");
+    Py_DECREF(pos);
+    Py_DECREF(star);
+
+    PyObject *plain = make_function_with_formals(plain_formals);
+    TEST_ASSERT_NOT_NULL(plain, "plain function");
+    PyObject *starred = make_function_with_formals(star_formals);
+    TEST_ASSERT_NOT_NULL(starred, "star function");
+    Py_DECREF(plain_formals);
+    Py_DECREF(star_formals);
+
+    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(plain), 2,
+                   "one positional formal is simple arity 1, stored as 2");
+    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(starred), 0,
+                   "star formals are not simple: stored as 0");
+
+    KosDynFrame *frame = make_offered_frame(plain);
+    TEST_ASSERT_NOT_NULL(frame, "plain frame");
+    TEST_ASSERT_EQ(KosFunction_CacheFrame(plain, frame), 1,
+                   "a simple function's frame is cached");
+    TEST_ASSERT(KosFunction_CACHED_FRAME(plain) == frame,
+                "the cached frame is the one offered");
+
+    frame = make_offered_frame(starred);
+    TEST_ASSERT_NOT_NULL(frame, "star frame");
+    int cached = KosFunction_CacheFrame(starred, frame);
+    if (cached)
+      TEST_ASSERT(KosFunction_CACHED_FRAME(starred) == frame,
+                  "a taken frame is on the cache");
+    else
+      kos_dynframe_free(frame);
+    TEST_ASSERT_EQ(cached, 0,
+                   "a function no call arm can serve is refused");
+    TEST_ASSERT_NULL(KosFunction_CACHED_FRAME(starred),
+                     "its cache stays empty");
+
+    Py_DECREF(plain);
+    Py_DECREF(starred);
+    return 0;
+}
+
+
+
+/* A namespace spec with the given two locals, the second the name a
+   named lambda declares for itself after its formals. */
+static PyObject *create_nspec_with_self(const char *formal, const char *self) {
+
+  PyObject *name = PyUnicode_FromString("test");
+  PyObject *locals = Py_BuildValue("(ss)", formal, self);
+  PyObject *closures = PyTuple_New(0);
+  PyObject *nspec = (name && locals && closures)
+      ? KosNamespaceSpec_New(name, locals, closures, NULL) : NULL;
+
+  Py_XDECREF(name);
+  Py_XDECREF(locals);
+  Py_XDECREF(closures);
+  return nspec;
+}
+
+
+static int test_cache_frame_takes_self_binding_function(void) {
+    /*
+      A function whose body names it, the named-lambda shape, resolves
+      bind_self_state to 1 with self_slot the name's slot, and its
+      frame is cached like any simple function's: the self-bind is a
+      store the call arms make, not a shape the cache refuses.
+    */
+    PyObject *nspec = create_nspec_with_self("a", "f");
+    TEST_ASSERT_NOT_NULL(nspec, "nspec with a self local");
+
+    PyObject *instr = PyList_New(1);
+    TEST_ASSERT_NOT_NULL(instr, "instr list");
+    PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_RETURN, 0));
+    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    Py_DECREF(instr);
+    TEST_ASSERT_NOT_NULL(code, "code");
+    PyObject *parent = KosNamespace_FromSpec(nspec, NULL);
+    Py_DECREF(nspec);
+    TEST_ASSERT_NOT_NULL(parent, "parent namespace");
+
+    PyObject *pos = Py_BuildValue("(s)", "a");
+    TEST_ASSERT_NOT_NULL(pos, "pos tuple");
+    PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
+                                           NULL, NULL, NULL, NULL);
+    Py_DECREF(pos);
+    TEST_ASSERT_NOT_NULL(formals, "formals");
+
+    PyObject *fn = KosFunction_NewFromFormals(code, formals, parent);
+    Py_DECREF(code);
+    Py_DECREF(parent);
+    Py_DECREF(formals);
+    TEST_ASSERT_NOT_NULL(fn, "function");
+    KosFunction_NAME(fn) = PyUnicode_FromString("f");
+    TEST_ASSERT_NOT_NULL(KosFunction_NAME(fn), "function name");
+
+    TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(fn), 2,
+                   "one positional formal is simple arity 1, stored as 2");
+
+    KosDynFrame *frame = make_offered_frame(fn);
+    TEST_ASSERT_NOT_NULL(frame, "prepared frame");
+    TEST_ASSERT_EQ(KosFunction_BIND_SELF_STATE(fn), 1,
+                   "a body naming the function resolves to bind (1)");
+    TEST_ASSERT_EQ(((KosFunction *) fn)->self_slot, 1,
+                   "the name's slot follows the formal's");
+    TEST_ASSERT(kos_ns_fast_peek(KosDynFrame_NS(frame), 1) == fn,
+                "the prepared frame holds the function in its slot");
+
+    int cached = KosFunction_CacheFrame(fn, frame);
+    if (! cached)
+      kos_dynframe_free(frame);
+    TEST_ASSERT_EQ(cached, 1, "a self-binding simple function's frame is cached");
+    TEST_ASSERT(KosFunction_CACHED_FRAME(fn) == frame,
+                "the cached frame is the one offered");
+    TEST_ASSERT_NULL(kos_ns_fast_peek(KosDynFrame_NS(frame), 1),
+                     "the reset cleared the self slot with the locals");
+
+    Py_DECREF(fn);
+    return 0;
+}
+
+
+
 int run_eval_tests(void) {
 
     BEGIN_TEST_SUITE("Eval Tests");
 
     RUN_TEST(test_class_is_not_koscallable);
+    RUN_TEST(test_cache_frame_refuses_function_no_arm_serves);
+    RUN_TEST(test_cache_frame_takes_self_binding_function);
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);

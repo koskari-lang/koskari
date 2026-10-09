@@ -14,12 +14,13 @@ block straight into a cached frame's namespace
 
 A function with one trailing default, `[depth x: 1]`, is not simple.
 Every call takes the general formals machine: a fresh namespace from
-the template, `KosFormals_VectorApplyFast`, and a frame that is tagged
-for the cache at return but never taken from it, because every consumer
-of a cached frame requires simple arity (brainstorm item 1.6). The
-`mc_dflt` microbenchmark measures the difference at 18 cycles per call
-over the simple path. The `tree` churn kernel takes this path on every
-call; estimated 2-4% there, about 20% per call for such functions.
+the template, `KosFormals_VectorApplyFast`, and a frame the cache
+refuses at return, because every consumer of a cached frame requires
+simple arity (brainstorm item 1.6) and the offer admits only what a
+consumer could take. The `mc_dflt` microbenchmark measures the
+difference at 18 cycles per call over the simple path. The `tree`
+churn kernel takes this path on every call; estimated 2-4% there,
+about 20% per call for such functions.
 
 ## The shape
 

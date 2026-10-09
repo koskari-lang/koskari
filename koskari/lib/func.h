@@ -178,7 +178,18 @@ typedef struct {
   int annotations_need_resolve; /* creation dict holds str forward refs */
   int bind_self_state;      /* self-bind on call: 0 unresolved (lazily
                                computed on first call; name is fixed after
-                               construction), 1 bind, 2 no-bind */
+                               construction), 1 bind, 2 no-bind. Only the
+                               named-lambda form declares the function's
+                               own name as a body local, so 1 is that
+                               form recursing through its name; define
+                               and function refer to the outer binding
+                               and resolve to 2 */
+  Py_ssize_t self_slot;     /* fast slot of the function's own name in its
+                               frame, set when bind_self_state resolves to
+                               1 (locals head the fast names in declaration
+                               order); -1 otherwise. A call arm stores the
+                               function there after binding the arguments,
+                               see KosFunction_StoreSelf */
   Py_ssize_t simple_arity1; /* exact positional arity PLUS ONE for the
                                simple-call fast path (plain positional
                                formals, no defaults/star/kwd/by-refs);
@@ -203,6 +214,16 @@ typedef struct {
 #define KOS_FRAME_CACHE_MAX 8
 
 #define KosFunction_SIMPLE_ARITY1(fn) (((KosFunction *) (fn))->simple_arity1)
+
+/* Bind the function into its own frame when its body names it: a
+   store into self_slot, a raw local, which cannot fail. A no-op for
+   every other function, so every positional call arm runs it after
+   binding the arguments; the arm requires only a resolved state. */
+static inline void KosFunction_StoreSelf(PyObject *self, PyObject *frame_ns) {
+  KosFunction *fn = (KosFunction *) self;
+  if (fn->bind_self_state == 1)
+    (void) kos_ns_fast_store(frame_ns, (size_t) fn->self_slot, self);
+}
 
 #define KosFunction_BIND_SELF_STATE(fn) (((KosFunction *) (fn))->bind_self_state)
 
@@ -264,9 +285,10 @@ PyObject *KosFunction_SimpleCallNamespaceFromVector(
    Steal-binding variant of the simple-call namespace prep: the top
    nargs references move off the block tail into the call namespace via
    KosFormals_SimpleStealApplyBlock, retracting the block length.
-   Caller must additionally have checked bind_self_state == 2 (no
-   self-bind), which makes the post-copy path infallible: a NULL return
-   always means the arg span is still intact on the block.
+   Caller must have checked that bind_self_state is resolved; the
+   self store that follows the steal cannot fail, so the post-copy
+   path is infallible: a NULL return always means the arg span is
+   still intact on the block.
 
    :return: new namespace reference, or NULL with error set
 */

@@ -83,6 +83,24 @@ class TestLambdaNamed(SpecialsTestCase):
         self.assertEqual(result, 10)
 
 
+    async def test_named_lambda_recurses_through_its_name_repeatedly(self):
+        """
+        A named lambda recursing through its own name answers the same
+        on every call: the later calls run on frames the earlier ones
+        left in the function's cache, each with the name rebound
+        """
+
+        src = """
+            (lambda fact [n]
+              (cond [(< n 2) 1]
+                    [else: (* n (fact (- n 1)))]))
+        """
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        for _ in range(3):
+            self.assertEqual(await fn(10), 3628800)
+
+
     async def test_lambda_docstring_from_leading_str(self):
         src = '(lambda [x] "module doc line" x)'
         expr, mod = self.compile_expr(src)

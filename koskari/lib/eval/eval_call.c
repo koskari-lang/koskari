@@ -723,7 +723,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
             && ! kwnames
             && ! (flags & KOS_CALL_ARGV_PREPENDED)
             && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-            && KosFunction_BIND_SELF_STATE(callable) == 2
+            && KosFunction_BIND_SELF_STATE(callable) != 0
             && ! KosDynFrame_RESUME_KIND(frame)
             && kos_tail_ns_reusable(KosDynFrame_NS(frame))) {
           PyObject *ns = KosDynFrame_NS(frame);
@@ -745,6 +745,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
 
           KosNamespace_ResetToTemplate(ns);
           (void) KosFormals_SimpleStealApplyBlock(ns, *caller_slot, nargs);
+          KosFunction_StoreSelf(callable, ns);
           kos_stack_clear_fast(&KosDynFrame_STACK(frame));
           KOS_TRACE_EVENTS_INC(KOS_TE_CALL_TAIL_INPLACE);
           es->pc = 0;
@@ -808,13 +809,14 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
          index; the general formals machine is bypassed.
 
          When argv is the block tail (window, no self-arg prepend) and
-         the function has no self-bind, the args steal-move off the
-         block into the namespace -- the stolen span leaves the window,
-         so only the residue (a WINDOW_CALLABLE slot) drops after the
-         install.  Any other shape takes the function's own install. */
+         the function's self-bind is resolved, the args steal-move off
+         the block into the namespace -- the stolen span leaves the
+         window, so only the residue (a WINDOW_CALLABLE slot) drops
+         after the install.  Any other shape takes the function's own
+         install. */
       if (likely((flags & KOS_CALL_ARGV_WINDOW)
                  && ! (flags & KOS_CALL_ARGV_PREPENDED)
-                 && KosFunction_BIND_SELF_STATE(callable) == 2)) {
+                 && KosFunction_BIND_SELF_STATE(callable) != 0)) {
         KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
 
         if (unlikely(kos_eval_check_frame_room(
@@ -829,6 +831,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
                   KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
             goto fail;
           }
+          KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
           (void) KosFunction_PopCachedFrame(callable);
           window -= (size_t) nargs;
           kos_dyn_push_ready_frame(es, cached);
@@ -869,7 +872,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
     }
 
     /* Every other function call (a generator function, a plain vector,
-       keywords, a non-simple arity, a self-binding function, a
+       keywords, a non-simple arity, an unresolved self-bind, a
        prepended receiver): the function's own install, reading argv
        in place.  An installed frame lands nothing on the caller's
        block, so the window drops after it; a generator function
@@ -1087,7 +1090,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
 
   if (Py_TYPE(callable) != KOS_EVALUATED_PYTYPE(KosFunctionType)
       || arity1 != KosFunction_SIMPLE_ARITY1(callable)
-      || KosFunction_BIND_SELF_STATE(callable) != 2
+      || KosFunction_BIND_SELF_STATE(callable) == 0
       || ! KosFunction_CODE(callable)
       || KosCode_YIELDS((KosCode *) KosFunction_CODE(callable)))
     return 0;
@@ -1109,6 +1112,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
             KosDynFrame_NS(cached), *KosEvalState_BLOCK(es), nargs) < 0))
     return -1;
 
+  KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
   (void) KosFunction_PopCachedFrame(callable);
   kos_dyn_push_ready_frame(es, cached);
   KosDynFrame_FN(cached) = callable;  /* the owned reference transfers */
@@ -1151,6 +1155,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
             KosDynFrame_NS(cached), self_arg, 0, *caller_slot, nargs) < 0)) {
       goto fail;
     }
+    KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
     (void) KosFunction_PopCachedFrame(callable);
     window -= (size_t) nargs;
     kos_dyn_push_ready_frame(es, cached);
@@ -1237,7 +1242,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke(
          in kos_call_invoke_impl instead */
       && KosFunction_CODE(callable)
       && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))
-      && KosFunction_BIND_SELF_STATE(callable) == 2)
+      && KosFunction_BIND_SELF_STATE(callable) != 0)
     return kos_call_invoke_self_steal(es, caller_slot, window, callable,
                                       self_arg, nargs, flags);
 

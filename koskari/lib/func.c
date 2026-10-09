@@ -205,7 +205,9 @@ static KosOpResult kos_vinstall_expression(
 
 /**
    Install a KosFunction call. A simple call (exact arity against plain
-   positional formals, no keywords, no self-bind) binds by slot index:
+   positional formals, no keywords, self-bind resolved) binds by slot
+   index, storing the function into its own slot when its body names
+   it:
    not in tail position it takes the function's cached frame when one
    is there, else pushes a fresh one; in tail position it refills the
    caller's frame. Any other call binds through the general formals
@@ -224,7 +226,7 @@ KosOpResult KosFunction_Install(
   KosCode *code = (KosCode *) KosFunction_CODE(callable);
   int simple = ! kwnames
       && nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
-      && KosFunction_BIND_SELF_STATE(callable) == 2;
+      && KosFunction_BIND_SELF_STATE(callable) != 0;
   int yields = code && KosCode_YIELDS(code);
   PyObject *frame_ns;
   KosOpResult r;
@@ -243,6 +245,7 @@ KosOpResult KosFunction_Install(
         Py_INCREF(args[i]);
       (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
                                          nargs);
+      KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
       (void) KosFunction_PopCachedFrame(callable);
       kos_dyn_push_ready_frame(es, cached);
       Py_INCREF(callable);
@@ -1344,12 +1347,21 @@ static int kos_function_bind_self_if_local(
         return -1;  /* leave unresolved; retried on the next call */
     }
 
+    if (bind) {
+      /* locals head the fast names in declaration order, so the
+         name's index among them is its slot */
+      Py_ssize_t slot = PySequence_Index(locals, name);
+      if (slot < 0)
+        return -1;
+      fn->self_slot = slot;
+    }
     fn->bind_self_state = bind ? 1 : 2;
     if (! bind)
       return 0;
   }
 
-  return KosNamespace_Store(frame_ns, KosFunction_NAME(fn), self);
+  KosFunction_StoreSelf(self, frame_ns);
+  return 1;
 }
 
 
@@ -1471,13 +1483,14 @@ PyObject *KosFunction_SimpleCallNamespaceStealBlock(
   if (unlikely(! frame_ns))
     return NULL;
 
-  /* caller guarantees bind_self_state == 2, so nothing after the steal
-     can fail: a NULL return always means the arg span is still intact
-     on the block */
+  /* caller guarantees a resolved bind_self_state, so nothing after the
+     steal can fail: a NULL return always means the arg span is still
+     intact on the block */
   if (unlikely(KosFormals_SimpleStealApplyBlock(frame_ns, block, nargs) < 0)) {
     Py_DECREF(frame_ns);
     return NULL;
   }
+  KosFunction_StoreSelf(self, frame_ns);
   return frame_ns;
 }
 
@@ -1493,14 +1506,15 @@ PyObject *KosFunction_SimpleCallNamespaceStealSelfBlock(
   if (unlikely(! frame_ns))
     return NULL;
 
-  /* caller guarantees bind_self_state == 2, so nothing after the steal
-     can fail: a NULL return always means the arg span is still intact
-     on the block */
+  /* caller guarantees a resolved bind_self_state, so nothing after the
+     steal can fail: a NULL return always means the arg span is still
+     intact on the block */
   if (unlikely(KosFormals_SimpleStealApplySelfBlock(
           frame_ns, recv, 0, block, nargs) < 0)) {
     Py_DECREF(frame_ns);
     return NULL;
   }
+  KosFunction_StoreSelf(self, frame_ns);
   return frame_ns;
 }
 
@@ -1521,7 +1535,7 @@ PyObject *KosFunction_VectorCall(
      machine -- the same classification the in-eval call core uses. */
   if (! kwnames
       && nargs + 1 == KosFunction_SIMPLE_ARITY1(self)
-      && KosFunction_BIND_SELF_STATE(self) == 2) {
+      && KosFunction_BIND_SELF_STATE(self) != 0) {
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
     if (! frame_ns)
       return NULL;
@@ -1692,6 +1706,7 @@ static PyObject *function_construct(
   ((KosFunction *) self)->annotations_cache = NULL;
   ((KosFunction *) self)->annotations_need_resolve = 0;
   ((KosFunction *) self)->bind_self_state = 0;
+  ((KosFunction *) self)->self_slot = -1;
   ((KosFunction *) self)->simple_arity1 =
       function_compute_simple_arity(code, formals) + 1;
   ((KosFunction *) self)->cached_frame = NULL;
@@ -1767,13 +1782,13 @@ PyObject *KosFunction_NewWithAnnotations(
 
 /**
    Offer a released frame to the function's frame cache.
-   The frame is cached only when the cache is under its cap and the
-   frame is provably private: exact Namespace with refcount 1,
-   GC-untracked, no binds dict, and no native handler.  On caching
-   the namespace's raw slots are cleared, the segment is cleared, and
-   the node base is normalized for kos_dyn_push_ready_frame.  The
-   frame's fn field must already be NULL (kos_dynframe_free clears it
-   before offering).
+   The frame is cached only when a call arm could take it, the cache
+   is under its cap and the frame is provably private: exact Namespace
+   with refcount 1, GC-untracked, no binds dict, and no native
+   handler.  On caching the namespace's raw slots are cleared, the
+   segment is cleared, and the node base is normalized for
+   kos_dyn_push_ready_frame.  The frame's fn field must already be
+   NULL (kos_dynframe_free clears it before offering).
 
    :return: 1 when cached (ownership taken), 0 when refused
 */
@@ -1784,6 +1799,19 @@ int KosFunction_CacheFrame(
   KosFunction *fn = (KosFunction *) self;
   KosDynFrame *head = fn->cached_frame;
   PyObject *ns;
+
+  /* Every consumer of the cache serves a call only when
+     nargs + 1 == simple_arity1. simple_arity1 is the exact positional
+     arity plus one for a function of plain positional formals, and 0
+     for any other shape (defaults, star, keyword-only, positional-only,
+     by-ref), which no call count can match. The self-bind is not a
+     shape: a consumer stores the function into its own slot after the
+     bind when the body names it (KosFunction_StoreSelf). A function no
+     consumer can serve would hold up to KOS_FRAME_CACHE_MAX dead
+     frames for its life, so its offers are refused before any work is
+     done. */
+  if (fn->simple_arity1 == 0)
+    return 0;
 
   if (head && KosDynFrame_DEPTH(head) >= KOS_FRAME_CACHE_MAX)
     return 0;
