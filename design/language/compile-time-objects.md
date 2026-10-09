@@ -267,7 +267,7 @@ whose `expand` function calls the quasiquote-block body with `cond`,
 `then`, `else` bound to the unevaluated arguments from the call site.
 
 The macro expansion pipeline (`compile/quasiquote-block` → `compile/quasiquote`
-→ quasi-evaluated source that may still contain `:block:` shells →
+→ quasi-evaluated source that may still contain `:#block:` shells →
 `apply_layout` in finalize → hygiene / Datum peel) is how block-syntax macro
 bodies yield layout-expanded source before ordinary compilation continues.
 

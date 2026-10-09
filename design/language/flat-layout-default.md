@@ -19,9 +19,9 @@ Bind in **`.ki`**: **`define layout/<head> layout/block-begin`**.
 
 ## Read pipeline
 
-1. **Parse** — colon blocks → **`:block:`** cons holding the header and one
+1. **Parse** — colon blocks → **`:#block:`** cons holding the header and one
    entry per body line, a line of elements or a nested block; stream peers →
-   spine of **`:block:`** conses for **`apply_layouts`**
+   spine of **`:#block:`** conses for **`apply_layouts`**
 2. **Expand** — **`LayoutReader.read()`** → **`apply_layout`** /
    **`apply_layouts`** → handler **`read(reader, source, peers)`**, which
    folds lines through the reader

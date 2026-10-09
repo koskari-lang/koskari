@@ -518,18 +518,18 @@ block-macro form. Anywhere else the prefix is treated as a plain `<quote-form>`,
 <block-quote-form>
                 ::= ("'" | "#'") <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
-                  ; reads raw (:block: (<head> . <args>) <entry>...), each entry a
+                  ; reads raw (:#block: (<head> . <args>) <entry>...), each entry a
                   ; line of elements or a nested block; layout/quote lowers to
-                  ; (compile/quote (:block: ...)) at expansion, and
-                  ; layout/quote-syntax to (compile/quote-syntax (:block: ...))
+                  ; (compile/quote (:#block: ...)) at expansion, and
+                  ; layout/quote-syntax to (compile/quote-syntax (:#block: ...))
 
 <quasiquote-block-form>
                 ::= ("`" | "#`") <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
                   ; through layout/quasiquote to
-                  ; (compile/quasiquote (:block: (<head> . <args>) <entry>...)),
+                  ; (compile/quasiquote (:#block: (<head> . <args>) <entry>...)),
                   ; or through layout/quasiquote-syntax to
-                  ; (compile/quasiquote-syntax (:block: ...))
+                  ; (compile/quasiquote-syntax (:#block: ...))
                   ; unquote ("," and ",@") is active in both the header and body
 ```
 
@@ -573,7 +573,7 @@ specials; see [MATCHER.md](MATCHER.md) and [MACROS.md](MACROS.md).
 
 ### Parse and expand
 
-Colon blocks parse as **`:block:`** conses, **`(:block: (head . args) entry ...)`**
+Colon blocks parse as **`:#block:`** conses, **`(:#block: (head . args) entry ...)`**
 with each entry a line of elements or a nested block, nothing folded.
 **`LayoutReader.read()`** calls **`apply_layout`** or **`apply_layouts`**,
 passing itself, to invoke **`layout/<head>`** handlers as

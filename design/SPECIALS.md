@@ -2261,7 +2261,7 @@ flattens a list into the surrounding list.
 - ``EXPR` → `(quasiquote EXPR)`
 - `,EXPR` → `(unquote EXPR)` (only valid inside a quasiquote body)
 - `,@EXPR` → `(unquote-splicing EXPR)` (only valid inside a quasiquote body)
-- ``HEAD: BODY` → `layout/quasiquote`, lowering to `(compile/quasiquote (:block: ...))`
+- ``HEAD: BODY` → `layout/quasiquote`, lowering to `(compile/quasiquote (:#block: ...))`
 
 **Behaviour:** One argument required. The compiler walks the expression
 recursively at a nesting *level* (starting at 0):

@@ -25,7 +25,7 @@ Agent summary:
 
 - **Layout block:** header + structural `:` + **mandatory newline** + indented body
 - **Layout line:** depth-0 line without structural trailing `:`; multiple forms fold to `(first . rest…)` when implicit calls are enabled (any first form, not symbol-only)
-- **Parse IR:** colon blocks → **`(:block: (HEAD ARG …) ENTRY …)`** where each entry is a line or a sub-block (see **Block IR** below); stream peers → spine of **`:block:`** conses
+- **Parse IR:** colon blocks → **`(:#block: (HEAD ARG …) ENTRY …)`** where each entry is a line or a sub-block (see **Block IR** below); stream peers → spine of **`:#block:`** conses
 - **Expand:** **`LayoutReader.read()`** → **`apply_layout`** / **`apply_layouts`**; handlers **`read(reader, source, peers)`**
 - **Default fallback:** unknown heads → **`layout/block`** → **`(HEAD ARG … BODY …)`** (flat splice)
 - **Opt-in begin wrap:** **`layout/block-begin`** → **`(HEAD ARG … (compile/begin BODY …))`**
@@ -35,24 +35,24 @@ Agent summary:
 A colon block reads to one cons:
 
 ```
-(:block: HEAD-LIST ENTRY ...)
+(:#block: HEAD-LIST ENTRY ...)
 
 HEAD-LIST ::= (ELEMENT ...)        the header's elements, colon removed
 ENTRY     ::= LINE | BLOCK         one per body line
 LINE      ::= (ELEMENT ...)        the elements the reader saw on that line
-BLOCK     ::= (:block: ...)        a nested colon block, or a peer
+BLOCK     ::= (:#block: ...)       a nested colon block, or a peer
 ```
 
 The header is always the second element. Every later element of the cons is
-one body entry, and the two kinds are told apart by the `:block:` keyword in
+one body entry, and the two kinds are told apart by the `:#block:` keyword in
 car: a line never starts with it. Nothing is folded at parse time. The reader
 records exactly what it saw, and the difference between a line that happens
 to be a pair and a pair that was written stays visible:
 
 ```
-foo:                (:block: (foo)
+foo:                (:#block: (foo)
   else: x             (else: x)                 line, two elements
-  bar:                (:block: (bar) (y))       sub-block
+  bar:                (:#block: (bar) (y))      sub-block
     y
   (else: x)           ((else: x))               line, one element, a pair
   [else: x]           ((else: x)))              line, one element, a pair
@@ -63,7 +63,7 @@ belongs to, so a peer spine and a body are the same shape. A decorated block
 is a line, because the `@` reader macro wraps the block in a
 **`(compile/decorate ...)`** form and that form is the line's one element.
 Inside a quoted or quasiquoted block a line holding only an unquote-splicing
-form is **`(:splice: FORM)`**, so the filled forms spread into one line each
+form is **`(:#splice: FORM)`**, so the filled forms spread into one line each
 when the block is expanded; a splice sharing a line with other elements
 splices into that line.
 
@@ -93,14 +93,14 @@ Any other handler folding such an entry gets the pair **`(k: VALUE)`**, which
 is what **`layout/block`** returns when dispatch reaches it as the block's own
 handler, and the compiler judges that form like any other.
 
-## `:block:` expansion
+## `:#block:` expansion
 
 **`LayoutReader.read()`** expands block conses through
 **`koskari.reader.layouts`**, passing itself:
 
-- **`apply_layout(block, reader)`** — one **`:block:`** cons
+- **`apply_layout(block, reader)`** — one **`:#block:`** cons
 - **`apply_layouts(spine, reader)`** — proper list spine of forms; declared
-  peer **`:block:`** siblings after each primary are consumed and passed to
+  peer **`:#block:`** siblings after each primary are consumed and passed to
   the handler; other forms are walked for embedded blocks
 - **`apply_lines(entries, reader)`** — a body: lines and sub-blocks as above
 
@@ -112,7 +112,7 @@ the way **`get-compiler`** does for the compiler. The runtime
 filled quasiquote block, as does **`koskari.syntax._finalize_macro_output`**
 for macro output.
 
-**`LayoutReader.read_form`** returns a raw **`:block:`** (or a spine for peer
+**`LayoutReader.read_form`** returns a raw **`:#block:`** (or a spine for peer
 groups) and a **`LINE`** for a plain line; **`read()`** folds a top-level line
 and expands a block. Quote and quasiquote block prefixes, and their
 mark-keeping forms `#'` and `` #` ``, set **`_block_mode`** so nested colons
@@ -120,7 +120,7 @@ stay raw until **`layout/quote`** / **`layout/quasiquote`** /
 **`layout/quote-syntax`** / **`layout/quasiquote-syntax`** unbox at
 expansion.
 
-Some compiler paths preserve **`:block:`** as data -- quoted and
+Some compiler paths preserve **`:#block:`** as data -- quoted and
 quasiquoted blocks, and macro templates.
 See [layout/quote, layout/quasiquote, and their syntax forms](#layoutquote-layoutquasiquote-and-their-syntax-forms)
 and [MACROS.md](MACROS.md).
@@ -218,15 +218,15 @@ import-from itertools:
 `layout/quasiquote-syntax`
 
 **Use-case:** A **`'`**, **`` ` ``**, **`#'`**, or **`` #` ``** prefix on a
-block head. The reader wraps the raw **`:block:`** in a synthetic
-**`(:block: (quote) INNER)`** (or `quasiquote`, `quote-syntax`,
+block head. The reader wraps the raw **`:#block:`** in a synthetic
+**`(:#block: (quote) INNER)`** (or `quasiquote`, `quote-syntax`,
 `quasiquote-syntax`), the inner block as the one body entry, for these raw
 handlers to unbox.
 
 **Behaviour:** **`(compile/quote INNER-BLOCK)`**,
 **`(compile/quasiquote INNER-BLOCK)`**, **`(compile/quote-syntax
 INNER-BLOCK)`**, or **`(compile/quasiquote-syntax INNER-BLOCK)`**, where
-INNER-BLOCK is the raw `:block:` cons, not layout-expanded. The syntax forms
+INNER-BLOCK is the raw `:#block:` cons, not layout-expanded. The syntax forms
 keep the hygiene marks on the block's symbols. No peers.
 
 **Implementation:** `koskari/reader/layouts/basics.layout_quote`,
@@ -860,7 +860,7 @@ bare-syntax SLOT:
 
 Some layouts declare **peer** block heads. After parsing the primary block body,
 the reader checks for sibling blocks at the same indent whose head matches one
-of the declared peers. These are gathered as **`:block:`** conses on a spine and
+of the declared peers. These are gathered as **`:#block:`** conses on a spine and
 expanded with the primary through **`apply_layouts`**, then passed to the
 handler as the `peers` argument.
 

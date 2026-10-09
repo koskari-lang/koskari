@@ -92,10 +92,10 @@ implemented in `Compiler` (`compile_symbol`, `compile_pair`, `lower_head`):
 [MATCHER.md](MATCHER.md), [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md).
 Local compile-time binding: [archive/let-syntax-and-inline-macro.md](archive/let-syntax-and-inline-macro.md) (archived).
 
-### Block quasiquote and `:block:` layout expansion
+### Block quasiquote and `:#block:` layout expansion
 
 Block backtick lowers through **`layout/quasiquote`** to
-**`(compile/quasiquote (:block: …))`**. `define-syntax` output is finalized through
+**`(compile/quasiquote (:#block: …))`**. `define-syntax` output is finalized through
 **`koskari.syntax._finalize_macro_output`**, which calls **`apply_layout`** and
 then peels the `Datum` boxes. A template arm's symbols are marked during
 transcription and carry their marks into layout, which reads block heads
