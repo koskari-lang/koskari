@@ -323,20 +323,6 @@ PyObject *koskari_Err_GetRaisedException(void) {
 
 
 /**
-   Create a dict presized for minused entries.  Uses _PyDict_NewPresized on
-   older versions; PyDict_New() on 3.14 when PyDict_NewPresized is not exported.
-*/
-PyObject *koskari_Dict_NewPresized(Py_ssize_t minused) {
-#if PY_MINOR_VERSION >= 14
-  (void) minused;
-  return PyDict_New();
-#else
-  return _PyDict_NewPresized(minused);
-#endif
-}
-
-
-/**
    Return dict.items() view.  Uses PyObject_CallMethod on 3.13+ (replaces
    _PyDictView_New removed in 3.13).
 */

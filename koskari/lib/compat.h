@@ -322,13 +322,6 @@ PyObject *koskari_DictView_Keys(PyObject *dict);
 
 
 /**
-   Create a dict presized for minused entries (new ref).  Replaces
-   PyDict_NewPresized when the symbol is not exported (e.g. 3.14).
-*/
-PyObject *koskari_Dict_NewPresized(Py_ssize_t minused);
-
-
-/**
    Fetch value from current StopIteration/StopAsyncIteration exception.
    Returns 0 on success, -1 on error.  Clears the exception.  On success
    sets *ptr to the value (new ref) or Py_None.  Replaces

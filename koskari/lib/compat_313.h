@@ -14,9 +14,9 @@
 */
 
 
-/* PyDict_NewPresized and PyGen_FetchStopIterationValue symbols may not be
-   exported in 3.13+; use our wrappers. */
-#define PyDict_NewPresized koskari_Dict_NewPresized
+/* _PyDict_NewPresized stays exported; PyGen_FetchStopIterationValue may
+   not be, so that one goes through our wrapper. */
+#define PyDict_NewPresized _PyDict_NewPresized
 #define PyGen_FetchStopIterationValue koskari_FetchStopIterationValue
 
 /* PyUnicode_Equal public from 3.14 */

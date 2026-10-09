@@ -14,9 +14,9 @@
 */
 
 
-/* PyDict_NewPresized and PyGen_FetchStopIterationValue symbols may not be
-   exported in 3.14; use our wrappers. */
-#define PyDict_NewPresized koskari_Dict_NewPresized
+/* _PyDict_NewPresized stays exported; PyGen_FetchStopIterationValue may
+   not be, so that one goes through our wrapper. */
+#define PyDict_NewPresized _PyDict_NewPresized
 #define PyGen_FetchStopIterationValue koskari_FetchStopIterationValue
 
 /* _PyList_Extend was removed in 3.14; PyList_Extend returns int.  Provide
