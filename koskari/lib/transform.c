@@ -432,6 +432,7 @@ int kos_transform_multi_traverse(PyObject *self, visitproc visit, void *arg) {
   KosTransformMulti *m = (KosTransformMulti *) self;
 
   Py_VISIT(m->srcs);
+  Py_VISIT(m->row);
   return kos_transform_traverse(self, visit, arg);
 }
 
@@ -443,6 +444,7 @@ int kos_transform_multi_clear(PyObject *self) {
   m->base.sources = NULL;
   m->base.nsrc = 0;
   Py_CLEAR(m->srcs);
+  Py_CLEAR(m->row);
 
   return kos_transform_clear(self);
 }
@@ -456,6 +458,7 @@ void kos_transform_multi_dealloc(PyObject *self) {
   m->base.sources = NULL;
   m->base.nsrc = 0;
   Py_CLEAR(m->srcs);
+  Py_CLEAR(m->row);
 
   kos_transform_dealloc(self);
 }

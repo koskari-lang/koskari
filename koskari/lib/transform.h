@@ -150,6 +150,9 @@ typedef struct KosTransformMulti {
   KosTransform base;
   PyObject *srcs;      /* tuple of acquired iterators; the storage the
                           base's sources view points into */
+  PyObject *row;       /* zip: the last row emitted, refilled in place
+                          for the next element while zip alone holds
+                          it; NULL before the first */
 } KosTransformMulti;
 
 

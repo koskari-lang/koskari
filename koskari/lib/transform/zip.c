@@ -7,10 +7,11 @@
    KosZip: a native lazy zip over N sources, duck-typed against
    builtins.zip, implemented as a KosIter provider on the shared
    transform body (transform.c). A multi-source provider on the
-   shared KosTransformMulti shape, with no fields of its own: the
-   acquired iterators live in the tuple that shape owns, published to
-   the base through the sources view so the base closes them without
-   knowing where they are kept.
+   shared KosTransformMulti shape: the acquired iterators live in the
+   tuple that shape owns, published to the base through the sources
+   view so the base closes them without knowing where they are kept,
+   and the last row emitted is kept in that shape's row field, to be
+   refilled in place for the next element while zip alone holds it.
 
    The fast path is pure C: when every source steps through
    tp_iternext the whole row is built in one loop with the evaluator
@@ -32,6 +33,28 @@
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
 */
+
+
+/* === the row === */
+
+
+/* Store an element at a row position, releasing the item a reused row
+   held there; a fresh row's slot is NULL. element is consumed. */
+static inline void zip_row_set(PyObject *row, Py_ssize_t i, PyObject *element) {
+  PyObject *old = PyTuple_GET_ITEM(row, i);
+
+  PyTuple_SET_ITEM(row, i, element);
+  Py_XDECREF(old);
+}
+
+
+/* A row about to be emitted: the collector may have untracked a reused
+   row whose items were all untrackable, and the refill can change
+   that, so it is tracked again as CPython's zip does. */
+static inline void zip_row_retrack(PyObject *row) {
+  if (! PyObject_GC_IsTracked(row))
+    PyObject_GC_Track(row);
+}
 
 
 /* === the step's CPS resumes ===
@@ -93,6 +116,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
+    zip_row_retrack(row);
     return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
   }
 }
@@ -112,7 +136,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   if (! element)
     return EVAL_RAISE();
 
-  PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);
+  zip_row_set(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
 
   RESUME_HOP(&zip_resume_fetch_kind, es, z, NULL);
@@ -144,9 +168,21 @@ static KosIterStepResult zip_iter_step(
     return KOS_ITER_EXHAUSTED;
   }
 
-  row = PyTuple_New((Py_ssize_t) t->nsrc);
-  if (! row)
-    return KOS_ITER_ERROR;
+  /* The row: the last one emitted, refilled in place while zip alone
+     holds it, which is the case once the consumer has read and
+     released it; a row the consumer kept is left to it and a fresh one
+     takes its place. The step holds one reference to the row it
+     fills, z->row the other. */
+  row = z->row;
+  if (row && Py_REFCNT(row) == 1) {
+    Py_INCREF(row);
+  } else {
+    row = PyTuple_New((Py_ssize_t) t->nsrc);
+    if (! row)
+      return KOS_ITER_ERROR;
+    Py_INCREF(row);
+    Py_XSETREF(z->row, row);
+  }
 
   {
     uint16_t i;
@@ -154,7 +190,8 @@ static KosIterStepResult zip_iter_step(
     /* The row fills here for as long as the sources answer without
        the evaluator; the first driven source defers the rest of the
        walk to zip_resume_fetch, with the row pending from its
-       position. */
+       position. A reused row that stops short keeps a mix of old and
+       new items until the next refill or its release. */
     for (i = 0; i < t->nsrc; i++) {
       PyObject *element;
 
@@ -162,7 +199,7 @@ static KosIterStepResult zip_iter_step(
                                        &zip_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:
-          PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
+          zip_row_set(row, (Py_ssize_t) i, element);
           continue;
         case KOS_IREQ_EXHAUSTED:
           Py_DECREF(row);
@@ -180,6 +217,7 @@ static KosIterStepResult zip_iter_step(
       }
     }
 
+    zip_row_retrack(row);
     *out = row;
     return KOS_ITER_VALUE;
   }

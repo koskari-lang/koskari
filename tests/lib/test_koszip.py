@@ -89,6 +89,21 @@ class TestKosZipSync(unittest.TestCase):
         rows = [[i, i + 100] for i in range(40)]
         self.assertEqual(list(KosZip(*rows)), list(zip(*rows)))
 
+    def test_rows_kept_by_the_consumer_stay_distinct(self):
+        rows = list(KosZip([1, 2, 3], "abc"))
+        self.assertEqual(rows, [(1, "a"), (2, "b"), (3, "c")])
+        self.assertEqual(3, len({id(r) for r in rows}))
+
+    def test_rows_read_one_at_a_time_hold_their_own_items(self):
+        z = iter(KosZip([1, 2, 3], "abc"))
+        first = next(z)
+        second = next(z)
+        self.assertEqual((1, "a"), first)
+        self.assertEqual((2, "b"), second)
+        del first
+        self.assertEqual((3, "c"), next(z))
+        self.assertEqual((2, "b"), second)
+
     def test_row_is_a_tuple(self):
         self.assertIsInstance(next(iter(KosZip([1], [2]))), tuple)
 
