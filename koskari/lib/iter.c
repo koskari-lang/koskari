@@ -519,15 +519,16 @@ static int agen_attach_gen_flatten(
 /**
    Shared core of ki_step and ki_throw: guard, mark busy, splice the
    generator's frames onto the consumer context. On success the drive is
-   in flight (KOS_ITER_INSTALLED); any pending exception set by the
-   caller (the throw ingress) is delivered at resume. send_val, when
-   given, replaces the install placeholder on TOS as the value of the
+   in flight (KOS_ITER_INSTALLED); when throwing, the exception the
+   throw ingress primed is delivered at resume. send_val, when given,
+   replaces the install placeholder on TOS as the value of the
    suspended yield expression.
 */
 static KosIterStepResult agen_iter_drive(
     KosEvalState *es,
     KosPyAsyncGen *agen,
     PyObject *send_val,
+    int throwing,
     PyObject **out) {
 
   if (agen->in_progress) {
@@ -572,14 +573,15 @@ static KosIterStepResult agen_iter_drive(
     /* A throw ingress primed the exception: a frame waiting on a
        resume takes it there and throws it into its delegate; any
        other frame raises it at the resume point as before. */
-    if (frozen && PyErr_Occurred())
+    if (frozen && throwing)
       (void) KosEvalState_ThrowIntoResume(es);
 
     /* Resume-of-frozen-yield only: the frozen install pushed the
        Py_None placeholder for the suspended yield expression; replace
        it with the sent value. A bootstrap install enters fresh code
-       with an empty stack -- nothing to swap. */
-    if (frozen && send_val && ! PyErr_Occurred()) {
+       with an empty stack -- nothing to swap. The throw ingress sends
+       no value. */
+    if (frozen && send_val) {
       KosDynFrame *frame = KosEvalState_FRAME(es);
       if (frame && KosDynFrame_RESUME_KIND(frame)) {
         /* waiting on a resume: the sent value is its delivery */
@@ -612,7 +614,7 @@ static KosIterStepResult agen_iter_step(
     PyObject *send_val,
     PyObject **out) {
 
-  return agen_iter_drive(es, (KosPyAsyncGen *) self, send_val, out);
+  return agen_iter_drive(es, (KosPyAsyncGen *) self, send_val, 0, out);
 }
 
 
@@ -643,7 +645,7 @@ static KosIterStepResult agen_iter_throw(
      exception. */
   PyErr_SetObject(throw_typ, throw_exc);
   {
-    KosIterStepResult r = agen_iter_drive(es, agen, NULL, out);
+    KosIterStepResult r = agen_iter_drive(es, agen, NULL, 1, out);
     if (r == KOS_ITER_EXHAUSTED)
       PyErr_Clear();
     return r;
