@@ -27,6 +27,7 @@ through the install slot and merges bound + call-site args.
 import functools
 import gc
 import pickle
+import sys
 import unittest
 
 import pytest
@@ -172,6 +173,23 @@ class TestKosPartialBehavior(unittest.TestCase):
         kp = KosPartial(_pyadd)
         self.assertEqual(kp.keywords, {})
         self.assertIsInstance(kp.keywords, dict)
+
+
+    def test_non_str_bound_keyword_releases_the_values_it_held(self):
+        """
+        A bound keyword dict given a non-str key after construction
+        makes the call raise TypeError, and the values the call had
+        already taken hold of are released again
+        """
+
+        val = object()
+        kp = KosPartial(_pyadd, b=val)
+        kp.keywords[0] = "x"
+
+        before = sys.getrefcount(val)
+        with self.assertRaises(TypeError):
+            kp(1)
+        self.assertEqual(before, sys.getrefcount(val))
 
 
     def test_requires_callable(self):

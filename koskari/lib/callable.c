@@ -250,6 +250,8 @@ int KosArgSpread_InitMerged(
     Py_ssize_t pos = 0, i = 0;
     Py_ssize_t tail = nbk;
 
+    /* nheld is published with each value stored, so a later key that
+       fails the str check releases every value already held */
     while (PyDict_Next(bound_kwds, &pos, &k, &v)) {
       if (! PyUnicode_Check(k))
         goto not_str;
@@ -257,9 +259,8 @@ int KosArgSpread_InitMerged(
       PyTuple_SET_ITEM(names, i, k);
       Py_INCREF(v);
       argv[npos + i] = v;
-      i++;
+      spread->nheld = ++i;
     }
-    spread->nheld = i;
 
     for (Py_ssize_t j = 0; j < nck; j++) {
       Py_ssize_t at = -1;
