@@ -203,6 +203,9 @@ static inline int KosFormals_SimpleStealApply(
     PyObject *const *args,
     Py_ssize_t nargs) {
 
+  /* one to three pointers on nearly every call: the plain loop, not
+     the vector expansion (KOS_LOOP_SCALAR in hints.h) */
+  KOS_LOOP_SCALAR
   for (Py_ssize_t i = 0; i < nargs; i++)
     KosNamespace_GET_FAST_VAL(ns, i) = args[i];
   return 0;
@@ -277,6 +280,8 @@ KOS_OP_INLINE int KosFormals_SimpleStealApplySelfBlock(
     size_t base = KosSegment_LEN(block) - (size_t) nargs;
     PyObject *const *args = &block->objs[base];
 
+    /* the plain loop, as in KosFormals_SimpleStealApply */
+    KOS_LOOP_SCALAR
     for (Py_ssize_t i = 0; i < nargs; i++)
       KosNamespace_GET_FAST_VAL(ns, (size_t) i + 1) = args[i];
     KosSegment_LEN(block) = base;

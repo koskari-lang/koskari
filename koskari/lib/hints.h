@@ -54,6 +54,27 @@
 #endif
 
 
+/* KOS_LOOP_SCALAR, written on the line before a for loop, keeps the
+   compiler from vectorising or unrolling it. At -O2 GCC and clang turn
+   a pointer-copy loop of unknown trip count into a length threshold,
+   an overlap test, an SSE loop, a four-way unrolled loop and a
+   remainder loop: about 240 bytes, and 14 + 5n instructions executed
+   for n pointers. The loops this marks copy one to three pointers on
+   the call path, where the plain 3n-instruction loop is both smaller
+   and faster. "GCC novector" exists from GCC 14; "GCC unroll 0" from
+   GCC 8; other compilers get the plain loop they would emit anyway. */
+#if defined(__clang__)
+# define KOS_LOOP_SCALAR \
+  _Pragma("clang loop vectorize(disable) interleave(disable) unroll(disable)")
+#elif defined(__GNUC__) && __GNUC__ >= 14
+# define KOS_LOOP_SCALAR _Pragma("GCC novector") _Pragma("GCC unroll 0")
+#elif defined(__GNUC__)
+# define KOS_LOOP_SCALAR _Pragma("GCC unroll 0")
+#else
+# define KOS_LOOP_SCALAR
+#endif
+
+
 /* Whether the compiler can enforce a tail call (clang, or GCC 15+).
    Opcode dispatch is threaded through musttail, so eval.h refuses to
    build without it. */
