@@ -557,26 +557,32 @@ static PyObject *pair_kos_repr(PyObject *self, PyObject *_unused) {
 
 
 static long pair_eq(PyObject *left, PyObject *right) {
-  PyObject *seen = NULL;
-  PyObject *left_id, *right_id, *visit;
+  PyObject *saved_left, *saved_right;
+  size_t step = 0;
+  size_t limit = 2;
   long answer = 1;
-  int revisit;
 
   if (left == right)
     return 1;
 
-  /* every (left, right) cell pair the walk compares, by address: the
-     pairs are finite, so a walk over two circular spines comes back to
-     one it has seen within their lengths' product and stops there,
-     whatever the periods. Remembering only each cell's latest partner
-     never repeats when the periods share no factor. */
-  seen = PySet_New(NULL);
-  if (! seen)
-    return -1;
+  /* The (left, right) cell pairs the walk compares are finite, so a
+     walk over two circular spines returns to a pair it has compared
+     within their lengths' product, whatever the periods, and the lists
+     are equal from there on. Brent's check finds that return without
+     recording the pairs: one pair is saved, the current pair is
+     compared to it by address each step, and the saved pair moves to
+     the current one at every power of two, so once it sits inside the
+     cycle and the span exceeds the cycle's length the walk meets it
+     again; a looping walk runs at most about three times its cycle. */
+  saved_left = left;
+  saved_right = right;
+  Py_INCREF(saved_left);
+  Py_INCREF(saved_right);
 
   /* both cells are held for the whole iteration, and both cars across
      their comparison: an element's __eq__ can cut either spine or swap
-     a car, and the walk keeps reading the cells it reached */
+     a car, and the walk keeps reading the cells it reached; the saved
+     pair is held for the same reason */
   Py_INCREF(left);
   Py_INCREF(right);
 
@@ -610,29 +616,19 @@ static long pair_eq(PyObject *left, PyObject *right) {
        memory space, so we can test
        their CAR equivs and their CDR equivs */
 
-    left_id = PyLong_FromVoidPtr(left);
-    right_id = left_id ? PyLong_FromVoidPtr(right) : NULL;
-    visit = right_id ? PyTuple_Pack(2, left_id, right_id) : NULL;
-    Py_XDECREF(left_id);
-    Py_XDECREF(right_id);
-    if (! visit) {
-      answer = -1;
-      break;
-    }
-
-    revisit = PySet_Contains(seen, visit);
-    if (revisit < 0 || (! revisit && PySet_Add(seen, visit) < 0)) {
-      Py_DECREF(visit);
-      answer = -1;
-      break;
-    }
-    Py_DECREF(visit);
-
-    if (revisit) {
+    if (step && left == saved_left && right == saved_right) {
       /* we've already compared these two against one another */
       break;
+    }
+    if (++step == limit) {
+      Py_INCREF(left);
+      Py_INCREF(right);
+      Py_SETREF(saved_left, left);
+      Py_SETREF(saved_right, right);
+      limit <<= 1;
+    }
 
-    } else {
+    {
       PyObject *left_car = KosPair_CAR(left);
       PyObject *right_car = KosPair_CAR(right);
       int eq;
@@ -662,7 +658,8 @@ static long pair_eq(PyObject *left, PyObject *right) {
 
   Py_DECREF(left);
   Py_DECREF(right);
-  Py_DECREF(seen);
+  Py_DECREF(saved_left);
+  Py_DECREF(saved_right);
   return answer;
 }
 

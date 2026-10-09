@@ -197,6 +197,45 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         p2 = cons(1, 2, 3, nil)
         self.assertEqual(p1, p2)
 
+    async def test_eq_circular_lists_of_different_periods(self):
+        """
+        Two circular lists are equal when every position agrees, which
+        the walk decides once it returns to a pair of cells it has
+        compared; periods that share no factor make that return the
+        product of the lengths away, and a constant cycle is the one
+        shape where different periods agree everywhere
+        """
+
+        two = cons(7, 7, nil)
+        make_recursive(two)
+        three = cons(7, 7, 7, nil)
+        make_recursive(three)
+        self.assertEqual(two, three)
+        self.assertEqual(three, two)
+
+    async def test_eq_circular_lists_that_differ(self):
+        """
+        A circular list whose cycle holds a differing element is unequal
+        to one that agrees on every other position
+        """
+
+        two = cons(1, 2, nil)
+        make_recursive(two)
+        other = cons(1, 2, 1, 3, nil)
+        make_recursive(other)
+        self.assertNotEqual(two, other)
+
+    async def test_eq_circular_against_finite(self):
+        """
+        A circular list and a finite one are unequal: the finite one
+        ends where the circular one goes on
+        """
+
+        two = cons(1, 2, nil)
+        make_recursive(two)
+        self.assertNotEqual(two, cons(1, 2, 1, 2, nil))
+        self.assertNotEqual(cons(1, 2, 1, 2, nil), two)
+
     async def test_eq_element_error_propagates(self):
         """
         An element comparison that raises makes the pair comparison
