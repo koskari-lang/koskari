@@ -755,6 +755,14 @@ static PyObject *stepper_send(PyObject *self, PyObject *value) {
 
   KosIterStepper *st = (KosIterStepper *) self;
 
+  /* A send from the body this stepper is driving: refused before the
+     fields are written, since the drive has already taken what they
+     held and a value left here would be the next resume's send. */
+  if (st->running) {
+    PyErr_SetString(PyExc_ValueError, "generator already executing");
+    return NULL;
+  }
+
   if (! st->started) {
     if (st->is_throw) {
       if (value && value != Py_None) {
@@ -785,6 +793,14 @@ static PyObject *stepper_throw(PyObject *self, PyObject *args) {
   KosIterStepper *st = (KosIterStepper *) self;
 
   PyObject *typ = NULL, *exc = NULL;
+
+  /* A throw from the body this stepper is driving: refused before the
+     fields are written, as in stepper_send. */
+  if (st->running) {
+    PyErr_SetString(PyExc_ValueError, "generator already executing");
+    return NULL;
+  }
+
   if (KosExc_NormalizeThrowArgs(args, "O|OO:throw", &typ, &exc) < 0)
     return NULL;
 
