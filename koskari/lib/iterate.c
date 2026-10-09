@@ -211,6 +211,10 @@ typedef struct {
                              drive or close from the body is refused */
   uint8_t started;        /* the first drive has run: a send now feeds
                              the step in flight, not the primed state */
+  PyObject **ret;         /* an am_send caller's result slot while its
+                             drive runs, else NULL: a yielded element
+                             is stored there instead of being wrapped
+                             in a StopIteration */
 } KosIterStepper;
 
 
@@ -347,7 +351,9 @@ static PyObject *stepper_finish_exhausted(
 
 
 /**
-   Complete an __anext__ step: the yielded element wraps in a 1-tuple
+   Complete an __anext__ step. An am_send caller takes the yielded
+   element through its result slot, reported as PYGEN_RETURN with no
+   exception. For a __next__ caller the element wraps in a 1-tuple
    StopIteration so PyErr_SetObject does not unpack args. val consumed.
 
    Passing a bare value instead, to let CPython defer building the
@@ -355,7 +361,12 @@ static PyObject *stepper_finish_exhausted(
    machinery normalizes it downstream, so the instance is built either
    way.
 */
-static PyObject *stepper_finish_yield(PyObject *val) {
+static PyObject *stepper_finish_yield(KosIterStepper *st, PyObject *val) {
+
+  if (st->ret) {
+    *st->ret = val;
+    return NULL;
+  }
 
   PyObject *args = PyTuple_Pack(1, val);
   Py_XDECREF(val);
@@ -564,7 +575,7 @@ static PyObject *stepper_drive(
         Py_XDECREF(send_val);
         Py_XDECREF(throw_typ);
         Py_XDECREF(throw_exc);
-        return stepper_finish_yield(out);
+        return stepper_finish_yield(st, out);
 
       case KOS_ITER_EXHAUSTED:
         /* Already-finished shortcut: a throw-flavored drive completes
@@ -635,7 +646,7 @@ static PyObject *stepper_drive(
           st->drive_mode = 0;
           islots->ki_finish(st->provider, 0);
           iterate_reset_host(islots, &st->host, &st->host_owned);
-          return stepper_finish_yield(res.val);
+          return stepper_finish_yield(st, res.val);
         }
         islots->ki_finish(st->provider, 1);
         iterate_reset_host(islots, &st->host, &st->host_owned);
@@ -651,7 +662,7 @@ static PyObject *stepper_drive(
           return NULL;
         }
         islots->ki_finish(st->provider, 0);
-        return stepper_finish_yield(res.val);
+        return stepper_finish_yield(st, res.val);
 
       case KOS_RES_RAISE:
       case KOS_RES_FATAL:
@@ -815,6 +826,32 @@ static PyObject *stepper_throw(PyObject *self, PyObject *args) {
 }
 
 
+#if PY_MINOR_VERSION >= 10
+/**
+   The send slot asyncio's task step and PyIter_Send use: the same
+   drive as send, with a yielded element reported as a value through
+   the result slot instead of a StopIteration.
+*/
+static PySendResult stepper_am_send(
+    PyObject *self, PyObject *value, PyObject **result) {
+
+  KosIterStepper *st = (KosIterStepper *) self;
+  PyObject *ret = NULL;
+  PyObject *res;
+
+  st->ret = &ret;
+  res = stepper_send(self, value);
+  st->ret = NULL;
+  if (res) {
+    *result = res;
+    return PYGEN_NEXT;
+  }
+  *result = ret;
+  return ret ? PYGEN_RETURN : PYGEN_ERROR;
+}
+#endif
+
+
 static PyObject *stepper_close(PyObject *self) {
 
   KosIterStepper *st = (KosIterStepper *) self;
@@ -868,6 +905,9 @@ static PyMethodDef stepper_methods[] = {
 
 static PyAsyncMethods stepper_async_methods = {
   .am_await = stepper_await,
+#if PY_MINOR_VERSION >= 10
+  .am_send = stepper_am_send,
+#endif
 };
 
 
@@ -926,6 +966,7 @@ static PyObject *stepper_new_ex(
   st->host_owned = 0;
   st->running = 0;
   st->started = 0;
+  st->ret = NULL;
 
   Py_XINCREF(send_value);
   st->send_value = send_value;
