@@ -55,25 +55,11 @@ KOS_OP_HANDLER(VAR4) {
     RESULT_RAISE();
   }
 
-  if (unlikely(KosEvalState_StackPUSH(es, a) < 0)) {
-    Py_DECREF(b);
-    Py_DECREF(c);
-    Py_DECREF(d);
+  PyObject *vals[4] = { a, b, c, d };
+  if (unlikely(kos_stack_push_steal_n_fast(
+                   KosEvalState_BLOCK(es), vals, 4) < 0))
     RESULT_RAISE();
-  }
-
-  if (unlikely(KosEvalState_StackPUSH(es, b) < 0)) {
-    Py_DECREF(c);
-    Py_DECREF(d);
-    RESULT_RAISE();
-  }
-
-  if (unlikely(KosEvalState_StackPUSH(es, c) < 0)) {
-    Py_DECREF(d);
-    RESULT_RAISE();
-  }
-
-  RESULT_STEAL(es, d);
+  RESULT_NEXT(es);
 }
 
 

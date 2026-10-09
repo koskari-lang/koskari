@@ -23,19 +23,12 @@ KOS_OP_HANDLER(CONST3) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
-  PyObject *a = KosExtra_OBJ(row, 0);
-
-  PyObject *b = KosExtra_OBJ(row, 1);
-
-  PyObject *c = KosExtra_OBJ(row, 2);
-
-  if (unlikely(KosEvalState_StackPushRef(es, a) < 0))
+  /* the row's four fields are the pool objects, one pointer each,
+     so the row is the vector */
+  if (unlikely(kos_stack_push_ref_n_fast(
+                   KosEvalState_BLOCK(es), KosExtra_OBJS(row), 3) < 0))
     RESULT_RAISE();
-
-  if (unlikely(KosEvalState_StackPushRef(es, b) < 0))
-    RESULT_RAISE();
-
-  RESULT_PUSH(es, c);
+  RESULT_NEXT(es);
 }
 
 

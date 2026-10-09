@@ -35,12 +35,11 @@ KOS_OP_HANDLER(FAST2) {
     RESULT_RAISE();
   }
 
-  if (unlikely(KosEvalState_StackPUSH(es, a) < 0)) {
-    Py_DECREF(b);
+  PyObject *vals[2] = { a, b };
+  if (unlikely(kos_stack_push_steal_n_fast(
+                   KosEvalState_BLOCK(es), vals, 2) < 0))
     RESULT_RAISE();
-  }
-
-  RESULT_STEAL(es, b);
+  RESULT_NEXT(es);
 }
 
 

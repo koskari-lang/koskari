@@ -238,6 +238,13 @@ typedef struct KosExtra {
 #define KosExtra_OBJ(row, i)     ((row)->f[i].obj)
 #define KosExtra_TARGET(row, i)  ((row)->f[i].target)
 
+/* A row whose schema is all CONST or VAR read as the vector of its
+   pool objects: a field is one pointer wide, so the four fields are
+   four consecutive pointers. */
+_Static_assert(sizeof(KosExtraField) == sizeof(PyObject *),
+               "a row field is one pointer");
+#define KosExtra_OBJS(row)       ((PyObject *const *) (row)->f)
+
 
 /* === Opcode enum === */
 

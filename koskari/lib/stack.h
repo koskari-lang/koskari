@@ -467,6 +467,62 @@ static inline void kos_stack_clear_fast(KosSegment **block) {
 #endif  /* KOS_STACK_TRACE */
 
 
+/* n values from vals at once, with one capacity test: the fast path
+   writes the slots and stores the length once; otherwise each value
+   takes the single-value push in turn. n is a constant at every call
+   site, so the loops unroll. The steal form owns vals: a failed push
+   has released its own value, and the rest are released here. */
+static inline int kos_stack_push_steal_n_fast(
+        KosSegment **block,
+        PyObject *const *vals,
+        size_t n) {
+
+#if ! KOS_STACK_TRACE
+  KosSegment *s = *block;
+  if (likely(s && s->len + n <= s->max)) {
+    size_t len = s->len;
+    for (size_t i = 0; i < n; i++)
+      s->objs[len + i] = vals[i];
+    s->len = len + n;
+    return 0;
+  }
+#endif
+  for (size_t i = 0; i < n; i++) {
+    if (unlikely(kos_stack_push_steal_fast(block, vals[i]) < 0)) {
+      for (size_t j = i + 1; j < n; j++)
+        Py_DECREF(vals[j]);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+
+static inline int kos_stack_push_ref_n_fast(
+        KosSegment **block,
+        PyObject *const *vals,
+        size_t n) {
+
+#if ! KOS_STACK_TRACE
+  KosSegment *s = *block;
+  if (likely(s && s->len + n <= s->max)) {
+    size_t len = s->len;
+    for (size_t i = 0; i < n; i++) {
+      Py_INCREF(vals[i]);
+      s->objs[len + i] = vals[i];
+    }
+    s->len = len + n;
+    return 0;
+  }
+#endif
+  for (size_t i = 0; i < n; i++) {
+    if (unlikely(kos_stack_push_ref_fast(block, vals[i]) < 0))
+      return -1;
+  }
+  return 0;
+}
+
+
 /**
    Pop tail slots into an aggregate of PyObject * fields only. Count is
    sizeof(agg) / sizeof(PyObject *). Field order must be deepest stack slot
