@@ -133,8 +133,6 @@ int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen) {
   KosDynGen_HOST(gen)->top = NULL;
 
   owner = KosDynGen_OWNER(gen);
-  if (owner && KosPyAsyncGen_Check(owner))
-    ((KosPyAsyncGen *) owner)->gen = (void *) gen;
 
   /* Release only when owner holds the gen; standalone gen is kept for resume */
   if (owner)
