@@ -2090,12 +2090,13 @@ void kos_continuation_free(KosContinuation *k);
    :return: 0 on success, -1 on error
 */
 /**
-   The lowest common ancestor of the live chain and a template segment,
-   matched from the roots by node id and by phase (a live node that has
-   moved on since the capture ends the match): *out_live on the chain,
-   *out_tmpl its counterpart; both NULL when the roots differ.
+   The lowest common ancestor of the live chain and a template segment:
+   the top of the run of pairs, matched by node id and by phase (a live
+   node that has moved on since the capture ends the match), that
+   reaches both roots. *out_live on the chain, *out_tmpl its
+   counterpart; both NULL when the roots differ.
 */
-int kos_chain_common_ancestor(
+void kos_chain_common_ancestor(
     KosEvalState *es,
     KosDynNode *tmpl,
     KosDynNode **out_live,
