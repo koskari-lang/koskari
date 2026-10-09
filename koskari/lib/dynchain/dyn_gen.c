@@ -235,6 +235,7 @@ static int kos_dyn_gen_install_span(KosEvalState *es, KosDynNode *node) {
 
 int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   KosDynNode *active;
+  KosDynNode *bottom;
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
 
@@ -269,6 +270,21 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   if (! active) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_gen_install: GEN has no active frame");
+    return -1;
+  }
+
+  /* The span's bottom node, whose parent is the GEN: found before
+     anything is installed, so a frozen frame that is not in the span
+     is a refusal that leaves the GEN frozen and nothing spliced. */
+  bottom = KosDynGen_FROZEN(gen)->frame
+      ? (KosDynNode *) KosDynGen_FROZEN(gen)->frame
+      : active;
+  while (bottom && KosDynNode_PARENT(bottom) != (KosDynNode *) gen)
+    bottom = KosDynNode_PARENT(bottom);
+  if (! bottom) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "kos_dyn_gen_install: frozen frame is not in the"
+                    " GEN's span");
     return -1;
   }
 
@@ -307,21 +323,13 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
      consumer's live namespace, dropped at the freeze. Done before
      either splice path below: stamps never overwrite, so a stale link
      here would survive the rebuild. */
-  {
-    KosDynNode *bottom = KosDynGen_FROZEN(gen)->frame
-        ? (KosDynNode *) KosDynGen_FROZEN(gen)->frame
-        : active;
-
-    while (KosDynNode_PARENT(bottom) != (KosDynNode *) gen)
-      bottom = KosDynNode_PARENT(bottom);
-    if (KosDynNode_IS_FRAME(bottom))
-      KosDynFrame_BACK_FRAME(bottom) =
-          (KosDynNode *) KosDynGen_HOST(gen)->frame;
-    if (KosDynNode_STACK(bottom))
-      KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
-    if (! KosDynNode_NS(gen))
-      KosDynNode_NS(gen) = Py_XNewRef(KosDynGen_HOST(gen)->ns);
-  }
+  if (KosDynNode_IS_FRAME(bottom))
+    KosDynFrame_BACK_FRAME(bottom) =
+        (KosDynNode *) KosDynGen_HOST(gen)->frame;
+  if (KosDynNode_STACK(bottom))
+    KosSegment_BACK(KosDynNode_STACK(bottom)) = KosDynGen_HOST(gen)->block;
+  if (! KosDynNode_NS(gen))
+    KosDynNode_NS(gen) = Py_XNewRef(KosDynGen_HOST(gen)->ns);
 
   /* 1. GEN's parent = current ctx's active node */
   KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
