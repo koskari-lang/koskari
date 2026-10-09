@@ -444,41 +444,26 @@ KOS_OP_INLINE int kos_foreach_deliver_in_hand(
    The store resume: the deferred element of an ITER_NEXT_STORE_* step
    arrives here, staged by the FOREACH node's delivery because the
    frame carries this resume, and is stored where the step names. The
-   step is the region's continue target. The state is NULL so the
-   delivery arrives as it is: a state asks the delivery to settle the
-   value first, which would await an element that is itself awaitable.
-   Nothing comes here on failure: the prologue hands no failure to a
-   bytecode frame's resume, and the node clears the resume at
-   exhaustion and at its teardown.
+   state is the step instruction that deferred. The kind takes its
+   delivery as it is: settling it would await an element that is
+   itself awaitable. Nothing comes here on failure: the prologue hands
+   no failure to a bytecode frame's resume, and the node clears the
+   resume at exhaustion and at its teardown.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult foreach_store_resume(
     KosEvalState *es,
     void *state,
     PyObject *value) {
 
-  KosDynNode *region;
-  const KosOp *step;
-
-  (void) state;
   if (unlikely(! value))
     return EVAL_RAISE();
-
-  region = kos_dyn_find_loop(es);
-  if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
-    Py_DECREF(value);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "for-each element delivered with no FOREACH region");
-    return EVAL_RAISE();
-  }
-
-  step = &KosEvalState_OPS(es)[KosDynForeach_CONTINUE_PC(region)];
-  if (unlikely(kos_foreach_store_element(es, step, value) < 0))
+  if (unlikely(kos_foreach_store_element(es, (const KosOp *) state, value) < 0))
     return EVAL_RAISE();
   return EVAL_NORMAL();
 }
 
 const KosResumeKind kos_foreach_store_resume_kind = {
-  "for-each-store", foreach_store_resume, NULL, kos_resume_clone_shared
+  "for-each-store", foreach_store_resume, NULL, kos_resume_clone_shared, 0
 };
 
 
@@ -495,7 +480,7 @@ KOS_OP_INLINE void kos_foreach_defer_step(
 
   if (KosOp_OP(step) != KOS_OP_ITER_NEXT) {
     KosDynFrame_RESUME_KIND(frame) = &kos_foreach_store_resume_kind;
-    KosDynFrame_RESUME_STATE(frame) = NULL;
+    KosDynFrame_RESUME_STATE(frame) = (void *) step;
   }
 }
 

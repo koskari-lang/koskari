@@ -3249,9 +3249,10 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
     }
   }
 
-  /* A node resume (NULL state: a yield-from phase) takes its delivery
-     as it is: a delegate's yielded value is data, never awaited here. */
-  if (val && ! have_res && state) {
+  /* A kind that takes its delivery as it is (a yield-from phase, the
+     for-each store) gets it unsettled: that value is data, never
+     awaited here. */
+  if (val && ! have_res && resume->settle) {
     switch (KosEval_ResultIsValue(val)) {
       case 1:
         break;  /* settled: deliver it below */

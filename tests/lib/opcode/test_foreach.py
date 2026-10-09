@@ -605,5 +605,39 @@ class TestIterNextStoreFromSource(unittest.IsolatedAsyncioTestCase):
         mod = await self.load()
         self.assertEqual(mod["module-acc"], 6)
 
+    async def test_store_step_away_from_the_continue_target(self):
+        """
+        A store step that defers resumes through the instruction that
+        deferred, not through the region's continue target: here the
+        continue target is a JUMP to the step, over a Koskari generator
+        so every step installs and resumes
+        """
+
+        mod = await self.load()
+        code, ns = build_expr([
+            ["CONST", 0],
+            ["VAR_STORE", "total"],
+            ["VAR", "gen"],
+            ["CONST", 4],
+            ["CALL", 1],
+            ["PUSH_FOREACH", 0],
+            ["JUMP", "step"],
+            ["LABEL", "body"],
+            ["VAR", "total"],
+            ["VAR", "x"],
+            ["OBJECT_ADD", 2],
+            ["VAR_STORE", "total"],
+            ["CONTINUE", 0],
+            ["LABEL", "step"],
+            ["ITER_NEXT_STORE_VAR", ("x", "else_lbl", None, None)],
+            ["JUMP", "body"],
+            ["LABEL", "else_lbl"],
+            ["POP_FOREACH", 0],
+            ["POP", 1],
+            ["VAR", "total"],
+            ["RETURN", 1],
+        ], values={"gen": mod["gen"], "total": 0, "x": None})
+        self.assertEqual(await make_callable(code, ns)(), 6)
+
 
 # The end.

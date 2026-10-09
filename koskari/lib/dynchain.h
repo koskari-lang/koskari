@@ -367,10 +367,19 @@ typedef struct KosResumeKind {
                                               void *state, PyObject *value);
   void (*clear)(void *state);
   void *(*clone)(void *state);
+  int settle;   /* the delivery is settled before fn sees it: 0 for a
+                   kind whose delivery is data, as a delegate's yielded
+                   value or a for-each element is */
 } KosResumeKind;
 
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
-  static const KosResumeKind ident = { (label), (fnp), (clearp), (clonep) }
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), 1 }
+
+/* A kind that takes its delivery as it is. */
+#define KOS_RESUME_KIND_AS_IS(ident, label, fnp, clearp, clonep)        \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), 0 }
 
 /* The clone of a kind whose state is owned elsewhere and copied with
    the chain (a node's resume, whose state is NULL or the node
