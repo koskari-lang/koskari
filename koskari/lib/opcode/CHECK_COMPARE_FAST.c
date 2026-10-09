@@ -28,12 +28,13 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
   KOS_OP_REQUIRE_NS(ns);
 
   /* Borrowed arms: an exact-int pair under a richcompare selector
-     settles on the extracted values, and IS / IS_NOT settle on the
-     pointers, neither with any refcount traffic. Nothing runs between
-     the peek and the compare that could rebind a slot, so the borrow
-     is sound. A slot the peek cannot answer (empty, or a ref kind
-     needing the general deref) and any other operand shape take the
-     owned path below, which raises for an empty slot. */
+     settles on the extracted values, an exact-float pair on its
+     doubles, and IS / IS_NOT settle on the pointers, none with any
+     refcount traffic. Nothing runs between the peek and the compare
+     that could rebind a slot, so the borrow is sound. A slot the peek
+     cannot answer (empty, or a ref kind needing the general deref)
+     and any other operand shape take the owned path below, which
+     raises for an empty slot. */
   KosCompare sel = (KosCompare) KosCmpSrc_SEL(src);
   if (likely(sel <= KOS_COMPARE_IS_NOT)) {
     PyObject *x = KosCmpSrc_X_CONST(src)
@@ -53,6 +54,12 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
       }
       if (kos_as_ll2(x, y, &a, &b)) {
         if (kos_ll_compare(sel, a, b))
+          RESULT_NEXT(es);
+        RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+      }
+      if (PyFloat_CheckExact(x) && PyFloat_CheckExact(y)) {
+        if (kos_double_compare(sel, PyFloat_AS_DOUBLE(x),
+                               PyFloat_AS_DOUBLE(y)))
           RESULT_NEXT(es);
         RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
       }
