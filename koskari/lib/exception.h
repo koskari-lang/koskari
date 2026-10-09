@@ -78,10 +78,14 @@ static inline void KosExc_Clear(KosExcState *s) {
 
 /* Take the thread's handler-visible exception (sys.exc_info) into s,
    releasing anything s held. The thread state keeps its own view; use
-   KosExc_Install to change it. */
+   KosExc_Install to change it. A thread handling nothing answers with
+   NULLs on some versions and three Nones on others; both leave s
+   empty, so KosExc_Held means an exception is held. */
 static inline void KosExc_Fetch(KosExcState *s) {
   KosExc_Clear(s);
   PyErr_GetExcInfo(&s->type, &s->value, &s->tb);
+  if (s->value == Py_None || (! s->value && s->type == Py_None))
+    KosExc_Clear(s);
 }
 
 

@@ -106,7 +106,7 @@ static KosIterStepResult iterate_suite_step(
     KosEvalState es;
     KosIterStepResult r;
 
-    KosEvalState_Init(&es, *host);
+    KosEvalState_Init(&es, *host, NULL);
     KosEvalState_ThawFromContext(&es);
     r = islots->ki_step(&es, provider, send_val, out);
     KosEvalState_FreezeToContext(&es);
@@ -131,7 +131,7 @@ static KosIterStepResult iterate_suite_throw(
     KosEvalState es;
     KosIterStepResult r;
 
-    KosEvalState_Init(&es, *host);
+    KosEvalState_Init(&es, *host, NULL);
     KosEvalState_ThawFromContext(&es);
     r = islots->ki_throw(&es, provider, throw_typ, throw_exc, out);
     KosEvalState_FreezeToContext(&es);

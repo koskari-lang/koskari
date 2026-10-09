@@ -72,7 +72,7 @@ static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
     KosEvalState es;
     int r;
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     if (! gen || ! kos_dyn_gen_frozen_needs_install_es(&es, gen)) {
         KosEvalState_FreezeToContext(&es);

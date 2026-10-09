@@ -112,7 +112,7 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   {
     KosEvalState es;
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     if (kos_dyn_gen_install(&es, gen) < 0) {
       KosEvalState_FreezeToContext(&es);
@@ -157,7 +157,7 @@ primary_success:
   {
     KosEvalState es;
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     if (kos_dyn_teardown_gen_exhausted(&es) < 0) {
       KosEvalState_FreezeToContext(&es);

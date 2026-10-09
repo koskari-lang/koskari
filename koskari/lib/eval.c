@@ -1052,7 +1052,7 @@ own_fail:
 /**
    Unified exception ingress (the RAISE hub).  All PyErr / KOS_RES_RAISE
    ingress converges here: post-opcode results (apply_kos_op_result),
-   prologue and signal-poll pending PyErr (eval_phase_pending_exception),
+   the prologue's pending PyErr (kos_eval_prologue),
    revive-throw (eval_phase_entry KOS_MODE_EXCEPTION), and transfer goal
    step failures (kos_eval_drain_goal).  One deliberate non-ingress
    carve-out lives in kos_eval_drain_goal: a foreign cc-unwind's boundary
@@ -2513,24 +2513,6 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
 
 
 /**
-   Phase 3: async exception check at each loop iteration top.
-
-   When PyErr_Occurred() is set on entry to the dispatch loop (e.g. from a
-   signal handler or a mid-loop async exception), calls process_raise to
-   attempt local handling.
-
-   :return: EVAL_NORMAL when no PyErr;
-            EVAL_REPROLOGUE when handled locally (restart prologue);
-            terminal KosOpResult when eval should stop.
-*/
-static KosOpResult eval_phase_pending_exception(KosEvalState *es) {
-  if (! PyErr_Occurred())
-    return EVAL_NORMAL();
-  return process_raise(es);
-}
-
-
-/**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
    generator dead-after-yield, freezes gen (the running frame's GEN, from
    kos_dyn_find_gen), delivers to the consuming iteration node (NEXT /
@@ -3485,14 +3467,20 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     }
     #endif
 
+    /* The pass reads the pending exception and the goal's intent once:
+       nothing below changes either without leaving the pass, since a
+       pending exception takes the raise phase, which returns or
+       restarts the loop. A pass with no goal skips the probe. */
+    PyObject *const err = PyErr_Occurred();
+    const int will_drive =
+        KosEvalState_GOAL(es) && kos_xfer_goal_will_drive(es);
+
     /* Slim bounce: a staged delivery with no pending exception and no
        goal about to drive goes straight to its resume. The two checks
        below exist for chain surgery, which a staged handoff performs
        none of. A goal waiting on a running thunk is dormant: the thunk's
        own deliveries go through here like anyone else's. */
-    if (KosEvalState_PENDING_VALUE(es)
-        && ! kos_xfer_goal_will_drive(es)
-        && ! PyErr_Occurred()) {
+    if (KosEvalState_PENDING_VALUE(es) && ! will_drive && ! err) {
       KosOpResult rs = eval_step_resume_delivery(es);
       if (rs.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(es);
@@ -3513,7 +3501,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        and then bounces straight back here with no goal active -- so a
        transfer still reaches abandon first, and the offer still
        fires. */
-    if (PyErr_Occurred()
+    if (err
         && ! KosEvalState_GOAL(es)
         && KosEvalState_FRAME(es)
         && ! KosDynFrame_CODE(KosEvalState_FRAME(es))
@@ -3528,8 +3516,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        wind before-thunk) must run abandon + try_local before draining
        the plan; otherwise the wind EXTENT_ACTION can complete while
        PyErr is still set. */
-    {
-      KosOpResult pend = eval_phase_pending_exception(es);
+    if (err) {
+      KosOpResult pend = process_raise(es);
       if (pend.kind != KOS_RES_NORMAL) {
         if (pend.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(es);
@@ -3544,7 +3532,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        neither shadow that delivery nor reach a resume it was never
        meant for. Only ahead of a drive: while the goal waits on a
        running thunk the slot belongs to the thunk's code. */
-    if (kos_xfer_goal_will_drive(es))
+    if (will_drive)
       Py_CLEAR(KosEvalState_PENDING_VALUE(es));
 
     {
@@ -3671,14 +3659,16 @@ KosOpResult koskari_eval(
      alive until the drive has frozen back onto it below. */
   Py_INCREF(ctx);
 
-  KosEvalState_Init(&es, ctx);
+  /* The thread record is resolved first so the state takes the
+     thread's breaker from it; the record holds es by address only
+     until KOS_CTX_RUNNING is set below. */
+  tls = kos_tls_enter_drive(ctx, &es);
+  KosEvalState_Init(&es, ctx, kos_tls_breaker(tls));
   KosEvalState_ThawFromContext(&es);
   if (KosEvalState_DYN_TOP(&es))
     kos_dyn_resync_chain(&es);
 
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
-
-  tls = kos_tls_enter_drive(ctx, &es);
   KOS_TRACE_EVAL_PUSH();
   KOS_TRACE_TRAMPOLINE_STEP();
 

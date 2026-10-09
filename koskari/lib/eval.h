@@ -1114,7 +1114,15 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
 #define kos_frame_free(frame) kos_dynframe_free(frame)
 
 
-void KosEvalState_Init(KosEvalState *es, KosContext *ctx);
+/**
+   Zero es and bind it to ctx. breaker is this thread's eval breaker
+   word, taken from the thread record by a drive that holds one; NULL
+   locates it through the thread state.
+*/
+void KosEvalState_Init(
+    KosEvalState *es,
+    KosContext *ctx,
+    const volatile KosBreakerWord *breaker);
 
 
 /**
@@ -1442,6 +1450,11 @@ typedef struct KosTlsState KosTlsState;
   the context's token gains a live depth. Returns the held record.
 */
 KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es);
+
+
+/* The eval breaker word of the thread s records, located once when
+   the record was made. */
+const volatile KosBreakerWord *kos_tls_breaker(const KosTlsState *s);
 
 
 /* Pop the active eval state of the drive holding s. */

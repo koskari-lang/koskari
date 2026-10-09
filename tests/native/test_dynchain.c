@@ -359,7 +359,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
 
     {
@@ -409,7 +409,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
 
     mgr = PyLong_FromLong(200001);

@@ -90,7 +90,7 @@ static KosDynParam *push_dyn_param(
         return NULL;
     }
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     node = kos_dyn_push_param_dict(&es, bindings);
     KosEvalState_FreezeToContext(&es);
@@ -118,7 +118,7 @@ static int pop_dyn_param(KosContext *ctx, KosDynParam *node) {
     KosEvalState es;
     int r;
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     r = kos_dyn_pop_param(&es, node);
     KosEvalState_FreezeToContext(&es);

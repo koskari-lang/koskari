@@ -46,7 +46,7 @@ static int test_breaker_reads_the_interpreter(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   TEST_ASSERT_SAME((void *) KosEvalState_BREAKER(&es), (void *) w,
                    "Init caches the located word");
   TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(&es) != 0, 0,

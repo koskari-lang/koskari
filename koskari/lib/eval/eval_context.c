@@ -125,7 +125,7 @@ KosContext *KosContext_NewFromSnapshot(
   { /* Lazy and evil */
     KosEvalState es;
 
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     kos_dyn_resync_chain(&es);
     KosEvalState_FreezeToContext(&es);

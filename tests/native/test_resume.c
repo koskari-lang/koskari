@@ -79,7 +79,7 @@ static int test_cg_prologue_delivers_staged_resume(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -133,7 +133,7 @@ static int test_dispatch_delivers_through_prologue(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -170,7 +170,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -239,7 +239,7 @@ static int test_return_into_resume_parent(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   /* the parent: a codeless frame waiting on a resume */
@@ -305,7 +305,7 @@ static int test_prologue_idle_threads_into_code(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *forty_two = PyLong_FromLong(42);
@@ -348,7 +348,7 @@ static int test_prologue_delivers_staged(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -387,7 +387,7 @@ static int test_prologue_runs_pending_exception(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -433,7 +433,7 @@ static int test_raise_walk_resume_propagates(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *bottom_ns = PyDict_New();
@@ -476,7 +476,7 @@ static int test_raise_walk_resume_handles(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *bottom_ns = PyDict_New();
@@ -633,7 +633,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -704,7 +704,7 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -872,7 +872,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -918,7 +918,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();

@@ -50,6 +50,9 @@ struct KosTlsState {
      capsule is gone. Compared against the current thread state to
      accept the TSS slot's record without a dict lookup. */
   PyThreadState *owner;
+  /* the owner's eval breaker word, located once here so a drive's
+     state takes it without asking for the thread state again */
+  const volatile KosBreakerWord *breaker;
   /* one count for the capsule, one for the TSS slot that names it,
      and one per drive holding the record across its run */
   Py_ssize_t refs;
@@ -179,6 +182,9 @@ static KosTlsState *get_or_alloc_tls_state(void) {
     return NULL;
   memset(s, 0, sizeof(KosTlsState));
   s->owner = PyThreadState_Get();
+  s->breaker = koskari_eval_breaker_locate();
+  if (! s->breaker)
+    s->breaker = &koskari_breaker_always;
   s->refs = 1;   /* the slot's */
 
   if (tls_state_dict_key) {
@@ -234,6 +240,11 @@ KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es) {
   s->eval_stack[s->eval_depth++] = es;
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
   return s;
+}
+
+
+const volatile KosBreakerWord *kos_tls_breaker(const KosTlsState *s) {
+  return s->breaker;
 }
 
 

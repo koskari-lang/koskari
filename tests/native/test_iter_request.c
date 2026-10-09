@@ -181,7 +181,7 @@ static int test_native_install_fresh_and_cached(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   /* a base frame with a namespace, so the fill has a live value */
@@ -247,7 +247,7 @@ static int test_native_install_clear_sees_state(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   PyObject *ns = PyDict_New();
@@ -286,7 +286,7 @@ static int test_request_next_sync_lifecycle(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosEvalState es;
-  KosEvalState_Init(&es, ctx);
+  KosEvalState_Init(&es, ctx, NULL);
   KosEvalState_ThawFromContext(&es);
 
   KosDynFrame *frame = KosResumeFrame_Install(
@@ -336,7 +336,7 @@ static int test_context_recycle(void) {
 
   {
     KosEvalState es;
-    KosEvalState_Init(&es, ctx);
+    KosEvalState_Init(&es, ctx, NULL);
     KosEvalState_ThawFromContext(&es);
     TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(&es), "push a frame");
     KosEvalState_FreezeToContext(&es);

@@ -477,7 +477,7 @@ static int coroutine_step(
      context's reference to the iterator while it runs. */
   if (coro->state == KOS_CORO_WAITING_PY) {
     KosEvalState coro_es;
-    KosEvalState_Init(&coro_es, coro->ctx);
+    KosEvalState_Init(&coro_es, coro->ctx, NULL);
     PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
     if (await_iter) {
       PyObject *await_result = NULL;
@@ -575,7 +575,7 @@ static PyObject *coroutine_throw_pair(
      and in_send set across it, as in coroutine_step */
   if (coro->state == KOS_CORO_WAITING_PY) {
     KosEvalState coro_es;
-    KosEvalState_Init(&coro_es, coro->ctx);
+    KosEvalState_Init(&coro_es, coro->ctx, NULL);
     PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
     if (await_iter) {
       Py_INCREF(await_iter);
@@ -651,7 +651,7 @@ static PyObject *coroutine_close(PyObject *self) {
      run user code that calls back into this coroutine. */
   {
     KosEvalState coro_es;
-    KosEvalState_Init(&coro_es, coro->ctx);
+    KosEvalState_Init(&coro_es, coro->ctx, NULL);
     PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
     if (await_iter) {
       Py_INCREF(await_iter);
