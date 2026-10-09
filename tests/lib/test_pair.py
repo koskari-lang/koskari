@@ -32,37 +32,57 @@ pytestmark = pytest.mark.phase_lib
 
 
 class TestPair(unittest.IsolatedAsyncioTestCase):
-    """Tests for the pair type"""
+    """
+    Tests for the pair type
+    """
 
     async def test_create(self):
-        """pair can be created with head and tail"""
+        """
+        pair can be created with head and tail
+        """
+
         p = pair(1, 2)
         self.assertIsInstance(p, pair)
 
     async def test_car(self):
-        """car() returns the head element"""
+        """
+        car() returns the head element
+        """
+
         p = pair("head", "tail")
         self.assertEqual(car(p), "head")
 
     async def test_cdr(self):
-        """cdr() returns the tail element"""
+        """
+        cdr() returns the tail element
+        """
+
         p = pair("head", "tail")
         self.assertEqual(cdr(p), "tail")
 
     async def test_setcar(self):
-        """setcar() modifies the head element"""
+        """
+        setcar() modifies the head element
+        """
+
         p = pair(1, 2)
         setcar(p, "new")
         self.assertEqual(car(p), "new")
 
     async def test_setcdr(self):
-        """setcdr() modifies the tail element"""
+        """
+        setcdr() modifies the tail element
+        """
+
         p = pair(1, 2)
         setcdr(p, "new")
         self.assertEqual(cdr(p), "new")
 
     async def test_car_cdr_attributes_read_write(self):
-        """pair.car and pair.cdr match car/cdr/setcar/setcdr"""
+        """
+        pair.car and pair.cdr match car/cdr/setcar/setcdr
+        """
+
         p = pair("head", "tail")
         self.assertEqual(p.car, car(p))
         self.assertEqual(p.cdr, cdr(p))
@@ -76,7 +96,10 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.cdr, "b")
 
     async def test_car_delete_raises(self):
-        """del pair.car and del pair[0] raise TypeError and leave the car"""
+        """
+        del pair.car and del pair[0] raise TypeError and leave the car
+        """
+
         p = pair(1, 2)
         with self.assertRaises(TypeError):
             del p.car
@@ -86,7 +109,10 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repr(p), "cons(1, 2)")
 
     async def test_cdr_delete_truncates_to_nil(self):
-        """del pair.cdr and del pair[1] set the cdr to nil"""
+        """
+        del pair.cdr and del pair[1] set the cdr to nil
+        """
+
         p = cons(1, 2, 3, nil)
         del p.cdr
         self.assertIs(p.cdr, nil)
@@ -98,7 +124,10 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(q.unpack()), [1])
 
     async def test_cdr_delete_releases_tail(self):
-        """truncating drops the reference to the old tail"""
+        """
+        truncating drops the reference to the old tail
+        """
+
         import weakref
 
         class Tail:
@@ -113,7 +142,10 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(ref())
 
     async def test_cdr_delete_bracket_keeps_style(self):
-        """a bracket cell truncates to bracket-nil, not nil"""
+        """
+        a bracket cell truncates to bracket-nil, not nil
+        """
+
         from koskari.lib import bracket_nil
         p = bracket_pair(1, bracket_pair(2, bracket_nil))
         del p.cdr
@@ -122,18 +154,27 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.cdr, nil)
 
     async def test_len(self):
-        """len() always returns 2 for pairs"""
+        """
+        len() always returns 2 for pairs
+        """
+
         p = pair(1, 2)
         self.assertEqual(len(p), 2)
 
     async def test_getitem(self):
-        """pairs support indexing with [0] and [1]"""
+        """
+        pairs support indexing with [0] and [1]
+        """
+
         p = pair("a", "b")
         self.assertEqual(p[0], "a")
         self.assertEqual(p[1], "b")
 
     async def test_setitem(self):
-        """pairs support assignment with [0] and [1]"""
+        """
+        pairs support assignment with [0] and [1]
+        """
+
         p = pair(1, 2)
         p[0] = "x"
         p[1] = "y"
@@ -141,58 +182,88 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p[1], "y")
 
     async def test_getitem_out_of_range(self):
-        """indexing outside [0, 1] raises IndexError"""
+        """
+        indexing outside [0, 1] raises IndexError
+        """
+
         p = pair(1, 2)
         with self.assertRaises(IndexError):
             _ = p[2]
 
     async def test_getitem_negative(self):
-        """negative indexing works (Python normalizes before sq_item)"""
+        """
+        negative indexing works (Python normalizes before sq_item)
+        """
+
         p = pair("a", "b")
         self.assertEqual(p[-1], "b")
         self.assertEqual(p[-2], "a")
 
     async def test_setitem_out_of_range(self):
-        """assignment outside [0, 1] raises IndexError"""
+        """
+        assignment outside [0, 1] raises IndexError
+        """
+
         p = pair(1, 2)
         with self.assertRaises(IndexError):
             p[2] = "x"
 
     async def test_iter(self):
-        """pairs are iterable, yielding head then tail"""
+        """
+        pairs are iterable, yielding head then tail
+        """
+
         p = pair("a", "b")
         result = list(p)
         self.assertEqual(result, ["a", "b"])
 
     async def test_repr(self):
-        """repr() returns cons(...) format"""
+        """
+        repr() returns cons(...) format
+        """
+
         p = pair(1, 2)
         self.assertEqual(repr(p), "cons(1, 2)")
 
     async def test_str_improper(self):
-        """str() of improper pair uses dot notation"""
+        """
+        str() of improper pair uses dot notation
+        """
+
         p = pair(1, 2)
         self.assertEqual(str(p), "(1 . 2)")
 
     async def test_str_proper(self):
-        """str() of proper list omits final dot"""
+        """
+        str() of proper list omits final dot
+        """
+
         p = cons(1, 2, 3, nil)
         self.assertEqual(str(p), "(1 2 3)")
 
     async def test_eq_same(self):
-        """pairs with same structure are equal"""
+        """
+        pairs with same structure are equal
+        """
+
         p1 = pair(1, 2)
         p2 = pair(1, 2)
         self.assertEqual(p1, p2)
 
     async def test_eq_different(self):
-        """pairs with different structure are not equal"""
+        """
+        pairs with different structure are not equal
+        """
+
         p1 = pair(1, 2)
         p2 = pair(1, 3)
         self.assertNotEqual(p1, p2)
 
     async def test_eq_nested(self):
-        """nested pairs with same structure are equal"""
+        """
+        nested pairs with same structure are equal
+        """
+
         p1 = cons(1, 2, 3, nil)
         p2 = cons(1, 2, 3, nil)
         self.assertEqual(p1, p2)
@@ -204,6 +275,7 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         compared; periods that share no factor make that return the
         product of the lengths away, and a constant cycle is the one
         shape where different periods agree everywhere
+
         """
 
         two = cons(7, 7, nil)
@@ -217,6 +289,7 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         """
         A circular list whose cycle holds a differing element is unequal
         to one that agrees on every other position
+
         """
 
         two = cons(1, 2, nil)
@@ -229,6 +302,7 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         """
         A circular list and a finite one are unequal: the finite one
         ends where the circular one goes on
+
         """
 
         two = cons(1, 2, nil)
@@ -240,6 +314,7 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         """
         An element comparison that raises makes the pair comparison
         raise the same error; no truth value is produced
+
         """
 
         class Refuses:
@@ -260,26 +335,38 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(produced, [])
 
     async def test_ne(self):
-        """!= works correctly"""
+        """
+        != works correctly
+        """
+
         p1 = pair(1, 2)
         p2 = pair(1, 3)
         self.assertTrue(p1 != p2)
         self.assertFalse(p1 != pair(1, 2))
 
     async def test_requires_two_args(self):
-        """pair() requires exactly two arguments"""
+        """
+        pair() requires exactly two arguments
+        """
+
         with self.assertRaises(TypeError):
             pair(1)
         with self.assertRaises(TypeError):
             pair()
 
     async def test_no_named_args(self):
-        """pair() rejects keyword arguments"""
+        """
+        pair() rejects keyword arguments
+        """
+
         with self.assertRaises(TypeError):
             pair(head=1, tail=2)
 
     async def test_copy(self):
-        """__copy__() creates a shallow copy"""
+        """
+        __copy__() creates a shallow copy
+        """
+
         import copy
         p = cons(1, 2, 3, nil)
         p2 = copy.copy(p)
@@ -287,14 +374,20 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(p, p2)
 
     async def test_copy_method(self):
-        """copy() creates a shallow copy"""
+        """
+        copy() creates a shallow copy
+        """
+
         p = cons(1, 2, 3, nil)
         p2 = p.copy()
         self.assertEqual(p, p2)
         self.assertIsNot(p, p2)
 
     async def test_copy_releases_cells(self):
-        """dropping a copy frees every copied cell"""
+        """
+        dropping a copy frees every copied cell
+        """
+
         val = object()
         p = cons(val, val, val, nil)
         before = sys.getrefcount(val)
@@ -304,38 +397,59 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sys.getrefcount(val), before)
 
     async def test_is_proper_true(self):
-        """is_proper() returns True for nil-terminated list"""
+        """
+        is_proper() returns True for nil-terminated list
+        """
+
         p = cons(1, 2, 3, nil)
         self.assertTrue(p.is_proper())
 
     async def test_is_proper_false(self):
-        """is_proper() returns False for non-nil-terminated list"""
+        """
+        is_proper() returns False for non-nil-terminated list
+        """
+
         p = pair(1, 2)
         self.assertFalse(p.is_proper())
 
     async def test_is_recursive_false(self):
-        """is_recursive() returns False for non-recursive list"""
+        """
+        is_recursive() returns False for non-recursive list
+        """
+
         p = cons(1, 2, 3, nil)
         self.assertFalse(p.is_recursive())
 
     async def test_is_recursive_true(self):
-        """is_recursive() returns True for recursive list"""
+        """
+        is_recursive() returns True for recursive list
+        """
+
         p = pair(1, nil)
         setcdr(p, p)  # make it circular
         self.assertTrue(p.is_recursive())
 
     async def test_length(self):
-        """length() returns number of pairs in list"""
+        """
+        length() returns number of pairs in list
+        """
+
         p = cons(1, 2, 3, nil)
         self.assertEqual(p.length(), 3)
 
     async def test_length_improper(self):
-        """length() counts tail of improper list"""
+        """
+        length() counts tail of improper list
+        """
+
         p = cons(1, 2, 3)
         self.assertEqual(p.length(), 3)
 
     async def test_follow(self):
-        """follow() iterates over pairs themselves"""
+        """
+        follow() iterates over pairs themselves
+        """
+
         p = cons(1, 2, 3, nil)
         pairs = list(p.follow())
         self.assertEqual(len(pairs), 4)  # 3 pairs + nil
@@ -343,19 +457,28 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertIs(pairs[3], nil)
 
     async def test_unpack(self):
-        """unpack() iterates over car values"""
+        """
+        unpack() iterates over car values
+        """
+
         p = cons(1, 2, 3, nil)
         values = list(p.unpack())
         self.assertEqual(values, [1, 2, 3])
 
     async def test_unpack_improper(self):
-        """unpack() includes tail of improper list"""
+        """
+        unpack() includes tail of improper list
+        """
+
         p = cons(1, 2, 3)
         values = list(p.unpack())
         self.assertEqual(values, [1, 2, 3])
 
     async def test_position(self):
-        """get_position() and set_position() work correctly"""
+        """
+        get_position() and set_position() work correctly
+        """
+
         p = pair(1, 2)
         self.assertIsNone(p.get_position())
         pos = ("file.ki", 10, 5)
@@ -366,7 +489,10 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(p.get_position(), ("other.ki", 8, 2))
 
     async def test_position_delete_clears(self):
-        """del pair.position clears the slot (C NULL), like clear_position"""
+        """
+        del pair.position clears the slot (C NULL), like clear_position
+        """
+
         p = pair(1, 2)
         p.set_position(("file.ki", 10, 5))
         self.assertIsNotNone(p.get_position())
@@ -375,7 +501,10 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(p.position)
 
     async def test_clear_position(self):
-        """clear_position() removes position info"""
+        """
+        clear_position() removes position info
+        """
+
         p = pair(1, 2)
         p.set_position(("file.ki", 10, 5))
         p.clear_position()
@@ -386,7 +515,9 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         fill_position adds positions where there are none; a cell that
         already has one ends that branch, its own subtree included, and
         the walk carries the caller's position throughout
+
         """
+
         inner = cons(2, 3, nil)
         inner.set_position(("inner", 1, 1))
         outer = cons(1, inner, 4, nil)
@@ -401,7 +532,9 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
         """
         The follow walks descend into cars with an explicit stack, so a
         nesting deeper than the C stack allows is fine
+
         """
+
         deep = nil
         for _ in range(200000):
             deep = cons(deep, nil)
@@ -418,10 +551,15 @@ class TestPair(unittest.IsolatedAsyncioTestCase):
 
 
 class TestNil(unittest.IsolatedAsyncioTestCase):
-    """Tests for the nil singleton"""
+    """
+    Tests for the nil singleton
+    """
 
     async def test_singleton(self):
-        """nil is a singleton"""
+        """
+        nil is a singleton
+        """
+
         from koskari.lib import nil as nil1
         from koskari.lib import nil as nil2
         self.assertIs(nil1, nil2)
@@ -430,6 +568,7 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         """
         A nil cell takes no position: filling one onto nil or bracket-nil
         changes nothing, as setting one does not
+
         """
 
         for empty in (nil, bracket_nil):
@@ -445,7 +584,9 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         inherit the pair's GC flag; the collector must never see them
         as GC objects. A contract guard: a fault here is a read of the
         bytes before the singleton that only a sanitizer reports
+
         """
+
         import gc
         self.assertFalse(gc.is_tracked(nil))
         self.assertFalse(gc.is_tracked(bracket_nil))
@@ -454,7 +595,9 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
     async def test_singletons_are_immortal(self):
         """
         A reference taken to either singleton moves no refcount
+
         """
+
         before = (sys.getrefcount(nil), sys.getrefcount(bracket_nil))
         held = [cons(1, nil) for _ in range(1000)]
         held += [cons(1, bracket_nil) for _ in range(1000)]
@@ -463,125 +606,199 @@ class TestNil(unittest.IsolatedAsyncioTestCase):
         del held
 
     async def test_repr(self):
-        """repr(nil) returns 'nil'"""
+        """
+        repr(nil) returns 'nil'
+        """
+
         self.assertEqual(repr(nil), "nil")
 
     async def test_str(self):
-        """str(nil) returns '()' (the empty list renders as its form)"""
+        """
+        str(nil) returns '()' (the empty list renders as its form)
+        """
+
         self.assertEqual(str(nil), "()")
 
     async def test_bool_false(self):
-        """nil is falsy"""
+        """
+        nil is falsy
+        """
+
         self.assertFalse(nil)
         self.assertFalse(bool(nil))
 
     async def test_len(self):
-        """len(nil) is 0"""
+        """
+        len(nil) is 0
+        """
+
         self.assertEqual(len(nil), 0)
 
     async def test_iter_empty(self):
-        """iterating nil yields nothing"""
+        """
+        iterating nil yields nothing
+        """
+
         result = list(nil)
         self.assertEqual(result, [])
 
     async def test_getitem_error(self):
-        """indexing nil raises IndexError"""
+        """
+        indexing nil raises IndexError
+        """
+
         with self.assertRaises(IndexError):
             _ = nil[0]
 
     async def test_setitem_error(self):
-        """assignment to nil raises IndexError"""
+        """
+        assignment to nil raises IndexError
+        """
+
         with self.assertRaises(IndexError):
             nil[0] = 1
 
     async def test_car_error(self):
-        """car(nil) raises TypeError"""
+        """
+        car(nil) raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             car(nil)
 
     async def test_cdr_error(self):
-        """cdr(nil) raises TypeError"""
+        """
+        cdr(nil) raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             cdr(nil)
 
     async def test_setcar_error(self):
-        """setcar(nil, x) raises TypeError"""
+        """
+        setcar(nil, x) raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             setcar(nil, 1)
 
     async def test_setcdr_error(self):
-        """setcdr(nil, x) raises TypeError"""
+        """
+        setcdr(nil, x) raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             setcdr(nil, 1)
 
     async def test_nil_car_attr_error(self):
-        """nil.car raises TypeError"""
+        """
+        nil.car raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             _ = nil.car
 
     async def test_nil_cdr_attr_error(self):
-        """nil.cdr raises TypeError"""
+        """
+        nil.cdr raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             _ = nil.cdr
 
     async def test_nil_setcar_attr_error(self):
-        """nil.car = x raises TypeError"""
+        """
+        nil.car = x raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             nil.car = 1
 
     async def test_nil_setcdr_attr_error(self):
-        """nil.cdr = x raises TypeError"""
+        """
+        nil.cdr = x raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             nil.cdr = 1
 
     async def test_nil_position_attr_noop(self):
-        """nil.position read is None, write is a no-op"""
+        """
+        nil.position read is None, write is a no-op
+        """
+
         self.assertIsNone(nil.position)
         nil.position = (1, 2)
         self.assertIsNone(nil.position)
 
     async def test_nil_position_delete_noop(self):
-        """del nil.position is a no-op"""
+        """
+        del nil.position is a no-op
+        """
+
         del nil.position
         self.assertIsNone(nil.position)
 
     async def test_is_pair(self):
-        """nil is an instance of pair (subtype)"""
+        """
+        nil is an instance of pair (subtype)
+        """
+
         self.assertIsInstance(nil, pair)
 
     async def test_nil_type_constructor(self):
-        """NilType() returns nil singleton"""
+        """
+        NilType() returns nil singleton
+        """
+
         nil_type = type(nil)
         self.assertIs(nil_type(), nil)
 
     async def test_nil_type_rejects_args(self):
-        """NilType() rejects arguments"""
+        """
+        NilType() rejects arguments
+        """
+
         nil_type = type(nil)
         with self.assertRaises(TypeError):
             nil_type(1)
 
 
 class TestCons(unittest.IsolatedAsyncioTestCase):
-    """Tests for the cons() function"""
+    """
+    Tests for the cons() function
+    """
 
     async def test_empty(self):
-        """cons() with no arguments returns nil"""
+        """
+        cons() with no arguments returns nil
+        """
+
         self.assertIs(cons(), nil)
 
     async def test_single(self):
-        """cons(x) creates pair with nil tail"""
+        """
+        cons(x) creates pair with nil tail
+        """
+
         p = cons(1)
         self.assertEqual(car(p), 1)
         self.assertIs(cdr(p), nil)
 
     async def test_two(self):
-        """cons(a, b) creates improper pair"""
+        """
+        cons(a, b) creates improper pair
+        """
+
         p = cons(1, 2)
         self.assertEqual(car(p), 1)
         self.assertEqual(cdr(p), 2)
 
     async def test_multiple(self):
-        """cons(a, b, c, ...) creates linked list"""
+        """
+        cons(a, b, c, ...) creates linked list
+        """
+
         p = cons(1, 2, 3, 4)
         self.assertEqual(car(p), 1)
         self.assertEqual(car(cdr(p)), 2)
@@ -589,13 +806,19 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cdr(cdr(cdr(p))), 4)
 
     async def test_proper_list(self):
-        """cons(a, b, c, nil) creates proper list"""
+        """
+        cons(a, b, c, nil) creates proper list
+        """
+
         p = cons(1, 2, 3, nil)
         self.assertTrue(p.is_proper())
         self.assertEqual(list(p.unpack()), [1, 2, 3])
 
     async def test_recursive(self):
-        """make_recursive(cons(...)) creates circular list"""
+        """
+        make_recursive(cons(...)) creates circular list
+        """
+
         p = cons(1, 2, 3, nil)
         make_recursive(p)
         self.assertTrue(p.is_recursive())
@@ -611,8 +834,22 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
         break_recursive(p)
         self.assertFalse(p.is_recursive())
 
+    async def test_recursive_length_and_is_proper(self):
+        """
+        a spine looping back to its head has the cycle's length and
+        no improper end
+        """
+
+        p = cons(1, 2, 3, nil)
+        make_recursive(p)
+        self.assertEqual(p.length(), 3)
+        self.assertTrue(p.is_proper())
+
     async def test_make_recursive_cycle_past_the_head(self):
-        """make_recursive rejects a spine looping below the head"""
+        """
+        make_recursive rejects a spine looping below the head
+        """
+
         a = pair(1, nil)
         b = pair(2, a)
         setcdr(a, b)
@@ -620,7 +857,10 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
             make_recursive(pair(0, a))
 
     async def test_break_recursive_cycle_past_the_head(self):
-        """break_recursive rejects a spine looping below the head"""
+        """
+        break_recursive rejects a spine looping below the head
+        """
+
         a = pair(1, nil)
         b = pair(2, a)
         setcdr(a, b)
@@ -628,7 +868,10 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
             break_recursive(pair(0, a))
 
     async def test_cycle_below_the_head(self):
-        """a spine looping below the head is recursive and proper"""
+        """
+        a spine looping below the head is recursive and proper
+        """
+
         a = pair(1, nil)
         b = pair(2, a)
         setcdr(a, b)
@@ -641,10 +884,15 @@ class TestCons(unittest.IsolatedAsyncioTestCase):
 
 
 class TestCarCdrErrors(unittest.IsolatedAsyncioTestCase):
-    """Tests for error handling in car/cdr functions"""
+    """
+    Tests for error handling in car/cdr functions
+    """
 
     async def test_car_non_pair(self):
-        """car() on non-pair raises TypeError"""
+        """
+        car() on non-pair raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             car(42)
         with self.assertRaises(TypeError):
@@ -653,7 +901,10 @@ class TestCarCdrErrors(unittest.IsolatedAsyncioTestCase):
             car([1, 2, 3])
 
     async def test_cdr_non_pair(self):
-        """cdr() on non-pair raises TypeError"""
+        """
+        cdr() on non-pair raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             cdr(42)
         with self.assertRaises(TypeError):
@@ -661,10 +912,15 @@ class TestCarCdrErrors(unittest.IsolatedAsyncioTestCase):
 
 
 class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
-    """Tests for handling recursive/circular structures"""
+    """
+    Tests for handling recursive/circular structures
+    """
 
     async def test_repr_recursive(self):
-        """repr() handles recursive pairs"""
+        """
+        repr() handles recursive pairs
+        """
+
         p = pair(1, nil)
         setcdr(p, p)
         r = repr(p)
@@ -672,7 +928,10 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         self.assertIn("recursive", r.lower())
 
     async def test_str_recursive(self):
-        """str() handles recursive pairs"""
+        """
+        str() handles recursive pairs
+        """
+
         p = pair(1, nil)
         setcdr(p, p)
         s = str(p)
@@ -680,7 +939,10 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         self.assertIn("...", s)
 
     async def test_eq_recursive(self):
-        """equality check handles recursive pairs"""
+        """
+        equality check handles recursive pairs
+        """
+
         p1 = pair(1, nil)
         setcdr(p1, p1)
         p2 = pair(1, nil)
@@ -693,6 +955,7 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         Circular lists whose periods share no factor still compare in
         bounded steps: every cell pair the walk reaches is remembered,
         so the walk stops when one comes round again
+
         """
 
         p2 = cons(1, 1, nil)
@@ -706,7 +969,10 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(p2, q3)
 
     async def test_copy_recursive(self):
-        """copy() handles recursive pairs"""
+        """
+        copy() handles recursive pairs
+        """
+
         import copy
         p = pair(1, nil)
         setcdr(p, p)
@@ -714,7 +980,10 @@ class TestPairRecursion(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(p2.is_recursive())
 
     async def test_length_recursive(self):
-        """length() handles recursive pairs"""
+        """
+        length() handles recursive pairs
+        """
+
         p = pair(1, pair(2, nil))
         setcdr(cdr(p), p)
         # Should return finite length, not infinite loop
@@ -726,6 +995,7 @@ class TestPairRenderErrors(unittest.IsolatedAsyncioTestCase):
     """
     repr() and str() propagate an error raised while rendering an element
     instead of dereferencing the NULL result
+
     """
 
     class Boom:
@@ -759,7 +1029,9 @@ class TestPairRenderErrors(unittest.IsolatedAsyncioTestCase):
         """
         A cycle through the car is not a spine cycle; the renderer recurses
         into it and Python's recursion guard must surface as an exception
+
         """
+
         p = pair(1, nil)
         setcar(p, p)
         with self.assertRaises(RecursionError):
@@ -774,12 +1046,14 @@ class TestPairRenderMutation(unittest.IsolatedAsyncioTestCase):
     rendering or comparing, so an element that mutates the list from
     its dunder cannot free what the walk still reads. The walk keeps
     going over the cells it reached before the cut
+
     """
 
     class Cutter:
         """
         Rendering or comparing this element cuts the spine after the
         head cell, dropping the only reference to every later cell
+
         """
 
         def __init__(self, head):
@@ -801,6 +1075,7 @@ class TestPairRenderMutation(unittest.IsolatedAsyncioTestCase):
         """
         Rendering this element replaces it in its cell, dropping the
         only reference to itself
+
         """
 
         def __init__(self, cell):
@@ -840,10 +1115,15 @@ class TestPairRenderMutation(unittest.IsolatedAsyncioTestCase):
 
 
 class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
-    """Tests for append, extend, splice methods"""
+    """
+    Tests for append, extend, splice methods
+    """
 
     async def test_append_proper(self):
-        """append on proper list adds element before nil"""
+        """
+        append on proper list adds element before nil
+        """
+
         p = cons("foo", "bar", nil)
         result = p.append("baz")
         self.assertIsNone(result)
@@ -851,7 +1131,10 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(p.is_proper())
 
     async def test_append_improper(self):
-        """append on improper list inserts before tail"""
+        """
+        append on improper list inserts before tail
+        """
+
         p = cons("foo", "bar")
         result = p.append("baz")
         self.assertIsNone(result)
@@ -860,45 +1143,66 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cdr(cdr(p)), "baz")
 
     async def test_append_nil_error(self):
-        """append on nil raises TypeError"""
+        """
+        append on nil raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             nil.append(1)
 
     async def test_append_recursive_error(self):
-        """append on recursive pair raises ValueError"""
+        """
+        append on recursive pair raises ValueError
+        """
+
         p = pair(1, nil)
         setcdr(p, p)
         with self.assertRaises(ValueError):
             p.append(2)
 
     async def test_extend_with_list(self):
-        """extend with list concatenates elements"""
+        """
+        extend with list concatenates elements
+        """
+
         p = cons("foo", "bar", nil)
         p.extend([1, 2, 3])
         self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
         self.assertTrue(p.is_proper())
 
     async def test_extend_improper_with_list(self):
-        """extend improper list with list inserts before tail"""
+        """
+        extend improper list with list inserts before tail
+        """
+
         p = cons("foo", "bar")
         p.extend([1, 2, 3])
         self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
         self.assertTrue(p.is_proper())
 
     async def test_extend_with_tuple(self):
-        """extend with tuple works like list"""
+        """
+        extend with tuple works like list
+        """
+
         p = cons(1, 2, nil)
         p.extend((3, 4))
         self.assertEqual(list(p.unpack()), [1, 2, 3, 4])
 
     async def test_extend_with_iterator(self):
-        """extend with iterator consumes and appends"""
+        """
+        extend with iterator consumes and appends
+        """
+
         p = cons(1, nil)
         p.extend(iter([2, 3]))
         self.assertEqual(list(p.unpack()), [1, 2, 3])
 
     async def test_extend_with_empty_iterable_is_unchanged(self):
-        """extend with an empty list, nil, or exhausted iterator appends nothing"""
+        """
+        extend with an empty list, nil, or exhausted iterator appends nothing
+        """
+
         for empty in ([], (), nil, iter([])):
             p = cons(1, 2, nil)
             p.extend(empty)
@@ -906,14 +1210,20 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(p.is_proper())
 
     async def test_extend_improper_with_empty_iterable(self):
-        """extend improper list with an empty iterable folds in the tail"""
+        """
+        extend improper list with an empty iterable folds in the tail
+        """
+
         p = cons(1, 2)
         p.extend([])
         self.assertEqual(list(p.unpack()), [1, 2])
         self.assertTrue(p.is_proper())
 
     async def test_extend_with_proper_cons(self):
-        """extend with proper cons copies and splices"""
+        """
+        extend with proper cons copies and splices
+        """
+
         p = cons("foo", "bar", nil)
         other = cons(1, 2, 3, nil)
         p.extend(other)
@@ -922,7 +1232,10 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(cdr(cdr(p)), other)
 
     async def test_extend_releases_copied_cells(self):
-        """dropping an extended pair frees the cells copied into it"""
+        """
+        dropping an extended pair frees the cells copied into it
+        """
+
         val = object()
         other = cons(val, val, nil)
         before = sys.getrefcount(val)
@@ -933,7 +1246,10 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sys.getrefcount(val), before)
 
     async def test_extend_with_improper_cons(self):
-        """extend with improper cons preserves improper tail"""
+        """
+        extend with improper cons preserves improper tail
+        """
+
         p = cons("foo", "bar", nil)
         other = cons(1, 2, 3)
         p.extend(other)
@@ -942,7 +1258,10 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cdr(cdr(cdr(cdr(p)))), 3)
 
     async def test_extend_improper_with_proper_cons(self):
-        """extend improper with proper cons yields proper"""
+        """
+        extend improper with proper cons yields proper
+        """
+
         p = cons("foo", "bar")
         other = cons(1, 2, 3, nil)
         p.extend(other)
@@ -950,19 +1269,28 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(p.is_proper())
 
     async def test_extend_nil_error(self):
-        """extend on nil raises TypeError"""
+        """
+        extend on nil raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             nil.extend([1])
 
     async def test_extend_recursive_error(self):
-        """extend on recursive pair raises ValueError"""
+        """
+        extend on recursive pair raises ValueError
+        """
+
         p = pair(1, nil)
         setcdr(p, p)
         with self.assertRaises(ValueError):
             p.extend([2])
 
     async def test_splice_with_cons_in_place(self):
-        """splice with cons reuses argument in place"""
+        """
+        splice with cons reuses argument in place
+        """
+
         p = cons("foo", "bar", nil)
         other = cons(1, 2, 3, nil)
         p.splice(other)
@@ -970,13 +1298,19 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
         self.assertIs(cdr(cdr(p)), other)
 
     async def test_splice_with_list(self):
-        """splice with list builds new cons like extend"""
+        """
+        splice with list builds new cons like extend
+        """
+
         p = cons("foo", "bar", nil)
         p.splice([1, 2, 3])
         self.assertEqual(list(p.unpack()), ["foo", "bar", 1, 2, 3])
 
     async def test_splice_with_empty_iterable_is_unchanged(self):
-        """splice with an empty list or nil appends nothing"""
+        """
+        splice with an empty list or nil appends nothing
+        """
+
         for empty in ([], nil):
             p = cons("foo", "bar", nil)
             p.splice(empty)
@@ -984,12 +1318,18 @@ class TestPairAppendExtendSplice(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(p.is_proper())
 
     async def test_splice_nil_error(self):
-        """splice on nil raises TypeError"""
+        """
+        splice on nil raises TypeError
+        """
+
         with self.assertRaises(TypeError):
             nil.splice(cons(1, nil))
 
     async def test_splice_recursive_error(self):
-        """splice on recursive pair raises ValueError"""
+        """
+        splice on recursive pair raises ValueError
+        """
+
         p = pair(1, nil)
         setcdr(p, p)
         with self.assertRaises(ValueError):
@@ -1000,6 +1340,7 @@ class TestPairMutationUnderFinalizers(unittest.IsolatedAsyncioTestCase):
     """
     A finalizer or an iterable that runs during a pair mutation sees the
     pair in a consistent state and cannot free the cells being written
+
     """
 
     async def test_setcdr_finalizer_reading_the_slot(self):
@@ -1079,20 +1420,31 @@ class TestPairMutationUnderFinalizers(unittest.IsolatedAsyncioTestCase):
 
 
 class TestPairNilDistinct(unittest.IsolatedAsyncioTestCase):
-    """Tests that pair and nil have proper type relationship"""
+    """
+    Tests that pair and nil have proper type relationship
+    """
 
     async def test_nil_is_pair_subtype(self):
-        """NilType is a subtype of pair"""
+        """
+        NilType is a subtype of pair
+        """
+
         self.assertTrue(isinstance(nil, pair))
 
     async def test_pair_is_not_nil(self):
-        """regular pairs are not nil"""
+        """
+        regular pairs are not nil
+        """
+
         p = pair(1, 2)
         self.assertIsNot(p, nil)
         self.assertNotEqual(type(p), type(nil))
 
     async def test_nil_type_different(self):
-        """nil has its own type"""
+        """
+        nil has its own type
+        """
+
         nil_type = type(nil)
         pair_type = type(pair(1, 2))
         self.assertIsNot(nil_type, pair_type)

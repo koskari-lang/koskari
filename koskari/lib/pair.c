@@ -823,29 +823,37 @@ static PyObject *pair_copy(PyObject *self, PyObject *_noargs) {
 
 /**
    Floyd's walk over the spine from head. The walk only reads cdr
-   links and runs no user code, so the borrowed cells stay put.
+   links and runs no user code, so the borrowed cells stay put. An
+   acyclic spine is walked to its end here, so the caller needs no
+   second walk for its count or its terminator.
 
    :param head: the first cell, or any non-cell for an empty spine
-   :param mu: the number of cells before the cycle, set when cyclic
-   :param lambda: the number of cells in the cycle, set when cyclic
+   :param mu: cyclic, the number of cells before the cycle; acyclic,
+     the number of cells
+   :param lambda: cyclic, the number of cells in the cycle; acyclic, 0
+   :param end: acyclic, the terminator (borrowed); cyclic, NULL. May be
+     NULL when the caller has no use for it
    :return: 1 when the spine loops, else 0
 */
 static int pair_spine_cycle(
     PyObject *head,
     Py_ssize_t *mu,
-    Py_ssize_t *lambda) {
+    Py_ssize_t *lambda,
+    PyObject **end) {
 
   PyObject *slow = head;
   PyObject *fast = head;
-  Py_ssize_t n;
+  Py_ssize_t n = 0;
 
   while (1) {
     if (! KosPair_IsCell(fast))
-      return 0;
+      goto acyclic;
     fast = KosPair_CDR(fast);
+    n++;
     if (! KosPair_IsCell(fast))
-      return 0;
+      goto acyclic;
     fast = KosPair_CDR(fast);
+    n++;
     slow = KosPair_CDR(slow);
     if (slow == fast)
       break;
@@ -864,25 +872,28 @@ static int pair_spine_cycle(
   for (fast = KosPair_CDR(slow); fast != slow; fast = KosPair_CDR(fast))
     n++;
   *lambda = n;
-
+  if (end)
+    *end = NULL;
   return 1;
+
+ acyclic:
+  *mu = n;
+  *lambda = 0;
+  if (end)
+    *end = fast;
+  return 0;
 }
 
 
 static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
   Py_ssize_t mu, lambda;
-  Py_ssize_t length = 0;
+  PyObject *end;
 
-  if (pair_spine_cycle(self, &mu, &lambda))
+  if (pair_spine_cycle(self, &mu, &lambda, &end))
     return PyLong_FromSsize_t(mu + lambda);
 
-  for (; KosPair_IsCell(self); self = KosPair_CDR(self))
-    length++;
-
-  if (! KosNilP(self))
-    length++;
-
-  return PyLong_FromSsize_t(length);
+  /* an improper terminator counts as an element */
+  return PyLong_FromSsize_t(KosNilP(end) ? mu : mu + 1);
 }
 
 
@@ -909,7 +920,7 @@ static PyObject *pair_follower_new(PyObject *head, long just_items) {
   i->seen = NULL;
   i->just_items = just_items;
 
-  if (pair_spine_cycle(head, &mu, &lambda)) {
+  if (pair_spine_cycle(head, &mu, &lambda, NULL)) {
     i->seen = PySet_New(NULL);
     if (! i->seen) {
       Py_DECREF(i);
@@ -938,14 +949,12 @@ PyObject *KosPair_Unpack(PyObject *pair) {
 
 long KosPair_IsProper(PyObject *self) {
   Py_ssize_t mu, lambda;
+  PyObject *end;
 
   /* a recursive spine has no improper end, so it counts as proper */
-  if (pair_spine_cycle(self, &mu, &lambda))
+  if (pair_spine_cycle(self, &mu, &lambda, &end))
     return 1;
-
-  for (; KosPair_IsCell(self); self = KosPair_CDR(self))
-    ;
-  return KosNilP(self);
+  return KosNilP(end);
 }
 
 
@@ -957,7 +966,7 @@ static PyObject *pair_is_proper(PyObject *self, PyObject *_noargs) {
 long KosPair_IsRecursive(PyObject *self) {
   Py_ssize_t mu, lambda;
 
-  return pair_spine_cycle(self, &mu, &lambda);
+  return pair_spine_cycle(self, &mu, &lambda, NULL);
 }
 
 
@@ -976,7 +985,7 @@ static KosPair *pair_find_last(PyObject *self, PyObject **out_cdr) {
   KosPair *last = NULL;
   Py_ssize_t mu, lambda;
 
-  if (pair_spine_cycle(self, &mu, &lambda)) {
+  if (pair_spine_cycle(self, &mu, &lambda, NULL)) {
     PyErr_SetString(PyExc_ValueError,
                     "cannot append/extend/splice: recursive pair");
     return NULL;
