@@ -213,7 +213,7 @@ class TestKeywordBlocks(TestCase):
             (symbol('quote'),
              (keyword('#block'), (symbol('print'),),
               (keyword('#block'), (keyword('file:'),),
-               (symbol('x'),)))))
+               (keyword('#line'), symbol('x'))))))
         self.assertEqual(parse_layout(src), expected)
 
 

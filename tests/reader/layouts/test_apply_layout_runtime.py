@@ -41,6 +41,7 @@ pytestmark = pytest.mark.phase_infra
 
 _keyword_block = keyword('#block')
 _keyword_splice = keyword('#splice')
+_keyword_line = keyword('#line')
 _symbol_compile_begin = symbol('begin')
 
 
@@ -50,11 +51,11 @@ def _make_block(head_args_tuple, body_tuple):
 
     head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
     body_tuple is a tuple of body forms, each becoming a one-element
-    line, or nested blocks and prebuilt lines taken as they are.
+    :#line: cons, or nested blocks and prebuilt lines taken as they are.
     """
 
     head_args = cons(*head_args_tuple, nil)
-    entries = [form if _is_entry(form) else cons(form, nil)
+    entries = [form if _is_entry(form) else cons(_keyword_line, form, nil)
                for form in body_tuple]
     return cons(_keyword_block, head_args, *entries, nil)
 
@@ -66,6 +67,7 @@ def _is_entry(form):
 
     return (is_pair(form)
             and (form.car is _keyword_block
+                 or form.car == _keyword_line
                  or form.car == _keyword_splice))
 
 

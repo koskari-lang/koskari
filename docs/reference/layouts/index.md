@@ -47,7 +47,7 @@ elements as one list and then one entry per body line:
 
 ```text
 (#block: (HEAD ARG ...) ENTRY ...)
-ENTRY ::= (ELEMENT ...) | (#block: ...)
+ENTRY ::= (#line: ELEMENT ...) | (#block: ...)
 ```
 
 `LayoutReader.read()` expands those conses through `apply_layout` for a

@@ -28,6 +28,7 @@ from ...types import is_pair, is_symbol
 
 
 _keyword_block = keyword('#block')
+_keyword_line = keyword('#line')
 
 
 def is_block(form):
@@ -36,6 +37,14 @@ def is_block(form):
     """
 
     return form and is_pair(form) and form.car is _keyword_block
+
+
+def is_line(form):
+    """
+    True when form is a ``:#line:`` cons
+    """
+
+    return form and is_pair(form) and form.car is _keyword_line
 
 
 _BLOCK_SOURCE_PATTERN = MATCH(LIST(BIND('header'), REST('body')))
@@ -105,9 +114,10 @@ class LayoutHandler:
 
     A handler is called as read_fn(reader, source, peers), where reader is
     the LayoutReader expanding the source. The source is the block cons's
-    cdr, ``((head . args) . entries)``, each entry a line, the proper list
-    of the elements the reader saw on it, or a nested block; the reader's
-    fold_line and fold_lines apply the line rule wherever a form is wanted.
+    cdr, ``((head . args) . entries)``, each entry a line,
+    ``(:#line: ELEMENT ...)`` over the elements the reader saw on it, or
+    a nested ``:#block:`` cons; the reader's fold_line and fold_lines
+    apply the line rule wherever a form is wanted.
     """
 
     def __init__(self, head_symbol, read_fn, peers=(), raw=False):

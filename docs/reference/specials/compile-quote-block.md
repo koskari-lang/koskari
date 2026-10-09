@@ -19,7 +19,8 @@ unboxes that to `(compile/quote INNER)`, which the compiler treats as an
 ordinary quote. Nothing expands the quoted block.
 
 Inside the cons, the head line is the first entry, each following body line is
-the list of that line's elements, and a nested block is a nested `#block:` entry.
+a `#line:` cons over that line's elements, and a nested block is a nested
+`#block:` entry.
 
 The `'` must open the statement -- the shorthand reads the block starting at
 that column, so it cannot sit in the middle of a line. It reads the primary
@@ -34,7 +35,7 @@ quoted head is not gathered, and stays a sibling of the enclosing form.
 ...     foo
 ...     bar
 >>> form
-(#block: (begin) (foo) (bar))
+(#block: (begin) (#line: foo) (#line: bar))
 ```
 
 A nested block stays a nested `#block:` entry:
@@ -47,7 +48,7 @@ A nested block stays a nested `#block:` entry:
 ...     else:
 ...       no
 >>> form
-(#block: (begin) (#block: (if flag) (yes)) (#block: (else) (no)))
+(#block: (begin) (#block: (if flag) (#line: yes)) (#block: (else) (#line: no)))
 ```
 
 **See also:** [`compile/quote`](compile-quote.md),

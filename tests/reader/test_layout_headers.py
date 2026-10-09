@@ -421,7 +421,7 @@ class TestQuoteBlockHeaderScan(IsolatedAsyncioTestCase):
                     symbol('quote'),
                     cons(keyword('#block'),
                          cons(symbol('a'), literal[1:-1], nil),
-                         cons(symbol('d'), nil),
+                         cons(keyword('#line'), symbol('d'), nil),
                          nil),
                     nil)
                 self.assertEqual(read_layout(src), expected)
@@ -443,7 +443,7 @@ class TestQuoteBlockHeaderScan(IsolatedAsyncioTestCase):
             symbol('quote'),
             cons(keyword('#block'),
                  cons(symbol('a'), cons(symbol('x'), symbol('y'), nil), nil),
-                 cons(symbol('d'), nil),
+                 cons(keyword('#line'), symbol('d'), nil),
                  nil),
             nil)
         self.assertEqual(read_layout(src), expected)

@@ -35,11 +35,13 @@ from functools import partial
 from ..exceptions import LayoutError, ReaderError
 from ..lib import Module, cons, nil, symbol
 from ..types import get_position, is_nil, is_pair
-from .layouts import apply_layout, apply_layouts, find_layout, is_block
+from .layouts import (
+    apply_layout, apply_layouts, find_layout, is_block, is_line)
 from .pragma import IndentMismatch
 from .parser import (
     BLOCK, BLOCKS, COLON, DOT, EOF, LINE, LINE_END, READ_EOF, VALUE, Reader,
-    _keyword_block, _keyword_splice, _symbol_decorate, _symbol_quasiquote,
+    _keyword_block, _keyword_line, _keyword_splice, _symbol_decorate,
+    _symbol_quasiquote,
     _symbol_quasiquote_syntax, _symbol_quote, _symbol_quote_syntax,
     _symbol_unquote_splicing)
 from .stream import IndentAwareStream
@@ -611,31 +613,46 @@ class LayoutReader(Reader):
         """
         The form one body entry denotes
 
-        A line is the proper list of the elements the reader saw on it.
-        One element is that element; several fold to the call of the
-        first, or raise when :attr:`layout_implicit_calls` is off. A
-        block entry lowers through its layout to its form.
+        A line is ``(:#line: ELEMENT ...)`` over the elements the reader
+        saw on it. One element is that element; several fold to the call
+        of the first, or raise when :attr:`layout_implicit_calls` is off.
+        A block entry lowers through its layout to its form.
 
-        :param entry: a line, a proper cons list of elements, never
-            empty, or a :#block: cons
+        :param entry: a :#line: cons, never without elements, or a
+            :#block: cons
         :return: the entry's form
         :raises LayoutError: several elements with implicit calls off
         """
 
         if is_block(entry):
             return apply_layout(entry, self)
+        if not is_line(entry):
+            raise LayoutError(
+                'body entry is neither a line nor a block',
+                get_position(entry))
+        return self.fold_elements(entry.cdr, get_position(entry))
 
-        line = entry
-        head, rest = line
+
+    def fold_elements(self, elements, position=None):
+        """
+        The form the elements of one line denote, by the line rule
+
+        :param elements: proper cons list of the line's elements, never
+            empty
+        :param position: the line's position, stamped on a folded call
+        :return: the form
+        :raises LayoutError: several elements with implicit calls off
+        """
+
+        head, rest = elements
         if is_nil(rest):
             return head
         if not self.layout_implicit_calls:
             raise LayoutError(
-                'multiple forms on one layout line', get_position(line))
-        form = line.copy()
-        pos = get_position(line)
-        if pos:
-            form.set_position(pos)
+                'multiple forms on one layout line', position)
+        form = elements.copy()
+        if position:
+            form.set_position(position)
         return form
 
 
@@ -643,7 +660,7 @@ class LayoutReader(Reader):
         """
         Fold every entry of a body with :meth:`fold_line`
 
-        :param entries: proper cons list of lines and blocks
+        :param entries: proper cons list of :#line: and :#block: conses
         :return: proper cons list of forms
         """
 
@@ -829,10 +846,10 @@ class LayoutReader(Reader):
     @staticmethod
     def _one_element_line(form, position):
         """
-        Wrap a block or form that occupied a whole line as a line
+        Wrap a block or form that occupied a whole line as a :#line: cons
         """
 
-        line = cons(form, nil)
+        line = cons(_keyword_line, form, nil)
         if position:
             line.set_position(position)
         return line
@@ -1063,17 +1080,18 @@ class LayoutReader(Reader):
         """
         Collect the values on one layout line into a LINE result
 
-        Nothing is folded here: the line is handed on as the list of its
-        elements, and :meth:`fold_line` applies the line rule wherever a
-        form is wanted, in :meth:`read` for a top-level line and in the
-        layout handlers for the lines of a body. Inside a quoted or
-        quasiquoted block a line holding only an unquote-splicing form is
-        returned as ``(:#splice: FORM)``, so the filled forms spread into
-        lines of their own when the block is expanded.
+        Nothing is folded here: the line is handed on as ``(:#line:
+        ELEMENT ...)`` over its elements, and :meth:`fold_line` applies
+        the line rule wherever a form is wanted, in :meth:`read` for a
+        top-level line and in the layout handlers for the lines of a
+        body. Inside a quoted or quasiquoted block a line holding only an
+        unquote-splicing form is returned as ``(:#splice: FORM)``, so the
+        filled forms spread into lines of their own when the block is
+        expanded.
 
         :param values: non-empty list of values collected on the line
         :param first_value_pos: position of the first value
-        :return: (LINE, first_value_pos, the line as a proper cons list)
+        :return: (LINE, first_value_pos, the :#line: cons)
         """
 
         if self._block_mode and len(values) == 1 and self._is_splice(values[0]):
@@ -1082,7 +1100,7 @@ class LayoutReader(Reader):
             # elements, so it is marked for apply_lines to spread
             line = cons(_keyword_splice, values[0], nil)
         else:
-            line = cons(*values, nil)
+            line = cons(_keyword_line, *values, nil)
         if first_value_pos:
             line.set_position(first_value_pos)
         return LINE, first_value_pos, line
@@ -1113,7 +1131,7 @@ class LayoutReader(Reader):
             if not forms:
                 raise stream.error('empty decorator line', stream.position())
 
-            decorators.append(self.fold_line(cons(*forms, nil)))
+            decorators.append(self.fold_elements(cons(*forms, nil)))
             stream.skip_whitespace()
             pk = stream.peek(1)
             if not pk:

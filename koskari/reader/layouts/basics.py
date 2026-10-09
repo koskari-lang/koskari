@@ -82,10 +82,10 @@ def layout_block(reader, source, peers):
             ret.append(eheader.car)
             ret.append(keyword_block_value(reader, eheader, ebody))
             continue
-        head, rest = entry
+        head, rest = entry.cdr
         if is_keyword(head) and not is_nil(rest):
             ret.append(head)
-            ret.append(reader.fold_line(rest))
+            ret.append(reader.fold_elements(rest, get_position(entry)))
         else:
             ret.append(reader.fold_line(entry))
 
@@ -195,7 +195,7 @@ def layout_inline_block(reader, source, peers):
             ret.append(eheader.car)
             ret.append(keyword_block_value(reader, eheader, ebody))
         else:
-            ret.splice(entry.copy())
+            ret.splice(entry.cdr.copy())
 
     return ret
 

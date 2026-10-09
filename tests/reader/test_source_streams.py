@@ -408,7 +408,7 @@ class TestLayoutReaderWithSourceStream(IsolatedAsyncioTestCase):
             (symbol("quote"),
              (_kw_block,
               (symbol("begin"),),
-              (symbol("foo"),), (symbol("bar"),)))
+              (keyword('#line'), symbol("foo")), (keyword('#line'), symbol("bar"))))
         )
         result = _parse_layout(src)
         self.assertEqual(result, expected)

@@ -37,25 +37,25 @@ A colon block reads to one cons:
 ```
 (:#block: HEAD-LIST ENTRY ...)
 
-HEAD-LIST ::= (ELEMENT ...)        the header's elements, colon removed
-ENTRY     ::= LINE | BLOCK         one per body line
-LINE      ::= (ELEMENT ...)        the elements the reader saw on that line
-BLOCK     ::= (:#block: ...)       a nested colon block, or a peer
+HEAD-LIST ::= (ELEMENT ...)          the header's elements, colon removed
+ENTRY     ::= LINE | BLOCK           one per body line
+LINE      ::= (:#line: ELEMENT ...)  the elements the reader saw on that line
+BLOCK     ::= (:#block: ...)         a nested colon block, or a peer
 ```
 
 The header is always the second element. Every later element of the cons is
-one body entry, and the two kinds are told apart by the `:#block:` keyword in
-car: a line never starts with it. Nothing is folded at parse time. The reader
+one body entry, and both kinds carry their tag in car, `:#line:` or
+`:#block:`. Nothing is folded at parse time. The reader
 records exactly what it saw, and the difference between a line that happens
 to be a pair and a pair that was written stays visible:
 
 ```
 foo:                (:#block: (foo)
-  else: x             (else: x)                 line, two elements
-  bar:                (:#block: (bar) (y))      sub-block
+  else: x             (:#line: else: x)                 line, two elements
+  bar:                (:#block: (bar) (:#line: y))      sub-block
     y
-  (else: x)           ((else: x))               line, one element, a pair
-  [else: x]           ((else: x)))              line, one element, a pair
+  (else: x)           (:#line: (else: x))               line, one element, a pair
+  [else: x]           (:#line: (else: x)))              line, one element, a pair
 ```
 
 A peer block read from the stream is an entry after the primary block it

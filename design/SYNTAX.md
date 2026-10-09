@@ -519,7 +519,7 @@ block-macro form. Anywhere else the prefix is treated as a plain `<quote-form>`,
                 ::= ("'" | "#'") <block-header> <hspace>* ":" <hspace>* <comment>? <newline>
                     <block-body>
                   ; reads raw (:#block: (<head> . <args>) <entry>...), each entry a
-                  ; line of elements or a nested block; layout/quote lowers to
+                  ; (:#line: <element>...) or a nested (:#block: ...); layout/quote lowers to
                   ; (compile/quote (:#block: ...)) at expansion, and
                   ; layout/quote-syntax to (compile/quote-syntax (:#block: ...))
 
@@ -574,7 +574,8 @@ specials; see [MATCHER.md](MATCHER.md) and [MACROS.md](MACROS.md).
 ### Parse and expand
 
 Colon blocks parse as **`:#block:`** conses, **`(:#block: (head . args) entry ...)`**
-with each entry a line of elements or a nested block, nothing folded.
+with each entry a line **`(:#line: element ...)`** or a nested **`:#block:`**
+cons, nothing folded.
 **`LayoutReader.read()`** calls **`apply_layout`** or **`apply_layouts`**,
 passing itself, to invoke **`layout/<head>`** handlers as
 **`read(reader, source, peers)`**; the handler folds lines through

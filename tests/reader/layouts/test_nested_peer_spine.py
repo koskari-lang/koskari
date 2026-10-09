@@ -35,6 +35,7 @@ from koskari.reader.stream import IndentAwareStream
 pytestmark = pytest.mark.phase_infra
 
 _keyword_block = keyword('#block')
+_keyword_line = keyword('#line')
 
 
 def read_layout_form(src_str):
@@ -64,7 +65,7 @@ class TestNestedBlockRead(TestCase):
         begin_blk = pycons(
             (_keyword_block,
              (symbol('begin'),),
-             (symbol('print'), 'foo')
+             (_keyword_line, symbol('print'), 'foo')
             ))
 
         expected = pycons(
@@ -93,12 +94,12 @@ class TestNestedBlockRead(TestCase):
         if_blk = pycons(
             (_keyword_block,
              (symbol('foobar'),),
-             (symbol('print'), 'foo')
+             (_keyword_line, symbol('print'), 'foo')
             ))
         else_blk = pycons(
             (_keyword_block,
              (symbol('barfoo'),),
-             (symbol('print'), 'bar')
+             (_keyword_line, symbol('print'), 'bar')
             ))
 
         expected = pycons(
@@ -127,12 +128,12 @@ class TestNestedBlockRead(TestCase):
         if_blk = pycons(
             (_keyword_block,
              (symbol('if'), symbol('foo')),
-             (symbol('print'), 'foo')
+             (_keyword_line, symbol('print'), 'foo')
             ))
         else_blk = pycons(
             (_keyword_block,
              (symbol('else'),),
-             (symbol('print'), 'bar')
+             (_keyword_line, symbol('print'), 'bar')
             ))
 
         expected = pycons(

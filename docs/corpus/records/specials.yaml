@@ -1849,8 +1849,8 @@ source: |-
       b
   
 verify:
-  read: "(define b (quote-syntax (#block: (foo) (a) (b))))"
-  expand: "(define b (quote-syntax (#block: (foo) (a) (b))))"
+  read: "(define b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
+  expand: "(define b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -1876,8 +1876,8 @@ source: |-
       b
   
 verify:
-  read: "(define b (quasiquote-syntax (#block: (foo) ((unquote z)) (b))))"
-  expand: "(define b (quasiquote-syntax (#block: (foo) ((unquote z)) (b))))"
+  read: "(define b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
+  expand: "(define b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
   eval: "null"
 references:
   - reference/reader-layout.md

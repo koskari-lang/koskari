@@ -483,6 +483,7 @@ from koskari.types import is_pair
 
 _keyword_block = _kw_type('#block')
 _keyword_splice = _kw_type('#splice')
+_keyword_line = _kw_type('#line')
 
 
 def _make_block(head_args_tuple, body_tuple):
@@ -491,11 +492,11 @@ def _make_block(head_args_tuple, body_tuple):
 
     head_args_tuple is a tuple of atoms (head, arg0, arg1, ...),
     body_tuple is a tuple of body forms, each becoming a one-element
-    line, or nested blocks and prebuilt lines taken as they are.
+    :#line: cons, or nested blocks and prebuilt lines taken as they are.
     """
 
     head_args = cons(*head_args_tuple, nil)
-    entries = [form if _is_entry(form) else cons(form, nil)
+    entries = [form if _is_entry(form) else cons(_keyword_line, form, nil)
                for form in body_tuple]
     return cons(_keyword_block, head_args, *entries, nil)
 
@@ -507,6 +508,7 @@ def _is_entry(form):
 
     return (is_pair(form)
             and (form.car is _keyword_block
+                 or form.car == _keyword_line
                  or form.car == _keyword_splice))
 
 
@@ -614,7 +616,8 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
 
     async def test_static_begin_block_shape(self):
         """
-        Static block with no unquotes produces (:#block: (begin) (42))
+        Static block with no unquotes produces
+        (:#block: (begin) (:#line: 42))
         """
 
         block = _make_block((symbol('begin'),), (42,))
@@ -628,7 +631,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         head_args, body_tail = block_tail
         self.assertTrue(is_pair(head_args))
         self.assertEqual(head_args[0], symbol('begin'))
-        self.assertEqual(body_tail, cons(cons(42, nil), nil))
+        self.assertEqual(body_tail, cons(cons(_keyword_line, 42, nil), nil))
 
 
     async def test_unquote_slot_filled(self):
@@ -647,7 +650,7 @@ class TestQuasiquoteBlockShape(QuasiquoteBlockTestCase):
         self.assertIs(block_kw, _keyword_block)
         _, entries = block_tail
         first_line, _ = entries
-        self.assertEqual(first_line, cons(99, nil))
+        self.assertEqual(first_line, cons(_keyword_line, 99, nil))
 
 
     async def test_unquote_splicing_slot_filled(self):

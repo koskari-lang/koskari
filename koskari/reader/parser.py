@@ -108,6 +108,7 @@ _DICT_SPLIT_MATCHER = repeat_capture("pairs", ONEOF(
 )).build()
 
 _keyword_block = keyword("#block")
+_keyword_line = keyword("#line")
 _keyword_splice = keyword("#splice")
 _keyword_fence_filename = keyword("filename")
 _keyword_fence_line = keyword("line")

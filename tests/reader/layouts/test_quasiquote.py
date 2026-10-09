@@ -35,6 +35,7 @@ from .. import parse_layout
 pytestmark = pytest.mark.phase_infra
 
 _keyword_block = keyword('#block')
+_keyword_line = keyword('#line')
 
 
 class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
@@ -187,7 +188,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
            (symbol("quote-syntax"),
             (_kw_block,
              (symbol("begin"),),
-             (symbol("hello"),)))))
+             (_keyword_line, symbol("hello"))))))
 
         result = parse_layout(src)
         self.assertEqual(result, expected)
@@ -234,10 +235,10 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
              (_kw_block,
               (symbol("if"),
                (symbol("unquote"), symbol("test-expr"))),
-              ((symbol("unquote"), symbol("result")),)),
+              (_keyword_line, (symbol("unquote"), symbol("result")))),
              (_kw_block,
               (symbol("else"),),
-              ((symbol("unquote"), symbol("fallback")),))))))
+              (_keyword_line, (symbol("unquote"), symbol("fallback"))))))))
 
         result = parse_layout(src)
         print("result   :", result)
@@ -267,7 +268,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
             (symbol("quote"),
              (_keyword_block,
               (symbol("begin"),),
-              (symbol("foo"),), (symbol("bar"),)))
+              (_keyword_line, symbol("foo")), (_keyword_line, symbol("bar"))))
         )
 
         result = parse_layout(src)
@@ -324,7 +325,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
               (symbol("begin"),),
               (_keyword_block,
                (symbol("if"), symbol("x")),
-               (symbol("foo"),))))
+               (_keyword_line, symbol("foo")))))
         )
 
         result = parse_layout(src)
@@ -352,7 +353,7 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
              (symbol("quote"),
               (_keyword_block,
                (symbol("begin"),),
-               (symbol("foo"),), (symbol("bar"),))))
+               (_keyword_line, symbol("foo")), (_keyword_line, symbol("bar")))))
         )
 
         result = parse_layout(src)

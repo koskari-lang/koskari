@@ -19,11 +19,11 @@ synthetic `(#block: (quasiquote) INNER)` form. The `layout/quasiquote` handler
 unboxes that to `(compile/quasiquote INNER)`. The quasiquote fills the unquote
 sites and leaves the `#block:` structure in place; it runs no layout handlers.
 
-After the header, a `#block:` holds one entry per body line: the list of that
-line's elements, or a nested block. A line holding only an unquote-splicing
-form is marked `#splice:`, so the spliced forms spread into one line each when
-the filled block is expanded. An unquote-splicing sharing a line with other
-elements splices into that line.
+After the header, a `#block:` holds one entry per body line: a `#line:` cons
+over that line's elements, or a nested block. A line holding only an
+unquote-splicing form is marked `#splice:`, so the spliced forms spread into
+one `(#line: FORM)` entry each when the filled block is expanded. An
+unquote-splicing sharing a line with other elements splices into that line.
 
 The backtick must open the statement, and it reads the primary block only --
 a peer written at the same indentation as the quasiquoted head is not gathered.
@@ -53,7 +53,7 @@ A nested peer stays a nested entry:
 ...     else:
 ...       ,els
 >>> q
-(#block: (begin) (#block: (if (> n 1)) ("big")) (#block: (else) ("small")))
+(#block: (begin) (#block: (if (> n 1)) (#line: "big")) (#block: (else) (#line: "small")))
 ```
 
 **Expansion:** A filled block is still reader form. Macro expansion runs the

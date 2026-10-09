@@ -221,13 +221,13 @@ Parsing and layout expansion are separate steps.
 ### Parse
 
 A colon block is read as a `#block:` cons: the header's elements as one
-list, then one entry per body line, each entry either a line, the list of the
-elements the reader saw on it, or a nested block:
+list, then one entry per body line, each entry either a line, a `#line:` cons
+over the elements the reader saw on it, or a nested block:
 
 ```
 (#block: (HEAD ARG ...) ENTRY ...)
 ENTRY ::= LINE | BLOCK
-LINE  ::= (ELEMENT ...)
+LINE  ::= (#line: ELEMENT ...)
 ```
 
 Nothing on a line is folded at parse time. `else: x` is a two-element line,
@@ -240,7 +240,7 @@ foo:
   bar:
     y
   (else: x)
-;; (#block: (foo) (else: x) (#block: (bar) (y)) ((else: x)))
+;; (#block: (foo) (#line: else: x) (#block: (bar) (#line: y)) (#line: (else: x)))
 ```
 
 Stream-collected peer blocks (when the layout declares peer heads) form a spine

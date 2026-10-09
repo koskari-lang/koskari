@@ -24,7 +24,7 @@ from unittest import TestCase
 
 import pytest
 
-from koskari.lib import cons, nil, symbol
+from koskari.lib import cons, keyword, nil, symbol
 from koskari.pragma import ModulePragma
 from koskari.reader import LayoutReader
 from koskari.reader.layouts import layout_inline_block
@@ -39,7 +39,7 @@ def _read(header, body):
     """
 
     reader = LayoutReader.from_pragma({}, ModulePragma())
-    lines = cons(*(cons(form, nil) for form in body.unpack()), nil) if body else nil
+    lines = cons(*(cons(keyword('#line'), form, nil) for form in body.unpack()), nil) if body else nil
     return layout_inline_block.read(reader, cons(header, lines), None)
 
 

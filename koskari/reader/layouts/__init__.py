@@ -41,7 +41,7 @@ from .define_syntax import (
     layout_syntax_rules)
 from .dyn_wind import layout_dyn_wind
 from .exceptions import layout_try
-from .helpers import LayoutHandler, is_block, layout
+from .helpers import LayoutHandler, is_block, is_line, layout
 from .loops import layout_for_each, layout_while
 
 
@@ -81,6 +81,7 @@ __all__ = (
     "apply_lines",
     "find_layout",
     "is_block",
+    "is_line",
     "reader_for",
 )
 
@@ -113,6 +114,7 @@ def find_layout(ns, name):
 
 
 _keyword_block = keyword('#block')
+_keyword_line = keyword('#line')
 _keyword_splice = keyword('#splice')
 _symbol_begin = symbol('begin')
 
@@ -216,14 +218,15 @@ def apply_lines(entries, target):
     """
     Expand the sub-blocks of a body
 
-    A body is a proper list of entries, each a line, the proper list of
-    the elements the reader saw on it, or a nested :#block: cons. A
-    sub-block whose head is not a keyword is lowered in place into a
-    one-element line holding its form, taking declared peer blocks from
-    the entries that follow it. A sub-block whose head is a keyword is
-    left as it is for the handler. A ``(:#splice: FORM ...)`` line, left
-    by a filled quasiquote block, spreads into one line per form. Any
-    other element of a line that is a pair is walked for embedded blocks
+    A body is a proper list of entries, each a line, ``(:#line:
+    ELEMENT ...)`` over the elements the reader saw on it, or a nested
+    :#block: cons. A sub-block whose head is not a keyword is lowered in
+    place into a one-element line holding its form, taking declared peer
+    blocks from the entries that follow it. A sub-block whose head is a
+    keyword is left as it is for the handler. A ``(:#splice: FORM ...)``
+    entry, left by a filled quasiquote block, spreads into one line per
+    form. Any element of a line that is a pair is walked for embedded
+    blocks
 
     :param entries: proper cons list of lines and blocks
     :param target: a LayoutReader or a namespace whose module owns one
@@ -241,20 +244,20 @@ def apply_lines(entries, target):
                 out.append(entry)
             else:
                 lowered, tail = _lower_block(entry, tail, reader)
-                line = cons(lowered, nil)
+                line = cons(_keyword_line, lowered, nil)
                 if get_position(entry):
                     line.set_position(get_position(entry))
                 out.append(line)
 
         elif is_pair(entry) and entry.car is _keyword_splice:
             for form in entry.cdr.unpack():
-                spread = cons(form, nil)
+                spread = cons(_keyword_line, form, nil)
                 if get_position(entry):
                     spread.set_position(get_position(entry))
                 out.append(spread)
 
-        elif is_pair(entry):
-            corr = entry
+        elif is_line(entry):
+            corr = entry.cdr
             while corr:
                 elem, corr_tail = corr
                 if elem and is_pair(elem):
