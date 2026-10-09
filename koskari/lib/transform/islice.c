@@ -125,10 +125,8 @@ static void islice_advance(KosISlice *s) {
 /**
    SKIP: discard elements until the source reaches the next wanted
    position, then fetch the one to emit. Always entered with a NULL
-   value. Set only from the step's driven-source branch, and
-   re-entered only from islice_resume_discard, so src_sync is 0 on
-   every entry: every fetch here is a request. A sync source never
-   reaches this resume -- it slices whole inside the step.
+   value, from the step's deferred first fetch or from
+   islice_resume_discard: every fetch here is a request.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     KosEvalState *es, void *state, PyObject *value) {
@@ -217,19 +215,15 @@ static KosIterStepResult islice_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  if (t->src_sync) {
-    /* Pure C: the whole discard run and the emitted fetch complete
-       without the evaluator. */
+  {
+    /* The discard run and the emitted fetch complete here when the
+       source answers without the evaluator; a driven source defers
+       the whole walk to islice_resume_skip on its first fetch. */
     while (s->cnt < s->next) {
-      PyObject *element = PyIter_Next(t->source);
+      PyObject *element;
 
-      if (! element) {
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
+      KOS_TRANSFORM_FETCH(es, t, t->source, &islice_resume_skip_kind,
+                          pre_top, out, element);
       Py_DECREF(element);
       s->cnt++;
     }
@@ -241,15 +235,10 @@ static KosIterStepResult islice_iter_step(
     }
 
     {
-      PyObject *element = PyIter_Next(t->source);
+      PyObject *element;
 
-      if (! element) {
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
+      KOS_TRANSFORM_FETCH(es, t, t->source, &islice_resume_skip_kind,
+                          pre_top, out, element);
 
       s->cnt++;
       islice_advance(s);
@@ -258,10 +247,6 @@ static KosIterStepResult islice_iter_step(
     }
   }
 
-  /* Driven source: defer the whole walk. Nothing is fetched yet to
-     stage, and a request that can suspend must run from inside
-     koskari_eval's own dispatch. */
-  return kos_transform_stage(es, t, NULL, &islice_resume_skip_kind, pre_top);
 }
 
 

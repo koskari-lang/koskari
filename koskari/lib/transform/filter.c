@@ -109,19 +109,6 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  /* A sync source pulls directly through tp_iternext -- no iteration
-     node -- so a rejected element costs one tail call. */
-  if (f->src_sync) {
-    PyObject *element = PyIter_Next(f->source);
-
-    if (! element) {
-      if (! PyErr_Occurred())
-        PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-    RESUME_HOP(&filter_resume_do_invoke_kind, es, f, element);
-  }
-
   {
     KosOpResult r = KosEvalState_NextResume(es, f->source, NULL,
                                             &filter_resume_do_invoke_kind, f);
@@ -222,19 +209,12 @@ static KosIterStepResult filter_iter_step(
   if (! kos_transform_step_ready(f, send_val, out, &early))
     return early;
 
-  if (f->src_sync) {
-    /* Pure C while verdicts are immediate: fetch, test, emit or skip.
-       Skipped elements never leave this loop. */
+  {
     for (;;) {
-      PyObject *element = PyIter_Next(f->source);
+      PyObject *element;
 
-      if (! element) {
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        f->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
+      KOS_TRANSFORM_FETCH(es, f, f->source, &filter_resume_do_fetch_kind, pre_top, out,
+                          element);
 
       if (! f->fn.cs_callable) {
         int ok = PyObject_IsTrue(element);
@@ -312,12 +292,6 @@ static KosIterStepResult filter_iter_step(
     }
   }
 
-  /* Driven source (KosIter provider or python async iterator): set the
-     cold-start fetch resume and defer the whole step -- nothing is
-     fetched yet to stage, and the request itself (which can suspend)
-     must run from inside koskari_eval's own dispatch. */
-  return kos_transform_stage(es, f, NULL, &filter_resume_do_fetch_kind,
-                             pre_top);
 }
 
 

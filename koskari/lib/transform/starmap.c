@@ -152,17 +152,12 @@ static KosIterStepResult starmap_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  if (t->src_sync) {
-    PyObject *element = PyIter_Next(t->source);
+  {
+    PyObject *element;
     PyObject *args;
 
-    if (! element) {
-      if (PyErr_Occurred())
-        return KOS_ITER_ERROR;
-      t->closed = 1;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
-    }
+    KOS_TRANSFORM_FETCH(es, t, t->source, &starmap_resume_start_fetch_kind, pre_top, out,
+                        element);
 
     /* A FRAME-shaped function's call must run inside koskari_eval's
        own dispatch, so the element is staged raw and unpacked by
@@ -219,12 +214,6 @@ static KosIterStepResult starmap_iter_step(
     }
   }
 
-  /* Driven source: set the cold-start kickoff resume and defer the
-     first fetch entirely -- nothing is fetched yet to stage, and the
-     request itself (which can suspend) must run from inside
-     koskari_eval's own dispatch. */
-  return kos_transform_stage(es, t, NULL,
-                             &starmap_resume_start_fetch_kind, pre_top);
 }
 
 

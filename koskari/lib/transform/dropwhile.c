@@ -90,17 +90,6 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  if (t->src_sync) {
-    PyObject *element = PyIter_Next(t->source);
-
-    if (! element) {
-      if (! PyErr_Occurred())
-        PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-    RESUME_HOP(&dropwhile_resume_invoke_kind, es, t, element);
-  }
-
   {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
                                             &dropwhile_resume_invoke_kind, t);
@@ -190,19 +179,12 @@ static KosIterStepResult dropwhile_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  if (t->src_sync) {
-    /* Pure C while verdicts are immediate: fetch, test, drop or emit.
-       Dropped elements never leave this loop. */
+  {
     for (;;) {
-      PyObject *element = PyIter_Next(t->source);
+      PyObject *element;
 
-      if (! element) {
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
+      KOS_TRANSFORM_FETCH(es, t, t->source, &dropwhile_resume_fetch_kind, pre_top, out,
+                          element);
 
       if (d->passed) {
         *out = element;
@@ -266,12 +248,6 @@ static KosIterStepResult dropwhile_iter_step(
     }
   }
 
-  /* Driven source: set the cold-start fetch resume and defer the
-     whole step -- nothing is fetched yet to stage, and the request
-     itself (which can suspend) must run from inside koskari_eval's
-     own dispatch. */
-  return kos_transform_stage(es, t, NULL,
-                             &dropwhile_resume_fetch_kind, pre_top);
 }
 
 

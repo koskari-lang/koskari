@@ -63,10 +63,9 @@ KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step",
 
 
 /**
-   FETCH: walk the sources from base.idx, filing each element into the
-   row. A sync source completes inside the loop; a driven one requests
-   the next element and leaves, to be re-entered here by
-   zip_resume_deliver. A completed row is delivered as the step's value.
+   FETCH: request the source at base.idx; its element is filed by
+   zip_resume_deliver, which re-enters here for the next, until the
+   row is complete and delivered as the step's value.
    Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
@@ -80,27 +79,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  while (t->idx < t->nsrc) {
-    PyObject *element;
-
-    if (! kos_transform_multi_sync(z, t->idx)) {
-      KosOpResult r = KosEvalState_NextResume(
-          es, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
-      RESULT_ENTRY(es, r, &zip_resume_deliver_kind, z);
-    }
-
-    element = PyIter_Next(t->sources[t->idx]);
-    if (! element) {
-      /* A source is spent, so the zip is: let StopIteration reach the
-         consumer's iteration node, which owns the conversion. The
-         partial row is cleared by ki_finish. */
-      if (! PyErr_Occurred())
-        PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-
-    PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);
-    t->idx++;
+  if (t->idx < t->nsrc) {
+    /* the element lands in zip_resume_deliver, which files it and
+       hops back here; a spent source's StopIteration reaches the
+       consumer's iteration node, and the partial row is cleared by
+       ki_finish */
+    KosOpResult r = KosEvalState_NextResume(
+        es, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
+    RESULT_ENTRY(es, r, &zip_resume_deliver_kind, z);
   }
 
   {
@@ -162,43 +148,40 @@ static KosIterStepResult zip_iter_step(
   if (! row)
     return KOS_ITER_ERROR;
 
-  if (z->all_sync) {
+  {
     uint16_t i;
 
+    /* The row fills here for as long as the sources answer without
+       the evaluator; the first driven source defers the rest of the
+       walk to zip_resume_fetch, with the row pending from its
+       position. */
     for (i = 0; i < t->nsrc; i++) {
-      PyObject *element = PyIter_Next(t->sources[i]);
+      PyObject *element;
 
-      if (! element) {
-        Py_DECREF(row);
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
+      switch (KosEvalState_NextOrDefer(es, t->sources[i],
+                                       &zip_resume_fetch_kind, z,
+                                       &t->cached_frame, &element)) {
+        case KOS_IREQ_DELIVERED:
+          PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
+          continue;
+        case KOS_IREQ_EXHAUSTED:
+          Py_DECREF(row);
+          t->closed = 1;
+          *out = NULL;
+          return KOS_ITER_EXHAUSTED;
+        case KOS_IREQ_CONTINUES:
+          t->idx = i;
+          t->pending = row;  /* steals */
+          t->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        default:
+          Py_DECREF(row);
+          return kos_transform_step_abort(es, t, pre_top);
       }
-      PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
     }
 
     *out = row;
     return KOS_ITER_VALUE;
-  }
-
-  /* At least one driven source: defer the whole walk. Nothing is
-     fetched yet to stage, and a request that can suspend must run
-     from inside koskari_eval's own dispatch rather than from here
-     (see stepper_step). */
-  {
-    KosIterStepResult staged = kos_transform_stage(
-        es, t, NULL, &zip_resume_fetch_kind, pre_top);
-
-    if (staged != KOS_ITER_INSTALLED_VALUE) {
-      Py_DECREF(row);
-      return staged;
-    }
-
-    t->idx = 0;
-    t->pending = row;  /* steals */
-    return staged;
   }
 }
 

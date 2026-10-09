@@ -98,10 +98,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  /* Set only from the step's driven-source branch, and re-entered
-     only from batched_resume_deliver, so src_sync is 0 on every entry:
-     every fetch here is a request. A sync source never reaches this
-     resume -- it fills its whole batch inside the step. */
+  /* Entered from the step's deferred fetch, with the batch so far
+     pending, and re-entered from batched_resume_deliver: every fetch
+     here is a request. */
   while (b->filled < b->n) {
     KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
                                             &batched_resume_deliver_kind, b);
@@ -175,51 +174,43 @@ static KosIterStepResult batched_iter_step(
 
   b->filled = 0;
 
-  if (t->src_sync) {
+  {
     Py_ssize_t i;
 
     for (i = 0; i < b->n; i++) {
-      PyObject *element = PyIter_Next(t->source);
+      PyObject *element;
 
-      if (! element) {
-        if (PyErr_Occurred()) {
+      switch (KosEvalState_NextOrDefer(es, t->source,
+                                       &batched_resume_fill_kind, b,
+                                       &t->cached_frame, &element)) {
+        case KOS_IREQ_DELIVERED:
+          PyTuple_SET_ITEM(batch, i, element);
+          continue;
+        case KOS_IREQ_EXHAUSTED:
+          if (! i) {
+            Py_DECREF(batch);
+            t->closed = 1;
+            *out = NULL;
+            return KOS_ITER_EXHAUSTED;
+          }
+          t->pending = batch;
+          b->filled = i;
+          *out = batched_short(b);
+          return *out ? KOS_ITER_VALUE : KOS_ITER_ERROR;
+        case KOS_IREQ_CONTINUES:
+          /* the fill goes on in batched_resume_fill from here */
+          t->pending = batch;  /* steals */
+          b->filled = i;
+          t->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        default:
           Py_DECREF(batch);
-          return KOS_ITER_ERROR;
-        }
-        if (! i) {
-          Py_DECREF(batch);
-          t->closed = 1;
-          *out = NULL;
-          return KOS_ITER_EXHAUSTED;
-        }
-
-        t->pending = batch;
-        b->filled = i;
-        *out = batched_short(b);
-        return *out ? KOS_ITER_VALUE : KOS_ITER_ERROR;
+          return kos_transform_step_abort(es, t, pre_top);
       }
-
-      PyTuple_SET_ITEM(batch, i, element);
     }
 
     *out = batch;
     return KOS_ITER_VALUE;
-  }
-
-  /* Driven source: defer the whole fill. Nothing is fetched yet to
-     stage, and a request that can suspend must run from inside
-     koskari_eval's own dispatch. */
-  {
-    KosIterStepResult staged = kos_transform_stage(
-        es, t, NULL, &batched_resume_fill_kind, pre_top);
-
-    if (staged != KOS_ITER_INSTALLED_VALUE) {
-      Py_DECREF(batch);
-      return staged;
-    }
-
-    t->pending = batch;  /* steals */
-    return staged;
   }
 }
 

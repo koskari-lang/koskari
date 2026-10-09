@@ -157,16 +157,11 @@ static KosIterStepResult takewhile_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  if (t->src_sync) {
-    PyObject *element = PyIter_Next(t->source);
+  {
+    PyObject *element;
 
-    if (! element) {
-      if (PyErr_Occurred())
-        return KOS_ITER_ERROR;
-      t->closed = 1;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
-    }
+    KOS_TRANSFORM_FETCH(es, t, t->source, &takewhile_resume_fetch_kind, pre_top, out,
+                        element);
 
     /* Any KosCallable predicate's verdict must come back to this
        step, so a resume-carrying frame installs here and the element
@@ -225,10 +220,6 @@ static KosIterStepResult takewhile_iter_step(
     }
   }
 
-  /* Driven source: set the cold-start fetch resume and defer the
-     whole step. */
-  return kos_transform_stage(es, t, NULL, &takewhile_resume_fetch_kind,
-                             pre_top);
 }
 
 

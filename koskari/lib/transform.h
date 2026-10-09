@@ -69,10 +69,6 @@ typedef struct KosTransform {
   uint16_t idx;          /* resume position within a step that fetches
                             more than once; untouched by providers
                             that fetch a single element per step */
-  uint8_t src_sync;      /* the current source steps through
-                            tp_iternext alone; re-resolved on each
-                            acquisition by providers that swap sources
-                            rather than fixed for the lifetime */
   uint8_t closed;        /* exhausted or closed */
   uint8_t busy;          /* a step is in flight; ki_finish clears */
 } KosTransform;
@@ -144,9 +140,8 @@ void kos_transform_init_view(
 
 /**
    The shape of a provider over several sources acquired together
-   (zip, zip-longest, compress): the base, the tuple that holds the
-   acquired iterators and that the base's view points into, and the
-   cache of which of them step through tp_iternext alone. A provider
+   (zip, zip-longest, compress): the base and the tuple that holds
+   the acquired iterators and that the base's view points into. A provider
    with fields of its own embeds this first and chains its traverse,
    clear and dealloc to the multi ones, as a one-source provider
    chains to the base's.
@@ -155,18 +150,13 @@ typedef struct KosTransformMulti {
   KosTransform base;
   PyObject *srcs;      /* tuple of acquired iterators; the storage the
                           base's sources view points into */
-  uint32_t sync_mask;  /* bit i: source i steps through tp_iternext
-                          alone. A cache, not a limit -- sources past
-                          32 are checked live rather than capping the
-                          arity */
-  uint8_t all_sync;    /* no source needs the evaluator */
 } KosTransformMulti;
 
 
 /**
    Fill a freshly allocated multi-source transform: acquire every
-   iterable of the tuple into the srcs tuple, build the sync cache,
-   and publish the view over the tuple's items.
+   iterable of the tuple into the srcs tuple and publish the view over
+   the tuple's items.
 
    :param m: freshly allocated, zeroed
    :param iterables: borrowed tuple, at most UINT16_MAX long
@@ -174,19 +164,6 @@ typedef struct KosTransformMulti {
 */
 int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables);
 
-
-/**
-   Does source i step through tp_iternext alone? Cached in the mask
-   for the first 32, resolved live beyond it. Only for a slot still
-   holding an iterator.
-*/
-static inline int kos_transform_multi_sync(KosTransformMulti *m, uint16_t i) {
-
-  if (i < 32)
-    return (int) ((m->sync_mask >> i) & 1u);
-
-  return KosIter_CheckSync(m->base.sources[i]);
-}
 
 
 /* The GC and dealloc of a multi-source provider: the view is
@@ -266,6 +243,33 @@ KosIterStepResult kos_transform_stage(
     PyObject *value,
     const KosResumeKind *resume,
     KosDynNode *pre_top);
+
+
+/**
+   The fetch a provider's step makes, with the outcomes every provider
+   handles alike: on DELIVERED element is the new reference and the
+   step goes on; on EXHAUSTED the provider closes and reports it; on
+   CONTINUES the fetch was deferred to resume on an installed frame
+   and the step reports its work installed; on ERROR the step aborts
+   to pre_top. The kind of the source is the request entry's business.
+*/
+#define KOS_TRANSFORM_FETCH(es, t, source, resume, pre_top, out, element) \
+  do {                                                                  \
+    switch (KosEvalState_NextOrDefer((es), (source), (resume), (t),    \
+                                     &(t)->cached_frame, &(element))) { \
+      case KOS_IREQ_DELIVERED:                                          \
+        break;                                                          \
+      case KOS_IREQ_EXHAUSTED:                                          \
+        (t)->closed = 1;                                                \
+        *(out) = NULL;                                                  \
+        return KOS_ITER_EXHAUSTED;                                      \
+      case KOS_IREQ_CONTINUES:                                          \
+        (t)->busy = 1;                                                  \
+        return KOS_ITER_INSTALLED_VALUE;                                \
+      default:                                                          \
+        return kos_transform_step_abort((es), (t), (pre_top));          \
+    }                                                                   \
+  } while (0)
 
 
 /* The suite functions other than ki_step, shared by every provider. */

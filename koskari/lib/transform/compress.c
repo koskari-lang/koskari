@@ -86,44 +86,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  for (;;) {
-    PyObject *element;
-
-    if (! ((c->sync_mask >> t->idx) & 1u)) {
-      KosOpResult r = KosEvalState_NextResume(
-          es, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
-      RESULT_ENTRY(es, r, &compress_resume_deliver_kind, c);
-    }
-
-    element = PyIter_Next(t->sources[t->idx]);
-    if (! element) {
-      /* Either source running out ends the compress. */
-      if (! PyErr_Occurred())
-        PyErr_SetNone(PyExc_StopIteration);
-      return EVAL_RAISE();
-    }
-
-    if (t->idx == COMPRESS_DATA) {
-      t->pending = element;  /* steals; held for the selector */
-      t->idx = COMPRESS_SELECTOR;
-      continue;
-    }
-
-    {
-      int ok = compress_keeps(element);
-
-      if (ok < 0)
-        return EVAL_RAISE();
-
-      t->idx = COMPRESS_DATA;
-      if (ok) {
-        PyObject *kept = t->pending;
-
-        t->pending = NULL;
-        return KosNativeFrame_ReturnToCache(es, kept, &t->cached_frame);
-      }
-      Py_CLEAR(t->pending);
-    }
+  /* the element lands in compress_resume_deliver, which files it
+     and hops back here; either source running out ends the
+     compress through its StopIteration */
+  {
+    KosOpResult r = KosEvalState_NextResume(
+        es, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
+    RESULT_ENTRY(es, r, &compress_resume_deliver_kind, c);
   }
 }
 
@@ -186,29 +155,37 @@ static KosIterStepResult compress_iter_step(
 
   t->idx = COMPRESS_DATA;
 
-  if (c->all_sync) {
-    /* Pure C: rejected rows never leave this loop. */
+  {
+    /* Rejected rows never leave this loop while both sources answer
+       without the evaluator; a driven source defers the rest to
+       compress_resume_fetch, the data element pending when the
+       selector is the one deferred. */
     for (;;) {
-      PyObject *data = PyIter_Next(t->sources[COMPRESS_DATA]);
+      PyObject *data;
       PyObject *selector;
       int ok;
 
-      if (! data) {
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
+      KOS_TRANSFORM_FETCH(es, t, t->sources[COMPRESS_DATA],
+                          &compress_resume_fetch_kind, pre_top, out, data);
 
-      selector = PyIter_Next(t->sources[COMPRESS_SELECTOR]);
-      if (! selector) {
-        Py_DECREF(data);
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
+      switch (KosEvalState_NextOrDefer(es, t->sources[COMPRESS_SELECTOR],
+                                       &compress_resume_fetch_kind, c,
+                                       &t->cached_frame, &selector)) {
+        case KOS_IREQ_DELIVERED:
+          break;
+        case KOS_IREQ_EXHAUSTED:
+          Py_DECREF(data);
+          t->closed = 1;
+          *out = NULL;
+          return KOS_ITER_EXHAUSTED;
+        case KOS_IREQ_CONTINUES:
+          t->pending = data;  /* steals; held for the selector */
+          t->idx = COMPRESS_SELECTOR;
+          t->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        default:
+          Py_DECREF(data);
+          return kos_transform_step_abort(es, t, pre_top);
       }
 
       ok = compress_keeps(selector);
@@ -223,12 +200,6 @@ static KosIterStepResult compress_iter_step(
       Py_DECREF(data);
     }
   }
-
-  /* A driven source: defer the whole row. Nothing is fetched yet to
-     stage, and a request that can suspend must run from inside
-     koskari_eval's own dispatch. */
-  return kos_transform_stage(es, t, NULL, &compress_resume_fetch_kind,
-                             pre_top);
 }
 
 

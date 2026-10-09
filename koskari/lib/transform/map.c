@@ -142,16 +142,11 @@ static KosIterStepResult map_iter_step(
   if (! kos_transform_step_ready(m, send_val, out, &early))
     return early;
 
-  if (m->src_sync) {
-    PyObject *element = PyIter_Next(m->source);
+  {
+    PyObject *element;
 
-    if (! element) {
-      if (PyErr_Occurred())
-        return KOS_ITER_ERROR;
-      m->closed = 1;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
-    }
+    KOS_TRANSFORM_FETCH(es, m, m->source, &map_resume_start_fetch_kind, pre_top, out,
+                        element);
 
     /* A direct-delivery koskari function (cs_direct: its install
        fills a frame whose return IS the element) installs through the
@@ -205,12 +200,6 @@ static KosIterStepResult map_iter_step(
     }
   }
 
-  /* Driven source (KosIter provider or python async iterator): set the
-     cold-start kickoff resume and defer the first fetch entirely --
-     nothing is fetched yet to stage, and the request itself (which can
-     suspend) must run from inside koskari_eval's own dispatch. */
-  return kos_transform_stage(es, m, NULL, &map_resume_start_fetch_kind,
-                             pre_top);
 }
 
 

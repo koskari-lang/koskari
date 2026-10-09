@@ -192,16 +192,11 @@ static KosIterStepResult accumulate_iter_step(
     return KOS_ITER_VALUE;
   }
 
-  if (t->src_sync) {
-    PyObject *element = PyIter_Next(t->source);
+  {
+    PyObject *element;
 
-    if (! element) {
-      if (PyErr_Occurred())
-        return KOS_ITER_ERROR;
-      t->closed = 1;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
-    }
+    KOS_TRANSFORM_FETCH(es, t, t->source, &accumulate_resume_fetch_kind, pre_top, out,
+                        element);
 
     if (! a->total) {
       a->total = element;  /* steals */
@@ -260,10 +255,6 @@ static KosIterStepResult accumulate_iter_step(
     }
   }
 
-  /* Driven source: set the cold-start kickoff resume and defer the
-     first fetch entirely. */
-  return kos_transform_stage(es, t, NULL, &accumulate_resume_fetch_kind,
-                             pre_top);
 }
 
 

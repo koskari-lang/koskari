@@ -191,30 +191,30 @@ static KosIterStepResult cycle_iter_step(
     return KOS_ITER_VALUE;
   }
 
-  if (t->src_sync) {
-    PyObject *element = PyIter_Next(t->source);
+  {
+    PyObject *element;
 
-    if (! element) {
-      if (PyErr_Occurred())
-        return KOS_ITER_ERROR;
-
-      if (! cycle_switch_to_buffer(c)) {
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
-
-      *out = cycle_replay(c);
-      return KOS_ITER_VALUE;
+    switch (KosEvalState_NextOrDefer(es, t->source, &cycle_resume_fetch_kind,
+                                     t, &t->cached_frame, &element)) {
+      case KOS_IREQ_DELIVERED:
+        *out = cycle_keep(c, element);
+        return *out ? KOS_ITER_VALUE : KOS_ITER_ERROR;
+      case KOS_IREQ_EXHAUSTED:
+        /* the source is spent: replay from the buffer, if any */
+        if (! cycle_switch_to_buffer(c)) {
+          t->closed = 1;
+          *out = NULL;
+          return KOS_ITER_EXHAUSTED;
+        }
+        *out = cycle_replay(c);
+        return KOS_ITER_VALUE;
+      case KOS_IREQ_CONTINUES:
+        t->busy = 1;
+        return KOS_ITER_INSTALLED_VALUE;
+      default:
+        return kos_transform_step_abort(es, t, pre_top);
     }
-
-    *out = cycle_keep(c, element);
-    return *out ? KOS_ITER_VALUE : KOS_ITER_ERROR;
   }
-
-  /* Driven source: set the cold-start kickoff resume and defer the
-     fetch entirely. */
-  return kos_transform_stage(es, t, NULL, &cycle_resume_fetch_kind, pre_top);
 }
 
 

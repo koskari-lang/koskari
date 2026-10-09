@@ -191,9 +191,26 @@ extern KosEvaluatedTypeObject KosEvaluatedType;
 
 #define KOS_EVALUATED_PYTYPE(typeobj) (&((typeobj).type))
 
+/**
+   Is the type an evaluated one? Answered by walking tp_base, which
+   reaches the evaluated base whenever it is a base at all: a layout
+   conflict refuses any class that would put it elsewhere in the mro.
+   A plain builtin's walk is two loads and two compares, so the test
+   serves the per-element paths that classify an iterator.
+*/
+static inline int KosEvaluated_CheckType(PyTypeObject *t) {
+
+  PyTypeObject *const base = KOS_EVALUATED_PYTYPE(KosEvaluatedType);
+
+  for (; t; t = t->tp_base) {
+    if (t == base)
+      return 1;
+  }
+  return 0;
+}
+
 #define KosEvaluated_Check(obj)                                         \
-  ((obj) && PyType_IsSubtype(Py_TYPE(obj),                              \
-                             KOS_EVALUATED_PYTYPE(KosEvaluatedType)))
+  ((obj) && KosEvaluated_CheckType(Py_TYPE(obj)))
 
 
 /**
@@ -257,6 +274,74 @@ static inline int kos_iter_check(PyObject *obj) {
 static inline int KosIter_CheckSync(PyObject *iter) {
 
   return ! KosIter_Check(iter) && PyIter_Check(iter);
+}
+
+
+/**
+   The plain-iterator arm the request entries share: a python iterator
+   that is no provider and has tp_iternext answers through it alone,
+   with no iteration node, a StopIteration read as exhaustion. Returns
+   1 when iter is such an iterator, with *status set and *out the
+   element on DELIVERED; 0 when iter needs the node. Inline, so a
+   provider's per-element fetch is the type test and the call.
+*/
+KOS_OP_INLINE int kos_iter_next_plain(
+    PyObject *iter,
+    PyObject **out,
+    KosIterRequestStatus *status) {
+
+  if (! KosIter_CheckSync(iter))
+    return 0;
+
+  *out = Py_TYPE(iter)->tp_iternext(iter);
+  if (likely(*out)) {
+    *status = KOS_IREQ_DELIVERED;
+    return 1;
+  }
+
+  if (PyErr_Occurred()) {
+    if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
+      *status = KOS_IREQ_ERROR;
+      return 1;
+    }
+    PyErr_Clear();
+  }
+  *status = KOS_IREQ_EXHAUSTED;
+  return 1;
+}
+
+
+/**
+   Request the next element of iter from a provider's step, which
+   runs outside the drive and so cannot push an iteration node. A
+   plain python iterator answers now: DELIVERED with *out the element
+   (new ref), EXHAUSTED, or ERROR with PyErr set. Any other kind is
+   deferred: a code-less frame carrying resume and state is installed
+   (through cache, as KosResumeFrame_Install takes it) and CONTINUES is
+   returned, so the step reports its work installed and resume makes
+   the request through KosEvalState_NextResume once the drive reaches
+   the frame. ERROR with nothing installed when the frame cannot be.
+   The one place a provider asks for an element from its step; the
+   kind of the source is decided here, never by the provider.
+*/
+KOS_OP_INLINE KosIterRequestStatus KosEvalState_NextOrDefer(
+    KosEvalState *es,
+    PyObject *iter,
+    const KosResumeKind *resume,
+    void *state,
+    KosDynFrame **cache,
+    PyObject **out) {
+
+  KosIterRequestStatus status;
+
+  *out = NULL;
+
+  if (kos_iter_next_plain(iter, out, &status))
+    return status;
+
+  if (! KosResumeFrame_Install(es, resume, state, cache))
+    return KOS_IREQ_ERROR;
+  return KOS_IREQ_CONTINUES;
 }
 
 

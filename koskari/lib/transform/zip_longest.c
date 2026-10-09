@@ -97,10 +97,9 @@ KOS_RESUME_KIND(zip_longest_resume_fetch_kind, "zip-longest-step",
 
 /**
    FETCH: walk the sources from base.idx, filing each element into the
-   row. A spent source contributes its fill value without a fetch; a
-   sync source completes inside the loop; a driven one requests the
-   next element and leaves, to be re-entered here by
-   zip_longest_resume_deliver. Always entered with a NULL value.
+   row. A spent source contributes its fill value without a fetch;
+   a live one is requested, its element filed by
+   zip_longest_resume_deliver, which re-enters here. Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     KosEvalState *es, void *state, PyObject *value) {
@@ -114,38 +113,19 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     return EVAL_RAISE();
 
   while (t->idx < t->nsrc) {
-    PyObject *element;
-
     if (! t->sources[t->idx]) {
       zip_longest_fill(z, t->pending, t->idx);
       t->idx++;
       continue;
     }
 
-    if (! kos_transform_multi_sync(&z->multi, t->idx)) {
+    /* the element, or the source's exhaustion, lands in
+       zip_longest_resume_deliver, which files it and hops back here */
+    {
       KosOpResult r = KosEvalState_NextResume(
           es, t->sources[t->idx], NULL, &zip_longest_resume_deliver_kind, z);
       RESULT_ENTRY(es, r, &zip_longest_resume_deliver_kind, z);
     }
-
-    element = PyIter_Next(t->sources[t->idx]);
-    if (! element) {
-      if (PyErr_Occurred())
-        return EVAL_RAISE();
-
-      /* The last source to run out ends the whole thing, and the row
-         it ran out on is not emitted. */
-      if (! zip_longest_retire(z, t->idx)) {
-        PyErr_SetNone(PyExc_StopIteration);
-        return EVAL_RAISE();
-      }
-      zip_longest_fill(z, t->pending, t->idx);
-      t->idx++;
-      continue;
-    }
-
-    PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);
-    t->idx++;
   }
 
   {
@@ -220,12 +200,15 @@ static KosIterStepResult zip_longest_iter_step(
   if (! row)
     return KOS_ITER_ERROR;
 
-  if (z->multi.all_sync) {
+  {
     uint16_t i;
 
-    /* The row stays local: a fetch runs a source's __next__, which may
-       step this zip-longest again, and an inner step would hand out
-       and clear a row kept in t->pending. */
+    /* The row stays local while the sources answer without the
+       evaluator: a fetch runs a source's __next__, which may step
+       this zip-longest again, and an inner step would hand out and
+       clear a row kept in t->pending. The first driven source
+       defers the rest of the walk to zip_longest_resume_fetch, and
+       only then is the row pending, from that position. */
     for (i = 0; i < t->nsrc; i++) {
       PyObject *element;
 
@@ -234,44 +217,34 @@ static KosIterStepResult zip_longest_iter_step(
         continue;
       }
 
-      element = PyIter_Next(t->sources[i]);
-      if (! element) {
-        if (PyErr_Occurred()) {
+      switch (KosEvalState_NextOrDefer(es, t->sources[i],
+                                       &zip_longest_resume_fetch_kind, z,
+                                       &t->cached_frame, &element)) {
+        case KOS_IREQ_DELIVERED:
+          PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
+          continue;
+        case KOS_IREQ_EXHAUSTED:
+          if (! zip_longest_retire(z, i)) {
+            Py_DECREF(row);
+            t->closed = 1;
+            *out = NULL;
+            return KOS_ITER_EXHAUSTED;
+          }
+          zip_longest_fill(z, row, i);
+          continue;
+        case KOS_IREQ_CONTINUES:
+          t->idx = i;
+          t->pending = row;  /* steals */
+          t->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        default:
           Py_DECREF(row);
-          return KOS_ITER_ERROR;
-        }
-        if (! zip_longest_retire(z, i)) {
-          Py_DECREF(row);
-          t->closed = 1;
-          *out = NULL;
-          return KOS_ITER_EXHAUSTED;
-        }
-        zip_longest_fill(z, row, i);
-        continue;
+          return kos_transform_step_abort(es, t, pre_top);
       }
-
-      PyTuple_SET_ITEM(row, (Py_ssize_t) i, element);
     }
 
     *out = row;
     return KOS_ITER_VALUE;
-  }
-
-  /* At least one driven source: defer the whole walk. Nothing is
-     fetched yet to stage, and a request that can suspend must run
-     from inside koskari_eval's own dispatch. */
-  {
-    KosIterStepResult staged = kos_transform_stage(
-        es, t, NULL, &zip_longest_resume_fetch_kind, pre_top);
-
-    if (staged != KOS_ITER_INSTALLED_VALUE) {
-      Py_DECREF(row);
-      return staged;
-    }
-
-    t->idx = 0;
-    t->pending = row;  /* steals */
-    return staged;
   }
 }
 

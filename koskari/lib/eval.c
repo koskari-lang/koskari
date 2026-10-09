@@ -2184,8 +2184,9 @@ KosDynFrame *KosResumeFrame_Install(
 
 /**
    One next-element request against iter from inside a native frame
-   handler: push the iteration node, run the request, and clean the
-   node up on every immediately-final outcome. See eval.h for the
+   handler: a plain iterator answers through tp_iternext alone; any
+   other kind pushes the iteration node, runs the request, and cleans
+   the node up on every immediately-final outcome. See eval.h for the
    per-status contract.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
@@ -2193,7 +2194,12 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
     PyObject *iter,
     PyObject **out) {
 
+  KosIterRequestStatus status;
+
   *out = NULL;
+
+  if (kos_iter_next_plain(iter, out, &status))
+    return status;
 
   if (kos_dyn_push_next_node(es, iter, NULL, 1) < 0)
     return KOS_IREQ_ERROR;

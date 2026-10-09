@@ -58,10 +58,8 @@ KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
 /**
    FETCH: request the next source element. Always entered with a NULL
    value -- either cold, from the driven-source install, or from
-   pairwise_resume_deliver after the fetch that primed the pair. Set
-   only from the step's driven-source branch, so src_sync is 0 on every
-   entry: every fetch here is a request. A sync source never reaches
-   this resume -- it steps whole inside the step.
+   pairwise_resume_deliver after the fetch that primed the pair:
+   every fetch here is a request.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     KosEvalState *es, void *state, PyObject *value) {
@@ -141,21 +139,15 @@ static KosIterStepResult pairwise_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  if (t->src_sync) {
+  {
     PyObject *element;
     PyObject *row;
 
     /* Prime the pair on the first step. A source of fewer than two
        elements never yields, exactly as Python's does. */
     if (! p->held) {
-      p->held = PyIter_Next(t->source);
-      if (! p->held) {
-        if (PyErr_Occurred())
-          return KOS_ITER_ERROR;
-        t->closed = 1;
-        *out = NULL;
-        return KOS_ITER_EXHAUSTED;
-      }
+      KOS_TRANSFORM_FETCH(es, t, t->source, &pairwise_resume_fetch_kind,
+                          pre_top, out, p->held);
     }
 
     /* The fetch runs the source's __next__, which may step this
@@ -164,15 +156,25 @@ static KosIterStepResult pairwise_iter_step(
     PyObject *held = p->held;
     Py_INCREF(held);
 
-    element = PyIter_Next(t->source);
-    if (! element) {
-      Py_DECREF(held);
-      if (PyErr_Occurred())
-        return KOS_ITER_ERROR;
-      Py_CLEAR(p->held);
-      t->closed = 1;
-      *out = NULL;
-      return KOS_ITER_EXHAUSTED;
+    switch (KosEvalState_NextOrDefer(es, t->source,
+                                     &pairwise_resume_fetch_kind, t,
+                                     &t->cached_frame, &element)) {
+      case KOS_IREQ_DELIVERED:
+        break;
+      case KOS_IREQ_EXHAUSTED:
+        Py_DECREF(held);
+        Py_CLEAR(p->held);
+        t->closed = 1;
+        *out = NULL;
+        return KOS_ITER_EXHAUSTED;
+      case KOS_IREQ_CONTINUES:
+        /* the held element stays primed for pairwise_resume_deliver */
+        Py_DECREF(held);
+        t->busy = 1;
+        return KOS_ITER_INSTALLED_VALUE;
+      default:
+        Py_DECREF(held);
+        return kos_transform_step_abort(es, t, pre_top);
     }
 
     row = PyTuple_Pack(2, held, element);
@@ -188,12 +190,6 @@ static KosIterStepResult pairwise_iter_step(
     return KOS_ITER_VALUE;
   }
 
-  /* Driven source: set the cold-start fetch resume and defer the
-     whole step -- nothing is fetched yet to stage, and the request
-     itself (which can suspend) must run from inside koskari_eval's
-     own dispatch. */
-  return kos_transform_stage(es, t, NULL,
-                             &pairwise_resume_fetch_kind, pre_top);
 }
 
 

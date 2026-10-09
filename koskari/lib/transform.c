@@ -108,8 +108,6 @@ int kos_transform_init_one(
     t->fn.cs_callable = NULL;
     t->fn.cs_kind = KOS_CALL_SHAPE_PLAIN;
   }
-  t->src_sync = KosIter_CheckSync(source);
-
   t->pending = NULL;
   t->cached_frame = NULL;
   t->ctx = NULL;
@@ -135,7 +133,6 @@ void kos_transform_init_view(
   t->pending = NULL;
   t->cached_frame = NULL;
   t->ctx = NULL;
-  t->src_sync = 0;
   t->closed = 0;
   t->busy = 0;
 }
@@ -150,9 +147,6 @@ int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables) {
   if (! srcs)
     return -1;
 
-  m->sync_mask = 0;
-  m->all_sync = 1;
-
   for (i = 0; i < n; i++) {
     PyObject *source = kos_iter_acquire(PyTuple_GET_ITEM(iterables, i));
 
@@ -161,13 +155,6 @@ int kos_transform_init_multi(KosTransformMulti *m, PyObject *iterables) {
       return -1;
     }
     PyTuple_SET_ITEM(srcs, i, source);
-
-    if (KosIter_CheckSync(source)) {
-      if (i < 32)
-        m->sync_mask |= (uint32_t) 1u << i;
-    } else {
-      m->all_sync = 0;
-    }
   }
 
   m->srcs = srcs;

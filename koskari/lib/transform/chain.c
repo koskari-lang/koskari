@@ -18,10 +18,9 @@
    reason itertools.chain acquires as it goes, and the reason the
    koskari-written version it replaces did too.
 
-   This is the provider the base's per-acquisition src_sync rule
-   exists for: a chain can run a list into an async iterator, so the
-   flag is resolved again at every acquisition rather than fixed for
-   the transform's lifetime.
+   A chain can run a list into an async iterator, so each fetch asks
+   the request entry which kind its current source is; nothing about
+   a source is fixed for the transform's lifetime.
 
    Exhaustion of one source is not exhaustion of the chain, so this
    provider catches a source running out rather than propagating it --
@@ -37,8 +36,6 @@ typedef struct KosChain {
   KosTransform base;
   PyObject *series;        /* acquired iterator over the iterables not
                               yet reached; NULL once it runs out */
-  int series_sync;         /* the series steps through tp_iternext
-                              alone; a driven one is requested */
 } KosChain;
 
 
@@ -58,54 +55,11 @@ static int chain_take_source(KosChain *c, PyObject *iterable) {
     return -1;
 
   t->source = source;
-  t->src_sync = KosIter_CheckSync(source);
 
   return 0;
 }
 
 
-/**
-   Move to the next iterable of a sync series: release the spent
-   source and acquire its successor. A driven series is pulled through
-   a request instead (chain_resume_series).
-
-   :return: 1 when a new source is live, 0 when the series is spent,
-            -1 with PyErr set when pulling or acquiring failed
-*/
-static int chain_advance(KosChain *c) {
-
-  KosTransform *t = &c->base;
-  PyObject *iterable;
-  int r;
-
-  Py_CLEAR(t->source);
-
-  if (! c->series)
-    return 0;
-
-  iterable = PyIter_Next(c->series);
-  if (! iterable) {
-    if (PyErr_Occurred())
-      return -1;
-    Py_CLEAR(c->series);
-    return 0;
-  }
-
-  r = chain_take_source(c, iterable);
-  Py_DECREF(iterable);
-
-  return r < 0 ? -1 : 1;
-}
-
-
-/**
-   Is the series driven and still live, so that the next iterable has
-   to be requested rather than pulled in C?
-*/
-static inline int chain_series_driven(const KosChain *c) {
-
-  return c->series && ! c->series_sync;
-}
 
 
 /* === the step's CPS resumes ===
@@ -153,46 +107,25 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     return EVAL_RAISE();
 
   for (;;) {
-    PyObject *element;
-
     if (! t->source) {
-      int moved;
-
-      if (chain_series_driven(c)) {
-        /* the next iterable is requested from the series; its
-           delivery lands in chain_resume_series */
-        KosOpResult r = KosEvalState_NextResume(es, c->series, NULL,
-                                                &chain_resume_series_kind, c);
-        RESULT_ENTRY(es, r, &chain_resume_series_kind, c);
-      }
-
-      moved = chain_advance(c);
-      if (moved < 0)
-        return EVAL_RAISE();
-      if (! moved) {
+      if (! c->series) {
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
       }
-      continue;
+      /* the next iterable is requested from the series; its
+         delivery lands in chain_resume_series */
+      KosOpResult r = KosEvalState_NextResume(es, c->series, NULL,
+                                              &chain_resume_series_kind, c);
+      RESULT_ENTRY(es, r, &chain_resume_series_kind, c);
     }
 
-    if (! t->src_sync) {
+    /* the element lands in chain_resume_deliver; a spent source is
+       released there and the walk re-enters here */
+    {
       KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
                                               &chain_resume_deliver_kind, c);
       RESULT_ENTRY(es, r, &chain_resume_deliver_kind, c);
     }
-
-    element = PyIter_Next(t->source);
-    if (! element) {
-      if (PyErr_Occurred())
-        return EVAL_RAISE();
-
-      /* This source is spent; the chain is not until the series is. */
-      Py_CLEAR(t->source);
-      continue;
-    }
-
-    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
   }
 }
 
@@ -270,43 +203,60 @@ static KosIterStepResult chain_iter_step(
   if (! kos_transform_step_ready(t, send_val, out, &early))
     return early;
 
-  /* Walk the series in C for as long as the series and the sources
-     are sync, and defer only once a driven one is reached. */
+  /* Walk the series here for as long as the series and the sources
+     answer without the evaluator; the first driven one defers the
+     rest of the walk to chain_resume_fetch. */
   for (;;) {
     PyObject *element;
 
     if (! t->source) {
-      int moved;
+      PyObject *iterable;
+      int r;
 
-      if (chain_series_driven(c))
-        return kos_transform_stage(es, t, NULL, &chain_resume_fetch_kind,
-                                   pre_top);
-
-      moved = chain_advance(c);
-      if (moved < 0)
-        return KOS_ITER_ERROR;
-      if (! moved) {
+      if (! c->series) {
         t->closed = 1;
         *out = NULL;
         return KOS_ITER_EXHAUSTED;
       }
-      continue;
-    }
-
-    if (! t->src_sync)
-      return kos_transform_stage(es, t, NULL, &chain_resume_fetch_kind,
-                                 pre_top);
-
-    element = PyIter_Next(t->source);
-    if (! element) {
-      if (PyErr_Occurred())
+      switch (KosEvalState_NextOrDefer(es, c->series,
+                                       &chain_resume_fetch_kind, t,
+                                       &t->cached_frame, &iterable)) {
+        case KOS_IREQ_DELIVERED:
+          break;
+        case KOS_IREQ_EXHAUSTED:
+          Py_CLEAR(c->series);
+          t->closed = 1;
+          *out = NULL;
+          return KOS_ITER_EXHAUSTED;
+        case KOS_IREQ_CONTINUES:
+          t->busy = 1;
+          return KOS_ITER_INSTALLED_VALUE;
+        default:
+          return kos_transform_step_abort(es, t, pre_top);
+      }
+      r = chain_take_source(c, iterable);
+      Py_DECREF(iterable);
+      if (r < 0)
         return KOS_ITER_ERROR;
-      Py_CLEAR(t->source);
       continue;
     }
 
-    *out = element;
-    return KOS_ITER_VALUE;
+    switch (KosEvalState_NextOrDefer(es, t->source,
+                                     &chain_resume_fetch_kind, t,
+                                     &t->cached_frame, &element)) {
+      case KOS_IREQ_DELIVERED:
+        *out = element;
+        return KOS_ITER_VALUE;
+      case KOS_IREQ_EXHAUSTED:
+        /* this source is spent; the chain is not until the series is */
+        Py_CLEAR(t->source);
+        continue;
+      case KOS_IREQ_CONTINUES:
+        t->busy = 1;
+        return KOS_ITER_INSTALLED_VALUE;
+      default:
+        return kos_transform_step_abort(es, t, pre_top);
+    }
   }
 }
 
@@ -333,7 +283,6 @@ static PyObject *chain_build(PyTypeObject *type, PyObject *series) {
     Py_DECREF(c);
     return NULL;
   }
-  c->series_sync = KosIter_CheckSync(c->series);
 
   /* One source is live at a time, so the arity-one view serves: the
      step fills the slot as it advances and close reaches whichever
