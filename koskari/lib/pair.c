@@ -138,7 +138,10 @@ PyTypeObject KosPairIteratorType = {
 typedef struct {
   PyObject_HEAD
   PyObject *current;
-  PyObject *seen;
+  PyObject *seen;        /* the cells already yielded, by address, when
+                            the spine loops; NULL for a spine the Floyd
+                            walk at creation found acyclic, whose cdr
+                            chain ends on its own */
   long just_items;
 } KosPairFollower;
 
@@ -886,31 +889,48 @@ static PyObject *pair_length(PyObject *self, PyObject *_noargs) {
 }
 
 
-static PyObject *pair_follow(PyObject *self, PyObject *_noargs) {
+/**
+   A follower over the spine from head. The cyclicity is decided once
+   here by the Floyd walk, so a follower over an acyclic spine, the
+   common case, keeps no record of the cells it has yielded and
+   allocates nothing per cell; only a looping spine gets the set the
+   step consults to stop at the first repeated cell.
+
+   :param head: the first cell
+   :param just_items: 1 to yield cars, 0 to yield the cells
+   :return: new follower, or NULL on error
+*/
+static PyObject *pair_follower_new(PyObject *head, long just_items) {
   KosPairFollower *i = PyObject_New(KosPairFollower, &KosPairFollowerType);
-  if(! i)
+  Py_ssize_t mu, lambda;
+
+  if (! i)
     return NULL;
 
-  Py_INCREF(self);
-  i->current = self;
-  i->seen = PySet_New(NULL);
-  i->just_items = 0;
+  Py_INCREF(head);
+  i->current = head;
+  i->seen = NULL;
+  i->just_items = just_items;
+
+  if (pair_spine_cycle(head, &mu, &lambda)) {
+    i->seen = PySet_New(NULL);
+    if (! i->seen) {
+      Py_DECREF(i);
+      return NULL;
+    }
+  }
 
   return (PyObject *) i;
 }
 
 
+static PyObject *pair_follow(PyObject *self, PyObject *_noargs) {
+  return pair_follower_new(self, 0);
+}
+
+
 static PyObject *pair_unpack(PyObject *self, PyObject *_noargs) {
-  KosPairFollower *i = PyObject_New(KosPairFollower, &KosPairFollowerType);
-  if(! i)
-    return NULL;
-
-  Py_INCREF(self);
-  i->current = self;
-  i->seen = PySet_New(NULL);
-  i->just_items = 1;
-
-  return (PyObject *) i;
+  return pair_follower_new(self, 1);
 }
 
 
