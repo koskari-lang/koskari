@@ -33,7 +33,6 @@ import-from os getcwd
 import-from os.path abspath basename dirname
 
 import-from .host version_line
-import-from .repl repl
 import-from ..importer source_for_stale_kio
 import-from ..lib ParamRef
 import-from ..module:
@@ -416,6 +415,9 @@ define run []:
     unless options.interactive:
       return 0
 
+  ; the session module is read and compiled only for a session: a
+  ; script, -c, -m and the kio options never reach it
+  import-from .repl repl
   (repl mod
     histfile: options.histfile
     full_trace: options.repl_full_trace
