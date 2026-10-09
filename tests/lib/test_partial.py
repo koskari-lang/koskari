@@ -260,6 +260,41 @@ class TestKosPartialPythonCall(unittest.TestCase):
         self.assertEqual(KosPartial(int, base=2)("10"), 2)
 
 
+    def test_bound_keyword_outlives_mutation_during_call(self):
+        """
+        A bound keyword value reaches the callee even when code the
+        callee runs first drops it from the live keywords dict: sorted
+        iterates its argument before it hands key on, and the iteration
+        rebinds the partial's only reference to the key function
+        """
+
+        kp = KosPartial(sorted, key=lambda v: -v)
+
+        class Source:
+            def __iter__(self):
+                kp.keywords['key'] = None
+                return iter([1, 3, 2])
+
+        self.assertEqual(kp(Source()), [3, 2, 1])
+
+
+    def test_bound_args_outlive_setstate_during_call(self):
+        """
+        Bound positionals reach the callee after code the callee runs
+        replaces the partial's state, which frees the old tuple
+        """
+
+        kp = KosPartial(max, [1, 5, 3], key=lambda v: v)
+
+        class Replace:
+            def __call__(self, v):
+                kp.__setstate__((max, (), {}, None))
+                return v
+
+        kp.keywords['key'] = Replace()
+        self.assertEqual(kp(), 5)
+
+
 class TestKosPartialDispatch(unittest.TestCase):
     """
     Calling a KosPartial from koskari bytecode routes through the install slot.

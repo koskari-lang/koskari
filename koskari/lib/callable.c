@@ -104,6 +104,8 @@ int KosArgSpread_Init(
   spread->nargs = nargs;
   spread->kwnames = NULL;
   spread->heap = NULL;
+  spread->nheld = 0;
+  spread->held_tuple = NULL;
 
   /* No keywords: the tuple's item array IS the vector. */
   if (! nkw) {
@@ -137,9 +139,11 @@ int KosArgSpread_Init(
     while (PyDict_Next(kwds_dict, &pos, &k, &v)) {
       Py_INCREF(k);
       PyTuple_SET_ITEM(spread->kwnames, i, k);
+      Py_INCREF(v);
       argv[nargs + i] = v;
       i++;
     }
+    spread->nheld = i;
   }
 
   spread->argv = argv;
@@ -168,6 +172,8 @@ int KosArgSpread_InitMerged(
   spread->nargs = npos;
   spread->kwnames = NULL;
   spread->heap = NULL;
+  spread->nheld = 0;
+  spread->held_tuple = NULL;
 
   /* Nothing bound: the call vector IS the vector. */
   if (! nb && ! nbk) {
@@ -210,6 +216,10 @@ int KosArgSpread_InitMerged(
     spread->heap = argv;
   }
 
+  if (nb) {
+    Py_INCREF(bound_args);
+    spread->held_tuple = bound_args;
+  }
   for (Py_ssize_t i = 0; i < nb; i++)
     argv[i] = PyTuple_GET_ITEM(bound_args, i);
   for (Py_ssize_t i = 0; i < nargs; i++)
@@ -228,7 +238,9 @@ int KosArgSpread_InitMerged(
   }
 
   /* The bound keywords head the names, in dict order; a call keyword
-     that names one replaces its value there, the rest append. */
+     that names one replaces its value there, the rest append. Every
+     keyword value is held, the replaced bound one released, so the
+     tail of nkw entries is one span to release. */
   names = PyTuple_New(nkw);
   if (! names)
     goto fail;
@@ -243,9 +255,11 @@ int KosArgSpread_InitMerged(
         goto not_str;
       Py_INCREF(k);
       PyTuple_SET_ITEM(names, i, k);
+      Py_INCREF(v);
       argv[npos + i] = v;
       i++;
     }
+    spread->nheld = i;
 
     for (Py_ssize_t j = 0; j < nck; j++) {
       Py_ssize_t at = -1;
@@ -258,14 +272,16 @@ int KosArgSpread_InitMerged(
           break;
         }
       }
+      Py_INCREF(v);
       if (at >= 0) {
-        argv[npos + at] = v;
+        Py_SETREF(argv[npos + at], v);
         continue;
       }
       Py_INCREF(k);
       PyTuple_SET_ITEM(names, tail, k);
       argv[npos + tail] = v;
       tail++;
+      spread->nheld = tail;
     }
   }
 
@@ -277,6 +293,9 @@ int KosArgSpread_InitMerged(
   PyErr_SetString(PyExc_TypeError, "keywords must be strings");
  fail:
   Py_XDECREF(names);
+  for (Py_ssize_t i = 0; i < spread->nheld; i++)
+    Py_DECREF(argv[npos + i]);
+  Py_CLEAR(spread->held_tuple);
   PyMem_Free(spread->heap);
   spread->heap = NULL;
   return -1;
@@ -285,6 +304,10 @@ int KosArgSpread_InitMerged(
 
 void KosArgSpread_Clear(KosArgSpread *spread) {
 
+  for (Py_ssize_t i = 0; i < spread->nheld; i++)
+    Py_DECREF(spread->argv[spread->nargs + i]);
+  spread->nheld = 0;
+  Py_CLEAR(spread->held_tuple);
   Py_CLEAR(spread->kwnames);
   PyMem_Free(spread->heap);
   spread->heap = NULL;

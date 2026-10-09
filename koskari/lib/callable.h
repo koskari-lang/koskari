@@ -121,9 +121,13 @@ static inline void KosCallShape_Clear(KosCallShape *shape) {
    A tuple of positionals and a dict of keywords spread into a
    vectorcall-shaped vector: argv holds the positionals then the
    keyword values, kwnames names the keywords (NULL when there are
-   none). Every argv entry is borrowed from the source tuple and dict,
-   which must outlive the spread. The spread holds no storage of its
-   own: a keyword vector goes in the caller's buffer when it fits,
+   none). The spread holds what the callee may otherwise lose under
+   it: a reference to each keyword value taken from a dict (the last
+   nheld entries of argv) and to a bound tuple, since code the callee
+   runs can reach a live keywords dict or a partial's __setstate__
+   and drop them before the callee consumes its arguments. Entries
+   taken from a call vector stay borrowed: the caller's frame holds
+   them. A keyword vector goes in the caller's buffer when it fits,
    else on the heap.
 */
 typedef struct {
@@ -131,6 +135,8 @@ typedef struct {
   Py_ssize_t nargs;
   PyObject *kwnames;
   PyObject **heap;
+  Py_ssize_t nheld;
+  PyObject *held_tuple;
 } KosArgSpread;
 
 
@@ -139,8 +145,8 @@ typedef struct {
    or empty). Without keywords argv borrows the tuple's item array and
    nothing is used or allocated. With keywords the vector goes in buf
    when nargs plus the keyword count fits bufcap, else on the heap; buf
-   may be NULL with bufcap 0. Returns 0, or -1 with PyErr set and
-   nothing left to clear.
+   may be NULL with bufcap 0, and the keyword values are held. Returns
+   0, or -1 with PyErr set and nothing left to clear.
 */
 int KosArgSpread_Init(
     KosArgSpread *spread,
@@ -158,8 +164,9 @@ int KosArgSpread_Init(
    replaces its value in place. With nothing bound argv borrows args
    itself and nothing is allocated. Otherwise the vector goes in buf
    when it fits bufcap, else on the heap; buf may be NULL with bufcap
-   0. Every argv entry is borrowed from its source, which must outlive
-   the spread. Names are matched by their text, so no Python code runs
+   0. The bound tuple and the keyword values taken from the bound dict
+   are held; entries from the call vector are borrowed from it. Names
+   are matched by their text, so no Python code runs
    inside the merge. A bound key that is not a str raises TypeError,
    and so does a call name when there are bound keywords to match it
    against. Returns 0, or -1 with PyErr set and nothing left to clear.
