@@ -28,6 +28,7 @@ Design notes: design/expressive-facets.md, section 3.
 
 
 import asyncio
+import-from asyncio sleep
 import time
 
 

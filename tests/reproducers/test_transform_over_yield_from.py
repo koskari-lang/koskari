@@ -43,6 +43,8 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
+import-from asyncio sleep
+
 define inner []:
   yield 1
   (sleep 0)

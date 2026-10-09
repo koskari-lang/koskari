@@ -8,6 +8,7 @@
 
 
 (import-from functools partial)
+(import-from asyncio sleep)
 (import-from koskari.lib defer demand)
 
 

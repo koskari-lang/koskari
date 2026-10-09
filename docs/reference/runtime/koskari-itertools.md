@@ -57,6 +57,7 @@ These combinators drive their source through the evaluator, so a
 suspending source works wherever the surrounding code can await it:
 
 ```koskari
+import-from asyncio sleep
 import-from koskari.itertools islice
 
 define slow-numbers []:

@@ -17,6 +17,7 @@ Takewhile shapes exercising koskari.itertools; imported by tests.itertools
 """
 
 
+import-from asyncio sleep
 import-from koskari.itertools takewhile
 
 

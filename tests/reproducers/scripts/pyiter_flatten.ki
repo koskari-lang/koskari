@@ -5,7 +5,11 @@
 ;; consumer's chain. The drive carries the consumer's own demand state.
 
 
+(import-from asyncio sleep)
+
+
 (define-parameter level 1)
+
 
 
 (define gen []

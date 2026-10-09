@@ -181,7 +181,8 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
             "generator",
             "(begin (define gen [] (for-each [x #[1 2 3]] (yield (* x 2))))"
             " (define out #[]) (for-each [v (gen)] (out.append v)) out)",
-            [2, 4, 6], x=999, v=999, out=999)
+            [2, 4, 6], prelude="(import-from asyncio sleep)",
+            x=999, v=999, out=999)
 
 
     async def test_async_generator_body(self):
@@ -190,7 +191,8 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
             "(begin (define gen [] (for-each [x #[1 2 3]]"
             " (sleep 0) (yield (* x 2))))"
             " (define out #[]) (for-each [v (gen)] (out.append v)) out)",
-            [2, 4, 6], x=999, v=999, out=999)
+            [2, 4, 6], prelude="(import-from asyncio sleep)",
+            x=999, v=999, out=999)
 
 
     async def test_class_name(self):

@@ -37,6 +37,8 @@ pytestmark = pytest.mark.phase_reproducers
 
 # The design doc's reproducer: siblings interleave mid-extent via sleeps.
 SLEEP_SRC = """
+import-from asyncio sleep
+
 define results #{}
 
 define worker [name delay]:
@@ -57,7 +59,7 @@ define outcome (main)
 # Deterministic interleave: an Event handshake forces B to bind and read
 # while A is suspended mid-extent, and A to resume only afterward.
 HANDSHAKE_SRC = """
-import-from asyncio Event
+import-from asyncio Event sleep
 
 define a-bound (Event)
 define b-done (Event)
@@ -132,7 +134,7 @@ FORK_SRC = """
 # A task dropped while suspended inside parameterize cannot disturb the
 # parent's view; its extent dies with its own context.
 DROP_SRC = """
-import-from asyncio Event
+import-from asyncio Event sleep
 
 define never (Event)
 

@@ -258,6 +258,7 @@ gets a coroutine.
 
 ```koskari
 (import asyncio)
+(import-from asyncio sleep)
 
 define-coroutine work [x]:
   (await (sleep 0.1))

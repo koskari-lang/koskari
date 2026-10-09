@@ -22,14 +22,12 @@ asyncio loops which specifically check for the Python coroutine type.
 """
 
 
-import asyncio
 import sys
 import warnings
 from functools import wraps
 from json import loads as _json_loads
-from subprocess import CalledProcessError
 
-from koskari.bootstrap import add_builtin, add_builtin_type, builtin
+from koskari.bootstrap import add_builtin_type, builtin
 
 
 __all__ = (
@@ -40,6 +38,23 @@ __all__ = (
     "run_process",
     "run_until_complete",
 )
+
+
+# the stdlib module this one fronts, imported on first use so a process
+# that never runs a loop never loads it or the sixty modules behind it
+stdlib_asyncio = None
+
+
+def load_asyncio():
+    """
+    The asyncio module, imported on the first call and kept
+    """
+
+    global stdlib_asyncio
+    if stdlib_asyncio is None:
+        import asyncio
+        stdlib_asyncio = asyncio
+    return stdlib_asyncio
 
 
 async def as_coroutine(awaitable):
@@ -80,6 +95,7 @@ def create_task(coro):
     a defer consumes it -- the Task owns its single shot.
     """
 
+    asyncio = load_asyncio()
     if not asyncio.iscoroutine(coro):
         coro = as_coroutine(coro)
     return asyncio.create_task(coro)
@@ -97,6 +113,7 @@ def run_until_complete(loop, coro):
     :returns: The result of the coroutine.
     """
 
+    asyncio = load_asyncio()
     if not asyncio.iscoroutine(coro):
         coro = as_coroutine(coro)
 
@@ -124,6 +141,7 @@ def _default_loop():
     before one is made
     """
 
+    asyncio = load_asyncio()
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
@@ -140,9 +158,6 @@ def _default_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     return loop
-
-
-add_builtin("sleep", asyncio.sleep)
 
 
 class ProcessResult:
@@ -229,6 +244,7 @@ class ProcessResult:
         """
 
         if self.returncode:
+            from subprocess import CalledProcessError
             raise CalledProcessError(
                 self.returncode, self.args,
                 output=self.stdout, stderr=self.stderr)
@@ -249,6 +265,7 @@ async def run_process(*args):
     handling.
     """
 
+    asyncio = load_asyncio()
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,

@@ -5,6 +5,9 @@
 ;; takes the same path. async_init is injected by the test.
 
 
+import-from asyncio sleep
+
+
 define-class Counter []:
 
     define __init__ [self n]:
