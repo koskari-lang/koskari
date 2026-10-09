@@ -114,6 +114,12 @@ static PyObject *build_flags_new(void) {
 /* === module lifecycle === */
 
 
+/* The statics have been cleared since the last init: set before the
+   unit clears run, so a clear that failed partway is not repeated
+   either, and reset by koskari_lib_init. */
+static int lib_cleared = 0;
+
+
 int koskari_lib_init(PyObject *mod) {
   if (! mod)
     return -1;
@@ -122,6 +128,7 @@ int koskari_lib_init(PyObject *mod) {
   if (! dict)
     return -1;
 
+  lib_cleared = 0;
   kos_trace_init();
 
   {
@@ -179,12 +186,12 @@ int koskari_lib_init(PyObject *mod) {
    subinterpreter runs PyInit_lib again over them: the guarded unit
    inits rebuild only what a clear emptied, and the newcomer shares the
    statics without taking them over. Only the owner's teardown, through
-   m_clear on a cycle or m_free on a plain dealloc, clears them. A host
-   that fills a module of its own, as the native test harness does,
-   names no owner and clears as it always did. Borrowed: the owner is
-   the module being cleared. */
+   m_clear on a cycle or m_free on a plain dealloc, clears them; on a
+   cycle both slots run, and the second call is a no-op. A host that
+   fills a module of its own, as the native test harness does, names
+   no owner and clears as it always did. Borrowed: the owner is the
+   module being cleared. */
 static PyObject *lib_owner = NULL;
-
 
 int koskari_lib_clear(PyObject *mod) {
   if (! mod)
@@ -192,6 +199,9 @@ int koskari_lib_clear(PyObject *mod) {
 
   if (lib_owner && mod != lib_owner)
     return 0;
+  if (lib_cleared)
+    return 0;
+  lib_cleared = 1;
   lib_owner = NULL;
 
   PyObject *const dict = PyModule_GetDict(mod);

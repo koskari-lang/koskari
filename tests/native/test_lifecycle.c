@@ -57,6 +57,12 @@ static int test_lifecycle_init_clear_init(void) {
   TEST_ASSERT_EQ(koskari_lib_clear(mod), 0, "clear");
   TEST_ASSERT_NULL(PyDict_GetItemString(PyModule_GetDict(mod), "symbol"),
                    "clear emptied the module dict");
+
+  /* a cyclic teardown runs m_clear and then m_free: the second clear
+     on the same module is a no-op */
+  TEST_ASSERT_EQ(koskari_lib_clear(mod), 0, "a second clear");
+  TEST_ASSERT_NULL(PyDict_GetItemString(PyModule_GetDict(mod), "symbol"),
+                   "the module dict stays empty");
   Py_DECREF(mod);
 
   /* a re-import makes a new module object and runs the init over it */
