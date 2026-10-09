@@ -78,6 +78,19 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
   if (unlikely(! fn))
     RESULT_RAISE();
 
+  /* __module__ is the name of the module the function is built in,
+     recorded here as CPython records a function's globals' __name__:
+     the root of the namespace chain, when it is a module's namespace,
+     whose name is what the module answers as __name__. A function
+     built over a bare namespace has none. */
+  {
+    PyObject *root = parent_ns;
+    while (! KosModuleNamespace_CheckExact(root) && KosNamespace_PARENT(root))
+      root = KosNamespace_PARENT(root);
+    if (KosModuleNamespace_CheckExact(root))
+      ((KosFunction *) fn)->module_override = Py_NewRef(KosNamespace_NAME(root));
+  }
+
   RESULT_STEAL(es, fn);
 }
 

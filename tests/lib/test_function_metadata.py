@@ -28,11 +28,14 @@ methods.
 
 import asyncio
 import functools
+import inspect
+import pydoc
+import sys
 import unittest
 
 import pytest
 
-from koskari.lib import FormalsSpec
+from koskari.lib import FormalsSpec, demand
 from koskari.module import load_module_source_async, new_module
 from tests.lib.test_expression_function import build_expr
 
@@ -208,6 +211,59 @@ CLOSURE_SRC = """
   mk))
 (define g (lambda [flag] (when flag (define y 5)) y))
 """
+
+
+MODULE_SRC = """
+(define top [x] x)
+
+(define-class Holder []
+  (define method [self] self))
+
+(define outer []
+  (lambda [y] y))
+"""
+
+
+class TestFunctionModule(unittest.TestCase):
+    """
+    A function built while a module loads carries that module's name
+    as __module__, so inspect finds the module and pydoc lists the
+    function without an __all__
+    """
+
+    def load(self):
+        async def go():
+            mod = new_module("function_module_case", system=True)
+            vars(mod)["__file__"] = "<function_module_case>"
+            await load_module_source_async(mod, MODULE_SRC, layout=False)
+            v = vars(mod)
+            inner = await v["outer"]()
+            return mod, v, inner
+        try:
+            return asyncio.run(go())
+        finally:
+            self.addCleanup(sys.modules.pop, "function_module_case", None)
+
+    def test_top_level_function_names_its_module(self):
+        mod, v, inner = self.load()
+        self.assertEqual("function_module_case", v["top"].__module__)
+        self.assertIs(mod, inspect.getmodule(v["top"]))
+
+    def test_method_and_nested_lambda_name_the_module(self):
+        mod, v, inner = self.load()
+        self.assertEqual("function_module_case", v["Holder"].method.__module__)
+        self.assertEqual("function_module_case", inner.__module__)
+
+    def test_demand_wrapper_relays_the_module(self):
+        mod, v, inner = self.load()
+        self.assertEqual("function_module_case", demand(v["top"]).__module__)
+
+    def test_pydoc_lists_the_function_without_an_all(self):
+        mod, v, inner = self.load()
+        self.assertNotIn("__all__", vars(mod))
+        text = pydoc.render_doc(mod, renderer=pydoc.plaintext)
+        self.assertIn("FUNCTIONS", text)
+        self.assertIn("top(x)", text)
 
 
 class TestFunctionClosures(unittest.TestCase):
