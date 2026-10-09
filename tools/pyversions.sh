@@ -42,7 +42,8 @@ for ver in $VERSIONS; do
 
   echo "=== Running tests for Python $ver ==="
   # echo "$ENGINE" run -t --rm -v "$REPO_ROOT:/src:z" "$tag" "${EXTRA_RUN_ARGS[@]}"
-  "$ENGINE" run -t --rm -v "$REPO_ROOT:/src:z" "$tag" "${EXTRA_RUN_ARGS[@]}"
+  "$ENGINE" run -it --rm -v "$REPO_ROOT:/src:z" "$tag" "${EXTRA_RUN_ARGS[@]}"
 done
+
 
 # The end.
