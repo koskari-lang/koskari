@@ -774,6 +774,11 @@ static PyObject *stepper_send(PyObject *self, PyObject *value) {
     return NULL;
   }
 
+  /* A spent awaitable refuses from the state it was primed with,
+     before a send could overwrite it. */
+  if (! st->provider)
+    return stepper_iternext(self);
+
   if (! st->started) {
     if (st->is_throw) {
       if (value && value != Py_None) {
@@ -846,8 +851,26 @@ static PySendResult stepper_am_send(
     *result = res;
     return PYGEN_NEXT;
   }
-  *result = ret;
-  return ret ? PYGEN_RETURN : PYGEN_ERROR;
+  if (ret) {
+    *result = ret;
+    return PYGEN_RETURN;
+  }
+
+  /* A step that completed by raising StopIteration, as an athrow or
+     aclose awaitable does, is a return to a send-slot caller: the
+     slot's contract reports the value, never the exception, which a
+     coroutine awaiting through this slot would otherwise turn into
+     "coroutine raised StopIteration". */
+  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    if (PyGen_FetchStopIterationValue(&ret) < 0) {
+      *result = NULL;
+      return PYGEN_ERROR;
+    }
+    *result = ret;
+    return PYGEN_RETURN;
+  }
+  *result = NULL;
+  return PYGEN_ERROR;
 }
 #endif
 
