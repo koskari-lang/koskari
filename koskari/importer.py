@@ -24,8 +24,7 @@ kio files via Python's importlib machinery.
 
 import importlib.util
 import sys
-from importlib.abc import FileLoader
-from importlib.machinery import FileFinder, PathFinder
+from importlib.machinery import FileFinder, PathFinder, SourceFileLoader
 from os import getcwd, stat
 from os.path import basename, exists
 
@@ -120,9 +119,13 @@ def source_for_stale_kio(kio_path):
     return None
 
 
-class KoskariSourceFileLoader(FileLoader):
+class KoskariSourceFileLoader(SourceFileLoader):
     """
-    FileLoader for .ki source files and precompiled .kio artifacts.
+    Loader for .ki source files and precompiled .kio artifacts, on the
+    machinery's source loader for its file access; the base is also
+    the abc's FileLoader, which this module does not import, since
+    importlib.abc pulls in importlib.resources and seventy modules
+    behind it at every interpreter start the .pth triggers.
 
     exec_module uses exec_module_demand by default (demand path).
     """
