@@ -148,10 +148,19 @@ class TestBuildTupleSpecial(SpecialsTestCase):
         self.assertEqual((1, 99, 2), await expr())
 
 
-    async def test_tuple_mixed_runs_emits_combine(self):
-        code = self.compile_to_code("(#tuple 1 x 2)", x=99)
+    async def test_tuple_mixed_runs_emits_one_build_args(self):
+        """
+        Constants and expressions are pushed in order and built once;
+        no run is pooled as a tuple and nothing is combined
+        """
+
+        # bound rather than returned, since a built return folds into
+        # one RETURN of the pushed values
+        code = self.compile_to_code(
+            "(begin (define t (#tuple 1 x 2)) t)", x=99)
         ops = _opcodes(code)
-        self.assertIn(OpCode.COMBINE_ARGS, ops)
+        self.assertEqual(1, ops.count(OpCode.BUILD_ARGS))
+        self.assertNotIn(OpCode.COMBINE_ARGS, ops)
 
 
 class TestCollectionSplat(SpecialsTestCase):

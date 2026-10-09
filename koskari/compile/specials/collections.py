@@ -41,9 +41,12 @@ def special_build_tuple(compiler, source):
     """
     Build a Python tuple from evaluated elements.
 
-    Contiguous constant elements fold into a single pooled tuple; the tuple
-    is assembled with COMBINE_ARGS only when constant runs and dynamic
-    expressions are interleaved. An all-constant literal reduces to one CONST.
+    An all-constant literal reduces to one pooled CONST. A literal of
+    constants and expressions pushes every element in order, each
+    constant as its own CONST (the peephole folds a run into one
+    instruction), and builds once with BUILD_ARGS. Only a splat, whose
+    length the compiler cannot know, assembles the tuple with
+    COMBINE_ARGS over the chunks.
     """
 
     called_by, body = source
@@ -63,6 +66,23 @@ def special_build_tuple(compiler, source):
     frag.position_of(body)
     chunks = partition_collection_runs(compiler, args_seq)
 
+    if len(chunks) == 1 and chunks[0][0] == "const":
+        frag.instruction(OpCode.CONST, chunks[0][1])
+        return frag
+
+    if not any(kind == "splat" for kind, _ in chunks):
+        count = 0
+        for kind, data in chunks:
+            if kind == "const":
+                for value in data:
+                    frag.instruction(OpCode.CONST, value)
+            else:
+                for elem in data:
+                    frag.merge(elem)
+            count += len(data)
+        frag.instruction(OpCode.BUILD_ARGS, count)
+        return frag
+
     for kind, data in chunks:
         if kind == "const":
             frag.instruction(OpCode.CONST, data)
@@ -74,12 +94,8 @@ def special_build_tuple(compiler, source):
             frag.instruction(OpCode.BUILD_ARGS, len(data))
 
     # A lone splat leaves the raw iterable on the stack; COMBINE_ARGS coerces
-    # it to a fresh tuple. Multiple chunks always combine. A single const or
-    # expr chunk is already a tuple.
-    needs_combine = (len(chunks) > 1
-                     or (len(chunks) == 1 and chunks[0][0] == "splat"))
-    if needs_combine:
-        frag.instruction(OpCode.COMBINE_ARGS, len(chunks))
+    # it to a fresh tuple. Several chunks around a splat always combine.
+    frag.instruction(OpCode.COMBINE_ARGS, len(chunks))
 
     return frag
 
