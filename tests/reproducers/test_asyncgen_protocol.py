@@ -822,8 +822,12 @@ class TestAwaitableSendParity(unittest.IsolatedAsyncioTestCase):
 
     def test_non_none_send_to_athrow_is_refused(self):
         def scenario(agen):
-            return [step(agen.asend(None)),
-                    step(agen.athrow(ValueError("v")), 1)]
+            first = step(agen.asend(None))
+            refused = agen.athrow(ValueError("v"))
+            try:
+                return [first, step(refused, 1)]
+            finally:
+                refused.close()
 
         self.parity(p_catches(), "g-catches", scenario)
 
