@@ -16,7 +16,7 @@ koskari.compile.specials.variables
 
 Special form handlers for compile/setq, compile/setq-values,
 compile/define-values, compile/delq, compile/define, compile/var,
-compile/global, compile/globals, and compile/locals.
+compile/global, and compile/globals.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -361,18 +361,6 @@ def special_globals(compiler, called_by):
 
     frag = compiler.fragment(called_by.datum)
     frag.instruction(OpCode.GLOBALS, 0)
-    return frag
-
-
-@builtin("compile/locals")
-@special("compile/locals", patterns=_NOARG_PATTERNS, unpack="kwargs")
-def special_locals(compiler, called_by):
-    """
-    Compile (compile/locals). Push the current frame namespace (locals)
-    """
-
-    frag = compiler.fragment(called_by.datum)
-    frag.instruction(OpCode.LOCALS, 0)
     return frag
 
 

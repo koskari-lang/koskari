@@ -64,7 +64,7 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
 
     async def test_evaluate_macro_one_argument(self):
         """
-        (evaluate form) compiles and runs the form in (locals)
+        (evaluate form) compiles and runs the form in (vars)
         """
 
         expr, _mod = self.compile_expr("(evaluate (+ 1 2))")
@@ -77,7 +77,7 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         """
 
         src_str = """
-        (evaluate (+ x 2) (locals))
+        (evaluate (+ x 2) (vars))
         """
         expr, _mod = self.compile_expr(src_str, x=40)
         self.assertEqual(await expr(), 42)
@@ -89,7 +89,7 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         """
 
         src_str = """
-        (call evaluate '(* 6 7) (locals))
+        (call evaluate '(* 6 7) (vars))
         """
         expr, _mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 42)
@@ -101,7 +101,7 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         """
 
         src_str = """
-        (call evaluate (attr (compileq (* 6 7)) code) (locals))
+        (call evaluate (attr (compileq (* 6 7)) code) (vars))
         """
         expr, _mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 42)
@@ -113,7 +113,7 @@ class TestEvaluate(unittest.IsolatedAsyncioTestCase):
         """
 
         src_str = """
-        (call evaluate (compileq (* 6 7)) (locals))
+        (call evaluate (compileq (* 6 7)) (vars))
         """
         expr, _mod = self.compile_expr(src_str)
         self.assertEqual(await expr(), 42)

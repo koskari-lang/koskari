@@ -1390,6 +1390,98 @@ static PyObject *ns_valued(PyObject *self, enum ns_valued_mode mode) {
 }
 
 
+/**
+  The repr of every namespace kind: the type, the name, the parent by
+  name only, and NAME=VALUE for each declared name. A name with no
+  value shows as <unbound>, and a Ref slot shows its value.
+*/
+static PyObject *ns_repr(PyObject *self) {
+  PyObject *names = NULL;
+  PyObject *parts = NULL;
+  PyObject *sep = NULL;
+  PyObject *body = NULL;
+  PyObject *result = NULL;
+
+  // the type's own name, without the module a static type carries
+  const char *tname = Py_TYPE(self)->tp_name;
+  const char *dot = strrchr(tname, '.');
+  if (dot)
+    tname = dot + 1;
+
+  int busy = Py_ReprEnter(self);
+  if (busy != 0)
+    return busy > 0
+        ? PyUnicode_FromFormat("<%s ...>", tname)
+        : NULL;
+
+  // the scope's own names, not the captures sharing its slots
+  names = ns_declared_names(self, 1);
+  if (! names)
+    goto done;
+
+  parts = PyList_New(0);
+  if (! parts)
+    goto done;
+
+  Py_ssize_t count = PyList_GET_SIZE(names);
+  for (Py_ssize_t i = 0; i < count; i++) {
+    PyObject *key = PyList_GET_ITEM(names, i);
+    PyObject *val = ns_deref_symbol(self, key);
+    PyObject *item;
+
+    if (val) {
+      item = PyUnicode_FromFormat("%S=%R", key, val);
+      Py_DECREF(val);
+
+    } else if (PyErr_ExceptionMatches(PyExc_NameError)) {
+      PyErr_Clear();
+      item = PyUnicode_FromFormat("%S=<unbound>", key);
+
+    } else {
+      goto done;
+    }
+
+    if (! item)
+      goto done;
+
+    int res = PyList_Append(parts, item);
+    Py_DECREF(item);
+    if (res < 0)
+      goto done;
+  }
+
+  sep = PyUnicode_FromString(" ");
+  if (! sep)
+    goto done;
+
+  body = PyUnicode_Join(sep, parts);
+  if (! body)
+    goto done;
+
+  PyObject *name = KosNamespace_NAME(self);
+  PyObject *parent = KosNamespace_PARENT(self);
+  PyObject *pname = parent ? KosNamespace_NAME(parent) : NULL;
+  const char *colon = PyUnicode_GET_LENGTH(body) ? ": " : "";
+
+  if (pname)
+    result = PyUnicode_FromFormat(
+        "<%s %S in %S%s%U>", tname,
+        name ? name : Py_None, pname, colon, body);
+  else
+    result = PyUnicode_FromFormat(
+        "<%s %S%s%U>", tname,
+        name ? name : Py_None, colon, body);
+
+ done:
+  Py_XDECREF(names);
+  Py_XDECREF(parts);
+  Py_XDECREF(sep);
+  Py_XDECREF(body);
+  Py_ReprLeave(self);
+  return result;
+}
+
+
 /* Tier 3 read for the mapping protocol. Returns the value, or NULL
    with NameError set when the name is outside the mapping, unbound, or
    empty; other lookup errors pass through. */
@@ -2213,6 +2305,7 @@ PyTypeObject KosNamespaceType = {
   sizeof(KosNamespace),
   sizeof(PyObject *),
 
+  .tp_repr = ns_repr,
   .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_free = PyObject_GC_Del,
   .tp_methods = ns_methods,
@@ -2860,11 +2953,6 @@ static PyObject *mdl_ns_richcompare(PyObject *self, PyObject *other, int op) {
 }
 
 
-static PyObject *mdl_ns_repr(PyObject *self) {
-  return PyBaseObject_Type.tp_repr(self);
-}
-
-
 /* The dict methods exec'd code and the stdlib reach on a globals dict,
    answered through the module's bindings rather than the scratch
    storage dict's own versions would read or write. */
@@ -3225,7 +3313,7 @@ PyTypeObject KosModuleNamespaceType = {
   .tp_iter = ns_mapping_iter,
   .tp_hash = mdl_ns_hash,
   .tp_richcompare = mdl_ns_richcompare,
-  .tp_repr = mdl_ns_repr,
+  .tp_repr = ns_repr,
   .tp_new = mdl_ns_new,
   .tp_init = mdl_ns_init,
   .tp_dealloc = mdl_ns_dealloc,

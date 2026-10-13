@@ -66,3 +66,18 @@ tags:
   - invalid
   - module-global
 notes: "one scope cannot declare a name with var and with global. corrective: (def ok [] (global q 2)) to store at the module, or (def ok [] (var q 1) (set! q 2)) for a local"
+---
+id: runtime-koskari-vars-no-dict-invalid-001
+feature: runtime/koskari-vars
+source: (koskari-vars 5)
+verify:
+  read: (koskari-vars 5)
+  invalid: "an int has no __dict__, so koskari-vars raises TypeError: koskari-vars() argument must have __dict__ attribute"
+references:
+  - reference/runtime/koskari-vars.md
+stability: evolving
+tags:
+  - runtime
+  - koskari-vars
+  - invalid
+notes: "corrective: pass an object that carries a __dict__, such as a class instance, or call (koskari-vars) with no argument for the current namespace"

@@ -52,7 +52,7 @@ syntax get-compiler:
     case (get-compiler ns):
       (call get-compiler ns)
     case (get-compiler):
-      (call get-compiler (locals))
+      (call get-compiler (vars))
 
 
 let []:
@@ -212,7 +212,7 @@ syntax evaluate:
     case (evaluate form ns):
       (call evaluate form ns)
     case (evaluate form):
-      (call evaluate form (locals))
+      (call evaluate form (vars))
 
 
 syntax compileq:
@@ -220,7 +220,7 @@ syntax compileq:
     case (compileq form ns):
       (call compile (quote form) ns)
     case (compileq form):
-      (call compile (quote form) (locals))
+      (call compile (quote form) (vars))
 
 
 syntax inline-macro:

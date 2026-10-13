@@ -1580,3 +1580,77 @@ tags:
   - module-global
   - metaprogramming
 notes: global syntax inside a function body binds the transformer as compile/twice in the module
+---
+id: runtime-koskari-vars-function-001
+feature: runtime/koskari-vars
+source: (item (call (lambda [n] (koskari-vars)) 7) "n")
+verify:
+  eval: "7"
+references:
+  - reference/runtime/koskari-vars.md
+stability: evolving
+tags:
+  - runtime
+  - koskari-vars
+  - namespace
+  - name-resolution
+notes: called with no argument koskari-vars returns the calling frame's namespace, here the lambda's, holding n
+---
+id: runtime-koskari-vars-tail-position-002
+feature: runtime/koskari-vars
+source: (begin (def g [n] (var twice (* n 2)) (koskari-vars)) (item (g 4) "twice"))
+verify:
+  eval: "8"
+references:
+  - reference/runtime/koskari-vars.md
+stability: evolving
+tags:
+  - runtime
+  - koskari-vars
+  - namespace
+  - local-binding
+notes: the koskari-vars call is in tail position in g, and still returns g's namespace rather than the caller's
+---
+id: runtime-koskari-vars-object-003
+feature: runtime/koskari-vars
+source: (item (koskari-vars obj) "value")
+verify:
+  eval: "99"
+references:
+  - reference/runtime/koskari-vars.md
+stability: evolving
+tags:
+  - runtime
+  - koskari-vars
+  - object
+notes: with an argument koskari-vars returns the object's __dict__; obj fixture has value=99
+---
+id: runtime-koskari-vars-apply-004
+feature: runtime/koskari-vars
+source: "(begin (def h [n] (apply koskari-vars #[])) (item (h 3) \"n\"))"
+verify:
+  eval: "3"
+references:
+  - reference/runtime/koskari-vars.md
+stability: evolving
+tags:
+  - runtime
+  - koskari-vars
+  - namespace
+  - higher-order
+notes: invoked through apply with no arguments, koskari-vars still returns the namespace of h
+---
+id: runtime-koskari-vars-callback-005
+feature: runtime/koskari-vars
+source: "(list (map (lambda [x] (item (koskari-vars) \"x\")) #[1 2 3]))"
+verify:
+  eval: list:[1,2,3]
+references:
+  - reference/runtime/koskari-vars.md
+stability: evolving
+tags:
+  - runtime
+  - koskari-vars
+  - namespace
+  - higher-order
+notes: inside a callback run by map, koskari-vars sees the lambda's own frame on each call

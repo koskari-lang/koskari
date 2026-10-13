@@ -1000,12 +1000,25 @@ def special_dir(compiler, called_by, obj):
     return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_DIR)
 
 
+_VARS_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+    MATCH(CALLEDBY("called_by"), VALUE("obj")),
+]
+
+
 @builtin("compile/vars")
-@special("compile/vars", patterns=_UNARY_PATTERNS, unpack="kwargs")
-def special_vars(compiler, called_by, obj):
+@special("compile/vars", patterns=_VARS_PATTERNS, unpack="kwargs")
+def special_vars(compiler, called_by, obj=None):
     """
-    Compile (compile/vars OBJ). Attribute dict via __dict__
+    Compile (compile/vars) or (compile/vars OBJ). With no operand,
+    push the current frame namespace; with one, the attribute dict via
+    __dict__
     """
+
+    if obj is None:
+        frag = compiler.fragment(called_by.datum)
+        frag.instruction(OpCode.LOCALS, 0)
+        return frag
 
     return emit_unary_op(compiler, called_by, obj, OpCode.OBJECT_VARS)
 

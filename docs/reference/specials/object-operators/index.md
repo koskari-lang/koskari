@@ -113,7 +113,7 @@ operator's runtime binding, which folds the same way.
 | `len` | `OBJECT_LEN` | Length through `__len__` | `(len #[1 2 3])` -> `3` |
 | `type` | `OBJECT_TYPE` | The operand's type | `(type 42)` -> `<class 'int'>` |
 | `dir` | `OBJECT_DIR` | The attribute name list | `(in "append" (dir #[]))` -> `True` |
-| `vars` | `OBJECT_VARS` | The instance `__dict__` | `(vars obj)` -> `#{"x": 1}` |
+| [`vars`](../compile-vars.md) | `OBJECT_VARS`, `LOCALS` | The instance `__dict__`; with no operand, the current namespace | `(vars obj)` -> `#{"x": 1}` |
 | `iter` | `OBJECT_ITER` | An iterator over the operand | `(iter #[1 2 3])` |
 | `next` | `OBJECT_NEXT` | The next value from an iterator, with an optional default | `(next it)` -> `1` |
 

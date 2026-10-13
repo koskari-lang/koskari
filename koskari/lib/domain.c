@@ -1537,6 +1537,130 @@ static PyMethodDef domain_methods[] = {
 };
 
 
+/* === koskari-vars === */
+
+
+/**
+  The koskari_vars callable. It is a KosCallable, so a call from
+  Koskari runs its install with the caller's frame still current, in
+  tail position too, and reads that frame's namespace. A call from
+  Python reads the namespace of the frame running in the current
+  context's active evaluation. With an object, either answers the
+  object's __dict__, as Python's vars does.
+*/
+typedef struct KosVarsCallable {
+  PyObject_HEAD
+  vectorcallfunc vectorcall;
+} KosVarsCallable;
+
+
+static int vars_check_args(Py_ssize_t nargs, PyObject *kwnames) {
+  if (kwnames && PyTuple_GET_SIZE(kwnames)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "koskari-vars() takes no keyword arguments");
+    return -1;
+  }
+
+  if (nargs > 1) {
+    PyErr_Format(PyExc_TypeError,
+                 "koskari-vars() takes at most 1 argument (%zd given)",
+                 nargs);
+    return -1;
+  }
+
+  return 0;
+}
+
+
+static PyObject *vars_of(PyObject *obj) {
+  PyObject *dict = PyObject_GetAttrString(obj, "__dict__");
+  if (! dict && PyErr_ExceptionMatches(PyExc_AttributeError)) {
+    PyErr_Clear();
+    PyErr_SetString(PyExc_TypeError,
+                    "koskari-vars() argument must have __dict__ attribute");
+  }
+  return dict;
+}
+
+
+static PyObject *vars_of_eval(KosEvalState *es) {
+  if (! es || ! KosEvalState_NAMESPACE(es)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "koskari-vars() without an argument outside a running"
+                    " evaluation");
+    return NULL;
+  }
+  return KosEvalState_RevealNamespace(es);
+}
+
+
+static KosOpResult vars_kos_vinstall(
+    KosEvalState *es,
+    PyObject *callable,
+    PyObject *const *args,
+    Py_ssize_t nargs,
+    PyObject *kwnames,
+    int tail_call) {
+
+  (void) callable;
+  (void) tail_call;
+
+  if (vars_check_args(nargs, kwnames) < 0)
+    return EVAL_RAISE();
+
+  PyObject *result = nargs ? vars_of(args[0]) : vars_of_eval(es);
+  return result ? EVAL_RETURN(result) : EVAL_RAISE();
+}
+
+
+static PyObject *vars_vectorcall(
+    PyObject *callable,
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
+
+  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+
+  (void) callable;
+  if (vars_check_args(nargs, kwnames) < 0)
+    return NULL;
+
+  if (nargs)
+    return vars_of(args[0]);
+  return vars_of_eval(kos_tls_active_eval_for_ctx(kos_ctx_current()));
+}
+
+
+static PyObject *vars_repr(PyObject *self) {
+  (void) self;
+  return PyUnicode_FromString("<built-in function koskari-vars>");
+}
+
+
+static KosEvaluatedTypeObject KosVarsCallableType = {
+  .type = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  .tp_name = "koskari.lib.koskari_vars",
+  .tp_basicsize = sizeof(KosVarsCallable),
+  .tp_itemsize = 0,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_VECTORCALL,
+  .tp_doc = "koskari_vars(obj=...) => dict or namespace\n"
+  "With an object, its __dict__. With no argument, the namespace of the\n"
+  "calling frame.",
+  .tp_call = PyVectorcall_Call,
+  .tp_vectorcall_offset = offsetof(KosVarsCallable, vectorcall),
+  .tp_repr = vars_repr,
+  .tp_base = KOS_EVALUATED_PYTYPE(KosEvaluatedType),
+  },
+  .kos_call = {
+  .kc_vinstall = vars_kos_vinstall,
+  .kc_pycall = NULL,
+  .kc_pyvectorcall = vars_vectorcall,
+  },
+};
+
+
 static PyMethodDef domain_mod_methods[] = {
   { "parameter", (PyCFunction) m_parameter, METH_VARARGS,
     "parameter(name, default=...) => value\n"
@@ -1636,6 +1760,20 @@ int koskari_domain_init(PyObject *mod) {
   domain_scope_var = PyContextVar_New("koskari.domain", Py_None);
   if (! domain_scope_var)
     return -1;
+
+  if (PyType_Ready(KOS_EVALUATED_PYTYPE(KosVarsCallableType)) < 0)
+    return -1;
+
+  KosVarsCallable *kvars = PyObject_New(
+      KosVarsCallable, KOS_EVALUATED_PYTYPE(KosVarsCallableType));
+  if (! kvars)
+    return -1;
+
+  kvars->vectorcall = vars_vectorcall;
+  if (PyModule_AddObject(mod, "koskari_vars", (PyObject *) kvars) < 0) {
+    Py_DECREF(kvars);
+    return -1;
+  }
 
   for (PyMethodDef *mdef = domain_mod_methods; mdef->ml_name; mdef++) {
     PyObject *func = PyCFunction_New(mdef, mod);

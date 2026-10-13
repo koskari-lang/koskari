@@ -478,21 +478,21 @@ tags:
   - namespace
 notes: returns the module namespace; eval produces a ModuleNamespace object (not auto-encodable)
 ---
-id: special-locals-001
-feature: special/compile/locals
+id: special-vars-scope-001
+feature: special/compile/vars
 source: |-
-  (locals)
+  (vars)
   
 verify:
-  read: (locals)
-  expand: (locals)
+  read: (vars)
+  expand: (vars)
 references:
-  - reference/specials/compile-locals.md
+  - reference/specials/compile-vars.md
 stability: evolving
 tags:
   - special
   - namespace
-notes: returns the current frame namespace; eval produces a Namespace object (not auto-encodable)
+notes: with no operand vars returns the current scope's namespace; at module scope that is the ModuleNamespace (not auto-encodable)
 ---
 id: special-call-cc-invoke-002
 feature: special/compile/call/cc
@@ -632,39 +632,39 @@ tags:
   - namespace
 notes: compile/globals returns a ModuleNamespace; type/str confirms the runtime type
 ---
-id: special-locals-item-002
-feature: special/compile/locals
+id: special-vars-scope-item-002
+feature: special/compile/vars
 source: |-
-  (let [[x 5]] (item (locals) "x"))
+  (let [[x 5]] (item (vars) "x"))
   
 verify:
-  read: (let ((x 5)) (item (locals) "x"))
-  expand: (let ((x 5)) (item (locals) "x"))
+  read: (let ((x 5)) (item (vars) "x"))
+  expand: (let ((x 5)) (item (vars) "x"))
   eval: "5"
 references:
-  - reference/specials/compile-locals.md
+  - reference/specials/compile-vars.md
 stability: evolving
 tags:
   - special
   - namespace
 notes: item access on local namespace inside a let frame; reads back x=5
 ---
-id: special-locals-module-scope-003
-feature: special/compile/locals
+id: special-vars-module-scope-003
+feature: special/compile/vars
 source: |-
-  (item (locals) "z")
+  (item (vars) "z")
   
 verify:
-  read: (item (locals) "z")
-  expand: (item (locals) "z")
+  read: (item (vars) "z")
+  expand: (item (vars) "z")
   eval: "1"
 references:
-  - reference/specials/compile-locals.md
+  - reference/specials/compile-vars.md
 stability: evolving
 tags:
   - special
   - namespace
-notes: at module scope compile/locals is the module namespace; reads z=1 fixture
+notes: at module scope (vars) is the module namespace; reads z=1 fixture
 ---
 id: special-cdr-quoted-001
 feature: special/compile/cdr
@@ -1966,3 +1966,46 @@ tags:
   - metaprogramming
   - hygiene
 notes: "Repeating -' nests: a macro-generating template writes -'-'name, the outer expansion emits the raw (datumq name) into the inner template, and the inner expansion writes the raw name"
+---
+id: special-vars-function-scope-004
+feature: special/compile/vars
+source: (begin (def f1 [a] (var scale 2) (vars)) (item (f1 10) "scale"))
+verify:
+  eval: "2"
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - namespace
+  - local-binding
+  - name-resolution
+notes: inside a function body (vars) is that call's namespace, holding the parameter a and the var-declared scale
+---
+id: special-vars-instance-dict-005
+feature: special/compile/vars
+source: (begin (class Point [] (def __init__ [self x] (set-attr self x x))) (vars (Point 3)))
+verify:
+  eval: "{\"x\": 3}"
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - object
+  - namespace
+notes: with one operand vars is the object's __dict__; the instance carries only x
+---
+id: special-vars-namespace-repr-006
+feature: special/compile/vars
+source: (begin (def f1 [a] (var scale 2) (vars)) (repr (f1 1)))
+verify:
+  eval: '"<Namespace f1 in corpus.test: a=1 scale=2>"'
+references:
+  - reference/specials/compile-vars.md
+stability: evolving
+tags:
+  - special
+  - namespace
+  - local-binding
+notes: a namespace repr names the function, the enclosing module (corpus.test under the corpus harness), then name=value for each of the scope's own names

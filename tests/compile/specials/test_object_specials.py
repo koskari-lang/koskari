@@ -1339,9 +1339,9 @@ class TestObjectVars(SpecialsTestCase):
         self.assertIn(OpCode.OBJECT_VARS, _opcodes(code))
 
 
-    async def test_vars_requires_one_arg(self):
+    async def test_vars_takes_at_most_one_arg(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(vars)")
+            self.compile_to_code("(vars a b)")
 
 
 class TestObjectFormat(SpecialsTestCase):

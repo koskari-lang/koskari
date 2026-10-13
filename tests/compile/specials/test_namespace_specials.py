@@ -61,20 +61,34 @@ class TestCompileGlobals(SpecialsTestCase):
         self.assertEqual(42, result.resolve("marker"))
 
 
-class TestCompileLocals(SpecialsTestCase):
+class TestCompileVars(SpecialsTestCase):
 
-    async def test_locals_emits_opcode(self):
-        code = self.compile_to_code("(locals)")
+    async def test_vars_no_args_emits_locals(self):
+        code = self.compile_to_code("(vars)")
         self.assertIn(OpCode.LOCALS, _opcodes(code))
 
 
-    async def test_locals_rejects_args(self):
+    async def test_vars_object_emits_object_vars(self):
+        code = self.compile_to_code("(vars x)", x=1)
+        self.assertIn(OpCode.OBJECT_VARS, _opcodes(code))
+
+
+    async def test_vars_rejects_two_args(self):
         with self.assertRaises(SpecialError):
-            self.compile_to_code("(locals x)")
+            self.compile_to_code("(vars x y)")
 
 
-    async def test_locals_returns_namespace_with_binding(self):
-        expr, mod = self.compile_expr("(locals)", marker=42)
+    async def test_vars_object_dict(self):
+        class Thing:
+            pass
+        thing = Thing()
+        thing.k = 1
+        expr, mod = self.compile_expr("(vars thing)", thing=thing)
+        self.assertEqual({"k": 1}, await expr())
+
+
+    async def test_vars_returns_namespace_with_binding(self):
+        expr, mod = self.compile_expr("(vars)", marker=42)
         result = await expr()
         self.assertIsInstance(result, ModuleNamespace)
         # the harness places marker in the builtins, below the module

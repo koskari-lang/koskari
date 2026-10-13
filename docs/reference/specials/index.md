@@ -33,7 +33,7 @@ special, a macro, and a call is in
 | [`deref`](compile-deref.md) | Read through a ref |
 | [`takeq`](compile-takeq.md) | Read a binding and clear it |
 | [`delq`](compile-delq.md) | Delete a binding |
-| [`globals`](compile-globals.md), [`locals`](compile-locals.md) | The module namespace; the current frame's namespace |
+| [`globals`](compile-globals.md), [`vars`](compile-vars.md) | The module namespace; the current scope's namespace, or an object's `__dict__` |
 | [`parameter`](compile-parameter.md), [`parameterize`](compile-parameterize.md) | Read a dynamic parameter; rebind parameters for a body |
 
 ## Control flow

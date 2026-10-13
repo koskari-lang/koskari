@@ -271,27 +271,27 @@ lines in `koskari/bootstrap/basics.ki` use it.
 
 In value position `vars` resolves to Python's builtin (bound in
 `koskari/bootstrap/__init__.py`), whose zero-argument call reads the
-topmost CPython frame. `koskari-vars` is the runtime replacement: a
-native function that, called with no argument, returns the topmost
-namespace of the current domain's active context, and with an object
-returns its `__dict__`. The active context comes from
-`kos_ctx_current` and its running evaluation from
-`kos_tls_active_eval_for_ctx` (`koskari/lib/domain.c`); the namespace
-is that evaluation's current namespace, revealed with
-`KosEvalState_RevealNamespace` as the LOCALS handler does.
+topmost CPython frame. `koskari-vars` is the runtime replacement, a
+KosCallable singleton (`koskari/lib/domain.c`). With an object it
+returns the object's `__dict__`. Called from Koskari with no argument,
+its install runs while the caller's frame is still current, and
+returns that evaluation's namespace through
+`KosEvalState_RevealNamespace`, as the LOCALS handler does. A plain
+Python callable in tail position would run after the caller's frame
+was dropped and see the caller's caller. Called from Python, it reads
+the evaluation `kos_tls_active_eval_for_ctx` finds for
+`kos_ctx_current`.
 
 ## Namespace repr
 
-`(globals)`, `(locals)` and `(vars)` return namespace objects whose
-repr is the default one, which is why they are unhelpful at the CLI.
-Every namespace type object carries `.tp_repr = ns_repr` commented
-out beside the live `nspec_repr`. The repr is one line,
-`<Namespace f1: a=1 scale=2>`, showing the type, the name,
-and `member: value` pairs read off the fast names and slots and the
-dict when one exists: an unbound slot shows as unbound rather than
-raising, a Ref slot shows its value rather than the cell, and the
-parent shows by name only, since walking it recurses through the
-module and through closure cycles.
+`(globals)` and `(vars)` return namespace objects. `ns_repr` in
+`koskari/lib/namespace.c` serves the function, collector and module
+namespace types with one line, `<Namespace f1 in __main__: a=1
+scale=2>`: the type, the name, the parent by name only, and
+`name=value` for each of the scope's own names. An unbound name shows
+as `<unbound>` rather than raising, a Ref slot shows its value rather
+than the cell, and a cycle back to the namespace shows as
+`<Namespace ...>`.
 
 ## Where the names live
 
