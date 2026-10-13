@@ -167,7 +167,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         """
 
         src = ("(begin (define xs #[1 2 3 4])"
-               " (define bump [&n] (set! n (+ n 1)))"
+               " (def bump [&n] (set! n (+ n 1)))"
                " (bump &(item xs 2)) (item xs 2))")
         expr, mod = self.compile_expr(src)
         self.assertEqual(await expr(), 4)
@@ -178,7 +178,7 @@ class TestRefs(unittest.IsolatedAsyncioTestCase):
         the guardrail: a by-ref formal refuses a plain value, naming the formal
         """
 
-        src = ("(begin (define bump [&n] (set! n (+ n 1)))"
+        src = ("(begin (def bump [&n] (set! n (+ n 1)))"
                " (bump 5))")
         expr, mod = self.compile_expr(src)
         with self.assertRaisesRegex(

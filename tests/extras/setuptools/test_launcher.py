@@ -111,7 +111,7 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
     async def test_hosted_run_sets_sys_argv(self):
         self._write_ki(
             'ki_launcher_argv',
-            '(import sys)\n(define main [] (len sys.argv))')
+            '(import sys)\n(def main [] (len sys.argv))')
         code = await hosted_run(
             'ki_launcher_argv', 'main', 'ki-tool', ['--flag'])
         self.assertEqual(code, 2)

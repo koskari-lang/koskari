@@ -24,55 +24,25 @@ compile/global, and compile/globals.
 
 
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
 from ...hygiene import binding_atom
-from ...lib import Datum, OpCode, cons, keyword, symbol
+from ...lib import OpCode, cons, symbol
 from ...matcher import (
-    BODY, CALLEDBY, DECL, DEFINE, FORMALS, LITERAL_KW, MATCH, PAIR, SYMBOL,
-    VALUE)
+    CALLEDBY, DEFINE, LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
 from ...syntax import special
-from ...types import is_pair
-from ..helpers import (
-    _parse_decl_tail, parse_decl, unpack_lhs_bind_symbols, using_unpack_helper)
+from ...types import is_pair, is_symbol
+from ..helpers import unpack_lhs_bind_symbols, using_unpack_helper
 
 
-def _define_name_type_pos_from_match(matched):
+def name_and_type(matched):
     """
-    Resolve name symbol, optional type expression from a
-    define match (inline DEFINE with ``::`` / ``type:`` or DECL).
-
-    Prefer the DEFINE arm when ``name`` is present so ``decl`` is never
-    mistaken for a declaration result on patterns that only bind ``name``.
-
-    DECL composite captures are plain dicts or :class:`DatumFrame`
-    values; compile match may adapt the decl slot like a FORMALS group.
-    When the adapted value has no name attribute, recover the symbol and
-    optional type with parse_decl on ``decl.source`` (whole-cell spine).
-    When ``name`` is set but ``type`` is not (``name`` + ``decl_tail`` DECL
-    arm), parse ``decl_tail`` like a declaration attribute list.
+    The name symbol and optional type expression of a var-shaped match,
+    whose name is the DEFINE slot and whose type, when present, follows
+    ``::`` or ``type:``
     """
 
-    if "name" in matched:
-        name_mr = matched["name"]
-        namesym = name_mr.datum
-        rt = matched.get("return_type")
-        type_expr = rt.datum if rt else None
-
-    else:
-        decl = matched["decl"]
-        name_cell = decl.get("name")
-        if name_cell is not None:
-            namesym = name_cell.datum
-            tcell = decl.get("type")
-            type_expr = tcell.datum if tcell else None
-            if type_expr is None:
-                dtail = decl.get("decl_tail")
-                if dtail is not None:
-                    ann = _parse_decl_tail(dtail.datum, None)
-                    type_expr = ann.get("type")
-        else:
-            namesym, type_expr = parse_decl(decl.source)
-
-    return namesym, type_expr
+    rt = matched.get("return_type")
+    return matched["name"].datum, (rt.datum if rt else None)
 
 
 _SETQ_PATTERNS = [
@@ -222,173 +192,45 @@ def special_takeq(compiler, caps):
     return frag
 
 
-def emit_define_value(compiler, frag, caps, namesym, type_expr):
+def emit_value(compiler, frag, caps, namesym):
     """
-    Finish a define fragment from its match. The function shorthand
-    (define X [Y Z] BODY...) compiles a function form carrying the name
-    and any return type, a plain value compiles itself (positioned at
-    an atom value), and a declare-only form compiles nothing; the value
-    is stored to the name and the form's result is None
+    Finish a var-shaped fragment from its match: a value compiles
+    itself (positioned at an atom value) and is stored to the name, a
+    declaration compiles nothing, and the form's result is None
 
     :return: the fragment
     """
 
-    if "body" in caps:
-        formals = caps["formals"]
-        if isinstance(formals, Datum):
-            formals_spine = formals.datum
-        else:
-            formals_spine = formals.source
-        body_spine = caps["body"].datum
-        if type_expr is not None:
-            val_expr = cons(
-                symbol("function"),
-                namesym,
-                keyword("::"),
-                type_expr,
-                formals_spine,
-                body_spine)
-        else:
-            val_expr = cons(
-                symbol("function"), namesym, formals_spine, body_spine)
-
-    elif "value" in caps:
+    if "value" in caps:
         val_expr = caps["value"].datum
         if not is_pair(val_expr):
             frag.position(caps["value"].position)
+        frag.merge(compiler.full_compile(val_expr))
+        frag.instruction(OpCode.VAR_STORE, namesym)
 
-    else:
-        frag.instruction(OpCode.CONST, None)
-        return frag
+    frag.instruction(OpCode.CONST, None)
+    return frag
 
+
+def emit_function(compiler, frag, head, body, namesym):
+    """
+    Finish a define-shaped fragment whose name position holds
+    (NAME FORMALS...): compile (function NAME FORMALS BODY...) and store
+    it to the name. The form's result is None
+
+    :return: the fragment
+    """
+
+    _name, formals = head
+    val_expr = cons(symbol("function"), namesym, formals, body)
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.VAR_STORE, namesym)
     frag.instruction(OpCode.CONST, None)
-
     return frag
 
 
-_DEFINE_INLINE_PATTERNS = [
-    # a typed function has a body; a value that reads as a formals list,
-    # (dict) or (field ...), with nothing after it is the value arm's
-    MATCH(
-        CALLEDBY(),
-        DEFINE("name"),
-        LITERAL_KW("::"),
-        VALUE("return_type"),
-        FORMALS("formals"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        DEFINE("name"),
-        LITERAL_KW("type:"),
-        VALUE("return_type"),
-        FORMALS("formals"),
-        BODY("body")),
-    MATCH(
-        CALLEDBY(),
-        DEFINE("name"),
-        LITERAL_KW("::"),
-        VALUE("return_type"),
-        VALUE("value")),
-    MATCH(
-        CALLEDBY(),
-        DEFINE("name"),
-        LITERAL_KW("type:"),
-        VALUE("return_type"),
-        VALUE("value")),
-    MATCH(
-        CALLEDBY(),
-        DEFINE("name"),
-        LITERAL_KW("::"),
-        VALUE("return_type")),
-    MATCH(
-        CALLEDBY(),
-        DEFINE("name"),
-        LITERAL_KW("type:"),
-        VALUE("return_type")),
-]
-
-_DEFINE_DECL_PATTERNS = [
-    MATCH(CALLEDBY(), DECL("decl"), FORMALS("formals"), BODY("body")),
-    MATCH(CALLEDBY(), DECL("decl"), VALUE("value")),
-    MATCH(CALLEDBY(), DECL("decl")),
-]
-
-_DEFINE_PATTERNS = _DEFINE_INLINE_PATTERNS + _DEFINE_DECL_PATTERNS
-
-
-@builtin("compile/define")
-@special("compile/define", patterns=_DEFINE_PATTERNS, unpack="match")
-def special_define(compiler, caps):
-    """
-    Compile (define X), (define X EXPR), (define X [Y Z] BODY...), or
-    typed variants with ``X :: T`` / ``X type: T`` before formals, value,
-    or alone (declare-only). Function shorthand is equivalent to
-    (define X (lambda X [Y Z] BODY...)).
-    """
-
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    namesym, type_expr = _define_name_type_pos_from_match(caps)
-
-    namesym = binding_atom(compiler, namesym)
-
-    frag = compiler.fragment(called_by)
-
-    # the function shorthand declares untyped: the return type rides on
-    # the function form instead
-    if "body" in caps or type_expr is None:
-        frag.declare_var(namesym, position=pos)
-    else:
-        frag.declare_var(namesym, position=pos, type_expr=type_expr)
-
-    return emit_define_value(compiler, frag, caps, namesym, type_expr)
-
-
-_NOARG_PATTERNS = [
-    MATCH(CALLEDBY("called_by")),
-]
-
-
-@builtin("compile/globals")
-@special("compile/globals", patterns=_NOARG_PATTERNS, unpack="kwargs")
-def special_globals(compiler, called_by):
-    """
-    Compile (compile/globals). Push the outermost frame namespace (globals)
-    """
-
-    frag = compiler.fragment(called_by.datum)
-    frag.instruction(OpCode.GLOBALS, 0)
-    return frag
-
-
-@builtin("compile/define-global")
-@special("compile/define-global", patterns=_DEFINE_PATTERNS, unpack="match")
-def special_define_global(compiler, caps):
-    """
-    Compile (define-global X), (define-global X EXPR),
-    (define-global X [Y Z] BODY...), or typed ``X :: T`` / ``X type: T``
-    variants. Explicit module binding for read and write.
-    """
-
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    namesym, type_expr = _define_name_type_pos_from_match(caps)
-
-    frag = compiler.fragment(called_by)
-    # the local-or-global conflict is judged where this fragment merges
-    # into its body, the first point at which a declaration of the
-    # same name is in view
-    frag.request_global(namesym, position=pos)
-
-    return emit_define_value(compiler, frag, caps, namesym, type_expr)
-
-
-# the value and declaration shapes of define, without the function
-# shorthand: a var or global names a value, never formals and a body
+# the value and declaration shapes: a name and a value, never formals
+# and a body
 _VAR_PATTERNS = [
     MATCH(
         CALLEDBY(),
@@ -417,6 +259,73 @@ _VAR_PATTERNS = [
 ]
 
 
+# Scheme's shape: a pair in the name position is the name and the
+# formals of a function, a symbol is a value binding
+_DEFINE_PATTERNS = [
+    MATCH(CALLEDBY(), PAIR("head"), REST("body")),
+] + _VAR_PATTERNS
+
+
+def scheme_function_name(caps):
+    """
+    The name symbol heading the pair in a define's name position
+
+    :raises SpecialError: when the pair is not headed by a symbol
+    """
+
+    head = caps["head"].datum
+    name, _formals = head
+    if not is_symbol(name):
+        raise SpecialError(
+            "define expects a name to head (NAME FORMALS ...)",
+            head, position=caps["called-by"].position)
+    return name
+
+
+def compile_var(compiler, caps):
+    """
+    Declare a var-shaped match's name in the current scope and store its
+    value
+
+    :return: the fragment
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+
+    namesym, type_expr = name_and_type(caps)
+    namesym = binding_atom(compiler, namesym)
+
+    frag = compiler.fragment(called_by)
+    if type_expr is None:
+        frag.declare_var(namesym, position=pos)
+    else:
+        frag.declare_var(namesym, position=pos, type_expr=type_expr)
+
+    return emit_value(compiler, frag, caps, namesym)
+
+
+def compile_global(compiler, caps):
+    """
+    Bind a var-shaped match's name at the module and store its value
+
+    :return: the fragment
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+
+    namesym, _type_expr = name_and_type(caps)
+
+    frag = compiler.fragment(called_by)
+    # the local-or-global conflict is judged where this fragment merges
+    # into its body, the first point at which a declaration of the
+    # same name is in view
+    frag.request_global(namesym, position=pos)
+
+    return emit_value(compiler, frag, caps, namesym)
+
+
 @builtin("compile/var")
 @special("compile/var", patterns=_VAR_PATTERNS, unpack="match")
 def special_var(compiler, caps):
@@ -426,19 +335,7 @@ def special_var(compiler, caps):
     the scope the form appears in and stores the value
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
-
-    namesym, type_expr = _define_name_type_pos_from_match(caps)
-    namesym = binding_atom(compiler, namesym)
-
-    frag = compiler.fragment(called_by)
-    if type_expr is None:
-        frag.declare_var(namesym, position=pos)
-    else:
-        frag.declare_var(namesym, position=pos, type_expr=type_expr)
-
-    return emit_define_value(compiler, frag, caps, namesym, type_expr)
+    return compile_var(compiler, caps)
 
 
 @builtin("compile/global")
@@ -450,15 +347,62 @@ def special_global(compiler, caps):
     stores the value
     """
 
-    called_by = caps["called-by"].datum
-    pos = caps["called-by"].position
+    return compile_global(compiler, caps)
 
-    namesym, type_expr = _define_name_type_pos_from_match(caps)
 
-    frag = compiler.fragment(called_by)
-    frag.request_global(namesym, position=pos)
+@builtin("compile/define")
+@special("compile/define", patterns=_DEFINE_PATTERNS, unpack="match")
+def special_define(compiler, caps):
+    """
+    Compile (define (F ARGS...) BODY...), the function F of ARGS bound
+    in the current scope, or (define X), (define X EXPR) and their typed
+    variants, which are var's
+    """
 
-    return emit_define_value(compiler, frag, caps, namesym, type_expr)
+    if "head" not in caps:
+        return compile_var(compiler, caps)
+
+    namesym = binding_atom(compiler, scheme_function_name(caps))
+    frag = compiler.fragment(caps["called-by"].datum)
+    frag.declare_var(namesym, position=caps["called-by"].position)
+    return emit_function(
+        compiler, frag, caps["head"].datum, caps["body"].datum, namesym)
+
+
+@builtin("compile/define-global")
+@special("compile/define-global", patterns=_DEFINE_PATTERNS, unpack="match")
+def special_define_global(compiler, caps):
+    """
+    Compile (define-global (F ARGS...) BODY...), the function F of ARGS
+    bound at the module, or (define-global X), (define-global X EXPR)
+    and their typed variants, which are global's
+    """
+
+    if "head" not in caps:
+        return compile_global(compiler, caps)
+
+    namesym = scheme_function_name(caps)
+    frag = compiler.fragment(caps["called-by"].datum)
+    frag.request_global(namesym, position=caps["called-by"].position)
+    return emit_function(
+        compiler, frag, caps["head"].datum, caps["body"].datum, namesym)
+
+
+_NOARG_PATTERNS = [
+    MATCH(CALLEDBY("called_by")),
+]
+
+
+@builtin("compile/globals")
+@special("compile/globals", patterns=_NOARG_PATTERNS, unpack="kwargs")
+def special_globals(compiler, called_by):
+    """
+    Compile (compile/globals). Push the outermost frame namespace (globals)
+    """
+
+    frag = compiler.fragment(called_by.datum)
+    frag.instruction(OpCode.GLOBALS, 0)
+    return frag
 
 
 # The end.

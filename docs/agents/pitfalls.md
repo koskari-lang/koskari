@@ -135,6 +135,17 @@ keys:
 `*:` / `**:`, not a dotted tail. `for-each` takes a `[var seq]`
 binding, not a procedure argument.
 
+**`define` takes Scheme's shape.** A function is
+`(define [f x] body)` or `(define (f x) body)`, the name inside the
+pair with its formals; `(define x v)` binds a value. The shorthand
+`(define f [x] body)` matches no rule and raises `SyntaxMatchError`,
+and `define` has no return-type slot -- a typed function is
+`(def f :: int [x] body)`. A pair after `define` is never a pattern:
+`(define [a b] x)` defines a function `a` with formal `b`, so unpack
+with `(var [a b] x)` or `(define-values [a b] x)`. Idiomatic Koskari
+binds functions with `def` and values with `var`; see
+[compile/define](../reference/specials/compile-define.md).
+
 **Brackets are not vectors.** `[ ]` and `( )` read identically and
 compare equal; `[ ]` is a readability convention, covered in
 [Brackets and the call convention](../guide/brackets-and-call-convention.md).

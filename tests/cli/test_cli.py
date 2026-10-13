@@ -348,7 +348,7 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.NamedTemporaryFile(
                 'w', suffix='.ki', delete=False) as fh:
-            fh.write('define foo [x]:\n    (+ 1 (bar x))\n')
+            fh.write('def foo [x]:\n    (+ 1 (bar x))\n')
             path = fh.name
         self.addCleanup(os.unlink, path)
         self.addCleanup(linecache.clearcache)
@@ -394,7 +394,7 @@ class TestKoskariTracebackFormatting(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.NamedTemporaryFile(
                 'w', suffix='.ki', delete=False) as fh:
-            fh.write('define foo [x]:\n    (+ 1 (bar x))\n')
+            fh.write('def foo [x]:\n    (+ 1 (bar x))\n')
             path = fh.name
         self.addCleanup(os.unlink, path)
         self.addCleanup(linecache.clearcache)
@@ -620,7 +620,7 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             sub = os.path.join(tmp, 'sub')
             os.makedirs(sub)
             with open(os.path.join(sub, 'helper.ki'), 'w') as fh:
-                fh.write("define VALUE 42\n")
+                fh.write("var VALUE 42\n")
             with open(os.path.join(sub, 'app.ki'), 'w') as fh:
                 fh.write("import sys\n"
                          "print \"path0\" sys.path[0]\n"
@@ -686,9 +686,9 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             pkg = os.path.join(tmp, 'mpkg')
             os.makedirs(pkg)
             with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-                fh.write("define PKG_VALUE 7\n")
+                fh.write("var PKG_VALUE 7\n")
             with open(os.path.join(pkg, 'helper.ki'), 'w') as fh:
-                fh.write("define VALUE 42\n")
+                fh.write("var VALUE 42\n")
             with open(os.path.join(pkg, 'app.ki'), 'w') as fh:
                 fh.write("import sys\n"
                          "import-from .helper VALUE\n"
@@ -715,9 +715,9 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             pkg = os.path.join(tmp, 'mpkg')
             os.makedirs(pkg)
             with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-                fh.write("define PKG_VALUE 7\n")
+                fh.write("var PKG_VALUE 7\n")
             with open(os.path.join(pkg, 'helper.ki'), 'w') as fh:
-                fh.write("define VALUE 42\n")
+                fh.write("var VALUE 42\n")
             with open(os.path.join(pkg, '__main__.ki'), 'w') as fh:
                 fh.write("import-from .helper VALUE\n"
                          "print \"main\" __name__ VALUE\n")
@@ -904,7 +904,7 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         - runs a whole program from stdin, read as layout like a file
         """
 
-        source = 'define greet [who]:\n  print f"hi {who}"\ngreet "stdin"\n'
+        source = 'def greet [who]:\n  print f"hi {who}"\ngreet "stdin"\n'
 
         def run():
             captured = io.StringIO()

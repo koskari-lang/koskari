@@ -121,7 +121,7 @@ class TestCompilerPositionWidth(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_position_past_16_bits_saturates(self):
         mod = new_module("position_width")
-        src = "\n" * 70000 + "define v 1\n"
+        src = "\n" * 70000 + "var v 1\n"
         await load_module_source_async(mod, src, layout=True, seal=False)
         self.assertEqual(1, vars(mod)["v"])
 

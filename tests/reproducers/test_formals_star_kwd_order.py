@@ -102,7 +102,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
         src = """
         (begin
-          (define g [a b: 1 *: rest] (col a b rest))
+          (define [g a b: 1 *: rest] (col a b rest))
           #((g 1) (g 1 2) (g 1 2 3)))
         """
         expr, mod = self.compile_expr(src, col=lambda *a: a)
@@ -118,8 +118,8 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
         """
         src = """
         (begin
-          (define f [a z: 99 *: more c] (col a z more c))
-          (define h [a b: 99 *: more x] (col a b more x))
+          (define [f a z: 99 *: more c] (col a z more c))
+          (define [h a b: 99 *: more x] (col a b more x))
           #((f 1 2 3 c: 0) (f 1 c: 0) (h 1 2 3 x: 0) (h 1 x: 0)))
         """
         expr, mod = self.compile_expr(src, col=lambda *a: a)
@@ -132,7 +132,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
     async def test_define_foobar_call_matches_python_formals_apply(self):
         src = """
         (begin
-          (define foobar [a b *: more x y: 100 **: lol]
+          (define [foobar a b *: more x y: 100 **: lol]
             (col a b more x y lol))
           (foobar 1 2 3 4 x: "ecks"))
         """
@@ -148,7 +148,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
         src = """
         (begin
-          (define g [a b *: more x **: rest]
+          (define [g a b *: more x **: rest]
             (col a b more x rest))
           (g 1 2 x: "only"))
         """
@@ -164,7 +164,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
         src = """
         (begin
-          (define f [a b *: more x y: 100 **: lol]
+          (define [f a b *: more x y: 100 **: lol]
             (col a b more x y lol))
           (f 1 2 3 4 x: "ecks" y: 42))
         """
@@ -180,7 +180,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
         src = """
         (begin
-          (define f [a b *: more x y: 100 **: lol]
+          (define [f a b *: more x y: 100 **: lol]
             (col a b more x y lol))
           (f 1 2 3 4 x: "ecks" extra: 7))
         """
@@ -198,7 +198,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
         src = """
         (begin
-          (define h [a *: more p q **: r]
+          (define [h a *: more p q **: r]
             (col a more p q r))
           (h 10 p: 1 q: 2))
         """
@@ -214,7 +214,7 @@ class TestFormalsStarKwdOrderKoskariSource(SpecialsTestCase):
 
         src = """
         (begin
-          (define f [a b: 99 *: more x **: lol]
+          (define [f a b: 99 *: more x **: lol]
             (col a b more x lol))
           (f 1 2 3 x: "z"))
         """

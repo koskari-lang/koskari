@@ -59,12 +59,12 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
 
     async def check(self, name, body, expected, prelude="", **shadows):
         defines = "\n".join(
-            f"(define {sym} {spell(val)})" for sym, val in shadows.items())
+            f"(var {sym} {spell(val)})" for sym, val in shadows.items())
         src = (
             f"{prelude}\n"
             f"(define-syntax m (syntax-rules [] [(m) {body}]))\n"
             f"{defines}\n"
-            "(define answer (m))\n")
+            "(var answer (m))\n")
         ns = await load(f"mhf_{name}", src)
         self.assertEqual(ns["answer"], expected)
         for sym, val in shadows.items():
@@ -88,7 +88,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_for_each_variable(self):
         await self.check(
             "for_each",
-            "(begin (define acc 0)"
+            "(begin (var acc 0)"
             " (for-each [i #[1 2 3]] (setq acc (+ acc i))) acc)",
             6, i=1000, acc=1000)
 
@@ -96,7 +96,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_while_variable(self):
         await self.check(
             "while",
-            "(begin (define k 3) (define acc 0)"
+            "(begin (var k 3) (var acc 0)"
             " (while (> k 0) (setq acc (+ acc k)) (setq k (- k 1))) acc)",
             6, k=999, acc=999)
 
@@ -119,7 +119,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_rest_formals(self):
         await self.check(
             "rest",
-            "(begin (define f [*: args **: kw] (+ (len args) (len kw)))"
+            "(begin (def f [*: args **: kw] (+ (len args) (len kw)))"
             " (f 1 2 x: 3))",
             3, args=999, kw=999)
 
@@ -127,8 +127,8 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_decorator(self):
         await self.check(
             "decorator",
-            "(begin (define wrap (lambda [f] (lambda [] (+ (f) 1))))"
-            " (decorate [wrap] (define f [] 5)) (f))",
+            "(begin (var wrap (lambda [f] (lambda [] (+ (f) 1))))"
+            " (decorate [wrap] (def f [] 5)) (f))",
             6, wrap=55, f=55)
 
 
@@ -179,8 +179,8 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_generator_body(self):
         await self.check(
             "generator",
-            "(begin (define gen [] (for-each [x #[1 2 3]] (yield (* x 2))))"
-            " (define out #[]) (for-each [v (gen)] (out.append v)) out)",
+            "(begin (def gen [] (for-each [x #[1 2 3]] (yield (* x 2))))"
+            " (var out #[]) (for-each [v (gen)] (out.append v)) out)",
             [2, 4, 6], prelude="(import-from asyncio sleep)",
             x=999, v=999, out=999)
 
@@ -188,9 +188,9 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_async_generator_body(self):
         await self.check(
             "async_generator",
-            "(begin (define gen [] (for-each [x #[1 2 3]]"
+            "(begin (def gen [] (for-each [x #[1 2 3]]"
             " (sleep 0) (yield (* x 2))))"
-            " (define out #[]) (for-each [v (gen)] (out.append v)) out)",
+            " (var out #[]) (for-each [v (gen)] (out.append v)) out)",
             [2, 4, 6], prelude="(import-from asyncio sleep)",
             x=999, v=999, out=999)
 

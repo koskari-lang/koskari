@@ -128,7 +128,7 @@ class TestByRefKeywordFormalInTemplate(unittest.IsolatedAsyncioTestCase):
     SRC = """
 (define-syntax mk-fill
   (syntax-rules []
-    [(mk-fill name) (define name [&out: 99] out)]))
+    [(mk-fill name) (define [name &out: 99] out)]))
 
 (mk-fill fill)
 (var mine)
@@ -197,7 +197,7 @@ class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
     [(d2 getter)
      (begin
        (var secret 11)
-       (define getter [] (lambda [] secret)))]))
+       (define [getter] (lambda [] secret)))]))
 
 (d2 gg)
 (var answer ((gg)))
@@ -209,7 +209,7 @@ class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
     [(d2 getter)
      (begin
        (var secret 11)
-       (define getter [] (+ secret ((lambda [] secret)))))]))
+       (define [getter] (+ secret ((lambda [] secret)))))]))
 
 (d2 gg)
 (var answer (gg))
@@ -562,17 +562,17 @@ class TestSetqInInlineScope(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(inc-i) (setq i (+ i 1))]))
 
-(define in-let []
+(define [in-let]
   (var i 10)
   (let [[j 1]] (inc-i))
   i)
 
-(define in-nested-let []
+(define [in-nested-let]
   (var i 10)
   (let [[j 1]] (let [[k 2]] (inc-i)))
   i)
 
-(define in-class []
+(define [in-class]
   (var i 10)
   (class C [] (inc-i))
   i)
@@ -608,8 +608,8 @@ class TestResolvedRequestMatchesHandWritten(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(inc-i) (setq i (+ i 1))]))
 
-(define f [] (var i 10) (inc-i) i)
-(define g [] (var i 10) (setq i (+ i 1)) i)
+(define [f] (var i 10) (inc-i) i)
+(define [g] (var i 10) (setq i (+ i 1)) i)
 """
 
     async def test_namespace_spec_matches(self):
@@ -636,7 +636,7 @@ class TestTemplateParameterLabels(unittest.IsolatedAsyncioTestCase):
 
 (define-syntax make-pair-fn
   (syntax-rules []
-    [(make-pair-fn name) (define name [-'x -'y] #(x y))]))
+    [(make-pair-fn name) (define [name -'x -'y] #(x y))]))
 
 (var x "outer")
 (var wrapped ((wrap x) "param"))
@@ -664,14 +664,14 @@ class TestDynWindThunksInTemplate(unittest.IsolatedAsyncioTestCase):
 
     SRC = """
 (var out #[])
-(define hlp [x] (out.append (* 100 x)))
+(define [hlp x] (out.append (* 100 x)))
 
 (define-syntax make-go
   (syntax-rules []
     [(make-go go)
      (begin
-       (define go [] (dyn-wind (hlp 1) (hlp 2) (hlp 3)))
-       (define hlp [x] (out.append x)))]))
+       (define [go] (dyn-wind (hlp 1) (hlp 2) (hlp 3)))
+       (define [hlp x] (out.append x)))]))
 
 (make-go go)
 (go)
@@ -924,7 +924,7 @@ class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
     SRC = """
 (class Point []
   (var __match_args__ #("x" "y"))
-  (define __init__ [self x y]
+  (define [__init__ self x y]
     (set-attr self x x)
     (set-attr self y y)))
 
@@ -976,11 +976,11 @@ class TestTemplateBoundPatternType(unittest.IsolatedAsyncioTestCase):
     SRC = """
 (class A []
   (var __match_args__ #("x"))
-  (define __init__ [self x] (set-attr self x x)))
+  (define [__init__ self x] (set-attr self x x)))
 
 (class B []
   (var __match_args__ #("x"))
-  (define __init__ [self x] (set-attr self x x)))
+  (define [__init__ self x] (set-attr self x x)))
 
 (var Kind str)
 (var Shape A)
@@ -1126,7 +1126,7 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
     [(mk-greeter name)
      (class name []
        (var greeting "hi")
-       (define greet [self] (#str self.greeting " there")))]))
+       (define [greet self] (#str self.greeting " there")))]))
 
 (mk-greeter Greeter)
 (var greeter (Greeter))
@@ -1150,7 +1150,7 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
        (import-from math pi)
        (import math)
        (with [cm (nullcontext 5)] None)
-       (define get-pi [self] self.pi))]))
+       (define [get-pi self] self.pi))]))
 
 (mk-binders Binders)
 (var got-pi ((Binders).get-pi))
@@ -1211,7 +1211,7 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
 
 
     SELF_BOUND_SRC = """
-(define f [] (var g (gensym-thunk (+ %1 1))) (g 2))
+(define [f] (var g (gensym-thunk (+ %1 1))) (g 2))
 (var result (f))
 """
 
@@ -1240,7 +1240,7 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(top) (begin (global ga 5) ga)]))
 
-(define f [] (top))
+(define [f] (top))
 (var result (f))
 """
 

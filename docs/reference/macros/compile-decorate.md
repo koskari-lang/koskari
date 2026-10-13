@@ -9,9 +9,9 @@
 | `(decorate [D ...] (var NAME VALUE))` | `(var NAME (decorate [D ...] VALUE))` |
 | `(decorate [D ...] (global def NAME FORMALS BODY ...))` | `(global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (global class NAME SUPERS BODY ...))` | `(global NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
-| `(decorate [D ...] (define NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
+| `(decorate [D ...] (define [NAME FORMALS ...] BODY ...))` | `(var NAME (decorate [D ...] (function NAME [FORMALS ...] BODY ...)))` |
 | `(decorate [D ...] (class NAME SUPERS BODY ...))` | `(var NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
-| `(decorate [D ...] (define-global NAME FORMALS BODY ...))` | `(global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
+| `(decorate [D ...] (define-global [NAME FORMALS ...] BODY ...))` | `(global NAME (decorate [D ...] (function NAME [FORMALS ...] BODY ...)))` |
 | `(decorate [D REST ...] FN)` | `(decorate-subject D (decorate [REST ...] FN))` |
 
 **Behaviour:** What `@` lines read to, and usable directly. The name of

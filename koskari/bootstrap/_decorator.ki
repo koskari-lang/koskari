@@ -119,13 +119,20 @@ syntax decorate:
     case (decorate [decorators ...] (class name supers body ...)):
       var name (decorate [decorators ...] (build-class name supers body ...))
 
-    case (decorate [decorators ...] (define name formals body ...)):
-      var name (decorate [decorators ...] (function name formals body ...))
+    ;; the Scheme define: a (NAME FORMALS ...) head is a function, a
+    ;; name is a value; the decorators wrap the value either way
+    case (decorate [decorators ...] (define (name formals ...) body ...)):
+      var name (decorate [decorators ...] (function name [formals ...] body ...))
 
-    ;; each define-* form binds its name to a value built from the
-    ;; function or class it declares; the decorators wrap that value
-    case (decorate [decorators ...] (define-global name formals body ...)):
-      global name (decorate [decorators ...] (function name formals body ...))
+    case (decorate [decorators ...] (define name value)):
+      var name (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (define-global (name formals ...) body ...)):
+      global name:
+        decorate [decorators ...] (function name [formals ...] body ...)
+
+    case (decorate [decorators ...] (define-global name value)):
+      global name (decorate [decorators ...] value)
 
     case (decorate [d rest ...] fn):
       decorate-subject d (decorate [rest ...] fn)

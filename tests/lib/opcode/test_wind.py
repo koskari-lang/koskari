@@ -117,7 +117,7 @@ class TestWindOpcodes(CevalTest):
 
         from koskari.module import load_module_source_async, new_module
 
-        src = '(define k (reset (begin (shift k k) (record "region"))))'
+        src = '(var k (reset (begin (shift k k) (record "region"))))'
         mod = new_module("wind_cont")
         vars(mod)["__file__"] = "<wind_cont>"
         vars(mod)["record"] = log.append

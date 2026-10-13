@@ -392,7 +392,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (decorate [(call-with [(cm)])]
-            (define shout [w]
+            (define [shout w]
               \"\"\"
               original docstring
               \"\"\"

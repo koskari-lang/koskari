@@ -33,14 +33,14 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-define typed [v]:
+define [typed v]:
     match v:
         case m :: Fake:
             "hit"
         else:
             "miss"
 
-define shaped [v]:
+define [shaped v]:
     match v:
         case Fake[x: a]:
             a

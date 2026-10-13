@@ -4,31 +4,40 @@
 `define-global` is the Scheme-layer spelling of
 [`global`](compile-global.md) and `global def`.
 
-**Syntax:** Same arities and spellings as `compile/define`: **inline type**
-(`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
+**Syntax:** The arms of [compile/define](compile-define.md), binding at
+the module:
 
-- `(define-global NAME :: TYPE)` ... (and `type:`), or `(define-global DECL)`
-- `(define-global NAME :: TYPE EXPR)` or `(define-global DECL EXPR)`
-- `(define-global NAME :: TYPE FORMALS BODY ...)` or
-`(define-global DECL FORMALS BODY ...)`
+- Function: `(define-global [NAME FORMALS ...] BODY ...)` or
+  `(define-global (NAME FORMALS ...) BODY ...)`
+- Declaration only: `(define-global NAME)`, `(define-global NAME :: TYPE)`,
+  or `(define-global NAME type: TYPE)`
+- Declare and store: `(define-global NAME VALUE)`,
+  `(define-global NAME :: TYPE VALUE)`, or
+  `(define-global NAME type: TYPE VALUE)`
 
-See **compile/define** for the meaning of **DECL** and function-shorthand
-lowering to [compile/function](compile-function.md) (including `NAME :: TYPE`
-when a return type is present). Same inner form as `define`; additionally calls
-`request_global(name)` and stores via `VAR_STORE` into the module binding.
+A pair in the name position is a function head, its first element the
+name and the rest the formals. A symbol is a value binding.
 
-**Use-case:** Explicit module binding for read and write. When using strict
-resolution (KoskariPragma), writes to undeclared names raise at compile time;
-`compile/define-global` opts a name into the module scope so that setq/delq
-target the module binding rather than requiring a local declaration.
-Mirrors `compile/define` structure but pulls the ref from the module instead
-of the local or closure chain.
+**Use-case:** Bind a name at the module from any depth. Inside a
+function body, `define-global` makes **NAME** refer to the module
+binding throughout that body, as Python's `global` statement does, so
+reads, `set!`, and `setq` of **NAME** reach the module. At module top
+level it binds as [`define`](compile-define.md) does.
 
-**Behaviour:** Calls `request_global(name)` to record an explicit need from the
-module. For declaration-only: emits CONST None. For declare-and-store or
-function shorthand: compiles the value expression and emits VAR_STORE. Conflicts
-with local declaration; raises if the name is already in `declares` (e.g. from
-`compile/define`).
+**Behaviour:** A function head stores
+`(function NAME FORMALS ... BODY ...)` into the module binding
+**NAME**, as `(global def NAME [FORMALS ...] BODY ...)` does. A symbol
+binds the module name as [`global`](compile-global.md) does: with a
+value it evaluates and stores it, without one it stores nothing. The
+form's value is `None`.
+
+A name declared local in the same body, with `var` or `define`, cannot
+also be made global there; the compiler raises `CompilerError`.
+
+The pre-Scheme shorthand `(define-global NAME [FORMALS ...] BODY ...)`
+matches no rule and raises `SyntaxMatchError`. `(define-global [a b] x)`
+defines a function named `a`, as with [`define`](compile-define.md);
+it does not unpack.
 
 **Examples:**
 
@@ -37,11 +46,21 @@ with local declaration; raises if the name is already in `declares` (e.g. from
 (define-global x 1)
 (setq x 42)
 
+;; A function bound at the module from inside another function
+(define [install]
+  (define-global [helper x] (* x 10))
+  None)
+(install)
+(helper 4)    ;; 40
+
 ;; Shared counter across nested closures
 ((lambda ()
    (define-global counter 0)
-   (define inc (lambda []
+   (define [inc]
      (setq counter (+ counter 1))
-     counter))
+     counter)
    (inc)))
 ```
+
+**See also:** [compile/global](compile-global.md),
+[compile/define](compile-define.md), [def](../macros/compile-def.md).

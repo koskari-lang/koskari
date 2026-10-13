@@ -354,8 +354,8 @@ class TestKioRoundTrip(unittest.TestCase):
 
         buf = io.BytesIO()
         compile_ki_source_to_kio(
-            '(define f (lambda [x] (await x)))\n'
-            '(define d (divmod 7 2))\n', buf)
+            '(var f (lambda [x] (await x)))\n'
+            '(var d (divmod 7 2))\n', buf)
         buf.seek(0)
         kio = load_kio(buf)
         rows = {}
@@ -378,7 +378,7 @@ class TestKioRoundTrip(unittest.TestCase):
         """
 
         source = (
-            '(define x 1)\n'
+            '(var x 1)\n'
             '(if (== x 1) (print "one") (print "other"))\n')
         buf = io.BytesIO()
         compile_ki_source_to_kio(source, buf)
@@ -408,7 +408,7 @@ class TestKioRoundTrip(unittest.TestCase):
 
         buf = io.BytesIO()
         compile_ki_source_to_kio(
-            '(define k (lambda [a b] (print a b)))\n', buf)
+            '(var k (lambda [a b] (print a b)))\n', buf)
         buf.seek(0)
         kio = load_kio(buf)
         specs = [arg for op, arg in kio.codes[0].soften()
@@ -459,7 +459,7 @@ class TestKioRoundTrip(unittest.TestCase):
         logical = 'pkg/module.ki'
         buf = io.BytesIO()
         compile_ki_source_to_kio(
-            '(define _sf_indir 0)\n',
+            '(var _sf_indir 0)\n',
             buf,
             source_filename=logical)
         buf.seek(0)

@@ -147,7 +147,7 @@ class TestKiImport(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_multiple_defines(self):
-        self._write_ki('ki_multi', '(define x 1)\n(define y 2)')
+        self._write_ki('ki_multi', '(var x 1)\n(var y 2)')
         mod = importlib.import_module('ki_multi')
         self.assertEqual(1, mod.x)
         self.assertEqual(2, mod.y)
@@ -183,7 +183,7 @@ class TestExecModuleDemand(unittest.TestCase):
     def test_exec_module_demand_binds_define(self):
         path = os.path.join(self._tmpdir, 'demand_loader.ki')
         with open(path, 'w', encoding='utf-8') as fh:
-            fh.write('(define result 42)\n')
+            fh.write('(var result 42)\n')
         loader = KoskariSourceFileLoader('demand_loader', path)
         spec = importlib.util.spec_from_file_location(
             'demand_loader', path, loader=loader)

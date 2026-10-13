@@ -72,11 +72,11 @@ class TestRunpy(unittest.TestCase):
             '  raise (KeyboardInterrupt)\n')
         pkg = os.path.join(self._tmpdir, 'kpkg')
         os.mkdir(pkg)
-        self._write(os.path.join('kpkg', '__init__.ki'), '(define answer 1)\n')
+        self._write(os.path.join('kpkg', '__init__.ki'), '(var answer 1)\n')
         self._write(
             os.path.join('kpkg', '__main__.ki'),
             '@entry-point\n'
-            'define main []:\n'
+            'def main []:\n'
             '  print "package" __package__\n'
             '  7\n')
 

@@ -81,7 +81,7 @@ class TestCollectDiagnostics(IsolatedAsyncioTestCase):
 
     async def test_layout_error_emits_diagnostic(self):
         diags = collect_diagnostics(
-            'define foo []:\n  if:\n    x', 'file:///test.ki')
+            'def foo []:\n  if:\n    x', 'file:///test.ki')
         self.assertGreater(len(diags), 0)
 
 

@@ -132,8 +132,8 @@ a function body the expansion compiles to the same instructions as
 `define-values` today (`BUILD_LIST_CONST`, `UNPACK_FAST`). The
 expansion binds the same way at module top level and in a class body.
 
-`define-values` lowers to the same expansion and is the Scheme
-spelling. `compile/define-values` retires.
+`define-values` is the Scheme spelling. Its special unpacks through the
+same helper and compiles to the same instructions.
 
 `set!` keeps `(set! (values ...) v)`. A bracket arm on `set!` would
 have to treat any pair whose head is not `item`, `attr` or `deref` as
@@ -243,17 +243,20 @@ value binding before and after. No form silently changes meaning.
 
 ## Specials underneath
 
-Once `define` and `define-global` are macros, the declare-and-store
-work needs specials of its own:
+The declare-and-store work lives in `compile/var` and
+`compile/global` (`koskari/compile/specials/variables.py`): the
+value, declaration and `::` / `type:` arms, with no function
+shorthand. `def` and `class` lower to `var`.
 
-- `compile/var` takes the body of `compile/define`: the value,
-  declaration and `::` / `type:` arms, without the function shorthand.
-- `compile/global` takes the body of `compile/define-global` on the
-  same terms.
-
-`def`, `var`, `define` and `class` lower to `compile/var`; `global`
-and `define-global` lower to `compile/global`. `compile/define`,
-`compile/define-global` and `compile/define-values` retire.
+`compile/define` and `compile/define-global` stay specials, with the
+Scheme patterns: a pair in the name position compiles
+`(function NAME FORMALS BODY...)` and stores it as `var` or `global`
+would, and a symbol takes the `var` or `global` arms. As specials
+rather than bootstrap macros they compile without the bootstrap, in
+the specials test harness and in `_define_syntax.ki` before any macro
+exists. `compile/define-values` keeps its implementation; it is the
+Scheme spelling of `var` over a pattern and compiles to the same
+instructions.
 
 Generated forms that name `define` today
 (`koskari/compile/specials/exceptions.py`, the module docstring's
@@ -357,10 +360,10 @@ silent change of meaning.
    `define-coroutine` retire in favour of `@demand` and a coroutine
    decorator over `def`. `syntax` lands, with the overlay arm for
    function bodies.
-6. **`define` reshaped.** `define` and `define-global` become macros
-   in the Scheme form over `compile/var` and `compile/global`;
-   `define-values` becomes the pattern macro. `compile/define`,
-   `compile/define-global` and `compile/define-values` retire.
+6. **`define` reshaped.** The `compile/define` and
+   `compile/define-global` specials take the Scheme patterns, a pair
+   in the name position for a function and the `var` or `global` arms
+   for a symbol. `define-values` is unchanged.
 7. **Version.** 0.2.0-dev.
 
 ## Obligations

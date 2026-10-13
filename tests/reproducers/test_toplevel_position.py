@@ -54,7 +54,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_bare_symbol(self):
         err = await self.error_for(
-            "define x 6\n"
+            "var x 6\n"
             "\n"
             "nope\n", NameError)
         self.assertEqual([3], sorted(set(dynchain_lines(err))))
@@ -62,7 +62,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_macro_call(self):
         err = await self.error_for(
-            "define x 6\n"
+            "var x 6\n"
             "\n"
             "incr! x \"s\"\n", TypeError)
         self.assertEqual([3], sorted(set(dynchain_lines(err))))
@@ -70,7 +70,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_define_class_unbound_base(self):
         err = await self.error_for(
-            "define x 6\n"
+            "var x 6\n"
             "\n"
             "class C (Base):\n"
             "    pass\n", NameError)

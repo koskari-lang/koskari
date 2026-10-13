@@ -35,11 +35,11 @@ pytestmark = pytest.mark.phase_lib
 
 SRC = """
 class Point []:
-    define __init__ [self x y]:
+    define [__init__ self x y]:
         set! self.x x
         set! self.y y
 
-define shapes [v]:
+define [shapes v]:
     match v:
         case Point[x: 0 y: 0]:
             "origin"
@@ -56,7 +56,7 @@ define shapes [v]:
         else:
             "other"
 
-define which [v]:
+define [which v]:
     match v:
         case Point[x: a y: b]:
             "class"

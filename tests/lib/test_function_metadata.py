@@ -214,12 +214,12 @@ CLOSURE_SRC = """
 
 
 MODULE_SRC = """
-(define top [x] x)
+(define [top x] x)
 
 (class Holder []
-  (define method [self] self))
+  (define [method self] self))
 
-(define outer []
+(define [outer]
   (lambda [y] y))
 """
 

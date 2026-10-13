@@ -144,7 +144,7 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
     demand_call on Function with closures (reproducer for closure-slot bug)
 
     Simpler case: no args, one closure. Slot 0 = closure 'x'.
-    (define later [] (+ x 5))-style with x in enclosing scope.
+    (def later [] (+ x 5))-style with x in enclosing scope.
     """
 
     def _make_closure_fn_no_args(self):

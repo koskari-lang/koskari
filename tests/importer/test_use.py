@@ -225,7 +225,7 @@ class TestUseErrorFidelity(UseCase):
         pkg = os.path.join(self._tmpdir, 'ki_use_pkg')
         os.makedirs(pkg)
         with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-            fh.write("(define marker 1)\n")
+            fh.write("(var marker 1)\n")
         with open(os.path.join(pkg, 'broken.ki'), 'w') as fh:
             fh.write('(raise (RuntimeError "boom inside broken"))\n')
 
@@ -248,7 +248,7 @@ class TestUseErrorFidelity(UseCase):
         pkg = os.path.join(self._tmpdir, 'ki_use_pkg2')
         os.makedirs(pkg)
         with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-            fh.write("(define marker 1)\n")
+            fh.write("(var marker 1)\n")
         with open(os.path.join(pkg, 'needy.ki'), 'w') as fh:
             fh.write('(raise (ImportError "optional dependency missing"))\n')
 

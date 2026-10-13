@@ -79,19 +79,19 @@ def wrap(level, bound, inner):
     """
 
     after = "x" if bound else "None"
-    bind = f'(define x "{level}")' if bound else ""
+    bind = f'(var x "{level}")' if bound else ""
 
     if level == "mod":
         return f"(begin {bind} {inner})"
     if level == "fn":
-        return f"((lambda [] {bind} (define r {inner}) #[r {after}]))"
+        return f"((lambda [] {bind} (var r {inner}) #[r {after}]))"
     if level == "let":
         binding = '[[x "let"]]' if bound else "[[unused 0]]"
-        return f"(let {binding} (define r {inner}) #[r {after}])"
+        return f"(let {binding} (var r {inner}) #[r {after}])"
     if level == "class":
         return (
-            f"(begin (define K (build-class K () {bind}"
-            f" (define m (lambda [self] {inner}))))"
+            f"(begin (var K (build-class K () {bind}"
+            f" (var m (lambda [self] {inner}))))"
             f" #[((attr (K) m)) None])")
     raise ValueError(level)
 

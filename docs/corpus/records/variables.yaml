@@ -1654,3 +1654,19 @@ tags:
   - namespace
   - higher-order
 notes: inside a callback run by map, koskari-vars sees the lambda's own frame on each call
+---
+id: variable-define-typed-value-001
+feature: special/compile/define
+source: "(begin (define n :: int 5) n)"
+verify:
+  read: "(begin (define n :: int 5) n)"
+  eval: "5"
+references:
+  - reference/specials/compile-define.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - variable
+  - define
+  - local-binding
+notes: "a symbol in the name position makes define a value binding, as var; :: T annotates it"

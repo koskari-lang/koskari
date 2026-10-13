@@ -102,7 +102,7 @@ notes: shared helper_function pipeline with lambda
 ---
 id: function-define-shorthand-001
 feature: special/compile/define
-source: (begin (define double [x] (* x 2)) (double 5))
+source: (begin (define [double x] (* x 2)) (double 5))
 verify:
   eval: "10"
 references:
@@ -116,7 +116,7 @@ notes: lowers to compile/function
 ---
 id: function-define-fact-001
 feature: special/compile/define
-source: "(begin (define fact [n] (cond [(== n 0) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
+source: "(begin (define [fact n] (cond [(== n 0) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
 verify:
   eval: "120"
 references:
@@ -129,24 +129,26 @@ notes: requires eq mul sub at eval
 ---
 id: function-define-return-type-001
 feature: special/compile/define
-source: "(begin (define f :: int [x] (* x 2)) f)"
+source: "(begin (define f (function f :: int [x] (* x 2))) f)"
 verify:
   eval: "@annotations:return:int"
 references:
   - reference/specials/compile-define.md
+  - reference/specials/compile-function.md
 stability: evolving
 tags:
   - function
   - define
-notes: build step only — invoke in function-define-return-type-invoke-001
+notes: "the Scheme define has no return-type slot; a typed function value from compile/function carries it. build step only -- invoke in function-define-return-type-invoke-001"
 ---
 id: function-define-return-type-invoke-001
 feature: special/compile/define
-source: "(begin (define f :: int [x] (* x 2)) (f 5))"
+source: "(begin (define f (function f :: int [x] (* x 2))) (f 5))"
 verify:
   eval: "10"
 references:
   - reference/specials/compile-define.md
+  - reference/specials/compile-function.md
 stability: evolving
 tags:
   - function
@@ -155,7 +157,7 @@ notes: call step only — no compile annotation check on a value result
 ---
 id: function-define-global-shorthand-001
 feature: special/compile/define-global
-source: (begin (define-global bump [x] (+ x 1)) (bump 41))
+source: (begin (define-global [bump x] (+ x 1)) (bump 41))
 verify:
   eval: "42"
 references:
@@ -614,7 +616,7 @@ id: function-define-keyword-arg-default-001
 feature: special/compile/define
 source: |-
   begin:
-    define around [i reach: 1]:
+    define [around i reach: 1]:
       (range (- i reach) (+ i reach 1))
     (list (around 3))
   
@@ -633,7 +635,7 @@ id: function-define-keyword-arg-call-002
 feature: special/compile/define
 source: |-
   begin:
-    define around [i reach: 1]:
+    define [around i reach: 1]:
       (range (- i reach) (+ i reach 1))
     (list (around 3 reach: 2))
   
@@ -652,7 +654,7 @@ id: function-define-star-args-003
 feature: special/compile/define
 source: |-
   (begin
-    (define f [x *: rest] (len rest))
+    (define [f x *: rest] (len rest))
     (f 1 2 3 4))
   
 verify:
@@ -670,7 +672,7 @@ id: function-define-star-kwargs-004
 feature: special/compile/define
 source: |-
   (begin
-    (define f [**: kwargs] (len kwargs))
+    (define [f **: kwargs] (len kwargs))
     (f x: 1 y: 2))
   
 verify:
@@ -1136,11 +1138,11 @@ notes: "stacked decorators peel outermost first: @let grafts a definition-time p
 id: function-define-pass-body-001
 feature: special/compile/define
 source: |-
-  define foo []:
+  define [foo]:
       pass
   (foo)
 verify:
-  read: "(begin (define foo [] pass) (foo))"
+  read: "(begin (define [foo] pass) (foo))"
   eval: "null"
 references:
   - reference/specials/compile-define.md
@@ -1498,3 +1500,101 @@ tags:
   - await
   - idiom
 notes: "@demand above def defines a function a synchronous Python caller can call directly for its value. Requires reader/decorators (baseline on)."
+---
+id: function-define-scheme-paren-001
+feature: special/compile/define
+source: (begin (define (square x) (* x x)) (square 7))
+verify:
+  read: (begin (define (square x) (* x x)) (square 7))
+  eval: "49"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - surface:sexpr
+notes: "Scheme shape: any pair in the name position, ( ) or [ ], is NAME followed by its formals. The idiomatic Koskari spelling is (def square [x] (* x x))."
+---
+id: function-define-scheme-block-001
+feature: special/compile/define
+source: |-
+  define [hyp a b]:
+    var sq (+ (* a a) (* b b))
+    (** sq 0.5)
+  (hyp 3 4)
+verify:
+  read: (begin (define [hyp a b] (var sq (+ (* a a) (* b b))) (** sq 0.5)) (hyp 3 4))
+  eval: "5.0"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - surface:block
+notes: "layout: define [NAME ARGS...]: then the body. The idiomatic Koskari spelling is def hyp [a b]:"
+---
+id: function-define-global-from-body-001
+feature: special/compile/define-global
+source: |-
+  (begin
+    (define [install]
+      (define-global [helper x] (* x 10))
+      None)
+    (install)
+    (helper 4))
+verify:
+  read: (begin (define [install] (define-global [helper x] (* x 10)) None) (install) (helper 4))
+  eval: "40"
+references:
+  - reference/specials/compile-define-global.md
+stability: evolving
+tags:
+  - function
+  - define-global
+  - module-global
+notes: define-global binds helper at the module even though it runs inside install's body; helper is visible at top level once install has been called
+---
+id: function-decorate-scheme-define-001
+feature: macro/compile/decorate
+source: (decorate [twice] (define [inc x] (+ x 1)))
+verify:
+  expand: (var inc (decorate [twice] (function inc [x] (+ x 1))))
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - define
+notes: decorate hoists the name out of a Scheme define subject, so the function value is decorated and the result bound to inc
+---
+id: function-decorate-scheme-define-block-001
+feature: layout/decorate
+source: |-
+  define [twice f]:
+    (lambda [x] (* 2 (f x)))
+  
+  @twice
+  define [inc x]:
+    (+ x 1)
+  
+  (inc 4)
+verify:
+  read: (begin (define [twice f] (lambda [x] (* 2 (f x)))) (decorate (twice) (define [inc x] (+ x 1))) (inc 4))
+  eval: "10"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-define.md
+  - guide/decorators.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - define
+  - surface:block
+  - pragma:reader/decorators
+notes: inc is bound to (twice <function inc>), so (inc 4) is 2 * 5. Requires reader/decorators (baseline on).

@@ -54,7 +54,7 @@ class TestBareRelativeImport(unittest.IsolatedAsyncioTestCase):
                      os.path.join(sub, '__init__.py')):
             with open(init, 'w', encoding='utf-8'):
                 pass
-        self.write(os.path.join(pkg, 'sib.ki'), "define SIB 7\n")
+        self.write(os.path.join(pkg, 'sib.ki'), "var SIB 7\n")
         self.write(os.path.join(sub, 'bare2.ki'),
                    "(import [.. as: parent_pkg])\n")
         self.write(os.path.join(sub, 'twodot.ki'),

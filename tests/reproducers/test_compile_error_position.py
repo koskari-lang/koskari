@@ -58,17 +58,17 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_syntax_match_error(self):
         err = await self.error_for(
-            "define a 1\n"
-            "define g []:\n"
+            "var a 1\n"
+            "def g []:\n"
             "    (if)\n")
         self.assert_located(err, 3)
 
 
     async def test_unsatisfied_write_layout(self):
         err = await self.error_for(
-            "define a 1\n"
+            "var a 1\n"
             "\n"
-            "define g []:\n"
+            "def g []:\n"
             "    define q 1\n"
             "    set! undeclared 2\n"
             "    q\n")
@@ -78,9 +78,9 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_unsatisfied_write_sexpr(self):
         err = await self.error_for(
-            "define a 1\n"
+            "var a 1\n"
             "\n"
-            "define g []:\n"
+            "def g []:\n"
             "    define q 1\n"
             "    (set! undeclared 2)\n"
             "    q\n")
@@ -91,9 +91,9 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_local_global_conflict(self):
         err = await self.error_for(
-            "define a 1\n"
+            "var a 1\n"
             "\n"
-            "define g []:\n"
+            "def g []:\n"
             "    define q 1\n"
             "    define-global q 2\n"
             "    q\n")
@@ -103,7 +103,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_global_then_local_conflict(self):
         err = await self.error_for(
-            "define g []:\n"
+            "def g []:\n"
             "    define-global q 2\n"
             "\n"
             "    define q 1\n"
@@ -119,7 +119,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
             "        case (bump! v):\n"
             "            (set! tmp (+ v 1))\n"
             "\n"
-            "define g []:\n"
+            "def g []:\n"
             "    define q 1\n"
             "    (bump! q)\n"
             "    q\n")
@@ -134,7 +134,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
             "        case (o rest ...):\n"
             "            `(#tuple . ,rest)\n"
             "\n"
-            "define f []:\n"
+            "def f []:\n"
             "    print \"before\"\n"
             "    o 1 2\n")
         self.assertIn("Unsupported source object", str(err))
@@ -148,7 +148,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
             "        case (o):\n"
             "            (object)\n"
             "\n"
-            "define f []:\n"
+            "def f []:\n"
             "    print \"before\"\n"
             "    (o)\n")
         self.assertIn("Unsupported source object", str(err))
@@ -157,7 +157,7 @@ class TestCompileErrorPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_innermost_enclosing_form(self):
         err = await self.error_for(
-            "define g []:\n"
+            "def g []:\n"
             "    print:\n"
             "        1\n"
             "        (if)\n"

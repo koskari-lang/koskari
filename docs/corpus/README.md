@@ -48,7 +48,7 @@ Schema documentation exists. Initial records live under `records/`:
 | [objects.yaml](records/objects.yaml) | Object operators, inplace, incr!/decr!, class, build-class |
 | [objects-invalid.yaml](records/objects-invalid.yaml) | Illegal object-operator forms (arity errors, format spec pitfalls) |
 | [classes.yaml](records/classes.yaml) | Layout class definitions with Python dunders, dataclass, staticmethod, classmethod, property, inheritance |
-| [functions.yaml](records/functions.yaml) | lambda, function, def, define function shorthand, gensym-thunk, compose, decorate |
+| [functions.yaml](records/functions.yaml) | lambda, function, def, Scheme-shape define, gensym-thunk, compose, decorate |
 | [functions-invalid.yaml](records/functions-invalid.yaml) | Illegal gensym-thunk forms and compile-time placeholder errors |
 | [syntax.yaml](records/syntax.yaml) | syntax, define-syntax, extend-syntax, rules/match, datum, pattern parsers |
 | [specials.yaml](records/specials.yaml) | Other compiler special forms |

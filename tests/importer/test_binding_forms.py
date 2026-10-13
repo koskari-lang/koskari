@@ -346,6 +346,15 @@ class TestDecorators(BindingFormsCase):
         self.assertEqual(1002, demand_call(ns['plus1'], 1))
 
 
+    async def test_decorated_scheme_define(self):
+        ns = await self.load(dedent(self.PRELUDE) + dedent("""
+        @wrap
+        define [plus2 x]:
+          + x 2
+        """))
+        self.assertEqual(1003, demand_call(ns['plus2'], 1))
+
+
     async def test_decorated_var(self):
         ns = await self.load(dedent(self.PRELUDE) + dedent("""
         @wrap

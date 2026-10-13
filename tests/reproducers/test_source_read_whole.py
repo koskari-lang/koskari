@@ -60,7 +60,7 @@ class TestSourceReadWhole(unittest.IsolatedAsyncioTestCase):
     async def test_text_appended_while_running_does_not_run(self):
         path = self.write("self_append.ki", (
             b"import builtins\n"
-            b"define seen #[]\n"
+            b"var seen #[]\n"
             b"(seen.append 1)\n"
             b"((attr (builtins.open __file__ \"a\") write)"
             b" \"\\n(seen.append 99)\\n\")\n"
@@ -70,7 +70,7 @@ class TestSourceReadWhole(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_lone_carriage_return_separates_forms(self):
-        path = self.write("lone_cr.ki", b'(define a 1)\r(define b 2)\n')
+        path = self.write("lone_cr.ki", b'(var a 1)\r(var b 2)\n')
         m = await self.load("lone_cr", path)
         self.assertEqual((1, 2), (m["a"], m["b"]))
 

@@ -21,7 +21,7 @@ pos and kwd lists.
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 
-Equivalent to (define foo [a: 1] a) but written as (define foo [[a 1]] a).
+Equivalent to (def foo [a: 1] a) but written as (def foo [[a 1]] a).
 Bracket (name default) is syntactic sugar for keyword default name: default.
 """
 

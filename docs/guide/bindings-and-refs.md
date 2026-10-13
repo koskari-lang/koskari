@@ -37,13 +37,27 @@ mix freely in one module:
 | Koskari | Scheme |
 |---|---|
 | `var NAME VALUE` | `define NAME VALUE` |
-| `def NAME [FORMALS]: BODY` | `define NAME [FORMALS] BODY` |
+| `def NAME [FORMALS]: BODY` | `define [NAME FORMALS]: BODY` |
 | `var [a b] VALUE` | `define-values [a b] VALUE` |
 | `global NAME VALUE` | `define-global NAME VALUE` |
+| `global def NAME [FORMALS]: BODY` | `define-global [NAME FORMALS]: BODY` |
 | `syntax NAME TRANSFORMER` | `define-syntax NAME TRANSFORMER` |
 
+`define` takes Scheme's shape: a function's name goes inside the pair
+with its formals, as in Scheme's `(define (area w h) ...)`:
+
+```koskari
+define [area width height]:
+  * width height
+
+area 6 7      ;; 42
+```
+
 `def` takes formals and a body, never a plain value; `def x 1` fails to
-compile. `var` takes a value, never formals and a body.
+compile. `var` takes a value, never formals and a body. A pair after
+`define` is always a function head, never a pattern: `define [a b] x`
+defines a function `a` of one argument `b`, where `var [a b] x` unpacks
+`x` into `a` and `b`.
 
 ## Local names with `let`
 

@@ -6,74 +6,111 @@
 [`def`](../macros/compile-def.md); see
 [Bindings and refs](../../guide/bindings-and-refs.md).
 
-**Syntax:** The name and optional return type can be written in either of two
-ways:
+**Syntax:**
 
-**Inline type** (preferred; same `::` / `type:` placement as `compile/lambda`):
+- Function: `(define [NAME FORMALS ...] BODY ...)` or
+  `(define (NAME FORMALS ...) BODY ...)`
+- Declaration only: `(define NAME)`, `(define NAME :: TYPE)`, or
+  `(define NAME type: TYPE)`
+- Declare and store: `(define NAME VALUE)`, `(define NAME :: TYPE VALUE)`,
+  or `(define NAME type: TYPE VALUE)`
 
-- Declaration only: `(define NAME :: TYPE)` or `(define NAME type: TYPE)`
-- Declare and store: `(define NAME :: TYPE EXPR)` (or `type: TYPE`)
-- Function shorthand:
-`(define NAME :: TYPE FORMALS BODY ...)` (or `type: TYPE`)
+The form of the first operand selects the arm. A pair, `[ ]` or `( )`,
+is a function head: its first element is the name and the rest are the
+formals, in every shape [`lambda`](compile-lambda.md) accepts. A symbol
+is a value binding.
 
-**DECL** as the first argument (single binding-shaped form, no value):
+In block form the function head is followed by a colon and an indented
+body:
 
-- Declaration only: `(define DECL)`
-- Declare and store: `(define DECL EXPR)`
-- Function shorthand: `(define DECL FORMALS BODY ...)`
+```koskari
+define [NAME FORMALS ...]:
+  BODY ...
+```
 
-**DECL** may be:
+**Use-case:** Scheme-style definitions. `(define [f x] body)` reads as
+Scheme's `(define (f x) body)`; `(define x v)` is
+`(var x v)`.
 
-- A **symbol** (e.g. `x`), or
-- A **proper list** introducing a name with optional **type** attributes only:
-e.g. `[x]`, `[x :: int]`, `[x type: int]`, or `(TYPE as: NAME)` for the
-type-as-name spelling. **`value:`** and two-element **`(SYM EXPR)`** defaults
-are rejected (declarations do not carry a value).
+**Behaviour:** A function head declares **NAME** in the current scope
+and stores `(function NAME FORMALS ... BODY ...)` into it, as
+`(def NAME [FORMALS ...] BODY ...)` does. The function needs at least
+one body form. A recursive call to **NAME** inside the body reads the
+binding in the enclosing scope.
 
-**Use-case:** Variable and function definition for module-level loading.
-Declaration-only leaves the ref in scope but empty (reading before assignment
-raises). Declare-and-store evaluates EXPR and stores the result in the slot
-(equivalent to compile/bindq). Function shorthand lowers to
-[compile/function](compile-function.md): if a return type is present (inline or
-in `DECL`), the expansion is `(function NAME :: TYPE FORMALS BODY ...)` (using
-the `::` keyword); if not, `(function NAME FORMALS BODY ...)`.
+A symbol in the name position behaves as [`var`](compile-var.md):
+**NAME** is declared in the current scope, **VALUE**, when present, is
+evaluated and stored, and without a value the slot is left empty, so
+reading it before a store raises. The form's value is `None`.
 
-For declaration-only or value binding with a type (e.g.
-`(define [x :: int])` or `(define x :: int 99)`), the type is
-accepted by the parser but is not stored on the variable binding in the current
-compiler (parse-only / metadata for tooling), except that function shorthand
-passes the type through to `compile/function` as the return annotation.
+`define` has no return-type slot for a function. A typed function is
+`(def NAME :: TYPE [FORMALS ...] BODY ...)`, or
+`(define NAME (function NAME :: TYPE [FORMALS ...] BODY ...))`.
 
-Recursive calls in function shorthand (e.g. `fact` below) use the **module/local
-binding** after `VAR_STORE`, not an inner closure self-ref for the name.
+A pair in the name position whose head is not a symbol raises
+`SpecialError`. The pre-Scheme shorthand `(define NAME [FORMALS ...] BODY ...)`
+matches no rule and raises `SyntaxMatchError`; move the name inside the
+pair.
 
-**Behaviour:** With **DECL**, parses the first argument with `parse_decl`. With
-**inline type**, the matcher binds `NAME`, `::` or `type:`, and `TYPE` (see
-[`koskari.matcher`](../api/koskari-matcher.md) -- **DECL** composite). Declares
-the introduced name. For declaration-only: emits CONST None. For
-declare-and-store: compiles EXPR, emits `VAR_STORE` to store the value, then
-CONST None. For function shorthand: builds the `compile/function` form as above and
-compiles it, then emits `VAR_STORE`.
+**Pitfall:** `(define [a b] x)` is not an unpacking. It defines a
+function named `a` with one formal `b` whose body is `x`, and binds
+nothing named `b`:
+
+```koskari
+(define [a b] #(1 2))
+(a "ignored")          ;; (1, 2)
+```
+
+Unpack with [`var`](compile-var.md) over a pattern, or with
+[`define-values`](compile-define-values.md):
+
+```koskari
+(var [a b] #(1 2))
+(define-values [a b] #(1 2))
+```
+
+A decorator line above a function `define` decorates the function and
+binds the result; see [`decorate`](../macros/compile-decorate.md).
 
 **Examples:**
 
 ```koskari
-;; Declaration only; assign later with compile/setq
+;; Declaration only; assign later with set!
 (define x)
-(setq x 42)
+(set! x 42)
 
-;; Typed declaration (parse-only on the binding; assign later as usual)
-(define x :: int)
-(define [x :: int])
+;; Typed declaration and value
+(define port :: int)
+(define host type: str "localhost")
 
 ;; Declare and store
 (define y 99)
 
-;; Function shorthand
-(define double [x] (* x 2))
-(define f :: int [x] 5)
-(define [f :: int] [x] 5)
-(define fact [n]
+;; Function, with ( ) or [ ] around the head
+(define (square x) (* x x))
+(define [double x] (* x 2))
+(define [fact n]
   (cond [(== n 0) 1]
-                [else: (* n (fact (- n 1)))]))
+        [else: (* n (fact (- n 1)))]))
+
+;; Typed function value
+(define half (function half :: float [x] (/ x 2)))
 ```
+
+In block form, with a decorator:
+
+```koskari
+define [twice f]:
+  (lambda [x] (* 2 (f x)))
+
+@twice
+define [inc x]:
+  (+ x 1)
+
+(inc 4)    ;; 10
+```
+
+**See also:** [compile/define-global](compile-define-global.md),
+[compile/var](compile-var.md), [def](../macros/compile-def.md),
+[compile/function](compile-function.md),
+[compile/define-values](compile-define-values.md).

@@ -96,6 +96,14 @@ def head-name [form]:
 ; specials take alone, for sources compiled without the bootstrap macros
 var SPECIALS-ONLY #[False]
 
+; scheme reshapes the function shorthand of define and define-global,
+; (define NAME [ARGS] BODY...), to (define [NAME ARGS] BODY...), and leaves
+; every other form alone
+var SCHEME #[False]
+
+; a reshape is planned under this replacement and applied by reshape-line
+var RESHAPE "<reshape>"
+
 
 def classify [head args top]:
   """
@@ -104,6 +112,9 @@ def classify [head args top]:
   """
 
   var specials-only (item SPECIALS-ONLY 0)
+
+  when (item SCHEME 0):
+    return (scheme-classify head args)
 
   if (in head #("define-values" "define-syntax")):
     if specials-only:
@@ -131,6 +142,39 @@ def classify [head args top]:
     (if function? "def" "var")
   else:
     (if function? "global def" "global")
+
+
+def scheme-classify [head args]:
+  """
+  RESHAPE for a define or define-global in the function shorthand,
+  else None
+  """
+
+  unless (and (in head #("define" "define-global")) (>= (len args) 3)):
+    return None
+
+  var [name formals *: body] args
+  (when (and (is_symbol name) (or (nil? formals) (is_pair formals)))
+    RESHAPE)
+
+
+var SCHEME_TAIL:
+  (re.compile r"(\s+)([^\s\[\]()]+)(\s+)([\[(])(\s*)([\])])?")
+
+
+def reshape-line [line at head]:
+  """
+  Move the name after head into the formals bracket that follows it,
+  or None when the name and the bracket are not on the head's line
+  """
+
+  var m (SCHEME_TAIL.match line (+ at (len head)))
+  when (None? m):
+    return None
+  var close (m.group 6)
+  (+ (line.__getitem__ (slice None (+ at (len head))))
+     (m.group 1) (m.group 4) (m.group 2) (or close " ")
+     (line.__getitem__ (slice (m.end) None)))
 
 
 def collect [form top edits]:
@@ -270,10 +314,17 @@ def rewrite-text [text]:
     var [lineno at] key
     var [head replacement] val
     var line (item lines (- lineno 1))
-    set! (item lines (- lineno 1)):
-      (+ (line.__getitem__ (slice None at))
-         replacement
-         (line.__getitem__ (slice (+ at (len head)) None)))
+    if (== replacement RESHAPE):
+      var reshaped (reshape-line line at head)
+      if (None? reshaped):
+        (problems.append f"line {lineno}: cannot reshape {head}")
+      else:
+        set! (item lines (- lineno 1)) reshaped
+    else:
+      set! (item lines (- lineno 1)):
+        (+ (line.__getitem__ (slice None at))
+           replacement
+           (line.__getitem__ (slice (+ at (len head)) None)))
 
   #(("\n".join lines) (len planned) problems)
 
@@ -470,7 +521,7 @@ def rewrite-yaml [text]:
     set! i (+ i 1)
 
     when (line.startswith "feature:"):
-      set! keep (in "define" line)
+      set! keep (and (not (item SCHEME 0)) (in "define" line))
 
     if (or (None? m) keep):
       (out.append line)
@@ -521,11 +572,14 @@ def build_arguments [parser]:
     help: "report counts without writing")
   (parser.add_argument "--specials-only" action: "store_true"
     help: "rewrite only the value forms the var and global specials take")
+  (parser.add_argument "--scheme" action: "store_true"
+    help: "reshape define function shorthand to the Scheme form")
   parser
 
 
 def run [options]:
   set! (item SPECIALS-ONLY 0) options.specials_only
+  set! (item SCHEME 0) options.scheme
   var grand 0
   var failed 0
   for-each [path (paths-of options.paths)]:

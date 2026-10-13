@@ -61,10 +61,10 @@ class TestTrailingReturnPosition(unittest.IsolatedAsyncioTestCase):
 
     async def test_return_tuple_last(self):
         err = await self.error_for(
-            "define parse [text]:\n"
+            "def parse [text]:\n"
             "    return (int text)\n"
             "\n"
-            "define load [a b]:\n"
+            "def load [a b]:\n"
             "    define n 1\n"
             "    return #(n (parse a) (parse b))\n"
             "\n"

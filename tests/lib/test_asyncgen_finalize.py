@@ -39,13 +39,13 @@ pytestmark = pytest.mark.phase_lib
 SRC = """
 import-from asyncio sleep
 
-define produce [box record]:
+define [produce box record]:
     try:
         (yield 1)
     finally:
         (record box.tag)
 
-define waits [record]:
+define [waits record]:
     try:
         (yield 1)
     finally:

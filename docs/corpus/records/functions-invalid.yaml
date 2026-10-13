@@ -148,7 +148,7 @@ notes: "corrective: @call-parameterize [[verbose True]] enters the extent per in
 id: function-define-percall-state-001
 feature: special/compile/define
 source: |-
-  define tick []:
+  define [tick]:
     define count 0
     incr! count
     count
@@ -156,7 +156,7 @@ source: |-
   #[(tick) (tick)]
   
 verify:
-  read: "(begin (define tick [] (define count 0) (incr! count) count) (#list (tick) (tick)))"
+  read: "(begin (define [tick] (define count 0) (incr! count) count) (#list (tick) (tick)))"
   invalid: "count is re-defined inside the body on every call, so the state never persists -- both calls return 1, giving list:[1,1] instead of list:[1,2]"
 references:
   - reference/specials/compile-define.md
@@ -272,3 +272,57 @@ tags:
   - surprising
   - pitfall
 notes: "corrective: (decorate [demand] (def sync-id [x] x)), written in block form as @demand above def sync-id [x]:. define-coroutine is gone the same way; use @coroutine-fn above def."
+---
+id: function-define-old-shorthand-invalid-001
+feature: special/compile/define
+source: (define f [x] x)
+verify:
+  read: (define f [x] x)
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - define
+  - invalid
+  - pitfall
+notes: "define takes Scheme's shape: the function name goes inside the pair with its formals. A symbol name followed by a formals list and a body matches no rule. corrective: (define [f x] x), or idiomatically (def f [x] x)"
+---
+id: function-define-typed-shorthand-invalid-001
+feature: special/compile/define
+source: "(define f :: int [x] (* x 2))"
+verify:
+  read: "(define f :: int [x] (* x 2))"
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - define
+  - invalid
+  - pitfall
+notes: "define has no return-type slot for a function. corrective: (def f :: int [x] (* x 2)), or (define f (function f :: int [x] (* x 2)))"
+---
+id: function-define-pair-not-unpack-001
+feature: special/compile/define
+source: "(begin (define [a b] #(1 2)) (a \"ignored\"))"
+verify:
+  read: (begin (define [a b] (#tuple 1 2)) (a "ignored"))
+  eval: tuple:(1,2)
+  invalid: "(define [a b] x) is not an unpacking: it defines a function named a with one formal b whose body is x. b is never bound outside a, and a is a function, so calling it with one argument returns the tuple"
+references:
+  - reference/specials/compile-define.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - function
+  - define
+  - invalid
+  - surprising
+  - pitfall
+  - destructure
+notes: "corrective: (var [a b] #(1 2)) or (define-values [a b] #(1 2)) to unpack into a and b"

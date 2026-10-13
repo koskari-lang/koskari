@@ -94,10 +94,10 @@ class TestInspectCompiledLambda(SpecialsTestCase):
 
 class TestInspectCompiledDefine(SpecialsTestCase):
 
-    async def test_define_shorthand_signature_types(self):
+    async def test_define_function_signature_types(self):
         src_str = """
         (begin
-          (define f :: int [(x :: int)] (mul x 2))
+          (define f (function f :: int [(x :: int)] (mul x 2)))
           f)
         """
         expr, mod = self.compile_expr(
