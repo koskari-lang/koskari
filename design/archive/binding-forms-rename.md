@@ -2,10 +2,9 @@
 
 ## Status
 
-Proposal -- not implemented. Revised 2026-10-12, replacing the
-2026-09-17 settlement. The work bumps the package from 0.1.0 to
-0.2.0-dev: the `class` rename and the `define` reshape break existing
-source.
+Implemented 2026-10-12, as revised that day over the 2026-09-17
+settlement. The work bumped the package from 0.1.0 to 0.2.0-dev: the
+`class` rename and the `define` reshape break existing source.
 
 ## Summary
 

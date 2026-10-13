@@ -4418,7 +4418,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
   pushes KOS_DYN_COLLECT owning it (`KOS_DYN_CAP_OWNS_NS`). The live namespace
   follows the chain top, so the body runs in the collector while the node is
   on the chain; nothing is saved or restored. The node's operand segment
-  attaches at push; expression results (e.g. None from compile/define) stay in
+  attaches at push; expression results (e.g. None from compile/var) stay in
   it and are discarded on POP_COLLECT, which pops the node and pushes the
   collected namespace.
 - **Pushes:** KOS_DYN_COLLECT (static extent KOS_EXT_COLLECT) owning the

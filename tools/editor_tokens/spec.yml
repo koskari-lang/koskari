@@ -4,17 +4,17 @@ version: 1
 # start of a line. Peer heads are listed separately under layout_peers.
 layout_heads:
   - begin
+  - build-class
   - call
   - class
+  - def
   - define
-  - define-class
-  - define-coroutine
-  - define-dataclass
   - define-syntax
   - dyn-wind
   - dyn-with
   - extend-syntax
   - for-each
+  - global
   - if
   - import-from
   - macro-match
@@ -29,9 +29,11 @@ layout_heads:
   - special-match
   - special-rules
   - switch
+  - syntax
   - syntax-match
   - syntax-rules
   - try
+  - var
   - when
   - when-main
   - while
@@ -112,6 +114,7 @@ list_head_specials:
   - bracket-proper
   - bracket-splice
   - break
+  - build-class
   - build-macro
   - build-proper
   - build-slice
@@ -148,7 +151,6 @@ list_head_specials:
   - cons
   - continue
   - coroutine-fn
-  - create-instance-check
   - create-task
   - datum
   - datum?
@@ -159,14 +161,11 @@ list_head_specials:
   - decorate
   - decorate-subject
   - decr!
+  - def
   - default!
   - defer
   - defer?
   - define
-  - define-class
-  - define-coroutine
-  - define-dataclass
-  - define-demanding
   - define-environ
   - define-fence
   - define-global
@@ -254,6 +253,7 @@ list_head_specials:
   - keyword
   - keyword-block
   - keyword?
+  - koskari-vars
   - labels
   - lambda
   - le?
@@ -268,8 +268,6 @@ list_head_specials:
   - list-each
   - list?
   - load-exception
-  - local
-  - locals
   - lt?
   - macro-match
   - macro-rules
@@ -355,6 +353,7 @@ list_head_specials:
   - switch
   - symbol
   - symbol?
+  - syntax
   - syntax-match
   - syntax-rules
   - take!
@@ -376,6 +375,7 @@ list_head_specials:
   - use
   - values
   - values?
+  - var
   - vars
   - when
   - when-main

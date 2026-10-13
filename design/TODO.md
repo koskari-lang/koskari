@@ -153,17 +153,6 @@ Two pieces of work:
 
 ## Compiler
 
-### Binding forms and builder forms (rename)
-
-One word per role: `var` binds a value (and unpacks a pattern), `def`
-a function, `class` a class (today `define-class`), with `build-class`
-as the builder; `global` prefixes any of them to bind at the module.
-`define` is reshaped to Scheme's `(define [f x] body...)` as the
-purist layer. A zero-arity `(vars)`, a runtime `koskari-vars`, and
-the 0.2.0-dev bump.
-
-Ref: [language/binding-forms-rename.md](language/binding-forms-rename.md).
-
 ### Extent verification and dead-region sweep
 
 Add the TAIL-under-non-discardable-extent check to the finalize walk
