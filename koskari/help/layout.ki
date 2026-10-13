@@ -30,7 +30,7 @@ import-from .tools help_for
 
 
 @demand
-define format_layout_peer [peer]:
+def format_layout_peer [peer]:
   """
   Render one peer head symbol for help text
   """
@@ -39,17 +39,17 @@ define format_layout_peer [peer]:
 
 
 @(help_for LayoutHandler)
-define help_for_layout_handler [obj formatter]:
+def help_for_layout_handler [obj formatter]:
   """
   Fill formatter with LayoutHandler documentation
   """
 
-  define doc (getattr obj "__doc__" None)
+  var doc (getattr obj "__doc__" None)
   when doc:
     (formatter.paragraph doc)
 
   when obj.peers:
-    define sec (formatter.section "Peers")
+    var sec (formatter.section "Peers")
     for-each [peer obj.peers]:
       (sec.item (format_layout_peer peer))
 

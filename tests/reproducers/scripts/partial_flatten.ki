@@ -7,45 +7,45 @@
 (define-parameter level 1)
 
 
-(define read-level [x]
+(def read-level [x]
   #(x level))
 
 
-(define kos-kw [a b c]
+(def kos-kw [a b c]
   #(a b c))
 
 
-(define via-demand-partial []
-  (define p (partial (demand (partial read-level 7))))
+(def via-demand-partial []
+  (var p (partial (demand (partial read-level 7))))
   (parameterize [[level 10]]
     (p)))
 
 
-(define via-async-partial []
+(def via-async-partial []
   ((partial py_async 1) 2))
 
 
-(define kos-bound-kw []
+(def kos-bound-kw []
   ((partial kos-kw 1 c: 3) 2))
 
 
-(define kos-call-kw []
+(def kos-call-kw []
   ((partial kos-kw 1) b: 2 c: 3))
 
 
-(define kos-both-kw []
+(def kos-both-kw []
   ((partial kos-kw 1 c: 3) b: 2))
 
 
-(define py-bound-kw []
+(def py-bound-kw []
   ((partial py_kw 1 c: 3) 2))
 
 
-(define py-both-kw []
+(def py-both-kw []
   ((partial py_kw 1 c: 3) b: 2))
 
 
-(define py-tail []
+(def py-tail []
   ((partial py_add 40) 2))
 
 

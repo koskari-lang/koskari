@@ -47,7 +47,7 @@ pytestmark = pytest.mark.phase_reproducers
 # A defer created inside a parameterize extent on the loading thread;
 # driven later on a different OS thread, it reads its captured binding.
 CAPTURE_SRC = """
-(define probe
+(var probe
   (parameterize [[tp "captured"]]
     (defer (lambda [] (parameterq tp "unset")))))
 """
@@ -61,7 +61,7 @@ CAPTURE_SRC = """
 # thread. B1, B2, and RESULTS are pre-seeded into the module
 # namespace.
 SHARED_SRC = """
-(define worker (lambda [name]
+(var worker (lambda [name]
   (parameterize [[shared name]]
     (B1.wait 10)
     (set! (item RESULTS name) (parameterq shared "unset")))
@@ -72,7 +72,7 @@ SHARED_SRC = """
   (when (== name "T2")
     (set! (item RESULTS "after") (parameterq shared "unset")))))
 
-(define probes #[(defer worker "T1") (defer worker "T2")])
+(var probes #[(defer worker "T1") (defer worker "T2")])
 """
 
 

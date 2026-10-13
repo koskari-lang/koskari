@@ -12,46 +12,46 @@
 
 
 
-(define gen []
+(def gen []
   (yield level)
   (yield level))
 
 
-(define relay []
+(def relay []
   (yield-from (iter (gen))))
 
 
-(define sleeper []
+(def sleeper []
   (sleep 0)
   (yield 1))
 
 
-(define consume-bare []
-  (define out #[])
+(def consume-bare []
+  (var out #[])
   (parameterize [[level 10]]
     (for-each [x (gen)]
       (out.append x)))
   out)
 
 
-(define consume-iter []
-  (define out #[])
+(def consume-iter []
+  (var out #[])
   (parameterize [[level 10]]
     (for-each [x (iter (gen))]
       (out.append x)))
   out)
 
 
-(define consume-relay []
-  (define out #[])
+(def consume-relay []
+  (var out #[])
   (parameterize [[level 10]]
     (for-each [x (relay)]
       (out.append x)))
   out)
 
 
-(define consume-sleeper []
-  (define out #[])
+(def consume-sleeper []
+  (var out #[])
   (for-each [x (iter (sleeper))]
     (out.append x))
   out)

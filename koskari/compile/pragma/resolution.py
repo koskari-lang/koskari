@@ -354,8 +354,8 @@ class KoskariPragma:
         pos = self.get_write_position(fragment, name)
         raise CompilerError(
             f"Cannot write to {str(name)!r}: not declared in this scope"
-            " or any enclosing scope. Use define for a local or"
-            " define-global for a global.",
+            " or any enclosing scope. Use var for a local or"
+            " global for a global.",
             name,
             position=pos,
             filename=filename)

@@ -70,8 +70,8 @@ class TestModuleIdentity(unittest.IsolatedAsyncioTestCase):
 
     async def test_rebound_global_is_read_from_python(self):
         self.write_ki('ki_ident_counter', """
-        (define count 0)
-        (define bump (lambda [] (define-global count (+ count 1)) count))
+        (var count 0)
+        (var bump (lambda [] (global count (+ count 1)) count))
         """)
         mod = importlib.import_module('ki_ident_counter')
         self.assertEqual(await mod.bump(), 1)
@@ -80,8 +80,8 @@ class TestModuleIdentity(unittest.IsolatedAsyncioTestCase):
 
     async def test_attribute_assigned_from_python_is_called(self):
         self.write_ki('ki_ident_helper', """
-        (define helper (lambda [] "real"))
-        (define call-helper (lambda [] (helper)))
+        (var helper (lambda [] "real"))
+        (var call-helper (lambda [] (helper)))
         """)
         mod = importlib.import_module('ki_ident_helper')
         mod.helper = lambda: "patched"
@@ -90,13 +90,13 @@ class TestModuleIdentity(unittest.IsolatedAsyncioTestCase):
 
     async def test_circular_import_sees_names_defined_so_far(self):
         self.write_ki('ki_ident_a', """
-        (define x 1)
+        (var x 1)
         (import ki_ident_b)
-        (define y ki_ident_b.seen)
+        (var y ki_ident_b.seen)
         """)
         self.write_ki('ki_ident_b', """
         (import-from ki_ident_a x)
-        (define seen x)
+        (var seen x)
         """)
         mod = importlib.import_module('ki_ident_a')
         self.assertEqual(mod.y, 1)

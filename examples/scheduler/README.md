@@ -709,7 +709,7 @@ Each config emits an idempotent guard so the first config of a type claims the
 shared default slot, with no registry and no duplicate check:
 
 ```koskari
-(define default/kafka)                   ; declare-only, idempotent
+(var default/kafka)                   ; declare-only, idempotent
 (unless &default/kafka                   ; the ref is falsey until first set
     (set! default/kafka audit-cluster))  ; so the FIRST config wins
 ```

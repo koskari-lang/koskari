@@ -18,7 +18,7 @@ produce macros.
 """
 
 
-define-syntax tacos:
+syntax tacos:
     syntax-rules []:
         match (tacos):
              print "Lonely Tacos"

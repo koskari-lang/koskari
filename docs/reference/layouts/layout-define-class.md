@@ -3,7 +3,7 @@
 
 **Use-case:** Class **definition** block syntax: lowers to
 `(define-class NAME SUPERS (begin BODY))`, which the
-**`compile/define-class`** macro expands to **`define`** plus **`class`** (see
+**`compile/define-class`** macro expands to **`var`** plus **`class`** (see
 [`define-class`](../macros/compile-define-class.md)). Same header shape as
 **`layout/class`**, but the read result binds **NAME** to the class after
 expansion.

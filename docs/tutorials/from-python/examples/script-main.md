@@ -8,7 +8,7 @@ module.
 
 ```koskari
 @entry-point
-define main []:
+def main []:
   print "running as a program"
 ```
 

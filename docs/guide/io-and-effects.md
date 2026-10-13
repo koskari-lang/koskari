@@ -63,7 +63,7 @@ and a bare `except:` catches everything.
 arm's when one ran:
 
 ```koskari
-define port:
+var port:
   try:
     (int text)
   except [ValueError]:
@@ -103,7 +103,7 @@ A call that returns an awaitable is awaited where it is called, so I/O
 through an async library reads the same as through a sync one:
 
 ```koskari
-define body [url]:
+def body [url]:
   (client.get url)     ;; awaited here if it suspends
 ```
 

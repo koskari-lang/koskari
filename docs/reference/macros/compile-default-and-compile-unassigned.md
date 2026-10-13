@@ -23,7 +23,7 @@ VALUE is not evaluated when the store is skipped.
 ```koskari
 >>> define-class Bag ():
 ...   pass
->>> define b (Bag)
+>>> var b (Bag)
 >>> (unassigned? b.x)
 True
 >>> (default! b.x 5)
@@ -35,7 +35,7 @@ True
 ```
 
 ```koskari
->>> define slot
+>>> var slot
 >>> (unassigned? slot)
 True
 >>> (default! slot 7)

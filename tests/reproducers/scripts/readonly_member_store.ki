@@ -4,14 +4,14 @@
 ;; must stay on the generic setattr path, which raises. The range
 ;; type declares start/stop/step this way.
 
-(define poke
+(var poke
   (lambda [r v]
     (set-attr r start v)))
 
-(define bump
+(var bump
   (lambda [r v]
     (inplace-attr + r start v)))
 
-(define peek
+(var peek
   (lambda [r]
     (attr r start)))

@@ -1,7 +1,7 @@
 # compile/extend-syntax
 
 **Syntax:** `(extend-syntax NAME TRANSFORMER)`, with the same transformer
-heads as `define-syntax`, `bare-syntax` included.
+heads as `syntax`, `bare-syntax` included.
 
 **Behaviour:** Rebinds `compile/NAME` to the combination of the existing
 transformer and the new spec, through `setq`. The new arms take
@@ -22,7 +22,7 @@ A library can ship a base macro and let each consumer specialize it.
 **Examples:**
 
 ```koskari
-define-syntax greet:
+syntax greet:
   syntax-rules []:
     greet name:
       f"hello {name}"
@@ -36,6 +36,7 @@ extend-syntax greet:
 (greet loud "b")     ;; "HELLO b"
 ```
 
-**See also:** [`define-syntax`](compile-define-syntax.md),
+**See also:** [`syntax`](compile-syntax.md),
+[`define-syntax`](compile-define-syntax.md),
 [`decorate-subject`](compile-decorate-subject.md), whose shape arms are
 extended this way.

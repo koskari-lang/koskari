@@ -34,7 +34,7 @@ pytestmark = pytest.mark.phase_specials
 
 DEEP = """
 (begin
-  (define f
+  (var f
     (lambda [n]
       (begin
         (call record n)
@@ -86,7 +86,7 @@ class TestRecursionLimit(SpecialsTestCase):
 
         src = """
         (begin
-          (define f
+          (var f
             (lambda [n]
               (+ 1 (call f (+ n 1)))))
           (try

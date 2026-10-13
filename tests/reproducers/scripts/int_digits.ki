@@ -5,75 +5,75 @@
 ;; boundaries and compares each result with Python's own operator.
 
 
-define kos_add [a b]:
+def kos_add [a b]:
     + a b
 
 
-define kos_sub [a b]:
+def kos_sub [a b]:
     - a b
 
 
-define kos_mul [a b]:
+def kos_mul [a b]:
     * a b
 
 
-define kos_mod [a b]:
+def kos_mod [a b]:
     % a b
 
 
-define kos_floordiv [a b]:
+def kos_floordiv [a b]:
     // a b
 
 
-define kos_truediv [a b]:
+def kos_truediv [a b]:
     / a b
 
 
-define kos_pow [a b]:
+def kos_pow [a b]:
     ** a b
 
 
-define kos_and [a b]:
+def kos_and [a b]:
     & a b
 
 
-define kos_or [a b]:
+def kos_or [a b]:
     | a b
 
 
-define kos_xor [a b]:
+def kos_xor [a b]:
     ^ a b
 
 
-define kos_lshift [a b]:
+def kos_lshift [a b]:
     << a b
 
 
-define kos_rshift [a b]:
+def kos_rshift [a b]:
     >> a b
 
 
-define kos_lt [a b]:
+def kos_lt [a b]:
     < a b
 
 
-define kos_le [a b]:
+def kos_le [a b]:
     <= a b
 
 
-define kos_eq [a b]:
+def kos_eq [a b]:
     == a b
 
 
-define kos_ne [a b]:
+def kos_ne [a b]:
     != a b
 
 
-define kos_gt [a b]:
+def kos_gt [a b]:
     > a b
 
 
-define kos_ge [a b]:
+def kos_ge [a b]:
     >= a b
 
 

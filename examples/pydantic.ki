@@ -22,11 +22,11 @@ import-from itertools product
 import-from koskari.lib Function
 
 
-define around [i reach: 1]:
+def around [i reach: 1]:
     (range (- i reach) (+ i reach 1))
 
 
-define base_config [**: cfg]:
+def base_config [**: cfg]:
     """
     Pydantic ConfigDict for Koskari-written models.
 
@@ -34,7 +34,7 @@ define base_config [**: cfg]:
     ignored_types setting.
     """
 
-    define ignored (cfg.get "ignored_types" #())
+    var ignored (cfg.get "ignored_types" #())
     set! cfg["ignored_types"] #(demand Function *: ignored)
     (ConfigDict **: cfg)
 
@@ -42,12 +42,12 @@ define base_config [**: cfg]:
 define-class Point [BaseModel]:
     """ A point in 2D space """
 
-    define model_config (base_config)
+    var model_config (base_config)
 
-    define x :: int 0
-    define y :: int 0
+    var x :: int 0
+    var y :: int 0
 
-    define neighbors [self reach: 1]:
+    def neighbors [self reach: 1]:
         each [[x y] (product (around self.x reach) (around self.y reach))]:
             (Point x: x y: y)
 
@@ -58,7 +58,7 @@ define main []:
     print "Point.__doc__:" Point.__doc__
     print "Point.__annotations__:" Point.__annotations__
 
-    define p (Point x: 3 y: 5)
+    var p (Point x: 3 y: 5)
     print "p:" p
     print "p.x:" p.x
     print "p.y:" p.y

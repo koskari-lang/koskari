@@ -5,22 +5,22 @@
 
 
 (define-class Counter []
-  (define __iter__ [self]
+  (def __iter__ [self]
     (yield 1)
     (yield 2)))
 
 
 (define-class Plain []
-  (define __iter__ [self]
+  (def __iter__ [self]
     (iter #[1 2])))
 
 
-(define koskari-iter-call []
+(def koskari-iter-call []
   (.__iter__ (Counter)))
 
 
-(define koskari-for-each []
-  (define out #[])
+(def koskari-for-each []
+  (var out #[])
   (for-each [x (Counter)]
     (out.append x))
   out)

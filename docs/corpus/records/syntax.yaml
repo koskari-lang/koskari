@@ -2,7 +2,7 @@ id: syntax-define-syntax-sr-expand-001
 feature: macro/compile/define-syntax
 source: "(define-syntax unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
 verify:
-  expand: "(define-global compile/unless (syntax-rules unless unless (else:) ...))"
+  expand: "(global compile/unless (syntax-rules unless unless (else:) ...))"
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -16,7 +16,7 @@ id: syntax-define-syntax-sm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax double (syntax-match [(double (VALUE x)) (+ x x)]))
 verify:
-  expand: (define-global compile/double (syntax-match double ...))
+  expand: (global compile/double (syntax-match double ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -31,7 +31,7 @@ id: syntax-define-syntax-mr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-rules [] [(ident x) x]))
 verify:
-  expand: (define-global compile/ident (macro-rules ident [] [(ident x) x]))
+  expand: (global compile/ident (macro-rules ident [] [(ident x) x]))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -46,7 +46,7 @@ id: syntax-define-syntax-mm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-match [(ident (VALUE x)) x]))
 verify:
-  expand: (define-global compile/ident (macro-match ident ...))
+  expand: (global compile/ident (macro-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -61,7 +61,7 @@ id: syntax-define-syntax-spr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-rules [] [(c (ident x)) x.datum]))
 verify:
-  expand: (define-global compile/ident (special-rules ident [] ...))
+  expand: (global compile/ident (special-rules ident [] ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -76,7 +76,7 @@ id: syntax-define-syntax-spm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-match [(compiler (ident (VALUE x))) x.datum]))
 verify:
-  expand: (define-global compile/ident (special-match ident ...))
+  expand: (global compile/ident (special-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -104,9 +104,9 @@ notes: koskari/bootstrap/_define_syntax.ki; newer rules take precedence via Synt
 ---
 id: syntax-syntax-rules-unless-001
 feature: special/compile/syntax-rules
-source: "(define unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
+source: "(var unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
 verify:
-  read: "(define unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
+  read: "(var unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
 references:
   - reference/specials/compile-syntax-rules.md
 stability: evolving
@@ -118,9 +118,9 @@ notes: define-only
 ---
 id: syntax-syntax-rules-ellipsis-001
 feature: special/compile/syntax-rules
-source: "(define example (syntax-rules example [#list] [(example fn (a b) ...) (#list (fn a b) ...)]))"
+source: "(var example (syntax-rules example [#list] [(example fn (a b) ...) (#list (fn a b) ...)]))"
 verify:
-  read: "(define example (syntax-rules example [#list] [(example fn (a b) ...) (#list (fn a b) ...)]))"
+  read: "(var example (syntax-rules example [#list] [(example fn (a b) ...) (#list (fn a b) ...)]))"
 references:
   - reference/specials/compile-syntax-rules.md
 stability: evolving
@@ -133,9 +133,9 @@ notes: define-only
 ---
 id: syntax-macro-rules-identity-001
 feature: special/compile/macro-rules
-source: (define ident (macro-rules ident [] [(ident x) x]))
+source: (var ident (macro-rules ident [] [(ident x) x]))
 verify:
-  read: (define ident (macro-rules ident [] [(ident x) x]))
+  read: (var ident (macro-rules ident [] [(ident x) x]))
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -147,9 +147,9 @@ notes: define-only
 ---
 id: syntax-macro-rules-ellipsis-001
 feature: special/compile/macro-rules
-source: "(define ellipsis-repro (macro-rules ellipsis-repro [] [(ellipsis-repro xs ...) `(#list ,@xs)]))"
+source: "(var ellipsis-repro (macro-rules ellipsis-repro [] [(ellipsis-repro xs ...) `(#list ,@xs)]))"
 verify:
-  read: "(define ellipsis-repro (macro-rules ellipsis-repro [] [(ellipsis-repro xs ...) `(#list ,@xs)]))"
+  read: "(var ellipsis-repro (macro-rules ellipsis-repro [] [(ellipsis-repro xs ...) `(#list ,@xs)]))"
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -162,9 +162,9 @@ notes: define-only
 ---
 id: syntax-syntax-match-double-001
 feature: special/compile/syntax-match
-source: (define double (syntax-match double [(double (VALUE x)) (+ x x)]))
+source: (var double (syntax-match double [(double (VALUE x)) (+ x x)]))
 verify:
-  read: (define double (syntax-match double [(double (VALUE x)) (+ x x)]))
+  read: (var double (syntax-match double [(double (VALUE x)) (+ x x)]))
 references:
   - reference/specials/compile-syntax-match.md
 stability: evolving
@@ -176,9 +176,9 @@ notes: define-only
 ---
 id: syntax-syntax-match-repeat-empty-001
 feature: special/compile/syntax-match
-source: "(define zot (syntax-match zot [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))"
+source: "(var zot (syntax-match zot [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))"
 verify:
-  read: "(define zot (syntax-match zot [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))"
+  read: "(var zot (syntax-match zot [(zot (REPEAT xs (VALUE e) min: 0)) (+ 1 1)]))"
 references:
   - reference/specials/compile-syntax-match.md
 stability: evolving
@@ -190,9 +190,9 @@ notes: define-only
 ---
 id: syntax-syntax-match-repeat-literal-001
 feature: special/compile/syntax-match
-source: "(define zot (syntax-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+source: "(var zot (syntax-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
 verify:
-  read: "(define zot (syntax-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+  read: "(var zot (syntax-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
 references:
   - reference/specials/compile-syntax-match.md
 stability: evolving
@@ -204,9 +204,9 @@ notes: define-only
 ---
 id: syntax-macro-match-identity-001
 feature: special/compile/macro-match
-source: (define ident (macro-match ident [(ident (VALUE x)) x]))
+source: (var ident (macro-match ident [(ident (VALUE x)) x]))
 verify:
-  read: (define ident (macro-match ident [(ident (VALUE x)) x]))
+  read: (var ident (macro-match ident [(ident (VALUE x)) x]))
 references:
   - reference/specials/compile-macro-match.md
 stability: evolving
@@ -218,9 +218,9 @@ notes: define-only
 ---
 id: syntax-macro-match-repeat-literal-001
 feature: special/compile/macro-match
-source: "(define zot (macro-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+source: "(var zot (macro-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
 verify:
-  read: "(define zot (macro-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
+  read: "(var zot (macro-match zot [(zot (REPEAT ys (LITERAL hello) min: 1)) (+ 1 1)]))"
 references:
   - reference/specials/compile-macro-match.md
 stability: evolving
@@ -232,9 +232,9 @@ notes: define-only
 ---
 id: syntax-special-rules-identity-001
 feature: special/compile/special-rules
-source: (define ident (special-rules ident [] [(c (ident x)) x.datum]))
+source: (var ident (special-rules ident [] [(c (ident x)) x.datum]))
 verify:
-  read: (define ident (special-rules ident [] [(c (ident x)) x.datum]))
+  read: (var ident (special-rules ident [] [(c (ident x)) x.datum]))
 references:
   - reference/specials/compile-special-rules.md
 stability: evolving
@@ -246,9 +246,9 @@ notes: define-only
 ---
 id: syntax-special-rules-bare-form-001
 feature: special/compile/special-rules
-source: (define ident (special-rules ident [] [(c x) (car (cdr x.datum))]))
+source: (var ident (special-rules ident [] [(c x) (car (cdr x.datum))]))
 verify:
-  read: (define ident (special-rules ident [] [(c x) (car (cdr x.datum))]))
+  read: (var ident (special-rules ident [] [(c x) (car (cdr x.datum))]))
 references:
   - reference/specials/compile-special-rules.md
 stability: evolving
@@ -260,9 +260,9 @@ notes: define-only
 ---
 id: syntax-special-match-identity-001
 feature: special/compile/special-match
-source: (define ident (special-match ident [(compiler (ident (VALUE x))) x.datum]))
+source: (var ident (special-match ident [(compiler (ident (VALUE x))) x.datum]))
 verify:
-  read: (define ident (special-match ident [(compiler (ident (VALUE x))) x.datum]))
+  read: (var ident (special-match ident [(compiler (ident (VALUE x))) x.datum]))
 references:
   - reference/specials/compile-special-match.md
 stability: evolving
@@ -274,9 +274,9 @@ notes: define-only
 ---
 id: syntax-special-match-bare-form-001
 feature: special/compile/special-match
-source: (define ident (special-match ident [(c x) (car (cdr x.datum))]))
+source: (var ident (special-match ident [(c x) (car (cdr x.datum))]))
 verify:
-  read: (define ident (special-match ident [(c x) (car (cdr x.datum))]))
+  read: (var ident (special-match ident [(c x) (car (cdr x.datum))]))
 references:
   - reference/specials/compile-special-match.md
 stability: evolving
@@ -326,9 +326,9 @@ tags:
 ---
 id: syntax-extend-syntax-precedence-001
 feature: macro/compile/extend-syntax
-source: (begin (define-syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (syntax-rules [] [(pick a b) a])))
+source: (begin (syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (syntax-rules [] [(pick a b) a])))
 verify:
-  read: (begin (define-syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (syntax-rules [] [(pick a b) a])))
+  read: (begin (syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (syntax-rules [] [(pick a b) a])))
 references:
   - reference/macros/compile-extend-syntax.md
 stability: evolving
@@ -387,7 +387,7 @@ notes: koskari/bootstrap/_define_syntax.ki; quotes expr before wrapping
 ---
 id: syntax-datum-unwrap-001
 feature: macro/compile/datum
-source: (begin (define d (datum 42)) (attr d datum))
+source: (begin (var d (datum 42)) (attr d datum))
 verify:
   eval: "42"
 references:
@@ -400,7 +400,7 @@ notes: koskari.lib.Datum constructor at eval; requires datum in builtins namespa
 ---
 id: syntax-datumq-unwrap-001
 feature: macro/compile/datumq
-source: (begin (define d (datumq hello)) (attr d datum))
+source: (begin (var d (datumq hello)) (attr d datum))
 verify:
   eval: "symbol:hello"
 references:
@@ -414,7 +414,7 @@ notes: datumq expands then Datum wraps quoted symbol; requires builtins at expan
 id: syntax-macro-rules-multi-body-003
 feature: special/compile/macro-rules
 source: |-
-  (define swap! (macro-rules swap! [] [(swap! a b) (let [[t a]] (setq a b) (setq b t))]))
+  (var swap! (macro-rules swap! [] [(swap! a b) (let [[t a]] (setq a b) (setq b t))]))
   
 verify:
   eval: "null"
@@ -430,11 +430,11 @@ notes: multi-form template body; define-only; [] literals round-trips as nil
 id: syntax-macro-match-two-values-003
 feature: special/compile/macro-match
 source: |-
-  (define add-pair (macro-match add-pair [(add-pair (VALUE x) (VALUE y)) (+ x y)]))
+  (var add-pair (macro-match add-pair [(add-pair (VALUE x) (VALUE y)) (+ x y)]))
   
 verify:
-  read: (define add-pair (macro-match add-pair ((add-pair (VALUE x) (VALUE y)) (+ x y))))
-  expand: (define add-pair (macro-match add-pair ((add-pair (VALUE x) (VALUE y)) (+ x y))))
+  read: (var add-pair (macro-match add-pair ((add-pair (VALUE x) (VALUE y)) (+ x y))))
+  expand: (var add-pair (macro-match add-pair ((add-pair (VALUE x) (VALUE y)) (+ x y))))
   eval: "null"
 references:
   - reference/specials/compile-macro-match.md
@@ -448,7 +448,7 @@ notes: two VALUE pattern vars; define-only; macro-match matches hygienically
 id: syntax-special-rules-double-003
 feature: special/compile/special-rules
 source: |-
-  (define dbl (special-rules dbl [] [(c (dbl x)) (+ x.datum x.datum)]))
+  (var dbl (special-rules dbl [] [(c (dbl x)) (+ x.datum x.datum)]))
   
 verify:
   eval: "null"
@@ -464,11 +464,11 @@ notes: define-only; x.datum accesses the datum from the AST node; [] reads as ni
 id: syntax-special-match-second-003
 feature: special/compile/special-match
 source: |-
-  (define second (special-match second [(compiler (second (VALUE x) (VALUE y))) y.datum]))
+  (var second (special-match second [(compiler (second (VALUE x) (VALUE y))) y.datum]))
   
 verify:
-  read: (define second (special-match second ((compiler (second (VALUE x) (VALUE y))) (attr y datum))))
-  expand: (define second (special-match second ((compiler (second (VALUE x) (VALUE y))) (attr y datum))))
+  read: (var second (special-match second ((compiler (second (VALUE x) (VALUE y))) (attr y datum))))
+  expand: (var second (special-match second ((compiler (second (VALUE x) (VALUE y))) (attr y datum))))
   eval: "null"
 references:
   - reference/specials/compile-special-match.md
@@ -482,7 +482,7 @@ notes: two VALUE pattern variables; y.datum reads the second argument's compile-
 id: syntax-syntax-rules-cond-template-003
 feature: special/compile/syntax-rules
 source: |-
-  (define my-and (syntax-rules my-and [] [(my-and a b) (cond [a b] [else: False])]))
+  (var my-and (syntax-rules my-and [] [(my-and a b) (cond [a b] [else: False])]))
   
 verify:
   eval: "null"
@@ -498,11 +498,11 @@ notes: define-only; cond template body; [] literals round-trip as nil in printed
 id: syntax-datumq-integer-003
 feature: macro/compile/datumq
 source: |-
-  (begin (define d (datumq 42)) (attr d datum))
+  (begin (var d (datumq 42)) (attr d datum))
   
 verify:
-  read: (begin (define d (datumq 42)) (attr d datum))
-  expand: (begin (define d (datumq 42)) (attr d datum))
+  read: (begin (var d (datumq 42)) (attr d datum))
+  expand: (begin (var d (datumq 42)) (attr d datum))
   eval: "42"
 references:
   - reference/macros/compile-datum.md
@@ -515,7 +515,7 @@ notes: datumq wraps an integer literal; datum attribute returns the original val
 id: syntax-extend-syntax-mr-003
 feature: macro/compile/extend-syntax
 source: |-
-  (begin (define-syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (macro-rules [] [(pick a b) a])))
+  (begin (syntax pick (syntax-rules [] [(pick a) a])) (extend-syntax pick (macro-rules [] [(pick a b) a])))
   
 verify:
   eval: "null"
@@ -527,7 +527,7 @@ tags:
   - extend-syntax
   - macro-rules
   - metaprogramming
-notes: extend-syntax macro-rules arm; define-syntax first then extend with a two-arg rule
+notes: extend-syntax macro-rules arm; syntax first, then extend with a two-arg rule
 ---
 id: syntax-layout-define-syntax-sr-003
 feature: layout/define-syntax
@@ -552,7 +552,7 @@ notes: layout form with syntax-rules and a single body expression
 id: macro-precedence-over-local-binding-001
 feature: macro/compile/caddr
 source: |-
-  (let [] (define caddr (lambda [n] 999)) (caddr (cons 1 2 3 4 nil)))
+  (let [] (var caddr (lambda [n] 999)) (caddr (cons 1 2 3 4 nil)))
   
 verify:
   eval: "3"
@@ -567,21 +567,21 @@ tags:
   - surprising
   - name-resolution
   - pitfall
-notes: macros expand at compile time before name resolution, so a macro always wins over a same-named value binding in call position. caddr is a macro, so the local (define caddr ...) is never consulted for (caddr ...) — it evaluates via the accessor to 3, not 999. Names bound to runtime functions (e.g. first) shadow normally; see the concepts page.
+notes: macros expand at compile time before name resolution, so a macro always wins over a same-named value binding in call position. caddr is a macro, so the local (var caddr ...) is never consulted for (caddr ...) — it evaluates via the accessor to 3, not 999. Names bound to runtime functions (e.g. first) shadow normally; see the concepts page.
 ---
 id: syntax-macro-rules-introspect-001
 feature: special/compile/macro-rules
 source: |-
-  (define-syntax tag-head
+  (syntax tag-head
     (macro-rules []
       [(tag-head TAG form)
        (begin
-         (define-values [head rest] form.datum)
+         (var [head rest] form.datum)
          (datum `(,head ,TAG.datum ,@rest)))]))
   
 verify:
-  read: (define-syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (datum (quasiquote ((unquote head) (unquote (attr TAG datum)) (unquote-splicing rest)))))]))
-  expand: (define-global compile/tag-head (macro-rules tag-head [] [(tag-head TAG form) (begin (define-values [head rest] (attr form datum)) (datum (quasiquote ((unquote head) (unquote (attr TAG datum)) (unquote-splicing rest)))))]))
+  read: (syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (var [head rest] (attr form datum)) (datum (quasiquote ((unquote head) (unquote (attr TAG datum)) (unquote-splicing rest)))))]))
+  expand: (syntax tag-head (macro-rules [] [(tag-head TAG form) (begin (var [head rest] (attr form datum)) (datum (quasiquote ((unquote head) (unquote (attr TAG datum)) (unquote-splicing rest)))))]))
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -591,7 +591,7 @@ tags:
   - metaprogramming
 notes: |-
   Procedural macro that introspects its matched form: form.datum unwraps the
-  matched pair, define-values [head rest] destructures it, and quasiquote with
+  matched pair, var [head rest] destructures it, and quasiquote with
   unquote-splicing rebuilds a form with TAG injected after the head. Used:
   (tag-head 0 (+ 1 2)) -> (+ 0 1 2). The rebuilt form is the caller's code,
   so it goes back out inside datum; a piece taken out with .datum and
@@ -603,13 +603,13 @@ notes: |-
 id: syntax-rules-nested-ellipsis-inject-001
 feature: special/compile/syntax-rules
 source: |-
-  (define-syntax with-subitems
+  (syntax with-subitems
     (syntax-rules []
       [(with-subitems tag (subhead subrest ...) ...)
        (begin (subhead tag subrest ...) ...)]))
 verify:
-  read: (define-syntax with-subitems (syntax-rules [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
-  expand: (define-global compile/with-subitems (syntax-rules with-subitems [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
+  read: (syntax with-subitems (syntax-rules [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
+  expand: (syntax with-subitems (syntax-rules [] [(with-subitems tag (subhead subrest ...) ...) (begin (subhead tag subrest ...) ...)]))
 references:
   - reference/specials/compile-syntax-rules.md
 stability: evolving
@@ -642,12 +642,12 @@ notes: "Open dispatch on a tagged sub-form: kafka in the literal list matches th
 id: syntax-macro-rules-synth-head-001
 feature: special/compile/macro-rules
 source: |-
-  (define-syntax job
+  (syntax job
     (macro-rules []
       [(job tp rest ...) `(,(datum (symbol f"job/{tp.datum.base}")) ,@rest)]))
 verify:
-  read: "(define-syntax job (macro-rules [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr (attr tp datum) base)))))) (unquote-splicing rest)))]))"
-  expand: "(define-global compile/job (macro-rules job [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr (attr tp datum) base)))))) (unquote-splicing rest)))]))"
+  read: "(syntax job (macro-rules [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr (attr tp datum) base)))))) (unquote-splicing rest)))]))"
+  expand: "(syntax job (macro-rules [] [(job tp rest ...) (quasiquote ((unquote (datum (symbol (#str \"job/\" (format (attr (attr tp datum) base)))))) (unquote-splicing rest)))]))"
 references:
   - reference/specials/compile-macro-rules.md
 stability: evolving
@@ -677,13 +677,13 @@ notes: "unquoting a dotted name takes the WHOLE expression: ,job.enabled reads a
 id: layout-split-value-open-paren-001
 feature: reader/layout
 source: |-
-  define-values [a b] (values
+  var [a b] (values
       1 2)
   (+ a b)
   
 verify:
-  read: (begin (define-values [a b] (values 1 2)) (+ a b))
-  expand: (begin (define-values [a b] (values 1 2)) (+ a b))
+  read: (begin (var [a b] (values 1 2)) (+ a b))
+  expand: (begin (var [a b] (values 1 2)) (+ a b))
   eval: "3"
 stability: evolving
 tags:
@@ -695,13 +695,13 @@ notes: "splitting a long value across lines, option 1: open the value's parenthe
 id: layout-split-value-colon-block-002
 feature: reader/layout
 source: |-
-  define-values [a b]:
+  var [a b]:
       values 1 2
   (+ a b)
   
 verify:
-  read: (begin (define-values [a b] (values 1 2)) (+ a b))
-  expand: (begin (define-values [a b] (values 1 2)) (+ a b))
+  read: (begin (var [a b] (values 1 2)) (+ a b))
+  expand: (begin (var [a b] (values 1 2)) (+ a b))
   eval: "3"
 stability: evolving
 tags:
@@ -732,11 +732,11 @@ notes: requires reader/index-brackets (baseline on). a [ ] group attached with n
 id: reader-index-bracket-chain-002
 feature: reader/index-bracket
 source: |-
-  (define grid #[#[1 2] #[3 4]])
+  (var grid #[#[1 2] #[3 4]])
   grid[1][0]
   
 verify:
-  read: "(begin (define grid (#list (#list 1 2) (#list 3 4))) (item (item grid 1) 0))"
+  read: "(begin (var grid (#list (#list 1 2) (#list 3 4))) (item (item grid 1) 0))"
   eval: "3"
 references:
   - reference/grammar.md
@@ -829,11 +829,11 @@ notes: "requires reader/string-segments (baseline on). a hyphen touching the clo
 id: reader-string-segment-format-splice-002
 feature: reader/string-segment
 source: |-
-  (define n 7)
+  (var n 7)
   (print "n is "- f"{n}")
   
 verify:
-  read: "(begin (define n 7) (print (#str \"n is \" (format n))))"
+  read: "(begin (var n 7) (print (#str \"n is \" (format n))))"
   eval: "null"
 references:
   - reference/grammar.md
@@ -848,12 +848,12 @@ notes: "requires reader/string-segments (baseline on). each segment carries its 
 id: reader-string-segment-block-surface-003
 feature: reader/string-segment
 source: |-
-  define greet [name]:
+  def greet [name]:
       return "Hello, "-
              f"{name}!"
   
 verify:
-  read: "(define greet [name] (return (#str \"Hello, \" (format name) \"!\")))"
+  read: "(def greet [name] (return (#str \"Hello, \" (format name) \"!\")))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -870,7 +870,7 @@ id: syntax-define-syntax-bare-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax greeting (bare-syntax me (quote hello)))
 verify:
-  expand: (define-global compile/greeting (bare-syntax greeting me (quote hello)))
+  expand: (global compile/greeting (bare-syntax greeting me (quote hello)))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -1073,10 +1073,10 @@ notes: "\\x7b / \\x7d decode to { and } in literal text but must not act as fiel
 ---
 id: reader-f-string-index-chain-017
 feature: reader/f-string
-source: "(begin (define grid #(#(10 20) #(30 40))) (define y 1) (define x 0) f\"{grid[y][x]}\")"
+source: "(begin (var grid #(#(10 20) #(30 40))) (var y 1) (var x 0) f\"{grid[y][x]}\")"
 verify:
-  read: "(begin (define grid (#tuple (#tuple 10 20) (#tuple 30 40))) (define y 1) (define x 0) (#str (format (item (item grid y) x))))"
-  expand: "(begin (define grid (#tuple (#tuple 10 20) (#tuple 30 40))) (define y 1) (define x 0) (#str (format (item (item grid y) x))))"
+  read: "(begin (var grid (#tuple (#tuple 10 20) (#tuple 30 40))) (var y 1) (var x 0) (#str (format (item (item grid y) x))))"
+  expand: "(begin (var grid (#tuple (#tuple 10 20) (#tuple 30 40))) (var y 1) (var x 0) (#str (format (item (item grid y) x))))"
   eval: '"30"'
 references:
   - reference/grammar.md
@@ -1149,10 +1149,10 @@ notes: "a colon inside parentheses is a keyword argument, not a format spec. the
 ---
 id: reader-f-string-legacy-dynamic-spec-011
 feature: reader/f-string
-source: (begin (define rules "04d") f"{42 rules}")
+source: (begin (var rules "04d") f"{42 rules}")
 verify:
-  read: "(begin (define rules \"04d\") (#str (format 42 rules)))"
-  expand: "(begin (define rules \"04d\") (#str (format 42 rules)))"
+  read: "(begin (var rules \"04d\") (#str (format 42 rules)))"
+  expand: "(begin (var rules \"04d\") (#str (format 42 rules)))"
   eval: '"0042"'
 references:
   - reference/grammar.md
@@ -1253,10 +1253,10 @@ notes: "koskari/dis.ki truncates a repr with f\"{(item-slice r stop: 57)}...\". 
 ---
 id: reader-f-string-two-slots-019
 feature: reader/f-string
-source: "(begin (define name \"PUSH_NS\") f\"{42:3d}  {name:24s}\")"
+source: "(begin (var name \"PUSH_NS\") f\"{42:3d}  {name:24s}\")"
 verify:
-  read: "(begin (define name \"PUSH_NS\") (#str (format 42 \"3d\") \"  \" (format name \"24s\")))"
-  expand: "(begin (define name \"PUSH_NS\") (#str (format 42 \"3d\") \"  \" (format name \"24s\")))"
+  read: "(begin (var name \"PUSH_NS\") (#str (format 42 \"3d\") \"  \" (format name \"24s\")))"
+  expand: "(begin (var name \"PUSH_NS\") (#str (format 42 \"3d\") \"  \" (format name \"24s\")))"
   eval: '" 42  PUSH_NS                 "'
 references:
   - reference/grammar.md
@@ -1548,7 +1548,7 @@ source: |-
   
 verify:
   read: (define-syntax mk-getter (syntax-rules [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
-  expand: (define-global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
+  expand: (global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
 references:
   - guide/hygiene.md
   - reference/specials/compile-quasiquote-syntax.md
@@ -1576,7 +1576,7 @@ source: |-
   
 verify:
   read: (define-syntax mk-getter (syntax-rules [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
-  expand: (define-global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
+  expand: (global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
 references:
   - guide/hygiene.md
   - reference/specials/compile-quasiquote.md
@@ -1599,7 +1599,7 @@ source: |-
     (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
 verify:
   read: (define-syntax set-slot (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
-  expand: (define-global compile/set-slot (syntax-rules set-slot [] [(set-slot v) (define (datumq shared-slot) v)]))
+  expand: (global compile/set-slot (syntax-rules set-slot [] [(set-slot v) (define (datumq shared-slot) v)]))
 references:
   - guide/hygiene.md
   - guide/macros-and-hygiene.md
@@ -1624,7 +1624,7 @@ source: |-
          (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
 verify:
   read: (define-syntax make-setter (syntax-rules [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
-  expand: (define-global compile/make-setter (syntax-rules make-setter [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+  expand: (global compile/make-setter (syntax-rules make-setter [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
 references:
   - guide/hygiene.md
 stability: evolving
@@ -1647,7 +1647,7 @@ source: |-
          (macro-rules [] [(mname) `(define ,((datumq datumq) other) 0)]))]))
 verify:
   read: (define-syntax make-raw (syntax-rules [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
-  expand: (define-global compile/make-raw (syntax-rules make-raw [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
+  expand: (global compile/make-raw (syntax-rules make-raw [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
 references:
   - guide/hygiene.md
 stability: evolving

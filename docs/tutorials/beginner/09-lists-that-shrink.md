@@ -104,7 +104,7 @@ Ask the plain question first, and otherwise ask the same question of the
 rest:
 
 ```koskari
-define length [items]:
+def length [items]:
   if (nil? items):
     0
   else:
@@ -143,7 +143,7 @@ Not empty; the `car` is `'pear`. Yes.
 Write it.
 +++
 ```koskari
-define member? [item items]:
+def member? [item items]:
   if (nil? items):
     False
   elif (== item (car items)):
@@ -168,7 +168,7 @@ the `car` is the item, the answer is the rest. Otherwise keep the `car`
 and remove the item from the rest:
 
 ```koskari
-define remove [item items]:
+def remove [item items]:
   if (nil? items):
     nil
   elif (== item (car items)):

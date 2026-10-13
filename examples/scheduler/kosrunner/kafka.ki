@@ -21,7 +21,7 @@ import-from typing Any
 (use .job Config Job require-extra watch-task)
 
 
-define logger (logging.getLogger "kosrunner.kafka")
+var logger (logging.getLogger "kosrunner.kafka")
 
 
 define-dataclass KafkaConfig [Config]:
@@ -33,28 +33,28 @@ define-dataclass KafkaConfig [Config]:
     ;; required in practice; defaulted None because the base Config's
     ;; defaulted `disabled` field precedes it in the dataclass init, and
     ;; guarded at start so a serverless kafka job still dies loudly
-    define [servers :: str] None
-    define [group_id :: str] None
+    var servers :: str None
+    var group_id :: str None
 
-    define [security_protocol :: str] "PLAINTEXT"
-    define [ssl_context :: Any] None
-    define [ssl_cafile :: str] None
+    var security_protocol :: str "PLAINTEXT"
+    var ssl_context :: Any None
+    var ssl_cafile :: str None
 
-    define [sasl_mechanism :: str] None
-    define [sasl_plain_username :: str] None
-    define [sasl_plain_password :: str] None
+    var sasl_mechanism :: str None
+    var sasl_plain_username :: str None
+    var sasl_plain_password :: str None
 
-    define [auto_offset_reset :: str] "latest"
-    define [enable_auto_commit :: bool] True
+    var auto_offset_reset :: str "latest"
+    var enable_auto_commit :: bool True
 
     ;; politeness knobs -- how hard we lean on the broker. A larger
     ;; fetch_max_wait_ms lets each fetch long-poll longer on an idle
     ;; topic, so we make fewer empty round-trips; retry_backoff_ms
     ;; spaces out reconnect/refetch attempts. Both default politer than
     ;; aiokafka's own defaults (500ms / 100ms).
-    define [fetch_max_wait_ms :: int] 1000
-    define [fetch_min_bytes :: int] 1
-    define [retry_backoff_ms :: int] 500
+    var fetch_max_wait_ms :: int 1000
+    var fetch_min_bytes :: int 1
+    var retry_backoff_ms :: int 500
 
 
 define-class KafkaJob [Job]:
@@ -62,9 +62,9 @@ define-class KafkaJob [Job]:
     Consumes one topic; dispatches each message to the handler
     """
 
-    define config-class KafkaConfig
+    var config-class KafkaConfig
 
-    define __init__ [self topic]:
+    def __init__ [self topic]:
         (Job.__init__ self)
         (require-extra "aiokafka" "kafka")
         set! self.topic topic
@@ -73,19 +73,19 @@ define-class KafkaJob [Job]:
 
 
     ;; kafka-variety sub-item setter (paired with the `on-error` macro)
-    define on-error [self fn]:
+    def on-error [self fn]:
         set! self.on_error_cb fn
         self
 
 
-    define make-consumer [self]:
+    def make-consumer [self]:
 
         import-from aiokafka AIOKafkaConsumer
         import-from aiokafka.helpers create_ssl_context
 
-        define c self.config
+        var c self.config
 
-        define ssl_context c.ssl_context
+        var ssl_context c.ssl_context
         unless ssl_context:
             when (or c.ssl_cafile (has? c.security_protocol "SSL")):
                 set! ssl_context (create_ssl_context cafile: c.ssl_cafile)
@@ -111,16 +111,16 @@ define-class KafkaJob [Job]:
             retry_backoff_ms: c.retry_backoff_ms)
 
 
-    define _consume [self]:
+    def _consume [self]:
         (logger.info "consumer loop started: %s" self.topic)
         for-each [msg self._consumer]:
-            define raw msg.value
-            define value (if (None? raw) None (raw.decode "utf-8"))
+            var raw msg.value
+            var value (if (None? raw) None (raw.decode "utf-8"))
             ;; Job.run records the run and dispatches to on-error on failure
             (self.run value cause: "kafka")
 
 
-    define start [self]:
+    def start [self]:
         when self._consumer:
             (return)
         when (None? self.config.servers):
@@ -139,7 +139,7 @@ define-class KafkaJob [Job]:
             job: self)
 
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
         when self._consumer:
             (self._consumer.stop)
@@ -149,28 +149,28 @@ define-class KafkaJob [Job]:
             set! self._task None
 
 
-define-syntax config/kafka:
+syntax config/kafka:
     syntax-rules []:
         case (config/kafka () setting ...):
             (begin
-                (define -'default/kafka)
+                (var -'default/kafka)
                 (unless &-'default/kafka
                     (set! -'default/kafka (KafkaConfig setting ...))))
 
         case (config/kafka nm setting ...):
             (begin
-                (define nm (KafkaConfig setting ...))
-                (define -'default/kafka)
+                (var nm (KafkaConfig setting ...))
+                (var -'default/kafka)
                 (unless &-'default/kafka (set! -'default/kafka nm)))
 
 
 ;; `job kafka <name> <topic>:` -- trigger key is the topic.
-define-syntax job/kafka:
+syntax job/kafka:
     syntax-rules []:
         case (job/kafka name topic (subhead subrest ...) ...):
             (begin
-                (define name (KafkaJob topic))
-                (define -'default/kafka)
+                (var name (KafkaJob topic))
+                (var -'default/kafka)
                 (if &-'default/kafka
                     (.configure name via: -'default/kafka)
                     (.configure name))

@@ -34,10 +34,10 @@ import-from pyarrow Table
 import-from pyarrow.parquet write_table
 
 
-define _HERE (.resolve (Path __file__))
+var _HERE (.resolve (Path __file__))
 
 ; parents is a property, so it is indexed rather than called.
-define _REPO_ROOT _HERE.parents[2]
+var _REPO_ROOT _HERE.parents[2]
 
 ; Invoked as a script the interpreter puts this directory on sys.path
 ; rather than the repository root, so the tools package needs help.
@@ -45,10 +45,10 @@ when (not (in? (str _REPO_ROOT) sys.path)):
     sys.path.insert 0 (str _REPO_ROOT)
 
 
-define DEFAULT_VIEW "koskari-corpus"
+var DEFAULT_VIEW "koskari-corpus"
 
 
-define project_root [root: None]:
+def project_root [root: None]:
     """
     Return the repository root path
 
@@ -61,7 +61,7 @@ define project_root [root: None]:
     return _REPO_ROOT
 
 
-define load_views []:
+def load_views []:
     """
     Load tools.corpus.views as a module
 
@@ -72,7 +72,7 @@ define load_views []:
     return views
 
 
-define read_schema_version [schema_path]:
+def read_schema_version [schema_path]:
     """
     Read the corpus schema identifier from SCHEMA.json
 
@@ -80,11 +80,11 @@ define read_schema_version [schema_path]:
     :return: schema $id string
     """
 
-    define data (json.loads (.read_text (Path schema_path)))
+    var data (json.loads (.read_text (Path schema_path)))
     return (data.get "$id" "")
 
 
-define git_ref [root: None]:
+def git_ref [root: None]:
     """
     Return short git commit for provenance, or empty string
 
@@ -94,12 +94,12 @@ define git_ref [root: None]:
 
     import-from tools.regen_version git_state
 
-    define state (git_state root)
+    var state (git_state root)
     return (or (state.get "commit") "")
 
 
 @demand
-define load_records [records_dir]:
+def load_records [records_dir]:
     """
     Load all corpus records from YAML shards in a directory
 
@@ -114,7 +114,7 @@ define load_records [records_dir]:
     return (load.load_records records_dir)
 
 
-define _provenance [schema_path root]:
+def _provenance [schema_path root]:
     """
     Build the provenance mapping stamped onto every row
     """
@@ -124,7 +124,7 @@ define _provenance [schema_path root]:
         git_ref: (git_ref root))
 
 
-define apply_view [records transform provenance]:
+def apply_view [records transform provenance]:
     """
     Apply a view transform to corpus records
 
@@ -134,15 +134,15 @@ define apply_view [records transform provenance]:
     :return: list of output row dicts
     """
 
-    define rows #[]
+    var rows #[]
     for-each [record records]:
-        define row (transform record provenance)
+        var row (transform record provenance)
         unless (None? row):
             (rows.append row)
     return rows
 
 
-define write_parquet [rows output_dir filename: "train.parquet"]:
+def write_parquet [rows output_dir filename: "train.parquet"]:
     """
     Write rows to a parquet file under output_dir
 
@@ -152,16 +152,16 @@ define write_parquet [rows output_dir filename: "train.parquet"]:
     :return: path to written parquet file
     """
 
-    define out_path (Path output_dir)
+    var out_path (Path output_dir)
     (out_path.mkdir parents: True exist_ok: True)
-    define parquet_path (out_path.joinpath filename)
-    define table (Table.from_pylist rows)
+    var parquet_path (out_path.joinpath filename)
+    var table (Table.from_pylist rows)
     (write_table table parquet_path)
     return parquet_path
 
 
 @demand
-define export_corpus [view records_dir schema_path output_dir root: None]:
+def export_corpus [view records_dir schema_path output_dir root: None]:
     """
     Export one corpus dataset view to parquet
 
@@ -174,18 +174,18 @@ define export_corpus [view records_dir schema_path output_dir root: None]:
     :raises KeyError: when view is unknown
     """
 
-    define views (load_views)
-    define transform views.VIEWS[view]
-    define root_path (project_root root)
+    var views (load_views)
+    var transform views.VIEWS[view]
+    var root_path (project_root root)
 
-    define provenance (_provenance schema_path root_path)
-    define records (load_records records_dir)
-    define rows (apply_view records transform provenance)
+    var provenance (_provenance schema_path root_path)
+    var records (load_records records_dir)
+    var rows (apply_view records transform provenance)
     return (write_parquet rows output_dir)
 
 
 @demand
-define export_source_view [view schema_path output_dir root: None]:
+def export_source_view [view schema_path output_dir root: None]:
     """
     Export one source-generated view to parquet
 
@@ -201,17 +201,17 @@ define export_source_view [view schema_path output_dir root: None]:
     :raises KeyError: when view is unknown
     """
 
-    define views (load_views)
-    define generate views.SOURCE_VIEWS[view]
-    define root_path (project_root root)
+    var views (load_views)
+    var generate views.SOURCE_VIEWS[view]
+    var root_path (project_root root)
 
-    define provenance (_provenance schema_path root_path)
-    define rows (generate root_path provenance)
+    var provenance (_provenance schema_path root_path)
+    var rows (generate root_path provenance)
     return (write_parquet rows output_dir)
 
 
 @demand
-define export_all_views [records_dir schema_path output_base root: None]:
+def export_all_views [records_dir schema_path output_base root: None]:
     """
     Export every registered corpus and source view to parquet
 
@@ -222,9 +222,9 @@ define export_all_views [records_dir schema_path output_base root: None]:
     :return: list of paths to written parquet files
     """
 
-    define views (load_views)
-    define base (Path output_base)
-    define paths #[]
+    var views (load_views)
+    var base (Path output_base)
+    var paths #[]
 
     for-each [view_name (sorted views.VIEWS)]:
         (paths.append (export_corpus
@@ -239,13 +239,13 @@ define export_all_views [records_dir schema_path output_base root: None]:
     return paths
 
 
-define build_arguments [parser]:
+def build_arguments [parser]:
     """
     Register the export options on a parser or subparser
     """
 
-    define root (project_root)
-    define datasets (root.joinpath "build" "corpus" "datasets")
+    var root (project_root)
+    var datasets (root.joinpath "build" "corpus" "datasets")
 
     (parser.add_argument "--all-views"
         action: "store_true"
@@ -268,7 +268,7 @@ define build_arguments [parser]:
     return parser
 
 
-define run [options]:
+def run [options]:
     """
     Execute the export described by parsed options
 
@@ -276,13 +276,13 @@ define run [options]:
     :return: integer exit code
     """
 
-    define root (project_root)
-    define views (load_views)
-    define path None
+    var root (project_root)
+    var views (load_views)
+    var path None
 
     try:
         when options.all_views:
-            define paths (export_all_views
+            var paths (export_all_views
                 options.records_dir options.schema options.output_base
                 root: root)
             for-each [each paths]:
@@ -294,7 +294,7 @@ define run [options]:
                 options.view options.schema options.output_dir root: root)
 
         elif (not-in? options.view views.VIEWS):
-            define names (", ".join
+            var names (", ".join
                 (sorted (.union (set views.VIEWS) (set views.SOURCE_VIEWS))))
 
             (sys.stderr.write
@@ -315,7 +315,7 @@ define run [options]:
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Export corpus views from the command line
 
@@ -326,9 +326,9 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [_name *: args] argv
+    var [_name *: args] argv
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: "corpus-export"
         description: "Export corpus YAML records to parquet dataset views")
 

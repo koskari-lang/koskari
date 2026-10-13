@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax pragma:
+syntax pragma:
   """
   Update the pragma in the current module with the given settings
 
@@ -36,12 +36,12 @@ define-syntax pragma:
 
   macro-match:
     case (pragma (REPEAT settings (LIST (SYMBOL key) (REST values)))):
-      define fixed:
+      var fixed:
         list-each [s settings]:
           ;; a pragma key is a pure key, never a gensym
-          define key (item s "key").datum.base
+          var key (item s "key").datum.base
           ;; the values are the caller's code, emitted in their Datums
-          define vals (item s "values")
+          var vals (item s "values")
           `#(',key (values ,@vals))
 
       `(setq __pragma__ (.rebuild __pragma__ ,@fixed))
@@ -55,7 +55,7 @@ define-syntax pragma:
       '__pragma__
 
 
-define-syntax package-pragma:
+syntax package-pragma:
     """
     Update the pragma in the current module with the given settings, then
     record the result as the package default that sub-packages and
@@ -84,12 +84,12 @@ define-syntax package-pragma:
           (item __package_pragma__ (str 'setting))
 
 
-define help-pragma-key [key]:
+def help-pragma-key [key]:
     import-from pydoc pager
     import-from koskari.help.tools kos_help_text_object
     import-from koskari.pragma lookup
 
-    define handler (lookup key)
+    var handler (lookup key)
     unless handler:
       raise (ValueError f"Unknown pragma key: {key}")
 
@@ -112,7 +112,7 @@ let [[default-pragma None]]:
   import-from koskari.pragma ModulePragma
 
 
-  define-global active-pragma [key: None]:
+  global def active-pragma [key: None]:
     """
     The pragma active in the current compilation turn, bound by the
     compiler into the active-compiler-pragma parameter. When no pragma
@@ -122,7 +122,7 @@ let [[default-pragma None]]:
     value of that setting.
     """
 
-    define p (parameterq active-compiler-pragma None)
+    var p (parameterq active-compiler-pragma None)
     when (None? p):
       when (None? default-pragma):
         set! default-pragma (ModulePragma)
@@ -131,7 +131,7 @@ let [[default-pragma None]]:
     if (None? key) p (item p (str key))
 
 
-define-syntax active-pragma:
+syntax active-pragma:
   """
   The pragma active for the module currently being compiled
 

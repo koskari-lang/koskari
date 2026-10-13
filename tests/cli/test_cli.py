@@ -290,7 +290,7 @@ class TestRunCommand(unittest.IsolatedAsyncioTestCase):
 
     async def test_sets_string_filename(self):
         mod = new_module('__main__')
-        await run_command_async(mod, '(define x 1)')
+        await run_command_async(mod, '(var x 1)')
         self.assertEqual('<string>', getattr(mod, '__file__', None))
 
 

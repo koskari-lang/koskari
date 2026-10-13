@@ -72,7 +72,7 @@ A block that only needs its body spliced after the header needs no handler;
 the default applies.
 
 A block whose body should be one `begin` form binds
-`define layout/<head> layout/block-begin` in the module that uses it. A block
+`var layout/<head> layout/block-begin` in the module that uses it. A block
 that only breaks a long line binds `layout/inline-block` the same way.
 
 Anything else is a `LayoutHandler` bound to `layout/<head>`. The handler wraps a
@@ -85,10 +85,10 @@ ignored.
 
 ```koskari
 >>> import-from koskari.reader.layouts LayoutHandler
->>> define report-read [reader source peers]:
+>>> def report-read [reader source peers]:
 ...   (cons (symbol "#list") (reader.fold_lines source.cdr))
->>> define layout/report (LayoutHandler (symbol "layout/report") (demand report-read))
->>> define vals:
+>>> var layout/report (LayoutHandler (symbol "layout/report") (demand report-read))
+>>> var vals:
 ...   report:
 ...     1
 ...     (+ 1 1)

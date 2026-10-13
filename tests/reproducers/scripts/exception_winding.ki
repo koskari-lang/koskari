@@ -7,7 +7,7 @@
 ;; success.
 
 
-define check [tag expect got]:
+def check [tag expect got]:
     unless (equal? expect got):
         print "FAIL" tag "expected:" expect "got:" got
         raise (AssertionError tag)
@@ -16,8 +16,8 @@ define check [tag expect got]:
 ;; 1. A raise crosses a frame with open extents (let NS) into the
 ;;    caller's try.
 
-define scenario-frame-cross []:
-    define blow [x]:
+def scenario-frame-cross []:
+    def blow [x]:
         let [[y x]]:
           raise (ValueError "boom")
 
@@ -28,9 +28,9 @@ define scenario-frame-cross []:
 ;; 2. The dyn-wind after thunk runs exactly once on exception unwind
 ;;    before the enclosing handler catches.
 
-define scenario-wind-raise []:
-    define events #[]
-    define result:
+def scenario-wind-raise []:
+    var events #[]
+    var result:
         try:
           (dyn-wind
             (events.append "before")
@@ -46,9 +46,9 @@ define scenario-wind-raise []:
 ;; 3. A failing after thunk supersedes the original exception, which
 ;;    chains in as __context__.
 
-define scenario-teardown-supersede []:
-    define events #[]
-    define result:
+def scenario-teardown-supersede []:
+    var events #[]
+    var result:
         try:
             (dyn-wind
               (events.append "before")
@@ -64,9 +64,9 @@ define scenario-teardown-supersede []:
 ;; 4. In-shift delimited invoke resumes in place: a single before/after
 ;;    pair, value delivered to the call site.
 
-define scenario-inshift []:
-    define events #[]
-    define result:
+def scenario-inshift []:
+    var events #[]
+    var result:
         reset:
           (dyn-wind
             (events.append "before")
@@ -80,9 +80,9 @@ define scenario-inshift []:
 ;; 5. Remote invoke instantiates the captured template: one before/after
 ;;    pair for the capture pass, one for the invoke.
 
-define scenario-remote []:
-    define events (list)
-    define captured:
+def scenario-remote []:
+    var events (list)
+    var captured:
         reset:
           (dyn-wind
             (events.append "before")
@@ -96,9 +96,9 @@ define scenario-remote []:
 ;; 6. Multi-shot in-shift invoke: the first call runs in place, the
 ;;    re-invoke grafts a fresh template instance; one wind pair each.
 
-define scenario-multishot []:
-    define events #[]
-    define result:
+def scenario-multishot []:
+    var events #[]
+    var result:
         reset:
           (dyn-wind
             (events.append "before")
@@ -111,14 +111,14 @@ define scenario-multishot []:
 
 ;; 7. Recursive invoke: k called in the path of k via a stashed alias.
 
-define scenario-recursive []:
-    define cell #[None None]
+def scenario-recursive []:
+    var cell #[None None]
 
-    define bump [n]:
+    def bump [n]:
         set! (item cell 1) n
         if (< n 3) ((item cell 0) (+ n 1)) n
 
-    define result:
+    var result:
         reset:
           bump:
             shift k:
@@ -132,11 +132,11 @@ define scenario-recursive []:
 ;; 8. An exception raised by a remotely-invoked slice reaches the
 ;;    invoke-site handler.
 
-define scenario-remote-exc []:
-    define bad [v]:
+def scenario-remote-exc []:
+    def bad [v]:
         raise (ValueError "slice")
 
-    define captured:
+    var captured:
       reset:
         (bad (shift k k))
 

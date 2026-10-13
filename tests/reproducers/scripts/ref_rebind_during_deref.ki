@@ -4,20 +4,20 @@
 
 import-from koskari.lib ItemRef Ref
 
-define ns (globals)
+var ns (globals)
 
 define-class K []:
-    define __hash__ [self]:
+    def __hash__ [self]:
         ns.bind "sensor" (Ref "sensor" 42)
-        define junk (list-each [i (range 64)] (dict))
+        var junk (list-each [i (range 64)] (dict))
         1
 
 bind! sensor (ItemRef "sensor" (dict) (K))
 
-define first:
+var first:
     try:
         sensor
     except [e KeyError]:
         "keyerror"
 
-define second sensor
+var second sensor

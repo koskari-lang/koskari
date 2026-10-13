@@ -12,7 +12,7 @@ through the pager.
 **Examples:**
 
 ```koskari
-(help define)
+(help var)
 (help if)
 (help compile/lambda)
 (help layout/try)

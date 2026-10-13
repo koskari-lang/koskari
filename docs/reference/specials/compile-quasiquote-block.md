@@ -32,8 +32,8 @@ Peers nested inside the block are ordinary nested `#block:` entries.
 **Examples:**
 
 ```koskari
->>> define forms '(1 2 3)
->>> define tmpl:
+>>> var forms '(1 2 3)
+>>> var tmpl:
 ...   `begin:
 ...     ,@forms
 >>> tmpl
@@ -43,10 +43,10 @@ Peers nested inside the block are ordinary nested `#block:` entries.
 A nested peer stays a nested entry:
 
 ```koskari
->>> define cnd '(> n 1)
->>> define thn "big"
->>> define els "small"
->>> define q:
+>>> var cnd '(> n 1)
+>>> var thn "big"
+>>> var els "small"
+>>> var q:
 ...   `begin:
 ...     if ,cnd:
 ...       ,thn

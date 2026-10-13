@@ -17,7 +17,7 @@ import logging
 (use .job Config Job)
 
 
-define logger (logging.getLogger "kosrunner.fake")
+var logger (logging.getLogger "kosrunner.fake")
 
 
 define-dataclass FakeConfig [Config]:
@@ -26,24 +26,24 @@ define-dataclass FakeConfig [Config]:
     smallest example of a variety declaring its shape and defaults.
     """
 
-    define [note :: str] ""
-    define [delay :: int] 0
+    var note :: str ""
+    var delay :: int 0
 
 
 define-class FakeJob [Job]:
     """A trivial job variety: start/stop just flip `running` and log."""
 
-    define config-class FakeConfig
+    var config-class FakeConfig
 
-    define __init__ [self label]:
+    def __init__ [self label]:
         (Job.__init__ self)
         set! self.label label
 
-    define start [self]:
+    def start [self]:
         set! self.running True
         (logger.info "FakeJob started: %s (config=%r)" self.label self.config)
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
         (logger.info "FakeJob stopped: %s" self.label)
 
@@ -52,29 +52,29 @@ define-class FakeJob [Job]:
 ;; rewrites a config entry into `(config/fake () ...)` (unnamed) or
 ;; `(config/fake <name> ...)` (named). Both bind the shared `default/fake`
 ;; slot with the first-wins `&`-guard; a named one also binds its name.
-define-syntax config/fake:
+syntax config/fake:
     syntax-rules []:
         case (config/fake () setting ...):
             (begin
-                (define -'default/fake)
+                (var -'default/fake)
                 (unless &-'default/fake
                     (set! -'default/fake (FakeConfig setting ...))))
         case (config/fake nm setting ...):
             (begin
-                (define nm (FakeConfig setting ...))
-                (define -'default/fake)
+                (var nm (FakeConfig setting ...))
+                (var -'default/fake)
                 (unless &-'default/fake (set! -'default/fake nm)))
 
 
 ;; The `job fake <name>:` variety syntax. Fake has no trigger-key, so
 ;; the header is just the name; the sub-items are tag-injected with
 ;; `(fake name)` so the base `config`/`handler` dispatch routes them.
-define-syntax job/fake:
+syntax job/fake:
     syntax-rules []:
         case (job/fake name (subhead subrest ...) ...):
             (begin
-                (define name (FakeJob 'name))
-                (define -'default/fake)
+                (var name (FakeJob 'name))
+                (var -'default/fake)
                 (if &-'default/fake
                     (.configure name via: -'default/fake)
                     (.configure name))

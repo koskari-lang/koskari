@@ -2,7 +2,7 @@
 **Symbol:** `layout/syntax-match`
 
 **Use-case:** Block syntax for the `syntax-match` transformer within a
-`define-syntax` block. No literals list; each rule carries an explicit
+`syntax` block. No literals list; each rule carries an explicit
 match-style pattern and lowers to `(syntax-match [NAME] (PATTERN TEMPLATE) ...)`.
 
 **Behaviour:** Same per-rule header and body rules as
@@ -18,9 +18,9 @@ header that is a lone parenthesized form, `(complex pat):`, raises
 
 **Named header:** `syntax-match NAME:` puts NAME in the emitted form,
 which is where the transformer takes its identity for help text and match
-errors. `define-syntax` and `extend-syntax` supply that name themselves,
+errors. `syntax` and `extend-syntax` supply that name themselves,
 so the named header belongs to a transformer bound directly, as
-`define compile/NAME:`.
+`var compile/NAME:`.
 
 **Syntax:**
 
@@ -46,7 +46,7 @@ syntax-match:
 ```
 
 ```koskari
-define compile/first-of:
+var compile/first-of:
   syntax-match first-of:
     case (first-of (BIND a) (BIND b)):
       (print a)

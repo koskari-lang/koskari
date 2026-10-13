@@ -254,7 +254,7 @@ Two opcode families write to a name, and they do different things.
 value is a constant, `Compiler.compress` fuses `CONST` and `VAR_STORE`
 into `VAR_STORE_CONST`, which uses no stack, and `convert_fast` lowers
 that to `FAST_STORE_CONST` for a local. The same split is the surface
-distinction between `define` and `set!`; see
+distinction between `var` and `set!`; see
 [Bindings and refs](../../guide/bindings-and-refs.md).
 
 ## 2. Opcode families

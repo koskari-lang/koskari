@@ -312,15 +312,15 @@ def _except(compiler, catches):
             checksrc = cons(symbol("check-exception"), cons(match, nil))
             if pos:
                 fill_position(checksrc, pos)
-            define_form = cons(
-                symbol("define"),
+            var_form = cons(
+                symbol("var"),
                 symbol(str(key)),
                 cons(symbol("load-exception"), nil),
                 nil)
             if is_pair(act):
-                begin_body = cons(define_form, act)
+                begin_body = cons(var_form, act)
             else:
-                begin_body = cons(define_form, act, nil)
+                begin_body = cons(var_form, act, nil)
             begin_form = cons(symbol("begin"), begin_body)
             if pos:
                 fill_position(begin_form, pos)

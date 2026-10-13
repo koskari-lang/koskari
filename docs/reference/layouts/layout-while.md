@@ -37,8 +37,8 @@ else:
 ```
 
 ```koskari
-define total 0
-define x 0
+var total 0
+var x 0
 
 while (< x 3):
   set! total (+ total x)

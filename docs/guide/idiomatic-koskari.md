@@ -35,27 +35,27 @@ The dotted form reads as `(set! (attr obj value) 7)`.
 
 ## Destructuring
 
-When a form returns a sequence, bind its parts with `define-values`
-rather than indexing each position.
+When a form returns a sequence, bind its parts with `var` over a
+pattern rather than indexing each position.
 
 ```koskari
 ; assembled
-define fn (item pair 0)
-define args (item pair 1)
+var fn (item pair 0)
+var args (item pair 1)
 
 ; idiom
-define-values [fn args] pair
+var [fn args] pair
 ```
 
-`define-values` takes a `*:` rest, which replaces a head plus a slice:
+The pattern takes a `*:` rest, which replaces a head plus a slice:
 
 ```koskari
 ; assembled
-define name (item argv 0)
-define rest (item argv (slice 1 None))
+var name (item argv 0)
+var rest (item argv (slice 1 None))
 
 ; idiom
-define-values [name *: rest] argv
+var [name *: rest] argv
 ```
 
 These two differ in the type of the tail. Slicing a list yields a list,

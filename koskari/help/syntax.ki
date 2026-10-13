@@ -30,7 +30,7 @@ import-from .tools help_for
 
 
 @demand
-define format_accept_pattern [pattern head]:
+def format_accept_pattern [pattern head]:
   """
   Render one accepted-arm pattern for help text and SyntaxMatchError
   """
@@ -43,14 +43,14 @@ define format_accept_pattern [pattern head]:
     except [Exception]:
       return "<unrenderable pattern>"
 
-  define children pattern._children
+  var children pattern._children
 
   try:
     if (and children (instance? children[0] CALLEDBY)):
-      define h (or head "(CALLEDBY)")
+      var h (or head "(CALLEDBY)")
 
-      define reprs (list-each [c (item-slice children 1)] (repr c))
-      define rest (" ".join reprs)
+      var reprs (list-each [c (item-slice children 1)] (repr c))
+      var rest (" ".join reprs)
 
       if rest:
         f"({h} {rest})"
@@ -58,8 +58,8 @@ define format_accept_pattern [pattern head]:
         f"({h})"
 
     else:
-      define reprs (list-each [c children] (repr c))
-      define body (" ".join reprs)
+      var reprs (list-each [c children] (repr c))
+      var body (" ".join reprs)
       f"({body})"
 
   except [Exception]:
@@ -67,7 +67,7 @@ define format_accept_pattern [pattern head]:
 
 
 @demand
-define format_bare_pattern [head]:
+def format_bare_pattern [head]:
   """
   Render the bare arm's accepted lone-atom form for help text
   """
@@ -76,24 +76,24 @@ define format_bare_pattern [head]:
 
 
 @(help_for Syntax)
-define help_for_syntax [obj formatter]:
+def help_for_syntax [obj formatter]:
   """
   Fill formatter with Syntax dispatcher documentation
   """
 
-  define doc (getattr obj "__doc__" None)
+  var doc (getattr obj "__doc__" None)
   when doc:
     formatter.paragraph doc
 
-  define head (str obj.name)
+  var head (str obj.name)
 
   when obj.transforms:
-    define acc (formatter.section "Accepts")
+    var acc (formatter.section "Accepts")
     for-each [transform obj.transforms]:
       acc.item (format_accept_pattern transform.pattern head)
 
   when obj.bare:
-    define sec (formatter.section "Bare")
+    var sec (formatter.section "Bare")
     sec.item (format_bare_pattern head)
 
 

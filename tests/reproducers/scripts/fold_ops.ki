@@ -5,64 +5,64 @@
 ;; and the runtime operator called on the same run.
 
 
-define add3 [a b c]:
+def add3 [a b c]:
     + a b c
 
 
-define sub3 [a b c]:
+def sub3 [a b c]:
     - a b c
 
 
-define mul3 [a b c]:
+def mul3 [a b c]:
     * a b c
 
 
-define floordiv3 [a b c]:
+def floordiv3 [a b c]:
     // a b c
 
 
-define truediv3 [a b c]:
+def truediv3 [a b c]:
     / a b c
 
 
-define and3 [a b c]:
+def and3 [a b c]:
     & a b c
 
 
-define or3 [a b c]:
+def or3 [a b c]:
     | a b c
 
 
-define xor3 [a b c]:
+def xor3 [a b c]:
     ^ a b c
 
 
-define add5 [a b c d e]:
+def add5 [a b c d e]:
     + a b c d e
 
 
-define mul5 [a b c d e]:
+def mul5 [a b c d e]:
     * a b c d e
 
 
-define add3_runtime [a b c]:
+def add3_runtime [a b c]:
     apply + #(a b c)
 
 
-define energy [x y z m]:
+def energy [x y z m]:
     * (+ (* x x) (* y y) (* z z)) m 0.5
 
 
-define nested_int [a b c d]:
+def nested_int [a b c d]:
     + (* a b) c d
 
 
-define nested_float [a b c d]:
+def nested_float [a b c d]:
     + (* a b) c d
 
 
-define item_run [seed a b]:
-    define cells #[seed seed]
+def item_run [seed a b]:
+    var cells #[seed seed]
     inplace-item + cells 0 a b
     cells
 

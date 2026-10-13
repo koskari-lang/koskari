@@ -5,7 +5,7 @@
 **Behaviour:** `let` with unpacking, over one binding. `PATTERN` is a
 list shape, with an optional `*:` rest segment, and `VALUE` is unpacked
 into it for the extent of the body, through
-[`define-values`](../specials/compile-define-values.md). The bracketed
+[`var`](../specials/compile-var.md) over the pattern. The bracketed
 form holds the pattern and the value, not a list of pairs -- for more
 than one unpacking, nest `let-values` forms.
 
@@ -28,5 +28,5 @@ let-values [[name *: rest] sys.argv]:
   print name (len rest)
 ```
 
-**See also:** [`define-values`](../specials/compile-define-values.md),
+**See also:** [`var`](../specials/compile-var.md),
 [`let*`](compile-letstar.md).

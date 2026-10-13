@@ -10,22 +10,22 @@ import-from .harness SchedulerAsyncTestCase
      AccessConfig Group group HttpServer UiConfig UiJob)
 
 
-define OPERATOR "root@example.com"
-define DEV "dev@example.com"
-define OUTSIDER "other@example.com"
+var OPERATOR "root@example.com"
+var DEV "dev@example.com"
+var OUTSIDER "other@example.com"
 
 group deployers:
     "dev@example.com"
 
 
-define ident [email]:
+def ident [email]:
     #{"X-Forwarded-Email": email}
 
 
 define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define asyncSetUp [self]:
+    def asyncSetUp [self]:
         set! self.js (self.jobset-with-store)
         (self.js.bind-access (AccessConfig
             operators: #[OPERATOR]
@@ -36,107 +36,107 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
         ;; a gated, typed webhook job; the ui job itself is the
         ;; not-manually-triggerable case
-        define seen #[]
+        var seen #[]
         set! self.seen seen
-        define handler [[ref :: str]]:
+        def handler [[ref :: str]]:
             (seen.append ref)
             #{"ok": True}
-        define hook (self.webhook self.server "deploy" handler jobset: self.js)
+        var hook (self.webhook self.server "deploy" handler jobset: self.js)
         (hook.allow #[deployers])
         set! self.hook hook
 
-        define ui (UiJob)
+        var ui (UiJob)
         (ui.configure via: (UiConfig))
         (self.js.register "web" ui)
         (ui.mount self.server)
 
 
-    define page-text [self url headers: None]:
+    def page-text [self url headers: None]:
         (attr (self.http.get url headers: headers) text)
 
 
     @coroutine-fn
-    define test-visible-jobs-carry-type-and-flags [self]:
-        define by-name [rows]:
-            define out #{}
+    def test-visible-jobs-carry-type-and-flags [self]:
+        def by-name [rows]:
+            var out #{}
             for-each [r rows]:
                 (set! (item out (item r "name")) r)
             out
 
-        define op (by-name (self.js.visible-jobs OPERATOR))
+        var op (by-name (self.js.visible-jobs OPERATOR))
         (self.assertEqual (item (item op "deploy") "type") "webhook")
         (self.assertTrue (item (item op "deploy") "may_trigger"))
         (self.assertTrue (item (item op "deploy") "may_control"))
 
-        define dev (by-name (self.js.visible-jobs DEV))
+        var dev (by-name (self.js.visible-jobs DEV))
         (self.assertTrue (item (item dev "deploy") "may_trigger"))
         (self.assertFalse (item (item dev "deploy") "may_control"))
         (self.assertFalse (item (item dev "web") "may_trigger"))
 
-        define anon (by-name (self.js.visible-jobs None))
+        var anon (by-name (self.js.visible-jobs None))
         (self.assertFalse (item (item anon "deploy") "may_trigger"))
         (self.assertFalse (item (item anon "deploy") "may_control"))
 
 
     @coroutine-fn
-    define test-dashboard-is-a-gateway [self]:
+    def test-dashboard-is-a-gateway [self]:
         ;; jobs link into their pages; no action buttons for ANY caller
-        define op-page (self.page-text "/ui" headers: (ident OPERATOR))
+        var op-page (self.page-text "/ui" headers: (ident OPERATOR))
         (self.assertIn "/ui/jobs/deploy" op-page)
         (self.assertNotIn "/ui/trigger/" op-page)
         (self.assertNotIn "/ui/disable/" op-page)
-        define anon-page (self.page-text "/ui")
+        var anon-page (self.page-text "/ui")
         (self.assertIn "/ui/jobs/deploy" anon-page)
         (self.assertNotIn "/ui/trigger/" anon-page)
 
 
     @coroutine-fn
-    define test-dashboard-links-last-run [self]:
+    def test-dashboard-links-last-run [self]:
         (self.http.post "/webhook/deploy" json: #{"ref": "v1"})
-        define runid (item (item (self.js.store.list-runs) 0) "run_id")
+        var runid (item (item (self.js.store.list-runs) 0) "run_id")
         (self.assertIn f"/ui/runs/{runid}" (self.page-text "/ui"))
 
 
     @coroutine-fn
-    define test-job-page-projects-per-user [self]:
-        define url "/ui/jobs/deploy"
-        define op-page (self.page-text url headers: (ident OPERATOR))
+    def test-job-page-projects-per-user [self]:
+        var url "/ui/jobs/deploy"
+        var op-page (self.page-text url headers: (ident OPERATOR))
         (self.assertIn "/ui/disable/deploy" op-page)
         (self.assertIn "/ui/trigger/deploy" op-page)
         (self.assertIn "name=\"ref\"" op-page)
 
-        define dev-page (self.page-text url headers: (ident DEV))
+        var dev-page (self.page-text url headers: (ident DEV))
         (self.assertNotIn "/ui/disable/" dev-page)
         (self.assertIn "/ui/trigger/deploy" dev-page)
 
-        define anon-page (self.page-text url)
+        var anon-page (self.page-text url)
         (self.assertNotIn "/ui/disable/" anon-page)
         (self.assertNotIn "/ui/trigger/" anon-page)
 
 
     @coroutine-fn
-    define test-job-page-untriggerable-hides-form [self]:
+    def test-job-page-untriggerable-hides-form [self]:
         ;; the ui job's trigger-spec is None: no form even for an operator
-        define page (self.page-text "/ui/jobs/web" headers: (ident OPERATOR))
+        var page (self.page-text "/ui/jobs/web" headers: (ident OPERATOR))
         (self.assertNotIn "/ui/trigger/web" page)
 
 
     @coroutine-fn
-    define test-trigger-form-fires-typed-run [self]:
-        define resp (self.http.post "/ui/trigger/deploy"
+    def test-trigger-form-fires-typed-run [self]:
+        var resp (self.http.post "/ui/trigger/deploy"
             data: #{"ref": "v2"}
             headers: (ident DEV))
         (self.assertEqual resp.status_code 303)
         (self.assertEqual (.get resp.headers "location") "/ui/jobs/deploy")
         (self.assertEqual self.seen #["v2"])
-        define runs (self.js.store.list-runs)
+        var runs (self.js.store.list-runs)
         (self.assertEqual (len runs) 1)
         (self.assertEqual (item (item runs 0) "cause") "manual")
 
 
     @coroutine-fn
-    define test-trigger-form-still-enforced [self]:
-        define resp (self.http.post "/ui/trigger/deploy"
+    def test-trigger-form-still-enforced [self]:
+        var resp (self.http.post "/ui/trigger/deploy"
             data: #{"ref": "v2"}
             headers: (ident OUTSIDER))
         (self.assertEqual resp.status_code 403)
@@ -144,8 +144,8 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-trigger-form-bad-input-is-400 [self]:
-        define resp (self.http.post "/ui/trigger/deploy"
+    def test-trigger-form-bad-input-is-400 [self]:
+        var resp (self.http.post "/ui/trigger/deploy"
             data: #{}
             headers: (ident DEV))
         (self.assertEqual resp.status_code 400)
@@ -153,44 +153,44 @@ define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-untriggerable-trigger-is-400 [self]:
-        define resp (self.http.post "/ui/trigger/web"
+    def test-untriggerable-trigger-is-400 [self]:
+        var resp (self.http.post "/ui/trigger/web"
             data: #{}
             headers: (ident OPERATOR))
         (self.assertEqual resp.status_code 400)
 
 
     @coroutine-fn
-    define test-run-page-hides-retrigger [self]:
+    def test-run-page-hides-retrigger [self]:
         (self.http.post "/webhook/deploy" json: #{"ref": "v1"})
-        define runid (item (item (self.js.store.list-runs) 0) "run_id")
-        define url f"/ui/runs/{runid}"
+        var runid (item (item (self.js.store.list-runs) 0) "run_id")
+        var url f"/ui/runs/{runid}"
         (self.assertIn "retrigger" (self.page-text url headers: (ident DEV)))
         (self.assertNotIn "retrigger" (self.page-text url))
 
 
     @coroutine-fn
-    define test-job-page-pages-run-history [self]:
+    def test-job-page-pages-run-history [self]:
         (self.http.post "/webhook/deploy" json: #{"ref": "a"})
         (self.http.post "/webhook/deploy" json: #{"ref": "b"})
         ;; the store pages: one row past an offset of one
-        define rows (self.js.store.list-runs job: "deploy" limit: 1 offset: 1)
+        var rows (self.js.store.list-runs job: "deploy" limit: 1 offset: 1)
         (self.assertEqual (len rows) 1)
         ;; and the page parameter is accepted
-        define resp (self.http.get "/ui/jobs/deploy?page=2")
+        var resp (self.http.get "/ui/jobs/deploy?page=2")
         (self.assertEqual resp.status_code 200)
 
 
     @coroutine-fn
-    define test-root-prefix-normalizes-links [self]:
+    def test-root-prefix-normalizes-links [self]:
         ;; a UI bound at "/" must emit root-relative links, not "//..."
-        define server2 (HttpServer "127.0.0.1" 8081)
-        define http2 (self.http-client server2)
-        define ui2 (UiJob)
+        var server2 (HttpServer "127.0.0.1" 8081)
+        var http2 (self.http-client server2)
+        var ui2 (UiJob)
         (ui2.configure via: (UiConfig prefix: "/"))
         (self.js.register "web2" ui2)
         (ui2.mount server2)
-        define resp (http2.get "/")
+        var resp (http2.get "/")
         (self.assertEqual resp.status_code 200)
         (self.assertIn "href=\"/jobs/deploy\"" resp.text)
         (self.assertNotIn "href=\"//" resp.text)

@@ -17,10 +17,10 @@ import-from kosrunner HttpServer
 define-class TestWebhookReply [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define asyncSetUp [self]:
+    def asyncSetUp [self]:
         ;; mirror `config logging: level: DEBUG` so handler logs reach the
         ;; per-run capture buffer
-        define lg (logging.getLogger "kosrunner")
+        var lg (logging.getLogger "kosrunner")
         (lg.setLevel logging.DEBUG)
         set! self.server (HttpServer "127.0.0.1" 8080)
         set! self.http (self.http-client self.server)
@@ -28,41 +28,41 @@ define-class TestWebhookReply [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-sync-run-returns-result-and-records-success [self]:
+    def test-sync-run-returns-result-and-records-success [self]:
         (self.webhook self.server "ping"
             (lambda [payload] #{"ok": True "echo": payload})
             jobset: self.js)                              ; wait defaults True
-        define resp (self.http.post "/webhook/ping" json: #{"a": 1})
+        var resp (self.http.post "/webhook/ping" json: #{"a": 1})
         (self.assertEqual resp.status_code 200)
         (self.assertEqual (item (resp.json) "echo") #{"a": 1})
 
-        define runs (self.js.store.list-runs)
+        var runs (self.js.store.list-runs)
         (self.assertEqual (len runs) 1)
         (self.assertEqual (item (item runs 0) "status") "success")
         (self.assertEqual (item (item runs 0) "cause") "webhook")
 
 
     @coroutine-fn
-    define test-async-run-returns-receipt-then-drains-to-success [self]:
-        define gate (asyncio.Event)
+    def test-async-run-returns-receipt-then-drains-to-success [self]:
+        var gate (asyncio.Event)
 
-        define handler [payload]:
-            define lg (logging.getLogger "kosrunner.test")
+        def handler [payload]:
+            var lg (logging.getLogger "kosrunner.test")
             (lg.info "handling %s" payload)
             (gate.wait)
             #{"done": True}
 
         (self.webhook self.server "slow" handler jobset: self.js wait: False)
 
-        define resp (self.http.post "/webhook/slow" json: #{"n": 7})
+        var resp (self.http.post "/webhook/slow" json: #{"n": 7})
         (self.assertEqual resp.status_code 200)
-        define body (resp.json)
+        var body (resp.json)
         (self.assertEqual (item body "status") "started")
-        define runid (item body "run_id")
+        var runid (item body "run_id")
         (self.assertTrue runid)
 
         ;; the background task is waiting on the gate: the run is still open
-        define row (self.js.store.get-run runid)
+        var row (self.js.store.get-run runid)
         (self.assertEqual (item row "status") "running")
 
         ;; release and drain, then it lands success with its log captured --
@@ -70,21 +70,21 @@ define-class TestWebhookReply [SchedulerAsyncTestCase]:
         (gate.set)
         (await (asyncio.gather *: (list self.js._inflight)))
 
-        define detail (self.js.store.run-detail runid)
+        var detail (self.js.store.run-detail runid)
         (self.assertEqual (item detail "status") "success")
         (self.assertIn "handling" (item detail "output"))
 
 
     @coroutine-fn
-    define test-background-crash-is-surfaced [self]:
-        define boom []:
+    def test-background-crash-is-surfaced [self]:
+        def boom []:
             (raise (RuntimeError "boom in the background"))
 
         ;; assertLogs raises on exit if nothing logs at ERROR, so reaching
         ;; the end of the block asserts the crashed background run was
         ;; surfaced by _run-done rather than swallowed
         with [_logs (self.assertLogs "kosrunner" level: "ERROR")]:
-            define task (self.js.spawn-run boom)
+            var task (self.js.spawn-run boom)
             (await (asyncio.gather task return_exceptions: True))
             (asyncio.sleep 0)                          ; let the callback run
             (self.assertNotIn task self.js._inflight)

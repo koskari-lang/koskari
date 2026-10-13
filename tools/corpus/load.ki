@@ -26,7 +26,7 @@ import-from pathlib Path
 import yaml
 
 
-define _RECORD_FIELD_ORDER #(
+var _RECORD_FIELD_ORDER #(
     "id"
     "feature"
     "source"
@@ -36,7 +36,7 @@ define _RECORD_FIELD_ORDER #(
     "tags"
     "notes")
 
-define _VERIFY_KEY_ORDER #(
+var _VERIFY_KEY_ORDER #(
     "read"
     "expand"
     "compile"
@@ -45,7 +45,7 @@ define _VERIFY_KEY_ORDER #(
     "invalid")
 
 @demand
-define load_records [records_dir]:
+def load_records [records_dir]:
     """
     Load all corpus records from YAML shards in a directory
 
@@ -54,13 +54,13 @@ define load_records [records_dir]:
     :raises ValueError: on malformed YAML with shard name in message
     """
 
-    define records #[]
-    define records_path (Path records_dir)
-    define shards (sorted (records_path.glob "*.yaml"))
+    var records #[]
+    var records_path (Path records_dir)
+    var shards (sorted (records_path.glob "*.yaml"))
 
     for-each [shard shards]:
-        define text (shard.read_text)
-        define docs None
+        var text (shard.read_text)
+        var docs None
         try:
             set! docs (list (yaml.safe_load_all text))
 
@@ -74,7 +74,7 @@ define load_records [records_dir]:
                 (continue)
 
             unless (instance? doc dict):
-                define kind (type doc).__name__
+                var kind (type doc).__name__
                 raise (ValueError
                     f"{shard.name}:document {doc_no}: expected mapping, got {kind}")
 
@@ -83,7 +83,7 @@ define load_records [records_dir]:
     return records
 
 
-define _escape_double_quoted [text]:
+def _escape_double_quoted [text]:
     """
     Escape a string for YAML double-quoted scalar form
     """
@@ -91,7 +91,7 @@ define _escape_double_quoted [text]:
     ((text.replace "\\" "\\\\").replace "\"" "\\\"")
 
 
-define _yaml_needs_double_quotes [text]:
+def _yaml_needs_double_quotes [text]:
     """
     Return True when the bare text would not load back as the same
     string. The loader itself is the test, so every YAML shape that
@@ -103,13 +103,13 @@ define _yaml_needs_double_quotes [text]:
     when (or (not text) (!= (text.strip) text)):
         return True
     try:
-        define back (yaml.safe_load f"k: {text}")
+        var back (yaml.safe_load f"k: {text}")
     except [Exception]:
         return True
     return (not (and (instance? back dict) (== (back.get "k") text)))
 
 
-define _use_block_scalar [text]:
+def _use_block_scalar [text]:
     """
     Return True when text should be emitted as a literal block scalar
     """
@@ -117,7 +117,7 @@ define _use_block_scalar [text]:
     return (in? "\n" text)
 
 
-define _format_inline_scalar [text]:
+def _format_inline_scalar [text]:
     """
     Format a single-line string for YAML output
     """
@@ -125,39 +125,39 @@ define _format_inline_scalar [text]:
     when (and (>= (len text) 2)
               (== text[0] "\"")
               (== text[-1] "\"")):
-        define single (text.replace "'" "''")
+        var single (text.replace "'" "''")
         return f"'{single}'"
 
     when (_yaml_needs_double_quotes text):
-        define escaped (_escape_double_quoted text)
+        var escaped (_escape_double_quoted text)
         return f"\"{escaped}\""
 
     return text
 
 
-define _format_scalar_lines [key text indent]:
+def _format_scalar_lines [key text indent]:
     """
     Format one key and string value as YAML lines
     """
 
-    define prefix (* "  " indent)
+    var prefix (* "  " indent)
     when (_use_block_scalar text):
-        define lines #[f"{prefix}{key}: |-"]
+        var lines #[f"{prefix}{key}: |-"]
         for-each [line (text.split "\n")]:
             (lines.append f"{prefix}  {line}")
         return lines
 
-    define scalar (_format_inline_scalar text)
+    var scalar (_format_inline_scalar text)
     return #[f"{prefix}{key}: {scalar}"]
 
 
-define _format_verify [verify indent]:
+def _format_verify [verify indent]:
     """
     Format the verify mapping for YAML output
     """
 
-    define prefix (* "  " indent)
-    define lines #[f"{prefix}verify:"]
+    var prefix (* "  " indent)
+    var lines #[f"{prefix}verify:"]
 
     for-each [key _VERIFY_KEY_ORDER]:
         unless (in? key verify):
@@ -169,7 +169,7 @@ define _format_verify [verify indent]:
     return lines
 
 
-define _format_list [key values indent]:
+def _format_list [key values indent]:
     """
     Format a list field as a YAML block sequence.
 
@@ -178,20 +178,20 @@ define _format_list [key values indent]:
     the next append.
     """
 
-    define prefix (* "  " indent)
+    var prefix (* "  " indent)
     unless values:
         return #[f"{prefix}{key}: []"]
 
-    define lines #[f"{prefix}{key}:"]
+    var lines #[f"{prefix}{key}:"]
     for-each [value values]:
-        define scalar (_format_inline_scalar value)
+        var scalar (_format_inline_scalar value)
         (lines.append f"{prefix}  - {scalar}")
 
     return lines
 
 
 @demand
-define dump_record [record]:
+def dump_record [record]:
     """
     Serialize one corpus record as a YAML document string
 
@@ -199,12 +199,12 @@ define dump_record [record]:
     :return: YAML document text without leading document marker
     """
 
-    define lines #[]
+    var lines #[]
     for-each [field _RECORD_FIELD_ORDER]:
         unless (in? field record):
             (continue)
 
-        define value record[field]
+        var value record[field]
         switch field:
             case ["verify"]:
                 lines.extend (_format_verify value 0)
@@ -215,15 +215,15 @@ define dump_record [record]:
             case ["notes"]:
                 lines.extend (_format_scalar_lines field value 0)
             else:
-                define scalar (_format_inline_scalar value)
+                var scalar (_format_inline_scalar value)
                 lines.append f"{field}: {scalar}"
 
-    define text ("\n".join lines)
+    var text ("\n".join lines)
     (check_round_trip record text)
     return text
 
 
-define _same_value [want got]:
+def _same_value [want got]:
     """
     Field equality after a YAML round trip. A block scalar's trailing
     newline is dropped by the |- form, so strings compare without one
@@ -235,7 +235,7 @@ define _same_value [want got]:
 
 
 @demand
-define check_round_trip [record text]:
+def check_round_trip [record text]:
     """
     Raise ValueError unless the YAML text loads back to the record's
     fields, naming the first field that differs. Guards every writer
@@ -247,19 +247,19 @@ define check_round_trip [record text]:
     :raises ValueError: on the first field that does not load back
     """
 
-    define rid (record.get "id" "<no-id>")
-    define back (yaml.safe_load text)
+    var rid (record.get "id" "<no-id>")
+    var back (yaml.safe_load text)
     unless (instance? back dict):
         raise (ValueError f"record {rid} did not load back as a mapping")
 
     for-each [field _RECORD_FIELD_ORDER]:
         unless (in? field record):
             (continue)
-        define want record[field]
-        define got (back.get field)
+        var want record[field]
+        var got (back.get field)
 
         if (== field "verify"):
-            define stages (or got #{})
+            var stages (or got #{})
             for-each [[key value] (want.items)]:
                 unless (_same_value value (stages.get key)):
                     raise (ValueError
@@ -273,7 +273,7 @@ define check_round_trip [record text]:
 
 
 @demand
-define dump_shard [records]:
+def dump_shard [records]:
     """
     Serialize corpus records as a multi-document YAML shard
 
@@ -281,12 +281,12 @@ define dump_shard [records]:
     :return: full shard text
     """
 
-    define docs (list-each [record records] (dump_record record))
+    var docs (list-each [record records] (dump_record record))
     return (+ ("\n---\n".join docs) "\n")
 
 
 @demand
-define write_shard [path records]:
+def write_shard [path records]:
     """
     Write corpus records to a YAML shard file
 

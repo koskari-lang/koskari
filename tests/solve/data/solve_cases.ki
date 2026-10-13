@@ -20,51 +20,51 @@ Search shapes exercising koskari.solve; imported by tests.solve
 import-from koskari.solve NoActiveSearch amb fail require solve solve-first
 
 
-(define triples
+(var triples
   (solve
     (lambda []
-      (define a (amb (range 1 15)))
-      (define b (amb (range a 15)))
-      (define c (amb (range b 15)))
+      (var a (amb (range 1 15)))
+      (var b (amb (range a 15)))
+      (var c (amb (range b 15)))
       (require (== (+ (* a a) (* b b)) (* c c)))
       (#tuple a b c))))
 
 
-(define first-triple
+(var first-triple
   (solve-first
     (lambda []
-      (define a (amb (range 1 15)))
-      (define b (amb (range a 15)))
-      (define c (amb (range b 15)))
+      (var a (amb (range 1 15)))
+      (var b (amb (range a 15)))
+      (var c (amb (range b 15)))
       (require (== (+ (* a a) (* b b)) (* c c)))
       (#tuple a b c))))
 
 
-(define no-solution
+(var no-solution
   (solve-first
     (lambda []
-      (define x (amb (#list 1 2 3)))
+      (var x (amb (#list 1 2 3)))
       (require (> x 10))
       x)))
 
 
-(define all-failing
+(var all-failing
   (solve
     (lambda []
-      (define x (amb (#list 1 2 3)))
+      (var x (amb (#list 1 2 3)))
       (fail))))
 
 
 ; A solve nested inside a solve-first: the inner search runs to
 ; completion and the outer stop marker does not leak into it.
-(define nested
+(var nested
   (solve-first
     (lambda []
-      (define outer (amb (#list 1 2 3)))
-      (define inner-all
+      (var outer (amb (#list 1 2 3)))
+      (var inner-all
         (solve
           (lambda []
-            (define y (amb (#list 10 20)))
+            (var y (amb (#list 10 20)))
             (+ outer y))))
       (require (== outer 2))
       (#tuple outer inner-all))))
@@ -72,12 +72,12 @@ import-from koskari.solve NoActiveSearch amb fail require solve solve-first
 
 ; solve-first skips remaining choices once a solution is accepted: with
 ; choices 1 2 3 and a guard passing from 2 up, only two branches run.
-(define visits (#list))
+(var visits (#list))
 
-(define first-passing
+(var first-passing
   (solve-first
     (lambda []
-      (define x (amb (#list 1 2 3)))
+      (var x (amb (#list 1 2 3)))
       (visits.append x)
       (require (> x 1))
       x)))
@@ -85,16 +85,16 @@ import-from koskari.solve NoActiveSearch amb fail require solve solve-first
 
 ; amb and fail with no enclosing search delimiter raise the module's
 ; NoActiveSearch rather than the VM's capture vocabulary.
-define catch-no-search [thunk]:
+def catch-no-search [thunk]:
   try:
     (thunk)
     None
   except [e NoActiveSearch]:
     e
 
-(define outside-amb (catch-no-search (lambda [] (amb (#list 1 2 3)))))
+(var outside-amb (catch-no-search (lambda [] (amb (#list 1 2 3)))))
 
-(define outside-fail (catch-no-search (lambda [] (fail))))
+(var outside-fail (catch-no-search (lambda [] (fail))))
 
 
 ;; The end.

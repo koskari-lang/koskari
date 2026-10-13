@@ -19,12 +19,12 @@ import-from dataclasses field
 (use .job Config)
 
 
-define logger (logging.getLogger "kosrunner.access")
+var logger (logging.getLogger "kosrunner.access")
 
 ;; The identity the OIDC front-end (oauth2-proxy) injects after a real
 ;; login. Authn is the proxy's job; these lists are authz only. Absent
 ;; header = anonymous, the read floor of the ladder.
-define IDENTITY-HEADER "X-Forwarded-Email"
+var IDENTITY-HEADER "X-Forwarded-Email"
 
 
 define-dataclass Group []:
@@ -35,8 +35,8 @@ define-dataclass Group []:
     `group` macro, which names the value after its binding.
     """
 
-    define [name :: str] (field)
-    define [members :: list] (field)
+    var name :: str (field)
+    var members :: list (field)
 
 
 define-dataclass AccessConfig [Config]:
@@ -49,13 +49,13 @@ define-dataclass AccessConfig [Config]:
     no access config at all is fully open.
     """
 
-    define [operators :: list] None
-    define [groups :: list] None
+    var operators :: list None
+    var groups :: list None
 
 
 ;; --- the identity -> level seam ------------------------------------
 
-define resolve-identity [ctx]:
+def resolve-identity [ctx]:
     """
     The caller's identity off the request context: the proxy-verified
     email, or None for anonymous.
@@ -64,7 +64,7 @@ define resolve-identity [ctx]:
     (ctx.header IDENTITY-HEADER)
 
 
-define groups-of [access identity]:
+def groups-of [access identity]:
     """
     The Group values under `access` that `identity` belongs to.
     """
@@ -74,7 +74,7 @@ define groups-of [access identity]:
         g)
 
 
-define resolve-level [access identity]:
+def resolve-level [access identity]:
     """
     identity -> ladder level under `access`: "operator", "control" (in at
     least one group), or "anonymous". The swappable seam: replace this to
@@ -93,7 +93,7 @@ define resolve-level [access identity]:
 
 ;; --- checks ---------------------------------------------------------
 
-define operator? [access ctx]:
+def operator? [access ctx]:
     """
     May the caller act as an operator (enable/disable, shutdown, trigger
     anything)? Open when there is no access config.
@@ -103,7 +103,7 @@ define operator? [access ctx]:
         (== (resolve-level access (resolve-identity ctx)) "operator"))
 
 
-define may-trigger? [access identity job]:
+def may-trigger? [access identity job]:
     """
     May `identity` trigger `job`? Operators always; otherwise membership
     in any Group on the job's allow list, tested directly against the
@@ -133,7 +133,7 @@ define may-trigger? [access identity job]:
         False
 
 
-define trigger-allowed? [access ctx job]:
+def trigger-allowed? [access ctx job]:
     """
     The request-boundary wrapper over may-trigger?: resolve the caller's
     identity off the request context, then ask.
@@ -142,7 +142,7 @@ define trigger-allowed? [access ctx job]:
     (may-trigger? access (resolve-identity ctx) job)
 
 
-define require-operator! [access ctx]:
+def require-operator! [access ctx]:
     """
     403 unless the caller holds operator level (or there is no access
     config). The JSON-flavored guard for the admin API.
@@ -154,7 +154,7 @@ define require-operator! [access ctx]:
             detail: "operator access required")
 
 
-define require-trigger! [access ctx job]:
+def require-trigger! [access ctx job]:
     """
     403 unless the caller may trigger `job` (or there is no access
     config). The JSON-flavored guard for the admin API.
@@ -175,10 +175,10 @@ define require-trigger! [access ctx job]:
 ;; A plain top-level definer (it lives beside the jobset block, not
 ;; inside it), so `allow #[deployers]` and `groups: #[deployers]`
 ;; reference the binding directly.
-define-syntax group:
+syntax group:
     macro-rules []:
         case (group name member ...):
-            `(define ,name (Group ,(str name.datum.base) (#list ,@member)))
+            `(var ,name (Group ,(str name.datum.base) (#list ,@member)))
 
 
 ;; --- variety entry syntax -------------------------------------------
@@ -186,10 +186,10 @@ define-syntax group:
 ;; Access is singular per jobset, so only the unnamed `()` case exists:
 ;; `config access:` binds the first-wins `default/access` slot the jobset
 ;; macro reads when it wires the JobSet.
-define-syntax config/access:
+syntax config/access:
     syntax-rules []:
         case (config/access () setting ...):
-            define -'default/access
+            var -'default/access
             unless &-'default/access:
                 set! -'default/access (AccessConfig setting ...)
 

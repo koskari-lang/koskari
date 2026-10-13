@@ -10,7 +10,7 @@ The result is an `Expression`, callable to run it.
 **Examples:**
 
 ```koskari
->>> (define e (compileq (+ 1 2)))
+>>> (var e (compileq (+ 1 2)))
 >>> (type e)
 <class 'koskari.lib.Expression'>
 >>> (e)

@@ -8,14 +8,14 @@ that tools and readers use; nothing checks them at a call.
 `::` attaches an annotation to a definition, a formal, or a return:
 
 ```koskari
-define total :: int 0
+var total :: int 0
 
-define double :: int [(n :: int)]:
+def double :: int [(n :: int)]:
   (* n 2)
 
 define-class Point []:
-  define x :: int 0
-  define y :: int 0
+  var x :: int 0
+  var y :: int 0
 ```
 
 An annotated formal is parenthesized inside the formals list:
@@ -38,7 +38,7 @@ import inspect
 (print (inspect.signature double))    ;; (n: int) -> int
 ```
 
-A class's annotated `define` forms go to the class `__annotations__`,
+A class's annotated `var` forms go to the class `__annotations__`,
 which is what `dataclasses.dataclass` reads to generate `__init__`,
 `__repr__`, and `__eq__`. Any Python tool that consumes annotations,
 pydantic, FastAPI, `typing.get_type_hints`, sees the same objects it
@@ -50,7 +50,7 @@ An annotation does not check anything. A function that wants a guarantee
 checks it:
 
 ```koskari
-define take [count]:
+def take [count]:
   when (< count 0):
     raise (ValueError "count must be non-negative")
   ...

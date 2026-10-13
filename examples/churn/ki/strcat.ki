@@ -5,10 +5,10 @@
 ;; rather than the allocator's growth of one long string.
 
 
-define churn_strcat [n]:
-    define total 0
-    define s ""
-    define i 0
+def churn_strcat [n]:
+    var total 0
+    var s ""
+    var i 0
     while (< i n):
         incr! s (+ "k" (str (& i 0xff)) ",")
         when (== (& i 0x3ff) 0x3ff):

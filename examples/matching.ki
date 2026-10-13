@@ -29,33 +29,33 @@ import-from dataclasses dataclass
 define-class Point []:
     """ a location; encloses no area """
 
-    define x :: int 0
-    define y :: int 0
+    var x :: int 0
+    var y :: int 0
 
 
 @dataclass
 define-class Plane []:
     """ a rectangular region """
 
-    define w :: int 0
-    define h :: int 0
+    var w :: int 0
+    var h :: int 0
 
 
 @dataclass
 define-class Square []:
     """ a plane with equal sides """
 
-    define side :: int 0
+    var side :: int 0
 
 
 @dataclass
 define-class Cube []:
     """ a solid with equal sides """
 
-    define side :: int 0
+    var side :: int 0
 
 
-define area [shape]:
+def area [shape]:
     """
     dispatch on shape class, destructuring fields positionally
     """
@@ -73,7 +73,7 @@ define area [shape]:
             None
 
 
-define describe [shape]:
+def describe [shape]:
     """
     keyword-field literals and guards refine the dispatch
     """
@@ -95,7 +95,7 @@ define describe [shape]:
             "no idea"
 
 
-define summarize [shapes]:
+def summarize [shapes]:
     """
     sequence patterns destructure the collection itself
     """
@@ -109,7 +109,7 @@ define summarize [shapes]:
             f"{(describe first)} and {(len rest)} more"
 
 
-define from-message [msg]:
+def from-message [msg]:
     """
     mapping patterns pick apart dict-shaped input
     """
@@ -126,8 +126,8 @@ define from-message [msg]:
 
 
 @entry-point
-define main []:
-    define shapes #((Point 0 0) (Point 3 5) (Square 12) (Square 500)
+def main []:
+    var shapes #((Point 0 0) (Point 3 5) (Square 12) (Square 500)
                     (Plane 4 8) (Plane 6 6) (Cube 3))
 
     for-each [s shapes]:

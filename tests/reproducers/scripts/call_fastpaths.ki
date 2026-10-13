@@ -20,23 +20,23 @@
 ;; FN tag matches the callee, so every following hop rebinds the live
 ;; namespace in place.
 
-define tail_sum [n acc]:
+def tail_sum [n acc]:
     if (<= n 0):
         acc
     else:
         (tail_sum (- n 1) (+ acc n))
 
 
-define add_one [x]:
+def add_one [x]:
     (+ x 1)
 
 
 ;; One helper call per while iteration: every return delivers into the
 ;; LOOP extent above the caller's frame.
 
-define sum_calls_while [n]:
-    define total 0
-    define i 0
+def sum_calls_while [n]:
+    var total 0
+    var i 0
     while (< i n):
         incr! total (add_one i)
         incr! i
@@ -46,8 +46,8 @@ define sum_calls_while [n]:
 ;; One helper call per foreach iteration: returns deliver into the
 ;; FOREACH extent.
 
-define sum_calls_foreach [n]:
-    define total 0
+def sum_calls_foreach [n]:
+    var total 0
     for-each [i (range n)]:
         incr! total (add_one i)
     total
@@ -56,9 +56,9 @@ define sum_calls_foreach [n]:
 ;; A helper call under a let binding: the return delivers into the NS
 ;; extent.
 
-define sum_calls_let [n]:
-    define total 0
-    define i 0
+def sum_calls_let [n]:
+    var total 0
+    var i 0
     while (< i n):
         let [[bump (add_one i)]]:
             incr! total bump
@@ -68,10 +68,10 @@ define sum_calls_let [n]:
 
 define-class Counter []:
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.total 0
 
-    define bump [self v]:
+    def bump [self v]:
         set! self.total (+ self.total v)
         self.total
 
@@ -79,8 +79,8 @@ define-class Counter []:
 ;; Unbound method calls at simple arity: the self-steal route with the
 ;; cached frame.
 
-define bump_loop [c n]:
-    define i 0
+def bump_loop [c n]:
+    var i 0
     while (< i n):
         (c.bump i)
         incr! i
@@ -91,7 +91,7 @@ define bump_loop [c n]:
 ;; side warms it, then plants instance attributes that must shadow the
 ;; class method on later calls through this same site.
 
-define call_bump [c v]:
+def call_bump [c v]:
     (c.bump v)
 
 

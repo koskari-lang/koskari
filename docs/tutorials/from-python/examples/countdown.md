@@ -7,7 +7,7 @@ chapter.
 ## The program
 
 ```koskari
-define countdown [n]:
+def countdown [n]:
   while (> n 0):
     print n
     decr! n

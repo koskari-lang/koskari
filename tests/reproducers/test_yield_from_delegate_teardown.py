@@ -41,25 +41,25 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define inner [col]:
+def inner [col]:
     try:
         (yield 1)
         (yield 2)
     finally:
         (col.append "inner finally")
 
-define outer [col]:
+def outer [col]:
     try:
         (yield-from (inner col))
     finally:
         (col.append "outer finally")
 
-define loop-outer [col]:
+def loop-outer [col]:
     for-each [x (outer col)]:
         (break)
     col
 
-define relay [items col]:
+def relay [items col]:
     try:
         (yield-from items)
     except [ValueError]:

@@ -135,7 +135,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_keyword_arguments_at_a_call(self):
         await self.check(
             "kwargs",
-            "(begin (define f [a: 0 b: 0] (+ a b)) (f a: 1 b: 2))",
+            "(begin (def f [a: 0 b: 0] (+ a b)) (f a: 1 b: 2))",
             3, a=100, b=100)
 
 
@@ -151,21 +151,21 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_refq(self):
         await self.check(
             "refq",
-            "(begin (define t 0) (define r (refq t)) (r.store 9) t)",
+            "(begin (var t 0) (var r (refq t)) (r.store 9) t)",
             9, t=100, r=100)
 
 
     async def test_takeq_and_delq(self):
         await self.check(
             "takeq",
-            "(begin (define t 3) (define u 4) (delq u) (takeq t))",
+            "(begin (var t 3) (var u 4) (delq u) (takeq t))",
             3, t=100, u=100)
 
 
     async def test_define_values(self):
         await self.check(
             "define_values",
-            "(begin (define-values [a b] #(1 2)) (+ a b))",
+            "(begin (var [a b] #(1 2)) (+ a b))",
             3, a=100, b=200)
 
 
@@ -198,7 +198,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_class_name(self):
         await self.check(
             "class",
-            "(begin (define-class K [] (define v 5)) K.v)",
+            "(begin (define-class K [] (var v 5)) K.v)",
             5, K=1000)
 
 

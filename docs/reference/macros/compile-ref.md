@@ -25,11 +25,11 @@ The reader spells `(ref ...)` with `&`: `&name`, `&obj.attr`, and
 **Examples:**
 
 ```koskari
-define total 6
-define xs #[1 2 3]
+var total 6
+var xs #[1 2 3]
 
-define r &total
-define ri (ref (item xs 0))
+var r &total
+var ri (ref (item xs 0))
 (deref r)              ;; 6
 (deref ri)             ;; 1
 (set! (deref ri) 10)   ;; xs is now #[10 2 3]
@@ -38,19 +38,19 @@ define ri (ref (item xs 0))
 The computed arms:
 
 ```koskari
-define store #{"n": 1}
+var store #{"n": 1}
 
-define rd (ref (dynamic (lambda [] (item store "n"))
+var rd (ref (dynamic (lambda [] (item store "n"))
                         (lambda [v] (set-item store "n" v))))
 (deref rd)             ;; 1
 (set! (deref rd) 9)
 (deref rd)             ;; 9
 
-define rc (ref (constant 42))
+var rc (ref (constant 42))
 (deref rc)             ;; 42
 
-define calls #[]
-define rm (ref (memoized (lambda [] (.append calls 1) "computed")))
+var calls #[]
+var rm (ref (memoized (lambda [] (.append calls 1) "computed")))
 (deref rm)             ;; "computed"
 (deref rm)             ;; "computed", the getter ran once
 (len calls)            ;; 1

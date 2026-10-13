@@ -13,15 +13,15 @@ import-from kosrunner Job watch-task
 
 define-class TestWatchTask [SchedulerAsyncTestCase]:
 
-    define crashing-task [self]:
-        define boom []:
+    def crashing-task [self]:
+        def boom []:
             raise (RuntimeError "consumer died")
         (create-task (defer boom))
 
 
     @coroutine-fn
-    define test-crash-is-retrieved-and-logged [self]:
-        define task (self.crashing-task)
+    def test-crash-is-retrieved-and-logged [self]:
+        var task (self.crashing-task)
         with [caught (self.assertLogs "kosrunner" level: "ERROR")]:
             (watch-task task "test loop")
             (await (asyncio.gather task return_exceptions: True))
@@ -34,10 +34,10 @@ define-class TestWatchTask [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-crash-clears-the-job-running-flag [self]:
-        define job (Job)
+    def test-crash-clears-the-job-running-flag [self]:
+        var job (Job)
         set! job.running True
-        define task (self.crashing-task)
+        var task (self.crashing-task)
         with [caught (self.assertLogs "kosrunner" level: "ERROR")]:
             (watch-task task "test loop" job: job)
             (await (asyncio.gather task return_exceptions: True))
@@ -49,10 +49,10 @@ define-class TestWatchTask [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-cancellation-is-not-an-error [self]:
-        define forever []:
+    def test-cancellation-is-not-an-error [self]:
+        def forever []:
             (asyncio.sleep 3600)
-        define task (create-task (defer forever))
+        var task (create-task (defer forever))
         (watch-task task "test loop")
         (asyncio.sleep 0)
         (task.cancel)

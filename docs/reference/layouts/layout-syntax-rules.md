@@ -2,7 +2,7 @@
 **Symbol:** `layout/syntax-rules`
 
 **Use-case:** Block syntax for the `syntax-rules` transformer within a
-`define-syntax` block. Converts indented pattern/template rule blocks into the
+`syntax` block. Converts indented pattern/template rule blocks into the
 canonical `(syntax-rules [NAME] (LIT ...) (PATTERN TEMPLATE) ...)` form.
 
 **Behaviour:** Accepts a literals list in the header (e.g. `[x]` or `(x y)`).
@@ -26,9 +26,9 @@ parenthesized form, `(complex pat):`, raises
 
 **Named header:** `syntax-rules NAME [LIT ...]:` puts NAME in the emitted
 form, which is where the transformer takes its identity for help text and
-match errors. `define-syntax` and `extend-syntax` supply that name
+match errors. `syntax` and `extend-syntax` supply that name
 themselves, so the named header belongs to a transformer bound directly,
-as `define compile/NAME:`.
+as `var compile/NAME:`.
 
 **Syntax:**
 
@@ -68,7 +68,7 @@ syntax-rules [item]:
 ```
 
 ```koskari
-define compile/swap:
+var compile/swap:
   syntax-rules swap []:
     case (swap a b):
       (print b a)

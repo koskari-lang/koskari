@@ -84,9 +84,9 @@ import-from koskari.solve amb require solve solve-first
 ;; every pythagorean triple with sides under 15
 (solve
   (lambda []
-    (define a (amb (range 1 15)))
-    (define b (amb (range a 15)))
-    (define c (amb (range b 15)))
+    (var a (amb (range 1 15)))
+    (var b (amb (range a 15)))
+    (var c (amb (range b 15)))
     (require (== (+ (* a a) (* b b)) (* c c)))
     (#tuple a b c)))
 ;; => #[#(3 4 5) #(5 12 13) #(6 8 10)]
@@ -94,7 +94,7 @@ import-from koskari.solve amb require solve solve-first
 ;; just the first
 (solve-first
   (lambda []
-    (define x (amb (#list 1 2 3)))
+    (var x (amb (#list 1 2 3)))
     (require (> x 1))
     x))
 ;; => 2

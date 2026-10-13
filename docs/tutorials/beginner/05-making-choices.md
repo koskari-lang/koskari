@@ -13,11 +13,11 @@ In a file, no. A line with more than one thing on it is a call, with the
 first thing as the thing to do:
 
 ```koskari
-define temperature 72
+var temperature 72
 print "it is" temperature "degrees"
 ```
 
-That is the same as `(define temperature 72)` and
+That is the same as `(var temperature 72)` and
 `(print "it is" temperature "degrees")`.
 :::
 
@@ -43,7 +43,7 @@ How does a program choose?
 With `if`, a question, and an indented body:
 
 ```koskari
-define temperature 72
+var temperature 72
 
 if (> temperature 70):
   print "warm enough for a walk"
@@ -82,7 +82,7 @@ Can we do something else when the question is false?
 Add `else:` at the same indent as the `if`:
 
 ```koskari
-define score 8
+var score 8
 
 if (>= score 10):
   print "bonus level unlocked"
@@ -101,7 +101,7 @@ And when there are several cases?
 `elif` asks another question when the one above it was false:
 
 ```koskari
-define coins 17
+var coins 17
 
 if (>= coins 20):
   print "buy the big snack"
@@ -123,9 +123,9 @@ Can a choice produce a value instead of printing?
 Yes. The value of an `if` is the value of the body that ran:
 
 ```koskari
-define age 12
+var age 12
 
-define price:
+var price:
   if (< age 13):
     5
   else:
@@ -134,7 +134,7 @@ define price:
 print "ticket price:" price
 ```
 
-`define price:` opens a block too, and the `if` inside it is the value
+`var price:` opens a block too, and the `if` inside it is the value
 that `price` gets.
 :::
 
@@ -142,7 +142,7 @@ that `price` gets.
 What does this print?
 +++
 ```koskari
-define steps 4500
+var steps 4500
 
 if (>= steps 10000):
   print "goal met"

@@ -39,10 +39,10 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import gc
 
-define churn [count]:
-    define n 0
+def churn [count]:
+    var n 0
     while (< n count):
-        define l #[]
+        var l #[]
         (l.append l)
         set! n (+ n 1)
     (gc.get_count)

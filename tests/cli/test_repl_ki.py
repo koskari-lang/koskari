@@ -129,7 +129,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
         mod = new_module('__main__')
         init_module(mod, '<string>')
         await load_module_source_async(
-            mod, '(define x 41)', detach=False, layout=False)
+            mod, '(var x 41)', detach=False, layout=False)
         self.assertTrue(vars(mod)['__reader__'].layout_enabled)
 
         out, err = await self._run_repl(['+ x 1'], mod=mod)
@@ -158,13 +158,13 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_multiple_expressions_accumulate_state(self):
-        out, _ = await self._run_repl(['(define x 5)', '(* x x)'])
+        out, _ = await self._run_repl(['(var x 5)', '(* x x)'])
         self.assertIn('25', out)
 
 
     async def test_form_after_a_block_body_runs(self):
         out, err = await self._run_repl([
-            'if True:', '  (define a 1)', '(+ a 1)', '(+ a 2)'])
+            'if True:', '  (var a 1)', '(+ a 1)', '(+ a 2)'])
         self.assertNotIn('Error', err)
         self.assertEqual(['2', '3'], out.split())
 
@@ -191,7 +191,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
         out, _ = await self._run_repl(
             ['@(let [[c 41]])',
-             'define bump []:',
+             'def bump []:',
              '    (incr! c)',
              '    c',
              '',
@@ -201,9 +201,9 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
     async def test_defer_result_stays_a_handle(self):
         out, _ = await self._run_repl(
-            ['(define log (list))',
-             '(define f (lambda [] (log.append 1) 42))',
-             '(define d (defer f))',
+            ['(var log (list))',
+             '(var f (lambda [] (log.append 1) 42))',
+             '(var d (defer f))',
              '(len log)',
              '(await d)',
              '(len log)'])
@@ -221,7 +221,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
     async def test_spent_defer_await_raises(self):
         out, err = await self._run_repl(
-            ['(define d (defer (lambda [] 42)))',
+            ['(var d (defer (lambda [] 42)))',
              '(await d)',
              '(await d)'])
         self.assertIn('42', out)
@@ -261,7 +261,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
 
         stdout = io.StringIO()
         stderr = io.StringIO()
-        steps = iter(['(define x 5)', KeyboardInterrupt(), 'x'])
+        steps = iter(['(var x 5)', KeyboardInterrupt(), 'x'])
 
         def prompter(prompt, **kwargs):
             try:

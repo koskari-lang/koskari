@@ -39,7 +39,7 @@ import-from argparse ArgumentParser
 import-from os.path basename
 
 
-define cmd_selftest [options]:
+def cmd_selftest [options]:
     """
     Report the running interpreter and working directory.
 
@@ -53,7 +53,7 @@ define cmd_selftest [options]:
     return 0
 
 
-define cmd_editors [options]:
+def cmd_editors [options]:
     """
     Regenerate one editor syntax-highlighting asset.
 
@@ -67,7 +67,7 @@ define cmd_editors [options]:
     return 0
 
 
-define cmd_opgrams [options]:
+def cmd_opgrams [options]:
     """
     Run opcode n-gram frequency analysis over compiled Koskari code.
     """
@@ -76,7 +76,7 @@ define cmd_opgrams [options]:
     run options
 
 
-define cmd_corpus [options]:
+def cmd_corpus [options]:
     """
     Export corpus YAML records to parquet dataset views.
     """
@@ -85,7 +85,7 @@ define cmd_corpus [options]:
     run options
 
 
-define cmd_matchbench [options]:
+def cmd_matchbench [options]:
     """
     Run the matcher and match/case micro-benchmarks.
     """
@@ -94,7 +94,7 @@ define cmd_matchbench [options]:
     run options
 
 
-define cmd_opsizing [options]:
+def cmd_opsizing [options]:
     """
     Join per-handler code size with per-opcode timing into a TSV.
     """
@@ -103,7 +103,7 @@ define cmd_opsizing [options]:
     run options
 
 
-define cmd_lockup [options]:
+def cmd_lockup [options]:
     """
     Write the Koskari wordmark lockup SVG.
     """
@@ -112,22 +112,31 @@ define cmd_lockup [options]:
     run options
 
 
-define build_parser [name]:
+def cmd_rewrite_define [options]:
+    """
+    Rewrite define-family forms to var, def, global, and syntax.
+    """
+
+    import-from tools.rewritedefine run
+    run options
+
+
+def build_parser [name]:
     """
     Construct the dispatcher argument parser.
     """
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: (basename name)
         description: "Koskari developer tools")
 
-    define sub (parser.add_subparsers dest: "command" required: True)
+    var sub (parser.add_subparsers dest: "command" required: True)
 
-    define ps (sub.add_parser "selftest"
+    var ps (sub.add_parser "selftest"
         help: "report interpreter and working directory")
     (ps.set_defaults func: cmd_selftest)
 
-    define pe (sub.add_parser "editors"
+    var pe (sub.add_parser "editors"
         help: "render one editor asset from YAML and a Jinja2 template")
     (pe.add_argument "spec_yaml"
         help: "path to the token spec YAML")
@@ -146,39 +155,44 @@ define build_parser [name]:
     ; every unrelated invocation for about a quarter second, and it is
     ; the one tool driven interactively in a tight loop. It is run
     ; directly instead; see docs/corpus/CLAUDE.md.
-    import-from tools lockup matchbench opgrams opsizing
+    import-from tools lockup matchbench opgrams opsizing rewritedefine
     import-from tools.corpus export
 
-    define po (sub.add_parser "opgrams"
+    var po (sub.add_parser "opgrams"
         help: "opcode n-gram frequency analysis over compiled Koskari code")
     (opgrams.build_arguments po)
     (po.set_defaults func: cmd_opgrams)
 
-    define pc (sub.add_parser "corpus"
+    var pc (sub.add_parser "corpus"
         help: "export corpus YAML records to parquet dataset views")
     (export.build_arguments pc)
     (pc.set_defaults func: cmd_corpus)
 
-    define pm (sub.add_parser "matchbench"
+    var pm (sub.add_parser "matchbench"
         help: "matcher and match/case micro-benchmarks")
     (matchbench.build_arguments pm)
     (pm.set_defaults func: cmd_matchbench)
 
-    define pz (sub.add_parser "opsizing"
+    var pz (sub.add_parser "opsizing"
         help: "per-handler code size joined with per-opcode timing")
     (opsizing.build_arguments pz)
     (pz.set_defaults func: cmd_opsizing)
 
-    define pl (sub.add_parser "lockup"
+    var pl (sub.add_parser "lockup"
         help: "write the wordmark lockup SVG from the icon SVG")
     (lockup.build_arguments pl)
     (pl.set_defaults func: cmd_lockup)
+
+    var pr (sub.add_parser "rewrite-define"
+        help: "rewrite define-family forms to var, def, global and syntax")
+    (rewritedefine.build_arguments pr)
+    (pr.set_defaults func: cmd_rewrite_define)
 
     return parser
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Parse arguments and dispatch to the selected subcommand.
 
@@ -189,10 +203,10 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [name *: args] argv
+    var [name *: args] argv
 
-    define parser (build_parser name)
-    define options (parser.parse_args args)
+    var parser (build_parser name)
+    var options (parser.parse_args args)
 
     options.func options
 

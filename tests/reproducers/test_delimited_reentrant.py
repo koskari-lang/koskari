@@ -106,7 +106,7 @@ class TestDelimitedReentrant(SpecialsTestCase):
 
         src = """
         (begin
-          (define-global amb (lambda [choices]
+          (global amb (lambda [choices]
             (shift k
               (let [[out (#list)]]
                 (for-each [c choices]
@@ -132,14 +132,14 @@ class TestDelimitedReentrant(SpecialsTestCase):
 
         src = """
         (begin
-          (define-global amb (lambda [choices]
+          (global amb (lambda [choices]
             (shift k
               (let [[out (#list)]]
                 (for-each [c choices]
                   (call (attr out extend)
                     (call k c)))
                 out))))
-          (define-global fail (lambda []
+          (global fail (lambda []
             (shift k (#list))))
           (reset
             (#list

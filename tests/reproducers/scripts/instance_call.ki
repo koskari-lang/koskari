@@ -6,37 +6,37 @@
 ;; an instance attribute of that name does not shadow it.
 
 
-define target [a b]:
+def target [a b]:
     #(a b)
 
 
 define-class Method []:
 
-    define __call__ [self x]:
+    def __call__ [self x]:
         #(self.tag x)
 
 
 define-class Bound []:
 
-    define __call__ (partial target 1)
+    var __call__ (partial target 1)
 
 
-define method_from_koskari []:
-    define m (Method)
+def method_from_koskari []:
+    var m (Method)
     set! m.tag "m"
     (m 2)
 
 
-define bound_from_koskari []:
+def bound_from_koskari []:
     ((Bound) 2)
 
 
-define bound_in_tail []:
-    define b (Bound)
+def bound_in_tail []:
+    var b (Bound)
     (b 3)
 
 
-define deep [n]:
+def deep [n]:
     if (> n 0):
         + 1 (deep_step (- n 1))
     else:
@@ -45,18 +45,18 @@ define deep [n]:
 
 define-class Deep []:
 
-    define __call__ (partial deep)
+    var __call__ (partial deep)
 
 
-define deep_step (Deep)
+var deep_step (Deep)
 
 
-define bound_deep [n]:
+def bound_deep [n]:
     (deep_step n)
 
 
-define shadowed_from_koskari []:
-    define m (Method)
+def shadowed_from_koskari []:
+    var m (Method)
     set! m.tag "type"
     set! m.__call__ (lambda [x] #("instance" x))
     (m 2)

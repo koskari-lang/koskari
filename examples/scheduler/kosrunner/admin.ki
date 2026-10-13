@@ -19,7 +19,7 @@ import logging
 (use .server get-server normalize-prefix ServerConfig)
 
 
-define logger (logging.getLogger "kosrunner.admin")
+var logger (logging.getLogger "kosrunner.admin")
 
 
 define-dataclass AdminConfig [ServerConfig]:
@@ -27,7 +27,7 @@ define-dataclass AdminConfig [ServerConfig]:
     Config for the control-plane server; prefix defaults to /admin
     """
 
-    define [prefix :: str] "/admin"
+    var prefix :: str "/admin"
 
 
 define-class AdminJob [Job]:
@@ -39,9 +39,9 @@ define-class AdminJob [Job]:
     webhook it shares that webhook's FastAPI server (see server.get-server).
     """
 
-    define config-class AdminConfig
+    var config-class AdminConfig
 
-    define mount [self server]:
+    def mount [self server]:
         """
         Mount the control-plane routes on `server`. Reads are the
         anonymous floor; mutations are guarded against the jobset's access
@@ -51,28 +51,28 @@ define-class AdminJob [Job]:
         server it manages itself.
         """
 
-        define prefix (normalize-prefix self.config.prefix)
-        define js self.jobset
+        var prefix (normalize-prefix self.config.prefix)
+        var js self.jobset
 
-        define do-enable [name ctx]:
+        def do-enable [name ctx]:
             (require-operator! js.access ctx)
             (js.enable name)
             #{"enabled": name}
 
-        define do-disable [name ctx]:
+        def do-disable [name ctx]:
             (require-operator! js.access ctx)
             (js.disable name)
             #{"disabled": name}
 
-        define do-shutdown [payload ctx]:
+        def do-shutdown [payload ctx]:
             (require-operator! js.access ctx)
             (js.shutdown)
             #{"ok": True}
 
-        define do-retrigger [runid ctx]:
-            define trig (js.store.get-trigger runid)
+        def do-retrigger [runid ctx]:
+            var trig (js.store.get-trigger runid)
             unless (None? trig):
-                define job (js.jobs.get (item trig "job"))
+                var job (js.jobs.get (item trig "job"))
                 unless (None? job):
                     (require-trigger! js.access ctx job)
             (js.retrigger runid)
@@ -91,40 +91,40 @@ define-class AdminJob [Job]:
         (server.add-action prefix "retrigger" do-retrigger)
 
 
-    define start [self]:
+    def start [self]:
         set! self.running True
-        define server (get-server self.config)
+        var server (get-server self.config)
         (self.mount server)
         (server.start)
         (logger.info "admin control plane mounted at %s" self.config.prefix)
 
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
 
 
-define-syntax config/admin:
+syntax config/admin:
     syntax-rules []:
         case (config/admin () setting ...):
             (begin
-                (define -'default/admin)
+                (var -'default/admin)
                 (unless &-'default/admin
                     (set! -'default/admin (AdminConfig setting ...))))
         case (config/admin nm setting ...):
             (begin
-                (define nm (AdminConfig setting ...))
-                (define -'default/admin)
+                (var nm (AdminConfig setting ...))
+                (var -'default/admin)
                 (unless &-'default/admin (set! -'default/admin nm)))
 
 
 ;; `job admin <name>` -- no trigger key and usually no sub-items; it
 ;; serves the control plane from its config alone.
-define-syntax job/admin:
+syntax job/admin:
     syntax-rules []:
         case (job/admin name (subhead subrest ...) ...):
             (begin
-                (define name (AdminJob))
-                (define -'default/admin)
+                (var name (AdminJob))
+                (var -'default/admin)
                 (if &-'default/admin
                     (.configure name via: -'default/admin)
                     (.configure name))

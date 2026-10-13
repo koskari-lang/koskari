@@ -20,8 +20,8 @@
 ; instead of the loop value, corrupting the result. A bare-symbol body
 ; escaped the leak; any nesting (a call, an f-string) triggered it.
 
-define nested (list-each [col #[1 2 3]] (+ col 10))
-define fstr (list-each [col #["a" "b" "c"]] f"<{col}>")
+var nested (list-each [col #[1 2 3]] (+ col 10))
+var fstr (list-each [col #["a" "b" "c"]] f"<{col}>")
 
 print nested
 print fstr

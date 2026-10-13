@@ -212,7 +212,7 @@ notes: zero placeholders
 ---
 id: function-compose-identity-001
 feature: macro/compile/function-compose
-source: (begin (define id [x] x) ((function-compose id) 42))
+source: (begin (def id [x] x) ((function-compose id) 42))
 verify:
   eval: "42"
 references:
@@ -228,7 +228,7 @@ notes: koskari/bootstrap/_functions.ki; requires builtins at expand
 ---
 id: function-compose-chain-001
 feature: macro/compile/function-compose
-source: (begin (define double [x] (* x 2)) (define add-one [x] (+ x 1)) ((function-compose add-one double) 5))
+source: (begin (def double [x] (* x 2)) (def add-one [x] (+ x 1)) ((function-compose add-one double) 5))
 verify:
   eval: "11"
 references:
@@ -258,24 +258,24 @@ notes: koskari/bootstrap/_functions.ki decorate [] fn; requires builtins at expa
 ---
 id: function-decorate-define-001
 feature: macro/compile/decorate
-source: (begin (decorate [] (define sq [x] (* x x))) (sq 4))
+source: (begin (decorate [] (def sq [x] (* x x))) (sq 4))
 verify:
   eval: "16"
 references:
   - reference/macros/compile-decorate.md
-  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
 stability: evolving
 tags:
   - function
   - macro
   - decorate
-notes: koskari/bootstrap/_functions.ki; define form wraps function shorthand
+notes: koskari/bootstrap/_functions.ki; def wraps the function shorthand
 ---
 id: function-define-coroutine-001
 feature: macro/compile/define-coroutine
 source: (define-coroutine idle [] 1)
 verify:
-  expand: (define idle (coroutine-fn (function idle [] 1)))
+  expand: (var idle (coroutine-fn (function idle [] 1)))
 references:
   - reference/macros/compile-define-coroutine.md
 stability: evolving
@@ -291,7 +291,7 @@ id: function-define-demanding-001
 feature: macro/compile/define-demanding
 source: (define-demanding sync-id [x] x)
 verify:
-  expand: (define sync-id (demand (function sync-id [x] x)))
+  expand: (var sync-id (demand (function sync-id [x] x)))
 references:
   - reference/macros/compile-define-demanding.md
 stability: evolving
@@ -419,7 +419,7 @@ source: |-
   (define-coroutine counter [n] n)
   
 verify:
-  expand: (define counter (coroutine-fn (function counter (n) n)))
+  expand: (var counter (coroutine-fn (function counter (n) n)))
 references:
   - reference/macros/compile-define-coroutine.md
 stability: evolving
@@ -457,7 +457,7 @@ source: |-
   (define-demanding add [x y] (+ x y))
   
 verify:
-  expand: (define add (demand (function add (x y) (+ x y))))
+  expand: (var add (demand (function add (x y) (+ x y))))
 references:
   - reference/macros/compile-define-demanding.md
 stability: evolving
@@ -467,7 +467,7 @@ tags:
   - define-demanding
   - await
   - concurrency
-notes: two-param form; expands to define with demand wrapper around function
+notes: two-param form; expands to var with demand wrapper around function
 ---
 id: function-define-coroutine-type-003
 feature: macro/compile/define-coroutine
@@ -581,11 +581,11 @@ notes: decorate [] with two-arg lambda; [] reads as nil in printed form; result 
 id: function-compose-double-003
 feature: macro/compile/function-compose
 source: |-
-  (begin (define add-one [x] (+ x 1)) (define double [x] (* x 2)) ((function-compose double add-one) 3))
+  (begin (def add-one [x] (+ x 1)) (def double [x] (* x 2)) ((function-compose double add-one) 3))
   
 verify:
-  read: (begin (define add-one (x) (+ x 1)) (define double (x) (* x 2)) ((function-compose double add-one) 3))
-  expand: (begin (define add-one (x) (+ x 1)) (define double (x) (* x 2)) ((function-compose double add-one) 3))
+  read: (begin (def add-one (x) (+ x 1)) (def double (x) (* x 2)) ((function-compose double add-one) 3))
+  expand: (begin (def add-one (x) (+ x 1)) (def double (x) (* x 2)) ((function-compose double add-one) 3))
   eval: "8"
 references:
   - reference/macros/compile-function-compose.md
@@ -677,7 +677,7 @@ id: function-call-star-spread-001
 feature: special/compile/call
 source: |-
   (begin
-    (define f [x] x)
+    (def f [x] x)
     (f *: #[42]))
   
 verify:
@@ -726,10 +726,10 @@ notes: functools.partial is bound by default (KosPartial); (partial + 10) fixes 
 ---
 id: function-partial-import-multi-001
 feature: builtin/partial
-source: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+source: (begin (import-from functools partial) (var add3 (partial + 1 2)) (add3 4))
 verify:
-  read: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
-  expand: (begin (import-from functools partial) (define add3 (partial + 1 2)) (add3 4))
+  read: (begin (import-from functools partial) (var add3 (partial + 1 2)) (add3 4))
+  expand: (begin (import-from functools partial) (var add3 (partial + 1 2)) (add3 4))
   eval: "7"
 stability: evolving
 tags:
@@ -804,7 +804,7 @@ source: |-
   
 verify:
   read: (labels [[fact [n] (if (== n 0) 1 (* n (fact (- n 1))))]] (fact 5))
-  expand: (let [] (define fact (function fact [n] (if (== n 0) 1 (* n (fact (- n 1)))))) (fact 5))
+  expand: (let [] (var fact (function fact [n] (if (== n 0) 1 (* n (fact (- n 1)))))) (fact 5))
   eval: "120"
 references:
   - reference/macros/compile-labels.md
@@ -930,7 +930,7 @@ id: function-decorate-let-private-state-001
 feature: layout/decorate
 source: |-
   @let [[count 0]]
-  define tick []:
+  def tick []:
     incr! count
     count
   
@@ -939,7 +939,7 @@ source: |-
   (tick)
   
 verify:
-  read: (begin (decorate ((let [[count 0]])) (define tick [] (incr! count) count)) (tick) (tick) (tick))
+  read: (begin (decorate ((let [[count 0]])) (def tick [] (incr! count) count)) (tick) (tick) (tick))
   eval: "3"
 references:
   - guide/decorators.md
@@ -955,7 +955,7 @@ tags:
   - closure
   - mutate
   - idiom
-notes: "graft arm: a body-less @let over a define completes the let with the definition as its body, so count is bound once at definition time, private to tick, and persists across calls. This is the idiom for private persistent state (caches, counters). Requires reader/decorators (baseline on)."
+notes: "graft arm: a body-less @let over a def completes the let with the definition as its body, so count is bound once at definition time, private to tick, and persists across calls. This is the idiom for private persistent state (caches, counters). Requires reader/decorators (baseline on)."
 ---
 id: function-decorate-subject-let-graft-001
 feature: macro/compile/decorate-subject
@@ -999,10 +999,10 @@ notes: "default arm: a decorator expression with no registered shape evaluates a
 id: function-decorate-define-hoist-001
 feature: macro/compile/decorate
 source: |-
-  (decorate (demand) (define foo [x] x))
+  (decorate (demand) (def foo [x] x))
   
 verify:
-  expand: (define foo (decorate [demand] (function foo [x] x)))
+  expand: (var foo (decorate [demand] (function foo [x] x)))
 references:
   - reference/macros/compile-decorate.md
   - guide/decorators.md
@@ -1012,7 +1012,7 @@ tags:
   - macro
   - decorate
   - name-resolution
-notes: compile/decorate hoists the name out of a define subject so the function value is what gets decorated and the finished result is what gets bound; define-class is hoisted the same way.
+notes: compile/decorate hoists the name out of a def subject so the function value is what gets decorated and the finished result is what gets bound; define-class is hoisted the same way.
 ---
 id: function-decorate-call-parameterize-001
 feature: layout/decorate
@@ -1020,13 +1020,13 @@ source: |-
   define-parameter verbose False
   
   @call-parameterize [[verbose True]]
-  define loud? []:
+  def loud? []:
     verbose
   
   #[(loud?) verbose]
   
 verify:
-  read: "(begin (define-parameter verbose False) (decorate ((call-parameterize [[verbose True]])) (define loud? [] verbose)) (#list (loud?) verbose))"
+  read: "(begin (define-parameter verbose False) (decorate ((call-parameterize [[verbose True]])) (def loud? [] verbose)) (#list (loud?) verbose))"
   eval: "list:[true,false]"
 references:
   - guide/decorators.md
@@ -1049,7 +1049,7 @@ source: |-
   (begin
     (define-parameter p False)
     (decorate ((call-parameterize [[p True]]))
-      (define f [] p))
+      (def f [] p))
     (f))
   
 verify:
@@ -1094,7 +1094,7 @@ source: |-
   
   @let [[total 0]]
   @call-parameterize [[scale 100]]
-  define add [n]:
+  def add [n]:
     set! total (+ total (* n scale))
     total
   
@@ -1102,7 +1102,7 @@ source: |-
   (add 2)
   
 verify:
-  read: (begin (define-parameter scale 10) (decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (define add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
+  read: (begin (define-parameter scale 10) (decorate ((let [[total 0]]) (call-parameterize [[scale 100]])) (def add [n] (set! total (+ total (* n scale))) total)) (add 1) (add 2))
   eval: "300"
 references:
   - guide/decorators.md
@@ -1176,12 +1176,12 @@ id: function-identity-keyword-default-001
 feature: builtin/identity
 source: |-
   (begin
-    (define apply-to [x f: identity] (f x))
+    (def apply-to [x f: identity] (f x))
     (#list (apply-to 7) (apply-to 7 f: str)))
 verify:
   eval: list:[7,"7"]
 references:
-  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
 stability: evolving
 tags:
   - function

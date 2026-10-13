@@ -8,24 +8,24 @@ of an anonymous function.
 The layout form and the parenthesized form are the same definition:
 
 ```koskari
-define double [n]:
+def double [n]:
   (* n 2)
 
-(define double [n]
+(def double [n]
   (* n 2))
 ```
 
 A body that fits on the header line needs no colon:
 
 ```koskari
-define double [n] (* n 2)
+def double [n] (* n 2)
 ```
 
-`define` with formals is sugar for binding a `function` value to a
-name. `lambda` makes the same value without a name:
+`def` is sugar for binding a `function` value to a name. `lambda` makes
+the same value without a name:
 
 ```koskari
-define add-one (lambda [x] (+ x 1))
+var add-one (lambda [x] (+ x 1))
 (add-one 41)
 ```
 
@@ -37,7 +37,7 @@ The formals list holds positional names, keyword names with defaults,
 and the two rest collectors:
 
 ```koskari
-define connect [host port: 80 *: extra **: options]:
+def connect [host port: 80 *: extra **: options]:
   #(host port extra options)
 
 (connect "a" 8080 1 2 verbose: True)
@@ -62,7 +62,7 @@ objects; see [Types and annotations](types-and-annotations.md).
 A body runs in order and its last form is the result:
 
 ```koskari
-define shipping [subtotal]:
+def shipping [subtotal]:
   if (>= subtotal 50):
     0
   else:
@@ -74,7 +74,7 @@ the spellings, and a bare `return` on a layout line expands to
 `(return)`:
 
 ```koskari
-define first-even [xs]:
+def first-even [xs]:
   for-each [x xs]:
     when (== 0 (% x 2)):
       return x
@@ -85,15 +85,15 @@ define first-even [xs]:
 keyword arguments return a `values` object:
 
 ```koskari
-define minmax [a b]:
+def minmax [a b]:
   if (< a b):
     return a b
   else:
     return b a
 
-define-values [lo hi] (minmax 8 3)   ;; lo = 3, hi = 8
+var [lo hi] (minmax 8 3)   ;; lo = 3, hi = 8
 
-define stats [xs]:
+def stats [xs]:
   return count: (len xs) first: xs[0]
 
 (stats #[10 20 30])   ;; values(count=3, first=10)
@@ -101,7 +101,7 @@ define stats [xs]:
 
 Positional and keyword arguments cannot be mixed in one `return`.
 Destructure a tuple result with
-[`define-values`](../reference/specials/compile-define-values.md) or
+[`var`](../reference/specials/compile-var.md) over a pattern or
 [`let-values`](../reference/macros/compile-let-values.md).
 
 ## Closures
@@ -111,14 +111,14 @@ function reads outer names, and `set!` inside it stores into the outer
 name it finds, with no declaration:
 
 ```koskari
-define make-counter []:
-  define count 0
-  define tick []:
+def make-counter []:
+  var count 0
+  def tick []:
     incr! count
     count
   tick
 
-define t (make-counter)
+var t (make-counter)
 (t)
 (t)   ;; 2
 ```
@@ -133,7 +133,7 @@ the module, saying explicitly which scope a store should reach; see
 A recursive function calls itself. Write the stopping case first:
 
 ```koskari
-define countdown [n]:
+def countdown [n]:
   if (<= n 0):
     print "done"
   else:
@@ -145,7 +145,7 @@ Tail calls do not grow the stack, so a loop written as recursion costs
 what a `while` costs. The named `let` is the idiom for that:
 
 ```koskari
-define fib [n]:
+def fib [n]:
   let loop [[n n] [a 0] [b 1]]:
     if (< n 1):
       a
@@ -158,7 +158,7 @@ calling it is the next iteration.
 
 ## Decorators
 
-An `@` line above a `define` applies a decorator, as in Python. Koskari
+An `@` line above a `def` applies a decorator, as in Python. Koskari
 adds decorator forms that wrap the definition syntactically, such as
 `@let` closing a function over a private binding. The whole surface is
 in [Decorators](decorators.md).
@@ -168,7 +168,7 @@ in [Decorators](decorators.md).
 A Koskari function called from Koskari yields a value. Called from
 plain Python code, with no event loop, it yields a coroutine, because
 every Koskari function can suspend. `define-demanding`, or `@demand`
-over a `define`, gives Python a function that returns the value. That
+over a `def`, gives Python a function that returns the value. That
 applies to any function a Python caller invokes directly, including a
 Python decorator like `lru_cache` that calls what it wraps. The model
 is in [Demand, async, and defer](demand-async-and-defer.md).

@@ -16,8 +16,8 @@ getter, a parameter, or a variable in `os.environ`.
 **Examples:**
 
 ```koskari
-define total 5
-define xs #[1 2 3]
+var total 5
+var xs #[1 2 3]
 
 (bind! alias &total)
 (set! alias 6)            ;; total is now 6

@@ -22,8 +22,8 @@ is returned unchanged. Expansion is depth-first, and peer blocks that a handler
 declares are consumed from the block's entries.
 
 ```koskari
->>> define forms '(1 2 3)
->>> define tmpl:
+>>> var forms '(1 2 3)
+>>> var tmpl:
 ...   `begin:
 ...     ,@forms
 >>> tmpl
@@ -42,10 +42,10 @@ through. A declared peer block is consumed from the spine following its primary
 block, so `if` and its `else` peer collapse into one form:
 
 ```koskari
->>> define b1:
+>>> var b1:
 ...   `if (> 2 1):
 ...     "yes"
->>> define b2:
+>>> var b2:
 ...   `begin:
 ...     (+ 1 2)
 >>> (apply-layouts (cons b1 b2 '(x) nil) (globals))

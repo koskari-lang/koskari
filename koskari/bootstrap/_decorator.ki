@@ -20,7 +20,7 @@ Portion of koskari.builtins
 let []:
   import-from functools update_wrapper
 
-  define-global decorate-wraps [inner wrapper]:
+  global def decorate-wraps [inner wrapper]:
     """
     Copies callable metadata from inner onto wrapper via
     functools.update_wrapper, returning wrapper. When inner is a
@@ -37,7 +37,7 @@ let []:
       update_wrapper wrapper inner
 
 
-define-syntax decorate-subject:
+syntax decorate-subject:
   """
   Applies one decorator expression to a subject form.
 
@@ -90,7 +90,7 @@ define-syntax decorate-subject:
       (deco subject)
 
 
-define-syntax decorate:
+syntax decorate:
   """
   Handler for the decorator layout syntax, can also be used to apply
   decorator-style wrappers to an s-expr form.
@@ -118,25 +118,25 @@ define-syntax decorate:
         decorate [decorators ...] (build-class name supers body ...)
 
     case (decorate [decorators ...] (define-class name supers body ...)):
-      define name (decorate [decorators ...] (class name supers (begin body ...)))
+      var name (decorate [decorators ...] (class name supers (begin body ...)))
 
     case (decorate [decorators ...] (define name formals body ...)):
-      define name (decorate [decorators ...] (function name formals body ...))
+      var name (decorate [decorators ...] (function name formals body ...))
 
     ;; each define-* form binds its name to a value built from the
     ;; function or class it declares; the decorators wrap that value
     case (decorate [decorators ...] (define-global name formals body ...)):
-      define-global name (decorate [decorators ...] (function name formals body ...))
+      global name (decorate [decorators ...] (function name formals body ...))
 
     case (decorate [decorators ...] (define-demanding name formals body ...)):
-      define name (decorate [decorators ...] (demand (function name formals body ...)))
+      var name (decorate [decorators ...] (demand (function name formals body ...)))
 
     case (decorate [decorators ...] (define-coroutine name formals body ...)):
-      define name (decorate [decorators ...] (coroutine-fn (function name formals body ...)))
+      var name (decorate [decorators ...] (coroutine-fn (function name formals body ...)))
 
     case (decorate [decorators ...] (define-dataclass name supers members ...)):
       begin:
-        define name:
+        var name:
           decorate [decorators ...]:
             let []:
               import-from dataclasses dataclass

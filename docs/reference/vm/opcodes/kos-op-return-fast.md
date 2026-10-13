@@ -5,7 +5,7 @@
 - **See also**: [KOS_OP_RETURN_VAR](kos-op-return-var.md); **`koskari/lib/opcode/RETURN_FAST.c`**.
 - **Covered by**: `tests/lib/opcode/test_control_operand.py`, `tests/compile/test_fuse_feeders.py`
 
-**Example:** `(define (f a) a)`: the body returns its parameter.
+**Example:** `(def f [a] a)`: the body returns its parameter.
 
 | index | opcode      | arg | arg view | comment |
 |------:|-------------|-----|----------|---------|

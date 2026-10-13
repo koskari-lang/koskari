@@ -1518,10 +1518,10 @@ notes: 0-arity (raise) inside a handler re-raises the active exception; an outer
 ---
 id: special-raise-custom-exception-001
 feature: special/compile/raise
-source: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+source: (begin (define-class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
 verify:
-  read: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
-  expand: (begin (define-class AppError [Exception] (define __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  read: (begin (define-class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  expand: (begin (define-class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
   eval: '"boom"'
 references:
   - reference/specials/compile-raise.md
@@ -1583,18 +1583,18 @@ id: special-return-multiple-values-destructure-001
 feature: special/compile/return
 source: |-
   begin:
-    define minmax [a b]:
+    def minmax [a b]:
       if (< a b):
         return a b
       else:
         return b a
-    define-values [lo hi] (minmax 8 3)
+    var [lo hi] (minmax 8 3)
     #(lo hi)
 verify:
   eval: "tuple:(3,8)"
 references:
   - reference/specials/compile-return.md
-  - reference/specials/compile-define-values.md
+  - reference/specials/compile-var.md
 stability: evolving
 tags:
   - special
@@ -1603,13 +1603,13 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) return is consumed positionally with define-values; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) return is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
 ---
 id: special-return-keyword-values-001
 feature: special/compile/return
 source: |-
   begin:
-    define stats [xs]:
+    def stats [xs]:
       return count: (len xs) first: (item xs 0)
     (dict (stats #[10 20 30]))
 verify:
@@ -1647,15 +1647,15 @@ id: special-yield-multiple-values-destructure-001
 feature: special/compile/yield
 source: |-
   begin:
-    define gen []:
+    def gen []:
       yield 3 8
-    define-values [lo hi] (item (list (gen)) 0)
+    var [lo hi] (item (list (gen)) 0)
     #(lo hi)
 verify:
   eval: "tuple:(3,8)"
 references:
   - reference/specials/compile-yield.md
-  - reference/specials/compile-define-values.md
+  - reference/specials/compile-var.md
 stability: evolving
 tags:
   - special
@@ -1665,13 +1665,13 @@ tags:
   - destructure
   - "surface:block"
   - idiom
-notes: a multi-value (tuple) yield is consumed positionally with define-values; koskari/compile/specials/continuations.py
+notes: a multi-value (tuple) yield is consumed positionally with var over a pattern; koskari/compile/specials/continuations.py
 ---
 id: special-yield-keyword-values-001
 feature: special/compile/yield
 source: |-
   begin:
-    define stats [xs]:
+    def stats [xs]:
       yield count: (len xs) first: (item xs 0)
     (dict (item (list (stats #[10 20 30])) 0))
 verify:
@@ -1690,7 +1690,7 @@ notes: keyword arguments to yield produce a values object labelling each result;
 ---
 id: special-return-bare-word-001
 feature: special/compile/return
-source: "(begin (define f (lambda f [x] (begin (when x return) 99))) #[(f True) (f False)])"
+source: "(begin (var f (lambda f [x] (begin (when x return) 99))) #[(f True) (f False)])"
 verify:
   eval: "list:[null,99]"
 references:
@@ -1881,14 +1881,14 @@ notes: "the long form spelled without the #` prefix; a comma is only active afte
 id: layout-quote-syntax-block-001
 feature: layout/quote-syntax
 source: |-
-  define b:
+  var b:
     #'foo:
       a
       b
   
 verify:
-  read: "(define b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
-  expand: "(define b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
+  read: "(var b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
+  expand: "(var b (quote-syntax (#block: (foo) (#line: a) (#line: b))))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -1903,19 +1903,19 @@ tags:
   - surface:block
   - metaprogramming
   - hygiene
-notes: "#' before a block head quotes the raw block: cons as data keeping hygiene marks, through layout/quote-syntax; define returns None"
+notes: "#' before a block head quotes the raw block: cons as data keeping hygiene marks, through layout/quote-syntax; var returns None"
 ---
 id: layout-quasiquote-syntax-block-001
 feature: layout/quasiquote-syntax
 source: |-
-  define b:
+  var b:
     #`foo:
       ,z
       b
   
 verify:
-  read: "(define b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
-  expand: "(define b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
+  read: "(var b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
+  expand: "(var b (quasiquote-syntax (#block: (foo) (#line: (unquote z)) (#line: b))))"
   eval: "null"
 references:
   - reference/reader-layout.md
@@ -1931,7 +1931,7 @@ tags:
   - surface:block
   - metaprogramming
   - hygiene
-notes: "#` before a block head quasiquotes the raw block: cons keeping hygiene marks, through layout/quasiquote-syntax; a comma line is an unquote entry; define returns None"
+notes: "#` before a block head quasiquotes the raw block: cons keeping hygiene marks, through layout/quasiquote-syntax; a comma line is an unquote entry; var returns None"
 ---
 id: reader-datumq-shorthand-001
 feature: reader/datumq

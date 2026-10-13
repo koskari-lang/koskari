@@ -64,8 +64,8 @@ CHAINS = (
 ACCESS = {
     "read": "x",
     "setq": '(begin (setq x "new") x)',
-    "define": '(begin (define x "inner") x)',
-    "define-global": '(begin (define-global x "global") x)',
+    "define": '(begin (var x "inner") x)',
+    "define-global": '(begin (global x "global") x)',
     "ref-store": '(begin ((attr (refq x) store) "ref") x)',
 }
 

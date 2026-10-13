@@ -5,12 +5,12 @@
 
 (import-from math sqrt)
 
-(define PI 3.141592653589793)
-(define SOLAR_MASS (* 4.0 PI PI))
-(define DAYS_PER_YEAR 365.24)
+(var PI 3.141592653589793)
+(var SOLAR_MASS (* 4.0 PI PI))
+(var DAYS_PER_YEAR 365.24)
 
 
-define make-bodies []:
+def make-bodies []:
     #[
       #[ 0.0 0.0 0.0 0.0 0.0 0.0 SOLAR_MASS ]
       #[ 4.84143144246472090 -1.16032004402742839 -0.103622044471123109
@@ -36,35 +36,35 @@ define make-bodies []:
     ]
 
 
-define offset-momentum [bodies]:
-    define px 0.0
-    define py 0.0
-    define pz 0.0
+def offset-momentum [bodies]:
+    var px 0.0
+    var py 0.0
+    var pz 0.0
     for-each [b bodies]:
         incr! px (* b[3] b[6])
         incr! py (* b[4] b[6])
         incr! pz (* b[5] b[6])
-    define sun bodies[0]
+    var sun bodies[0]
     set! sun[3] (/ (- 0.0 px) SOLAR_MASS)
     set! sun[4] (/ (- 0.0 py) SOLAR_MASS)
     set! sun[5] (/ (- 0.0 pz) SOLAR_MASS)
 
 
-define advance [bodies dt]:
-    define n (len bodies)
-    define i 0
+def advance [bodies dt]:
+    var n (len bodies)
+    var i 0
     while (< i n):
-        define bi bodies[i]
-        define j (+ i 1)
+        var bi bodies[i]
+        var j (+ i 1)
         while (< j n):
-            define bj bodies[j]
-            define dx (- bi[0] bj[0])
-            define dy (- bi[1] bj[1])
-            define dz (- bi[2] bj[2])
-            define d2 (+ (* dx dx) (* dy dy) (* dz dz))
-            define mag (/ dt (* d2 (sqrt d2)))
-            define bim (* bi[6] mag)
-            define bjm (* bj[6] mag)
+            var bj bodies[j]
+            var dx (- bi[0] bj[0])
+            var dy (- bi[1] bj[1])
+            var dz (- bi[2] bj[2])
+            var d2 (+ (* dx dx) (* dy dy) (* dz dz))
+            var mag (/ dt (* d2 (sqrt d2)))
+            var bim (* bi[6] mag)
+            var bjm (* bj[6] mag)
             decr! bi[3] (* dx bjm)
             decr! bi[4] (* dy bjm)
             decr! bi[5] (* dz bjm)
@@ -73,42 +73,42 @@ define advance [bodies dt]:
             incr! bj[5] (* dz bim)
             incr! j
         incr! i
-    define k 0
+    var k 0
     while (< k n):
-        define b bodies[k]
+        var b bodies[k]
         incr! b[0] (* dt b[3])
         incr! b[1] (* dt b[4])
         incr! b[2] (* dt b[5])
         incr! k
 
 
-define energy [bodies]:
-    define n (len bodies)
-    define e 0.0
-    define i 0
+def energy [bodies]:
+    var n (len bodies)
+    var e 0.0
+    var i 0
     while (< i n):
-        define b bodies[i]
+        var b bodies[i]
         set! e (+ e (* 0.5 b[6]
                        (+ (* b[3] b[3])
                           (* b[4] b[4])
                           (* b[5] b[5]))))
-        define j (+ i 1)
+        var j (+ i 1)
         while (< j n):
-            define bj bodies[j]
-            define dx (- b[0] bj[0])
-            define dy (- b[1] bj[1])
-            define dz (- b[2] bj[2])
-            define dist (sqrt (+ (* dx dx) (* dy dy) (* dz dz)))
+            var bj bodies[j]
+            var dx (- b[0] bj[0])
+            var dy (- b[1] bj[1])
+            var dz (- b[2] bj[2])
+            var dist (sqrt (+ (* dx dx) (* dy dy) (* dz dz)))
             set! e (- e (/ (* b[6] bj[6]) dist))
             incr! j
         incr! i
     e
 
 
-define nbody [n]:
-    define bodies (make-bodies)
+def nbody [n]:
+    var bodies (make-bodies)
     (offset-momentum bodies)
-    define step 0
+    var step 0
     while (< step n):
         (advance bodies 0.01)
         incr! step

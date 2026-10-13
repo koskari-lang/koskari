@@ -8,7 +8,7 @@ A decorator is a leading `@` line over a form:
 
 ```koskari
 @demand
-define greet [name]:
+def greet [name]:
     f"hi {name}"
 ```
 
@@ -23,14 +23,14 @@ block:
 
 ```koskari
 @let [[count 0]]
-define tick []:
+def tick []:
     incr! count
     count
 ```
 
 `tick` is a module-level function closed over a private `count`: the
 same program as a `let` block containing the definition, without the
-indentation and without `define-global` to push the name back out.
+indentation and without `global` to push the name back out.
 
 ## The pragma
 
@@ -60,16 +60,16 @@ reads the single layout form beneath them, and wraps the lot:
 ```koskari
 @(let [[c 0]])
 @demand
-define tick []: ...
+def tick []: ...
 
 ;; reads as
-(decorate ((let [[c 0]]) demand) (define tick [] ...))
+(decorate ((let [[c 0]]) demand) (def tick [] ...))
 ```
 
 Two conveniences follow from the layout rules. Parentheses are optional
 on the decorator line, since several forms on a layout line are one
 call, so `@let [[c 0]]` reads as `@(let [[c 0]])`. And the subject is
-any layout form: a `define`, a `define-class`, a `begin:` block, an
+any layout form: a `def`, a `define-class`, a `begin:` block, an
 `if`, a bare s-expression.
 
 The reader builds the `compile/decorate` form and nothing more. What a
@@ -81,15 +81,16 @@ s-expression spelling works with the pragma off.
 [`compile/decorate`](../reference/macros/compile-decorate.md) does two
 jobs.
 
-Name hoisting: when the subject is a `define`, `define-class`,
-`define-global`, `define-demanding`, `define-coroutine` or
-`define-dataclass`, the name moves outside the decoration so the
-decorated value is what gets bound:
+Name hoisting: when the subject is a `def`, `var`, `global def`,
+`global class`, `define-class`, `define-demanding`, `define-coroutine`
+or `define-dataclass`, or the Scheme-layer `define` or `define-global`,
+the name moves outside the decoration so the decorated value is what
+gets bound:
 
 ```koskari
-(decorate [d1] (define foo [x] x))
+(decorate [d1] (def foo [x] x))
 ;; expands to
-(define foo (decorate [d1] (function foo [x] x)))
+(var foo (decorate [d1] (function foo [x] x)))
 ```
 
 The fold: with a value subject, `decorate` peels one decorator per
@@ -154,7 +155,7 @@ begin:
     ...
 ```
 
-It does not fit `with` or `parameterize` directly over a `define`: the
+It does not fit `with` or `parameterize` directly over a `def`: the
 extent would span the function's creation, which no call observes. A
 per-call extent uses the `call-` spelling.
 
@@ -171,7 +172,7 @@ in the body. The wrapper answers for the function it wraps:
 ```koskari
 @let [[db (connect)]]
 @call-with [lock]
-define handle [msg]:
+def handle [msg]:
     ...
 ```
 

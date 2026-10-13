@@ -10,7 +10,7 @@ The target is a name, an attribute, or a subscript, as for `set!`.
 **Examples:**
 
 ```koskari
-define x 1
+var x 1
 incr! x          ;; 2
 incr! x 10       ;; 12
 decr! x 2        ;; 10

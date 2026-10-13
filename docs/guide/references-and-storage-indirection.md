@@ -13,11 +13,11 @@ The snippets here are also `examples/refs.ki` in the repository.
 
 ## A name labels a location
 
-`define` creates a storage location and attaches a name to it. `set!`
+`var` creates a storage location and attaches a name to it. `set!`
 changes what is inside the location; the name does not move.
 
 ```koskari
-(define food 10)
+(var food 10)
 (set! food 11)
 food
 ; -> 11
@@ -27,7 +27,7 @@ food
 rather than its contents:
 
 ```koskari
-(define r &food)
+(var r &food)
 (type r)
 ; -> <class 'koskari.lib.Ref'>
 (deref r)
@@ -70,8 +70,8 @@ A ref can point at a list slot or an object attribute, neither of which
 has a variable name:
 
 ```koskari
-(define xs #[1 2 3 4])
-(define cell &(item xs 2))
+(var xs #[1 2 3 4])
+(var cell &(item xs 2))
 (deref cell)
 ; -> 3
 (set! (deref cell) 100)
@@ -89,7 +89,7 @@ labels.
 deref and plain `set!` stores through:
 
 ```koskari
-(define total 5)
+(var total 5)
 (bind! alias &total)
 alias
 ; -> 5
@@ -115,7 +115,7 @@ automatically; see
 non-ref to one is an error at the call, not a silent corruption:
 
 ```koskari
-define bump [&n]:
+def bump [&n]:
   set! n (+ n 1)
 
 (bump 5)
@@ -128,9 +128,9 @@ define bump [&n]:
 clears it in one step, returning the value that was there:
 
 ```koskari
-(define y 5)
+(var y 5)
 (take! y)          ;; 5; y is now empty
-(define d #{"j": 5})
+(var d #{"j": 5})
 (take! d["j"])     ;; 5
 d                  ;; {}
 ```
@@ -147,8 +147,8 @@ its own get, set, and clear behaviour, so there is no underlying storage
 at all -- reading the name runs a function:
 
 ```koskari
-(define store #{"temp": 0})
-(define log #[])
+(var store #{"temp": 0})
+(var log #[])
 
 (bind! sensor (dynamic { (begin (log.append "read") store["temp"]) }
                        { (set! store["temp"] %1) }))

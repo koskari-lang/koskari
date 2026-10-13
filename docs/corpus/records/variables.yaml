@@ -326,7 +326,7 @@ notes: koskari/bootstrap/_variables.ki; name form expands to delq; final None no
 ---
 id: variable-unassigned-declare-001
 feature: macro/compile/unassigned?
-source: (begin (define slot) (unassigned? slot))
+source: (begin (var slot) (unassigned? slot))
 verify:
   eval: "true"
 references:
@@ -341,7 +341,7 @@ notes: koskari/bootstrap/_variables.ki; empty declaration
 ---
 id: variable-unassigned-bound-001
 feature: macro/compile/unassigned?
-source: (begin (define slot 1) (unassigned? slot))
+source: (begin (var slot 1) (unassigned? slot))
 verify:
   eval: "false"
 references:
@@ -356,7 +356,7 @@ notes: koskari/bootstrap/_variables.ki; assigned slot
 ---
 id: variable-default-empty-001
 feature: macro/compile/default!
-source: (begin (define port) (default! port 8080) port)
+source: (begin (var port) (default! port 8080) port)
 verify:
   eval: "8080"
 references:
@@ -371,7 +371,7 @@ notes: koskari/bootstrap/_variables.ki; fills empty or falsy binding
 ---
 id: variable-default-keeps-truthy-001
 feature: macro/compile/default!
-source: (begin (define port 3000) (default! port 8080) port)
+source: (begin (var port 3000) (default! port 8080) port)
 verify:
   eval: "3000"
 references:
@@ -411,7 +411,7 @@ tags:
   - variable
   - macro
   - define-parameter
-notes: koskari/bootstrap/_variables.ki; define + ParamRef with default; requires builtins at expand
+notes: koskari/bootstrap/_variables.ki; var + ParamRef with default; requires builtins at expand
 ---
 id: variable-setq-constant-001
 feature: special/compile/setq
@@ -556,7 +556,7 @@ notes: name form; z=1 fixture; del! z clears the slot; None is the form's value
 id: variable-del-attr-003
 feature: macro/compile/del!
 source: |
-  (begin (import-from types SimpleNamespace) (define obj (SimpleNamespace count: 5 value: 99)) (del! (attr obj count)) None)
+  (begin (import-from types SimpleNamespace) (var obj (SimpleNamespace count: 5 value: 99)) (del! (attr obj count)) None)
 verify:
   eval: "null"
 references:
@@ -721,7 +721,7 @@ source: |-
   (define-parameter max-retries 3)
   
 verify:
-  expand: (begin (define max-retries) (bindq max-retries (ParamRef (quote max-retries) 3)))
+  expand: (begin (var max-retries) (bindq max-retries (ParamRef (quote max-retries) 3)))
 references:
   - reference/macros/compile-define-parameter-and-compile-parameterq.md
 stability: evolving
@@ -729,7 +729,7 @@ tags:
   - variable
   - macro
   - define-parameter
-notes: define-parameter expands to define then bindq with a ParamRef cell; key is quoted
+notes: define-parameter expands to var then bindq with a ParamRef cell; key is quoted
 ---
 id: variable-define-parameter-readback-003
 feature: macro/compile/define-parameter
@@ -770,11 +770,11 @@ notes: "compile/delq: delete x from the frame; form evaluates to None"
 id: variable-default-idempotent-003
 feature: macro/compile/default!
 source: |-
-  (begin (define port) (default! port 3000) (default! port 9999) port)
+  (begin (var port) (default! port 3000) (default! port 9999) port)
   
 verify:
-  read: (begin (define port) (default! port 3000) (default! port 9999) port)
-  expand: (begin (define port) (default! port 3000) (default! port 9999) port)
+  read: (begin (var port) (default! port 3000) (default! port 9999) port)
+  expand: (begin (var port) (default! port 3000) (default! port 9999) port)
   eval: "3000"
 references:
   - reference/macros/index.md
@@ -845,11 +845,11 @@ notes: ref tracks the live slot value after setq; deref returns the updated valu
 id: variable-unassigned-zero-003
 feature: macro/compile/unassigned?
 source: |-
-  (begin (define slot 0) (unassigned? slot))
+  (begin (var slot 0) (unassigned? slot))
   
 verify:
-  read: (begin (define slot 0) (unassigned? slot))
-  expand: (begin (define slot 0) (unassigned? slot))
+  read: (begin (var slot 0) (unassigned? slot))
+  expand: (begin (var slot 0) (unassigned? slot))
   eval: "false"
 references:
   - reference/macros/index.md
@@ -1073,8 +1073,8 @@ id: variable-ref-attr-bindq-pattern-001
 feature: special/compile/ref-attr
 source: |-
   (begin
-    (define-class Pt [] (define __init__ [self x] (set-attr self val x)))
-    (define p (Pt 10))
+    (define-class Pt [] (def __init__ [self x] (set-attr self val x)))
+    (var p (Pt 10))
     (bindq fx (ref-attr p val))
     (deref (ref-attr p val)))
   
@@ -1195,10 +1195,10 @@ notes: requires obj fixture; bind! makes c's storage the attribute ref, so plain
 id: variable-byref-formal-001
 feature: special/compile/lambda
 source: |-
-  (begin (define v 7) (define bump [&n] (set! n (+ n 1))) (bump &v) v)
+  (begin (var v 7) (def bump [&n] (set! n (+ n 1))) (bump &v) v)
   
 verify:
-  read: (begin (define v 7) (define bump ((ref n)) (set! n (+ n 1))) (bump (ref v)) v)
+  read: (begin (var v 7) (def bump ((ref n)) (set! n (+ n 1))) (bump (ref v)) v)
   eval: "8"
 references:
   - reference/specials/compile-lambda.md
@@ -1213,7 +1213,7 @@ notes: by-ref formal &n aliases the caller's ref; (set! n …) writes back into 
 id: variable-ref-store-method-001
 feature: macro/compile/ref
 source: |-
-  (begin (define v 10) (define r &v) (r.store 20) v)
+  (begin (var v 10) (var r &v) (r.store 20) v)
   
 verify:
   eval: "20"
@@ -1231,7 +1231,7 @@ notes: "value-level write-through: the ref store method changes the original bin
 id: variable-ref-set-rebind-trap-001
 feature: macro/compile/ref
 source: |-
-  (begin (define v 10) (define r &v) (set! r 99) v)
+  (begin (var v 10) (var r &v) (set! r 99) v)
   
 verify:
   eval: "10"
@@ -1249,7 +1249,7 @@ notes: set! on the name holding a ref REBINDS it; it does not write through. v i
 id: variable-byref-list-writeback-001
 feature: special/compile/lambda
 source: |-
-  (begin (define xs #[1 2 3 4]) (define bump [&n] (set! n (+ n 1))) (bump &(item xs 2)) xs)
+  (begin (var xs #[1 2 3 4]) (def bump [&n] (set! n (+ n 1))) (bump &(item xs 2)) xs)
   
 verify:
   eval: "list:[1,2,4,4]"
@@ -1265,7 +1265,7 @@ notes: a by-ref formal accepts a ref to a list slot; &(item xs 2) lets the calle
 ---
 id: variable-ref-set-deref-write-001
 feature: macro/compile/set!
-source: (begin (define v 10) (define r &v) (set! (deref r) 20) v)
+source: (begin (var v 10) (var r &v) (set! (deref r) 20) v)
 verify:
   eval: "20"
 references:

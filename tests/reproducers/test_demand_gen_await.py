@@ -41,32 +41,32 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import-from asyncio sleep
 
-define gen-fallback []:
+def gen-fallback []:
     try:
         (await (sleep 0.01))
         (yield "awaited")
     except [KoskariSyncViolation]:
         (yield "fell-back-sync")
 
-define gen-bare []:
+def gen-bare []:
     (await (sleep 0.01))
     (yield "awaited")
 
-define gen-two []:
+def gen-two []:
     (yield "first")
     (await (sleep 0.01))
     (yield "awaited")
 
 ;; demand koskari for-eaching a plain async gen: flattened iteration
 ;; inherits the demand bit from the consumer's frame
-define collect-fallback []:
-    define out #[]
+def collect-fallback []:
+    var out #[]
     (for-each [x (gen-fallback)]
         (out.append x))
     out
 
-define collect-bare []:
-    define out #[]
+def collect-bare []:
+    var out #[]
     (for-each [x (gen-bare)]
         (out.append x))
     out

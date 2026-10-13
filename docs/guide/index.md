@@ -17,7 +17,7 @@ one whose topic has come up in your code.
 
 | Page | Covers |
 |------|--------|
-| [Bindings and refs](bindings-and-refs.md) | `define`, `let`, `set!`, shadowing; namespaces, bind versus store, ref, deref, resolve, unpack |
+| [Bindings and refs](bindings-and-refs.md) | `var`, `def`, `let`, `set!`, shadowing; namespaces, bind versus store, ref, deref, resolve, unpack |
 | [References and storage indirection](references-and-storage-indirection.md) | Refs as location handles, `&`, writing through a ref, `bind!`, `take!`, dynamic refs |
 | [Data structures](data-structures.md) | Python containers, pairs, quote and quasiquote, symbols and keywords |
 | [Types and annotations](types-and-annotations.md) | `::` annotations, where they land, checking values at runtime |
@@ -30,7 +30,7 @@ one whose topic has come up in your code.
 | [Decorators](decorators.md) | The `@` surface end to end: reader, `decorate`, graft and call-time families, extending it |
 | [Control flow](control-flow.md) | `if`, `cond`, `when`, `unless`, `while`, `for-each`, `break` with a value, the `-each` family |
 | [Match patterns](match-patterns.md) | The `match` pattern language: sequences, classes, mappings, typed captures, guards |
-| [Idiomatic Koskari](idiomatic-koskari.md) | The direct form over the assembled one: `item-slice`, dotted `set!`, `define-values`, `None?`, `unless` |
+| [Idiomatic Koskari](idiomatic-koskari.md) | The direct form over the assembled one: `item-slice`, dotted `set!`, `var` patterns, `None?`, `unless` |
 
 ## Programs
 
@@ -47,7 +47,7 @@ one whose topic has come up in your code.
 
 | Page | Covers |
 |------|--------|
-| [Macros and hygiene](macros-and-hygiene.md) | What a macro is for, `define-syntax`, templates versus procedures, hygiene, expansion order |
+| [Macros and hygiene](macros-and-hygiene.md) | What a macro is for, `syntax`, templates versus procedures, hygiene, expansion order |
 | [Hygiene](hygiene.md) | What capture is, the gensym a template symbol becomes, how the expander scopes an expansion, how the compiler resolves it |
 | [Fences](fences.md) | Foreign literals as compile-time transliteration; when a format earns one |
 | [Pragmas and feature settings](pragma.md) | Setting and reading a pragma; every `reader/*`, `compiler/*`, and `pragma/*` setting |

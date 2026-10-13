@@ -3,7 +3,7 @@
 **Syntax:** `(define-coroutine NAME FORMALS BODY ...)`
 
 **Behaviour:** Expands to
-`(define NAME (coroutine-fn (function NAME FORMALS BODY ...)))`. The
+`(var NAME (coroutine-fn (function NAME FORMALS BODY ...)))`. The
 result is a function that `asyncio.iscoroutinefunction` accepts: when
 Python calls it, it returns a coroutine. Called from Koskari it is
 awaited at the call like any other function, so hand the function

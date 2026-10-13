@@ -21,7 +21,7 @@ from your code or from a library you called.
 is a reader error,
 
 ```koskari
->>> (define)
+>>> (var)
 ```
 
 is a compile error, and
@@ -79,7 +79,7 @@ except:
 Is `try` a statement?
 +++
 An expression. Its value is the body's value, or the handler's when one
-ran, so `define result: try: ...` is a common shape.
+ran, so `var result: try: ...` is a common shape.
 :::
 
 :::{pair}

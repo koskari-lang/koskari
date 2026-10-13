@@ -46,15 +46,15 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 PROBE_SRC = """
-(define g (lambda [] (yield 1) (yield 2)))
+(var g (lambda [] (yield 1) (yield 2)))
 
-(define control (lambda []
-  (define lst #[1 2])
+(var control (lambda []
+  (var lst #[1 2])
   (lst.nope)
   "unreached"))
 
-(define probe (lambda []
-  (define gen (g))
+(var probe (lambda []
+  (var gen (g))
   (gen.__anext__)
   (gen.nope)
   "unreached"))
@@ -64,7 +64,7 @@ PROBE_SRC = """
 # Module-load drive: the raise happens inside a top-level define's
 # expression. The load itself must propagate the AttributeError.
 MODULE_DRIVE_SRC = PROBE_SRC + """
-(define result (probe))
+(var result (probe))
 """
 
 

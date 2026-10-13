@@ -19,9 +19,9 @@ resolved forward reference). A leading string in `BODY` becomes `__doc__`.
 **Use-case:** Create a **named** function value whose body must **not** receive
 a closure self-binding for `NAME` at `BUILD_FUNCTION` time. The name in the
 body resolves via outer or module bindings instead -- e.g. after decorators wrap
-the stored definition, or when [define](compile-define.md) /
-[define-global](compile-define-global.md) function shorthand stores the
-function and recursive calls use that binding.
+the stored definition, or when [def](../macros/compile-def.md) or
+[`global def`](compile-global.md) stores the function and recursive calls
+use that binding.
 
 **Behaviour:** Same pipeline as `compile/lambda` via `helper_function` with
 `selfref=False`: `gather_formals`, `helper_begin`, `FunctionSpec`,

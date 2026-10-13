@@ -28,10 +28,10 @@ import-from fastapi.responses HTMLResponse RedirectResponse
 
 
 ;; run-history rows per page on the job page
-define PAGE-SIZE 20
+var PAGE-SIZE 20
 
 
-define logger (logging.getLogger "kosrunner.ui")
+var logger (logging.getLogger "kosrunner.ui")
 
 
 define-dataclass UiConfig [ServerConfig]:
@@ -41,10 +41,10 @@ define-dataclass UiConfig [ServerConfig]:
     server, each mounting under its own prefix.
     """
 
-    define [prefix :: str] "/ui"
+    var prefix :: str "/ui"
 
 
-define stamp [value]:
+def stamp [value]:
     """
     A run timestamp for reading rather than for sorting. Stored values
     are full ISO-8601 UTC (fractional seconds and a +00:00 offset), which
@@ -60,11 +60,11 @@ define stamp [value]:
 
 ;; Templates ship as package data. Koskari modules have no __file__, so
 ;; the package directory is located via its import spec.
-define _build-env []:
-    define spec (find_spec "kosrunner")
-    define pkgdir (list spec.submodule_search_locations)[0]
-    define tdir (os.path.join pkgdir "templates")
-    define env (jinja2.Environment
+def _build-env []:
+    var spec (find_spec "kosrunner")
+    var pkgdir (list spec.submodule_search_locations)[0]
+    var tdir (os.path.join pkgdir "templates")
+    var env (jinja2.Environment
         loader: (jinja2.FileSystemLoader tdir)
         autoescape: True)
     ;; demand: jinja calls a filter synchronously, so a bare koskari
@@ -73,32 +73,32 @@ define _build-env []:
     env
 
 
-define _render [env name ctx]:
-    define template (env.get_template name)
+def _render [env name ctx]:
+    var template (env.get_template name)
     (HTMLResponse (template.render ctx))
 
 
-define _redirect [target]:
+def _redirect [target]:
     ;; 303 so the browser re-GETs after a form POST
     (RedirectResponse target status_code: 303)
 
 
-define _forbid []:
+def _forbid []:
     ;; the human-flavored 403 (the admin API's guards answer in JSON)
     (HTMLResponse "<h1>403 Forbidden</h1><p>you are not allowed to do that</p>"
         status_code: 403)
 
 
-define _trigger-fields [spec]:
+def _trigger-fields [spec]:
     """
     Flatten a webhook input spec (name -> type or #(type default)) into
     the field descriptors the trigger form template renders.
     """
 
-    define out #[]
+    var out #[]
     when spec:
         for-each [[name typ] (spec.items)]:
-            define-values [t default required]:
+            var [t default required]:
                 if (tuple? typ):
                     #(typ[0] typ[1] False)
                 else:
@@ -119,10 +119,10 @@ define-class UiJob [Job]:
     API. Its form actions POST to its own prefix and redirect back.
     """
 
-    define config-class UiConfig
+    var config-class UiConfig
 
 
-    define mount [self server]:
+    def mount [self server]:
         """
         Mount the UI page hierarchy on `server`: the dashboard is a
         gateway (jobs grouped by variety, each with its last run), the
@@ -135,22 +135,22 @@ define-class UiJob [Job]:
         on a server it manages itself.
         """
 
-        define prefix (normalize-prefix self.config.prefix)
-        define root (if (== prefix "") "/" prefix)
-        define js self.jobset
-        define env (_build-env)
+        var prefix (normalize-prefix self.config.prefix)
+        var root (if (== prefix "") "/" prefix)
+        var js self.jobset
+        var env (_build-env)
 
-        define job-url [name]:
+        def job-url [name]:
             f"{prefix}/jobs/{name}"
 
         ;; dashboard: the gateway. Jobs grouped by variety, one status
         ;; line each, the name linking into the job page and the last run
         ;; linking straight into that run.
-        define page-dashboard [ctx]:
-            define identity (resolve-identity ctx)
-            define groups #{}
+        def page-dashboard [ctx]:
+            var identity (resolve-identity ctx)
+            var groups #{}
             for-each [j (js.visible-jobs identity)]:
-                define tp j["type"]
+                var tp j["type"]
                 unless (in? tp groups):
                     set! groups[tp] #[]
                 groups[tp].append j
@@ -163,19 +163,19 @@ define-class UiJob [Job]:
         ;; job page: status + gated actions + optional trigger form +
         ;; paged run history (newest first; fetch one over the page size
         ;; to know whether an older page exists)
-        define page-job [name ctx]:
-            define job (js.jobs.get name)
+        def page-job [name ctx]:
+            var job (js.jobs.get name)
 
             when (None? job):
                 return (HTMLResponse "<h1>404</h1><p>no such job</p>" status_code: 404)
 
-            define spec (job.trigger-spec)
-            define page (max 1
+            var spec (job.trigger-spec)
+            var page (max 1
                 (try
                     (int (or (ctx.param "page") 1))
                 (except: 1)))
-            define offset (* (- page 1) PAGE-SIZE)
-            define rows (if js.store
+            var offset (* (- page 1) PAGE-SIZE)
+            var rows (if js.store
                 (js.store.list-runs job: name limit: (+ PAGE-SIZE 1) offset: offset)
                 #[])
 
@@ -196,14 +196,14 @@ define-class UiJob [Job]:
 
         ;; run page: one run's detail (metadata + trigger + captured
         ;; output/result), under its job in the breadcrumb
-        define page-run [runid ctx]:
-            define detail (js.store.run-detail runid)
+        def page-run [runid ctx]:
+            var detail (js.store.run-detail runid)
             when (None? detail):
                 return (HTMLResponse "<h1>404</h1><p>no such run</p>" status_code: 404)
 
-            define jobname detail["job"]
-            define job (js.jobs.get jobname)
-            define-values [older newer] (js.store.run-neighbors runid)
+            var jobname detail["job"]
+            var job (js.jobs.get jobname)
+            var [older newer] (js.store.run-neighbors runid)
             (_render env "run.html"
                 #{"prefix": prefix
                   "root": root
@@ -219,24 +219,24 @@ define-class UiJob [Job]:
         (server.add-page-item f"{prefix}/runs" page-run)
 
         ;; form actions -> guard, act, then redirect back to the job page
-        define do-enable [name ctx]:
+        def do-enable [name ctx]:
             if (operator? js.access ctx):
                 js.enable name
                 _redirect (job-url name)
             else:
                 (_forbid)
 
-        define do-disable [name ctx]:
+        def do-disable [name ctx]:
             if (operator? js.access ctx):
                 js.disable name
                 _redirect (job-url name)
             else:
                 (_forbid)
 
-        define do-retrigger [runid ctx]:
-            define trig (js.store.get-trigger runid)
-            define jobname (unless (None? trig) trig["job"])
-            define job (unless (None? jobname) (js.jobs.get jobname))
+        def do-retrigger [runid ctx]:
+            var trig (js.store.get-trigger runid)
+            var jobname (unless (None? trig) trig["job"])
+            var job (unless (None? jobname) (js.jobs.get jobname))
 
             if (or (None? job) (trigger-allowed? js.access ctx job)):
                 js.retrigger runid
@@ -247,10 +247,10 @@ define-class UiJob [Job]:
         ;; manual trigger: the job's trigger-spec drives both the form
         ;; fields and the coercion of what comes back; a job whose spec
         ;; is None cannot be fired fresh from here
-        define do-trigger [name form ctx]:
+        def do-trigger [name form ctx]:
             import-from fastapi HTTPException
-            define job (js.jobs.get name)
-            define spec (unless (None? job) (job.trigger-spec))
+            var job (js.jobs.get name)
+            var spec (unless (None? job) (job.trigger-spec))
             if (None? job):
                 (HTMLResponse "<h1>404</h1><p>no such job</p>" status_code: 404)
             elif (not (trigger-allowed? js.access ctx job)):
@@ -261,7 +261,7 @@ define-class UiJob [Job]:
                     status_code: 400)
             else:
                 try:
-                    define kwargs (coerce-input spec form)
+                    var kwargs (coerce-input spec form)
                     (job.run **: kwargs cause: "manual")
                     (_redirect (job-url name))
                 except [HTTPException as: exc]:
@@ -275,39 +275,39 @@ define-class UiJob [Job]:
         (server.add-form f"{prefix}/trigger" do-trigger)
 
 
-    define start [self]:
+    def start [self]:
         set! self.running True
-        define server (get-server self.config)
+        var server (get-server self.config)
         (self.mount server)
         (server.start)
         (logger.info "web ui mounted at %s" self.config.prefix)
 
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
 
 
-define-syntax config/ui:
+syntax config/ui:
     syntax-rules []:
         case (config/ui () setting ...):
             (begin
-                (define -'default/ui)
+                (var -'default/ui)
                 (unless &-'default/ui
                     (set! -'default/ui (UiConfig setting ...))))
         case (config/ui nm setting ...):
             (begin
-                (define nm (UiConfig setting ...))
-                (define -'default/ui)
+                (var nm (UiConfig setting ...))
+                (var -'default/ui)
                 (unless &-'default/ui (set! -'default/ui nm)))
 
 
 ;; `job ui <name>` -- no trigger key; serves from its config.
-define-syntax job/ui:
+syntax job/ui:
     syntax-rules []:
         case (job/ui name (subhead subrest ...) ...):
             (begin
-                (define name (UiJob))
-                (define -'default/ui)
+                (var name (UiJob))
+                (var -'default/ui)
                 (if &-'default/ui
                     (.configure name via: -'default/ui)
                     (.configure name))

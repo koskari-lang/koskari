@@ -152,7 +152,7 @@ elements are all constants reduces to a single instruction.
 | `#list-append` | Append to a list binding or list expression | `(#list-append lst 3)` |
 
 ```koskari
->>> define lst #[1 2]
+>>> var lst #[1 2]
 >>> (#list-append lst 3)
 >>> lst
 #[1 2 3]

@@ -55,14 +55,14 @@ import-from tools.corpus.views._material:
     rewrite_markdown_links
 
 
-define VIEW_NAME "koskari-docs"
+var VIEW_NAME "koskari-docs"
 
-define _DOC_SUBDIRS #("reference" "tutorials" "guide" "agents")
+var _DOC_SUBDIRS #("reference" "tutorials" "guide" "agents")
 
-define DOC_ROOT_PAGES #("quickstart.md" "faq.md")
+var DOC_ROOT_PAGES #("quickstart.md" "faq.md")
 
 
-define _section [rel_path]:
+def _section [rel_path]:
     """
     Return the parent directory of a docs-relative path as its section
 
@@ -76,7 +76,7 @@ define _section [rel_path]:
 
 
 @demand
-define generate [root provenance]:
+def generate [root provenance]:
     """
     Build koskari-docs rows from Markdown pages under docs/
 
@@ -85,25 +85,25 @@ define generate [root provenance]:
     :return: list of row dicts sorted by path
     """
 
-    define docs_dir (.joinpath (Path root) "docs")
+    var docs_dir (.joinpath (Path root) "docs")
 
-    define pages #[]
+    var pages #[]
     for-each [name DOC_ROOT_PAGES]:
-        define page (docs_dir.joinpath name)
+        var page (docs_dir.joinpath name)
         when (page.is_file):
             (pages.append page)
 
     for-each [subdir _DOC_SUBDIRS]:
-        define base (docs_dir.joinpath subdir)
+        var base (docs_dir.joinpath subdir)
         when (base.is_dir):
             (pages.extend (base.rglob "*.md"))
 
-    define rows #[]
+    var rows #[]
     for-each [path pages]:
-        define rel_path ((path.relative_to docs_dir).as_posix)
-        define text (rewrite_markdown_links
+        var rel_path ((path.relative_to docs_dir).as_posix)
+        var text (rewrite_markdown_links
             (path.read_text encoding: "utf-8") rel_path)
-        define-values [title summary] (markdown_title_summary text)
+        var [title summary] (markdown_title_summary text)
 
         rows.append #{
             "path": rel_path

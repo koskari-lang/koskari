@@ -141,7 +141,7 @@ class TestKiImport(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_define_binding_visible(self):
-        self._write_ki('ki_defn', '(define answer 42)')
+        self._write_ki('ki_defn', '(var answer 42)')
         mod = importlib.import_module('ki_defn')
         self.assertEqual(42, mod.answer)
 

@@ -68,11 +68,11 @@ class BareSyntaxHelpers(unittest.IsolatedAsyncioTestCase):
 
 
 BARE_ALIAS = """
-(define-syntax adding (bare-syntax me +))
+(syntax adding (bare-syntax me +))
 """
 
 BARE_QUOTED = """
-(define-syntax greeting (bare-syntax me (quote hello)))
+(syntax greeting (bare-syntax me (quote hello)))
 """
 
 
@@ -88,7 +88,7 @@ class TestBareAtom(BareSyntaxHelpers):
 
     async def test_extend_syntax_attaches_bare(self):
         result = await self.run_forms(
-            "(define-syntax pick (syntax-rules [] [(pick x) x]))",
+            "(syntax pick (syntax-rules [] [(pick x) x]))",
             "(extend-syntax pick (bare-syntax me (quote alone)))",
             "pick")
         self.assertEqual(str(result), "alone")
@@ -110,15 +110,15 @@ class TestBareOnlyAlias(BareSyntaxHelpers):
 
     async def test_alias_in_nested_head_position(self):
         result = await self.run_forms(
-            "(define mk (lambda mk [a] (lambda inner [b c] (+ a b c))))",
-            "(define-syntax mk! (bare-syntax me mk))",
+            "(var mk (lambda mk [a] (lambda inner [b c] (+ a b c))))",
+            "(syntax mk! (bare-syntax me mk))",
             "((mk! 1) 2 3)")
         self.assertEqual(result, 6)
 
 
     async def test_alias_expanding_to_attr_form(self):
         result = await self.run_forms(
-            '(define-syntax dash (bare-syntax me (attr "-" join)))',
+            '(syntax dash (bare-syntax me (attr "-" join)))',
             '(dash #["a" "b"])')
         self.assertEqual(result, "a-b")
 
@@ -132,7 +132,7 @@ class TestMixedBareAndCall(BareSyntaxHelpers):
 
     async def test_call_arm_and_bare_arm_both_work(self):
         result = await self.run_forms(
-            "(define-syntax pick (syntax-rules [] [(pick x) x]))",
+            "(syntax pick (syntax-rules [] [(pick x) x]))",
             "(extend-syntax pick (bare-syntax me (quote alone)))",
             "(pick 42)")
         self.assertEqual(result, 42)
@@ -141,7 +141,7 @@ class TestMixedBareAndCall(BareSyntaxHelpers):
     async def test_no_matching_call_arm_raises(self):
         with self.assertRaises(SyntaxMatchError):
             await self.run_forms(
-                "(define-syntax pick (syntax-rules [] [(pick x) x]))",
+                "(syntax pick (syntax-rules [] [(pick x) x]))",
                 "(extend-syntax pick (bare-syntax me (quote alone)))",
                 "(pick 1 2)")
 
@@ -158,7 +158,7 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         # ((sel 1) 2 3): the head expands to the symbol +, and the
         # rebuilt (+ 2 3) dispatches as the arithmetic special
         result = await self.run_forms(
-            "(define-syntax sel (syntax-rules [] [(sel x) +]))",
+            "(syntax sel (syntax-rules [] [(sel x) +]))",
             "((sel 1) 2 3)")
         self.assertEqual(result, 5)
 
@@ -167,8 +167,8 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         # (((foo2 1) 2) 3) lowers to ((bar2 2) 3), restarts, lowers to
         # (+ 3), restarts, and compiles as the special
         result = await self.run_forms(
-            "(define-syntax foo2 (syntax-rules [] [(foo2 x) bar2]))",
-            "(define-syntax bar2 (syntax-rules [] [(bar2 x) +]))",
+            "(syntax foo2 (syntax-rules [] [(foo2 x) bar2]))",
+            "(syntax bar2 (syntax-rules [] [(bar2 x) +]))",
             "(((foo2 1) 2) 3)")
         self.assertEqual(result, 3)
 
@@ -177,7 +177,7 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         # the head expands to a form rather than a symbol; the rebuilt
         # outer form calls its value
         result = await self.run_forms(
-            "(define mk (lambda mk [a] (lambda inner [b] (+ a b))))",
+            "(var mk (lambda mk [a] (lambda inner [b] (+ a b))))",
             "(define-syntax curried (macro-rules []"
             "  [(curried x) `(call mk ,x)]))",
             "((curried 1) 2)")
@@ -188,7 +188,7 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         # a pair head whose own head is no syntax lowers straight to the
         # call path: ((mk 1) 2) calls the returned closure
         result = await self.run_forms(
-            "(define mk (lambda mk [a] (lambda inner [b] (+ a b))))",
+            "(var mk (lambda mk [a] (lambda inner [b] (+ a b))))",
             "((mk 1) 2)")
         self.assertEqual(result, 3)
 
@@ -240,14 +240,14 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_return(self):
         result = await self.run_forms(
-            "(define f (lambda f [x] (begin (when x return) 99)))",
+            "(var f (lambda f [x] (begin (when x return) 99)))",
             "#[(f True) (f False)]")
         self.assertEqual(result, [None, 99])
 
 
     async def test_bare_continue(self):
         result = await self.run_forms(
-            "(define out #[])",
+            "(var out #[])",
             "(for-each [x #[1 2 3]]"
             "  (when (== x 2) continue)"
             "  (.append out x))",
@@ -257,7 +257,7 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_break(self):
         result = await self.run_forms(
-            "(define out #[])",
+            "(var out #[])",
             "(for-each [x #[1 2 3]]"
             "  (when (== x 2) break)"
             "  (.append out x))",
@@ -267,7 +267,7 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_yield(self):
         result = await self.run_forms(
-            "(define gen (lambda gen [] (begin yield (yield 2))))",
+            "(var gen (lambda gen [] (begin yield (yield 2))))",
             "(list (gen))")
         self.assertEqual(result, [None, 2])
 
@@ -283,7 +283,7 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_pass(self):
         result = await self.run_forms(
-            "(define f (lambda f [] pass))",
+            "(var f (lambda f [] pass))",
             "(f)")
         self.assertIsNone(result)
 
@@ -378,7 +378,7 @@ class TestHeadLoweringFusion(BareSyntaxHelpers):
         # a bare-only alias in form position rewrites the head; an attr
         # expansion must fuse like the hand-written spelling
         code = await self.compile_last(
-            '(define-syntax dash (bare-syntax me (attr "-" join)))',
+            '(syntax dash (bare-syntax me (attr "-" join)))',
             '(dash #["a" "b"])')
         self.assert_fused(code)
 
@@ -393,11 +393,11 @@ class TestHeadLoweringFusion(BareSyntaxHelpers):
 
 
 BARE_WORD = """
-(define-syntax word (bare-syntax me "hello"))
+(syntax word (bare-syntax me "hello"))
 """
 
 BARE_BOX = """
-(define-syntax box (bare-syntax me holder))
+(syntax box (bare-syntax me holder))
 """
 
 
@@ -424,7 +424,7 @@ class TestBareAtomInObjectPosition(BareSyntaxHelpers):
 
     async def test_call_of_a_bare_atom(self):
         result = await self.run_forms(
-            "(define-syntax shout (bare-syntax me str.upper))",
+            "(syntax shout (bare-syntax me str.upper))",
             '(call shout "hello")')
         self.assertEqual(result, "HELLO")
 

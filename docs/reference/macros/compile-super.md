@@ -17,16 +17,16 @@ explicit form: `(super __class__ cls)`.
 
 ```koskari
 define-class A []:
-  define __init__ [self]:
+  def __init__ [self]:
     (set-attr self a 1)
 
 define-class B (A):
-  define __init__ [self]:
+  def __init__ [self]:
     (.__init__ (super))
     (set-attr self b 2)
 
 define-class C (B):
-  define __init__ [self]:
+  def __init__ [self]:
     (.__init__ (super))
     (set-attr self c 3)
 

@@ -13,7 +13,7 @@ iterates from both sync and async consumers.
 **Examples:**
 
 ```koskari
-define squares:
+var squares:
   each [x (range 6)]:
     (* x x)
 

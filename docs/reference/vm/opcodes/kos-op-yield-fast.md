@@ -5,7 +5,7 @@
 - **See also**: [KOS_OP_YIELD_VAR](kos-op-yield-var.md); **`koskari/lib/opcode/YIELD_FAST.c`**.
 - **Covered by**: `tests/lib/opcode/test_control_operand.py`, `tests/compile/test_fuse_feeders.py`
 
-**Example:** `(define (g a) (yield a))`: the body yields its parameter.
+**Example:** `(def g [a] (yield a))`: the body yields its parameter.
 
 | index | opcode     | arg | arg view | comment |
 |------:|------------|-----|----------|---------|

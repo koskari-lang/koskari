@@ -25,13 +25,13 @@ form the head names.
 ```koskari
 print "hello" name
 name
-define sq [x] (* x x)
+def sq [x] (* x x)
 ```
 +++
 ```koskari
 (print "hello" name)
 name
-(define sq [x] (* x x))
+(def sq [x] (* x x))
 ```
 :::
 
@@ -144,13 +144,13 @@ let [[a 1]
 :right: s-expression
 
 ```koskari
-define greet [name]:
+def greet [name]:
   print f"hello {name}"
   name
 ```
 +++
 ```koskari
-(define greet [name]
+(def greet [name]
   (print f"hello {name}")
   name)
 ```
@@ -215,12 +215,12 @@ finally:
 
 ```koskari
 define-class Point (Base):
-  define x 0
+  var x 0
 ```
 +++
 ```koskari
 (define-class Point (Base)
-  (begin (define x 0)))
+  (begin (var x 0)))
 ```
 :::
 

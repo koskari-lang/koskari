@@ -80,7 +80,7 @@ per-record):
 | Metaprogramming | `metaprogramming`, `hygiene` |
 | Pedagogy | `idiom`, `pitfall` |
 
-`metaprogramming` marks records that teach *writing* macros (define-syntax,
+`metaprogramming` marks records that teach *writing* macros (syntax,
 syntax-rules, quasiquote/unquote, gensym, special-match) — not every builtin
 that happens to live under a `macro/compile/…` feature path.
 
@@ -104,8 +104,8 @@ notes: "requires reader/index-brackets (baseline on). …"
 ## Source conventions
 
 A single source form must not **define a syntax or macro transformer and invoke
-that name in the same expression**. Do not wrap `(define-syntax NAME …)` or
-`(define NAME (macro-rules …))` (or other transformer-binding `define`) together
+that name in the same expression**. Do not wrap `(syntax NAME …)`, `(define-syntax NAME …)` or
+`(var NAME (macro-rules …))` (or other transformer-binding `var`) together
 with a call to `NAME` in one `(begin …)`.
 
 Install transformers and use them in separate top-level forms (or separate
@@ -147,7 +147,7 @@ concept or macro page that states the correct rule (for example
 `reference/concepts/bindings-and-refs.md`).
 
 **`bind!` / `bindq`:** bind a name to a **Ref**, not to a plain value. Storing
-`42` in a slot uses `define`, `var`, or `setq` — not `(bind! y 42)`.
+`42` in a slot uses `var` or `setq` — not `(bind! y 42)`.
 
 ## Eval value conventions (seed records)
 

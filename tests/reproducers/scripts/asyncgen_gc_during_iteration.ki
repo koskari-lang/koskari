@@ -9,18 +9,18 @@
 ;; required to provoke a collection mid-iteration.
 
 
-define tracked [data]:
+def tracked [data]:
     for-each [item (list (data.items))]:
         (yield item)
 
 
 when (equal? __name__ "__main__"):
-    define data #{}
-    define i 0
+    var data #{}
+    var i 0
     while (< i 800):
         (set! (item data i) i)
         (set! i (+ i 1))
-    define shown 0
+    var shown 0
     for-each [item (tracked data)]:
         (set! shown (+ shown 1))
     (print "SHOWN" shown "EXPECTED" (len data))

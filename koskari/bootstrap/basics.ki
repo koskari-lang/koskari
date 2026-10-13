@@ -22,7 +22,7 @@ let []:
   import-from koskari.module find_module_pragma
 
 
-  define-global get-compiler [ns]:
+  global def get-compiler [ns]:
     """
     The compiler for the module owning ns. Returns the bound
     __compiler__, or rebuilds one from __pragma__ and binds it when the
@@ -33,7 +33,7 @@ let []:
     while (getattr ns "parent" None):
       set! ns ns.parent
 
-    define compiler (ns.get "__compiler__")
+    var compiler (ns.get "__compiler__")
     when compiler:
       return compiler
 
@@ -47,7 +47,7 @@ let []:
     compiler
 
 
-define-syntax get-compiler:
+syntax get-compiler:
   syntax-rules []:
     case (get-compiler ns):
       (call get-compiler ns)
@@ -59,26 +59,26 @@ let []:
   import-from koskari.syntax Syntax SyntaxTransform MacroTransform
 
 
-  define-global macroexpand-1 [form ns]:
+  global def macroexpand-1 [form ns]:
     """
     Apply an expansion step to a source form object in the given namespace.
     """
 
-    define compiler (get-compiler ns)
-    define name (if (pair? form) (car form) form)
-    define special (compiler.find_compiled name)
+    var compiler (get-compiler ns)
+    var name (if (pair? form) (car form) form)
+    var special (compiler.find_compiled name)
 
     unless (instance? special Syntax):
       return form
 
-    define-values [tf captures] (special.match_transformer form)
+    var [tf captures] (special.match_transformer form)
     unless tf:
       return form
 
     unless (instance? tf #(SyntaxTransform MacroTransform)):
       return form
 
-    define expanded (tf.handle_expand compiler form captures)
+    var expanded (tf.handle_expand compiler form captures)
 
     if (and (pair? expanded)
             (equal? (.length expanded) 2)
@@ -91,22 +91,22 @@ let []:
       expanded
 
 
-  define-global macroexpand [form ns]:
+  global def macroexpand [form ns]:
     """
     Expand a source form object in the given namespace. Repeat until the
     result is no longer a macro.
     """
 
-    define compiler (get-compiler ns)
+    var compiler (get-compiler ns)
 
     while True:
-      define name (if (pair? form) (car form) form)
-      define special (compiler.find_compiled name)
+      var name (if (pair? form) (car form) form)
+      var special (compiler.find_compiled name)
 
       unless (instance? special Syntax):
         return form
 
-      define-values [tf captures] (special.match_transformer form)
+      var [tf captures] (special.match_transformer form)
       unless tf:
         return form
 
@@ -116,7 +116,7 @@ let []:
       set! form (tf.handle_expand compiler form captures)
 
 
-define-syntax macroexpand-1:
+syntax macroexpand-1:
   """
   Apply a single expansion step to a source form object in the given
   namespace, or the current globals namespace if unspecified.
@@ -129,7 +129,7 @@ define-syntax macroexpand-1:
       (call macroexpand-1 form (globals))
 
 
-define-syntax macroexpand:
+syntax macroexpand:
   """
   Expand a source form object in the given namespace, or the current globals
   namespace if unspecified. Repeat until the result is no longer a
@@ -143,7 +143,7 @@ define-syntax macroexpand:
       (call macroexpand form (globals))
 
 
-define-syntax macroexpandq-1:
+syntax macroexpandq-1:
   """
   Quote and expand a source object in the given namespace, or
   the current globals namespace if unspecified.
@@ -158,7 +158,7 @@ define-syntax macroexpandq-1:
       (call macroexpand-1 (quote form) (globals))
 
 
-define-syntax macroexpandq:
+syntax macroexpandq:
   """
   Quote and expand a source object in the given namespace, or
   the current globals namespace if unspecified. Repeat until the result
@@ -179,7 +179,7 @@ let []:
   import-from koskari.compile ByteCodeFragment
 
 
-  define-global compile [source_obj ns]:
+  global def compile [source_obj ns]:
     """
     Compile a source object into an Expression via the compiler from
     the given namespace
@@ -188,18 +188,18 @@ let []:
     when (instance? source_obj #(Expression Function)):
       return source_obj
 
-    define compiler (get-compiler ns)
-    define frag (compiler.compile_expression source_obj)
+    var compiler (get-compiler ns)
+    var frag (compiler.compile_expression source_obj)
     frag.as_expression ns
 
 
-  define-global evaluate [source_obj ns]:
+  global def evaluate [source_obj ns]:
     """
     Compile and evaluate a source object as an expression in the given
     namespace
     """
 
-    define expr source_obj
+    var expr source_obj
     if (instance? source_obj Code):
       set! expr (source_obj.expression ns)
     else:
@@ -207,7 +207,7 @@ let []:
     (expr)
 
 
-define-syntax evaluate:
+syntax evaluate:
   syntax-rules []:
     case (evaluate form ns):
       (call evaluate form ns)
@@ -215,7 +215,7 @@ define-syntax evaluate:
       (call evaluate form (locals))
 
 
-define-syntax compileq:
+syntax compileq:
   syntax-rules []:
     case (compileq form ns):
       (call compile (quote form) ns)
@@ -223,16 +223,16 @@ define-syntax compileq:
       (call compile (quote form) (locals))
 
 
-define-syntax inline-macro:
+syntax inline-macro:
   """
   Evaluate body and expand to the resulting form
   """
 
   special-rules []:
     case [c (inline-macro body ...)]:
-      define source `(let [] ,@(each [b body] b.datum))
-      define frag (c.full_compile source)
-      define expr (frag.as_expression (vars c.module))
+      var source `(let [] ,@(each [b body] b.datum))
+      var frag (c.full_compile source)
+      var expr (frag.as_expression (vars c.module))
       (expr)
 
 

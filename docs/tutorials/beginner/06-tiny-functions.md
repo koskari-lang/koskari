@@ -8,10 +8,10 @@ it hands back a result.
 :::{dialogue}
 How do we make our own thing to call?
 +++
-With `define`, a name, the inputs in square brackets, and a block:
+With `def`, a name, the inputs in square brackets, and a block:
 
 ```koskari
-define double [n]:
+def double [n]:
   (* n 2)
 ```
 
@@ -45,12 +45,12 @@ What if the body has several lines?
 They run in order, and the last one is the result:
 
 ```koskari
-define add-tax [price]:
-  define tax (* price 0.08)
+def add-tax [price]:
+  var tax (* price 0.08)
   (+ price tax)
 ```
 
-The `define tax` line sets up a helper name. The `(+ price tax)` line is
+The `var tax` line sets up a helper name. The `(+ price tax)` line is
 the result.
 :::
 
@@ -68,7 +68,7 @@ Can a function take several inputs?
 Put each name in the brackets:
 
 ```koskari
-define rectangle-area [width height]:
+def rectangle-area [width height]:
   (* width height)
 
 print "area:" (rectangle-area 6 7)
@@ -90,7 +90,7 @@ Can a function use `if`?
 A body can hold anything you have used so far:
 
 ```koskari
-define describe-score [score]:
+def describe-score [score]:
   if (>= score 10):
     "great"
   elif (>= score 5):
@@ -109,7 +109,7 @@ result: `good`.
 What does this print?
 +++
 ```koskari
-define badge [name points]:
+def badge [name points]:
   if (>= points 100):
     print name "earned a gold badge"
   elif (>= points 50):

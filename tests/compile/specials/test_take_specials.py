@@ -47,7 +47,7 @@ class TestTakeqSpecial(SpecialsTestCase):
     async def test_takeq_on_uninitialized_raises(self):
         src_str = """
         (begin
-          (define x)
+          (var x)
           (takeq x))
         """
         expr, mod = self.compile_expr(src_str)
@@ -58,7 +58,7 @@ class TestTakeqSpecial(SpecialsTestCase):
     async def test_delq_on_uninitialized_returns_none(self):
         src_str = """
         (begin
-          (define x)
+          (var x)
           (delq x))
         """
         expr, mod = self.compile_expr(src_str)

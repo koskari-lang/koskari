@@ -51,7 +51,7 @@ notes: "agent mistake: [x 1] is one binding pair (x . 1) not a list of pairs; co
 id: functions-bare-multiline-call-kwarg-invalid-001
 feature: reader/layout
 source: |-
-  define run []:
+  def run []:
     compile_file src dest
       source_filename: name
     return 0
@@ -97,7 +97,7 @@ notes: "flet initializers evaluate in the enclosing scope, so a's body cannot se
 id: layout-bare-multiline-define-invalid-001
 feature: reader/layout
 source: |-
-  define x
+  var x
       (+ 1 2)
 verify:
   error: "ReaderSyntaxError: unexpected indent"
@@ -113,7 +113,7 @@ tags:
   - "surface:block"
   - invalid
   - pitfall
-notes: "a bare (unparenthesized) define or set! does NOT continue onto a more-indented next line: `define x` is complete as (define x), and a top-level line must start at column 0, so the indented `(+ 1 2)` is a reader error under the default reader/indent pragma. corrective: parenthesize the whole form -- (define x (+ 1 2)) -- or end the header with a colon, `define x:` with `+ 1 2` indented beneath it."
+notes: "a bare (unparenthesized) var or set! does NOT continue onto a more-indented next line: `var x` is complete as (var x), and a top-level line must start at column 0, so the indented `(+ 1 2)` is a reader error under the default reader/indent pragma. corrective: parenthesize the whole form -- (var x (+ 1 2)) -- or end the header with a colon, `var x:` with `+ 1 2` indented beneath it."
 ---
 id: function-decorate-parameterize-timing-001
 feature: layout/decorate
@@ -121,14 +121,14 @@ source: |-
   define-parameter verbose False
   
   @parameterize [[verbose True]]
-  define loud? []:
+  def loud? []:
     verbose
   
   (loud?)
   
 verify:
-  read: (begin (define-parameter verbose False) (decorate ((parameterize [[verbose True]])) (define loud? [] verbose)) (loud?))
-  invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the define itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
+  read: (begin (define-parameter verbose False) (decorate ((parameterize [[verbose True]])) (def loud? [] verbose)) (loud?))
+  invalid: grafted @parameterize completes at definition time, so the parameter extent spans only the def itself and has already ended before any call; (loud?) reads verbose at call time and returns False, not True
 references:
   - guide/decorators.md
   - reference/macros/compile-decorate-subject.md
@@ -143,7 +143,7 @@ tags:
   - invalid
   - surprising
   - pitfall
-notes: "corrective: @call-parameterize [[verbose True]] enters the extent per invocation, which is almost always what a grafted with/parameterize over a define was trying to say. Requires reader/decorators (baseline on)."
+notes: "corrective: @call-parameterize [[verbose True]] enters the extent per invocation, which is almost always what a grafted with/parameterize over a def was trying to say. Requires reader/decorators (baseline on)."
 ---
 id: function-define-percall-state-001
 feature: special/compile/define

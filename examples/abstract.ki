@@ -34,12 +34,12 @@ define-class Shape [ABC]:
 
     @property
     @abstractmethod
-    define area [self]:
+    def area [self]:
         ...
 
     ; A concrete method may lean on the abstract one; subclasses fill
     ; in `area` and inherit `describe` for free.
-    define describe [self]:
+    def describe [self]:
         f"a {(type self).__name__} enclosing {self.area}"
 
 
@@ -49,25 +49,25 @@ define-class Shape [ABC]:
 define-class Point2D [Shape]:
     """ A single point in the plane """
 
-    define __init__ [self x y]:
+    def __init__ [self x y]:
         set! self.x x
         set! self.y y
 
     @property
-    define area [self]:
+    def area [self]:
         0
 
-    define move [self x: 0 y: 0]:
+    def move [self x: 0 y: 0]:
         incr! self.x x
         incr! self.y y
 
-    define __repr__ [self]:
+    def __repr__ [self]:
         f"Point2D at {self.x}, {self.y}"
 
-    define __add__ [self other]:
+    def __add__ [self other]:
         self.relocated other.x other.y
 
-    define relocated [self x: 0 y: 0]:
+    def relocated [self x: 0 y: 0]:
         Point2D (+ self.x x) (+ self.y y)
 
 
@@ -78,13 +78,13 @@ define-class Point2D [Shape]:
 define-class Shape2D [Shape]:
     """ A positioned 2D shape; still abstract until `area` is provided """
 
-    define __init__ [self origin]:
+    def __init__ [self origin]:
         set! self.origin origin
 
-    define __repr__ [self]:
+    def __repr__ [self]:
         f"{(type self).__name__} at {self.origin.x}, {self.origin.y}"
 
-    define move [self x: 0 y: 0]:
+    def move [self x: 0 y: 0]:
         set! self.origin (self.origin.relocated x y)
 
 
@@ -95,20 +95,20 @@ define-class Shape2D [Shape]:
 define-class Rectangle [Shape2D]:
     """ An axis-aligned rectangle anchored at its origin """
 
-    define __init__ [self coordinate height width]:
+    def __init__ [self coordinate height width]:
         (super).__init__ coordinate
         set! self.height height
         set! self.width width
 
     @property
-    define area [self]:
+    def area [self]:
         * self.width self.height
 
 
 @entry-point
-define main []:
-    define origin (Point2D 1 2)
-    define rect (Rectangle origin 5 4)
+def main []:
+    var origin (Point2D 1 2)
+    var rect (Rectangle origin 5 4)
 
     print "origin:" (origin.describe)
     print "rect:  " (rect.describe)

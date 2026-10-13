@@ -29,13 +29,13 @@ define-dataclass NAME (Base1 Base2):
 
 ```koskari
 define-dataclass Point:
-  define x :: int 0
-  define y :: int 0
-;; -> (define-dataclass Point () (begin (define x :: int 0) (define y :: int 0)))
+  var x :: int 0
+  var y :: int 0
+;; -> (define-dataclass Point () (begin (var x :: int 0) (var y :: int 0)))
 
 define-dataclass Point3 [Point]:
-  define z :: int 0
-;; -> (define-dataclass Point3 [Point] (begin (define z :: int 0)))
+  var z :: int 0
+;; -> (define-dataclass Point3 [Point] (begin (var z :: int 0)))
 ```
 
 **See also:** [`define-class`](layout-define-class.md), the same header

@@ -157,7 +157,7 @@ class TestBuildTupleSpecial(SpecialsTestCase):
         # bound rather than returned, since a built return folds into
         # one RETURN of the pushed values
         code = self.compile_to_code(
-            "(begin (define t (#tuple 1 x 2)) t)", x=99)
+            "(begin (var t (#tuple 1 x 2)) t)", x=99)
         ops = _opcodes(code)
         self.assertEqual(1, ops.count(OpCode.BUILD_ARGS))
         self.assertNotIn(OpCode.COMBINE_ARGS, ops)

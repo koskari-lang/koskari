@@ -14,7 +14,7 @@ that expansion bound before it falls back to the plain name.
 Take a `swap!` macro that needs a temporary:
 
 ```koskari
-define-syntax swap!:
+syntax swap!:
   syntax-rules []:
     swap! a b:
       let [[tmp a]]:
@@ -29,8 +29,8 @@ the template's binder swallows the caller's name. Hygiene keeps the two
 `tmp`s apart:
 
 ```koskari
-define tmp 1
-define other 2
+var tmp 1
+var other 2
 (swap! tmp other)
 ;; tmp is 2, other is 1
 ```
@@ -39,12 +39,12 @@ A name the template uses but does not bind is free. It resolves at the
 use site, as if the caller had written it:
 
 ```koskari
-define-syntax twice:
+syntax twice:
   syntax-rules []:
     twice v:
       (double v)
 
-define double [x] (* x 2)
+def double [x] (* x 2)
 (twice 4)
 ;; => 8
 ```
@@ -71,7 +71,7 @@ the two. Here the mark is chosen so the spelling is fixed; a template's
 mark comes from the process counter.
 
 ```koskari
->>> define g (gensym (symbol "tmp") marks: #(26))
+>>> var g (gensym (symbol "tmp") marks: #(26))
 >>> (str g)
 "tmp#1a"
 >>> g.base
@@ -117,12 +117,12 @@ inside a `datum` box, is left alone. For a hand-written macro a
 quasiquoted template therefore behaves like a `syntax-rules` one:
 
 ```koskari
-define-syntax with-tmp:
+syntax with-tmp:
   macro-rules []:
     with-tmp expr:
       `(let [[tmp 10]] (+ tmp ,expr))
 
-define tmp 1
+var tmp 1
 (with-tmp tmp)
 ;; => 11: the template's tmp is 10, the caller's tmp is 1
 ```
@@ -133,10 +133,10 @@ distinct from every other gensym and from the plain `t`. It is a symbol
 and goes into the output like one:
 
 ```koskari
-define-syntax with-fresh:
+syntax with-fresh:
   macro-rules []:
     with-fresh expr:
-      define t (gensym "t")
+      var t (gensym "t")
       `(let [[,t 10]] (+ ,t ,expr))
 
 (with-fresh tmp)
@@ -164,23 +164,23 @@ will read back later, and the inner template must reach the binder the
 outer expansion made:
 
 ```koskari
-(define-syntax mk-getter
+(syntax mk-getter
   (syntax-rules []
     [(mk-getter name val)
      (begin
-       (define secret val)
-       (define-syntax name (syntax-rules [] [(name) secret])))]))
+       (var secret val)
+       (global syntax name (syntax-rules [] [(name) secret])))]))
 
-(define secret 100)
+(var secret 100)
 (mk-getter get-secret 7)
 (get-secret)
 ;; => 7
 ```
 
-The outer expansion writes `secret#outer` at both the `define` and the
+The outer expansion writes `secret#outer` at both the `var` and the
 inner template. When the inner macro expands, its template symbol gains
 the inner mark as well, `secret#outer#inner`, and the compiler's fallback,
-below, finds `secret#outer`. This works because `define-syntax` quotes
+below, finds `secret#outer`. This works because `syntax` quotes
 patterns and templates with `quote-syntax`, spelled `#'`, which keeps
 marks; a plain `quote` would have projected `secret#outer` to `secret`
 and the inner template would have found the module's `secret`.
@@ -190,14 +190,14 @@ built by a backtick in a body the compiler cannot tell from any other
 code:
 
 ```koskari
-(define-syntax mk-getter
+(syntax mk-getter
   (syntax-rules []
     [(mk-getter name val)
      (begin
-       (define secret val)
-       (define-syntax name (macro-rules [] [(name) #`secret])))]))
+       (var secret val)
+       (global syntax name (macro-rules [] [(name) #`secret])))]))
 
-(define secret 100)
+(var secret 100)
 (mk-getter get-secret 8)
 (get-secret)
 ;; => 8
@@ -222,9 +222,9 @@ another reads it, need that name written raw. In a `syntax-rules` or
 `-'name`, writes `name` as the caller would, unmarked:
 
 ```koskari
-(define-syntax set-slot
-  (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
-(define-syntax read-slot
+(syntax set-slot
+  (syntax-rules [] [(set-slot v) (var (datumq shared-slot) v)]))
+(syntax read-slot
   (syntax-rules [] [(read-slot) (datumq shared-slot)]))
 
 (set-slot 7)
@@ -243,8 +243,8 @@ name is the function's local binding, so a caller cannot pass it by
 keyword. A template whose parameters callers name writes them raw:
 
 ```koskari
-(define-syntax make-pair-fn
-  (syntax-rules [] [(make-pair-fn name) (define name [-'x -'y] #(x y))]))
+(syntax make-pair-fn
+  (syntax-rules [] [(make-pair-fn name) (def name [-'x -'y] #(x y))]))
 
 (make-pair-fn pair-of)
 (pair-of y: 2 x: 1)
@@ -257,11 +257,11 @@ so the inner template receives the raw `(datumq slot)` and its own
 expansion writes `slot`:
 
 ```koskari
-(define-syntax make-setter
+(syntax make-setter
   (syntax-rules []
     [(make-setter mname)
-     (define-syntax mname
-       (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+     (global syntax mname
+       (syntax-rules [] [(mname v) (var (datumq (datumq slot)) v)]))]))
 
 (make-setter set-slot)
 (set-slot 11)
@@ -274,12 +274,12 @@ a procedural macro it defines, writes the head raw:
 `((datumq datumq) name)`. A `datum` call needs no escape; `datum` has no
 meaning in a template. In a procedural body, `(datumq name)` is the
 ordinary macro and returns the same raw form; inside a backtick it is
-data like the rest, so it is unquoted: `` `(define ,(datumq slot) 0) ``.
+data like the rest, so it is unquoted: `` `(var ,(datumq slot) 0) ``.
 
 ## What the compiler does
 
 The compiler treats a gensym as a symbol with a longer spelling. A
-binder written as a gensym, in `define`, `let`, a lambda's formals,
+binder written as a gensym, in `var`, `def`, `let`, a lambda's formals,
 `labels`, or `letrec`, declares the derived spelling, so the template's
 `tmp` lives in the namespace as `tmp#b23376a7` beside the caller's `tmp`.
 
@@ -319,20 +319,20 @@ there the compiler reads the base:
 - the operator in an inplace assignment;
 - quoted data, as above.
 
-`define-global` in a template binds the module under the scoped
+`global` in a template binds the module under the scoped
 spelling, so each expansion gets its own global and the caller's
 same-named global is untouched:
 
 ```koskari
-define-syntax counter:
+syntax counter:
   syntax-rules []:
     counter:
       begin:
-        define-global hits 0
+        global hits 0
         set! hits (+ hits 1)
         hits
 
-define hits "mine"
+var hits "mine"
 (counter)
 ;; => 1
 hits
@@ -343,13 +343,13 @@ And a formal named by a keyword binds under the name the caller writes,
 because that name is the call-site interface:
 
 ```koskari
-define-syntax kw-formal:
+syntax kw-formal:
   syntax-rules []:
     kw-formal:
       lambda [count: 1]:
         count
 
-define kf (kw-formal)
+var kf (kw-formal)
 (kf)
 ;; => 1
 (kf count: 5)

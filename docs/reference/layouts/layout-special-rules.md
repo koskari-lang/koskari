@@ -2,7 +2,7 @@
 **Symbol:** `layout/special-rules`
 
 **Use-case:** Block syntax for the `special-rules` transformer, normally
-the inner block of a `define-syntax` or `extend-syntax` block. Converts
+the inner block of a `syntax` or `extend-syntax` block. Converts
 indented rule blocks into the canonical
 `(special-rules [NAME] (LIT ...) (PATTERN BODY) ...)` form that
 [`compile/special-rules`](../specials/compile-special-rules.md) compiles.
@@ -21,9 +21,9 @@ with `rule must be a block`; write `case [c (foo x)]:` instead.
 
 **Named header:** `special-rules NAME [LIT ...]:` puts NAME in the emitted
 form, which is where the transformer takes its identity for help text and
-match errors. `define-syntax` and `extend-syntax` supply that name
+match errors. `syntax` and `extend-syntax` supply that name
 themselves, so the named header belongs to a transformer bound directly,
-as `define compile/NAME:`.
+as `var compile/NAME:`.
 
 **Syntax:**
 
@@ -40,10 +40,10 @@ special-rules NAME [LIT ...]:
 **Examples:**
 
 ```koskari
-define-syntax say-hi:
+syntax say-hi:
   special-rules []:
     case [c (say-hi thing)]:
-      define t thing.datum
+      var t thing.datum
       `(print "hi" ,t)
 
 (say-hi "there")
@@ -51,11 +51,11 @@ define-syntax say-hi:
 ```
 
 ```koskari
-define compile/say-hi:
+var compile/say-hi:
   special-rules say-hi []:
     c (say-hi thing):
-      define t thing.datum
+      var t thing.datum
       `(print "hi" ,t)
-;; -> (define compile/say-hi
+;; -> (var compile/say-hi
 ;;      (special-rules say-hi [] ((c (say-hi thing)) (begin ...))))
 ```

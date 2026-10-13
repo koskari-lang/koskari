@@ -6,20 +6,20 @@
 ;; yield-from over a plain Python iterable (e.g. range) still worked.
 
 
-define foobar [x]:
+def foobar [x]:
     yield-from x
 
 
-define krange [limit]:
-    define count 0
+def krange [limit]:
+    var count 0
     while (< count limit):
         yield count
         incr! count
 
 
 when (equal? __name__ "__main__"):
-    define seen 0
-    define total 0
+    var seen 0
+    var total 0
     for-each [v (foobar (krange 5))]:
         print "VALUE" v
         incr! seen

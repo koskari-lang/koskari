@@ -37,14 +37,14 @@ node (KOS_DYN_GEN), RETURN returns `EVAL_RETURN(val)`; `eval_event_return`
 delivers and `koskari_eval` exits with `KOS_RES_RETURN`.
 
 **Consuming multiple values:** index the returned tuple with `(item result 0)`,
-or destructure it with [`define-values`](compile-define-values.md) /
+or destructure it with [`var`](compile-var.md) over a pattern or with
 [`let-values`](../macros/compile-let-values.md):
 
 ```koskari
-define swap [a b]:
+def swap [a b]:
   return b a
 
-define-values [x y] (swap 1 2)   ;; x = 2, y = 1
+var [x y] (swap 1 2)   ;; x = 2, y = 1
 ```
 
 **Examples:**

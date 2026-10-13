@@ -30,15 +30,15 @@ import-from types SimpleNamespace
 
 ; --- A name labels a storage location ---------------------------------------
 
-define food 10
+var food 10
 set! food 11
 (print "food:" food)                       ; -> 11
 
 
 ; --- Getting a ref: long form, then the & sugar -----------------------------
 
-define r1 (ref food)
-define r2 &food
+var r1 (ref food)
+var r2 &food
 (print "r1 is a:" (type r1))               ; -> <class 'Ref'>
 (print "r2 is a:" (type r2))               ; -> <class 'Ref'>
 (print "same object:" (is r1 r2))          ; -> True
@@ -68,8 +68,8 @@ set! r2 99
 
 ; --- Refs to places that have no name of their own --------------------------
 
-define xs #[1 2 3 4]
-define cell &(item xs 2)
+var xs #[1 2 3 4]
+var cell &(item xs 2)
 (print "cell points into xs, reads:" (deref cell))  ; -> 3
 set! (deref cell) 100
 (print "xs after (set! (deref cell) 100):" xs)      ; -> [1, 2, 100, 4]
@@ -85,7 +85,7 @@ set! r2 99       ; store 99 into that location (food becomes 99)
 (print "after bind! then set! r2 99 -> food:" food) ; -> 99  (write-through)
 (print "                                 r2:" r2)      ; -> 99  (same location)
 
-define total 5
+var total 5
 bind! alias &total
 (print "alias reads:" alias)               ; -> 5  (auto-derefs)
 set! alias 42
@@ -95,7 +95,7 @@ bind! first &(item xs 0)
 set! first 1000
 (print "xs after set! first 1000:" xs)     ; -> [1000, 2, 100, 4]
 
-define obj (SimpleNamespace count: 15)
+var obj (SimpleNamespace count: 15)
 bind! cnt &obj.count
 set! cnt 99
 (print "obj.count after set! cnt 99:" obj.count)  ; -> 99
@@ -103,21 +103,21 @@ set! cnt 99
 
 ; --- Passing a ref to a function: bind! inside the callee -------------------
 
-define bump-manual [the-ref]:
+def bump-manual [the-ref]:
     bind! n the-ref
     incr! n 1
 
-define a 7
+var a 7
 (bump-manual &a)
 (print "a after bump-manual:" a)           ; -> 8
 
 
 ; --- ...and the by-ref formal that does the bind for you --------------------
 
-define bump [&n]:
+def bump [&n]:
     incr! n 1
 
-define b 7
+var b 7
 (bump &b)
 (print "b after bump:" b)                  ; -> 8
 

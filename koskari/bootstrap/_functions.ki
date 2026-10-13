@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax define-coroutine:
+syntax define-coroutine:
   """
   Defines a function whose result will be converted to a Python
   coroutine object.
@@ -25,10 +25,10 @@ define-syntax define-coroutine:
 
   syntax-rules []:
     case (define-coroutine name args body ...):
-      (define name (coroutine-fn (function name args body ...)))
+      (var name (coroutine-fn (function name args body ...)))
 
 
-define-syntax define-demanding:
+syntax define-demanding:
   """
   Defines a function which will be run on the demand path, where
   `await` it denied.
@@ -36,10 +36,10 @@ define-syntax define-demanding:
 
   syntax-rules []:
     case (define-demanding name formals body ...):
-      (define name (demand (function name formals body ...)))
+      (var name (demand (function name formals body ...)))
 
 
-define-syntax function-compose:
+syntax function-compose:
   """
   Composes multiple functions into a single function, eg.::
 
@@ -58,13 +58,13 @@ define-syntax function-compose:
     case (function-compose fn1):
       fn1
     case (function-compose fn1 ...):
-      define acc `(*: args **: kwds)
+      var acc `(*: args **: kwds)
       for-each [fn (reversed fn1)]:
         set! acc `((,fn ,@acc))
       `(lambda [*: args **: kwds] ,@acc)
 
 
-define-syntax flet:
+syntax flet:
   """
   Binds local functions for the extent of a body, eg.::
 
@@ -84,7 +84,7 @@ define-syntax flet:
         body ...)
 
 
-define-syntax labels:
+syntax labels:
   """
   Binds local functions for the extent of a body, with the names visible to
   one another so the functions can be mutually recursive, eg.::
@@ -93,20 +93,21 @@ define-syntax labels:
              [odd? [n] (if (== n 0) False (even? (- n 1)))]]
       (even? 10))
 
-  Each function is `define`d inside a shared scope, so a binding's body sees
-  every sibling in the same `labels` (unlike `flet`, whose initializers are
-  evaluated in the enclosing scope and cannot see siblings).
+  Each function is bound with `var` inside a shared scope, so a
+  binding's body sees every sibling in the same `labels` (unlike `flet`,
+  whose initializers are evaluated in the enclosing scope and cannot see
+  siblings).
   """
 
   syntax-rules []:
     case (labels [[name formals fbody ...] ...] body ...):
       (let []
-        (define name (function name formals fbody ...))
+        (var name (function name formals fbody ...))
         ...
         body ...)
 
 
-define-syntax str:
+syntax str:
   """
   The str builtin at a call head. One argument lowers to #str, which
   converts through __str__ and returns an exact str unchanged, as str()

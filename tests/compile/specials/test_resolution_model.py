@@ -63,7 +63,7 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         """define-global then setq to same name works"""
         src_str = """
         (begin
-          (define-global x 1)
+          (global x 1)
           (setq x 2)
           x)
         """
@@ -78,8 +78,8 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
 
         src_str = """
         (lambda []
-          (define x 1)
-          (define-global x 2)
+          (var x 1)
+          (global x 2)
           x)
         """
         with self.assertRaises(CompilerError) as caught:
@@ -94,8 +94,8 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
 
         src_str = """
         (lambda []
-          (define-global x 2)
-          (define x 1)
+          (global x 2)
+          (var x 1)
           x)
         """
         with self.assertRaises(CompilerError) as caught:
@@ -109,8 +109,8 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         """
 
         for src_str in (
-                "(begin (define x 1) (define-global x 2) x)",
-                "(begin (define-global x 1) (define x 2) x)"):
+                "(begin (var x 1) (global x 2) x)",
+                "(begin (global x 1) (var x 2) x)"):
             expr, mod = self.compile_expr(src_str)
             self.assertEqual(2, await expr())
             self.assertEqual(vars(mod).deref('x'), 2)
@@ -152,9 +152,9 @@ class TestResolutionModelNestedWrite(SpecialsTestCase):
         """define x, inner define setter with setq x works (closure write)"""
         src_str = """
         ((lambda ()
-           (define x 101)
-           (define getter (lambda () x))
-           (define setter (lambda [v] (setq x v)))
+           (var x 101)
+           (var getter (lambda () x))
+           (var setter (lambda [v] (setq x v)))
            (call (lambda [g s]
              (call s 42)
              (call g))
@@ -183,8 +183,8 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         """define-global counter; inner lambda setq counter; shared across calls"""
         src_str = """
         ((lambda ()
-           (define-global counter 0)
-           (define inc (lambda ()
+           (global counter 0)
+           (var inc (lambda ()
              (setq counter (call + counter 1))
              counter))
            (call inc)
@@ -200,9 +200,9 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         """Outer define x; inner define-global x; inner setq does not touch outer"""
         src_str = """
         ((lambda ()
-           (define x 0)
-           (define inner (lambda ()
-             (define-global x 99)
+           (var x 0)
+           (var inner (lambda ()
+             (global x 99)
              (setq x 1)))
            (call inner)
            x))
@@ -265,8 +265,8 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         pragma = KoskariPragma()
         src_str = """
         ((lambda ()
-           (define x 101)
-           (define setter (lambda [v] (setq x v)))
+           (var x 101)
+           (var setter (lambda [v] (setq x v)))
            (call setter 42)))
         """
         code = self.compile_to_code(
@@ -294,7 +294,7 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         """define-global at module level yields global_syms in root Code"""
         src_str = """
         (begin
-          (define-global x 1)
+          (global x 1)
           (setq x 2)
           x)
         """
@@ -353,8 +353,8 @@ class TestResolutionLexicalAncestry(SpecialsTestCase):
     async def test_later_define_in_enclosing_body_still_satisfies(self):
         src_str = """
         ((lambda []
-           (define bump (lambda [] (setq x (+ x 1))))
-           (define x 10)
+           (var bump (lambda [] (setq x (+ x 1))))
+           (var x 10)
            (bump)
            x))
         """
@@ -384,11 +384,11 @@ class TestResolutionLexicalAncestry(SpecialsTestCase):
 
         src_str = """
         ((lambda []
-           (define bump
+           (var bump
              (lambda []
                (let [[a 1]]
                  (setq total (+ total a)))))
-           (define total 10)
+           (var total 10)
            (bump)
            total))
         """

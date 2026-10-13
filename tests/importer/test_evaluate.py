@@ -265,7 +265,7 @@ class TestGetCompiler(unittest.IsolatedAsyncioTestCase):
         """
 
         src = """
-        (define run (lambda [] (evaluate (+ 20 22))))
+        (var run (lambda [] (evaluate (+ 20 22))))
         """
         module = new_module("evaltest")
         ns = vars(module)

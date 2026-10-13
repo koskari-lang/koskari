@@ -12,10 +12,10 @@ taken binding stays bound to its ref but empty.
 **Examples:**
 
 ```koskari
-define y 5
+var y 5
 (take! y)              ;; 5; y is now empty
 
-define d #{"j": 5}
+var d #{"j": 5}
 (take! d["j"])         ;; 5; d is now {}
 
 set! box.v 3

@@ -115,7 +115,7 @@ class TestPythonPragma(SpecialsTestCase):
 
         src_str = """
         ((lambda ()
-           (define x 0)
+           (var x 0)
            (let [[y 1]] (setq x y))
            x))
         """
@@ -138,7 +138,7 @@ class TestPythonPragma(SpecialsTestCase):
     async def test_setq_to_the_let_binding_writes_the_let(self):
         src_str = """
         ((lambda ()
-           (define y 0)
+           (var y 0)
            (let [[y 1]] (setq y 2) y)))
         """
         expr, mod = self.compile_expr(
@@ -165,7 +165,7 @@ class TestPythonPragma(SpecialsTestCase):
     async def test_write_inside_nested_lambda_stays_its_own_local(self):
         src_str = """
         ((lambda ()
-           (define x 0)
+           (var x 0)
            ((lambda () (setq x 1)))
            x))
         """

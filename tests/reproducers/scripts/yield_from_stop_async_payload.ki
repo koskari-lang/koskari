@@ -2,8 +2,8 @@
 ;; a generator delegating to an async iterator the test supplies, which
 ;; ends with a StopAsyncIteration carrying a payload.
 
-define deleg [source]:
+def deleg [source]:
     (yield-from source)
 
-define run [source]:
+def run [source]:
     list-each [x (deleg source)] x

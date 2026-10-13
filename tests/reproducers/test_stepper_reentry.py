@@ -34,8 +34,8 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define g-throws-at-self [box susp]:
-    define st box.step
+def g-throws-at-self [box susp]:
+    var st box.step
     try:
         (st.throw ValueError)
     except [ValueError]:
@@ -43,8 +43,8 @@ define g-throws-at-self [box susp]:
     (await susp)
     (yield "ok")
 
-define g-sends-to-self [box susp]:
-    define st box.step
+def g-sends-to-self [box susp]:
+    var st box.step
     try:
         (st.send "hijack")
     except [ValueError]:

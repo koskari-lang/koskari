@@ -19,9 +19,9 @@ special, a macro, and a call is in
 |------|------|
 | [`var`](compile-var.md) | Bind a name in the current scope, with an optional type, or several names by unpacking |
 | [`global`](compile-global.md) | Bind a name at the module from any depth; `global def`, `global class`, `global syntax` |
-| [`define`](compile-define.md) | Bind a name, or a function when formals follow |
-| [`define-global`](compile-define-global.md) | Bind a module-level name from inside a function |
-| [`define-values`](compile-define-values.md) | Bind several names by unpacking one value |
+| [`define`](compile-define.md) | The Scheme-layer spelling of `var`, or of `def` when formals follow |
+| [`define-global`](compile-define-global.md) | The Scheme-layer spelling of `global` |
+| [`define-values`](compile-define-values.md) | The Scheme-layer spelling of `var` over a pattern |
 | [`function`](compile-function.md) | A named function value that is not bound |
 | [`lambda`](compile-lambda.md) | An anonymous function value; formals, defaults, rest collectors, annotations, by-ref |
 | [`let`](compile-let.md) | Lexical bindings for a body; named `let` for loops |

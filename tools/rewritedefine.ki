@@ -1,0 +1,564 @@
+; This library is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This library is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+; General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+rewritedefine -- rewrite define-family forms to var, def, global, and
+syntax in place.
+
+Reads each source with the layout reader and classifies every form
+headed by define, define-global, define-values, or define-syntax by its
+shape, then replaces the head token in the source text, so comments and
+formatting are kept:
+
+  define NAME VALUE / define NAME          -> var
+  define NAME FORMALS BODY...              -> def
+  define-global NAME VALUE                 -> global
+  define-global NAME FORMALS BODY...       -> global def
+  define-values PATTERN VALUE              -> var
+  define-syntax NAME ... (top level)       -> syntax
+  define-syntax NAME ... (in a body)       -> global syntax
+
+A typed name (NAME :: TYPE or NAME type: TYPE) is classified by what
+follows the type. Forms in quoted data and in syntax patterns are left
+alone. Koskari sources are found in .ki files, in the string literals
+of .py files, in koskari fences of .md files, and in the source and
+read fields of corpus .yaml records.
+
+Run from the repository root:
+
+    uv run python -B -m koskari -m tools.tools -- rewrite-define PATH...
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+
+import io
+import re
+import sys
+import tokenize
+
+import-from argparse ArgumentParser
+import-from pathlib Path
+
+import koskari.builtins
+import-from koskari.lib keyword nil symbol
+import-from koskari.reader source_str IndentAwareStream LayoutReader
+import-from koskari.module new_module
+import-from koskari.pragma ModulePragma
+import-from koskari.reader.parser READ_EOF
+import-from koskari.types get_position is_keyword is_pair is_symbol
+
+
+var HEADS (frozenset #["define" "define-global" "define-values" "define-syntax"])
+
+; forms whose body is data, never code
+var QUOTING (frozenset #["quote" "quote-syntax"])
+
+; transformer builders whose rules each carry a pattern first
+var RULE_BUILDERS (frozenset #["syntax-rules" "syntax-match" "macro-rules"
+                               "macro-match" "special-rules" "special-match"])
+
+; forms whose bodies keep a top-level define-syntax at top level
+var TRANSPARENT (frozenset #["begin"])
+
+var TYPE_KEYWORDS (frozenset #[(keyword "::") (keyword "type:")])
+
+
+def proper-items [form]:
+  """
+  The elements of a pair spine, stopping at an improper tail
+  """
+
+  var items #[]
+  while (and (is_pair form) (not (nil? form))):
+    (items.append form.car)
+    set! form form.cdr
+  items
+
+
+def head-name [form]:
+  (when (and (is_pair form) (not (nil? form)) (is_symbol form.car))
+    (str form.car))
+
+
+; specials-only limits the rewrite to the forms the var and global
+; specials take alone, for sources compiled without the bootstrap macros
+var SPECIALS-ONLY #[False]
+
+
+def classify [head args top]:
+  """
+  The replacement text for a define-family head, or None to leave the
+  form alone
+  """
+
+  var specials-only (item SPECIALS-ONLY 0)
+
+  if (in head #("define-values" "define-syntax")):
+    if specials-only:
+      return None
+    elif (== head "define-values"):
+      return "var"
+    else:
+      return (if top "syntax" "global syntax")
+
+  when (not args):
+    return None
+
+  var [name *: rest] args
+  unless (or (is_symbol name) (== (head-name name) "unquote")):
+    return None
+
+  when (and rest (is_keyword (item rest 0)) (in (item rest 0) TYPE_KEYWORDS)):
+    set! rest (rest.__getitem__ (slice 2 None))
+
+  var function? (and (>= (len rest) 2)
+                     (or (nil? (item rest 0)) (is_pair (item rest 0))))
+  if (and function? specials-only):
+    None
+  elif (== head "define"):
+    (if function? "def" "var")
+  else:
+    (if function? "global def" "global")
+
+
+def collect [form top edits]:
+  """
+  Walk form, appending (position, head, replacement) for every
+  define-family form found in code position
+  """
+
+  unless (and (is_pair form) (not (nil? form))):
+    return None
+
+  var head (head-name form)
+  var items (proper-items form)
+
+  when (in head QUOTING):
+    return None
+
+  when (in head HEADS):
+    var replacement (classify head (items.__getitem__ (slice 1 None)) top)
+    when replacement:
+      (edits.append #((get_position form) head replacement))
+
+  if (== head "case"):
+    ; (case PATTERN TEMPLATE...): the pattern is not code
+    for-each [sub (items.__getitem__ (slice 2 None))]:
+      collect sub False edits
+
+  elif (in head RULE_BUILDERS):
+    ; bracketed rules carry their pattern first
+    for-each [sub (items.__getitem__ (slice 1 None))]:
+      if (and (is_pair sub) (not (nil? sub)) (is_pair sub.car)):
+        for-each [part (proper-items sub.cdr)]:
+          collect part False edits
+      elif (== (head-name sub) "case"):
+        collect sub False edits
+
+  else:
+    var keep-top (and top (or (None? head) (in head TRANSPARENT)))
+    for-each [sub items]:
+      collect sub keep-top edits
+
+
+def read-forms [text]:
+  """
+  Every top-level form of text, read with the layout reader
+  """
+
+  var reader (LayoutReader.from_pragma (new_module "rewrite")
+                                       pragma: (ModulePragma))
+  var stream (IndentAwareStream.from_source (source_str text "<rewrite>"))
+  var forms #[]
+  while True:
+    var form (reader.read stream)
+    when (is form READ_EOF):
+      break
+    (forms.append form)
+  forms
+
+
+def head-column [line col head]:
+  """
+  The column of the head token for a form positioned at col on line,
+  or None when it cannot be found unambiguously
+  """
+
+  var pat (re.compile (+ r"(?<![\w!?*<>=/+-])" (re.escape head) r"(?=\s|$)"))
+
+  when (< col (len line)):
+    var ch line[col]
+    when (in ch "(["):
+      var m (pat.match line (+ col 1))
+      when m:
+        return (m.start)
+      var j (+ col 1)
+      while (and (< j (len line)) (in line[j] " \t")):
+        set! j (+ j 1)
+      var m2 (pat.match line j)
+      return (when m2 (m2.start))
+
+    var m (pat.match line col)
+    when m:
+      return (m.start)
+
+  None
+
+
+def header-head [lines lineno head]:
+  """
+  A block header is positioned at its colon, and its head starts the
+  header's first line, which is this line or one above it when the
+  header continues over several lines
+
+  :return: #(lineno col), or None
+  """
+
+  var pat (re.compile (+ (re.escape head) r"(?=\s|$)"))
+  var stop (max 0 (- lineno 30))
+  var n lineno
+  while (> n stop):
+    var line (item lines (- n 1))
+    var indent (- (len line) (len (line.lstrip)))
+    when (pat.match line indent):
+      return #(n indent)
+    set! n (- n 1)
+  None
+
+
+def rewrite-text [text]:
+  """
+  Rewrite the define-family forms of one Koskari source text
+
+  :return: #(new-text edits-made problems)
+  """
+
+  var edits #[]
+  for-each [form (read-forms text)]:
+    collect form True edits
+
+  var lines (text.split "\n")
+  var problems #[]
+  var planned #{}
+
+  for-each [[pos head replacement] edits]:
+    if (None? pos):
+      (problems.append f"no position for {head}")
+    else:
+      var [lineno col] pos
+      var at (head-column (item lines (- lineno 1)) col head)
+      var found (if (None? at) (header-head lines lineno head) #(lineno at))
+      if (None? found):
+        (problems.append f"line {lineno}: cannot find {head}")
+      else:
+        set! (item planned found) #(head replacement)
+
+  ; apply right to left so earlier columns stay valid
+  for-each [[key val] (sorted (planned.items) reverse: True)]:
+    var [lineno at] key
+    var [head replacement] val
+    var line (item lines (- lineno 1))
+    set! (item lines (- lineno 1)):
+      (+ (line.__getitem__ (slice None at))
+         replacement
+         (line.__getitem__ (slice (+ at (len head)) None)))
+
+  #(("\n".join lines) (len planned) problems)
+
+
+def margin [text]:
+  var widths:
+    list-each [ln (text.split "\n")]:
+      when (ln.strip):
+        - (len ln) (len (ln.lstrip " "))
+  (if widths (min widths) 0)
+
+
+def rewrite-block [text]:
+  """
+  Rewrite an indented block of Koskari source, keeping its margin
+  """
+
+  var m (margin text)
+  var lines (text.split "\n")
+  var body ("\n".join (list-each [ln lines] (ln.__getitem__ (slice m None))))
+  var [new count problems] (rewrite-text body)
+  when (== count 0):
+    return #(text 0 problems)
+  var pad (* " " m)
+  ; edits never add or remove lines, so a blank line keeps its own text
+  var out:
+    list-each [[old ln] (zip lines (new.split "\n"))]:
+      (if (ln.strip) (+ pad ln) old)
+  #(("\n".join out) count problems)
+
+
+def rewrite-ki [text]:
+  (rewrite-text text)
+
+
+def docstring? [toks i]:
+  """
+  True when the string token at i stands alone as a statement
+  """
+
+  var prev (item toks (- i 1))
+  var nxt (item toks (+ i 1))
+  (and (in prev.type #(tokenize.NEWLINE tokenize.INDENT tokenize.DEDENT
+                       tokenize.NL))
+       (in nxt.type #(tokenize.NEWLINE tokenize.NL)))
+
+
+var STRING_PREFIX (re.compile r"^([rRbBuUfF]*)('''|\"\"\"|'|\")")
+
+
+def rewrite-py [text]:
+  """
+  Rewrite the Koskari sources held in the string literals of a Python
+  module. Docstrings, escaped strings and strings that do not read as
+  Koskari are left alone
+  """
+
+  var toks (list (tokenize.generate_tokens (io.StringIO text).readline))
+  var lines (text.splitlines True)
+  var offsets #[0]
+  for-each [ln lines]:
+    (offsets.append (+ (item offsets -1) (len ln)))
+
+  var replacements #[]
+  var total 0
+  var problems #[]
+
+  for-each [[i tok] (enumerate toks)]:
+    when (and (== tok.type tokenize.STRING)
+              (not (docstring? toks i))):
+      var m (STRING_PREFIX.match tok.string)
+      var raw (and m (in "r" ((item (m.groups) 0).lower)))
+      var quote (and m (item (m.groups) 1))
+      when (and quote
+                (not (in "b" ((item (m.groups) 0).lower)))
+                (or raw (not (in "\\" tok.string)))
+                (re.search r"\bdefine(-global|-values|-syntax)?\b"
+                           tok.string)):
+        var start (+ (len (item (m.groups) 0)) (len quote))
+        var body (tok.string.__getitem__ (slice start (- (len quote))))
+        var result:
+          try:
+            (rewrite-block body)
+          except [Exception]:
+            None
+        when result:
+          var [new count probs] result
+          when (> count 0):
+            var [srow scol] tok.start
+            var [erow ecol] tok.end
+            var a (+ (item offsets (- srow 1)) scol start)
+            var b (- (+ (item offsets (- erow 1)) ecol) (len quote))
+            (replacements.append #(a b new))
+            set! total (+ total count)
+          for-each [p probs]:
+            (problems.append f"string at line {(item tok.start 0)}: {p}")
+
+  for-each [[a b new] (sorted replacements reverse: True)]:
+    set! text (+ (text.__getitem__ (slice None a)) new
+                 (text.__getitem__ (slice b None)))
+
+  #(text total problems)
+
+
+var FENCE (re.compile r"(^[ \t]*```koskari[^\n]*\n)(.*?)(^[ \t]*```)"
+                      (| re.M re.S))
+
+
+def rewrite-md [text]:
+  var total 0
+  var problems #[]
+
+  def fence [m]:
+    var result:
+      try:
+        (rewrite-block (m.group 2))
+      except [Exception as: e]:
+        (problems.append f"fence at offset {(m.start)}: {e}")
+        None
+    when (None? result):
+      return (m.group 0)
+    var [new count probs] result
+    set! total (+ total count)
+    (problems.extend probs)
+    (+ (m.group 1) new (m.group 3))
+
+  var out (FENCE.sub (demand fence) text)
+  #(out total problems)
+
+
+var YAML_KEY (re.compile r"^(\s*)(source|read):(\s*)(.*)$")
+
+var BLOCK_SCALARS #("|" "|-" ">" ">-" "|+")
+
+var QUOTES #("'" (chr 34))
+
+
+def take-block [lines i indent]:
+  """
+  The lines of a block scalar starting at i, deeper than indent, with
+  trailing blank lines split off
+
+  :return: #(block tail next-i)
+  """
+
+  var block #[]
+  while (and (< i (len lines))
+             (or (not ((item lines i).strip))
+                 (> (- (len (item lines i)) (len ((item lines i).lstrip)))
+                    indent))):
+    (block.append (item lines i))
+    set! i (+ i 1)
+
+  var tail #[]
+  while (and block (not ((item block -1).strip))):
+    (tail.insert 0 (block.pop))
+
+  #(block tail i)
+
+
+def rewrite-yaml [text]:
+  """
+  Rewrite the source and read fields of corpus records, plain one-line
+  values and block scalars both
+  """
+
+  var lines (text.split "\n")
+  var out #[]
+  var total 0
+  var problems #[]
+  var i 0
+
+  def rewrite-into [rewrite body fallback]:
+    var result:
+      try:
+        (rewrite body)
+      except [Exception as: e]:
+        (problems.append f"near line {i}: {e}")
+        None
+    if (None? result):
+      (out.extend fallback)
+    else:
+      var [new count probs] result
+      set! total (+ total count)
+      (problems.extend probs)
+      (out.extend (new.split "\n"))
+
+  ; a record documenting a define-family form keeps its spelling
+  var keep False
+
+  while (< i (len lines)):
+    var line (item lines i)
+    var m (YAML_KEY.match line)
+    set! i (+ i 1)
+
+    when (line.startswith "feature:"):
+      set! keep (in "define" line)
+
+    if (or (None? m) keep):
+      (out.append line)
+
+    elif (in (m.group 4) BLOCK_SCALARS):
+      (out.append line)
+      var [block tail after] (take-block lines i (len (m.group 1)))
+      set! i after
+      rewrite-into rewrite-block ("\n".join block) block
+      (out.extend tail)
+
+    elif (and (m.group 4) (not ((m.group 4).startswith QUOTES))):
+      var prefix (+ (m.group 1) (m.group 2) ":" (m.group 3))
+      def prefixed [body]:
+        var [new count probs] (rewrite-text body)
+        #((+ prefix new) count probs)
+      rewrite-into prefixed (m.group 4) #[line]
+
+    else:
+      (out.append line)
+
+  #(("\n".join out) total problems)
+
+
+var REWRITERS #{".ki": rewrite-ki
+                ".py": rewrite-py
+                ".md": rewrite-md
+                ".yaml": rewrite-yaml}
+
+
+def paths-of [roots]:
+  for-each [root roots]:
+    var p (Path root)
+    if (p.is_dir):
+      for-each [child (sorted (p.rglob "*"))]:
+        when (and (child.is_file) (in child.suffix REWRITERS)
+                  (not (in "archive" child.parts))
+                  (not (in "__pycache__" child.parts))):
+          yield child
+    else:
+      yield p
+
+
+def build_arguments [parser]:
+  (parser.add_argument "paths" nargs: "+"
+    help: "files or directories to rewrite in place")
+  (parser.add_argument "--dry-run" action: "store_true"
+    help: "report counts without writing")
+  (parser.add_argument "--specials-only" action: "store_true"
+    help: "rewrite only the value forms the var and global specials take")
+  parser
+
+
+def run [options]:
+  set! (item SPECIALS-ONLY 0) options.specials_only
+  var grand 0
+  var failed 0
+  for-each [path (paths-of options.paths)]:
+    var rewriter (REWRITERS.get path.suffix)
+    when rewriter:
+      var text (path.read_text encoding: "utf-8")
+      var result:
+        try:
+          (rewriter text)
+        except [Exception as: e]:
+          print f"{path}: unreadable: {e}" file: sys.stderr
+          set! failed (+ failed 1)
+          None
+      when result:
+        var [new count problems] result
+        for-each [p problems]:
+          print f"{path}: {p}" file: sys.stderr
+        when (> count 0):
+          print f"{path}: {count}"
+          set! grand (+ grand count)
+          unless options.dry_run:
+            (path.write_text new encoding: "utf-8")
+  print f"total: {grand} rewrites, {failed} unreadable files"
+  0
+
+
+def main [argv: None]:
+  var parser (build_arguments (ArgumentParser prog: "rewritedefine"))
+  run (parser.parse_args (if (None? argv) (sys.argv.__getitem__ (slice 1 None)) argv))
+
+
+when-main:
+  (sys.exit (main))
+
+
+; The end.

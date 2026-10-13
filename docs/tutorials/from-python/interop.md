@@ -54,7 +54,7 @@ mypkg.tools.CONSTANT
 +++
 ```koskari
 ;; mypkg/tools.ki
-define CONSTANT 42
+var CONSTANT 42
 
 define-demanding shout [word]:
   (+ (word.upper) "!")
@@ -64,7 +64,7 @@ define-demanding shout [word]:
 :::{dialogue}
 Why `define-demanding`?
 +++
-A plain `define` produces an ambiently async function. Called from
+A plain `def` produces an ambiently async function. Called from
 Koskari it returns a value; called from Python it returns a coroutine.
 `define-demanding` wraps the function so a Python caller with no event
 loop gets the value. Any function Python will call directly wants it;

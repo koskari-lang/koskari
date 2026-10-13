@@ -303,7 +303,7 @@ class TestDynWithTransferWindReproducer(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define result
+          (var result
             (dyn-with [x (call make_mgr)]
               (capture/cc k
                 (begin
@@ -405,7 +405,7 @@ class TestDynWithTransferFailures(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define result
+          (var result
             (try
               (dyn-with [a (call make_outer)]
                 (dyn-with [b (call make_inner)]

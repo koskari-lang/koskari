@@ -3,7 +3,7 @@
 
 **Use-case:** Opt-in layout for block heads that should receive the body wrapped
 in **`compile/begin`**. Bind in a **`.ki`** module, for example
-**`define layout/my-head layout/block-begin`**, when a head needs sequential
+**`var layout/my-head layout/block-begin`**, when a head needs sequential
 body evaluation inside an explicit begin form.
 
 **Behaviour:** Produces **`(HEAD ARG ... (begin BODY ...))`**. Does not
@@ -20,7 +20,7 @@ HEAD ARG ... :
 **Examples:**
 
 ```koskari
-;; with define layout/foo layout/block-begin in the module:
+;; with var layout/foo layout/block-begin in the module:
 foo x:
   bar
   baz

@@ -29,9 +29,9 @@ import-from collections Counter
 import-from pathlib Path
 
 
-define logger (logging.getLogger "kosrunner.memwatch")
+var logger (logging.getLogger "kosrunner.memwatch")
 
-define _STATUS (Path "/proc/self/status")
+var _STATUS (Path "/proc/self/status")
 
 ;; Two references to measure against: the previous sample (movement) and
 ;; the first one of this process (drift). Drift is the leak signal --
@@ -39,18 +39,18 @@ define _STATUS (Path "/proc/self/status")
 ;; count oscillating around a stable mean is up half the time it is
 ;; sampled. Module-level, so two memwatch jobs in one definition would
 ;; share (and fight over) them.
-define _prev #{}
-define _base #{}
-define _base-totals #{}
-define _samples 0
+var _prev #{}
+var _base #{}
+var _base-totals #{}
+var _samples 0
 
 ;; the previous sample's per-line tracemalloc statistics, held only
 ;; while tracing is on -- never the Snapshot itself, which materializes
 ;; millions of blocks and would be traced by the next take_snapshot
-define _snap None
+var _snap None
 
 
-define vmrss []:
+def vmrss []:
     """
     This process's resident set size in KiB, read from /proc/self/status.
     None where that file does not exist (anywhere but Linux).
@@ -64,7 +64,7 @@ define vmrss []:
     None
 
 
-define memory-census []:
+def memory-census []:
     """
     Live objects by type name, counted AFTER a full collection so that
     everything counted is genuinely reachable rather than cyclic garbage
@@ -72,13 +72,13 @@ define memory-census []:
     and the census.
     """
 
-    define collected (gc.collect)
-    define counts (Counter
+    var collected (gc.collect)
+    var counts (Counter
         (list-each [obj (gc.get_objects)] obj.__class__.__name__))
     (values collected counts)
 
 
-define _drift [key value unit: ""]:
+def _drift [key value unit: ""]:
     """
     One header figure as `<total><unit>(<drift>)`, the drift measured
     against this process's first sample of that figure -- a total on its
@@ -89,7 +89,7 @@ define _drift [key value unit: ""]:
     when (None? value):
         return "n/a"
 
-    define first (_base-totals.get key)
+    var first (_base-totals.get key)
     when (None? first):
         set! _base-totals[key] value
         return f"{value}{unit}"
@@ -97,14 +97,14 @@ define _drift [key value unit: ""]:
     f"{value}{unit}({(- value first):+d})"
 
 
-define _task-count []:
+def _task-count []:
     try:
         len (asyncio.all_tasks)
     except [RuntimeError]:
         None
 
 
-define _snapshot-report [top]:
+def _snapshot-report [top]:
     """
     Log the `top` allocation sites whose retained bytes have moved the
     most since the previous sample, ranked like the census by the size
@@ -121,19 +121,19 @@ define _snapshot-report [top]:
     unless (tracemalloc.is_tracing):
         return None
 
-    define snap ((tracemalloc.take_snapshot).filter_traces
+    var snap ((tracemalloc.take_snapshot).filter_traces
         #((tracemalloc.Filter False "<frozen importlib._bootstrap>")
           (tracemalloc.Filter False "<unknown>")
           (tracemalloc.Filter False tracemalloc.__file__)))
 
-    define stats #{}
+    var stats #{}
     for-each [stat (snap.statistics "lineno")]:
         let [[frame stat.traceback[0]]]:
             (set! stats[f"{frame.filename}:{frame.lineno}"]
                 #(stat.size stat.count))
 
     global _snap
-    define prev _snap
+    var prev _snap
     set! _snap stats
 
     when (None? prev):
@@ -142,10 +142,10 @@ define _snapshot-report [top]:
 
     ;; every line seen in either sample, so a site that vanished shows
     ;; its fall rather than silently dropping out of the report
-    define keys (set (stats.keys))
+    var keys (set (stats.keys))
     keys.update (prev.keys)
 
-    define moved:
+    var moved:
         list-each [where keys]:
             let [[cur (stats.get where #(0 0))]
                  [old (prev.get where #(0 0))]]:
@@ -163,7 +163,7 @@ define _snapshot-report [top]:
     None
 
 
-define memory-report [top: 10]:
+def memory-report [top: 10]:
     """
     Log one memory sample: process totals, then the `top` types that have
     drifted furthest since this process's first sample. Every figure is
@@ -194,7 +194,7 @@ define memory-report [top: 10]:
     aggregate.
     """
 
-    define-values [collected counts] (memory-census)
+    var [collected counts] (memory-census)
 
     global _samples
     incr! _samples
@@ -202,13 +202,13 @@ define memory-report [top: 10]:
     ;; built as one string rather than logged with args, because it is
     ;; also the return value -- a handler hands it to `mnemonic` to label
     ;; its own run with the numbers the history is scanned for
-    define sample _samples
-    define rss (_drift "rss" (vmrss) unit: "KiB")
-    define blocks (_drift "blocks" (sys.getallocatedblocks))
-    define live (_drift "live" (sum (counts.values)))
-    define threads (threading.active_count)
-    define tasks (_task-count)
-    define line f"sample={sample} rss={rss} blocks={blocks} live={live}"-
+    var sample _samples
+    var rss (_drift "rss" (vmrss) unit: "KiB")
+    var blocks (_drift "blocks" (sys.getallocatedblocks))
+    var live (_drift "live" (sum (counts.values)))
+    var threads (threading.active_count)
+    var tasks (_task-count)
+    var line f"sample={sample} rss={rss} blocks={blocks} live={live}"-
                 f" collected={collected} threads={threads} tasks={tasks}"
     (logger.info "%s" line)
 
@@ -216,7 +216,7 @@ define memory-report [top: 10]:
     ;; is as much of a clue as one that rose, and hiding the falls is
     ;; what makes an oscillating count read as a leak
     when _base:
-        define moved (list-each [[name n] (counts.items)]
+        var moved (list-each [[name n] (counts.items)]
             (let [[drift (- n (_base.get name 0))]]
                 #((abs drift) drift (- n (_prev.get name 0)) n name)))
 

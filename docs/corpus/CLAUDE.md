@@ -172,7 +172,7 @@ macro ([macros index](../reference/macros/index.md)), aim for at least:
 Priority order (highest training value first):
 
 1. Patterns common in real code: `define-class`, `for-each` + destructuring,
-   `demand`, `define-syntax` with `macro-rules`, `try/except`, f-strings,
+   `demand`, `syntax` with `macro-rules`, `try/except`, f-strings,
    `let`, async patterns.
 2. All specials with < 3 entries.
 3. All macros with < 3 entries.

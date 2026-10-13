@@ -22,9 +22,9 @@ Yes. `print` is the thing; `"a"` and `"b"` are its inputs.
 :::
 
 :::{dialogue}
-Does `(define total 0)` have the same shape?
+Does `(var total 0)` have the same shape?
 +++
-Nearly. `define` is the thing to do; `total` and `0` are what it works
+Nearly. `var` is the thing to do; `total` and `0` are what it works
 with. The difference is what it does: it gives a name a value instead of
 producing one.
 :::
@@ -64,8 +64,8 @@ If `width` is `10` and `height` is `4`, what is `(* width height)`?
 `40`:
 
 ```koskari
->>> (define width 10)
->>> (define height 4)
+>>> (var width 10)
+>>> (var height 4)
 >>> (* width height)
 40
 ```
@@ -90,8 +90,8 @@ Can a file hold more than one call?
 Yes. Koskari runs them from top to bottom. Save this as `numbers.ki`:
 
 ```koskari
-(define x 6)
-(define y 7)
+(var x 6)
+(var y 7)
 (print x y (* x y))
 ```
 

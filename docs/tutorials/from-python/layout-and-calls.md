@@ -18,8 +18,8 @@ callee. A line with one element is that element. So `print "hi"` is
 What does a colon mean?
 +++
 A line ending in `:` opens a block, and the indented lines under it are
-arguments to that line. `define double [x]:` followed by a body is one
-form, `(define double [x] BODY...)`.
+arguments to that line. `def double [x]:` followed by a body is one
+form, `(def double [x] BODY...)`.
 :::
 
 ## Functions
@@ -31,7 +31,7 @@ def double(x):
 ```
 +++
 ```koskari
-define double [x]:
+def double [x]:
   (* x 2)
 ```
 :::
@@ -50,7 +50,7 @@ double = lambda x: x * 2
 ```
 +++
 ```koskari
-define double [x] (* x 2)
+def double [x] (* x 2)
 ```
 :::
 
@@ -75,7 +75,7 @@ def sign(n):
 ```
 +++
 ```koskari
-define sign [n]:
+def sign [n]:
   if (< n 0):
     "negative"
   elif (== n 0):
@@ -126,7 +126,7 @@ example, are in
 Save as `sign.ki`:
 
 ```koskari
-define sign [n]:
+def sign [n]:
   if (< n 0):
     "negative"
   elif (== n 0):

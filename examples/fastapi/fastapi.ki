@@ -6,13 +6,13 @@ import uvicorn
 ;; Application definition
 
 
-define app (fastapi.FastAPI title: "Koskari Demo")
+var app (fastapi.FastAPI title: "Koskari Demo")
 
 
-define-syntax define-route:
+syntax define-route:
     syntax-rules []:
         define-route path name args body ...:
-            define name args body ...
+            def name args body ...
             (app.add_api_route path (coroutine-fn name)
                 methods: #["GET"])
 
@@ -36,22 +36,22 @@ define-route "/echo/{name}" echo [name: "<anon>"]:
 ;; Server management
 
 
-define server None
+var server None
 
 
-define create-server [host: "127.0.0.1" port: 8000]:
-    define config (uvicorn.Config app host: host port: port)
+def create-server [host: "127.0.0.1" port: 8000]:
+    var config (uvicorn.Config app host: host port: port)
     (uvicorn.Server config)
 
 
-define start [host: "127.0.0.1" port: 8000]:
+def start [host: "127.0.0.1" port: 8000]:
     global server
     when (None? server):
         set! server (create-server host: host port: port)
     (server.serve)
 
 
-define stop []:
+def stop []:
     global server
     unless (None? server):
         (server.shutdown)
@@ -61,13 +61,13 @@ define stop []:
 ;; Client for interactive mode
 
 
-define create-client []:
+def create-client []:
     import-from httpx AsyncClient
 
-    define-global client:
+    global client:
         AsyncClient base_url: "http://127.0.0.1:8000/"
 
-    define-global GET [path: ""]:
+    global def GET [path: ""]:
         .json (client.get path)
 
 
@@ -75,12 +75,12 @@ define create-client []:
 
 
 @entry-point
-define main []:
+def main []:
     define-parameter *interactive* False
 
     if *interactive*:
         ;; global keeps the Task alive; the loop holds only a weak ref
-        define-global server-task (create-task (defer start))
+        global server-task (create-task (defer start))
         (create-client)
         (await)
 

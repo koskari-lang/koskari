@@ -1,6 +1,9 @@
 # compile/define-global
 **Symbol:** `compile/define-global`
 
+`define-global` is the Scheme-layer spelling of
+[`global`](compile-global.md) and `global def`.
+
 **Syntax:** Same arities and spellings as `compile/define`: **inline type**
 (`NAME :: TYPE` / `NAME type: TYPE`) or **DECL** as the first argument:
 

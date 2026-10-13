@@ -17,7 +17,7 @@ Portion of koskari.builtins
 """
 
 
-define-syntax if:
+syntax if:
   """
   Evaluates the `then` body only when the `condition` is truthy.
   Evaluates the `else` body otherwise, or `None` if not provided.
@@ -38,7 +38,7 @@ define-syntax if:
         [else: None])
 
 
-define-syntax when:
+syntax when:
   """
   Evaluates the body only when the condition is true
   Evaluates as None otherwise.
@@ -51,7 +51,7 @@ define-syntax when:
         [else: None])
 
 
-define-syntax unless:
+syntax unless:
   """
   Evaluates the body only when the condition is false.
   Evaluates as None otherwise.
@@ -64,7 +64,7 @@ define-syntax unless:
         [else: then ...])
 
 
-define-syntax ?:
+syntax ?:
   syntax-rules []:
     case (? condition then else):
       (cond
@@ -78,7 +78,7 @@ define-syntax ?:
       (truth condition)
 
 
-define-syntax bool:
+syntax bool:
   """
   Compile-time object truthiness as a boolean.
   """
@@ -88,7 +88,7 @@ define-syntax bool:
       (truth value)
 
 
-define-syntax when-main:
+syntax when-main:
   """
   Evaluates the body only when the current module's name is "__main__"
   """
@@ -99,7 +99,7 @@ define-syntax when-main:
         (begin body ...)
 
 
-define-syntax None?:
+syntax None?:
   """
   Identity predicate for the None singleton
   """
@@ -115,7 +115,7 @@ define-syntax None?:
 ;; CHECK_NIL. The runtime koskari.lib.nilp backs first-class use of nil?.
 
 
-define on-demand? :: bool []:
+def on-demand? :: bool []:
   """
   True if current context is being evaluated via demand-call and
   cannot use `await` to suspend.

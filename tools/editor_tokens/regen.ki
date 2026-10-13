@@ -44,14 +44,14 @@ import-from koskari.lib demand
 
 ; Characters that must be backslash-escaped inside a regex alternation.
 ; Membership is tested per character, so a string serves as the set.
-define REGEX_META "\\.^$*+?{}[]|()"
+var REGEX_META "\\.^$*+?{}[]|()"
 
 ; Width at which an Emacs ``concat`` fragment is wrapped.
-define MAX_CHUNK 72
+var MAX_CHUNK 72
 
 
 @demand
-define expand_block_header_tokens [layout_heads layout_peers]:
+def expand_block_header_tokens [layout_heads layout_peers]:
     """
     Expand layout heads and peer heads into a single ordered token list.
 
@@ -59,7 +59,7 @@ define expand_block_header_tokens [layout_heads layout_peers]:
     (if any).
     """
 
-    define out #[]
+    var out #[]
     for-each [head layout_heads]:
         out.append head
         out.extend (layout_peers.get head #())
@@ -67,13 +67,13 @@ define expand_block_header_tokens [layout_heads layout_peers]:
     sorted (set out) reverse: True
 
 
-define escape_regex_token [token]:
+def escape_regex_token [token]:
     """
     Escape a Koskari symbol token for inclusion inside a regex
     alternation.
     """
 
-    define parts #[]
+    var parts #[]
     for-each [ch token]:
         when (in? ch REGEX_META):
             parts.append "\\"
@@ -83,7 +83,7 @@ define escape_regex_token [token]:
 
 
 @demand
-define join_regex_alternation [tokens]:
+def join_regex_alternation [tokens]:
     """
     Join escaped tokens with ``|`` for a regex alternation.
     """
@@ -92,7 +92,7 @@ define join_regex_alternation [tokens]:
 
 
 @demand
-define json_string_escape [fragment]:
+def json_string_escape [fragment]:
     """
     Escape a string for use inside a JSON double-quoted value (no
     quotes).
@@ -101,7 +101,7 @@ define json_string_escape [fragment]:
     item-slice (json.dumps fragment) 1 -1
 
 
-define emacs_regex_alternation [tokens]:
+def emacs_regex_alternation [tokens]:
     """
     Build an Emacs regexp alternation string using ``\\|`` separators.
     """
@@ -109,7 +109,7 @@ define emacs_regex_alternation [tokens]:
     "\\|".join (list-each [t tokens] (escape_regex_token t))
 
 
-define emacs_regex_body_concat_lines [body indent continuation]:
+def emacs_regex_body_concat_lines [body indent continuation]:
     """
     Split a regexp body across lines like the committed ``concat``
     fragments.
@@ -118,13 +118,13 @@ define emacs_regex_body_concat_lines [body indent continuation]:
     ``\\|`` separator (alternation continues on the next string).
     """
 
-    define lines #[]
-    define start 0
-    define body_len (len body)
-    define end 0
-    define split_at None
-    define cut 0
-    define chunk ""
+    var lines #[]
+    var start 0
+    var body_len (len body)
+    var end 0
+    var split_at None
+    var cut 0
+    var chunk ""
 
     while (< start body_len):
         set! end (min body_len (+ start MAX_CHUNK))
@@ -157,18 +157,18 @@ define emacs_regex_body_concat_lines [body indent continuation]:
 
 
 @demand
-define emacs_regex_lines [tokens indent]:
+def emacs_regex_lines [tokens indent]:
     """
     Format Emacs ``concat`` fragment lines with trailing ``\\|``
     continuations.
     """
 
-    define alt (emacs_regex_alternation tokens)
+    var alt (emacs_regex_alternation tokens)
     return (emacs_regex_body_concat_lines alt indent True)
 
 
 @demand
-define emacs_block_control_concat_lines [tokens indent]:
+def emacs_block_control_concat_lines [tokens indent]:
     """
     Build ``concat`` lines for the block-control keyword regexp group.
 
@@ -177,16 +177,16 @@ define emacs_block_control_concat_lines [tokens indent]:
     fragments).
     """
 
-    define body (+ "\\(" (emacs_regex_alternation tokens) "\\)")
+    var body (+ "\\(" (emacs_regex_alternation tokens) "\\)")
     return (emacs_regex_body_concat_lines body indent True)
 
 
-define jinja_env [templates_dir]:
+def jinja_env [templates_dir]:
     """
     Jinja environment with Koskari editor filters and globals.
     """
 
-    define env (Environment
+    var env (Environment
         loader: (FileSystemLoader (str templates_dir))
         autoescape: False
         undefined: StrictUndefined
@@ -202,29 +202,29 @@ define jinja_env [templates_dir]:
     return env
 
 
-define render [spec_path template_path output_path]:
+def render [spec_path template_path output_path]:
     """
     Load YAML, render one template, write ``output_path``.
     """
 
-    define spec_file ((Path spec_path).resolve)
-    define spec (yaml.safe_load (spec_file.read_text))
+    var spec_file ((Path spec_path).resolve)
+    var spec (yaml.safe_load (spec_file.read_text))
 
     set! spec["list_head_specials"]:
         sorted spec["list_head_specials"] reverse: True
 
-    define template_file ((Path template_path).resolve)
-    define env (jinja_env template_file.parent)
-    define template (env.get_template template_file.name)
-    define rendered (template.render spec)
+    var template_file ((Path template_path).resolve)
+    var env (jinja_env template_file.parent)
+    var template (env.get_template template_file.name)
+    var rendered (template.render spec)
 
-    define output_file ((Path output_path).resolve)
+    var output_file ((Path output_path).resolve)
     output_file.parent.mkdir parents: True exist_ok: True
     output_file.write_text rendered
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     Three positional arguments only: YAML spec, Jinja template, output
     file.
@@ -236,9 +236,9 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [name *: args] argv
+    var [name *: args] argv
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: (basename name)
         description: "Render one editor asset from YAML and a Jinja2 template")
 
@@ -249,7 +249,7 @@ define main [argv: None]:
     (parser.add_argument "output"
         help: "path to write the generated file")
 
-    define options (parser.parse_args args)
+    var options (parser.parse_args args)
 
     render options.spec_yaml options.template options.output
     return 0

@@ -14,15 +14,15 @@ define gen_src [box]:
     yield 1
 
 define-class PairSrc []:
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.n 0
         set! self.pw None
         set! self.inner None
 
-    define __iter__ [self]:
+    def __iter__ [self]:
         self
 
-    define __next__ [self]:
+    def __next__ [self]:
         set! self.n (+ self.n 1)
         when (== self.n 2):
             try:
@@ -34,22 +34,22 @@ define-class PairSrc []:
             raise (StopIteration)
         self.n
 
-define pair_case []:
-    define s (PairSrc)
-    define pw (pairwise s)
+def pair_case []:
+    var s (PairSrc)
+    var pw (pairwise s)
     set! s.pw pw
     #((next pw) s.inner)
 
 define-class ZipSrc []:
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.n 0
         set! self.z None
         set! self.inner None
 
-    define __iter__ [self]:
+    def __iter__ [self]:
         self
 
-    define __next__ [self]:
+    def __next__ [self]:
         set! self.n (+ self.n 1)
         when (== self.n 1):
             try:
@@ -58,9 +58,9 @@ define-class ZipSrc []:
                 set! self.inner (str e)
         self.n
 
-define zip_case []:
-    define s (ZipSrc)
-    define z (zip-longest s #[10 20])
+def zip_case []:
+    var s (ZipSrc)
+    var z (zip-longest s #[10 20])
     set! s.z z
     #((next z) s.inner)
 

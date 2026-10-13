@@ -2,7 +2,7 @@
 **Symbol:** `layout/macro-match`
 
 **Use-case:** Block syntax for the `macro-match` transformer within a
-`define-syntax` block. No literals list; each rule carries an explicit
+`syntax` block. No literals list; each rule carries an explicit
 match-style pattern and a procedural body, and lowers to
 `(macro-match [NAME] (PATTERN BODY) ...)`.
 
@@ -29,9 +29,9 @@ is then a pair rather than a symbol. Write `case (complex pat):` instead.
 
 **Named header:** `macro-match NAME:` puts NAME in the emitted form,
 which is where the transformer takes its identity for help text and match
-errors. `define-syntax` and `extend-syntax` supply that name themselves,
+errors. `syntax` and `extend-syntax` supply that name themselves,
 so the named header belongs to a transformer bound directly, as
-`define compile/NAME:`.
+`var compile/NAME:`.
 
 **Syntax:**
 
@@ -58,7 +58,7 @@ macro-match:
 ```
 
 ```koskari
-define compile/pair-up:
+var compile/pair-up:
   macro-match pair-up:
     case (pair-up (BIND a) (BIND b)):
       `(print ,b ,a)

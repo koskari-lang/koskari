@@ -18,7 +18,7 @@ import logging
 (use .subitems with-subitems)
 
 
-define logger (logging.getLogger "kosrunner.cron")
+var logger (logging.getLogger "kosrunner.cron")
 
 
 define-dataclass CronConfig [Config]:
@@ -26,7 +26,7 @@ define-dataclass CronConfig [Config]:
     Cron config; usually left default (cron jobs carry no config)
     """
 
-    define [timezone :: str] None
+    var timezone :: str None
 
 
 define-class CronJob [Job]:
@@ -34,27 +34,27 @@ define-class CronJob [Job]:
     A schedule-driven job; fires its handler on the crontab schedule
     """
 
-    define config-class CronConfig
+    var config-class CronConfig
 
-    define __init__ [self schedule]:
+    def __init__ [self schedule]:
         (Job.__init__ self)
         set! self.schedule schedule
         set! self._handle None
 
 
-    define trigger-spec [self]:
+    def trigger-spec [self]:
         ;; fire now, no fields; the schedule is ignored for a manual run
         #{}
 
 
-    define start [self]:
+    def start [self]:
         import aiocron
 
         set! self.running True
         (logger.info "scheduling cron job: %s" self.schedule)
 
         ;; the tracked run (record + capture + on-error) lives in Job.run
-        define fire []:
+        def fire []:
             (self.run cause: "schedule")
 
         set! self._handle (aiocron.crontab
@@ -63,7 +63,7 @@ define-class CronJob [Job]:
             start: True)
 
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
         unless (None? self._handle):
             (self._handle.stop)
@@ -71,17 +71,17 @@ define-class CronJob [Job]:
 
 
 ;; `config cron [name]:` -- optional; cron jobs run fine with no config.
-define-syntax config/cron:
+syntax config/cron:
     syntax-rules []:
         case (config/cron () setting ...):
             (begin
-                (define -'default/cron)
+                (var -'default/cron)
                 (unless &-'default/cron
                     (set! -'default/cron (CronConfig setting ...))))
         case (config/cron nm setting ...):
             (begin
-                (define nm (CronConfig setting ...))
-                (define -'default/cron)
+                (var nm (CronConfig setting ...))
+                (var -'default/cron)
                 (unless &-'default/cron (set! -'default/cron nm)))
 
 
@@ -92,16 +92,16 @@ define-syntax config/cron:
 ;; string at expand time (the fields include `*`, which cannot be passed
 ;; as a runtime value). macro-rules is needed for that; sub-items go through
 ;; `with-subitems`.
-define-syntax job/cron:
+syntax job/cron:
     macro-rules []:
         case (job/cron name [mi hr dom mon dow] sub ...):
-            define sched f"{mi.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
+            var sched f"{mi.datum} {hr.datum} {dom.datum} {mon.datum} {dow.datum}"
             `(job/cron ,name ,sched ,@sub)
 
         case (job/cron name sched sub ...):
             `(begin
-                (define ,name (CronJob ,sched))
-                (define ,-'default/cron)
+                (var ,name (CronJob ,sched))
+                (var ,-'default/cron)
                 (if &,-'default/cron
                     (.configure ,name via: ,-'default/cron)
                     (.configure ,name))

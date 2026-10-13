@@ -41,10 +41,10 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import sys
 
-define exc_now []:
+def exc_now []:
     (sys.exc_info)[1]
 
-define gen []:
+def gen []:
     try:
         raise (ValueError "GA")
     except [e ValueError]:
@@ -52,7 +52,7 @@ define gen []:
         yield (exc_now)
     yield (exc_now)
 
-define nested_gen []:
+def nested_gen []:
     try:
         raise (ValueError "outer")
     except [e ValueError]:
@@ -64,13 +64,13 @@ define nested_gen []:
         yield (exc_now)
     yield (exc_now)
 
-define plain_gen []:
+def plain_gen []:
     yield (exc_now)
     yield (exc_now)
 
-define consumer []:
-    define g (gen)
-    define seen #[]
+def consumer []:
+    var g (gen)
+    var seen #[]
     try:
         raise (KeyError "X")
     except [e KeyError]:
@@ -86,9 +86,9 @@ define consumer []:
         (seen.append e.__context__)
     seen
 
-define nested_consumer []:
-    define g (nested_gen)
-    define seen #[]
+def nested_consumer []:
+    var g (nested_gen)
+    var seen #[]
     try:
         raise (KeyError "X")
     except [e KeyError]:
@@ -101,9 +101,9 @@ define nested_consumer []:
     (seen.append (exc_now))
     seen
 
-define plain_consumer []:
-    define g (plain_gen)
-    define seen #[]
+def plain_consumer []:
+    var g (plain_gen)
+    var seen #[]
     try:
         raise (KeyError "X")
     except [e KeyError]:

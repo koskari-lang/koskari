@@ -38,8 +38,8 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(define boom (lambda boom [] (raise (ValueError "boom"))))
-(define outer (lambda outer [] (boom)))
+(var boom (lambda boom [] (raise (ValueError "boom"))))
+(var outer (lambda outer [] (boom)))
 """
 
 

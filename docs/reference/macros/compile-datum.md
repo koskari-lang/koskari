@@ -16,7 +16,7 @@ the compiler can position errors in it.
 ```
 
 ```koskari
-define-syntax job:
+syntax job:
   macro-rules []:
     case (job tp rest ...):
       ;; rewrite (job kafka ...) to (job/kafka ...)

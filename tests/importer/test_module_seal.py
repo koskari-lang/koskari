@@ -38,8 +38,8 @@ pytestmark = pytest.mark.phase_importer
 PAGE = resource.getpagesize()
 
 SRC = """
-(define durable (lambda [x] (+ x 1)))
-(define helper (lambda [y] (* y 2)))
+(var durable (lambda [x] (+ x 1)))
+(var helper (lambda [y] (* y 2)))
 (durable 1)
 """
 
@@ -262,7 +262,7 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         """nested lambdas are placed in the same chunks"""
 
         src = """
-(define outer (lambda [x] (lambda [y] (+ x y))))
+(var outer (lambda [x] (lambda [y] (+ x y))))
 """
         module = await load(src)
         outer = vars(module)["outer"]
@@ -308,14 +308,14 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         ns["__file__"] = "<deferred>"
 
         await load_module_source_async(
-            module, "(define one (lambda [] 1))",
+            module, "(var one (lambda [] 1))",
             seal=False, detach=False)
         compiler = ns["__compiler__"]
         reader = ns["__reader__"]
         pragma = ns["__pragma__"]
 
         await load_module_source_async(
-            module, "(define two (lambda [] 2))",
+            module, "(var two (lambda [] 2))",
             seal=False, detach=False)
 
         self.assertIs(ns["__compiler__"], compiler)
@@ -328,8 +328,8 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         """codes from every load land in one arena, sealed once"""
 
         module, arenas = await self.multi_load(
-            "(define one (lambda [] 1))",
-            "(define two (lambda [] 2))")
+            "(var one (lambda [] 1))",
+            "(var two (lambda [] 2))")
         ns = vars(module)
 
         self.assertEqual(len(arenas), 1)
@@ -349,7 +349,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         ns["__file__"] = "<deferred>"
 
         await load_module_source_async(
-            module, "(define one (lambda [] 1))",
+            module, "(var one (lambda [] 1))",
             seal=False, detach=False)
 
         chunk = ns["one"].code.arena
@@ -374,7 +374,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
             module, "(pragma [compiler/pack-module False])",
             seal=False, detach=False)
         await load_module_source_async(
-            module, "(define one (lambda [] 1))",
+            module, "(var one (lambda [] 1))",
             seal=False, detach=False)
 
         arenas = ns["__compiler__"].seal()
@@ -391,12 +391,12 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
 
         ns["__file__"] = "<part-one>"
         await load_module_source_async(
-            module, "(define one (lambda [] 1))",
+            module, "(var one (lambda [] 1))",
             seal=False, detach=False)
 
         ns["__file__"] = "<part-two>"
         await load_module_source_async(
-            module, "(define two (lambda [] 2))",
+            module, "(var two (lambda [] 2))",
             seal=False, detach=False)
 
         detach_module_load_facets(module)
@@ -415,7 +415,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         ns["__file__"] = "<deferred>"
 
         await load_module_source_async(
-            module, "(define fn (lambda [] 'first))",
+            module, "(var fn (lambda [] 'first))",
             seal=False, detach=False)
         first = ns["fn"].code
         first_size = first.payload_bytes + first.padding_bytes
@@ -423,7 +423,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         del first
 
         await load_module_source_async(
-            module, "(define fn (lambda [] 'second))",
+            module, "(var fn (lambda [] 'second))",
             seal=False, detach=False)
 
         # the displaced function lingers as cyclic garbage until a

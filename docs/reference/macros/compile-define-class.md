@@ -2,7 +2,7 @@
 
 **Syntax:** `(define-class NAME SUPERS BODY ...)`
 
-**Behaviour:** Expands to `(define NAME (class NAME SUPERS BODY ...))`
+**Behaviour:** Expands to `(var NAME (class NAME SUPERS BODY ...))`
 and binds `NAME?` to `(lambda [value] (instance? value NAME))`. `SUPERS`
 is the base list, empty for no explicit base. The layout form
 [`define-class NAME SUPERS:`](../layouts/layout-define-class.md) wraps
@@ -14,10 +14,10 @@ undecorated definition.
 
 ```koskari
 define-class Point []:
-  define x :: int 0
-  define y :: int 0
+  var x :: int 0
+  var y :: int 0
 
-  define coord [self]:
+  def coord [self]:
     #(self.x self.y)
 
 (Point? (Point))     ;; True
@@ -25,7 +25,7 @@ define-class Point []:
 ```
 
 ```koskari
-(define-class Point [] (define x 0))
+(define-class Point [] (var x 0))
 ```
 
 **See also:** [`class`](../specials/compile-class.md),

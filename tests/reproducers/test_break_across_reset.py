@@ -38,13 +38,13 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define break_in_body []:
+def break_in_body []:
     while True:
         reset:
             break 5
 
-define continue_in_body []:
-    define seen #[]
+def continue_in_body []:
+    var seen #[]
     for-each [x #[1 2 3]]:
         reset:
             (seen.append x)
@@ -52,25 +52,25 @@ define continue_in_body []:
         (seen.append "unreached")
     seen
 
-define break_in_handler []:
+def break_in_handler []:
     while True:
         reset:
             (+ 1 (shift k (k (break 9))))
 
-define continue_in_handler []:
-    define seen #[]
+def continue_in_handler []:
+    var seen #[]
     for-each [x #[1 2 3]]:
         reset:
             (+ 1 (shift k (begin (seen.append x) (continue x))))
         (seen.append "unreached")
     seen
 
-define return_in_body []:
+def return_in_body []:
     while True:
         reset:
             return 7
 
-define raise_in_body []:
+def raise_in_body []:
     try:
         while True:
             reset:
@@ -78,21 +78,21 @@ define raise_in_body []:
     except [ValueError as: e]:
         (str e)
 
-define break_in_slice []:
+def break_in_slice []:
     while True:
         reset:
             (+ 1 (shift k (k 1)) (break 11))
 
-define break_in_slice_handler_loop []:
+def break_in_slice_handler_loop []:
     reset:
         (+ 1 (shift k (while True (k 1))) (break 11))
 
-define continue_in_slice []:
+def continue_in_slice []:
     for-each [x #[1 2 3]]:
         reset:
             (+ 1 (shift k (k 1)) (continue x))
 
-define break_in_slice_own_loop []:
+def break_in_slice_own_loop []:
     reset:
         (+ 1 (shift k (k 1)) (while True (break 13)))
 """

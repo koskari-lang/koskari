@@ -27,7 +27,7 @@ source: |-
     (import-from koskari.solve amb solve)
     (solve
       (lambda []
-        (define g ((lambda [] (yield (amb (#list 1 2))))))
+        (var g ((lambda [] (yield (amb (#list 1 2))))))
         (next g))))
 verify:
   invalid: "amb inside a generator body cannot reach the search delimiter: the capture is denied at the generator boundary and fails at runtime with KoskariPromptUnreachable. Adding another solve will not help; a shift cannot cross a generator boundary, which is also why lazy one-solution-at-a-time enumeration is a non-goal for koskari.solve. Restructure so the choice point is not inside a generator."

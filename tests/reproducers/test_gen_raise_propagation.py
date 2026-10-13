@@ -45,18 +45,18 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define boomgen []:
+def boomgen []:
     (yield 1)
     (yield 2)
     (raise (ValueError "boom"))
 
-define leakgen []:
-    define r (iter (range 0 3))
+def leakgen []:
+    var r (iter (range 0 3))
     while True:
         (yield (next r))
 
-define catch-boom []:
-    define col #[]
+def catch-boom []:
+    var col #[]
     try:
         (for-each [v (boomgen)]
             (col.append v))
@@ -64,8 +64,8 @@ define catch-boom []:
     except [ValueError]:
         #["caught" col]
 
-define catch-leak []:
-    define col #[]
+def catch-leak []:
+    var col #[]
     try:
         (for-each [v (leakgen)]
             (col.append v))
@@ -73,18 +73,18 @@ define catch-leak []:
     except [StopIteration]:
         #["caught" col]
 
-define uncaught-boom []:
+def uncaught-boom []:
     (for-each [v (boomgen)] None)
     "unreached"
 
-define closed-after []:
-    define gen (boomgen)
+def closed-after []:
+    var gen (boomgen)
     try:
         (for-each [v gen] None)
     except [ValueError]:
         None
     ;; the exception finished the generator: nothing more to yield
-    define col #[]
+    var col #[]
     (for-each [v gen]
         (col.append v))
     col

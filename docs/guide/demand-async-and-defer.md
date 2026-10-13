@@ -45,10 +45,10 @@ through callers -- sometimes called async contagion.
 In Koskari:
 
 ```koskari
-define fetch-user []:
+def fetch-user []:
   (db.get-user)
 
-define user (fetch-user)
+var user (fetch-user)
 (print user)
 ```
 
@@ -91,10 +91,10 @@ the event loop; hold them, cancel them, or resolve them with an explicit
 ## Suspension in sequential code
 
 ```koskari
-define fetch-user [id]:
+def fetch-user [id]:
   (db.fetch-user id)
 
-define user (fetch-user id)
+var user (fetch-user id)
 (print user)
 ```
 
@@ -110,7 +110,7 @@ The wrapped call runs when the defer is constructed; the VM does not
 auto-await the defer value at the next use site.
 
 ```koskari
-define task (defer fetch-user)
+var task (defer fetch-user)
 ;; ... pass task around ...
 (await task)
 ```
@@ -240,7 +240,7 @@ define-demanding checksum [a b]:
 ```
 
 `define-demanding NAME formals body` expands to
-`(define NAME (demand (function NAME formals body ...)))`. See
+`(var NAME (demand (function NAME formals body ...)))`. See
 [`compile/define-demanding`](../reference/macros/compile-define-demanding.md).
 
 ### `defer` -- hold work instead of resolving it
@@ -270,7 +270,7 @@ define-coroutine work [x]:
 Pass `work` itself to the asyncio API. Do not call `(work 1)` from Koskari
 first -- that auto-awaits to the value (see the caveat above).
 `define-coroutine NAME args body` expands to
-`(define NAME (coroutine-fn (function NAME args body ...)))`. See
+`(var NAME (coroutine-fn (function NAME args body ...)))`. See
 [`compile/define-coroutine`](../reference/macros/compile-define-coroutine.md).
 
 ### Scheduling and gathering -- `create-task`, `defer` + `gather`
@@ -282,7 +282,7 @@ handle can be stored, cancelled, or given done-callbacks, and is resolved
 by explicit await:
 
 ```koskari
-define t (create-task (defer fetch-user))
+var t (create-task (defer fetch-user))
 ;; ... other work runs meanwhile ...
 ;; (t.cancel) would stop it; (await t) resolves it
 (await t)
@@ -297,8 +297,8 @@ are awaitable, so `asyncio.gather` accepts them directly:
 
 ```koskari
 (import asyncio)
-define a (defer (function fetch [] (fetch-user 1)))
-define b (defer (function fetch [] (fetch-user 2)))
+var a (defer (function fetch [] (fetch-user 1)))
+var b (defer (function fetch [] (fetch-user 2)))
 (await (asyncio.gather a b))          ; both run concurrently
 ```
 

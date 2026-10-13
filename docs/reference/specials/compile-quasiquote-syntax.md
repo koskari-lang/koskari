@@ -25,14 +25,14 @@ deeper level.
 **Examples:**
 
 ```koskari
-(define-syntax mk-getter
+(syntax mk-getter
   (syntax-rules []
     [(mk-getter name val)
      (begin
-       (define secret val)
-       (define-syntax name (macro-rules [] [(name) #`secret])))]))
+       (var secret val)
+       (global syntax name (macro-rules [] [(name) #`secret])))]))
 
-(define secret 100)
+(var secret 100)
 (mk-getter get-secret 8)
 (get-secret)
 ;; => 8

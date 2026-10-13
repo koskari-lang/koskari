@@ -404,7 +404,7 @@ class TestDynWindTransferWindReproducer(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define result
+          (var result
             (dyn-wind
               (begin
                 (call record "before-setup")
@@ -485,8 +485,8 @@ class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define helper (lambda [] (call record "helper")))
-          (define result
+          (var helper (lambda [] (call record "helper")))
+          (var result
             (dyn-wind
               (begin (call helper) (call record "before"))
               (capture/cc k
@@ -510,8 +510,8 @@ class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define helper (lambda [] (call record "helper")))
-          (define result
+          (var helper (lambda [] (call record "helper")))
+          (var result
             (dyn-wind
               (begin (call helper) (call record "before"))
               (call (lambda []
@@ -569,7 +569,7 @@ class TestDynWindTransferFailures(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define result
+          (var result
             (try
               (dyn-wind
                 (begin
@@ -647,7 +647,7 @@ class TestDynWindTransferFailures(SpecialsTestCase):
 
         src_str = """
         (begin
-          (define result
+          (var result
             (try
               (dyn-wind
                 (begin

@@ -12,13 +12,13 @@ bound to its ref but empty, and reading it raises `NameError`.
 **Examples:**
 
 ```koskari
-define d #{"k": 1 "j": 2}
+var d #{"k": 1 "j": 2}
 (del! d["k"])          ;; d is {'j': 2}
 
-define b (Box)
+var b (Box)
 (del! b.w)             ;; the attribute is gone
 
-define gone 1
+var gone 1
 (del! gone)
 gone                   ;; NameError: Empty reference: gone
 ```

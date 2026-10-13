@@ -24,14 +24,14 @@ import-from typing Any
 (use .job Config Job require-extra)
 
 
-define logger (logging.getLogger "kosrunner.umb")
+var logger (logging.getLogger "kosrunner.umb")
 
 ;; the SSL STOMP port UMB brokers listen on; a `servers` entry may
 ;; override it per host with the usual `host:port`
-define DEFAULT-PORT 61612
+var DEFAULT-PORT 61612
 
 
-define parse-servers [spec port login passcode connect-headers]:
+def parse-servers [spec port login passcode connect-headers]:
     """
     Split a `host:port,host:port` server string into the
     ConnectionParameters list stompman connects with, trying each in turn.
@@ -41,14 +41,14 @@ define parse-servers [spec port login passcode connect-headers]:
 
     import-from stompman ConnectionParameters
 
-    define out #[]
+    var out #[]
     for-each [entry (spec.split ",")]:
-        define e (entry.strip)
+        var e (entry.strip)
         when e:
-            define host e
-            define p port
+            var host e
+            var p port
             when (in? ":" e):
-                define parts (e.rsplit ":" 1)
+                var parts (e.rsplit ":" 1)
                 set! host (item parts 0)
                 set! p (int (item parts 1))
             (out.append (ConnectionParameters
@@ -60,7 +60,7 @@ define parse-servers [spec port login passcode connect-headers]:
     out
 
 
-define encode-body [value]:
+def encode-body [value]:
     """
     Turn a handler's return value into the `(body, content-type)` pair a
     STOMP frame carries. Bytes ride as-is and a str is utf-8 encoded (both
@@ -88,46 +88,46 @@ define-dataclass UmbConfig [Config]:
     ;; required in practice; defaulted None because the base Config's
     ;; defaulted `disabled` field precedes it in the dataclass init, and
     ;; guarded at start so a serverless umb job still dies loudly
-    define [servers :: str] None
-    define [port :: int] DEFAULT-PORT
+    var servers :: str None
+    var port :: int DEFAULT-PORT
 
     ;; UMB authenticates with an x509 client cert, so the STOMP login
     ;; frame is normally empty; both are here for brokers that want one
-    define [login :: str] ""
-    define [passcode :: str] ""
+    var login :: str ""
+    var passcode :: str ""
 
-    define [ssl_context :: Any] None
-    define [ssl_certfile :: str] None
-    define [ssl_keyfile :: str] None
-    define [ssl_password :: str] None
-    define [ssl_cafile :: str] None
+    var ssl_context :: Any None
+    var ssl_certfile :: str None
+    var ssl_keyfile :: str None
+    var ssl_password :: str None
+    var ssl_cafile :: str None
 
     ;; extra headers for the CONNECT frame (e.g. `client-id`, which UMB
     ;; wants for a durable subscription) and for the SUBSCRIBE frame (e.g.
     ;; `selector`, or `activemq.subscriptionName`)
-    define [connect_headers :: Any] None
-    define [subscribe_headers :: Any] None
+    var connect_headers :: Any None
+    var subscribe_headers :: Any None
 
-    define [ack :: str] "client-individual"
+    var ack :: str "client-individual"
 
     ;; where a reply goes when the incoming message declares no `reply-to`
     ;; header; unset means a handler's return value is simply dropped
-    define [reply_to :: str] None
+    var reply_to :: str None
 
     ;; politeness knobs -- how hard we lean on the broker. The heartbeat
     ;; pair is what we promise to send and what we ask to receive; both
     ;; default a good deal quieter than stompman's own 1s/1s, which is
     ;; chatty for a shared bus. The connect trio bounds a reconnect storm.
-    define [heartbeat_send_ms :: int] 10000
-    define [heartbeat_receive_ms :: int] 10000
-    define [connect_retry_attempts :: int] 3
-    define [connect_retry_interval :: int] 1
-    define [connect_timeout :: int] 5
+    var heartbeat_send_ms :: int 10000
+    var heartbeat_receive_ms :: int 10000
+    var connect_retry_attempts :: int 3
+    var connect_retry_interval :: int 1
+    var connect_timeout :: int 5
 
     ;; stompman's transport class -- unset takes its plain TCP one; set it
     ;; to `stompman.connection_ws.WebSocketConnection` for STOMP over a
     ;; websocket (and give the servers their `ws_uri_path`)
-    define [connection_class :: Any] None
+    var connection_class :: Any None
 
 
 define-class UmbJob [Job]:
@@ -136,9 +136,9 @@ define-class UmbJob [Job]:
     handler, and publishes the handler's return value back as a reply.
     """
 
-    define config-class UmbConfig
+    var config-class UmbConfig
 
-    define __init__ [self destination]:
+    def __init__ [self destination]:
         (Job.__init__ self)
         (require-extra "stompman" "umb")
         set! self.destination destination
@@ -148,12 +148,12 @@ define-class UmbJob [Job]:
 
 
     ;; umb-variety sub-item setter (paired with the `on-error` macro)
-    define on-error [self fn]:
+    def on-error [self fn]:
         set! self.on_error_cb fn
         self
 
 
-    define make-ssl-context [self]:
+    def make-ssl-context [self]:
         """
         The ssl context the client connects with: an explicitly configured
         one wins, otherwise one is built from the cert files -- which is
@@ -161,13 +161,13 @@ define-class UmbJob [Job]:
         nothing TLS-shaped is configured, leaving a plaintext connection.
         """
 
-        define c self.config
+        var c self.config
         when c.ssl_context:
             (return c.ssl_context)
         unless (or c.ssl_certfile c.ssl_cafile):
             (return None)
 
-        define ctx (ssl.create_default_context cafile: c.ssl_cafile)
+        var ctx (ssl.create_default_context cafile: c.ssl_cafile)
         when c.ssl_certfile:
             (ctx.load_cert_chain c.ssl_certfile
                 keyfile: c.ssl_keyfile
@@ -175,15 +175,15 @@ define-class UmbJob [Job]:
         ctx
 
 
-    define make-client [self]:
+    def make-client [self]:
 
         import-from stompman Client Heartbeat
 
-        define c self.config
+        var c self.config
 
         ;; the transport defaults to a CLASS, not None, so it can only be
         ;; passed when the config actually names one
-        define extra #{}
+        var extra #{}
         when c.connection_class:
             (set! (item extra "connection_class") c.connection_class)
 
@@ -204,17 +204,17 @@ define-class UmbJob [Job]:
             **: extra)
 
 
-    define _on-error-frame [self frame]:
+    def _on-error-frame [self frame]:
         (logger.error "umb error frame on %s: %s" self.destination frame.body)
 
 
-    define _on-suppressed [self exc frame]:
+    def _on-suppressed [self exc frame]:
         ;; Job.run already catches and records a failing handler, so this
         ;; only fires when the dispatch or reply path itself broke
         (logger.error "umb dispatch failed on %s" self.destination exc_info: exc)
 
 
-    define send [self body destination content-type: None headers: None]:
+    def send [self body destination content-type: None headers: None]:
         """
         Publish one frame on the live connection. `body` must already be
         bytes -- see `encode-body`.
@@ -227,7 +227,7 @@ define-class UmbJob [Job]:
             headers: headers)
 
 
-    define reply [self msg value]:
+    def reply [self msg value]:
         """
         Publish a handler's return value as the reply to `msg`: to the
         message's own `reply-to` header, or the config's `reply_to` when it
@@ -236,19 +236,19 @@ define-class UmbJob [Job]:
         value is dropped with a warning.
         """
 
-        define dest (or (msg.headers.get "reply-to") self.config.reply_to)
+        var dest (or (msg.headers.get "reply-to") self.config.reply_to)
         unless dest:
             (logger.warning "no reply-to for message on %s; reply dropped"
                 self.destination)
             (return)
 
-        define-values [body ctype] (encode-body value)
+        var [body ctype] (encode-body value)
 
         ;; JMS-style request/reply: echo the requester's correlation id, or
         ;; fall back to its message id, which is what a requester that sent
         ;; none will be waiting on
-        define headers #{}
-        define corr (or (msg.headers.get "correlation-id")
+        var headers #{}
+        var corr (or (msg.headers.get "correlation-id")
             (msg.headers.get "message-id"))
         when corr:
             (set! (item headers "correlation-id") corr)
@@ -256,7 +256,7 @@ define-class UmbJob [Job]:
         (self.send body dest content-type: ctype headers: headers)
 
 
-    define _dispatch [self msg]:
+    def _dispatch [self msg]:
         """
         The subscription callback: decode the frame body, fire it as a
         tracked run, and publish a non-None result back as the reply. A
@@ -264,15 +264,15 @@ define-class UmbJob [Job]:
         `on-error`, returning None -- so a failed run never answers.
         """
 
-        define raw msg.body
-        define value (if (None? raw) None (raw.decode "utf-8"))
+        var raw msg.body
+        var value (if (None? raw) None (raw.decode "utf-8"))
         ;; Job.run records the run and dispatches to on-error on failure
-        define result (self.run value cause: "umb")
+        var result (self.run value cause: "umb")
         unless (None? result):
             (self.reply msg result)
 
 
-    define start [self]:
+    def start [self]:
         when self._client:
             (return)
         when (None? self.config.servers):
@@ -283,7 +283,7 @@ define-class UmbJob [Job]:
 
         ;; the client is an async context manager and start/stop straddle
         ;; two calls, so the stack holds the entered context for `stop`
-        define stack (AsyncExitStack)
+        var stack (AsyncExitStack)
         set! self._stack stack
         set! self._client (stack.enter_async_context (self.make-client))
         set! self._subscription (self._client.subscribe
@@ -294,7 +294,7 @@ define-class UmbJob [Job]:
             on_suppressed_exception: (demand self._on-suppressed))
 
 
-    define stop [self]:
+    def stop [self]:
         set! self.running False
         ;; unsubscribe FIRST: closing the client waits for its subscriptions
         ;; to drain, so an active one would hold the teardown open
@@ -307,28 +307,28 @@ define-class UmbJob [Job]:
             set! self._client None
 
 
-define-syntax config/umb:
+syntax config/umb:
     syntax-rules []:
         case (config/umb () setting ...):
             (begin
-                (define -'default/umb)
+                (var -'default/umb)
                 (unless &-'default/umb
                     (set! -'default/umb (UmbConfig setting ...))))
 
         case (config/umb nm setting ...):
             (begin
-                (define nm (UmbConfig setting ...))
-                (define -'default/umb)
+                (var nm (UmbConfig setting ...))
+                (var -'default/umb)
                 (unless &-'default/umb (set! -'default/umb nm)))
 
 
 ;; `job umb <name> <destination>:` -- trigger key is the destination.
-define-syntax job/umb:
+syntax job/umb:
     syntax-rules []:
         case (job/umb name destination (subhead subrest ...) ...):
             (begin
-                (define name (UmbJob destination))
-                (define -'default/umb)
+                (var name (UmbJob destination))
+                (var -'default/umb)
                 (if &-'default/umb
                     (.configure name via: -'default/umb)
                     (.configure name))

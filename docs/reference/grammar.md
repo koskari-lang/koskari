@@ -144,7 +144,7 @@ delimit the body. The `%N` placeholders become the formals. See
 [`gensym-thunk`](specials/compile-gensym-partial.md).
 
 ```koskari
->>> (define add {(+ %1 %2)})
+>>> (var add {(+ %1 %2)})
 >>> (add 3 4)
 7
 >>> (list (map {(* %1 %1)} #[1 2 3]))
@@ -202,7 +202,7 @@ source the handler returns in place of the fence. The `reader/fences` pragma
 governs the syntax; with it off, a backtick keeps only its quasiquote reading.
 
 ````koskari
-define shout ```bash
+var shout ```bash
 echo -n "$1" | tr a-z A-Z
 ```
 
@@ -273,13 +273,13 @@ followed by the form they decorate, read as
 `(compile/decorate (DECORATOR ...) FORM)`:
 
 ```koskari
-define loud [f]:
+def loud [f]:
   lambda [*: args]:
     (print "calling")
     (f *: args)
 
 @loud
-define greet [who]:
+def greet [who]:
   (print "hello" who)
 
 (greet "world")

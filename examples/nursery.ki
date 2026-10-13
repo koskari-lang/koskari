@@ -41,10 +41,10 @@ import time
 define-parameter current-nursery None
 
 
-define FIRST-EXC asyncio.FIRST_EXCEPTION
+var FIRST-EXC asyncio.FIRST_EXCEPTION
 
 
-define task-error [t]:
+def task-error [t]:
     """
     The exception a settled task failed with, or None
     """
@@ -60,20 +60,20 @@ define-class Nursery []:
     A scope that owns the tasks spawned inside it
     """
 
-    define __init__ [self]:
+    def __init__ [self]:
         (set! self.tasks #[])
         (set! self.error None)
 
-    define start [self handle]:
+    def start [self handle]:
         """
         Adopt an awaitable as a child of this scope
         """
 
-        define task (create-task handle)
+        var task (create-task handle)
         (self.tasks.append task)
         task
 
-    define abort [self]:
+    def abort [self]:
         """
         Cancel every child that has not settled yet
         """
@@ -81,7 +81,7 @@ define-class Nursery []:
         for-each [t self.tasks]:
             (t.cancel)
 
-    define join [self]:
+    def join [self]:
         """
         Wait for every child, cancelling the rest after the first
         failure. Returns the first child exception, or None -- the
@@ -89,13 +89,13 @@ define-class Nursery []:
         """
 
         while self.tasks:
-            define batch (list self.tasks)
+            var batch (list self.tasks)
             (self.tasks.clear)
 
-            define-values [done pending] (asyncio.wait batch return_when: FIRST-EXC)
+            var [done pending] (asyncio.wait batch return_when: FIRST-EXC)
 
             for-each [t done]:
-                define exc (task-error t)
+                var exc (task-error t)
                 when (and exc (None? self.error)):
                     set! self.error exc
 
@@ -107,7 +107,7 @@ define-class Nursery []:
         self.error
 
 
-define run-nursery [thunk]:
+def run-nursery [thunk]:
     """
     Run THUNK with a fresh nursery installed as the ambient scope, then
     join. A failure in the body cancels the children; a failure in a
@@ -115,9 +115,9 @@ define run-nursery [thunk]:
     until every child has settled.
     """
 
-    define scope (Nursery)
-    define result None
-    define failure None
+    var scope (Nursery)
+    var result None
+    var failure None
 
     parameterize [[current-nursery scope]]:
         try:
@@ -126,7 +126,7 @@ define run-nursery [thunk]:
             set! failure exc
             (scope.abort)
 
-        define child-failure (scope.join)
+        var child-failure (scope.join)
 
         ; A failure in the body outranks the cancellations it caused.
         unless (None? failure):
@@ -137,7 +137,7 @@ define run-nursery [thunk]:
     result
 
 
-define spawn-into [scope fn *: args **: kwargs]:
+def spawn-into [scope fn *: args **: kwargs]:
     """
     Attach a call to SCOPE as a child task. ARGS are evaluated by the
     caller and handed to `defer`, which invokes at construction -- so a
@@ -152,7 +152,7 @@ define spawn-into [scope fn *: args **: kwargs]:
     (scope.start (defer fn *: args **: kwargs))
 
 
-define-syntax nursery:
+syntax nursery:
     """
     (nursery BODY ...) -- run BODY in a scope that owns every task
     spawned inside it. Written as a layout block, `nursery:` reaches
@@ -164,7 +164,7 @@ define-syntax nursery:
             (run-nursery (lambda [] body ...))
 
 
-define-syntax spawn:
+syntax spawn:
     """
     (spawn FN ARG ...) -- call FN concurrently as a child of the
     innermost enclosing nursery.
@@ -183,30 +183,30 @@ define-syntax spawn:
 
 ; --- Demo scaffolding -------------------------------------------------------
 
-define log #[]
+var log #[]
 
 
-define note [message]:
+def note [message]:
     (log.append message)
     (print "   " message)
 
 
 define-class Stopwatch []:
 
-    define __init__ [self]:
+    def __init__ [self]:
         (set! self.t0 (time.monotonic))
 
-    define split [self]:
+    def split [self]:
         (- (time.monotonic) self.t0)
 
 
-define banner [title]:
+def banner [title]:
     (print)
     (print title)
     (print (* "-" (len title)))
 
 
-define worker [name seconds]:
+def worker [name seconds]:
     """
     A cooperative job that reports whether it finished or was cancelled
     """
@@ -219,7 +219,7 @@ define worker [name seconds]:
         (raise)
 
 
-define failing-worker [name seconds]:
+def failing-worker [name seconds]:
     (sleep seconds)
     (note f"{name} raising")
     (raise (ValueError f"{name} failed"))
@@ -227,10 +227,10 @@ define failing-worker [name seconds]:
 
 ; --- 1. Fan-out: the block waits, the children overlap ----------------------
 
-define demo-fanout []:
+def demo-fanout []:
     (banner "1. Fan-out -- three 0.3s children inside one block")
 
-    define watch (Stopwatch)
+    var watch (Stopwatch)
 
     nursery:
         (spawn worker "a" 0.3)
@@ -243,10 +243,10 @@ define demo-fanout []:
 
 ; --- 2. A child failure cancels its siblings --------------------------------
 
-define demo-sibling-cancel []:
+def demo-sibling-cancel []:
     (banner "2. One child fails -- siblings are cancelled, error escapes")
 
-    define watch (Stopwatch)
+    var watch (Stopwatch)
 
     try:
         nursery:
@@ -260,13 +260,13 @@ define demo-sibling-cancel []:
 
 ; --- 3. The same shape on asyncio.gather, for contrast ----------------------
 
-define demo-gather-orphan []:
+def demo-gather-orphan []:
     (banner "3. asyncio.gather -- the sibling is orphaned, not cancelled")
 
     (log.clear)
 
-    define boom (create-task (defer failing-worker "boom2" 0.05))
-    define long (create-task (defer worker "orphan" 0.3))
+    var boom (create-task (defer failing-worker "boom2" 0.05))
+    var long (create-task (defer worker "orphan" 0.3))
 
     try:
         (await (asyncio.gather boom long))
@@ -284,7 +284,7 @@ define demo-gather-orphan []:
 
 ; --- 4. Ambient spawn: a helper never sees the nursery ----------------------
 
-define enqueue-batch [prefix count]:
+def enqueue-batch [prefix count]:
     """
     Plain function. It spawns into whatever nursery is ambient at the
     call site, without receiving one as an argument.
@@ -294,10 +294,10 @@ define enqueue-batch [prefix count]:
         (spawn worker f"{prefix}{i}" 0.2)
 
 
-define demo-ambient []:
+def demo-ambient []:
     (banner "4. Ambient spawn -- a callee spawns into its caller's scope")
 
-    define watch (Stopwatch)
+    var watch (Stopwatch)
 
     nursery:
         (enqueue-batch "job-" 4)
@@ -308,7 +308,7 @@ define demo-ambient []:
 
 ; --- 5. The scope reaches into children too ---------------------------------
 
-define parent-worker [name]:
+def parent-worker [name]:
     """
     A child that spawns a child of its own. The parameterize installed
     by the nursery is inherited by the task, so the ambient scope is
@@ -321,10 +321,10 @@ define parent-worker [name]:
     (note f"{name} finished")
 
 
-define demo-transitive []:
+def demo-transitive []:
     (banner "5. A child spawns into the same scope; the block still waits")
 
-    define watch (Stopwatch)
+    var watch (Stopwatch)
 
     nursery:
         (spawn parent-worker "p")
@@ -334,12 +334,12 @@ define demo-transitive []:
 
 ; --- 6. Nesting under a timeout ---------------------------------------------
 
-define demo-timeout []:
+def demo-timeout []:
     (banner "6. A timeout around a nursery cancels everything inside")
 
-    define watch (Stopwatch)
+    var watch (Stopwatch)
 
-    define body []:
+    def body []:
         nursery:
             (spawn worker "slow-1" 5.0)
             (spawn worker "slow-2" 5.0)

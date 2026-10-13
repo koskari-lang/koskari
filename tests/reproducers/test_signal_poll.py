@@ -174,7 +174,7 @@ class TestSignalPoll(SpecialsTestCase):
         src = """
         (begin
           (import _thread)
-          (define-global spin
+          (global spin
             (lambda [n]
               (let [[m (+ n 1)]]
                 (depths.append m)
@@ -202,7 +202,7 @@ class TestSignalPoll(SpecialsTestCase):
         src = """
         (begin
           (import _thread)
-          (define-global descend
+          (global descend
             (lambda [n]
               (depths.append n)
               (cond ((== n 500) (_thread.interrupt_main)))

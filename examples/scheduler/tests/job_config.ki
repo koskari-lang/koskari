@@ -11,8 +11,8 @@ import-from kosrunner Config Job KafkaConfig KafkaJob WebhookConfig WebhookJob
 define-class TestJobConfig [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define test-baseless-configure-builds-fresh-config [self]:
-        define job (WebhookJob "hook")
+    def test-baseless-configure-builds-fresh-config [self]:
+        var job (WebhookJob "hook")
         (job.configure port: 9999)
         (self.assertIsInstance job.config WebhookConfig)
         (self.assertEqual job.config.port 9999)
@@ -22,32 +22,32 @@ define-class TestJobConfig [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-base-job-falls-back-to-raw-config [self]:
-        define job (Job)
+    def test-base-job-falls-back-to-raw-config [self]:
+        var job (Job)
         (job.configure)
         (self.assertIsInstance job.config Config)
         (self.assertFalse job.config.disabled)
 
 
     @coroutine-fn
-    define test-disabled-config-disables-job [self]:
-        define job (WebhookJob "hook")
+    def test-disabled-config-disables-job [self]:
+        var job (WebhookJob "hook")
         (job.configure disabled: True)
         (self.assertFalse job.enabled)
 
 
     @coroutine-fn
-    define test-shared-disabled-config-and-override [self]:
+    def test-shared-disabled-config-and-override [self]:
         ;; a shared config carrying disabled dims every job wired to it...
-        define shared (KafkaConfig servers: "k:9092" disabled: True)
-        define a (KafkaJob "topic.a")
-        define b (KafkaJob "topic.b")
+        var shared (KafkaConfig servers: "k:9092" disabled: True)
+        var a (KafkaJob "topic.a")
+        var b (KafkaJob "topic.b")
         (a.configure via: shared)
         (b.configure via: shared)
         (self.assertFalse a.enabled)
         (self.assertFalse b.enabled)
         ;; ...and a per-job override wins by ordinary merge
-        define c (KafkaJob "topic.c")
+        var c (KafkaJob "topic.c")
         (c.configure via: shared disabled: False)
         (self.assertTrue c.enabled)
         (self.assertEqual c.config.servers "k:9092")

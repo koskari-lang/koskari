@@ -61,13 +61,13 @@ unless a syntax was defined with the `bare-syntax` kind; see
 A header line ending in `:` is not complete -- it keeps reading
 arguments from the following indented lines, one argument per line,
 recursively (a line ending in its own `:` opens a further nested
-continuation). This rule is uniform across every header: `define`,
+continuation). This rule is uniform across every header: `var`, `def`,
 `set!`, `if`, `try`, `list-each`, any call at all. There is no
 distinct "block" construct; a colon-terminated header plus its
 indented lines *is* one parenthesized form, mechanically:
 
 ```koskari
-define parts:
+var parts:
     list-each [x (range 0 10)]:
         + x 250
 ```
@@ -75,7 +75,7 @@ define parts:
 is identical to
 
 ```koskari
-(define parts (list-each [x (range 0 10)] (+ x 250)))
+(var parts (list-each [x (range 0 10)] (+ x 250)))
 ```
 
 A header line with **no** trailing `:` has already completed as its
@@ -92,8 +92,8 @@ silent sibling:
 compile_file src dest
     source_filename: name
 
-; WRONG: the same error; define parts is complete
-define parts
+; WRONG: the same error; var parts is complete
+var parts
     list-each [x (range 0 10)]:
         + x 250
 
@@ -106,9 +106,9 @@ compile_file src dest:
     source_filename: name
 ```
 
-`define x` (bare, no colon, nothing after it) failing to attach a
-value on the next line is this same rule, not a `define`-specific
-exception: `define x` is already `(define x)`; the value has to be on
+`var x` (bare, no colon, nothing after it) failing to attach a
+value on the next line is this same rule, not a `var`-specific
+exception: `var x` is already `(var x)`; the value has to be on
 that line, or the header needs the trailing `:` shown above.
 
 The `reader/indent` pragma governs the check: `error` (the default)
@@ -242,10 +242,10 @@ config["port"]                  ; preferred: bracket suffix
 ```
 
 Keep subscripts out of f-string slots: compute
-`define port config["port"]` first and interpolate `{port}`.
+`var port config["port"]` first and interpolate `{port}`.
 
 Rest parameters in formals are `*:` and `**:` --
-`define f [a *: rest **: kwargs]:`. Iteration binds a variable
+`def f [a *: rest **: kwargs]:`. Iteration binds a variable
 directly: `for-each [x items]:` takes a `[var seq]` binding, not a
 lambda. `&name` yields the reference cell for `name`; a plain `name`
 is its value.

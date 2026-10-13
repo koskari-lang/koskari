@@ -4,7 +4,7 @@ source: |-
   (begin
     (import-from koskari.solve amb require solve)
     (solve (lambda []
-      (define x (amb (#list 1 2 3)))
+      (var x (amb (#list 1 2 3)))
       (require (> x 1))
       x)))
 verify:
@@ -55,7 +55,7 @@ source: |-
   (begin
     (import-from koskari.solve amb require solve-first)
     (solve-first (lambda []
-      (define x (amb (#list 1 2 3)))
+      (var x (amb (#list 1 2 3)))
       (require (> x 1))
       x)))
 verify:

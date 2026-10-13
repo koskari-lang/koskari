@@ -60,13 +60,13 @@ suspending source works wherever the surrounding code can await it:
 import-from asyncio sleep
 import-from koskari.itertools islice
 
-define slow-numbers []:
+def slow-numbers []:
   for-each [i #[1 2 3 4]]:
     (sleep 0)
     yield i
 
-define first-two []:
-  define out #[]
+def first-two []:
+  var out #[]
   for-each [x (islice (slow-numbers) 2)]:
     out.append x
   out

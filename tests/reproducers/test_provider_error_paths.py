@@ -46,71 +46,71 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define add [a b]:
+def add [a b]:
     (+ a b)
 
-define big-sum? [a b]:
+def big-sum? [a b]:
     (> (+ a b) 3)
 
-define two-args [a b]:
+def two-args [a b]:
     a
 
-define inc [x]:
+def inc [x]:
     (+ x 1)
 
-define odd? [x]:
+def odd? [x]:
     (== 1 (% x 2))
 
-define gen1 [x]:
+def gen1 [x]:
     yield x
     yield (* x 2)
 
-define gen2 [a b]:
+def gen2 [a b]:
     yield a
     yield b
 
-define consume [it]:
-    define total 0
+def consume [it]:
+    var total 0
     for-each [v it]:
         set! total (+ total v)
     total
 
-define yield-each [items]:
+def yield-each [items]:
     for-each [c items]:
         yield c
 
-define collect [it]:
-    define out (list)
+def collect [it]:
+    var out (list)
     for-each [v it]:
         (out.append v)
     out
 
-define apply-gen [args]:
+def apply-gen [args]:
     (apply gen2 args)
 
-define apply-gen-tail []:
+def apply-gen-tail []:
     (apply gen2 #(7 8))
 
-define apply-partial-gen []:
+def apply-partial-gen []:
     (apply (partial gen2 1) #(2))
 
-define tail-py [f args]:
+def tail-py [f args]:
     (apply f args)
 
-define apply-map [seq]:
+def apply-map [seq]:
     (list (map apply seq))
 
-define apply-filter [seq]:
+def apply-filter [seq]:
     (list (filter apply seq))
 
-define ktrunc [x]:
+def ktrunc [x]:
     if (== x 3):
         raise StopIteration
     else:
         (* x 10)
 
-define echo []:
-    define x (yield None)
+def echo []:
+    var x (yield None)
     while True:
         set! x (yield x)
 """

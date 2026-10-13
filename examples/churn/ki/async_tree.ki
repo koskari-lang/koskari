@@ -8,15 +8,15 @@
 (import asyncio)
 
 
-define recurse [level branches]:
+def recurse [level branches]:
     if (== level 0):
         1
     else:
-        define held (list-each [_ (range branches)] (defer recurse (- level 1) branches))
+        var held (list-each [_ (range branches)] (defer recurse (- level 1) branches))
         (sum (await (asyncio.gather *: held)))
 
 
-define async_tree [levels branches]:
+def async_tree [levels branches]:
     (recurse levels branches)
 
 

@@ -146,7 +146,7 @@ class TestWithHookShapes(SpecialsTestCase):
 
         enter_src = """
         (lambda [self]
-          (define h (helper))
+          (var h (helper))
           "enter-result")
         """
         exit_src = f"""
@@ -374,7 +374,7 @@ class TestWithHookShapes(SpecialsTestCase):
 
         src = """
         (begin
-          (define result
+          (var result
             (with [c ctx] (capture/cc k (begin (stash k) 1))))
           (cond [saved (invoke_saved)] [else: result]))
         """

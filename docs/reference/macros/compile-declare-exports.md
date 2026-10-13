@@ -2,7 +2,7 @@
 
 **Syntax:** `(declare-exports NAME ...)`
 
-**Behaviour:** Expands to `(define-global __features__ #(...))` holding
+**Behaviour:** Expands to `(global __features__ #(...))` holding
 the sorted, deduplicated names as strings. Each name is a feature stem.
 When the module finishes loading, `__all__` is built from the stems as
 the bindings that exist: the runtime name and its `compile/` and
@@ -17,9 +17,9 @@ that one binding.
 ;; shapes.ki
 (declare-exports area define-shape)
 
-define area [w h] (* w h)
+def area [w h] (* w h)
 
-define-syntax define-shape:
+syntax define-shape:
   ...
 ```
 

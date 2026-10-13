@@ -6,78 +6,78 @@
 ;; accumulator; and a chained accumulation.
 
 
-define f_add [a b]:
+def f_add [a b]:
     + a b
 
 
-define f_sub [a b]:
+def f_sub [a b]:
     - a b
 
 
-define f_mul [a b]:
+def f_mul [a b]:
     * a b
 
 
-define f_div [a b]:
+def f_div [a b]:
     / a b
 
 
-define f_mod [a b]:
+def f_mod [a b]:
     % a b
 
 
-define f_floordiv [a b]:
+def f_floordiv [a b]:
     // a b
 
 
-define f_add_t [a b]:
+def f_add_t [a b]:
     + (* a 1.0) b
 
 
-define f_sub_t [a b]:
+def f_sub_t [a b]:
     - (* a 1.0) b
 
 
-define f_mul_t [a b]:
+def f_mul_t [a b]:
     * (* a 1.0) b
 
 
-define f_div_t [a b]:
+def f_div_t [a b]:
     / (* a 1.0) b
 
 
-define f_mod_t [a b]:
+def f_mod_t [a b]:
     % (* a 1.0) b
 
 
-define f_floordiv_t [a b]:
+def f_floordiv_t [a b]:
     // (* a 1.0) b
 
 
-define alias_binding [a]:
-    define t (* a 1.0)
-    define u t
-    define v (+ t 1.0)
+def alias_binding [a]:
+    var t (* a 1.0)
+    var u t
+    var v (+ t 1.0)
     #(t u v)
 
 
-define alias_slot [a]:
-    define t (* a 1.0)
-    define u t
+def alias_slot [a]:
+    var t (* a 1.0)
+    var u t
     incr! t 1.0
     #(t u)
 
 
-define accumulate [n]:
-    define e 0.0
+def accumulate [n]:
+    var e 0.0
     for-each [i (range n)]:
         incr! e (* 0.5 i)
         decr! e (/ i 3.0)
     e
 
 
-define mixed_site [values]:
-    define total 0.0
+def mixed_site [values]:
+    var total 0.0
     for-each [v values]:
         incr! total v
     total

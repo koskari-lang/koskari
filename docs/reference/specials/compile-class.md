@@ -42,20 +42,20 @@ or `VAR_STORE` for **NAME** itself (only for injected `__doc__` /
 
 ```koskari
 ;; Expression value is the class (e.g. bind with compile/define)
-(define C (class C ()))
+(var C (class C ()))
 
 ;; Class with attribute
-(define C
+(var C
   (class C ()
-    (define x 42)))
+    (var x 42)))
 
 ;; Class with superclass (object is available from bootstrap)
-(define C
+(var C
   (class C (object)
-    (define x 1)))
+    (var x 1)))
 
 ;; Custom metaclass
-(define C
+(var C
   (class C (Base meta: MyMeta)
-    (define x 1)))
+    (var x 1)))
 ```

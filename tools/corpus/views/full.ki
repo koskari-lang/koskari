@@ -21,13 +21,13 @@ koskari-corpus dataset view: every record with all verify stages.
 """
 
 
-define VIEW_NAME "koskari-corpus"
+var VIEW_NAME "koskari-corpus"
 
-define _STAGES #("read" "expand" "eval" "error" "invalid")
+var _STAGES #("read" "expand" "eval" "error" "invalid")
 
 
 @demand
-define transform [record provenance]:
+def transform [record provenance]:
     """
     Build one koskari-corpus row from a corpus record
 
@@ -36,9 +36,9 @@ define transform [record provenance]:
     :return: row dict for every record
     """
 
-    define verify (or (record.get "verify") #{})
+    var verify (or (record.get "verify") #{})
 
-    define row #{
+    var row #{
         "corpus_id": record["id"]
         "feature": record["feature"]
         "source": record["source"]

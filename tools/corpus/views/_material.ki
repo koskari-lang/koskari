@@ -35,10 +35,10 @@ import posixpath
 import re
 
 
-define _LINK_RE (re.compile "\\[([^\\]]+)\\]\\([^)]*\\)")
-define _EMPHASIS_RE (re.compile "[*_`]+")
+var _LINK_RE (re.compile "\\[([^\\]]+)\\]\\([^)]*\\)")
+var _EMPHASIS_RE (re.compile "[*_`]+")
 
-define _LICENSE_MARKERS #(
+var _LICENSE_MARKERS #(
     "redistribute"
     "without any warranty"
     "free software foundation"
@@ -47,15 +47,15 @@ define _LICENSE_MARKERS #(
     "see <http"
     "copyright")
 
-define _HEADING_RE (re.compile "#+\\s+(.*)")
-define _MD_LINK_RE (re.compile "(!?\\[[^\\]]*\\]\\()([^)]+)(\\))")
-define _SCHEME_RE (re.compile "[A-Za-z][A-Za-z0-9+.-]*:")
-define _TITLE_RE (re.compile "(\\S+)(\\s+[\"'].*)\\Z")
-define _TOCTREE_TITLE_RE (re.compile "(.*<)([^>]+)(>)\\Z")
-define _GLOB_CHARS (frozenset "*?[]")
+var _HEADING_RE (re.compile "#+\\s+(.*)")
+var _MD_LINK_RE (re.compile "(!?\\[[^\\]]*\\]\\()([^)]+)(\\))")
+var _SCHEME_RE (re.compile "[A-Za-z][A-Za-z0-9+.-]*:")
+var _TITLE_RE (re.compile "(\\S+)(\\s+[\"'].*)\\Z")
+var _TOCTREE_TITLE_RE (re.compile "(.*<)([^>]+)(>)\\Z")
+var _GLOB_CHARS (frozenset "*?[]")
 
 
-define _clean_inline [text]:
+def _clean_inline [text]:
     """
     Strip common inline Markdown so a summary reads as plain prose
 
@@ -68,7 +68,7 @@ define _clean_inline [text]:
     " ".join (text.split)
 
 
-define _strip_frontmatter [lines]:
+def _strip_frontmatter [lines]:
     """
     Drop a leading YAML frontmatter block delimited by ``---`` lines
 
@@ -84,7 +84,7 @@ define _strip_frontmatter [lines]:
 
 
 @demand
-define markdown_title_summary [text]:
+def markdown_title_summary [text]:
     """
     Extract a heading title and first-paragraph summary from Markdown
 
@@ -92,21 +92,21 @@ define markdown_title_summary [text]:
     :return: tuple of (title or None, summary or None)
     """
 
-    define lines (_strip_frontmatter (text.splitlines))
+    var lines (_strip_frontmatter (text.splitlines))
 
-    define title None
+    var title None
     for-each [line lines]:
-        define match (_HEADING_RE.match line)
+        var match (_HEADING_RE.match line)
         when match:
             set! title (_clean_inline (match.group 1))
             (break)
 
-    define summary None
-    define in_fence False
-    define paragraph #[]
+    var summary None
+    var in_fence False
+    var paragraph #[]
 
     for-each [line lines]:
-        define stripped (line.strip)
+        var stripped (line.strip)
         if (stripped.startswith "```"):
             set! in_fence (not in_fence)
         elif in_fence:
@@ -123,7 +123,7 @@ define markdown_title_summary [text]:
     return title summary
 
 
-define _normalize_link_target [dest base_dir]:
+def _normalize_link_target [dest base_dir]:
     """
     Resolve one Markdown link destination to a root-relative path
 
@@ -139,13 +139,13 @@ define _normalize_link_target [dest base_dir]:
     :return: the rewritten destination, or None to leave it unchanged
     """
 
-    define stripped (dest.strip)
+    var stripped (dest.strip)
     unless stripped:
         return None
 
-    define title ""
-    define target stripped
-    define match (_TITLE_RE.match stripped)
+    var title ""
+    var target stripped
+    var match (_TITLE_RE.match stripped)
     when match:
         set! target (match.group 1)
         set! title (match.group 2)
@@ -157,8 +157,8 @@ define _normalize_link_target [dest base_dir]:
              (in? (item-slice target 0 1) #("#" "/"))):
         return None
 
-    define fragment ""
-    define hash_index (target.find "#")
+    var fragment ""
+    var hash_index (target.find "#")
     when (>= hash_index 0):
         set! fragment (item-slice target hash_index)
         set! target (item-slice target 0 hash_index)
@@ -166,14 +166,14 @@ define _normalize_link_target [dest base_dir]:
     unless target:
         return None
 
-    define resolved (posixpath.normpath (posixpath.join base_dir target))
+    var resolved (posixpath.normpath (posixpath.join base_dir target))
     when (resolved.startswith ".."):
         return None
 
     return (+ resolved fragment title)
 
 
-define _normalize_toctree_entry [entry base_dir]:
+def _normalize_toctree_entry [entry base_dir]:
     """
     Resolve one ``{toctree}`` child entry to a root-relative page path
 
@@ -189,10 +189,10 @@ define _normalize_toctree_entry [entry base_dir]:
     :return: the rewritten entry, or None to leave it unchanged
     """
 
-    define prefix ""
-    define target entry
-    define suffix ""
-    define match (_TOCTREE_TITLE_RE.match entry)
+    var prefix ""
+    var target entry
+    var suffix ""
+    var match (_TOCTREE_TITLE_RE.match entry)
     when match:
         set! prefix (match.group 1)
         set! target (.strip (match.group 2))
@@ -205,7 +205,7 @@ define _normalize_toctree_entry [entry base_dir]:
              (== target "self")):
         return None
 
-    define resolved (posixpath.normpath (posixpath.join base_dir target))
+    var resolved (posixpath.normpath (posixpath.join base_dir target))
     when (resolved.startswith ".."):
         return None
     unless (resolved.endswith ".md"):
@@ -213,7 +213,7 @@ define _normalize_toctree_entry [entry base_dir]:
     return (+ prefix resolved suffix)
 
 
-define _rewrite_toctree_line [line base_dir]:
+def _rewrite_toctree_line [line base_dir]:
     """
     Rewrite a single non-glob ``{toctree}`` body line, preserving layout
 
@@ -222,20 +222,20 @@ define _rewrite_toctree_line [line base_dir]:
     :return: the line with its entry rewritten, or unchanged
     """
 
-    define body (line.rstrip "\r\n")
-    define ending (item-slice line (len body))
-    define stripped (body.strip)
+    var body (line.rstrip "\r\n")
+    var ending (item-slice line (len body))
+    var stripped (body.strip)
     when (or (not stripped) (stripped.startswith ":")):
         return line
-    define rewritten (_normalize_toctree_entry stripped base_dir)
+    var rewritten (_normalize_toctree_entry stripped base_dir)
     when (None? rewritten):
         return line
-    define leading (item-slice body 0 (- (len body) (len (body.lstrip))))
+    var leading (item-slice body 0 (- (len body) (len (body.lstrip))))
     return (+ leading rewritten ending)
 
 
 @demand
-define rewrite_markdown_links [text rel_path]:
+def rewrite_markdown_links [text rel_path]:
     """
     Rewrite relative Markdown links to root-relative content paths
 
@@ -252,21 +252,21 @@ define rewrite_markdown_links [text rel_path]:
         rewritten
     """
 
-    define base_dir (posixpath.dirname rel_path)
+    var base_dir (posixpath.dirname rel_path)
 
     @demand
-    define sub_fn [match]:
-        define replaced (_normalize_link_target (match.group 2) base_dir)
+    def sub_fn [match]:
+        var replaced (_normalize_link_target (match.group 2) base_dir)
         when (None? replaced):
             return (match.group 0)
         return (+ (match.group 1) replaced (match.group 3))
 
-    define out #[]
-    define fence None
-    define toctree_glob False
+    var out #[]
+    var fence None
+    var toctree_glob False
 
     for-each [line (text.splitlines keepends: True)]:
-        define marker (line.lstrip)
+        var marker (line.lstrip)
 
         if (None? fence):
             if (or (marker.startswith "```") (marker.startswith "~~~")):
@@ -294,7 +294,7 @@ define rewrite_markdown_links [text rel_path]:
     "".join out
 
 
-define _extract_module_docstring [lines start]:
+def _extract_module_docstring [lines start]:
     """
     Read a triple-double-quoted block beginning at or after ``start``
 
@@ -303,12 +303,12 @@ define _extract_module_docstring [lines start]:
     :return: first non-empty line of the docstring, or None
     """
 
-    define body #[]
-    define first (lines[start].lstrip)
+    var body #[]
+    var first (lines[start].lstrip)
     unless (first.startswith "\"\"\""):
         return None
 
-    define remainder (item-slice first 3)
+    var remainder (item-slice first 3)
     when (in? "\"\"\"" remainder):
         return (or (_clean_inline (remainder.split "\"\"\"" 1)[0]) None)
 
@@ -320,14 +320,14 @@ define _extract_module_docstring [lines start]:
         body.append line
 
     for-each [line body]:
-        define cleaned (_clean_inline line)
+        var cleaned (_clean_inline line)
         when cleaned:
             return cleaned
 
     return None
 
 
-define _is_boilerplate_comment [line stem]:
+def _is_boilerplate_comment [line stem]:
     """
     Return True for comment lines that are not a useful summary
 
@@ -342,7 +342,7 @@ define _is_boilerplate_comment [line stem]:
     unless line:
         return True
 
-    define lowered (line.lower)
+    var lowered (line.lower)
     when (line.startswith ":"):
         return True
 
@@ -357,7 +357,7 @@ define _is_boilerplate_comment [line stem]:
 
 
 @demand
-define ki_title_summary [text stem]:
+def ki_title_summary [text stem]:
     """
     Extract a title and summary from a Koskari source file
 
@@ -370,12 +370,12 @@ define ki_title_summary [text stem]:
     :return: tuple of (title, summary or None)
     """
 
-    define lines (text.splitlines)
-    define comments #[]
+    var lines (text.splitlines)
+    var comments #[]
 
-    define index 0
+    var index 0
     while (< index (len lines)):
-        define stripped (lines[index].strip)
+        var stripped (lines[index].strip)
         if (not stripped):
             incr! index
         elif (stripped.startswith ";"):
@@ -384,7 +384,7 @@ define ki_title_summary [text stem]:
         else:
             (break)
 
-    define summary None
+    var summary None
     when (and (< index (len lines))
               ((lines[index].lstrip).startswith "\"\"\"")):
         set! summary (_extract_module_docstring lines index)

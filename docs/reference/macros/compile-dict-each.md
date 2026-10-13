@@ -17,7 +17,7 @@ the keys, values or body works as it does in
 **Examples:**
 
 ```koskari
-define words #["a" "bb"]
+var words #["a" "bb"]
 
 dict-each [w words] key: w value: (len w)
 ;; {'a': 1, 'bb': 2}

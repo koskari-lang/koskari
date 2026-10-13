@@ -21,7 +21,7 @@ Greet whoever is named on the command line
 import sys
 
 
-define greet [name]:
+def greet [name]:
   print "hello" name
 
 

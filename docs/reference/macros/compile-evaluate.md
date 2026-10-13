@@ -14,7 +14,7 @@ rather than a plain dict. `FORM` is evaluated, so quote a literal form.
 ```koskari
 >>> (evaluate '(+ 1 2))
 3
->>> (define x 4)
+>>> (var x 4)
 >>> (evaluate '(* 2 x) (globals))
 8
 ```

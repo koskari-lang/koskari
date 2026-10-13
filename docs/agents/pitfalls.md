@@ -28,7 +28,7 @@ that stay Koskari-internal.
 **Any direct call from Python needs `demand`, not only callback
 arguments.** Koskari runs ambiently async. This applies to every call
 made from plain Python code, not only a lambda handed to a Python
-higher-order function -- calling a plain `define`d top-level function
+higher-order function -- calling a plain `def` top-level function
 directly from Python (`mod.some_fn(x)`, no `await`, no event loop)
 returns an un-awaited `koskari.lib.Coroutine`, not the value, exactly
 like the callback case:
@@ -44,12 +44,12 @@ callables directly -- `(list (map {(* %1 %1)} numbers))`, no wrap; see
 
 ```koskari
 (define-demanding some_fn [x] (+ x 1))      ; direct-call entry point
-; equivalent: (define some_fn (demand (function some_fn [x] (+ x 1))))
-; equivalent: @demand \n define some_fn [x]: (+ x 1)
+; equivalent: (var some_fn (demand (function some_fn [x] (+ x 1))))
+; equivalent: @demand \n def some_fn [x]: (+ x 1)
 ```
 
 `define-demanding NAME FORMALS BODY...` and `@demand` above a plain
-`define` are equivalent; both wrap the function so a synchronous
+`def` are equivalent; both wrap the function so a synchronous
 Python caller with no event loop gets the resolved value. Any
 top-level function meant to be imported and called directly by Python
 (a module boundary a Python package will call into, a test harness)

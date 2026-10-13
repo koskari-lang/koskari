@@ -28,7 +28,7 @@ import [.programs as: _programs]
 
 ; Record-mapped views: each value is a transform(record, provenance)
 ; callable applied once per corpus record.
-define VIEWS #{
+var VIEWS #{
     _full.VIEW_NAME: _full.transform
 }
 
@@ -36,7 +36,7 @@ define VIEWS #{
 ; callable that produces rows from repository files rather than from
 ; corpus records. These publish reference material (docs, example
 ; programs) that is not part of the verified corpus.
-define SOURCE_VIEWS #{
+var SOURCE_VIEWS #{
     _docs.VIEW_NAME: _docs.generate
     _programs.VIEW_NAME: _programs.generate
 }

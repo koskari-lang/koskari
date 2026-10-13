@@ -21,10 +21,10 @@ import-from dataclasses replace
 import-from importlib import_module
 
 
-define logger (logging.getLogger "kosrunner")
+var logger (logging.getLogger "kosrunner")
 
 
-define require-extra [module extra]:
+def require-extra [module extra]:
     """
     Resolve a variety's optional client library, raising a message that
     names the extra to install when it is absent. A variety whose library
@@ -44,7 +44,7 @@ define require-extra [module extra]:
             f" pip install koskari-kosrunner[{extra}]"))
 
 
-define watch-task [task what job: None]:
+def watch-task [task what job: None]:
     """
     Watch a long-lived background task so that its death is reported.
 
@@ -61,11 +61,11 @@ define watch-task [task what job: None]:
     in the same expression that stores it.
     """
 
-    define _done [t]:
+    def _done [t]:
         unless (None? job):
             set! job.running False
         try:
-            define exc (t.exception)
+            var exc (t.exception)
         except [CancelledError]:
             (logger.info "%s cancelled" what)
             (return)
@@ -86,7 +86,7 @@ define-class ConfigBase []:
     raise).
     """
 
-    define merge [self **: overrides]:
+    def merge [self **: overrides]:
         (replace self **: overrides)
 
 
@@ -101,7 +101,7 @@ define-dataclass Config [ConfigBase]:
     default it and guard at start instead.
     """
 
-    define [disabled :: bool] False
+    var disabled :: bool False
 
 
 define-class Job []:
@@ -111,7 +111,7 @@ define-class Job []:
     and may add their own sub-item setters.
     """
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.name None            ; set by JobSet.register
         set! self.config None
         set! self.callback None
@@ -126,9 +126,9 @@ define-class Job []:
 
     ;; the variety's Config class, used when a job is configured with no
     ;; base to merge onto; subclasses override (WebhookJob -> WebhookConfig)
-    define config-class Config
+    var config-class Config
 
-    define configure [self via: None **: overrides]:
+    def configure [self via: None **: overrides]:
         """
         The `config:` sub-item. `via` selects a base Config (the type
         default or a named one); with no `via` the job's current config is
@@ -140,7 +140,7 @@ define-class Job []:
         afterwards and unaffected.
         """
 
-        define base (or via self.config)
+        var base (or via self.config)
         set! self.config (if base
             (base.merge **: overrides)
             (self.config-class **: overrides))
@@ -148,7 +148,7 @@ define-class Job []:
         self
 
 
-    define handler [self fn]:
+    def handler [self fn]:
         """
         The `handler [..]:` sub-item -- the code run when the job fires.
         """
@@ -157,7 +157,7 @@ define-class Job []:
         self
 
 
-    define allow [self groups]:
+    def allow [self groups]:
         """
         The `allow #[..]` sub-item -- the Group values whose members may
         trigger this job (operators always may), referenced by BINDING,
@@ -170,7 +170,7 @@ define-class Job []:
         self
 
 
-    define trigger-spec [self]:
+    def trigger-spec [self]:
         """
         The manual-trigger contract. None (the base) means this job cannot
         be fired fresh from the UI -- admin/ui/kafka and untyped webhooks
@@ -187,18 +187,18 @@ define-class Job []:
 
     ; --- tracked execution ---
 
-    define _job-kind [self]:
-        define cls (type self)
+    def _job-kind [self]:
+        var cls (type self)
         (.lower (.removesuffix cls.__name__ "Job"))
 
 
-    define _invoke [self args kwargs]:
+    def _invoke [self args kwargs]:
         (if (None? self.callback)
             None
             (self.callback *: args **: kwargs))
 
 
-    define _tracked-invoke [self store runid args kwargs]:
+    def _tracked-invoke [self store runid args kwargs]:
         """
         The recorded body of a run: set the per-run log buffer and
         mnemonic slot, invoke the callback, dispatch the on-error hook on
@@ -214,16 +214,16 @@ define-class Job []:
         ;; local import dodges the job<->store load-time cycle
         import-from .store _current-run _current-mnemonic
 
-        define buf #[]
+        var buf #[]
         ;; a one-slot cell rather than a value: `mnemonic` mutates this
         ;; from inside the handler, where a contextvar `.set` would not
         ;; carry back out to this context
-        define label #[None]
-        define token (_current-run.set buf)
-        define mtoken (_current-mnemonic.set label)
-        define status "success"
-        define result None
-        define err None
+        var label #[None]
+        var token (_current-run.set buf)
+        var mtoken (_current-mnemonic.set label)
+        var status "success"
+        var result None
+        var err None
 
         try:
             set! result (self._invoke args kwargs)
@@ -257,7 +257,7 @@ define-class Job []:
         result
 
 
-    define run [
+    def run [
             self
             *: args
             cause: "manual"
@@ -283,11 +283,11 @@ define-class Job []:
         there is no store (e.g. an unregistered job).
         """
 
-        define store (if self.jobset self.jobset.store None)
+        var store (if self.jobset self.jobset.store None)
         when (None? store):
             (return (self._invoke args kwargs))
 
-        define runid (store.record-start self.name
+        var runid (store.record-start self.name
             (self._job-kind) cause
             args: args
             kwargs: kwargs
@@ -304,11 +304,11 @@ define-class Job []:
 
     ; --- lifecycle (varieties implement) ---
 
-    define start [self]:
+    def start [self]:
         raise (NotImplementedError f"{self}.start")
 
 
-    define stop [self]:
+    def stop [self]:
         raise (NotImplementedError f"{self}.stop")
 
 
@@ -319,7 +319,7 @@ define-class JobSet []:
     enabled jobs; disabled ones stay registered but dormant.
     """
 
-    define __init__ [self name]:
+    def __init__ [self name]:
         set! self.name name
         set! self.jobs #{}
         set! self.store None              ; RunStore, wired by the jobset macro
@@ -328,7 +328,7 @@ define-class JobSet []:
         set! self._inflight (set)         ; background run tasks (async webhooks)
 
 
-    define bind-store [self config]:
+    def bind-store [self config]:
         """
         Construct the run store from an optional StorageConfig (the jobset
         macro passes `&default/storage`, which is falsey when the
@@ -339,12 +339,12 @@ define-class JobSet []:
 
         ;; local import dodges the job<->store load-time cycle
         import-from .store RunStore resolve-storage-root
-        define root (resolve-storage-root config)
+        var root (resolve-storage-root config)
         set! self.store (RunStore (str root) config: config)
         self.store
 
 
-    define bind-access [self config]:
+    def bind-access [self config]:
         """
         Attach the access lists (the jobset macro passes `&default/access`,
         falsey when the definition carried no `config access:`). None
@@ -355,7 +355,7 @@ define-class JobSet []:
         self.access
 
 
-    define register [self name job]:
+    def register [self name job]:
         set! (item self.jobs name) job
         set! job.jobset self
         set! job.name name
@@ -363,14 +363,14 @@ define-class JobSet []:
         job
 
 
-    define list-jobs [self]:
+    def list-jobs [self]:
         list-each [[name job] (self.jobs.items)]:
             #{"name": name
               "enabled": job.enabled
               "running": job.running}
 
 
-    define visible-jobs [self identity]:
+    def visible-jobs [self identity]:
         """
         The per-user projection of list-jobs: each row carries what THIS
         identity may do with the job -- `may_trigger` (fire/replay it) and
@@ -382,10 +382,10 @@ define-class JobSet []:
 
         ;; local import dodges the job<->access load-time cycle
         import-from .access may-trigger? resolve-level
-        define access self.access
-        define control (or (None? access)
+        var access self.access
+        var control (or (None? access)
             (== (resolve-level access identity) "operator"))
-        define lasts (if self.store (self.store.last-runs) #{})
+        var lasts (if self.store (self.store.last-runs) #{})
         list-each [[name job] (self.jobs.items)]:
             #{"name": name
               "type": (job._job-kind)
@@ -396,23 +396,23 @@ define-class JobSet []:
               "may_control": control}
 
 
-    define enable [self name]:
-        define job self.jobs[name]
+    def enable [self name]:
+        var job self.jobs[name]
         set! job.enabled True
         unless job.running:
             (job.start)
         job
 
 
-    define disable [self name]:
-        define job self.jobs[name]
+    def disable [self name]:
+        var job self.jobs[name]
         set! job.enabled False
         when job.running:
             (job.stop)
         job
 
 
-    define retrigger [self runid]:
+    def retrigger [self runid]:
         """
         Replay a past run by id: read its stored trigger args and fire the
         same job again as a new `manual` run linked to the original via
@@ -420,20 +420,20 @@ define-class JobSet []:
         needs. Returns a small status dict for the control plane.
         """
 
-        define trig (self.store.get-trigger runid)
+        var trig (self.store.get-trigger runid)
         unless trig:
             return #{"error": "no such run"
                      "run_id": runid}
 
-        define jobname trig["job"]
-        define job (self.jobs.get jobname)
+        var jobname trig["job"]
+        var job (self.jobs.get jobname)
 
         unless job:
             return #{"error": "unknown job"
                      "job": jobname}
 
-        define args (or (trig.get "args") #[])
-        define kwargs (or (trig.get "kwargs") #{})
+        var args (or (trig.get "args") #[])
+        var kwargs (or (trig.get "kwargs") #{})
         (job.run *: args **: kwargs cause: "manual" parent: runid)
 
         #{"ok": True
@@ -441,7 +441,7 @@ define-class JobSet []:
           "job": jobname}
 
 
-    define spawn-run [self thunk]:
+    def spawn-run [self thunk]:
         """
         Run a run's recorded body as a background task (an async webhook's
         reply). The task is held in `_inflight` -- the loop keeps only a
@@ -450,23 +450,23 @@ define-class JobSet []:
         it and surfaces any crash that escaped the run's own error handling.
         """
 
-        define task (create-task (defer thunk))
+        var task (create-task (defer thunk))
         (self._inflight.add task)
         (task.add_done_callback (demand self._run-done))
         task
 
 
-    define _run-done [self task]:
+    def _run-done [self task]:
         (self._inflight.discard task)
         try:
-            define exc (task.exception)
+            var exc (task.exception)
         except [CancelledError]:
             (return)
         when exc:
             (logger.error "background run crashed" exc_info: exc)
 
 
-    define start [self]:
+    def start [self]:
         (logger.info "starting jobset: %s" self.name)
         for-each [[name job] (self.jobs.items)]:
             when job.enabled:
@@ -474,7 +474,7 @@ define-class JobSet []:
                 (job.start)
 
 
-    define stop [self]:
+    def stop [self]:
         (logger.info "stopping jobset: %s" self.name)
         for-each [[name job] (self.jobs.items)]:
             when job.running:
@@ -485,7 +485,7 @@ define-class JobSet []:
                     (logger.error "stop failed: %s" name exc_info: True)
 
 
-    define shutdown [self]:
+    def shutdown [self]:
         """
         Signal the run loop to tear down. Safe to call from a request
         handler or a signal handler -- it only trips the event; the actual
@@ -497,8 +497,8 @@ define-class JobSet []:
             (self._stopping.set)
 
 
-    define _install-signals [self]:
-        define loop (asyncio.get_running_loop)
+    def _install-signals [self]:
+        var loop (asyncio.get_running_loop)
         for-each [sig #[signal.SIGINT signal.SIGTERM]]:
             try:
                 (loop.add_signal_handler sig (demand self.shutdown))
@@ -506,8 +506,8 @@ define-class JobSet []:
                 (logger.warning "signals unsupported on this loop: %s" sig)
 
 
-    define _remove-signals [self]:
-        define loop (asyncio.get_running_loop)
+    def _remove-signals [self]:
+        var loop (asyncio.get_running_loop)
         for-each [sig #[signal.SIGINT signal.SIGTERM]]:
             try:
                 (loop.remove_signal_handler sig)
@@ -515,7 +515,7 @@ define-class JobSet []:
                 None
 
 
-    define _teardown [self]:
+    def _teardown [self]:
         (self._remove-signals)
         (self.stop)
         ;; let in-flight background runs finish writing before the store
@@ -529,7 +529,7 @@ define-class JobSet []:
             (self.store.close)
 
 
-    define __call__ [self heartbeat: 3600 snore: False]:
+    def __call__ [self heartbeat: 3600 snore: False]:
         """
         Start enabled jobs and keep the process alive. Job start methods
         schedule their work on the ambient event loop; the run loop holds

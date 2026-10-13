@@ -44,11 +44,11 @@ pytestmark = pytest.mark.phase_importer
 
 
 PROVIDER = """
-(define-syntax doubled
+(syntax doubled
   (syntax-rules []
     [(doubled x) (* x 2)]))
 
-(define plain-value 7)
+(var plain-value 7)
 """
 
 
@@ -102,7 +102,7 @@ class TestImportSyntax(SyntaxImportCase):
         self.write_ki('ki_syn_provider', PROVIDER)
         self.write_ki('ki_syn_user', """
         (import-from ki_syn_provider compile/doubled)
-        (define result (doubled 21))
+        (var result (doubled 21))
         """)
 
         mod = importlib.import_module('ki_syn_user')
@@ -113,7 +113,7 @@ class TestImportSyntax(SyntaxImportCase):
         self.write_ki('ki_syn_provider2', PROVIDER)
         self.write_ki('ki_syn_user2', """
         (import-from ki_syn_provider2 compile/doubled)
-        (define result (doubled 4))
+        (var result (doubled 4))
         """)
 
         mod = importlib.import_module('ki_syn_user2')
@@ -124,7 +124,7 @@ class TestImportSyntax(SyntaxImportCase):
         self.write_ki('ki_syn_provider3', PROVIDER)
         self.write_ki('ki_syn_user3', """
         (import-from ki_syn_provider3 [compile/doubled as: compile/twiced])
-        (define result (twiced 5))
+        (var result (twiced 5))
         """)
 
         mod = importlib.import_module('ki_syn_user3')
@@ -136,7 +136,7 @@ class TestImportSyntax(SyntaxImportCase):
         self.write_ki('ki_syn_user5', """
         (import-from ki_syn_provider5 compile/doubled)
         (extend-syntax doubled (syntax-rules [] [(doubled x y) (* x y)]))
-        (define result #[(doubled 21) (doubled 6 7)])
+        (var result #[(doubled 21) (doubled 6 7)])
         """)
 
         mod = importlib.import_module('ki_syn_user5')
@@ -147,7 +147,7 @@ class TestImportSyntax(SyntaxImportCase):
         self.write_ki('ki_syn_provider4', PROVIDER)
         self.write_ki('ki_syn_user4', """
         (import-from ki_syn_provider4 compile/doubled plain-value)
-        (define result (doubled plain-value))
+        (var result (doubled plain-value))
         """)
 
         mod = importlib.import_module('ki_syn_user4')

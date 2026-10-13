@@ -5,7 +5,7 @@
 (begin BODY))`. The form evaluates to the new class object; it does **not**
 by itself bind **NAME** in the module (see [compile/class](../specials/compile-class.md)).
 To define a named class in one step, use **`layout/define-class`**
-or wrap with **`compile/define`**.
+or wrap with **`compile/var`**.
 
 The superclass list may be omitted; when missing, the expansion uses `()` (nil).
 

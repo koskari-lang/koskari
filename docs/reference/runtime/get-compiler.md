@@ -29,10 +29,10 @@ See [compile/get-compiler](../macros/compile-get-compiler.md).
 
 ```koskari
 ;; One-argument form uses (locals) via the compile/get-compiler macro
-(define c (get-compiler))
+(var c (get-compiler))
 
 ;; Compile a form by hand with the module compiler
-(define frag (.compile_expression (get-compiler) '(+ 1 2)))
+(var frag (.compile_expression (get-compiler) '(+ 1 2)))
 ```
 
 See also [compile](compile.md) and [evaluate](evaluate.md).

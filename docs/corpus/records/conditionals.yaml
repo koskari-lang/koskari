@@ -1014,10 +1014,10 @@ notes: bool 0 is falsy; bool expands to compile/truth
 id: conditional-when-not-spell-as-unless-001
 feature: macro/compile/when
 source: |-
-  (begin (define x False) (when (not x) "ran"))
+  (begin (var x False) (when (not x) "ran"))
   
 verify:
-  read: (begin (define x False) (when (not x) "ran"))
+  read: (begin (var x False) (when (not x) "ran"))
   eval: '"ran"'
 references:
   - reference/macros/compile-unless.md

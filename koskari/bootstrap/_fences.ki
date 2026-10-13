@@ -1,9 +1,9 @@
 
 
-define-syntax define-fence:
+syntax define-fence:
   syntax-rules []:
     case (define-fence name [source-str options] body ...):
-      define name:
+      var name:
         let []:
           import-from koskari.fences FenceHandler
           (FenceHandler (str 'name)
@@ -12,11 +12,11 @@ define-syntax define-fence:
 
 
 define-fence fence/bash [raw meta]:
-  define options (meta.get "options")
-  define exec_now (options.pop "immediate" False)
+  var options (meta.get "options")
+  var exec_now (options.pop "immediate" False)
 
   when options:
-    define names (.join " " (sorted options))
+    var names (.join " " (sorted options))
     raise (FenceError f"fence/bash got unknown options: {names}")
 
   ;; meta and options are source forms, so we look for an explicit

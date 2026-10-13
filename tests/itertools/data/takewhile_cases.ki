@@ -21,32 +21,32 @@ import-from asyncio sleep
 import-from koskari.itertools takewhile
 
 
-define small? [x]:
+def small? [x]:
   (< x 3)
 
 
-(define prefix (list (takewhile small? (range 10))))
+(var prefix (list (takewhile small? (range 10))))
 
-(define empty-source (list (takewhile small? #[])))
+(var empty-source (list (takewhile small? #[])))
 
-(define all-pass (list (takewhile small? #[0 1 2])))
+(var all-pass (list (takewhile small? #[0 1 2])))
 
-(define none-pass (list (takewhile small? #[5 6])))
+(var none-pass (list (takewhile small? #[5 6])))
 
-(define python-predicate (list (takewhile str.isdigit "12a3")))
+(var python-predicate (list (takewhile str.isdigit "12a3")))
 
 
-(define visits #[])
+(var visits #[])
 
-define visiting [src]:
+def visiting [src]:
   for-each [x src]:
     (visits.append x)
     yield x
 
-(define stops-early (list (takewhile small? (visiting (range 10)))))
-(define visited (list visits))
+(var stops-early (list (takewhile small? (visiting (range 10)))))
+(var visited (list visits))
 
 
-define slow-small? [x]:
+def slow-small? [x]:
   (sleep 0)
   (< x 3)

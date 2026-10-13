@@ -16,17 +16,17 @@ import-from kosrunner HttpServer
 define-class TestWebhookToken [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define asyncSetUp [self]:
+    def asyncSetUp [self]:
         set! self.server (HttpServer "127.0.0.1" 8080)
         set! self.http (self.http-client self.server)
 
 
     @coroutine-fn
-    define test-correct-token-runs-and-returns-result [self]:
+    def test-correct-token-runs-and-returns-result [self]:
         (self.webhook self.server "ping"
             (lambda [payload] #{"ok": True "echo": payload})
             token: "sekret")
-        define resp (self.http.post "/webhook/ping"
+        var resp (self.http.post "/webhook/ping"
             json: #{"a": 1}
             headers: #{"X-Kosrunner-Token": "sekret"})
         (self.assertEqual resp.status_code 200)
@@ -34,30 +34,30 @@ define-class TestWebhookToken [SchedulerAsyncTestCase]:
 
 
     @coroutine-fn
-    define test-wrong-token-is-rejected [self]:
+    def test-wrong-token-is-rejected [self]:
         (self.webhook self.server "ping"
             (lambda [payload] #{"ok": True})
             token: "sekret")
-        define resp (self.http.post "/webhook/ping"
+        var resp (self.http.post "/webhook/ping"
             json: #{"a": 1}
             headers: #{"X-Kosrunner-Token": "nope"})
         (self.assertEqual resp.status_code 401)
 
 
     @coroutine-fn
-    define test-missing-token-is-rejected [self]:
+    def test-missing-token-is-rejected [self]:
         (self.webhook self.server "ping"
             (lambda [payload] #{"ok": True})
             token: "sekret")
-        define resp (self.http.post "/webhook/ping" json: #{"a": 1})
+        var resp (self.http.post "/webhook/ping" json: #{"a": 1})
         (self.assertEqual resp.status_code 401)
 
 
     @coroutine-fn
-    define test-open-webhook-stays-open [self]:
+    def test-open-webhook-stays-open [self]:
         (self.webhook self.server "echo"
             (lambda [payload] #{"ok": True}))
-        define resp (self.http.post "/webhook/echo" json: #{})
+        var resp (self.http.post "/webhook/echo" json: #{})
         (self.assertEqual resp.status_code 200)
 
 

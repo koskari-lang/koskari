@@ -9,7 +9,7 @@ the hygiene marks on its symbols. `quote` strips them, which is right for
 data: a `'(t)` written in a template yields the plain symbol `t`, the one
 the caller also writes. A syntax transformer's patterns and templates are
 not data the program compares but source the expander reads back, so
-`define-syntax` quotes them with `quote-syntax`. A template that a
+`syntax` quotes them with `quote-syntax`. A template that a
 macro-generating macro introduced then keeps the outer expansion's marks,
 and its references resolve to what that expansion bound. A macro author
 writes `#'` for the same reason in the rare case of hand-building such a

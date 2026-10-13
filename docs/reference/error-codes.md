@@ -45,10 +45,10 @@ Compile errors happen after reading and before runtime evaluation.
 Example:
 
 ```koskari
-(define)
+(var)
 ```
 
-The text is readable, but the `define` form is missing required pieces.
+The text is readable, but the `var` form is missing required pieces.
 
 ---
 

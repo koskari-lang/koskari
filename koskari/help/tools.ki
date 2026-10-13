@@ -33,10 +33,10 @@ import-from ..lib symbol
   kos_help_text_object)
 
 
-define _registry #{}
+var _registry #{}
 
 
-define _HELP_PREFIXES #("compile/" "layout/" "match/")
+var _HELP_PREFIXES #("compile/" "layout/" "match/")
 
 
 define-class HelpFormatter []:
@@ -44,7 +44,7 @@ define-class HelpFormatter []:
   Mutable help document builder rendered via pydoc.TextDoc
   """
 
-  define __init__ [self title: None]:
+  def __init__ [self title: None]:
     set! self.title title
     set! self._textdoc (pydoc.TextDoc)
     set! self._paragraphs #[]
@@ -54,7 +54,7 @@ define-class HelpFormatter []:
 
 
   @demand
-  define is_empty [self]:
+  def is_empty [self]:
     """
     True when this formatter has no text or nested sections with content
     """
@@ -68,7 +68,7 @@ define-class HelpFormatter []:
 
 
   @demand
-  define paragraph [self text]:
+  def paragraph [self text]:
     """
     Append a prose paragraph in the current section
     """
@@ -78,7 +78,7 @@ define-class HelpFormatter []:
 
 
   @demand
-  define item [self text]:
+  def item [self text]:
     """
     Append an indented line in the current section
     """
@@ -88,7 +88,7 @@ define-class HelpFormatter []:
 
 
   @demand
-  define raw [self text]:
+  def raw [self text]:
     """
     Append pre-formatted pydoc text without re-indenting
     """
@@ -96,28 +96,28 @@ define-class HelpFormatter []:
     when (None? text):
       return None
 
-    define stripped ((str text).rstrip)
+    var stripped ((str text).rstrip)
     when stripped:
       self._raw.append stripped
 
 
   @demand
-  define section [self title]:
+  def section [self title]:
     """
     Open a section and return a child formatter scoped to it
     """
 
-    define child (HelpFormatter title: (str title))
+    var child (HelpFormatter title: (str title))
     (self._children.append child)
     child
 
 
-  define _render_body [self]:
+  def _render_body [self]:
     """
     Assemble section body before TextDoc.section wrapping
     """
 
-    define parts #[]
+    var parts #[]
     for-each [chunk self._raw]:
       parts.append chunk
 
@@ -128,7 +128,7 @@ define-class HelpFormatter []:
       parts.append ("\n".join self._lines)
 
     for-each [child self._children]:
-      define rendered (child.render)
+      var rendered (child.render)
       when rendered:
         parts.append (rendered.rstrip "\n")
 
@@ -136,12 +136,12 @@ define-class HelpFormatter []:
 
 
   @demand
-  define render [self]:
+  def render [self]:
     """
     Render this formatter and nested sections to a single string
     """
 
-    define body (self._render_body)
+    var body (self._render_body)
     if self.title:
       if body:
         (self._textdoc.section self.title body)
@@ -156,18 +156,18 @@ define-class HelpFormatter []:
 
 
 @demand
-define help_for [typeobj]:
+def help_for [typeobj]:
   """
   Decorator to register a help handler for a type
   """
 
-  define decorator [handler]:
+  def decorator [handler]:
     (help_register typeobj handler)
     handler
   (demand decorator)
 
 
-define help_register [typeobj handler]:
+def help_register [typeobj handler]:
   """
   Register a type-specific help renderer
 
@@ -178,7 +178,7 @@ define help_register [typeobj handler]:
   set! _registry[typeobj] handler
 
 
-define help_unregister [typeobj]:
+def help_unregister [typeobj]:
   """
   Remove a type from the help registry if present
   """
@@ -187,7 +187,7 @@ define help_unregister [typeobj]:
   None
 
 
-define help_registry_clear []:
+def help_registry_clear []:
   """
   Clear all help registry entries
   """
@@ -195,7 +195,7 @@ define help_registry_clear []:
   (_registry.clear)
 
 
-define help_registry_snapshot []:
+def help_registry_snapshot []:
   """
   Return a shallow copy of the help registry dict
   """
@@ -203,7 +203,7 @@ define help_registry_snapshot []:
   (dict _registry)
 
 
-define _default_help [obj formatter]:
+def _default_help [obj formatter]:
   """
   Fallback help via pydoc.TextDoc.document
   """
@@ -211,7 +211,7 @@ define _default_help [obj formatter]:
   (formatter.raw ((pydoc.TextDoc).document obj))
 
 
-define _help_protocol [obj formatter]:
+def _help_protocol [obj formatter]:
   """
   Invoke __kos_help__ or legacy __help__ on obj
   """
@@ -221,14 +221,14 @@ define _help_protocol [obj formatter]:
   ;; text. Each is called once, so an error raised inside a handler
   ;; propagates as itself.
   for-each [attrname #("__kos_help__" "__help__")]:
-    define meth (getattr obj attrname None)
+    var meth (getattr obj attrname None)
     unless (callable? meth):
       continue
 
     if (== attrname "__kos_help__"):
       (meth formatter)
     else:
-      define text (meth)
+      var text (meth)
       when (and (str? text) (text.strip)):
         (formatter.paragraph (text.strip))
 
@@ -238,7 +238,7 @@ define _help_protocol [obj formatter]:
     False
 
 
-define help_into [formatter obj]:
+def help_into [formatter obj]:
   """
   Render help for obj into formatter using registry, protocol, or default
 
@@ -247,7 +247,7 @@ define help_into [formatter obj]:
   """
 
   for-each [ty (attr (type obj) __mro__)]:
-    define handler (_registry.get ty)
+    var handler (_registry.get ty)
     unless (None? handler):
       (handler obj formatter)
       return
@@ -258,19 +258,19 @@ define help_into [formatter obj]:
   _default_help obj formatter
 
 
-define _help_lookup_keys [name]:
+def _help_lookup_keys [name]:
   """
   Namespace keys to try for a help subject name
   """
 
-  define n (str name)
+  var n (str name)
   if (n.startswith _HELP_PREFIXES):
     #(n)
   else:
     #(n f"compile/{n}" f"layout/{n}" f"match/{n}")
 
 
-define _namespace_get [namespace key]:
+def _namespace_get [namespace key]:
   """
   Fetch one binding from a namespace mapping
   """
@@ -288,18 +288,18 @@ define _namespace_get [namespace key]:
       pass
 
 
-define kos_help_text_object [obj heading: None]:
+def kos_help_text_object [obj heading: None]:
   """
   Collect help text for an object
   """
 
-  define doc (HelpFormatter)
-  define sec (doc.section (or heading (repr obj)))
+  var doc (HelpFormatter)
+  var sec (doc.section (or heading (repr obj)))
   (help_into sec obj)
   (doc.render)
 
 
-define kos_help_text [name namespace: None heading: None]:
+def kos_help_text [name namespace: None heading: None]:
   """
   Collect help text for name and related namespace keys
 
@@ -309,7 +309,7 @@ define kos_help_text [name namespace: None heading: None]:
   :raises TypeError: when namespace is None
   """
 
-  define doc (HelpFormatter)
+  var doc (HelpFormatter)
 
   when (None? namespace):
     ; we don't use a normal truthiness simply because an empty namespace
@@ -317,29 +317,29 @@ define kos_help_text [name namespace: None heading: None]:
     raise (TypeError "namespace is required")
 
   for-each [key (_help_lookup_keys name)]:
-    define val (_namespace_get namespace key)
+    var val (_namespace_get namespace key)
     when (None? val):
       (continue)
-    define sec (doc.section (or heading key))
+    var sec (doc.section (or heading key))
     (help_into sec val)
 
   if (doc.is_empty) "" (doc.render)
 
 
-define kos_help [element namespace: None]:
+def kos_help [element namespace: None]:
   """
   Display help for name in namespace via the system pager
   """
 
-  define units:
+  var units:
     if (instance? element #(list tuple)):
       element
     else:
       #[element]
 
-  define symtypes #(str symbol)
+  var symtypes #(str symbol)
 
-  define col:
+  var col:
     list-each [unit units]:
       if (instance? unit symtypes):
         kos_help_text unit namespace

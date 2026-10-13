@@ -454,7 +454,7 @@ tags:
 ---
 id: object-class-slot-001
 feature: special/compile/class
-source: (begin (define Box (class Box () (define label "hi"))) (attr Box label))
+source: (begin (var Box (class Box () (var label "hi"))) (attr Box label))
 verify:
   eval: '"hi"'
 references:
@@ -468,7 +468,7 @@ notes: class with class-level slot; read via compile/attr on the type
 ---
 id: object-class-type-001
 feature: special/compile/class
-source: (begin (define Box (class Box () (define label "hi"))) Box)
+source: (begin (var Box (class Box () (var label "hi"))) Box)
 verify:
   eval: "@kostype:Box"
 references:
@@ -480,9 +480,9 @@ tags:
 ---
 id: object-define-class-expand-001
 feature: macro/compile/define-class
-source: (define-class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))
+source: (define-class Counter [] (var n 0) (def bump [self] (set-attr self n (+ (attr self n) 1))))
 verify:
-  expand: "(begin (define Counter (class Counter [] (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1))))) (create-instance-check Counter))"
+  expand: "(begin (var Counter (class Counter [] (var n 0) (def bump [self] (set-attr self n (+ (attr self n) 1))))) (create-instance-check Counter))"
 references:
   - reference/macros/compile-define-class.md
   - reference/specials/compile-class.md
@@ -498,7 +498,7 @@ id: object-define-class-eval-001
 feature: macro/compile/define-class
 source: |-
   (begin
-    (define-class Counter [] (define n 0))
+    (define-class Counter [] (var n 0))
     (let [[c (Counter)]]
       (begin (set-attr c n 1) (attr c n))))
 verify:
@@ -517,7 +517,7 @@ notes: instance slot mutation via define-class and set-attr
 ---
 id: object-define-class-type-001
 feature: macro/compile/define-class
-source: (begin (define-class Counter [] (define n 0)) Counter)
+source: (begin (define-class Counter [] (var n 0)) Counter)
 verify:
   eval: "@kostype:Counter"
 references:
@@ -535,11 +535,11 @@ id: object-define-class-layout-001
 feature: layout/define-class
 source: |-
   define-class Counter []:
-    define n 0
-    define bump [self]:
+    var n 0
+    def bump [self]:
       (set-attr self n (+ (attr self n) 1))
 verify:
-  read: "(define-class Counter () (begin (define n 0) (define bump [self] (set-attr self n (+ (attr self n) 1)))))"
+  read: "(define-class Counter () (begin (var n 0) (def bump [self] (set-attr self n (+ (attr self n) 1)))))"
 references:
   - reference/layouts/layout-define-class.md
   - reference/macros/compile-define-class.md
@@ -1449,7 +1449,7 @@ notes: 42 is an instance of int
 id: object-class-slot-int-003
 feature: special/compile/class
 source: |-
-  (begin (define Counter (class Counter () (define count 0))) (attr Counter count))
+  (begin (var Counter (class Counter () (var count 0))) (attr Counter count))
   
 verify:
   eval: "0"
@@ -1837,11 +1837,11 @@ id: object-layout-class-read-001
 feature: layout/class
 source: |-
   class MyClass (object):
-    define method [self]:
+    def method [self]:
       42
   
 verify:
-  read: (class MyClass (object) (begin (define method (self) 42)))
+  read: (class MyClass (object) (begin (def method (self) 42)))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1855,13 +1855,13 @@ id: object-layout-class-methods-002
 feature: layout/class
 source: |-
   class Counter (object):
-    define __init__ [self n]:
+    def __init__ [self n]:
       (setattr self "_n" n)
-    define tick [self]:
+    def tick [self]:
       (incr! self._n)
   
 verify:
-  read: (class Counter (object) (begin (define __init__ (self n) (setattr self "_n" n)) (define tick (self) (incr! (attr self _n)))))
+  read: (class Counter (object) (begin (def __init__ (self n) (setattr self "_n" n)) (def tick (self) (incr! (attr self _n)))))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1875,13 +1875,13 @@ id: object-layout-class-attr-access-003
 feature: layout/class
 source: |-
   class Adder (object):
-    define __init__ [self base]:
+    def __init__ [self base]:
       (setattr self "base" base)
-    define add [self x]:
+    def add [self x]:
       (+ self.base x)
   
 verify:
-  read: (class Adder (object) (begin (define __init__ (self base) (setattr self "base" base)) (define add (self x) (+ (attr self base) x))))
+  read: (class Adder (object) (begin (def __init__ (self base) (setattr self "base" base)) (def add (self x) (+ (attr self base) x))))
 references:
   - reference/layouts/layout-class.md
 stability: stable
@@ -1898,9 +1898,9 @@ source: |-
     import-from dataclasses dataclass
     @dataclass
     define-class Pt []:
-      define x :: int 0
-      define y :: int 0
-    define p (Pt 3 5)
+      var x :: int 0
+      var y :: int 0
+    var p (Pt 3 5)
     p.x
   
 verify:
@@ -1913,20 +1913,20 @@ tags:
   - define-class
   - "surface:block"
   - define-type
-notes: "from examples/dataclass.ki; @dataclass decorator on define-class; define x :: int 0 is typed field with default"
+notes: "from examples/dataclass.ki; @dataclass decorator on define-class; var x :: int 0 is a typed field with default"
 ---
 id: object-set-attr-method-pattern-001
 feature: special/compile/set-attr
 source: |-
   begin:
     define-class Point []:
-      define __init__ [self x]:
+      def __init__ [self x]:
         (self.set_x x)
-      define get_x [self]:
+      def get_x [self]:
         self.real_x
-      define set_x [self x]:
+      def set_x [self x]:
         (set-attr self real_x x)
-    define p (Point 42)
+    var p (Point 42)
     (p.get_x)
   
 verify:
@@ -1947,13 +1947,13 @@ feature: special/compile/set-attr
 source: |-
   (begin
     (import-from types SimpleNamespace)
-    (define ns (SimpleNamespace))
+    (var ns (SimpleNamespace))
     (set-attr ns name "koskari")
     ns.name)
   
 verify:
-  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
-  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
+  read: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
+  expand: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns name "koskari") (attr ns name))
   eval: '"koskari"'
 references:
   - reference/specials/compile-set-attr.md
@@ -1969,14 +1969,14 @@ feature: special/compile/set-attr
 source: |-
   (begin
     (import-from types SimpleNamespace)
-    (define ns (SimpleNamespace))
+    (var ns (SimpleNamespace))
     (set-attr ns x 10)
     (set-attr ns y 20)
     (+ ns.x ns.y))
   
 verify:
-  read: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
-  expand: (begin (import-from types SimpleNamespace) (define ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
+  read: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
+  expand: (begin (import-from types SimpleNamespace) (var ns (SimpleNamespace)) (set-attr ns x 10) (set-attr ns y 20) (+ (attr ns x) (attr ns y)))
   eval: "30"
 references:
   - reference/specials/compile-set-attr.md
@@ -1989,10 +1989,10 @@ notes: setting multiple attributes; dot-attr access reads as compile/attr for ea
 ---
 id: object-define-class-eq-behavior-001
 feature: macro/compile/define-class
-source: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== self.x other.x) (== self.y other.y)))) (== (V2 1 2) (V2 1 2)))
+source: (begin (define-class V2 [] (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __eq__ [self other] (and (== self.x other.x) (== self.y other.y)))) (== (V2 1 2) (V2 1 2)))
 verify:
-  read: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
-  expand: (begin (define-class V2 [] (define __init__ [self x y] (set-attr self x x) (set-attr self y y)) (define __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
+  read: (begin (define-class V2 [] (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
+  expand: (begin (define-class V2 [] (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __eq__ [self other] (and (== (attr self x) (attr other x)) (== (attr self y) (attr other y))))) (== (V2 1 2) (V2 1 2)))
   eval: "true"
 references:
   - reference/macros/compile-define-class.md
@@ -2008,10 +2008,10 @@ notes: "behavior (not just shape) of a user __eq__: two distinct instances with 
 ---
 id: object-define-class-call-behavior-001
 feature: macro/compile/define-class
-source: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* self.f v))) (define dbl (Mult 2)) (dbl 21))
+source: (begin (define-class Mult [] (def __init__ [self f] (set-attr self f f)) (def __call__ [self v] (* self.f v))) (var dbl (Mult 2)) (dbl 21))
 verify:
-  read: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (attr self f) v))) (define dbl (Mult 2)) (dbl 21))
-  expand: (begin (define-class Mult [] (define __init__ [self f] (set-attr self f f)) (define __call__ [self v] (* (attr self f) v))) (define dbl (Mult 2)) (dbl 21))
+  read: (begin (define-class Mult [] (def __init__ [self f] (set-attr self f f)) (def __call__ [self v] (* (attr self f) v))) (var dbl (Mult 2)) (dbl 21))
+  expand: (begin (define-class Mult [] (def __init__ [self f] (set-attr self f f)) (def __call__ [self v] (* (attr self f) v))) (var dbl (Mult 2)) (dbl 21))
   eval: "42"
 references:
   - reference/macros/compile-define-class.md

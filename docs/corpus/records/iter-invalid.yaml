@@ -159,12 +159,12 @@ id: iter-sort-key-koskari-lambda-invalid-001
 feature: builtin/demand
 source: |-
   (begin
-    (define rows #[#{"k": 2} #{"k": 1}])
+    (var rows #[#{"k": 2} #{"k": 1}])
     (rows.sort key: {(item %1 "k")})
     rows)
   
 verify:
-  read: "(begin (define rows (#list (#dict (#tuple \"k\" 2)) (#dict (#tuple \"k\" 1)))) ((attr rows sort) key: (gensym-thunk (item %1 \"k\"))) rows)"
+  read: "(begin (var rows (#list (#dict (#tuple \"k\" 2)) (#dict (#tuple \"k\" 1)))) ((attr rows sort) key: (gensym-thunk (item %1 \"k\"))) rows)"
   invalid: "list.sort is a python method: it calls the key from python, so a bare koskari lambda returns an un-awaited Coroutine per element and the sort raises TypeError: '<' not supported between instances of 'koskari.lib.Coroutine' and 'koskari.lib.Coroutine'. sorted tolerates the same lambda because it demand-wraps its key; list.sort does not."
 references:
   - agents/pitfalls.md

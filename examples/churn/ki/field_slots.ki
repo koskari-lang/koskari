@@ -2,21 +2,21 @@
 ;; attribute access takes the SLOT storage path (a fixed member offset)
 ;; rather than the instance dict.
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
 define-class SlotBox []:
 
-    define __slots__ #("i" "a" "b")
+    var __slots__ #("i" "a" "b")
 
-    define __init__ [self]:
+    def __init__ [self]:
         set! self.i 0
         set! self.a 0
         set! self.b 0
 
 
-define churn_field_slots [n x: 1]:
-    define box (SlotBox)
+def churn_field_slots [n x: 1]:
+    var box (SlotBox)
     set! box.i 0
     set! box.a (& x MASK32)
     set! box.b 1

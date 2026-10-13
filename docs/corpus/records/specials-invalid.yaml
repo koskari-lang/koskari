@@ -53,9 +53,9 @@ notes: "corrective: obj.count (bare, no parens) -- or (attr obj count), which it
 ---
 id: special-use-nested-scope-invalid-001
 feature: special/compile/use
-source: (define f (lambda f [] (begin (use os.path join) 1)))
+source: (var f (lambda f [] (begin (use os.path join) 1)))
 verify:
-  read: (define f (lambda f [] (begin (use (attr os path) join) 1)))
+  read: (var f (lambda f [] (begin (use (attr os path) join) 1)))
   error: use is only allowed at module level
 references:
   - reference/specials/use.md

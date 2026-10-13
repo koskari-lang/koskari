@@ -82,7 +82,7 @@ class TestNestedExcInfo(SpecialsTestCase):
         # a nested handler shows its own, and after it the outer is back
         src = """
         (begin
-          (define seen (list))
+          (var seen (list))
           (try
             (try
               (throw (ValueError "outer"))
@@ -120,7 +120,7 @@ class TestNestedExcInfo(SpecialsTestCase):
 
         src = """
         (begin
-          (define seen (list))
+          (var seen (list))
           (try
             (try
               (throw (ValueError "outer"))
@@ -141,7 +141,7 @@ class TestNestedExcInfo(SpecialsTestCase):
     async def test_handled_exception_after_nested_try_in_handler(self):
         src = """
         (begin
-          (define seen (list))
+          (var seen (list))
           (try
             (throw (ValueError "outer"))
             ([e ValueError]
@@ -173,7 +173,7 @@ class TestNestedExcInfo(SpecialsTestCase):
     async def test_exception_state_clears_when_the_handler_ends(self):
         src = """
         (begin
-          (define seen (list))
+          (var seen (list))
           (try (throw (ValueError "x")) ([e ValueError] (seen.append (handled))))
           (seen.append (handled))
           seen)
@@ -186,8 +186,8 @@ class TestNestedExcInfo(SpecialsTestCase):
         # the caller, itself inside a ValueError handler, still sees its own
         src = """
         (begin
-          (define seen (list))
-          (define f (lambda []
+          (var seen (list))
+          (var f (lambda []
             (try (throw (KeyError "inner"))
               ([e KeyError] (seen.append (handled)) (return 1)))))
           (try

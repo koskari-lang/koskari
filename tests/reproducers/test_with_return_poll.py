@@ -41,13 +41,13 @@ SRC = """
 import _thread
 
 define-class Mgr []:
-    define __enter__ [self]:
+    def __enter__ [self]:
         self
 
-    define __exit__ [self typ val tb]:
+    def __exit__ [self typ val tb]:
         False
 
-define return-under-pending-signal []:
+def return-under-pending-signal []:
     with [(Mgr)]:
         (_thread.interrupt_main)
         (return 42)

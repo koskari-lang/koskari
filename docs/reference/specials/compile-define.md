@@ -1,6 +1,11 @@
 # compile/define
 **Symbol:** `compile/define`
 
+`define` is the Scheme-layer spelling. Koskari code binds a value with
+[`var`](compile-var.md) and a function with
+[`def`](../macros/compile-def.md); see
+[Bindings and refs](../../guide/bindings-and-refs.md).
+
 **Syntax:** The name and optional return type can be written in either of two
 ways:
 

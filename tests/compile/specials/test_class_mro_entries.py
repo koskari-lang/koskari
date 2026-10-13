@@ -43,7 +43,7 @@ class TestClassMroEntries(SpecialsTestCase):
     async def test_generic_base(self):
         src_str = """
         (class Box (GenericT)
-          (define __init__ (lambda [self v] (setattr self "v" v))))
+          (var __init__ (lambda [self v] (setattr self "v" v))))
         """
         expr, mod = self.compile_expr(
             src_str, GenericT=Generic[T], setattr=setattr)
@@ -56,7 +56,7 @@ class TestClassMroEntries(SpecialsTestCase):
     async def test_named_tuple_base(self):
         src_str = """
         (class Point (NamedTuple)
-          (define __annotations__ #{"x": int "y": int}))
+          (var __annotations__ #{"x": int "y": int}))
         """
         expr, mod = self.compile_expr(
             src_str, NamedTuple=NamedTuple, int=int)
@@ -70,7 +70,7 @@ class TestClassMroEntries(SpecialsTestCase):
     async def test_typed_dict_base(self):
         src_str = """
         (class Movie (TypedDict)
-          (define __annotations__ #{"title": str}))
+          (var __annotations__ #{"title": str}))
         """
         expr, mod = self.compile_expr(src_str, TypedDict=TypedDict, str=str)
         movie = await expr()

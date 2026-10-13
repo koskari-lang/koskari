@@ -76,9 +76,9 @@ class TestCodeCycleCollection(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-class Leaky []
-            (define helper [self] 1)
-            (define run [self] (self.helper)))
-          (define inst (Leaky))
+            (def helper [self] 1)
+            (def run [self] (self.helper)))
+          (var inst (Leaky))
           (inst.run)
           (inst.run)
           (inst.run)
@@ -103,8 +103,8 @@ class TestCodeCycleCollection(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-class Holder []
-            (define m [self] 1))
-          (define o (Holder))
+            (def m [self] 1))
+          (var o (Holder))
           (set-attr o cb o.m)
           o)
         """

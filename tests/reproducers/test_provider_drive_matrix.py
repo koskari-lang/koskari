@@ -38,31 +38,31 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define inc [x]:
+def inc [x]:
     (+ x 1)
 
-define odd? [x]:
+def odd? [x]:
     (== 1 (% x 2))
 
-define gen-src []:
+def gen-src []:
     yield 1
     yield 2
     yield 3
     yield 4
 
-define consume [it]:
-    define total 0
+def consume [it]:
+    var total 0
     for-each [v it]:
         set! total (+ total v)
     total
 
-define consume-demand [it]:
+def consume-demand [it]:
     (consume (list it))
 
-define make-map [f seq]:
+def make-map [f seq]:
     (map f seq)
 
-define make-filter [p seq]:
+def make-filter [p seq]:
     (filter p seq)
 """
 

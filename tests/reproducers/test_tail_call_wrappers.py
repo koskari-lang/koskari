@@ -53,10 +53,10 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
     async def test_partial_over_koskari_function(self):
         src = """
         (begin
-          (define add (lambda [a b] (+ a b)))
-          (define inc (partial add 1))
-          (define f (lambda [x] (inc x)))
-          (define h (lambda [x] (* 10 (f x))))
+          (var add (lambda [a b] (+ a b)))
+          (var inc (partial add 1))
+          (var f (lambda [x] (inc x)))
+          (var h (lambda [x] (* 10 (f x))))
           (h 5))
         """
         self.assertEqual(60, await self._run(src))
@@ -65,9 +65,9 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
     async def test_partial_over_python_callable(self):
         src = """
         (begin
-          (define inc (partial add 1))
-          (define f (lambda [x] (inc x)))
-          (define h (lambda [x] (* 10 (f x))))
+          (var inc (partial add 1))
+          (var f (lambda [x] (inc x)))
+          (var h (lambda [x] (* 10 (f x))))
           (h 5))
         """
         self.assertEqual(60, await self._run(src, add=_add))
@@ -76,9 +76,9 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
     async def test_apply_over_koskari_function(self):
         src = """
         (begin
-          (define add (lambda [a b] (+ a b)))
-          (define g (lambda [x] (apply add #[x 1])))
-          (define h (lambda [x] (* 10 (g x))))
+          (var add (lambda [a b] (+ a b)))
+          (var g (lambda [x] (apply add #[x 1])))
+          (var h (lambda [x] (* 10 (g x))))
           (h 5))
         """
         self.assertEqual(60, await self._run(src))
@@ -87,8 +87,8 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
     async def test_apply_over_python_callable(self):
         src = """
         (begin
-          (define g (lambda [x] (apply add #[x 1])))
-          (define h (lambda [x] (* 10 (g x))))
+          (var g (lambda [x] (apply add #[x 1])))
+          (var h (lambda [x] (* 10 (g x))))
           (h 5))
         """
         self.assertEqual(60, await self._run(src, add=_add))
@@ -99,10 +99,10 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
         # be tail-prepped against it
         src = """
         (begin
-          (define add (lambda [a b] (+ a b)))
-          (define g (lambda [x] (apply add #[x 1])))
-          (define w (lambda [x] (with [cm (nullcontext)] (g x))))
-          (define hw (lambda [x] (* 10 (w x))))
+          (var add (lambda [a b] (+ a b)))
+          (var g (lambda [x] (apply add #[x 1])))
+          (var w (lambda [x] (with [cm (nullcontext)] (g x))))
+          (var hw (lambda [x] (* 10 (w x))))
           (hw 5))
         """
         self.assertEqual(
@@ -114,7 +114,7 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
         # depth does not grow with the iteration count
         src = """
         (begin
-          (define loop
+          (var loop
             (lambda [n acc]
               (cond [(== n 0) acc]
                     [else: (apply loop #[(- n 1) (+ acc 1)])])))
@@ -126,11 +126,11 @@ class TestTailCallThroughWrappers(SpecialsTestCase):
     async def test_deep_tail_recursion_through_partial_stays_flat(self):
         src = """
         (begin
-          (define step
+          (var step
             (lambda [k n acc]
               (cond [(== n 0) acc]
                     [else: (bump (- n k) (+ acc k))])))
-          (define bump (partial step 1))
+          (var bump (partial step 1))
           (bump 20000 0))
         """
         self.assertEqual(20000, await self._run(src))

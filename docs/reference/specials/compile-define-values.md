@@ -1,6 +1,9 @@
 # compile/define-values
 **Symbol:** `compile/define-values`
 
+`define-values` is the Scheme-layer spelling of
+[`var`](compile-var.md) over a pattern.
+
 **Syntax:** `(define-values PATTERN VALUE)`
 
 Same PATTERN shapes as `compile/setq-values`.

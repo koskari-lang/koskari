@@ -3,16 +3,16 @@
 ;; unrelated class, read and written through cached attribute sites.
 
 define-class A [object]:
-    define __slots__ #("x" "y" "z" "w" "v")
+    var __slots__ #("x" "y" "z" "w" "v")
 
 define-class B [object]:
-    define __slots__ #()
+    var __slots__ #()
 
 setattr B "x" (getattr A "x")
 
-define read [o]:
+def read [o]:
     o.x
 
-define write [o v]:
+def write [o v]:
     set! o.x v
     None

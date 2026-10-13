@@ -15,14 +15,14 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner HttpServer
 
 
-define TOKEN "s3cret"
+var TOKEN "s3cret"
 
 
 define-class WebhookReadbackTestCase [SchedulerAsyncTestCase]:
 
     @coroutine-fn
-    define asyncSetUp [self]:
-        define lg (logging.getLogger "kosrunner")
+    def asyncSetUp [self]:
+        var lg (logging.getLogger "kosrunner")
         (lg.setLevel logging.DEBUG)
         set! self.server (HttpServer "127.0.0.1" 8080)
         set! self.http (self.http-client self.server)
@@ -32,22 +32,22 @@ define-class WebhookReadbackTestCase [SchedulerAsyncTestCase]:
 define-class TestWebhookReadback [WebhookReadbackTestCase]:
 
     @coroutine-fn
-    define test-receipt-run-id-is-readable-through-the-webhook-door [self]:
-        define gate (asyncio.Event)
+    def test-receipt-run-id-is-readable-through-the-webhook-door [self]:
+        var gate (asyncio.Event)
 
-        define handler [payload]:
-            define lg (logging.getLogger "kosrunner.test")
+        def handler [payload]:
+            var lg (logging.getLogger "kosrunner.test")
             (lg.info "working on %s" payload)
             (gate.wait)
             #{"done": True}
 
         (self.webhook self.server "slow" handler jobset: self.js wait: False)
 
-        define resp (self.http.post "/webhook/slow" json: #{"n": 7})
-        define runid (item (resp.json) "run_id")
+        var resp (self.http.post "/webhook/slow" json: #{"n": 7})
+        var runid (item (resp.json) "run_id")
 
         ;; still waiting on the gate: the read-back sees it open
-        define open-resp (self.http.get f"/webhook/slow/{runid}")
+        var open-resp (self.http.get f"/webhook/slow/{runid}")
         (self.assertEqual open-resp.status_code 200)
         (self.assertEqual (item (open-resp.json) "status") "running")
 
@@ -55,8 +55,8 @@ define-class TestWebhookReadback [WebhookReadbackTestCase]:
         (await (asyncio.gather *: (list self.js._inflight)))
 
         ;; and closed, with the run's own result and captured output
-        define done-resp (self.http.get f"/webhook/slow/{runid}")
-        define body (done-resp.json)
+        var done-resp (self.http.get f"/webhook/slow/{runid}")
+        var body (done-resp.json)
         (self.assertEqual (item body "status") "success")
         ;; the stored result artifact wraps the handler's value, the same
         ;; shape /admin/runs/{id} serves
@@ -65,15 +65,15 @@ define-class TestWebhookReadback [WebhookReadbackTestCase]:
 
 
     @coroutine-fn
-    define test-unknown-run-id-is-404 [self]:
+    def test-unknown-run-id-is-404 [self]:
         (self.webhook self.server "ping" (lambda [payload] None)
             jobset: self.js)
-        define resp (self.http.get "/webhook/ping/no-such-run")
+        var resp (self.http.get "/webhook/ping/no-such-run")
         (self.assertEqual resp.status_code 404)
 
 
     @coroutine-fn
-    define test-another-jobs-run-is-404 [self]:
+    def test-another-jobs-run-is-404 [self]:
         (self.webhook self.server "ping" (lambda [payload] #{"ok": True})
             jobset: self.js)
         (self.webhook self.server "other" (lambda [payload] #{"ok": True})
@@ -81,13 +81,13 @@ define-class TestWebhookReadback [WebhookReadbackTestCase]:
 
         ;; fire `other`, then try to read its run through `ping`'s door
         (self.http.post "/webhook/other" json: #{})
-        define runs (self.js.store.list-runs job: "other")
-        define runid (item (item runs 0) "run_id")
+        var runs (self.js.store.list-runs job: "other")
+        var runid (item (item runs 0) "run_id")
 
-        define mine (self.http.get f"/webhook/other/{runid}")
+        var mine (self.http.get f"/webhook/other/{runid}")
         (self.assertEqual mine.status_code 200)
 
-        define theirs (self.http.get f"/webhook/ping/{runid}")
+        var theirs (self.http.get f"/webhook/ping/{runid}")
         (self.assertEqual theirs.status_code 404)
 
 
@@ -98,36 +98,36 @@ define-class TestWebhookReadbackToken [WebhookReadbackTestCase]:
     """
 
     @coroutine-fn
-    define fire [self]:
+    def fire [self]:
         (self.webhook self.server "guarded" (lambda [payload] #{"ok": True})
             jobset: self.js token: TOKEN)
-        define resp (self.http.post "/webhook/guarded" json: #{}
+        var resp (self.http.post "/webhook/guarded" json: #{}
             headers: #{"X-Kosrunner-Token": TOKEN})
         (self.assertEqual resp.status_code 200)
-        define runs (self.js.store.list-runs job: "guarded")
+        var runs (self.js.store.list-runs job: "guarded")
         (item (item runs 0) "run_id")
 
 
     @coroutine-fn
-    define test-read-back-with-the-token-succeeds [self]:
-        define runid (self.fire)
-        define resp (self.http.get f"/webhook/guarded/{runid}"
+    def test-read-back-with-the-token-succeeds [self]:
+        var runid (self.fire)
+        var resp (self.http.get f"/webhook/guarded/{runid}"
             headers: #{"X-Kosrunner-Token": TOKEN})
         (self.assertEqual resp.status_code 200)
         (self.assertEqual (item (resp.json) "status") "success")
 
 
     @coroutine-fn
-    define test-read-back-without-a-token-is-401 [self]:
-        define runid (self.fire)
-        define resp (self.http.get f"/webhook/guarded/{runid}")
+    def test-read-back-without-a-token-is-401 [self]:
+        var runid (self.fire)
+        var resp (self.http.get f"/webhook/guarded/{runid}")
         (self.assertEqual resp.status_code 401)
 
 
     @coroutine-fn
-    define test-read-back-with-a-wrong-token-is-401 [self]:
-        define runid (self.fire)
-        define resp (self.http.get f"/webhook/guarded/{runid}"
+    def test-read-back-with-a-wrong-token-is-401 [self]:
+        var runid (self.fire)
+        var resp (self.http.get f"/webhook/guarded/{runid}"
             headers: #{"X-Kosrunner-Token": "nope"})
         (self.assertEqual resp.status_code 401)
 

@@ -43,49 +43,49 @@ SRC = """
 import-from asyncio sleep
 import-from operator neg
 
-define inc [x]:
+def inc [x]:
     (+ x 1)
 
-define slow-inc [x]:
+def slow-inc [x]:
     (await (sleep 0.001))
     (+ x 1)
 
-define boom [x]:
+def boom [x]:
     raise (ValueError "boom")
 
-define boom-at-one [x]:
+def boom-at-one [x]:
     when (== x 1):
         raise (ValueError "boom")
     x
 
-define raising-gen [n]:
+def raising-gen [n]:
     for-each [i (range n)]:
         when (== i 1):
             raise (ValueError "gen")
         yield i
 
-define stopper [x]:
+def stopper [x]:
     if (== x 2):
         raise (StopIteration)
     x
 
-define py-name [x]:
+def py-name [x]:
     (str x)
 
-define call-in-try [x]:
+def call-in-try [x]:
     try:
         (py-name x)
     except [e Exception]:
         "no"
 
-define py-neg [x]:
+def py-neg [x]:
     (neg x)
 
-define map-lambda [xs]:
+def map-lambda [xs]:
     (collect (map (lambda [x] (neg x)) xs))
 
-define consume [it]:
-    define total 0
+def consume [it]:
+    var total 0
     for-each [v it]:
         set! total (+ total v)
     total

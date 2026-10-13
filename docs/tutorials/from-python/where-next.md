@@ -27,7 +27,7 @@ you hand a Koskari function to a Python library.
 Which reference pages matter day to day?
 +++
 [Layouts](../../reference/layouts/index.md) for the block heads you
-write, [Macros](../../reference/macros/index.md) for `define`, `set!`,
+write, [Macros](../../reference/macros/index.md) for `def`, `set!`,
 and the `-each` family, and the [Glossary](../../reference/glossary.md).
 :::
 

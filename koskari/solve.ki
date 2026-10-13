@@ -60,10 +60,10 @@ define-class NoActiveSearch [SearchError]:
 ; compile/reset and compile/shift delimit with prompt tag 0. A capture
 ; failure carrying this id failed against the search delimiter; any
 ; other id belongs to a foreign delimiter and is not ours to interpret.
-(define search-prompt-tag 0)
+(var search-prompt-tag 0)
 
 
-define amb [choices]:
+def amb [choices]:
   """
   Nondeterministically choose a value from choices.
 
@@ -89,7 +89,7 @@ define amb [choices]:
       raise
 
 
-define fail []:
+def fail []:
   """
   Abandon the current branch; it contributes no solutions.
 
@@ -105,7 +105,7 @@ define fail []:
       raise
 
 
-define require [test]:
+def require [test]:
   """
   Prune the current branch unless test is truthy
   """
@@ -114,7 +114,7 @@ define require [test]:
   test
 
 
-define solve [thunk]:
+def solve [thunk]:
   """
   Every solution of thunk, as a list, in choice order
   """
@@ -124,7 +124,7 @@ define solve [thunk]:
       #[(thunk)]
 
 
-define solve-first [thunk]:
+def solve-first [thunk]:
   """
   The first solution of thunk, or None when every branch fails.
 
@@ -132,7 +132,7 @@ define solve-first [thunk]:
   skipped; their continuations are never invoked
   """
 
-  define found #[]
+  var found #[]
 
   parameterize [[amb-stop-marker found]]:
 

@@ -3,11 +3,11 @@
 **Syntax:** `(define-demanding NAME FORMALS BODY ...)`
 
 **Behaviour:** Expands to
-`(define NAME (demand (function NAME FORMALS BODY ...)))`. The function
+`(var NAME (demand (function NAME FORMALS BODY ...)))`. The function
 runs on the demand path: called from plain Python code with no event
 loop, it returns its value rather than a coroutine. A body that must
 await a Python awaitable raises `KoskariSyncViolation` there. `@demand`
-above a plain `define` is the same wrap.
+above a plain `def` is the same wrap.
 
 **Examples:**
 

@@ -44,8 +44,8 @@ import-from argparse ArgumentParser
 import-from pathlib Path
 
 
-define _HERE ((Path __file__).resolve)
-define REPO_ROOT _HERE.parents[2]
+var _HERE ((Path __file__).resolve)
+var REPO_ROOT _HERE.parents[2]
 
 
 ; Importing the runner triggers the koskari bootstrap (the warmup cost
@@ -66,7 +66,7 @@ import-from tools.corpus load
 
 
 ; Categories whose entries route to a known shard when --shard is omitted.
-define _CATEGORY_TO_SHARD #{
+var _CATEGORY_TO_SHARD #{
     "conditional": "conditionals"
     "function": "functions"
     "class": "classes"
@@ -79,7 +79,7 @@ define _CATEGORY_TO_SHARD #{
 }
 
 
-define _make_case [feature: None block: False fixtures: None]:
+def _make_case [feature: None block: False fixtures: None]:
     """
     Build a bound CorpusTestCase for an ad-hoc source form
 
@@ -89,14 +89,14 @@ define _make_case [feature: None block: False fixtures: None]:
     :return: a bound CorpusTestCase
     """
 
-    define record #{
+    var record #{
         "id": "<quick>"
         "feature": (or feature "")
         "source": ""
         "tags": (if block #["surface:block"] #[])
     }
 
-    define case (CorpusTestCase "bind_record")
+    var case (CorpusTestCase "bind_record")
     (case.bind_record record)
 
     when fixtures:
@@ -106,7 +106,7 @@ define _make_case [feature: None block: False fixtures: None]:
     return case
 
 
-define _json_or_none [value separators: None]:
+def _json_or_none [value separators: None]:
     """
     Encode a value as JSON, or None when it cannot be encoded
     """
@@ -121,7 +121,7 @@ define _json_or_none [value separators: None]:
         return None
 
 
-define _scalar_token [value]:
+def _scalar_token [value]:
     """
     Render one pair element as a proper/improper-list token
 
@@ -136,7 +136,7 @@ define _scalar_token [value]:
         (json.dumps value)
 
 
-define _pair_candidates [got]:
+def _pair_candidates [got]:
     """
     Yield proper-list/improper-list encodings for a pair value
 
@@ -144,23 +144,23 @@ define _pair_candidates [got]:
     :return: iterator of candidate encoding strings
     """
 
-    define out None
+    var out None
     try:
         if (proper? got):
-            define items (list (unpack got))
-            define encoded (json.dumps items separators: #("," ":"))
+            var items (list (unpack got))
+            var encoded (json.dumps items separators: #("," ":"))
             set! out f"proper-list:{encoded}"
 
         else:
-            define parts #[]
-            define cur got
+            var parts #[]
+            var cur got
             while (pair? cur):
                 (parts.append (_scalar_token (car cur)))
                 set! cur (cdr cur)
             (parts.append (_scalar_token cur))
 
-            define head (" ".join (item-slice parts 0 -1))
-            define tail parts[-1]
+            var head (" ".join (item-slice parts 0 -1))
+            var tail parts[-1]
             set! out f"improper-list:({head} . {tail})"
 
     except [#(TypeError ValueError)]:
@@ -169,7 +169,7 @@ define _pair_candidates [got]:
     yield out
 
 
-define _eval_candidates [got]:
+def _eval_candidates [got]:
     """
     Yield candidate corpus eval encodings for a runtime value
 
@@ -193,12 +193,12 @@ define _eval_candidates [got]:
         (return)
 
     when (symbol? got):
-        define name (str got)
+        var name (str got)
         yield f"symbol:{name}"
         (return)
 
     when (instance? got #(int float)):
-        define number (_json_or_none got)
+        var number (_json_or_none got)
         unless (None? number):
             yield number
         (return)
@@ -208,18 +208,18 @@ define _eval_candidates [got]:
         (return)
 
     when (list? got):
-        define listing (_json_or_none got separators: #("," ":"))
+        var listing (_json_or_none got separators: #("," ":"))
         unless (None? listing):
             yield f"list:{listing}"
         (return)
 
     when (tuple? got):
-        define parts:
+        var parts:
             list-each [x got]:
                 _json_or_none x separators: #("," ":")
 
         unless (in? None parts):
-            define joined (",".join parts)
+            var joined (",".join parts)
             yield f"tuple:({joined})"
         (return)
 
@@ -227,12 +227,12 @@ define _eval_candidates [got]:
         yield-from (_pair_candidates got)
         (return)
 
-    define fallback (_json_or_none got)
+    var fallback (_json_or_none got)
     unless (None? fallback):
         yield fallback
 
 
-define suggest_eval_encoding [got]:
+def suggest_eval_encoding [got]:
     """
     Return a corpus eval encoding that is verified to match the value
 
@@ -244,19 +244,19 @@ define suggest_eval_encoding [got]:
     """
 
     for-each [cand (_eval_candidates got)]:
-        define kind None
-        define payload None
-        define parsed True
+        var kind None
+        var payload None
+        var parsed True
 
         try:
-            define-values [k p] (parse_eval_expected cand)
+            var [k p] (parse_eval_expected cand)
             set! kind k
             set! payload p
         except [Exception]:
             set! parsed False
 
         when (and parsed (== kind "literal")):
-            define matched False
+            var matched False
             try:
                 set! matched (eval_values_equal got payload)
             except [Exception]:
@@ -267,14 +267,14 @@ define suggest_eval_encoding [got]:
     return None
 
 
-define _stage_read [case source warnings]:
+def _stage_read [case source warnings]:
     """
     Produce the read-stage encoding for a source form
     """
 
-    define form (case.read_source source)
-    define text (repr form)
-    define reread (case.parse_expected_form text)
+    var form (case.read_source source)
+    var text (repr form)
+    var reread (case.parse_expected_form text)
 
     unless (forms_equal form reread):
         warnings.append "read string did not round-trip; verify by hand"
@@ -282,15 +282,15 @@ define _stage_read [case source warnings]:
     return text
 
 
-define _stage_expand [case source warnings]:
+def _stage_expand [case source warnings]:
     """
     Produce the expand-stage encoding for a source form
     """
 
-    define form (case.read_source source)
-    define expanded (case.macroexpand1 form)
-    define text (repr expanded)
-    define reread (case.parse_expected_form text)
+    var form (case.read_source source)
+    var expanded (case.macroexpand1 form)
+    var text (repr expanded)
+    var reread (case.parse_expected_form text)
 
     unless (forms_equal expanded reread):
         (warnings.append "expand string did not round-trip; verify by hand")
@@ -298,7 +298,7 @@ define _stage_expand [case source warnings]:
     return text
 
 
-define _stage_eval [case source result]:
+def _stage_eval [case source result]:
     """
     Produce the eval-stage encoding for a source form
 
@@ -306,8 +306,8 @@ define _stage_eval [case source result]:
     otherwise records the raw repr and type for manual encoding.
     """
 
-    define got (case.eval_source source)
-    define encoding (suggest_eval_encoding got)
+    var got (case.eval_source source)
+    var encoding (suggest_eval_encoding got)
 
     if (not (None? encoding)):
         set! result["eval"] encoding
@@ -322,7 +322,7 @@ define _stage_eval [case source result]:
             " and confirm with \"quick insert --dry-run\"")
 
 
-define cmd_verify [options]:
+def cmd_verify [options]:
     """
     verify subcommand: run a form and emit corpus-encoded strings
 
@@ -330,7 +330,7 @@ define cmd_verify [options]:
     :return: process exit code
     """
 
-    define source options.form
+    var source options.form
     when (None? source):
         set! source (sys.stdin.read)
 
@@ -339,7 +339,7 @@ define cmd_verify [options]:
         print (json.dumps #{"error": "empty source" "stage": "read"})
         return 1
 
-    define stages #[]
+    var stages #[]
     if (or options.all
            (not (or options.read options.expand options.eval))):
         set! stages #["read" "expand" "eval"]
@@ -352,13 +352,13 @@ define cmd_verify [options]:
         when options.eval:
             stages.append "eval"
 
-    define fixtures (if options.fixture (json.loads options.fixture) None)
-    define case (_make_case
+    var fixtures (if options.fixture (json.loads options.fixture) None)
+    var case (_make_case
         feature: options.feature block: options.block fixtures: fixtures)
 
-    define result #{}
-    define warnings #[]
-    define errors #{}
+    var result #{}
+    var warnings #[]
+    var errors #{}
 
     for-each [stage stages]:
         try:
@@ -369,7 +369,7 @@ define cmd_verify [options]:
             else:
                 (_stage_eval case source result)
         except [Exception as: exc]:
-            define kind (type exc).__name__
+            var kind (type exc).__name__
             set! errors[stage] f"{kind}: {exc}"
 
     when warnings:
@@ -378,13 +378,13 @@ define cmd_verify [options]:
     when errors:
         set! result["errors"] errors
 
-    define single (== (len stages) 1)
+    var single (== (len stages) 1)
     when (and single (in? stages[0] errors)):
-        define only (item stages 0)
+        var only (item stages 0)
         print (json.dumps #{"error": errors[only] "stage": only})
         return 1
 
-    define produced False
+    var produced False
     for-each [key #("read" "expand" "eval" "eval_raw")]:
         when (in? key result):
             set! produced True
@@ -393,7 +393,7 @@ define cmd_verify [options]:
     return (if produced 0 1)
 
 
-define _read_candidate [options]:
+def _read_candidate [options]:
     """
     Read a candidate record from --file or stdin
 
@@ -403,18 +403,18 @@ define _read_candidate [options]:
 
     import yaml
 
-    define text (if options.file
+    var text (if options.file
         (.read_text (Path options.file))
         (sys.stdin.read))
 
-    define doc (yaml.safe_load text)
+    var doc (yaml.safe_load text)
     unless (dict? doc):
         raise (ValueError "candidate is not a single YAML mapping")
 
     return doc
 
 
-define _verify_stages [record]:
+def _verify_stages [record]:
     """
     Run every applicable verify stage for a record
 
@@ -422,16 +422,16 @@ define _verify_stages [record]:
     :raises Exception: when a stage fails (assertion or otherwise)
     """
 
-    define verify (or (record.get "verify") (dict))
-    define case (CorpusTestCase "bind_record")
+    var verify (or (record.get "verify") (dict))
+    var case (CorpusTestCase "bind_record")
     (case.bind_record record)
 
-    define ran 0
+    var ran 0
     for-each [[stage expected] (.items verify)]:
         when (== stage "invalid"):
             (continue)
 
-        define handler (HANDLERS.get stage)
+        var handler (HANDLERS.get stage)
         unless handler:
             raise (ValueError f"no handler for verify stage '{stage}'")
 
@@ -442,7 +442,7 @@ define _verify_stages [record]:
         raise (ValueError "record has no runnable verify stages")
 
 
-define _category_of [record]:
+def _category_of [record]:
     """
     Return the routing category tag for a record, or None
     """
@@ -453,7 +453,7 @@ define _category_of [record]:
     return None
 
 
-define _target_shard [record records_dir override]:
+def _target_shard [record records_dir override]:
     """
     Resolve the shard path a record should be appended to
 
@@ -465,34 +465,34 @@ define _target_shard [record records_dir override]:
     """
 
     when override:
-        define name:
+        var name:
             if (override.endswith ".yaml"):
                 override
             else:
                 f"{override}.yaml"
         return ((Path records_dir).joinpath name)
 
-    define category (_category_of record)
-    define base (_CATEGORY_TO_SHARD.get category)
+    var category (_category_of record)
+    var base (_CATEGORY_TO_SHARD.get category)
     when (None? base):
-        define tags (record.get "tags")
+        var tags (record.get "tags")
         raise (ValueError
             f"cannot infer shard from tags {tags}; pass --shard")
 
-    define verify (or (record.get "verify") #{})
-    define invalid (or (== (record.get "stability") "invalid")
+    var verify (or (record.get "verify") #{})
+    var invalid (or (== (record.get "stability") "invalid")
                        (in? "error" verify)
                        (in? "invalid" verify))
 
     when invalid:
-        define inv ((Path records_dir).joinpath f"{base}-invalid.yaml")
+        var inv ((Path records_dir).joinpath f"{base}-invalid.yaml")
         when (inv.exists):
             return inv
 
     return ((Path records_dir).joinpath f"{base}.yaml")
 
 
-define _append_record [path record]:
+def _append_record [path record]:
     """
     Append one record as a new YAML document to a shard file
 
@@ -502,11 +502,11 @@ define _append_record [path record]:
     :param record: candidate record dict
     """
 
-    define doc (load.dump_record record)
-    define new None
+    var doc (load.dump_record record)
+    var new None
 
     if (and (path.exists) ((path.read_text).strip)):
-        define text (path.read_text)
+        var text (path.read_text)
         unless (text.endswith "\n"):
             incr! text "\n"
 
@@ -517,7 +517,7 @@ define _append_record [path record]:
     (path.write_text new)
 
 
-define cmd_insert [options]:
+def cmd_insert [options]:
     """
     insert subcommand: validate and append a candidate record
 
@@ -527,24 +527,24 @@ define cmd_insert [options]:
 
     import jsonschema
 
-    define record None
+    var record None
     try:
         set! record (_read_candidate options)
     except [Exception as: exc]:
-        define kind (type exc).__name__
+        var kind (type exc).__name__
         print f"FAIL <unparsed> {kind}: {exc}"
         return 1
 
-    define record_id (record.get "id" "<no-id>")
+    var record_id (record.get "id" "<no-id>")
 
     try:
-        define schema (load_schema (default_schema_path))
+        var schema (load_schema (default_schema_path))
         (.validate (jsonschema.Draft202012Validator schema) record)
     except [Exception as: exc]:
         print f"FAIL {record_id} schema: {exc}"
         return 1
 
-    define index None
+    var index None
     try:
         set! index (load_corpus_index)
     except [Exception as: exc]:
@@ -557,7 +557,7 @@ define cmd_insert [options]:
     try:
         (_verify_stages record)
     except [Exception as: exc]:
-        define kind (attr (type exc) __name__)
+        var kind (attr (type exc) __name__)
         print f"FAIL {record_id} verify: {kind}: {exc}"
         return 1
 
@@ -571,7 +571,7 @@ define cmd_insert [options]:
         print f"OK {record_id} (validated, not written)"
         return 0
 
-    define shard None
+    var shard None
     try:
         set! shard (_target_shard record (default_records_dir) options.shard)
         (_append_record shard record)
@@ -579,12 +579,12 @@ define cmd_insert [options]:
         print f"FAIL {record_id} write: {exc}"
         return 1
 
-    define rel (shard.relative_to REPO_ROOT)
+    var rel (shard.relative_to REPO_ROOT)
     print f"OK {record_id} (inserted into {rel})"
     return 0
 
 
-define cmd_coverage [options]:
+def cmd_coverage [options]:
     """
     coverage subcommand: report sparsely covered features
 
@@ -592,28 +592,28 @@ define cmd_coverage [options]:
     :return: process exit code
     """
 
-    define index None
+    var index None
     try:
         set! index (load_corpus_index)
     except [Exception as: exc]:
         print f"error loading corpus: {exc}"
         return 1
 
-    define counts #{}
-    define ids_by_feature #{}
+    var counts #{}
+    var ids_by_feature #{}
     for-each [record (index.values)]:
-        define feature (or (record.get "feature") "<none>")
+        var feature (or (record.get "feature") "<none>")
         set! counts[feature] (+ (counts.get feature 0) 1)
         ((ids_by_feature.setdefault feature #[]).append record["id"])
 
     when options.feature:
-        define n (counts.get options.feature 0)
+        var n (counts.get options.feature 0)
         print f"{options.feature}\t{n}"
         for-each [rid (sorted (ids_by_feature.get options.feature #[]))]:
             print f"  {rid}"
         return 0
 
-    define rows #[]
+    var rows #[]
     for-each [[f c] (.items counts)]:
         when (< c options.min_entries):
             rows.append #(c f)
@@ -622,8 +622,8 @@ define cmd_coverage [options]:
     for-each [[count feature] rows]:
         print f"{count}\t{feature}"
 
-    define below (len rows)
-    define total (len counts)
+    var below (len rows)
+    var total (len counts)
     (print
         f"# {below} features below {options.min_entries} entries"-
         f" (of {total} features with any coverage)"
@@ -636,7 +636,7 @@ define cmd_coverage [options]:
     return 0
 
 
-define build_arguments [parser]:
+def build_arguments [parser]:
     """
     Register the quick subcommands on a parser or subparser
 
@@ -644,9 +644,9 @@ define build_arguments [parser]:
     the outer dispatcher's own ``func``.
     """
 
-    define sub (parser.add_subparsers dest: "quick_command" required: True)
+    var sub (parser.add_subparsers dest: "quick_command" required: True)
 
-    define pv (sub.add_parser "verify"
+    var pv (sub.add_parser "verify"
         help: "run a form and emit corpus-encoded strings")
     (pv.add_argument "form" nargs: "?"
         help: "source form; read from stdin when omitted")
@@ -663,7 +663,7 @@ define build_arguments [parser]:
         help: "JSON object of extra eval bindings")
     (pv.set_defaults quick_func: cmd_verify)
 
-    define pi (sub.add_parser "insert"
+    var pi (sub.add_parser "insert"
         help: "validate and append a candidate record")
     (pi.add_argument "--file"
         help: "candidate YAML file; reads stdin when omitted")
@@ -673,7 +673,7 @@ define build_arguments [parser]:
         help: "validate only; do not write")
     (pi.set_defaults quick_func: cmd_insert)
 
-    define pc (sub.add_parser "coverage"
+    var pc (sub.add_parser "coverage"
         help: "report sparsely covered features")
     (pc.add_argument "--min-entries" type: int default: 3
         help: "report features with fewer than N entries (default 3)")
@@ -684,7 +684,7 @@ define build_arguments [parser]:
     return parser
 
 
-define run [options]:
+def run [options]:
     """
     Dispatch to the selected quick subcommand
 
@@ -696,7 +696,7 @@ define run [options]:
 
 
 @entry-point
-define main [argv: None]:
+def main [argv: None]:
     """
     CLI entry point
 
@@ -707,9 +707,9 @@ define main [argv: None]:
     when (None? argv):
         set! argv sys.argv
 
-    define-values [_name *: args] argv
+    var [_name *: args] argv
 
-    define parser (ArgumentParser
+    var parser (ArgumentParser
         prog: "quick"
         description: "Corpus oracle, validator, and coverage query.")
 

@@ -13,7 +13,7 @@ import-from random random seed
 
 define-class LifeBoard []:
 
-    define __init__ [self width height wrap: False]:
+    def __init__ [self width height wrap: False]:
         set! self.width width
         set! self.height height
         set! self.wrap wrap
@@ -21,7 +21,7 @@ define-class LifeBoard []:
         set! self.data #{}
 
 
-    define clear [self]:
+    def clear [self]:
         """
         Clear the board to dead; keeps keys so UIs can turn cells off
         """
@@ -29,11 +29,11 @@ define-class LifeBoard []:
         set! self.data (dict.fromkeys self.data 0)
 
 
-    define all-coordinates [self]:
+    def all-coordinates [self]:
         product (range 0 self.width) (range 0 self.height)
 
 
-    define randomize [self threshold: 0.6]:
+    def randomize [self threshold: 0.6]:
         """
         Random fill: cell lives when (random) > threshold
         """
@@ -46,15 +46,15 @@ define-class LifeBoard []:
                 self.set-cell x y 1
 
 
-    define tracked [self cleanup: True]:
+    def tracked [self cleanup: True]:
         """
         Yield (coord, value) for live and recently dead cells
         """
 
-        define data self.data
+        var data self.data
         if cleanup:
             for-each [item (list (data.items))]:
-                define-values [coord cell] item
+                var [coord cell] item
                 unless cell:
                     del! data[coord]
                 yield item
@@ -62,32 +62,32 @@ define-class LifeBoard []:
             yield-from (data.items)
 
 
-    define toggle [self x y]:
-        define coord #(x y)
-        define cell (self.data.get coord None)
+    def toggle [self x y]:
+        var coord #(x y)
+        var cell (self.data.get coord None)
         set! self.data[coord] (if cell 0 1)
 
 
-    define coord-key [self x y]:
-        define w self.width
-        define h self.height
+    def coord-key [self x y]:
+        var w self.width
+        var h self.height
         unless self.wrap:
             unless (and (< -1 x w) (< -1 y h)):
                 return None
         #((% x w) (% y h))
 
 
-    define set-cell [self x y value]:
-        define key (self.coord-key x y)
+    def set-cell [self x y value]:
+        var key (self.coord-key x y)
         unless (None? key):
             set! self.data[key] value
 
 
-    define group-coords [self x y]:
+    def group-coords [self x y]:
         product #((- x 1) x (+ x 1)) #((- y 1) y (+ y 1))
 
 
-    define age [self]:
+    def age [self]:
         """
         Advance one generation.
 
@@ -97,25 +97,25 @@ define-class LifeBoard []:
         blank them.
         """
 
-        define data self.data
-        define counts #{}
+        var data self.data
+        var counts #{}
 
         ;; Scatter: each live cell adds 1 to each of its eight neighbours.
         for-each [[coord value] (data.items)]:
             when value:
-                define-values [x y] coord
+                var [x y] coord
                 for-each [[cx cy] (self.group-coords x y)]:
                     unless (and (== cx x) (== cy y)):
-                        define key (self.coord-key cx cy)
+                        var key (self.coord-key cx cy)
                         unless (None? key):
                             set! counts[key] (+ 1 (counts.get key 0))
 
-        define new #{}
+        var new #{}
 
         ;; Survival ages the cell up; birth needs exactly three neighbours.
         for-each [[key n] (counts.items)]:
-            define prev (data.get key 0)
-            define survives (<= 2 n 3)
+            var prev (data.get key 0)
+            var survives (<= 2 n 3)
             if prev:
                 set! new[key] (if survives (+ prev 1) 0)
             elif (== n 3):
@@ -131,8 +131,8 @@ define-class LifeBoard []:
         self
 
 
-    define child [self]:
-        define clone (LifeBoard self.width self.height self.wrap)
+    def child [self]:
+        var clone (LifeBoard self.width self.height self.wrap)
         set! clone.data self.data
         (clone.age)
 

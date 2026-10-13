@@ -17,32 +17,32 @@ Portion of koskari.builtins
 """
 
 
-define-syntax create-instance-check:
+syntax create-instance-check:
   macro-match:
     case (create-instance-check (BIND name)):
       ;; the predicate is the class's name with ?, under the same marks,
       ;; so a class a template defines has the template's predicate
-      define n name.datum
-      define pname (datum (if (is n n.base)
+      var n name.datum
+      var pname (datum (if (is n n.base)
                               (symbol f"{n}?")
                               (gensym (symbol f"{n.base}?") marks: n.marks)))
-      `define ,pname:
+      `var ,pname:
         lambda ,pname [value]:
           instance? value ,name
 
 
-define-syntax define-class:
+syntax define-class:
   """
   Defines a class and a typecheck function for it
   """
 
   syntax-rules []:
     case (define-class name supers body ...):
-      (define name (class name supers body ...))
+      (var name (class name supers body ...))
       create-instance-check name
 
 
-define-syntax define-dataclass:
+syntax define-dataclass:
   """
   Defines a dataclass and a typecheck function for it.
 
@@ -61,7 +61,7 @@ define-syntax define-dataclass:
 
   syntax-rules []:
     case (define-dataclass name supers members ...):
-      define name:
+      var name:
         let []:
           import-from dataclasses dataclass field
           @dataclass
@@ -70,7 +70,7 @@ define-syntax define-dataclass:
       create-instance-check name
 
 
-define-syntax super:
+syntax super:
   syntax-rules []:
     case (super):
       (call super __class__ self)

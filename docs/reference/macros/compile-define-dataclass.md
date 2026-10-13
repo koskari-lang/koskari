@@ -4,7 +4,7 @@
 
 **Behaviour:** Imports `dataclass` and `field` from `dataclasses`,
 defines the class with `@dataclass` applied, and binds `NAME?` as the
-instance predicate. The body holds annotated `define` forms for the
+instance predicate. The body holds annotated `var` forms for the
 fields, as a `define-class` body does; `dataclass` reads the
 annotations and generates `__init__`, `__repr__`, and `__eq__`.
 
@@ -12,14 +12,14 @@ annotations and generates `__init__`, `__repr__`, and `__eq__`.
 
 ```koskari
 define-dataclass Point:
-  define x :: int 0
-  define y :: int 0
+  var x :: int 0
+  var y :: int 0
 
 (Point 1 2)        ;; Point(x=1, y=2)
 (Point? (Point))   ;; True
 
 define-dataclass Point3 [Point]:
-  define z :: int 0
+  var z :: int 0
 ```
 
 In block form the supers may be omitted, as with `define-class`; see
@@ -27,7 +27,7 @@ In block form the supers may be omitted, as with `define-class`; see
 subclass that adds no fields is `(define-dataclass Child [Parent])`.
 
 ```koskari
-(define-dataclass P [] (define x :: int 0) (define y :: int 0))
+(define-dataclass P [] (var x :: int 0) (var y :: int 0))
 ```
 
 **See also:** [`define-class`](compile-define-class.md), which takes

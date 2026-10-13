@@ -1,10 +1,10 @@
 ;; churn_list_each -- build a list via a comprehension, then fold it.
 ;; Exercises list-each construction and for-each iteration.
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define churn_step [x i]:
+def churn_step [x i]:
     set! x (& (+ (* x 1664525) 1013904223) MASK32)
     set! x (^ x (& (<< x 13) MASK32))
     set! x (^ x (>> x 17))
@@ -12,8 +12,8 @@ define churn_step [x i]:
     (& (+ x (* i 1103515245)) MASK32)
 
 
-define churn_list_each [n x: 1]:
-    define acc 0
+def churn_list_each [n x: 1]:
+    var acc 0
     for-each [v (list-each [i (range n)] (churn_step x i))]:
         set! acc (^ acc v)
     (& acc MASK32)

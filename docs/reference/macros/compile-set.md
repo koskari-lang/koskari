@@ -18,16 +18,16 @@ and on an item or attribute to its in-place special.
 **Examples:**
 
 ```koskari
-define x 6
+var x 6
 set! x 7
 
 set! obj.count 0
 set! d["k"] v
 
-define r &x
+var r &x
 set! (deref r) 8        ;; x is now 8
 
-define point #(5 6)
+var point #(5 6)
 set! (values a b) point
 ```
 

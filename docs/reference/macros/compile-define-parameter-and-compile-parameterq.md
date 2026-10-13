@@ -43,7 +43,7 @@ other and a block can only be closed by the stack that opened it.
 ```koskari
 (define-parameter verbose False)
 
-define show [] (if verbose "loud" "quiet")
+def show [] (if verbose "loud" "quiet")
 
 (show)                                    ;; "quiet"
 (parameterize [[verbose True]] (show))    ;; "loud"
@@ -52,7 +52,7 @@ define show [] (if verbose "loud" "quiet")
 
 ```koskari
 >>> (macroexpand-1 '(define-parameter verbose False))
-(begin (define verbose) (bindq verbose (ParamRef (quote verbose) False)))
+(begin (var verbose) (bindq verbose (ParamRef (quote verbose) False)))
 ```
 
 **See also:** [`parameterize`](../specials/compile-parameterize.md),

@@ -30,10 +30,10 @@ opener-line option raises `FenceError`.
 **Examples:**
 
 ```koskari
->>> define rev ```bash
+>>> var rev ```bash
 ... echo -n "$@" | rev
 ... ```
->>> define ohai (rev "Hello" 123 "World")
+>>> var ohai (rev "Hello" 123 "World")
 >>> ohai
 <ProcessResult 'bash' returncode=0>
 >>> ohai.text
@@ -42,10 +42,10 @@ opener-line option raises `FenceError`.
 
 ````koskari
 ;; immediate: True -- the fence is the ProcessResult, no callable
-define host ```bash immediate: True
+var host ```bash immediate: True
 hostname -f
 ```
-define name host.text
+var name host.text
 ````
 
 ## ProcessResult
@@ -68,7 +68,7 @@ everything, interpret afterwards.
 Because `raise_for_status` returns the result, strict-and-parsed reads chain:
 
 ```koskari
-define summary (.json (.raise_for_status (report)))
+var summary (.json (.raise_for_status (report)))
 ```
 
 ## Implementation
@@ -79,11 +79,11 @@ raw script text and the metadata dict and returns Koskari source:
 
 ```koskari
 define-fence fence/bash [raw meta]:
-  define options (meta.get "options")
-  define exec_now (options.pop "immediate" False)
+  var options (meta.get "options")
+  var exec_now (options.pop "immediate" False)
 
   when options:
-    define names (.join " " (sorted options))
+    var names (.join " " (sorted options))
     raise (FenceError f"fence/bash got unknown options: {names}")
 
   switch exec_now:
