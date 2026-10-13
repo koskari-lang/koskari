@@ -182,37 +182,6 @@ class TestPassThroughDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["b"], [3])
 
 
-class TestClassPredicateInTemplate(unittest.IsolatedAsyncioTestCase):
-    """
-    A class a template defines has a predicate named for the class
-    under the same marks: the template's own call reaches it, and the
-    caller's binding of the same name is not captured
-    """
-
-    SRC = """
-(var Widget? (lambda [v] "use-site"))
-
-(syntax make-widget
-  (syntax-rules []
-    [(make-widget out)
-     (begin
-       (define-class Widget [])
-       (var out (Widget? (Widget))))]))
-
-(make-widget checked)
-(var still (Widget? 1))
-"""
-
-    async def test_template_reaches_its_predicate(self):
-        ns = await load("phc_predicate", self.SRC)
-        self.assertIs(ns["checked"], True)
-
-
-    async def test_caller_predicate_not_captured(self):
-        ns = await load("phc_predicate_caller", self.SRC)
-        self.assertEqual(ns["still"], "use-site")
-
-
 class TestPragmaKeyInTemplate(unittest.IsolatedAsyncioTestCase):
     """
     A pragma key is a pure key: a template that writes one sets and

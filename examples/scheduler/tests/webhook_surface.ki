@@ -22,7 +22,7 @@ def ident [email]:
     #{"X-Forwarded-Email": email}
 
 
-define-class TestSurfaceProjection [SchedulerAsyncTestCase]:
+class TestSurfaceProjection [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def asyncSetUp [self]:

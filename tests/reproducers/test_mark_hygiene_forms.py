@@ -198,7 +198,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_class_name(self):
         await self.check(
             "class",
-            "(begin (define-class K [] (var v 5)) K.v)",
+            "(begin (class K [] (var v 5)) K.v)",
             5, K=1000)
 
 

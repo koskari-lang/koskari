@@ -36,12 +36,12 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define-class Counter []
+(class Counter []
   (define __init__ [self] (set-attr self count 0))
   (define bump [self] (set-attr self count (+ self.count 1)) self)
   (define bump_by [self n: 1] (set-attr self count (+ self.count n)) self))
 
-(define-class Lazy []
+(class Lazy []
   (define __init__ [self] (set-attr self count 0))
   (define __getattr__ [self name]
     (if (== name "bump")

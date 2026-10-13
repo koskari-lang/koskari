@@ -14,6 +14,8 @@
 
 import logging
 
+import-from dataclasses dataclass
+
 (use .access require-operator! require-trigger!)
 (use .job Job)
 (use .server get-server normalize-prefix ServerConfig)
@@ -22,7 +24,8 @@ import logging
 var logger (logging.getLogger "kosrunner.admin")
 
 
-define-dataclass AdminConfig [ServerConfig]:
+@dataclass
+class AdminConfig [ServerConfig]:
     """
     Config for the control-plane server; prefix defaults to /admin
     """
@@ -30,7 +33,7 @@ define-dataclass AdminConfig [ServerConfig]:
     var prefix :: str "/admin"
 
 
-define-class AdminJob [Job]:
+class AdminJob [Job]:
     """
     The jobset's control plane as HTTP routes. It reaches its parent
     JobSet through the `jobset` back-reference the JobSet sets at register

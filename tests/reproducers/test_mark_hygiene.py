@@ -574,7 +574,7 @@ class TestSetqInInlineScope(unittest.IsolatedAsyncioTestCase):
 
 (define in-class []
   (var i 10)
-  (define-class C [] (inc-i))
+  (class C [] (inc-i))
   i)
 
 (var from-let (in-let))
@@ -922,7 +922,7 @@ class TestClassPatternInTemplate(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-class Point []
+(class Point []
   (var __match_args__ #("x" "y"))
   (define __init__ [self x y]
     (set-attr self x x)
@@ -974,11 +974,11 @@ class TestTemplateBoundPatternType(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(define-class A []
+(class A []
   (var __match_args__ #("x"))
   (define __init__ [self x] (set-attr self x x)))
 
-(define-class B []
+(class B []
   (var __match_args__ #("x"))
   (define __init__ [self x] (set-attr self x x)))
 
@@ -1124,7 +1124,7 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
 (define-syntax mk-greeter
   (syntax-rules []
     [(mk-greeter name)
-     (define-class name []
+     (class name []
        (var greeting "hi")
        (define greet [self] (#str self.greeting " there")))]))
 
@@ -1146,7 +1146,7 @@ class TestClassMembersInTemplate(unittest.IsolatedAsyncioTestCase):
 (define-syntax mk-binders
   (syntax-rules []
     [(mk-binders name)
-     (define-class name []
+     (class name []
        (import-from math pi)
        (import math)
        (with [cm (nullcontext 5)] None)

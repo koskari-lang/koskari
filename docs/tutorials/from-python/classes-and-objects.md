@@ -14,7 +14,7 @@ class Point:
 ```
 +++
 ```koskari
-define-class Point []:
+class Point []:
   """ A point in 2D space """
   var x :: int 0
   var y :: int 0
@@ -25,7 +25,7 @@ define-class Point []:
 What is the `[]`?
 +++
 The base list. Empty means no explicit base, as `class Point:` does.
-`define-class Child (Parent):` subclasses. The `::` carries an
+`class Child (Parent):` subclasses. The `::` carries an
 annotation, and it lands in `__annotations__` as the real type object.
 :::
 
@@ -43,7 +43,7 @@ class Point:
 ```
 +++
 ```koskari
-define-class Point []:
+class Point []:
   def __init__ [self x y]:
     set! self.x x
     set! self.y y
@@ -78,7 +78,7 @@ class Circle:
 ```
 +++
 ```koskari
-define-class Circle []:
+class Circle []:
   var _radius :: float 0.0
 
   @property
@@ -116,7 +116,7 @@ p = Point(3, 5)
 import-from dataclasses dataclass
 
 @dataclass
-define-class Point []:
+class Point []:
   var x :: int 0
   var y :: int 0
 
@@ -127,7 +127,7 @@ var p (Point 3 5)
 :::{dialogue}
 Which decorators work?
 +++
-Any importable callable, above `define-class` or above a method. The
+Any importable callable, above `class` or above a method. The
 class body's annotated `var` forms are what `dataclass` reads, so it
 generates `__init__`, `__repr__`, and `__eq__` as it would for the
 Python spelling.
@@ -165,7 +165,7 @@ Save as `point.ki`:
 import-from dataclasses dataclass
 
 @dataclass
-define-class Point []:
+class Point []:
   var x :: int 0
   var y :: int 0
 

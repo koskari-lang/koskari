@@ -122,7 +122,7 @@ class C(Base):
 ```
 +++
 ```koskari
-define-class C (Base):
+class C (Base):
   ...
 ```
 :::

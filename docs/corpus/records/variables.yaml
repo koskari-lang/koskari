@@ -1073,7 +1073,7 @@ id: variable-ref-attr-bindq-pattern-001
 feature: special/compile/ref-attr
 source: |-
   (begin
-    (define-class Pt [] (def __init__ [self x] (set-attr self val x)))
+    (class Pt [] (def __init__ [self x] (set-attr self val x)))
     (var p (Pt 10))
     (bindq fx (ref-attr p val))
     (deref (ref-attr p val)))

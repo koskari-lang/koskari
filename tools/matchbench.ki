@@ -59,7 +59,7 @@ import-from koskari.syntax SpecialTransform Syntax
 
 
 @dataclass
-define-class Point []:
+class Point []:
     var x :: int 0
     var y :: int 0
 

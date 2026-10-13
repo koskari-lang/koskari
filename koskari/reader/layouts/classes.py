@@ -82,27 +82,4 @@ def layout_build_class(reader, source, peers):
     return _class_block(reader, source, peers, 'build-class')
 
 
-@builtin('layout/define-class')
-@layout(symbol('layout/define-class'))
-def layout_define_class(reader, source, peers):
-    """
-    Lower define-class block to (define-class NAME SUPERS (begin BODY)).
-    SUPERS may be omitted; when missing, use nil.
-    """
-
-    return _class_block(reader, source, peers, 'define-class')
-
-
-@builtin('layout/define-dataclass')
-@layout(symbol('layout/define-dataclass'))
-def layout_define_dataclass(reader, source, peers):
-    """
-    Lower define-dataclass block to
-    (define-dataclass NAME SUPERS (begin BODY)). SUPERS may be omitted;
-    when missing, use nil.
-    """
-
-    return _class_block(reader, source, peers, 'define-dataclass')
-
-
 # The end.

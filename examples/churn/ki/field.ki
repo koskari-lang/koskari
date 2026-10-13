@@ -5,7 +5,7 @@
 (var MASK32 0xffffffff)
 
 
-define-class ChurnBox []:
+class ChurnBox []:
 
     def __init__ [self]:
         set! self.i 0

@@ -62,7 +62,7 @@ which is what puts a Koskari line in a traceback.
 The compiler walks each form. When a form's head names a macro, the
 macro receives the form and returns a new one, and the walk continues
 on the result. `if` is a macro over `cond`; `when`, `unless`, `set!`,
-`define-class`, and the comprehension forms `each`, `list-each`, and
+`class`, and the comprehension forms `each`, `list-each`, and
 `dict-each` are macros too:
 
 ```koskari

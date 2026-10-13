@@ -183,21 +183,19 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DECORATED", co)
 
 
-    async def test_define_dataclass_binds_decorated_value(self):
+    async def test_class_binds_decorated_value(self):
         src = """
         (begin
           (var seen #[])
           (var tag (lambda [x] (begin (seen.append (type x).__name__) x)))
-          (decorate [tag] (define-dataclass DC [] (var x :: int 0)))
-          (#list seen DC (DC? (DC)) (DC? 1)))
+          (decorate [tag] (class DC [] (var x :: int 0)))
+          (#list seen DC))
         """
         expr, _mod = self.compile_expr(src)
-        seen, dc, is_dc, is_int = await expr()
+        seen, dc = await expr()
         self.assertEqual(["type"], seen)
         self.assertEqual("DC", dc.__name__)
-        self.assertEqual(0, dc().x)
-        self.assertTrue(is_dc)
-        self.assertFalse(is_int)
+        self.assertEqual(0, dc.x)
 
 
     async def test_define_global_binds_decorated_value(self):

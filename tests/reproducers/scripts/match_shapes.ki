@@ -12,24 +12,24 @@ import-from dataclasses dataclass
 
 
 @dataclass
-define-class Point []:
+class Point []:
     var x :: int 0
     var y :: int 0
 
 
 @dataclass
-define-class Plane []:
+class Plane []:
     var w :: int 0
     var h :: int 0
 
 
 @dataclass
-define-class Square []:
+class Square []:
     var side :: int 0
 
 
 @dataclass
-define-class Cube []:
+class Cube []:
     var side :: int 0
 
 

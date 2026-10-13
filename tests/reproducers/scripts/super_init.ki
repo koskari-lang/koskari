@@ -1,13 +1,13 @@
-;; Reproducer: layout define-class with inheritance and (super) __init__ chain.
+;; Reproducer: layout class with inheritance and (super) __init__ chain.
 
 
-define-class Base []:
+class Base []:
 
     def __init__ [self x]:
         set! self.x x
 
 
-define-class Child (Base):
+class Child (Base):
 
     def __init__ [self x y]:
         (.__init__ (super) x)

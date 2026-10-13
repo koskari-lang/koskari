@@ -9,7 +9,7 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner CronJob memory-census memory-report vmrss
 
 
-define-class TestMemwatch [SchedulerAsyncTestCase]:
+class TestMemwatch [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-vmrss-is-a-positive-size [self]:

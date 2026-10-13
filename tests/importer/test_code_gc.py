@@ -18,7 +18,7 @@ A method-call site caches the receiver type and the resolved function
 in a slot trailing the Code object. A class whose methods call through
 such a site forms type, function, code, slot, type; the collector must
 be able to see and break it. Requires import koskari.builtins for the
-define-class macro.
+class macro.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -75,7 +75,7 @@ class TestCodeCycleCollection(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define-class Leaky []
+          (class Leaky []
             (def helper [self] 1)
             (def run [self] (self.helper)))
           (var inst (Leaky))
@@ -102,7 +102,7 @@ class TestCodeCycleCollection(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define-class Holder []
+          (class Holder []
             (def m [self] 1))
           (var o (Holder))
           (set-attr o cb o.m)

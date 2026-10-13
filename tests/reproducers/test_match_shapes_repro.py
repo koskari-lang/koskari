@@ -14,7 +14,7 @@
 """
 tests.reproducers.test_match_shapes_repro
 
-Full-stack reproducer: runtime match/case over a @dataclass define-class
+Full-stack reproducer: runtime match/case over a @dataclass class
 shape hierarchy (Point, Plane, Square, Cube). One consumer module
 exercises the whole pattern vocabulary end to end -- class patterns via
 __match_args__, keyword-field literals, when/unless guards, or-patterns,

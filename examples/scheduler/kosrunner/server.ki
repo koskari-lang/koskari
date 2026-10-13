@@ -14,13 +14,16 @@
 
 import logging
 
+import-from dataclasses dataclass
+
 (use .job Config watch-task)
 
 
 var logger (logging.getLogger "kosrunner.server")
 
 
-define-dataclass ServerConfig [Config]:
+@dataclass
+class ServerConfig [Config]:
     """
     Shared shape for HTTP-server-backed configs (webhook, admin). The
     server is interned by host:port, so two of these sharing a port share
@@ -45,7 +48,7 @@ def normalize-prefix [prefix]:
     (if p f"/{p}" "")
 
 
-define-class RequestContext []:
+class RequestContext []:
     """
     The request-context seam (Phase 5). A route handler sees only what it
     needs off the raw Request -- headers now, resolved identity later (R4/
@@ -75,7 +78,7 @@ define-class RequestContext []:
         (self.query.get name default)
 
 
-define-class HttpServer []:
+class HttpServer []:
     """
     A shared FastAPI/uvicorn server. It is interned by host:port (see
     get-server), so any jobs that resolve to the same host:port -- webhook

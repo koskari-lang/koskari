@@ -9,7 +9,7 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner KafkaJob UmbJob require-extra
 
 
-define-class TestRequireExtra [SchedulerAsyncTestCase]:
+class TestRequireExtra [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-present-module-is-returned [self]:
@@ -29,7 +29,7 @@ define-class TestRequireExtra [SchedulerAsyncTestCase]:
                 " pip install koskari-kosrunner[someextra]"))
 
 
-define-class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
+class TestVarietiesRequireTheirExtra [SchedulerAsyncTestCase]:
     """
     Both broker varieties check at construction, so a definition naming one
     whose extra was never installed dies at LOAD time. The check is

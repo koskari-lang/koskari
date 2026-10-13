@@ -18,7 +18,7 @@ import-from kosrunner HttpServer
 var TOKEN "s3cret"
 
 
-define-class WebhookReadbackTestCase [SchedulerAsyncTestCase]:
+class WebhookReadbackTestCase [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def asyncSetUp [self]:
@@ -29,7 +29,7 @@ define-class WebhookReadbackTestCase [SchedulerAsyncTestCase]:
         set! self.js (self.jobset-with-store)
 
 
-define-class TestWebhookReadback [WebhookReadbackTestCase]:
+class TestWebhookReadback [WebhookReadbackTestCase]:
 
     @coroutine-fn
     def test-receipt-run-id-is-readable-through-the-webhook-door [self]:
@@ -91,7 +91,7 @@ define-class TestWebhookReadback [WebhookReadbackTestCase]:
         (self.assertEqual theirs.status_code 404)
 
 
-define-class TestWebhookReadbackToken [WebhookReadbackTestCase]:
+class TestWebhookReadbackToken [WebhookReadbackTestCase]:
     """
     The read-back takes the same machine-door token the POST takes: a
     webhook whose fire is guarded must not have an unguarded reader.

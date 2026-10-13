@@ -14,7 +14,7 @@
 """
 koskari.compile.specials.class_
 
-Special form handler for compile/class.
+Special form handler for compile/build-class.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -67,11 +67,11 @@ def _compiling_module_name(compiler):
     return str(modname) if modname else None
 
 
-@builtin("compile/class", "compile/build-class")
-@special("compile/class", patterns=_CLASS_PATTERNS, unpack="kwargs")
-def special_class(compiler, called_by, name, supers, body):
+@builtin("compile/build-class")
+@special("compile/build-class", patterns=_CLASS_PATTERNS, unpack="kwargs")
+def special_build_class(compiler, called_by, name, supers, body):
     """
-    Compile (compile/class NAME (SUPERS) BODY...). Creates a class via
+    Compile (compile/build-class NAME (SUPERS) BODY...). Creates a class via
     PUSH_COLLECT/POP_COLLECT/BUILD_CLASS, runs body in CollectorNamespace,
     and leaves the class on the stack. NAME is the class's name; no
     variable is defined. SUPERS may include superclass expressions and
@@ -93,14 +93,14 @@ def special_class(compiler, called_by, name, supers, body):
     metaclass_expr, extra_kwds = _extract_metaclass(kwds_seq)
     if extra_kwds:
         raise SpecialError(
-            "compile/class supers only supports meta: keyword, not %s"
-            % [k for k, _ in extra_kwds],
+            "compile/build-class supers only supports meta: keyword, not"
+            f" {[k for k, _ in extra_kwds]}",
             supers_form, position=pos)
 
     has_star = any(x[0] == "*" for x in args_seq)
     if has_star:
         raise SpecialError(
-            "compile/class supers does not support *args",
+            "compile/build-class supers does not support *args",
             supers_form, position=pos)
 
     bases = [expr for _, expr in args_seq]

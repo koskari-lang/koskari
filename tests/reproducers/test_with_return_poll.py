@@ -40,7 +40,7 @@ pytestmark = pytest.mark.phase_reproducers
 SRC = """
 import _thread
 
-define-class Mgr []:
+class Mgr []:
     def __enter__ [self]:
         self
 

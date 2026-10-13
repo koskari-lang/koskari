@@ -11,7 +11,7 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner Job watch-task
 
 
-define-class TestWatchTask [SchedulerAsyncTestCase]:
+class TestWatchTask [SchedulerAsyncTestCase]:
 
     def crashing-task [self]:
         def boom []:

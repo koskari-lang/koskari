@@ -3,7 +3,7 @@
 ;; __class__ directly.
 
 
-define-class A []:
+class A []:
     def __init__ [self]:
         set! self.a 1
     def defining_class [self]:
@@ -13,25 +13,25 @@ define-class A []:
         (inner)
 
 
-define-class B (A):
+class B (A):
     def __init__ [self]:
         (.__init__ (super))
         set! self.b 2
 
 
-define-class C (B):
+class C (B):
     def __init__ [self]:
         (.__init__ (super))
         set! self.c 3
 
 
-define-class D (C):
+class D (C):
     def __init__ [self]:
         (.__init__ (super))
         set! self.d 4
 
 
-define-class Widen (A):
+class Widen (A):
     def defining_class [self]:
         (.defining_class (super))
 

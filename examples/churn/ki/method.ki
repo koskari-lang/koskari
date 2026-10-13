@@ -4,7 +4,7 @@
 (var MASK32 0xffffffff)
 
 
-define-class ChurnCounter []:
+class ChurnCounter []:
 
     def __init__ [self]:
         set! self.total 0

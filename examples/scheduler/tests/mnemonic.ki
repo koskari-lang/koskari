@@ -15,7 +15,7 @@ import-from kosrunner CronJob RunStore clean-mnemonic mnemonic
 import-from kosrunner.ui stamp
 
 
-define-class TestCleanMnemonic [SchedulerAsyncTestCase]:
+class TestCleanMnemonic [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-collapses-to-one-line [self]:
@@ -43,7 +43,7 @@ define-class TestCleanMnemonic [SchedulerAsyncTestCase]:
         (self.assertEqual (mnemonic "loose") "loose")
 
 
-define-class TestRunMnemonic [SchedulerAsyncTestCase]:
+class TestRunMnemonic [SchedulerAsyncTestCase]:
 
     def job-firing [self js handler]:
         var job (CronJob "* * * * *")
@@ -138,7 +138,7 @@ define-class TestRunMnemonic [SchedulerAsyncTestCase]:
         (self.assertEqual (item (item rows 1) "mnemonic") "original")
 
 
-define-class TestStoreMigration [SchedulerAsyncTestCase]:
+class TestStoreMigration [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-open-adds-the-column-to-an-older-store [self]:
@@ -172,7 +172,7 @@ define-class TestStoreMigration [SchedulerAsyncTestCase]:
         (self.assertEqual (item row "status") "success")
 
 
-define-class TestStamp [SchedulerAsyncTestCase]:
+class TestStamp [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-drops-fraction-and-offset [self]:

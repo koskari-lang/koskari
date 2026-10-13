@@ -55,7 +55,7 @@ def task-error [t]:
         (t.exception)
 
 
-define-class Nursery []:
+class Nursery []:
     """
     A scope that owns the tasks spawned inside it
     """
@@ -191,7 +191,7 @@ def note [message]:
     (print "   " message)
 
 
-define-class Stopwatch []:
+class Stopwatch []:
 
     def __init__ [self]:
         (set! self.t0 (time.monotonic))

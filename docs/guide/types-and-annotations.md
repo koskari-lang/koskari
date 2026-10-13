@@ -13,7 +13,7 @@ var total :: int 0
 def double :: int [(n :: int)]:
   (* n 2)
 
-define-class Point []:
+class Point []:
   var x :: int 0
   var y :: int 0
 ```
@@ -56,9 +56,8 @@ def take [count]:
   ...
 ```
 
-`instance?` and `subclass?` are the type tests, and a class name with a
-`?` suffix is bound as a predicate for classes defined with a bare
-`define-class`.
+`instance?` and `subclass?` are the type tests: `(instance? p Point)`.
+Defining a class binds only its name; no `Point?` predicate is created.
 
 ## Contracts by convention
 

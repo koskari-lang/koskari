@@ -17,7 +17,7 @@ def around [i reach: 1]:
 
 
 @dataclass
-define-class Point []:
+class Point []:
   """ A point in 2D space """
 
   var x :: int 0
@@ -95,7 +95,7 @@ p after move: Point(x=11, y=20)
 
 ## See also
 
-- [layout/define-class](../../../reference/layouts/layout-define-class.md)
+- [layout/class](../../../reference/layouts/layout-class.md)
 - [compile/each](../../../reference/macros/compile-each.md) (generator comprehension macro)
 - [Property accessors](property-accessors.md)
 - [From Python: Interop](../interop.md)

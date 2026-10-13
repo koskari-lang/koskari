@@ -89,7 +89,7 @@ def get-renderer [by-name]:
     (make-char-renderer)
 
 
-define-class LifeScreen []:
+class LifeScreen []:
 
     def __init__ [self screen rw: False rend: None]:
         when (None? rend):

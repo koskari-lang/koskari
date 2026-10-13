@@ -10,13 +10,13 @@ def target [a b]:
     #(a b)
 
 
-define-class Method []:
+class Method []:
 
     def __call__ [self x]:
         #(self.tag x)
 
 
-define-class Bound []:
+class Bound []:
 
     var __call__ (partial target 1)
 
@@ -43,7 +43,7 @@ def deep [n]:
         0
 
 
-define-class Deep []:
+class Deep []:
 
     var __call__ (partial deep)
 

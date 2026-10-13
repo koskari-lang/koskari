@@ -31,7 +31,7 @@ syntax template-group:
     (job fake j2))
 
 
-define-class TestJobsetLabels [TestCase]:
+class TestJobsetLabels [TestCase]:
 
     def test-template-job-registers-by-written-name [self]:
         (self.assertEqual (list (attr (get-ws) jobs)) #["j1"])

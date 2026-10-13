@@ -16,6 +16,7 @@ import json
 import logging
 import ssl
 
+import-from dataclasses dataclass
 import-from contextlib AsyncExitStack
 import-from typing Any
 
@@ -76,7 +77,8 @@ def encode-body [value]:
         (values (.encode (json.dumps value) "utf-8") "application/json")
 
 
-define-dataclass UmbConfig [Config]:
+@dataclass
+class UmbConfig [Config]:
     """
     A UMB broker connection over STOMP 1.2: the full client surface, with
     sensible defaults, declared in one place. Mirrors KafkaConfig's shape
@@ -130,7 +132,7 @@ define-dataclass UmbConfig [Config]:
     var connection_class :: Any None
 
 
-define-class UmbJob [Job]:
+class UmbJob [Job]:
     """
     Subscribes to one UMB destination; dispatches each message to the
     handler, and publishes the handler's return value back as a reply.

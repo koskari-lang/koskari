@@ -16,16 +16,16 @@ first parameter has another name, a classmethod for instance, uses the
 explicit form: `(super __class__ cls)`.
 
 ```koskari
-define-class A []:
+class A []:
   def __init__ [self]:
     (set-attr self a 1)
 
-define-class B (A):
+class B (A):
   def __init__ [self]:
     (.__init__ (super))
     (set-attr self b 2)
 
-define-class C (B):
+class C (B):
   def __init__ [self]:
     (.__init__ (super))
     (set-attr self c 3)

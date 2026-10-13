@@ -21,7 +21,7 @@ VALUE is not evaluated when the store is skipped.
 **Examples:**
 
 ```koskari
->>> define-class Bag ():
+>>> class Bag ():
 ...   pass
 >>> var b (Bag)
 >>> (unassigned? b.x)

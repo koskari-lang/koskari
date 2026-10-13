@@ -10,7 +10,7 @@
 ;; === Synchronous managers === ;;
 
 
-define-class KosCM []:
+class KosCM []:
     """
     Koskari-defined synchronous context manager. Records entry, exit, and
     the exception type handed to __exit__.
@@ -34,7 +34,7 @@ define-class KosCM []:
         False
 
 
-define-class KosSwallowCM [KosCM]:
+class KosSwallowCM [KosCM]:
     """
     Synchronous manager whose __exit__ swallows the body's exception.
     """
@@ -46,7 +46,7 @@ define-class KosSwallowCM [KosCM]:
         True
 
 
-define-class KosExitBoomCM [KosCM]:
+class KosExitBoomCM [KosCM]:
     """
     Synchronous manager whose __exit__ itself raises.
     """
@@ -61,7 +61,7 @@ define-class KosExitBoomCM [KosCM]:
 ;; === Asynchronous managers === ;;
 
 
-define-class KosAsyncCM []:
+class KosAsyncCM []:
     """
     Koskari-defined asynchronous context manager. The protocol methods are
     undecorated -- with awaits them.
@@ -83,7 +83,7 @@ define-class KosAsyncCM []:
         False
 
 
-define-class KosAsyncSwallowCM [KosAsyncCM]:
+class KosAsyncSwallowCM [KosAsyncCM]:
     """
     Asynchronous manager whose __aexit__ swallows the body's exception.
     """

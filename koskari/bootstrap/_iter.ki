@@ -247,7 +247,7 @@ global def sorted [iterable key: None reverse: False]:
     reverse: reverse)
 
 
-@let [[UNDEFINED ((class Undefined []
+@let [[UNDEFINED ((build-class Undefined []
                    (def __repr__ [self]
                      "<raise>")))]]
 global def next [it default: UNDEFINED]:

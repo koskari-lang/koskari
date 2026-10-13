@@ -8,35 +8,35 @@
 import-from asyncio sleep
 
 
-define-class Counter []:
+class Counter []:
 
     def __init__ [self n]:
         set! self.n n
         n
 
 
-define-class Runaway []:
+class Runaway []:
 
     def __init__ [self]:
         (.__init__ self)
         None
 
 
-define-class Chain []:
+class Chain []:
 
     def __init__ [self n]:
         when (> n 0):
             (.__init__ self (- n 1))
 
 
-define-class Sleeper []:
+class Sleeper []:
 
     def __init__ [self]:
         (sleep 0)
         set! self.done true
 
 
-define-class Raiser []:
+class Raiser []:
 
     def __init__ [self]:
         (raise (ValueError "boom"))
@@ -69,12 +69,12 @@ def set-n [k self]:
     k
 
 
-define-class Partial []:
+class Partial []:
 
     var __init__ (partial set-n 5)
 
 
-define-class AsyncPartial []:
+class AsyncPartial []:
 
     var __init__ (partial async_init)
 

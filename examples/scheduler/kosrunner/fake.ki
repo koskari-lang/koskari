@@ -14,13 +14,16 @@
 
 import logging
 
+import-from dataclasses dataclass
+
 (use .job Config Job)
 
 
 var logger (logging.getLogger "kosrunner.fake")
 
 
-define-dataclass FakeConfig [Config]:
+@dataclass
+class FakeConfig [Config]:
     """
     A small dataclass config standing in for a real broker config -- the
     smallest example of a variety declaring its shape and defaults.
@@ -30,7 +33,7 @@ define-dataclass FakeConfig [Config]:
     var delay :: int 0
 
 
-define-class FakeJob [Job]:
+class FakeJob [Job]:
     """A trivial job variety: start/stop just flip `running` and log."""
 
     var config-class FakeConfig

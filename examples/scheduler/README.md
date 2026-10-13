@@ -779,7 +779,7 @@ by name.
 A variety is a `Job` subclass plus two syntaxes. Nothing in the core
 enumerates types, so this is the whole recipe:
 
-1. Declare `<Type>Config` as a `define-dataclass` subclass of `Config` (or of
+1. Declare `<Type>Config` as an `@dataclass` class subclassing `Config` (or
    `ServerConfig` if it needs a shared HTTP server) -- its fields, types, and
    defaults are the config's contract. The base `Config` supplies dataclass
    `merge` and the `disabled` field for free; note base fields precede yours

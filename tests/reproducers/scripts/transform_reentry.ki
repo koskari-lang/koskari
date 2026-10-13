@@ -6,14 +6,14 @@
 import-from koskari.itertools pairwise zip-longest
 
 
-define gen_src [box]:
+def gen_src [box]:
     try:
         (next (item box 0))
     except [e ValueError]:
         (set! (item box 1) (str e))
     yield 1
 
-define-class PairSrc []:
+class PairSrc []:
     def __init__ [self]:
         set! self.n 0
         set! self.pw None
@@ -40,7 +40,7 @@ def pair_case []:
     set! s.pw pw
     #((next pw) s.inner)
 
-define-class ZipSrc []:
+class ZipSrc []:
     def __init__ [self]:
         set! self.n 0
         set! self.z None

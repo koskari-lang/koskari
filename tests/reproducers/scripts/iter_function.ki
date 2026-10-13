@@ -4,13 +4,13 @@
 ;; generator itself. A non-generator __iter__ stays a Demand.
 
 
-(define-class Counter []
+(class Counter []
   (def __iter__ [self]
     (yield 1)
     (yield 2)))
 
 
-(define-class Plain []
+(class Plain []
   (def __iter__ [self]
     (iter #[1 2])))
 

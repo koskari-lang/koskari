@@ -22,6 +22,7 @@ import logging
 
 import aiosqlite
 
+import-from dataclasses dataclass
 import-from contextvars ContextVar
 import-from datetime datetime timezone
 import-from pathlib Path
@@ -32,7 +33,8 @@ import-from pathlib Path
 var logger (logging.getLogger "kosrunner.store")
 
 
-define-dataclass StorageConfig [Config]:
+@dataclass
+class StorageConfig [Config]:
     """
     Where run history lives. `root` is the store directory; when it is
     None the root is resolved from the KOSRUNNER_STORAGE_ROOT env var,
@@ -184,7 +186,7 @@ var _current-run (ContextVar "kosrunner_run" default: None)
 var _log-installed #[False]
 
 
-define-class _RunLogHandler [logging.Handler]:
+class _RunLogHandler [logging.Handler]:
     """
     Appends each `kosrunner.*` log record to the active run's buffer. The
     `emit` override is @demand-decorated because Python's logging calls it
@@ -215,7 +217,7 @@ def install-run-logging []:
         set! _log-installed[0] True
 
 
-define-class RunStore []:
+class RunStore []:
     """
     Run history over a single aiosqlite connection, with per-run
     artifacts (trigger/result/log) on disk beneath <root>/runs/<job>/

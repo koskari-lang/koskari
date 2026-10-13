@@ -1,7 +1,7 @@
 id: class-layout-init-repr-eq-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Vector2 []:
+  class Vector2 []:
     def __init__ [self x y]:
       (set-attr self x x)
       (set-attr self y y)
@@ -10,26 +10,25 @@ source: |-
     def __eq__ [self other]:
       (and (instance? other Vector2) (== self.x other.x) (== self.y other.y))
 verify:
-  read: "(define-class Vector2 () (begin (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __repr__ [self] (#str \"Vector2(\" (attr self x) \", \" (attr self y) \")\")) (def __eq__ [self other] (and (instance? other Vector2) (== (attr self x) (attr other x)) (== (attr self y) (attr other y)))))))"
+  read: "(class Vector2 () (begin (def __init__ [self x y] (set-attr self x x) (set-attr self y y)) (def __repr__ [self] (#str \"Vector2(\" (attr self x) \", \" (attr self y) \")\")) (def __eq__ [self other] (and (instance? other Vector2) (== (attr self x) (attr other x)) (== (attr self y) (attr other y)))))))"
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-set-attr.md
   - reference/specials/compile-attr.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - method
 notes: Seed corpus example for idiomatic layout class construction and Python equality/repr protocols.
 ---
 id: class-layout-hash-bool-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Token []:
+  class Token []:
     def __init__ [self text kind]:
       (set-attr self text text)
       (set-attr self kind kind)
@@ -38,16 +37,15 @@ source: |-
     def __bool__ [self]:
       (truth self.text)
 verify:
-  read: (define-class Token () (begin (def __init__ [self text kind] (set-attr self text text) (set-attr self kind kind)) (def __hash__ [self] (hash [(attr self kind) (attr self text)])) (def __bool__ [self] (truth (attr self text))))))
+  read: (class Token () (begin (def __init__ [self text kind] (set-attr self text text) (set-attr self kind kind)) (def __hash__ [self] (hash [(attr self kind) (attr self text)])) (def __bool__ [self] (truth (attr self text))))))
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-set-attr.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - protocol
@@ -55,9 +53,9 @@ tags:
 notes: Shows a user-defined type using truthiness and hashing hooks.
 ---
 id: class-layout-len-iter-contains-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Bag []:
+  class Bag []:
     def __init__ [self items]:
       (set-attr self items items)
     def __len__ [self]:
@@ -67,16 +65,15 @@ source: |-
     def __contains__ [self item]:
       (in? item self.items)
 verify:
-  read: (define-class Bag () (begin (def __init__ [self items] (set-attr self items items)) (def __len__ [self] (len (attr self items))) (def __iter__ [self] (iter (attr self items))) (def __contains__ [self item] (in? item (attr self items))))))
+  read: (class Bag () (begin (def __init__ [self items] (set-attr self items items)) (def __len__ [self] (len (attr self items))) (def __iter__ [self] (iter (attr self items))) (def __contains__ [self item] (in? item (attr self items))))))
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-attr.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - collection
@@ -84,9 +81,9 @@ tags:
 notes: Illustrates Python collection protocol method names in Koskari method definitions.
 ---
 id: class-layout-getitem-setitem-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Row []:
+  class Row []:
     def __init__ [self cells]:
       (set-attr self cells cells)
     def __getitem__ [self index]:
@@ -94,15 +91,14 @@ source: |-
     def __setitem__ [self index value]:
       (set-item self.cells index value)
 verify:
-  read: (define-class Row () (begin (def __init__ [self cells] (set-attr self cells cells)) (def __getitem__ [self index] (item (attr self cells) index)) (def __setitem__ [self index value] (set-item (attr self cells) index value)))))
+  read: (class Row () (begin (def __init__ [self cells] (set-attr self cells cells)) (def __getitem__ [self index] (item (attr self cells) index)) (def __setitem__ [self index value] (set-item (attr self cells) index value)))))
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - indexing
@@ -110,24 +106,23 @@ tags:
 notes: Focuses on Python item access method names in class body layout.
 ---
 id: class-layout-callable-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Multiplier []:
+  class Multiplier []:
     def __init__ [self factor]:
       (set-attr self factor factor)
     def __call__ [self value]:
       (* self.factor value)
 verify:
-  read: (define-class Multiplier () (begin (def __init__ [self factor] (set-attr self factor factor)) (def __call__ [self value] (* (attr self factor) value)))))
+  read: (class Multiplier () (begin (def __init__ [self factor] (set-attr self factor factor)) (def __call__ [self value] (* (attr self factor) value)))))
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
   - reference/specials/compile-call.md
-  - reference/specials/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - callable
@@ -135,9 +130,9 @@ tags:
 notes: Demonstrates making instances callable with a Python dunder.
 ---
 id: class-layout-context-manager-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class ManagedFlag []:
+  class ManagedFlag []:
     def __init__ [self]:
       (set-attr self active False)
     def __enter__ [self]:
@@ -147,16 +142,15 @@ source: |-
       (set-attr self active False)
       False
 verify:
-  read: (define-class ManagedFlag () (begin (def __init__ [self] (set-attr self active False)) (def __enter__ [self] (set-attr self active True) self) (def __exit__ [self exc_type exc value] (set-attr self active False) False))))
+  read: (class ManagedFlag () (begin (def __init__ [self] (set-attr self active False)) (def __enter__ [self] (set-attr self active True) self) (def __exit__ [self exc_type exc value] (set-attr self active False) False))))
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-set-attr.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - context-manager
@@ -165,9 +159,9 @@ tags:
 notes: Shows Python context manager hooks in a Koskari class body.
 ---
 id: class-layout-ordering-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Version []:
+  class Version []:
     def __init__ [self major minor]:
       (set-attr self major major)
       (set-attr self minor minor)
@@ -176,15 +170,14 @@ source: |-
     def __le__ [self other]:
       (<= [self.major self.minor] [other.major other.minor])
 verify:
-  read: (define-class Version () (begin (def __init__ [self major minor] (set-attr self major major) (set-attr self minor minor)) (def __lt__ [self other] (< [(attr self major) (attr self minor)] [(attr other major) (attr other minor)])) (def __le__ [self other] (<= [(attr self major) (attr self minor)] [(attr other major) (attr other minor)])))))
+  read: (class Version () (begin (def __init__ [self major minor] (set-attr self major major) (set-attr self minor minor)) (def __lt__ [self other] (< [(attr self major) (attr self minor)] [(attr other major) (attr other minor)])) (def __le__ [self other] (<= [(attr self major) (attr self minor)] [(attr other major) (attr other minor)])))))
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - comparison
@@ -192,9 +185,9 @@ tags:
 notes: Covers user-defined ordering methods.
 ---
 id: class-layout-string-conversion-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Label []:
+  class Label []:
     def __init__ [self text]:
       (set-attr self text text)
     def __str__ [self]:
@@ -202,16 +195,15 @@ source: |-
     def __repr__ [self]:
       (#str "Label(" (repr self.text) ")")
 verify:
-  read: "(define-class Label () (begin (def __init__ [self text] (set-attr self text text)) (def __str__ [self] (attr self text)) (def __repr__ [self] (#str \"Label(\" (repr (attr self text)) \")\")))))"
+  read: "(class Label () (begin (def __init__ [self text] (set-attr self text text)) (def __str__ [self] (attr self text)) (def __repr__ [self] (#str \"Label(\" (repr (attr self text)) \")\")))))"
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
   - reference/specials/compile-attr.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - string
@@ -224,22 +216,21 @@ source: |-
   import-from dataclasses dataclass
   
   @dataclass
-  define-class Point3 []:
+  class Point3 []:
     var x :: float 0.0
     var y :: float 0.0
     var z :: float 0.0
     def __iter__ [self]:
       (iter [self.x self.y self.z])
 verify:
-  read: "(begin (import-from dataclasses dataclass) (decorate (dataclass) (define-class Point3 () (begin (var x :: float 0.0) (var y :: float 0.0) (var z :: float 0.0) (def __iter__ [self] (iter ((attr self x) (attr self y) (attr self z)))))))))"
+  read: "(begin (import-from dataclasses dataclass) (decorate (dataclass) (class Point3 () (begin (var x :: float 0.0) (var y :: float 0.0) (var z :: float 0.0) (def __iter__ [self] (iter ((attr self x) (attr self y) (attr self z)))))))))"
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - decorator
   - dataclass
@@ -252,21 +243,20 @@ source: |-
   import-from dataclasses dataclass
   
   @(dataclass frozen: True order: True)
-  define-class Span []:
+  class Span []:
     var start :: int 0
     var stop :: int 0
     def __len__ [self]:
       (- self.stop self.start)
 verify:
-  read: "(begin (import-from dataclasses dataclass) (decorate ((dataclass frozen: True order: True)) (define-class Span () (begin (var start :: int 0) (var stop :: int 0) (def __len__ [self] (- (attr self stop) (attr self start))))))))"
+  read: "(begin (import-from dataclasses dataclass) (decorate ((dataclass frozen: True order: True)) (class Span () (begin (var start :: int 0) (var stop :: int 0) (def __len__ [self] (- (attr self stop) (attr self start))))))))"
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - decorator
   - dataclass
@@ -276,7 +266,7 @@ notes: Shows a decorator call with keyword options before a class block.
 id: class-layout-staticmethod-001
 feature: layout/decorate
 source: |-
-  define-class Slug []:
+  class Slug []:
     @staticmethod
     def normalize [text]:
       (.replace (.lower text) " " "-")
@@ -284,15 +274,14 @@ source: |-
     def valid? [text]:
       (truth text)
 verify:
-  read: (define-class Slug () (begin (decorate (staticmethod) (def normalize [text] (.replace (.lower text) " " "-"))) (decorate (staticmethod) (def valid? [text] (truth text))))))
+  read: (class Slug () (begin (decorate (staticmethod) (def normalize [text] (.replace (.lower text) " " "-"))) (decorate (staticmethod) (def valid? [text] (truth text))))))
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - decorator
   - staticmethod
@@ -302,7 +291,7 @@ notes: Demonstrates Python staticmethod decoration on class-body functions.
 id: class-layout-classmethod-001
 feature: layout/decorate
 source: |-
-  define-class Color []:
+  class Color []:
     def __init__ [self red green blue]:
       (set-attr self red red)
       (set-attr self green green)
@@ -311,16 +300,15 @@ source: |-
     def from_hex [cls text]:
       (cls (parse-int (slice text 1 3) 16) (parse-int (slice text 3 5) 16) (parse-int (slice text 5 7) 16))
 verify:
-  read: (define-class Color () (begin (def __init__ [self red green blue] (set-attr self red red) (set-attr self green green) (set-attr self blue blue)) (decorate (classmethod) (def from_hex [cls text] (cls (parse-int (slice text 1 3) 16) (parse-int (slice text 3 5) 16) (parse-int (slice text 5 7) 16)))))))
+  read: (class Color () (begin (def __init__ [self red green blue] (set-attr self red red) (set-attr self green green) (set-attr self blue blue)) (decorate (classmethod) (def from_hex [cls text] (cls (parse-int (slice text 1 3) 16) (parse-int (slice text 3 5) 16) (parse-int (slice text 5 7) 16)))))))
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
   - reference/specials/compile-call.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - decorator
   - classmethod
@@ -330,7 +318,7 @@ notes: Shows classmethod factory layout with explicit cls first parameter.
 id: class-layout-property-decorator-001
 feature: layout/decorate
 source: |-
-  define-class Rectangle []:
+  class Rectangle []:
     def __init__ [self width height]:
       (set-attr self width width)
       (set-attr self height height)
@@ -338,15 +326,14 @@ source: |-
     def area [self]:
       (* self.width self.height)
 verify:
-  read: (define-class Rectangle () (begin (def __init__ [self width height] (set-attr self width width) (set-attr self height height)) (decorate (property) (def area [self] (* (attr self width) (attr self height)))))))
+  read: (class Rectangle () (begin (def __init__ [self width height] (set-attr self width width) (set-attr self height height)) (decorate (property) (def area [self] (* (attr self width) (attr self height)))))))
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - decorator
   - property
@@ -356,7 +343,7 @@ notes: Adds a Python property-style method decorator to the class corpus.
 id: class-layout-multiple-method-decorators-001
 feature: layout/decorate
 source: |-
-  define-class Parser []:
+  class Parser []:
     @classmethod
     @trace-factory
     def build [cls grammar]:
@@ -366,15 +353,14 @@ source: |-
     def tokenize [source]:
       (split source)
 verify:
-  read: (define-class Parser () (begin (decorate (classmethod trace-factory) (def build [cls grammar] (cls grammar))) (decorate (staticmethod memoize) (def tokenize [source] (split source))))))
+  read: (class Parser () (begin (decorate (classmethod trace-factory) (def build [cls grammar] (cls grammar))) (decorate (staticmethod memoize) (def tokenize [source] (split source))))))
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - decorator
   - classmethod
@@ -383,29 +369,28 @@ tags:
 notes: Shows stacked decorators on methods without tying the record to a concrete example program.
 ---
 id: class-layout-inheritance-super-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class BaseRecord []:
+  class BaseRecord []:
     def __init__ [self id]:
       (set-attr self id id)
   
-  define-class AuditRecord (BaseRecord):
+  class AuditRecord (BaseRecord):
     def __init__ [self id actor]:
       (.__init__ (super) id)
       (set-attr self actor actor)
     def __repr__ [self]:
       (#str "AuditRecord(" self.id ", " self.actor ")")
 verify:
-  read: "(begin (define-class BaseRecord () (begin (def __init__ [self id] (set-attr self id id)))) (define-class AuditRecord (BaseRecord) (begin (def __init__ [self id actor] (.__init__ (super) id) (set-attr self actor actor)) (def __repr__ [self] (#str \"AuditRecord(\" (attr self id) \", \" (attr self actor) \")\")))))"
+  read: "(begin (class BaseRecord () (begin (def __init__ [self id] (set-attr self id id)))) (class AuditRecord (BaseRecord) (begin (def __init__ [self id actor] (.__init__ (super) id) (set-attr self actor actor)) (def __repr__ [self] (#str \"AuditRecord(\" (attr self id) \", \" (attr self actor) \")\")))))"
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-super.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - inheritance
   - dunder
@@ -414,18 +399,18 @@ tags:
 notes: Covers superclass list syntax and Python-style initializer chaining.
 ---
 id: class-layout-inheritance-super-002
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class A []:
+  class A []:
     def __init__ [self]:
       (set-attr self a 1)
 
-  define-class B (A):
+  class B (A):
     def __init__ [self]:
       (.__init__ (super))
       (set-attr self b 2)
 
-  define-class C (B):
+  class C (B):
     def __init__ [self]:
       (.__init__ (super))
       (set-attr self c 3)
@@ -434,13 +419,12 @@ source: |-
 verify:
   eval: "{\"a\": 1, \"b\": 2, \"c\": 3}"
 references:
-  - reference/layouts/layout-define-class.md
+  - reference/layouts/layout-class.md
   - reference/macros/compile-super.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - inheritance
   - dunder
@@ -449,9 +433,9 @@ tags:
 notes: Three levels, each initializer chaining through (super); (super) names the defining class via __class__, so B's initializer reaches A even on a C instance.
 ---
 id: class-layout-match-args-001
-feature: layout/define-class
+feature: layout/class
 source: |-
-  define-class Event []:
+  class Event []:
     var __match_args__ ["kind" "payload"]
     def __init__ [self kind payload]:
       (set-attr self kind kind)
@@ -459,125 +443,129 @@ source: |-
     def __repr__ [self]:
       (#str "Event(" (repr self.kind) ", " (repr self.payload) ")")
 verify:
-  read: "(define-class Event () (begin (var __match_args__ (\"kind\" \"payload\")) (def __init__ [self kind payload] (set-attr self kind kind) (set-attr self payload payload)) (def __repr__ [self] (#str \"Event(\" (repr (attr self kind)) \", \" (repr (attr self payload)) \")\"))))"
+  read: "(class Event () (begin (var __match_args__ (\"kind\" \"payload\")) (def __init__ [self kind payload] (set-attr self kind kind) (set-attr self payload payload)) (def __repr__ [self] (#str \"Event(\" (repr (attr self kind)) \", \" (repr (attr self payload)) \")\"))))"
 references:
-  - reference/layouts/layout-define-class.md
-  - reference/macros/compile-define-class.md
-  - reference/specials/compile-class.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-build-class.md
 stability: evolving
 tags:
   - class
-  - define-class
   - layout
   - dunder
   - pattern-matching
   - define-type
 notes: Includes a Python class metadata dunder used by structural pattern matching.
 ---
-id: class-define-dataclass-field-001
-feature: macro/compile/define-dataclass
-source: "(begin (define-dataclass Point [] (var x :: int 0) (var y :: int 0)) (var p (Point 3 5)) p.x)"
+id: class-dataclass-field-001
+feature: macro/compile/decorate
+source: "(begin (import-from dataclasses dataclass) (decorate [dataclass] (class Point [] (var x :: int 0) (var y :: int 0))) (var p (Point 3 5)) p.x)"
 verify:
   eval: "3"
 references:
-  - reference/macros/compile-define-dataclass.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
-  - define-dataclass
   - dataclass
+  - decorate
   - define-type
-notes: "define-dataclass NAME SUPERS members...; empty [] supers, typed fields via ::; positional construction sets x and y. koskari/bootstrap/_class.ki. read/expand omitted: :: annotation does not round-trip through the corpus renderer"
+notes: "the decorate class arm applies dataclass to the built class and binds Point to the result; typed fields via ::; positional construction sets x and y. read/expand omitted: :: annotation does not round-trip through the corpus renderer"
 ---
-id: class-define-dataclass-predicate-true-001
-feature: macro/compile/define-dataclass
-source: "(begin (define-dataclass Point [] (var x :: int 0) (var y :: int 0)) (Point? (Point 1 2)))"
+id: class-dataclass-instance-true-001
+feature: macro/compile/decorate
+source: "(begin (import-from dataclasses dataclass) (decorate [dataclass] (class Point [] (var x :: int 0) (var y :: int 0))) (instance? (Point 1 2) Point))"
 verify:
   eval: "true"
 references:
-  - reference/macros/compile-define-dataclass.md
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-class.md
+  - reference/specials/compile-instance.md
 stability: evolving
 tags:
   - class
-  - define-dataclass
   - dataclass
+  - decorate
   - predicate
   - define-type
-notes: define-dataclass also defines NAME? via create-instance-check; a Point instance satisfies Point?. koskari/bootstrap/_class.ki
+notes: class defines no Point? predicate; test membership with (instance? value Point)
 ---
-id: class-define-dataclass-predicate-false-001
-feature: macro/compile/define-dataclass
-source: "(begin (define-dataclass Point [] (var x :: int 0) (var y :: int 0)) (Point? 42))"
+id: class-dataclass-instance-false-001
+feature: macro/compile/decorate
+source: "(begin (import-from dataclasses dataclass) (decorate [dataclass] (class Point [] (var x :: int 0) (var y :: int 0))) (instance? 42 Point))"
 verify:
   eval: "false"
 references:
-  - reference/macros/compile-define-dataclass.md
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-instance.md
 stability: evolving
 tags:
   - class
-  - define-dataclass
   - dataclass
+  - decorate
   - predicate
   - define-type
-notes: the generated Point? predicate returns false for a non-instance (a plain int). koskari/bootstrap/_class.ki
+notes: instance? returns false for a non-instance (a plain int)
 ---
-id: class-layout-define-dataclass-elided-supers-001
-feature: layout/define-dataclass
+id: class-layout-dataclass-elided-supers-001
+feature: layout/class
 source: |-
-  define-dataclass Point:
+  import-from dataclasses dataclass
+  @dataclass
+  class Point:
     var x :: int 0
     var y :: int 0
   (Point 3 5).y
 verify:
+  read: "(begin (import-from dataclasses dataclass) (decorate (dataclass) (class Point () (begin (var x :: int 0) (var y :: int 0)))) (attr (Point 3 5) y))"
   eval: "5"
 references:
-  - reference/layouts/layout-define-dataclass.md
-  - reference/macros/compile-define-dataclass.md
+  - reference/layouts/layout-class.md
+  - reference/macros/compile-decorate.md
 stability: evolving
 tags:
   - class
-  - define-dataclass
   - dataclass
   - layout
+  - decorate
+  - surface:block
   - define-type
-notes: "block form with the supers elided reads as (define-dataclass Point () (begin ...)); read/expand omitted: :: annotation does not round-trip through the corpus renderer. koskari/reader/layouts/classes.py"
+notes: "block form with the supers elided reads as (class Point () (begin ...)); @dataclass above it decorates the class before Point is bound. koskari/reader/layouts/classes.py"
 ---
 id: class-property-getter-eval-001
 feature: special/compile/decorate
-source: (begin (define-class Rectangle [] (def __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (def area [self] (* self.w self.h)))) (var r (Rectangle 3 4)) r.area)
+source: (begin (class Rectangle [] (def __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (def area [self] (* self.w self.h)))) (var r (Rectangle 3 4)) r.area)
 verify:
-  read: (begin (define-class Rectangle [] (def __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (def area [self] (* (attr self w) (attr self h))))) (var r (Rectangle 3 4)) (attr r area))
-  expand: (begin (define-class Rectangle [] (def __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (def area [self] (* (attr self w) (attr self h))))) (var r (Rectangle 3 4)) (attr r area))
+  read: (begin (class Rectangle [] (def __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (def area [self] (* (attr self w) (attr self h))))) (var r (Rectangle 3 4)) (attr r area))
+  expand: (begin (class Rectangle [] (def __init__ [self w h] (set-attr self w w) (set-attr self h h)) (decorate (property) (def area [self] (* (attr self w) (attr self h))))) (var r (Rectangle 3 4)) (attr r area))
   eval: "12"
 references:
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
   - property
   - decorator
-  - define-class
   - decorate
 notes: "@property getter as a computed attribute; r.area reads the method result 3*4 without call syntax"
 ---
 id: class-property-setter-roundtrip-001
 feature: special/compile/decorate
-source: (begin (define-class Celsius [] (def __init__ [self t] (set-attr self _t t)) (decorate (property) (def temp [self] self._t)) (decorate ((attr temp setter)) (def temp [self value] (set-attr self _t value)))) (var c (Celsius 20)) (set! c.temp 30) c.temp)
+source: (begin (class Celsius [] (def __init__ [self t] (set-attr self _t t)) (decorate (property) (def temp [self] self._t)) (decorate ((attr temp setter)) (def temp [self value] (set-attr self _t value)))) (var c (Celsius 20)) (set! c.temp 30) c.temp)
 verify:
-  read: (begin (define-class Celsius [] (def __init__ [self t] (set-attr self _t t)) (decorate (property) (def temp [self] (attr self _t))) (decorate ((attr temp setter)) (def temp [self value] (set-attr self _t value)))) (var c (Celsius 20)) (set! (attr c temp) 30) (attr c temp))
-  expand: (begin (define-class Celsius [] (def __init__ [self t] (set-attr self _t t)) (decorate (property) (def temp [self] (attr self _t))) (decorate ((attr temp setter)) (def temp [self value] (set-attr self _t value)))) (var c (Celsius 20)) (set! (attr c temp) 30) (attr c temp))
+  read: (begin (class Celsius [] (def __init__ [self t] (set-attr self _t t)) (decorate (property) (def temp [self] (attr self _t))) (decorate ((attr temp setter)) (def temp [self value] (set-attr self _t value)))) (var c (Celsius 20)) (set! (attr c temp) 30) (attr c temp))
+  expand: (begin (class Celsius [] (def __init__ [self t] (set-attr self _t t)) (decorate (property) (def temp [self] (attr self _t))) (decorate ((attr temp setter)) (def temp [self value] (set-attr self _t value)))) (var c (Celsius 20)) (set! (attr c temp) 30) (attr c temp))
   eval: "30"
 references:
   - reference/macros/compile-decorate.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
 stability: evolving
 tags:
   - class
   - property
   - decorator
   - setter
-  - define-class
   - decorate
 notes: "@name.setter round-trip (from examples/dataclass.ki coord.setter); set! through the property writes _t, then reading temp returns 30"

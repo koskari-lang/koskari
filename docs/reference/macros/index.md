@@ -42,8 +42,7 @@ the REPL shows the expansion of any of them.
 | Macro | Does |
 |-------|------|
 | [`def`](compile-def.md) | Define a function and bind it in the current scope |
-| [`define-class`](compile-define-class.md) | Define a class, with a predicate named after it |
-| [`define-dataclass`](compile-define-dataclass.md) | A class through `dataclasses.dataclass` |
+| [`class`](compile-class.md) | Define a class and bind it in the current scope |
 | [`define-demanding`](compile-define-demanding.md) | A function wrapped for direct calls from Python |
 | [`define-coroutine`](compile-define-coroutine.md) | A function that Python sees as a coroutine function |
 | [`super`](compile-super.md) | The superclass proxy inside a method |

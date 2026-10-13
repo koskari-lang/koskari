@@ -5,8 +5,8 @@
 `(build-class NAME SUPERS (begin BODY))`. The form evaluates to the new
 class object and does **not** bind **NAME** (see
 [compile/build-class](../specials/compile-build-class.md)). To bind it,
-store the value with `var`, or write `global class` to bind it at the
-module.
+store the value with `var`, write [`class NAME:`](layout-class.md) to
+build and bind in one step, or `global class` to bind at the module.
 
 The superclass list may be omitted; when missing, the expansion uses `()` (nil).
 

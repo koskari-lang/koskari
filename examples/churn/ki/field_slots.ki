@@ -5,7 +5,7 @@
 (var MASK32 0xffffffff)
 
 
-define-class SlotBox []:
+class SlotBox []:
 
     var __slots__ #("i" "a" "b")
 

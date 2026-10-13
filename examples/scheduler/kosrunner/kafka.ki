@@ -14,6 +14,7 @@
 
 import logging
 
+import-from dataclasses dataclass
 import-from typing Any
 
 ;; aiokafka is the `kafka` EXTRA, so it is imported where it is used, not
@@ -24,7 +25,8 @@ import-from typing Any
 var logger (logging.getLogger "kosrunner.kafka")
 
 
-define-dataclass KafkaConfig [Config]:
+@dataclass
+class KafkaConfig [Config]:
     """
     A kafka broker connection: the full consumer surface, with sensible
     defaults, declared in one place.
@@ -57,7 +59,7 @@ define-dataclass KafkaConfig [Config]:
     var retry_backoff_ms :: int 500
 
 
-define-class KafkaJob [Job]:
+class KafkaJob [Job]:
     """
     Consumes one topic; dispatches each message to the handler
     """

@@ -14,7 +14,7 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner HttpServer
 
 
-define-class TestWebhookReply [SchedulerAsyncTestCase]:
+class TestWebhookReply [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def asyncSetUp [self]:

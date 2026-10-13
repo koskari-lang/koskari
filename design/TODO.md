@@ -481,12 +481,13 @@ Ref: [api/async-form.md](api/async-form.md); `koskari/asyncio.py`;
 
 ### Dataclass builder in Koskari (proposed)
 
-`define-dataclass` applies the stdlib decorator, which generates the
-methods by `exec` against the module's `__dict__` and so leans on the
-module namespace relaying as a dict. A `dataclass` builtin in the
-bootstrap would collect the annotated fields, set `__dataclass_fields__`
-and `__dataclass_params__` for the stdlib helpers, and compile
-`__init__`, `__repr__`, `__eq__` and the rest as Koskari functions.
+`@dataclass` over a `class` applies the stdlib decorator, which
+generates the methods by `exec` against the module's `__dict__` and so
+leans on the module namespace relaying as a dict. A `dataclass` builtin
+in the bootstrap would collect the annotated fields, set
+`__dataclass_fields__` and `__dataclass_params__` for the stdlib
+helpers, and compile `__init__`, `__repr__`, `__eq__` and the rest as
+Koskari functions.
 
 Ref: [language/dataclass-builder.md](language/dataclass-builder.md).
 

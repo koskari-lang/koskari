@@ -6,7 +6,7 @@ import-from koskari.lib ItemRef Ref
 
 var ns (globals)
 
-define-class K []:
+class K []:
     def __hash__ [self]:
         ns.bind "sensor" (Ref "sensor" 42)
         var junk (list-each [i (range 64)] (dict))

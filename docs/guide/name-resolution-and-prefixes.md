@@ -118,7 +118,7 @@ resolves through the compile-time and runtime rules like any other.
 |------------|--------|---------|
 | a runtime value and a syntax | `(foo ...)` uses the syntax; `foo` as a value, or `(call foo ...)`, uses the function | `+` |
 | a syntax only | `(foo ...)` expands, and `foo` has no runtime value | `if`, `while`, `begin`, most `syntax` macros |
-| either, plus `layout/foo` | the block header `foo ...:` is handled as well | `while`, `try`, `define-class` |
+| either, plus `layout/foo` | the block header `foo ...:` is handled as well | `while`, `try`, `class` |
 
 `syntax foo:` and `syntax compile/foo:` are the same
 definition: the transformer is bound under `compile/foo` whichever is

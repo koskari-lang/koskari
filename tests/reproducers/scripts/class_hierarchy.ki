@@ -3,13 +3,13 @@
 
 ;; Koskari subclassing Koskari
 
-define-class KosBase []:
+class KosBase []:
 
     def __init__ [self x]:
         set! self.x x
 
 
-define-class KosChild [KosBase]:
+class KosChild [KosBase]:
 
     def __init__ [self x y]:
         (.__init__ (super) x)
@@ -23,7 +23,7 @@ def verify_kos_inherits_kos []:
 
 ;; Koskari subclassing bare Python (PlainBase injected by test harness)
 
-define-class KosPlainChild [PlainBase]:
+class KosPlainChild [PlainBase]:
 
     def __init__ [self tag extra]:
         (.__init__ (super) tag)
@@ -40,7 +40,7 @@ def verify_kos_inherits_python []:
 import-from enum IntEnum
 
 
-define-class Color [IntEnum]:
+class Color [IntEnum]:
     var RED 1
     var GREEN 2
 
@@ -53,7 +53,7 @@ def verify_kos_inherits_intenum []:
 
 ;; Koskari subclassing Python ABC (Animal injected by test harness)
 
-define-class Dog [Animal]:
+class Dog [Animal]:
 
     def __init__ [self name breed]:
         (.__init__ (super) name)
@@ -71,7 +71,7 @@ import-from dataclasses dataclass
 
 
 @dataclass
-define-class DCPoint []:
+class DCPoint []:
     var x :: int 0
     var y :: int 0
 

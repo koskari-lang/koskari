@@ -63,3 +63,45 @@ tags:
   - invalid
   - surface:block
 notes: "corrective: build-class Box:"
+---
+id: object-class-no-predicate-invalid-001
+feature: macro/compile/class
+source: |-
+  (begin (class C [] (var n 1)) (C? (C)))
+  
+verify:
+  read: (begin (class C [] (var n 1)) (C? (C)))
+  invalid: "class binds only C; it defines no C? predicate, so calling C? fails at eval with NameError: No such reference: C?"
+references:
+  - reference/macros/compile-class.md
+  - reference/specials/compile-instance.md
+stability: evolving
+tags:
+  - object
+  - class
+  - invalid
+  - predicate
+  - define-type
+  - pitfall
+notes: "corrective: (instance? (C) C)"
+---
+id: object-class-local-unbound-invalid-001
+feature: macro/compile/class
+source: |-
+  (begin (def make [] (class Local [] (var n 7)) Local) (make) Local)
+  
+verify:
+  read: (begin (def make [] (class Local [] (var n 7)) Local) (make) Local)
+  invalid: "class inside a function body binds Local as a local of make; after (make) returns, reading Local at the outer scope fails at eval with NameError: No such reference: Local"
+references:
+  - reference/macros/compile-class.md
+  - reference/specials/compile-global.md
+stability: evolving
+tags:
+  - object
+  - class
+  - invalid
+  - local-binding
+  - surprising
+  - pitfall
+notes: "corrective: return the class from make and bind the result, or write (global class Local [] ...) to bind at the module"

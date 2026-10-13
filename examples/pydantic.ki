@@ -13,7 +13,7 @@
 
 
 """
-Example: Pydantic model using a Koskari define-class
+Example: Pydantic model using a Koskari class
 """
 
 
@@ -39,7 +39,7 @@ def base_config [**: cfg]:
     (ConfigDict **: cfg)
 
 
-define-class Point [BaseModel]:
+class Point [BaseModel]:
     """ A point in 2D space """
 
     var model_config (base_config)

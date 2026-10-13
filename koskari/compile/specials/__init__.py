@@ -25,7 +25,7 @@ from ...syntax import special
 from .begin import special_begin
 from .bytecode import special_bytecode
 from .call import special_call, special_call_attr
-from .class_ import special_class
+from .class_ import special_build_class
 from .collections import (
     special_build_list, special_build_tuple, special_list_append)
 from .conditionals import special_and, special_cond, special_or, special_switch
@@ -107,10 +107,10 @@ __all__ = (
     "special_bracket_cons",
     "special_bracket_proper",
     "special_break",
+    "special_build_class",
     "special_bytecode",
     "special_call",
     "special_call_attr",
-    "special_class",
     "special_call_cc",
     "special_compile_macro_match",
     "special_compile_macro_rules",

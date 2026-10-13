@@ -3,7 +3,7 @@
 ;; rather than re-entering the evaluator via tp_call.
 
 
-define-class Adder []:
+class Adder []:
 
     def __init__ [self base]:
         set! self.base base
@@ -26,7 +26,7 @@ def verify_call_multiple []:
 
 ;; __call__ keyword and default-argument handling
 
-define-class Greeter []:
+class Greeter []:
 
     def __init__ [self greeting]:
         set! self.greeting greeting
@@ -49,7 +49,7 @@ def inc [n]:
     (+ n 1)
 
 
-define-class Twice []:
+class Twice []:
 
     def __init__ [self fn]:
         set! self.fn fn

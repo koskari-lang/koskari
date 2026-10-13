@@ -34,7 +34,7 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-define-class Point []:
+class Point []:
     define __init__ [self x y]:
         set! self.x x
         set! self.y y

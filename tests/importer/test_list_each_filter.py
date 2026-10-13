@@ -153,7 +153,7 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_class_body_keeps_its_col_attribute(self):
         src = """
         (begin
-          (define-class Table []
+          (class Table []
             (var col "name")
             (var widths (list-each [w #[3 5]] (* w 2))))
           #(Table.widths (getattr Table "col" "<deleted>")))
@@ -164,7 +164,7 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_nested_in_class_body(self):
         src = """
         (begin
-          (define-class Grid []
+          (class Grid []
             (var cells (list-each [x #[1 2]]
                             (list-each [y #[10 20]] (+ x y)))))
           Grid.cells)
@@ -182,7 +182,7 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_filter_arms_in_class_body(self):
         src = """
         (begin
-          (define-class F []
+          (class F []
             (var odds (list-each [x (range 0 6)] (when (& x 1) x)))
             (var evens (list-each [x (range 0 6)] (unless (& x 1) x))))
           #(F.odds F.evens))

@@ -16,7 +16,7 @@ import-from kosrunner:
     RunStore JobSet StorageConfig WebhookJob WebhookConfig
 
 
-define-class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
+class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:
     """
     Base for tests exercising kosrunner through its live async surface: a
     temp-dir store, an ASGI HTTP client, and a one-call webhook builder.

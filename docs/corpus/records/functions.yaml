@@ -1012,7 +1012,7 @@ tags:
   - macro
   - decorate
   - name-resolution
-notes: compile/decorate hoists the name out of a def subject so the function value is what gets decorated and the finished result is what gets bound; define-class is hoisted the same way.
+notes: compile/decorate hoists the name out of a def subject so the function value is what gets decorated and the finished result is what gets bound; a class subject is hoisted the same way.
 ---
 id: function-decorate-call-parameterize-001
 feature: layout/decorate

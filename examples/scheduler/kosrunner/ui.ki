@@ -18,6 +18,7 @@ import logging
 
 import jinja2
 
+import-from dataclasses dataclass
 import-from importlib.util find_spec
 import-from fastapi.responses HTMLResponse RedirectResponse
 
@@ -34,7 +35,8 @@ var PAGE-SIZE 20
 var logger (logging.getLogger "kosrunner.ui")
 
 
-define-dataclass UiConfig [ServerConfig]:
+@dataclass
+class UiConfig [ServerConfig]:
     """
     Config for the human-facing web UI's shared server; prefix defaults
     to /ui. Same host:port as a webhook/admin config -> one FastAPI
@@ -111,7 +113,7 @@ def _trigger-fields [spec]:
     out
 
 
-define-class UiJob [Job]:
+class UiJob [Job]:
     """
     The human-facing control plane: Jinja2-rendered HTML mounted on the
     shared server. Reads the live JobSet and its run store in-process

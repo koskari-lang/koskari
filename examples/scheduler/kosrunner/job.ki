@@ -17,7 +17,7 @@ import logging
 import signal
 
 import-from asyncio CancelledError
-import-from dataclasses replace
+import-from dataclasses dataclass replace
 import-from importlib import_module
 
 
@@ -78,7 +78,7 @@ def watch-task [task what job: None]:
     task
 
 
-define-class ConfigBase []:
+class ConfigBase []:
     """
     Method carrier for Config (a dataclass body holds fields, so the
     behavior lives one class up). `merge` builds a NEW config instance
@@ -90,7 +90,8 @@ define-class ConfigBase []:
         (replace self **: overrides)
 
 
-define-dataclass Config [ConfigBase]:
+@dataclass
+class Config [ConfigBase]:
     """
     Base config. Subclasses are dataclasses that declare their fields,
     valid shape, and sensible defaults; every config additionally
@@ -104,7 +105,7 @@ define-dataclass Config [ConfigBase]:
     var disabled :: bool False
 
 
-define-class Job []:
+class Job []:
     """
     Base job: a unit of work with enable/disable state and the inherited
     sub-item vocabulary (configure/handler). Varieties override start/stop
@@ -312,7 +313,7 @@ define-class Job []:
         raise (NotImplementedError f"{self}.stop")
 
 
-define-class JobSet []:
+class JobSet []:
     """
     Tracks jobs by name and offers the control-plane surface (list /
     enable / disable) that the REST layer will call. Starting runs only

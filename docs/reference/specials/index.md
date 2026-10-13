@@ -5,7 +5,7 @@ names one, the compiler emits bytecode for it directly, following the
 form's own rules for which arguments are evaluated and when. Every other
 head in call position is a runtime call. Each page below gives the
 form's symbol, syntax, behaviour, and examples; the surface names most
-programs write, `if`, `when`, `set!`, `define-class`, are
+programs write, `if`, `when`, `set!`, `class`, are
 [macros](../macros/index.md) that lower to these.
 
 The compiler binds each special under its `compile/` name, and the
@@ -64,8 +64,7 @@ special, a macro, and a call is in
 | [`inplace`](compile-inplace.md) | Update a variable in place; the special under `incr!` and `decr!` |
 | [`call`](compile-call.md) | Call a value; forces a runtime call past a same-named macro |
 | [`call-attr`](compile-call-attr.md) | Call a method by name; `(obj.method ...)` reads to this |
-| [`class`](compile-class.md) | Build a class value; what `define-class` lowers to |
-| [`build-class`](compile-build-class.md) | Build a class value without binding a name |
+| [`build-class`](compile-build-class.md) | Build a class value without binding a name; what `class` lowers to |
 | [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests; a tuple as the second operand tests several types |
 | [`#str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional bare format spec |
 | [`#list`, `#tuple`, `#list-append`](object-operators/index.md#collection-builders) | Build a list or tuple; append to a list |

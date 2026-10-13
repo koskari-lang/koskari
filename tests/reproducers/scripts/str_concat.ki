@@ -25,13 +25,13 @@ def grow_captured [n piece]:
     s
 
 
-define-class DictBox []:
+class DictBox []:
 
     def __init__ [self]:
         set! self.s ""
 
 
-define-class SlotBox []:
+class SlotBox []:
 
     var __slots__ #("s")
 

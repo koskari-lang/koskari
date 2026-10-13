@@ -33,7 +33,7 @@ import-from dataclasses dataclass
 
 
 @dataclass
-define-class Circle []:
+class Circle []:
   """ A circle with a validated radius. """
 
   var _radius :: float 0.0
@@ -89,5 +89,5 @@ a `@dataclass` class.
 ## See also
 
 - [From Python: Classes and objects -- Property accessors](../classes-and-objects.md#properties)
-- [layout/define-class](../../../reference/layouts/layout-define-class.md)
+- [layout/class](../../../reference/layouts/layout-class.md)
 - [compile/decorate](../../../reference/macros/compile-decorate.md)

@@ -3,7 +3,7 @@
 A macro is a function from forms to forms that runs at compile time.
 The compiler hands it a use of its name, it returns the code that use
 stands for, and the compiler continues on the result. That is how
-`if`, `when`, `set!`, `define-class`, and the `-each` family exist: each
+`if`, `when`, `set!`, `class`, and the `-each` family exist: each
 lowers to a smaller core form.
 
 ## What a macro is for

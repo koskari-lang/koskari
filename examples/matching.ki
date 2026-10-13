@@ -26,7 +26,7 @@ import-from dataclasses dataclass
 
 
 @dataclass
-define-class Point []:
+class Point []:
     """ a location; encloses no area """
 
     var x :: int 0
@@ -34,7 +34,7 @@ define-class Point []:
 
 
 @dataclass
-define-class Plane []:
+class Plane []:
     """ a rectangular region """
 
     var w :: int 0
@@ -42,14 +42,14 @@ define-class Plane []:
 
 
 @dataclass
-define-class Square []:
+class Square []:
     """ a plane with equal sides """
 
     var side :: int 0
 
 
 @dataclass
-define-class Cube []:
+class Cube []:
     """ a solid with equal sides """
 
     var side :: int 0

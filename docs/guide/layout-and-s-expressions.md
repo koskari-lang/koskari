@@ -214,12 +214,12 @@ finally:
 :right: s-expression
 
 ```koskari
-define-class Point (Base):
+class Point (Base):
   var x 0
 ```
 +++
 ```koskari
-(define-class Point (Base)
+(class Point (Base)
   (begin (var x 0)))
 ```
 :::

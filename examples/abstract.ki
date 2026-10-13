@@ -15,7 +15,7 @@
 """
 Example: Abstract base classes
 
-A Koskari define-class can inherit from abc.ABC and decorate its
+A Koskari class can inherit from abc.ABC and decorate its
 methods with @abstractmethod, just like a Python class.  The metaclass
 is combined automatically, abstract members are collected into
 __abstractmethods__, and attempting to instantiate a class that still
@@ -29,7 +29,7 @@ import-from abc ABC abstractmethod
 ; Abstract root: every Shape promises an `area`, but refuses to say how.
 ; Because `area` is left abstract, Shape itself cannot be instantiated.
 
-define-class Shape [ABC]:
+class Shape [ABC]:
     """ Anything that encloses (or fails to enclose) some area """
 
     @property
@@ -46,7 +46,7 @@ define-class Shape [ABC]:
 ; A concrete coordinate.  A point is a degenerate shape: it encloses
 ; no area, so it can satisfy the contract and be instantiated.
 
-define-class Point2D [Shape]:
+class Point2D [Shape]:
     """ A single point in the plane """
 
     def __init__ [self x y]:
@@ -75,7 +75,7 @@ define-class Point2D [Shape]:
 ; constructor but leaves `area` abstract, so it also cannot be
 ; instantiated directly.
 
-define-class Shape2D [Shape]:
+class Shape2D [Shape]:
     """ A positioned 2D shape; still abstract until `area` is provided """
 
     def __init__ [self origin]:
@@ -92,7 +92,7 @@ define-class Shape2D [Shape]:
 ; chains through (super) to store the origin and finally implements
 ; `area`, becoming instantiable.
 
-define-class Rectangle [Shape2D]:
+class Rectangle [Shape2D]:
     """ An axis-aligned rectangle anchored at its origin """
 
     def __init__ [self coordinate height width]:

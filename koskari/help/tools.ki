@@ -39,7 +39,7 @@ var _registry #{}
 var _HELP_PREFIXES #("compile/" "layout/" "match/")
 
 
-define-class HelpFormatter []:
+class HelpFormatter []:
   """
   Mutable help document builder rendered via pydoc.TextDoc
   """

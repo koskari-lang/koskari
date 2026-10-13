@@ -21,7 +21,7 @@ def ident [email]:
     #{"X-Forwarded-Email": email}
 
 
-define-class TestAccessControl [SchedulerAsyncTestCase]:
+class TestAccessControl [SchedulerAsyncTestCase]:
 
     def post-status [self url headers: None]:
         (attr (self.http.post url headers: headers) status_code)

@@ -231,7 +231,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
           (var a "module")
           ((lambda [a]
              (var K
-               (class K ()
+               (build-class K ()
                  (var get (lambda [self] a))))
              ((attr (K) get)))
            "argument"))
@@ -245,7 +245,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
         (begin
           ((lambda []
              (var K
-               (class K ()
+               (build-class K ()
                  (var make (lambda [self] (K)))))
              (type ((attr (K) make))))))
         """

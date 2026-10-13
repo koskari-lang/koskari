@@ -6,7 +6,7 @@
 (var MASK32 0xffffffff)
 
 
-define-class DictBox []:
+class DictBox []:
 
     def __init__ [self]:
         set! self.i 0
@@ -14,7 +14,7 @@ define-class DictBox []:
         set! self.b 0
 
 
-define-class SlotBox []:
+class SlotBox []:
 
     var __slots__ #("i" "a" "b")
 

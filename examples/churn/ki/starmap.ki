@@ -9,7 +9,7 @@
 (var MASK32 0xffffffff)
 
 
-define-class ChurnGrid []:
+class ChurnGrid []:
 
     def __init__ [self w h]:
         set! self.width w

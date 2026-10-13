@@ -30,7 +30,7 @@ class TestClassEmpty(SpecialsTestCase):
 
     async def test_empty_class_binds_and_is_type(self):
         src_str = """
-        (class C () 5)
+        (build-class C () 5)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -40,7 +40,7 @@ class TestClassEmpty(SpecialsTestCase):
 
     async def test_empty_class_is_plain_type(self):
         src_str = """
-        (class C () 5)
+        (build-class C () 5)
         """
         expr, mod = self.compile_expr(src_str)
 
@@ -62,7 +62,7 @@ class TestClassBodyBoundRef(SpecialsTestCase):
         """
 
         src_str = """
-        (class C ()
+        (build-class C ()
           (var plain 1)
           (bindq bound (refq y)))
         """
@@ -86,7 +86,7 @@ class TestClassBodyRefs(SpecialsTestCase):
           (var outer 5)
           (var x 9)
           (var C
-            (class C ()
+            (build-class C ()
               (var x 1)
               (var r (refq outer))
               (var s (refq x))))
@@ -106,7 +106,7 @@ class TestClassBodyRefs(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               (var y 1)
               (var r (refq y))))
           #[(attr C y) (attr (attr C r) empty)])
@@ -121,7 +121,7 @@ class TestClassQualname(SpecialsTestCase):
     async def test_class_has_qualname_from_form_name(self):
         src_str = """
         (begin
-          (var C (class C () (var x 1)))
+          (var C (build-class C () (var x 1)))
           (attr C __qualname__))
         """
         expr, mod = self.compile_expr(src_str)
@@ -132,7 +132,7 @@ class TestClassQualname(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               (var __qualname__ "custom")
               (var x 1)))
           (attr C __qualname__))
@@ -147,7 +147,7 @@ class TestClassModule(SpecialsTestCase):
     async def test_class_has_module_from_compiling_context(self):
         src_str = """
         (begin
-          (var C (class C () (var x 1)))
+          (var C (build-class C () (var x 1)))
           (attr C __module__))
         """
         expr, mod = self.compile_expr(src_str)
@@ -158,7 +158,7 @@ class TestClassModule(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               (var __module__ "custom.mod")
               (var x 1)))
           (attr C __module__))
@@ -174,7 +174,7 @@ class TestClassDocstring(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               "hello class doc"
               (var x 1)))
           (attr C __doc__))
@@ -187,7 +187,7 @@ class TestClassDocstring(SpecialsTestCase):
     async def test_class_docstring_only_body(self):
         src_str = """
         (begin
-          (var C (class C () "only doc"))
+          (var C (build-class C () "only doc"))
           (attr C __doc__))
         """
         expr, mod = self.compile_expr(src_str)
@@ -201,7 +201,7 @@ class TestClassAnnotations(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               (var x :: int 1)))
           C)
         """
@@ -213,7 +213,7 @@ class TestClassAnnotations(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               (var x 1)))
           C)
         """
@@ -228,7 +228,7 @@ class TestClassAnnotations(SpecialsTestCase):
         src_str = """
         (begin
           (var E
-            (class E (IntEnum)
+            (build-class E (IntEnum)
               (var foo :: int 1)))
           E)
         """
@@ -246,7 +246,7 @@ class TestClassWithAttribute(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C ()
+            (build-class C ()
               (var x 42)))
           C.x)
         """
@@ -264,7 +264,7 @@ class TestClassWithSuperclass(SpecialsTestCase):
         src_str = """
         (begin
           (var C
-            (class C (object)
+            (build-class C (object)
               (var x 1)))
           C.x)
         """
@@ -290,7 +290,7 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
         src_str = """
         (begin
           (var Box
-            (class Box ()
+            (build-class Box ()
               (var __init__
                 (lambda [self v]
                   (set-attr self value v)))
@@ -319,7 +319,7 @@ class TestClassKosCallable(SpecialsTestCase):
         """
 
         src_str = """
-        (class Foo () 1)
+        (build-class Foo () 1)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -336,7 +336,7 @@ class TestClassKosCallable(SpecialsTestCase):
         """
 
         src_str = """
-        (class C () 1)
+        (build-class C () 1)
         """
         expr, mod = self.compile_expr(src_str)
         result = await expr()
@@ -350,7 +350,7 @@ class TestClassKosCallable(SpecialsTestCase):
 
         src_str = """
         (begin
-          (var Foo (class Foo () 1))
+          (var Foo (build-class Foo () 1))
           (Foo))
         """
         expr, mod = self.compile_expr(src_str)
@@ -367,7 +367,7 @@ class TestClassKosCallable(SpecialsTestCase):
 
         src_str = """
         (begin
-          (var Foo (class Foo () 1))
+          (var Foo (build-class Foo () 1))
           (var f (Foo))
           f)
         """
@@ -388,7 +388,7 @@ class TestClassKosCallable(SpecialsTestCase):
         src_str = """
         (begin
           (var Foo
-            (class Foo ()
+            (build-class Foo ()
               (var greet (lambda [self] "hello"))))
           (var inst (Foo))
           inst)
@@ -409,7 +409,7 @@ class TestClassKosCallable(SpecialsTestCase):
         src_str = """
         (begin
           (var Foo
-            (class Foo ()
+            (build-class Foo ()
               (var id_self (lambda [self] self))))
           (var inst (Foo))
           inst)
@@ -424,7 +424,7 @@ class TestClassBytecode(SpecialsTestCase):
 
     async def test_class_emits_push_pop_collect_build_class(self):
         src_str = """
-        (class C () (var x 1))
+        (build-class C () (var x 1))
         """
         code = self.compile_to_code(src_str)
         opcodes = [code.oparg(i)[0] for i in range(code.length())]

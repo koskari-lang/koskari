@@ -29,7 +29,7 @@ syntax print-example:
       print 'expression "is" expression
 
 
-define-class dollars [decimal]:
+class dollars [decimal]:
   """
   Simple wrapper for decimal which formats the value as dollars in str.
   Do not use floats for real currency; this is a teaching example only.

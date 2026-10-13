@@ -45,7 +45,7 @@ Schema documentation exists. Initial records live under `records/`:
 | [conditionals.yaml](records/conditionals.yaml) | Conditionals: compile/cond, switch, and, or; macros when, unless, ?, bool; layout if/when/unless |
 | [variables.yaml](records/variables.yaml) | Bindings: var, global, define, define-global, let, letrec, refs, delq, parameters |
 | [variables-invalid.yaml](records/variables-invalid.yaml) | Illegal binding forms (documented with verify.invalid) |
-| [objects.yaml](records/objects.yaml) | Object operators, inplace, incr!/decr!, class, define-class |
+| [objects.yaml](records/objects.yaml) | Object operators, inplace, incr!/decr!, class, build-class |
 | [objects-invalid.yaml](records/objects-invalid.yaml) | Illegal object-operator forms (arity errors, format spec pitfalls) |
 | [classes.yaml](records/classes.yaml) | Layout class definitions with Python dunders, dataclass, staticmethod, classmethod, property, inheritance |
 | [functions.yaml](records/functions.yaml) | lambda, function, def, define function shorthand, gensym-thunk, compose, decorate |

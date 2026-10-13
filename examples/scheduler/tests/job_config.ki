@@ -8,7 +8,7 @@ import-from .harness SchedulerAsyncTestCase
 import-from kosrunner Config Job KafkaConfig KafkaJob WebhookConfig WebhookJob
 
 
-define-class TestJobConfig [SchedulerAsyncTestCase]:
+class TestJobConfig [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-baseless-configure-builds-fresh-config [self]:

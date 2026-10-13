@@ -14,6 +14,7 @@
 import inspect
 import logging
 
+import-from dataclasses dataclass
 import-from fastapi HTTPException
 import-from hmac compare_digest
 
@@ -28,7 +29,8 @@ var logger (logging.getLogger "kosrunner.webhook")
 var TOKEN-HEADER "X-Kosrunner-Token"
 
 
-define-dataclass WebhookConfig [ServerConfig]:
+@dataclass
+class WebhookConfig [ServerConfig]:
     """
     Config for a webhook route's shared server (host, port, prefix). An
     optional `token` enables the machine-door guard: when set, a caller
@@ -106,7 +108,7 @@ def coerce-input [spec payload]:
     kwargs
 
 
-define-class WebhookJob [Job]:
+class WebhookJob [Job]:
     """
     An inbound HTTP route; its name is the route path segment
     """

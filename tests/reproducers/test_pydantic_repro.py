@@ -14,7 +14,7 @@
 """
 tests.reproducers.test_pydantic_repro
 
-Full-stack reproducer: define-class subclassing pydantic.BaseModel, keyword
+Full-stack reproducer: class subclassing pydantic.BaseModel, keyword
 argument construction, and field access.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>

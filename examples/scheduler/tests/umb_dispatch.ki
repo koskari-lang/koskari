@@ -15,7 +15,7 @@ import-from kosrunner UmbConfig UmbJob
 var DESTINATION "/topic/VirtualTopic.eng.test"
 
 
-define-class UmbDispatchTestCase [SchedulerAsyncTestCase]:
+class UmbDispatchTestCase [SchedulerAsyncTestCase]:
     """
     Base for the dispatch tests: one call builds a started UmbJob talking
     to a fake broker, registered on a jobset with a temp-dir store so its
@@ -40,7 +40,7 @@ define-class UmbDispatchTestCase [SchedulerAsyncTestCase]:
         (values job broker)
 
 
-define-class TestUmbSubscription [UmbDispatchTestCase]:
+class TestUmbSubscription [UmbDispatchTestCase]:
 
     @coroutine-fn
     def test-start-subscribes-to-the-destination [self]:
@@ -71,7 +71,7 @@ define-class TestUmbSubscription [UmbDispatchTestCase]:
         (self.assertEqual (len (broker.frames_of UnsubscribeFrame)) 1)
 
 
-define-class TestUmbDispatch [UmbDispatchTestCase]:
+class TestUmbDispatch [UmbDispatchTestCase]:
 
     @coroutine-fn
     def test-message-body-reaches-the-handler [self]:
@@ -101,7 +101,7 @@ define-class TestUmbDispatch [UmbDispatchTestCase]:
         (self.assertEqual (item run "status") "success")
 
 
-define-class TestUmbReply [UmbDispatchTestCase]:
+class TestUmbReply [UmbDispatchTestCase]:
 
     @coroutine-fn
     def test-return-value-replies-to-the-reply-to-header [self]:

@@ -320,7 +320,7 @@ class TestMarkResolutionStreams(TestMarkedForms):
             S("begin"),
             build_proper(S("define"), M("base"), 4),
             build_proper(S("define"), M("C"), build_proper(
-                S("class"), M("C"), build_proper(),
+                S("build-class"), M("C"), build_proper(),
                 build_proper(S("define"), M("member"), M("base")))),
             build_proper(S("attr"), M("C"), S("member")))
         expr, module = self.compile_form(form)

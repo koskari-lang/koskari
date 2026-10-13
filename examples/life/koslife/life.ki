@@ -11,7 +11,7 @@ import-from itertools product
 import-from random random seed
 
 
-define-class LifeBoard []:
+class LifeBoard []:
 
     def __init__ [self width height wrap: False]:
         set! self.width width

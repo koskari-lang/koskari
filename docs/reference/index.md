@@ -18,7 +18,7 @@ in the [Guide](../guide/index.md).
   directly. `var`, `lambda`, `cond`, `try`, `match`, the operators, the
   imports, continuations.
 - [Macros](macros/index.md): bootstrap macros that expand to special forms.
-  `if`, `when`, `set!`, `define-class`, `let*`, the `-each` family.
+  `if`, `when`, `set!`, `class`, `let*`, the `-each` family.
 - [Layout handlers](layouts/index.md): the block heads that read an
   indented block into a form, and their peers.
 - [Fence handlers](fences/index.md): triple-backtick foreign literals.

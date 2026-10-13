@@ -8,7 +8,7 @@ save and run, with the output it prints.
 | [Countdown](countdown.md) | `while` with `decr!` and an `else:` peer |
 | [Script entry point](script-main.md) | `@entry-point` for the function that runs only as a program |
 | [Fibonacci](fibonacci.md) | recursion, `lru_cache` with `@demand`, `@let`, named `let`, `while` |
-| [Point class](point-class.md) | `@dataclass` on `define-class`, `each`, a property with a setter |
+| [Point class](point-class.md) | `@dataclass` on `class`, `each`, a property with a setter |
 | [Property accessors](property-accessors.md) | `@property`, `.setter`, `.deleter`, `del!` |
 
 ```{toctree}

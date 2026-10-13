@@ -39,7 +39,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-define-class Ctx []:
+class Ctx []:
     def __init__ [self log name]:
         (setattr self "log" log)
         (setattr self "name" name)

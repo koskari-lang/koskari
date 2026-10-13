@@ -36,7 +36,7 @@ import-from koskari.exceptions KoskariContinuationError KoskariPromptNotFound
                  amb fail require solve solve-first)
 
 
-define-class SearchError [KoskariContinuationError]:
+class SearchError [KoskariContinuationError]:
   """
   Base class for search errors raised by koskari.solve
   """
@@ -44,7 +44,7 @@ define-class SearchError [KoskariContinuationError]:
   pass
 
 
-define-class NoActiveSearch [SearchError]:
+class NoActiveSearch [SearchError]:
   """
   amb, fail, or require was called with no enclosing solve or
   solve-first to delimit the search

@@ -8,7 +8,7 @@ import-from kosrunner UmbConfig UmbJob
 import-from kosrunner.umb encode-body parse-servers DEFAULT-PORT
 
 
-define-class TestUmbServers [SchedulerAsyncTestCase]:
+class TestUmbServers [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-bare-host-takes-config-port [self]:
@@ -50,7 +50,7 @@ define-class TestUmbServers [SchedulerAsyncTestCase]:
             (self.assertEqual s.connect_headers #{"client-id": "kosrunner-1"})
 
 
-define-class TestUmbEncodeBody [SchedulerAsyncTestCase]:
+class TestUmbEncodeBody [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-bytes-pass-through-untyped [self]:
@@ -73,7 +73,7 @@ define-class TestUmbEncodeBody [SchedulerAsyncTestCase]:
         (self.assertEqual ctype "application/json")
 
 
-define-class TestUmbConfig [SchedulerAsyncTestCase]:
+class TestUmbConfig [SchedulerAsyncTestCase]:
 
     @coroutine-fn
     def test-defaults [self]:

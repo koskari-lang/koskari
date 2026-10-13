@@ -14,6 +14,8 @@
 
 import logging
 
+import-from dataclasses dataclass
+
 (use .job Config Job)
 (use .subitems with-subitems)
 
@@ -21,7 +23,8 @@ import logging
 var logger (logging.getLogger "kosrunner.cron")
 
 
-define-dataclass CronConfig [Config]:
+@dataclass
+class CronConfig [Config]:
     """
     Cron config; usually left default (cron jobs carry no config)
     """
@@ -29,7 +32,7 @@ define-dataclass CronConfig [Config]:
     var timezone :: str None
 
 
-define-class CronJob [Job]:
+class CronJob [Job]:
     """
     A schedule-driven job; fires its handler on the crontab schedule
     """

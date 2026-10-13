@@ -1518,21 +1518,21 @@ notes: 0-arity (raise) inside a handler re-raises the active exception; an outer
 ---
 id: special-raise-custom-exception-001
 feature: special/compile/raise
-source: (begin (define-class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+source: (begin (class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
 verify:
-  read: (begin (define-class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
-  expand: (begin (define-class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  read: (begin (class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
+  expand: (begin (class AppError [Exception] (def __init__ [self msg] (.__init__ (super) msg))) (try (raise (AppError "boom")) [[e AppError] (str e)]))
   eval: '"boom"'
 references:
   - reference/specials/compile-raise.md
-  - reference/macros/compile-define-class.md
+  - reference/macros/compile-class.md
   - reference/macros/compile-super.md
 stability: evolving
 tags:
   - special
   - raise
   - exception
-  - define-class
+  - class
   - error-handling
 notes: raise a user-defined Exception subclass; __init__ chains to super with the message
 ---

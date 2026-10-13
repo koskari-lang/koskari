@@ -10,18 +10,17 @@
 | `(decorate [D ...] (global def NAME FORMALS BODY ...))` | `(global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (global class NAME SUPERS BODY ...))` | `(global NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
 | `(decorate [D ...] (define NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
-| `(decorate [D ...] (define-class NAME SUPERS BODY ...))` | `(var NAME (decorate [D ...] (class NAME SUPERS (begin BODY ...))))` |
+| `(decorate [D ...] (class NAME SUPERS BODY ...))` | `(var NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
 | `(decorate [D ...] (define-global NAME FORMALS BODY ...))` | `(global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (define-demanding NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (demand (function NAME FORMALS BODY ...))))` |
 | `(decorate [D ...] (define-coroutine NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (coroutine-fn (function NAME FORMALS BODY ...))))` |
-| `(decorate [D ...] (define-dataclass NAME SUPERS MEMBERS ...))` | `(var NAME (decorate [D ...] (dataclass (class NAME SUPERS ...))))` followed by the `NAME?` predicate |
 | `(decorate [D REST ...] FN)` | `(decorate-subject D (decorate [REST ...] FN))` |
 
 **Behaviour:** What `@` lines read to, and usable directly. The name of
-a `def`, `var`, `global def`, `global class`, `define`, `define-class`,
-`define-global`, `define-demanding`, `define-coroutine` or
-`define-dataclass` subject is hoisted out so the
-decorated value is what gets bound; then the decorator list folds through
+a `def`, `var`, `class`, `global def`, `global class`, `define`,
+`define-global`, `define-demanding` or `define-coroutine` subject is
+hoisted out so the decorated value is what gets bound; then the
+decorator list folds through
 [`decorate-subject`](compile-decorate-subject.md) one decorator per
 step, outermost first, so `@d1` over `@d2` over a definition applies as
 `(d1 (d2 ...))`, as in Python.

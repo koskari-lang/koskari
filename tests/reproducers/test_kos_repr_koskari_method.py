@@ -35,7 +35,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 SRC = """
 (var C
-  (class C ()
+  (build-class C ()
     (var __kos_repr__ (lambda [self] "custom repr"))))
 (var inst (C))
 """

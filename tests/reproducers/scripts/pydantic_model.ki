@@ -1,10 +1,10 @@
-;; Reproducer: define-class with pydantic.BaseModel, field access via kwargs.
+;; Reproducer: class with pydantic.BaseModel, field access via kwargs.
 
 
 import-from pydantic BaseModel
 
 
-define-class Point [BaseModel]:
+class Point [BaseModel]:
     var x :: int 0
     var y :: int 0
 

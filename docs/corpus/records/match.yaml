@@ -396,7 +396,7 @@ notes: the extraction result is itself pattern-matched -- here destructured as a
 id: match-class-001
 feature: special/compile/match
 source: |-
-  (begin (import-from dataclasses dataclass) (define-class Point [] (var x :: int 0) (var y :: int 0)) (var P (dataclass Point)) (match (P 3 4) [[(item P a b)] b] [else: "no"]))
+  (begin (import-from dataclasses dataclass) (class Point [] (var x :: int 0) (var y :: int 0)) (var P (dataclass Point)) (match (P 3 4) [[(item P a b)] b] [else: "no"]))
   
 verify:
   eval: "4"
@@ -533,7 +533,7 @@ source: |-
   begin:
       import-from dataclasses dataclass
       @dataclass
-      define-class Point []:
+      class Point []:
           var x :: int 0
           var y :: int 0
       match (Point 3 4):

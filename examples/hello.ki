@@ -17,7 +17,7 @@ Example koskari program
 """
 
 
-define-class FunTimes []:
+class FunTimes []:
 
     def __init__ [self x]:
         (self.set_x x)

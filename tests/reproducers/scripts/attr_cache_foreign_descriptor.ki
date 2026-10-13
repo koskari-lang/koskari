@@ -2,10 +2,10 @@
 ;; a __slots__ member of one class installed as an attribute of an
 ;; unrelated class, read and written through cached attribute sites.
 
-define-class A [object]:
+class A [object]:
     var __slots__ #("x" "y" "z" "w" "v")
 
-define-class B [object]:
+class B [object]:
     var __slots__ #()
 
 setattr B "x" (getattr A "x")

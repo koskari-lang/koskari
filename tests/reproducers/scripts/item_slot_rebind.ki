@@ -10,15 +10,15 @@
 (var ds (dict))
 (var first ds)
 
-(define-class LoadKey []
+(class LoadKey []
   (def __hash__ [self] (global dl (dict)) 1)
   (def __eq__ [self other] False))
 
-(define-class IncrKey []
+(class IncrKey []
   (def __hash__ [self] (global di (dict)) 1)
   (def __eq__ [self other] False))
 
-(define-class StoreKey []
+(class StoreKey []
   (def __hash__ [self] (global ds (dict)) 1)
   (def __eq__ [self other] False))
 
@@ -26,7 +26,7 @@
 (var armed False)
 
 ;; rebinds only once armed, so the cell can be primed first
-(define-class MissKey []
+(class MissKey []
   (def __hash__ [self] (if armed (global dm (dict)) None) 1)
   (def __eq__ [self other] False))
 

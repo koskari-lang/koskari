@@ -261,6 +261,73 @@ class TestSyntax(BindingFormsCase):
         self.assertEqual(6, ns['after'])
 
 
+class TestClass(BindingFormsCase):
+
+    async def test_class_binds_its_name(self):
+        ns = await self.load("""
+        class Box []:
+          var size 3
+        """)
+        self.assertEqual('Box', ns['Box'].__name__)
+        self.assertEqual(3, ns['Box'].size)
+
+
+    async def test_class_supers(self):
+        ns = await self.load("""
+        class Base []:
+          var k 1
+        class Sub [Base]:
+          pass
+        """)
+        self.assertEqual((ns['Base'],), ns['Sub'].__bases__)
+        self.assertEqual(1, ns['Sub'].k)
+
+
+    async def test_class_makes_no_predicate(self):
+        ns = await self.load("""
+        class Box []:
+          pass
+        """)
+        self.assertNotIn('Box?', ns)
+
+
+    async def test_class_in_function_body_is_local(self):
+        ns = await self.load("""
+        def make []:
+          class Inner []:
+            var k 2
+          Inner
+        """)
+        self.assertEqual(2, demand_call(ns['make']).k)
+        self.assertNotIn('Inner', ns)
+
+
+    async def test_decorated_class(self):
+        ns = await self.load("""
+        def tag [cls]:
+          set! cls.tagged True
+          cls
+
+        @tag
+        class Thing []:
+          var k 1
+        """)
+        self.assertTrue(ns['Thing'].tagged)
+
+
+    async def test_dataclass_over_class(self):
+        ns = await self.load("""
+        import-from dataclasses dataclass
+
+        @dataclass
+        class Point []:
+          var x :: int 0
+          var y :: int 0
+        """)
+        point = ns['Point'](1, 2)
+        self.assertEqual((1, 2), (point.x, point.y))
+
+
 class TestDecorators(BindingFormsCase):
 
     PRELUDE = """

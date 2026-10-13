@@ -42,7 +42,7 @@ class TestClassMroEntries(SpecialsTestCase):
 
     async def test_generic_base(self):
         src_str = """
-        (class Box (GenericT)
+        (build-class Box (GenericT)
           (var __init__ (lambda [self v] (setattr self "v" v))))
         """
         expr, mod = self.compile_expr(
@@ -55,7 +55,7 @@ class TestClassMroEntries(SpecialsTestCase):
 
     async def test_named_tuple_base(self):
         src_str = """
-        (class Point (NamedTuple)
+        (build-class Point (NamedTuple)
           (var __annotations__ #{"x": int "y": int}))
         """
         expr, mod = self.compile_expr(
@@ -69,7 +69,7 @@ class TestClassMroEntries(SpecialsTestCase):
 
     async def test_typed_dict_base(self):
         src_str = """
-        (class Movie (TypedDict)
+        (build-class Movie (TypedDict)
           (var __annotations__ #{"title": str}))
         """
         expr, mod = self.compile_expr(src_str, TypedDict=TypedDict, str=str)
@@ -80,7 +80,7 @@ class TestClassMroEntries(SpecialsTestCase):
 
     async def test_plain_base_leaves_no_orig_bases(self):
         src_str = """
-        (class C (Base) 5)
+        (build-class C (Base) 5)
         """
         expr, mod = self.compile_expr(src_str, Base=object)
         cls = await expr()

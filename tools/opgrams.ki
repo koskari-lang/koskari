@@ -317,7 +317,7 @@ def iter_blocks [code enders]:
         yield block
 
 
-define-class GramTally []:
+class GramTally []:
     """
     Accumulates raw and depth-weighted n-gram counts, exemplar
     locations, and the bigram successor table.

@@ -7,6 +7,6 @@ var gen (each [x src] (* x 10))
 global src #[7]
 var after_rebind (list gen)
 
-define-class K []:
+class K []:
     var names #["a" "b"]
     var table (dict-each [n names] key: n value: 1)

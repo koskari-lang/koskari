@@ -262,6 +262,17 @@ syntax def:
       (var name (function name rest ...))
 
 
+syntax class:
+  """
+  Defines a class and binds it to its name in the scope the form
+  appears in.
+  """
+
+  syntax-rules []:
+    case (class name supers body ...):
+      (var name (build-class name supers body ...))
+
+
 let []:
   import-from koskari.compile.helpers unpack_lhs_bind_symbols
 

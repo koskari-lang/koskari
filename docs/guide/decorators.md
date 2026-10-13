@@ -69,7 +69,7 @@ def tick []: ...
 Two conveniences follow from the layout rules. Parentheses are optional
 on the decorator line, since several forms on a layout line are one
 call, so `@let [[c 0]]` reads as `@(let [[c 0]])`. And the subject is
-any layout form: a `def`, a `define-class`, a `begin:` block, an
+any layout form: a `def`, a `class`, a `begin:` block, an
 `if`, a bare s-expression.
 
 The reader builds the `compile/decorate` form and nothing more. What a
@@ -81,9 +81,9 @@ s-expression spelling works with the pragma off.
 [`compile/decorate`](../reference/macros/compile-decorate.md) does two
 jobs.
 
-Name hoisting: when the subject is a `def`, `var`, `global def`,
-`global class`, `define-class`, `define-demanding`, `define-coroutine`
-or `define-dataclass`, or the Scheme-layer `define` or `define-global`,
+Name hoisting: when the subject is a `def`, `var`, `class`,
+`global def`, `global class`, `define-demanding` or `define-coroutine`,
+or the Scheme-layer `define` or `define-global`,
 the name moves outside the decoration so the decorated value is what
 gets bound:
 

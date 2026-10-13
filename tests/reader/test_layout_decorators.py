@@ -40,12 +40,12 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
     async def test_single_decorator_define_class(self):
         src = """
         @foo
-        define-class Obj []:
+        class Obj []:
           x
         """
 
         inner = pycons(
-            (symbol('define-class'),
+            (symbol('class'),
              symbol('Obj'),
              (),
              (symbol('begin'), symbol('x'))))
@@ -63,12 +63,12 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         src = """
         @foo
         @bar 123
-        define-class Obj []:
+        class Obj []:
           x
         """
 
         inner = pycons(
-            (symbol('define-class'),
+            (symbol('class'),
              symbol('Obj'),
              (),
              (symbol('begin'), symbol('x'))))
@@ -86,12 +86,12 @@ class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
         # @(…) must use the layout @ path, not matmul (@ as first token on line).
         src = """
         @(foo 123)
-        define-class Obj []:
+        class Obj []:
           x
         """
 
         inner = pycons(
-            (symbol('define-class'),
+            (symbol('class'),
              symbol('Obj'),
              (),
              (symbol('begin'), symbol('x'))))
@@ -150,7 +150,7 @@ class TestLayoutDecorateErrors(IsolatedAsyncioTestCase):
     async def test_empty_decorator_line_errors(self):
         src = """
         @
-        define-class Obj []:
+        class Obj []:
           x
         """
 

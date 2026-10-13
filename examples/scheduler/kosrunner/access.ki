@@ -14,7 +14,7 @@
 
 import logging
 
-import-from dataclasses field
+import-from dataclasses dataclass field
 
 (use .job Config)
 
@@ -27,7 +27,8 @@ var logger (logging.getLogger "kosrunner.access")
 var IDENTITY-HEADER "X-Forwarded-Email"
 
 
-define-dataclass Group []:
+@dataclass
+class Group []:
     """
     A named set of member emails -- a real value, so jobs reference it by
     BINDING (`allow #[deployers]`), not by string key: a typo'd group is a
@@ -39,7 +40,8 @@ define-dataclass Group []:
     var members :: list (field)
 
 
-define-dataclass AccessConfig [Config]:
+@dataclass
+class AccessConfig [Config]:
     """
     The committed access lists: `operators` are emails with the run of the
     place (trigger anything, enable/disable); `groups` lists the Group
