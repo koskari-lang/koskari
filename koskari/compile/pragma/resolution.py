@@ -203,8 +203,8 @@ class KoskariPragma:
                 fragment._request_global.remove(name)
             else:
                 raise CompilerError(
-                    f"{str(name)!r} cannot be both local (define)"
-                    " and global (define-global).", name,
+                    f"{str(name)!r} cannot be both local (var)"
+                    " and global (global).", name,
                     position=position
                     or fragment.declare_positions.get(name))
 
@@ -217,14 +217,14 @@ class KoskariPragma:
 
     def on_explicit_global(self, fragment, name, *, position=None):
         """
-        Record explicit global (define-global) of name, a symbol.
+        Record explicit global (global) of name, a symbol.
         Conflicts with local declaration; removes from requests buckets.
         """
 
         if name in fragment.declares and not _in_module_scope(fragment):
             raise CompilerError(
-                f"{str(name)!r} cannot be both local (define)"
-                " and global (define-global).", name,
+                f"{str(name)!r} cannot be both local (var)"
+                " and global (global).", name,
                 position=position
                 or fragment.declare_positions.get(name))
 

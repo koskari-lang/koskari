@@ -15,8 +15,8 @@
 koskari.compile.specials.variables
 
 Special form handlers for compile/setq, compile/setq-values,
-compile/define-values, compile/delq, compile/define,
-compile/globals, and compile/locals.
+compile/define-values, compile/delq, compile/define, compile/var,
+compile/global, compile/globals, and compile/locals.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -394,6 +394,80 @@ def special_define_global(compiler, caps):
     # the local-or-global conflict is judged where this fragment merges
     # into its body, the first point at which a declaration of the
     # same name is in view
+    frag.request_global(namesym, position=pos)
+
+    return emit_define_value(compiler, frag, caps, namesym, type_expr)
+
+
+# the value and declaration shapes of define, without the function
+# shorthand: a var or global names a value, never formals and a body
+_VAR_PATTERNS = [
+    MATCH(
+        CALLEDBY(),
+        DEFINE("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type"),
+        VALUE("value")),
+    MATCH(
+        CALLEDBY(),
+        DEFINE("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type"),
+        VALUE("value")),
+    MATCH(
+        CALLEDBY(),
+        DEFINE("name"),
+        LITERAL_KW("::"),
+        VALUE("return_type")),
+    MATCH(
+        CALLEDBY(),
+        DEFINE("name"),
+        LITERAL_KW("type:"),
+        VALUE("return_type")),
+    MATCH(CALLEDBY(), DEFINE("name"), VALUE("value")),
+    MATCH(CALLEDBY(), DEFINE("name")),
+]
+
+
+@builtin("compile/var")
+@special("compile/var", patterns=_VAR_PATTERNS, unpack="match")
+def special_var(compiler, caps):
+    """
+    Compile (var X), (var X EXPR), or the typed variants with
+    ``X :: T`` / ``X type: T`` before the value or alone. Declares X in
+    the scope the form appears in and stores the value
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+
+    namesym, type_expr = _define_name_type_pos_from_match(caps)
+    namesym = binding_atom(compiler, namesym)
+
+    frag = compiler.fragment(called_by)
+    if type_expr is None:
+        frag.declare_var(namesym, position=pos)
+    else:
+        frag.declare_var(namesym, position=pos, type_expr=type_expr)
+
+    return emit_define_value(compiler, frag, caps, namesym, type_expr)
+
+
+@builtin("compile/global")
+@special("compile/global", patterns=_VAR_PATTERNS, unpack="match")
+def special_global(compiler, caps):
+    """
+    Compile (global X), (global X EXPR), or the typed variants with
+    ``X :: T`` / ``X type: T``. Binds X at the module from any depth and
+    stores the value
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+
+    namesym, type_expr = _define_name_type_pos_from_match(caps)
+
+    frag = compiler.fragment(called_by)
     frag.request_global(namesym, position=pos)
 
     return emit_define_value(compiler, frag, caps, namesym, type_expr)

@@ -215,7 +215,7 @@ define syntax_codes [label syn]:
     contribute nothing.
     """
 
-    local members
+    var members
 
     for-each [[i transform] (enumerate syn.transforms)]:
         set! members (getattr transform "__dict__" None)

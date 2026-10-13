@@ -141,7 +141,7 @@ define make-counter []:
 Where is `nonlocal`?
 +++
 Not needed. `set!` and `incr!` store into the name they find, and the
-inner function finds the outer `count`. `global` and `local` exist for
+inner function finds the outer `count`. `var` and `global` exist for
 the cases where you want to say so explicitly.
 :::
 

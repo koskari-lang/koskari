@@ -2192,3 +2192,92 @@ tags:
   - mutate
   - evaluation-order
 notes: with a symbol object and a constant or symbol key, the VALUEs run before OBJ is resolved and its item read; a VALUE that rebinds OBJ updates the new binding
+---
+id: object-build-class-value-001
+feature: special/compile/build-class
+source: (begin (var B (build-class Box [] (var size 3))) B.size)
+verify:
+  eval: "3"
+references:
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+notes: build-class is a class value; var binds it
+---
+id: object-build-class-type-002
+feature: special/compile/build-class
+source: (begin (var B (build-class Box [] (var size 3))) B)
+verify:
+  eval: "@kostype:Box"
+references:
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+notes: NAME sets the class __name__ even though the binding is B
+---
+id: object-build-class-layout-003
+feature: layout/build-class
+source: |-
+  build-class Box:
+    var size 3
+verify:
+  read: (build-class Box () (begin (var size 3)))
+  eval: "@kostype:Box"
+references:
+  - reference/layouts/layout-build-class.md
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+  - surface:block
+notes: omitted supers read as nil; the block's value is the class
+---
+id: object-build-class-layout-004
+feature: layout/build-class
+source: |-
+  build-class Box (object):
+    var size 3
+verify:
+  read: (build-class Box (object) (begin (var size 3)))
+references:
+  - reference/layouts/layout-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - define-type
+  - inheritance
+  - surface:block
+notes: a supers list after the name passes through as written
+---
+id: object-build-class-layout-005
+feature: layout/build-class
+source: |-
+  var Point:
+    build-class Point:
+      var x 0
+      var y 0
+  
+  Point.y
+verify:
+  read: (begin (var Point (build-class Point () (begin (var x 0) (var y 0)))) (attr Point y))
+  eval: "0"
+references:
+  - reference/layouts/layout-build-class.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - var
+  - define-type
+  - surface:block
+notes: var over a build-class block binds the class

@@ -28,3 +28,38 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: (format 255 \"x\") or f\"{255:x}\". see object-format-hex-003"
+---
+id: object-build-class-unbound-invalid-001
+feature: special/compile/build-class
+source: (begin (build-class Box [] (var size 3)) Box)
+verify:
+  read: (begin (build-class Box [] (var size 3)) Box)
+  invalid: "build-class builds a class value and binds nothing; NAME is only the class __name__, so reading Box afterward fails at eval with NameError: No such reference: Box"
+references:
+  - reference/specials/compile-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - invalid
+  - surprising
+  - define-type
+  - pitfall
+notes: "corrective: (var Box (build-class Box [] (var size 3))), or global class Box at the module"
+---
+id: object-build-class-layout-noname-invalid-002
+feature: layout/build-class
+source: |-
+  build-class:
+    var size 3
+verify:
+  error: "LayoutError: build-class block requires a name"
+references:
+  - reference/layouts/layout-build-class.md
+stability: evolving
+tags:
+  - object
+  - build-class
+  - invalid
+  - surface:block
+notes: "corrective: build-class Box:"

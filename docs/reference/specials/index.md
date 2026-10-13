@@ -17,6 +17,8 @@ special, a macro, and a call is in
 
 | Form | Does |
 |------|------|
+| [`var`](compile-var.md) | Bind a name in the current scope, with an optional type, or several names by unpacking |
+| [`global`](compile-global.md) | Bind a name at the module from any depth; `global def`, `global class`, `global syntax` |
 | [`define`](compile-define.md) | Bind a name, or a function when formals follow |
 | [`define-global`](compile-define-global.md) | Bind a module-level name from inside a function |
 | [`define-values`](compile-define-values.md) | Bind several names by unpacking one value |
@@ -63,6 +65,7 @@ special, a macro, and a call is in
 | [`call`](compile-call.md) | Call a value; forces a runtime call past a same-named macro |
 | [`call-attr`](compile-call-attr.md) | Call a method by name; `(obj.method ...)` reads to this |
 | [`class`](compile-class.md) | Build a class value; what `define-class` lowers to |
+| [`build-class`](compile-build-class.md) | Build a class value without binding a name |
 | [`instance?`](compile-instance.md), [`subclass?`](compile-subclass.md) | Type tests; a tuple as the second operand tests several types |
 | [`#str`](compile-str.md), [`format`](compile-format.md) | String conversion; `format` with an optional bare format spec |
 | [`#list`, `#tuple`, `#list-append`](object-operators/index.md#collection-builders) | Build a list or tuple; append to a list |

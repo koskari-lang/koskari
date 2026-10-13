@@ -371,3 +371,20 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: a:: on its own line, then the if block indented beneath it, which reads as a: (begin (cond ...)). Peers such as else pair only with a block head that starts its line, so a peer-gathering head cannot follow a keyword on the same header line."
+---
+id: syntax-syntax-body-scope-invalid-001
+feature: macro/compile/syntax
+source: (begin (def f [n] (syntax twice (syntax-rules [] [(twice x) (* 2 x)])) n) (twice 5))
+verify:
+  read: (begin (def f [n] (syntax twice (syntax-rules [] [(twice x) (* 2 x)])) n) (twice 5))
+  invalid: "a syntax inside a function body applies to the rest of that body only; after the body closes twice is not defined, so (twice 5) compiles as a call to an unbound name and fails at eval with NameError: No such reference: twice"
+references:
+  - reference/macros/compile-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - invalid
+  - surprising
+  - metaprogramming
+  - pitfall
+notes: "corrective: put the syntax at module top level, or write global syntax twice inside the body"

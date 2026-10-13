@@ -75,6 +75,34 @@ class TestLayoutClass(IsolatedAsyncioTestCase):
         self.assertEqual(result, expected)
 
 
+class TestLayoutBuildClass(IsolatedAsyncioTestCase):
+
+    async def test_build_class_omit_supers(self):
+        src = """
+        build-class C:
+          x
+        """
+        expected = pycons(
+            (symbol('build-class'),
+             symbol('C'),
+             (),
+             (symbol('begin'), symbol('x'))))
+        self.assertEqual(parse_layout(src), expected)
+
+
+    async def test_build_class_with_supers(self):
+        src = """
+        build-class C (Base):
+          x
+        """
+        expected = pycons(
+            (symbol('build-class'),
+             symbol('C'),
+             (symbol('Base'),),
+             (symbol('begin'), symbol('x'))))
+        self.assertEqual(parse_layout(src), expected)
+
+
 class TestLayoutDefineDataclass(IsolatedAsyncioTestCase):
 
     async def test_define_dataclass_omit_supers(self):

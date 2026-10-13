@@ -12,7 +12,7 @@ tags:
   - macro
   - bind!
   - invalid
-notes: "Illegal: use (local y 42) or (setq y 42) after declare to store a value; bind! accepts (item …), (attr …), (dynamic …), (constant …), (memoized …), (parameter …), or another Ref — not a bare literal or computed value"
+notes: "Illegal: use (var y 42) or (setq y 42) after declare to store a value; bind! accepts (item …), (attr …), (dynamic …), (constant …), (memoized …), (parameter …), or another Ref — not a bare literal or computed value"
 ---
 id: variable-byref-value-not-ref-001
 feature: special/compile/lambda
@@ -33,3 +33,36 @@ tags:
   - invalid
   - pitfall
 notes: "corrective: pass a ref, e.g. (bump &v); a by-ref formal refuses a plain value"
+---
+id: variable-var-function-shorthand-invalid-001
+feature: special/compile/var
+source: (var f [x] (* x 2))
+verify:
+  read: (var f [x] (* x 2))
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-var.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - variable
+  - var
+  - invalid
+  - pitfall
+notes: "var takes a name and a value, never formals and a body. corrective: (def f [x] (* x 2))"
+---
+id: variable-global-var-conflict-invalid-002
+feature: special/compile/global
+source: (def bad [] (var q 1) (global q 2))
+verify:
+  error: "CompilerError: 'q' cannot be both local"
+references:
+  - reference/specials/compile-global.md
+stability: evolving
+tags:
+  - variable
+  - global
+  - var
+  - invalid
+  - module-global
+notes: "one scope cannot declare a name with var and with global. corrective: (def ok [] (global q 2)) to store at the module, or (def ok [] (var q 1) (set! q 2)) for a local"

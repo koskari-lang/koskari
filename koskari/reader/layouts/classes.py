@@ -71,6 +71,17 @@ def layout_class(reader, source, peers):
     return _class_block(reader, source, peers, 'class')
 
 
+@builtin('layout/build-class')
+@layout(symbol('layout/build-class'))
+def layout_build_class(reader, source, peers):
+    """
+    Lower build-class block to (build-class NAME SUPERS (begin BODY)).
+    SUPERS may be omitted; when missing, use nil.
+    """
+
+    return _class_block(reader, source, peers, 'build-class')
+
+
 @builtin('layout/define-class')
 @layout(symbol('layout/define-class'))
 def layout_define_class(reader, source, peers):

@@ -79,8 +79,8 @@ from .syntax import (
 from .thunk import special_gensym_thunk
 from .variables import (
     special_define, special_define_global, special_define_values, special_delq,
-    special_globals, special_locals, special_setq, special_setq_values,
-    special_takeq)
+    special_global, special_globals, special_locals, special_setq,
+    special_setq_values, special_takeq, special_var)
 
 
 __all__ = (
@@ -145,6 +145,7 @@ __all__ = (
     "special_function",
     "special_ge",
     "special_gensym_thunk",
+    "special_global",
     "special_globals",
     "special_gt",
     "special_in",
@@ -208,6 +209,7 @@ __all__ = (
     "special_type",
     "special_unquote",
     "special_unquote_splicing",
+    "special_var",
     "special_vars",
     "special_while",
     "special_with",

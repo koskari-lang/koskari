@@ -147,7 +147,7 @@ concept or macro page that states the correct rule (for example
 `reference/concepts/bindings-and-refs.md`).
 
 **`bind!` / `bindq`:** bind a name to a **Ref**, not to a plain value. Storing
-`42` in a slot uses `define`, `local`, or `setq` — not `(bind! y 42)`.
+`42` in a slot uses `define`, `var`, or `setq` — not `(bind! y 42)`.
 
 ## Eval value conventions (seed records)
 

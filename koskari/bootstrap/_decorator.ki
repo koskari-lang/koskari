@@ -100,9 +100,22 @@ define-syntax decorate:
   """
 
   syntax-rules [define-class define define-global define-demanding
-                define-coroutine define-dataclass]:
+                define-coroutine define-dataclass def var global class]:
     case (decorate [] fn):
       fn
+
+    case (decorate [decorators ...] (def name rest ...)):
+      var name (decorate [decorators ...] (function name rest ...))
+
+    case (decorate [decorators ...] (var name value)):
+      var name (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (global def name rest ...)):
+      global name (decorate [decorators ...] (function name rest ...))
+
+    case (decorate [decorators ...] (global class name supers body ...)):
+      global name:
+        decorate [decorators ...] (build-class name supers body ...)
 
     case (decorate [decorators ...] (define-class name supers body ...)):
       define name (decorate [decorators ...] (class name supers (begin body ...)))

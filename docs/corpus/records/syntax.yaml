@@ -1660,3 +1660,102 @@ tags:
   - hygiene
   - metaprogramming
 notes: A template that writes a datumq call for a procedural macro it defines writes the head raw with (datumq datumq), so the template does not consume it; the procedural body then runs (datumq other) and defines the use site's other. Definition only, since a macro and its use cannot share one corpus unit
+---
+id: syntax-syntax-toplevel-001
+feature: macro/compile/syntax
+source: (syntax twice (syntax-rules [] [(twice x) (* 2 x)]))
+verify:
+  read: (syntax twice (syntax-rules [] [(twice x) (* 2 x)]))
+  eval: "null"
+references:
+  - reference/macros/compile-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - macro
+  - metaprogramming
+notes: at module top level syntax is define-syntax; the form's value is None
+---
+id: syntax-syntax-toplevel-002
+feature: macro/compile/syntax
+source: (begin (syntax twice (syntax-rules [] [(twice x) (* 2 x)])) (attr (type compile/twice) __name__))
+verify:
+  eval: '"Syntax"'
+references:
+  - reference/macros/compile-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - macro
+  - metaprogramming
+  - module-global
+notes: at top level the transformer is bound as compile/twice in the module; the record reads the binding without invoking it
+---
+id: syntax-syntax-docstring-003
+feature: macro/compile/syntax
+source: (begin (syntax twice "Doubles x." (syntax-rules [] [(twice x) (* 2 x)])) (attr compile/twice __doc__))
+verify:
+  eval: '"Doubles x."'
+references:
+  - reference/macros/compile-syntax.md
+  - reference/macros/compile-define-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - macro
+  - metaprogramming
+notes: a string before the transformer is its docstring, as with define-syntax
+---
+id: syntax-syntax-body-004
+feature: macro/compile/syntax
+source: (begin (def f [n] (syntax twice (syntax-rules [] [(twice x) (* 2 x)])) (twice n)) (f 5))
+verify:
+  eval: "10"
+references:
+  - reference/macros/compile-syntax.md
+  - reference/macros/compile-let-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - macro
+  - metaprogramming
+notes: inside a function body syntax applies to the rest of that body, as let-syntax does for its body
+---
+id: syntax-syntax-body-block-005
+feature: macro/compile/syntax
+source: |-
+  def scale [n]:
+    syntax twice:
+      syntax-rules []:
+        case (twice x):
+          * 2 x
+    twice (twice n)
+  
+  scale 5
+verify:
+  read: (begin (def scale [n] (syntax twice (syntax-rules [] ((twice x) (* 2 x)))) (twice (twice n))) (scale 5))
+  eval: "20"
+references:
+  - reference/macros/compile-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - macro
+  - metaprogramming
+  - surface:block
+notes: block form of a body-scoped syntax
+---
+id: syntax-syntax-let-body-006
+feature: macro/compile/syntax
+source: (let [[k 3]] (syntax trip (syntax-rules [] [(trip x) (* 3 x)])) (trip k))
+verify:
+  eval: "9"
+references:
+  - reference/macros/compile-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - macro
+  - metaprogramming
+  - local-binding
+notes: a let body scopes a syntax the same way a function body does

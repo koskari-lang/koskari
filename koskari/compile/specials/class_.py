@@ -67,7 +67,7 @@ def _compiling_module_name(compiler):
     return str(modname) if modname else None
 
 
-@builtin("compile/class")
+@builtin("compile/class", "compile/build-class")
 @special("compile/class", patterns=_CLASS_PATTERNS, unpack="kwargs")
 def special_class(compiler, called_by, name, supers, body):
     """

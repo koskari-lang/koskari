@@ -1272,10 +1272,10 @@ notes: 'repr reports the captured value, constantly(5)'
 id: function-decorate-subject-entry-point-001
 feature: macro/compile/decorate-subject
 source: |-
-  (begin (decorate [entry-point] (define main [] 0)) (is __entry__ main))
+  (begin (decorate [entry-point] (def main [] 0)) (is __entry__ main))
   
 verify:
-  read: (begin (decorate [entry-point] (define main [] 0)) (is __entry__ main))
+  read: (begin (decorate [entry-point] (def main [] 0)) (is __entry__ main))
   eval: "true"
 references:
   - reference/macros/compile-decorate-subject.md
@@ -1288,4 +1288,175 @@ tags:
   - entry-point
   - module-global
   - idiom
-notes: the entry-point arm binds the subject as the module's __entry__ and delivers it unchanged, so main and __entry__ are the same function; when the module runs as a program the launcher calls __entry__ with no arguments after the load completes, and its return value is the exit status (None 0, int itself, anything else printed to stderr with 1). In layout source the decorator is the line @entry-point above define main
+notes: the entry-point arm binds the subject as the module's __entry__ and delivers it unchanged, so main and __entry__ are the same function; when the module runs as a program the launcher calls __entry__ with no arguments after the load completes, and its return value is the exit status (None 0, int itself, anything else printed to stderr with 1). In layout source the decorator is the line @entry-point above def main
+---
+id: function-def-plain-001
+feature: macro/compile/def
+source: (begin (def double [x] (* x 2)) (double 21))
+verify:
+  eval: "42"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: def binds the function to its name in the current scope
+---
+id: function-def-expand-002
+feature: macro/compile/def
+source: (def double [x] (* x 2))
+verify:
+  read: (def double [x] (* x 2))
+  expand: (var double (function double [x] (* x 2)))
+references:
+  - reference/macros/compile-def.md
+  - reference/specials/compile-var.md
+  - reference/specials/compile-function.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: def lowers to var over a named function
+---
+id: function-def-block-003
+feature: macro/compile/def
+source: |-
+  def fact [n]:
+    if (<= n 1):
+      1
+    else:
+      * n (fact (- n 1))
+  
+  fact 5
+verify:
+  read: "(begin (def fact [n] (cond [(<= n 1) 1] [else: (* n (fact (- n 1)))])) (fact 5))"
+  eval: "120"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+  - recursion
+  - surface:block
+notes: a recursive def calls itself through the binding def made
+---
+id: function-def-typed-004
+feature: macro/compile/def
+source: "(def half :: float [x] (/ x 2))"
+verify:
+  expand: "(var half (function half :: float [x] (/ x 2)))"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: "a :: TYPE after the name passes through to function as the return type"
+---
+id: function-def-typed-005
+feature: macro/compile/def
+source: "(begin (def half :: float [x] (/ x 2)) half)"
+verify:
+  eval: "@annotations:return:float"
+references:
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - def
+notes: the return type lands in the function's __annotations__
+---
+id: function-def-decorated-006
+feature: layout/decorate
+source: |-
+  def plus-one [f]:
+    lambda [x]:
+      + (f x) 1
+  
+  @plus-one
+  def square [x]:
+    * x x
+  
+  square 4
+verify:
+  read: (begin (def plus-one [f] (lambda [x] (+ (f x) 1))) (decorate (plus-one) (def square [x] (* x x))) (square 4))
+  eval: "17"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/macros/compile-def.md
+  - guide/decorators.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - def
+  - surface:block
+notes: the decorated function is what def binds
+---
+id: function-def-decorate-expand-007
+feature: macro/compile/decorate
+source: (decorate [plus-one] (def square [x] (* x x)))
+verify:
+  expand: (var square (decorate [plus-one] (function square [x] (* x x))))
+references:
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - def
+notes: decorate hoists the def name so the decorated value is bound
+---
+id: function-def-decorated-global-008
+feature: layout/decorate
+source: |-
+  def plus-one [f]:
+    lambda [x]:
+      + (f x) 1
+  
+  def setup []:
+    @plus-one
+    global def cube [x]:
+      * x x x
+  
+  (setup)
+  cube 2
+verify:
+  read: (begin (def plus-one [f] (lambda [x] (+ (f x) 1))) (def setup [] (decorate (plus-one) (global def cube [x] (* x x x)))) (setup) (cube 2))
+  eval: "9"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-global.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - def
+  - global
+  - module-global
+  - surface:block
+notes: a decorator above global def binds the decorated function at the module
+---
+id: function-decorate-var-009
+feature: macro/compile/decorate
+source: (begin (def plus-one [f] (lambda [x] (+ (f x) 1))) (decorate [plus-one] (var g abs)) (g -3))
+verify:
+  eval: "4"
+references:
+  - reference/macros/compile-decorate.md
+  - reference/specials/compile-var.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate
+  - var
+notes: decorate over var NAME VALUE decorates the value and binds the result

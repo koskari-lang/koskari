@@ -123,9 +123,10 @@ define t (make-counter)
 (t)   ;; 2
 ```
 
-The `global` and `local` macros exist to say explicitly which scope a
-store should reach; see
-[`global` and `local`](../reference/macros/compile-global-and-compile-local.md).
+`var` declares a name in the current scope and `global` declares it at
+the module, saying explicitly which scope a store should reach; see
+[`var`](../reference/specials/compile-var.md) and
+[`global`](../reference/specials/compile-global.md).
 
 ## Recursion and named `let`
 

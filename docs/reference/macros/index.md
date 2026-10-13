@@ -16,7 +16,6 @@ the REPL shows the expansion of any of them.
 | [`bind!`](compile-bind.md) | Bind a name to a ref, typed by the target shape |
 | [`ref`](compile-ref.md) | A ref to a name, attribute, subscript, or parameter |
 | [`unassigned?`, `default!`](compile-default-and-compile-unassigned.md) | Whether a location holds a value; store one unless it already does |
-| [`global`, `local`](compile-global-and-compile-local.md) | Declare which scope a name belongs to |
 | [`let*`](compile-letstar.md) | Sequential `let`, each binding seeing the ones before |
 | [`let-values`](compile-let-values.md) | `let` with unpacking |
 | [`labels`](compile-labels.md), [`flet`](compile-flet.md) | Local functions for a body, mutually recursive and not |
@@ -42,6 +41,7 @@ the REPL shows the expansion of any of them.
 
 | Macro | Does |
 |-------|------|
+| [`def`](compile-def.md) | Define a function and bind it in the current scope |
 | [`define-class`](compile-define-class.md) | Define a class, with a predicate named after it |
 | [`define-dataclass`](compile-define-dataclass.md) | A class through `dataclasses.dataclass` |
 | [`define-demanding`](compile-define-demanding.md) | A function wrapped for direct calls from Python |
@@ -69,6 +69,7 @@ the REPL shows the expansion of any of them.
 | [`define-syntax`](compile-define-syntax.md) | Define a transformer, with any of the rule and match kinds or a bare form; its template names are kept apart from the use site, see [Hygiene](../../guide/hygiene.md) |
 | [`extend-syntax`](compile-extend-syntax.md) | Add arms to an existing transformer |
 | [`let-syntax`](compile-let-syntax.md) | A transformer scoped to a body |
+| [`syntax`](compile-syntax.md) | A transformer bound at the module from top level, or for the rest of a body inside one |
 | [`inline-macro`](compile-inline-macro.md) | Run a body at expand time and splice its result |
 | [`datum`](compile-datum.md) | Capture a form with its source position for hygiene |
 | [`datumq`](compile-datumq.md) | The same without evaluating the argument; in a template, writes a form raw (`-'form`) |

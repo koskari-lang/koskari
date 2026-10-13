@@ -199,6 +199,33 @@ define-syntax let-syntax:
         (c.full_compile bdy)
 
 
+define-syntax syntax:
+  """
+  Define a syntax transformer. At module top level it is bound as
+  define-syntax binds it; inside a body it applies to the rest of
+  that body.
+  """
+
+  special-rules []:
+    case [c (syntax name rest ...)]:
+      define parts (list ({(for-each [r rest] (yield r.datum))}))
+      if (== c.scope_depth 0):
+        (c.full_compile `(define-syntax ,name.datum ,@parts))
+
+      else:
+        ;; the transformer form is the last part, after any docstring
+        define form (item parts -1)
+        define src `(,(car form) ,name.datum ,@(cdr form))
+        define expr ((c.full_compile src).as_expression (vars c.module))
+
+        define n (str name.datum)
+        define key (cond ((n.startswith "compile/") n)
+                         (else: f"compile/{n}"))
+
+        (c.scope_overlay key (expr))
+        (c.full_compile None)
+
+
 define-syntax datum:
   """
   Captures `expr` form in a datum, recording the source position
@@ -222,6 +249,78 @@ define-syntax datumq:
       `(call datum (quote ,expr) ,pos)
     case (datumq expr):
       `(call datum (quote ,expr) ,(getattr expr "position" None))
+
+
+define-syntax def:
+  """
+  Defines a function and binds it to its name in the scope the form
+  appears in. A return type may follow the name as :: TYPE.
+  """
+
+  syntax-rules []:
+    case (def name rest ...):
+      (var name (function name rest ...))
+
+
+let []:
+  import-from koskari.compile.helpers unpack_lhs_bind_symbols
+
+  (define pattern-declarations
+    ;; one (HEAD NAME) form per name the unpack pattern binds, each name
+    ;; datum-wrapped so hygiene treats it as the caller's own
+    (lambda pattern-declarations [head pattern]
+      (list ({(for-each [n (unpack_lhs_bind_symbols pattern.datum
+                                                   flatten: True)]
+               (yield `(,head ,(datum n))))}))))
+
+
+  extend-syntax var:
+    """
+    A pattern in the name position declares each name the pattern
+    binds, then unpacks the value into them. Without a value, the
+    names are only declared.
+    """
+
+    macro-match:
+      case (var (PAIR pattern) (BIND value)):
+        `(begin ,@(pattern-declarations 'var pattern)
+                (setq-values ,pattern ,value))
+
+      case (var (PAIR pattern)):
+        `(begin ,@(pattern-declarations 'var pattern))
+
+
+  extend-syntax global:
+    """
+    A pattern in the name position binds each name the pattern binds
+    at the module, then unpacks the value into them. Without a value,
+    the names are only bound.
+    """
+
+    macro-match:
+      case (global (PAIR pattern) (BIND value)):
+        `(begin ,@(pattern-declarations 'global pattern)
+                (setq-values ,pattern ,value))
+
+      case (global (PAIR pattern)):
+        `(begin ,@(pattern-declarations 'global pattern))
+
+
+extend-syntax global:
+  """
+  Followed by def, class, or syntax, binds that definition at the
+  module rather than in the scope the form appears in.
+  """
+
+  syntax-rules [def class syntax]:
+    case (global def name rest ...):
+      (global name (function name rest ...))
+
+    case (global class name supers body ...):
+      (global name (build-class name supers body ...))
+
+    case (global syntax name rest ...):
+      (define-syntax name rest ...)
 
 
 ; The end.
