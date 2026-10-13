@@ -167,8 +167,8 @@ in [Decorators](decorators.md).
 
 A Koskari function called from Koskari yields a value. Called from
 plain Python code, with no event loop, it yields a coroutine, because
-every Koskari function can suspend. `define-demanding`, or `@demand`
-over a `def`, gives Python a function that returns the value. That
+every Koskari function can suspend. `@demand` over a `def` gives
+Python a function that returns the value. That
 applies to any function a Python caller invokes directly, including a
 Python decorator like `lru_cache` that calls what it wraps. The model
 is in [Demand, async, and defer](demand-async-and-defer.md).

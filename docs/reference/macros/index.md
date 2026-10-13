@@ -43,8 +43,6 @@ the REPL shows the expansion of any of them.
 |-------|------|
 | [`def`](compile-def.md) | Define a function and bind it in the current scope |
 | [`class`](compile-class.md) | Define a class and bind it in the current scope |
-| [`define-demanding`](compile-define-demanding.md) | A function wrapped for direct calls from Python |
-| [`define-coroutine`](compile-define-coroutine.md) | A function that Python sees as a coroutine function |
 | [`super`](compile-super.md) | The superclass proxy inside a method |
 | [`decorate`](compile-decorate.md), [`decorate-subject`](compile-decorate-subject.md) | What `@` lines lower to, and the per-decorator dispatch |
 | [`when-main`](compile-when-main.md) | Python's `__name__` guard; prefer `entry-point` for a program's work |

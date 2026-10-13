@@ -86,7 +86,7 @@ context, await it:
 greeting = await mod.greet('world')            # 'hello, world'
 ```
 
-A function defined with `define-demanding`, or `@demand`, returns the
+A function defined with `@demand` above its `def` returns the
 value directly and can be called with no event loop. Outside a loop, or
 when handing a result to a raw asyncio API, bridge it:
 
@@ -107,7 +107,7 @@ Which construct fits which situation is the
 | running a file headless | `new_module`, `init_module`, `load_module_async` |
 | the CLI's file-running behaviour | `koskari.cli.host.run_file_async` |
 | an interactive prompt | `koskari.cli.repl.repl`, with prompt-toolkit |
-| calling a Koskari function | `await` the result, or define it with `define-demanding` |
+| calling a Koskari function | `await` the result, or define it with `@demand` above `def` |
 | no event loop | the demand path; a suspension raises `KoskariSyncViolation` |
 
 ## See also

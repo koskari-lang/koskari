@@ -252,3 +252,23 @@ tags:
   - invalid
   - pitfall
 notes: "agent mistake from Clojure habit: def takes a name, formals and a body, never a plain value; 1 is not a formals list, so the function form matches no rule. corrective: (var x 1)"
+---
+id: function-define-demanding-unbound-001
+feature: builtin/demand
+source: (define-demanding sync-id [x] x)
+verify:
+  read: (define-demanding sync-id [x] x)
+  invalid: "define-demanding is not bound, so the form compiles as an ordinary call whose arguments evaluate first: it raises NameError: No such reference: sync-id, naming the function being defined rather than define-demanding"
+references:
+  - guide/decorators.md
+  - guide/demand-async-and-defer.md
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - demand
+  - decorate
+  - invalid
+  - surprising
+  - pitfall
+notes: "corrective: (decorate [demand] (def sync-id [x] x)), written in block form as @demand above def sync-id [x]:. define-coroutine is gone the same way; use @coroutine-fn above def."

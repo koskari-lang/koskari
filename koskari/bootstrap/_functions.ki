@@ -17,28 +17,6 @@ Portion of koskari.builtins
 """
 
 
-syntax define-coroutine:
-  """
-  Defines a function whose result will be converted to a Python
-  coroutine object.
-  """
-
-  syntax-rules []:
-    case (define-coroutine name args body ...):
-      (var name (coroutine-fn (function name args body ...)))
-
-
-syntax define-demanding:
-  """
-  Defines a function which will be run on the demand path, where
-  `await` it denied.
-  """
-
-  syntax-rules []:
-    case (define-demanding name formals body ...):
-      (var name (demand (function name formals body ...)))
-
-
 syntax function-compose:
   """
   Composes multiple functions into a single function, eg.::

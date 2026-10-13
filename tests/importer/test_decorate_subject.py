@@ -150,17 +150,17 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(7, await expr())
 
 
-    async def test_define_demanding_binds_decorated_value(self):
+    async def test_decorator_over_demand_binds_decorated_value(self):
         """
-        A decorated define-demanding binds the decorator's result,
-        applied to the demand wrapper, under its name
+        A decorator stacked over demand on a def binds the decorator's
+        result, applied to the demand wrapper, under its name
         """
 
         src = """
         (begin
           (var seen #[])
           (var tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
-          (decorate [tag] (define-demanding cached [n] n))
+          (decorate [tag demand] (def cached [n] n))
           (#list seen cached))
         """
         expr, _mod = self.compile_expr(src)
@@ -169,12 +169,12 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("DECORATED", cached)
 
 
-    async def test_define_coroutine_binds_decorated_value(self):
+    async def test_decorator_over_coroutine_fn_binds_decorated_value(self):
         src = """
         (begin
           (var seen #[])
           (var tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
-          (decorate [tag] (define-coroutine co [n] n))
+          (decorate [tag coroutine-fn] (def co [n] n))
           (#list seen co))
         """
         expr, _mod = self.compile_expr(src)

@@ -191,9 +191,9 @@ Importer details: [`koskari.importer`](../reference/api/koskari-importer.md),
 
 ## Authoring for both paths
 
-- `define-demanding` -- defines a function wrapped with `demand` so its body
-  is compiled for demand-call contexts
-  ([`compile/define-demanding`](../reference/macros/compile-define-demanding.md))
+- `@demand` above a `def` -- binds the function wrapped with `demand`, so a
+  Python caller with no event loop gets its value
+  ([`compile/decorate`](../reference/macros/compile-decorate.md))
 - `on-demand?` -- runtime predicate: tries bare `(await)` and returns true if
   that would violate sync completion (demand path)
   ([`on-demand?`](../reference/runtime/on-demand.md))
@@ -212,9 +212,9 @@ hand Koskari async work to a raw asyncio API.
 
 | Your situation | Use | Kind |
 |----------------|-----|------|
-| The code must run to completion **now, with no event loop** -- a module imported without a host, or a body reached through a Python dunder | **`demand`** / **`define-demanding`** | function wrapper / macro |
+| The code must run to completion **now, with no event loop** -- a module imported without a host, or a body reached through a Python dunder | **`demand`**, or `@demand` above `def` | function wrapper |
 | You want to **hold** an async result and await it **later**, not resolve it at the next use site | **`defer`** | builtin type |
-| You must hand a Koskari **function** to a **Python asyncio API that requires a coroutine function** (a task factory, framework hook) | **`coroutine-fn`** / **`define-coroutine`** | builtin / macro |
+| You must hand a Koskari **function** to a **Python asyncio API that requires a coroutine function** (a task factory, framework hook) | **`coroutine-fn`**, or `@coroutine-fn` above `def` | builtin |
 | You need to **schedule or gather** held async work on the asyncio loop | **`create-task`**, or `defer` + `asyncio.gather` | asyncio bridge |
 
 The first two shape how your own code runs; the last two are **bridges to
@@ -227,21 +227,22 @@ certainly want `demand`/`defer`, not the coroutine bridges.
 > value. To hand a real coroutine to asyncio, pass the function
 > (`coroutine-fn`) or a `defer`, never a call result.
 
-### `demand` / `define-demanding` -- run without a loop
+### `demand` -- run without a loop
 
 Runs on the demand path: produce a value now, or raise -- never suspend. A body
 that tries to await a Python awaitable here raises `KoskariSyncViolation`.
 
 ```koskari
-define-demanding checksum [a b]:
+@demand
+def checksum [a b]:
   (+ a b)
 
 (checksum 2 3)   ; -> 5, computed with no event loop hosting the run
 ```
 
-`define-demanding NAME formals body` expands to
-`(var NAME (demand (function NAME formals body ...)))`. See
-[`compile/define-demanding`](../reference/macros/compile-define-demanding.md).
+The decorator lines read as `(decorate [demand] (def checksum [a b] ...))`,
+which binds `checksum` to `(demand (function checksum [a b] ...))`. See
+[`compile/decorate`](../reference/macros/compile-decorate.md).
 
 ### `defer` -- hold work instead of resolving it
 
@@ -249,7 +250,7 @@ A defer holds an async result instead of resolving it at the next use
 site, and an explicit `(await ...)` consumes it. [defer](#defer) above
 has the rules.
 
-### `coroutine-fn` / `define-coroutine` -- a genuine coroutine function
+### `coroutine-fn` -- a genuine coroutine function
 
 Some asyncio entry points require a real coroutine function -- one that
 `asyncio.iscoroutinefunction` accepts. `coroutine-fn` wraps a function so it
@@ -260,7 +261,8 @@ gets a coroutine.
 (import asyncio)
 (import-from asyncio sleep)
 
-define-coroutine work [x]:
+@coroutine-fn
+def work [x]:
   (await (sleep 0.1))
   x
 
@@ -269,9 +271,9 @@ define-coroutine work [x]:
 
 Pass `work` itself to the asyncio API. Do not call `(work 1)` from Koskari
 first -- that auto-awaits to the value (see the caveat above).
-`define-coroutine NAME args body` expands to
-`(var NAME (coroutine-fn (function NAME args body ...)))`. See
-[`compile/define-coroutine`](../reference/macros/compile-define-coroutine.md).
+`@coroutine-fn` above `def work` binds `work` to
+`(coroutine-fn (function work [x] ...))`. See
+[`compile/decorate`](../reference/macros/compile-decorate.md).
 
 ### Scheduling and gathering -- `create-task`, `defer` + `gather`
 

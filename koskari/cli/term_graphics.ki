@@ -137,7 +137,8 @@ def render_iterm2_escape [png_bytes name: "koskari-icon.png"]:
   f"\x1b]1337;File=name={encoded_name};size={png_len};inline=1:{payload}\x07"
 
 
-define-demanding emit_icon [stream: None size: 32]:
+@demand
+def emit_icon [stream: None size: 32]:
   """
   Write the packaged icon to stream via whichever graphics protocol
   detect_protocol() finds, if any.

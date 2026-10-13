@@ -99,8 +99,7 @@ syntax decorate:
   `decorate-subject`, outermost decorator first.
   """
 
-  syntax-rules [define define-global define-demanding define-coroutine
-                def var global class]:
+  syntax-rules [define define-global def var global class]:
     case (decorate [] fn):
       fn
 
@@ -127,12 +126,6 @@ syntax decorate:
     ;; function or class it declares; the decorators wrap that value
     case (decorate [decorators ...] (define-global name formals body ...)):
       global name (decorate [decorators ...] (function name formals body ...))
-
-    case (decorate [decorators ...] (define-demanding name formals body ...)):
-      var name (decorate [decorators ...] (demand (function name formals body ...)))
-
-    case (decorate [decorators ...] (define-coroutine name formals body ...)):
-      var name (decorate [decorators ...] (coroutine-fn (function name formals body ...)))
 
     case (decorate [d rest ...] fn):
       decorate-subject d (decorate [rest ...] fn)

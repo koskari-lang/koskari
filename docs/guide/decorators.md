@@ -82,8 +82,7 @@ s-expression spelling works with the pragma off.
 jobs.
 
 Name hoisting: when the subject is a `def`, `var`, `class`,
-`global def`, `global class`, `define-demanding` or `define-coroutine`,
-or the Scheme-layer `define` or `define-global`,
+`global def` or `global class`, or the Scheme-layer `define` or `define-global`,
 the name moves outside the decoration so the decorated value is what
 gets bound:
 

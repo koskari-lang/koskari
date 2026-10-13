@@ -271,37 +271,41 @@ tags:
   - decorate
 notes: koskari/bootstrap/_functions.ki; def wraps the function shorthand
 ---
-id: function-define-coroutine-001
-feature: macro/compile/define-coroutine
-source: (define-coroutine idle [] 1)
+id: function-decorate-coroutine-fn-001
+feature: macro/compile/decorate
+source: (decorate [coroutine-fn] (def idle [] 1))
 verify:
-  expand: (var idle (coroutine-fn (function idle [] 1)))
+  expand: (var idle (decorate [coroutine-fn] (function idle [] 1)))
 references:
-  - reference/macros/compile-define-coroutine.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-coroutine
+  - decorate
+  - coroutine-fn
   - await
   - concurrency
-notes: koskari/bootstrap/_functions.ki; eval yields coroutine via coroutine-fn; requires builtins at expand
+notes: koskari/bootstrap/_decorator.ki; what @coroutine-fn above def reads to. decorate hoists the def name and binds the coroutine-fn wrapped function
 ---
-id: function-define-demanding-001
-feature: macro/compile/define-demanding
-source: (define-demanding sync-id [x] x)
+id: function-decorate-demand-001
+feature: macro/compile/decorate
+source: (decorate [demand] (def sync-id [x] x))
 verify:
-  expand: (var sync-id (demand (function sync-id [x] x)))
+  expand: (var sync-id (decorate [demand] (function sync-id [x] x)))
 references:
-  - reference/macros/compile-define-demanding.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-demanding
+  - decorate
+  - demand
   - await
   - concurrency
-notes: koskari/bootstrap/_functions.ki; demand wrapper for on-demand eval path
+notes: koskari/bootstrap/_decorator.ki; what @demand above def reads to. decorate hoists the def name and binds the demand wrapped function, which runs on the demand path when Python calls it
 ---
 id: function-yield-basic-001
 feature: special/compile/yield
@@ -413,81 +417,89 @@ tags:
   - concurrency
 notes: zero-arg form emits cooperative suspend; form value is None
 ---
-id: function-define-coroutine-param-002
-feature: macro/compile/define-coroutine
+id: function-decorate-coroutine-fn-param-002
+feature: macro/compile/decorate
 source: |-
-  (define-coroutine counter [n] n)
+  (decorate [coroutine-fn] (def counter [n] n))
   
 verify:
-  expand: (var counter (coroutine-fn (function counter (n) n)))
+  expand: (var counter (decorate [coroutine-fn] (function counter [n] n)))
 references:
-  - reference/macros/compile-define-coroutine.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-coroutine
+  - decorate
+  - coroutine-fn
   - await
   - concurrency
-notes: with a parameter; expands to coroutine-fn wrapping a function form with formals
+notes: with a parameter; decorate hoists the def name and wraps the function form, formals intact, in coroutine-fn
 ---
-id: function-define-demanding-eval-002
-feature: macro/compile/define-demanding
+id: function-decorate-demand-eval-002
+feature: macro/compile/decorate
 source: |-
-  (begin (define-demanding sync-id [x] x) (sync-id 42))
+  (begin (decorate [demand] (def sync-id [x] x)) (sync-id 42))
   
 verify:
-  read: (begin (define-demanding sync-id (x) x) (sync-id 42))
-  expand: (begin (define-demanding sync-id (x) x) (sync-id 42))
+  read: (begin (decorate [demand] (def sync-id [x] x)) (sync-id 42))
+  expand: (begin (decorate [demand] (def sync-id [x] x)) (sync-id 42))
   eval: "42"
 references:
-  - reference/macros/compile-define-demanding.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-demanding
+  - decorate
+  - demand
   - await
   - concurrency
 notes: demand-wrapped function; calling sync-id 42 returns 42 directly (sync-safe)
 ---
-id: function-define-demanding-two-param-003
-feature: macro/compile/define-demanding
+id: function-decorate-demand-two-param-003
+feature: macro/compile/decorate
 source: |-
-  (define-demanding add [x y] (+ x y))
+  (decorate [demand] (def add [x y] (+ x y)))
   
 verify:
-  expand: (var add (demand (function add (x y) (+ x y))))
+  expand: (var add (decorate [demand] (function add [x y] (+ x y))))
 references:
-  - reference/macros/compile-define-demanding.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-demanding
+  - decorate
+  - demand
   - await
   - concurrency
-notes: two-param form; expands to var with demand wrapper around function
+notes: two-param form; expands to var binding the demand-decorated function
 ---
-id: function-define-coroutine-type-003
-feature: macro/compile/define-coroutine
+id: function-decorate-coroutine-fn-type-003
+feature: macro/compile/decorate
 source: |-
-  (begin (define-coroutine gen [n] (yield n)) (str (type gen)))
+  (begin (decorate [coroutine-fn] (def gen [n] (yield n))) (str (type gen)))
   
 verify:
-  read: (begin (define-coroutine gen (n) (yield n)) (str (type gen)))
-  expand: (begin (define-coroutine gen (n) (yield n)) (str (type gen)))
+  read: (begin (decorate [coroutine-fn] (def gen [n] (yield n))) (str (type gen)))
+  expand: (begin (decorate [coroutine-fn] (def gen [n] (yield n))) (str (type gen)))
   eval: '"<class ''function''>"'
 references:
-  - reference/macros/compile-define-coroutine.md
+  - reference/macros/compile-decorate.md
+  - guide/demand-async-and-defer.md
 stability: evolving
 tags:
   - function
   - macro
-  - define-coroutine
+  - decorate
+  - coroutine-fn
   - await
   - concurrency
-notes: define-coroutine binds a function slot; type check confirms it is a Python function wrapping coroutine-fn
+notes: "@coroutine-fn over def binds a native Python function (an async def wrapper), not a KosCallable; type check confirms it"
 ---
 id: function-named-two-param-003
 feature: special/compile/function
@@ -1460,3 +1472,29 @@ tags:
   - decorate
   - var
 notes: decorate over var NAME VALUE decorates the value and binds the result
+---
+id: function-decorate-demand-block-004
+feature: layout/decorate
+source: |-
+  @demand
+  def sync-id [x]:
+    x
+  
+  (sync-id 42)
+verify:
+  read: (begin (decorate (demand) (def sync-id [x] x)) (sync-id 42))
+  eval: "42"
+references:
+  - guide/decorators.md
+  - guide/demand-async-and-defer.md
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - decorate
+  - demand
+  - surface:block
+  - pragma:reader/decorators
+  - await
+  - idiom
+notes: "@demand above def defines a function a synchronous Python caller can call directly for its value. Requires reader/decorators (baseline on)."

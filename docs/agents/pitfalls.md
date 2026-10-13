@@ -43,19 +43,24 @@ callables directly -- `(list (map {(* %1 %1)} numbers))`, no wrap; see
 [Native builtins](native-builtins.md).
 
 ```koskari
-(define-demanding some_fn [x] (+ x 1))      ; direct-call entry point
-; equivalent: (var some_fn (demand (function some_fn [x] (+ x 1))))
-; equivalent: @demand \n def some_fn [x]: (+ x 1)
+@demand
+def some_fn [x]:                            ; direct-call entry point
+  (+ x 1)
 ```
 
-`define-demanding NAME FORMALS BODY...` and `@demand` above a plain
-`def` are equivalent; both wrap the function so a synchronous
-Python caller with no event loop gets the resolved value. Any
-top-level function meant to be imported and called directly by Python
-(a module boundary a Python package will call into, a test harness)
-needs one of these forms. A function called only from other Koskari
-code does not -- ambient async resolves those calls without help, and
-wrapping them anyway is harmless but unnecessary.
+The s-expression form is `(decorate [demand] (def some_fn [x] (+ x 1)))`.
+`@demand` above `def` wraps the function so a synchronous Python caller
+with no event loop gets the resolved value. Any top-level function
+meant to be imported and called directly by Python (a module boundary a
+Python package will call into, a test harness) needs it. A function
+called only from other Koskari code does not -- ambient async resolves
+those calls without help, and wrapping them anyway is harmless but
+unnecessary.
+
+There is no `define-demanding` macro. The name is unbound, so
+`(define-demanding some_fn [x] ...)` compiles as an ordinary call and
+fails at run time with a `NameError` for `some_fn`. There is no
+`define-coroutine` either; use `@coroutine-fn` above `def`.
 
 `sorted` is a known exception: Koskari's `sorted` demand-wraps a
 callable `key:` itself, so no wrap is needed there. The exception does

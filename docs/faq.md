@@ -35,7 +35,7 @@ Not yet.
 
 Yes. After `import koskari`, a `.ki` module imports like any other, and
 its functions and classes are ordinary Python callables. A function that
-Python calls directly is defined with `define-demanding` so it returns a
+Python calls directly carries `@demand` above its `def` so it returns a
 value rather than a coroutine; see
 [Interop](tutorials/from-python/interop.md).
 
@@ -69,8 +69,7 @@ Installing the PyPI wheel needs no compiler.
 ### A Koskari function returns a coroutine when Python calls it
 
 Every Koskari function can suspend, so a call from plain Python yields
-a coroutine. Wrap the function with `define-demanding`, or `@demand`, at
-its definition, or `demand` at the call. Python's `map`, `filter`,
+a coroutine. Put `@demand` above the function's `def`, or `demand` at the call. Python's `map`, `filter`,
 `min`, `max`, and `list.sort` calling a Koskari lambda have the same
 cause. See
 [Demand, async, and defer](guide/demand-async-and-defer.md).

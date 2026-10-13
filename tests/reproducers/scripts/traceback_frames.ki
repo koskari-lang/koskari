@@ -16,8 +16,8 @@ def outer [z]:
     var w 2
     var r (inner z)
     return (+ r 1)
-
-define-demanding douter [z]:
+@demand
+def douter [z]:
     var q 1
     var r (inner z)
     return (+ r 1)

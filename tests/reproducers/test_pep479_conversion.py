@@ -49,7 +49,8 @@ def aleakgen [ait]:
     (yield (await (ait.__anext__)))
     (yield 3)
 
-define-coroutine leakcoro [it]:
+@coroutine-fn
+def leakcoro [it]:
     (next it)
 
 def consume [gen]:
