@@ -291,8 +291,8 @@ When adding or changing an opcode:
 - [9.2 Pattern matching](#92-pattern-matching) — MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_CORE_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_CLEAR2/3/4, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_STORE, ITEM_INPLACE, ITEM_CLEAR, ITEM_TAKE, ITEM_REF, and the rows naming their object, key, and value
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -423,6 +423,9 @@ When adding or changing an opcode:
 | VAR4 | EXTRA | Load four names, push in row order | [§12](#kos_op_var4) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
 | VAR_CLEAR | VAR | Delete the name from the namespace; no stack effect | [§12](#kos_op_var_clear) |
+| VAR_CLEAR2 | EXTRA | Clear 2 names in row order; no stack effect | [§12](#kos_op_var_clear2) |
+| VAR_CLEAR3 | EXTRA | Clear 3 names in row order; no stack effect | [§12](#kos_op_var_clear3) |
+| VAR_CLEAR4 | EXTRA | Clear 4 names in row order; no stack effect | [§12](#kos_op_var_clear4) |
 | VAR_TAKE | VAR | Deref name, clear binding, push value (errors if empty) | [§12](#kos_op_var_take) |
 | VAR_REF | VAR | Push a reference to the named variable | [§12](#kos_op_var_ref) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
@@ -479,6 +482,9 @@ When adding or changing an opcode:
 | FAST4 | EXTRA | Load four slots, push in row order | [§13](#kos_op_fast4) |
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
 | FAST_CLEAR | FASTVAR | Clear the slot; no stack effect | [§13](#kos_op_fast_clear) |
+| FAST_CLEAR2 | EXTRA | Clear 2 slots in row order; no stack effect | [§13](#kos_op_fast_clear2) |
+| FAST_CLEAR3 | EXTRA | Clear 3 slots in row order; no stack effect | [§13](#kos_op_fast_clear3) |
+| FAST_CLEAR4 | EXTRA | Clear 4 slots in row order; no stack effect | [§13](#kos_op_fast_clear4) |
 | FAST_TAKE | FASTVAR | Deref slot, clear, push value (errors if empty) | [§13](#kos_op_fast_take) |
 | FAST_REF | FASTVAR | Push a reference to the slot | [§13](#kos_op_fast_ref) |
 | FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
@@ -2631,6 +2637,36 @@ Extra row: `("os.path", 0, 0, 0)`.
 
 ---
 
+### KOS_OP_VAR_CLEAR2 {#kos_op_var_clear2}
+
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG). Row = 2 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 2 names in row order, as
+  2 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
+  lowers it to `FAST_CLEAR2` when every name has a fast slot.
+
+### KOS_OP_VAR_CLEAR3 {#kos_op_var_clear3}
+
+- **Style**: EXTRA (VAR, VAR, VAR, NOARG). Row = 3 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 3 names in row order, as
+  3 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
+  lowers it to `FAST_CLEAR3` when every name has a fast slot.
+
+### KOS_OP_VAR_CLEAR4 {#kos_op_var_clear4}
+
+- **Style**: EXTRA (VAR, VAR, VAR, VAR). Row = 4 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 4 names in row order, as
+  4 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
+  lowers it to `FAST_CLEAR4` when every name has a fast slot.
+
 ### KOS_OP_VAR_TAKE {#kos_op_var_take}
 
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
@@ -3160,6 +3196,33 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | 2     | FAST_CLEAR | 1   | 1        | clear slot 1 |
 
 ---
+
+### KOS_OP_FAST_CLEAR2 {#kos_op_fast_clear2}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG). Row = 2 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 2 fast slots in row order, as
+  2 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
+### KOS_OP_FAST_CLEAR3 {#kos_op_fast_clear3}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, NOARG). Row = 3 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 3 fast slots in row order, as
+  3 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
+### KOS_OP_FAST_CLEAR4 {#kos_op_fast_clear4}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, FASTVAR). Row = 4 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 4 fast slots in row order, as
+  4 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
 
 ### KOS_OP_FAST_TAKE {#kos_op_fast_take}
 

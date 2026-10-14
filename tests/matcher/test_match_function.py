@@ -29,7 +29,7 @@ from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, setcdr, symbol)
 from koskari.match_code import compile_match_function
 from koskari.matcher import (
-    BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
+    BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS, GROUP,
     LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST,
     SAME, SYMBOL, TEST_ANY, TYPE, USING, VALUE, MatchCompiler, make_matcher,
     repeat_capture)
@@ -304,6 +304,29 @@ class TestLoopingSpines(unittest.TestCase):
         pattern = MATCH(FORM(MATCH(REST("r"))))
         with self.assertRaises(ValueError):
             make_matcher(pattern).match((cyclic,))
+
+
+class TestRepeatScopes(unittest.TestCase):
+    """
+    Every pass of a repeat starts with nothing bound below it: a named
+    group's slots that one pass bound and the next did not are not
+    carried into the next pass's captures
+    """
+
+    def test_group_slots_do_not_carry_across_iterations(self):
+        pattern = MATCH(repeat_capture("rows", FORM(MATCH(
+            GROUP("g", OPTIONAL(CAPTURE("b", LITERAL(1)))), CAPTURE("c")))))
+        result = make_matcher(pattern).match(((1, "x"), ("y",)))
+        self.assertTrue(result.matched)
+        self.assertEqual(
+            result.captures["rows"],
+            [{"g": {"b": 1}, "c": "x"}, {"g": {}, "c": "y"}])
+
+        result = make_matcher(pattern).match(
+            cons(cons(1, "x", nil), cons("y", nil), nil))
+        rows = result.captures["rows"]
+        self.assertEqual(list(rows[0]["g"].keys()), ["b"])
+        self.assertEqual(list(rows[1]["g"].keys()), [])
 
 
 class TestPairSpineElements(unittest.TestCase):

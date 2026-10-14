@@ -383,13 +383,17 @@ CALL_TO_TAIL_CALL = {
 }
 
 
-# The trailing pack phase's run kinds: bare load opcode -> its bulk
-# twins for two, three, and four loads. A run is homogeneous; a load
+# The trailing pack phase's run kinds: bare load or clear opcode -> its
+# bulk twins for two, three, and four. A run is homogeneous; an opcode
 # of another kind breaks it.
 PACK_SHAPES = {
     OpCode.CONST: (OpCode.CONST2, OpCode.CONST3, OpCode.CONST4),
     OpCode.VAR: (OpCode.VAR2, OpCode.VAR3, OpCode.VAR4),
     OpCode.FAST: (OpCode.FAST2, OpCode.FAST3, OpCode.FAST4),
+    OpCode.VAR_CLEAR: (
+        OpCode.VAR_CLEAR2, OpCode.VAR_CLEAR3, OpCode.VAR_CLEAR4),
+    OpCode.FAST_CLEAR: (
+        OpCode.FAST_CLEAR2, OpCode.FAST_CLEAR3, OpCode.FAST_CLEAR4),
 }
 
 

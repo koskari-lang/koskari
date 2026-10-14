@@ -889,6 +889,15 @@ with a suffix peels before it boxes. A predicate or extractor on a
 pair spine receives the Datum: a runtime pair is a source spine, and
 the reviewers' finding there records intended behaviour.
 
+Review item 4 as of 2026-10-14: a repeat pass clears the slots of
+every nested scope under its node after the iteration packs, so a
+named group's slot one pass bound and the next did not is not carried
+into the next pass's captures; `MATCH_ITERATION` keeps clearing its
+own scope. The clears pack: `VAR_CLEAR2/3/4` and `FAST_CLEAR2/3/4`
+join the run shapes, so a `clear_slots` of up to four slots, on a
+failed branch, a missed optional or a repeat's fail path, is one
+dispatch.
+
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,

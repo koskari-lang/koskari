@@ -1431,8 +1431,13 @@ class MatchLowering:
         self.emit_sequence(
             self.children(inner), cur, (fail, depth), depth, level + 1,
             trailing)
-        # the iteration instruction clears the slots it read
+        # the iteration instruction clears the slots it read; a nested
+        # group's slots are cleared here, so the next pass starts with
+        # nothing bound below it whatever path this one took
         self.emit_captures(scope, start, cur, iteration=True)
+        for slot in self.slots_under(inner):
+            if self.scopes.get(slot) != scope:
+                self.emit(OpCode.VAR_CLEAR, self.slot_local(slot))
         self.emit(OpCode.VAR_LIST_APPEND, items)
         self.emit(OpCode.JUMP, loop)
 
