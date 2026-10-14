@@ -111,11 +111,11 @@ class TestDispatcher(unittest.TestCase):
         self.assertEqual(captures, {})
 
 
-    def test_inline_arm_externs_come_from_the_defaults(self):
+    def test_core_type_arms_read_no_extern(self):
         d = Dispatcher((
             MatchCompiler.compile(MATCH(CAPTURE("k", TYPE("keyword")))),
             MatchCompiler.compile(MATCH(CAPTURE("s", TYPE("symbol"))))))
-        self.assertEqual(d.externs, ("keyword", "symbol"))
+        self.assertEqual(d.externs, ())
         idx, captures = d.select((symbol("a"),))
         self.assertEqual(idx, 1)
         self.assertEqual(captures["s"], symbol("a"))

@@ -260,6 +260,26 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
             self.compile_expr(src_str, **defn)
 
 
+class TestCoreTypesAreNotModuleNames(DefineSyntaxCompileHelpers):
+
+    async def test_module_binding_of_symbol_does_not_reach_the_rule(self):
+        # the head of every rule is a symbol test; it is a core type
+        # test and reads nothing from the module, so a module that binds
+        # symbol to something else, before or after the definition,
+        # still expands the macro
+        src_str = """
+        (begin
+          (define symbol 5)
+          (define pick (syntax-rules pick [] [(pick x) x]))
+          (define pair (lambda [x] False)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/pick': vars(mod)['pick']}
+        expr, mod = self.compile_expr("(pick 42)", **defn)
+        self.assertEqual(42, await expr())
+
+
 class TestCompileMacroRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_rules_identity(self):

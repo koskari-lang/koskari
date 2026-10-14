@@ -23,7 +23,8 @@ miss edges leaving the cursor and the stack as they were.
 
 import pytest
 
-from koskari.lib import Datum, DatumFrame, OpCode, OpStyle, cons, nil
+from koskari.lib import (
+    CoreType, Datum, DatumFrame, OpCode, OpStyle, cons, gensym, nil, symbol)
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -327,6 +328,58 @@ class TestPulls(CevalTest):
         self.assertEqual(await run(prog, syms, subject=(1, 2)), "miss")
 
 
+    async def test_next_core_type_reads_no_slot(self):
+        # a core type test carries its ordinal in the RAW field and
+        # resolves nothing: a binding of the same name in the frame
+        # is never read; a gensym passes SYMBOL and a bool passes INT
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
+            ["MATCH_NEXT_CORE_TYPE_BIND_FAST",
+             ("miss", 0, int(CoreType.SYMBOL), 1)],
+            ["MATCH_NEXT_CORE_TYPE_FAST", ("miss", 0, int(CoreType.INT), 0)],
+            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["POP", 1],
+            ["FAST", 1],
+            ["RETURN", 1],
+        ]
+        syms = ("cur", "s", "symbol", "int")
+        values = {"symbol": 5, "int": "not a type"}
+        self.assertIs(
+            await run(prog, syms, values, subject=(symbol("a"), 1)),
+            symbol("a"))
+        scoped = gensym(symbol("t"))
+        self.assertIs(
+            await run(prog, syms, values, subject=(scoped, True)), scoped)
+        self.assertEqual(
+            await run(prog, syms, values, subject=("a", 1)), "miss")
+        self.assertEqual(
+            await run(prog, syms, values, subject=(symbol("a"), 1.0)), "miss")
+        self.assertEqual(
+            await run(prog, syms, values, subject=(symbol("a"),)), "miss")
+        # the pull reads a pair spine through the box and binds the box
+        got = await run(prog, syms, values, subject=cons(symbol("a"), 1, nil))
+        self.assertIsInstance(got, Datum)
+        self.assertIs(got.datum, symbol("a"))
+
+
+    async def test_next_core_type_miss_leaves_cursor(self):
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
+            ["MATCH_NEXT_CORE_TYPE_FAST", ("retry", 0, int(CoreType.STR), 0)],
+            ["POP", 1],
+            ["CONST", "str"],
+            ["RETURN", 1],
+            ["LABEL", "retry"],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
+            ["POP", 1],
+            ["FAST", 1],
+            ["RETURN", 1],
+        ]
+        self.assertEqual(await run(prog, ("cur", "x"), subject=("s",)), "str")
+        self.assertEqual(await run(prog, ("cur", "x"), subject=(7,)), 7)
+        self.assertEqual(await run(prog, ("cur", "x"), subject=[[1]]), [1])
+
+
     async def test_var_twins_store_by_name(self):
         prog = [
             ["MATCH_FORM_VAR", ("miss", "cur", widths(2, 2), 0)],
@@ -360,6 +413,34 @@ class TestPeeks(CevalTest):
         self.assertEqual(await run(prog, syms, values, subject=7), (7, 7))
         self.assertEqual(await run(prog, syms, values, subject=8), "miss")
         self.assertEqual(await run(prog, syms, values, subject="7"), "miss")
+
+
+    async def test_core_type_peek_and_bind(self):
+        prog = [
+            ["MATCH_CORE_TYPE", ("miss", int(CoreType.TUPLE), 0, 0)],
+            ["MATCH_CORE_TYPE_BIND_FAST", ("miss", int(CoreType.TUPLE), 0, 0)],
+            ["FAST", 0],
+            ["BUILD_ARGS", 2],
+            ["RETURN", 1],
+        ]
+        self.assertEqual(
+            await run(prog, ("x",), subject=(1, 2)), ((1, 2), (1, 2)))
+        self.assertEqual(await run(prog, ("x",), subject=[1, 2]), "miss")
+        prog = [
+            ["MATCH_CORE_TYPE_BIND_VAR", ("miss", int(CoreType.PAIR), "p", 0)],
+            ["POP", 1],
+            ["VAR", "p"],
+            ["RETURN", 1],
+        ]
+        self.assertIs(await run(prog, ("p",), subject=nil), nil)
+        self.assertEqual(await run(prog, ("p",), subject=(1,)), "miss")
+        # an ordinal past the enum raises instead of matching
+        prog = [
+            ["MATCH_CORE_TYPE", ("miss", len(CoreType), 0, 0)],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(SystemError):
+            await run(prog, (), subject=1)
 
 
     async def test_type_miss_with_a_non_type_raises(self):

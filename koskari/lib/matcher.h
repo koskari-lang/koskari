@@ -78,6 +78,23 @@ extern PyTypeObject KosMatchCursorType;
   ((obj) && ((obj)->ob_type == &KosMatchCursorType))
 
 
+/* The core types a pattern names by their bare spelling: a type test
+   against one is an instruction carrying this ordinal in a RAW field,
+   with no reference to resolve, and the check is the type walk the
+   isinstance of the builtin would run. The ordinals are bytecode ABI,
+   mirrored by the Python CoreType IntEnum; keep the order stable. */
+typedef enum KosCoreType {
+  KOS_CORE_PAIR = 0,
+  KOS_CORE_SYMBOL,
+  KOS_CORE_KEYWORD,
+  KOS_CORE_INT,
+  KOS_CORE_STR,
+  KOS_CORE_TUPLE,
+  KOS_CORE_LIST,
+  KOS_CORE_COUNT   /* number of core types; also the invalid sentinel */
+} KosCoreType;
+
+
 /* The packed widths of a FORM row, in one sixteen-bit immediate: min
    in the high eight bits, max in the low, 0xFF for an unbounded max.
    A REST row packs its minimum tail and the suffix width the same
@@ -169,6 +186,13 @@ int KosMatch_TypeTest(PyObject *elem, PyObject *type);
    The literal test: elem read through Datum is lit by identity, a
    gensym whose base is lit, or equal to lit. 1, 0, or -1.
  */
+/**
+   The type test against a core type: elem read through Datum must be
+   an instance of the type the ordinal names. 1 or 0; -1 with an
+   exception set for an ordinal out of range.
+ */
+int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
+
 int KosMatch_LiteralTest(PyObject *elem, PyObject *lit);
 
 /**

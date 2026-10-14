@@ -31,8 +31,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from koskari.lib import (
-    Datum, DatumFrame, ModuleNamespace, cons, demand, keyword, kos_repr,
-    nil, pair, symbol)
+    CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,
+    kos_repr, nil, pair, symbol)
 from koskari.match_code import (
     compile_dispatch_function, compile_match_function, validate_frozen)
 from koskari.types import (
@@ -924,9 +924,16 @@ class LITERAL(Pattern):
         return f"(LITERAL {kos_repr(self._value)})"
 
 
+# the types a pattern names by their bare spelling and tests without a
+# reference: a MATCH_CORE_TYPE instruction carries the ordinal
+CORE_TYPES = {name.lower(): member for name, member in CoreType.__members__.items()}
+
+
 class TYPE(Pattern):
     """
-    Match a single element which is an instance of the named extern type
+    Match a single element which is an instance of the named type: a
+    core type by its ordinal, any other name as an extern resolved at
+    match time
     """
 
 
@@ -944,9 +951,13 @@ class TYPE(Pattern):
 
     def lower(self, ctx):
         """
-        Intern the extern and emit a TEST/TYPE node
+        Emit a TEST/CORE node for a core type, else intern the extern
+        and emit a TEST/TYPE node
         """
 
+        core = CORE_TYPES.get(self._extern)
+        if core is not None:
+            return ctx.append_node(("TEST", "CORE", int(core)))
         idx = ctx.intern_extern(self._extern)
         return ctx.append_node(("TEST", "TYPE", idx))
 

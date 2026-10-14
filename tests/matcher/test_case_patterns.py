@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import CoreType, cons, keyword, nil, symbol
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FORM, LITERAL, MAP, MATCH, NOT, ONEOF, PREDICATE,
     REST, MatchCompiler, parse_case_element, parse_case_pattern, parse_matcher,
@@ -105,7 +105,8 @@ class TestClassifyTyped(unittest.TestCase):
             _delim(symbol("x"), keyword("::"), symbol("int")))
         frozen = _frozen(pat)
         self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("int",))
+        self.assertEqual(frozen[2], ())
+        self.assertEqual(frozen[4][0], ("TEST", "CORE", int(CoreType.INT)))
 
     def test_single_form_typed(self):
         # [[(x :: int)]]
@@ -113,7 +114,7 @@ class TestClassifyTyped(unittest.TestCase):
             _delim(_list(symbol("x"), keyword("::"), symbol("int"))))
         frozen = _frozen(pat)
         self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("int",))
+        self.assertEqual(frozen[2], ())
 
     def test_anonymous_typed(self):
         # [[:: int]]
@@ -121,7 +122,15 @@ class TestClassifyTyped(unittest.TestCase):
             _delim(keyword("::"), symbol("int")))
         frozen = _frozen(pat)
         self.assertEqual(frozen[1], ())
-        self.assertEqual(frozen[2], ("int",))
+        self.assertEqual(frozen[2], ())
+
+
+    def test_user_type_is_an_extern(self):
+        # [[x :: Point]]
+        pat = parse_case_pattern(
+            _delim(symbol("x"), keyword("::"), symbol("Point")))
+        frozen = _frozen(pat)
+        self.assertEqual(frozen[2], ("Point",))
 
 
 class TestClassifySequence(unittest.TestCase):

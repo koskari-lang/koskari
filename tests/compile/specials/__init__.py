@@ -28,7 +28,6 @@ import unittest
 import koskari.compile.specials  # noqa: F401 - populate _BUILTIN_REGISTRY
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler, CompilerMode
-from koskari.matcher import get_extern_defaults
 from koskari.lib import (
     FunctionSpec, Module, ModuleNamespace, OpCode, bracket_cons, build_dict)
 from koskari.reader import (
@@ -65,11 +64,7 @@ class SpecialsTestCase(unittest.IsolatedAsyncioTestCase):
     """
 
     def get_glbls(self, **defns):
-        # a syntax definition's matcher closes over the types its
-        # pattern names, symbol and pair among them; a real module
-        # namespace reaches them through its builtins. A test's own
-        # definitions shadow them.
-        builtins = dict(get_extern_defaults())
+        builtins = {}
         builtins.update(defns)
         return ModuleNamespace("test", builtins)
 

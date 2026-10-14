@@ -186,8 +186,9 @@ predicate, an extractor, a mapping key. In the inline shape each is a
 `VAR` field requested through `request_var`, as `compile/match` does
 today for the missing externs, so the closure apparatus brings the
 module binding into the function namespace at build and `convert_fast`
-gives it a fast slot; `int` and `str` resolve the same way as a user
-type. In the standalone shape each is a keyword formal. `CONST` fields
+gives it a fast slot. In the standalone shape each is a keyword formal
+(superseded: a closure name over the matcher's namespace, section
+12.2). `CONST` fields
 carry values only: the literal of a literal test, a mapping key written
 as an atom, a field name. The engine's missing-binding `TypeError`
 becomes the formals machinery's arity error; `missing_externs` is the
@@ -195,9 +196,22 @@ formals spec read back.
 
 Boundary shift: there is no defaults table. `KosMatcher_ExternDefaults`,
 `reset_extern_defaults`, the defaults version watcher, and the per-site
-env cache have no successor. A pattern's `int` is the ref the closure
+env cache have no successor. A user type's name is the ref the closure
 captured: a store into that ref reaches every site at once, a bind of a
 new ref to the name reaches none of them, as for any closure.
+
+Core types are not externs at all. `pair`, `symbol`, `keyword`, `int`,
+`str`, `tuple` and `list` lower to the `MATCH_CORE_TYPE` shapes, whose
+RAW field carries a `KosCoreType` ordinal and whose test is the type
+walk the builtin's isinstance would run, with no reference to resolve.
+A pattern's `int` is therefore syntax, as master's defaults table made
+it: a module that binds `int` to something else, before or after the
+pattern is compiled, changes nothing the pattern tests. This closes the
+implicit-extern defect the 2026-10-14 review found, where every
+`syntax-rules` head resolved `symbol` in the defining module, and the
+hygiene collision of a macro's `int` with a user sub-pattern's `int`.
+The decision is `MatchCompiler.lower`'s, so the frozen tuple's extern
+table lists only real externs. CONST never holds a type.
 
 ### 2.8 Captures and repeat iterations
 
@@ -836,6 +850,15 @@ that flatten, and `resumable-reads.md` section 8 is marked superseded;
 pages for `compile/match`, the match-patterns guide and the glossary
 no longer describe a frozen matcher constant, a native engine or a
 synchronous predicate call.
+
+Core types as of 2026-10-14, after the review: `TYPE` of a core
+name lowers to a `("TEST", "CORE", ordinal)` node and the four
+`MATCH_CORE_TYPE` shapes (`MATCH_CORE_TYPE`, `MATCH_CORE_TYPE_BIND`,
+`MATCH_NEXT_CORE_TYPE`, `MATCH_NEXT_CORE_TYPE_BIND`, seven opcodes
+with the twins), the ordinals `KosCoreType` in `matcher.h` exported as
+`koskari.lib.CoreType`. The test harness no longer seeds the defaults
+into a bare module namespace, since nothing in a syntax rule reads
+them. The match_case churn kernel moved from 0.57x to 0.54x of Python.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,

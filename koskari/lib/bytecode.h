@@ -44,6 +44,7 @@
 extern PyObject *KosOpStyleEnum;
 extern PyObject *KosOperandEnum;
 extern PyObject *KosCompareEnum;
+extern PyObject *KosCoreTypeEnum;
 
 
 typedef enum KosOpStyle {

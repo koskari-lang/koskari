@@ -270,7 +270,7 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_CORE_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -360,6 +360,10 @@ The opcodes by family, each linking to its section.
 | MATCH_NEXT_BIND_VAR / MATCH_NEXT_BIND_FAST | EXTRA | Pull and store the element into the second slot | [section 9.2](opcodes/kos-op-match-next-bind.md) |
 | MATCH_NEXT_TYPE_VAR / MATCH_NEXT_TYPE_FAST | EXTRA | Pull; the element must be an instance of the type in the second slot | [section 9.2](opcodes/kos-op-match-next-type.md) |
 | MATCH_NEXT_TYPE_BIND_VAR / MATCH_NEXT_TYPE_BIND_FAST | EXTRA | Pull, the type test, the store into the third slot | [section 9.2](opcodes/kos-op-match-next-type-bind.md) |
+| MATCH_NEXT_CORE_TYPE_VAR / MATCH_NEXT_CORE_TYPE_FAST | EXTRA | Pull; the element must be an instance of the core type the ordinal names; no reference read | [section 9.2](opcodes/kos-op-match-next-core-type.md) |
+| MATCH_NEXT_CORE_TYPE_BIND_VAR / MATCH_NEXT_CORE_TYPE_BIND_FAST | EXTRA | Pull, the core type test, the store into the third slot | [section 9.2](opcodes/kos-op-match-next-core-type-bind.md) |
+| MATCH_CORE_TYPE | EXTRA | Peek: TOS must be an instance of the core type the ordinal names | [section 9.2](opcodes/kos-op-match-core-type.md) |
+| MATCH_CORE_TYPE_BIND_VAR / MATCH_CORE_TYPE_BIND_FAST | EXTRA | Peek: the core type test, then TOS stored into the slot | [section 9.2](opcodes/kos-op-match-core-type-bind.md) |
 | MATCH_NEXT_LITERAL_VAR / MATCH_NEXT_LITERAL_FAST | EXTRA | Pull; the element must equal the constant | [section 9.2](opcodes/kos-op-match-next-literal.md) |
 | MATCH_REST_VAR / MATCH_REST_FAST | EXTRA | Consume the remainder but the suffix; the minimum tail and suffix width packed | [section 9.2](opcodes/kos-op-match-rest.md) |
 | MATCH_REST_BIND_VAR / MATCH_REST_BIND_FAST | EXTRA | The remainder stored into the third slot | [section 9.2](opcodes/kos-op-match-rest-bind.md) |
@@ -1814,6 +1818,11 @@ interprets a pattern object at run time.
   loaded as any variable is, so a closure-captured name works. A
   predicate or extractor is a `CALL` from the same frame and flattens
   as any Koskari call does.
+- **Core types.** Seven type names are not variables: `pair`,
+  `symbol`, `keyword`, `int`, `str`, `tuple` and `list` in a pattern
+  lower to the `MATCH_CORE_TYPE` instructions, which carry the type as
+  an ordinal in a RAW field and test it directly. A binding of one of
+  those names in scope is never read by a pattern.
 
 `MATCH_CASE`, the one-instruction form of an arm over the matcher that
 preceded this family, keeps its number in the table. The compiler
@@ -1885,6 +1894,39 @@ never emits it and its handler raises.
 - **Stack**: No stack effect; jump to `a0` on a miss.
 - **Semantics**: `MATCH_NEXT_TYPE` with the passing element stored, boxed, into
   slot `a3`.
+
+### KOS_OP_MATCH_NEXT_CORE_TYPE_VAR / KOS_OP_MATCH_NEXT_CORE_TYPE_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Pull the next element from the cursor in `a1`; the element
+  read through `Datum` must be an instance of the core type whose ordinal is
+  `a2`: `pair`, `symbol`, `keyword`, `int`, `str`, `tuple` or `list`,
+  subclasses included, so a scoped symbol passes `symbol` and a bool passes
+  `int`. Nothing is read from the namespace; a binding of the type's name in
+  scope is never consulted. The cursor advances only on a pass.
+
+### KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_VAR / KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: `MATCH_NEXT_CORE_TYPE` with the passing element stored, boxed,
+  into slot `a3`. The head of every special form's pattern and of every
+  `syntax-rules` rule is this instruction over `symbol`.
+
+### KOS_OP_MATCH_CORE_TYPE
+
+- **Style**: EXTRA (LABEL, RAW)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: Peek. `elem` read through `Datum` must be an instance of the
+  core type whose ordinal is `a1`, as `MATCH_NEXT_CORE_TYPE` tests.
+
+### KOS_OP_MATCH_CORE_TYPE_BIND_VAR / KOS_OP_MATCH_CORE_TYPE_BIND_FAST
+
+- **Style**: EXTRA (LABEL, RAW, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: `MATCH_CORE_TYPE` with the passing `elem` stored into slot
+  `a2`.
 
 ### KOS_OP_MATCH_NEXT_LITERAL_VAR / KOS_OP_MATCH_NEXT_LITERAL_FAST
 

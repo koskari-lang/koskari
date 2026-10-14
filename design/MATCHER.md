@@ -78,6 +78,10 @@ Lowering emits:
 ("MATCHER", slot_names, extern_names, consts, nodes, entry_index)
 ```
 
+- A `TEST` node is `ANY`, `LITERAL` (a const index), `TYPE` or
+  `PREDICATE` (an extern index), or `CORE` (a `CoreType` ordinal: one of
+  `pair`, `symbol`, `keyword`, `int`, `str`, `tuple`, `list`, which
+  `TYPE(name)` lowers to without interning an extern).
 - The lowering to instructions uses only this tuple; `validate_frozen`
   checks it (indices in range, widths, a REST's position, no capture under
   NOT) before anything is emitted.
@@ -580,7 +584,8 @@ The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 | The arm | The subject stays on the stack across the arm chain. `lower_clause` emits the arm's `MATCH_*` instructions in place: the root test peeks the subject, a form opens a cursor in a temporary of the enclosing function, each pull or peek test jumps to the next arm's label on a miss, and a capture stores straight into the local the pattern names. A hit falls through to the arm body after a `POP` of the subject; the miss edges that a nested peek needs (a label, the pops down to the subject, the jump) are emitted after the body. |
 | Captures | Fast slots of the enclosing function, declared in the enclosing scope. Only a slot that fired is written; an unbound optional slot raises `NameError` when read. The subject is a single runtime value, never a source spine, so captures are raw. |
 | Guards | `[[PATTERN] when:/unless: COND BODY...]`. The guard compiles after the arm's instructions with the subject still on the stack; `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
-| Externs | Every name the pattern resolves, `int` and `str` included, is requested through `request_var` and read from the enclosing scope, so closure capture works and a store into a builtin is seen. A predicate or extractor is a `CALL` from the same frame and flattens; one that awaits does so in place. |
+| Externs | Every name the pattern resolves is requested through `request_var` and read from the enclosing scope, so closure capture works and a store into a user type is seen. A predicate or extractor is a `CALL` from the same frame and flattens; one that awaits does so in place. |
+| Core types | `int`, `str`, `list`, `tuple`, `pair`, `symbol` and `keyword` are not externs: a test against one is a `MATCH_CORE_TYPE` instruction carrying the type's ordinal, with no reference read, so a binding of the name in any scope never reaches a pattern. `CALLEDBY`, `SYMBOL`, `KEYWORD`, `PAIR`, `BINDINGS` and `FORMALS` rest on these, which is what lets a module bind `symbol` without breaking the macros it defines. |
 
 Behavioural contracts: bindings land in the **enclosing scope** and persist
 after the form (Python-consistent; arms are not isolated scopes); first arm

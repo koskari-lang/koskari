@@ -589,4 +589,35 @@ class TestMatchExternResolution(SpecialsTestCase):
         self.assertEqual(await fn("hi"), "no")
 
 
+    async def test_core_type_name_is_not_a_module_name(self):
+        # int in a pattern is the core type test; a module binding of
+        # int is neither read nor requested
+        src = """
+        (match data
+          [[x :: int] "int"]
+          [else: "no"])
+        """
+        expr, mod = self.compile_expr(src, data=7, int="not a type")
+        self.assertEqual(await expr(), "int")
+        expr, mod = self.compile_expr(src, data="s", int="not a type")
+        self.assertEqual(await expr(), "no")
+
+
+    async def test_macro_pattern_and_user_pattern_both_naming_int(self):
+        # a core type name goes through no hygiene table, so the
+        # macro's own (a :: int) and the user's (b :: int) coexist
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m v p) (match v [[#[(a :: int) p]] (+ a b)] [else: 0])]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+        expr, mod = self.compile_expr("(m (#list 1 2) (b :: int))", **defn)
+        self.assertEqual(3, await expr())
+        expr, mod = self.compile_expr('(m (#list 1 "x") (b :: int))', **defn)
+        self.assertEqual(0, await expr())
+
+
 # The end.

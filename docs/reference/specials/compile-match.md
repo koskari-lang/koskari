@@ -23,8 +23,10 @@ Per arm, the pattern is classified and compiled to match instructions
 in place, part of the enclosing function's own code. Every name the
 pattern references (types, classes, predicates, extractors, symbol
 mapping keys) is requested through resolution and loaded from the
-enclosing scope at match time, `int` and `str` as much as a user type, so
-closure-captured names work. The subject is kept on the stack across the
+enclosing scope at match time, so closure-captured names work, except
+the seven core type names `int`, `str`, `list`, `tuple`, `pair`,
+`symbol` and `keyword`, which the match instructions test directly and
+never load from the scope. The subject is kept on the stack across the
 arm chain (the same discipline as [`compile/switch`](compile-switch.md));
 a non-matching arm leaves it in place and falls to the next arm. The
 captured names are bound into the enclosing scope as the pattern walks

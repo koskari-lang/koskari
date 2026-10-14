@@ -354,6 +354,59 @@ KOS_MATCH_BODY(kos_match_next_type) {
 
 
 /**
+   MATCH_NEXT_CORE_TYPE and MATCH_NEXT_CORE_TYPE_BIND: pull from field
+   1, the element must be an instance of the core type whose ordinal
+   is the RAW field 2; the BIND twins store the boxed element into
+   field 3. Row LABEL, slot, RAW, slot.
+*/
+KOS_MATCH_BODY(kos_match_next_core_type) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOpCode op = (KosOpCode) KosOp_OP(insn);
+  int fast = op == KOS_OP_MATCH_NEXT_CORE_TYPE_FAST
+      || op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
+  int bind = op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_VAR
+      || op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  KosMatchStep step;
+  int r = KosMatch_Pull(cursor, &step);
+  Py_DECREF(cursor);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+
+  r = KosMatch_CoreTypeTest(step.elem, KosExtra_IMM(row, 2));
+  if (r != 1) {
+    KosMatch_StepClear(&step);
+    if (unlikely(r < 0))
+      RESULT_RAISE();
+    KOS_MATCH_MISS(row);
+  }
+
+  if (bind) {
+    PyObject *boxed = KosMatch_Box(&step);
+    if (unlikely(! boxed)) {
+      KosMatch_StepClear(&step);
+      RESULT_RAISE();
+    }
+    if (unlikely(kos_match_store(es, row, 3, fast, boxed) < 0)) {
+      KosMatch_StepClear(&step);
+      RESULT_RAISE();
+    }
+  }
+  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
    MATCH_NEXT_LITERAL: pull from field 1, the element must equal the
    constant in field 2. Row LABEL, slot, const.
 */
@@ -523,6 +576,38 @@ KOS_MATCH_BODY(kos_match_type) {
     RESULT_RAISE();
   int r = KosMatch_TypeTest(elem, type);
   Py_DECREF(type);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+
+  if (bind) {
+    Py_INCREF(elem);
+    if (unlikely(kos_match_store(es, row, 2, fast, elem) < 0))
+      RESULT_RAISE();
+  }
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH_CORE_TYPE and MATCH_CORE_TYPE_BIND: TOS must be an instance of
+   the core type whose ordinal is the RAW field 1; the BIND twins store
+   TOS into field 2. Row LABEL, RAW, slot.
+*/
+KOS_MATCH_BODY(kos_match_core_type) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOpCode op = (KosOpCode) KosOp_OP(insn);
+  int fast = op == KOS_OP_MATCH_CORE_TYPE_BIND_FAST;
+  int bind = op != KOS_OP_MATCH_CORE_TYPE;
+  (void) kos_match_delivery_;
+
+  PyObject *elem = kos_match_peek(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+
+  int r = KosMatch_CoreTypeTest(elem, KosExtra_IMM(row, 1));
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)

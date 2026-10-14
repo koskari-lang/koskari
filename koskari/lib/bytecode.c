@@ -4019,6 +4019,7 @@ fail:
 
 
 PyObject *KosCompareEnum = NULL;
+PyObject *KosCoreTypeEnum = NULL;
 
 
 /* IntEnum of the comparison selectors (KosCompare, bytecode.h), exposed as
@@ -4045,6 +4046,31 @@ static PyObject *create_compare_enum(void) {
   int_enum(enum_dict, KOS_COMPARE_, IS_SUBCLASS);
 
   return create_int_enum("Compare", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
+}
+
+
+/* IntEnum of the core types a pattern names by their bare spelling
+   (KosCoreType, matcher.h), exposed as koskari.lib.CoreType so the match
+   compiler and the MATCH_CORE_TYPE handlers share one ordinal set. */
+static PyObject *create_core_type_enum(void) {
+
+  PyObject *enum_dict = PyDict_New();
+  if (! enum_dict)
+    return NULL;
+
+  int_enum(enum_dict, KOS_CORE_, PAIR);
+  int_enum(enum_dict, KOS_CORE_, SYMBOL);
+  int_enum(enum_dict, KOS_CORE_, KEYWORD);
+  int_enum(enum_dict, KOS_CORE_, INT);
+  int_enum(enum_dict, KOS_CORE_, STR);
+  int_enum(enum_dict, KOS_CORE_, TUPLE);
+  int_enum(enum_dict, KOS_CORE_, LIST);
+
+  return create_int_enum("CoreType", enum_dict);
 
 fail:
   Py_DECREF(enum_dict);
@@ -4118,6 +4144,16 @@ int koskari_bytecode_init(PyObject *mod) {
   }
   KosCompareEnum = stuff;
 
+  stuff = create_core_type_enum();
+  if (! stuff) {
+    return -1;
+  }
+  if (PyDict_SetItemString(dict, "CoreType", stuff)) {
+    Py_DECREF(stuff);
+    return -1;
+  }
+  KosCoreTypeEnum = stuff;
+
   STR_CONST(_str_anon, "<anon>");
 
   return 0;
@@ -4130,6 +4166,7 @@ int koskari_bytecode_clear(PyObject *mod) {
   Py_CLEAR(KosOpStyleEnum);
   Py_CLEAR(KosOperandEnum);
   Py_CLEAR(KosCompareEnum);
+  Py_CLEAR(KosCoreTypeEnum);
   Py_CLEAR(_str_anon);
 
   return 0;

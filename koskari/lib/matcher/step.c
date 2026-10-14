@@ -361,6 +361,32 @@ int KosMatch_TypeTest(PyObject *elem, PyObject *type) {
 }
 
 
+int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core) {
+  PyObject *got = matcher_peel_datum(elem);
+
+  switch ((KosCoreType) core) {
+  case KOS_CORE_PAIR:
+    return KosPair_Check(got) ? 1 : 0;
+  case KOS_CORE_SYMBOL:
+    return KosSymbol_Check(got) ? 1 : 0;
+  case KOS_CORE_KEYWORD:
+    return KosKeyword_Check(got) ? 1 : 0;
+  case KOS_CORE_INT:
+    return PyLong_Check(got) ? 1 : 0;
+  case KOS_CORE_STR:
+    return PyUnicode_Check(got) ? 1 : 0;
+  case KOS_CORE_TUPLE:
+    return PyTuple_Check(got) ? 1 : 0;
+  case KOS_CORE_LIST:
+    return PyList_Check(got) ? 1 : 0;
+  case KOS_CORE_COUNT:
+    break;
+  }
+  PyErr_Format(PyExc_SystemError, "unknown core type ordinal %u", core);
+  return -1;
+}
+
+
 int KosMatch_LiteralTest(PyObject *elem, PyObject *lit) {
   PyObject *got = matcher_peel_datum(elem);
 

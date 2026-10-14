@@ -30,8 +30,8 @@ first clause that matches when a dispatcher is built over several.
 
 from .exceptions import SpecialError
 from .lib import (
-    Code, Compare, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle,
-    gensym, symbol, values)
+    Code, Compare, CoreType, FormalsSpec, Function, NamespaceSpec, OpCode,
+    OpStyle, gensym, symbol, values)
 
 
 __all__ = (
@@ -142,6 +142,8 @@ def validate_frozen(frozen):
                 ref(node[2], len(consts), "TEST_LITERAL ref_index", i)
             elif test in ('TYPE', 'PREDICATE'):
                 ref(node[2], len(externs), "TEST ref_index", i)
+            elif test == 'CORE':
+                ref(node[2], len(CoreType), "TEST_CORE ordinal", i)
             elif test != 'ANY':
                 raise ValueError(f"unknown test_kind: {test!r}")
         elif kind == 'CAPTURE':
@@ -942,6 +944,11 @@ class MatchLowering:
         return node[0] == 'TEST' and node[1] == 'TYPE'
 
 
+    def is_core_test(self, idx):
+        node = self.nodes[idx]
+        return node[0] == 'TEST' and node[1] == 'CORE'
+
+
     # --- entry points ---
 
 
@@ -1052,6 +1059,9 @@ class MatchLowering:
             elif self.is_type_test(sub):
                 type_ = self.externs[self.nodes[sub][2]]
                 self.emit(OpCode.MATCH_TYPE_BIND_VAR, m, type_, slot)
+            elif self.is_core_test(sub):
+                self.emit(
+                    OpCode.MATCH_CORE_TYPE_BIND_VAR, m, self.nodes[sub][2], slot)
             else:
                 self.emit_peek(sub, miss, depth, level)
                 self.emit(OpCode.MATCH_BIND_VAR, slot)
@@ -1134,6 +1144,8 @@ class MatchLowering:
             self.emit(OpCode.MATCH_LITERAL, m, self.consts[node[2]])
         elif test == 'TYPE':
             self.emit(OpCode.MATCH_TYPE_VAR, m, self.externs[node[2]])
+        elif test == 'CORE':
+            self.emit(OpCode.MATCH_CORE_TYPE, m, node[2])
         elif test == 'PREDICATE':
             self.emit(OpCode.DUP, 1)
             self.emit(OpCode.CALL_VAR, self.externs[node[2]], 1)
@@ -1251,6 +1263,8 @@ class MatchLowering:
             elif test == 'TYPE':
                 self.emit(
                     OpCode.MATCH_NEXT_TYPE_VAR, m, cur, self.externs[node[2]])
+            elif test == 'CORE':
+                self.emit(OpCode.MATCH_NEXT_CORE_TYPE_VAR, m, cur, node[2])
             else:
                 self.emit(OpCode.MATCH_NEXT_VAR, m, cur)
                 self.emit_peek_test(node, miss, depth + 1)
@@ -1328,6 +1342,9 @@ class MatchLowering:
         if self.is_type_test(sub):
             type_ = self.externs[subnode[2]]
             self.emit(OpCode.MATCH_NEXT_TYPE_BIND_VAR, m, cur, type_, slot)
+        elif self.is_core_test(sub):
+            self.emit(
+                OpCode.MATCH_NEXT_CORE_TYPE_BIND_VAR, m, cur, subnode[2], slot)
         elif subnode[0] == 'REST':
             counts = self.rest_counts(subnode[1], trailing)
             self.emit(OpCode.MATCH_REST_BIND_VAR, m, cur, counts, slot)

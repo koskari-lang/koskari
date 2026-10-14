@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, pair, symbol
+from koskari.lib import CoreType, cons, keyword, nil, pair, symbol
 from koskari.matcher import (
     BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
@@ -66,9 +66,23 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         node referencing that index
         """
 
-        frozen = TYPE("symbol").freeze()
-        self.assertEqual(frozen[2], ("symbol",))
+        frozen = TYPE("Point").freeze()
+        self.assertEqual(frozen[2], ("Point",))
         self.assertEqual(frozen[4], (("TEST", "TYPE", 0),))
+
+
+    def test_core_type_is_an_ordinal_not_an_extern(self):
+        """
+        A core type name lowers to a TEST/CORE node carrying the
+        CoreType ordinal and interns nothing
+        """
+
+        for name in ("pair", "symbol", "keyword", "int", "str", "tuple", "list"):
+            frozen = TYPE(name).freeze()
+            self.assertEqual(frozen[2], (), name)
+            self.assertEqual(
+                frozen[4], (("TEST", "CORE", int(CoreType[name.upper()])),),
+                name)
 
 
     def test_predicate_interns_extern(self):
@@ -98,9 +112,9 @@ class TestPrimitiveFreezeShapes(unittest.TestCase):
         whose subnode index references the TYPE
         """
 
-        frozen = CAPTURE("x", TYPE("symbol")).freeze()
+        frozen = CAPTURE("x", TYPE("Point")).freeze()
         self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("symbol",))
+        self.assertEqual(frozen[2], ("Point",))
         self.assertEqual(
             frozen[4],
             (("TEST", "TYPE", 0), ("CAPTURE", 0, 0)))
@@ -294,11 +308,11 @@ class TestInterning(unittest.TestCase):
 
     def test_extern_dedup(self):
         """
-        Two TYPE('symbol') references share extern idx 0
+        Two TYPE('Point') references share extern idx 0
         """
 
-        frozen = ONEOF(TYPE("symbol"), TYPE("symbol")).freeze()
-        self.assertEqual(frozen[2], ("symbol",))
+        frozen = ONEOF(TYPE("Point"), TYPE("Point")).freeze()
+        self.assertEqual(frozen[2], ("Point",))
 
 
     def test_class_extern_in_declaration_order(self):
@@ -307,9 +321,9 @@ class TestInterning(unittest.TestCase):
         order
         """
 
-        pat = CLASS("Point", FIELD(TYPE("int"), name="x"))
+        pat = CLASS("Point", FIELD(TYPE("Coord"), name="x"))
         frozen = pat.freeze()
-        self.assertEqual(frozen[2], ("Point", "int"))
+        self.assertEqual(frozen[2], ("Point", "Coord"))
 
 
 # === Build -> thaw -> match round-trips ===
@@ -343,7 +357,7 @@ class TestBuildAndMatch(unittest.TestCase):
         )
         m = pat.build()
         self.assertEqual(m.slots, ("name", "body"))
-        self.assertEqual(m.externs, ("symbol",))
+        self.assertEqual(m.externs, ())
         self.assertEqual(m.consts, ("::",))
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")

@@ -469,6 +469,10 @@ OP(MATCH_NEXT_TYPE_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull; the element 
 OP(MATCH_NEXT_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
 OP(MATCH_NEXT_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, VAR)  // pull, the type test, the store into the third slot
 OP(MATCH_NEXT_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, FASTVAR)
+OP(MATCH_NEXT_CORE_TYPE_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // pull; the element must be an instance of the core type the RAW ordinal names (KosCoreType), no reference read
+OP(MATCH_NEXT_CORE_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_NEXT_CORE_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, RAW, VAR)  // pull, the core type test, the store into the third slot
+OP(MATCH_NEXT_CORE_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, FASTVAR)
 OP(MATCH_NEXT_LITERAL_VAR, 0, EXTRA, LABEL, VAR, CONST, NOARG)  // pull; the element must equal the constant
 OP(MATCH_NEXT_LITERAL_FAST, 0, EXTRA, LABEL, FASTVAR, CONST, NOARG)
 OP(MATCH_REST_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // consume the remainder but the suffix; the minimum tail and suffix width packed
@@ -484,6 +488,9 @@ OP(MATCH_TYPE_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // peek: TOS must be an 
 OP(MATCH_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
 OP(MATCH_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // peek: the type test, then TOS stored into the second slot
 OP(MATCH_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_CORE_TYPE, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // peek: TOS must be an instance of the core type the RAW ordinal names
+OP(MATCH_CORE_TYPE_BIND_VAR, 0, EXTRA, LABEL, RAW, VAR, NOARG)  // peek: the core type test, then TOS stored into the slot
+OP(MATCH_CORE_TYPE_BIND_FAST, 0, EXTRA, LABEL, RAW, FASTVAR, NOARG)
 OP(MATCH_BIND_VAR, 0, VAR)  // peek: TOS stored into the slot, nothing popped
 OP(MATCH_BIND_FAST, 0, FASTVAR)
 OP(MATCH_CLASS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // peek: TOS must be an instance of the class in the slot, whose __match_args__ covers the positional count

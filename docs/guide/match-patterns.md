@@ -111,9 +111,9 @@ would in the body.
 
 Seven type names are the exception: `int`, `str`, `list`, `tuple`,
 `pair`, `symbol` and `keyword` in a pattern always mean the builtin
-types. They come from the matcher's own table, so a match arm reads
-nothing from the namespace for them, and rebinding one of those names
-in the enclosing scope does not change what the pattern tests:
+types. The pattern tests them directly, so a match arm reads nothing
+from the namespace for them, and rebinding one of those names in the
+enclosing scope does not change what the pattern tests:
 
 ```koskari
 define int float            ; does not reach the pattern below
