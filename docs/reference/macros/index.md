@@ -42,6 +42,7 @@ the REPL shows the expansion of any of them.
 | Macro | Does |
 |-------|------|
 | [`def`](compile-def.md) | Define a function and bind it in the current scope |
+| [`global`](compile-global.md) | Prefix over `var`, `def`, `class` and `syntax` that binds the form at the module |
 | [`class`](compile-class.md) | Define a class and bind it in the current scope |
 | [`super`](compile-super.md) | The superclass proxy inside a method |
 | [`decorate`](compile-decorate.md), [`decorate-subject`](compile-decorate-subject.md) | What `@` lines lower to, and the per-decorator dispatch |

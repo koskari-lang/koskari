@@ -123,10 +123,10 @@ var t (make-counter)
 (t)   ;; 2
 ```
 
-`var` declares a name in the current scope and `global` declares it at
+`var` declares a name in the current scope and `global var` declares it at
 the module, saying explicitly which scope a store should reach; see
 [`var`](../reference/specials/compile-var.md) and
-[`global`](../reference/specials/compile-global.md).
+[`global`](../reference/macros/compile-global.md).
 
 ## Recursion and named `let`
 

@@ -9,7 +9,7 @@
   `(var NAME type: TYPE VALUE)`
 - Unpacking: `(var PATTERN VALUE)` or `(var PATTERN)`, where **PATTERN**
   is a bracket list of names, nested lists, and a `*:` rest collector,
-  as in [compile/setq-values](compile-setq-values.md)
+  as in [compile/define-values](compile-define-values.md)
 
 **Use-case:** Bind a name in the scope the form appears in: the module at
 top level, a function's locals inside a function body, the class
@@ -27,12 +27,13 @@ value, evaluates **VALUE** and stores it. In a class body the type
 after `::` or `type:` is recorded in the class's `__annotations__`.
 The form's value is `None`.
 
-A pattern in the name position declares every name the pattern binds,
-then unpacks **VALUE** into them:
+A pattern in the name position lowers to
+[compile/define-values](compile-define-values.md), which declares every
+name the pattern binds and unpacks **VALUE** into them:
 
 ```koskari
 (var [a [b c] *: d] x)
-;; -> (begin (var a) (var b) (var c) (var d) (setq-values [a [b c] *: d] x))
+;; -> (define-values [a [b c] *: d] x)
 ```
 
 Without a value, `(var [a b])` declares each name and stores nothing.
@@ -64,7 +65,7 @@ def parse-endpoint [text]:
   values host (int port)
 ```
 
-**See also:** [compile/global](compile-global.md) to bind at the module
+**See also:** [compile/global](../macros/compile-global.md) to bind at the module
 from any depth, [def](../macros/compile-def.md),
 [compile/setq-values](compile-setq-values.md),
 [Bindings and refs](../../guide/bindings-and-refs.md).

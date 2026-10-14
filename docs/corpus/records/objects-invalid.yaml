@@ -95,7 +95,7 @@ verify:
   invalid: "class inside a function body binds Local as a local of make; after (make) returns, reading Local at the outer scope fails at eval with NameError: No such reference: Local"
 references:
   - reference/macros/compile-class.md
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - object

@@ -38,8 +38,9 @@ mix freely in one module:
 |---|---|
 | `var NAME VALUE` | `define NAME VALUE` |
 | `def NAME [FORMALS]: BODY` | `define [NAME FORMALS]: BODY` |
+| `def NAME :: T [FORMALS]: BODY` | `define [NAME :: T FORMALS]: BODY` |
 | `var [a b] VALUE` | `define-values [a b] VALUE` |
-| `global NAME VALUE` | `define-global NAME VALUE` |
+| `global var NAME VALUE` | `define-global NAME VALUE` |
 | `global def NAME [FORMALS]: BODY` | `define-global [NAME FORMALS]: BODY` |
 | `syntax NAME TRANSFORMER` | `define-syntax NAME TRANSFORMER` |
 
@@ -84,7 +85,7 @@ set! counter (+ counter 1)
 `incr!` and `decr!` are the same store for the two common updates. Inside
 a function, `set!` on a name with no binding in any enclosing scope is a
 compile error; declare the name first, with `var` for a local or
-`global` for a module name. At module level the store creates the module name.
+`global var` for a module name. At module level the store creates the module name.
 
 An inner function stores into the outer name it finds, so Python's
 `nonlocal` has no counterpart:

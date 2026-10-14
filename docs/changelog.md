@@ -18,8 +18,9 @@ meaning.
   binding it. `define-class` and `define-dataclass` are removed: write
   `@dataclass` above `class`. See
   [class](reference/macros/compile-class.md).
-- `global` binds at the module, and prefixes `def`, `class` and
-  `syntax`. `local` is removed.
+- `global` is a prefix over `var`, `def`, `class` and `syntax` that
+  binds the form at the module; `global var x` replaces the bare
+  `define-global x` shape. `local` is removed.
 - `define` takes Scheme's shape, `(define [f x] body...)` for a
   function and `(define x value)` for a value; the old
   `(define f [x] body...)` no longer matches. See

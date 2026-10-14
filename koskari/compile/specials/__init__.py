@@ -78,8 +78,9 @@ from .syntax import (
     special_compile_syntax_rules)
 from .thunk import special_gensym_thunk
 from .variables import (
-    special_define, special_define_global, special_define_values, special_delq,
-    special_global, special_globals, special_setq, special_setq_values,
+    special_define, special_define_global, special_define_global_values,
+    special_define_values, special_delq,
+    special_globals, special_setq, special_setq_values,
     special_takeq, special_var)
 
 
@@ -130,6 +131,7 @@ __all__ = (
     "special_del_item",
     "special_define",
     "special_define_global",
+    "special_define_global_values",
     "special_define_values",
     "special_delq",
     "special_dir",
@@ -145,7 +147,6 @@ __all__ = (
     "special_function",
     "special_ge",
     "special_gensym_thunk",
-    "special_global",
     "special_globals",
     "special_gt",
     "special_in",

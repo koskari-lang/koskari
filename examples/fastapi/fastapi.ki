@@ -45,14 +45,14 @@ def create-server [host: "127.0.0.1" port: 8000]:
 
 
 def start [host: "127.0.0.1" port: 8000]:
-    global server
+    global var server
     when (None? server):
         set! server (create-server host: host port: port)
     (server.serve)
 
 
 def stop []:
-    global server
+    global var server
     unless (None? server):
         (server.shutdown)
         set! server None
@@ -64,7 +64,7 @@ def stop []:
 def create-client []:
     import-from httpx AsyncClient
 
-    global client:
+    global var client:
         AsyncClient base_url: "http://127.0.0.1:8000/"
 
     global def GET [path: ""]:
@@ -80,7 +80,7 @@ def main []:
 
     if *interactive*:
         ;; global keeps the Task alive; the loop holds only a weak ref
-        global server-task (create-task (defer start))
+        global var server-task (create-task (defer start))
         (create-client)
         (await)
 

@@ -203,7 +203,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_global_declaration(self):
-        await self.check("global", "(begin (global t 4) t)", 4, t=100)
+        await self.check("global", "(begin (global var t 4) t)", 4, t=100)
 
 
 # The end.

@@ -112,15 +112,6 @@ def cmd_lockup [options]:
     run options
 
 
-def cmd_rewrite_define [options]:
-    """
-    Rewrite define-family forms to var, def, global, and syntax.
-    """
-
-    import-from tools.rewritedefine run
-    run options
-
-
 def build_parser [name]:
     """
     Construct the dispatcher argument parser.
@@ -155,7 +146,7 @@ def build_parser [name]:
     ; every unrelated invocation for about a quarter second, and it is
     ; the one tool driven interactively in a tight loop. It is run
     ; directly instead; see docs/corpus/CLAUDE.md.
-    import-from tools lockup matchbench opgrams opsizing rewritedefine
+    import-from tools lockup matchbench opgrams opsizing
     import-from tools.corpus export
 
     var po (sub.add_parser "opgrams"
@@ -182,11 +173,6 @@ def build_parser [name]:
         help: "write the wordmark lockup SVG from the icon SVG")
     (lockup.build_arguments pl)
     (pl.set_defaults func: cmd_lockup)
-
-    var pr (sub.add_parser "rewrite-define"
-        help: "rewrite define-family forms to var, def, global and syntax")
-    (rewritedefine.build_arguments pr)
-    (pr.set_defaults func: cmd_rewrite_define)
 
     return parser
 

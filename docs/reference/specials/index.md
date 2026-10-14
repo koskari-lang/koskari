@@ -18,10 +18,10 @@ special, a macro, and a call is in
 | Form | Does |
 |------|------|
 | [`var`](compile-var.md) | Bind a name in the current scope, with an optional type, or several names by unpacking |
-| [`global`](compile-global.md) | Bind a name at the module from any depth; `global def`, `global class`, `global syntax` |
 | [`define`](compile-define.md) | The Scheme-layer spelling of `var`, or of `def` when the name position is a pair `[NAME FORMALS ...]` |
-| [`define-global`](compile-define-global.md) | The Scheme-layer spelling of `global`, or of `global def` when the name position is a pair |
-| [`define-values`](compile-define-values.md) | The Scheme-layer spelling of `var` over a pattern |
+| [`define-global`](compile-define-global.md) | Bind a name at the module from any depth; what `global var` and `global def` lower to |
+| [`define-values`](compile-define-values.md) | Bind the names of a pattern in the current scope; what `var` over a pattern lowers to |
+| [`define-global-values`](compile-define-global-values.md) | Bind the names of a pattern at the module; what `global var` over a pattern lowers to |
 | [`function`](compile-function.md) | A named function value that is not bound |
 | [`lambda`](compile-lambda.md) | An anonymous function value; formals, defaults, rest collectors, annotations, by-ref |
 | [`let`](compile-let.md) | Lexical bindings for a body; named `let` for loops |

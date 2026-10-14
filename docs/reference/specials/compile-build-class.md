@@ -21,7 +21,7 @@ new class object (default metaclass is plain `type`; use `meta: MyMeta`
 in SUPERS for a custom metaclass). To bind the class to its name, use
 the [`class`](../macros/compile-class.md) macro, which expands to
 `(var NAME (build-class NAME SUPERS BODY ...))`; write `global class` to
-bind it at the module (see [compile/global](compile-global.md)), or
+bind it at the module (see [compile/global](../macros/compile-global.md)), or
 store the value under another name with [`var`](compile-var.md).
 
 **Behaviour:** The body runs in a fresh class namespace and the class is

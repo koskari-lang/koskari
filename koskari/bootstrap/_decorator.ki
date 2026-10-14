@@ -20,7 +20,7 @@ Portion of koskari.builtins
 let []:
   import-from functools update_wrapper
 
-  global def decorate-wraps [inner wrapper]:
+  define-global [decorate-wraps inner wrapper]:
     """
     Copies callable metadata from inner onto wrapper via
     functools.update_wrapper, returning wrapper. When inner is a
@@ -109,30 +109,50 @@ syntax decorate:
     case (decorate [decorators ...] (var name value)):
       var name (decorate [decorators ...] value)
 
+    case (decorate [decorators ...] (global var name value)):
+      define-global name (decorate [decorators ...] value)
+
     case (decorate [decorators ...] (global def name rest ...)):
-      global name (decorate [decorators ...] (function name rest ...))
+      define-global name (decorate [decorators ...] (function name rest ...))
 
     case (decorate [decorators ...] (global class name supers body ...)):
-      global name:
+      define-global name:
         decorate [decorators ...] (build-class name supers body ...)
 
     case (decorate [decorators ...] (class name supers body ...)):
       var name (decorate [decorators ...] (build-class name supers body ...))
 
-    ;; the Scheme define: a (NAME FORMALS ...) head is a function, a
-    ;; name is a value; the decorators wrap the value either way
+    ;; the Scheme define: a (NAME FORMALS ...) head is a function, with
+    ;; an optional return type beside the name; a name is a value; the
+    ;; decorators wrap the value either way
+    case (decorate [decorators ...] (define (name :: rtype formals ...) body ...)):
+      var name:
+        decorate [decorators ...] (function name :: rtype [formals ...] body ...)
+
+    case (decorate [decorators ...] (define (name type: rtype formals ...) body ...)):
+      var name:
+        decorate [decorators ...] (function name type: rtype [formals ...] body ...)
+
     case (decorate [decorators ...] (define (name formals ...) body ...)):
       var name (decorate [decorators ...] (function name [formals ...] body ...))
 
     case (decorate [decorators ...] (define name value)):
       var name (decorate [decorators ...] value)
 
+    case (decorate [decorators ...] (define-global (name :: rtype formals ...) body ...)):
+      define-global name:
+        decorate [decorators ...] (function name :: rtype [formals ...] body ...)
+
+    case (decorate [decorators ...] (define-global (name type: rtype formals ...) body ...)):
+      define-global name:
+        decorate [decorators ...] (function name type: rtype [formals ...] body ...)
+
     case (decorate [decorators ...] (define-global (name formals ...) body ...)):
-      global name:
+      define-global name:
         decorate [decorators ...] (function name [formals ...] body ...)
 
     case (decorate [decorators ...] (define-global name value)):
-      global name (decorate [decorators ...] value)
+      define-global name (decorate [decorators ...] value)
 
     case (decorate [d rest ...] fn):
       decorate-subject d (decorate [rest ...] fn)

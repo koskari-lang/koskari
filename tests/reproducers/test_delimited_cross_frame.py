@@ -59,7 +59,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global f (lambda []
+          (define-global f (lambda []
                               (shift k (call k 1))))
           (reset (call f)))
         """
@@ -76,7 +76,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global f (lambda []
+          (define-global f (lambda []
                               (shift k (call k 5))))
           (reset (+ 1 (call f))))
         """
@@ -94,7 +94,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global f (lambda [n]
+          (define-global f (lambda [n]
                               (+ n (shift k (call k 100)))))
           (reset (+ 1 (call f 2))))
         """
@@ -110,9 +110,9 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global inner (lambda []
+          (define-global inner (lambda []
                                   (shift k (call k 1))))
-          (global outer (lambda []
+          (define-global outer (lambda []
                                   (call inner)))
           (reset (call outer)))
         """
@@ -128,7 +128,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global f (lambda []
+          (define-global f (lambda []
                               (shift k "abandoned")))
           (reset (+ 1 (call f))))
         """
@@ -185,7 +185,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global f (lambda []
+          (define-global f (lambda []
                               (shift k (call k 1))))
           (reset (apply f #())))
         """
@@ -202,7 +202,7 @@ class TestDelimitedCrossFrameCapture(SpecialsTestCase):
 
         src = """
         (begin
-          (global f (lambda [a]
+          (define-global f (lambda [a]
                               (shift k (call k (+ a 1)))))
           (reset (call (partial f 10))))
         """

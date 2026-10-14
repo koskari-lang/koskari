@@ -71,7 +71,7 @@ class TestModuleIdentity(unittest.IsolatedAsyncioTestCase):
     async def test_rebound_global_is_read_from_python(self):
         self.write_ki('ki_ident_counter', """
         (var count 0)
-        (var bump (lambda [] (global count (+ count 1)) count))
+        (var bump (lambda [] (global var count (+ count 1)) count))
         """)
         mod = importlib.import_module('ki_ident_counter')
         self.assertEqual(await mod.bump(), 1)

@@ -6,13 +6,13 @@
 
 **Syntax:** Matches **`(define-syntax NAME TRANSFORMER)`** where **`TRANSFORMER`** is:
 
-- `(syntax-rules literals rule ...)` -> `(global compile/name (syntax-rules name literals rule ...))`
-- `(syntax-match rule ...)` -> `(global compile/name (syntax-match name rule ...))`
-- `(macro-rules literals rule ...)` -> `(global compile/name (macro-rules name literals rule ...))`
-- `(macro-match rule ...)` -> `(global compile/name (macro-match name rule ...))`
-- `(special-rules literals rule ...)` -> `(global compile/name (special-rules name literals rule ...))`
-- `(special-match rule ...)` -> `(global compile/name (special-match name rule ...))`
-- `(bare-syntax slot template)` -> `(global compile/name (bare-syntax name slot template))`
+- `(syntax-rules literals rule ...)` -> `(define-global compile/name (syntax-rules name literals rule ...))`
+- `(syntax-match rule ...)` -> `(define-global compile/name (syntax-match name rule ...))`
+- `(macro-rules literals rule ...)` -> `(define-global compile/name (macro-rules name literals rule ...))`
+- `(macro-match rule ...)` -> `(define-global compile/name (macro-match name rule ...))`
+- `(special-rules literals rule ...)` -> `(define-global compile/name (special-rules name literals rule ...))`
+- `(special-match rule ...)` -> `(define-global compile/name (special-match name rule ...))`
+- `(bare-syntax slot template)` -> `(define-global compile/name (bare-syntax name slot template))`
 - `(define-syntax name docstr (form ...))` -- re-expands with docstring appended via `append_doc`
 
 The transformer is bound under the `compile/` prefix whatever spelling the

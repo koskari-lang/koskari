@@ -2361,7 +2361,7 @@ verify:
   eval: list:[7,false]
 references:
   - reference/macros/compile-class.md
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - object
@@ -2385,7 +2385,7 @@ verify:
   eval: "0"
 references:
   - reference/layouts/layout-class.md
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - object

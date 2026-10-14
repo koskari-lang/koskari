@@ -168,8 +168,58 @@ class TestDefineSchemeShape(SpecialsTestCase):
 
 
     async def test_head_must_be_named(self):
-        with self.assertRaises(SpecialError):
+        with self.assertRaises(SyntaxMatchError):
             self.compile_expr("(define [1 x] x)")
+
+
+    async def test_typed_head_return_annotation(self):
+        src_str = """
+        (begin
+          (define [f :: int x] (mul x 2))
+          f)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
+        f = await expr()
+        self.assertIs(f.__annotations__['return'], int)
+        self.assertEqual(await f(5), 10)
+
+
+    async def test_typed_head_type_colon_return_annotation(self):
+        src_str = """
+        (begin
+          (define [g type: int x] (mul x 2))
+          g)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
+        g = await expr()
+        self.assertIs(g.__annotations__['return'], int)
+        self.assertEqual(await g(5), 10)
+
+
+    async def test_typed_head_without_formals(self):
+        src_str = "(begin (define [answer :: int] 42) answer)"
+        expr, mod = self.compile_expr(src_str, int=int)
+        answer = await expr()
+        self.assertIs(answer.__annotations__['return'], int)
+        self.assertEqual(await answer(), 42)
+
+
+    async def test_define_global_typed_head_from_body(self):
+        src_str = """
+        (begin
+          (define [setup]
+            (define-global [helper :: int y] (mul y 10))
+            None)
+          (setup)
+          helper)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
+                                      int=int)
+        helper = await expr()
+        self.assertIs(helper.__annotations__['return'], int)
+        self.assertEqual(await helper(2), 20)
 
 
     async def test_define_global_function_from_body(self):

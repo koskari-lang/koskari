@@ -11,15 +11,15 @@
 (var first ds)
 
 (class LoadKey []
-  (def __hash__ [self] (global dl (dict)) 1)
+  (def __hash__ [self] (global var dl (dict)) 1)
   (def __eq__ [self other] False))
 
 (class IncrKey []
-  (def __hash__ [self] (global di (dict)) 1)
+  (def __hash__ [self] (global var di (dict)) 1)
   (def __eq__ [self other] False))
 
 (class StoreKey []
-  (def __hash__ [self] (global ds (dict)) 1)
+  (def __hash__ [self] (global var ds (dict)) 1)
   (def __eq__ [self other] False))
 
 (var dm (dict))
@@ -27,7 +27,7 @@
 
 ;; rebinds only once armed, so the cell can be primed first
 (class MissKey []
-  (def __hash__ [self] (if armed (global dm (dict)) None) 1)
+  (def __hash__ [self] (if armed (global var dm (dict)) None) 1)
   (def __eq__ [self other] False))
 
 (var kl (LoadKey))
@@ -39,8 +39,8 @@
 (var incr (lambda () (incr! di[ki]) di))
 (var store (lambda (v) (set! ds[ks] v) ds))
 (var prime (lambda (v)
-  (global armed False)
+  (global var armed False)
   (set! dm[km] v)
-  (global armed True)))
+  (global var armed True)))
 (var miss (lambda () (incr! dm[km]) dm))
 (var current (lambda () #(dl di ds dm)))

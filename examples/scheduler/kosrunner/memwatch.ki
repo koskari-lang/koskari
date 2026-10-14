@@ -132,7 +132,7 @@ def _snapshot-report [top]:
             (set! stats[f"{frame.filename}:{frame.lineno}"]
                 #(stat.size stat.count))
 
-    global _snap
+    global var _snap
     var prev _snap
     set! _snap stats
 
@@ -196,7 +196,7 @@ def memory-report [top: 10]:
 
     var [collected counts] (memory-census)
 
-    global _samples
+    global var _samples
     incr! _samples
 
     ;; built as one string rather than logged with args, because it is

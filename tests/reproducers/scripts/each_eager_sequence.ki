@@ -4,7 +4,7 @@
 
 var src #[1 2 3]
 var gen (each [x src] (* x 10))
-global src #[7]
+global var src #[7]
 var after_rebind (list gen)
 
 class K []:

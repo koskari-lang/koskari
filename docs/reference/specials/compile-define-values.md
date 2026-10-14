@@ -1,12 +1,13 @@
 # compile/define-values
 **Symbol:** `compile/define-values`
 
-`define-values` is the Scheme-layer spelling of
-[`var`](compile-var.md) over a pattern.
+`define-values` is the special that
+[`var`](compile-var.md) over a pattern lowers to, and its Scheme spelling.
 
-**Syntax:** `(define-values PATTERN VALUE)`
+**Syntax:** `(define-values PATTERN VALUE)` or `(define-values PATTERN)`
 
-Same PATTERN shapes as `compile/setq-values`.
+Same PATTERN shapes as `compile/setq-values`. Without **VALUE** the
+pattern's names are declared and nothing is stored.
 
 **Use-case:** Introduce new bindings and assign by unpacking the value of VALUE
 according to PATTERN (parallel to `compile/define` for a single name).

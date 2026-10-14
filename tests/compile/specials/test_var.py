@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the compile/var, compile/global, and compile/build-class
+Tests for the compile/var, compile/define-global, and compile/build-class
 special forms.
 """
 
@@ -79,25 +79,69 @@ class TestVar(SpecialsTestCase):
 class TestGlobal(SpecialsTestCase):
 
     async def test_global_value(self):
-        expr, mod = self.compile_expr("(begin (global g 5) g)")
+        expr, mod = self.compile_expr("(begin (define-global g 5) g)")
         self.assertEqual(5, await expr())
         self.assertEqual(5, vars(mod)["g"])
 
 
     async def test_global_declare_then_setq(self):
-        expr, mod = self.compile_expr("(begin (global g) (setq g 6) g)")
+        expr, mod = self.compile_expr("(begin (define-global g) (setq g 6) g)")
         self.assertEqual(6, await expr())
 
 
     async def test_global_typed_value(self):
-        expr, mod = self.compile_expr("(begin (global g :: int 9) g)")
+        expr, mod = self.compile_expr("(begin (define-global g :: int 9) g)")
         self.assertEqual(9, await expr())
+
+
+    async def test_global_values_from_function_body(self):
+        src = """
+        (begin
+          (var f (lambda []
+            (define-global-values [a [b c] *: d] seq)
+            None))
+          (f)
+          d)
+        """
+        expr, mod = self.compile_expr(src, seq=(1, (2, 3), 4, 5))
+        self.assertEqual((4, 5), await expr())
+        ns = vars(mod)
+        self.assertEqual((1, 2, 3), (ns["a"], ns["b"], ns["c"]))
+
+
+    async def test_define_values_pattern_only_declares(self):
+        src = """
+        (begin
+          (define-values [a b])
+          (setq a 1)
+          (setq b 2)
+          b)
+        """
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(2, await expr())
+        self.assertEqual(1, vars(mod)["a"])
+
+
+    async def test_global_values_pattern_only_declares(self):
+        src = """
+        (begin
+          (var f (lambda []
+            (define-global-values [a b])
+            (setq a 1)
+            (setq b 2)
+            None))
+          (f)
+          b)
+        """
+        expr, mod = self.compile_expr(src)
+        self.assertEqual(2, await expr())
+        self.assertEqual(1, vars(mod)["a"])
 
 
     async def test_global_from_function_body(self):
         src = """
         (begin
-          (var f (lambda [] (global counter 10) None))
+          (var f (lambda [] (define-global counter 10) None))
           (f)
           counter)
         """

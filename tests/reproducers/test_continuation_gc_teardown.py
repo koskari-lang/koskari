@@ -44,7 +44,7 @@ SHIFT_SRC = """
 (var leak-k None)
 
 (var capture-and-abandon (lambda [x]
-  (global leak-k None)
+  (global var leak-k None)
   (reset
     (+ x (shift k (begin (setq leak-k k) 100))))))
 

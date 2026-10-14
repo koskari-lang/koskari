@@ -20,7 +20,7 @@ resolved forward reference). A leading string in `BODY` becomes `__doc__`.
 a closure self-binding for `NAME` at `BUILD_FUNCTION` time. The name in the
 body resolves via outer or module bindings instead -- e.g. after decorators wrap
 the stored definition, or when [def](../macros/compile-def.md) or
-[`global def`](compile-global.md) stores the function and recursive calls
+[`global def`](../macros/compile-global.md) stores the function and recursive calls
 use that binding.
 
 **Behaviour:** Same pipeline as `compile/lambda` via `helper_function` with

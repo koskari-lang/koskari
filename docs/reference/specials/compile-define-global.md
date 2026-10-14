@@ -1,14 +1,15 @@
 # compile/define-global
 **Symbol:** `compile/define-global`
 
-`define-global` is the Scheme-layer spelling of
-[`global`](compile-global.md) and `global def`.
+`define-global` is the special that [`global var`](../macros/compile-global.md)
+and `global def` lower to, and the Scheme spelling of both.
 
 **Syntax:** The arms of [compile/define](compile-define.md), binding at
 the module:
 
 - Function: `(define-global [NAME FORMALS ...] BODY ...)` or
-  `(define-global (NAME FORMALS ...) BODY ...)`
+  `(define-global (NAME FORMALS ...) BODY ...)`, with an optional
+  `:: TYPE` or `type: TYPE` return type after **NAME** inside the head
 - Declaration only: `(define-global NAME)`, `(define-global NAME :: TYPE)`,
   or `(define-global NAME type: TYPE)`
 - Declare and store: `(define-global NAME VALUE)`,
@@ -27,7 +28,7 @@ level it binds as [`define`](compile-define.md) does.
 **Behaviour:** A function head stores
 `(function NAME FORMALS ... BODY ...)` into the module binding
 **NAME**, as `(global def NAME [FORMALS ...] BODY ...)` does. A symbol
-binds the module name as [`global`](compile-global.md) does: with a
+binds the module name as [`global var`](../macros/compile-global.md) does: with a
 value it evaluates and stores it, without one it stores nothing. The
 form's value is `None`.
 
@@ -62,5 +63,5 @@ it does not unpack.
    (inc)))
 ```
 
-**See also:** [compile/global](compile-global.md),
+**See also:** [compile/global](../macros/compile-global.md),
 [compile/define](compile-define.md), [def](../macros/compile-def.md).

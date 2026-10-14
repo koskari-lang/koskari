@@ -7,7 +7,7 @@ building a class and binding it to **NAME** in the scope the form
 appears in, as [`var`](../specials/compile-var.md) binds. At the top of
 a module **NAME** is a module global; inside a function body it is a
 local of that function. To bind at the module from inside a body, write
-`global class`; see [compile/global](../specials/compile-global.md).
+`global class`; see [compile/global](compile-global.md).
 
 **SUPERS** is the base list, empty for no explicit base, with an
 optional `meta: Metaclass` keyword. **BODY** runs in the class

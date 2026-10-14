@@ -53,12 +53,12 @@ tags:
 notes: module-level global slot; pattern from test_resolution_model nested counter tests
 ---
 id: variable-global-declare-001
-feature: special/compile/global
-source: (begin (global g) (setq g 5) g)
+feature: macro/compile/global
+source: (begin (global var g) (setq g 5) g)
 verify:
   eval: "5"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -570,16 +570,16 @@ tags:
 notes: "recreates obj locally so del! does not mutate the shared fixture; del! (attr obj count) removes the count attribute"
 ---
 id: variable-global-value-002
-feature: special/compile/global
+feature: macro/compile/global
 source: |-
-  (begin (global g) (setq g 99) g)
+  (begin (global var g) (setq g 99) g)
   
 verify:
-  read: (begin (global g) (setq g 99) g)
-  expand: (begin (global g) (setq g 99) g)
+  read: (begin (global var g) (setq g 99) g)
+  expand: (begin (global var g) (setq g 99) g)
   eval: "99"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -590,14 +590,14 @@ tags:
 notes: declare global slot, assign via setq, then read back
 ---
 id: variable-global-expand-003
-feature: special/compile/global
+feature: macro/compile/global
 source: |-
   (global def sq [x] (* x x))
   
 verify:
-  expand: (global sq (function sq [x] (* x x)))
+  expand: (define-global sq (function sq [x] (* x x)))
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -630,10 +630,9 @@ source: |-
   (var [a [b c] *: d] (values 1 (values 2 3) 4 5))
   
 verify:
-  expand: "(begin (var a) (var b) (var c) (var d) (setq-values [a [b c] *: d] (values 1 (values 2 3) 4 5)))"
+  expand: "(define-values [a [b c] *: d] (values 1 (values 2 3) 4 5))"
 references:
   - reference/specials/compile-var.md
-  - reference/specials/compile-setq-values.md
 stability: evolving
 tags:
   - variable
@@ -1363,16 +1362,17 @@ id: variable-var-pattern-declare-003
 feature: special/compile/var
 source: (var [a b])
 verify:
-  expand: (begin (var a) (var b))
+  expand: (define-values [a b])
 references:
   - reference/specials/compile-var.md
+  - reference/specials/compile-define-values.md
 stability: evolving
 tags:
   - variable
   - special
   - var
   - local-binding
-notes: a pattern with no value only declares each name
+notes: a value-less pattern lowers to define-values, which declares each name and stores nothing
 ---
 id: variable-var-pattern-declare-004
 feature: special/compile/var
@@ -1414,27 +1414,27 @@ tags:
 notes: var over a pattern inside a function body declares function locals
 ---
 id: variable-global-function-body-004
-feature: special/compile/global
-source: (begin (def setup [] (global counter 10) None) (setup) counter)
+feature: macro/compile/global
+source: (begin (def setup [] (global var counter 10) None) (setup) counter)
 verify:
   eval: "10"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
   - special
   - global
   - module-global
-notes: global NAME VALUE inside a function body binds and stores at the module
+notes: global var NAME VALUE inside a function body binds and stores at the module
 ---
 id: variable-global-declare-function-005
-feature: special/compile/global
-source: (begin (var hits 0) (def bump [] (global hits) (set! hits (+ hits 1))) (bump) (bump) hits)
+feature: macro/compile/global
+source: (begin (var hits 0) (def bump [] (global var hits) (set! hits (+ hits 1))) (bump) (bump) hits)
 verify:
   eval: "2"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -1442,15 +1442,15 @@ tags:
   - global
   - module-global
   - mutate
-notes: (global hits) with no value makes the function's stores reach the module binding
+notes: (global var hits) with no value makes the function's stores reach the module binding
 ---
 id: variable-global-pattern-006
-feature: special/compile/global
-source: (global [lo hi] (values 1 9))
+feature: macro/compile/global
+source: (global var [lo hi] (values 1 9))
 verify:
-  expand: (begin (global lo) (global hi) (setq-values [lo hi] (values 1 9)))
+  expand: (define-global-values [lo hi] (values 1 9))
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -1458,15 +1458,15 @@ tags:
   - global
   - module-global
   - destructure
-notes: a pattern binds each name at the module, then unpacks through setq-values
+notes: a pattern lowers to define-global-values, which binds each name at the module and unpacks
 ---
 id: variable-global-pattern-007
-feature: special/compile/global
-source: (begin (def setup [] (global [lo hi] (values 1 9)) None) (setup) (+ lo hi))
+feature: macro/compile/global
+source: (begin (def setup [] (global var [lo hi] (values 1 9)) None) (setup) (+ lo hi))
 verify:
   eval: "10"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -1477,12 +1477,12 @@ tags:
 notes: unpacking from inside a function body stores every name at the module
 ---
 id: variable-global-def-008
-feature: special/compile/global
+feature: macro/compile/global
 source: (begin (def setup [] (global def sq [x] (* x x)) None) (setup) (sq 4))
 verify:
   eval: "16"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
   - reference/macros/compile-def.md
 stability: evolving
 tags:
@@ -1493,7 +1493,7 @@ tags:
 notes: global def inside a function body binds the function at the module
 ---
 id: variable-global-def-block-009
-feature: special/compile/global
+feature: macro/compile/global
 source: |-
   def setup []:
     global def square [x]:
@@ -1505,7 +1505,7 @@ verify:
   read: (begin (def setup [] (global def square [x] (* x x))) (setup) (square 4))
   eval: "16"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -1516,12 +1516,12 @@ tags:
 notes: block form of global def inside a function body
 ---
 id: variable-global-class-010
-feature: special/compile/global
+feature: macro/compile/global
 source: (global class Box [] (var size 3))
 verify:
-  expand: (global Box (build-class Box [] (var size 3)))
+  expand: (define-global Box (build-class Box [] (var size 3)))
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
   - reference/specials/compile-build-class.md
 stability: evolving
 tags:
@@ -1533,12 +1533,12 @@ tags:
 notes: global class builds the class with build-class and binds it at the module
 ---
 id: variable-global-class-011
-feature: special/compile/global
+feature: macro/compile/global
 source: (begin (def setup [] (global class Box [] (var size 3)) None) (setup) Box.size)
 verify:
   eval: "3"
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable
@@ -1549,12 +1549,12 @@ tags:
 notes: a class defined with global class inside a function body is bound at the module
 ---
 id: variable-global-syntax-012
-feature: special/compile/global
+feature: macro/compile/global
 source: (global syntax twice (syntax-rules [] [(twice x) (* 2 x)]))
 verify:
   expand: (define-syntax twice (syntax-rules [] [(twice x) (* 2 x)]))
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
   - reference/macros/compile-define-syntax.md
 stability: evolving
 tags:
@@ -1566,12 +1566,12 @@ tags:
 notes: global syntax lowers to define-syntax, binding compile/twice at the module
 ---
 id: variable-global-syntax-013
-feature: special/compile/global
+feature: macro/compile/global
 source: (begin (def setup [] (global syntax twice (syntax-rules [] [(twice x) (* 2 x)])) None) (setup) (attr (type compile/twice) __name__))
 verify:
   eval: '"Syntax"'
 references:
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - variable

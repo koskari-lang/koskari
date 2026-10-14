@@ -2,7 +2,7 @@ id: syntax-define-syntax-sr-expand-001
 feature: macro/compile/define-syntax
 source: "(define-syntax unless (syntax-rules unless (else:) ((unless test body ... else: alt) (cond (test alt) (else: (begin body ...)))) ((unless test body ...) (cond (test null) (else: (begin body ...))))))"
 verify:
-  expand: "(global compile/unless (syntax-rules unless unless (else:) ...))"
+  expand: "(define-global compile/unless (syntax-rules unless unless (else:) ...))"
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -16,7 +16,7 @@ id: syntax-define-syntax-sm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax double (syntax-match [(double (VALUE x)) (+ x x)]))
 verify:
-  expand: (global compile/double (syntax-match double ...))
+  expand: (define-global compile/double (syntax-match double ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -31,7 +31,7 @@ id: syntax-define-syntax-mr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-rules [] [(ident x) x]))
 verify:
-  expand: (global compile/ident (macro-rules ident [] [(ident x) x]))
+  expand: (define-global compile/ident (macro-rules ident [] [(ident x) x]))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -46,7 +46,7 @@ id: syntax-define-syntax-mm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (macro-match [(ident (VALUE x)) x]))
 verify:
-  expand: (global compile/ident (macro-match ident ...))
+  expand: (define-global compile/ident (macro-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -61,7 +61,7 @@ id: syntax-define-syntax-spr-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-rules [] [(c (ident x)) x.datum]))
 verify:
-  expand: (global compile/ident (special-rules ident [] ...))
+  expand: (define-global compile/ident (special-rules ident [] ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -76,7 +76,7 @@ id: syntax-define-syntax-spm-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax ident (special-match [(compiler (ident (VALUE x))) x.datum]))
 verify:
-  expand: (global compile/ident (special-match ident ...))
+  expand: (define-global compile/ident (special-match ident ...))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -870,7 +870,7 @@ id: syntax-define-syntax-bare-expand-001
 feature: macro/compile/define-syntax
 source: (define-syntax greeting (bare-syntax me (quote hello)))
 verify:
-  expand: (global compile/greeting (bare-syntax greeting me (quote hello)))
+  expand: (define-global compile/greeting (bare-syntax greeting me (quote hello)))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving
@@ -1548,7 +1548,7 @@ source: |-
   
 verify:
   read: (define-syntax mk-getter (syntax-rules [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
-  expand: (global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
+  expand: (define-global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote-syntax secret)])))]))
 references:
   - guide/hygiene.md
   - reference/specials/compile-quasiquote-syntax.md
@@ -1576,7 +1576,7 @@ source: |-
   
 verify:
   read: (define-syntax mk-getter (syntax-rules [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
-  expand: (global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
+  expand: (define-global compile/mk-getter (syntax-rules mk-getter [] [(mk-getter name val) (begin (define secret val) (define-syntax name (macro-rules [] [(name) (quasiquote secret)])))]))
 references:
   - guide/hygiene.md
   - reference/specials/compile-quasiquote.md
@@ -1599,7 +1599,7 @@ source: |-
     (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
 verify:
   read: (define-syntax set-slot (syntax-rules [] [(set-slot v) (define (datumq shared-slot) v)]))
-  expand: (global compile/set-slot (syntax-rules set-slot [] [(set-slot v) (define (datumq shared-slot) v)]))
+  expand: (define-global compile/set-slot (syntax-rules set-slot [] [(set-slot v) (define (datumq shared-slot) v)]))
 references:
   - guide/hygiene.md
   - guide/macros-and-hygiene.md
@@ -1624,7 +1624,7 @@ source: |-
          (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
 verify:
   read: (define-syntax make-setter (syntax-rules [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
-  expand: (global compile/make-setter (syntax-rules make-setter [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
+  expand: (define-global compile/make-setter (syntax-rules make-setter [] [(make-setter mname) (define-syntax mname (syntax-rules [] [(mname v) (define (datumq (datumq slot)) v)]))]))
 references:
   - guide/hygiene.md
 stability: evolving
@@ -1647,7 +1647,7 @@ source: |-
          (macro-rules [] [(mname) `(define ,((datumq datumq) other) 0)]))]))
 verify:
   read: (define-syntax make-raw (syntax-rules [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
-  expand: (global compile/make-raw (syntax-rules make-raw [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
+  expand: (define-global compile/make-raw (syntax-rules make-raw [] [(make-raw mname) (define-syntax mname (macro-rules [] [(mname) (quasiquote (define (unquote ((datumq datumq) other)) 0))]))]))
 references:
   - guide/hygiene.md
 stability: evolving

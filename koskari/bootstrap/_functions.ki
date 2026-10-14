@@ -17,6 +17,28 @@ Portion of koskari.builtins
 """
 
 
+syntax def:
+  """
+  Defines a function and binds it to its name in the scope the form
+  appears in. A return type may follow the name as :: TYPE.
+  """
+
+  syntax-rules []:
+    case (def name rest ...):
+      (var name (function name rest ...))
+
+
+extend-syntax global:
+  """
+  Followed by def, binds the function at the module rather than in the
+  scope the form appears in.
+  """
+
+  syntax-rules [def]:
+    case (global def name rest ...):
+      (define-global name (function name rest ...))
+
+
 syntax function-compose:
   """
   Composes multiple functions into a single function, eg.::

@@ -250,7 +250,7 @@ syntax bind!:
       (bindq name value)
 
 
-def environ-ref [key: None default: None]:
+define [environ-ref key: None default: None]:
   unless key:
     raise (ValueError "environ-ref requires a non-empty key")
 
@@ -385,6 +385,43 @@ syntax attr*:
       (attr* (attr obj name) rest ...)
 
 
+syntax global:
+  """
+  A prefix over a binding form, binding it at the module rather than
+  in the scope the form appears in. global var takes the shapes of var
+  and lowers to define-global; global syntax lowers to define-syntax.
+  The def and class arms are added where those forms are defined.
+  """
+
+  macro-match:
+    case (global var (PAIR pattern) (BIND value)):
+      `(define-global-values ,pattern ,value)
+
+    case (global var (PAIR pattern)):
+      `(define-global-values ,pattern)
+
+    case (global var (SYMBOL name) (REST rest)):
+      `(define-global ,name ,@rest)
+
+    case (global syntax (SYMBOL name) (REST rest)):
+      `(define-syntax ,name ,@rest)
+
+
+extend-syntax var:
+  """
+  A pattern in the name position declares every name the pattern binds
+  and unpacks the value into them, through define-values. Without a
+  value the names are only declared.
+  """
+
+  macro-match:
+    case (var (PAIR pattern) (BIND value)):
+      `(define-values ,pattern ,value)
+
+    case (var (PAIR pattern)):
+      `(define-values ,pattern)
+
+
 syntax declare-exports:
   """
   Declare the module's exported features
@@ -401,17 +438,17 @@ syntax declare-exports:
 
   expands to::
 
-    (global __features__ #("name1" "name2" ...))
+    (define-global __features__ #("name1" "name2" ...))
   """
 
   macro-rules []:
     case (declare-exports):
-      `(global ,(datum '__features__) #())
+      `(define-global ,(datum '__features__) #())
     case (declare-exports [names ...]):
-      `(global ,(datum '__features__)
+      `(define-global ,(datum '__features__)
         #(,@(sorted (set (list-each [n names] (str n.datum))))))
     case (declare-exports names ...):
-      `(global ,(datum '__features__)
+      `(define-global ,(datum '__features__)
         #(,@(sorted (set (list-each [n names] (str n.datum))))))
 
 

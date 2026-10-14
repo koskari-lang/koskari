@@ -328,7 +328,7 @@ syntax counter:
   syntax-rules []:
     counter:
       begin:
-        global hits 0
+        global var hits 0
         set! hits (+ hits 1)
         hits
 

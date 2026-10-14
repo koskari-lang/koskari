@@ -1448,7 +1448,7 @@ verify:
   eval: "9"
 references:
   - reference/macros/compile-decorate.md
-  - reference/specials/compile-global.md
+  - reference/macros/compile-global.md
 stability: evolving
 tags:
   - function

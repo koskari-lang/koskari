@@ -10,7 +10,7 @@ take every shape [`lambda`](../specials/compile-lambda.md) accepts. A
 `:: TYPE` after the name passes through to
 [`function`](../specials/compile-function.md) as the return annotation.
 To bind the function at the module from inside a body, write
-`global def`; see [compile/global](../specials/compile-global.md).
+`global def`; see [compile/global](compile-global.md).
 
 `def` takes a name, formals, and a body, never a plain value:
 `(def x 1)` expands to `(var x (function x 1))`, which fails to compile

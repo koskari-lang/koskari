@@ -136,6 +136,46 @@ class TestDef(BindingFormsCase):
 
 class TestGlobalPrefix(BindingFormsCase):
 
+    async def test_global_var(self):
+        ns = await self.load("""
+        var count 5
+        def zero []:
+          global var count 0
+        (zero)
+        """)
+        self.assertEqual(0, ns['count'])
+        self.assertNotIn('var', ns)
+
+
+    async def test_global_var_declare_then_store(self):
+        ns = await self.load("""
+        var hits 0
+        def bump []:
+          global var hits
+          set! hits (+ hits 1)
+        (bump)
+        (bump)
+        """)
+        self.assertEqual(2, ns['hits'])
+
+
+    async def test_global_var_typed(self):
+        ns = await self.load("""
+        def setup []:
+          global var g :: int 9
+        (setup)
+        """)
+        self.assertEqual(9, ns['g'])
+
+
+    async def test_global_bare_name_is_wrong_usage(self):
+        with self.assertRaises(SyntaxMatchError):
+            await self.load("""
+            def setup []:
+              global x 1
+            """)
+
+
     async def test_global_def(self):
         ns = await self.load("""
         def setup []:
@@ -160,7 +200,7 @@ class TestGlobalPrefix(BindingFormsCase):
     async def test_global_pattern(self):
         ns = await self.load("""
         def setup []:
-          global [p q] #[8 9]
+          global var [p q] #[8 9]
         (setup)
         """)
         self.assertEqual((8, 9), (ns['p'], ns['q']))
@@ -169,7 +209,7 @@ class TestGlobalPrefix(BindingFormsCase):
     async def test_global_pattern_without_value(self):
         ns = await self.load("""
         def setup []:
-          global [p q]
+          global var [p q]
           set! p 1
           set! q 2
         (setup)
@@ -355,6 +395,15 @@ class TestDecorators(BindingFormsCase):
         self.assertEqual(1003, demand_call(ns['plus2'], 1))
 
 
+    async def test_decorated_typed_scheme_define(self):
+        ns = await self.load(dedent(self.PRELUDE) + dedent("""
+        @wrap
+        define [plus3 :: int x]:
+          + x 3
+        """))
+        self.assertEqual(1004, demand_call(ns['plus3'], 1))
+
+
     async def test_decorated_var(self):
         ns = await self.load(dedent(self.PRELUDE) + dedent("""
         @wrap
@@ -362,6 +411,17 @@ class TestDecorators(BindingFormsCase):
           lambda [x] x
         """))
         self.assertEqual(1005, demand_call(ns['ident'], 5))
+
+
+    async def test_decorated_global_var(self):
+        ns = await self.load(dedent(self.PRELUDE) + dedent("""
+        def setup []:
+          @wrap
+          global var gident:
+            lambda [x] x
+        (setup)
+        """))
+        self.assertEqual(1007, demand_call(ns['gident'], 7))
 
 
     async def test_decorated_global_def(self):

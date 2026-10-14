@@ -15,8 +15,8 @@
 koskari.compile.specials.variables
 
 Special form handlers for compile/setq, compile/setq-values,
-compile/define-values, compile/delq, compile/define, compile/var,
-compile/global, and compile/globals.
+compile/define-values, compile/define-global-values, compile/delq,
+compile/define, compile/var, compile/define-global, and compile/globals.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -24,13 +24,13 @@ compile/global, and compile/globals.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...hygiene import binding_atom
-from ...lib import OpCode, cons, symbol
+from ...lib import OpCode, cons, keyword, nil, symbol
 from ...matcher import (
-    CALLEDBY, DEFINE, LITERAL_KW, MATCH, PAIR, REST, SYMBOL, VALUE)
+    CALLEDBY, DEFINE, LIST, LITERAL_KW, MATCH, PAIR, REST, SYMBOL,
+    VALUE)
 from ...syntax import special
-from ...types import is_pair, is_symbol
+from ...types import is_pair
 from ..helpers import unpack_lhs_bind_symbols, using_unpack_helper
 
 
@@ -114,28 +114,82 @@ def special_setq_values(compiler, caps):
     return frag
 
 
+# the define-values shapes: a pattern with a value to unpack, or a
+# pattern alone, which declares its names and stores nothing
+_VALUES_DEFINE_PATTERNS = _VALUES_BIND_PATTERNS + [
+    MATCH(CALLEDBY(), PAIR("lhs")),
+]
+
+
 @builtin("compile/define-values")
-@special("compile/define-values", patterns=_VALUES_BIND_PATTERNS, unpack="match")
+@special("compile/define-values", patterns=_VALUES_DEFINE_PATTERNS,
+         unpack="match")
 def special_define_values(compiler, caps):
     """
-    Compile (compile/define-values PATTERN VALUE). Evaluate VALUE, then bind
-    fresh names from PATTERN (symbol or unpack list, same shape as
-    compile/setq-values)
+    Compile (compile/define-values PATTERN VALUE), which evaluates VALUE
+    and binds fresh names from PATTERN (symbol or unpack list, same
+    shape as compile/setq-values), or (compile/define-values PATTERN),
+    which declares the pattern's names and stores nothing
     """
 
     called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
 
     lhs_mr = caps["lhs"]
-    expr_mr = caps["expr"]
+    lhs = lhs_mr.datum
 
     frag = compiler.fragment(called_by)
 
-    lhs = lhs_mr.datum
+    if "expr" not in caps:
+        for namesym in unpack_lhs_bind_symbols(lhs, flatten=True):
+            frag.declare_var(namesym, position=pos)
+        frag.instruction(OpCode.CONST, None)
+        return frag
+
+    expr_mr = caps["expr"]
 
     frag.position(expr_mr.position)
     frag.merge(compiler.full_compile(expr_mr.datum))
     frag.merge(
         using_unpack_helper(compiler, lhs, declare=True))
+    frag.instruction(OpCode.CONST, None)
+
+    return frag
+
+
+@builtin("compile/define-global-values")
+@special("compile/define-global-values", patterns=_VALUES_DEFINE_PATTERNS,
+         unpack="match")
+def special_define_global_values(compiler, caps):
+    """
+    Compile (compile/define-global-values PATTERN VALUE), which evaluates
+    VALUE and binds the names of PATTERN (symbol or unpack list, same
+    shape as compile/define-values) at the module from any depth, or
+    (compile/define-global-values PATTERN), which binds the names at the
+    module and stores nothing
+    """
+
+    called_by = caps["called-by"].datum
+    pos = caps["called-by"].position
+
+    lhs_mr = caps["lhs"]
+    lhs = lhs_mr.datum
+
+    frag = compiler.fragment(called_by)
+
+    for namesym in unpack_lhs_bind_symbols(lhs, flatten=True):
+        frag.request_global(namesym, position=pos)
+
+    if "expr" not in caps:
+        frag.instruction(OpCode.CONST, None)
+        return frag
+
+    expr_mr = caps["expr"]
+
+    frag.position(expr_mr.position)
+    frag.merge(compiler.full_compile(expr_mr.datum))
+    frag.merge(
+        using_unpack_helper(compiler, lhs, declare=False))
     frag.instruction(OpCode.CONST, None)
 
     return frag
@@ -212,17 +266,24 @@ def emit_value(compiler, frag, caps, namesym):
     return frag
 
 
-def emit_function(compiler, frag, head, body, namesym):
+def emit_function(compiler, frag, caps, namesym):
     """
     Finish a define-shaped fragment whose name position holds
-    (NAME FORMALS...): compile (function NAME FORMALS BODY...) and store
-    it to the name. The form's result is None
+    (NAME FORMALS...) or (NAME :: TYPE FORMALS...): compile
+    (function NAME [:: TYPE] FORMALS BODY...) and store it to the
+    name. The form's result is None
 
     :return: the fragment
     """
 
-    _name, formals = head
-    val_expr = cons(symbol("function"), namesym, formals, body)
+    formals = caps["formals"].datum if "formals" in caps else nil
+    body = caps["body"].datum if "body" in caps else nil
+    if "return_type" in caps:
+        val_expr = cons(
+            symbol("function"), namesym, keyword("::"),
+            caps["return_type"].datum, formals, body)
+    else:
+        val_expr = cons(symbol("function"), namesym, formals, body)
     frag.merge(compiler.full_compile(val_expr))
     frag.instruction(OpCode.VAR_STORE, namesym)
     frag.instruction(OpCode.CONST, None)
@@ -260,26 +321,30 @@ _VAR_PATTERNS = [
 
 
 # Scheme's shape: a pair in the name position is the name and the
-# formals of a function, a symbol is a value binding
+# formals of a function, with an optional return type beside the name
+# as def and var place it; a symbol is a value binding
 _DEFINE_PATTERNS = [
-    MATCH(CALLEDBY(), PAIR("head"), REST("body")),
+    MATCH(
+        CALLEDBY(),
+        LIST(
+            SYMBOL("fname"),
+            LITERAL_KW("::"),
+            VALUE("return_type"),
+            REST("formals")),
+        REST("body")),
+    MATCH(
+        CALLEDBY(),
+        LIST(
+            SYMBOL("fname"),
+            LITERAL_KW("type:"),
+            VALUE("return_type"),
+            REST("formals")),
+        REST("body")),
+    MATCH(
+        CALLEDBY(),
+        LIST(SYMBOL("fname"), REST("formals")),
+        REST("body")),
 ] + _VAR_PATTERNS
-
-
-def scheme_function_name(caps):
-    """
-    The name symbol heading the pair in a define's name position
-
-    :raises SpecialError: when the pair is not headed by a symbol
-    """
-
-    head = caps["head"].datum
-    name, _formals = head
-    if not is_symbol(name):
-        raise SpecialError(
-            "define expects a name to head (NAME FORMALS ...)",
-            head, position=caps["called-by"].position)
-    return name
 
 
 def compile_var(compiler, caps):
@@ -338,18 +403,6 @@ def special_var(compiler, caps):
     return compile_var(compiler, caps)
 
 
-@builtin("compile/global")
-@special("compile/global", patterns=_VAR_PATTERNS, unpack="match")
-def special_global(compiler, caps):
-    """
-    Compile (global X), (global X EXPR), or the typed variants with
-    ``X :: T`` / ``X type: T``. Binds X at the module from any depth and
-    stores the value
-    """
-
-    return compile_global(compiler, caps)
-
-
 @builtin("compile/define")
 @special("compile/define", patterns=_DEFINE_PATTERNS, unpack="match")
 def special_define(compiler, caps):
@@ -359,14 +412,13 @@ def special_define(compiler, caps):
     variants, which are var's
     """
 
-    if "head" not in caps:
+    if "fname" not in caps:
         return compile_var(compiler, caps)
 
-    namesym = binding_atom(compiler, scheme_function_name(caps))
+    namesym = binding_atom(compiler, caps["fname"].datum)
     frag = compiler.fragment(caps["called-by"].datum)
     frag.declare_var(namesym, position=caps["called-by"].position)
-    return emit_function(
-        compiler, frag, caps["head"].datum, caps["body"].datum, namesym)
+    return emit_function(compiler, frag, caps, namesym)
 
 
 @builtin("compile/define-global")
@@ -375,17 +427,16 @@ def special_define_global(compiler, caps):
     """
     Compile (define-global (F ARGS...) BODY...), the function F of ARGS
     bound at the module, or (define-global X), (define-global X EXPR)
-    and their typed variants, which are global's
+    and their typed variants, the shapes of (global var X ...)
     """
 
-    if "head" not in caps:
+    if "fname" not in caps:
         return compile_global(compiler, caps)
 
-    namesym = scheme_function_name(caps)
+    namesym = caps["fname"].datum
     frag = compiler.fragment(caps["called-by"].datum)
     frag.request_global(namesym, position=caps["called-by"].position)
-    return emit_function(
-        compiler, frag, caps["head"].datum, caps["body"].datum, namesym)
+    return emit_function(compiler, frag, caps, namesym)
 
 
 _NOARG_PATTERNS = [

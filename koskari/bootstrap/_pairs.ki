@@ -38,13 +38,13 @@ syntax cadddr:
 syntax caddddr:
   (syntax-rules [] [(caddddr x) (car (cddddr x))])
 
-def cddr [p] (cddr p)
-def cdddr [p] (cdddr p)
-def cddddr [p] (cddddr p)
-def cadr [p] (cadr p)
-def caddr [p] (caddr p)
-def cadddr [p] (cadddr p)
-def caddddr [p] (caddddr p)
+define [cddr p] (cddr p)
+define [cdddr p] (cdddr p)
+define [cddddr p] (cddddr p)
+define [cadr p] (cadr p)
+define [caddr p] (caddr p)
+define [cadddr p] (cadddr p)
+define [caddddr p] (caddddr p)
 
 var first car
 var second cadr

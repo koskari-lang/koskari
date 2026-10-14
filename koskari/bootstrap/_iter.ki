@@ -183,7 +183,7 @@ syntax has?:
       (in element collection)
 
 
-def build-slice [start: None stop: None step: None]:
+define [build-slice start: None stop: None step: None]:
   """
   Simple slice class constructor that accepts keyword arguments
   """
@@ -225,7 +225,7 @@ syntax item-slice:
 
 
 @let [[py-sorted sorted]]
-global def sorted [iterable key: None reverse: False]:
+define-global [sorted iterable key: None reverse: False]:
   """
   Koskari wrapper for Python's sorted function. Automatically
   wraps the key argument as a demand.
@@ -248,9 +248,9 @@ global def sorted [iterable key: None reverse: False]:
 
 
 @let [[UNDEFINED ((build-class Undefined []
-                   (def __repr__ [self]
+                   (define [__repr__ self]
                      "<raise>")))]]
-global def next [it default: UNDEFINED]:
+define-global [next it default: UNDEFINED]:
   """
   Get the next item from an iterator.
 
@@ -264,7 +264,7 @@ global def next [it default: UNDEFINED]:
     next it default
 
 
-global def iter [val]:
+define-global [iter val]:
   """
   Produce an iterator for an iterable value
   """

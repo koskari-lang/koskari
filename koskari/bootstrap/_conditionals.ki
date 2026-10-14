@@ -115,7 +115,7 @@ syntax None?:
 ;; CHECK_NIL. The runtime koskari.lib.nilp backs first-class use of nil?.
 
 
-def on-demand? :: bool []:
+define [on-demand? :: bool]:
   """
   True if current context is being evaluated via demand-call and
   cannot use `await` to suspend.

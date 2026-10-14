@@ -811,19 +811,19 @@ class TestDefineGlobalInTemplate(unittest.IsolatedAsyncioTestCase):
     SRC = """
 (define-syntax top
   (syntax-rules []
-    [(top) (begin (global ga 5) ga)]))
+    [(top) (begin (global var ga 5) ga)]))
 
 (define-syntax scoped
   (syntax-rules []
-    [(scoped) (let [] (global gb 6) gb)]))
+    [(scoped) (let [] (global var gb 6) gb)]))
 
 (define-syntax closed
   (syntax-rules []
-    [(closed) (begin (global gc 7) ((lambda [] gc)))]))
+    [(closed) (begin (global var gc 7) ((lambda [] gc)))]))
 
 (define-syntax scoped-closed
   (syntax-rules []
-    [(scoped-closed) (let [] (global gd 8) ((lambda [] gd)))]))
+    [(scoped-closed) (let [] (global var gd 8) ((lambda [] gd)))]))
 
 (var a (top))
 (var b (scoped))
@@ -1238,7 +1238,7 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
     OWN_GLOBAL_SRC = """
 (define-syntax top
   (syntax-rules []
-    [(top) (begin (global ga 5) ga)]))
+    [(top) (begin (global var ga 5) ga)]))
 
 (define [f] (top))
 (var result (f))

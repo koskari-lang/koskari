@@ -63,7 +63,7 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         """define-global then setq to same name works"""
         src_str = """
         (begin
-          (global x 1)
+          (define-global x 1)
           (setq x 2)
           x)
         """
@@ -79,7 +79,7 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         src_str = """
         (lambda []
           (var x 1)
-          (global x 2)
+          (define-global x 2)
           x)
         """
         with self.assertRaises(CompilerError) as caught:
@@ -94,7 +94,7 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
 
         src_str = """
         (lambda []
-          (global x 2)
+          (define-global x 2)
           (var x 1)
           x)
         """
@@ -109,8 +109,8 @@ class TestResolutionModelDefineGlobal(SpecialsTestCase):
         """
 
         for src_str in (
-                "(begin (var x 1) (global x 2) x)",
-                "(begin (global x 1) (var x 2) x)"):
+                "(begin (var x 1) (define-global x 2) x)",
+                "(begin (define-global x 1) (var x 2) x)"):
             expr, mod = self.compile_expr(src_str)
             self.assertEqual(2, await expr())
             self.assertEqual(vars(mod).deref('x'), 2)
@@ -183,7 +183,7 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         """define-global counter; inner lambda setq counter; shared across calls"""
         src_str = """
         ((lambda ()
-           (global counter 0)
+           (define-global counter 0)
            (var inc (lambda ()
              (setq counter (call + counter 1))
              counter))
@@ -202,7 +202,7 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         ((lambda ()
            (var x 0)
            (var inner (lambda ()
-             (global x 99)
+             (define-global x 99)
              (setq x 1)))
            (call inner)
            x))
@@ -294,7 +294,7 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         """define-global at module level yields global_syms in root Code"""
         src_str = """
         (begin
-          (global x 1)
+          (define-global x 1)
           (setq x 2)
           x)
         """

@@ -19,7 +19,7 @@ name) or more than three (extra forms after supers).
 
 A `global` prefix, `global class NAME SUPERS:`, binds **NAME** at the
 module even from inside a function body; see
-[compile/global](../specials/compile-global.md). Decorator lines above
+[compile/global](../macros/compile-global.md). Decorator lines above
 the header decorate the built class before it is bound; see
 [`decorate`](../macros/compile-decorate.md).
 

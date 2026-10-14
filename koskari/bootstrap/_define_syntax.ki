@@ -27,19 +27,18 @@ Portion of koskari.builtins
 
 let []:
 
-  (var transformer-binding-name
+  (define [transformer-binding-name name]
     ;; The binding key for a transformer written as NAME, as a datum-wrapped
     ;; symbol ready to splice into binding position: compile/NAME, or NAME
     ;; unchanged when it already carries the prefix. One home for the rule
     ;; every define-syntax and extend-syntax arm applies.
 
-    (lambda transformer-binding-name (name)
-      (var n (str name))
-      (datum (symbol (cond ((n.startswith "compile/") n)
-                            (else: f"compile/{n}"))))))
+    (var n (str name))
+    (datum (symbol (cond ((n.startswith "compile/") n)
+                          (else: f"compile/{n}")))))
 
 
-  (global compile/define-syntax
+  (define-global compile/define-syntax
     ;; the macro for defining macros
 
     (macro-rules compile/define-syntax
@@ -50,34 +49,34 @@ let []:
 
       [(define-syntax name (bare-syntax slot template))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (bare-syntax ,name ,slot ,template))]
+        `(define-global ,bound (bare-syntax ,name ,slot ,template))]
 
       [(define-syntax name (syntax-rules literals rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (syntax-rules ,name ,literals ,@rule))]
+        `(define-global ,bound (syntax-rules ,name ,literals ,@rule))]
 
       [(define-syntax name (syntax-match rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (syntax-match ,name ,@rule))]
+        `(define-global ,bound (syntax-match ,name ,@rule))]
 
       [(define-syntax name (macro-rules literals rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (macro-rules ,name ,literals ,@rule))]
+        `(define-global ,bound (macro-rules ,name ,literals ,@rule))]
 
       [(define-syntax name (macro-match rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (macro-match ,name ,@rule))]
+        `(define-global ,bound (macro-match ,name ,@rule))]
 
       [(define-syntax name (special-rules literals rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (special-rules ,name ,literals ,@rule))]
+        `(define-global ,bound (special-rules ,name ,literals ,@rule))]
 
       [(define-syntax name (special-match rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(global ,bound (special-match ,name ,@rule))]))
+        `(define-global ,bound (special-match ,name ,@rule))]))
 
 
-  (global compile/extend-syntax
+  (define-global compile/extend-syntax
     ;; the macro for extending macros; raw like define-syntax above,
     ;; since the definer is not yet usable within this same unit
 
@@ -249,89 +248,6 @@ syntax datumq:
       `(call datum (quote ,expr) ,pos)
     case (datumq expr):
       `(call datum (quote ,expr) ,(getattr expr "position" None))
-
-
-syntax def:
-  """
-  Defines a function and binds it to its name in the scope the form
-  appears in. A return type may follow the name as :: TYPE.
-  """
-
-  syntax-rules []:
-    case (def name rest ...):
-      (var name (function name rest ...))
-
-
-syntax class:
-  """
-  Defines a class and binds it to its name in the scope the form
-  appears in.
-  """
-
-  syntax-rules []:
-    case (class name supers body ...):
-      (var name (build-class name supers body ...))
-
-
-let []:
-  import-from koskari.compile.helpers unpack_lhs_bind_symbols
-
-  (var pattern-declarations
-    ;; one (HEAD NAME) form per name the unpack pattern binds, each name
-    ;; datum-wrapped so hygiene treats it as the caller's own
-    (lambda pattern-declarations [head pattern]
-      (list ({(for-each [n (unpack_lhs_bind_symbols pattern.datum
-                                                   flatten: True)]
-               (yield `(,head ,(datum n))))}))))
-
-
-  extend-syntax var:
-    """
-    A pattern in the name position declares each name the pattern
-    binds, then unpacks the value into them. Without a value, the
-    names are only declared.
-    """
-
-    macro-match:
-      case (var (PAIR pattern) (BIND value)):
-        `(begin ,@(pattern-declarations 'var pattern)
-                (setq-values ,pattern ,value))
-
-      case (var (PAIR pattern)):
-        `(begin ,@(pattern-declarations 'var pattern))
-
-
-  extend-syntax global:
-    """
-    A pattern in the name position binds each name the pattern binds
-    at the module, then unpacks the value into them. Without a value,
-    the names are only bound.
-    """
-
-    macro-match:
-      case (global (PAIR pattern) (BIND value)):
-        `(begin ,@(pattern-declarations 'global pattern)
-                (setq-values ,pattern ,value))
-
-      case (global (PAIR pattern)):
-        `(begin ,@(pattern-declarations 'global pattern))
-
-
-extend-syntax global:
-  """
-  Followed by def, class, or syntax, binds that definition at the
-  module rather than in the scope the form appears in.
-  """
-
-  syntax-rules [def class syntax]:
-    case (global def name rest ...):
-      (global name (function name rest ...))
-
-    case (global class name supers body ...):
-      (global name (build-class name supers body ...))
-
-    case (global syntax name rest ...):
-      (define-syntax name rest ...)
 
 
 ; The end.

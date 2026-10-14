@@ -10,6 +10,9 @@
 
 - Function: `(define [NAME FORMALS ...] BODY ...)` or
   `(define (NAME FORMALS ...) BODY ...)`
+- Typed function: `(define [NAME :: TYPE FORMALS ...] BODY ...)` or
+  `(define [NAME type: TYPE FORMALS ...] BODY ...)`, the return type
+  beside the name as in `def NAME :: TYPE [FORMALS ...]`
 - Declaration only: `(define NAME)`, `(define NAME :: TYPE)`, or
   `(define NAME type: TYPE)`
 - Declare and store: `(define NAME VALUE)`, `(define NAME :: TYPE VALUE)`,
@@ -43,14 +46,9 @@ A symbol in the name position behaves as [`var`](compile-var.md):
 evaluated and stored, and without a value the slot is left empty, so
 reading it before a store raises. The form's value is `None`.
 
-`define` has no return-type slot for a function. A typed function is
-`(def NAME :: TYPE [FORMALS ...] BODY ...)`, or
-`(define NAME (function NAME :: TYPE [FORMALS ...] BODY ...))`.
-
-A pair in the name position whose head is not a symbol raises
-`SpecialError`. The pre-Scheme shorthand `(define NAME [FORMALS ...] BODY ...)`
-matches no rule and raises `SyntaxMatchError`; move the name inside the
-pair.
+A pair in the name position whose first element is not a symbol, and
+the pre-Scheme shorthand `(define NAME [FORMALS ...] BODY ...)`, match
+no rule and raise `SyntaxMatchError`; move the name inside the pair.
 
 **Pitfall:** `(define [a b] x)` is not an unpacking. It defines a
 function named `a` with one formal `b` whose body is `x`, and binds
@@ -93,8 +91,8 @@ binds the result; see [`decorate`](../macros/compile-decorate.md).
   (cond [(== n 0) 1]
         [else: (* n (fact (- n 1)))]))
 
-;; Typed function value
-(define half (function half :: float [x] (/ x 2)))
+;; Typed function
+(define [half :: float x] (/ x 2))
 ```
 
 In block form, with a decorator:
