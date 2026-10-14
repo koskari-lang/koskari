@@ -110,4 +110,70 @@ class TestParseAll(IsolatedAsyncioTestCase):
         self.assertTrue(is_pair(forms[1]))
 
 
+class TestParseAllPragma(IsolatedAsyncioTestCase):
+
+    async def test_layout_off_reads_later_forms_as_sexprs(self):
+        """
+        a top-level pragma turning reader/layout off applies to the forms
+        after it, so an indented s-expression is not an unexpected indent
+        """
+
+        src = (
+            '(pragma [reader/layout False])\n'
+            '(define f (lambda (x)\n'
+            '  (+ x 1)))\n'
+            '  (print "ok")\n')
+        forms = list(parse_all(src, '<layout-off>'))
+        self.assertEqual(len(forms), 3)
+        self.assertEqual(car(forms[2]), symbol('print'))
+
+
+    async def test_implicit_calls_off_rejects_bare_call_line(self):
+        """
+        a top-level pragma turning reader/implicit-calls off applies to
+        the forms after it, so a line of several forms is an error
+        """
+
+        from koskari.exceptions import LayoutError
+
+        src = (
+            '(pragma [reader/implicit-calls False])\n'
+            'print 1 2\n')
+        with self.assertRaises(LayoutError) as caught:
+            list(parse_all(src, '<implicit-off>'))
+        self.assertEqual(caught.exception.location[0], 2)
+
+
+    async def test_non_literal_value_skips_the_form(self):
+        """
+        a pragma whose reader setting is not a literal is skipped, and
+        layout reading continues
+        """
+
+        src = (
+            '(pragma [reader/layout (f)])\n'
+            'if x:\n'
+            '  1\n'
+            'else:\n'
+            '  2\n')
+        forms = list(parse_all(src, '<non-literal>'))
+        self.assertEqual(len(forms), 2)
+
+
+    async def test_unknown_key_skips_the_form(self):
+        """
+        a pragma naming an unregistered reader setting is skipped, and
+        layout reading continues
+        """
+
+        src = (
+            '(pragma [reader/bogus 1])\n'
+            'if x:\n'
+            '  1\n'
+            'else:\n'
+            '  2\n')
+        forms = list(parse_all(src, '<unknown-key>'))
+        self.assertEqual(len(forms), 2)
+
+
 # The end.

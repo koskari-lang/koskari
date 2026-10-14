@@ -85,6 +85,35 @@ class TestCollectDiagnostics(IsolatedAsyncioTestCase):
         self.assertGreater(len(diags), 0)
 
 
+    async def test_layout_off_pragma_reports_no_diagnostic(self):
+        """
+        a file turning reader/layout off reads its later forms as
+        s-expressions, so an indented form is not reported
+        """
+
+        src = (
+            '(pragma [reader/layout False])\n'
+            '(define f (lambda (x)\n'
+            '  (+ x 1)))\n'
+            '  (print "ok")\n')
+        diags = collect_diagnostics(src, 'file:///test.ki')
+        self.assertEqual(diags, [])
+
+
+    async def test_implicit_calls_off_pragma_reports_bare_call_line(self):
+        """
+        a file turning reader/implicit-calls off gets a diagnostic on a
+        line holding several forms
+        """
+
+        src = (
+            '(pragma [reader/implicit-calls False])\n'
+            'print 1 2\n')
+        diags = collect_diagnostics(src, 'file:///test.ki')
+        self.assertEqual(len(diags), 1)
+        self.assertEqual(diags[0].range.start.line, 1)
+
+
 class TestHandleCompletion(IsolatedAsyncioTestCase):
 
     async def test_completion_returns_items_for_prefix(self):
