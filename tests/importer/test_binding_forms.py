@@ -312,6 +312,48 @@ class TestSyntax(BindingFormsCase):
         self.assertEqual(6, ns['after'])
 
 
+    async def test_extend_syntax_from_body_extends_the_module(self):
+        # the arms exist once the extending form has run, as every
+        # module transformer bound from a body does
+        ns = await self.load("""
+        syntax pick:
+          syntax-rules []:
+            case (pick a):
+              a
+        def widen []:
+          extend-syntax pick:
+            syntax-rules []:
+              case (pick a b):
+                b
+        (widen)
+        var narrow (pick 1)
+        var wide (pick 1 2)
+        """)
+        self.assertEqual(1, ns['narrow'])
+        self.assertEqual(2, ns['wide'])
+
+
+    async def test_extend_syntax_of_body_syntax_fails_when_run(self):
+        # a body syntax is never bound as compile/NAME, so the extension
+        # reads an unbound name when the body runs, as any use before
+        # definition does
+        ns = await self.load("""
+        def f []:
+          syntax thrice:
+            syntax-rules []:
+              case (thrice x):
+                (+ x x x)
+          extend-syntax thrice:
+            syntax-rules []:
+              case (thrice x y):
+                (+ x y)
+          thrice 1
+        """)
+        with self.assertRaises(NameError) as caught:
+            demand_call(ns['f'])
+        self.assertIn("compile/thrice", str(caught.exception))
+
+
 class TestClass(BindingFormsCase):
 
     async def test_class_binds_its_name(self):

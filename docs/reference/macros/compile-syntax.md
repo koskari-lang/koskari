@@ -22,7 +22,9 @@ where the form appears:
 Inside a body, a later `syntax` with the same name shadows the earlier
 one for the forms after it. To bind a transformer at the module from
 inside a body, write `global syntax`; see
-[compile/global](compile-global.md).
+[compile/global](compile-global.md). A body-scoped transformer has no
+module binding, so [`extend-syntax`](compile-extend-syntax.md) cannot
+add arms to it; it extends the module's transformer of that name.
 
 **Examples:**
 

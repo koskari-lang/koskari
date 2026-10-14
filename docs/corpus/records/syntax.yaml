@@ -91,7 +91,7 @@ id: syntax-extend-syntax-sr-expand-001
 feature: macro/compile/extend-syntax
 source: (extend-syntax pick (syntax-rules [] [(pick a b) a]))
 verify:
-  expand: (setq compile/pick (+ compile/pick (syntax-rules pick [] ...)))
+  expand: (define-global compile/pick (+ compile/pick (syntax-rules pick [] ...)))
 references:
   - reference/macros/compile-extend-syntax.md
 stability: evolving
@@ -337,6 +337,35 @@ tags:
   - extend-syntax
   - metaprogramming
 notes: install only; no pick use in same form
+---
+id: syntax-extend-syntax-from-body-001
+feature: macro/compile/extend-syntax
+source: |-
+  syntax pick:
+    syntax-rules []:
+      case (pick a):
+        a
+
+  def widen []:
+    extend-syntax pick:
+      syntax-rules []:
+        case (pick a b):
+          b
+
+  (widen)
+  (len compile/pick.transforms)
+verify:
+  eval: "2"
+references:
+  - reference/macros/compile-extend-syntax.md
+stability: evolving
+tags:
+  - syntax
+  - extend-syntax
+  - module-global
+  - metaprogramming
+  - surface:block
+notes: extend-syntax inside a function body extends the module's transformer once the body has run, here from one arm to two; forms compiled after the call can use the new arm
 ---
 id: syntax-datum-expand-default-pos-001
 feature: macro/compile/datum
@@ -628,7 +657,7 @@ source: |-
       [(config (kafka name) params ...) (kafka-configure name params ...)]))
 verify:
   read: (extend-syntax config (syntax-rules [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)]))
-  expand: (setq compile/config (+ compile/config (syntax-rules config [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)])))
+  expand: (define-global compile/config (+ compile/config (syntax-rules config [kafka] [(config (kafka name) params ...) (kafka-configure name params ...)])))
 references:
   - reference/macros/compile-extend-syntax.md
 stability: evolving
@@ -884,7 +913,7 @@ id: syntax-extend-syntax-bare-expand-001
 feature: macro/compile/extend-syntax
 source: (extend-syntax pick (bare-syntax me (quote alone)))
 verify:
-  expand: (setq compile/pick (+ compile/pick (bare-syntax pick me (quote alone))))
+  expand: (define-global compile/pick (+ compile/pick (bare-syntax pick me (quote alone))))
 references:
   - reference/macros/compile-define-syntax.md
 stability: evolving

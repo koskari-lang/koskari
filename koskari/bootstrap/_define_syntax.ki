@@ -78,7 +78,13 @@ let []:
 
   (define-global compile/extend-syntax
     ;; the macro for extending macros; raw like define-syntax above,
-    ;; since the definer is not yet usable within this same unit
+    ;; since the definer is not yet usable within this same unit.
+    ;;
+    ;; A transformer is a module binding, so the extension is stored
+    ;; there with define-global from any depth, and its arms exist once
+    ;; the form has run. A body syntax lives only in the compiler's
+    ;; overlay, so extending it fails on the read of compile/NAME when
+    ;; the body runs, as any other use before definition does.
 
     (macro-rules compile/extend-syntax
         [syntax-rules syntax-match
@@ -88,31 +94,31 @@ let []:
 
       [(extend-syntax name (bare-syntax slot template))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))]
+        `(define-global ,bound (+ ,bound (bare-syntax ,name ,slot ,template)))]
 
       [(extend-syntax name (syntax-rules literals rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))]
+        `(define-global ,bound (+ ,bound (syntax-rules ,name ,literals ,@rule)))]
 
       [(extend-syntax name (syntax-match rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (syntax-match ,name ,@rule)))]
+        `(define-global ,bound (+ ,bound (syntax-match ,name ,@rule)))]
 
       [(extend-syntax name (macro-rules literals rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))]
+        `(define-global ,bound (+ ,bound (macro-rules ,name ,literals ,@rule)))]
 
       [(extend-syntax name (macro-match rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (macro-match ,name ,@rule)))]
+        `(define-global ,bound (+ ,bound (macro-match ,name ,@rule)))]
 
       [(extend-syntax name (special-rules literals rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))]
+        `(define-global ,bound (+ ,bound (special-rules ,name ,literals ,@rule)))]
 
       [(extend-syntax name (special-match rule ...))
         (var bound (transformer-binding-name name.datum))
-        `(setq ,bound (+ ,bound (special-match ,name ,@rule)))]))
+        `(define-global ,bound (+ ,bound (special-match ,name ,@rule)))]))
 
 
   ;; The docstring forms of define-syntax and extend-syntax arrive as
