@@ -21,9 +21,18 @@ Tab completion for Koskari REPL.
 """
 
 
+import re
+
 from prompt_toolkit.completion import Completer, Completion
 
-from ..tokens import LAYOUT_BLOCK_NAMES, SPECIAL_NAMES
+from ..tokens import _ATOM_TERMINATORS, LAYOUT_BLOCK_NAMES, SPECIAL_NAMES
+
+
+# prompt_toolkit applies the pattern to the reversed text before the
+# cursor, so the anchor holds the match to the atom ending at the cursor
+# and the lookahead stops it at a leading ,@ prefix
+ATOM_CHAR = f"[^{re.escape(_ATOM_TERMINATORS)}]"
+ATOM_BEFORE_CURSOR_RE = re.compile(f"^(?:{ATOM_CHAR}+?(?=@,)|{ATOM_CHAR}+)")
 
 
 def _completion_candidates_sorted(candidates):
@@ -73,14 +82,14 @@ class KoskariCompleter(Completer):
 
     def get_completions(self, document, complete_event):
         """
-        Yield completions for the word before the cursor.
+        Yield completions for the atom before the cursor.
 
         :param document: prompt_toolkit Document
         :param complete_event: CompletionEvent
         :yield: Completion instances
         """
 
-        word = document.get_word_before_cursor()
+        word = document.get_word_before_cursor(pattern=ATOM_BEFORE_CURSOR_RE)
         if not word:
             return
 
