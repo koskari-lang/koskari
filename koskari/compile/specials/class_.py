@@ -26,6 +26,7 @@ from ...exceptions import ParametersError, SpecialError
 from ...lib import OpCode, symbol
 from ...matcher import CALLEDBY, MATCH, REST, SYMBOL, VALUE
 from ...syntax import special
+from ...types import strip_mark
 from ..helpers import (
     gather_parameters, helper_begin, strip_leading_docstring)
 
@@ -80,7 +81,9 @@ def special_build_class(compiler, called_by, name, supers, body):
 
     pos = called_by.position
     head = called_by.datum
-    name = str(name.datum)
+    # the binding keeps the symbol as given, mark and all; the class is
+    # named by the plain name, as a function is
+    name = str(strip_mark(name.datum))
     supers_form = supers.datum
     body = body.datum
 

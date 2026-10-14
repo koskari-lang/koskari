@@ -184,6 +184,40 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["answer"], 42)
 
 
+class TestClassInTemplate(unittest.IsolatedAsyncioTestCase):
+    """
+    A class a template defines is bound under the template's own mark,
+    so the caller's binding of the same name is not captured, and is
+    named by the plain name, as a template-defined function is
+    """
+
+    SRC = """
+(var Widget "use-site")
+
+(syntax make-widget
+  (syntax-rules []
+    [(make-widget out)
+     (begin
+       (class Widget []
+         (var size 3))
+       (var out (Widget)))]))
+
+(make-widget made)
+"""
+
+    async def test_class_named_by_the_plain_name(self):
+        ns = await load("mh_template_class_name", self.SRC)
+        cls = type(ns["made"])
+        self.assertEqual("Widget", cls.__name__)
+        self.assertEqual("Widget", cls.__qualname__)
+        self.assertEqual(3, ns["made"].size)
+
+
+    async def test_caller_binding_not_captured(self):
+        ns = await load("mh_template_class_caller", self.SRC)
+        self.assertEqual("use-site", ns["Widget"])
+
+
 class TestNestedClosureOverModuleBinder(unittest.IsolatedAsyncioTestCase):
     """
     A template's module-level definition is visible from a function
