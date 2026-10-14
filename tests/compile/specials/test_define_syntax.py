@@ -280,6 +280,21 @@ class TestCoreTypesAreNotModuleNames(DefineSyntaxCompileHelpers):
         self.assertEqual(42, await expr())
 
 
+class TestRulePatternValidation(DefineSyntaxCompileHelpers):
+
+    async def test_zero_width_repeat_is_refused_at_definition(self):
+        # a repeat whose element may match nothing would never advance;
+        # the definition refuses it, not the first use
+        src_str = """
+        (define m
+          (syntax-match m
+            [(m (REPEAT xs (OPTIONAL (VALUE e)) min: 0)) 1]))
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("REPEAT", str(caught.exception))
+
+
 class TestCompileMacroRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_rules_identity(self):

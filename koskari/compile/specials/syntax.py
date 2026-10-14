@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms, function_constant
 from ...lib import FormalsSpec, OpCode, cons, keyword, nil, symbol
-from ...match_code import SUBJECT, FragmentTarget, lower_matcher
+from ...match_code import SUBJECT, FragmentTarget, lower_matcher, validate_frozen
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
     VALUE, MatchCompiler, parse_explicit_rule_pattern, pattern_slot_names,
@@ -57,6 +57,10 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
     """
 
     frozen = MatchCompiler().lower(pattern)
+    try:
+        validate_frozen(frozen)
+    except (TypeError, ValueError) as exc:
+        raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
     atoms = extern_atoms(pattern_src, frozen[2])
     body = compiler.fragment(name)
     body.declare_var(symbol(SUBJECT))

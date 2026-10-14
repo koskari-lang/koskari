@@ -33,7 +33,7 @@ from ...matcher import (
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
-from ...match_code import lower_clause
+from ...match_code import lower_clause, validate_frozen
 
 
 # The layout that keeps a form's cursor, mark and group temporaries in
@@ -142,6 +142,11 @@ def special_match(compiler, caps):
 
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         frozen = MatchCompiler().lower(arm)
+        try:
+            validate_frozen(frozen)
+        except (TypeError, ValueError) as exc:
+            raise SpecialError(
+                f"invalid match pattern: {exc}", pattern, position=clause_pos)
         atoms = extern_atoms(pattern, frozen[2])
         arms.append(
             (pattern, frozen, atoms, guard_kw, guard_expr, body, clause_pos))

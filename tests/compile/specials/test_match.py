@@ -661,4 +661,25 @@ class TestMatchTemporaries(SpecialsTestCase):
         self.assertEqual(await fn((2, 1)), ("other", 2, 1, ()))
 
 
+
+
+class TestPatternValidation(SpecialsTestCase):
+    """
+    A pattern the validator refuses is refused when the form compiles,
+    naming the clause, not when an arm runs
+    """
+
+    def test_capture_under_not_is_refused(self):
+        with self.assertRaises(SpecialError) as caught:
+            self.compile_expr("(match data [[(not x)] 1] [else: 0])", data=1)
+        self.assertIn("NOT", str(caught.exception))
+
+
+    def test_optional_after_rest_is_refused(self):
+        with self.assertRaises(SpecialError) as caught:
+            self.compile_expr(
+                "(match data [[#[*: r (OPTIONAL a)]] 1] [else: 0])", data=(1,))
+        self.assertIn("REST", str(caught.exception))
+
+
 # The end.
