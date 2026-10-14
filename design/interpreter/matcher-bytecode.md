@@ -1,15 +1,17 @@
 # Matcher as bytecode
 
-**Status:** proposal, 2026-10-13. A proof of concept is scoped in
-section 11. The native engine remains the matcher until the
-measurements in section 9 say otherwise.
+**Status:** implemented, 2026-10-14; the stages in section 12.6 record
+the path. Sections 1 and 7 describe the engine this replaced as it
+stood, and section 11 the proof of concept that became the
+implementation.
 
-**See also:** [../MATCHER.md](../MATCHER.md) (the engine, the pattern
-vocabulary, the capture shapes), [../FLATTENING.md](../FLATTENING.md)
-(the predicate and extractor entry this design closes),
-[resumable-reads.md](resumable-reads.md) section 8 (the resume-row
-engine this design supersedes), [../OPCODES.md](../OPCODES.md) section
-1.8 (compression), [electors.md](electors.md),
+**See also:** [../MATCHER.md](../MATCHER.md) (the pattern vocabulary,
+the capture shapes), [../OPCODES.md](../OPCODES.md) section 9.2 (the
+instruction reference) and section 1.8 (compression),
+[../FLATTENING.md](../FLATTENING.md) (the predicate and extractor
+entry this design closed), [resumable-reads.md](resumable-reads.md)
+section 8 (the resume-row engine this design superseded),
+[electors.md](electors.md),
 [../archive/threaded-dispatch.md](../archive/threaded-dispatch.md),
 [../language/define-matcher.md](../language/define-matcher.md).
 
@@ -822,6 +824,18 @@ mapping probe and the 3.9 `__match_args__` synthesis with it.
 matcher tests, `tests/lib/opcode/test_match_case.py` and the corpus
 oracle test went with the engine they drove; the instruction tests
 and the matcher suites over the Python `Matcher` cover the steps.
+
+Stage 6 as of 2026-10-14: `OPCODES.md` section 9.2 and the VM
+reference under `docs/reference/vm/` describe the `MATCH_*` family,
+one entry per shape with its VAR and FAST twins, and mark `MATCH_CASE`
+retired; `MATCHER.md` describes the three containers a compiled
+pattern lives in, the `Syntax` dispatcher and the inline `match` arm;
+`FLATTENING.md` lists match predicates and extractors among the calls
+that flatten, and `resumable-reads.md` section 8 is marked superseded;
+`SPECIALS.md`, `FEATURES.md`, `api/pattern-matching.md` and the user
+pages for `compile/match`, the match-patterns guide and the glossary
+no longer describe a frozen matcher constant, a native engine or a
+synchronous predicate call.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,

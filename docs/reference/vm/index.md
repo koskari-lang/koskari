@@ -270,6 +270,7 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -351,7 +352,39 @@ The opcodes by family, each linking to its section.
 | SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-fast.md) |
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-var-attr.md) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-fast-attr.md) |
-| MATCH_CASE | EXTRA | Match the subject against one pattern arm; jump on no match, bind the missing externs on a match | [section 9.1](opcodes/kos-op-match-case.md) |
+| MATCH_CASE | EXTRA | Retired; never emitted, raises when reached | [section 9.2](opcodes/kos-op-match-case.md) |
+| MATCH_FORM_VAR / MATCH_FORM_FAST | EXTRA | Peek: sequence gate and length precheck on TOS; the cursor into the slot | [section 9.2](opcodes/kos-op-match-form.md) |
+| MATCH_NEXT_FORM_VAR / MATCH_NEXT_FORM_FAST | EXTRA | Pull: the gate on the element; the inner cursor into the second slot | [section 9.2](opcodes/kos-op-match-next-form.md) |
+| MATCH_NEXT_VAR / MATCH_NEXT_FAST | EXTRA | Pull and push the element, boxed from a pair spine | [section 9.2](opcodes/kos-op-match-next.md) |
+| MATCH_PEEK_VAR / MATCH_PEEK_FAST | EXTRA | Push the next element without advancing the cursor | [section 9.2](opcodes/kos-op-match-peek.md) |
+| MATCH_NEXT_BIND_VAR / MATCH_NEXT_BIND_FAST | EXTRA | Pull and store the element into the second slot | [section 9.2](opcodes/kos-op-match-next-bind.md) |
+| MATCH_NEXT_TYPE_VAR / MATCH_NEXT_TYPE_FAST | EXTRA | Pull; the element must be an instance of the type in the second slot | [section 9.2](opcodes/kos-op-match-next-type.md) |
+| MATCH_NEXT_TYPE_BIND_VAR / MATCH_NEXT_TYPE_BIND_FAST | EXTRA | Pull, the type test, the store into the third slot | [section 9.2](opcodes/kos-op-match-next-type-bind.md) |
+| MATCH_NEXT_LITERAL_VAR / MATCH_NEXT_LITERAL_FAST | EXTRA | Pull; the element must equal the constant | [section 9.2](opcodes/kos-op-match-next-literal.md) |
+| MATCH_REST_VAR / MATCH_REST_FAST | EXTRA | Consume the remainder but the suffix; the minimum tail and suffix width packed | [section 9.2](opcodes/kos-op-match-rest.md) |
+| MATCH_REST_BIND_VAR / MATCH_REST_BIND_FAST | EXTRA | The remainder stored into the third slot | [section 9.2](opcodes/kos-op-match-rest-bind.md) |
+| MATCH_END_VAR / MATCH_END_FAST | EXTRA | The cursor must be at its end | [section 9.2](opcodes/kos-op-match-end.md) |
+| MATCH_AVAILABLE_VAR / MATCH_AVAILABLE_FAST | EXTRA | At least the count of elements must remain from the cursor | [section 9.2](opcodes/kos-op-match-available.md) |
+| MATCH_LITERAL | EXTRA | Peek: TOS must equal the constant | [section 9.2](opcodes/kos-op-match-literal.md) |
+| MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | Peek: TOS must be an instance of the type in the slot | [section 9.2](opcodes/kos-op-match-type.md) |
+| MATCH_TYPE_BIND_VAR / MATCH_TYPE_BIND_FAST | EXTRA | Peek: the type test, then TOS stored into the second slot | [section 9.2](opcodes/kos-op-match-type-bind.md) |
+| MATCH_BIND_VAR / MATCH_BIND_FAST | VAR / FASTVAR | Peek: TOS stored into the slot, nothing popped | [section 9.2](opcodes/kos-op-match-bind.md) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | Peek: TOS must be an instance of the class whose __match_args__ covers the positional count | [section 9.2](opcodes/kos-op-match-class.md) |
+| MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | EXTRA | Peek: push the attribute __match_args__[count] of the class names | [section 9.2](opcodes/kos-op-match-field-pos.md) |
+| MATCH_FIELD_POS_BIND_VAR / MATCH_FIELD_POS_BIND_FAST | EXTRA | The positional attribute stored into the third slot | [section 9.2](opcodes/kos-op-match-field-pos-bind.md) |
+| MATCH_FIELD_KW | EXTRA | Peek: push the attribute the constant names | [section 9.2](opcodes/kos-op-match-field-kw.md) |
+| MATCH_FIELD_KW_BIND_VAR / MATCH_FIELD_KW_BIND_FAST | EXTRA | The named attribute stored into the slot | [section 9.2](opcodes/kos-op-match-field-kw-bind.md) |
+| MATCH_MAP | LABEL | Peek: the mapping gate on TOS | [section 9.2](opcodes/kos-op-match-map.md) |
+| MATCH_KEY_CONST / MATCH_KEY_VAR / MATCH_KEY_FAST | EXTRA | Peek: push the value under the key; an absent key is a miss | [section 9.2](opcodes/kos-op-match-key.md) |
+| MATCH_KEY_CONST_BIND_VAR / MATCH_KEY_CONST_BIND_FAST / MATCH_KEY_VAR_BIND_VAR / MATCH_KEY_FAST_BIND_FAST | EXTRA | The value under the key stored into the slot | [section 9.2](opcodes/kos-op-match-key-bind.md) |
+| MATCH_SAME_VAR / MATCH_SAME_FAST | EXTRA | Peek: TOS must equal the value bound in the slot; an unbound slot is a miss | [section 9.2](opcodes/kos-op-match-same.md) |
+| MATCH_NEXT_SAME_VAR / MATCH_NEXT_SAME_FAST | EXTRA | Pull; the element must equal the value bound in the second slot | [section 9.2](opcodes/kos-op-match-next-same.md) |
+| MATCH_NEXT_APPEND_VAR / MATCH_NEXT_APPEND_FAST | EXTRA | Pull and append the element to the list in the second slot | [section 9.2](opcodes/kos-op-match-next-append.md) |
+| MATCH_COLLECT_VAR / MATCH_COLLECT_FAST | EXTRA | Every remaining element appended to the list in the second slot | [section 9.2](opcodes/kos-op-match-collect.md) |
+| MATCH_MARK_VAR / MATCH_MARK_FAST | EXTRA | The cursor's position stored into the second slot | [section 9.2](opcodes/kos-op-match-mark.md) |
+| MATCH_RESET_VAR / MATCH_RESET_FAST | EXTRA | The cursor moved back to the position in the second slot | [section 9.2](opcodes/kos-op-match-reset.md) |
+| MATCH_CAPTURES / MATCH_CAPTURES_NAMED_VAR / MATCH_CAPTURES_NAMED_FAST | EXTRA | Push the captures: a DatumFrame over a pair spine, a dict otherwise; an unbound slot is absent | [section 9.2](opcodes/kos-op-match-captures.md) |
+| MATCH_ITERATION / MATCH_ITERATION_NAMED_VAR / MATCH_ITERATION_NAMED_FAST | EXTRA | Push one repeat iteration's value, its captures or the span, and clear the slots it read | [section 9.2](opcodes/kos-op-match-iteration.md) |
 | GLOBALS | NOARG | Push globals dict | [section 10](opcodes/kos-op-globals.md) |
 | LOCALS | NOARG | Push locals dict | [section 10](opcodes/kos-op-locals.md) |
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [section 10.1](opcodes/kos-op-import.md) |
@@ -1738,29 +1771,323 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 - **Compiler form:** tuple arg `("label", slot_index, "attr_name", 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST_ATTR.c`
 
+
+## 9.2 Pattern matching
+
+The `MATCH_*` family carries a compiled pattern. The compiler lowers a
+`match` or `case` arm, a special form's pattern and a `syntax-rules`
+rule to a run of these instructions, so matching a value or a source
+form is ordinary bytecode in the frame that asked for it; nothing
+interprets a pattern object at run time.
+
+- **Cursor.** A walk over a sequence keeps its position in a local
+  slot: the pair cell itself for a pair spine, a cursor object over a
+  tuple, list or other sequence. `MATCH_FORM` opens a cursor over the
+  element on top of the stack and `MATCH_NEXT_FORM` opens an inner
+  cursor over an element it pulls.
+- **Pull and peek.** A pull instruction reads the next element from a
+  cursor slot and advances the cursor only after the element passes;
+  a miss leaves the cursor and the stack as they were. A peek
+  instruction tests the element on top of the stack and never pops
+  it; `MATCH_NEXT` or `MATCH_PEEK` pushes the element and a `POP`
+  follows the tests.
+- **Miss edge.** A test carries a label and jumps there when it
+  fails. The compiler lays the clause out so a miss arrives with the
+  stack as the next clause expects it.
+- **Twins.** An instruction that names a slot has a `_VAR` form,
+  resolving the slot by name, and a `_FAST` form, by fast index;
+  `convert_fast` lowers the one to the other as for every `VAR`
+  instruction. `MATCH_LITERAL`, `MATCH_FIELD_KW`, `MATCH_MAP`,
+  `MATCH_KEY_CONST`, `MATCH_CAPTURES` and `MATCH_ITERATION` have one
+  form.
+- **Immediates.** A RAW field is a number the instruction interprets:
+  the packed minimum and maximum widths of a form (high and low eight
+  bits, 255 for unbounded), the minimum tail and suffix width of a
+  rest, a positional field index, a reservation count.
+- **Boxing.** An element pulled from a pair spine is boxed as a
+  `Datum` carrying its cell's position; an element from a tuple or
+  list is the raw value. Every test reads through the box. The
+  captures of a pair spine are a `DatumFrame` whose source is the span
+  matched; of a sequence, a dict. A slot that did not bind is absent.
+- **Externs and calls.** A type, class, predicate, extractor or
+  mapping key the pattern names is a variable of the enclosing code,
+  loaded as any variable is, so a closure-captured name works. A
+  predicate or extractor is a `CALL` from the same frame and flattens
+  as any Koskari call does.
+
+`MATCH_CASE`, the one-instruction form of an arm over the matcher that
+preceded this family, keeps its number in the table. The compiler
+never emits it and its handler raises.
+
 ### KOS_OP_MATCH_CASE
 
-- **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT): `a0` = no-match
-  target pc, `a1` = frozen matcher tuple (cpool), `a2` = tuple of the extern
-  names the matcher's defaults do not cover (cpool), `a3` = keep-subject flag.
-  Matcher thawed from `a1` and a KosSlotMap of its capture slots resolved
-  against the namespace layout.
-- **Stack**: `[..., subject, e0 ... eN-1] -> [..., subject]` on no match (then
-  jump to `a0`); `-> [...]` on a match with the keep flag clear, or
-  `-> [..., subject]` with it set. `N = len(a2)`: the compiler pushes one
-  value per missing extern above the subject, in `a2` order.
-- **Semantics**: The opcode is the interface between the stack, the
-  namespace, and the matcher API. The subject goes to
-  `KosMatcher_RunSlotsVectorcall` as a length-1 spine with the stacked
-  externs and their names; the matcher resolves every extern (inbuilt
-  defaults included) and raises its own errors. On the first match the slot
-  array is bound through the cached KosSlotMap (by fast index, or by name for
-  a slot without one); a slot that did not fire stays unbound. The stacked
-  externs are consumed on both outcomes. With the keep flag set (a guarded
-  arm) the guard code must either jump to `a0` with the subject intact or
-  pop it before the arm body commits.
-- **Compiler form:** Emitted by `compile/match` (`compile/specials/conditionals.py`).
-- **Implementation**: `koskari/lib/opcode/MATCH_CASE.c`
+- **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT).
+- **Status**: retired; the opcode keeps its number, the compiler never
+  emits it, and a program that reaches it raises `RuntimeError`.
+
+### KOS_OP_MATCH_FORM_VAR / KOS_OP_MATCH_FORM_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: Peek. The sequence gate on `elem` read through `Datum`: `str`,
+  `bytes` and `bytearray` are atoms and miss; a pair spine, `nil`, a list, a
+  tuple or a sequence-typed object descends. A sequence must have a length
+  within the packed widths of `a2` (minimum in the high eight bits, maximum in
+  the low, 255 for unbounded). A pair spine is not counted here; `MATCH_END`
+  and the pulls judge its length. The cursor into the walk goes into slot `a1`:
+  the pair or `nil` itself, or a cursor object over the sequence.
+
+### KOS_OP_MATCH_NEXT_FORM_VAR / KOS_OP_MATCH_NEXT_FORM_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot, RAW)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Pull the next element from the cursor in `a1`, apply the gate
+  and the length precheck of `MATCH_FORM` with the widths in `a3`, and put the
+  inner cursor into `a2`. The outer cursor advances only once the element has
+  passed; at the end of the outer walk or on a failed gate nothing moves.
+
+### KOS_OP_MATCH_NEXT_VAR / KOS_OP_MATCH_NEXT_FAST
+
+- **Style**: EXTRA (LABEL, slot)
+- **Stack**: `[...]` -> `[..., elem]`; jump to `a0` with nothing pushed at the
+  end of the walk.
+- **Semantics**: Pull the next element from the cursor in `a1` and push it,
+  boxed as a `Datum` with its cell's position when the cursor is a pair spine,
+  raw from a sequence. The cursor advances.
+
+### KOS_OP_MATCH_PEEK_VAR / KOS_OP_MATCH_PEEK_FAST
+
+- **Style**: EXTRA (LABEL, slot)
+- **Stack**: `[...]` -> `[..., elem]`; jump to `a0` with nothing pushed at the
+  end of the walk.
+- **Semantics**: Push the next element of the cursor in `a1` as `MATCH_NEXT`
+  does, and leave the cursor where it is. A zero-width `(not ...)` reads its
+  element this way.
+
+### KOS_OP_MATCH_NEXT_BIND_VAR / KOS_OP_MATCH_NEXT_BIND_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot)
+- **Stack**: No stack effect; jump to `a0` at the end of the walk.
+- **Semantics**: Pull the next element from the cursor in `a1` and store it,
+  boxed as `MATCH_NEXT` boxes it, into slot `a2`. The cursor advances.
+
+### KOS_OP_MATCH_NEXT_TYPE_VAR / KOS_OP_MATCH_NEXT_TYPE_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Pull the next element from the cursor in `a1`; the element
+  read through `Datum` must be an instance of the type in slot `a2`. The cursor
+  advances only on a pass.
+
+### KOS_OP_MATCH_NEXT_TYPE_BIND_VAR / KOS_OP_MATCH_NEXT_TYPE_BIND_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: `MATCH_NEXT_TYPE` with the passing element stored, boxed, into
+  slot `a3`.
+
+### KOS_OP_MATCH_NEXT_LITERAL_VAR / KOS_OP_MATCH_NEXT_LITERAL_FAST
+
+- **Style**: EXTRA (LABEL, slot, CONST)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Pull the next element from the cursor in `a1`; the element
+  read through `Datum` must equal the constant `a2`. A scoped symbol equals the
+  symbol it was derived from; otherwise `==`. The cursor advances only on a
+  pass.
+
+### KOS_OP_MATCH_REST_VAR / KOS_OP_MATCH_REST_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Consume the remainder of the cursor in `a1` but for the suffix
+  width packed in the low eight bits of `a2`, requiring at least the minimum
+  tail in the high eight bits. Too few elements, or an improper pair tail, is a
+  miss.
+
+### KOS_OP_MATCH_REST_BIND_VAR / KOS_OP_MATCH_REST_BIND_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: `MATCH_REST` with the remainder stored into slot `a3`: the
+  tail cell boxed as a `Datum` for a pair spine, a tuple slice for a sequence.
+
+### KOS_OP_MATCH_END_VAR / KOS_OP_MATCH_END_FAST
+
+- **Style**: EXTRA (LABEL, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: The cursor in `a1` must be at its end: `nil` for a pair spine,
+  the length for a sequence. An improper tail is a miss.
+
+### KOS_OP_MATCH_AVAILABLE_VAR / KOS_OP_MATCH_AVAILABLE_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: At least `a2` elements must remain from the cursor in `a1`.
+  The reservation a fixed suffix makes before a repeat, an optional or a branch
+  consumes elements.
+
+### KOS_OP_MATCH_LITERAL
+
+- **Style**: EXTRA (LABEL, CONST)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: Peek. `elem` read through `Datum` must equal the constant
+  `a1`, as `MATCH_NEXT_LITERAL` compares.
+
+### KOS_OP_MATCH_TYPE_VAR / KOS_OP_MATCH_TYPE_FAST
+
+- **Style**: EXTRA (LABEL, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: Peek. `elem` read through `Datum` must be an instance of the
+  type in slot `a1`.
+
+### KOS_OP_MATCH_TYPE_BIND_VAR / KOS_OP_MATCH_TYPE_BIND_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: `MATCH_TYPE` with the passing `elem` stored into slot `a2`.
+
+### KOS_OP_MATCH_BIND_VAR / KOS_OP_MATCH_BIND_FAST
+
+- **Style**: VAR / FASTVAR (the slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`.
+- **Semantics**: Peek. Store `elem` into the slot; nothing is popped and
+  nothing can miss.
+
+### KOS_OP_MATCH_CLASS_VAR / KOS_OP_MATCH_CLASS_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: Peek. `elem` must be an instance of the class in slot `a1`.
+  When `a2`, the positional field count, is more than zero, the class's
+  `__match_args__` must be a tuple with at least that many names, or the
+  instruction raises `TypeError` as the Python `match` statement does. On
+  Python 3.9 the tuple is synthesized for a dataclass or a namedtuple.
+
+### KOS_OP_MATCH_FIELD_POS_VAR / KOS_OP_MATCH_FIELD_POS_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW)
+- **Stack**: `[..., elem]` -> `[..., elem, value]`; jump to `a0` with nothing
+  pushed on a miss.
+- **Semantics**: Peek. Push the attribute of `elem` that entry `a2` of the
+  `__match_args__` of the class in slot `a1` names. A missing attribute is a
+  miss.
+
+### KOS_OP_MATCH_FIELD_POS_BIND_VAR / KOS_OP_MATCH_FIELD_POS_BIND_FAST
+
+- **Style**: EXTRA (LABEL, slot, RAW, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: `MATCH_FIELD_POS` with the attribute stored into slot `a3`
+  instead of pushed.
+
+### KOS_OP_MATCH_FIELD_KW
+
+- **Style**: EXTRA (LABEL, CONST)
+- **Stack**: `[..., elem]` -> `[..., elem, value]`; jump to `a0` with nothing
+  pushed on a miss.
+- **Semantics**: Peek. Push the attribute of `elem` that the constant `a1`
+  names. A missing attribute is a miss.
+
+### KOS_OP_MATCH_FIELD_KW_BIND_VAR / KOS_OP_MATCH_FIELD_KW_BIND_FAST
+
+- **Style**: EXTRA (LABEL, CONST, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: `MATCH_FIELD_KW` with the attribute stored into slot `a2`
+  instead of pushed.
+
+### KOS_OP_MATCH_MAP
+
+- **Style**: LABEL
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to the label on a miss.
+- **Semantics**: Peek. The mapping gate on `elem` read through `Datum`: a dict
+  or a mapping-typed object passes; anything else misses.
+
+### KOS_OP_MATCH_KEY_CONST / KOS_OP_MATCH_KEY_VAR / KOS_OP_MATCH_KEY_FAST
+
+- **Style**: EXTRA (LABEL, key)
+- **Stack**: `[..., elem]` -> `[..., elem, value]`; jump to `a0` with nothing
+  pushed on a miss.
+- **Semantics**: Peek. Push the value under the key in the mapping `elem`: the
+  constant `a1` on the CONST form, the value of slot `a1` otherwise. The
+  mapping is probed without inserting, so a `defaultdict` neither inserts nor
+  invents the key. An absent key is a miss.
+
+### KOS_OP_MATCH_KEY_CONST_BIND_VAR / KOS_OP_MATCH_KEY_CONST_BIND_FAST / KOS_OP_MATCH_KEY_VAR_BIND_VAR / KOS_OP_MATCH_KEY_FAST_BIND_FAST
+
+- **Style**: EXTRA (LABEL, key, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: `MATCH_KEY` with the value stored into slot `a2` instead of
+  pushed.
+
+### KOS_OP_MATCH_SAME_VAR / KOS_OP_MATCH_SAME_FAST
+
+- **Style**: EXTRA (LABEL, slot)
+- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
+- **Semantics**: Peek. `elem` must equal the value bound in slot `a1`, both
+  read through `Datum`: identity, then `==`. An unbound slot is a miss, and so
+  is a `DatumFrame` on either side.
+
+### KOS_OP_MATCH_NEXT_SAME_VAR / KOS_OP_MATCH_NEXT_SAME_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Pull the next element from the cursor in `a1`; it must equal
+  the value bound in slot `a2` as `MATCH_SAME` compares. The cursor advances
+  only on a pass.
+
+### KOS_OP_MATCH_NEXT_APPEND_VAR / KOS_OP_MATCH_NEXT_APPEND_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot)
+- **Stack**: No stack effect; jump to `a0` at the end of the walk.
+- **Semantics**: Pull the next element from the cursor in `a1` and append it,
+  boxed as `MATCH_NEXT` boxes it, to the list in slot `a2`. The cursor
+  advances.
+
+### KOS_OP_MATCH_COLLECT_VAR / KOS_OP_MATCH_COLLECT_FAST
+
+- **Style**: EXTRA (LABEL, slot, slot)
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Append every remaining element of the cursor in `a1`, boxed
+  from a pair spine, to the list in slot `a2`, and leave the cursor at its end.
+  A pair spine is counted first, so an improper tail is a miss before anything
+  is appended.
+
+### KOS_OP_MATCH_MARK_VAR / KOS_OP_MATCH_MARK_FAST
+
+- **Style**: EXTRA (slot, slot)
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Store the position of the cursor in `a0` into slot `a1`: the
+  cell itself for a pair spine, the index as an int for a sequence.
+
+### KOS_OP_MATCH_RESET_VAR / KOS_OP_MATCH_RESET_FAST
+
+- **Style**: EXTRA (slot, slot)
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Move the cursor in `a0` back to the position saved in slot
+  `a1`. A failed branch of a repeat, an optional or a `(or ...)` returns to
+  where it began.
+
+### KOS_OP_MATCH_CAPTURES / KOS_OP_MATCH_CAPTURES_NAMED_VAR / KOS_OP_MATCH_CAPTURES_NAMED_FAST
+
+- **Style**: EXTRA (CONST, FASTVAR, FASTVAR, FASTVAR) on `MATCH_CAPTURES`: the
+  names tuple, the first capture slot of one run, the start, the cursor. EXTRA
+  (CONST, slot, slot) on the NAMED forms: the names tuple, the start, the
+  cursor, each capture read by its name.
+- **Stack**: `[...]` -> `[..., captures]`.
+- **Semantics**: Push the captures of a scope: the value of each named slot
+  that is bound, an unbound slot absent. When the start saved by `MATCH_MARK`
+  is a pair cell the result is a `DatumFrame` whose source is the span from
+  that cell to the cursor and whose position is the start cell's; when it is an
+  index the result is a plain dict.
+
+### KOS_OP_MATCH_ITERATION / KOS_OP_MATCH_ITERATION_NAMED_VAR / KOS_OP_MATCH_ITERATION_NAMED_FAST
+
+- **Style**: As `MATCH_CAPTURES`.
+- **Stack**: `[...]` -> `[..., value]`.
+- **Semantics**: Push one repeat iteration's value and clear the slots it read,
+  so the next iteration starts with none of them bound. The value is the
+  captures when any slot bound, else the span itself: one boxed element for a
+  one-element span, a tuple of them otherwise.
+
 
 ## 10. Introspection
 

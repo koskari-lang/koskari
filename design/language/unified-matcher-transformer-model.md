@@ -65,7 +65,7 @@ pattern only, is gone. The **four** top-level forms (`syntax-rules`,
 
 - **Syntax boxes / procedural hygiene**: [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
 - **Matcher hygiene metadata (archived; superseded by [MATCHER.md § Hygiene model](../MATCHER.md#hygiene-model))**: [matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md)
-- **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.lib.Matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
+- **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.match_code`)**: [pattern-matching.md](../api/pattern-matching.md)
 - **Implemented compile-time macros**: [MACROS.md](../MACROS.md)
 - **`compile/define-syntax` and macro specials**: [SPECIALS.md](../SPECIALS.md)
 - **Historical macro notes**: [archive/macros.md](../archive/macros.md)

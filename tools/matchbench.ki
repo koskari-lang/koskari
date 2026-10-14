@@ -14,19 +14,22 @@
 """
 matchbench -- matcher and match/case micro-benchmarks.
 
-Three tiers of timing cells over the one matcher engine:
+Three tiers of timing cells over the one matcher:
 
-  engine-*   direct Matcher.match on pre-thawed matchers -- the C
-             engine in isolation, hit and miss paths per node family
-  match-*    compiled koskari match functions -- the full MATCH_CASE
-             chain: per-arm subject wrap, extern env build, binding
+  engine-*   Matcher.match on matchers built ahead of the run -- the
+             compiled function entered from Python, hit and miss paths
+             per node family
+  syntax-*   one matcher over a let form, and a three-arm Syntax
+             dispatching through its one function
+  match-*    compiled koskari match functions -- the arm chain of
+             MATCH_* instructions inline, captures into fast slots
   anchor-*   the same 8-way literal dispatch as match, switch, and
-             cond -- the ratios that say when engine taxes matter
+             cond -- the ratios that say when matching taxes matter
 
 Methodology follows examples/churn: a uniform harness loop, an
 empty-cell baseline subtracted from every measurement, and a warmup
-pass so MATCH_CASE cache slots are thawed before timing. Numbers are
-machine-relative; compare before/after on one machine, not across.
+pass so every matcher's function is compiled before timing. Numbers
+are machine-relative; compare before/after on one machine, not across.
 
 Run from the repository root:
 

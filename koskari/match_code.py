@@ -20,9 +20,8 @@ Two targets take the same instructions. The inline target emits into
 a fragment of the standard compiler for a match clause, the captures
 stored into the clause's declared names. The standalone target builds
 a Function of its own from the instructions, with no compiler in
-reach, whose result is the captures. The walk, the widths and the
-capture shapes are the engine's; the control is labels
-(design/interpreter/matcher-bytecode.md).
+reach, whose result is the captures, or the index and captures of the
+first clause that matches when a dispatcher is built over several.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -81,8 +80,8 @@ CONTAINERS = ('MATCH', 'GROUP', 'ONEOF', 'MAP', 'CLASS')
 
 def validate_frozen(frozen):
     """
-    Check a frozen matcher tuple as the engine's thaw and validator
-    did: the tuple shape, every node's arity and references, the
+    Check a frozen matcher tuple before anything is emitted from it:
+    the tuple shape, every node's arity and references, the
     chains, the subnodes a kind requires, a REPEAT that consumes, no
     capture under NOT, at most one REST per branch with a fixed suffix
     after it, and the CLASS and FIELD structure. Iterative throughout,
@@ -327,7 +326,7 @@ def spine_children(nodes, idx):
 def branch_chunks(nodes, widths, root):
     """
     The chunks of a branch in spine order, each (min, max, is_rest):
-    the engine's chunk list, collected without recursion
+    the branch's chunk list, collected without recursion
     """
 
     chunks = []
@@ -889,8 +888,7 @@ class MatchLowering:
 
     def width(self, idx):
         """
-        The engine's min and max width of a node, max None when
-        unbounded
+        The min and max width of a node, max None when unbounded
         """
 
         found = self.widths_cache.get(idx)

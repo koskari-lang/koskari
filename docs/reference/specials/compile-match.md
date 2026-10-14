@@ -19,18 +19,16 @@ pattern (`[[x :: int]]`); any other bare multi-token content raises
 `SpecialError` -- a sequence is always the explicit `#[...]` / `#(...)`
 form, never bare juxtaposition.
 
-Per arm, the pattern is classified and lowered to a frozen matcher
-constant. Every name the pattern references (types, classes, predicates,
-extractors, symbol mapping keys) is requested through resolution and
-loaded from the enclosing scope at match time, so closure-captured names
-work, except the seven builtin type names `int`, `str`, `list`, `tuple`,
-`pair`, `symbol` and `keyword`, which the matcher resolves from its own
-table and never loads from the scope. The subject is kept on the stack
-across the arm chain (the same
-discipline as [`compile/switch`](compile-switch.md)); a non-matching arm
-leaves it in place and falls to the next arm. On the first match the
-captured names are bound into the enclosing scope in one step and the body
-runs via `helper_begin`.
+Per arm, the pattern is classified and compiled to match instructions
+in place, part of the enclosing function's own code. Every name the
+pattern references (types, classes, predicates, extractors, symbol
+mapping keys) is requested through resolution and loaded from the
+enclosing scope at match time, `int` and `str` as much as a user type, so
+closure-captured names work. The subject is kept on the stack across the
+arm chain (the same discipline as [`compile/switch`](compile-switch.md));
+a non-matching arm leaves it in place and falls to the next arm. The
+captured names are bound into the enclosing scope as the pattern walks
+the value, and on the first match the body runs via `helper_begin`.
 
 A clause may carry a **guard** between the delimiter and the body:
 `[[PATTERN] when: COND BODY...]` runs the body only when `COND` is truthy
@@ -42,8 +40,8 @@ Contracts (details in
 [Match patterns](../../guide/match-patterns.md)): captures are sparse -- an
 unbound optional slot raises `NameError` when read; bindings persist after
 the form; `str` / `bytes` never destructure under sequence patterns;
-pattern callables are called synchronously, so one that suspends raises
-`KoskariSyncViolation`.
+a predicate or extractor is called from the enclosing function, so one
+that awaits does so in place.
 
 The head may be written as `match` or `compile/match`; compiler lookup
 resolves `match` to `compile/match`.

@@ -7,7 +7,7 @@ discussion; the **type and value association semantics are deliberately
 unsettled** (see Open questions) and warrant deliberation before any
 implementation. This is its own effort, on its own schedule — not a
 follow-up item of the runtime match/case work, though it builds on the
-same matcher engine and pattern dialects.
+same matcher compiler and pattern dialects.
 
 ## Purpose
 

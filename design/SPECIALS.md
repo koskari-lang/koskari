@@ -534,8 +534,9 @@ pair/list (`"match clause must be a list"`) whose first element is the
 `pair`/`nil` checks only. Classification errors from the dialect surface as
 `SpecialError` at the clause's position.
 
-Per arm the pattern is lowered to a frozen matcher constant
-(`MatchCompiler().lower(MATCH(...))`). The frozen slot table supplies the
+Per arm the pattern is lowered to a frozen tuple
+(`MatchCompiler().lower(MATCH(...))`) and from that to instructions. The
+frozen slot table supplies the
 binding names (ordered dedup — `ONEOF` branches may declare the same slot);
 the extern table lists every name the pattern resolves at match time (types,
 classes, predicates, extractors, symbol mapping keys). Each extern is passed
@@ -543,21 +544,21 @@ through `request_var` so closure-bound names used only in a pattern are still
 captured.
 
 The subject stays on the stack across the arm chain (same discipline as
-`compile/switch`). Each arm emits one **`MATCH_CASE`** EXTRA row (no-match
-label, frozen matcher, externs tuple, keep-subject flag). No match leaves
-the subject in place and jumps to the next arm; a match binds the arm's
-captures into the namespace, pushes nothing, and consumes the subject unless
-the keep flag is set. The opcode resolves the slot names to namespace slots
-once per site through its cache and binds only the slots that actually
-captured -- an unbound optional slot raises `NameError` when read. Binding
-names are `declare_var`'d in the enclosing scope; bindings persist after the
-form (arms are not isolated scopes).
+`compile/switch`). Each arm's instructions are emitted in place by
+`lower_clause` (`koskari/match_code.py`): the root test peeks the subject,
+a form opens a cursor in a temporary of the function, every test jumps to
+the next arm's label on a miss, and a capture stores into the local the
+pattern names as the walk reaches it. A hit pops the subject and falls into
+the body; the miss edges a nested peek needs are emitted after the body.
+Only a slot that fired is written -- an unbound optional slot raises
+`NameError` when read. Binding names are `declare_var`'d in the enclosing
+scope; bindings persist after the form (arms are not isolated scopes).
 
 A clause may carry a **guard** between the delimiter and the body:
 `[[PATTERN] when: COND BODY...]` (or `unless:`). A guard keyword with no
 expression raises `SpecialError` (`"match guard requires an expression"`).
-With a guard, `MATCH_CASE` binds the captures and leaves the subject on the
-stack; the guard expression compiles after that bind and a `JUMP_FALSE`
+With a guard, the arm's instructions bind the captures and leave the subject
+on the stack; the guard expression compiles after that bind and a `JUMP_FALSE`
 (`when:`) or `JUMP_TRUE` (`unless:`) falls to the next arm with the subject
 intact -- captures persist across a failed guard. A passing guard pops the
 subject and commits to the body.

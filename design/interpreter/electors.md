@@ -369,8 +369,7 @@ and the chain shape varies per activation). Investigative only; hot code
 uses `FAST`.
 
 Not worth a slot: `CAR`, `CDR`, `CONS`, `NILP` (one inline check),
-`PAIR_SPLICE`, `COMBINE_ARGS`, `BUILD_LIST_EXTEND` (cold ladders),
-`MATCH_CASE` (already a guard-free cache).
+`PAIR_SPLICE`, `COMBINE_ARGS`, `BUILD_LIST_EXTEND` (cold ladders).
 
 ## Node-style electors and resumes
 

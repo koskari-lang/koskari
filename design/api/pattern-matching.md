@@ -23,15 +23,15 @@ fidelity is the point.
 
 ---
 
-## Implementation (native matcher)
+## Implementation
 
 The Tags tables, Match Result Types and Match Result sections further down
 record the IR of the Python matcher this note was written against
-(`matcher/...` tags, results carrying `.source`, `with_specs`); the native
-matcher has none of it, and the frozen IR in [MATCHER.md](../MATCHER.md)
+(`matcher/...` tags, results carrying `.source`, `with_specs`); the matcher
+has none of it, and the frozen IR in [MATCHER.md](../MATCHER.md)
 supersedes those sections.
 
-The **native** matcher (`koskari.lib.Matcher`) interprets frozen matcher tuples. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
+A frozen matcher tuple is compiled to `MATCH_*` instructions by **`koskari.match_code`** ([../interpreter/matcher-bytecode.md](../interpreter/matcher-bytecode.md)); **`koskari.matcher.Matcher`** runs the compiled function. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
 
 `koskari.hygiene` holds template transcription, marking, and resolution; `koskari.syntax` the transformer types.
 
@@ -48,14 +48,14 @@ Compile-specific composites (e.g. **BINDINGS**, **FORMALS**) are defined in **`k
 
 ## Design Goals (Target Matcher Set)
 
-The following describes the intended unified design. Implementation may lag; see "Implementation (native matcher)" for current state; the Tags tables are
+The following describes the intended unified design. Implementation may lag; see "Implementation" for current state; the Tags tables are
 the superseded IR.
 
 ### Unified Coverage
 
 All matchers follow a regex MatchObject-like model: forms bind by key in the result dict, and some have special unpacking semantics (e.g. BINDINGS yields `(names, values)`).
 
-**Core matchers (native `koskari.lib.Matcher` IR; built via `koskari.matcher`):**
+**Core matchers (the frozen IR; built via `koskari.matcher`):**
 
 | Matcher | Keyed? | Result | Notes |
 |---------|--------|--------|-------|
@@ -139,7 +139,7 @@ def match(self, source, literals, result, specs=None) -> Tuple[Optional[Any], bo
     When specs is not None, capturing matchers add specs[key] = self."""
 ```
 
-### Tags (native matcher IR)
+### Tags (frozen matcher IR)
 
 | Tag | Payload | Meaning |
 |-----|---------|---------|
@@ -298,13 +298,13 @@ frozen = mc.lower(pattern)
 matcher_obj = Matcher.from_tuple(frozen)
 ```
 
-Serialization and thaw use the same frozen tuple representation consumed by **`koskari.lib.Matcher`**. At match time, use **`Matcher.from_tuple`** on the frozen pattern and call **`.match(source)`** on the result (see `koskari.compile.helpers.match_pattern_raw` for the compile-time wrapper).
+Serialization and thaw use the same frozen tuple representation the match compiler lowers. At match time, use **`koskari.matcher.Matcher.from_tuple`** on the frozen pattern and call **`.match(source)`** on the result (see `koskari.compile.helpers.match_pattern_raw` for the compile-time wrapper).
 
 The snippet below is illustrative; exact combinator names live in **`koskari.matcher`** (see module exports).
 
 ```python
 # Illustrative: build a matcher pattern, lower with MatchCompiler,
-# then match a source spine with koskari.lib.Matcher.from_tuple(...).match(...)
+# then match a source spine with koskari.matcher.Matcher.from_tuple(...).match(...)
 pass
 ```
 
@@ -436,7 +436,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### MATCHERS Registry
 
-Matcher classes register into the native engine’s tables when lowered from **`matcher`** (see `MatchCompiler` and `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.lib.Matcher`** only.
+Pattern forms register in `MATCHER_REGISTRY` and lower through **`MatchCompiler`** to the frozen tuple (see `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.match_code`** only.
 
 ### Const-Pool Friendliness
 

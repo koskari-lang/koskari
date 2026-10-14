@@ -200,11 +200,13 @@ same helper (`pair.c:582/605`, `values.c:717/737`, `partial.c:479-508`)
 are CPython slots: boundary.
 
 **D10. Runtime match predicates nest.**
-Deferred (stretch) to the opcode dispatch group in
-[../FLATTENING.md](../FLATTENING.md) Future. `MATCH_CASE` ->
-`KOS_MATCH_TEST_PREDICATE` (`matcher.c:1376-1384`) ->
-`matcher_call_extern` -> `Koskari_DemandSync` (`matcher/datum.c:485`). A
-Koskari predicate or APP extractor in a runtime `match` nests an eval.
+Closed by the matcher as bytecode
+([matcher-bytecode.md](matcher-bytecode.md)): a `(? pred)` or
+`(app f ...)` in a runtime `match` is a `CALL` from the matching frame
+and flattens. The text below records the gap as it stood.
+`MATCH_CASE` -> `KOS_MATCH_TEST_PREDICATE` -> `matcher_call_extern` ->
+`Koskari_DemandSync`. A Koskari predicate or APP extractor in a
+runtime `match` nested an eval.
 The comment there names it a flattening gap and points at
 [resumable-reads.md](resumable-reads.md) section 8, the match row.
 

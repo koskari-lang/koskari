@@ -127,7 +127,7 @@ match 2.5:
 
 To test against your own type, bind it under another name.
 
-### Callables are called synchronously
+### Callables are called as functions
 
 A predicate or extractor is an ordinary callable, and a plain Koskari
 `define` works without wrapping:
@@ -141,11 +141,10 @@ match path:
     (compile-source base)
 ```
 
-The call is synchronous in the current release: a predicate or
-extractor that suspends, an `async` function that awaits inside a
-`match`, raises `KoskariSyncViolation`. Keep awaiting work in the arm
-body, or resolve it before the `match`. A predicate or extractor that
-raises propagates the error rather than counting as a no-match.
+The call is a call from the function the `match` is in, so a
+predicate or extractor that awaits does so in place, as a call in the
+arm body would. A predicate or extractor that raises propagates the
+error rather than counting as a no-match.
 
 ## Guards
 
@@ -181,4 +180,4 @@ Captured names stay bound when a guard fails, as after Python's
 - [`layout/match`](../reference/layouts/layout-match.md): the `match:` block
 - [`compile/switch`](../reference/specials/compile-switch.md): equality dispatch
 - [`koskari.matcher`](../reference/api/koskari-matcher.md): the matcher these patterns compile to
-- [Macros and hygiene](macros-and-hygiene.md): the same engine matching source forms at compile time
+- [Macros and hygiene](macros-and-hygiene.md): the same matcher matching source forms at compile time

@@ -1,26 +1,30 @@
 # Koskari matcher reference
 
-Canonical reference for the native matcher (`koskari.lib.Matcher`), the Python
-pattern builders in `koskari.matcher`, the capture wrappers (`Datum`,
-`DatumFrame`), the scoped symbols (`koskari.lib.gensym`) that carry macro
-hygiene, and the **runtime match/case system** (the case-pattern dialect, the
-`MATCH_CASE` opcode, and `compile/match` / `layout/match`).
+Canonical reference for the matcher: the Python pattern builders in
+`koskari.matcher`, the match compiler in `koskari.match_code` that lowers a
+pattern to `MATCH_*` instructions, the `Matcher` and `Dispatcher` that run
+the compiled function, the capture wrappers (`Datum`, `DatumFrame`), the
+scoped symbols (`koskari.lib.gensym`) that carry macro hygiene, and the
+**runtime match/case system** (the case-pattern dialect and `compile/match`
+/ `layout/match`).
 
-**Implementation:** `koskari/matcher.py`, `koskari/hygiene.py`,
-`koskari/syntax.py`, `koskari/lib/matcher.{c,h}`;
-runtime match/case: `koskari/compile/specials/match.py`,
-`koskari/reader/layouts/conditionals.py`,
-`koskari/lib/opcode/MATCH_CASE.c`
+**Implementation:** `koskari/matcher.py`, `koskari/match_code.py`,
+`koskari/hygiene.py`, `koskari/syntax.py`, `koskari/lib/matcher.{c,h}`,
+`koskari/lib/matcher/step.c`, `koskari/lib/eval/eval_match.c`,
+`koskari/lib/opcode/MATCH_*.c`; runtime match/case:
+`koskari/compile/specials/match.py`,
+`koskari/reader/layouts/conditionals.py`
 
 **Related design (deeper or historical):**
 
+- [interpreter/matcher-bytecode.md](interpreter/matcher-bytecode.md) -- the matcher as bytecode: the instruction set, the lowering, the three lifetimes of a compiled pattern
 - [api/pattern-matching.md](api/pattern-matching.md) -- tagged-tuple IR and migration notes
 - [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md) -- the superseded discovery-by-pattern hygiene design
 - [archive/matcher-ng-rollup.md](archive/matcher-ng-rollup.md) -- rollout notes and as-built sketches from before hygiene by marks; the hygiene names it uses are gone
 - [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) -- `Datum` in macro expansion
 - [language/unified-matcher-transformer-model.md](language/unified-matcher-transformer-model.md) -- specials, syntax-rules, and shared finalize pipeline
 - [archive/match-pattern-language.md](archive/match-pattern-language.md) — runtime pattern-language design record
-- [archive/match-case-form.md](archive/match-case-form.md) — MATCH_CASE opcode / cache design record
+- [archive/match-case-form.md](archive/match-case-form.md) — the retired MATCH_CASE opcode and its cache, a design record
 - [language/define-matcher.md](language/define-matcher.md) — parameterized matcher templates (open design)
 
 ---
@@ -29,14 +33,24 @@ runtime match/case: `koskari/compile/specials/match.py`,
 
 The matcher is a small pattern language over **spine subjects**: proper lists
 of koskari source cells (usually `KosPair`) at compile time, or **runtime
-sequences** (tuple/list via a `PySequence_Fast` adapter) at run time. The same
-engine serves both: macro / special-form dispatch matches source forms, and the
-runtime `match`/`case` statement matches values (each arm's frozen matcher
-runs against the subject wrapped as a length-1 sequence). Patterns are built
-in Python (`MATCH(...)`, `BINDINGS(...)`, …) or parsed from surface syntax,
-lowered to a frozen **6-tuple** IR, and executed by the C `Matcher`.
+sequences** (tuple, list) at run time. The same lowering serves both: macro /
+special-form dispatch matches source forms, and the runtime `match`/`case`
+statement matches values. Patterns are built in Python (`MATCH(...)`,
+`BINDINGS(...)`, …) or parsed from surface syntax, lowered to a frozen
+**6-tuple** IR, and compiled from that to `MATCH_*` instructions
+([OPCODES.md](OPCODES.md) section 9.2). The instructions live in one of
+three containers:
 
-One compilation path: `MatchCompiler` lowers a pattern to the frozen tuple.
+- a standalone `Function` over a namespace the default externs fill, for a
+  pattern built in Python (`Matcher`, and the one `Dispatcher` function a
+  `Syntax` tries its arms through);
+- a lambda the defining module's compile builds, for a `syntax-rules` or
+  `syntax-match` rule, its externs closure names of the module;
+- the enclosing function itself, for a `match`/`case` arm, its captures the
+  function's locals.
+
+Two compilation paths: `MatchCompiler` lowers a pattern to the frozen tuple,
+and `koskari.match_code` lowers the tuple to instructions.
 
 ```python
 from koskari.matcher import MATCH, DEFINE, BODY, MatchCompiler, make_matcher
@@ -51,7 +65,8 @@ business, and hygiene is provenance on the atoms themselves (see
 
 Special forms and syntax macros attach patterns via `@special(..., patterns=...)`
 or `Syntax(...)`. Each arm stores its `matcher` on its `Transform`, built in
-`koskari.syntax.Transform.__init__`.
+`koskari.syntax.Transform.__init__`; the `Syntax` dispatches through one
+function over every arm's matcher.
 
 ---
 
@@ -63,8 +78,11 @@ Lowering emits:
 ("MATCHER", slot_names, extern_names, consts, nodes, entry_index)
 ```
 
-- **Matching** and **thaw** use only this tuple.
-- `thaw(frozen)` and `Matcher.from_tuple(frozen)` reconstruct a native matcher.
+- The lowering to instructions uses only this tuple; `validate_frozen`
+  checks it (indices in range, widths, a REST's position, no capture under
+  NOT) before anything is emitted.
+- `thaw(frozen)` and `Matcher.from_tuple(frozen)` build a `Matcher` over it;
+  the function is compiled on the first match.
 
 `MatchResult.captures` is a **sparse** dict: only slots that actually bound appear.
 Check membership before use.
@@ -75,7 +93,7 @@ Check membership before use.
 
 ### Datum
 
-`koskari.lib.Datum` is the box the matcher puts input material in: a native
+`koskari.lib.Datum` is the box the matcher puts input material in: a
 wrapper around a captured value with its source position.
 
 Captures are boxed only on a walk over source, a `KosPair` spine whose cell
@@ -140,9 +158,10 @@ and raises `ValueError` when another atom holds the spelling.
 Use `.source` when compile code needs the raw declaration, binding cell, or
 formals list spine without re-parsing from inner keys.
 
-**Not everything is a DatumFrame:** `BINDINGS` stores a bare Python `list` of
-per-row dicts (or `nil` for the empty arm). `repeat_capture` list captures are
-plain lists unless the engine produced `DatumFrame` per row on KosPair subjects.
+**Not everything is a DatumFrame:** `BINDINGS` stores a bare Python `list`,
+one dict per binding (or `nil` for the empty arm). A `repeat_capture` list
+holds one entry per iteration: a dict, or a `DatumFrame` on a KosPair
+subject.
 
 ---
 
@@ -198,7 +217,7 @@ Built-ins registered in `MATCHER_REGISTRY` include:
 
 ## Structural primitives
 
-These lower to native nodes.
+These lower to nodes of the frozen tuple.
 
 | Pattern | Match behaviour | Capture |
 |---------|-----------------|---------|
@@ -452,8 +471,18 @@ spelling records the slot's role for the reader.
 
 Each transform arm:
 
-1. Lowers `pattern` with `MatchCompiler` and stores the `matcher`.
+1. Lowers `pattern` with `MatchCompiler` and stores the `matcher`, or takes
+   the function a module compiled for the rule (`Matcher.from_function`,
+   the `build-*` builtins' function rows).
 2. `try_expand` runs `matcher.match(source_obj)` then `handle_expand`.
+
+The `Syntax` itself does not try the arms one by one. Its `dispatcher`, a
+`Dispatcher` built on first use over every arm's matcher, is one `Function`:
+a frozen matcher lowers inline with the next arm's entry as its miss edge, a
+module-built matcher is called and its result tested against None, and the
+first hit returns `(values index captures)`. `compile_impl` makes one call
+per form compiled. Composition with `+` makes a new `Syntax` and so a new
+dispatcher over the combined arms.
 
 `SyntaxTransform.handle_expand` transcribes the template with a fresh mark;
 `MacroTransform.handle_expand` runs the handler and marks its output. Both
@@ -511,9 +540,10 @@ registry-headed forms back to `parse_matcher`.
 
 ## Runtime match/case
 
-The runtime `match` statement is the value-matching consumer of the engine:
-`compile/match` (s-expr) and `layout/match` (block syntax) lower each arm's
-pattern to a frozen matcher constant and emit a `MATCH_CASE` per arm over it.
+The runtime `match` statement is the value-matching consumer of the
+lowering: `compile/match` (s-expr) and `layout/match` (block syntax) lower
+each arm's pattern to a frozen tuple and emit its instructions inline,
+through `lower_clause`, between the arm tests of the enclosing function.
 
 ### The case-pattern dialect
 
@@ -532,7 +562,7 @@ mint the distinguishing heads:
 | `#[a b *: r]` | `(#list a b *: r)` | `FORM(MATCH(...))`, `*:` → `REST` |
 | `#(a b)` | `(#tuple a b)` | `FORM(MATCH(...))` |
 | `#{K: PAT ...}` | `(#dict (#tuple K PAT) ...)` | `MAP`; symbol keys are externs, atom keys consts |
-| `Point[x y]` | `(item Point x y)` | `CLASS`; Python field rules (`__match_args__` positional, `k: pat` keyword, self-binding bare symbol after keywords). On 3.9 (pre-PEP 634) the engine synthesizes `__match_args__` for dataclasses / namedtuples, gated `PY_MINOR_VERSION < 10` so a 3.10+ `match_args=False` opt-out is never overridden |
+| `Point[x y]` | `(item Point x y)` | `CLASS`; Python field rules (`__match_args__` positional, `k: pat` keyword, self-binding bare symbol after keywords). On 3.9 (pre-PEP 634) the class test synthesizes `__match_args__` for dataclasses / namedtuples, gated `PY_MINOR_VERSION < 10` so a 3.10+ `match_args=False` opt-out is never overridden |
 | `(app f PAT)` | head `app` | `APP` |
 | `(? pred)` | head `?` | `PREDICATE` |
 | `(or ...)` / `(not ...)` | heads | `ONEOF` / `NOT` |
@@ -543,14 +573,14 @@ The clause shape is `[[PATTERN] BODY...]` — the pattern rides in its own
 delimiter list, which holds one pattern form or the multi-token `::` spelling.
 The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 
-### Opcodes and lowering
+### Instructions and lowering
 
 | Piece | Behaviour |
 |-------|-----------|
-| `MATCH_CASE` | EXTRA row: no-match label, frozen matcher const, externs name tuple, keep-subject flag; one `KOS_CACHE_MATCHER` slot. Subject held on the stack across arms; wrapped as a length-1 sequence per attempt. No match: subject stays, jump. Match: the engine fills a slot array aligned to the matcher's slot table (`KosMatcher_RunSlotsVectorcall`), the opcode binds each slot that fired into the namespace and pushes nothing (subject consumed unless `keep`). The subject is a single runtime value, never a source spine, so captures are raw. **Unfired slots are skipped** -- an unbound optional slot raises `NameError` when read. |
-| `KOS_CACHE_MATCHER` | Per-site cache slot holding the thawed `Matcher` -- thaw-once, no guard/version (thaw is a pure function of the const) -- and a `KosSlotMap` (namespace subsystem) over the matcher's slot table: per slot the fast index or -1 for bind-by-name, guarded by the namespace layout with adoption of a same-contents fast-names tuple, so sibling function objects of one code share the resolution and another layout re-resolves. |
-| Guards | `[[PATTERN] when:/unless: COND BODY...]`. Keep-flagged `MATCH_CASE` leaves the subject on the stack after binding; evaluate guard, `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
-| Externs | The special collects the frozen matcher's externs, `request_var`s each (closure capture works), and the handler loads them from the frame namespace at match time. |
+| The arm | The subject stays on the stack across the arm chain. `lower_clause` emits the arm's `MATCH_*` instructions in place: the root test peeks the subject, a form opens a cursor in a temporary of the enclosing function, each pull or peek test jumps to the next arm's label on a miss, and a capture stores straight into the local the pattern names. A hit falls through to the arm body after a `POP` of the subject; the miss edges that a nested peek needs (a label, the pops down to the subject, the jump) are emitted after the body. |
+| Captures | Fast slots of the enclosing function, declared in the enclosing scope. Only a slot that fired is written; an unbound optional slot raises `NameError` when read. The subject is a single runtime value, never a source spine, so captures are raw. |
+| Guards | `[[PATTERN] when:/unless: COND BODY...]`. The guard compiles after the arm's instructions with the subject still on the stack; `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
+| Externs | Every name the pattern resolves, `int` and `str` included, is requested through `request_var` and read from the enclosing scope, so closure capture works and a store into a builtin is seen. A predicate or extractor is a `CALL` from the same frame and flattens; one that awaits does so in place. |
 
 Behavioural contracts: bindings land in the **enclosing scope** and persist
 after the form (Python-consistent; arms are not isolated scopes); first arm
@@ -563,8 +593,11 @@ patterns.
 
 ```python
 from koskari.matcher import (
-    make_matcher, thaw, pattern_slot_names,
+    make_matcher, thaw, pattern_slot_names, Matcher, Dispatcher,
     MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS, MatchCompiler,
+)
+from koskari.match_code import (
+    compile_match_function, compile_dispatch_function, validate_frozen,
 )
 from koskari.hygiene import (
     expand_template_with_hygiene, mark_expansion, peel_datums,
@@ -577,7 +610,12 @@ from koskari.compile.helpers import match, match_pattern_raw
 
 | Function | Role |
 |----------|------|
-| `make_matcher(pat)` | Compile a pattern |
+| `make_matcher(pat)` | Compile a pattern to a `Matcher` |
+| `Matcher.match(subject, **externs)` | Run the compiled function; a keyword is stored into the matcher's namespace for the call |
+| `Dispatcher(matchers).select(subject)` | The first matching index and its captures, or `(-1, None)` |
+| `compile_match_function(frozen, ns)` | A frozen tuple as a `Function` over `ns` |
+| `compile_dispatch_function(clauses, ns)` | Frozen tuples and functions as one `Function` returning `(values index captures)` |
+| `validate_frozen(frozen)` | Refuse a malformed frozen tuple |
 | `pattern_slot_names(pat)` | Slot names in declaration order |
 | `match(source, patterns)` | Try patterns; optional `with_specs` |
 | `match_pattern_raw(source, patterns)` | First capture dict or `None` |
@@ -607,7 +645,9 @@ from koskari.compile.helpers import match, match_pattern_raw
 | Hygiene end to end | `tests/reproducers/test_mark_hygiene.py` |
 | Special patterns | `koskari/compile/specials/` |
 | Case-pattern dialect, `APP`, `MAP` | `tests/matcher/test_case_patterns.py` |
-| `MATCH_CASE` opcode | `tests/lib/opcode/test_match_case.py` |
+| `MATCH_*` instructions | `tests/lib/opcode/test_match_instructions.py` |
+| The compiled function's capture shapes | `tests/matcher/test_match_function.py` |
+| The `Syntax` dispatcher | `tests/syntax/test_syntax_dispatch.py` |
 | `compile/match` (incl. guards, layout eval) | `tests/compile/specials/test_match.py` |
 | `layout/match` structure | `tests/reader/layouts/test_match_layout.py` |
 
@@ -621,6 +661,13 @@ When adding a new composite:
 2. Register a surface factory in `register_builtin_matchers()` if exposed in
    `parse_matcher` / rule patterns.
 3. Add tests for the match shape.
+
+A composite needs no change below the frozen tuple. A new primitive node
+kind needs a lowering in `koskari/match_code.py`, a rule in
+`validate_frozen`, and, when no existing instruction does its test, an
+instruction: the `OP` row in `opcodes.incl`, the step in
+`koskari/lib/matcher/step.c`, the body in `koskari/lib/eval/eval_match.c`,
+the thin handlers, and the `convert_fast` twin rule.
 
 When writing a special that reads a name out of the form by hand, apply the
 table under [Reading a scoped atom](#reading-a-scoped-atom): the key for a
