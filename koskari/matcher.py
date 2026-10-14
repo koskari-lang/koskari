@@ -24,9 +24,14 @@ Python surface for the native matcher
 
 from typing import Protocol, runtime_checkable
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+
 from koskari.lib import (
-    Datum, DatumFrame, Matcher, MatchResult, cons, keyword, kos_repr,
+    Datum, DatumFrame, ModuleNamespace, cons, demand, keyword, kos_repr,
     nil, pair, symbol)
+from koskari.match_code import compile_match_function, validate_frozen
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
@@ -40,6 +45,9 @@ __all__ = (
 
     "Matcher",
     "MatchResult",
+    "match_select",
+    "get_extern_defaults",
+    "reset_extern_defaults",
     "Datum",
     "DatumFrame",
     "Pattern",
@@ -106,10 +114,373 @@ __all__ = (
 )
 
 
+# === The matcher: a function built from the frozen tuple ===
+
+
+class ExternDefaults(dict):
+    """
+    The default externs a matcher built outside a module resolves its
+    names in: the builtin types a pattern names by their bare spelling.
+    Every write bumps the version, so a matcher knows when to refresh
+    the namespace its function closes over
+    """
+
+    def __init__(self, *args, **kwds):
+        super().__init__(*args, **kwds)
+        self.version = 0
+
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self.version += 1
+
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self.version += 1
+
+
+    def clear(self):
+        super().clear()
+        self.version += 1
+
+
+    def update(self, *args, **kwds):
+        super().update(*args, **kwds)
+        self.version += 1
+
+
+    def pop(self, *args):
+        found = super().pop(*args)
+        self.version += 1
+        return found
+
+
+    def setdefault(self, key, default=None):
+        found = super().setdefault(key, default)
+        self.version += 1
+        return found
+
+
+EXTERN_BASELINE = {
+    "pair": pair,
+    "symbol": symbol,
+    "keyword": keyword,
+    "int": int,
+    "str": str,
+    "tuple": tuple,
+    "list": list,
+}
+
+
+EXTERN_DEFAULTS = ExternDefaults(EXTERN_BASELINE)
+
+
+def get_extern_defaults():
+    """
+    The live default externs mapping; a store into it reaches every
+    matcher built from Python on its next match
+    """
+
+    return EXTERN_DEFAULTS
+
+
+def reset_extern_defaults():
+    """
+    Drop every entry of the default externs and restore the baseline
+    """
+
+    EXTERN_DEFAULTS.clear()
+    EXTERN_DEFAULTS.update(EXTERN_BASELINE)
+    return EXTERN_DEFAULTS
+
+
+def interned_consts(frozen):
+    """
+    The consts of a frozen matcher as the engine's thaw interned them:
+    the frozen pool, then each keyword FIELD's attribute name appended
+    once in node order, an equal const of the same type being one entry
+    """
+
+    consts = list(frozen[3])
+    for node in frozen[4]:
+        if node[0] != 'FIELD_KW':
+            continue
+        name = node[2]
+        for existing in consts:
+            if type(existing) is type(name) and existing == name:
+                break
+        else:
+            consts.append(name)
+    return tuple(consts)
+
+
+@dataclass
+class MatchResult:
+    """
+    The outcome of a match: whether it matched, and the captures, a
+    dict or a DatumFrame, sparse over the slots that fired
+    """
+
+    matched: bool
+    captures: Any
+
+
+class Matcher:
+    """
+    A frozen matcher as a function: the subject its one formal, its
+    externs closure names over a namespace the default externs fill,
+    the captures its result. Built once from the frozen tuple, called
+    through the demand wrapper so the context it runs in is reused
+    """
+
+    def __init__(self, frozen, name=None):
+        validate_frozen(frozen)
+        self.frozen = frozen
+        self.slots = tuple(frozen[1])
+        self.externs = tuple(frozen[2])
+        self.consts = interned_consts(frozen)
+        self.nodes = tuple(frozen[4])
+        self.entry = frozen[5]
+        self.name = name or "matcher"
+        # the defaults are stored into the namespace by refresh, so a
+        # later change to them reaches the function's closure refs
+        self.namespace = ModuleNamespace(self.name, {})
+        self._extern_set = frozenset(self.externs)
+        self._version = None
+        self._nodefault = ()
+        self._overridden = set()
+        # the function is built on the first match: a pattern nested
+        # past the interpreter's limit is refused there, as the engine
+        # refused it, and not when the matcher is made
+        self._function = None
+        self._call = None
+
+
+    @property
+    def function(self):
+        """
+        The Function the matcher runs, built on first use
+        """
+
+        if self._function is None:
+            self._function = compile_match_function(
+                self.frozen, self.namespace, name=self.name)
+            self._call = demand(self._function)
+        return self._function
+
+
+    @classmethod
+    def from_tuple(cls, frozen):
+        return cls(frozen)
+
+
+    @classmethod
+    def from_function(cls, function, slots=(), name=None):
+        """
+        A Matcher over a function a module built from a pattern: its
+        externs are the function's own closure names, so nothing here
+        is refreshed, overridden or refused; a keyword to match is
+        ignored as a name the matcher does not declare
+
+        :param function: the matcher function, one positional formal
+        :param slots: the slot names, in slot order
+        """
+
+        self = cls.__new__(cls)
+        self.frozen = None
+        self.slots = tuple(slots)
+        self.externs = ()
+        self.consts = ()
+        self.nodes = ()
+        self.entry = None
+        self.name = name or getattr(function, "__name__", "matcher")
+        self.namespace = None
+        self._extern_set = frozenset()
+        self._version = EXTERN_DEFAULTS.version
+        self._nodefault = ()
+        self._overridden = set()
+        self._function = function
+        self._call = demand(function)
+        return self
+
+
+    @property
+    def node_count(self):
+        return len(self.nodes)
+
+
+    def __repr__(self):
+        return (
+            f"<Matcher nodes={len(self.nodes)} slots={len(self.slots)}"
+            f" externs={len(self.externs)} consts={len(self.consts)}"
+            f" entry={self.entry}>")
+
+
+    def refresh(self):
+        """
+        Store the default externs into the namespace when the defaults
+        have changed since the last match, and note which externs have
+        no default
+        """
+
+        if self._version == EXTERN_DEFAULTS.version or self.namespace is None:
+            return
+        nodefault = []
+        for name in self.externs:
+            if name in EXTERN_DEFAULTS:
+                self.namespace.store(name, EXTERN_DEFAULTS[name])
+            else:
+                nodefault.append(name)
+        self._nodefault = tuple(nodefault)
+        self._version = EXTERN_DEFAULTS.version
+
+
+    def match(self, subject, **externs):
+        """
+        Match subject, a pair spine, nil, or a sequence. A keyword
+        argument names an extern for this match; a name the matcher
+        does not declare is ignored.
+
+        :raises TypeError: when a pair subject is not a proper list, or
+            an extern has neither a keyword nor a default
+        :raises ValueError: when a pair subject loops
+        """
+
+        subject = check_subject(subject)
+
+        # the common call: no keywords, the defaults as they were, no
+        # override to undo, every extern covered
+        if (externs or self._version != EXTERN_DEFAULTS.version
+                or self._overridden or self._nodefault):
+            self.prepare(externs)
+
+        call = self._call
+        if call is None:
+            self.function
+            call = self._call
+        captures = call(subject)
+        if captures is None:
+            return MatchResult(False, {})
+        return MatchResult(True, captures)
+
+
+    def ready(self):
+        """
+        The bare call of the function, with the namespace brought to
+        the defaults when they changed and no keyword in play: what
+        match_select runs per matcher
+        """
+
+        if (self._version != EXTERN_DEFAULTS.version
+                or self._overridden or self._nodefault):
+            self.prepare({})
+        if self._call is None:
+            self.function
+        return self._call
+
+
+    def prepare(self, externs):
+        """
+        Bring the namespace to this call's externs: the defaults when
+        they changed, the keyword arguments over them, a previous call's
+        keywords undone, and a missing extern refused
+        """
+
+        self.refresh()
+        if self._overridden:
+            for name in self._overridden:
+                if name not in externs and name in EXTERN_DEFAULTS:
+                    self.namespace.store(name, EXTERN_DEFAULTS[name])
+            self._overridden = set()
+        for name, value in externs.items():
+            if name in self._extern_set:
+                self.namespace.store(name, value)
+                self._overridden.add(name)
+        for name in self._nodefault:
+            if name not in externs:
+                raise TypeError(f"matcher missing extern binding: {name!r}")
+
+
+    def missing_externs(self, provided=None, exclude_defaults=False):
+        """
+        The externs neither provided nor, unless exclude_defaults,
+        covered by the defaults, in extern order
+
+        :param provided: a mapping of extern names, or None
+        :param exclude_defaults: when true the defaults count as
+            satisfying a name
+        :raises TypeError: when provided is neither None nor a mapping
+        """
+
+        if provided is not None and not isinstance(provided, Mapping):
+            raise TypeError("provided must be None or a mapping")
+        missing = []
+        for name in self.externs:
+            satisfied = provided is not None and name in provided
+            if not satisfied and exclude_defaults:
+                satisfied = name in EXTERN_DEFAULTS
+            if not satisfied:
+                missing.append(name)
+        return tuple(missing)
+
+
+def check_subject(subject):
+    """
+    The subject a match runs on: read through Datum, and a pair spine
+    refused when it loops or is improper
+
+    :raises ValueError: when a pair subject loops
+    :raises TypeError: when a pair subject is not a proper list
+    """
+
+    while isinstance(subject, Datum):
+        subject = subject.datum
+    if is_pair(subject):
+        if subject.is_recursive():
+            raise ValueError("looping spine in match subject")
+        if not subject.is_proper():
+            raise TypeError(
+                "match subject must be a proper list (nil-terminated)")
+    return subject
+
+
+def match_select(matchers, subject, **externs):
+    """
+    Run matchers in order against one subject until one matches. With
+    no keywords each matcher's function is called bare, the subject
+    checked once and a result built for the winner alone.
+
+    :return: (index, result) for the first match, or (-1, None)
+    :raises TypeError: when an element is not a Matcher
+    """
+
+    if externs:
+        for idx, matcher in enumerate(matchers):
+            if not isinstance(matcher, Matcher):
+                raise TypeError(
+                    f"match_select element {idx} is not a Matcher:"
+                    f" {type(matcher).__name__}")
+            result = matcher.match(subject, **externs)
+            if result.matched:
+                return idx, result
+        return -1, None
+
+    subject = check_subject(subject)
+    for idx, matcher in enumerate(matchers):
+        if not isinstance(matcher, Matcher):
+            raise TypeError(
+                f"match_select element {idx} is not a Matcher:"
+                f" {type(matcher).__name__}")
+        captures = matcher.ready()(subject)
+        if captures is not None:
+            return idx, MatchResult(True, captures)
+    return -1, None
+
+
 def thaw(tagged_tuple):
     """
-    Reconstruct a native Matcher from its frozen tagged-tuple
-    representation
+    Reconstruct a Matcher from its frozen tagged-tuple representation
     """
 
     return Matcher.from_tuple(tagged_tuple)
@@ -2140,7 +2511,7 @@ def parse_matcher(elem):
     # the element is source, so it is walked as a one-cell spine:
     # captures come back as Datum with position intact
     result = META_MATCHER.match(
-        cons(elem, nil), symbol=symbol, keyword=keyword)
+        cons(elem, nil))
     if not result.matched:
         raise ValueError(
             f"not a valid matcher pattern: {elem!r}")
@@ -2930,7 +3301,7 @@ def parse_case_element(elem):
         raise ValueError(
             "nil is not a valid case pattern element")
     result = CASE_ELEMENT_MATCHER.match(
-        cons(elem, nil), symbol=symbol, keyword=keyword)
+        cons(elem, nil))
     if not result.matched:
         raise ValueError(
             f"not a valid case pattern: {elem!r}")
@@ -3028,7 +3399,7 @@ def parse_case_pattern(content):
     if is_nil(content):
         raise ValueError("empty case pattern")
     result = CASE_DELIM_MATCHER.match(
-        cons(content, nil), symbol=symbol, keyword=keyword)
+        cons(content, nil))
     if not result.matched:
         raise ValueError(
             f"invalid case pattern {content!r};"

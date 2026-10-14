@@ -14,11 +14,9 @@
 """
 tests.lib.test_match_case_env
 
-A match site's extern env and first element test: an arm whose externs
-all come from the defaults sees a change to those defaults on its
-next execution, and arms the matcher rules out on the bare subject
-give the same answers as the engine would, for every root shape, a
-subject whose __class__ lies, and a Datum-boxed subject.
+A match site's first element tests: the clauses answer as the engine
+would, for every root shape, a subject whose __class__ lies, and a
+Datum-boxed subject.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,8 +26,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import (
-    Datum, cons, get_extern_defaults, nil, reset_extern_defaults)
+from koskari.lib import Datum, cons, nil
 from koskari.module import load_module_source_async, new_module
 
 
@@ -41,15 +38,6 @@ define-class Point []:
     define __init__ [self x y]:
         set! self.x x
         set! self.y y
-
-define typed [v]:
-    match v:
-        case m :: int:
-            (+ 1000 m)
-        case s :: str:
-            (len s)
-        else:
-            -1
 
 define shapes [v]:
     match v:
@@ -90,25 +78,6 @@ class TestMatchCaseEnv(unittest.IsolatedAsyncioTestCase):
         vars(module)["__file__"] = "<match_case_env>"
         await load_module_source_async(module, SRC)
         return vars(module)
-
-    async def test_defaults_change_reaches_a_running_site(self):
-        mod = await self.load()
-        typed = mod["typed"]
-        self.assertEqual(await typed(5), 1005)
-        self.assertEqual(await typed(2.5), -1)
-        defaults = get_extern_defaults()
-        saved = defaults["int"]
-        try:
-            defaults["int"] = float
-            self.assertEqual(await typed(2.5), 1002.5)
-            self.assertEqual(await typed(5), -1)
-            defaults["int"] = saved
-            self.assertEqual(await typed(5), 1005)
-            reset_extern_defaults()
-            self.assertEqual(await typed(5), 1005)
-            self.assertEqual(await typed("abc"), 3)
-        finally:
-            reset_extern_defaults()
 
     async def test_every_root_shape_answers_as_the_engine(self):
         mod = await self.load()

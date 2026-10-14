@@ -20,9 +20,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import (
-    get_extern_defaults, keyword, nil, pair, reset_extern_defaults, symbol)
-from koskari.matcher import Matcher, MatchResult, thaw
+from koskari.lib import keyword, nil, pair, symbol
+from koskari.matcher import (
+    Matcher, MatchResult, get_extern_defaults, reset_extern_defaults, thaw)
 
 
 pytestmark = pytest.mark.phase_infra

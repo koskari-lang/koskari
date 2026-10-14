@@ -1790,13 +1790,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           continue;
         }
         /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC,
-           OPERAND: store raw integer (slot, argc, bitflags, packed
+           OPERAND, RAW: store raw integer (slot, argc, bitflags, packed
            op-type+count, comparison selector, packed
-           selector+count/source-bits, operator selector) */
+           selector+count/source-bits, operator selector, an opcode's
+           own immediate) */
         if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
             || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT
             || fk == KOSTYLE_CMP || fk == KOSTYLE_CMPCOUNT
-            || fk == KOSTYLE_CMPSRC || fk == KOSTYLE_OPERAND) {
+            || fk == KOSTYLE_CMPSRC || fk == KOSTYLE_OPERAND
+            || fk == KOSTYLE_RAW) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "Code instruction %zd EXTRA field %d expects int,"
@@ -1900,7 +1902,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
        arg. */
     if (style == KOSTYLE_COUNT || style == KOSTYLE_PAIR_COUNT
         || style == KOSTYLE_STAR || style == KOSTYLE_FASTVAR
-        || style == KOSTYLE_OPCOUNT || style == KOSTYLE_CMPCOUNT) {
+        || style == KOSTYLE_OPCOUNT || style == KOSTYLE_CMPCOUNT
+        || style == KOSTYLE_RAW) {
       if (! PyLong_Check(b)) {
         PyErr_Format(PyExc_TypeError, "Code instruction %zd argument must be"
                      " an int, not %.100s", i, Py_TYPE(b)->tp_name);
@@ -3819,6 +3822,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, CMPCOUNT);
   int_enum(enum_dict, KOSTYLE_, CMPSRC);
   int_enum(enum_dict, KOSTYLE_, OPERAND);
+  int_enum(enum_dict, KOSTYLE_, RAW);
 
   return create_int_enum("OpStyle", enum_dict);
 

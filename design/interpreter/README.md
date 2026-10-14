@@ -42,6 +42,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **[archive/gil-cooperation.md](../archive/gil-cooperation.md)** (archived): GIL cooperation design — domain-TLS counter + timer, maybe_cooperate/ensure_gil, candidate call sites, and cost–benefit of options
 - **kio-format.md**: `.kio` compiled cache format — binary file layout, softened/hardened serialization levels, constant pool policy, `TaggedTuple`, cache invalidation, and loader algorithm
 - **kio-setuptools-build.md**: `.kio` precompilation during `bdist_wheel` (sdist `.ki` only; wheel adds `.kio` beside `.ki`), loader preference, and why not `__pycache__`
+- **matcher-bytecode.md**: the matcher lowered to evaluator instructions -- one lowering from the frozen tuple to a standalone `Code` or an inline fragment, pull and peek instructions over fast-slot cursors, failure edges in place of the change log, the twenty-eight fused instruction shapes with their VAR and FAST entries, and the proof-of-concept scope (proposal)
 
 Completed design drafts (historical) live under **[archive/](../archive/)** — e.g.
 `dynamic-node-unified-api.md` (partial dynnode migration spec), `compiler.md` (stub),

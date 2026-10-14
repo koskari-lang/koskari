@@ -1019,9 +1019,9 @@ class TestFormSubjectErrors(unittest.TestCase):
 
 class TestPairSubjectMutation(unittest.TestCase):
     """
-    The pair subject owns every cell and car it loaded, so a predicate
-    that mutates the list mid-match cannot free what the engine still
-    reads; the match finishes over the list it loaded
+    The cursor holds the cell it stands on, so a predicate that cuts
+    the list behind it mid-match cannot free what the match still
+    reads; the walk finishes over the cells it holds
     """
 
     def test_predicate_cuts_the_spine(self):
@@ -1039,21 +1039,5 @@ class TestPairSubjectMutation(unittest.TestCase):
         self.assertEqual(list(caps["rest"].unpack()), [3, 4])
         self.assertEqual(list(subject.unpack()), [1])
 
-
-    def test_predicate_swaps_the_next_car(self):
-        subject = cons(1, "two", 3, nil)
-        second = cdr(subject)
-
-        def swap(v):
-            setcar(second, "swapped")
-            return True
-
-        m = make_matcher(MATCH(PREDICATE("swap"), CAPTURE("b"), CAPTURE("c")))
-        result = m.match(subject, swap=swap)
-        self.assertTrue(result.matched)
-        caps = _ucaps(result)
-        self.assertEqual(caps["b"], "two")
-        self.assertEqual(caps["c"], 3)
-        self.assertEqual(list(subject.unpack()), [1, "swapped", 3])
 
 # The end.

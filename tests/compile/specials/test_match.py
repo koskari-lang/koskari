@@ -226,6 +226,34 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "low")
 
 
+    async def test_match_not(self):
+        src = """
+        (match data
+          [[(not 9)] "not-nine"]
+          [else: "nine"])
+        """
+        expr, mod = self.compile_expr(src, data=5)
+        self.assertEqual(await expr(), "not-nine")
+        expr, mod = self.compile_expr(src, data=9)
+        self.assertEqual(await expr(), "nine")
+
+
+    async def test_match_not_in_sequence(self):
+        # the case dialect's (not p) is a whole element: present, and
+        # not matching p
+        src = """
+        (match data
+          [[#[(not 9) x]] x]
+          [else: "nine"])
+        """
+        expr, mod = self.compile_expr(src, data=(5, 7))
+        self.assertEqual(await expr(), 7)
+        expr, mod = self.compile_expr(src, data=(9, 7))
+        self.assertEqual(await expr(), "nine")
+        expr, mod = self.compile_expr(src, data=(5,))
+        self.assertEqual(await expr(), "nine")
+
+
     async def test_match_or_shared_slot_binds(self):
         # ONEOF branches may declare the same slot; the arm's binding
         # step dedups the name and binds whichever branch matched

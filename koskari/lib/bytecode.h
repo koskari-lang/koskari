@@ -112,6 +112,11 @@ typedef enum KosOpStyle {
       fixed by the opcode shape */
   KOSTYLE_OPERAND,
 
+  /** field is a raw sixteen-bit immediate the opcode interprets its
+      own way (a width, a limit, an index into a tuple); never a count
+      of stack operands, which is COUNT */
+  KOSTYLE_RAW,
+
 } KosOpStyle;
 
 

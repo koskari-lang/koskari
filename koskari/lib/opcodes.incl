@@ -444,6 +444,84 @@ OP(UNPACK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
 // runtime match/case dispatch — subject held on the stack across arms
 OP(MATCH_CASE, 1, EXTRA, LABEL, CONST, CONST, COUNT)  // no-match label; frozen matcher tuple; missing-externs name tuple (values stacked above the subject); keep-subject flag; a match binds the captures into the namespace; cache: thawed Matcher + capture slot indices
 
+// the match instructions (design/interpreter/matcher-bytecode.md): a
+// pattern lowered to straight-line code. A pull instruction reads its
+// element from the cursor slot it names, advancing the slot in place,
+// and pushes nothing unless it says so; a peek instruction tests the
+// element on top of the stack and never pops; a miss jumps to the
+// row's label with the stack and the cursor as they were. Every slot
+// is a VAR field the compiler lowers to its FAST twin. A RAW field is
+// the instruction's own immediate: the FORM shapes pack the inner
+// pattern's min and max widths, eight bits each, 0xFF unbounded; the
+// REST shapes pack the minimum tail and the width of the suffix that
+// follows; CLASS carries its positional count, FIELD_POS its index.
+OP(MATCH_FORM_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // peek: the sequence gate on TOS, the cursor into the slot
+OP(MATCH_FORM_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_NEXT_FORM_VAR, 0, EXTRA, LABEL, VAR, VAR, RAW)  // pull from the first slot, the gate, the inner cursor into the second
+OP(MATCH_NEXT_FORM_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, RAW)
+OP(MATCH_NEXT_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // pull and push the element, boxed from a pair spine
+OP(MATCH_NEXT_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_PEEK_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // push the next element without advancing the cursor; the zero-width NOT reads it
+OP(MATCH_PEEK_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_NEXT_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull and store the element into the second slot
+OP(MATCH_NEXT_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_NEXT_TYPE_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull; the element must be an instance of the type in the second slot
+OP(MATCH_NEXT_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_NEXT_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, VAR)  // pull, the type test, the store into the third slot
+OP(MATCH_NEXT_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, FASTVAR)
+OP(MATCH_NEXT_LITERAL_VAR, 0, EXTRA, LABEL, VAR, CONST, NOARG)  // pull; the element must equal the constant
+OP(MATCH_NEXT_LITERAL_FAST, 0, EXTRA, LABEL, FASTVAR, CONST, NOARG)
+OP(MATCH_REST_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // consume the remainder but the suffix; the minimum tail and suffix width packed
+OP(MATCH_REST_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_REST_BIND_VAR, 0, EXTRA, LABEL, VAR, RAW, VAR)  // the remainder stored into the third slot
+OP(MATCH_REST_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, FASTVAR)
+OP(MATCH_END_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // the cursor must be at its end
+OP(MATCH_END_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_AVAILABLE_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // the cursor must have at least the RAW count of elements left: the reservation a suffix makes against a repeat, an optional or a branch
+OP(MATCH_AVAILABLE_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_LITERAL, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // peek: TOS must equal the constant
+OP(MATCH_TYPE_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // peek: TOS must be an instance of the type in the slot
+OP(MATCH_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // peek: the type test, then TOS stored into the second slot
+OP(MATCH_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_BIND_VAR, 0, VAR)  // peek: TOS stored into the slot, nothing popped
+OP(MATCH_BIND_FAST, 0, FASTVAR)
+OP(MATCH_CLASS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // peek: TOS must be an instance of the class in the slot, whose __match_args__ covers the positional count
+OP(MATCH_CLASS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_FIELD_POS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // peek: push the attribute __match_args__[count] of the class names; a missing attribute is a miss
+OP(MATCH_FIELD_POS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_FIELD_POS_BIND_VAR, 0, EXTRA, LABEL, VAR, RAW, VAR)  // the positional attribute stored into the third slot
+OP(MATCH_FIELD_POS_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, FASTVAR)
+OP(MATCH_FIELD_KW, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // peek: push the attribute the constant names; a missing attribute is a miss
+OP(MATCH_FIELD_KW_BIND_VAR, 0, EXTRA, LABEL, CONST, VAR, NOARG)  // the named attribute stored into the slot
+OP(MATCH_FIELD_KW_BIND_FAST, 0, EXTRA, LABEL, CONST, FASTVAR, NOARG)
+OP(MATCH_MAP, 0, LABEL)  // peek: the mapping gate on TOS
+OP(MATCH_KEY_CONST, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // peek: push the value under the constant key; an absent key is a miss
+OP(MATCH_KEY_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // peek: push the value under the key in the slot
+OP(MATCH_KEY_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_KEY_CONST_BIND_VAR, 0, EXTRA, LABEL, CONST, VAR, NOARG)  // the value under the constant key stored into the slot
+OP(MATCH_KEY_CONST_BIND_FAST, 0, EXTRA, LABEL, CONST, FASTVAR, NOARG)
+OP(MATCH_KEY_VAR_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // the value under the key in the first slot stored into the second
+OP(MATCH_KEY_FAST_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_SAME_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // peek: TOS must equal the value bound in the slot; an unbound slot is a miss
+OP(MATCH_SAME_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_NEXT_SAME_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull; the element must equal the value bound in the second slot
+OP(MATCH_NEXT_SAME_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_NEXT_APPEND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull and append the element, boxed from a pair spine, to the list in the second slot
+OP(MATCH_NEXT_APPEND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_COLLECT_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // every remaining element, boxed from a pair spine, appended to the list in the second slot; an improper tail is a miss
+OP(MATCH_COLLECT_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_MARK_VAR, 0, EXTRA, VAR, VAR, NOARG, NOARG)  // the cursor's position, its cell or its index, stored into the second slot
+OP(MATCH_MARK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
+OP(MATCH_RESET_VAR, 0, EXTRA, VAR, VAR, NOARG, NOARG)  // the cursor in the first slot moved back to the position in the second
+OP(MATCH_RESET_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
+OP(MATCH_CAPTURES, 0, EXTRA, CONST, FASTVAR, FASTVAR, FASTVAR)  // push the captures: the names tuple, the first capture slot, the start position, the cursor; a DatumFrame with its source over a pair spine, a dict otherwise; an unbound slot is absent
+OP(MATCH_CAPTURES_NAMED_VAR, 0, EXTRA, CONST, VAR, VAR, NOARG)  // the captures read by name: the names tuple, the start position, the cursor
+OP(MATCH_CAPTURES_NAMED_FAST, 0, EXTRA, CONST, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_ITERATION, 0, EXTRA, CONST, FASTVAR, FASTVAR, FASTVAR)  // push one repeat iteration's value, its captures or the boxed span when none fired, and clear the slots it read
+OP(MATCH_ITERATION_NAMED_VAR, 0, EXTRA, CONST, VAR, VAR, NOARG)
+OP(MATCH_ITERATION_NAMED_FAST, 0, EXTRA, CONST, FASTVAR, FASTVAR, NOARG)
+
 // binary operator sites with one or both operands off the stack: the
 // left operand's source is the prefix (the stack unnamed, VAR, FAST),
 // the right operand's source the suffix (CONST, VAR, FAST); the

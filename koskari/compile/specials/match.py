@@ -26,13 +26,14 @@ compiled per pattern and an optional else clause.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
-from ...lib import Matcher, OpCode, keyword, symbol
+from ...lib import OpCode, keyword, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
+from ...match_code import lower_clause
 
 
 _keyword_else = keyword("else")
@@ -100,6 +101,7 @@ def special_match(compiler, caps):
     fragment.merge(compiler.full_compile(caps["subject"].datum))
 
     declared = set()
+    cursors = []
 
     clauses = caps["clauses"]
     remaining = len(clauses)
@@ -139,55 +141,49 @@ def special_match(compiler, caps):
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         frozen = MatchCompiler().lower(arm)
         # frozen[1] is the full slot table in emission order -- the one
-        # lowering yields both the constant and the binding names.
+        # lowering yields both the instructions and the binding names.
         # Ordered dedup: ONEOF branches may declare the same slot in
-        # mutually exclusive arms.
+        # mutually exclusive clauses.
         names = list(dict.fromkeys(symbol(n) for n in frozen[1]))
 
-        # externs covered by the matcher extern defaults (int, str,
-        # pair, ...) resolve from that baked-in table at match time and
-        # never touch the namespace; only the missing ones are loaded,
-        # as ordinary variable reads pushed above the subject in
-        # extern-table order for MATCH_CASE to consume. The loads lower
-        # to FAST with every other read, and the request also captures
-        # a closure-bound type used only in a pattern. The extern table
-        # names each by its base spelling; the load is the atom the
-        # pattern wrote, so a name a template binds resolves to it.
-        matcher = Matcher.from_tuple(frozen)
-        externs = matcher.missing_externs(exclude_defaults=True)
+        # every extern (int, str, a user type, a predicate, a mapping
+        # key) is a name the pattern wrote: requested so a closure
+        # captures it, and read by the match instructions from the
+        # slot it lowers to. The extern table names each by its base
+        # spelling; the request is the atom the pattern wrote, so a
+        # name a template binds resolves to it.
+        externs = frozen[2]
         atoms = extern_atoms(pattern, externs)
         for extern in externs:
-            sym = atoms.get(extern) or symbol(extern)
-            fragment.request_var(sym)
-            fragment.instruction(OpCode.VAR, sym)
-
-        # the opcode binds the arm's captures itself, resolving the
-        # slot names to namespace slots once per site through its
-        # cache; the names are declared here so they get slots
-        next_label = gen_label()
-        fragment.instruction(
-            OpCode.MATCH_CASE,
-            (next_label, frozen, tuple(externs),
-             1 if guard_kw is not None else 0))
+            fragment.request_var(atoms.get(extern) or symbol(extern))
 
         for name in names:
             if name not in declared:
                 declared.add(name)
                 fragment.declare_var(name)
 
+        # the clause's instructions test the subject on the stack and
+        # store the captures as they fire; a miss jumps to the next
+        # clause with the subject still on the stack
+        next_label = gen_label()
+        miss_edges = lower_clause(
+            compiler, fragment, frozen, atoms, next_label, cursors,
+            pattern, clause_pos)
+
         if guard_kw is not None:
-            # the subject is still on the stack (keep flag); a failed
-            # guard advances with it intact, a passed guard pops it and
+            # the subject is still on the stack; a failed guard
+            # advances with it intact, a passed guard pops it and
             # commits to the body
             fragment.merge(compiler.full_compile(guard_expr))
             fragment.instruction(
                 OpCode.JUMP_FALSE if guard_kw is _keyword_when
                 else OpCode.JUMP_TRUE,
                 next_label)
-            fragment.instruction(OpCode.POP, 1)
 
+        fragment.instruction(OpCode.POP, 1)
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
+        miss_edges()
         fragment.instruction(OpCode.LABEL, next_label)
 
     else:

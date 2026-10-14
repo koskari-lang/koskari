@@ -1703,6 +1703,7 @@ static int matcher_mapping_gate(PyObject *peeled) {
 #include "matcher/match_class.c"
 #include "matcher/match_map.c"
 #include "matcher/match_app.c"
+#include "matcher/step.c"
 
 
 static int match_node_kind(
@@ -2904,6 +2905,9 @@ int koskari_matcher_init(PyObject *mod) {
     return -1;
 
   if (PyType_Ready(&KosDatumFrameType))
+    return -1;
+
+  if (PyType_Ready(&KosMatchCursorType))
     return -1;
 
   kos_match_args_name = PyUnicode_InternFromString("__match_args__");

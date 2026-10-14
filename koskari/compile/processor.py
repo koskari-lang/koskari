@@ -335,6 +335,16 @@ def build_var_to_fast():
         if hasattr(OpCode, varname):
             var_to_fast[OpCode[varname]] = opcode
 
+    for opcode in OpCode:
+        # the match instructions spell FAST in every slot position of
+        # the name (MATCH_NEXT_BIND_FAST, MATCH_KEY_FAST_BIND_FAST)
+        opname = opcode.name
+        if not (opname.startswith('MATCH_') and 'FAST' in opname):
+            continue
+        varname = opname.replace('FAST', 'VAR')
+        if hasattr(OpCode, varname):
+            var_to_fast[OpCode[varname]] = opcode
+
     var_to_fast.update(ITEM_VAR_TO_FAST)
 
     var_to_fast[OpCode.UNPACK_VAR] = OpCode.UNPACK_FAST
@@ -1423,6 +1433,35 @@ class ByteCodeProcessor:
                         and ((cmpsrc & CMPSRC_Y_CONST) or ny >= 0)):
                     op = OpCode.CHECK_COMPARE_FAST
                     arg = (cmpsrc, nx, ny, label)
+
+            elif nstack and op in (OpCode.MATCH_CAPTURES_NAMED_VAR,
+                                   OpCode.MATCH_ITERATION_NAMED_VAR):
+                # the captures of a scope: when the scope's locals sit in
+                # one run of fast slots the row names the run's base and
+                # the handler reads by index; otherwise the NAMED twin
+                # reads them by name
+                table, start, cur, _pad = arg
+                keys, locals_ = table
+                nstart = fast_slot(start)
+                ncur = fast_slot(cur)
+                if nstart >= 0 and ncur >= 0:
+                    idxs = [fast_slot(v) for v in locals_]
+                    run = (all(i >= 0 for i in idxs)
+                           and all(b == a + 1 for a, b in zip(idxs, idxs[1:])))
+                    if run and idxs:
+                        op = (OpCode.MATCH_CAPTURES
+                              if op == OpCode.MATCH_CAPTURES_NAMED_VAR
+                              else OpCode.MATCH_ITERATION)
+                        arg = (keys, idxs[0], nstart, ncur)
+                    elif run:
+                        # no slots: the run's base is any slot
+                        op = (OpCode.MATCH_CAPTURES
+                              if op == OpCode.MATCH_CAPTURES_NAMED_VAR
+                              else OpCode.MATCH_ITERATION)
+                        arg = (keys, ncur, nstart, ncur)
+                    else:
+                        op = VAR_TO_FAST[op]
+                        arg = (table, nstart, ncur, _pad)
 
             elif nstack and op in VAR_TO_FAST:
                 # An EXTRA opcode carries its schema tuple in op.extra

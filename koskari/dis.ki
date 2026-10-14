@@ -359,7 +359,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
               case [OpStyle.FASTVAR]:
                 (_format_fast_part val local_names closure_names)
-              case [OpStyle.COUNT]:
+              case [OpStyle.COUNT OpStyle.RAW]:
                 (str val)
               case [OpStyle.CMP]:
                 (_format_selector val (and (equal? schema[3] OpStyle.COUNT)
