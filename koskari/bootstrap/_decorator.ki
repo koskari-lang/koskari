@@ -123,13 +123,14 @@ syntax decorate:
       var name (decorate [decorators ...] (build-class name supers body ...))
 
     ;; the Scheme define: a (NAME FORMALS ...) head is a function, with
-    ;; an optional return type beside the name; a name is a value; the
-    ;; decorators wrap the value either way
-    case (decorate [decorators ...] (define (name :: rtype formals ...) body ...)):
+    ;; an optional return type bundled with the name as ((NAME :: TYPE)
+    ;; FORMALS ...); a name is a value; the decorators wrap the value
+    ;; either way
+    case (decorate [decorators ...] (define ((name :: rtype) formals ...) body ...)):
       var name:
         decorate [decorators ...] (function name :: rtype [formals ...] body ...)
 
-    case (decorate [decorators ...] (define (name type: rtype formals ...) body ...)):
+    case (decorate [decorators ...] (define ((name type: rtype) formals ...) body ...)):
       var name:
         decorate [decorators ...] (function name type: rtype [formals ...] body ...)
 
@@ -139,11 +140,11 @@ syntax decorate:
     case (decorate [decorators ...] (define name value)):
       var name (decorate [decorators ...] value)
 
-    case (decorate [decorators ...] (define-global (name :: rtype formals ...) body ...)):
+    case (decorate [decorators ...] (define-global ((name :: rtype) formals ...) body ...)):
       define-global name:
         decorate [decorators ...] (function name :: rtype [formals ...] body ...)
 
-    case (decorate [decorators ...] (define-global (name type: rtype formals ...) body ...)):
+    case (decorate [decorators ...] (define-global ((name type: rtype) formals ...) body ...)):
       define-global name:
         decorate [decorators ...] (function name type: rtype [formals ...] body ...)
 

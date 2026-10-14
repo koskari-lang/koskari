@@ -10,9 +10,9 @@
 
 - Function: `(define [NAME FORMALS ...] BODY ...)` or
   `(define (NAME FORMALS ...) BODY ...)`
-- Typed function: `(define [NAME :: TYPE FORMALS ...] BODY ...)` or
-  `(define [NAME type: TYPE FORMALS ...] BODY ...)`, the return type
-  beside the name as in `def NAME :: TYPE [FORMALS ...]`
+- Typed function: `(define [(NAME :: TYPE) FORMALS ...] BODY ...)` or
+  `(define [(NAME type: TYPE) FORMALS ...] BODY ...)`, the return type
+  bundled with the name as a typed formal bundles, `(n :: int)`
 - Declaration only: `(define NAME)`, `(define NAME :: TYPE)`, or
   `(define NAME type: TYPE)`
 - Declare and store: `(define NAME VALUE)`, `(define NAME :: TYPE VALUE)`,
@@ -22,6 +22,11 @@ The form of the first operand selects the arm. A pair, `[ ]` or `( )`,
 is a function head: its first element is the name and the rest are the
 formals, in every shape [`lambda`](compile-lambda.md) accepts. A symbol
 is a value binding.
+
+The name takes the first slot of the head, so its return type bundles
+with it as a typed formal does, `[(f :: int) x]`, never inline. An
+inline `[f :: int x]` is rejected as a bare `::` in the formals, and
+`[f type: 1 x]` is a keyword formal named `type` defaulting to 1.
 
 In block form the function head is followed by a colon and an indented
 body:
@@ -92,7 +97,7 @@ binds the result; see [`decorate`](../macros/compile-decorate.md).
         [else: (* n (fact (- n 1)))]))
 
 ;; Typed function
-(define [half :: float x] (/ x 2))
+(define [(half :: float) x] (/ x 2))
 ```
 
 In block form, with a decorator:

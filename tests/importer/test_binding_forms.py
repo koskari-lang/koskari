@@ -398,7 +398,7 @@ class TestDecorators(BindingFormsCase):
     async def test_decorated_typed_scheme_define(self):
         ns = await self.load(dedent(self.PRELUDE) + dedent("""
         @wrap
-        define [plus3 :: int x]:
+        define [(plus3 :: int) x]:
           + x 3
         """))
         self.assertEqual(1004, demand_call(ns['plus3'], 1))

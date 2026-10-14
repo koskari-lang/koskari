@@ -269,7 +269,7 @@ def emit_value(compiler, frag, caps, namesym):
 def emit_function(compiler, frag, caps, namesym):
     """
     Finish a define-shaped fragment whose name position holds
-    (NAME FORMALS...) or (NAME :: TYPE FORMALS...): compile
+    (NAME FORMALS...) or ((NAME :: TYPE) FORMALS...): compile
     (function NAME [:: TYPE] FORMALS BODY...) and store it to the
     name. The form's result is None
 
@@ -321,23 +321,21 @@ _VAR_PATTERNS = [
 
 
 # Scheme's shape: a pair in the name position is the name and the
-# formals of a function, with an optional return type beside the name
-# as def and var place it; a symbol is a value binding
+# formals of a function; a symbol is a value binding. The name takes
+# the first formal slot, so a return type bundles with it the way a
+# typed formal bundles, (NAME :: TYPE), and never inline, where type:
+# would read as a keyword formal named type
 _DEFINE_PATTERNS = [
     MATCH(
         CALLEDBY(),
         LIST(
-            SYMBOL("fname"),
-            LITERAL_KW("::"),
-            VALUE("return_type"),
+            LIST(SYMBOL("fname"), LITERAL_KW("::"), VALUE("return_type")),
             REST("formals")),
         REST("body")),
     MATCH(
         CALLEDBY(),
         LIST(
-            SYMBOL("fname"),
-            LITERAL_KW("type:"),
-            VALUE("return_type"),
+            LIST(SYMBOL("fname"), LITERAL_KW("type:"), VALUE("return_type")),
             REST("formals")),
         REST("body")),
     MATCH(

@@ -9,7 +9,9 @@ the module:
 
 - Function: `(define-global [NAME FORMALS ...] BODY ...)` or
   `(define-global (NAME FORMALS ...) BODY ...)`, with an optional
-  `:: TYPE` or `type: TYPE` return type after **NAME** inside the head
+  return type bundled with the name, `[(NAME :: TYPE) FORMALS ...]` or
+  `[(NAME type: TYPE) FORMALS ...]`, as [`define`](compile-define.md)
+  takes it
 - Declaration only: `(define-global NAME)`, `(define-global NAME :: TYPE)`,
   or `(define-global NAME type: TYPE)`
 - Declare and store: `(define-global NAME VALUE)`,

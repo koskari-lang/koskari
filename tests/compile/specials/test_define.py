@@ -175,7 +175,7 @@ class TestDefineSchemeShape(SpecialsTestCase):
     async def test_typed_head_return_annotation(self):
         src_str = """
         (begin
-          (define [f :: int x] (mul x 2))
+          (define [(f :: int) x] (mul x 2))
           f)
         """
         expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
@@ -188,7 +188,7 @@ class TestDefineSchemeShape(SpecialsTestCase):
     async def test_typed_head_type_colon_return_annotation(self):
         src_str = """
         (begin
-          (define [g type: int x] (mul x 2))
+          (define [(g type: int) x] (mul x 2))
           g)
         """
         expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b,
@@ -198,8 +198,29 @@ class TestDefineSchemeShape(SpecialsTestCase):
         self.assertEqual(await g(5), 10)
 
 
+    async def test_inline_return_type_is_rejected(self):
+        # the name takes the first formal slot, so a bare :: after it
+        # is the bare :: the formals parser refuses
+        with self.assertRaises(SpecialError):
+            self.compile_expr("(define [f :: int x] (mul x 2))")
+
+
+    async def test_inline_type_keyword_is_a_formal(self):
+        src_str = """
+        (begin
+          (define [g type: 1 x] (mul x type))
+          g)
+        """
+        expr, mod = self.compile_expr(src_str, mul=lambda a, b: a * b)
+        g = await expr()
+        self.assertNotIn('return', g.__annotations__)
+        # x follows a keyword formal, so it is keyword-only
+        self.assertEqual(await g(x=5), 5)
+        self.assertEqual(await g(x=5, type=3), 15)
+
+
     async def test_typed_head_without_formals(self):
-        src_str = "(begin (define [answer :: int] 42) answer)"
+        src_str = "(begin (define [(answer :: int)] 42) answer)"
         expr, mod = self.compile_expr(src_str, int=int)
         answer = await expr()
         self.assertIs(answer.__annotations__['return'], int)
@@ -210,7 +231,7 @@ class TestDefineSchemeShape(SpecialsTestCase):
         src_str = """
         (begin
           (define [setup]
-            (define-global [helper :: int y] (mul y 10))
+            (define-global [(helper :: int) y] (mul y 10))
             None)
           (setup)
           helper)

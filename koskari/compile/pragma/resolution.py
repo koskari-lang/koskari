@@ -204,7 +204,7 @@ class KoskariPragma:
             else:
                 raise CompilerError(
                     f"{str(name)!r} cannot be both local (var)"
-                    " and global (global).", name,
+                    " and global (global var).", name,
                     position=position
                     or fragment.declare_positions.get(name))
 
@@ -217,14 +217,14 @@ class KoskariPragma:
 
     def on_explicit_global(self, fragment, name, *, position=None):
         """
-        Record explicit global (global) of name, a symbol.
+        Record explicit global (global var) of name, a symbol.
         Conflicts with local declaration; removes from requests buckets.
         """
 
         if name in fragment.declares and not _in_module_scope(fragment):
             raise CompilerError(
                 f"{str(name)!r} cannot be both local (var)"
-                " and global (global).", name,
+                " and global (global var).", name,
                 position=position
                 or fragment.declare_positions.get(name))
 
@@ -355,7 +355,7 @@ class KoskariPragma:
         raise CompilerError(
             f"Cannot write to {str(name)!r}: not declared in this scope"
             " or any enclosing scope. Use var for a local or"
-            " global for a global.",
+            " global var for a global.",
             name,
             position=pos,
             filename=filename)

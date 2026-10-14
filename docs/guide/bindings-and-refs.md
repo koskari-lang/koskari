@@ -38,7 +38,7 @@ mix freely in one module:
 |---|---|
 | `var NAME VALUE` | `define NAME VALUE` |
 | `def NAME [FORMALS]: BODY` | `define [NAME FORMALS]: BODY` |
-| `def NAME :: T [FORMALS]: BODY` | `define [NAME :: T FORMALS]: BODY` |
+| `def NAME :: T [FORMALS]: BODY` | `define [(NAME :: T) FORMALS]: BODY` |
 | `var [a b] VALUE` | `define-values [a b] VALUE` |
 | `global var NAME VALUE` | `define-global NAME VALUE` |
 | `global def NAME [FORMALS]: BODY` | `define-global [NAME FORMALS]: BODY` |
