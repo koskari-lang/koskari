@@ -87,6 +87,9 @@ Read as layout, that same line would be `((print "a") (print "b"))` -- both
 forms evaluate, then the result of the first is called. For a layout program
 from the command line, use `-`.
 
+`-c` starts with the `reader/layout` setting off; a `pragma` form in the
+string keeps it off, and `(pragma reader/layout)` there reads `False`.
+
 ## Related commands
 
 | Command | Purpose |

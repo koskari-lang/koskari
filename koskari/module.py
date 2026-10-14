@@ -38,7 +38,8 @@ from contextlib import contextmanager
 from os.path import split
 
 from .compile import Compiler, CompilerMode
-from .lib import Module, ModuleNamespace, cons, demand_call, nil, symbol
+from .lib import (
+    Module, ModuleNamespace, cons, demand_call, nil, symbol, values)
 from .pragma import ModulePragma
 from .reader import (
     READ_EOF, IndentAwareStream, LayoutReader, source_open, source_str)
@@ -339,9 +340,12 @@ async def load_module_source_async(
     :param detach: when True, detach the compiler and reader facets
         afterward
     :param layout: when False, read plain s-expressions instead of
-        layout.  A layout line is a single form, so several expressions
-        on one line become one implicit call; that suits a file but not
-        a one-liner, where consecutive top-level forms are wanted
+        layout, by turning reader/layout off on the module pragma for
+        this load, so a pragma form in the source keeps it off; the
+        prior value is restored afterward.  A layout line is a single
+        form, so several expressions on one line become one implicit
+        call; that suits a file but not a one-liner, where consecutive
+        top-level forms are wanted
     """
 
     filename = getattr(module, '__file__', '<string>')
@@ -349,16 +353,23 @@ async def load_module_source_async(
 
     with load_facets(module, filename, seal=seal, detach=detach) \
             as (compiler, reader):
-        # the switch is this load's: a reader retained for a session
-        # afterward reads as it did before
-        prior = reader.layout_enabled
-        if not layout:
-            reader.set_layout_modes(layout_enabled=False)
+        if layout:
+            await run_codes_async(
+                module, compile_top_level(compiler, reader, source_stream))
+            return
+
+        # the setting is this load's: a session retaining the facets
+        # afterward gets back the pragma's prior reader/layout
+        ns = vars(module)
+        prior = ns['__pragma__'].get('reader/layout')
+        ns['__pragma__'] = ns['__pragma__'].rebuild(
+            ('reader/layout', values(False)))
         try:
             await run_codes_async(
                 module, compile_top_level(compiler, reader, source_stream))
         finally:
-            reader.set_layout_modes(layout_enabled=prior)
+            ns['__pragma__'] = ns['__pragma__'].rebuild(
+                ('reader/layout', values(prior)))
 
 
 async def load_module_kio_async(module):

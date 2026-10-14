@@ -803,6 +803,19 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(['a', 'b'], out.split())
 
 
+    async def test_main_command_pragma_keeps_sexpr(self):
+        """
+        A pragma form in a -c string leaves the later forms on the line
+        read as s-expressions
+        """
+
+        code, out = await self._capture_main(
+            '-c',
+            '(pragma [compiler/tco-enable True]) (print "a") (print "b")')
+        self.assertEqual(0, code)
+        self.assertEqual(['a', 'b'], out.split())
+
+
     async def test_main_stdin_dash_reads_layout(self):
         """
         - runs a whole program from stdin, read as layout like a file
