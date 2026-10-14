@@ -8,9 +8,10 @@
 `(define-global-values PATTERN)`
 
 Same PATTERN shapes as [compile/define-values](compile-define-values.md):
-a name, or a bracket list of names, nested lists, and one `*:` rest
-collector. Without **VALUE** the names are bound at the module and
-nothing is stored.
+a list of names, nested lists, and one `*:` rest collector; with a
+**VALUE**, a single name as well. Without **VALUE** the names are bound
+at the module and nothing is stored; a single name without a value is
+[compile/define-global](compile-define-global.md).
 
 **Use-case:** Bind several module names at once from inside any scope.
 Where [compile/define-values](compile-define-values.md) declares its

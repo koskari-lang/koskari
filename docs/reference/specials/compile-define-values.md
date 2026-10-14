@@ -6,8 +6,10 @@
 
 **Syntax:** `(define-values PATTERN VALUE)` or `(define-values PATTERN)`
 
-Same PATTERN shapes as `compile/setq-values`. Without **VALUE** the
-pattern's names are declared and nothing is stored.
+Same PATTERN shapes as `compile/setq-values`: a list of names, nested
+lists, and one `*:` rest collector; with a **VALUE**, a single name as
+well. Without **VALUE** the pattern's names are declared and nothing is
+stored; a single name without a value is [compile/var](compile-var.md).
 
 **Use-case:** Introduce new bindings and assign by unpacking the value of VALUE
 according to PATTERN (parallel to `compile/define` for a single name).
