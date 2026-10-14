@@ -110,7 +110,7 @@ syntax decorate:
       var name (decorate [decorators ...] value)
 
     case (decorate [decorators ...] (global var name value)):
-      define-global name (decorate [decorators ...] value)
+      global var name (decorate [decorators ...] value)
 
     case (decorate [decorators ...] (global def name rest ...)):
       define-global name (decorate [decorators ...] (function name rest ...))

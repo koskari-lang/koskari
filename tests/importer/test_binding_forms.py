@@ -435,6 +435,20 @@ class TestDecorators(BindingFormsCase):
         self.assertEqual(1007, demand_call(ns['gident'], 7))
 
 
+    async def test_decorated_global_pattern(self):
+        ns = await self.load("""
+        def doubled [seq]:
+          #[(* 2 (item seq 0)) (* 2 (item seq 1))]
+
+        def setup []:
+          @doubled
+          global var [p q] #[8 9]
+        (setup)
+        """)
+        self.assertEqual(16, ns['p'])
+        self.assertEqual(18, ns['q'])
+
+
     async def test_decorated_global_def(self):
         ns = await self.load(dedent(self.PRELUDE) + dedent("""
         def setup []:

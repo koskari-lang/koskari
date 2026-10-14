@@ -7,7 +7,7 @@
 | `(decorate [] FN)` | `FN` |
 | `(decorate [D ...] (def NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (var NAME VALUE))` | `(var NAME (decorate [D ...] VALUE))` |
-| `(decorate [D ...] (global var NAME VALUE))` | `(define-global NAME (decorate [D ...] VALUE))` |
+| `(decorate [D ...] (global var NAME VALUE))` | `(global var NAME (decorate [D ...] VALUE))` |
 | `(decorate [D ...] (global def NAME FORMALS BODY ...))` | `(define-global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (global class NAME SUPERS BODY ...))` | `(define-global NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
 | `(decorate [D ...] (define [NAME FORMALS ...] BODY ...))` | `(var NAME (decorate [D ...] (function NAME [FORMALS ...] BODY ...)))` |
