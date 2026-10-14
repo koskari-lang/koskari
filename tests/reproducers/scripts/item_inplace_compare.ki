@@ -1,0 +1,11 @@
+;; Full-stack reproducer for an in-place item update on an exact dict
+;; whose key compares equal to, but is not, the stored key: the first
+;; run of the site calls __eq__ as often as Python's d[k] += 1 does,
+;; and an exception from __eq__ propagates.
+
+(define bump [d k]
+  (inplace + (item d k) 1)
+  d)
+
+
+;; The end.

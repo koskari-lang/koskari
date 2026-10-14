@@ -704,22 +704,15 @@ static int kos_item_inplace_str_add(
 }
 
 
-/* The current item of a site as its classification sees it, borrowed:
-   the cell of an exact list under an exact int key the index read can
-   take, or of an exact dict under any key; NULL for any other shape,
-   an index outside the list, or a key the dict lacks. */
+/* The cell of an exact list under an exact int key the index read can
+   take, borrowed; NULL for any other shape or an index outside the
+   list. */
 static inline PyObject *kos_item_inplace_peek(PyObject *obj, PyObject *key) {
   Py_ssize_t idx;
 
   if (PyList_CheckExact(obj) && PyLong_CheckExact(key))
     return kos_item_index(key, PyList_GET_SIZE(obj), &idx)
         ? PyList_GET_ITEM(obj, idx) : NULL;
-  if (PyDict_CheckExact(obj)) {
-    PyObject *acc = PyDict_GetItemWithError(obj, key);
-    if (! acc)
-      PyErr_Clear();
-    return acc;
-  }
   return NULL;
 }
 
@@ -727,14 +720,17 @@ static inline PyObject *kos_item_inplace_peek(PyObject *obj, PyObject *key) {
 /* The body a site elects: the operator's entry in the int table when
    the cell and rhs are exact ints the read can take, in the float
    table when both are exact floats, the str body for + on two exact
-   strs, else NULL. */
+   strs, else NULL. An exact dict's cell is not read, since the lookup
+   runs the key's __eq__; rhs stands in for it, and the body checks
+   the cell and answers a miss. Runs no user code. */
 static inline KosItemInplaceBody kos_item_inplace_classify(
     KosOperand op,
     PyObject *obj,
     PyObject *key,
     PyObject *rhs) {
 
-  PyObject *acc = kos_item_inplace_peek(obj, key);
+  PyObject *acc = PyDict_CheckExact(obj)
+      ? rhs : kos_item_inplace_peek(obj, key);
   long long b;
 
   if (op >= KOS_OPERAND_COUNT || ! acc)
@@ -826,23 +822,14 @@ static KOS_NOINLINE int kos_item_inplace_cold(
     int count) {
 
   KosItemInplaceBody body;
-  int rc;
 
   if (slot && slot->kind == KOS_CACHE_ITEM)
     return kos_item_inplace_protocol(slot, obj, key, op, args, count);
-  /* the classification hashes the key, so the borrowed operands are
-     held across it and the call that follows */
-  Py_INCREF(obj);
-  Py_INCREF(key);
   body = count == 1 ? kos_item_inplace_classify(op, obj, key, args[0]) : NULL;
   kos_item_elect(slot, (KosItemBody) { .inplace = body });
   if (! body)
-    rc = kos_item_inplace_protocol(slot, obj, key, op, args, count);
-  else
-    rc = kos_item_inplace_run(slot, body, obj, key, op, args);
-  Py_DECREF(key);
-  Py_DECREF(obj);
-  return rc;
+    return kos_item_inplace_protocol(slot, obj, key, op, args, count);
+  return kos_item_inplace_run(slot, body, obj, key, op, args);
 }
 
 
