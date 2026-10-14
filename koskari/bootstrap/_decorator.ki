@@ -37,6 +37,22 @@ let []:
       update_wrapper wrapper inner
 
 
+syntax decorate-nothing:
+  """
+  The error for a decorator over a declaration. A declaration binds no
+  value, so a decorator has nothing to transform and its result would
+  be dropped; the decorate arms route every valueless binding subject
+  here, which refuses it at compile time naming the form.
+  """
+
+  special-rules []:
+    case [c (decorate-nothing form)]:
+      raise (CompilerError
+        f"nothing to decorate: {form.datum} declares a name and binds"-
+        " no value"
+        None form.position c.filename)
+
+
 syntax decorate-subject:
   """
   Applies one decorator expression to a subject form.
@@ -106,11 +122,32 @@ syntax decorate:
     case (decorate [decorators ...] (def name rest ...)):
       var name (decorate [decorators ...] (function name rest ...))
 
+    ;; a value subject keeps its annotation and wraps only the value; a
+    ;; declaration, or any other shape under the head, has no value to
+    ;; wrap and is refused
+    case (decorate [decorators ...] (var name :: type value)):
+      var name :: type (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (var name type: type value)):
+      var name type: type (decorate [decorators ...] value)
+
     case (decorate [decorators ...] (var name value)):
       var name (decorate [decorators ...] value)
 
+    case (decorate [decorators ...] (var rest ...)):
+      decorate-nothing (var rest ...)
+
+    case (decorate [decorators ...] (global var name :: type value)):
+      global var name :: type (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (global var name type: type value)):
+      global var name type: type (decorate [decorators ...] value)
+
     case (decorate [decorators ...] (global var name value)):
       global var name (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (global var rest ...)):
+      decorate-nothing (global var rest ...)
 
     case (decorate [decorators ...] (global def name rest ...)):
       define-global name (decorate [decorators ...] (function name rest ...))
@@ -137,8 +174,17 @@ syntax decorate:
     case (decorate [decorators ...] (define (name formals ...) body ...)):
       var name (decorate [decorators ...] (function name [formals ...] body ...))
 
+    case (decorate [decorators ...] (define name :: type value)):
+      var name :: type (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (define name type: type value)):
+      var name type: type (decorate [decorators ...] value)
+
     case (decorate [decorators ...] (define name value)):
       var name (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (define rest ...)):
+      decorate-nothing (define rest ...)
 
     case (decorate [decorators ...] (define-global ((name :: rtype) formals ...) body ...)):
       define-global name:
@@ -152,8 +198,17 @@ syntax decorate:
       define-global name:
         decorate [decorators ...] (function name [formals ...] body ...)
 
+    case (decorate [decorators ...] (define-global name :: type value)):
+      define-global name :: type (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (define-global name type: type value)):
+      define-global name type: type (decorate [decorators ...] value)
+
     case (decorate [decorators ...] (define-global name value)):
       define-global name (decorate [decorators ...] value)
+
+    case (decorate [decorators ...] (define-global rest ...)):
+      decorate-nothing (define-global rest ...)
 
     case (decorate [d rest ...] fn):
       decorate-subject d (decorate [rest ...] fn)

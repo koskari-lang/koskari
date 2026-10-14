@@ -22,7 +22,7 @@ from textwrap import dedent
 
 import pytest
 
-from koskari.exceptions import SyntaxMatchError
+from koskari.exceptions import CompilerError, SyntaxMatchError
 from koskari.lib import demand_call
 from koskari.module import load_module_source_async, new_module
 
@@ -433,6 +433,89 @@ class TestDecorators(BindingFormsCase):
         (setup)
         """))
         self.assertEqual(1007, demand_call(ns['gident'], 7))
+
+
+    VALUE_PRELUDE = """
+    def doubled [v]:
+      * 2 v
+    """
+
+
+    async def test_decorated_typed_var(self):
+        ns = await self.load(dedent(self.VALUE_PRELUDE) + dedent("""
+        @doubled
+        var x :: int 5
+        @doubled
+        var y type: int 6
+        """))
+        self.assertEqual(10, ns['x'])
+        self.assertEqual(12, ns['y'])
+
+
+    async def test_decorated_typed_var_keeps_annotation(self):
+        ns = await self.load(dedent(self.VALUE_PRELUDE) + dedent("""
+        class C []:
+          @doubled
+          var x :: int 5
+        """))
+        self.assertEqual(10, ns['C'].x)
+        self.assertIs(int, ns['C'].__annotations__['x'])
+
+
+    async def test_decorated_typed_global_var(self):
+        ns = await self.load(dedent(self.VALUE_PRELUDE) + dedent("""
+        def setup []:
+          @doubled
+          global var g :: int 5
+          @doubled
+          global var h type: int 6
+        (setup)
+        """))
+        self.assertEqual(10, ns['g'])
+        self.assertEqual(12, ns['h'])
+
+
+    async def test_decorated_typed_define(self):
+        ns = await self.load(dedent(self.VALUE_PRELUDE) + dedent("""
+        @doubled
+        define x :: int 5
+        @doubled
+        define y type: int 6
+        """))
+        self.assertEqual(10, ns['x'])
+        self.assertEqual(12, ns['y'])
+
+
+    async def test_decorated_typed_define_global(self):
+        ns = await self.load(dedent(self.VALUE_PRELUDE) + dedent("""
+        def setup []:
+          @doubled
+          define-global g :: int 5
+          @doubled
+          define-global h type: int 6
+        (setup)
+        """))
+        self.assertEqual(10, ns['g'])
+        self.assertEqual(12, ns['h'])
+
+
+    async def test_decorated_declaration_is_an_error(self):
+        # a declaration binds no value, so there is nothing to decorate
+        sources = (
+            "@doubled\nvar x",
+            "@doubled\nvar x :: int",
+            "@doubled\nvar [a b]",
+            "def setup []:\n  @doubled\n  global var x",
+            "def setup []:\n  @doubled\n  global var [a b]",
+            "@doubled\ndefine x",
+            "@doubled\ndefine x type: int",
+            "def setup []:\n  @doubled\n  define-global x",
+        )
+        for src in sources:
+            with self.subTest(src=src):
+                with self.assertRaises(CompilerError) as caught:
+                    await self.load(dedent(self.VALUE_PRELUDE) + src)
+                self.assertIn("nothing to decorate", str(caught.exception))
 
 
     async def test_decorated_global_pattern(self):

@@ -7,7 +7,12 @@
 | `(decorate [] FN)` | `FN` |
 | `(decorate [D ...] (def NAME FORMALS BODY ...))` | `(var NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (var NAME VALUE))` | `(var NAME (decorate [D ...] VALUE))` |
+| `(decorate [D ...] (var NAME :: TYPE VALUE))` | `(var NAME :: TYPE (decorate [D ...] VALUE))` |
 | `(decorate [D ...] (global var NAME VALUE))` | `(global var NAME (decorate [D ...] VALUE))` |
+| `(decorate [D ...] (global var NAME :: TYPE VALUE))` | `(global var NAME :: TYPE (decorate [D ...] VALUE))` |
+| `(decorate [D ...] (define NAME VALUE))` | `(var NAME (decorate [D ...] VALUE))` |
+| `(decorate [D ...] (define-global NAME VALUE))` | `(define-global NAME (decorate [D ...] VALUE))` |
+| `(decorate [D ...] (var NAME))`, or any other declaration | a `CompilerError`, nothing to decorate |
 | `(decorate [D ...] (global def NAME FORMALS BODY ...))` | `(define-global NAME (decorate [D ...] (function NAME FORMALS BODY ...)))` |
 | `(decorate [D ...] (global class NAME SUPERS BODY ...))` | `(define-global NAME (decorate [D ...] (build-class NAME SUPERS BODY ...)))` |
 | `(decorate [D ...] (define [NAME FORMALS ...] BODY ...))` | `(var NAME (decorate [D ...] (function NAME [FORMALS ...] BODY ...)))` |
@@ -25,6 +30,14 @@ decorator list folds through
 [`decorate-subject`](compile-decorate-subject.md) one decorator per
 step, outermost first, so `@d1` over `@d2` over a definition applies as
 `(d1 (d2 ...))`, as in Python.
+
+A typed value subject keeps its annotation and wraps only the value, so
+`@d var x :: int 0` in a class body still records `x` in
+`__annotations__`; `type: TYPE` reads the same as `:: TYPE`. A
+declaration, `var x`, `var [a b]`, `global var x`, `define x` or
+`define-global x`, with or without a type, binds no value, so a
+decorator over it has nothing to transform and the compiler raises
+`CompilerError` naming the form.
 
 **Examples:**
 
