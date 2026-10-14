@@ -295,6 +295,25 @@ class TestRulePatternValidation(DefineSyntaxCompileHelpers):
         self.assertIn("REPEAT", str(caught.exception))
 
 
+class TestRepeatedVariableInEllipsis(DefineSyntaxCompileHelpers):
+
+    async def test_repeated_variable_binds_per_iteration(self):
+        # (a a) under an ellipsis: the second a is a SAME of the
+        # iteration's own a, not of an outer one
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m (a a) ...) (quote (a ...))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+        expr, mod = self.compile_expr("(m (1 1) (2 2))", **defn)
+        self.assertEqual(cons(1, 2, nil), await expr())
+        with self.assertRaises(CompilerError):
+            self.compile_expr("(m (1 2))", **defn)
+
+
 class TestCompileMacroRules(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_rules_identity(self):

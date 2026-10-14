@@ -898,6 +898,14 @@ join the run shapes, so a `clear_slots` of up to four slots, on a
 failed branch, a missed optional or a repeat's fail path, is one
 dispatch.
 
+Review item 5 as of 2026-10-14: `SAME` resolves its name by frame
+when the pattern lowers, through `MatchCompiler.resolve_slot`: the
+root, a GROUP or a REPEAT iteration is a frame, a ONEOF branch shares
+the frame around it, depth 0 is the innermost frame and depth 1 the
+one enclosing it, as the engine's frame dicts read by name. A name
+not bound at the asked depth is refused at lowering. The emitter is
+unchanged.
+
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,

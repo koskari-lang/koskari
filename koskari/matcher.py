@@ -405,6 +405,11 @@ class MatchCompiler:
         self.nodes = []
         self.capture_scope_stack = [{}]
         self._formal_scope_stack = [True]
+        # per capture scope, the slot index of each name interned in
+        # it, and whether the scope is a frame of its own (the root, a
+        # GROUP or a REPEAT) or shares the enclosing frame (a ONEOF
+        # branch); SAME resolves its name through these
+        self._slot_scopes = [({}, True)]
         self.in_class_fields = False
 
 
@@ -418,6 +423,7 @@ class MatchCompiler:
         """
 
         self.capture_scope_stack.append({})
+        self._slot_scopes.append(({}, not inherit_formals))
         if inherit_formals:
             self._formal_scope_stack.append(self._formal_scope_stack[-1])
         else:
@@ -433,6 +439,7 @@ class MatchCompiler:
             raise RuntimeError(
                 "end_nested_claims underflow (unbalanced nested scope)")
         self.capture_scope_stack.pop()
+        self._slot_scopes.pop()
         self._formal_scope_stack.pop()
 
 
@@ -445,9 +452,33 @@ class MatchCompiler:
 
         idx = len(self.slot_names)
         self.slot_names.append(name)
+        self._slot_scopes[-1][0][name] = idx
         if self._formal_scope_stack[-1]:
             self.formal_slot_names.append(name)
         return idx
+
+
+    def resolve_slot(self, name, depth):
+        """
+        The slot a SAME names: the scopes from the innermost down to
+        and including the nearest frame are depth 0, the next frame
+        depth 1, and the first scope at the requested depth holding
+        the name gives the slot
+
+        :raises ValueError: when no scope at that depth binds the name
+        """
+
+        level = 0
+        for slots, frame in reversed(self._slot_scopes):
+            if level == depth and name in slots:
+                return slots[name]
+            if frame:
+                level += 1
+                if level > depth:
+                    break
+        raise ValueError(
+            f"SAME slot {name!r} is not bound earlier in this pattern at"
+            f" depth {depth}")
 
 
     def intern_extern(self, name):
@@ -653,7 +684,9 @@ def pattern_slot_names(pattern):
 
 class SAME(Pattern):
     """
-    Match one element equal to an earlier capture in this frame
+    Match one element equal to an earlier capture of this frame: the
+    root, or the GROUP or REPEAT iteration the SAME sits in, at depth
+    0; the enclosing frame at depth 1
     """
 
 
@@ -681,14 +714,7 @@ class SAME(Pattern):
         Emit a SAME node referencing an existing slot index
         """
 
-        slot_idx = None
-        for i, nm in enumerate(ctx.slot_names):
-            if nm == self._slot:
-                slot_idx = i
-                break
-        if slot_idx is None:
-            raise ValueError(
-                f"SAME slot {self._slot!r} is not bound earlier in this pattern")
+        slot_idx = ctx.resolve_slot(self._slot, self._depth)
         return ctx.append_node(
             ("SAME", slot_idx, self._depth))
 

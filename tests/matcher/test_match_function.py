@@ -329,6 +329,46 @@ class TestRepeatScopes(unittest.TestCase):
         self.assertEqual(list(rows[1]["g"].keys()), [])
 
 
+class TestSameScopes(unittest.TestCase):
+    """
+    SAME names a capture of its own frame: a group's or repeat
+    iteration's own binding at depth 0, the enclosing frame's at depth
+    1, and a ONEOF branch shares its frame with what came before it
+    """
+
+    def test_same_in_a_repeat_reads_the_iteration_capture(self):
+        pattern = MATCH(CAPTURE("x"), repeat_capture(
+            "rows", FORM(MATCH(CAPTURE("x"), SAME("x")))))
+        m = make_matcher(pattern)
+        self.assertTrue(m.match((1, (2, 2), (3, 3))).matched)
+        self.assertFalse(m.match((1, (2, 3))).matched)
+        self.assertTrue(m.match((1, (1, 1))).matched)
+
+
+    def test_same_at_depth_one_reads_the_enclosing_capture(self):
+        pattern = MATCH(CAPTURE("x"), repeat_capture(
+            "rows", FORM(MATCH(SAME("x", depth=1)))))
+        m = make_matcher(pattern)
+        self.assertTrue(m.match((1, (1,), (1,))).matched)
+        self.assertFalse(m.match((1, (1,), (2,))).matched)
+
+
+    def test_same_in_a_oneof_branch_shares_the_frame(self):
+        pattern = MATCH(CAPTURE("x"), ONEOF(SAME("x"), LITERAL(0)))
+        m = make_matcher(pattern)
+        self.assertTrue(m.match((5, 5)).matched)
+        self.assertTrue(m.match((5, 0)).matched)
+        self.assertFalse(m.match((5, 6)).matched)
+
+
+    def test_same_outside_its_frame_is_refused(self):
+        pattern = MATCH(CAPTURE("x"), repeat_capture(
+            "rows", FORM(MATCH(SAME("x")))))
+        with self.assertRaises(ValueError) as caught:
+            MatchCompiler().lower(pattern)
+        self.assertIn("depth", str(caught.exception))
+
+
 class TestPairSpineElements(unittest.TestCase):
     """
     A pair spine is source: an element pulled from it is boxed, user
