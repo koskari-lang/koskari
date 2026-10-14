@@ -480,6 +480,15 @@ Koskari functions.
 
 Ref: [language/dataclass-builder.md](language/dataclass-builder.md).
 
+### Module-level `__annotations__` (proposed)
+
+`var x :: int 5` records its type on the fragment, but the only consumer
+is the class builder, which writes the class's `__annotations__`. At
+module top level the type is dropped, where Python's `x: int = 5` fills
+the module's `__annotations__`; `define-global NAME :: TYPE` from a body
+has the same gap. The module load would collect the top-level bindings
+into `__annotations__`, and a body's global binding would reach it too.
+
 - **Reader macro helpers** — bootstrap **`set-macro-character`** /
   **`read-atom`** helpers for `examples/reader-macro/dollars.ki`, reader
   tests, user recipe. Ref:
