@@ -62,7 +62,7 @@ class TestLazyLexerNames(unittest.TestCase):
         out = run(
             "from koskari.lexer.tokens import SPECIAL_NAMES, tokenize\n"
             "toks = list(tokenize('(define x 1)'))\n"
-            "print('compile/define' in SPECIAL_NAMES, len(toks))\n")
+            "print('define' in SPECIAL_NAMES, len(toks))\n")
         self.assertEqual(out, ["True", "5"])
 
 

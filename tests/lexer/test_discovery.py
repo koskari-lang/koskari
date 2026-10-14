@@ -32,20 +32,20 @@ class TestDiscovery(TestCase):
 
     def test_collect_from_builtins_includes_known_special(self):
         """
-        collect_special_like_names_from_builtins finds compile/define from basics.ki
+        collect_special_like_names_from_builtins finds define from basics.ki
         """
 
         import koskari.builtins as builtins
         bltns = vars(builtins)
         names = collect_special_like_names_from_builtins(bltns)
-        self.assertIn('compile/define', names)
+        self.assertNotIn('compile/define', names)
         self.assertIn('define', names)
 
 
     def test_special_names_for_repl_non_empty(self):
         names = special_names_for_repl()
         self.assertGreater(len(names), 0)
-        self.assertIn('compile/define', names)
+        self.assertNotIn('compile/define', names)
         self.assertIn('define', names)
         self.assertIn('import', names)
 

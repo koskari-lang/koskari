@@ -176,8 +176,8 @@ class TestTokenize(IsolatedAsyncioTestCase):
 
 
     async def test_tokenize_special_form(self):
-        toks = list(tokenize('(compile/define x 1)'))
-        sym = next(t for t in toks if t.text == 'compile/define')
+        toks = list(tokenize('(define x 1)'))
+        sym = next(t for t in toks if t.text == 'define')
         self.assertEqual(sym.type, 'special')
 
 
@@ -294,7 +294,7 @@ class TestNameSets(IsolatedAsyncioTestCase):
     async def test_special_names_non_empty(self):
         self.assertIsInstance(SPECIAL_NAMES, frozenset)
         self.assertGreater(len(SPECIAL_NAMES), 0)
-        self.assertIn('compile/define', SPECIAL_NAMES)
+        self.assertIn('define', SPECIAL_NAMES)
 
 
     async def test_layout_names_non_empty(self):
@@ -317,6 +317,35 @@ class TestNameSets(IsolatedAsyncioTestCase):
         self.assertIsInstance(LAYOUT_BLOCK_NAMES, frozenset)
         self.assertIn('if', LAYOUT_BLOCK_NAMES)
         self.assertIn('except', LAYOUT_BLOCK_NAMES)
+
+
+    async def test_bare_head_is_special(self):
+        """
+        The bare name is the syntax use at a call head
+        """
+
+        toks = list(tokenize('(lambda x)'))
+        sym = next(t for t in toks if t.text == 'lambda')
+        self.assertEqual(sym.type, 'special')
+
+
+    async def test_compile_prefixed_head_is_symbol(self):
+        """
+        The compile/ name reads the Syntax object and is a plain symbol
+        """
+
+        toks = list(tokenize('(compile/lambda x)'))
+        sym = next(t for t in toks if t.text == 'compile/lambda')
+        self.assertEqual(sym.type, 'symbol')
+
+
+    async def test_special_names_match_repl_names(self):
+        """
+        The tokenizer and the REPL read one special-name set
+        """
+
+        from koskari.lexer.discovery import special_names_for_repl
+        self.assertEqual(SPECIAL_NAMES, special_names_for_repl())
 
 
 # The end.

@@ -28,39 +28,29 @@ __all__ = (
 )
 
 
-def _names_for_special_binding(name):
-    """
-    Yield the binding key and, for compile/ specials, the head name without
-    the ``compile/`` prefix so both forms highlight.
-    """
-
-    yield name
-    if name.startswith('compile/'):
-        yield name[8:]
-
-
 def collect_special_like_names_from_builtins(builtins_dict):
     """
-    Return the set of builtin dict keys whose values are compiler specials
-    or syntax-rules transformers.
+    Return the head names of the compiler specials and syntax-rules
+    transformers bound in a builtins mapping.
 
     Walks the merged runtime builtins (bootstrap plus loaded basics) so new
     specials registered only in Python stay in sync, and user-defined
-    ``define-syntax`` names from basics.ki are included when present.
+    ``define-syntax`` names from basics.ki are included when present. The
+    compiler resolves only the unprefixed name as a syntax use, so the
+    compile/ key itself is a plain symbol and is left out.
 
     :param builtins_dict: mapping from string name to builtin value
-    :return: frozenset of name strings (each ``compile/...`` special also
-        contributes the unprefixed name)
+    :return: frozenset of the unprefixed head of each compile/ special
     """
 
     from koskari.compile.compiler import Compiled
 
     names = set()
     for name, val in builtins_dict.items():
-        if name.startswith('__'):
+        if not name.startswith('compile/'):
             continue
         if isinstance(val, Compiled):
-            names.update(_names_for_special_binding(name))
+            names.add(name[8:])
 
     return frozenset(names)
 

@@ -57,11 +57,8 @@ names = None
 
 
 def _make_special_names():
-    import koskari.builtins as builtins
-
-    from ..compile.compiler import Compiled
-    return frozenset(n for n, v in vars(builtins).items()
-                     if isinstance(v, Compiled))
+    from .discovery import special_names_for_repl
+    return special_names_for_repl()
 
 
 def _make_layout_names():
@@ -162,10 +159,10 @@ def _atom_type(text, special_names):
         return 'ellipsis'
     if text in ("None", "True", "False"):
         return 'py_singleton'
-    if text in special_names:
-        return 'special'
     if text in lexer_names().block:
         return 'layout'
+    if text in special_names:
+        return 'special'
     return 'symbol'
 
 
@@ -279,7 +276,8 @@ def tokenize(source, filename='<string>', special_names=None):
     :param source: source string
     :param filename: filename for error context (unused for now)
     :param special_names: optional set of special-form names; defaults to
-        ``SPECIAL_NAMES`` from the compiler registry
+        ``SPECIAL_NAMES``, the unprefixed head names from the compiler
+        registry
     :yield: Token instances
     """
 
