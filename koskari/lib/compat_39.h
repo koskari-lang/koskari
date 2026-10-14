@@ -112,17 +112,6 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 }
 
 
-/* The version of the extern defaults dict is its ma_version_tag: a
-   global counter stamped on the dict at creation and at every mutation,
-   so a reset's new dict reads different too. No dict watcher here, and
-   none is needed for this. */
-#define KOS_MATCHER_DEFAULTS_WATCHER 0
-
-static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
-  return ((PyDictObject *) dict)->ma_version_tag;
-}
-
-
 /* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
    types.coroutine marked generator function's product), which await
    takes as its own iterator. The code is reached through gi_code. */

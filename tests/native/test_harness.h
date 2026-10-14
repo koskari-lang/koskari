@@ -174,7 +174,6 @@ int run_stack_tests(void);
 int run_dynchain_tests(void);
 int run_eval_tests(void);
 int run_paramref_tests(void);
-int run_matcher_tests(void);
 int run_property_tests(void);
 int run_partial_tests(void);
 int run_iter_request_tests(void);

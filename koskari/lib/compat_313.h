@@ -166,11 +166,6 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 }
 
 
-/* The version of the extern defaults dict is a counter bumped by a dict
-   watcher: ma_version_tag is deprecated on this version. */
-#define KOS_MATCHER_DEFAULTS_WATCHER 1
-
-
 /* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
    types.coroutine marked generator function's product), which await
    takes as its own iterator. gi_code is gone from the struct; the

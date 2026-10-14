@@ -15,7 +15,9 @@
 """
 koskari.matcher
 
-Python surface for the native matcher
+The matcher: the pattern builders and the registry of pattern forms,
+the compiler that lowers a pattern to its frozen tables, and the
+Matcher and Dispatcher that run the function those tables compile to
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -198,7 +200,7 @@ def reset_extern_defaults():
 
 def interned_consts(frozen):
     """
-    The consts of a frozen matcher as the engine's thaw interned them:
+    The consts of a frozen matcher as the function reads them:
     the frozen pool, then each keyword FIELD's attribute name appended
     once in node order, an equal const of the same type being one entry
     """
@@ -680,7 +682,7 @@ class MatchCompiler:
     @classmethod
     def compile(cls, pattern: "Pattern") -> Matcher:
         """
-        Compile a pattern into a native Matcher
+        Compile a pattern into a Matcher
         """
         return Matcher.from_tuple(cls().lower(pattern))
 
@@ -716,8 +718,7 @@ class Pattern(Protocol):
 
     def build(self):
         """
-        Lower this pattern and thaw it into a native Matcher. Match-time
-        behaviour is pure native engine
+        Lower this pattern into a Matcher
 
         :rtype: Matcher
         """
@@ -727,9 +728,8 @@ class Pattern(Protocol):
 
     def match(self, subject, **externs):
         """
-        Convenience helper that thaws this pattern into a native Matcher
-        and runs it against subject. Returns the native MatchResult;
-        captures are final
+        Lower this pattern into a Matcher and run it against subject.
+        Returns the MatchResult
         """
 
         return self.build().match(subject, **externs)
@@ -1836,7 +1836,7 @@ def LIST(*specs, key=None):
 def match_pattern_raw(source, patterns):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Return native ``MatchResult.captures`` on first match, else ``None``
+    Return the ``MatchResult.captures`` of the first match, else ``None``
     """
 
     if not is_nil(source) and not is_pair(source):
@@ -1861,7 +1861,7 @@ def match_pattern_raw(source, patterns):
 def match(source, patterns):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Returns native ``MatchResult.captures`` on first match, else ``None``.
+    Returns the ``MatchResult.captures`` of the first match, else ``None``.
     """
 
     return match_pattern_raw(source, patterns)
@@ -1877,7 +1877,7 @@ def match1(value, patterns):
 
 def make_matcher(pattern):
     """
-    Lower a pattern AST into a native Matcher. The matcher carries
+    Lower a pattern AST into a Matcher. The matcher carries
     slots, externs, and consts declared by the pattern tree
 
     :param pattern: a matcher pattern object

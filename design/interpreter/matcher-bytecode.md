@@ -808,6 +808,21 @@ through two `Matcher.match` calls; the new `syntax-select` cell, a
 three-arm syntax whose last arm is the let shape, reads 1648 ns beside
 the one-matcher `syntax-dispatch` cell's 1381 ns.
 
+Stage 5 as of 2026-10-14: the engine is gone from `koskari/lib`. The
+builder, validator, thaw, the subject adapters, the node walk and its
+change log, the defaults resolution, the root pre-test, the C
+`Matcher` and `MatchResult` types and the `match_select`,
+`get_extern_defaults` and `reset_extern_defaults` module functions
+are removed, with the `KOS_CACHE_MATCHER` cache kind and the compat
+helpers that read the defaults dict's version. `matcher.c` keeps
+`Datum`, `DatumFrame`, the sequence cursor, the isinstance and PEP
+634 gate helpers and the steps in `matcher/step.c`, which took the
+mapping probe and the 3.9 `__match_args__` synthesis with it.
+`MATCH_CASE` keeps its opcode and its handler raises. The native
+matcher tests, `tests/lib/opcode/test_match_case.py` and the corpus
+oracle test went with the engine they drove; the instruction tests
+and the matcher suites over the Python `Matcher` cover the steps.
+
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,

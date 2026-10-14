@@ -12,10 +12,10 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-The standalone matcher function against the engine: the same frozen
-matcher compiled to a Function and run by the engine, over the same
+The standalone matcher function beside the Matcher over it: the same
+frozen matcher called bare and through Matcher.match, over the same
 subjects, must yield the same captures in the same shapes, Datum and
-DatumFrame included.
+DatumFrame included, and the shapes are the ones the compiler reads.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -70,19 +70,19 @@ class TestMatchFunction(unittest.TestCase):
 
     def check(self, pattern, *subjects, externs=None):
         """
-        Both engines over every subject; the function's answer must be
-        the engine's, captures and misses alike
+        Both entries over every subject; the bare function's answer
+        must be the Matcher's, captures and misses alike
         """
 
         frozen = MatchCompiler().lower(pattern)
-        engine = make_matcher(pattern)
+        matcher = make_matcher(pattern)
         fn = compile_match_function(frozen, self.base_ns)
         if externs:
             for name, value in externs.items():
                 self.base_ns.store(name, value)
         results = []
         for subject in subjects:
-            want = engine.match(subject, **(externs or {}))
+            want = matcher.match(subject, **(externs or {}))
             got = fn(subject).demand()
             if not want.matched:
                 self.assertIsNone(got, subject)
@@ -103,8 +103,8 @@ class TestMatchFunction(unittest.TestCase):
         self.assertIsNotNone(hit["sym"].position)
         self.assertIsNone(miss)
 
-        # the engine's Python entry refuses an improper subject before
-        # it matches; the function treats it as a miss
+        # Matcher.match refuses an improper subject before it matches;
+        # the bare function treats it as a miss
         fn = compile_match_function(MatchCompiler().lower(pattern), self.base_ns)
         self.assertIsNone(fn(cons(symbol("define"), symbol("x"))).demand())
 

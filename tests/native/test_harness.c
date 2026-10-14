@@ -166,7 +166,6 @@ int main(int argc, char *argv[]) {
     run_dynchain_tests();
     run_eval_tests();
     run_paramref_tests();
-    run_matcher_tests();
     run_property_tests();
     run_partial_tests();
     run_iter_request_tests();

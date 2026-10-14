@@ -3201,11 +3201,6 @@ static void cache_slot_release(KosCacheSlot *slot) {
   case KOS_CACHE_FIELD:
     /* ref-free: a borrowed guard type and an integer index. */
     break;
-  case KOS_CACHE_MATCHER:
-    Py_CLEAR(slot->u.matcher.matcher);
-    Py_CLEAR(slot->u.matcher.slotmap);
-    Py_CLEAR(slot->u.matcher.env);
-    break;
   case KOS_CACHE_ELECTOR:
   case KOS_CACHE_ITEM:
     /* ref-free: a static function and two counters. */
@@ -3234,11 +3229,6 @@ static int cache_slot_visit(KosCacheSlot *slot, visitproc visit, void *arg) {
   case KOS_CACHE_METHOD:
     Py_VISIT(slot->u.method.type);
     Py_VISIT(slot->u.method.resolved);
-    break;
-  case KOS_CACHE_MATCHER:
-    Py_VISIT(slot->u.matcher.matcher);
-    Py_VISIT(slot->u.matcher.slotmap);
-    Py_VISIT(slot->u.matcher.env);
     break;
   }
   return 0;
