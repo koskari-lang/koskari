@@ -1127,11 +1127,13 @@ class LayoutReader(Reader):
 
         decorators = []
         while True:
+            line = stream.position()[0]
             forms = self._read_line_tail_forms(stream)
             if not forms:
                 raise stream.error('empty decorator line', stream.position())
 
-            decorators.append(self.fold_elements(cons(*forms, nil)))
+            decorators.append(self.fold_elements(
+                cons(*forms, nil), (line, outer_indent)))
             stream.skip_whitespace()
             pk = stream.peek(1)
             if not pk:
@@ -1326,13 +1328,14 @@ class LayoutReader(Reader):
                 "LayoutReader.read needs an IndentAwareStream; make one"
                 " with IndentAwareStream.from_source")
 
-        with self.nesting_guard(reader_stream):
-            event, pos, value = self.read_form(reader_stream)
-
-        if event is not EOF and self.layout_enabled:
-            self._check_indent(reader_stream, pos, 0)
-
+        pos = None
         try:
+            with self.nesting_guard(reader_stream):
+                event, pos, value = self.read_form(reader_stream)
+
+            if event is not EOF and self.layout_enabled:
+                self._check_indent(reader_stream, pos, 0)
+
             if event is LINE:
                 return self.fold_line(value), pos
             elif event is BLOCK:
@@ -1342,9 +1345,12 @@ class LayoutReader(Reader):
         except LayoutError as err:
             # a layout handler knows its position at best; the stream
             # knows the file and the text, and the block's start stands
-            # in for a raw layout that read a form carrying no position
+            # in for a raw layout that read a form carrying no position.
+            # A decorator read inside read_form folds its lines there,
+            # before the form's start is known, so the stream's position
+            # stands in for an error raised that early
             if not err.filename:
-                location = err.location or pos
+                location = err.location or pos or reader_stream.position()
                 err.locate(reader_stream.filename, location,
                            reader_stream._source_line(location[0]))
             raise

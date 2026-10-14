@@ -17,7 +17,8 @@ tests.reader.layouts.test_layout_error_location
 A LayoutError raised by a layout handler names the file, the line and
 the source text of the block it was reading, as a reader syntax error
 does: from the handler's own position when it has one, and from the
-block's start when a raw layout has none.
+block's start when a raw layout has none. A decorator line or a
+decorated line that the decorator read folds names its own line.
 """
 
 from textwrap import dedent
@@ -39,8 +40,9 @@ pytestmark = pytest.mark.phase_infra
 FILENAME = "/nonexistent/layout_error_location.ki"
 
 
-def read_all(src):
+def read_all(src, **modes):
     reader = LayoutReader(dict(_BUILTIN_REGISTRY))
+    reader.set_layout_modes(**modes)
     stream = IndentAwareStream.from_source(
         source_str(dedent(src), FILENAME))
     out = []
@@ -81,6 +83,39 @@ class TestLayoutErrorLocation(TestCase):
         self.assertEqual(FILENAME, err.filename)
         self.assertEqual(3, err.lineno)
         self.assertIn("line 3", str(err))
+
+
+    def test_decorator_line(self):
+        """
+        Several forms on a later decorator line name that line
+        """
+
+        with self.assertRaises(LayoutError) as caught:
+            read_all("""
+            @f
+            @g 1
+            print
+            """, layout_implicit_calls=False, layout_decorators=True)
+        err = caught.exception
+        self.assertEqual(FILENAME, err.filename)
+        self.assertEqual(3, err.lineno)
+        self.assertEqual("@g 1\n", err.text)
+
+
+    def test_decorated_line(self):
+        """
+        Several forms on the decorated line name that line
+        """
+
+        with self.assertRaises(LayoutError) as caught:
+            read_all("""
+            @f
+            print 1
+            """, layout_implicit_calls=False, layout_decorators=True)
+        err = caught.exception
+        self.assertEqual(FILENAME, err.filename)
+        self.assertEqual(3, err.lineno)
+        self.assertEqual("print 1\n", err.text)
 
 
 # The end.
