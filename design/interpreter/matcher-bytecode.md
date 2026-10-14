@@ -870,6 +870,18 @@ externs into the matcher's namespace and refuses a call missing one;
 refused at construction when a frozen clause declares an extern, since
 a syntax passes none.
 
+Review items as of 2026-10-14, the two blocking findings: a sequence
+cursor over an exact list now reads the list's live size at every
+step after the descent, in the end test, the rest, the reservation,
+the collect, the iteration span and the slice, so a list that user
+code shrinks mid-match is read as it is and never past its end; the
+descent's recorded length serves the width precheck alone. The class
+test and the field reads peel the Datum as every other test does, so
+a class pattern over a pair spine matches its element, and a REST
+with a suffix peels before it boxes. A predicate or extractor on a
+pair spine receives the Datum: a runtime pair is a source spine, and
+the reviewers' finding there records intended behaviour.
+
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,

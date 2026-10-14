@@ -28,9 +28,10 @@ import pytest
 from koskari.lib import Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, symbol
 from koskari.match_code import compile_match_function
 from koskari.matcher import (
-    BINDINGS, BODY, CALLEDBY, CAPTURE, FORM, FORMALS, LITERAL, LITERAL_KW,
-    MATCH, NOT, ONEOF, OPTIONAL, REPEAT, REST, SAME, SYMBOL, TEST_ANY, TYPE,
-    USING, VALUE, MatchCompiler, make_matcher, repeat_capture)
+    BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
+    LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST,
+    SAME, SYMBOL, TEST_ANY, TYPE, USING, VALUE, MatchCompiler, make_matcher,
+    repeat_capture)
 from koskari.reader import Reader, source_str
 
 
@@ -230,6 +231,109 @@ class TestMatchFunction(unittest.TestCase):
         boxed = cons(Datum(symbol("define"), None), symbol("y"), 2, nil)
         pattern = MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))
         self.check(pattern, inner, boxed)
+
+
+
+
+class TestLiveSubjects(unittest.TestCase):
+    """
+    A list that user code shrinks during the match is read as it is at
+    each step, and never past its end
+    """
+
+    def test_rest_after_the_list_is_cleared(self):
+        subject = [1, 2, 3, 4]
+
+        def clear(v):
+            subject.clear()
+            return True
+
+        pattern = MATCH(FORM(MATCH(PREDICATE("clear"), REST("r"))))
+        result = make_matcher(pattern).match((subject,), clear=clear)
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["r"], ())
+
+
+    def test_collect_and_end_after_the_list_is_cleared(self):
+        subject = [1, 2, 3, 4]
+
+        def clear(v):
+            subject.clear()
+            return True
+
+        pattern = MATCH(FORM(MATCH(
+            PREDICATE("clear"), repeat_capture("xs", TEST_ANY()))))
+        result = make_matcher(pattern).match((subject,), clear=clear)
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["xs"], [])
+
+        subject[:] = [1, 2, 3, 4]
+        pattern = MATCH(FORM(MATCH(PREDICATE("clear"), TEST_ANY())))
+        result = make_matcher(pattern).match((subject,), clear=clear)
+        self.assertFalse(result.matched)
+
+
+    def test_rest_with_a_suffix_after_the_list_shrinks(self):
+        subject = [1, 2, 3, 4, 5]
+
+        def trim(v):
+            del subject[2:]
+            return True
+
+        pattern = MATCH(FORM(MATCH(PREDICATE("trim"), REST("r"), TEST_ANY())))
+        result = make_matcher(pattern).match((subject,), trim=trim)
+        self.assertTrue(result.matched)
+        self.assertEqual(result.captures["r"], ())
+
+
+class TestPairSpineElements(unittest.TestCase):
+    """
+    A pair spine is source: an element pulled from it is boxed, user
+    code reached from the walk receives the box, and the matcher's own
+    tests read through it
+    """
+
+    def test_predicate_receives_the_datum(self):
+        seen = []
+
+        def note(v):
+            seen.append(v)
+            return v.datum == 5
+
+        pattern = MATCH(FORM(MATCH(PREDICATE("note"))))
+        subject = cons(cons(5, nil), nil)
+        self.assertTrue(make_matcher(pattern).match(subject, note=note).matched)
+        self.assertIsInstance(seen[0], Datum)
+        self.assertEqual(seen[0].datum, 5)
+
+
+    def test_class_pattern_reads_through_the_box(self):
+        class Point:
+            __match_args__ = ("x", "y")
+
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+        pattern = MATCH(FORM(MATCH(CLASS(
+            "Point", FIELD(CAPTURE("x")), FIELD(CAPTURE("y"), name="y")))))
+        subject = cons(cons(Point(3, 4), nil), nil)
+        result = make_matcher(pattern).match(subject, Point=Point)
+        self.assertTrue(result.matched)
+        self.assertEqual(
+            (result.captures["x"], result.captures["y"]), (3, 4))
+        self.assertFalse(
+            make_matcher(pattern).match(cons(cons(7, nil), nil), Point=Point).matched)
+
+
+    def test_rest_with_a_suffix_boxes_a_spliced_datum_once(self):
+        pattern = MATCH(REST("r"), BIND("z"))
+        subject = cons(Datum(1, None), 2, 3, nil)
+        result = make_matcher(pattern).match(subject)
+        self.assertTrue(result.matched)
+        first = result.captures["r"][0]
+        self.assertIsInstance(first, Datum)
+        self.assertEqual(first.datum, 1)
 
 
 # The end.

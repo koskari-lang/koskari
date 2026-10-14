@@ -121,9 +121,9 @@ class TestMatchCaseEnv(unittest.IsolatedAsyncioTestCase):
         Point = mod["Point"]
         self.assertEqual(await which(Datum(cons(6, 7, nil))), "seq")
         self.assertEqual(await which(Datum({"k": 1})), "map")
-        # a class pattern tests the element as it is, so a boxed
-        # instance is not one of the class: the engine's own rule
-        self.assertEqual(await which(Datum(Point(1, 2))), "other")
+        # the class test reads through the box as every other test
+        # does, so a boxed instance is one of the class
+        self.assertEqual(await which(Datum(Point(1, 2))), "class")
         self.assertEqual(await which(Point(1, 2)), "class")
         self.assertEqual(await which(Datum(4)), "int")
         self.assertEqual(await which(Datum("s")), "other")
