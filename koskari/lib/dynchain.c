@@ -2175,6 +2175,8 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
       }
       return KOS_HANDLE_PASS;
     case KOS_DYN_PROMPT:
+      /* every prompt consumes a shift; kos_shift_capture's walk judges
+         the tag and crosses a prompt whose tag differs */
       if (event == KOS_XFER_EVENT_SHIFT)
         return KOS_HANDLE_CONSUMED;
       return KOS_HANDLE_PASS;
@@ -2647,8 +2649,10 @@ int kos_shift_capture(
   /* One walk from dyn_top locates the nearest matching prompt while
      offering handle(SHIFT) to every node crossed: GEN denies (a shift
      cannot cross a generator node), a PROMPT consumes -- the match
-     when its tag agrees, a topology error otherwise. Reachability is
-     implied by the walk itself. */
+     when its tag agrees, crossed when it does not, so the walk goes
+     on to the parent and the prompt rides in the template as region
+     content. A consumer of any other kind is a topology error.
+     Reachability is implied by the walk itself. */
   KosDynPrompt *prompt = NULL;
   {
     KosDynNode *node = KosEvalState_DYN_TOP(es);
@@ -2661,14 +2665,15 @@ int kos_shift_capture(
         return -1;
       }
       if (hr == KOS_HANDLE_CONSUMED) {
-        if (KosDynNode_IS_PROMPT(node)
-            && KosDynPrompt_ID((KosDynPrompt *) node) == prompt_id) {
+        if (! KosDynNode_IS_PROMPT(node)) {
+          PyErr_SetString(PyExc_RuntimeError,
+                          "handle(SHIFT) consumed before reaching prompt");
+          return -1;
+        }
+        if (KosDynPrompt_ID((KosDynPrompt *) node) == prompt_id) {
           prompt = (KosDynPrompt *) node;
           break;
         }
-        PyErr_SetString(PyExc_RuntimeError,
-                        "handle(SHIFT) consumed before reaching prompt");
-        return -1;
       }
       node = KosDynNode_PARENT(node);
     }
@@ -2769,6 +2774,7 @@ int kos_shift_capture(
       uint32_t live_id = kos_dynnode_id((KosDynNode *) prompt);
       KosDynNode *pclone = KosContinuation_CAPTURED_CHAIN(k);
       KosDynNode *walk;
+      int below_delim = 0;
 
       while (pclone
              && ! (KosDynNode_IS_PROMPT(pclone)
@@ -2812,7 +2818,13 @@ int kos_shift_capture(
        * never-executed padding; their originals stay live, so they must
        * be falsified too or the landed copy shadows the real one. SHIFT
        * nodes cloned alongside recorded live ids; follow each to its
-       * falsified copy. */
+       * falsified copy.
+       *
+       * The INVOCATION flag goes on the delimiter and the padding below
+       * it only. A prompt above the delimiter is region content, a
+       * reset of another tag the shift crossed: its own POP_PROMPT runs
+       * in the graft and must pop it as a reset, not walk past it to
+       * the graft's DELIM. */
       for (walk = KosContinuation_CAPTURED_CHAIN(k); walk;
            walk = KosDynNode_PARENT(walk)) {
         KosDynNode *snode;
@@ -2822,7 +2834,10 @@ int kos_shift_capture(
           continue;
         old_id = kos_dynnode_id(walk);
         KosDynNode_NODE_ID(walk) = kos_dynnode_mint_id();
-        KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
+        if (walk == pclone)
+          below_delim = 1;
+        if (below_delim)
+          KosDynNode_FLAGS(walk) |= KOS_DYNF_INVOCATION;
         for (snode = KosContinuation_CAPTURED_CHAIN(k); snode;
              snode = KosDynNode_PARENT(snode)) {
           if (KosDynNode_IS_SHIFT(snode)

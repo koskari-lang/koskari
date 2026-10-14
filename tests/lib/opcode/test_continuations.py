@@ -172,6 +172,67 @@ class TestDelimitedContinuations(CevalTest):
         self.assertEqual(result, 42)
 
 
+    async def test_tagged_shift_passes_inner_prompt_graft(self):
+        """
+        A shift with tag 1 inside a prompt with tag 0 inside a prompt
+        with tag 1: the handler's value k is delivered at the outer
+        prompt, and invoking k from there re-enters the region through
+        the inner prompt, whose own POP_PROMPT pops it as a reset.
+        (+ 1 5) then (+ 6 10): 16. Delivery at the inner prompt would
+        add 10 to k; an early return at the inner prompt would give 6.
+        """
+
+        code = [
+            ["PUSH_PROMPT", 1],
+            ["PUSH_PROMPT", 0],
+            ["CONST", 1],
+            ["PUSH_SHIFT", 1],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["CONST", 10],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["CONST", 5],
+            ["CALL", 1],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 16)
+
+
+    async def test_tagged_shift_passes_inner_prompt_inplace(self):
+        """
+        The same shape with k invoked inside the handler: the slice
+        resumes on the live chain, the inner prompt pops as a reset, and
+        the outer prompt's POP_PROMPT returns 16 to the handler, which
+        delivers it at the outer prompt. Delivery at the inner prompt
+        would give 26.
+        """
+
+        code = [
+            ["PUSH_PROMPT", 1],
+            ["PUSH_PROMPT", 0],
+            ["CONST", 1],
+            ["PUSH_SHIFT", 1],
+            ["CONST", 5],
+            ["CALL", 1],
+            ["POP_SHIFT", 0],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["CONST", 10],
+            ["OBJECT_ADD", 2],
+            ["POP_PROMPT", 0],
+            ["RETURN", 1],
+        ]
+        code_obj, ns = build_expr(code)
+        expr = make_callable(code_obj, ns)
+        result = await expr()
+        self.assertEqual(result, 16)
+
+
 class TestUndelimitedContinuations(CevalTest):
     """
     Tests for PUSH_CC, POP_CC, CAPTURE_CC (undelimited call/cc block).
