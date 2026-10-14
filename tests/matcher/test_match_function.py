@@ -25,7 +25,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, symbol
+from koskari.lib import (
+    Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, setcdr, symbol)
 from koskari.match_code import compile_match_function
 from koskari.matcher import (
     BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
@@ -284,6 +285,25 @@ class TestLiveSubjects(unittest.TestCase):
         result = make_matcher(pattern).match((subject,), trim=trim)
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["r"], ())
+
+
+class TestLoopingSpines(unittest.TestCase):
+    """
+    A pair spine that loops is refused at the descent into it, nested
+    as deep as it may be, instead of being walked without end
+    """
+
+    def test_nested_loop_is_refused(self):
+        cyclic = cons(1, 2, nil)
+        setcdr(cyclic.cdr, cyclic)
+        pattern = MATCH(FORM(MATCH(CAPTURE("xs", REPEAT(TYPE("int"))))))
+        with self.assertRaises(ValueError) as caught:
+            make_matcher(pattern).match((cyclic,))
+        self.assertIn("looping", str(caught.exception))
+
+        pattern = MATCH(FORM(MATCH(REST("r"))))
+        with self.assertRaises(ValueError):
+            make_matcher(pattern).match((cyclic,))
 
 
 class TestPairSpineElements(unittest.TestCase):

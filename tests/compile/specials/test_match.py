@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import Datum, cons, nil
+from koskari.lib import Datum, cons, nil, setcdr
 
 from . import SpecialsTestCase
 
@@ -618,6 +618,23 @@ class TestMatchExternResolution(SpecialsTestCase):
         self.assertEqual(3, await expr())
         expr, mod = self.compile_expr('(m (#list 1 "x") (b :: int))', **defn)
         self.assertEqual(0, await expr())
+
+
+    async def test_looping_spine_in_the_subject_is_refused(self):
+        # the descent into the subject refuses a looping spine for any
+        # arm shape, as the engine refused it before any arm ran
+        cyclic = cons(1, 2, nil)
+        setcdr(cyclic.cdr, cyclic)
+        src = """
+        (match data
+          [[#[a b]] "two"]
+          [else: "no"])
+        """
+        expr, mod = self.compile_expr(src, data=cyclic)
+        with self.assertRaises(ValueError):
+            await expr()
+        expr, mod = self.compile_expr(src, data=cons(1, 2, nil))
+        self.assertEqual(await expr(), "two")
 
 
 # The end.

@@ -138,6 +138,12 @@ int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor) {
     return gate;
 
   if (KosPair_Check(peeled) || KosNilP(peeled)) {
+    /* the one walk over a spine before anything pulls from it: a
+       cycle is refused here, as the engine refused it when it built
+       the subject; an improper tail is left to miss at the end */
+    PyObject *term = NULL;
+    if (step_count_spine(peeled, &term) == -2)
+      return -1;
     Py_INCREF(peeled);
     *out_cursor = peeled;
     return 1;

@@ -126,9 +126,10 @@ typedef struct KosMatchStep {
 /**
    The FORM descent: the PEP 634 sequence gate on elem read through
    Datum, the length precheck against the packed widths for a
-   sequence, and the cursor for the walk. Returns 1 with *out_cursor a
+   sequence, the loop check over a pair spine, and the cursor for the
+   walk. Returns 1 with *out_cursor a
    new reference (the pair or nil itself, or a KosMatchCursor), 0 on a
-   miss, -1 with an exception set.
+   miss, -1 with an exception set, ValueError for a spine that loops.
  */
 int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor);
 
