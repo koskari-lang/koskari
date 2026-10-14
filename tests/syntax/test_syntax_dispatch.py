@@ -29,7 +29,7 @@ from koskari.lib import DatumFrame, ModuleNamespace, cons, nil, symbol
 from koskari.match_code import compile_match_function
 from koskari.matcher import (
     CALLEDBY, CAPTURE, LITERAL, MATCH, SYMBOL, TYPE, VALUE, Dispatcher,
-    MatchCompiler, Matcher, get_extern_defaults, reset_extern_defaults)
+    MatchCompiler, Matcher)
 from koskari.syntax import SpecialTransform, Syntax
 
 
@@ -42,7 +42,7 @@ def function_matcher(pattern):
     hands one to build-syntax
     """
 
-    ns = ModuleNamespace("module", dict(get_extern_defaults()))
+    ns = ModuleNamespace("module", {})
     fn = compile_match_function(MatchCompiler().lower(pattern), ns)
     return Matcher.from_function(fn, tuple(MatchCompiler().lower(pattern)[1]))
 
@@ -52,10 +52,6 @@ def form(*items):
 
 
 class TestDispatcher(unittest.TestCase):
-
-    def setUp(self):
-        reset_extern_defaults()
-
 
     def test_first_arm_wins(self):
         d = Dispatcher((
@@ -112,33 +108,27 @@ class TestDispatcher(unittest.TestCase):
 
 
     def test_core_type_arms_read_no_extern(self):
-        d = Dispatcher((
+        matchers = (
             MatchCompiler.compile(MATCH(CAPTURE("k", TYPE("keyword")))),
-            MatchCompiler.compile(MATCH(CAPTURE("s", TYPE("symbol"))))))
-        self.assertEqual(d.externs, ())
+            MatchCompiler.compile(MATCH(CAPTURE("s", TYPE("symbol")))))
+        self.assertEqual([m.externs for m in matchers], [(), ()])
+        d = Dispatcher(matchers)
         idx, captures = d.select((symbol("a"),))
         self.assertEqual(idx, 1)
         self.assertEqual(captures["s"], symbol("a"))
 
 
-    def test_a_store_into_the_defaults_reaches_the_function(self):
-        d = Dispatcher((
-            MatchCompiler.compile(MATCH(CAPTURE("p", TYPE("Point")))),))
-        with self.assertRaises(TypeError):
-            d.select((1,))
+    def test_inline_arm_with_an_extern_is_refused(self):
+        """
+        A syntax passes no externs, so an arm whose pattern names a user
+        type has no binding for it and the dispatcher refuses it when
+        built, naming the extern
+        """
 
-        class Point:
-            pass
-
-        get_extern_defaults()["Point"] = Point
-        point = Point()
-        idx, captures = d.select((point,))
-        self.assertEqual(idx, 0)
-        self.assertIs(captures["p"], point)
-
-        get_extern_defaults()["Point"] = int
-        self.assertEqual(d.select((point,)), (-1, None))
-        self.assertEqual(d.select((7,))[0], 0)
+        with self.assertRaises(TypeError) as caught:
+            Dispatcher((
+                MatchCompiler.compile(MATCH(CAPTURE("p", TYPE("Point")))),))
+        self.assertIn("Point", str(caught.exception))
 
 
     def test_improper_subject_refused(self):
@@ -153,10 +143,6 @@ class TestDispatcher(unittest.TestCase):
 
 
 class TestSyntaxDispatch(unittest.TestCase):
-
-    def setUp(self):
-        reset_extern_defaults()
-
 
     def test_syntax_builds_its_function_once(self):
         name = symbol("compile/d")

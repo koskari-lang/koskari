@@ -41,9 +41,11 @@ statement matches values. Patterns are built in Python (`MATCH(...)`,
 ([OPCODES.md](OPCODES.md) section 9.2). The instructions live in one of
 three containers:
 
-- a standalone `Function` over a namespace the default externs fill, for a
-  pattern built in Python (`Matcher`, and the one `Dispatcher` function a
-  `Syntax` tries its arms through);
+- a standalone `Function` over a namespace of its own, for a pattern built
+  in Python (`Matcher`, whose `match` stores its keyword externs into that
+  namespace before each call, and the one `Dispatcher` function a `Syntax`
+  tries its arms through, which passes none and so refuses an arm that
+  declares one);
 - a lambda the defining module's compile builds, for a `syntax-rules` or
   `syntax-match` rule, its externs closure names of the module;
 - the enclosing function itself, for a `match`/`case` arm, its captures the
@@ -616,7 +618,7 @@ from koskari.compile.helpers import match, match_pattern_raw
 | Function | Role |
 |----------|------|
 | `make_matcher(pat)` | Compile a pattern to a `Matcher` |
-| `Matcher.match(subject, **externs)` | Run the compiled function; a keyword is stored into the matcher's namespace for the call |
+| `Matcher.match(subject, **externs)` | Run the compiled function; every extern the pattern declares is given by keyword and stored into the matcher's namespace for the call |
 | `Dispatcher(matchers).select(subject)` | The first matching index and its captures, or `(-1, None)` |
 | `compile_match_function(frozen, ns)` | A frozen tuple as a `Function` over `ns` |
 | `compile_dispatch_function(clauses, ns)` | Frozen tuples and functions as one `Function` returning `(values index captures)` |

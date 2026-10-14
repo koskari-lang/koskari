@@ -30,8 +30,7 @@ from koskari.match_code import compile_match_function
 from koskari.matcher import (
     BINDINGS, BODY, CALLEDBY, CAPTURE, FORM, FORMALS, LITERAL, LITERAL_KW,
     MATCH, NOT, ONEOF, OPTIONAL, REPEAT, REST, SAME, SYMBOL, TEST_ANY, TYPE,
-    USING, VALUE, MatchCompiler, get_extern_defaults, make_matcher,
-    repeat_capture)
+    USING, VALUE, MatchCompiler, make_matcher, repeat_capture)
 from koskari.reader import Reader, source_str
 
 
@@ -65,7 +64,7 @@ def read(text):
 class TestMatchFunction(unittest.TestCase):
 
     def setUp(self):
-        self.base_ns = ModuleNamespace("matcher", dict(get_extern_defaults()))
+        self.base_ns = ModuleNamespace("matcher", {})
 
 
     def check(self, pattern, *subjects, externs=None):
@@ -215,7 +214,7 @@ class TestMatchFunction(unittest.TestCase):
         self.assertIsNone(miss)
 
 
-    def test_externs_from_the_base_namespace(self):
+    def test_core_types_read_no_namespace(self):
         pattern = MATCH(CAPTURE("k", TYPE("keyword")), CAPTURE("s", TYPE("symbol")))
         hit, = self.check(pattern, cons(keyword("a"), symbol("b"), nil))
         self.assertEqual(hit["s"].datum, symbol("b"))

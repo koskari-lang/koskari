@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher extern defaults registry and Matcher.missing_externs
+Tests for keyword externs on Matcher.match and Matcher.missing_externs
 """
 
 
@@ -20,9 +20,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import keyword, nil, pair, symbol
-from koskari.matcher import (
-    Matcher, MatchResult, get_extern_defaults, reset_extern_defaults, thaw)
+from koskari.lib import symbol
+from koskari.matcher import Matcher, MatchResult, thaw
 
 
 pytestmark = pytest.mark.phase_infra
@@ -64,86 +63,38 @@ def _two_extern_tuple():
     )
 
 
-class TestExternDefaults(unittest.TestCase):
+class TestKeywordExterns(unittest.TestCase):
 
-    def test_defaults_contains_baseline(self):
+    def test_every_extern_is_a_keyword_on_every_call(self):
         """
-        Baseline extern names map to the expected type objects
-        """
-
-        d = get_extern_defaults()
-        self.assertIs(d["pair"], pair)
-        self.assertIs(d["symbol"], symbol)
-        self.assertIs(d["keyword"], keyword)
-        self.assertIs(d["int"], int)
-        self.assertIs(d["str"], str)
-        self.assertIs(d["tuple"], tuple)
-        self.assertIs(d["list"], list)
-
-    def test_match_without_kwargs_uses_defaults(self):
-        """
-        TYPE(symbol) matcher matches when symbol extern is resolved from
-        defaults
+        A declared extern must be given by keyword on each call; a call
+        without it is refused before the match runs
         """
 
         m = thaw(_lambda_style_tuple())
         self.assertIsInstance(m, Matcher)
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj)
-        self.assertIsInstance(result, MatchResult)
-        self.assertTrue(result.matched)
-
-    def test_explicit_kwarg_overrides_default(self):
-        """
-        A supplied extern binding wins over the defaults dict
-        """
-
-        m = thaw(_lambda_style_tuple())
-        subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
+        good = m.match(subj, symbol=symbol)
+        self.assertIsInstance(good, MatchResult)
+        self.assertTrue(good.matched)
         bad = m.match(subj, symbol=int)
         self.assertFalse(bad.matched)
-        good = m.match(subj, symbol=symbol)
-        self.assertTrue(good.matched)
+        with self.assertRaises(TypeError) as caught:
+            m.match(subj)
+        self.assertIn("symbol", str(caught.exception))
+        # the keyword of a previous call does not carry over
+        m.match(subj, symbol=symbol)
+        with self.assertRaises(TypeError):
+            m.match(subj)
 
-    def test_runtime_mutation_persists(self):
-        """
-        Names added to the defaults dict are resolved like baseline entries
-        """
-
-        class Point(object):
+    def test_user_type_extern(self):
+        class Point:
             pass
 
-        d = get_extern_defaults()
-        d["Point"] = Point
-        try:
-            m = thaw(
-                (
-                    "MATCHER",
-                    (),
-                    ("Point",),
-                    (),
-                    (("TEST", "TYPE", 0),),
-                    0,
-                )
-            )
-            result = m.match((Point(),))
-            self.assertTrue(result.matched)
-        finally:
-            reset_extern_defaults()
-
-    def test_reset_extern_defaults_restores_baseline(self):
-        """
-        reset_extern_defaults drops ad-hoc entries and restores baseline keys
-        """
-
-        d = get_extern_defaults()
-        d["custom_extern_marker"] = object
-        self.assertIn("custom_extern_marker", get_extern_defaults())
-        reset_extern_defaults()
-        d2 = get_extern_defaults()
-        self.assertNotIn("custom_extern_marker", d2)
-        self.assertIn("symbol", d2)
-        self.assertIn("pair", d2)
+        m = thaw((
+            "MATCHER", (), ("Point",), (), (("TEST", "TYPE", 0),), 0))
+        self.assertTrue(m.match((Point(),), Point=Point).matched)
+        self.assertFalse(m.match((7,), Point=Point).matched)
 
 
 class TestMissingExterns(unittest.TestCase):
@@ -155,15 +106,6 @@ class TestMissingExterns(unittest.TestCase):
 
         m = thaw(_two_extern_tuple())
         missing = m.missing_externs(provided={"symbol": symbol("x")})
-        self.assertEqual(missing, ("Point",))
-
-    def test_missing_externs_exclude_defaults(self):
-        """
-        With exclude_defaults, names satisfied by the defaults dict are omitted
-        """
-
-        m = thaw(_two_extern_tuple())
-        missing = m.missing_externs(exclude_defaults=True)
         self.assertEqual(missing, ("Point",))
 
     def test_missing_externs_validates_provided(self):

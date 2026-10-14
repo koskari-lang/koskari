@@ -49,8 +49,6 @@ __all__ = (
     "Dispatcher",
     "Matcher",
     "MatchResult",
-    "get_extern_defaults",
-    "reset_extern_defaults",
     "Datum",
     "DatumFrame",
     "Pattern",
@@ -120,84 +118,6 @@ __all__ = (
 # === The matcher: a function built from the frozen tuple ===
 
 
-class ExternDefaults(dict):
-    """
-    The default externs a matcher built outside a module resolves its
-    names in: the builtin types a pattern names by their bare spelling.
-    Every write bumps the version, so a matcher knows when to refresh
-    the namespace its function closes over
-    """
-
-    def __init__(self, *args, **kwds):
-        super().__init__(*args, **kwds)
-        self.version = 0
-
-
-    def __setitem__(self, key, value):
-        super().__setitem__(key, value)
-        self.version += 1
-
-
-    def __delitem__(self, key):
-        super().__delitem__(key)
-        self.version += 1
-
-
-    def clear(self):
-        super().clear()
-        self.version += 1
-
-
-    def update(self, *args, **kwds):
-        super().update(*args, **kwds)
-        self.version += 1
-
-
-    def pop(self, *args):
-        found = super().pop(*args)
-        self.version += 1
-        return found
-
-
-    def setdefault(self, key, default=None):
-        found = super().setdefault(key, default)
-        self.version += 1
-        return found
-
-
-EXTERN_BASELINE = {
-    "pair": pair,
-    "symbol": symbol,
-    "keyword": keyword,
-    "int": int,
-    "str": str,
-    "tuple": tuple,
-    "list": list,
-}
-
-
-EXTERN_DEFAULTS = ExternDefaults(EXTERN_BASELINE)
-
-
-def get_extern_defaults():
-    """
-    The live default externs mapping; a store into it reaches every
-    matcher built from Python on its next match
-    """
-
-    return EXTERN_DEFAULTS
-
-
-def reset_extern_defaults():
-    """
-    Drop every entry of the default externs and restore the baseline
-    """
-
-    EXTERN_DEFAULTS.clear()
-    EXTERN_DEFAULTS.update(EXTERN_BASELINE)
-    return EXTERN_DEFAULTS
-
-
 def interned_consts(frozen):
     """
     The consts of a frozen matcher as the function reads them:
@@ -232,9 +152,10 @@ class MatchResult:
 class Matcher:
     """
     A frozen matcher as a function: the subject its one formal, its
-    externs closure names over a namespace the default externs fill,
-    the captures its result. Built once from the frozen tuple, called
-    through the demand wrapper so the context it runs in is reused
+    externs closure names over a namespace of its own that each match
+    call's keyword arguments are stored into, the captures its result.
+    Built once from the frozen tuple, called through the demand wrapper
+    so the context it runs in is reused
     """
 
     def __init__(self, frozen, name=None):
@@ -246,13 +167,9 @@ class Matcher:
         self.nodes = tuple(frozen[4])
         self.entry = frozen[5]
         self.name = name or "matcher"
-        # the defaults are stored into the namespace by refresh, so a
-        # later change to them reaches the function's closure refs
+        # the externs are closure names over this namespace; a match
+        # call stores its keyword arguments into it before the call
         self.namespace = ModuleNamespace(self.name, {})
-        self._extern_set = frozenset(self.externs)
-        self._version = None
-        self._nodefault = ()
-        self._overridden = set()
         # the function is built on the first match: a pattern nested
         # past the interpreter's limit is refused there, as the engine
         # refused it, and not when the matcher is made
@@ -282,9 +199,9 @@ class Matcher:
     def from_function(cls, function, slots=(), name=None):
         """
         A Matcher over a function a module built from a pattern: its
-        externs are the function's own closure names, so nothing here
-        is refreshed, overridden or refused; a keyword to match is
-        ignored as a name the matcher does not declare
+        externs are the function's own closure names, so nothing is
+        stored or refused here; a keyword to match is ignored as a name
+        the matcher does not declare
 
         :param function: the matcher function, one positional formal
         :param slots: the slot names, in slot order
@@ -299,10 +216,6 @@ class Matcher:
         self.entry = None
         self.name = name or getattr(function, "__name__", "matcher")
         self.namespace = None
-        self._extern_set = frozenset()
-        self._version = EXTERN_DEFAULTS.version
-        self._nodefault = ()
-        self._overridden = set()
         self._function = function
         self._call = demand(function)
         return self
@@ -320,36 +233,20 @@ class Matcher:
             f" entry={self.entry}>")
 
 
-    def refresh(self):
-        """
-        Store the default externs into the namespace when the defaults
-        have changed since the last match, and note which externs have
-        no default
-        """
-
-        if self._version == EXTERN_DEFAULTS.version or self.namespace is None:
-            return
-        self._nodefault = store_defaults(self.namespace, self.externs)
-        self._version = EXTERN_DEFAULTS.version
-
-
     def match(self, subject, **externs):
         """
         Match subject, a pair spine, nil, or a sequence. A keyword
-        argument names an extern for this match; a name the matcher
-        does not declare is ignored.
+        argument names an extern for this match; every extern the
+        matcher declares must be given on every call, and a name the
+        matcher does not declare is ignored.
 
         :raises TypeError: when a pair subject is not a proper list, or
-            an extern has neither a keyword nor a default
+            an extern has no keyword
         :raises ValueError: when a pair subject loops
         """
 
         subject = check_subject(subject)
-
-        # the common call: no keywords, the defaults as they were, no
-        # override to undo, every extern covered
-        if (externs or self._version != EXTERN_DEFAULTS.version
-                or self._overridden or self._nodefault):
+        if self.externs:
             self.prepare(externs)
 
         call = self._call
@@ -364,64 +261,31 @@ class Matcher:
 
     def prepare(self, externs):
         """
-        Bring the namespace to this call's externs: the defaults when
-        they changed, the keyword arguments over them, a previous call's
-        keywords undone, and a missing extern refused
+        Store this call's keyword externs into the namespace, every
+        extern the matcher declares among them
+
+        :raises TypeError: when an extern has no keyword
         """
 
-        self.refresh()
-        if self._overridden:
-            for name in self._overridden:
-                if name not in externs and name in EXTERN_DEFAULTS:
-                    self.namespace.store(name, EXTERN_DEFAULTS[name])
-            self._overridden = set()
-        for name, value in externs.items():
-            if name in self._extern_set:
-                self.namespace.store(name, value)
-                self._overridden.add(name)
-        for name in self._nodefault:
+        for name in self.externs:
             if name not in externs:
                 raise TypeError(f"matcher missing extern binding: {name!r}")
+            self.namespace.store(name, externs[name])
 
 
-    def missing_externs(self, provided=None, exclude_defaults=False):
+    def missing_externs(self, provided=None):
         """
-        The externs neither provided nor, unless exclude_defaults,
-        covered by the defaults, in extern order
+        The externs not in provided, in extern order
 
         :param provided: a mapping of extern names, or None
-        :param exclude_defaults: when true the defaults count as
-            satisfying a name
         :raises TypeError: when provided is neither None nor a mapping
         """
 
         if provided is not None and not isinstance(provided, Mapping):
             raise TypeError("provided must be None or a mapping")
-        missing = []
-        for name in self.externs:
-            satisfied = provided is not None and name in provided
-            if not satisfied and exclude_defaults:
-                satisfied = name in EXTERN_DEFAULTS
-            if not satisfied:
-                missing.append(name)
-        return tuple(missing)
-
-
-def store_defaults(namespace, externs):
-    """
-    Store the default extern of every name in externs that has one
-    into namespace
-
-    :return: the names with no default, in extern order
-    """
-
-    nodefault = []
-    for name in externs:
-        if name in EXTERN_DEFAULTS:
-            namespace.store(name, EXTERN_DEFAULTS[name])
-        else:
-            nodefault.append(name)
-    return tuple(nodefault)
+        return tuple(
+            name for name in self.externs
+            if provided is None or name not in provided)
 
 
 class Dispatcher:
@@ -429,26 +293,27 @@ class Dispatcher:
     The matchers of a syntax's clauses as one function: the subject
     its one formal, the index and captures of the first clause that
     matches its result. A matcher built from a frozen tuple lowers
-    into the function, its externs closure names over a namespace
-    the default externs fill; a matcher a module built is called
+    into the function; a matcher a module built is called. A syntax
+    passes no externs, so a frozen matcher that declares one has no
+    binding for it and is refused here
+
+    :raises TypeError: when a clause is not a Matcher, or a frozen
+        clause declares an extern
     """
 
     def __init__(self, matchers, name="dispatch"):
         self.matchers = tuple(matchers)
         self.name = name
-        externs = []
-        for matcher in self.matchers:
+        for index, matcher in enumerate(self.matchers):
             if not isinstance(matcher, Matcher):
                 raise TypeError(
                     f"Dispatcher clause is not a Matcher:"
                     f" {type(matcher).__name__}")
-            for extern in matcher.externs:
-                if extern not in externs:
-                    externs.append(extern)
-        self.externs = tuple(externs)
+            if matcher.externs:
+                raise TypeError(
+                    f"Dispatcher clause {index} names an extern with no"
+                    f" binding: {matcher.externs[0]!r}")
         self.namespace = ModuleNamespace(name, {})
-        self._version = None
-        self._nodefault = ()
         self._function = None
         self._call = None
 
@@ -475,19 +340,11 @@ class Dispatcher:
         sequence
 
         :return: (index, captures) for the first match, or (-1, None)
-        :raises TypeError: when a pair subject is not a proper list, or
-            an extern has no default
+        :raises TypeError: when a pair subject is not a proper list
         :raises ValueError: when a pair subject loops
         """
 
         subject = check_subject(subject)
-        if self._version != EXTERN_DEFAULTS.version:
-            self._nodefault = store_defaults(self.namespace, self.externs)
-            self._version = EXTERN_DEFAULTS.version
-            if self._nodefault:
-                raise TypeError(
-                    "matcher missing extern binding:"
-                    f" {self._nodefault[0]!r}")
         call = self._call
         if call is None:
             self.function

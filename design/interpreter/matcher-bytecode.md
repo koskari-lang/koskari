@@ -646,10 +646,11 @@ and hides its complexity in the DSL without touching the compiler.
   does. The handlers are the emitter of `match_code.py`, which moves
   to `koskari/match_code.py` below both `koskari.matcher` and
   `koskari.compile`.
-- **The default externs** are the table `get_extern_defaults` returns,
-  with `reset_extern_defaults`: `pair`, `symbol`, `keyword`, `int`,
-  `str`, `tuple`, `list`, all of them builtins. They feed every matcher
-  built outside a module.
+- **There are no default externs.** The seven builtin type names are
+  core types, tested by ordinal with no reference; every other extern of
+  a matcher built outside a module is a keyword of `Matcher.match`, given
+  on every call. The defaults table and its version counter went with
+  the core type instructions.
 
 ### 12.2 Environments
 
@@ -657,11 +658,11 @@ A standalone matcher is a `Function` over a namespace, and its externs
 are variables in that namespace, reached by the closure apparatus as
 `match` reaches them. The compilation decides the namespace:
 
-- a matcher built from Python gets a base namespace the compilation
-  pre-populates from the default externs;
+- a matcher built from Python gets an empty base namespace of its own,
+  which each `Matcher.match` call fills from its keyword externs; a core
+  type is not an extern and needs none;
 - a matcher built in a module closes over the module's namespace, so a
-  type or predicate the pattern names is the module's binding, and the
-  defaults are the builtins the module's chain already supplies.
+  type or predicate the pattern names is the module's binding.
 
 A store into a namespace reaches every matcher closed over it; a bind
 of a new ref reaches none, as for any closure. `Matcher.match(subject,
@@ -859,6 +860,15 @@ with the twins), the ordinals `KosCoreType` in `matcher.h` exported as
 `koskari.lib.CoreType`. The test harness no longer seeds the defaults
 into a bare module namespace, since nothing in a syntax rule reads
 them. The match_case churn kernel moved from 0.57x to 0.54x of Python.
+
+Defaults removed as of 2026-10-14: `ExternDefaults`, the baseline
+table, `get_extern_defaults`, `reset_extern_defaults`, `store_defaults`,
+`Matcher.refresh` and the version compares in `Matcher.match` and
+`Dispatcher.select` are gone. `Matcher.match` stores its keyword
+externs into the matcher's namespace and refuses a call missing one;
+`missing_externs` takes only the provided mapping; a `Dispatcher` is
+refused at construction when a frozen clause declares an extern, since
+a syntax passes none.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
