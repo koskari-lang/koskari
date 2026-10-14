@@ -174,6 +174,16 @@ every delivery and every receiver.
 
 Ref: [language/values-pack.md](language/values-pack.md).
 
+### Scratch slots for compiler temporaries (design)
+
+Fast locals the compiler owns, handed out through a context manager
+for the extent of a special's emitted code and returned to a pool on
+exit, so two non-overlapping walks share one slot and nothing named
+reaches the namespace or the `.kio`. First user: the match form's
+cursor, mark and items temporaries.
+
+Ref: [interpreter/scratch-slots.md](interpreter/scratch-slots.md).
+
 ### Externs slot in NamespaceSpec (investigate)
 
 A fourth name list on `NamespaceSpec`: names a frame reads from a
