@@ -38,9 +38,9 @@ from koskari.types import bracket_splice
 def _register_specials(ns, specials):
     for sym, fn in specials.items():
         ns.store(str(sym), fn)
-    # quote/quasiquote of bracket forms reconstructs via runtime
-    # bracket-cons / bracket-splice calls; a real module namespace has
-    # them bound.
+    # bracket-cons and bracket-splice are builtins a real module
+    # namespace has bound; quasiquote of a bracket form emits the
+    # BRACKET_* opcodes and calls neither.
     ns.store("bracket-cons", bracket_cons)
     ns.store("bracket-splice", bracket_splice)
     # the #{ } literal lowers to a plain call of the #dict builtin; a

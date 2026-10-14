@@ -11,7 +11,8 @@ into the surrounding list.
 **Behaviour:** When called as a top-level special form (outside quasiquote),
 raises `SpecialError`. When the enclosing list is being compiled, splice sites
 are detected by the quasiquote compiler and compiled directly; the spliced
-value is pushed onto the stack as a `PAIR_SPLICE` argument. Not valid in the
+value is pushed onto the stack as a `PAIR_SPLICE` argument, or a
+`BRACKET_SPLICE` argument in a `[ ]` list. Not valid in the
 cdr (dotted tail) position of an improper list; the quasiquote compiler raises
 `SpecialError` if a splice form appears there.
 

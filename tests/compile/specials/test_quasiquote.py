@@ -32,7 +32,7 @@ import unittest
 import pytest
 
 from koskari.exceptions import SpecialError
-from koskari.lib import cons, nil, symbol
+from koskari.lib import OpCode, bracket_pair, cons, kos_repr, nil, symbol
 from koskari.types import is_pair
 
 from . import SpecialsTestCase, _register_specials
@@ -326,6 +326,35 @@ class TestQuasiquoteSplice(SpecialsTestCase):
         expr, mod = self.compile_expr("`(,@lst)", lst=lst)
         result = await expr()
         self.assertTrue(result.is_proper())
+
+
+class TestQuasiquoteBracketSplice(SpecialsTestCase):
+    """
+    Quasi-quoting bracket lists containing unquote-splicing
+    """
+
+    async def test_shadowed_bracket_splice_name(self):
+        """
+        A local named bracket-splice does not change a bracket splice
+        """
+
+        expr, mod = self.compile_expr(
+            "(let [[bracket-splice other]] `[a ,@lst b])",
+            lst=cons(1, 2, nil), other=list)
+        result = await expr()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual("[a 1 2 b]", kos_repr(result))
+
+
+    def test_no_call_emitted(self):
+        """
+        A bracket splice compiles to BRACKET_SPLICE and calls no name
+        """
+
+        code = self.compile_to_code("`[a ,@lst b]")
+        self.assertEqual([], self.call_ops(code))
+        ops = [code.oparg(i)[0] for i in range(code.length())]
+        self.assertIn(OpCode.BRACKET_SPLICE, ops)
 
 
 class TestQuasiquoteDottedPair(SpecialsTestCase):

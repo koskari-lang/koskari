@@ -20,7 +20,7 @@ Tests for PROPER, PAIR_SPLICE, CAR, and CDR
 
 import pytest
 
-from koskari.lib import bracket_nil, bracket_pair, cons, nil, symbol
+from koskari.lib import bracket_nil, bracket_pair, cons, nil, pair, symbol
 from tests import make_callable
 from tests.lib.opcode import CevalTest, build_expr
 
@@ -519,6 +519,157 @@ class TestPairSpliceOpcode(CevalTest):
         ])
         result = await make_callable(code, ns)()
         self.assertIs(result, nil)
+
+
+class TestBracketSpliceOpcode(CevalTest):
+    """
+    BRACKET_SPLICE: the twin of PAIR_SPLICE with a bracket leading cell
+    """
+
+    async def test_bracket_splice_zero_pushes_bracket_nil(self):
+        """
+        BRACKET_SPLICE 0 pushes bracket-nil
+        """
+
+        code, ns = build_expr([
+            ["BRACKET_SPLICE", 0],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, bracket_nil)
+
+
+    async def test_bracket_splice_single_proper_pair(self):
+        """
+        BRACKET_SPLICE 1 with a single proper list yields its elements
+        """
+
+        code, ns = build_expr([
+            ["CONST", cons(1, 2, nil)],
+            ["BRACKET_SPLICE", 1],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual([1, 2], list(result.unpack()))
+
+
+    async def test_bracket_splice_single_element(self):
+        """
+        BRACKET_SPLICE of one element yields a bracket pair over nil
+        """
+
+        code, ns = build_expr([
+            ["CONST", (1,)],
+            ["BRACKET_SPLICE", 1],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual(1, result.car)
+        self.assertIs(result.cdr, nil)
+
+
+    async def test_bracket_splice_two_pairs(self):
+        """
+        BRACKET_SPLICE 2 concatenates two proper lists
+        """
+
+        code, ns = build_expr([
+            ["CONST", cons(1, 2, nil)],
+            ["CONST", cons(3, 4, nil)],
+            ["BRACKET_SPLICE", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual([1, 2, 3, 4], list(result.unpack()))
+
+
+    async def test_bracket_splice_head_only(self):
+        """
+        BRACKET_SPLICE makes the leading cell a bracket pair and the tail
+        plain pairs ending in nil
+        """
+
+        code, ns = build_expr([
+            ["CONST", (1, 2)],
+            ["CONST", (3,)],
+            ["BRACKET_SPLICE", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(type(result), bracket_pair)
+        self.assertIs(type(result.cdr), pair)
+        self.assertIs(type(result.cdr.cdr), pair)
+        self.assertIs(result.cdr.cdr.cdr, nil)
+        self.assertTrue(result.is_proper())
+
+
+    async def test_bracket_splice_tuple_and_pair(self):
+        """
+        BRACKET_SPLICE handles a mix of a tuple segment and a pair segment
+        """
+
+        a = symbol("a")
+        b = symbol("b")
+        c = symbol("c")
+        code, ns = build_expr([
+            ["CONST", (a, b)],
+            ["CONST", cons(c, nil)],
+            ["BRACKET_SPLICE", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual([a, b, c], list(result.unpack()))
+
+
+    async def test_bracket_splice_nil_segment_skipped(self):
+        """
+        BRACKET_SPLICE skips nil segments
+        """
+
+        code, ns = build_expr([
+            ["CONST", nil],
+            ["CONST", cons(1, 2, nil)],
+            ["BRACKET_SPLICE", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual([1, 2], list(result.unpack()))
+
+
+    async def test_bracket_splice_three_segments(self):
+        """
+        BRACKET_SPLICE 3 concatenates three segments in order
+        """
+
+        a = symbol("a")
+        b = symbol("b")
+        c = symbol("c")
+        code, ns = build_expr([
+            ["CONST", (a,)],
+            ["CONST", (b,)],
+            ["CONST", (c,)],
+            ["BRACKET_SPLICE", 3],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual([a, b, c], list(result.unpack()))
+
+
+    async def test_bracket_splice_empty_segments(self):
+        """
+        BRACKET_SPLICE with only empty segments produces bracket-nil
+        """
+
+        code, ns = build_expr([
+            ["CONST", ()],
+            ["CONST", nil],
+            ["BRACKET_SPLICE", 2],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, bracket_nil)
 
 
 # The end.

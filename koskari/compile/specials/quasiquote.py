@@ -21,20 +21,20 @@ Quasi-quote constructs a pair structure at runtime, with selected
 sub-expressions evaluated via unquote (,) and lists spliced in via
 unquote-splicing (,@).
 
-The compiler emits CONST, PROPER, CONS, their bracket twins, and
-PAIR_SPLICE opcodes:
+The compiler emits CONST, PROPER, CONS, PAIR_SPLICE and their bracket
+twins:
 
 - CONST atom: push a constant symbol, keyword, number, etc.
 - PROPER n: pop N elements, build a proper list (appends nil automatically)
 - CONS n: pop N elements using the last as an explicit tail (for dotted pairs)
-- BRACKET_PROPER n, BRACKET_CONS n: the same two over bracket pairs, for
-  a [ ] form
 - PAIR_SPLICE n: concatenate N pair/tuple segments into one proper list
+- BRACKET_PROPER n, BRACKET_CONS n, BRACKET_SPLICE n: the same three for
+  a [ ] form; BRACKET_SPLICE makes only the leading cell a bracket pair
 
 When a segment of a quasi-quoted list contains only compile-time-constant
 elements, it is emitted as a single CONST (sym_a, sym_b, ...) tuple rather
-than N individual CONST instructions followed by PROPER N. PAIR_SPLICE
-accepts tuples as segments natively.
+than N individual CONST instructions followed by PROPER N. PAIR_SPLICE and
+BRACKET_SPLICE accept tuples as segments natively.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -54,7 +54,6 @@ _symbol_quasiquote = symbol("quasiquote")
 _symbol_quote = symbol("quote")
 _symbol_unquote = symbol("unquote")
 _symbol_unquote_splicing = symbol("unquote-splicing")
-_symbol_bracket_splice = symbol("bracket-splice")
 
 _ONE_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("expr")),
@@ -130,8 +129,8 @@ def _qq_expr(compiler, frag, expr, level, keep=False):
         return
 
     # [ ] lists build bracket cells directly during reconstruction:
-    # _qq_list picks its constructor (bracket-cons / bracket-splice) at each
-    # emission site, so construction is parallel rather than build-then-coerce.
+    # _qq_list picks the bracket opcode at each emission site, so
+    # construction is parallel rather than build-then-coerce.
     _qq_list(
         compiler, frag, expr, level, isinstance(expr, bracket_pair), keep)
 
@@ -149,16 +148,6 @@ def _is_splice(expr, level):
     )
 
 
-def _emit_call_var(frag, name, count):
-    """
-    Emit a CALL_VAR to a named runtime builtin with `count` args already on
-    the stack (used for the bracket-cons / bracket-splice runtime calls).
-    """
-
-    frag.request_var(name)
-    frag.instruction(OpCode.CALL_VAR, (name, count, 0, 0))
-
-
 def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
                   bracket=False):
     """
@@ -168,10 +157,9 @@ def _emit_segment(compiler, frag, segment, as_tuple_for_splice=False,
     When as_tuple_for_splice is True and every element is a compile-time
     constant, emits a single CONST tuple (which PAIR_SPLICE consumes
     directly). Otherwise emits each element, then closes the list: a
-    plain-pair segment with PROPER n, or — when this is a bracket list's
-    whole-list build (bracket and not a splice segment) — a bracket-cons
-    call with an explicit bracket-nil tail, so the cells are built bracket
-    directly.
+    plain-pair segment with PROPER n, or -- when this is a bracket list's
+    whole-list build (bracket and not a splice segment) -- BRACKET_PROPER
+    n, so the cells are built bracket directly.
 
     :param compiler: the active Compiler
     :param frag: the ByteCodeFragment to emit into
@@ -241,14 +229,16 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
     Walks the pair structure, accumulating elements into segments separated
     by unquote-splicing sites. Each segment is flushed via _emit_segment.
     Splice expressions are compiled and pushed directly as PAIR_SPLICE args.
-    A final PAIR_SPLICE n is emitted when there was at least one splice.
+    A final PAIR_SPLICE n (BRACKET_SPLICE n for a bracket-pair) is emitted
+    when there was at least one splice.
 
     Dotted-pair tails use CONS instead of PROPER so the cdr is explicit.
 
-    When `bracket` is True (the source is a bracket-pair), the constructors
-    are swapped for their bracket forms: bracket-cons for whole-list and
-    dotted builds, bracket-splice for splices, and bracket-nil for empty.
-    Construction is direct — no plain list is built and then converted.
+    When `bracket` is True (the source is a bracket-pair), the opcodes
+    are swapped for their bracket twins: BRACKET_PROPER for whole-list
+    builds, BRACKET_CONS for dotted builds, BRACKET_SPLICE for splices,
+    and bracket-nil for empty. Construction is direct -- no plain list is
+    built and then converted.
 
     :param compiler: the active Compiler
     :param frag: the ByteCodeFragment to emit into
@@ -374,11 +364,11 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
         # the stack (list/tuple/pair/iterable); skipping it left Python
         # list/tuple values unevaluated into Koskari proper lists (PAIR_SPLICE.c
         # flattens segments into cons cells). splice_count counts every segment:
-        # literal PROPER/tuple chunks plus each splice result. bracket-splice is
-        # the [ ] twin (only its leading cell is a bracket-pair).
+        # literal PROPER/tuple chunks plus each splice result. BRACKET_SPLICE
+        # is the [ ] twin (only its leading cell is a bracket-pair).
         if splice_count >= 1:
             if bracket:
-                _emit_call_var(frag, _symbol_bracket_splice, splice_count)
+                frag.instruction(OpCode.BRACKET_SPLICE, splice_count)
             else:
                 frag.instruction(OpCode.PAIR_SPLICE, splice_count)
     elif splice_count == 0:
@@ -392,8 +382,8 @@ def special_quasiquote(compiler, called_by, expr):
     """
     Compile (compile/quasiquote EXPR) — the backtick quasi-quote special form.
 
-    Emits CONST, PROPER, CONS, and PAIR_SPLICE opcodes to construct the
-    quoted structure at runtime, with unquote and unquote-splicing sites
+    Emits CONST, PROPER, CONS, PAIR_SPLICE and their bracket twins to
+    construct the quoted structure at runtime, with unquote and unquote-splicing sites
     evaluated as normal expressions.
     """
 

@@ -261,7 +261,7 @@ The opcodes by family, each linking to its section.
 - [3. No-op and compile-time](#3-no-op-and-compile-time) -- NOOP, LABEL, POSITION
 - [4. Stack](#4-stack) -- DUP, POP, UNPACK, UNPACK_STAR, UNPACK_VAR, UNPACK_FAST
 - [5. Constants](#5-constants) -- CONST, CONST2, CONST3, CONST4
-- [5.1 Pair construction and access](#51-pair-construction-and-access) -- CAR, CDR, CONS, PROPER, PAIR_SPLICE
+- [5.1 Pair construction and access](#51-pair-construction-and-access) -- CAR, CDR, CONS, PROPER, PAIR_SPLICE, BRACKET_SPLICE
 - [6. Mode control](#6-mode-control) -- AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, RETURN_CONST, YIELD_CONST, YIELD_FROM
 - [7. Iteration](#7-iteration) -- ITER_NEXT, ITER_NEXT_STORE_VAR, ITER_NEXT_STORE_FAST, OBJECT_NEXT, VAR_NEXT, FAST_NEXT
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR
@@ -309,6 +309,7 @@ The opcodes by family, each linking to its section.
 | BRACKET_CONS | COUNT | Pop N values; push the bracket pair chain [e_0 . ... . e_{N-1}] | [section 5.1](opcodes/kos-op-bracket-cons.md) |
 | BRACKET_PROPER | COUNT | Pop N values; push the proper bracket list [e_0 ... e_{N-1}] | [section 5.1](opcodes/kos-op-bracket-proper.md) |
 | PAIR_SPLICE | COUNT | Concatenate N pair/tuple segments into one proper list | [section 5.1](opcodes/kos-op-pair-splice.md) |
+| BRACKET_SPLICE | COUNT | Concatenate N pair/tuple segments into one list with a bracket leading cell | [section 5.1](opcodes/kos-op-bracket-splice.md) |
 | AWAIT | COUNT | Suspend on awaitable; resume with value | [section 6](opcodes/kos-op-await.md) |
 | BREAK | COUNT | Jump to loop break target | [section 6](opcodes/kos-op-break.md) |
 | CONTINUE | COUNT | Jump to loop continue target | [section 6](opcodes/kos-op-continue.md) |
@@ -967,9 +968,10 @@ bottom to top matches push order).
   empty). Dotted-pair segments are walked until nil; the implicit nil tail of
   the last segment is not included.
 - **Use-case**: Emitted by the quasiquote compiler when at least one
-  `unquote-splicing` site is present in a list. Each constant-only segment is
-  folded into a single `CONST tuple` (which PAIR_SPLICE accepts natively),
-  reducing instruction count significantly for mostly-literal lists.
+  `unquote-splicing` site is present in a `( )` list; a `[ ]` list uses
+  **BRACKET_SPLICE**. Each constant-only segment is folded into a single
+  `CONST tuple` (which PAIR_SPLICE accepts natively), reducing instruction
+  count significantly for mostly-literal lists.
 
 **Example:** Splice a variable list `b` between constants.
 `` `(a ,@b c) `` compiles to roughly:
@@ -980,6 +982,20 @@ bottom to top matches push order).
 | 1     | VAR         | 1   | 1 (b)           | splice value |
 | 2     | CONST       | 2   | 2 ((sym c,))    | segment: tuple `(c,)` |
 | 3     | PAIR_SPLICE | 3   | 3               | stack: [..., (a . (b_0 ... b_n . (c)))] |
+
+### KOS_OP_BRACKET_SPLICE
+- **Style**: COUNT. Arg = number of segments on stack (bottom = first segment,
+  top = last segment).
+- **Stack**: `[..., seg_0, ..., seg_{count-1}] -> [..., result]` where result is
+  the concatenation of all segments with a bracket pair as its leading cell:
+  the twin of **PAIR_SPLICE** for bracket lists, accepting the same segments.
+  count 0 -> push bracket-nil.
+- **Invariants**: Only the leading cell is a bracket pair; the rest of the
+  spine is plain pairs ending in nil. If every segment is empty the result is
+  bracket-nil.
+- **Use-case**: Emitted by the quasiquote compiler for a `[ ]` list holding at
+  least one `unquote-splicing` site. No name is looked up, so a binding of any
+  name leaves the result unchanged.
 
 ## 6. Mode control
 

@@ -11,7 +11,8 @@
   empty). Dotted-pair segments are walked until nil; the implicit nil tail of
   the last segment is not included.
 - **Use-case**: Emitted by the quasiquote compiler when at least one
-  `unquote-splicing` site is present in a list. Each constant-only segment is
+  `unquote-splicing` site is present in a `( )` list; a `[ ]` list uses
+  [BRACKET_SPLICE](kos-op-bracket-splice.md). Each constant-only segment is
   folded into a single `CONST tuple` (which PAIR_SPLICE accepts natively),
   reducing instruction count significantly for mostly-literal lists.
 
