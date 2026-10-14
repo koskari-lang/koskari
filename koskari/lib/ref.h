@@ -80,6 +80,7 @@ typedef struct KosItemRef {
 } KosItemRef;
 
 
+/* obj and key borrowed; referenced before the cell is allocated. */
 PyObject *KosItemRef_New(PyObject *name,
                          PyObject *obj, PyObject *key);
 

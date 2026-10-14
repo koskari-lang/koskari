@@ -563,12 +563,17 @@ PyObject *KosAttributeRef_New(PyObject *name,
 /* === ItemRef === */
 
 
+/**
+   Fill a fresh ItemRef. Steals obj and key, storing them before the
+   name conversion, so a failure releases them through the cell's
+   dealloc. Returns 0, or -1 with the error set.
+*/
 static int item_ref_init(PyObject *self, PyObject *name,
                          PyObject *obj, PyObject *key) {
 
   KosRef_NAME(self) = NULL;
-  KosItemRef_OBJ(self) = NULL;
-  KosItemRef_KEY(self) = NULL;
+  KosItemRef_OBJ(self) = obj;
+  KosItemRef_KEY(self) = key;
 
   if (! name || name == Py_None) {
     name = _str_item_ref;
@@ -579,13 +584,6 @@ static int item_ref_init(PyObject *self, PyObject *name,
       return -1;
   }
   KosRef_NAME(self) = name;
-
-  Py_INCREF(obj);
-  KosItemRef_OBJ(self) = obj;
-
-  Py_INCREF(key);
-  KosItemRef_KEY(self) = key;
-
   return 0;
 }
 
@@ -714,6 +712,9 @@ static PyObject *item_ref_tp_new(
   self = type->tp_alloc(type, 0);
   if (! self)
     return NULL;
+
+  Py_INCREF(obj);
+  Py_INCREF(key);
   if (item_ref_init(self, name, obj, key) < 0) {
     Py_DECREF(self);
     return NULL;
@@ -769,10 +770,22 @@ PyTypeObject KosItemRefType = {
 };
 
 
+/**
+   obj and key are borrowed and referenced before the allocation: on
+   3.9-3.11 PyObject_GC_New can run a collection whose finalizers
+   release a value the caller peeked from a fast slot.
+*/
 PyObject *KosItemRef_New(PyObject *name, PyObject *obj, PyObject *key) {
-  PyObject *self = PyObject_GC_New(PyObject, &KosItemRefType);
-  if (! self)
+  PyObject *self;
+
+  Py_INCREF(obj);
+  Py_INCREF(key);
+  self = PyObject_GC_New(PyObject, &KosItemRefType);
+  if (! self) {
+    Py_DECREF(key);
+    Py_DECREF(obj);
     return NULL;
+  }
 
   if(item_ref_init(self, name, obj, key))
     Py_CLEAR(self);

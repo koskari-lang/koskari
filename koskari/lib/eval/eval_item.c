@@ -18,9 +18,10 @@
    and kos_item_inplace own the election on a site's cache slot, the
    container bodies (exact list or tuple under an exact int key, exact
    dict under any key), the miss and demotion accounting, and the
-   object protocol fallback; kos_item_clear, kos_item_take and
-   kos_item_ref hold the operands across the protocol for the verbs
-   that elect nothing. A handler fetches its operands by origin, calls
+   object protocol fallback; kos_item_clear and kos_item_take hold
+   the operands across the protocol for the verbs that elect nothing,
+   and kos_item_ref passes them to KosItemRef_New, which references
+   them before it allocates. A handler fetches its operands by origin, calls
    one helper, and settles.
 
    Every helper borrows obj and key. A body runs no user code between
@@ -894,8 +895,9 @@ static inline PyObject *kos_item_take(PyObject *obj, PyObject *key) {
 
 
 /**
-   A reference cell over obj[key]. obj and key borrowed. Returns the
-   new KosItemRef, or NULL with the error set.
+   A reference cell over obj[key]. obj and key borrowed;
+   KosItemRef_New references them before its allocation can collect.
+   Returns the new KosItemRef, or NULL with the error set.
 */
 static inline PyObject *kos_item_ref(PyObject *obj, PyObject *key) {
   return KosItemRef_New(NULL, obj, key);
