@@ -786,10 +786,12 @@ class MatchLowering:
         if found is None:
             name = self.slot_names[slot]
             if self.scopes.get(slot) is None and self.plain_root_locals:
+                # the match form declares its root captures itself, in
+                # the scope they bind in
                 found = symbol(name)
             else:
                 found = gensym(name)
-            self.target.declare(found)
+                self.target.declare(found)
             self.locals[slot] = found
         return found
 

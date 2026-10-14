@@ -26,7 +26,7 @@ compiled per pattern and an optional else clause.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
-from ...lib import OpCode, keyword, symbol
+from ...lib import OpCode, gensym, keyword, symbol
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
@@ -35,6 +35,15 @@ from ...types import is_pair
 from ..helpers import helper_begin
 from ...match_code import lower_clause
 
+
+# The layout that keeps a form's cursor, mark and group temporaries in
+# a namespace of the form's own, delivering the matched arm's index to
+# the enclosing scope. Off: every capture the form binds is a
+# write-through closure of that namespace, made on each entry, and the
+# churn match_case kernel went from 0.21 s to 0.97 s with it on
+# (2026-10-14). With it off the temporaries are gensym locals of the
+# enclosing scope.
+SCOPED_TEMPORARIES = False
 
 _keyword_else = keyword("else")
 _keyword_when = keyword("when")
@@ -98,33 +107,26 @@ def special_match(compiler, caps):
     gen_label = compiler.gen_label
     done = gen_label()
 
-    fragment.merge(compiler.full_compile(caps["subject"].datum))
-
-    declared = set()
-    cursors = []
-
+    # each arm's pattern, lowered ahead of emission: the frozen tuples
+    # decide the layout, since an arm whose pattern opens a cursor
+    # needs temporaries and a form with any such arm keeps them in a
+    # namespace of its own
     clauses = caps["clauses"]
+    arms = []
     remaining = len(clauses)
-
     for clause in clauses:
         remaining -= 1
-
         patcap = clause["pattern"]
         pattern = patcap.datum
         body = clause["body"].datum
         clause_pos = patcap.position
-
-        fragment.position(clause_pos)
 
         if pattern is _keyword_else:
             if remaining:
                 raise SpecialError(
                     "else: must be last clause", pattern,
                     position=clause_pos)
-
-            fragment.instruction(OpCode.POP, 1)
-            helper_begin(fragment, body)
-            fragment.instruction(OpCode.JUMP, done)
+            arms.append((None, None, None, None, None, body, clause_pos))
             break
 
         guard_kw = None
@@ -140,55 +142,139 @@ def special_match(compiler, caps):
 
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         frozen = MatchCompiler().lower(arm)
-        # frozen[1] is the full slot table in emission order -- the one
-        # lowering yields both the instructions and the binding names.
-        # Ordered dedup: ONEOF branches may declare the same slot in
-        # mutually exclusive clauses.
-        names = list(dict.fromkeys(symbol(n) for n in frozen[1]))
+        atoms = extern_atoms(pattern, frozen[2])
+        arms.append(
+            (pattern, frozen, atoms, guard_kw, guard_expr, body, clause_pos))
 
-        # every extern (int, str, a user type, a predicate, a mapping
-        # key) is a name the pattern wrote: requested so a closure
-        # captures it, and read by the match instructions from the
-        # slot it lowers to. The extern table names each by its base
-        # spelling; the request is the atom the pattern wrote, so a
-        # name a template binds resolves to it.
-        externs = frozen[2]
-        atoms = extern_atoms(pattern, externs)
-        for extern in externs:
-            fragment.request_var(atoms.get(extern) or symbol(extern))
+    def request_externs(target):
+        """
+        Every extern (a user type, a predicate, a mapping key) is a
+        name the pattern wrote: requested from the scope the tests
+        run in, so a closure captures it, and read by the match
+        instructions from the slot it lowers to. The extern table
+        names each by its base spelling; the request is the atom the
+        pattern wrote, so a name a template binds resolves to it
+        """
 
-        for name in names:
+        for _pattern, frozen, atoms, *_rest in arms:
+            if frozen is None:
+                continue
+            for extern in frozen[2]:
+                target.request_var(atoms.get(extern) or symbol(extern))
+
+    declared = set()
+    for pattern, frozen, atoms, _kw, _expr, _body, _pos in arms:
+        if frozen is None:
+            continue
+        # frozen[1] is the full slot table in emission order -- the
+        # one lowering yields both the instructions and the binding
+        # names. Ordered dedup: ONEOF branches may declare the same
+        # slot in mutually exclusive clauses.
+        for name in dict.fromkeys(symbol(n) for n in frozen[1]):
             if name not in declared:
                 declared.add(name)
                 fragment.declare_var(name)
 
-        # the clause's instructions test the subject on the stack and
-        # store the captures as they fire; a miss jumps to the next
-        # clause with the subject still on the stack
-        next_label = gen_label()
-        miss_edges = lower_clause(
-            compiler, fragment, frozen, atoms, next_label, cursors,
-            pattern, clause_pos)
+    scoped = SCOPED_TEMPORARIES and any(
+        frozen is not None and any(node[0] == 'FORM' for node in frozen[4])
+        for _p, frozen, *_rest in arms)
 
+    def emit_tests(target, index, arm, hit, next_label):
+        """
+        One arm's tests against the subject on top of the stack, the
+        guard after its captures bind; a pass jumps to hit with the
+        subject still on the stack, a miss to next_label the same way
+        """
+
+        pattern, frozen, atoms, guard_kw, guard_expr, _body, clause_pos = arm
+        target.position(clause_pos)
+        miss_edges = lower_clause(
+            compiler, target, frozen, atoms, next_label, [],
+            pattern, clause_pos)
         if guard_kw is not None:
-            # the subject is still on the stack; a failed guard
-            # advances with it intact, a passed guard pops it and
-            # commits to the body
-            fragment.merge(compiler.full_compile(guard_expr))
-            fragment.instruction(
+            target.merge(compiler.full_compile(guard_expr))
+            target.instruction(
                 OpCode.JUMP_FALSE if guard_kw is _keyword_when
                 else OpCode.JUMP_TRUE,
                 next_label)
+        target.instruction(OpCode.JUMP, hit)
+        miss_edges()
 
-        fragment.instruction(OpCode.POP, 1)
+    if not scoped:
+        # no arm opens a cursor: the subject stays on the stack across
+        # the arm chain, a hit pops it and runs the body in place
+        request_externs(fragment)
+        fragment.merge(compiler.full_compile(caps["subject"].datum))
+        for arm in arms:
+            pattern, frozen, atoms, guard_kw, guard_expr, body, clause_pos = arm
+            if frozen is None:
+                fragment.position(clause_pos)
+                fragment.instruction(OpCode.POP, 1)
+                helper_begin(fragment, body)
+                fragment.instruction(OpCode.JUMP, done)
+                break
+            hit = gen_label()
+            next_label = gen_label()
+            emit_tests(fragment, None, arm, hit, next_label)
+            fragment.instruction(OpCode.LABEL, hit)
+            fragment.instruction(OpCode.POP, 1)
+            helper_begin(fragment, body)
+            fragment.instruction(OpCode.JUMP, done)
+            fragment.instruction(OpCode.LABEL, next_label)
+        else:
+            fragment.instruction(OpCode.POP, 1)
+            fragment.instruction(OpCode.CONST, None)
+        fragment.instruction(OpCode.LABEL, done)
+        return fragment
+
+    # an arm opens a cursor: the subject is bound into a namespace of
+    # the form's own, where every cursor, mark and group local lives,
+    # each arm reads it back and tests it there, and the namespace
+    # delivers the index of the arm that matched, or None, to the
+    # enclosing scope, which dispatches to the arm's body outside it.
+    # The captures are the enclosing scope's names and bind there.
+    subject_name = gensym("match-subject")
+    with fragment.child_namespace(
+            called_by.datum, (subject_name,), (caps["subject"].datum,)) as child:
+        # the externs are read and the captures written from inside
+        # the namespace; the captures are the enclosing scope's names
+        request_externs(child)
+        for name in declared:
+            child.request_for_write(name)
+        out = gen_label()
+        for index, arm in enumerate(arms):
+            pattern, frozen, atoms, guard_kw, guard_expr, body, clause_pos = arm
+            if frozen is None:
+                child.position(clause_pos)
+                child.instruction(OpCode.CONST, index)
+                child.instruction(OpCode.JUMP, out)
+                break
+            hit = gen_label()
+            next_label = gen_label()
+            child.instruction(OpCode.VAR, subject_name)
+            emit_tests(child, index, arm, hit, next_label)
+            child.instruction(OpCode.LABEL, hit)
+            child.instruction(OpCode.POP, 1)
+            child.instruction(OpCode.CONST, index)
+            child.instruction(OpCode.JUMP, out)
+            child.instruction(OpCode.LABEL, next_label)
+            child.instruction(OpCode.POP, 1)
+        else:
+            child.instruction(OpCode.CONST, None)
+        child.instruction(OpCode.LABEL, out)
+
+    labels = [gen_label() for _arm in arms]
+    for index, label in enumerate(labels):
+        fragment.instruction(OpCode.SWITCH_EQ_CONST, (label, index, 0, 0))
+    fragment.instruction(OpCode.POP, 1)
+    fragment.instruction(OpCode.CONST, None)
+    fragment.instruction(OpCode.JUMP, done)
+    for label, arm in zip(labels, arms):
+        body, clause_pos = arm[5], arm[6]
+        fragment.instruction(OpCode.LABEL, label)
+        fragment.position(clause_pos)
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
-        miss_edges()
-        fragment.instruction(OpCode.LABEL, next_label)
-
-    else:
-        fragment.instruction(OpCode.POP, 1)
-        fragment.instruction(OpCode.CONST, None)
 
     fragment.instruction(OpCode.LABEL, done)
     return fragment

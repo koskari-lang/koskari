@@ -738,10 +738,17 @@ cleared. The VAR twin reads each capture by name.
   is a fast slot or compile-time knowledge; the push and pop would
   cost about 10 ns on every attempt's hit path, and no teardown or
   continuation copy needs it.
-- **A `let` around a clause's instructions** to keep the cursor
-  temporaries out of the enclosing function's local table. Open; it
-  costs a namespace and a region node per attempt, and is taken when a
-  reason beyond tidiness appears.
+- **A namespace around a form's instructions** to keep the cursor
+  temporaries out of the enclosing scope. Built and measured on
+  2026-10-14 behind `SCOPED_TEMPORARIES` in `compile/specials/match.py`:
+  the subject bound into the form's own namespace, every arm reading
+  it back, the matched arm's index delivered through the one pop and
+  dispatched to the bodies outside. The push is about 60 ns; the cost
+  is the write-through closure cell per capture per entry, and the
+  churn match_case kernel went from 0.21 s to 0.97 s. Off; the
+  temporaries are gensym locals of the enclosing scope, `match-cursor`,
+  `match-mark`, `match-items` and the slot's own name for a group
+  local, which at module or class scope live in that namespace.
 - **Unpacking the FORM and REST widths** and the wide-pattern
   fallbacks. Held.
 

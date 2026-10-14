@@ -637,4 +637,28 @@ class TestMatchExternResolution(SpecialsTestCase):
         self.assertEqual(await expr(), "two")
 
 
+
+
+class TestMatchTemporaries(SpecialsTestCase):
+    """
+    The captures and the body's own definitions of an arm land in the
+    enclosing scope, whatever temporaries the arm's walk declares
+    """
+
+    async def test_function_scope_captures_and_definitions(self):
+        src = """
+        (lambda [data]
+          (match data
+            [[#[a b *: rest]] when: (< a b) (define kind "ascending")]
+            [[#[a b *: rest]] (define kind "other")]
+            [[x] (define kind "one")]
+            [else: (define kind "none")])
+          #(kind a b rest))
+        """
+        expr, mod = self.compile_expr(src)
+        fn = await expr()
+        self.assertEqual(await fn((1, 2, 3)), ("ascending", 1, 2, (3,)))
+        self.assertEqual(await fn((2, 1)), ("other", 2, 1, ()))
+
+
 # The end.
