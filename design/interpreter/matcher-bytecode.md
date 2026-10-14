@@ -407,15 +407,20 @@ each branch and popped on the miss edge.
 
 ## 6. Consumers
 
-- **`Syntax`.** All clauses lower into one standalone `Code` with a
-  shared prologue; clause k's miss edge is clause k+1's entry; the
-  function returns `(values index captures)`. One evaluator entry per
-  form compiled instead of one engine run per clause tried. The Python
-  `Syntax.compile_impl` unpacks the values object; a self-hosted one
-  uses the values binding forms. Once clauses are instructions, the
-  pure tests (literal, type, nil, length) can be hoisted into a shared
-  ladder across clauses; predicate, extractor and field reads cannot,
-  since they run user code in an observable order.
+- **`Syntax`.** All clauses lower into one standalone `Code`; clause
+  k's miss edge is clause k+1's entry; the function returns `(values
+  index captures)`, None when no clause matches. A clause whose
+  matcher is a frozen tuple lowers inline; a clause a module compiled
+  to a function of its own is called from the `Code`, its result
+  tested against None, so a composed syntax (`+`, `extend-syntax`)
+  has one function over both halves and an arm keeps a matcher of its
+  own. One evaluator entry per form compiled instead of one per clause
+  tried. The Python `Syntax.compile_impl` indexes the values object; a
+  self-hosted one uses the values binding forms. Once clauses are
+  instructions, the pure tests (literal, type, nil, length) can be
+  hoisted into a shared ladder across clauses; predicate, extractor
+  and field reads cannot, since they run user code in an observable
+  order.
 - **`compile/match`.** Emits the inline shape in place of the extern
   loads and `MATCH_CASE`; declares the capture names and the scratch
   temporaries; clause bodies, guards and `else:` unchanged.
@@ -786,6 +791,22 @@ through the module's builtins, so a harness that compiles over a bare
 namespace binds the defaults under the test's own definitions. The
 serializer test that asserted the old lowering's artifact, the
 literals frozenset the build call quoted, was dropped.
+
+Stage 4 as of 2026-10-14: `Dispatcher` in `koskari.matcher` holds a
+syntax's matchers and builds, on first use, one Function over them
+through `compile_dispatch_function`: a frozen matcher lowers inline
+with the next clause's entry as its miss edge, a matcher a module
+built is called under a closure name of its own and its result
+compared against None with `CHECK_COMPARE`, and a hit returns
+`(values index captures)` through the `values` type stored in the
+dispatcher's namespace beside the default externs. `Syntax` builds
+its dispatcher lazily and anew for every composition, since `+` makes
+a new `Syntax`; `match_select` and `Matcher.ready` are gone, and
+`MatchResult` is built for the winning arm alone. The `let` special's
+two arms dispatch in 1371 ns through the one function against 2129 ns
+through two `Matcher.match` calls; the new `syntax-select` cell, a
+three-arm syntax whose last arm is the let shape, reads 1648 ns beside
+the one-matcher `syntax-dispatch` cell's 1381 ns.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,

@@ -32,12 +32,13 @@ capture shapes are the engine's; the control is labels
 from .exceptions import SpecialError
 from .lib import (
     Code, Compare, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle,
-    gensym, symbol)
+    gensym, symbol, values)
 
 
 __all__ = (
     'FragmentTarget',
     'FunctionTarget',
+    'compile_dispatch_function',
     'compile_match_function',
     'lower_clause',
     'lower_matcher',
@@ -561,6 +562,72 @@ def lower_matcher(target, frozen, atoms, source=None, position=None):
     lowering.lower_function()
 
 
+# the closure names a dispatcher reads: the values type its result is
+# built with, and each clause a module compiled to a function of its own
+VALUES = "values"
+
+
+def clause_name(index):
+    return f"clause-{index}"
+
+
+def compile_dispatch_function(clauses, base_ns, name="dispatch"):
+    """
+    The clauses of a syntax as one Function over base_ns: one
+    positional formal, the subject; the clauses tried in order; the
+    result (values index captures) for the first that matches, None
+    when none does. A frozen clause lowers inline, its externs closure
+    names resolved in base_ns; a clause a module compiled to a
+    function is called, and is stored into base_ns under the closure
+    name the call reads. The values type is stored there as well
+
+    :param clauses: frozen matcher 6-tuples and Functions, in try order
+    :param base_ns: the namespace the closure names resolve in
+    :param name: the function's name
+    """
+
+    target = FunctionTarget(name)
+    cursors = []
+    externs = []
+    seen = set()
+    base_ns.store(VALUES, values)
+
+    for index, clause in enumerate(clauses):
+        # the next clause's entry, or the miss tail after the last
+        after = target.label("dispatch.next")
+        if isinstance(clause, tuple):
+            lowering = MatchLowering(target, clause, {}, cursors, None, None)
+            for extern in lowering.externs:
+                if extern not in seen:
+                    seen.add(extern)
+                    externs.append(extern)
+            lowering.lower_body(after, index)
+            target.instruction(OpCode.CALL_VAR, (symbol(VALUES), 2, 0, 0))
+            target.instruction(OpCode.RETURN, 1)
+            lowering.flush_trampolines()
+            target.instruction(OpCode.LABEL, after)
+        else:
+            called = symbol(clause_name(index))
+            base_ns.store(str(called), clause)
+            seen.add(called)
+            externs.append(called)
+            target.instruction(OpCode.CONST, index)
+            target.instruction(OpCode.VAR, symbol(SUBJECT))
+            target.instruction(OpCode.CALL_VAR, (called, 1, 0, 0))
+            target.instruction(OpCode.DUP, 1)
+            target.instruction(OpCode.CONST, None)
+            target.instruction(
+                OpCode.CHECK_COMPARE, (Compare.IS_NOT, 2, after, None))
+            target.instruction(OpCode.CALL_VAR, (symbol(VALUES), 2, 0, 0))
+            target.instruction(OpCode.RETURN, 1)
+            target.instruction(OpCode.LABEL, after)
+            target.instruction(OpCode.POP, 2)
+
+    target.instruction(OpCode.CONST, None)
+    target.instruction(OpCode.RETURN, 1)
+    return target.build(externs + [symbol(VALUES)], base_ns)
+
+
 def compile_match_function(frozen, base_ns, atoms=None, name="matcher"):
     """
     The frozen matcher as a Function over base_ns: one positional
@@ -904,6 +971,23 @@ class MatchLowering:
         """
 
         miss = self.target.label("match.miss")
+        self.lower_body(miss)
+        self.emit(OpCode.RETURN, 1)
+        self.flush_trampolines()
+        self.emit(OpCode.LABEL, miss)
+        self.emit(OpCode.CONST, None)
+        self.emit(OpCode.RETURN, 1)
+
+
+    def lower_body(self, miss, index=None):
+        """
+        The entry node against the subject formal walked as a spine,
+        leaving the captures on the stack on a match and jumping to
+        miss with nothing left on it otherwise. With an index, the
+        clause's index in its dispatcher is pushed under the captures,
+        the two arguments of the values the dispatcher returns
+        """
+
         cur = self.cursor(0)
         start = self.mark(0)
         # the root scope's locals are declared first so their fast
@@ -913,17 +997,15 @@ class MatchLowering:
 
         self.emit(OpCode.VAR, symbol(SUBJECT))
         self.emit(
-            OpCode.MATCH_FORM_VAR, miss, cur, pack_widths(*self.width(self.entry)))
+            OpCode.MATCH_FORM_VAR, self.miss_at((miss, 0), 1), cur,
+            pack_widths(*self.width(self.entry)))
         self.emit(OpCode.POP, 1)
         self.emit(OpCode.MATCH_MARK_VAR, cur, start)
         self.emit_pull(self.entry, cur, (miss, 0), 0, 1, 0)
         self.emit(OpCode.MATCH_END_VAR, miss, cur)
+        if index is not None:
+            self.emit(OpCode.CONST, index)
         self.emit_captures(None, start, cur)
-        self.emit(OpCode.RETURN, 1)
-        self.flush_trampolines()
-        self.emit(OpCode.LABEL, miss)
-        self.emit(OpCode.CONST, None)
-        self.emit(OpCode.RETURN, 1)
 
 
     def emit_captures(self, scope, start, cur, iteration=False):

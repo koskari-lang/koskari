@@ -174,3 +174,20 @@ class TestMissingExterns(unittest.TestCase):
         m = thaw(_two_extern_tuple())
         with self.assertRaises(TypeError):
             m.missing_externs(provided="not-a-mapping")
+
+
+class TestKeywordsAreIgnoredByName(unittest.TestCase):
+
+    def test_zero_extern_matcher_ignores_keywords(self):
+        """
+        A keyword naming no extern of a matcher is ignored, whether or
+        not the matcher declares any externs
+        """
+
+        consts = (42,)
+        nodes = (("TEST", "LITERAL", 0), ("MATCH", 0))
+        m = thaw(("MATCHER", (), (), consts, nodes, 1))
+        self.assertTrue(m.match((42,), bogus=1).matched)
+
+
+# The end.

@@ -31,7 +31,8 @@ from typing import Any
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, cons, demand, keyword, kos_repr,
     nil, pair, symbol)
-from koskari.match_code import compile_match_function, validate_frozen
+from koskari.match_code import (
+    compile_dispatch_function, compile_match_function, validate_frozen)
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
@@ -43,9 +44,9 @@ __all__ = (
     "match",
     "match1",
 
+    "Dispatcher",
     "Matcher",
     "MatchResult",
-    "match_select",
     "get_extern_defaults",
     "reset_extern_defaults",
     "Datum",
@@ -326,13 +327,7 @@ class Matcher:
 
         if self._version == EXTERN_DEFAULTS.version or self.namespace is None:
             return
-        nodefault = []
-        for name in self.externs:
-            if name in EXTERN_DEFAULTS:
-                self.namespace.store(name, EXTERN_DEFAULTS[name])
-            else:
-                nodefault.append(name)
-        self._nodefault = tuple(nodefault)
+        self._nodefault = store_defaults(self.namespace, self.externs)
         self._version = EXTERN_DEFAULTS.version
 
 
@@ -363,21 +358,6 @@ class Matcher:
         if captures is None:
             return MatchResult(False, {})
         return MatchResult(True, captures)
-
-
-    def ready(self):
-        """
-        The bare call of the function, with the namespace brought to
-        the defaults when they changed and no keyword in play: what
-        match_select runs per matcher
-        """
-
-        if (self._version != EXTERN_DEFAULTS.version
-                or self._overridden or self._nodefault):
-            self.prepare({})
-        if self._call is None:
-            self.function
-        return self._call
 
 
     def prepare(self, externs):
@@ -425,6 +405,97 @@ class Matcher:
         return tuple(missing)
 
 
+def store_defaults(namespace, externs):
+    """
+    Store the default extern of every name in externs that has one
+    into namespace
+
+    :return: the names with no default, in extern order
+    """
+
+    nodefault = []
+    for name in externs:
+        if name in EXTERN_DEFAULTS:
+            namespace.store(name, EXTERN_DEFAULTS[name])
+        else:
+            nodefault.append(name)
+    return tuple(nodefault)
+
+
+class Dispatcher:
+    """
+    The matchers of a syntax's clauses as one function: the subject
+    its one formal, the index and captures of the first clause that
+    matches its result. A matcher built from a frozen tuple lowers
+    into the function, its externs closure names over a namespace
+    the default externs fill; a matcher a module built is called
+    """
+
+    def __init__(self, matchers, name="dispatch"):
+        self.matchers = tuple(matchers)
+        self.name = name
+        externs = []
+        for matcher in self.matchers:
+            if not isinstance(matcher, Matcher):
+                raise TypeError(
+                    f"Dispatcher clause is not a Matcher:"
+                    f" {type(matcher).__name__}")
+            for extern in matcher.externs:
+                if extern not in externs:
+                    externs.append(extern)
+        self.externs = tuple(externs)
+        self.namespace = ModuleNamespace(name, {})
+        self._version = None
+        self._nodefault = ()
+        self._function = None
+        self._call = None
+
+
+    @property
+    def function(self):
+        """
+        The Function the dispatcher runs, built on first use
+        """
+
+        if self._function is None:
+            clauses = [
+                m.frozen if m.frozen is not None else m.function
+                for m in self.matchers]
+            self._function = compile_dispatch_function(
+                clauses, self.namespace, name=self.name)
+            self._call = demand(self._function)
+        return self._function
+
+
+    def select(self, subject):
+        """
+        The first clause matching subject, a pair spine, nil or a
+        sequence
+
+        :return: (index, captures) for the first match, or (-1, None)
+        :raises TypeError: when a pair subject is not a proper list, or
+            an extern has no default
+        :raises ValueError: when a pair subject loops
+        """
+
+        subject = check_subject(subject)
+        if self._version != EXTERN_DEFAULTS.version:
+            self._nodefault = store_defaults(self.namespace, self.externs)
+            self._version = EXTERN_DEFAULTS.version
+            if self._nodefault:
+                raise TypeError(
+                    "matcher missing extern binding:"
+                    f" {self._nodefault[0]!r}")
+        call = self._call
+        if call is None:
+            self.function
+            call = self._call
+        result = call(subject)
+        if result is None:
+            return -1, None
+        return result[0], result[1]
+
+
 def check_subject(subject):
     """
     The subject a match runs on: read through Datum, and a pair spine
@@ -443,39 +514,6 @@ def check_subject(subject):
             raise TypeError(
                 "match subject must be a proper list (nil-terminated)")
     return subject
-
-
-def match_select(matchers, subject, **externs):
-    """
-    Run matchers in order against one subject until one matches. With
-    no keywords each matcher's function is called bare, the subject
-    checked once and a result built for the winner alone.
-
-    :return: (index, result) for the first match, or (-1, None)
-    :raises TypeError: when an element is not a Matcher
-    """
-
-    if externs:
-        for idx, matcher in enumerate(matchers):
-            if not isinstance(matcher, Matcher):
-                raise TypeError(
-                    f"match_select element {idx} is not a Matcher:"
-                    f" {type(matcher).__name__}")
-            result = matcher.match(subject, **externs)
-            if result.matched:
-                return idx, result
-        return -1, None
-
-    subject = check_subject(subject)
-    for idx, matcher in enumerate(matchers):
-        if not isinstance(matcher, Matcher):
-            raise TypeError(
-                f"match_select element {idx} is not a Matcher:"
-                f" {type(matcher).__name__}")
-        captures = matcher.ready()(subject)
-        if captures is not None:
-            return idx, MatchResult(True, captures)
-    return -1, None
 
 
 def thaw(tagged_tuple):

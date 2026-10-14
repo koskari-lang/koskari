@@ -33,8 +33,8 @@ from koskari.hygiene import expand_template_with_hygiene, finalize_expansion
 from koskari.lib import Datum, cons, demand_call, gensym, nil, symbol
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-    MatchCompiler, Matcher, Pattern, check_pattern_arg, match_select,
-    parse_explicit_rule_pattern, repeat_capture)
+    Dispatcher, MatchCompiler, Matcher, MatchResult, Pattern,
+    check_pattern_arg, parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
     fill_position, get_position, is_nil, is_pair, is_proper, is_symbol,
@@ -99,13 +99,16 @@ class Syntax(Compiled):
 
         self.bare = bare
 
-        # fast matching via match_select
-        self._matchers = tuple(t.matcher for t in self.transforms)
+        # the one function over every arm's matcher, built on first use
+        self._dispatcher = None
 
 
     @property
-    def matchers(self):
-        return self._matchers
+    def dispatcher(self):
+        if self._dispatcher is None:
+            self._dispatcher = Dispatcher(
+                (t.matcher for t in self.transforms), name=str(self.name))
+        return self._dispatcher
 
 
     @property
@@ -115,17 +118,17 @@ class Syntax(Compiled):
 
     def match_transformer(self, form):
         """
-        Match ``form`` against the first arm whose frozen matcher succeeds.
+        Match ``form`` against the first arm whose matcher succeeds.
 
         :param form: special form pair spine
         :return: ``(transform, result)`` where ``transform`` is the matching
-            transform and ``result`` is the match result
+            transform and ``result`` is the match result, or (None, None)
         """
 
-        idx, result = match_select(self._matchers, form)
-        if result is None:
+        idx, captures = self.dispatcher.select(form)
+        if captures is None:
             return None, None
-        return self.transforms[idx], result
+        return self.transforms[idx], MatchResult(True, captures)
 
 
     def compile_impl(self, compiler, source_obj):
@@ -178,8 +181,8 @@ class Syntax(Compiled):
             fill_position(reemitted, get_position(source_obj))
             return reemitted
 
-        idx, result = match_select(self._matchers, source_obj)
-        if result is None:
+        idx, captures = self.dispatcher.select(source_obj)
+        if captures is None:
             raise SyntaxMatchError(
                 "no matching syntax rule",
                 source_obj,
@@ -188,7 +191,8 @@ class Syntax(Compiled):
             )
 
         tf = self.transforms[idx]
-        expansion = tf.handle_expand(compiler, source_obj, result)
+        expansion = tf.handle_expand(
+            compiler, source_obj, MatchResult(True, captures))
         if is_pair(expansion):
             # a template arm builds its output with no position; the
             # form it expands names the line, as for the bare path

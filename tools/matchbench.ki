@@ -50,6 +50,7 @@ import-from time perf_counter
 import-from koskari.matcher:
     APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
     MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
+import-from koskari.syntax SpecialTransform Syntax
 
 
 ;; === fixtures ===
@@ -97,6 +98,18 @@ define M_SYNTAX (make_matcher
     (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body")))
 
 define FORM_LET '(mylet [[x 1] [y 2]] (+ x y))
+
+define syntax-arm [compiler source result]:
+    None
+
+;; a syntax of three arms, the let shape last: one dispatch through
+;; the syntax's function tries all three
+define S_SYNTAX (Syntax "mylet" #(
+    (SpecialTransform (MATCH (SYMBOL "head") (LITERAL 0)) syntax-arm)
+    (SpecialTransform (MATCH (SYMBOL "head") (SYMBOL "only")) syntax-arm)
+    (SpecialTransform
+        (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body"))
+        syntax-arm)))
 
 define ki-pred [v]:
     True
@@ -235,6 +248,9 @@ define cell-thaw []:
 define cell-syntax-dispatch []:
     (M_SYNTAX.match FORM_LET)
 
+define cell-syntax-select []:
+    (S_SYNTAX.match_transformer FORM_LET)
+
 define cell-match-first-arm []:
     (m8 0)
 
@@ -276,6 +292,7 @@ define CELLS #(
     #("engine-app-ki" cell-engine-app-ki)
     #("thaw" cell-thaw)
     #("syntax-dispatch" cell-syntax-dispatch)
+    #("syntax-select" cell-syntax-select)
     #("match-first-arm" cell-match-first-arm)
     #("match-last-arm" cell-match-last-arm)
     #("match-else" cell-match-else)
