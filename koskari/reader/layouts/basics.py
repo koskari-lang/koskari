@@ -134,6 +134,41 @@ def keyword_block_value(reader, header, body):
     return apply_layout(block, reader)
 
 
+@builtin('layout/global')
+@layout(symbol('layout/global'))
+def layout_global(reader, source, peers):
+    """
+    Lower a global block through the layout of the word after global,
+    with global put back in front: global class NAME: reads as the
+    class block would, and a word with no layout of its own, or a bare
+    global header, reads through the default block layout
+
+    eg.
+    global class C:
+      x
+
+    becomes
+    (global class C () (begin x))
+    """
+
+    from . import apply_layout
+
+    header, body = source
+    _, rest = header
+    if is_nil(rest):
+        return layout_block.read(reader, source, peers)
+
+    position = get_position(source)
+    block = cons(_keyword_block, rest, *unpack(body), nil)
+    if position:
+        block.set_position(position)
+
+    result = cons(header.car, apply_layout(block, reader))
+    if position:
+        result.set_position(position)
+    return result
+
+
 @builtin('layout/block-begin')
 @layout(symbol('layout/block-begin'))
 def layout_block_begin(reader, source, peers):

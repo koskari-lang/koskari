@@ -26,6 +26,7 @@ structural colon, and peer blocks are in
 | [`match`](layout-match.md) | | `(match SUBJECT [[PATTERN...] BODY...] ... [else: BODY...])` |
 | [`class`](layout-class.md) | | `(class NAME SUPERS (begin BODY...))`, a class bound to NAME |
 | [`build-class`](layout-build-class.md) | | `(build-class NAME SUPERS (begin BODY...))`, a class expression that binds nothing |
+| [`global`](layout-global.md) | | the block of the word after `global`, read through that word's layout, with `global` put back in front |
 | [`syntax-rules`](layout-syntax-rules.md) | | a `syntax-rules` transformer, one arm per rule block |
 | [`syntax-match`](layout-syntax-match.md) | | a `syntax-match` transformer |
 | [`macro-rules`](layout-macro-rules.md) | | a `macro-rules` transformer |

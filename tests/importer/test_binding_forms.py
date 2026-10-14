@@ -197,6 +197,17 @@ class TestGlobalPrefix(BindingFormsCase):
         self.assertEqual('Box', ns['Box'].__name__)
 
 
+    async def test_global_class_omit_supers(self):
+        ns = await self.load("""
+        def setup []:
+          global class Box:
+            var size 3
+        (setup)
+        """)
+        self.assertEqual(3, ns['Box'].size)
+        self.assertEqual('Box', ns['Box'].__name__)
+
+
     async def test_global_pattern(self):
         ns = await self.load("""
         def setup []:

@@ -2381,7 +2381,7 @@ source: |-
   Registry.size
   
 verify:
-  read: (begin (def setup [] (global class Registry [] (var size 0)) None) (setup) (attr Registry size))
+  read: (begin (def setup [] (global class Registry [] (begin (var size 0))) None) (setup) (attr Registry size))
   eval: "0"
 references:
   - reference/layouts/layout-class.md

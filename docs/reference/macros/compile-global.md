@@ -58,6 +58,11 @@ A decorator line above `global var`, `global def` or `global class`
 decorates the value, function or class and binds the result at the
 module.
 
+In block form the word after `global` decides how the block reads:
+`global class NAME:` takes the [`class` layout](../layouts/layout-class.md),
+so the superclass list may be omitted as it may after a bare `class`.
+See [layout/global](../layouts/layout-global.md).
+
 **Examples:**
 
 ```koskari

@@ -1581,6 +1581,31 @@ tags:
   - metaprogramming
 notes: global syntax inside a function body binds the transformer as compile/twice in the module
 ---
+id: variable-global-class-block-014
+feature: macro/compile/global
+source: |-
+  def setup []:
+    global class Box:
+      var size 3
+
+  (setup)
+  Box.size
+verify:
+  read: (begin (def setup [] (global class Box () (begin (var size 3)))) (setup) Box.size)
+  eval: "3"
+references:
+  - reference/macros/compile-global.md
+  - reference/layouts/layout-global.md
+stability: evolving
+tags:
+  - variable
+  - special
+  - global
+  - module-global
+  - define-type
+  - surface:block
+notes: the block after global reads through the class layout, so the superclass list may be omitted as after a bare class
+---
 id: runtime-koskari-vars-function-001
 feature: runtime/koskari-vars
 source: (item (call (lambda [n] (koskari-vars)) 7) "n")
