@@ -250,7 +250,7 @@ def _try_layout_block_split(text, start_line, start_col, sn, opens_block):
     ``LAYOUT_BLOCK_NAMES`` opens a block anywhere; any other prefix opens
     one when opens_block says the colon ends a line outside all
     delimiters. Prefix type comes from ``_atom_type`` so specials win over
-    layout.
+    layout. Applies only with layout on.
     """
 
     if len(text) <= 1 or not text.endswith(':'):
@@ -266,7 +266,11 @@ def _try_layout_block_split(text, start_line, start_col, sn, opens_block):
     return (first, second)
 
 
-def tokenize(source, filename='<string>', special_names=None):
+def tokenize(
+        source,
+        filename='<string>',
+        special_names=None,
+        layout_enabled=True):
     """
     Yield Token instances for the given source.
 
@@ -278,6 +282,8 @@ def tokenize(source, filename='<string>', special_names=None):
     :param special_names: optional set of special-form names; defaults to
         ``SPECIAL_NAMES``, the unprefixed head names from the compiler
         registry
+    :param layout_enabled: the reader's reader/layout switch; when False
+        a ``name:`` atom never splits into a layout head and a colon
     :yield: Token instances
     """
 
@@ -411,9 +417,11 @@ def tokenize(source, filename='<string>', special_names=None):
                 end = _scan_atom_end(sl, i, n)
                 text = sl[i - 1:end]
                 i = end
-                split = _try_layout_block_split(
-                    text, start_line, start_col, sn,
-                    not depth and _rest_of_line_blank(sl, end, n))
+                split = None
+                if layout_enabled:
+                    split = _try_layout_block_split(
+                        text, start_line, start_col, sn,
+                        not depth and _rest_of_line_blank(sl, end, n))
                 if split is not None:
                     first, second = split
                     yield first
@@ -429,9 +437,11 @@ def tokenize(source, filename='<string>', special_names=None):
         end = _scan_atom_end(sl, i, n)
         text = sl[i - 1:end]
         i = end
-        split = _try_layout_block_split(
-            text, start_line, start_col, sn,
-            not depth and _rest_of_line_blank(sl, end, n))
+        split = None
+        if layout_enabled:
+            split = _try_layout_block_split(
+                text, start_line, start_col, sn,
+                not depth and _rest_of_line_blank(sl, end, n))
         if split is not None:
             first, second = split
             yield first

@@ -32,6 +32,7 @@ import koskari
 # from . import term_graphics
 from ..exceptions import CodeBoundary, CompilerError, UncaughtCompilerError
 from ..lexer.discovery import special_names_for_repl
+from ..module import find_module_reader
 
 
 __all__ = (
@@ -122,7 +123,9 @@ def _make_repl_prompter(histfile, ns):
             special_names=repl_special_names)
         session = PromptSession(
             history=history,
-            lexer=KoskariLexer(special_names=repl_special_names),
+            lexer=KoskariLexer(
+                special_names=repl_special_names,
+                get_reader=lambda: find_module_reader(ns)),
             completer=completer,
             style=koskari_style,
             auto_suggest=AutoSuggestFromHistory(),

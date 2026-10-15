@@ -81,6 +81,26 @@ class TestKoskariLexer(IsolatedAsyncioTestCase):
         self.assertTrue(has_layout)
         self.assertTrue(has_punct_colon)
 
+
+    async def test_lexer_layout_off_reader_keeps_keyword(self):
+        """
+        With the reader's layout switch off, try: highlights as one
+        keyword, not a layout head and a colon
+        """
+
+        from koskari.lexer.parser import make_layout_reader
+
+        reader = make_layout_reader()
+        reader.set_layout_modes(layout_enabled=False)
+        lexer = KoskariLexer(get_reader=lambda: reader)
+        parts = lexer.lex_document(Document('try:'))(0)
+        self.assertEqual(
+            [t for s, t in parts if s], ['try:'])
+        self.assertTrue(any(
+            'koskari.keyword' in str(s) for s, t in parts if t == 'try:'))
+        self.assertFalse(any(
+            s and 'koskari.layout' in str(s) for s, _ in parts))
+
     async def test_lexer_multiline_triple_string_reconstructs_lines(self):
         """
         Multi-line string tokens must be sliced per line; using full tok.text

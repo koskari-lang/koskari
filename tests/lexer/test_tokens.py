@@ -249,6 +249,29 @@ class TestTokenize(IsolatedAsyncioTestCase):
         self.assertEqual([t.type for t in toks[:2]], ['symbol', 'colon'])
 
 
+    async def test_tokenize_layout_off_line_end_colon_stays_keyword(self):
+        """
+        With layout off a name: atom ending a depth-0 line reads as a
+        keyword, so it tokenizes as one keyword
+        """
+
+        toks = list(tokenize('foo bar:\n', layout_enabled=False))
+        self.assertEqual(
+            [(t.type, t.text) for t in toks],
+            [('symbol', 'foo'), ('keyword', 'bar:')])
+
+
+    async def test_tokenize_layout_off_block_name_stays_keyword(self):
+        """
+        With layout off a layout block name with a colon reads as a
+        keyword, so it tokenizes as one keyword
+        """
+
+        toks = list(tokenize('try:', layout_enabled=False))
+        self.assertEqual(
+            [(t.type, t.text) for t in toks], [('keyword', 'try:')])
+
+
     async def test_tokenize_quote(self):
         toks = list(tokenize("'x"))
         self.assertEqual(toks[0].type, 'quote')

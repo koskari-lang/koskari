@@ -69,14 +69,18 @@ class KoskariLexer(Lexer):
     by returning highlighting for tokens produced before any error.
     """
 
-    def __init__(self, special_names=None):
+    def __init__(self, special_names=None, get_reader=None):
         """
         :param special_names: optional set of compiler special names for
             atom classification; defaults to ``SPECIAL_NAMES``
+        :param get_reader: optional callable returning the session's
+            LayoutReader, whose layout_enabled switch the tokenizer
+            follows; layout is on when None
         """
 
         self._special_names = (
             special_names if special_names is not None else SPECIAL_NAMES)
+        self._get_reader = get_reader
 
     def lex_document(self, document):
         """
@@ -86,9 +90,15 @@ class KoskariLexer(Lexer):
         :return: callable(lineno) -> list of (style_class, text) tuples
         """
 
+        layout_enabled = True
+        if self._get_reader is not None:
+            layout_enabled = self._get_reader().layout_enabled
+
         try:
             tokens = list(tokenize(
-                document.text, '<stdin>', special_names=self._special_names))
+                document.text, '<stdin>',
+                special_names=self._special_names,
+                layout_enabled=layout_enabled))
         except Exception:
             tokens = []
 
