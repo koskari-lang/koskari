@@ -337,6 +337,8 @@ def build_var_to_fast():
     var_to_fast[OpCode.RETURN_VAR] = OpCode.RETURN_FAST
     var_to_fast[OpCode.YIELD_VAR] = OpCode.YIELD_FAST
     var_to_fast[OpCode.ITER_NEXT_STORE_VAR] = OpCode.ITER_NEXT_STORE_FAST
+    var_to_fast[OpCode.JUMP_FALSE_VAR] = OpCode.JUMP_FALSE_FAST
+    var_to_fast[OpCode.JUMP_TRUE_VAR] = OpCode.JUMP_TRUE_FAST
 
     return var_to_fast
 
@@ -905,6 +907,21 @@ class ByteCodeProcessor:
 
         return [(OpCode.VAR_INPLACE_CONST,
                  (arg[0], arg[1], matched[0][1], None))]
+
+
+    @fuse_rule(VAR_FEEDER, OpCode.JUMP_FALSE)
+    @fuse_rule(VAR_FEEDER, OpCode.JUMP_TRUE)
+    def fuse_jump_feeder(self, op, arg, matched):
+        """
+        VAR name JUMP_FALSE / JUMP_TRUE -> the _VAR twin reading the
+        tested value from the row instead of the stack; the fast pass
+        lowers it to the FAST twin. A CONST feeder never reaches here:
+        the squish folded it to a JUMP or to nothing
+        """
+
+        fused = (OpCode.JUMP_FALSE_VAR if op == OpCode.JUMP_FALSE
+                 else OpCode.JUMP_TRUE_VAR)
+        return [(fused, (matched[0][1], arg, None, None))]
 
 
     @fuse_rule(FEEDER, OpCode.RETURN)

@@ -555,6 +555,18 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.JUMP_TRUE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
 
+    def test_bare_variable_clauses_take_the_feeder_jumps(self):
+        rows = compile_function_rows(
+            "(lambda [a b c] (cond [(and (or a b) c) 1] [else: 2]))")
+        ops = [op for op, _ in rows]
+        self.assertEqual(ops.count(OpCode.JUMP_TRUE_FAST), 1)
+        self.assertEqual(ops.count(OpCode.JUMP_FALSE_FAST), 2)
+        self.assertNotIn(OpCode.FAST, ops)
+        self.assertNotIn(OpCode.JUMP_TRUE, ops)
+        self.assertNotIn(OpCode.JUMP_FALSE, ops)
+        self.assertNotIn(OpCode.JUMP_AND, ops)
+        self.assertNotIn(OpCode.JUMP_OR, ops)
+
     def test_or_test_fuses_both_compares(self):
         rows = compile_function_rows(
             "(lambda [a b c d] (cond [(or (< a b) (< c d)) 1] [else: 2]))")

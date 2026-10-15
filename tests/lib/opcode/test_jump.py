@@ -157,4 +157,115 @@ class TestJumpOpcodes(CevalTest):
         self.assertEqual(result, 42)
 
 
+class TestJumpFeederTwins(CevalTest):
+    """
+    JUMP_FALSE_VAR, JUMP_TRUE_VAR and their FAST twins read the tested
+    value from the row's name or slot instead of popping it
+    """
+
+    def branch(self, row, **kwargs):
+        return build_expr([
+            row,
+            ["CONST", "continued"],
+            ["RETURN", 1],
+            ["LABEL", "target"],
+            ["CONST", "jumped"],
+            ["RETURN", 1],
+        ], **kwargs)
+
+
+    async def test_jump_false_var_jumps_when_falsy(self):
+        code, ns = self.branch(
+            ["JUMP_FALSE_VAR", ("a", "target", None, None)],
+            values={"a": 0})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_jump_false_var_continues_when_truthy(self):
+        code, ns = self.branch(
+            ["JUMP_FALSE_VAR", ("a", "target", None, None)],
+            values={"a": [1]})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_jump_true_var_jumps_when_truthy(self):
+        code, ns = self.branch(
+            ["JUMP_TRUE_VAR", ("a", "target", None, None)],
+            values={"a": "x"})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_jump_true_var_continues_when_falsy(self):
+        code, ns = self.branch(
+            ["JUMP_TRUE_VAR", ("a", "target", None, None)],
+            values={"a": None})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_jump_var_unbound_name_raises(self):
+        code, ns = self.branch(
+            ["JUMP_FALSE_VAR", ("nope", "target", None, None)])
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+    async def test_jump_false_fast_jumps_when_falsy(self):
+        code, ns = self.branch(
+            ["JUMP_FALSE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": False})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_jump_false_fast_continues_when_truthy(self):
+        code, ns = self.branch(
+            ["JUMP_FALSE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": 7})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_jump_true_fast_jumps_when_truthy(self):
+        code, ns = self.branch(
+            ["JUMP_TRUE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": True})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_jump_true_fast_continues_when_falsy(self):
+        code, ns = self.branch(
+            ["JUMP_TRUE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": ()})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_jump_fast_general_truth(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        code, ns = self.branch(
+            ["JUMP_TRUE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": Truthy()})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_jump_fast_truth_error_propagates(self):
+        class Broken:
+            def __bool__(self):
+                raise ValueError("no truth")
+
+        code, ns = self.branch(
+            ["JUMP_FALSE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": Broken()})
+        with self.assertRaises(ValueError):
+            await make_callable(code, ns)()
+
+
+    async def test_jump_fast_empty_slot_raises(self):
+        code, ns = self.branch(
+            ["JUMP_TRUE_FAST", (0, "target", None, None)],
+            local_syms=("a",))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
 # The end.

@@ -196,6 +196,45 @@ class TestFuseControlFeeders(unittest.TestCase):
         self.assertEqual(out, [(OpCode.RETURN_VAR, "b")])
 
 
+class TestFuseJumpFeeders(unittest.TestCase):
+    """
+    A bare VAR load ahead of JUMP_FALSE or JUMP_TRUE fuses into the
+    _VAR twin carrying the name and the label
+    """
+
+    def test_var_jump_false_fuses(self):
+        out = fuse_ops([(V, "a"), (OpCode.JUMP_FALSE, "L1")])
+        self.assertEqual(out, [
+            (OpCode.JUMP_FALSE_VAR, ("a", "L1", None, None)),
+        ])
+
+    def test_var_jump_true_fuses(self):
+        out = fuse_ops([(V, "a"), (OpCode.JUMP_TRUE, "L1")])
+        self.assertEqual(out, [
+            (OpCode.JUMP_TRUE_VAR, ("a", "L1", None, None)),
+        ])
+
+    def test_const_feeder_stays(self):
+        instr = [(C, 1), (OpCode.JUMP_FALSE, "L1")]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_computed_feeder_stays(self):
+        instr = [(V, "f"), (OpCode.CALL, 0), (OpCode.JUMP_TRUE, "L1")]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_label_between_stays(self):
+        instr = [(V, "a"), (OpCode.LABEL, "L0"), (OpCode.JUMP_FALSE, "L1")]
+        self.assertEqual(fuse_ops(instr), instr)
+
+    def test_position_absorbed(self):
+        pos = (OpCode.POSITION, (3, 1, None))
+        out = fuse_ops([(V, "a"), pos, (OpCode.JUMP_FALSE, "L1")])
+        self.assertEqual(out, [
+            (OpCode.JUMP_FALSE_VAR, ("a", "L1", None, None)),
+            pos,
+        ])
+
+
 class TestFuseCheckFeeders(unittest.TestCase):
 
     def test_var_var_fuses(self):

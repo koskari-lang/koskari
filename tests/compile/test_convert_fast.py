@@ -92,6 +92,28 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, instr)
 
 
+    async def test_jump_var_twins_lower_to_fast(self):
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [
+            (OpCode.JUMP_FALSE_VAR, ("x", "L1", None, None)),
+            (OpCode.JUMP_TRUE_VAR, ("x", "L2", None, None)),
+        ]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(result, [
+            (OpCode.JUMP_FALSE_FAST, (0, "L1", None, None)),
+            (OpCode.JUMP_TRUE_FAST, (0, "L2", None, None)),
+        ])
+
+
+    async def test_jump_var_twins_without_slot_stay(self):
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [
+            (OpCode.JUMP_FALSE_VAR, ("y", "L1", None, None)),
+            (OpCode.JUMP_TRUE_VAR, ("y", "L2", None, None)),
+        ]
+        self.assertEqual(convert_fast(nspec, instr), instr)
+
+
     async def test_simple_var_opcode_still_works(self):
         """
         Scalar VAR opcode converts to FAST when name is in findex

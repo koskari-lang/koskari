@@ -462,6 +462,14 @@ OP(FAST_OPERAND_FAST, 1, EXTRA, OPERAND, FASTVAR, FASTVAR, NOARG)  // fast OP fa
 OP(ITER_NEXT_STORE_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
 OP(ITER_NEXT_STORE_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
 
+// the truth-test branches with their feeder: the tested value read
+// from the row's name or fast slot instead of popped; the VAR +
+// JUMP_FALSE / JUMP_TRUE fusions, lowered to the FAST twins
+OP(JUMP_FALSE_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
+OP(JUMP_TRUE_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
+OP(JUMP_FALSE_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
+OP(JUMP_TRUE_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
+
 // THEEND must always be last
 OP(THEEND, 0, NOARG)
 
