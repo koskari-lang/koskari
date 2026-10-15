@@ -928,6 +928,13 @@ temporary and two instructions per branch on every match, and dropping
 the clear in the inline target would leak a failed branch's binding
 into a repeat iteration's captures.
 
+Review item 12 as of 2026-10-15: a predicate or extractor that
+captures its continuation and re-enters the match through it is a
+side-effecting predicate. The first resumption completes the match;
+a second pass sees the cursor, mark and captures as the first left
+them, since a frame's locals are locations shared across resumptions,
+and no further behaviour is defined.
+
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,

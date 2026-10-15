@@ -793,6 +793,37 @@ class TestMatchCalls(SpecialsTestCase):
         self.assertEqual(await expr(), 5)
 
 
+    async def test_escaped_predicate_continuation_completes_the_match(self):
+        """
+        A continuation captured inside a predicate and resumed once,
+        outside its delimiter, completes the walk it interrupted
+        """
+
+        src = """
+        (begin
+          (define-global pred
+            (lambda [v] (shift k (begin (setattr holder "k" k) False))))
+          (define-global first
+            (reset
+              (match data
+                [[#[(? pred) y z]] #("hit" y z)]
+                [else: "miss"])))
+          #(first (call holder.k True)))
+        """
+
+        class Holder:
+            k = None
+
+        expr, mod = self.compile_expr(
+            src, data=(1, 2, 3), holder=Holder(), setattr=setattr)
+        self.assertEqual(await expr(), (False, ("hit", 2, 3)))
+
+        expr, mod = self.compile_expr(
+            src, data=cons(1, 2, 3, nil), holder=Holder(), setattr=setattr)
+        first, (hit, y, z) = await expr()
+        self.assertEqual((first, hit, y.datum, z.datum), (False, "hit", 2, 3))
+
+
     async def test_awaiting_extractor_awaits_in_place(self):
         src = """
         (match data
