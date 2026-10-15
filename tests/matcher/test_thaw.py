@@ -313,6 +313,32 @@ class TestMatcherFromTuple(unittest.TestCase):
                 thaw(frozen)
 
 
+    def test_thaw_rejects_rest_counts_past_the_packed_limit(self):
+        """
+        A REST row packs its minimum tail and the width of the fixed
+        suffix after it into eight bits each, so a minimum tail past
+        255, or more than 255 fixed elements after a rest, is refused
+        when the tuple is validated
+        """
+
+        frozen = ("MATCHER", (), (), (), (("REST", 300), ("MATCH", 0)), 1)
+        with self.assertRaises(ValueError) as caught:
+            thaw(frozen)
+        self.assertIn("255", str(caught.exception))
+
+        anys = tuple(("TEST", "ANY", -1) for _ in range(256))
+        frozen = ("MATCHER", (), (), (), (("REST", 0),) + anys
+                  + (("MATCH",) + tuple(range(257)),), 257)
+        with self.assertRaises(ValueError) as caught:
+            thaw(frozen)
+        self.assertIn("255", str(caught.exception))
+
+        anys = tuple(("TEST", "ANY", -1) for _ in range(255))
+        frozen = ("MATCHER", (), (), (), (("REST", 255),) + anys
+                  + (("MATCH",) + tuple(range(256)),), 256)
+        self.assertIsInstance(thaw(frozen), Matcher)
+
+
     def test_thaw_rejects_duplicate_child_index(self):
         """
         A frozen MATCH that names the same child twice is rejected

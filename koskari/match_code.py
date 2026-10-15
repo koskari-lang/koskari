@@ -164,6 +164,10 @@ def validate_frozen(frozen):
         elif kind == 'REST':
             if not isinstance(node[1], int) or node[1] < 0:
                 raise ValueError(f"REST min_tail out of range at node {i}")
+            if node[1] > LIMIT:
+                raise ValueError(
+                    f"REST min_tail {node[1]} at node {i} is past the"
+                    f" {LIMIT} a row's packed counts hold")
         elif kind == 'APP':
             ref(node[1], len(externs), "APP fn_extern", i)
             subnode(node[2], i, False)
@@ -394,12 +398,18 @@ def check_branch(nodes, widths, root):
             f"branch at node {root} has {len(rests)} REST nodes"
             f" (max 1 per branch)")
     if rests:
+        suffix = 0
         for i in range(rests[0] + 1, len(chunks)):
             mn, mx, _ = chunks[i]
             if mn != mx:
                 raise ValueError(
                     f"branch at node {root} has non-deterministic chunk"
                     f" after REST (chunk {i}: min={mn} max={mx})")
+            suffix += mn
+        if suffix > LIMIT:
+            raise ValueError(
+                f"branch at node {root} has {suffix} fixed elements after"
+                f" its REST, past the {LIMIT} a row's packed counts hold")
 
 
 def pack_widths(mn, mx):

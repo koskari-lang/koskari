@@ -256,7 +256,7 @@ the rest of the row, except for a core type, which the
 for a symbol key; `const` is a value. `widths` packs min and max into
 one RAW field, eight bits each, `0xFF` unbounded, since a row immediate is
 sixteen bits; a FORM's widths saturate safely, and a REST whose minimum
-tail or suffix exceeds 255 is refused by the lowering.
+tail or fixed suffix exceeds 255 is refused at validation.
 
 | Instruction | Fields | Kind | Effect |
 |---|---|---|---|
