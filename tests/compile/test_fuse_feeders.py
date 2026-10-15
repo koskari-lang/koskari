@@ -225,6 +225,15 @@ class TestFuseCheckFeeders(unittest.TestCase):
             (CCV, (make_cmpsrc(LT, True, False), 0, "a", "fail")),
         ])
 
+    def test_jump_held_carried_into_cmpsrc(self):
+        out = fuse_ops([
+            (V, "a"), (C, 100),
+            (CC, (int(LT), 2, "held", 1)),
+        ])
+        self.assertEqual(out, [
+            (CCV, (make_cmpsrc(LT, False, True, True), "a", 100, "held")),
+        ])
+
     def test_const_const_stays_generic(self):
         instr = [
             (C, 1), (C, 2),
@@ -308,6 +317,16 @@ class TestFuseTernaryBounds(unittest.TestCase):
             (OpCode.JUMP_FALSE, "fail"),
         ])
 
+    def test_branch_position_jump_held_splits_to_jump_true(self):
+        out = fuse_ops([
+            (C, 0), (V, "x"), (C, 100),
+            (CC, (int(LT), 3, "held", 1)),
+        ])
+        self.assertEqual(out, [
+            (OCV, (int(LT), 0, "x", 100)),
+            (OpCode.JUMP_TRUE, "held"),
+        ])
+
     def test_wrong_shape_stays_generic(self):
         instr = [
             (V, "x"), (C, 0), (C, 100),
@@ -381,6 +400,19 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
         result = fuse_and_lower(nspec, instr)
         self.assertEqual(result, [
             (OpCode.CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
+        ])
+
+    async def test_jump_held_lowers_with_the_bit_kept(self):
+        nspec = NamespaceSpec(None, ("a", "b"), ())
+        src = make_cmpsrc(LT, False, False, True)
+        instr = [
+            (V, "a"),
+            (V, "b"),
+            (CC, (int(LT), 2, "held", 1)),
+        ]
+        result = fuse_and_lower(nspec, instr)
+        self.assertEqual(result, [
+            (OpCode.CHECK_COMPARE_FAST, (src, 0, 1, "held")),
         ])
 
     async def test_const_slot_passes_through(self):

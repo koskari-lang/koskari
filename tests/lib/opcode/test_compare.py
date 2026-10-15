@@ -44,8 +44,9 @@ def cmpcount(sel, count):
     return (sel << 8) | count
 
 
-def cmpsrc(sel, x_const, y_const):
-    return (sel & 0x0f) | (0x10 if x_const else 0) | (0x20 if y_const else 0)
+def cmpsrc(sel, x_const, y_const, jump_held=False):
+    return ((sel & 0x0f) | (0x10 if x_const else 0) | (0x20 if y_const else 0)
+            | (0x40 if jump_held else 0))
 
 
 class TestCheckCompare(CevalTest):
@@ -595,6 +596,168 @@ class TestObjectCompareVar(CevalTest):
         ])
         with self.assertRaises(NameError):
             await make_callable(code, ns)()
+
+
+class TestCheckCompareJumpHeld(CevalTest):
+    """
+    With the jump-held flag set, the three compare branches jump when
+    the comparison holds and continue when it fails
+    """
+
+    NAN = float("nan")
+
+    def check(self, rows, **kwargs):
+        return build_expr(rows + [
+            ["CONST", "continued"],
+            ["RETURN", 1],
+            ["LABEL", "held"],
+            ["CONST", "jumped"],
+            ["RETURN", 1],
+        ], **kwargs)
+
+
+    async def test_int_chain_jumps_when_held(self):
+        code, ns = self.check([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CONST", 3],
+            ["CHECK_COMPARE", (LT, 3, "held", 1)],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_int_chain_continues_when_failed(self):
+        code, ns = self.check([
+            ["CONST", 1],
+            ["CONST", 3],
+            ["CONST", 2],
+            ["CHECK_COMPARE", (LT, 3, "held", 1)],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_int_pair_jumps_when_held(self):
+        code, ns = self.check([
+            ["CONST", 1],
+            ["CONST", 2],
+            ["CHECK_COMPARE", (LT, 2, "held", 1)],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_float_pair_continues_when_failed(self):
+        code, ns = self.check([
+            ["CONST", 2.5],
+            ["CONST", 1.5],
+            ["CHECK_COMPARE", (LT, 2, "held", 1)],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_membership_jumps_when_held(self):
+        code, ns = self.check([
+            ["CONST", 2],
+            ["CONST", (1, 2, 3)],
+            ["CHECK_COMPARE", (IN, 2, "held", 1)],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_eq_nan_continues(self):
+        code, ns = self.check([
+            ["CONST", self.NAN],
+            ["CONST", self.NAN],
+            ["CHECK_COMPARE", (EQ, 2, "held", 1)],
+        ])
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_var_jumps_when_held(self):
+        code, ns = self.check([
+            ["CHECK_COMPARE_VAR",
+             (cmpsrc(LT, False, True, True), "a", 5, "held")],
+        ], values={"a": 1})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_var_continues_when_failed(self):
+        code, ns = self.check([
+            ["CHECK_COMPARE_VAR",
+             (cmpsrc(LT, False, True, True), "a", 5, "held")],
+        ], values={"a": 9})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_fast_int_jumps_when_held(self):
+        code, ns = self.check([
+            ["CONST", 1],
+            ["FAST_STORE", 0],
+            ["CONST", 2],
+            ["FAST_STORE", 1],
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(LT, False, False, True), 0, 1, "held")],
+        ], local_syms=("a", "b"))
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_fast_int_continues_when_failed(self):
+        code, ns = self.check([
+            ["CONST", 2],
+            ["FAST_STORE", 0],
+            ["CONST", 1],
+            ["FAST_STORE", 1],
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(LT, False, False, True), 0, 1, "held")],
+        ], local_syms=("a", "b"))
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_fast_float_jumps_when_held(self):
+        code, ns = self.check([
+            ["CONST", 1.5],
+            ["FAST_STORE", 0],
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(LT, False, True, True), 0, 2.5, "held")],
+        ], local_syms=("a",))
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_fast_is_continues_when_distinct(self):
+        code, ns = self.check([
+            ["CONST", 1],
+            ["FAST_STORE", 0],
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(IS, False, True, True), 0, None, "held")],
+        ], local_syms=("a",))
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_fast_is_jumps_when_same(self):
+        code, ns = self.check([
+            ["CONST", None],
+            ["FAST_STORE", 0],
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(IS, False, True, True), 0, None, "held")],
+        ], local_syms=("a",))
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_fast_general_jumps_when_held(self):
+        code, ns = self.check([
+            ["CONST", "abc"],
+            ["FAST_STORE", 0],
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(LT, False, True, True), 0, "abd", "held")],
+        ], local_syms=("a",))
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
+    async def test_fast_eq_nan_continues(self):
+        code, ns = self.check([
+            ["CHECK_COMPARE_FAST",
+             (cmpsrc(EQ, False, False, True), 0, 0, "held")],
+        ], local_syms=("a",), values={"a": self.NAN})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
 
 
 # The end.

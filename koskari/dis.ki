@@ -260,7 +260,8 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
   """
   Render a CMPSRC row: the selector name, then each operand per its
   source bit (constant pool when the bit is set, else the slot's
-  declared primary kind), then the jump target
+  declared primary kind), then the jump target, marked when the
+  jump-held bit turns the exits around
   """
 
   define src ext[0]
@@ -285,7 +286,10 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
 
   render_operand 1 (% bits 2) schema[1]
   render_operand 2 (% (// bits 2) 2) schema[2]
-  parts.append f"-> {ext[3]}"
+  if (% (// bits 4) 2):
+    parts.append f"-> {ext[3]} when held"
+  else:
+    parts.append f"-> {ext[3]}"
 
   define joined (", ".join parts)
   f"{arg} ({joined})"

@@ -452,13 +452,15 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
 
-    def test_or_test_fuses_last_compare(self):
+    def test_or_test_fuses_both_compares(self):
         rows = compile_function_rows(
             "(lambda [a b c d] (cond [(or (< a b) (< c d)) 1] [else: 2]))")
         ops = [op for op, _ in rows]
-        self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 1)
+        self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 2)
         self.assertNotIn(OpCode.JUMP_OR, ops)
-        self.assertIn(OpCode.JUMP_TRUE, ops)
+        self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
+        self.assertNotIn(OpCode.JUMP_TRUE, ops)
+        self.assertNotIn(OpCode.JUMP_FALSE, ops)
 
 
 # The end.

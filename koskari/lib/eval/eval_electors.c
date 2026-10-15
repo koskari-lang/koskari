@@ -1159,7 +1159,8 @@ KOS_SLOT_STR_ELECTOR(
 
 /**
    CHECK_COMPARE without an election: chain-compare the count operands
-   under the selector, drop them, jump on failure.
+   under the selector, drop them, jump on failure, or on success when
+   the row's jump-held field is set.
 */
 KOS_ELECTOR(check_compare_generic) {
   KOS_SYNC_PC(es, insn);
@@ -1183,7 +1184,7 @@ KOS_ELECTOR(check_compare_generic) {
   KosEvalState_StackDropNoErr(es, count);
   if (unlikely(res < 0))
     RESULT_RAISE();
-  if (res == 0)
+  if ((res != 0) == (int) KosExtra_IMM(row, 3))
     RESULT_JUMP_AT(es, KosExtra_TARGET(row, 2));
   RESULT_NEXT(es);
 }
@@ -1222,10 +1223,11 @@ KOS_ELECTOR(object_compare_generic) {
 /* One body per kind for each compare opcode: the stack pair under a
    richcompare selector, settled on the kind's compare over the
    extracted values. CHECK_COMPARE takes its selector from the row,
-   drops the pair, and jumps when the compare fails; OBJECT_COMPARE
-   takes it from the packed argument and replaces the pair with the
-   bool. SEL reads the selector after the family's prologue (ROW)
-   has run; SETTLE takes the compare's result. */
+   drops the pair, and jumps when the compare fails, or when it holds
+   under a set jump-held field; OBJECT_COMPARE takes it from the packed
+   argument and replaces the pair with the bool. SEL reads the selector
+   after the family's prologue (ROW) has run; SETTLE takes the
+   compare's result. */
 #define KOS_COMPARE_ELECTOR(FAMILY, KIND, kind, ROW, SEL, SETTLE)       \
   KOS_ELECTOR(FAMILY##_##kind) {                                        \
     ROW;                                                                \
@@ -1248,7 +1250,7 @@ KOS_ELECTOR(object_compare_generic) {
 #define KOS_CHECK_COMPARE_SETTLE(held)                                  \
   do {                                                                  \
     kos_stack_drop_noerr_fast(bl, 2);                                   \
-    if (held)                                                           \
+    if ((held) != (int) KosExtra_IMM(row, 3))                           \
       RESULT_NEXT(es);                                                  \
     RESULT_JUMP_AT(es, KosExtra_TARGET(row, 2));                        \
   } while (0)

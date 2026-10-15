@@ -130,14 +130,18 @@ typedef enum KosOpStyle {
 
 
 /** Compose/decode a KOSTYLE_CMPSRC value: comparison selector (bits 0-3)
-    plus per-operand constant-source bits (bit 4: x, bit 5: y). */
-#define KosCmpSrc_MAKE(sel, x_const, y_const)              \
+    plus per-operand constant-source bits (bit 4: x, bit 5: y) and the
+    jump-held bit (bit 6): set, the row jumps when the comparison holds
+    and falls through when it fails; clear, the reverse. */
+#define KosCmpSrc_MAKE(sel, x_const, y_const, jump_held)   \
   ((uint16_t)(((uint16_t)(sel) & 0x0f)                     \
               | ((x_const) ? 0x10 : 0)                     \
-              | ((y_const) ? 0x20 : 0)))
-#define KosCmpSrc_SEL(v)      ((uint16_t)((v) & 0x0f))
-#define KosCmpSrc_X_CONST(v)  (((v) >> 4) & 1)
-#define KosCmpSrc_Y_CONST(v)  (((v) >> 5) & 1)
+              | ((y_const) ? 0x20 : 0)                     \
+              | ((jump_held) ? 0x40 : 0)))
+#define KosCmpSrc_SEL(v)        ((uint16_t)((v) & 0x0f))
+#define KosCmpSrc_X_CONST(v)    (((v) >> 4) & 1)
+#define KosCmpSrc_Y_CONST(v)    (((v) >> 5) & 1)
+#define KosCmpSrc_JUMP_HELD(v)  (((v) >> 6) & 1)
 
 
 /** Comparison selector carried in CMP fields and the CMPCOUNT high byte,

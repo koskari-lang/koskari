@@ -1,10 +1,10 @@
 # KOS_OP_CHECK_COMPARE_VAR
 - **Style**: EXTRA (CMPSRC, VAR, VAR, LABEL). Row = packed selector +
-  source bits, two operand slots, target pc. A set source bit overrides
+  source bits, two operand slots, target pc; the jump-held bit turns the exits around. A set source bit overrides
   that operand slot from its declared VAR kind to CONST (pool index).
 - **Stack**: No stack effect. Arity-2 fused comparison branch: load both
   operands per the source bits (frame namespace name lookup, or constant
-  pool), compare under the selector, jump to LABEL on failure.
+  pool), compare under the selector, jump to LABEL on failure, or on success when the jump-held bit is set.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late

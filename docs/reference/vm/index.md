@@ -224,7 +224,7 @@ or demote tail calls when yields are present. Those happen later; see section 1.
 | `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
 | `KOS_OP_NILP` | `KOS_OP_CHECK_NIL` |
 
-**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior -> **EXTRA** `(CMP, COUNT, LABEL)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, None)` so the chained comparison survives (`a < b < c` fuses just like `a < b`).
+**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior -> **EXTRA** `(CMP, COUNT, LABEL, JUMP_HELD)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field set to 1, so the row jumps when the chain holds.
 
 **`_SWITCH_SQUASHES`** (prior opcode -> fused switch opcode):
 
@@ -235,7 +235,8 @@ or demote tail calls when yields are present. Those happen later; see section 1.
 | `KOS_OP_VAR_ATTR` | `KOS_OP_SWITCH_EQ_VAR_ATTR` |
 
 **Examples.**
-- `KOS_OP_OBJECT_COMPARE` `(EQ, count)`, **`KOS_OP_JUMP_FALSE`** `L` -> one **`KOS_OP_CHECK_COMPARE`** `(EQ, count, L, None)` (selector and count carried from the comparison, label from the jump).
+- `KOS_OP_OBJECT_COMPARE` `(EQ, count)`, **`KOS_OP_JUMP_FALSE`** `L` -> one **`KOS_OP_CHECK_COMPARE`** `(EQ, count, L, 0)` (selector and count carried from the comparison, label from the jump).
+- `KOS_OP_OBJECT_COMPARE` `(EQ, count)`, **`KOS_OP_JUMP_TRUE`** `L` -> one **`KOS_OP_CHECK_COMPARE`** `(EQ, count, L, 1)`, which jumps when the chain holds.
 
 ### 1.9 Bind and store
 
@@ -1391,19 +1392,21 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL)` row: `a0` is a KosCompare selector, `a1` the operand count (>= 2), `a2` the target pc. It is variadic -- the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), and the jump is taken when the chain fails. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
+Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL)` row: `a0` is a KosCompare selector, `a1` the operand count (>= 2), `a2` the target pc, `a3` the jump-held flag. It is variadic -- the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), and the jump is taken when the chain fails, or when it holds under a set `a3`. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_COMPARE
-- **Style**: EXTRA (CMP, COUNT, LABEL, NOARG). Row = KosCompare selector,
-  operand count, target pc.
+- **Style**: EXTRA (CMP, COUNT, LABEL, COUNT). Row = KosCompare selector,
+  operand count, target pc, jump-held flag.
 - **Stack**: `[..., a1, ..., aN] -> [...]`. Chain-compare the top COUNT
-  operands under the selector; jump to LABEL when the chain fails. The
-  operands are dropped either way. Raises `TypeError` when `COUNT < 2`.
+  operands under the selector; jump to LABEL when the chain fails, or
+  when it holds under a set jump-held flag. The operands are dropped
+  either way. Raises `TypeError` when `COUNT < 2`.
 - **Invariants**: Selector is a valid KosCompare ordinal. The richcompare
   six (LT/LE/EQ/NE/GT/GE, ordinals 0-5 == CPython's Py_LT..Py_GE) chain
   over any COUNT; the extended selectors require COUNT == 2.
 - **Compiler form:** Produced by `Compiler.compress` fusing
-  `OBJECT_COMPARE` + `JUMP_FALSE` into one row. Never emitted directly by
+  `OBJECT_COMPARE` + `JUMP_FALSE` into one row, and `OBJECT_COMPARE` +
+  `JUMP_TRUE` into the row with the flag set. Never emitted directly by
   specials.
 
 **Example:** Branch unless `1 < x < 100`. Selector LT = 0.
@@ -1419,11 +1422,11 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 
 ### KOS_OP_CHECK_COMPARE_VAR
 - **Style**: EXTRA (CMPSRC, VAR, VAR, LABEL). Row = packed selector +
-  source bits, two operand slots, target pc. A set source bit overrides
+  source bits, two operand slots, target pc; the jump-held bit turns the exits around. A set source bit overrides
   that operand slot from its declared VAR kind to CONST (pool index).
 - **Stack**: No stack effect. Arity-2 fused comparison branch: load both
   operands per the source bits (frame namespace name lookup, or constant pool), compare
-  under the selector, jump to LABEL on failure.
+  under the selector, jump to LABEL on failure, or on success when the jump-held bit is set.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` (late `compress` sweep) absorbing two bare VAR/CONST feeder rows into an arity-2 [CHECK_COMPARE](#kos_op_check_compare). Runs before `pack_var_runs` so this fusion gets first claim on the feeders. Lowers to CHECK_COMPARE_FAST via the CMPSRC-aware `convert_fast` case (all-or-nothing on the name slots).
@@ -1441,11 +1444,11 @@ Check jumps: if the predicate does **not** hold, jump to the target label. Jump 
 
 ### KOS_OP_CHECK_COMPARE_FAST
 - **Style**: EXTRA (CMPSRC, FASTVAR, FASTVAR, LABEL). Row = packed selector +
-  source bits, two operand slots, target pc. A set source bit overrides
+  source bits, two operand slots, target pc; the jump-held bit turns the exits around. A set source bit overrides
   that operand slot from its declared FASTVAR kind to CONST (pool index).
 - **Stack**: No stack effect. Arity-2 fused comparison branch: load both
   operands per the source bits (fast local slot, or constant pool), compare
-  under the selector, jump to LABEL on failure.
+  under the selector, jump to LABEL on failure, or on success when the jump-held bit is set.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
 - **Compiler form:** Post-compile only: the CMPSRC-aware `convert_fast` lowering of CHECK_COMPARE_VAR when every name-sourced slot has a fast slot. Constant-bit slots pass through untouched.
