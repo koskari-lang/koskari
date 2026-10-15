@@ -571,7 +571,13 @@ path can absorb, which 4 measures.
    apparatus brings the module binding into the function namespace at
    build. `CONST` carries values only. There is no defaults table.
 3. Decided 2026-10-14: direct stores; a failed clause may leave a
-   capture bound, as PEP 634 permits.
+   capture bound, as PEP 634 permits. Decided 2026-10-15: a capture
+   name is the arm's own local, so a binding of that name made before
+   the match is overwritten by any attempt at it, and an `(or ...)`
+   alternative that misses leaves its names unbound; its miss edge
+   clears them so a failed branch is absent from the captures the
+   standalone function and a repeat iteration gather. PEP 634 cannot
+   reach the case, every alternative there binding the same names.
 4. Which conditional reads start as instructions and which as builtin
    calls; the table in section 3 is the full set.
 5. Whether the `MATCH_TYPE` family takes an elector slot from the
@@ -913,6 +919,14 @@ extern named `subject` is an extern like any other. Item 6, the
 keyword externs stored into one namespace across a re-entrant call,
 is left: no caller in the tree passes a keyword extern, and a Koskari
 pattern's externs are module names.
+
+Review item 11 as of 2026-10-15: a failed `(or ...)` alternative
+clears a binding of the capture's name that existed before the match,
+where a plain miss leaves the failed capture's value. Ruled intended,
+open decision 3; a save and restore per alternative would cost a
+temporary and two instructions per branch on every match, and dropping
+the clear in the inline target would leak a failed branch's binding
+into a repeat iteration's captures.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,

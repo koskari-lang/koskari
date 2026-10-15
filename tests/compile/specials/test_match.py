@@ -371,6 +371,40 @@ class TestMatchSpecial(SpecialsTestCase):
             self.compile_expr(src, data=(1, 2, 3))
 
 
+class TestMatchFailedCaptures(SpecialsTestCase):
+    """
+    A capture name is the arm's own local: an attempt that binds it and
+    then misses leaves its value behind, and a failed or-alternative
+    leaves its names unbound, so a binding of that name made before the
+    match is overwritten either way
+    """
+
+    async def test_plain_miss_leaves_the_captured_value(self):
+        src = """
+        (let [[x 100]]
+          (match data
+            [[#[x 1]] x]
+            [else: x]))
+        """
+        expr, mod = self.compile_expr(src, data=(5, 3))
+        self.assertEqual(await expr(), 5)
+
+
+    async def test_failed_alternative_leaves_its_names_unbound(self):
+        src = """
+        (let [[x 100]]
+          (match data
+            [[(or #[x 1] #[5 2])] x]
+            [else: x]))
+        """
+        expr, mod = self.compile_expr(src, data=(5, 2))
+        with self.assertRaises(NameError):
+            await expr()
+        expr, mod = self.compile_expr(src, data=(5, 3))
+        with self.assertRaises(NameError):
+            await expr()
+
+
 class TestMatchGuards(SpecialsTestCase):
     """
     when: / unless: guards run after the pattern binds; a failed guard
