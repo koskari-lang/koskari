@@ -2641,10 +2641,9 @@ static inline KosOpResult eval_event_return_unwind(
    and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
    conjuncts below guard that, for separate reasons: without code there
    is nothing to dispatch, and with a resume pending the prologue is
-   what would have delivered the value to it. Only codeless frames
-   carry resumes today, so either check alone would do; they are
-   written out because a bytecode frame with a call in flight would
-   satisfy one and not the other.
+   what would have delivered the value to it. A bytecode frame can
+   carry a resume (the for-each store resume sits on one), so neither
+   check implies the other.
 */
 static inline int kos_return_parent_is_plain(KosDynNode *parent) {
   return parent
