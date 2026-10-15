@@ -125,7 +125,7 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 
 
 /**
-   Pop FOREACH when top. Callers: abort_push_region, kos_dyn_unwind_to_loop.
+   Pop FOREACH when top. Callers: opcode POP_FOREACH, kos_dyn_unwind_to_loop.
 */
 int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {

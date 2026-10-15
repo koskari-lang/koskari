@@ -102,7 +102,7 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
 
 
 /**
-   Pop LOOP when top. Callers: abort_push_region, kos_dyn_unwind_to_loop, POP.
+   Pop LOOP when top. Callers: opcode POP_LOOP, kos_dyn_unwind_to_loop.
 */
 int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {

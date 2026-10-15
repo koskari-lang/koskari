@@ -100,7 +100,7 @@ KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
 
 
 /**
-   Pop TRY when it is top (fast path). Callers: abort_push_region, POP_TRY.
+   Pop TRY when it is top (fast path). Callers: opcode POP_TRY.
 */
 int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {

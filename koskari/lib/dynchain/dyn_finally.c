@@ -114,7 +114,7 @@ KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
 
 
 /**
-   Pop FINALLY when top. Callers: abort_push_region, POP_FINALLY fast path.
+   Pop FINALLY when top. Callers: opcode POP_FINALLY.
 */
 int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
   if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
