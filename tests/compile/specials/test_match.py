@@ -22,6 +22,8 @@ Tests for the koskari.compile match special form: delimiter clauses
 
 from dataclasses import dataclass
 
+import asyncio
+
 import pytest
 
 from koskari.exceptions import SpecialError
@@ -680,6 +682,99 @@ class TestPatternValidation(SpecialsTestCase):
             self.compile_expr(
                 "(match data [[#[*: r (OPTIONAL a)]] 1] [else: 0])", data=(1,))
         self.assertIn("REST", str(caught.exception))
+
+
+class TestMatchCalls(SpecialsTestCase):
+    """
+    A predicate or extractor the pattern calls runs in the matcher's
+    frame: a Koskari one flattens, so a continuation captured inside it
+    crosses the match, and an awaiting one awaits in place with the
+    walk resuming where it stopped
+    """
+
+    async def test_awaiting_predicate_awaits_in_place(self):
+        src = """
+        (match data
+          [[(? even)] "even"]
+          [else: "odd"])
+        """
+
+        async def even(v):
+            await asyncio.sleep(0)
+            return v % 2 == 0
+
+        expr, mod = self.compile_expr(src, data=4, even=even)
+        self.assertEqual(await expr(), "even")
+        expr, mod = self.compile_expr(src, data=5, even=even)
+        self.assertEqual(await expr(), "odd")
+
+
+    async def test_suspension_mid_walk_resumes_the_walk(self):
+        src = """
+        (match data
+          [[#[(? slow) y]] y]
+          [else: "miss"])
+        """
+
+        async def slow(v):
+            await asyncio.sleep(0)
+            # a pair spine hands the predicate the boxed element
+            return (v.datum if isinstance(v, Datum) else v) > 3
+
+        expr, mod = self.compile_expr(src, data=(4, 9), slow=slow)
+        self.assertEqual(await expr(), 9)
+        expr, mod = self.compile_expr(src, data=(1, 9), slow=slow)
+        self.assertEqual(await expr(), "miss")
+        expr, mod = self.compile_expr(src, data=cons(4, 9, nil), slow=slow)
+        self.assertEqual((await expr()).datum, 9)
+
+
+    async def test_koskari_predicate_flattens(self):
+        src = """
+        (begin
+          (define-global big (lambda [v] (shift k (call k (> v 3)))))
+          (reset
+            (match data
+              [[(? big)] "big"]
+              [else: "small"])))
+        """
+
+        expr, mod = self.compile_expr(src, data=5)
+        self.assertEqual(await expr(), "big")
+        expr, mod = self.compile_expr(src, data=1)
+        self.assertEqual(await expr(), "small")
+
+
+    async def test_koskari_extractor_flattens(self):
+        src = """
+        (begin
+          (define-global half (lambda [v] (shift k (call k (// v 2)))))
+          (reset
+            (match data
+              [[(app half x)] x]
+              [else: "miss"])))
+        """
+
+        expr, mod = self.compile_expr(src, data=10)
+        self.assertEqual(await expr(), 5)
+
+
+    async def test_awaiting_extractor_awaits_in_place(self):
+        src = """
+        (match data
+          [[(app half 5)] "five"]
+          [[(app half x)] x]
+          [else: "miss"])
+        """
+
+        async def half(v):
+            await asyncio.sleep(0)
+            return v // 2
+
+        expr, mod = self.compile_expr(src, data=10, half=half)
+        self.assertEqual(await expr(), "five")
+        expr, mod = self.compile_expr(src, data=8, half=half)
+        self.assertEqual(await expr(), 4)
 
 
 # The end.
