@@ -293,4 +293,27 @@ class TestSpecialImportErrors(_OpcodeHelper, SpecialsTestCase):
                 '(let [[x 1]] (import-all-from os))')
 
 
+    def assertNilModuleRefused(self, source):
+        """
+        A nil module argument is refused as a special error naming the
+        import argument, in place of an escaped index error
+        """
+
+        with self.assertRaises(SpecialError) as caught:
+            self.compile_to_code(source)
+        self.assertIn("import argument must be", str(caught.exception))
+
+    async def test_import_nil_module_raises(self):
+        self.assertNilModuleRefused('(import ())')
+
+    async def test_import_nil_member_module_raises(self):
+        self.assertNilModuleRefused('(import [() as: x])')
+
+    async def test_import_from_nil_module_raises(self):
+        self.assertNilModuleRefused('(import-from () x)')
+
+    async def test_import_all_from_nil_module_raises(self):
+        self.assertNilModuleRefused('(import-all-from ())')
+
+
 # The end.

@@ -53,7 +53,7 @@ from ...hygiene import binding_atom
 from ...lib import OpCode, gensym, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_pair, is_symbol, strip_mark, unpack
+from ...types import is_nil, is_pair, is_symbol, strip_mark, unpack
 from ..helpers import helper_using
 
 
@@ -80,6 +80,16 @@ _USE_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("module")),
     MATCH(CALLEDBY("called_by"), VALUE("module"), BODY("stems")),
 ]
+
+
+def is_attr_form(form):
+    """
+    True for a non-empty pair headed by the attr symbol, the reader's
+    expansion of a dotted name; nil is a pair with no head to read
+    """
+
+    return (is_pair(form) and not is_nil(form)
+            and str(strip_mark(form[0])) == 'attr')
 
 
 def _attr_form_to_dotted(form, source, position=None):
@@ -119,7 +129,7 @@ def _attr_form_to_dotted(form, source, position=None):
         p = strip_mark(p)
         if is_symbol(p) or isinstance(p, str):
             result.append(str(p))
-        elif is_pair(p) and str(strip_mark(p[0])) == 'attr':
+        elif is_attr_form(p):
             result.append(_attr_form_to_dotted(p, source, position))
         else:
             raise SpecialError(
@@ -154,7 +164,7 @@ def _parse_import_name(name_form, source, position=None):
         name = stripped if stripped else None
         return (level, name)
 
-    if is_pair(name_form) and str(strip_mark(name_form[0])) == 'attr':
+    if is_attr_form(name_form):
         dotted = _attr_form_to_dotted(name_form, source, position)
         return (0, dotted)
 
@@ -301,7 +311,7 @@ def special_import(compiler, called_by, module):
 
     bind = None
     name_form = arg
-    if is_pair(arg) and str(strip_mark(arg[0])) != 'attr':
+    if is_pair(arg) and not is_nil(arg) and not is_attr_form(arg):
         bind, name_form = _parse_member(arg, arg, "import", pos)
 
     level, dotted = _parse_import_name(name_form, name_form, pos)
