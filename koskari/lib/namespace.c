@@ -3502,95 +3502,6 @@ PyObject *KosModule_New(PyObject *namespace) {
 }
 
 
-/* === SlotMap === */
-
-
-static void slotmap_dealloc(PyObject *self) {
-
-  KosSlotMap *m = (KosSlotMap *) self;
-
-  Py_XDECREF(m->names);
-  Py_XDECREF(m->layout);
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-PyTypeObject KosSlotMapType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-
-  "koskari.lib.slot_map",
-  offsetof(KosSlotMap, indices),
-  sizeof(int32_t),
-
-  .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_dealloc = slotmap_dealloc,
-};
-
-
-PyObject *KosSlotMap_New(PyObject *ns, PyObject *names) {
-
-  if (! names || ! PyTuple_Check(names)) {
-    PyErr_SetString(PyExc_TypeError, "SlotMap requires a names tuple");
-    return NULL;
-  }
-
-  Py_ssize_t n = PyTuple_GET_SIZE(names);
-  KosSlotMap *m = PyObject_NewVar(KosSlotMap, &KosSlotMapType, n);
-  if (! m)
-    return NULL;
-  Py_INCREF(names);
-  m->names = names;
-  m->layout = kos_ns_layout(ns);
-  Py_XINCREF(m->layout);
-
-  for (Py_ssize_t i = 0; i < n; i++) {
-    int idx = KosNamespace_FastIndex(ns, PyTuple_GET_ITEM(names, i));
-    if (idx < 0 && PyErr_Occurred()) {
-      Py_DECREF(m);
-      return NULL;
-    }
-    m->indices[i] = (int32_t) idx;
-  }
-  return (PyObject *) m;
-}
-
-
-int KosSlotMap_Valid(PyObject *map, PyObject *ns) {
-
-  KosSlotMap *m = (KosSlotMap *) map;
-  PyObject *layout = kos_ns_layout(ns);
-
-  if (m->layout == layout)
-    return 1;
-  if (! layout || ! m->layout)
-    return 0;
-
-  /* Another tuple identity for the same layout: compare contents,
-     identity-first, and adopt it. */
-  Py_ssize_t n = PyTuple_GET_SIZE(layout);
-  if (n != PyTuple_GET_SIZE(m->layout))
-    return 0;
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *a = PyTuple_GET_ITEM(layout, i);
-    PyObject *b = PyTuple_GET_ITEM(m->layout, i);
-    if (a == b)
-      continue;
-    /* An entry stays NULL for a global sym with no parent chain. */
-    if (! a || ! b)
-      return 0;
-    int eq = PyObject_RichCompareBool(a, b, Py_EQ);
-    if (eq < 0)
-      return -1;
-    if (! eq)
-      return 0;
-  }
-
-  Py_INCREF(layout);
-  Py_SETREF(m->layout, layout);
-  return 1;
-}
-
-
 /* === Unit lifecycle === */
 
 
@@ -3607,8 +3518,7 @@ int koskari_namespace_init(PyObject *mod) {
       PyType_Ready(&KosCollectorNamespaceType) ||
       PyType_Ready(&KosModuleNamespaceType) ||
       PyType_Ready(&KosModuleType) ||
-      PyType_Ready(&KosNamespaceRefsType) ||
-      PyType_Ready(&KosSlotMapType))
+      PyType_Ready(&KosNamespaceRefsType))
     return -1;
 
   STR_CONST(_namespace_str, "<namespace>");

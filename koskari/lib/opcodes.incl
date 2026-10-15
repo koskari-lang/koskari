@@ -448,7 +448,7 @@ OP(UNPACK_VAR, 0, EXTRA, VAR, VAR, NOARG, NOARG)
 OP(UNPACK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
 
 // runtime match/case dispatch — subject held on the stack across arms
-OP(MATCH_CASE, 1, EXTRA, LABEL, CONST, CONST, COUNT)  // no-match label; frozen matcher tuple; missing-externs name tuple (values stacked above the subject); keep-subject flag; a match binds the captures into the namespace; cache: thawed Matcher + capture slot indices
+OP(MATCH_CASE, 0, EXTRA, LABEL, CONST, CONST, COUNT)  // retired: the one-instruction arm over the matcher that preceded the MATCH_* family; never emitted, the handler raises
 
 // the match instructions (design/interpreter/matcher-bytecode.md): a
 // pattern lowered to straight-line code. A pull instruction reads its

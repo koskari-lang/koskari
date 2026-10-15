@@ -335,7 +335,8 @@ define run-cells [names iterations]:
         when (or (None? names) (in? cname names)):
             (selected.append #(cname cfn))
 
-    ; warmup: thaw MATCH_CASE cache slots and stabilize
+    ; warmup: build each cell's match functions, fill the caches of
+    ; the instructions they run, and stabilize
     for-each [[cname cfn] selected]:
         (time-loop cfn 100)
 
