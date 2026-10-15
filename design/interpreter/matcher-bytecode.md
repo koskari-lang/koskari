@@ -978,47 +978,137 @@ and no further behaviour is defined.
 6. **Documents.** `MATCHER.md`, `OPCODES.md`, `FLATTENING.md`,
    `resumable-reads.md` section 8, `api/pattern-matching.md`.
 
-## 13. Direction: the walk's state on the operand stack
+## 13. The walk's state on the operand stack
 
-**Status:** direction, 2026-10-15, not implemented. The opcode review
+**Status:** design, 2026-10-15, not implemented. The opcode review
 that follows the branch takes it up.
 
-A cloned frame copies its operand segment and shares its namespace,
-so state on the stack is per resumption and state in a local is per
-frame. The cursor, mark and repeat items are locals today, gensym
-temporaries declared per form (section 12.5), so a continuation
-captured inside a predicate and resumed after the frame has moved on
-walks on from whatever the slot holds then, and a second resumption
-finds the first's cursor (review item 12). With the walk's state on
-the stack each resumption walks on from the cursor it was captured
-with, the amb-style use a predicate invites, and no scratch slot of
-any tier is needed for the matcher.
+### 13.1 Model
 
-The shape:
+A cloned frame copies its operand segment and shares its namespace, so
+state on the stack is per resumption and state in a local is per
+frame. The matcher's cursor, mark and items temporaries are locals, so
+a continuation captured inside a predicate and resumed after the frame
+has moved on walks on from whatever the slot holds then (review item
+12), the temporaries outlive the form, and every form adds its own to
+the function's local table.
 
-- The subject stays at the base. A descent pushes the cursor above
-  it; a pull replaces the cursor with the advanced cursor and pushes
-  the element; the element tests peek and pop as now. A nested form
-  pushes its own cursor above. The lowering counts stack depth at
-  every miss edge for its pops, so cursors join that count.
-- A mark is a dup of the cursor, left under the walk; a reset drops
-  the current cursor and dups the mark back. A repeat keeps its items
-  list, its mark and its cursor as three entries.
-- Advancing must not mutate. A pair cursor is the cell and advances
-  by replacement. The sequence cursor advances in place today and has
-  to advance by producing a new cursor, from a freelist, or carry its
-  index as a separate entry.
-- Captures stay locals: they are names the body reads, not walk
-  state. The BIND shapes keep a slot for the capture.
+The temporaries move onto the operand stack as entries the rows push
+when they create them, write at a depth while they live, and pop when
+their extent ends. A row names a temporary by its distance under the
+top of the stack, an immediate the lowering computes from the depth it
+already traces. The segment is the storage, so nothing is allocated,
+cloned or freed for them: a continuation copies the entries live at
+the capture with the operands around them, a raise unwinds to the
+enclosing try's recorded depth and drops them, and a miss edge pops
+them on its way to the next arm as it pops the elements under test
+today.
 
-What it removes: the cursor, mark and items temporaries, their gensym
-names in the `.kio`, every clear of them, and the cursor slot field
-of the pull rows, with it the VAR and FAST twins that field alone
-forces. What it costs: one stack entry per live cursor in place of a
-fast slot, and over sequences one cursor object per advance, three
-words from a freelist.
+Captures stay locals. The body reads them after the walk is gone, a
+repeat's iteration reads a group's slots, and a binding is a name,
+not walk state.
 
-Pooling the temporaries instead was weighed and set aside: textual
+### 13.2 Extents
+
+- **Cursor.** `MATCH_FORM` pushes the cursor above the subject;
+  `MATCH_NEXT_FORM` pushes the inner cursor; `MATCH_END` pops the
+  cursor it checks, the top at that point since a pull leaves nothing.
+  A root walk ends as `[subject]`, and the root captures start at the
+  subject at depth 0.
+- **Mark.** `MATCH_MARK` pushes the position; `MATCH_RESET` reads it
+  at its depth; the node's hit path pops it, the top again, and the
+  miss edge pops it with everything above the subject.
+- **Items.** `MATCH_ITEMS` pushes the empty list; `MATCH_ITERATION`
+  appends its value at the list's depth; after the loop the list is
+  the top and goes into the capture slot or is popped.
+- **Arms.** A miss edge pops the arm's cursor and marks on its way to
+  the next arm, which pushes its own. Nothing is shared between arms
+  and nothing is stale when one begins.
+
+An entry's offset at an emission site is the count of entries pushed
+above it there, elements under test and later temporaries alike,
+which is the `depth` the lowering carries for its miss edges extended
+to count the temporaries too. Every instruction inside a walk has a
+static stack effect: the `MATCH_*` rows, the predicate call, and a
+guard, net zero around its jump; a form nested in a guard pushes its
+own entries above and reads only those.
+
+### 13.3 Instructions
+
+- The rows that name a cursor, mark or items slot take the offset as
+  a `RAW` field: `MATCH_NEXT_FORM` (the outer cursor; the inner is
+  pushed), `MATCH_NEXT`, `MATCH_PEEK`, `MATCH_NEXT_BIND`,
+  `MATCH_NEXT_TYPE` and `_BIND`, `MATCH_NEXT_CORE_TYPE` and `_BIND`,
+  `MATCH_NEXT_LITERAL`, `MATCH_REST` and `_BIND`, `MATCH_END`,
+  `MATCH_AVAILABLE`, `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND` (two),
+  `MATCH_COLLECT` (two), `MATCH_MARK` (the cursor; the mark is
+  pushed), `MATCH_RESET` (two), `MATCH_CAPTURES` and `MATCH_ITERATION`
+  (start and cursor; the first capture slot stays a fast slot).
+  `MATCH_FORM` names nothing: it gates the subject on the top and
+  pushes the cursor. A capture or type field keeps its VAR and FAST
+  twins. The peek rows are untouched.
+- `MATCH_ITEMS` pushes a repeat's empty list; `MATCH_COUNT L, k, n`
+  misses when the list at depth k is shorter than n, in place of the
+  load, `OBJECT_LEN`, `CONST` and `CHECK_COMPARE` a minimum count
+  emits today.
+- The handler reads an entry through `KosEvalState_StackPeekAt` and
+  writes it through a store at depth beside it, the one primitive the
+  eval state lacks. A read is a load at an offset from the top, with
+  no slot array and no ref between. Nothing generic is added.
+
+The family is new on this branch, so the rows change schema in
+place: no new names beside `MATCH_ITEMS` and `MATCH_COUNT`, and the
+VAR twins of the rows whose only slot was a cursor become
+schema-identical to their FAST twins and stay.
+
+### 13.4 Resumption
+
+Each resumption of a continuation captured in a predicate has its own
+entries, so a walk resumed twice walks on twice from the cursor it was
+captured with, over a pair spine as it stands, since a pair cursor
+advances by replacement. The sequence cursor advances in place and a
+copied entry would share it; it advances by producing a new cursor
+from a freelist, three words per element, and that can land after the
+rows.
+
+### 13.5 What it removes and costs
+
+Removed: the cursor, mark and items locals and their gensym names in
+the `.kio`; every clear of a temporary; the retention of a cursor
+past the form; the `SCOPED_TEMPORARIES` layout and its flag; and the
+scratch-slot tiers for the matcher. The namespace of a function with
+a match holds its captures and nothing else of the walk.
+
+Cost: the entries on the operand stack for their extents, where a
+segment grows on demand and spills past its inline eight, against
+fast slots allocated for every call of the function; the pops at the
+ends of extents against the clears they replace; and the row width of
+an offset where a slot index was. Measured by the churn match_case
+kernel and matchbench before and after.
+
+### 13.6 Staging
+
+1. The lowering traces the entries first, as a dry run beside the
+   slot emission: each temporary's push point and the offset computed
+   at every site that names it, with an assertion that the depth is
+   static there. Python only; it finds the sharp edges before any row
+   changes.
+2. The store-at-depth primitive, `MATCH_ITEMS`, `MATCH_COUNT`, the
+   offset schemas and their handlers; the lowering emits the pushes,
+   the offsets and the pops; both targets. One gate, since the
+   compiler and the rows change together.
+3. The sequence cursor advancing by replacement; the resumption test
+   of item 12 extended to a second pass over a tuple.
+4. The `SCOPED_TEMPORARIES` layout and the scratch-slot tiers' matcher
+   references removed; `OPCODES.md` and the VM reference updated.
+
+Pooling the temporaries as locals was weighed and set aside: textual
 non-overlap is not dynamic non-overlap once a continuation can leave a
-form's extent and come back, so tokens could only be shared within one
-form, or across forms whose patterns call no user code.
+form's extent and come back. A dynamic-chain node for the temporaries
+was weighed and set aside: it would need a node kind with its clone,
+traverse and free arms, an extent pair and a push and pop per form,
+to hold what the segment already holds per resumption. A block
+reserved at the form's entry and addressed by depth was weighed and
+set aside: the rows that create a temporary can push it, so nothing
+need exist before its first write and nothing is live past its
+extent.
