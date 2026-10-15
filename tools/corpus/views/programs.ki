@@ -32,10 +32,9 @@ applies to the ``content`` column here.
 
 import-from pathlib Path
 
-import-from tools.corpus.views._material:
-    ki_title_summary
-    markdown_title_summary
-    rewrite_markdown_links
+(import-from tools.corpus.views._material ki_title_summary
+  markdown_title_summary
+  rewrite_markdown_links)
 
 
 var VIEW_NAME "koskari-programs"

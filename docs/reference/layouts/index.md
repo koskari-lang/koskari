@@ -16,7 +16,6 @@ structural colon, and peer blocks are in
 | [any other head](layout-block-default.md) | | `(HEAD ARGS... BODY...)`, one argument per body line, keyword lines as keyword arguments |
 | [`block-begin`](layout-block-begin.md) | | `(HEAD ARGS... (begin BODY...))`; bind `layout/<head>` to it for a head that wants one body form |
 | [`inline-block`](layout-inline-block.md) | | `(HEAD ARGS... ELEMENT...)`, every element of every body line spliced and nothing folded; bind `layout/<head>` to it for a head whose block only breaks a long line |
-| [`import-from`](layout-import-from.md) | | `(import-from MODULE NAME...)`, the inlining lowering applied to a long import list |
 | [`if`](layout-if.md) | `elif`, `else` | `(cond [TEST BODY] ... [else: BODY])` |
 | [`while`](layout-while.md) | `else` | `(while TEST BODY... (else: BODY...))` |
 | [`for-each`](layout-for-each.md) | `else` | `(for-each [VAR SEQ] BODY... (else: BODY...))` |

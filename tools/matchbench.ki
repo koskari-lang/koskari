@@ -49,9 +49,9 @@ import-from dataclasses dataclass
 import-from os.path basename
 import-from time perf_counter
 
-import-from koskari.matcher:
-    APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
-    MATCH ONEOF PREDICATE SYMBOL make_matcher
+(import-from koskari.matcher
+  APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
+  MATCH ONEOF PREDICATE SYMBOL make_matcher)
 import-from koskari.syntax SpecialTransform Syntax
 
 

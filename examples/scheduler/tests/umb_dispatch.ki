@@ -4,8 +4,7 @@
 ;; correlation id. This exercises the whole path -- handshake, SUBSCRIBE,
 ;; the awaited handler callback, ACK, SEND -- with no socket.
 
-import-from stompman.frames:
-    AckFrame SendFrame SubscribeFrame UnsubscribeFrame
+(import-from stompman.frames AckFrame SendFrame SubscribeFrame UnsubscribeFrame)
 
 import-from .fakebroker FakeBroker
 import-from .harness SchedulerAsyncTestCase

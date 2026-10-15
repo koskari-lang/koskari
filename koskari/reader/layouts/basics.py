@@ -235,23 +235,6 @@ def layout_inline_block(reader, source, peers):
     return ret
 
 
-@builtin('layout/import-from')
-@layout(symbol('layout/import-from'))
-def layout_import_from(reader, source, peers):
-    """
-    Inlining layout handler for long import lists.
-
-    eg.::
-
-      import-from itertools:
-        count cycle permutations product repeat chain
-        combinations combinations_with_replacement
-        groupby tee
-    """
-
-    return layout_inline_block.read(reader, source, peers)
-
-
 _symbol_quote = symbol('quote')
 _symbol_quasiquote = symbol('quasiquote')
 _symbol_quote_syntax = symbol('quote-syntax')

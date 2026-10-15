@@ -27,9 +27,8 @@ __self__ in a leading section).
 """
 
 
-import-from koskari.lib:
-  BoundMethod Code Compare CoreType Expression Function
-  NamespaceSpec OpCode Operand OpStyle
+(import-from koskari.lib BoundMethod Code Compare CoreType Expression
+  Function NamespaceSpec OpCode Operand OpStyle)
 
 
 (declare-exports dis)

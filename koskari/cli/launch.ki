@@ -35,9 +35,8 @@ import-from os.path abspath basename dirname
 import-from .host version_line
 import-from ..importer import_module_async source_for_stale_kio
 import-from ..lib ParamRef
-import-from ..module:
-  new_module init_module
-  load_module_async load_module_kio_async load_module_source_async
+(import-from ..module new_module init_module
+  load_module_async load_module_kio_async load_module_source_async)
 
 
 (declare-exports run option_parser resolve_cli_target)

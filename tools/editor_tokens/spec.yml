@@ -16,7 +16,6 @@ layout_heads:
   - for-each
   - global
   - if
-  - import-from
   - macro-match
   - macro-rules
   - match

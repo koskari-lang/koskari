@@ -12,8 +12,7 @@ import httpx
 
 import-from unittest IsolatedAsyncioTestCase
 
-import-from kosrunner:
-    RunStore JobSet StorageConfig WebhookJob WebhookConfig
+(import-from kosrunner RunStore JobSet StorageConfig WebhookJob WebhookConfig)
 
 
 class SchedulerAsyncTestCase [IsolatedAsyncioTestCase]:

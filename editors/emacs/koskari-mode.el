@@ -84,9 +84,9 @@
                  "\\(with\\|while\\|when-main\\|when\\|var\\|try\\|syntax-rules\\|syntax-match\\|"
                  "syntax\\|switch\\|special-rules\\|special-match\\|shift\\|reset\\|"
                  "quote-syntax\\|quote\\|quasiquote-syntax\\|quasiquote\\|match\\|macro-rules\\|"
-                 "macro-match\\|import-from\\|if\\|global\\|for-each\\|finally\\|extend-syntax\\|"
-                 "except\\|else\\|elif\\|dyn-with\\|dyn-wind\\|define-syntax\\|define\\|def\\|"
-                 "class\\|call\\|build-class\\|begin\\)"
+                 "macro-match\\|if\\|global\\|for-each\\|finally\\|extend-syntax\\|except\\|"
+                 "else\\|elif\\|dyn-with\\|dyn-wind\\|define-syntax\\|define\\|def\\|class\\|"
+                 "call\\|build-class\\|begin\\)"
 
                  "\\b\\([^\n]*?\\)\\(:\\)")
          (list 2 font-lock-keyword-face)

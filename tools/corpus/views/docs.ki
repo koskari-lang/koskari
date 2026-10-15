@@ -50,9 +50,8 @@ record's references to their documentation content.
 
 import-from pathlib Path
 
-import-from tools.corpus.views._material:
-    markdown_title_summary
-    rewrite_markdown_links
+(import-from tools.corpus.views._material markdown_title_summary
+  rewrite_markdown_links)
 
 
 var VIEW_NAME "koskari-docs"

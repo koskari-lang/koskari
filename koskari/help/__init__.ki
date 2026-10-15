@@ -22,9 +22,8 @@ Koskari help formatting and builtins
 """
 
 
-import-from .tools:
-  HelpFormatter help_into help_register help_registry_clear
-  help_registry_snapshot help_unregister kos_help kos_help_text
+(import-from .tools HelpFormatter help_into help_register help_registry_clear
+  help_registry_snapshot help_unregister kos_help kos_help_text)
 
 ; importing these registers the Syntax and LayoutHandler renderers
 import-from .syntax format_accept_pattern help_for_syntax

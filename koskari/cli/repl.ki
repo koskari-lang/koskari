@@ -28,15 +28,14 @@ rendering reuses the Python formatters in koskari.exceptions.
 
 import sys
 
-import-from .host:
-  _await_user_form _make_repl_prompter
+(import-from .host _await_user_form _make_repl_prompter
   REPLCodeBoundary REPL_INFRASTRUCTURE_MODULES
-  startup_lines
+  startup_lines)
 ; maybe_print_logo startup_lines  -- logo emission disabled for now
-import-from ..exceptions:
+(import-from ..exceptions
   format_code_boundary_exception format_exception_with_koskari_trace
   apply_sys_last_exc CompilerError UncaughtCompilerError
-  ReaderEOF ReaderError
+  ReaderEOF ReaderError)
 import-from ..reader IndentAwareStream source_str READ_EOF
 import-from ..module init_module build_module_load_facets find_module_reader
 import-from ..lib kos_repr
