@@ -13,26 +13,26 @@
 
 
 """
-Example demonstrating using define-syntax and extend-syntax to
+Example demonstrating using syntax and extend-syntax to
 produce macros.
 """
 
 
 syntax tacos:
     syntax-rules []:
-        match (tacos):
-             print "Lonely Tacos"
+        case (tacos):
+            print "Lonely Tacos"
 
 extend-syntax tacos:
     syntax-rules []:
-        match (tacos friend):
+        case (tacos friend):
             print "Tacos with" friend
 
 extend-syntax tacos:
     syntax-rules []:
-        match (tacos f1 f2):
+        case (tacos f1 f2):
             (tacos f"{f1}, and {f2}")
-        match (tacos f1 f2 f3 ...):
+        case (tacos f1 f2 f3 ...):
             (tacos f"{f1}, {f2}" f3 ...)
 
 
