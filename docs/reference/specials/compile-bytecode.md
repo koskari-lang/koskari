@@ -11,7 +11,8 @@ argument (optional; defaults to 0).
 **Behaviour:** Compiles to a single fragment that emits the given instructions in
 order. No constant-pool or label resolution is done inside the form; the
 compiler's normal `complete` pass handles that. Opcode names are the `OpCode`
-enum member names.
+enum member names; a name or number that is not an opcode is a compile-time
+error positioned at that segment.
 
 **Examples:**
 

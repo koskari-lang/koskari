@@ -22,6 +22,7 @@ Special form handler for compile/bytecode.
 
 
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
 from ...lib import OpCode, keyword, symbol
 from ...matcher import (
     CALLEDBY, FORM, MATCH, OPTIONAL, VALUE, repeat_capture)
@@ -53,18 +54,23 @@ def special_bytecode(
         opacap = segm.get("opa")
         opa = 0 if opacap is None else opacap.datum
 
+        # only an enum member names an opcode: an out-of-range number
+        # or a name that is some other attribute of the enum is refused
+        # with the segment's own position
         if isinstance(op, int):
-            opc = OpCode(op)
+            opc = OpCode._value2member_map_.get(op)
 
         elif isinstance(op, (str, symbol, keyword)):
             op = str(op)
-            opc = getattr(OpCode, op, None)
+            opc = OpCode.__members__.get(op)
 
         else:
             opc = None
 
         if opc is None:
-            raise TypeError(f"invalid Koskari OpCode: {op!r}")
+            raise SpecialError(
+                f"invalid Koskari OpCode: {op!r}",
+                called_by.datum, position=opcap.position)
 
         # the op capture's position is the segment cell's own position
         fragment.position(opcap.position)

@@ -18,6 +18,8 @@ Tests for koskari.compile #bytecode special form.
 
 import pytest
 
+from koskari.exceptions import SpecialError
+
 from . import SpecialsTestCase
 
 
@@ -56,6 +58,26 @@ class TestBytecodeSpecial(SpecialsTestCase):
         )
         result = await expr()
         self.assertEqual("Hello World", result)
+
+
+    def assertNotAnOpcode(self, source):
+        """
+        A segment whose head is not an opcode is refused as a special
+        error naming the head, in place of an escaped Python error
+        """
+
+        with self.assertRaises(SpecialError) as caught:
+            self.compile_to_code(source)
+        self.assertIn("invalid Koskari OpCode", str(caught.exception))
+
+    async def test_bytecode_unknown_name_raises(self):
+        self.assertNotAnOpcode('(bytecode [FROB 1])')
+
+    async def test_bytecode_out_of_range_number_raises(self):
+        self.assertNotAnOpcode('(bytecode [9999 1])')
+
+    async def test_bytecode_non_member_attribute_raises(self):
+        self.assertNotAnOpcode('(bytecode [mro 1])')
 
 
 # The end.
