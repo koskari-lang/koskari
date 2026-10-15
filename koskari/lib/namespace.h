@@ -752,7 +752,10 @@ static inline PyObject *kos_ns_fast_peek_home(
    var_ref to the owned general deref, which raises NameError for an
    empty slot, and var to it; var_ref is NULL on the hit path and is
    what the handler releases.
-   For a handler that runs no user code while it holds var. on_error runs with the error set. */
+   The borrow is safe while nothing that can run user code or a GC
+   collection sees var; a handler that passes var on relies on the
+   callee holding it before that point, as the item entry points in
+   eval_item.c do. on_error runs with the error set. */
 #define KOS_NS_FAST_BORROW(var, var_ref, ns, idx, on_error)             \
   do {                                                                  \
     (var_ref) = NULL;                                                   \
