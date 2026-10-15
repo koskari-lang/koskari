@@ -84,3 +84,46 @@ tags:
   - invalid
   - error-handling
 notes: "runtime failure, not a compile error; the message names every spelling tried. corrective: check the feature name, or name a single facet explicitly if only one exists"
+---
+id: special-try-multi-body-invalid-001
+feature: special/compile/try
+source: |-
+  (try (/ 1 0) (+ 1 1) [[e ZeroDivisionError] (str e)])
+  
+verify:
+  read: (try (/ 1 0) (+ 1 1) [[e ZeroDivisionError] (str e)])
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-try.md
+  - reference/layouts/layout-try.md
+stability: evolving
+tags:
+  - special
+  - try
+  - exception
+  - error
+  - invalid
+  - catch
+  - error-handling
+notes: "(try BODY CLAUSE...) takes one body expression; every form after it must be a clause whose head is a bracketed [TYPE], [NAME TYPE] or [TYPE as: NAME] cell, or except:, else:, finally:. A second body form is not a clause, so the form matches no rule. corrective: (try (begin (/ 1 0) (+ 1 1)) [[e ZeroDivisionError] (str e)]) -- or write the layout form, try: with the body lines indented, which wraps them in begin"
+---
+id: special-try-bare-type-head-invalid-002
+feature: special/compile/try
+source: |-
+  (try (/ 1 0) (ZeroDivisionError 0))
+  
+verify:
+  read: (try (/ 1 0) (ZeroDivisionError 0))
+  error: "SyntaxMatchError: no matching syntax rule"
+references:
+  - reference/specials/compile-try.md
+stability: evolving
+tags:
+  - special
+  - try
+  - exception
+  - error
+  - invalid
+  - catch
+  - error-handling
+notes: "a clause head is a bracketed using cell, never a bare type symbol: (ZeroDivisionError 0) has the shape of a call, which is why the special refuses it rather than guess. corrective: (try (/ 1 0) [[ZeroDivisionError] 0])"
