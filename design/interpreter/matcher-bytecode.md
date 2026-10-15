@@ -25,7 +25,7 @@ Every acceleration it could take is one the evaluator already has.
 This design lowers a pattern to evaluator instructions. One lowering
 reads the frozen matcher tuple and emits an instruction list; the list
 becomes a standalone `Code` called like any function, or is merged
-inline into the function that contains a `match` form. Twenty-eight
+inline into the function that contains a `match` form. Thirty-six
 instruction shapes carry the matcher's tests, pulls and captures, fused
 from the start on the pattern the `VAR_ITEM_*` family set. The node
 implementations in `matcher/` survive as the library the handlers
@@ -100,13 +100,18 @@ Koskari under the tools migration.
 
 From one instruction list:
 
-- **standalone**: a `FunctionSpec` whose formals are the subject and
-  one keyword formal per extern (section 2.7), returning the capture
-  captures on a match and `None` on a miss; the `Matcher` surface,
-  `match_select`, `match1`, and `define-matcher` are calls to it;
+- **standalone**: a `Function` whose one formal is `match-subject`,
+  its externs the closure names of the namespace it is built in, a
+  keyword extern stored into that namespace per call (section 2.7),
+  returning the captures on a match and `None` on a miss; the
+  `Matcher` surface calls it, and a `Syntax` dispatches through one
+  such function over every arm, which returns the index and captures
+  of the first arm that matches;
 - **inline**: a fragment merged into the enclosing function by
-  `compile/match`, captures stored into the clause's declared names,
-  the clause bodies and guard lowering unchanged.
+  `compile/match`, the subject on the stack across the arm chain,
+  captures bound as the arm's own locals, the clause bodies and guard
+  lowering unchanged; the layout that pushes a namespace per form is
+  held behind `SCOPED_TEMPORARIES` (section 12.5).
 
 ### 2.2 Pull and peek
 
@@ -220,9 +225,10 @@ fast index pairs, skipping an unbound slot, so the sparse captures dict
 and an unfired `OPTIONAL` need no sentinel. On the syntax side it pops
 the source cell for `.source` and `.position` and builds a
 `DatumFrame`; on the runtime side it builds a dict. A `REPEAT`
-iteration over a group ends in `MATCH_REPEAT_APPEND`, which builds the
-group's captures from its scratch slots, appends them to the list in the
-capture slot, and clears the scratch slots. A capture-less iteration
+iteration ends in `MATCH_ITERATION`, which builds the iteration's
+captures from its slots, or the boxed span when none fired, and clears
+the slots; `VAR_LIST_APPEND` adds it to the list in the capture slot. A
+capture-less iteration
 appends the boxed element (`MATCH_NEXT_APPEND`), and an `x ...` at the
 end of a spine is one `MATCH_COLLECT`.
 
@@ -244,8 +250,9 @@ scratch slot; the compiler emits both as VAR fields and `convert_fast`
 lowers the row to its FAST twin where the names have fast slots, as it
 does for `ITER_NEXT_STORE_VAR` and the item family. At module scope
 and past the fast-slot cap the VAR form runs and stores by name, as
-`VAR_STORE` does. `type` is always a VAR field (section 2.7), lowered
-with the rest of the row. `key` is a CONST for an atom key and a VAR
+`VAR_STORE` does. `type` is a VAR field (section 2.7), lowered with
+the rest of the row, except for a core type, which the
+`MATCH_CORE_TYPE` shapes carry as a RAW ordinal. `key` is a CONST for an atom key and a VAR
 for a symbol key; `const` is a value. `widths` packs min and max into
 one RAW field, eight bits each, `0xFF` unbounded, since a row immediate is
 sixteen bits; a FORM's widths saturate safely, and a REST whose minimum
@@ -259,7 +266,9 @@ tail or suffix exceeds 255 is refused by the lowering.
 | MATCH_NEXT_BIND | L, cur, slot | pull | VALUE, BIND, a bare rule variable |
 | MATCH_NEXT_LITERAL | L, cur, const | pull | a keyword or literal element |
 | MATCH_NEXT_TYPE | L, cur, type | pull | anonymous `(:: T)` |
-| MATCH_NEXT_TYPE_BIND | L, cur, type, slot | pull | SYMBOL, CALLEDBY, PAIR, KEYWORD, `(x :: T)` in a spine |
+| MATCH_NEXT_TYPE_BIND | L, cur, type, slot | pull | `(x :: T)` in a spine |
+| MATCH_NEXT_CORE_TYPE | L, cur, core | pull | anonymous `(:: int)` on a core type, the ordinal in a RAW field |
+| MATCH_NEXT_CORE_TYPE_BIND | L, cur, core, slot | pull | SYMBOL, CALLEDBY, PAIR, KEYWORD, `(x :: int)` in a spine |
 | MATCH_NEXT_SAME | L, cur, slot | pull | a repeated rule variable |
 | MATCH_MARK | cur, slot | none | the cursor's position saved: its cell, or its index |
 | MATCH_RESET | cur, slot | none | the cursor moved back to a saved position |
@@ -272,11 +281,15 @@ tail or suffix exceeds 255 is refused by the lowering.
 | MATCH_LITERAL | L, const | peek | literal test |
 | MATCH_TYPE | L, type | peek | type test |
 | MATCH_TYPE_BIND | L, type, slot | peek | the runtime root `(x :: T)`; a typed branch |
+| MATCH_CORE_TYPE | L, core | peek | core type test |
+| MATCH_CORE_TYPE_BIND | L, core, slot | peek | the root `(x :: int)` on a core type |
 | MATCH_SAME | L, slot | peek | equality with a bound slot |
 | MATCH_FORM | L, inner cur, widths | peek | the runtime root sequence pattern |
-| MATCH_CLASS | L, type, positional count | peek | isinstance; one cache slot |
-| MATCH_FIELD | L, name or position | peek | push the attribute for a sub-pattern |
-| MATCH_FIELD_BIND | L, name or position, slot | peek | a field captured directly |
+| MATCH_CLASS | L, type, positional count | peek | isinstance, and `__match_args__` long enough for the count |
+| MATCH_FIELD_POS | L, type, position | peek | push the positional field named by `__match_args__` for a sub-pattern |
+| MATCH_FIELD_POS_BIND | L, type, position, slot | peek | a positional field captured directly |
+| MATCH_FIELD_KW | L, name | peek | push the attribute for a sub-pattern |
+| MATCH_FIELD_KW_BIND | L, name, slot | peek | a keyword field captured directly |
 | MATCH_MAP | L | peek | the mapping gate |
 | MATCH_KEY | L, key | peek | push the value for a sub-pattern; CONST and VAR key forms |
 | MATCH_KEY_BIND | L, key, slot | peek | an entry captured directly; CONST and VAR key forms |
@@ -284,13 +297,13 @@ tail or suffix exceeds 255 is refused by the lowering.
 | MATCH_CAPTURES | names, base, start, cur | push | the captures of a scope: the names tuple, the first of the scope's run of capture slots, the saved start and the cursor; a `DatumFrame` with the span as its source over a pair spine, a dict otherwise; a NAMED form reads the captures by name for the inline target |
 | MATCH_ITERATION | names, base, start, cur | push | one repeat iteration's value: the captures when any slot fired, else the boxed span; clears the slots it read; the same NAMED form |
 
-Thirty-one shapes. Every shape that names a slot or a type has a VAR
+Thirty-six shapes. Every shape that names a slot or a type has a VAR
 and a FAST entry in `opcodes.incl`, on the precedent of the `VAR_*` and
 `FAST_*` families; the two key shapes have a CONST key and a VAR key
 form besides; `MATCH_CAPTURES` and `MATCH_ITERATION` have the slot-run
 form the standalone target emits and a NAMED pair the inline target
-emits, whose CONST is the (keys, locals) tuple. Sixty-six opcodes as
-built. The FAST entry is the one that runs in a function body.
+emits, whose CONST is the (keys, locals) tuple. Seventy-three opcodes
+as built, beside the retired `MATCH_CASE`. The FAST entry is the one that runs in a function body.
 
 Handler notes:
 
@@ -320,16 +333,18 @@ Handler notes:
   identity, gensym base, `Py_EQ`.
 - **MATCH_SAME family.** Peel both, a `DatumFrame` operand misses,
   identity, `Py_EQ`.
-- **MATCH_CLASS.** `match_class` as the body with the `__match_args__`
-  resolution cached per type in the site's slot; the 3.9 synthesis
-  stays behind its version gate. `MATCH_FIELD` and `MATCH_FIELD_BIND`
-  follow with `match_one_field`'s miss rule; the positional index
-  reads the cached tuple.
+- **MATCH_CLASS.** isinstance through the box, then `__match_args__`
+  checked against the positional count; the 3.9 synthesis stays behind
+  its version gate; no cache slot. `MATCH_FIELD_POS`
+  reads the positional name from `__match_args__` and `MATCH_FIELD_KW`
+  the attribute; a missing attribute is a miss.
 - **MATCH_MAP, MATCH_KEY family.** `matcher_mapping_gate` and
   `map_probe` as the bodies.
-- **MATCH_CAPTURES, MATCH_REPEAT_APPEND.** The table is a CONST tuple of
-  slot name and fast index pairs. `datum_frame_set_source` sets the
-  source and position from the popped cell on the syntax side.
+- **MATCH_CAPTURES, MATCH_ITERATION.** The names tuple is a CONST and
+  the slot run starts at the first capture slot; the NAMED forms carry
+  the (keys, locals) pair. Over a pair spine the result is a
+  `DatumFrame` whose source is the span and whose position is the
+  start cell's.
 - **Naming.** Suffix composition as the item family uses: the pull,
   the test, the bind, in that order. One field kind is added: RAW, an
   immediate the instruction interprets its own way, where COUNT would
@@ -353,7 +368,7 @@ Handler notes:
 | REPEAT | `BUILD_LIST 0` into the capture slot or a temporary; a loop of MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node, MATCH_ITERATION, `VAR_LIST_APPEND`, `JUMP` back; the iteration's miss edge MATCH_RESET and clears; a `min_count` is `OBJECT_LEN` and `CHECK_COMPARE GE` after the loop |
 | REST | MATCH_REST_BIND or MATCH_REST; with a non-empty suffix, the `remaining` count feeds the min |
 | NOT | MATCH_PEEK, the inner node as peek instructions with its hit edge and miss edge exchanged, `POP 1`; captures are forbidden inside NOT already |
-| CLASS, FIELD | MATCH_CLASS, then MATCH_FIELD_BIND per captured field or MATCH_FIELD, the sub-pattern, `POP 1` |
+| CLASS, FIELD | MATCH_CLASS, then per field MATCH_FIELD_POS_BIND or MATCH_FIELD_KW_BIND for a captured field, or MATCH_FIELD_POS or MATCH_FIELD_KW, the sub-pattern, `POP 1` |
 | MAP, MAP_ENTRY | MATCH_MAP, then MATCH_KEY_BIND or MATCH_KEY, the sub-pattern, `POP 1` |
 | APP | MATCH_NEXT, `CALL 1` on the extern, the sub-pattern as peek instructions, `POP 1` |
 
@@ -415,7 +430,7 @@ then `repeat_capture("e", TEST_ANY())`.
 `[x 1] ...` under `let` is the loop form: a cursor save,
 `MATCH_NEXT_FORM`, `MATCH_NEXT_TYPE_BIND` and `MATCH_NEXT_BIND` into
 the group's scratch slots, `MATCH_END` on the inner cursor,
-`MATCH_REPEAT_APPEND`, `JUMP` back; the iteration's miss label restores
+`MATCH_ITERATION`, `VAR_LIST_APPEND`, `JUMP` back; the iteration's miss label restores
 the cursor from the save and falls out of the loop. The
 `(expr as: name)` alternative of `BINDINGS` is where `MATCH_NEXT`, the
 peek instructions and `MATCH_BIND` appear: one pulled element tried by
@@ -440,20 +455,18 @@ each branch and popped on the miss edge.
 - **`compile/match`.** Emits the inline shape in place of the extern
   loads and `MATCH_CASE`; declares the capture names and the scratch
   temporaries; clause bodies, guards and `else:` unchanged.
-- **Python entry.** `Matcher.match(subject, **externs)`, `match_select`,
-  `match1` and the reader layouts call the standalone `Code` through
-  `KosFunction_VectorCall`, which already adapts a Python call into
-  the demand entry: `KosContext_New`, `koskari_eval`,
-  `Py_EnterRecursiveCall` per call. Nothing matcher-specific crosses
-  the boundary. The host-cache parameter of `demand_run_koskari`
-  carries this entry if the baseline says it must. The entry
-  disappears from the compile path when the compiler self-hosts.
+- **Python entry.** `Matcher.match(subject, /, **externs)`, `match1`
+  and the reader layouts call the standalone function through the
+  demand wrapper, which adapts a Python call into the demand entry:
+  `KosContext_New`, `koskari_eval`, `Py_EnterRecursiveCall` per call.
+  Nothing matcher-specific crosses the boundary. The entry disappears
+  from the compile path when the compiler self-hosts.
 - **Bootstrap order.** The lowering is Python with no `Compiler`
   dependency, so it is available at the point `koskari.matcher` is
   today: before the reader layouts and before the first `.ki` loads.
 - **`.kio`.** A standalone matcher is a `FUNCTION_SPEC` constant; an
-  inline one is instructions. The frozen-tuple constant kind in
-  `serialize/constants.py` has no successor; a format bump.
+  inline one is instructions. A frozen tuple stored as a constant is
+  plain tuple pool entries.
 - **`define-matcher`.** A template expands at a use site as designed;
   the result lowers like any pattern. A matcher bound as a value is
   the standalone function.
@@ -562,10 +575,10 @@ path can absorb, which 4 measures.
 
 ## 10. Open decisions
 
-1. Whether `koskari.lib.Matcher` survives as a type wrapping the
-   `Code`, or `make_matcher` returns the callable and `MatchResult`
-   goes; the eighteen Python files that touch `Matcher`,
-   `from_tuple`, `match_select` or `MatchResult` follow that choice.
+1. Decided 2026-10-14: `Matcher` and `MatchResult` are Python classes
+   in `koskari.matcher` over the function, `from_tuple` builds one
+   from the frozen tuple, and a `Syntax` dispatches through one
+   function over every arm (section 6).
 2. Decided 2026-10-13: every extern, `int` and `str` included, is a
    `VAR` field requested through `request_var`, so the closure
    apparatus brings the module binding into the function namespace at
@@ -599,7 +612,8 @@ the gap.
    MATCH_NEXT, MATCH_NEXT_BIND, MATCH_NEXT_TYPE, MATCH_NEXT_TYPE_BIND,
    MATCH_NEXT_LITERAL, MATCH_REST, MATCH_REST_BIND, MATCH_END,
    MATCH_LITERAL, MATCH_TYPE, MATCH_TYPE_BIND, MATCH_BIND,
-   MATCH_CLASS, MATCH_FIELD, MATCH_FIELD_BIND, MATCH_MAP, MATCH_KEY,
+   MATCH_CLASS, MATCH_FIELD_POS, MATCH_FIELD_POS_BIND, MATCH_FIELD_KW,
+   MATCH_FIELD_KW_BIND, MATCH_MAP, MATCH_KEY,
    MATCH_KEY_BIND, with their VAR and FAST entries and the two key
    forms of the item shapes. Captures store directly into the declared
    names (decision 3). `SAME`, `REPEAT` and `GROUP`
@@ -610,7 +624,7 @@ the gap.
    `CALLEDBY`, `SYMBOL`, `VALUE`, `BODY`, `LITERAL_KW`, `REST`,
    `FORM`, `ONEOF`, `REPEAT`, `GROUP`, `SAME`: MATCH_NEXT_SAME,
    MATCH_SAME, MATCH_NEXT_APPEND, MATCH_COLLECT, MATCH_CAPTURES,
-   MATCH_REPEAT_APPEND, source boxing, the cursor save and restore of a
+   MATCH_ITERATION, source boxing, the cursor save and restore of a
    repeat. One special wired through it beside the engine; the step 1
    gap closes. Measured by gates 2 and 3.
 3. `BINDINGS` and `FORMALS`; `Syntax` as one dispatcher; the reader
@@ -724,9 +738,9 @@ a pair cell as the start makes the result a `DatumFrame` whose
 `.source` is the span from the start cell to the cursor and whose
 `.position` is the start cell's, an index as the start makes it a
 plain dict. The root and a named `GROUP` are the same instruction over
-different start and cursor slots; `MATCH_REPEAT_APPEND` is the same
-read of a group's slots appended to the iteration list with the slots
-cleared. The VAR twin reads each capture by name.
+different start and cursor slots; `MATCH_ITERATION` is the same read
+of an iteration's slots, the boxed span when none fired, with the
+slots cleared, and `VAR_LIST_APPEND` adds it to the iteration list. The VAR twin reads each capture by name.
 
 ### 12.5 Weighed and set aside
 
@@ -937,7 +951,7 @@ and no further behaviour is defined.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
-   `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,
+   `MATCH_CAPTURES`, `MATCH_ITERATION`, `MATCH_MARK`,
    `MATCH_RESET`; the `REPEAT`, `GROUP`, `OPTIONAL`, `SAME` and root
    lowerings; the emitter moved to `koskari/match_code.py` with its
    two targets. Gate: `tests/matcher` against the function.
