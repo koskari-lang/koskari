@@ -23,12 +23,18 @@ let []:
   define-global decorate-wraps [inner wrapper]:
     """
     Copies callable metadata from inner onto wrapper via
-    functools.update_wrapper, returning wrapper. Used by the call-with
-    and call-parameterize decorator expansions so the delivered wrapper
-    answers for the function it wraps.
+    functools.update_wrapper, returning wrapper. When inner is a
+    coroutine function, wrapper is first passed through coroutine-fn
+    and that result is returned, so it is a coroutine function too.
+    Used by the call-with and call-parameterize decorator expansions so
+    the delivered wrapper answers for the function it wraps.
     """
 
-    update_wrapper wrapper inner
+    import-from inspect iscoroutinefunction
+    if (iscoroutinefunction inner):
+      update_wrapper (coroutine-fn wrapper) inner
+    else:
+      update_wrapper wrapper inner
 
 
 define-syntax decorate-subject:

@@ -27,6 +27,7 @@ forwarding function that enters the extent per invocation.
 """
 
 
+import inspect
 import unittest
 
 import pytest
@@ -327,6 +328,59 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         """
         expr, _mod = self.compile_expr(src)
         self.assertEqual(["loud", "quiet"], await expr())
+
+
+    async def test_call_with_wrapper_keeps_coroutine_function(self):
+        """
+        call-with over a define-coroutine delivers a coroutine function
+        whose Python call returns an awaitable, while a plain subject
+        keeps a plain wrapper
+        """
+
+        log = []
+        made = []
+        src = """
+        (begin
+          (decorate [(call-with [(cm)])]
+            (define-coroutine co [n] (* n 2)))
+          (decorate [(call-with [(cm)])]
+            (define pl [n] n))
+          #[co pl])
+        """
+        expr, _mod = self.compile_expr(
+            src, cm=ContextRecorder(log, made), log=log)
+        co, pl = await expr()
+        self.assertTrue(inspect.iscoroutinefunction(co))
+        r = co(4)
+        self.assertTrue(inspect.isawaitable(r))
+        self.assertEqual(8, await r)
+        self.assertEqual(["enter", "exit"], log)
+        self.assertFalse(inspect.iscoroutinefunction(pl))
+
+
+    async def test_call_parameterize_wrapper_keeps_coroutine_function(self):
+        """
+        call-parameterize over a define-coroutine delivers a coroutine
+        function whose Python call returns an awaitable, while a plain
+        subject keeps a plain wrapper
+        """
+
+        src = """
+        (begin
+          (define-parameter deco-vol-d "quiet")
+          (decorate [(call-parameterize [[deco-vol-d "loud"]])]
+            (define-coroutine co [n] #[n deco-vol-d]))
+          (decorate [(call-parameterize [[deco-vol-d "loud"]])]
+            (define pl [n] n))
+          #[co pl])
+        """
+        expr, _mod = self.compile_expr(src)
+        co, pl = await expr()
+        self.assertTrue(inspect.iscoroutinefunction(co))
+        r = co(4)
+        self.assertTrue(inspect.isawaitable(r))
+        self.assertEqual([4, "loud"], await r)
+        self.assertFalse(inspect.iscoroutinefunction(pl))
 
 
     async def test_call_with_wrapper_answers_for_original(self):

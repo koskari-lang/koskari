@@ -18,8 +18,10 @@ the subject in as its body, so the extent spans the subject's
 evaluation. The `call-` forms instead wrap the subject in a forwarding
 function that establishes the extent per invocation and copies the
 callable's metadata through `decorate-wraps`, which is
-`functools.update_wrapper`. Any other decorator expression is evaluated
-and called on the subject.
+`functools.update_wrapper`. When the subject is a coroutine function,
+the `call-` wrapper is one too, so `inspect.iscoroutinefunction`
+reports True for it. Any other decorator expression is evaluated and
+called on the subject.
 
 New shape arms are added with [`extend-syntax`](compile-extend-syntax.md)
 and are tried before the invocation arm.
