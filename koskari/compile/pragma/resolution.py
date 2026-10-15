@@ -83,7 +83,7 @@ class ResolutionPragma(Protocol):
 
     def on_explicit_global(self, fragment, name, *, position=None):
         """
-        Invoked when a name is explicitly declared global (define-global)
+        Invoked when a name is explicitly declared global (global var)
         """
         ...
 
@@ -203,8 +203,8 @@ class KoskariPragma:
                 fragment._request_global.remove(name)
             else:
                 raise CompilerError(
-                    f"{str(name)!r} cannot be both local (var)"
-                    " and global (global var).", name,
+                    f"{str(name)!r} cannot be both local and global"
+                    " in the same scope.", name,
                     position=position
                     or fragment.declare_positions.get(name))
 
@@ -223,8 +223,8 @@ class KoskariPragma:
 
         if name in fragment.declares and not _in_module_scope(fragment):
             raise CompilerError(
-                f"{str(name)!r} cannot be both local (var)"
-                " and global (global var).", name,
+                f"{str(name)!r} cannot be both local and global"
+                " in the same scope.", name,
                 position=position
                 or fragment.declare_positions.get(name))
 
