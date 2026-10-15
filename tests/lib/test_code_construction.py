@@ -195,4 +195,67 @@ class TestExtentStructureValidation(unittest.TestCase):
         self.assertIn("unclosed extent", str(caught.exception))
 
 
+class TestCaptureRunValidation(unittest.TestCase):
+    """
+    A MATCH_CAPTURES or MATCH_ITERATION row reads one slot per name
+    from its first capture slot, so the whole run must sit inside the
+    frame's slots; a NAMED form's constant is the keys and the locals,
+    two tuples of names of one length
+    """
+
+    def make(self, instrs, syms=("cur", "mark", "a", "b", "c")):
+        return Code(NamespaceSpec("t", tuple(syms), ()), instrs, "t")
+
+    def test_run_within_the_slots_builds(self):
+        code = self.make([
+            [OpCode.MATCH_CAPTURES, (("a", "b", "c"), 2, 1, 0)],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+
+    def test_run_past_the_slots_is_refused(self):
+        for op in (OpCode.MATCH_CAPTURES, OpCode.MATCH_ITERATION):
+            with self.assertRaises(ValueError) as caught:
+                self.make([
+                    [op, (("a", "b", "c", "d", "e"), 2, 1, 0)],
+                    [OpCode.RETURN, 1],
+                ])
+            self.assertIn("out of bounds", str(caught.exception))
+
+    def test_names_not_a_tuple_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.make([
+                [OpCode.MATCH_CAPTURES, (["a"], 2, 1, 0)],
+                [OpCode.RETURN, 1],
+            ])
+
+    def test_named_pair_of_equal_tuples_builds(self):
+        code = self.make([
+            [OpCode.MATCH_CAPTURES_NAMED_VAR,
+             ((("a", "b"), ("a", "b")), "mark", "cur", 0)],
+            [OpCode.MATCH_ITERATION_NAMED_FAST,
+             ((("a",), ("b",)), 1, 0, 0)],
+            [OpCode.RETURN, 1],
+        ])
+        self.assertIsInstance(code, Code)
+
+    def test_named_constant_not_a_pair_is_refused(self):
+        for bad in (("a", "b"), (("a",),), (("a",), ("b",), ("c",)),
+                    (("a",), "b")):
+            with self.assertRaises(ValueError):
+                self.make([
+                    [OpCode.MATCH_CAPTURES_NAMED_VAR, (bad, "mark", "cur", 0)],
+                    [OpCode.RETURN, 1],
+                ])
+
+    def test_named_tuples_of_unequal_length_are_refused(self):
+        for op in (OpCode.MATCH_CAPTURES_NAMED_VAR,
+                   OpCode.MATCH_ITERATION_NAMED_VAR):
+            with self.assertRaises(ValueError):
+                self.make([
+                    [op, ((("a", "b"), ("a",)), "mark", "cur", 0)],
+                    [OpCode.RETURN, 1],
+                ])
+
+
 # The end.

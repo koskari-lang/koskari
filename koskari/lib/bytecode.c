@@ -2838,6 +2838,74 @@ static int namespace_spec_fast_slot_limit(
 
 
 /**
+   The names constant of a MATCH_CAPTURES or MATCH_ITERATION row and
+   its slot run: the handler reads one slot per name from the first
+   capture slot, so the run must end within the active limit. On the
+   NAMED forms the constant is the keys and the locals, two tuples of
+   one length, and no run is checked.
+
+   :return: 0, or -1 with ValueError set
+*/
+static int validate_capture_run(
+    PyObject *self,
+    KosOpCode op,
+    const KosExtra *row,
+    uint32_t active,
+    int depth) {
+
+  PyObject *table = KosExtra_OBJ(row, 0);
+
+  switch (op) {
+  case KOS_OP_MATCH_CAPTURES:
+  case KOS_OP_MATCH_ITERATION: {
+    if (! table || ! PyTuple_CheckExact(table)) {
+      PyErr_SetString(PyExc_ValueError,
+                      "capture names must be a tuple");
+      return -1;
+    }
+    uint32_t base = KosExtra_IMM(row, 1);
+    size_t count = (size_t) PyTuple_GET_SIZE(table);
+    size_t end = (size_t) base + count;
+    if (end > active) {
+      PyErr_Format(PyExc_ValueError,
+                   "FAST index %zu out of bounds (limit %u): "
+                   "capture run of %zu from %u",
+                   end - 1, (unsigned) active, count, (unsigned) base);
+      return -1;
+    }
+    if (depth == 0 && end > KosCode_FAST_NEED(self))
+      KosCode_FAST_NEED(self) = (uint32_t) end;
+    return 0;
+  }
+  case KOS_OP_MATCH_CAPTURES_NAMED_VAR:
+  case KOS_OP_MATCH_CAPTURES_NAMED_FAST:
+  case KOS_OP_MATCH_ITERATION_NAMED_VAR:
+  case KOS_OP_MATCH_ITERATION_NAMED_FAST: {
+    PyObject *keys, *locals;
+    if (! table || ! PyTuple_CheckExact(table)
+        || PyTuple_GET_SIZE(table) != 2
+        || ! PyTuple_CheckExact(keys = PyTuple_GET_ITEM(table, 0))
+        || ! PyTuple_CheckExact(locals = PyTuple_GET_ITEM(table, 1))) {
+      PyErr_SetString(PyExc_ValueError,
+                      "named captures must be a pair of tuples, "
+                      "the keys and the locals");
+      return -1;
+    }
+    if (PyTuple_GET_SIZE(keys) != PyTuple_GET_SIZE(locals)) {
+      PyErr_Format(PyExc_ValueError,
+                   "named captures hold %zd keys for %zd locals",
+                   PyTuple_GET_SIZE(keys), PyTuple_GET_SIZE(locals));
+      return -1;
+    }
+    return 0;
+  }
+  default:
+    return 0;
+  }
+}
+
+
+/**
    Reject FASTVAR operands outside the active NamespaceSpec slot range.
 
    Called after emit when ``code`` and ``extra`` are fully materialized so we
@@ -2936,6 +3004,9 @@ static int validate_fast_slots(
             KosCode_FAST_NEED(self) = (uint32_t) KosExtra_IMM(row, slot) + 1;
         }
       }
+
+      if (validate_capture_run(self, op, row, active, depth))
+        return -1;
     }
 
     /* Advance namespace stack (mirror Compiler.convert_fast) */
