@@ -64,7 +64,7 @@ both. A directory with no `__init__` is a namespace package, as it is for
 Python, so a bare directory of `.ki` files imports with no ceremony.
 
 The hook is normally active because Koskari installs a site `*.pth` bootstrap.
-In environments where that is not present (some editable installs, some embedded
+In environments where that is not present (editable installs, some embedded
 hosts), make sure something runs `import koskari` before the first `.ki` import.
 A package `__init__.py` containing `import koskari` is the common insurance.
 

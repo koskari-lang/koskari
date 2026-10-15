@@ -89,7 +89,7 @@ An `argv` parameter with a default of `sys.argv` is also accepted, since
 
 `mypkg/__init__.py` runs `import koskari`, which turns the `.ki` import
 hook on when the package loads, including in environments where
-Koskari's site `.pth` bootstrap is absent, as it is in some editable
+Koskari's site `.pth` bootstrap is absent, as it is in editable
 installs:
 
 ```python
