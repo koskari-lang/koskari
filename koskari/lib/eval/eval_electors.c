@@ -1337,10 +1337,12 @@ static inline KosThreadFn kos_elector_num_body(
    attribute site: a __slots__ member or an inline instance value. NULL
    for any other mode, for an inline value the instance no longer
    holds (a materialised dict, an index past its capacity) and for an
-   unset location, so a non-NULL address holds a value. The type
-   guard the head re-checks is what makes the address valid: a type
-   with generic getattr and setattr and no descriptor over the name,
-   so a store through the address is what setattr would do. */
+   unset location, so a non-NULL address holds a value. On 3.13+ a
+   materialised dict shares still-valid values, and a store into them
+   must notify that dict's watchers, so its presence is checked too.
+   The type guard the head re-checks is what makes the address valid:
+   a type with generic getattr and setattr and no descriptor over the
+   name, so a store through the address is what setattr would do. */
 KOS_OP_INLINE PyObject **kos_field_direct_addr(
     PyObject *obj, KosFieldMode mode, uint32_t index) {
 
@@ -1356,6 +1358,10 @@ KOS_OP_INLINE PyObject **kos_field_direct_addr(
     PyObject **slots = kos_inline_value_slots(obj, &active, &cap);
     if (! active || index >= cap)
       return NULL;
+#if PY_MINOR_VERSION >= 13
+    if (kos_managed_dict_peek(obj))
+      return NULL;
+#endif
     addr = &slots[index];
   }
 #endif

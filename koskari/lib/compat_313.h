@@ -75,9 +75,11 @@ static inline int kos_type_has_inline_values(PyTypeObject *tp) {
 
 
 /*
-   The inline value slots for obj and whether they are live (valid, i.e. not
-   materialized to a dict). When inactive the returned pointer must not be
-   dereferenced. Mirrors _PyObject_InlineValues for 3.13.
+   The inline value slots for obj and whether they are live (valid). A
+   materialized dict may share valid values, so live does not mean no dict;
+   a store that must notify the dict checks kos_managed_dict_peek. When
+   inactive the returned pointer must not be dereferenced. Mirrors
+   _PyObject_InlineValues for 3.13.
 */
 static inline PyObject **kos_inline_value_slots(
     PyObject *obj, int *active, uint32_t *capacity) {

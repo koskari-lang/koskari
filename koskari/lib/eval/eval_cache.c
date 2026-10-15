@@ -712,11 +712,13 @@ static void field_slot_store(PyObject *obj, uint32_t offset, PyObject *val) {
 /**
    Read an inline instance value (KOS_FIELD_INSTANCE_VALUE) at its index.
    Returns a borrowed reference, or NULL to signal the caller must fall back:
-   the instance materialized its dict, or the slot is unset (AttributeError /
+   the values are no longer valid, or the slot is unset (AttributeError /
    __getattr__ / a shadowed class attribute), or the site's index exceeds
    this instance's own values capacity (3.13+ sizes instances at creation,
-   so a later-grown keys index can outrun an early instance's buffer). The
-   per-version value access is behind kos_inline_value_slots (compat_3xx.h).
+   so a later-grown keys index can outrun an early instance's buffer). On
+   3.13+ a materialized dict shares valid values, so the read stays correct
+   there. The per-version value access is behind kos_inline_value_slots
+   (compat_3xx.h).
 */
 static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
   int active;
@@ -733,11 +735,13 @@ static PyObject *field_instance_value_load(PyObject *obj, uint32_t index) {
 /**
    Overwrite an inline instance value at its index. Returns 1 on success,
    the value slot having taken the caller's reference to val; 0 to signal
-   fallback with val untouched: the instance materialized its dict, or the
-   slot is unset -- a first assignment must bump the values' used count and
-   insertion order, bookkeeping we do not replicate, so PyObject_SetAttr
-   handles it. The common in-place update (slot already set) takes the
-   fast path.
+   fallback with val untouched: the values are no longer valid, or the
+   instance has a materialized dict, or the slot is unset. A first
+   assignment must bump the values' used count and insertion order, and
+   on 3.13+ a materialized dict sharing the values must notify its
+   watchers (and on 3.13 keep its GC tracking); we replicate none of that
+   bookkeeping, so PyObject_SetAttr handles it. The common in-place update
+   (slot already set, no dict) takes the fast path.
 */
 static int field_instance_value_store(PyObject *obj, uint32_t index,
     PyObject *val) {
@@ -748,6 +752,12 @@ static int field_instance_value_store(PyObject *obj, uint32_t index,
     KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
     return 0;
   }
+#if PY_MINOR_VERSION >= 13
+  if (kos_managed_dict_peek(obj)) {
+    KOS_TRACE_OPCACHE_INC(KOS_OC_FIELD_FALLBACK);
+    return 0;
+  }
+#endif
   Py_SETREF(slots[index], val);
   return 1;
 }

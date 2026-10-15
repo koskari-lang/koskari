@@ -353,4 +353,36 @@ class TestAttrFieldCache(CevalTest):
             await fn()
 
 
+    async def test_attr_store_materialized_dict_tracks(self):
+        """
+        ATTR_STORE on an instance whose __dict__ was materialized
+        updates that dict, and storing a container into it leaves the
+        dict tracked by the garbage collector as setattr does
+        """
+
+        import gc
+
+        class Box(object):
+            def __init__(self):
+                self.value = 1
+        box = Box()
+        d = box.__dict__
+        payload = []
+        code, ns = build_expr([
+            ["CONST", box],
+            ["VAR", "val"],
+            ["ATTR_STORE", "value"],
+            ["CONST", None],
+            ["RETURN", 1],
+        ], values={"val": None})
+        fn = make_callable(code, ns)
+        ns["val"] = 2
+        await fn()
+        ns["val"] = payload
+        await fn()
+        self.assertIs(box.value, payload)
+        self.assertIs(d["value"], payload)
+        self.assertTrue(gc.is_tracked(d))
+
+
 # The end.
