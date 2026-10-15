@@ -58,6 +58,7 @@ tests/native/
 ├── test_formals.c         # Tests for formals types
 ├── test_namespace.c       # Tests for namespace types
 ├── test_pair.c            # Tests for pair/nil types
+├── test_matcher.c         # Tests for the matcher's step helpers and Datum boxing
 ├── test_paramref.c        # Tests for dynamic parameter binding (paramref/dynparam)
 ├── test_stack.c           # Tests for stack types
 └── test_values.c          # Tests for values type
