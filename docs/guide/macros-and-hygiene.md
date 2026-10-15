@@ -140,24 +140,24 @@ name lookup. When the compiler sees a form in call position it first
 checks whether the head is a macro or special; if so it expands, and only
 the expanded result is subject to name resolution. A macro always wins
 over a same-named value binding in call position -- a local `let`,
-`var`, `labels`, or `flet` binding, a module binding, or an import
-cannot displace it.
+`var`, `def`, `labels`, or `flet` binding, a module binding, or an
+import cannot displace it.
 
 ```koskari
 (let []
-  (var caddr (lambda [n] 999))
+  (def caddr [n] 999)
   (caddr (cons 1 2 3 4 nil)))
 ;; -> 3, not 999
 ```
 
 `caddr` is a macro that expands to nested `car` and `cdr`, so the call
-expands at compile time and the local `var` is never consulted in that
+expands at compile time and the local `def` is never consulted in that
 position. A name bound to a plain function has no such precedence and
 shadows normally:
 
 ```koskari
 (let []
-  (var first (lambda [n] (* n 100)))
+  (def first [n] (* n 100))
   (first 3))
 ;; -> 300; first is a runtime function, so the local binding wins
 ```

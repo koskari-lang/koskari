@@ -1690,7 +1690,7 @@ notes: keyword arguments to yield produce a values object labelling each result;
 ---
 id: special-return-bare-word-001
 feature: special/compile/return
-source: "(begin (var f (lambda f [x] (begin (when x return) 99))) #[(f True) (f False)])"
+source: "(begin (def f [x] (begin (when x return) 99)) #[(f True) (f False)])"
 verify:
   eval: "list:[null,99]"
 references:

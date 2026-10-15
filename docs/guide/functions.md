@@ -25,8 +25,7 @@ def double [n] (* n 2)
 the same value without a name:
 
 ```koskari
-var add-one (lambda [x] (+ x 1))
-(add-one 41)
+(list (map (lambda [x] (+ x 1)) #[1 2 3]))   ;; [2, 3, 4]
 ```
 
 Functions are values. Pass them, store them, return them.

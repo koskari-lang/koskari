@@ -341,7 +341,7 @@ notes: uses the baked fixture seq=(1,2,3); a non-mapping falls past mapping arms
 id: match-predicate-001
 feature: special/compile/match
 source: |-
-  (begin (var pos? (lambda [v] (> v 0))) (match 5 [[(? pos?)] "positive"] [else: "nope"]))
+  (begin (def pos? [v] (> v 0)) (match 5 [[(? pos?)] "positive"] [else: "nope"]))
   
 verify:
   eval: '"positive"'
@@ -359,7 +359,7 @@ notes: the predicate is called from the function the match is in, as a call in t
 id: match-app-001
 feature: special/compile/match
 source: |-
-  (begin (var half (lambda [v] (// v 2))) (match 10 [[(app half h)] h]))
+  (begin (def half [v] (// v 2)) (match 10 [[(app half h)] h]))
   
 verify:
   eval: "5"

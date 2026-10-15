@@ -581,7 +581,7 @@ notes: layout form with syntax-rules and a single body expression
 id: macro-precedence-over-local-binding-001
 feature: macro/compile/caddr
 source: |-
-  (let [] (var caddr (lambda [n] 999)) (caddr (cons 1 2 3 4 nil)))
+  (let [] (def caddr [n] 999) (caddr (cons 1 2 3 4 nil)))
   
 verify:
   eval: "3"
