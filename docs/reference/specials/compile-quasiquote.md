@@ -38,8 +38,10 @@ data, with each escape replaced by a runtime value. The walk tracks a nesting
 **Nesting:** Each additional ``` increments the level; each `,` decrements it.
 
 **Dotted tails with unquote:** `(a . ,x)` reads as the three-element proper
-list `(a unquote x)`, because `(a . (unquote x))` is a proper list. Only an
-atomic tail produces an improper pair, as in ``(a . 42)` or ``(a . b)`.
+list `(a unquote x)`, because `(a . (unquote x))` is a proper list. The
+compiler treats that trailing `unquote` as a dotted tail and evaluates it, so
+``(a . ,(car xs))` with `xs` bound to `(1 2)` gives `(a . 1)`. An atomic tail
+also produces an improper pair, as in ``(a . 42)` or ``(a . b)`.
 
 **Examples:**
 
