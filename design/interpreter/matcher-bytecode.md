@@ -977,3 +977,48 @@ and no further behaviour is defined.
    goes with the engine it asserts. Container gates on every step.
 6. **Documents.** `MATCHER.md`, `OPCODES.md`, `FLATTENING.md`,
    `resumable-reads.md` section 8, `api/pattern-matching.md`.
+
+## 13. Direction: the walk's state on the operand stack
+
+**Status:** direction, 2026-10-15, not implemented. The opcode review
+that follows the branch takes it up.
+
+A cloned frame copies its operand segment and shares its namespace,
+so state on the stack is per resumption and state in a local is per
+frame. The cursor, mark and repeat items are locals today, gensym
+temporaries declared per form (section 12.5), so a continuation
+captured inside a predicate and resumed after the frame has moved on
+walks on from whatever the slot holds then, and a second resumption
+finds the first's cursor (review item 12). With the walk's state on
+the stack each resumption walks on from the cursor it was captured
+with, the amb-style use a predicate invites, and no scratch slot of
+any tier is needed for the matcher.
+
+The shape:
+
+- The subject stays at the base. A descent pushes the cursor above
+  it; a pull replaces the cursor with the advanced cursor and pushes
+  the element; the element tests peek and pop as now. A nested form
+  pushes its own cursor above. The lowering counts stack depth at
+  every miss edge for its pops, so cursors join that count.
+- A mark is a dup of the cursor, left under the walk; a reset drops
+  the current cursor and dups the mark back. A repeat keeps its items
+  list, its mark and its cursor as three entries.
+- Advancing must not mutate. A pair cursor is the cell and advances
+  by replacement. The sequence cursor advances in place today and has
+  to advance by producing a new cursor, from a freelist, or carry its
+  index as a separate entry.
+- Captures stay locals: they are names the body reads, not walk
+  state. The BIND shapes keep a slot for the capture.
+
+What it removes: the cursor, mark and items temporaries, their gensym
+names in the `.kio`, every clear of them, and the cursor slot field
+of the pull rows, with it the VAR and FAST twins that field alone
+forces. What it costs: one stack entry per live cursor in place of a
+fast slot, and over sequences one cursor object per advance, three
+words from a freelist.
+
+Pooling the temporaries instead was weighed and set aside: textual
+non-overlap is not dynamic non-overlap once a continuation can leave a
+form's extent and come back, so tokens could only be shared within one
+form, or across forms whose patterns call no user code.

@@ -1,9 +1,13 @@
 # Scratch slots: compiler-owned locals shared by non-overlapping uses
 
-**Status:** design, 2026-10-14. Tiers 1 and 2 are the plan; tier 3 is
-an optimization to measure once they are in. Recorded from the match
-temporaries work in [matcher-bytecode.md](matcher-bytecode.md)
-section 12.5.
+**Status:** design, 2026-10-14; set aside for the matcher 2026-10-15.
+A token shared by two forms in one frame is rewritten by the second
+before a continuation captured in the first resumes, since a resumed
+frame shares its locals, so the matcher keeps a gensym local per
+distinct slot, uncleared, until its walk state moves to the operand
+stack ([matcher-bytecode.md](matcher-bytecode.md) section 13), which
+a continuation copies. The tiers stand for a consumer whose extent no
+continuation can leave.
 
 ## The problem
 
