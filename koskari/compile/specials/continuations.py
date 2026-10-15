@@ -239,8 +239,8 @@ def special_yield(compiler, source):
 @special("compile/await", patterns=_OPTIONAL_ONE_PATTERNS, unpack="match")
 def special_await(compiler, caps):
     """
-    Compile (compile/await) or (compile/await EXPR). Zero-arg: bare AWAIT (0)
-    then CONST None. One-arg: evaluate EXPR, then AWAIT (1) on TOS.
+    Compile (compile/await) or (compile/await EXPR). Zero-arg: bare AWAIT
+    (0). One-arg: evaluate EXPR, then AWAIT (1) on TOS.
     """
 
     called_by = caps["called_by"]
