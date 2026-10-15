@@ -198,12 +198,12 @@ class TestKioImporterParity(unittest.TestCase):
 
     def test_kio_holds_plain_code_names(self):
         """
-        A function a macro template names (each, inside dict-each) is
+        A function a macro template names (the lambda each expands to) is
         serialized under its plain code name, with no expansion mark:
         the name a traceback and __name__ show
         """
         src = ("define h [words]:\n"
-               "    dict-each [w words] key: w value: (len w)\n")
+               "    (list (each [w words] (len w)))\n")
         ki, kio = self._both('plain_names', src)
         for mod in (ki, kio):
             inner = [c for c in mod.h.code.constants_pool

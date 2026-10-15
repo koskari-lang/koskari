@@ -1,12 +1,18 @@
 # compile/dict-each
 
-**Syntax:** `(dict-each [BINDING SEQ] key: KEY value: VALUE)`, with an
-optional `when:` or `unless:` clause before `key:`.
+**Syntax:** `(dict-each [BINDING SEQ] key: KEY value: VALUE)` or
+`(dict-each [BINDING SEQ] BODY ...)`, with an optional `when:` or
+`unless:` clause on the header.
 
-**Behaviour:** Builds a dict from one `KEY` and `VALUE` per element of
-`SEQ`, bound as `BINDING`. It is `dict` over an
-[`each`](compile-each.md) that yields key and value pairs, so the filter
-clause skips elements the same way.
+**Behaviour:** Builds a dict with one entry per element of `SEQ`, bound
+as `BINDING`. `SEQ` is evaluated in the scope the form is in, so a
+class-body name is in reach. Without `key:` and `value:`, the value of
+`BODY` is a two-item key and value pair. A `when:` clause keeps only
+elements whose test is true; `unless:` keeps those whose test is false.
+A body that is a single `when` or `unless` form also filters,
+contributing nothing when its test fails. An `await` or a `shift` in
+the keys, values or body works as it does in
+[`list-each`](compile-list-each.md).
 
 **Examples:**
 

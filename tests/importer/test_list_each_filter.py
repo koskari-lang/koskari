@@ -190,4 +190,15 @@ class TestListEachAccumulator(TestListEachFilter):
         self.assertEqual(([1, 3, 5], [0, 2, 4]), await self._eval(src))
 
 
+    async def test_sequence_is_a_class_body_name(self):
+        src = """
+        (begin
+          (define-class C []
+            (define names #["a" "b"])
+            (define upper (list-each [n names] (n.upper))))
+          C.upper)
+        """
+        self.assertEqual(["A", "B"], await self._eval(src))
+
+
 # The end.

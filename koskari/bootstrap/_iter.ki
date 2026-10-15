@@ -62,6 +62,9 @@ define-syntax list-each:
   a nested `when` is an ordinary expression whose None lands in the
   list. Write `(when (and a b) ...)` for a composite check, or
   `(if rule x None)` to collect the None deliberately.
+
+  The sequence is evaluated first, in the scope the form is in, so a
+  class-body name is in reach.
   """
 
   syntax-rules [when unless]:
@@ -72,8 +75,8 @@ define-syntax list-each:
       (list-each [binding seq] unless: condition body ...)
 
     case (list-each [binding seq] when: condition body):
-      let [[col (#list)]]:
-        for-each [binding seq]:
+      let [[src seq] [col (#list)]]:
+        for-each [binding src]:
           when condition:
             #list-append col body
         col
@@ -82,8 +85,8 @@ define-syntax list-each:
       (list-each [binding seq] when: condition (begin body ...))
 
     case (list-each [binding seq] unless: condition body):
-      let [[col (#list)]]:
-        for-each [binding seq]:
+      let [[src seq] [col (#list)]]:
+        for-each [binding src]:
           unless condition:
             #list-append col body
         col
@@ -92,8 +95,8 @@ define-syntax list-each:
       (list-each [binding seq] unless: condition (begin body ...))
 
     case (list-each [binding seq] body):
-      let [[col (#list)]]:
-        for-each [binding seq]:
+      let [[src seq] [col (#list)]]:
+        for-each [binding src]:
           #list-append col body
         col
 
@@ -103,22 +106,71 @@ define-syntax list-each:
 
 define-syntax dict-each:
   """
-  Dict comprehension over a sequence via the `each` macro
+  Dict comprehension over a sequence.
+
+  With `key:` and `value:` clauses, each element stores KEY to VALUE.
+  Otherwise the body is a (key value) pair per element. A `when:` or
+  `unless:` clause filters, as does a body that is a single `when` or
+  `unless` form, with the same whole-body rule as `list-each`. The
+  sequence is evaluated first, in the scope the form is in, so a
+  class-body name is in reach.
   """
 
-  syntax-rules [when: unless: key: value:]:
+  syntax-rules [when: unless: key: value: when unless]:
     case (dict-each [binding seq] key: key value: value):
-      (dict (each [binding seq] #(key value) ))
+      let [[src seq] [col (#dict)]]:
+        for-each [binding src]:
+          set! col[key] value
+        col
+
     case (dict-each [binding seq] when: condition key: key value: value):
-      (dict (each [binding seq] when: condition #(key value)))
+      let [[src seq] [col (#dict)]]:
+        for-each [binding src]:
+          when condition:
+            set! col[key] value
+        col
+
     case (dict-each [binding seq] unless: condition key: key value: value):
-      (dict (each [binding seq] unless: condition #(key value)))
+      let [[src seq] [col (#dict)]]:
+        for-each [binding src]:
+          unless condition:
+            set! col[key] value
+        col
+
+    case (dict-each [binding seq] (when condition body ...)):
+      (dict-each [binding seq] when: condition body ...)
+
+    case (dict-each [binding seq] (unless condition body ...)):
+      (dict-each [binding seq] unless: condition body ...)
+
+    case (dict-each [binding seq] when: condition body):
+      let [[src seq] [col (#dict)]]:
+        for-each [binding src]:
+          when condition:
+            (let-values [[k v] body] (set! col[k] v))
+        col
+
+    case (dict-each [binding seq] when: condition body ...):
+      (dict-each [binding seq] when: condition (begin body ...))
+
+    case (dict-each [binding seq] unless: condition body):
+      let [[src seq] [col (#dict)]]:
+        for-each [binding src]:
+          unless condition:
+            (let-values [[k v] body] (set! col[k] v))
+        col
+
+    case (dict-each [binding seq] unless: condition body ...):
+      (dict-each [binding seq] unless: condition (begin body ...))
 
     case (dict-each [binding seq] body):
-      (dict (each [binding seq] body))
+      let [[src seq] [col (#dict)]]:
+        for-each [binding src]:
+          (let-values [[k v] body] (set! col[k] v))
+        col
 
     case (dict-each [binding seq] body ...):
-      (dict (each [binding seq] (begin body ...)))
+      (dict-each [binding seq] (begin body ...))
 
 
 define-syntax has?:

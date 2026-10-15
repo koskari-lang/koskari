@@ -1670,7 +1670,6 @@ source: |-
   
 verify:
   read: "(dict-each [w (#list \"a\" \"bb\" \"ccc\")] key: w value: (len w))"
-  expand: "(dict (each [w (#list \"a\" \"bb\" \"ccc\")] (#tuple w (len w))))"
   eval: "{\"a\": 1, \"bb\": 2, \"ccc\": 3}"
 references:
   - reference/macros/compile-dict-each.md
@@ -1683,7 +1682,7 @@ tags:
   - dict
   - construct
   - iterate
-notes: "the dict comprehension: key: and value: clauses name the two halves of each entry; it lowers to dict over an each that yields (key value) tuples. Sibling of list-each; the same when:/unless: filter clauses apply (see iter-dict-each-when-filter-002)."
+notes: "the dict comprehension: key: and value: clauses name the two halves of each entry; it lowers to a fresh dict filled by a for-each that stores key to value, like list-each, so an await or shift in a clause suspends in place. The same when:/unless: filter clauses apply (see iter-dict-each-when-filter-002). The expansion's accumulator is a gensym, so the full expand string is not recorded here."
 ---
 id: iter-dict-each-when-filter-002
 feature: macro/compile/dict-each
@@ -1692,7 +1691,6 @@ source: |-
   
 verify:
   read: "(dict-each [w (#list \"a\" \"bb\" \"ccc\")] when: (& (len w) 1) key: w value: (len w))"
-  expand: "(dict (each [w (#list \"a\" \"bb\" \"ccc\")] when: (& (len w) 1) (#tuple w (len w))))"
   eval: "{\"a\": 1, \"ccc\": 3}"
 references:
   - reference/macros/compile-dict-each.md
@@ -1704,7 +1702,7 @@ tags:
   - dict
   - filter
   - iterate
-notes: "the when: clause precedes key:/value: and skips entries whose condition is false; unless: is the negated twin. In the body spelling a whole-body (when ...) around the pair filters the same way, through each (see iter-dict-each-tuple-body-003)."
+notes: "the when: clause precedes key:/value: and skips entries whose condition is false; unless: is the negated twin. In the body spelling a whole-body (when ...) around the pair filters the same way, as in list-each (see iter-dict-each-tuple-body-003)."
 ---
 id: iter-dict-each-tuple-body-003
 feature: macro/compile/dict-each
@@ -1713,7 +1711,6 @@ source: |-
   
 verify:
   read: "(dict-each [w (#list \"a\" \"bb\")] (#tuple w (len w)))"
-  expand: "(dict (each [w (#list \"a\" \"bb\")] (#tuple w (len w))))"
   eval: "{\"a\": 1, \"bb\": 2}"
 references:
   - reference/macros/compile-dict-each.md
