@@ -37,8 +37,8 @@ ATOM_BEFORE_CURSOR_RE = re.compile(f"^(?:{ATOM_CHAR}+?(?=@,)|{ATOM_CHAR}+)")
 
 def _completion_candidates_sorted(candidates):
     """
-    Longest strings first so a prefix matches more specific names before
-    shorter ones (e.g. ``compile/foo-bar`` before ``compile/foo``).
+    Reverse lexicographic order, so a name sorts ahead of any name that
+    is a proper prefix of it (e.g. compile/foo-bar before compile/foo)
     """
 
     return sorted(candidates, reverse=True)
