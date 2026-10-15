@@ -216,8 +216,9 @@ static KOS_NOINLINE int kos_var_inplace_operand(
    left to right.  Consumes the (owned) acc reference and returns the owned
    result, or NULL on error (acc already dropped).  Each step routes through the
    in-place reducing operator, so this matches a single reduction seeded with
-   acc.  Shared by the getattr/setattr generic path and the field-cache fast
-   path (eval_cache.c), which differ only in how acc is loaded and stored. */
+   acc.  Shared by the getattr/setattr generic path, the field-cache fast
+   path (eval_cache.c) and the item protocol path (kos_item_inplace_reduce),
+   which differ only in how acc is loaded and stored. */
 static PyObject *attr_inplace_fold(
     PyObject *acc,
     KosOperand op,
