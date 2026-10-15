@@ -3132,10 +3132,11 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 
 /**
-   After RETURN opcode pop: push onto the parent's stack, then
-   kos_dyn_settle_top (WIND/WITH). A parent waiting on a
-   resume picks the value up from that stack on the next prologue pass.
-   val is a new ref; ownership is consumed by this function.
+   After RETURN opcode pop: a parent waiting on a resume takes the
+   value through the pending slot, delivered on the next prologue
+   pass; a bytecode parent takes it on its stack. Then
+   kos_dyn_settle_top (WIND/WITH). val is a new ref; ownership is
+   consumed by this function.
 */
 static inline KosOpResult eval_parent_return_deliver_impl(
     KosEvalState *es, PyObject *val) {
