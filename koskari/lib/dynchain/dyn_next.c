@@ -119,7 +119,8 @@ int kos_dyn_next_deliver_yield(
    Exhaustion tail shared by the return delivery (GEN just unwound) and
    the raise-walk StopIteration conversion (GEN already finished): mark
    the iterator closed, then honor the NEXT arity -- 2-arg pushes the
-   default, 1-arg re-raises StopIteration to the caller. val consumed.
+   default, 1-arg re-raises StopIteration to the caller carrying the
+   generator's return value. val consumed.
 */
 int kos_dyn_next_deliver_exhausted(
     KosEvalState *es,
@@ -139,8 +140,19 @@ int kos_dyn_next_deliver_exhausted(
     }
     Py_XDECREF(val);
   } else if (nn == 1) {
-    Py_XDECREF(val);
-    PyErr_SetNone(PyExc_StopIteration);
+    /* the StopIteration carries the generator's return value, as
+       Python's next does; a bare return raises it empty */
+    if (val && val != Py_None) {
+      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, val);
+      Py_DECREF(val);
+      if (err) {
+        PyErr_SetObject(PyExc_StopIteration, err);
+        Py_DECREF(err);
+      }
+    } else {
+      Py_XDECREF(val);
+      PyErr_SetNone(PyExc_StopIteration);
+    }
     kos_dyn_unlink_next_node(es, next);
     return -1;
   } else {

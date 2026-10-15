@@ -1,0 +1,13 @@
+;; A generator that yields once and then returns a value, and a caller
+;; that drives it with one-argument next past its end and reports the
+;; value the StopIteration carries.
+
+(define gen (lambda [] (yield 1) (return 5)))
+
+(define return_value_of_next
+  (lambda []
+    (define g (gen))
+    (next g)
+    (try
+      (next g)
+      ([e StopIteration] e.value))))
