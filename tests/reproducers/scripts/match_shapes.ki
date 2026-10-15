@@ -1,6 +1,6 @@
 ;; Reproducer: runtime match/case over a dataclass shape hierarchy.
 ;;
-;; Point, Plane, Square, and Cube are @dataclass define-classes, so
+;; Point, Plane, Square, and Cube are @dataclass classes, so
 ;; positional class patterns resolve fields through __match_args__.  The
 ;; verify functions drive one consumer through the whole pattern
 ;; vocabulary: class patterns, keyword-field literals, guards, or / not,

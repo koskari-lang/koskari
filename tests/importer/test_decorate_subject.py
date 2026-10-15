@@ -330,7 +330,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
     async def test_call_with_wrapper_keeps_coroutine_function(self):
         """
-        call-with over a define-coroutine delivers a coroutine function
+        call-with over a coroutine function delivers a coroutine function
         whose Python call returns an awaitable, while a plain subject
         keeps a plain wrapper
         """
@@ -339,10 +339,10 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         made = []
         src = """
         (begin
+          (decorate [(call-with [(cm)]) coroutine-fn]
+            (def co [n] (* n 2)))
           (decorate [(call-with [(cm)])]
-            (define-coroutine co [n] (* n 2)))
-          (decorate [(call-with [(cm)])]
-            (define pl [n] n))
+            (def pl [n] n))
           #[co pl])
         """
         expr, _mod = self.compile_expr(
@@ -358,7 +358,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
     async def test_call_parameterize_wrapper_keeps_coroutine_function(self):
         """
-        call-parameterize over a define-coroutine delivers a coroutine
+        call-parameterize over a coroutine function delivers a coroutine
         function whose Python call returns an awaitable, while a plain
         subject keeps a plain wrapper
         """
@@ -366,10 +366,10 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (define-parameter deco-vol-d "quiet")
+          (decorate [(call-parameterize [[deco-vol-d "loud"]]) coroutine-fn]
+            (def co [n] #[n deco-vol-d]))
           (decorate [(call-parameterize [[deco-vol-d "loud"]])]
-            (define-coroutine co [n] #[n deco-vol-d]))
-          (decorate [(call-parameterize [[deco-vol-d "loud"]])]
-            (define pl [n] n))
+            (def pl [n] n))
           #[co pl])
         """
         expr, _mod = self.compile_expr(src)

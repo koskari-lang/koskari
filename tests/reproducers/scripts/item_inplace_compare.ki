@@ -3,7 +3,7 @@
 ;; run of the site calls __eq__ as often as Python's d[k] += 1 does,
 ;; and an exception from __eq__ propagates.
 
-(define bump [d k]
+(def bump [d k]
   (inplace + (item d k) 1)
   d)
 

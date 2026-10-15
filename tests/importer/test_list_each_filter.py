@@ -193,7 +193,7 @@ class TestListEachAccumulator(TestListEachFilter):
     async def test_sequence_is_a_class_body_name(self):
         src = """
         (begin
-          (define-class C []
+          (class C []
             (define names #["a" "b"])
             (define upper (list-each [n names] (n.upper))))
           C.upper)
