@@ -305,7 +305,7 @@ tags:
   - define
   - invalid
   - pitfall
-notes: "define has no return-type slot for a function. corrective: (def f :: int [x] (* x 2)), or (define f (function f :: int [x] (* x 2)))"
+notes: "the return type bundles with the name inside the formals pair. corrective: (define [(f :: int) x] (* x 2)), or (def f :: int [x] (* x 2))"
 ---
 id: function-define-pair-not-unpack-001
 feature: special/compile/define

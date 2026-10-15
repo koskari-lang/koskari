@@ -1695,3 +1695,21 @@ tags:
   - define
   - local-binding
 notes: "a symbol in the name position makes define a value binding, as var; :: T annotates it"
+---
+id: variable-define-global-values-001
+feature: special/compile/define-global-values
+source: |-
+  (begin (define-global-values [lo hi] (values 1 9)) (+ lo hi))
+  
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-define-global-values.md
+  - reference/macros/compile-global.md
+stability: evolving
+tags:
+  - variable
+  - special
+  - module-global
+  - destructure
+notes: the special that (global var [lo hi] ...) lowers to; binds each name at the module and unpacks

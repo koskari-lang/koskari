@@ -139,7 +139,7 @@ stability: evolving
 tags:
   - function
   - define
-notes: "the Scheme define has no return-type slot; a typed function value from compile/function carries it. build step only -- invoke in function-define-return-type-invoke-001"
+notes: "a typed function value from compile/function carries its return type. build step only -- invoke in function-define-return-type-invoke-001"
 ---
 id: function-define-return-type-invoke-001
 feature: special/compile/define
@@ -1598,3 +1598,36 @@ tags:
   - surface:block
   - pragma:reader/decorators
 notes: inc is bound to (twice <function inc>), so (inc 4) is 2 * 5. Requires reader/decorators (baseline on).
+---
+id: function-define-typed-head-001
+feature: special/compile/define
+source: |-
+  (begin (define [(f :: int) x] (* x 2)) f)
+  
+verify:
+  eval: "@annotations:return:int"
+references:
+  - reference/specials/compile-define.md
+  - reference/macros/compile-def.md
+stability: evolving
+tags:
+  - function
+  - define
+  - annotate
+notes: "the return type bundles with the name as a typed formal does; the inline (define f :: int [x] ...) matches no rule"
+---
+id: function-define-typed-head-invoke-001
+feature: special/compile/define
+source: |-
+  (begin (define [(f type: int) x] (* x 2)) (f 5))
+  
+verify:
+  eval: "10"
+references:
+  - reference/specials/compile-define.md
+stability: evolving
+tags:
+  - function
+  - define
+  - annotate
+notes: "type: is the keyword twin of :: in the bundled head"
