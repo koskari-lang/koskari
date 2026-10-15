@@ -37,7 +37,7 @@ pytestmark = pytest.mark.phase_infra
 
 class TestLayoutDecorateBlock(IsolatedAsyncioTestCase):
 
-    async def test_single_decorator_define_class(self):
+    async def test_single_decorator_class(self):
         src = """
         @foo
         class Obj []:
@@ -182,7 +182,7 @@ class TestLayoutDecorateLayoutMacroDisabled(IsolatedAsyncioTestCase):
 
         reader = LayoutReaderNoAt(builtins)
         stream = IndentAwareStream.from_source(
-            source_str('@foo\ndefine-class Obj []:\n  x\n', '<unittest>'))
+            source_str('@foo\nclass Obj []:\n  x\n', '<unittest>'))
         result = reader.read(stream)
 
         self.assertTrue(str(result).startswith('@'))
@@ -194,7 +194,7 @@ class TestDecoratorPragmaGate(IsolatedAsyncioTestCase):
     raw reader, on at the pragma baseline, and declarable off per module.
     """
 
-    SRC = '@foo\ndefine-class Obj []:\n  x\n'
+    SRC = '@foo\nclass Obj []:\n  x\n'
 
 
     async def test_bare_reader_reads_at_as_atom(self):

@@ -2932,9 +2932,8 @@ static int mdl_ns_init(PyObject *self, PyObject *args, PyObject *kwds) {
 }
 
 
-/* Identity hash, comparison and repr, as the other namespace kinds
-   have; the dict base would refuse the hash and print the scratch
-   dict. */
+/* Identity hash and comparison, and the shared namespace repr; the
+   dict base would refuse the hash and print the scratch dict. */
 static Py_hash_t mdl_ns_hash(PyObject *self) {
   return PyBaseObject_Type.tp_hash(self);
 }

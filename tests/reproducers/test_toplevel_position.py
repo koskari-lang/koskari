@@ -68,7 +68,7 @@ class TestTopLevelPosition(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([3], sorted(set(dynchain_lines(err))))
 
 
-    async def test_define_class_unbound_base(self):
+    async def test_class_unbound_base(self):
         err = await self.error_for(
             "var x 6\n"
             "\n"
