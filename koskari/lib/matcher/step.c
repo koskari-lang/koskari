@@ -213,6 +213,7 @@ int KosMatch_Pull(PyObject *cursor, KosMatchStep *out) {
       if (! item)
         return -1;
     }
+    Py_INCREF(cursor);
     out->cursor = cursor;
     out->elem = item;
     return 1;
@@ -221,6 +222,7 @@ int KosMatch_Pull(PyObject *cursor, KosMatchStep *out) {
   if (KosNilP(cursor) || ! KosPair_Check(cursor))
     return 0;
 
+  Py_INCREF(cursor);
   out->cell = cursor;
   out->elem = KosPair_CAR(cursor);
   Py_INCREF(out->elem);
@@ -250,8 +252,8 @@ void KosMatch_StepAdvance(KosMatchStep *step) {
 void KosMatch_StepClear(KosMatchStep *step) {
   Py_CLEAR(step->elem);
   Py_CLEAR(step->next);
-  step->cell = NULL;
-  step->cursor = NULL;
+  Py_CLEAR(step->cell);
+  Py_CLEAR(step->cursor);
 }
 
 

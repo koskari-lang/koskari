@@ -106,12 +106,14 @@ typedef enum KosCoreType {
 
 
 /**
-   One pulled element: the element itself (new reference), the pair
-   cell it came from (borrowed; NULL from a sequence cursor), the
-   sequence cursor it came from (borrowed; NULL from a pair spine),
-   and the advanced pair cursor to store back (new reference; NULL
-   from a sequence cursor). A pull advances nothing: the caller stores
-   next, or calls KosMatch_StepAdvance for a sequence cursor, once the
+   One pulled element: the element itself, the pair cell it came from
+   (NULL from a sequence cursor), the sequence cursor it came from
+   (NULL from a pair spine), and the advanced pair cursor to store
+   back (NULL from a sequence cursor), every one a new reference the
+   step owns until KosMatch_StepClear, so the test a body runs on the
+   element, which may reach user code, cannot leave the step holding
+   a released cursor. A pull advances nothing: the caller stores next,
+   or calls KosMatch_StepAdvance for a sequence cursor, once the
    element has passed its test, so a miss leaves the cursor where it
    was.
  */

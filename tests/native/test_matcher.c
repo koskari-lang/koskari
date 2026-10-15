@@ -92,7 +92,8 @@ static int test_sequence_walk(void) {
     TEST_ASSERT(! KosMatch_End(cursor), "not at the end");
     TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
     TEST_ASSERT_EQ(PyLong_AsLong(step.elem), i, "the element");
-    TEST_ASSERT_SAME(step.cursor, cursor, "the step borrows the cursor");
+    TEST_ASSERT_SAME(step.cursor, cursor, "the step records the cursor");
+    TEST_ASSERT_REFCNT(cursor, 2, "and holds a reference to it");
     TEST_ASSERT_NULL(step.cell, "no cell from a sequence");
     TEST_ASSERT_NULL(step.next, "no next from a sequence");
 
@@ -103,6 +104,8 @@ static int test_sequence_walk(void) {
     KosMatch_StepAdvance(&step);
     KosMatch_StepClear(&step);
     TEST_ASSERT_NULL(step.elem, "clear releases the element");
+    TEST_ASSERT_NULL(step.cursor, "and the cursor");
+    TEST_ASSERT_REFCNT(cursor, 1, "the step's reference is gone");
   }
 
   KosMatchStep past;
@@ -155,7 +158,8 @@ static int test_spine_walk(void) {
     TEST_ASSERT(! KosMatch_End(cursor), "not at the end");
     TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
     TEST_ASSERT_EQ(PyLong_AsLong(step.elem), i, "the element");
-    TEST_ASSERT_SAME(step.cell, cursor, "the step borrows the cell");
+    TEST_ASSERT_SAME(step.cell, cursor, "the step records the cell");
+    TEST_ASSERT_REFCNT(cursor, 3, "and holds a reference beside the walk's");
     TEST_ASSERT_NULL(step.cursor, "no sequence cursor from a spine");
     TEST_ASSERT_SAME(step.next, KosPair_CDR(cursor), "next is the cdr");
 
@@ -171,6 +175,8 @@ static int test_spine_walk(void) {
     PyObject *next = step.next;
     step.next = NULL;
     KosMatch_StepClear(&step);
+    TEST_ASSERT_NULL(step.cell, "clear releases the cell");
+    TEST_ASSERT_REFCNT(cursor, 2, "the step's reference is gone");
     Py_DECREF(cursor);
     cursor = next;
   }
