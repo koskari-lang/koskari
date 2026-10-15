@@ -3,7 +3,7 @@ feature: special/compile/raise
 source: (raise ValueError "a" "b")
 verify:
   read: (raise ValueError "a" "b")
-  error: too many arguments to raise
+  error: "SyntaxMatchError: no matching syntax rule"
 references:
   - reference/specials/compile-raise.md
 stability: evolving

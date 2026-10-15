@@ -13,7 +13,8 @@ module being compiled (`convert` by default, or `warn` / `error`); because the
 bare symbol always expands, `raise` can never name a variable.
 
 **Behaviour:** With no arg, emits RAISE 0 (re-raise). With EXPR, compiles EXPR,
-emits RAISE 1 (raise the value as exception).
+emits RAISE 1 (raise the value as exception). A second argument does not
+match the form and is a compile-time SyntaxMatchError.
 
 **Examples:**
 

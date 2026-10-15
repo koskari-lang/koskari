@@ -55,11 +55,8 @@ _TRY_PATTERNS = [
         OPTIONAL(LIST(LITERAL_KW("finally"), REST("finally_body")))),
 ]
 
-# raise keeps a trailing REST rather than one arm per arity: a corpus
-# record asserts its hand-written "too many arguments" message, which a
-# match failure would replace
 _RAISE_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), REST("rest")),
+    MATCH(CALLEDBY("called_by"), OPTIONAL(VALUE("expr"))),
 ]
 
 
@@ -349,19 +346,13 @@ def _except(compiler, catches):
 
 @builtin("compile/raise")
 @special("compile/raise", patterns=_RAISE_PATTERNS, unpack="kwargs")
-def special_raise(compiler, called_by, rest):
-    body = rest.datum
-
+def special_raise(compiler, called_by, expr=None):
     fragment = compiler.fragment(called_by.datum)
-    if is_nil(body):
+    if expr is None:
         fragment.instruction(OpCode.RAISE, 0)
         return fragment
 
-    expr, tail = body
-    if not is_nil(tail):
-        raise TypeError("too many arguments to raise")
-
-    fragment.merge(compiler.full_compile(expr))
+    fragment.merge(compiler.full_compile(expr.datum))
     fragment.instruction(OpCode.RAISE, 1)
 
     return fragment
