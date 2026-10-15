@@ -386,8 +386,8 @@ int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
    frame, in preparation for tail-call frame reuse.  These are the
    extents tail-call promotion allows a call through: their uninstall
    is pure reference release, and it must happen here because the
-   reused frame never reaches their POP_* rows.  Any other node kind
-   above the frame is a miscompiled or hand-assembled tail site and
+   reused frame never reaches their POP_* instructions.  Any other node
+   kind above the frame is a miscompiled or hand-assembled tail site and
    fails loudly rather than discarding an extent whose uninstall
    behavior must run.
 
