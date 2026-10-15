@@ -27,12 +27,13 @@ import pytest
 
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, setcdr, symbol)
-from koskari.match_code import compile_match_function
+from koskari.match_code import (
+    FunctionTarget, MatchLowering, compile_match_function)
 from koskari.matcher import (
-    BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS, GROUP,
-    LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST,
-    SAME, SYMBOL, TEST_ANY, TYPE, USING, VALUE, MatchCompiler, make_matcher,
-    repeat_capture)
+    APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
+    GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
+    REST, SAME, SYMBOL, TEST_ANY, TYPE, USING, VALUE, MatchCompiler,
+    make_matcher, repeat_capture)
 from koskari.reader import Reader, source_str
 
 
@@ -435,6 +436,116 @@ class TestTemporaries(unittest.TestCase):
         self.assertTrue(result.matched)
         self.assertIsInstance(result.captures, DatumFrame)
         self.assertIs(result.captures.source, cell)
+
+
+def depth_trace(pattern, index=None):
+    """
+    The rows of a standalone lowering that name a temporary, with the
+    offset under the top of the stack each would carry once the walk's
+    state lives there, and the edges whose pops would differ from
+    today's; the trace runs beside the slot emission
+    """
+
+    frozen = MatchCompiler().lower(pattern)
+    lowering = MatchLowering(FunctionTarget("t"), frozen, {}, [], None, None)
+    if index is None:
+        lowering.lower_function()
+    else:
+        lowering.lower_body("miss", index)
+    out = []
+    for use in lowering.uses:
+        if use[0] == "edge":
+            out.append(("edge", use[2]))
+        else:
+            out.append((use[0].replace("_VAR", ""), dict(use[1])))
+    return out
+
+
+def rows(trace):
+    return [u for u in trace if u[0] != "edge"]
+
+
+class TestDepthTrace(unittest.TestCase):
+    """
+    The lowering traces, at every row that names a cursor, mark or
+    items temporary, the depth that entry would sit at under the top
+    of the stack: the subject under everything, a form's cursor above
+    it, elements under test and marks above that
+    """
+
+    def test_flat_pattern(self):
+        self.assertEqual(rows(depth_trace(MATCH(VALUE("x")))), [
+            ("MATCH_NEXT_BIND", {"cur": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
+        ])
+
+    def test_nested_form_cursor_sits_above_the_outer(self):
+        self.assertEqual(
+            rows(depth_trace(MATCH(FORM(MATCH(VALUE("a"), LITERAL(2)))))), [
+                ("MATCH_NEXT_FORM", {"cur": 0}),
+                ("MATCH_NEXT_BIND", {"cur": 0}),
+                ("MATCH_NEXT_LITERAL", {"cur": 0}),
+                ("MATCH_END", {"cur": 0}),
+                ("MATCH_END", {"cur": 0}),
+                ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
+            ])
+
+    def test_form_inside_an_application_result(self):
+        # the pulled element, the call's result and the inner cursor
+        # all sit above the outer cursor while the inner form walks
+        trace = depth_trace(MATCH(APP("f", FORM(MATCH(VALUE("a"))))))
+        self.assertEqual(rows(trace), [
+            ("MATCH_NEXT", {"cur": 0}),
+            ("MATCH_NEXT_BIND", {"cur": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
+        ])
+        self.assertIn(("edge", 4), trace)
+
+    def test_repeat_over_a_group(self):
+        trace = depth_trace(MATCH(FORM(MATCH(
+            repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
+        self.assertEqual(rows(trace), [
+            ("MATCH_NEXT_FORM", {"cur": 0}),
+            ("MATCH_MARK", {"cur": 1}),
+            ("MATCH_NEXT_BIND", {"cur": 2}),
+            ("MATCH_NEXT_BIND", {"cur": 2}),
+            ("MATCH_CAPTURES", {"cur": 2, "start": 0}),
+            ("MATCH_ITERATION", {"cur": 2, "items": 1, "start": 0}),
+            ("MATCH_RESET", {"cur": 2, "mark": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
+        ])
+
+    def test_optional_reads_its_cursor_under_the_mark(self):
+        trace = depth_trace(MATCH(FORM(MATCH(
+            OPTIONAL(CAPTURE("o", LITERAL(1))), VALUE("z")))))
+        self.assertEqual(rows(trace), [
+            ("MATCH_NEXT_FORM", {"cur": 0}),
+            ("MATCH_AVAILABLE", {"cur": 0}),
+            ("MATCH_MARK", {"cur": 0}),
+            ("MATCH_NEXT", {"cur": 1}),
+            ("MATCH_RESET", {"cur": 1, "mark": 0}),
+            ("MATCH_NEXT_BIND", {"cur": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_END", {"cur": 0}),
+            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
+        ])
+
+    def test_last_branch_guard_leaves_with_the_mark_live(self):
+        # the enclosing miss is reached from under a live mark and an
+        # inner cursor: an edge that pops three where today pops none
+        trace = depth_trace(MATCH(FORM(MATCH(
+            ONEOF(GROUP("g", VALUE("a"), VALUE("b")), VALUE("c")),
+            LITERAL(9)))))
+        self.assertIn(("edge", 3), trace)
+
+    def test_indexed_root_reads_captures_one_deeper(self):
+        self.assertEqual(rows(depth_trace(MATCH(VALUE("x")), index=0))[-1],
+                         ("MATCH_CAPTURES", {"cur": 1, "start": 2}))
 
 
 class TestPairSpineElements(unittest.TestCase):
