@@ -111,6 +111,9 @@ class LayoutReader(Reader):
 
         :param namespace: Module, Namespace, or dict for layout lookup
         :param nodefaults: if True, do not add default macros and patterns
+        :param layout_enabled: if True (default), indentation-based layout
+            lines read into forms; if False, the source reads as plain
+            s-expressions
         :param layout_implicit_calls: if True, multiple values on one layout
             line fold to an implicit call; if False, more than one value is an
             error
