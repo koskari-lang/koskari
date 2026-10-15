@@ -144,7 +144,8 @@ int kos_dyn_pop_collect(
 
 
 /**
-   GC traverse a KOS_DYN_COLLECT: visit node-owned namespace for collector.
+   GC traverse a KOS_DYN_COLLECT: no payload beyond the base fields (the
+   node-owned namespace is visited generically by kos_dynnode_traverse).
 */
 static int dynnode_traverse_collect(KosDynNode *node, visitproc visit, void *arg) {
   (void) node;
