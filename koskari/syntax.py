@@ -1044,7 +1044,7 @@ def build_syntax(name, *pattern_template_pairs):
     """
 
     transforms = []
-    for pat, tail, matcher, repeat_variables in _build_rows(
+    for pat, tail, matcher, repeat_variables in build_rows(
             "build-syntax", pattern_template_pairs):
         transforms.append(SyntaxTransform(
             pat, tail, pattern_src=pat if matcher else nil,
@@ -1053,7 +1053,7 @@ def build_syntax(name, *pattern_template_pairs):
     return Syntax(name, transforms)
 
 
-def _build_rows(what, args):
+def build_rows(what, args):
     """
     The rows of a build call: ``(PATTERN TAIL)`` pairs for a pattern
     parsed at load, or ``(FUNCTION NAMES PATTERN-SRC TAIL)`` rows for a
@@ -1101,7 +1101,7 @@ def build_macro(name, *pattern_and_lambdas):
     """
 
     transforms = []
-    for pat, fn, matcher, repeat_variables in _build_rows(
+    for pat, fn, matcher, repeat_variables in build_rows(
             "build-macro", pattern_and_lambdas):
         transforms.append(MacroTransform(
             pat, _wrap_macro_handler(fn),
@@ -1117,7 +1117,7 @@ def build_special(name, *pattern_and_lambdas):
     """
 
     transforms = []
-    for pat, fn, matcher, repeat_variables in _build_rows(
+    for pat, fn, matcher, repeat_variables in build_rows(
             "build-special", pattern_and_lambdas):
         if repeat_variables is None:
             repeat_variables = _repeat_variables(pat)

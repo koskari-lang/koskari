@@ -15,10 +15,12 @@
 """
 tests.matcher.test_depth_bound
 
-The matcher walks a pattern's nesting on the C stack, in validation
-and in matching, under the interpreter's recursion guard: a pattern
-nested past the limit raises RecursionError, as nested Python
-containers do, rather than overflowing the stack.
+A pattern's frozen tuple is validated without recursion, so a
+Matcher builds from one at any depth. Its function is lowered when
+first matched, and the lowering recurses in Python once per level of
+nesting under the interpreter's recursion limit: a pattern nested
+past it raises RecursionError there, as nested Python containers do,
+rather than overflowing the stack.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -59,12 +61,11 @@ class TestMatcherDepthBound(unittest.TestCase):
 
     def test_matching_a_pattern_nested_past_the_limit_never_overflows(self):
         """
-        The match walk recurses once per level of pattern nesting under
-        the interpreter's recursion guard, so a pattern nested far past
-        any counted limit is refused with RecursionError where the
-        interpreter counts C recursion (3.12, 3.13) and completes, or is
-        refused at the stack margin, where it guards the stack itself
-        (3.14); it never overflows the stack
+        The lowering recurses once per level of pattern nesting, so a
+        pattern nested far past the recursion limit is refused with
+        RecursionError at the first match, when its function is built,
+        or completes where the limit allows it; it never overflows the
+        stack
         """
 
         m = Matcher.from_tuple(nested_forms(60000))
@@ -76,8 +77,9 @@ class TestMatcherDepthBound(unittest.TestCase):
 
     def test_validating_a_pattern_nested_past_the_limit_never_overflows(self):
         """
-        The validation walks are guarded the same way, so a deep
-        pattern under a NOT is refused or validated, never a crash
+        Validation of the frozen tuple does not recurse, so a deep
+        pattern under a NOT, whose validation walks the chain, builds a
+        Matcher without reaching the recursion limit
         """
 
         try:

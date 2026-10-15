@@ -24,11 +24,9 @@ Matcher and Dispatcher that run the function those tables compile to
 """
 
 
-from typing import Protocol, runtime_checkable
-
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from koskari.lib import (
     CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,

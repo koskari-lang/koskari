@@ -304,7 +304,7 @@ def validate_frozen(frozen):
         check_branch(nodes, widths, entry)
     for i, node in enumerate(nodes):
         if node[0] in ('FIELD_POS', 'FIELD_KW') and i == entry:
-            raise ValueError("FIELD at node %d may not appear on a spine" % i)
+            raise ValueError(f"FIELD at node {i} may not appear on a spine")
 
 
 def spine_children(nodes, idx):
