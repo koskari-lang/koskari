@@ -697,6 +697,30 @@ class TestMatchTemporaries(SpecialsTestCase):
         self.assertEqual(await fn((2, 1)), ("other", 2, 1, ()))
 
 
+    def test_arms_share_one_cursor(self):
+        """
+        The arms of one match form are alternatives in one activation,
+        so every arm that walks a spine uses the same cursor local
+        """
+
+        src = """
+        (lambda [data]
+          (match data
+            [[#[a 2]] a]
+            [[#[b c]] (+ b c)]
+            [[#[d *: more]] d]
+            [else: "none"]))
+        """
+        code = self.compile_to_code(src)
+        inner = next(
+            c.code if hasattr(c, "code") else c
+            for c in code.constants_pool
+            if hasattr(c, "soften") or hasattr(c, "code"))
+        names = [str(n).split("#")[0] for n in inner.namespace_spec.local_syms]
+        self.assertEqual(
+            [n for n in names if n.startswith("match-")], ["match-cursor"])
+
+
 
 
 class TestPatternValidation(SpecialsTestCase):

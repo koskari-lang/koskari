@@ -700,7 +700,11 @@ class MatchLowering:
         self.nodes = nodes
         self.entry = entry
         self.cursors = cursors
-        self.marks = []
+        # marks by level, declared only for a level that reads one
+        self.marks = {}
+        # the cursor and mark of a MATCH_MARK just emitted, for a group
+        # that opens at the same position to take instead of its own
+        self.fresh_mark = None
         self.source = source
         self.position = position
         self.trampolines = {}
@@ -730,6 +734,8 @@ class MatchLowering:
         else:
             args = tuple(args) + (0,) * (4 - len(args))
             self.target.instruction(op, args)
+        if op != OpCode.MATCH_MARK_VAR:
+            self.fresh_mark = None
 
 
     def temporary(self, pool, level, stem):
@@ -749,7 +755,12 @@ class MatchLowering:
 
 
     def mark(self, level):
-        return self.temporary(self.marks, level, "match-mark")
+        name = self.marks.get(level)
+        if name is None:
+            name = gensym("match-mark")
+            self.target.declare(name)
+            self.marks[level] = name
+        return name
 
 
     def assign_scopes(self, idx, scope):
@@ -1029,7 +1040,6 @@ class MatchLowering:
         """
 
         cur = self.cursor(0)
-        start = self.mark(0)
         # the root scope's locals are declared first so their fast
         # slots are one run the captures table can name
         for slot in self.scope_slots.get(None, []):
@@ -1040,12 +1050,12 @@ class MatchLowering:
             OpCode.MATCH_FORM_VAR, self.miss_at((miss, 0), 1), cur,
             pack_widths(*self.width(self.entry)))
         self.emit(OpCode.POP, 1)
-        self.emit(OpCode.MATCH_MARK_VAR, cur, start)
         self.emit_pull(self.entry, cur, (miss, 0), 0, 1, 0)
         self.emit(OpCode.MATCH_END_VAR, miss, cur)
         if index is not None:
             self.emit(OpCode.CONST, index)
-        self.emit_captures(None, start, cur)
+        # the span of the root captures starts at the subject itself
+        self.emit_captures(None, symbol(SUBJECT), cur)
 
 
     def emit_captures(self, scope, start, cur, iteration=False):
@@ -1425,8 +1435,12 @@ class MatchLowering:
         """
 
         self.open_scope(idx)
-        start = self.mark(level)
-        self.emit(OpCode.MATCH_MARK_VAR, cur, start)
+        if self.fresh_mark and self.fresh_mark[0] == cur:
+            # the position a repeat marked a moment ago, on this cursor
+            start = self.fresh_mark[1]
+        else:
+            start = self.mark(level)
+            self.emit(OpCode.MATCH_MARK_VAR, cur, start)
         self.emit_sequence(
             self.children(idx), cur, miss, depth, level + 1, trailing)
         self.emit_captures(idx, start, cur)
@@ -1449,29 +1463,39 @@ class MatchLowering:
         min_count = node[2]
         scope = self.scope_of(idx)
         self.open_scope(scope)
-        items = store if store is not None else self.temporary(
-            [], 0, "match-items")
+        # a repeat nothing captures, with no minimum, keeps no
+        # iteration values: it walks and discards
+        kept = (store is not None or min_count > 0
+                or bool(self.slots_under(inner)))
+        items = None
+        if kept:
+            items = store if store is not None else self.temporary(
+                [], 0, "match-items")
         start = self.mark(level)
         loop = self.target.label("match.repeat")
         fail = self.target.label("match.repeat.miss")
         done = self.target.label("match.repeat.end")
 
-        self.emit(OpCode.BUILD_LIST, 0)
-        self.emit(OpCode.VAR_STORE, items)
+        if kept:
+            self.emit(OpCode.BUILD_LIST, 0)
+            self.emit(OpCode.VAR_STORE, items)
         self.emit(OpCode.LABEL, loop)
         self.guard(inner, cur, done, trailing)
         self.emit(OpCode.MATCH_MARK_VAR, cur, start)
+        self.fresh_mark = (cur, start)
         self.emit_sequence(
             self.children(inner), cur, (fail, depth), depth, level + 1,
             trailing)
-        # the iteration instruction clears the slots it read; a nested
-        # group's slots are cleared here, so the next pass starts with
-        # nothing bound below it whatever path this one took
-        self.emit_captures(scope, start, cur, iteration=True)
-        for slot in self.slots_under(inner):
-            if self.scopes.get(slot) != scope:
-                self.emit(OpCode.VAR_CLEAR, self.slot_local(slot))
-        self.emit(OpCode.VAR_LIST_APPEND, items)
+        if kept:
+            # the iteration instruction clears the slots it read; a
+            # nested group's slots are cleared here, so the next pass
+            # starts with nothing bound below it whatever path this one
+            # took
+            self.emit_captures(scope, start, cur, iteration=True)
+            for slot in self.slots_under(inner):
+                if self.scopes.get(slot) != scope:
+                    self.emit(OpCode.VAR_CLEAR, self.slot_local(slot))
+            self.emit(OpCode.VAR_LIST_APPEND, items)
         self.emit(OpCode.JUMP, loop)
 
         self.emit(OpCode.LABEL, fail)

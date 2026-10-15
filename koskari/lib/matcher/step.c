@@ -852,6 +852,8 @@ PyObject *KosMatch_Captures(
     PyObject *start,
     PyObject *cursor) {
 
+  /* the root's start is the subject itself, which may arrive boxed */
+  start = matcher_peel_datum(start);
   if (! (KosPair_Check(start) || KosNilP(start))) {
     PyObject *out = PyDict_New();
     if (! out)

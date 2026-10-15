@@ -390,6 +390,53 @@ class TestSameScopes(unittest.TestCase):
         self.assertIn("depth", str(caught.exception))
 
 
+def temporaries(pattern):
+    """
+    The temporaries a standalone lowering declares beyond the subject
+    and the captures: the cursor, mark and items locals
+    """
+
+    frozen = MatchCompiler().lower(pattern)
+    fn = compile_match_function(frozen, ModuleNamespace("probe", {}))
+    names = [str(name).split("#")[0] for name in fn.code.namespace_spec.local_syms]
+    return [name for name in names
+            if name.startswith("match-") and name != "match-subject"]
+
+
+class TestTemporaries(unittest.TestCase):
+    """
+    A lowering declares one cursor per open spine, a mark only where a
+    span or a reset reads it, and an items list only where a repeat's
+    iterations are kept; the root's start is the subject itself
+    """
+
+    def test_a_flat_pattern_declares_its_cursor_alone(self):
+        self.assertEqual(temporaries(MATCH(LITERAL(1))), ["match-cursor"])
+
+    def test_a_bare_repeat_keeps_no_items_and_no_spare_mark(self):
+        got = temporaries(MATCH(FORM(MATCH(REPEAT(TYPE("int"))))))
+        self.assertEqual(sorted(got), ["match-cursor", "match-cursor", "match-mark"])
+
+    def test_a_repeat_over_a_group_shares_the_iteration_mark(self):
+        got = temporaries(MATCH(FORM(MATCH(
+            repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
+        self.assertEqual(sorted(got), ["match-cursor", "match-cursor", "match-mark"])
+
+    def test_bare_repeat_still_walks(self):
+        m = MatchCompiler.compile(MATCH(FORM(MATCH(REPEAT(TYPE("int"))))))
+        self.assertTrue(m.match(((1, 2, 3),)).matched)
+        self.assertFalse(m.match(((1, "x"),)).matched)
+        self.assertTrue(m.match((cons(1, 2, nil),)).matched)
+
+    def test_boxed_subject_root_captures_keep_their_source(self):
+        m = MatchCompiler.compile(MATCH(VALUE("x")))
+        cell = cons(1, nil)
+        result = m.match(Datum(cell))
+        self.assertTrue(result.matched)
+        self.assertIsInstance(result.captures, DatumFrame)
+        self.assertIs(result.captures.source, cell)
+
+
 class TestPairSpineElements(unittest.TestCase):
     """
     A pair spine is source: an element pulled from it is boxed, user
