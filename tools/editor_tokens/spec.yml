@@ -169,6 +169,7 @@ list_head_specials:
   - define-environ
   - define-fence
   - define-global
+  - define-global-values
   - define-parameter
   - define-syntax
   - define-values

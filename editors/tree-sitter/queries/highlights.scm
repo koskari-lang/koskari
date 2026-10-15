@@ -233,6 +233,7 @@
    "define-values"
    "define-syntax"
    "define-parameter"
+   "define-global-values"
    "define-global"
    "define-fence"
    "define-environ"
