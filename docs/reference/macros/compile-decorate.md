@@ -37,7 +37,9 @@ A typed value subject keeps its annotation and wraps only the value, so
 declaration, `var x`, `var [a b]`, `global var x`, `define x` or
 `define-global x`, with or without a type, binds no value, so a
 decorator over it has nothing to transform and the compiler raises
-`CompilerError` naming the form.
+`CompilerError` naming the form. A binding form of any other shape is
+not a declaration; it reaches its special and fails as it would
+undecorated, with `SyntaxMatchError`.
 
 **Examples:**
 

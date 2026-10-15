@@ -134,8 +134,14 @@ syntax decorate:
     case (decorate [decorators ...] (var name value)):
       var name (decorate [decorators ...] value)
 
-    case (decorate [decorators ...] (var rest ...)):
-      decorate-nothing (var rest ...)
+    case (decorate [decorators ...] (var name)):
+      decorate-nothing (var name)
+
+    case (decorate [decorators ...] (var name :: type)):
+      decorate-nothing (var name :: type)
+
+    case (decorate [decorators ...] (var name type: type)):
+      decorate-nothing (var name type: type)
 
     case (decorate [decorators ...] (global var name :: type value)):
       global var name :: type (decorate [decorators ...] value)
@@ -146,8 +152,14 @@ syntax decorate:
     case (decorate [decorators ...] (global var name value)):
       global var name (decorate [decorators ...] value)
 
-    case (decorate [decorators ...] (global var rest ...)):
-      decorate-nothing (global var rest ...)
+    case (decorate [decorators ...] (global var name)):
+      decorate-nothing (global var name)
+
+    case (decorate [decorators ...] (global var name :: type)):
+      decorate-nothing (global var name :: type)
+
+    case (decorate [decorators ...] (global var name type: type)):
+      decorate-nothing (global var name type: type)
 
     case (decorate [decorators ...] (global def name rest ...)):
       define-global name (decorate [decorators ...] (function name rest ...))
@@ -183,8 +195,14 @@ syntax decorate:
     case (decorate [decorators ...] (define name value)):
       var name (decorate [decorators ...] value)
 
-    case (decorate [decorators ...] (define rest ...)):
-      decorate-nothing (define rest ...)
+    case (decorate [decorators ...] (define name)):
+      decorate-nothing (define name)
+
+    case (decorate [decorators ...] (define name :: type)):
+      decorate-nothing (define name :: type)
+
+    case (decorate [decorators ...] (define name type: type)):
+      decorate-nothing (define name type: type)
 
     case (decorate [decorators ...] (define-global ((name :: rtype) formals ...) body ...)):
       define-global name:
@@ -207,8 +225,14 @@ syntax decorate:
     case (decorate [decorators ...] (define-global name value)):
       define-global name (decorate [decorators ...] value)
 
-    case (decorate [decorators ...] (define-global rest ...)):
-      decorate-nothing (define-global rest ...)
+    case (decorate [decorators ...] (define-global name)):
+      decorate-nothing (define-global name)
+
+    case (decorate [decorators ...] (define-global name :: type)):
+      decorate-nothing (define-global name :: type)
+
+    case (decorate [decorators ...] (define-global name type: type)):
+      decorate-nothing (define-global name type: type)
 
     case (decorate [d rest ...] fn):
       decorate-subject d (decorate [rest ...] fn)

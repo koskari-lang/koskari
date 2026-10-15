@@ -560,6 +560,21 @@ class TestDecorators(BindingFormsCase):
                 self.assertIn("nothing to decorate", str(caught.exception))
 
 
+    async def test_decorated_malformed_binding_is_a_syntax_error(self):
+        # a form no binding arm accepts is not a declaration; it reaches
+        # its special, which refuses it as it would undecorated
+        sources = (
+            "@doubled\n(var x 1 2)",
+            "def setup []:\n  @doubled\n  (global var x 1 2)",
+            "@doubled\n(define pl [n] n)",
+            "def setup []:\n  @doubled\n  (define-global pl [n] n)",
+        )
+        for src in sources:
+            with self.subTest(src=src):
+                with self.assertRaises(SyntaxMatchError):
+                    await self.load(dedent(self.VALUE_PRELUDE) + src)
+
+
     async def test_decorated_global_pattern(self):
         ns = await self.load("""
         def doubled [seq]:
