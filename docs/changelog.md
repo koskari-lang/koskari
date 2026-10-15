@@ -7,8 +7,11 @@ and links to the page that covers it.
 ## 0.2.0
 
 The binding forms are realigned. Source written for 0.1.0 needs
-migrating; the old spellings raise errors rather than change
-meaning.
+migrating. Most old spellings raise errors; two change meaning, because
+both shapes are valid under the new forms: `(define [x] value)` is now a
+function `x` of no formals returning the value, where 0.1.0 bound `x` to
+the value, and `(class NAME SUPERS body ...)` as an expression now binds
+**NAME** and evaluates to None, where 0.1.0 built the class as a value.
 
 - `var` binds a value and `def` a function, in the scope the form
   appears in; `var` over a bracket pattern unpacks. See
@@ -19,15 +22,25 @@ meaning.
   `@dataclass` above `class`. See
   [class](reference/macros/compile-class.md).
 - `global` is a prefix over `var`, `def`, `class` and `syntax` that
-  binds the form at the module; `global var x` replaces the bare
-  `define-global x` shape. `local` is removed.
+  binds the form at the module; `global var x` is the idiomatic
+  spelling of `define-global x`, which remains as the primitive. In
+  block form the word after `global` decides how the block reads, so
+  `global class NAME:` may omit the superclass list. `local` is
+  removed. See [global](reference/macros/compile-global.md).
 - `define` takes Scheme's shape, `(define [f x] body...)` for a
   function and `(define x value)` for a value; the old
-  `(define f [x] body...)` no longer matches. See
+  `(define f [x] body...)` no longer matches. A return type bundles
+  with the name as a typed formal does, `(define [(f :: int) x]
+  body...)`; the inline `[f :: int x]` of 0.1.0 is rejected. See
   [define](reference/specials/compile-define.md) and
   [Bindings and refs](guide/bindings-and-refs.md).
 - `syntax` defines a transformer, scoped to the rest of a body when
-  written inside one.
+  written inside one. `extend-syntax` extends the module's transformer
+  from inside a body too, with the new arms present once the form has
+  run. See [extend-syntax](reference/macros/compile-extend-syntax.md).
+- A decorator line over a declaration, `var x` with no value, is a
+  compile error; a typed value, `var x :: int 0`, is decorated with its
+  annotation kept. See [decorate](reference/macros/compile-decorate.md).
 - `define-demanding` and `define-coroutine` are removed: write
   `@demand` or `@coroutine-fn` above `def`.
 - `(vars)` with no operand is the current namespace and replaces
