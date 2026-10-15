@@ -126,7 +126,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          (Exception (good_guy -111)))
+          ([Exception] (good_guy -111)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
 
@@ -193,7 +193,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 123)
-          (Exception (good_guy -111)))
+          ([Exception] (good_guy -111)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
         with self.assertRaises(BaseException):
@@ -209,7 +209,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          (Exception (good_guy -111))
+          ([Exception] (good_guy -111))
           (else: (good_guy 987)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
@@ -226,7 +226,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          (Exception (good_guy -111))
+          ([Exception] (good_guy -111))
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(src, bad_guy=bad_guy, good_guy=good_guy, Exception=Exception)
@@ -259,7 +259,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          (KeyError (good_guy -111))
+          ([KeyError] (good_guy -111))
           (finally: (good_guy 999)))
         """
         expr, mod = self.compile_expr(
@@ -277,7 +277,7 @@ class TestTrySpecial(SpecialsTestCase):
         src = """
         (try
           (bad_guy 567)
-          (Exception (good_guy -111))
+          ([Exception] (good_guy -111))
           (else: (good_guy 987))
           (finally: (good_guy 999)))
         """

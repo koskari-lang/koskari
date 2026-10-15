@@ -23,14 +23,13 @@ clear-exception, load-exception, and raise.
 
 
 from ...bootstrap import builtin
-from ...exceptions import SpecialError
 from ...lib import OpCode, cons, keyword, nil, symbol
-from ...matcher import BODY, CALLEDBY, MATCH, REST, VALUE
+from ...matcher import (
+    CALLEDBY, CAPTURE, FORM, LIST, LITERAL_KW, MATCH, ONEOF, OPTIONAL,
+    REST, USING_FORMS, VALUE, repeat_capture)
 from ...syntax import special
-from ...types import (
-    fill_position, get_position, is_keyword, is_nil, is_pair, strip_mark,
-    unpack)
-from ..helpers import helper_begin, helper_using, pycons
+from ...types import fill_position, get_position, is_nil, is_pair, unpack
+from ..helpers import helper_begin, pycons
 
 
 _NOARG_PATTERNS = [
@@ -41,9 +40,19 @@ _CHECKS_PATTERNS = [
     MATCH(CALLEDBY("called_by"), REST("checks")),
 ]
 
+# one except arm: the head is except: or a using cell, [TYPE],
+# [NAME TYPE] or [TYPE as: NAME], then the handler forms
+_EXCEPT_ARM = FORM(MATCH(
+    ONEOF(CAPTURE("bare", LITERAL_KW("except")), *USING_FORMS),
+    REST("body")))
+
 _TRY_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), VALUE("body")),
-    MATCH(CALLEDBY("called_by"), VALUE("body"), BODY("clauses")),
+    MATCH(
+        CALLEDBY("called_by"),
+        VALUE("body"),
+        repeat_capture("catches", _EXCEPT_ARM),
+        OPTIONAL(LIST(LITERAL_KW("else"), REST("else_body"))),
+        OPTIONAL(LIST(LITERAL_KW("finally"), REST("finally_body")))),
 ]
 
 # raise keeps a trailing REST rather than one arm per arity: a corpus
@@ -55,7 +64,6 @@ _RAISE_PATTERNS = [
 
 
 _keyword_except = keyword("except")
-_keyword_finally = keyword("finally")
 
 
 def _finally_body(compiler, fragment, body):
@@ -84,83 +92,6 @@ def _finally_body(compiler, fragment, body):
             break
 
     return fragment
-
-
-def _collect_catches(compiler, catches):
-    """
-    Parse try catch list into normal_catches, act_else, act_finally.
-
-    Each element of catches must be (EXCEPTMATCH BODY...) where EXCEPTMATCH
-    is one of:
-
-    - keyword("except") — bare catch-all, no type check, no binding
-    - TYPEEXPR (any non-keyword, non-pair atom) — type-only, no binding
-    - (TYPEEXPR), (SYM TYPEEXPR), or (TYPEEXPR as: SYM) — USE form
-
-    Normal catches are normalised to (HEAD . BODY) where HEAD is a pair:
-
-    - (except: . nil) for bare
-    - (except: . TYPEEXPR) for type-only
-    - (SYM . TYPEEXPR) for bound
-
-    :param compiler: active Compiler
-    :param catches: pair list of clauses
-    :return: (normal_catches, act_else, act_finally)
-    :raises SpecialError: on invalid clauses
-    """
-
-    normal_catches = []
-    act_else = None
-    act_finally = None
-
-    for ca in unpack(catches):
-        if not ca:
-            raise SpecialError("clause with no body in try", ca)
-
-        ex, act = ca
-        tag = strip_mark(ex)
-
-        if tag is _keyword_except:
-            ex_pair = cons(cons(_keyword_except, nil), act)
-            pos = get_position(ca)
-            if pos:
-                fill_position(ex_pair, pos)
-            normal_catches.append(ex_pair)
-
-        elif is_pair(ex) and ex.is_proper():
-            ex_binding, ex_expr = helper_using(ex)
-            # helper_using reports "no binding" as None; normalise to the
-            # except: marker so a type-only clause takes the unbound path
-            # and does not compile a binding named "None"
-            if ex_binding is None:
-                ex_binding = _keyword_except
-            ex_pair = cons(cons(ex_binding, ex_expr), act)
-            pos = get_position(ca)
-            if pos:
-                fill_position(ex_pair, pos)
-            normal_catches.append(ex_pair)
-
-        elif not is_keyword(tag):
-            ex_pair = cons(cons(_keyword_except, ex), act)
-            pos = get_position(ca)
-            if pos:
-                fill_position(ex_pair, pos)
-            normal_catches.append(ex_pair)
-
-        elif tag is _keyword_finally:
-            if act_finally is not None:
-                raise SpecialError("duplicate finally: clause in try", ca)
-            act_finally = act
-
-        elif str(tag) == "else":
-            if act_else is not None:
-                raise SpecialError("duplicate else: clause in try", ca)
-            act_else = act
-
-        else:
-            raise SpecialError(f"unrecognised clause keyword in try: {ex!r}", ca)
-
-    return (normal_catches, act_else, act_finally)
 
 
 @builtin("compile/check-exception")
@@ -199,12 +130,55 @@ def special_load_exception(compiler, called_by):
     return fragment
 
 
+def _catch_rows(catches):
+    """
+    The except arms as (HEAD . BODY) cells for _except, HEAD a pair:
+    (except: . nil) for a bare arm, (except: . TYPEEXPR) for a type-only
+    arm, (SYM . TYPEEXPR) for a bound one. Each cell carries its arm's
+    position so diagnostics inside a handler name the arm
+
+    :param catches: the matched arm rows, one dict per arm
+    :return: list of cells
+    """
+
+    rows = []
+    for arm in catches:
+        bare = arm.get("bare")
+        if bare is not None:
+            head = cons(_keyword_except, nil)
+            pos = bare.position
+        else:
+            name = arm.get("name")
+            expr = arm["expr"]
+            head = cons(_keyword_except if name is None else name.datum,
+                        expr.datum)
+            pos = expr.position
+        cell = cons(head, arm["body"].datum)
+        if pos:
+            fill_position(cell, pos)
+        rows.append(cell)
+    return rows
+
+
 @builtin("compile/try")
 @special("compile/try", patterns=_TRY_PATTERNS, unpack="kwargs")
-def special_try(compiler, called_by, body, clauses=None):
+def special_try(
+        compiler,
+        called_by,
+        body,
+        catches=(),
+        else_body=None,
+        finally_body=None):
+    """
+    Compile (try BODY ARM... [(else: BODY...)] [(finally: BODY...)]),
+    where each ARM is (except: BODY...), ([TYPEEXPR] BODY...),
+    ([SYM TYPEEXPR] BODY...) or ([TYPEEXPR as: SYM] BODY...)
+    """
+
     try_expr = body.datum
-    clause_forms = nil if clauses is None else clauses.datum
-    ca, act_else, act_finally = _collect_catches(compiler, clause_forms)
+    ca = _catch_rows(catches)
+    act_else = None if else_body is None else else_body.datum
+    act_finally = None if finally_body is None else finally_body.datum
 
     if act_finally is not None:
         if act_else is not None:

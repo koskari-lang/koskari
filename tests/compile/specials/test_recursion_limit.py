@@ -91,7 +91,7 @@ class TestRecursionLimit(SpecialsTestCase):
               (+ 1 (call f (+ n 1)))))
           (try
             (call f 1)
-            (RecursionError (call record "caught")))
+            ([RecursionError] (call record "caught")))
           (call record "after"))
         """
         seen = []

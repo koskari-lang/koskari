@@ -60,7 +60,7 @@ class TestNestedExcInfo(SpecialsTestCase):
         (try
           (try
             (throw (ValueError "outer"))
-            [finally: (try (throw (KeyError "inner")) (KeyError 0))])
+            [finally: (try (throw (KeyError "inner")) ([KeyError] 0))])
           ([e ValueError] (str e)))
         """
         self.assertEqual("outer", await self._run(src))
@@ -71,7 +71,7 @@ class TestNestedExcInfo(SpecialsTestCase):
         (try
           (try
             (throw (ValueError "outer"))
-            [finally: (try 1 (KeyError 0))])
+            [finally: (try 1 ([KeyError] 0))])
           ([e ValueError] (str e)))
         """
         self.assertEqual("outer", await self._run(src))
@@ -88,7 +88,7 @@ class TestNestedExcInfo(SpecialsTestCase):
               (throw (ValueError "outer"))
               [finally:
                 (seen.append (handled))
-                (try (throw (KeyError "inner")) (KeyError (seen.append (handled))))
+                (try (throw (KeyError "inner")) ([KeyError] (seen.append (handled))))
                 (seen.append (handled))])
             ([e ValueError] None))
           seen)
@@ -103,7 +103,7 @@ class TestNestedExcInfo(SpecialsTestCase):
           (try
             (throw (ValueError "outer"))
             ([e ValueError]
-              (try 1 (KeyError 0))
+              (try 1 ([KeyError] 0))
               (raise)))
           ([e ValueError] (str e))
           ([e RuntimeError] "reraise lost"))
@@ -146,7 +146,7 @@ class TestNestedExcInfo(SpecialsTestCase):
             (throw (ValueError "outer"))
             ([e ValueError]
               (seen.append (handled))
-              (try (throw (KeyError "inner")) (KeyError (seen.append (handled))))
+              (try (throw (KeyError "inner")) ([KeyError] (seen.append (handled))))
               (seen.append (handled))))
           seen)
         """
@@ -160,7 +160,7 @@ class TestNestedExcInfo(SpecialsTestCase):
           (try
             (throw (ValueError "outer"))
             ([e ValueError]
-              (try 1 (KeyError 0))
+              (try 1 ([KeyError] 0))
               (throw (RuntimeError "second"))))
           ([e RuntimeError] e))
         """
