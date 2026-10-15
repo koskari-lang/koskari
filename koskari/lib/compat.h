@@ -221,8 +221,8 @@ static inline KosSharedKeyEntry *kos_shared_key_entries(KosSharedKeys *dk) {
    Find the inline-values index of name among tp's shared keys. Returns 1 and
    sets *index on a match, 0 otherwise (no cached keys, general keys, or name
    absent). The entry index is the value index: inline values are ordered by
-   the shared keys. Called only on the cold path, so the linear scan and the
-   rich-compare fallback are amortized to nothing.
+   the shared keys. Called only on the cold path, so the linear scan over
+   exact str keys, which runs no user code, is amortized to nothing.
 */
 static inline int kos_type_value_index(
     PyTypeObject *tp, PyObject *name, uint32_t *index) {
