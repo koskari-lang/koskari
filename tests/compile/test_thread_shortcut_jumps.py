@@ -390,14 +390,105 @@ class TestLandingSearch(unittest.TestCase):
         ]
         self.assertEqual(thread(instr), instr)
 
-    def test_not_landing_stays(self):
-        # (if (not (and a b)) 1 2)
+    def test_not_then_value_consumer_stays(self):
+        # (f (not (and a b)))
         instr = [
+            (V, "f"),
+            (V, "a"), (JA, "done"),
+            (V, "b"),
+            (L, "done"), (NOT, None), (CALL, 1), (RET, 1),
+        ]
+        self.assertEqual(thread(instr), instr)
+
+    def test_not_then_jump_and_stays(self):
+        # (and (not (and a b)) c) in value position
+        instr = [
+            (V, "a"), (JA, "inner"),
+            (V, "b"),
+            (L, "inner"), (NOT, None), (JA, "outer"),
+            (V, "c"),
+            (L, "outer"), (POP, 1), (RET, 0),
+        ]
+        self.assertEqual(thread(instr), instr)
+
+
+class TestNotLanding(unittest.TestCase):
+    """
+    A landing OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
+    as that jump with its polarity swapped
+    """
+
+    def test_and_behind_not_lands_on_jump_false(self):
+        # (if (not (and a b)) 1 2): a falsy a takes the then branch
+        out = thread([
             (V, "a"), (JA, "done"),
             (V, "b"),
             (L, "done"), (NOT, None), (JF, "else"),
             (C, 1), (RET, 1),
             (L, "else"), (C, 2), (RET, 1),
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JF, FRESH),
+            (V, "b"),
+            (NOT, None), (JF, "else"),
+            (L, FRESH), (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+
+    def test_or_behind_not_lands_on_jump_false(self):
+        # (if (not (or a b)) 1 2): a truthy a takes the else branch
+        out = thread([
+            (V, "a"), (JO, "done"),
+            (V, "b"),
+            (L, "done"), (NOT, None), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JT, "else"),
+            (V, "b"),
+            (NOT, None), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+
+    def test_and_behind_not_lands_on_jump_true(self):
+        out = thread([
+            (V, "a"), (JA, "done"),
+            (V, "b"),
+            (L, "done"), (NOT, None), (JT, "then"),
+            (C, 2), (RET, 1),
+            (L, "then"), (C, 1), (RET, 1),
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JF, "then"),
+            (V, "b"),
+            (NOT, None), (JT, "then"),
+            (C, 2), (RET, 1),
+            (L, "then"), (C, 1), (RET, 1),
+        ])
+
+    def test_position_between_not_and_jump_is_transparent(self):
+        out = thread([
+            (V, "a"), (JO, "done"),
+            (V, "b"),
+            (L, "done"), (NOT, None), (P, 4), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JT, "else"),
+            (V, "b"),
+            (NOT, None), (P, 4), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+
+    def test_not_then_return_stays(self):
+        instr = [
+            (V, "a"), (JA, "done"),
+            (V, "b"),
+            (L, "done"), (NOT, None), (RET, 1),
         ]
         self.assertEqual(thread(instr), instr)
 
@@ -450,6 +541,18 @@ class TestCompiled(unittest.TestCase):
         self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 2)
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
+        self.assertNotIn(OpCode.JUMP_FALSE, ops)
+
+    def test_not_and_test_fuses_both_compares(self):
+        rows = compile_function_rows(
+            "(lambda [a b c d]"
+            " (cond [(not (and (< a b) (< c d))) 1] [else: 2]))")
+        ops = [op for op, _ in rows]
+        self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 2)
+        self.assertNotIn(OpCode.JUMP_AND, ops)
+        self.assertNotIn(OpCode.OBJECT_NOT, ops)
+        self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
+        self.assertNotIn(OpCode.JUMP_TRUE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
 
     def test_or_test_fuses_both_compares(self):

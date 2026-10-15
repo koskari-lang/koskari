@@ -590,6 +590,22 @@ class TestCompareJumpTrueFusion(unittest.TestCase):
             (OpCode.CHECK_COMPARE, (int(Compare.LT), 2, "L1", 0)),
         ])
 
+    def test_not_then_jump_false_fuses_with_jump_held(self):
+        # (if (not (< a b)) ...): the NOT squash retries as JUMP_TRUE,
+        # which the compare ahead of it then absorbs
+        out = squish_ops([
+            (OpCode.VAR, "a"),
+            (OpCode.VAR, "b"),
+            (OpCode.OBJECT_COMPARE, (Compare.LT, 2)),
+            (OpCode.OBJECT_NOT, 0),
+            (OpCode.JUMP_FALSE, "L1"),
+        ])
+        self.assertEqual(out[:3], [
+            (OpCode.VAR, "a"),
+            (OpCode.VAR, "b"),
+            (OpCode.CHECK_COMPARE, (int(Compare.LT), 2, "L1", 1)),
+        ])
+
     def test_chain_count_carried(self):
         out = squish_ops([
             (OpCode.VAR, "a"),

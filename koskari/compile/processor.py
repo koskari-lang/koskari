@@ -421,6 +421,14 @@ SHORTCUT_THREADS = {
 
 SHORTCUT_OPS = frozenset((OpCode.JUMP_AND, OpCode.JUMP_OR))
 
+# a landing OBJECT_NOT ahead of one of these jumps resolves as the
+# jump with its polarity swapped: the value the short-circuit row
+# pushes is negated before the landing tests it
+NOT_LANDINGS = {
+    OpCode.JUMP_FALSE: OpCode.JUMP_TRUE,
+    OpCode.JUMP_TRUE: OpCode.JUMP_FALSE,
+}
+
 
 # The per-pass rule registries: trigger opcode -> candidate list of
 # (priors, rule method). Sight reading a pass means reading its
@@ -754,10 +762,15 @@ class ByteCodeProcessor:
     def jump_false_check_squash(self, op, arg, matched):
         """
         A check-squashable predicate and its JUMP_FALSE combine into
-        the single check jump
+        the single check jump. The OBJECT_NOT case comes back as a
+        JUMP_TRUE trigger so dispatch retries it against the row ahead
+        of the NOT, and a compare there fuses to its jump-held check.
         """
 
-        return [(CHECK_SQUASHES[matched[0][0]], arg)]
+        fused = CHECK_SQUASHES[matched[0][0]]
+        if fused == OpCode.JUMP_TRUE:
+            return (fused, arg)
+        return [(fused, arg)]
 
 
     @squish_rule(OpCode.OBJECT_COMPARE, OpCode.JUMP_FALSE)
@@ -1483,8 +1496,11 @@ class ByteCodeProcessor:
         replacement op and whether the row takes the landing's target
         or its fall-through; the fall-through label is the LABEL row
         directly after the landing when one is there, and is otherwise
-        inserted from the compiler's label generator. Any other landing
-        leaves the row alone, as does a label with no LABEL row.
+        inserted from the compiler's label generator. A landing
+        OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves as that
+        jump with its polarity swapped, the NOT row staying for the
+        fall-through clause. Any other landing leaves the row alone, as
+        does a label with no LABEL row.
 
         Sweeps repeat until none changes a row, so a nested form
         threads once its inner landing has been rewritten. A label a
@@ -1522,12 +1538,18 @@ class ByteCodeProcessor:
                 ci = landing(li)
                 if ci is None:
                     continue
-                thread = SHORTCUT_THREADS.get((op, instr[ci][0]))
+                lop, larg = instr[ci]
+                if lop == OpCode.OBJECT_NOT:
+                    ci = landing(ci)
+                    if ci is None or instr[ci][0] not in NOT_LANDINGS:
+                        continue
+                    lop, larg = NOT_LANDINGS[instr[ci][0]], instr[ci][1]
+                thread = SHORTCUT_THREADS.get((op, lop))
                 if thread is None:
                     continue
                 new_op, to_target = thread
                 if to_target:
-                    target = instr[ci][1]
+                    target = larg
                 elif ci in inserts:
                     target = inserts[ci]
                 elif ci + 1 < len(instr) \
