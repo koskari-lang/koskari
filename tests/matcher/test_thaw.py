@@ -269,6 +269,50 @@ class TestMatcherFromTuple(unittest.TestCase):
             thaw(frozen)
 
 
+    def test_thaw_rejects_repeat_without_a_count(self):
+        """
+        A frozen REPEAT carries its subnode and its minimum count; a
+        two-element node is rejected at validation rather than read
+        past its end when the pattern is lowered
+        """
+
+        frozen = ("MATCHER", ("x",), (), (), (
+            ("TEST", "ANY", -1), ("REPEAT", 0), ("MATCH", 1)), 2)
+        with self.assertRaises(ValueError):
+            thaw(frozen)
+
+
+    def test_thaw_rejects_capture_over_a_zero_width_node(self):
+        """
+        A CAPTURE over a node that may consume nothing has no span to
+        bind: OPTIONAL and NOT under a CAPTURE are refused
+        """
+
+        for inner in (("OPTIONAL", 0), ("NOT", 0)):
+            frozen = ("MATCHER", ("x",), (), (), (
+                ("TEST", "ANY", -1), inner, ("CAPTURE", 0, 1), ("MATCH", 2)), 3)
+            with self.assertRaises(ValueError):
+                thaw(frozen)
+
+
+    def test_thaw_rejects_spine_shapes_over_a_single_value(self):
+        """
+        The sub-pattern of an APP or a map entry tests one value, so a
+        REST or a REPEAT there is refused
+        """
+
+        for inner in (("REST", 0), ("REPEAT", 0, 0)):
+            frozen = ("MATCHER", (), ("f",), ("k",), (
+                ("TEST", "ANY", -1), inner, ("APP", 0, 1), ("MATCH", 2)), 3)
+            with self.assertRaises(ValueError):
+                thaw(frozen)
+            frozen = ("MATCHER", (), (), ("k",), (
+                ("TEST", "ANY", -1), inner, ("MAP_ENTRY_CONST", 0, 1),
+                ("MAP", 2), ("MATCH", 3)), 4)
+            with self.assertRaises(ValueError):
+                thaw(frozen)
+
+
     def test_thaw_rejects_duplicate_child_index(self):
         """
         A frozen MATCH that names the same child twice is rejected

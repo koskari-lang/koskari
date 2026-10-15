@@ -63,7 +63,7 @@ NODE_ARITY = {
     'APP': (3, 3),
     'MAP_ENTRY_CONST': (3, 3),
     'MAP_ENTRY_EXTERN': (3, 3),
-    'REPEAT': (2, 3),
+    'REPEAT': (3, 3),
     'OPTIONAL': (2, 2),
     'REST': (2, 2),
     'NOT': (2, 2),
@@ -159,7 +159,7 @@ def validate_frozen(frozen):
             subnode(node[1], i, True)
         elif kind == 'REPEAT':
             subnode(node[1], i, True)
-            if len(node) == 3 and (not isinstance(node[2], int) or node[2] < 0):
+            if not isinstance(node[2], int) or node[2] < 0:
                 raise ValueError(f"REPEAT min_count out of range at node {i}")
         elif kind == 'REST':
             if not isinstance(node[1], int) or node[1] < 0:
@@ -237,8 +237,7 @@ def validate_frozen(frozen):
                 mx = None if mx is None or cmx is None else max(mx, cmx)
             w = (mn or 0, mx)
         elif kind == 'REPEAT':
-            count = node[2] if len(node) == 3 else 0
-            w = (count * widths[node[1]][0], None)
+            w = (node[2] * widths[node[1]][0], None)
         elif kind == 'OPTIONAL':
             w = (0, widths[node[1]][1])
         else:
@@ -254,6 +253,21 @@ def validate_frozen(frozen):
         if kind in ('FIELD_POS', 'FIELD_KW') and widths[node[1]] != (1, 1):
             raise ValueError(
                 f"FIELD at node {i} subnode must have width exactly 1")
+        if (kind == 'CAPTURE' and node[2] != -1
+                and nodes[node[2]][0] not in ('REST', 'REPEAT', 'GROUP')
+                and widths[node[2]][0] < 1):
+            # a REST or REPEAT binds its list and a GROUP its captures
+            # when empty; any other node that may consume nothing has
+            # no span to bind
+            raise ValueError(
+                f"CAPTURE at node {i} over a subnode that may consume"
+                f" nothing has no span to bind")
+        if (kind in ('APP', 'MAP_ENTRY_CONST', 'MAP_ENTRY_EXTERN')
+                and node[2] != -1
+                and widths[node[2]] not in ((0, 0), (1, 1))):
+            raise ValueError(
+                f"{kind} at node {i} subnode must test one value, not a"
+                f" spine shape")
         if kind == 'CLASS':
             saw_keyword = False
             for child in node[2:]:

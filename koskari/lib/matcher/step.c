@@ -863,8 +863,10 @@ PyObject *KosMatch_Captures(
 
   Py_ssize_t n = step_span_count(start, cursor);
   if (n < 0) {
-    PyErr_SetString(PyExc_SystemError,
-                    "match captures: the start is not on the cursor's spine");
+    /* the span's start no longer reaches the cursor: user code
+       rewrote the spine between the mark and the captures */
+    PyErr_SetString(PyExc_ValueError,
+                    "match subject changed under the walk");
     return NULL;
   }
 

@@ -306,6 +306,27 @@ class TestLoopingSpines(unittest.TestCase):
             make_matcher(pattern).match((cyclic,))
 
 
+class TestMutatedSpines(unittest.TestCase):
+    """
+    A predicate that rewrites the subject's spine under the walk is
+    user code changing the subject: the captures over the span it
+    broke raise ValueError, not an internal error
+    """
+
+    def test_spine_cut_between_a_mark_and_its_captures(self):
+        subject = cons(1, 2, 3, nil)
+
+        def chop(v):
+            setcdr(subject, nil)
+            return True
+
+        pattern = MATCH(
+            GROUP("g", PREDICATE("chop"), CAPTURE("y")), CAPTURE("z"))
+        with self.assertRaises(ValueError) as caught:
+            make_matcher(pattern).match(subject, chop=chop)
+        self.assertIn("changed", str(caught.exception))
+
+
 class TestRepeatScopes(unittest.TestCase):
     """
     Every pass of a repeat starts with nothing bound below it: a named

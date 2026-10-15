@@ -486,11 +486,12 @@ static int test_captures_over_a_spine(void) {
   TEST_ASSERT_SAME(((KosDatumFrame *) out)->source, subj, "the spine");
   Py_DECREF(out);
 
-  /* a start off the cursor's spine is an internal error */
+  /* a start that no longer reaches the cursor: the subject's spine
+     was rewritten under the walk */
   PyObject *other = make_spine(1);
   TEST_ASSERT_NULL(KosMatch_Captures(names, values, other, third),
                    "disjoint span");
-  TEST_ASSERT(clear_expected(PyExc_SystemError), "SystemError");
+  TEST_ASSERT(clear_expected(PyExc_ValueError), "ValueError");
   Py_DECREF(other);
 
   TEST_ASSERT_REFCNT(bound, 1, "released");
