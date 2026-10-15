@@ -488,7 +488,7 @@ int kos_dyn_pop_frame(KosEvalState *es) {
    The frame is returned in *frame_out; caller may keep it (e.g. for async
    gen storage in agen->ctx).
 
-   :param ctx: execution context
+   :param es: eval state
    :param frame_out: output; set to the detached frame (may be NULL)
 
    :return: 0 on success, -1 if top is not a frame
