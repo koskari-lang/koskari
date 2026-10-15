@@ -906,6 +906,14 @@ one enclosing it, as the engine's frame dicts read by name. A name
 not bound at the asked depth is refused at lowering. The emitter is
 unchanged.
 
+Review item 7 as of 2026-10-14: the standalone function's formal is
+spelled `match-subject`, which no keyword extern a caller can pass
+spells, and `Matcher.match` takes its subject positional-only, so an
+extern named `subject` is an extern like any other. Item 6, the
+keyword externs stored into one namespace across a re-entrant call,
+is left: no caller in the tree passes a keyword extern, and a Koskari
+pattern's externs are module names.
+
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_REPEAT_APPEND`, `MATCH_MARK`,

@@ -48,7 +48,9 @@ __all__ = (
 UNBOUNDED = 0xFF
 LIMIT = 0xFF
 
-SUBJECT = "subject"
+# the standalone function's one formal; hyphenated so no keyword extern
+# a caller can pass spells it
+SUBJECT = "match-subject"
 
 
 # === validation of a frozen matcher ===

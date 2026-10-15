@@ -87,6 +87,19 @@ class TestKeywordExterns(unittest.TestCase):
         with self.assertRaises(TypeError):
             m.match(subj)
 
+    def test_extern_named_subject(self):
+        """
+        An extern spelled subject is an extern like any other: it does
+        not collide with the function's own formal, and the keyword
+        reaches the match as an extern
+        """
+
+        m = thaw((
+            "MATCHER", (), ("subject",), (), (("TEST", "TYPE", 0),), 0))
+        self.assertTrue(m.match((7,), subject=int).matched)
+        self.assertFalse(m.match(("s",), subject=int).matched)
+
+
     def test_user_type_extern(self):
         class Point:
             pass

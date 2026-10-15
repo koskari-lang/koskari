@@ -233,7 +233,7 @@ class Matcher:
             f" entry={self.entry}>")
 
 
-    def match(self, subject, **externs):
+    def match(self, subject, /, **externs):
         """
         Match subject, a pair spine, nil, or a sequence. A keyword
         argument names an extern for this match; every extern the
@@ -614,7 +614,7 @@ class Pattern(Protocol):
         return Matcher.from_tuple(MatchCompiler().lower(self))
 
 
-    def match(self, subject, **externs):
+    def match(self, subject, /, **externs):
         """
         Lower this pattern into a Matcher and run it against subject.
         Returns the MatchResult
