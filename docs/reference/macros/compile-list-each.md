@@ -3,13 +3,13 @@
 **Syntax:** `(list-each [BINDING SEQ] BODY ...)`, with an optional
 `when:` or `unless:` clause on the header.
 
-**Behaviour:** Builds a Python list from the value of `BODY` for each
-element of `SEQ` bound as `BINDING`. It expands to a fresh list, a
-`for-each` that appends to it, and a `takeq` that yields the list and
-clears the accumulator slot. A `when:` clause keeps only elements whose
-test is true; `unless:` keeps those whose test is false. A body that is
-a single `when` or `unless` form also filters, contributing nothing
-when its test fails.
+**Behaviour:** Builds a list with one element per element of `SEQ`,
+bound as `BINDING`; each element is the value of `BODY`. `SEQ` is
+evaluated in the scope the form is in, so a class-body name is in
+reach. A `when:` clause keeps only elements whose test is true;
+`unless:` keeps those whose test is false. A body that is a single
+`when` or `unless` form also filters, contributing nothing when its
+test fails. An `await` or a `shift` in the body works.
 
 **Examples:**
 
