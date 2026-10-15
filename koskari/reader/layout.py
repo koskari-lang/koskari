@@ -336,8 +336,10 @@ class LayoutReader(Reader):
         """
         Update layout-mode feature switches on this reader.
 
-        Intended as the stable hook for future pragma-driven reader reload.
-        Any None parameter leaves the current setting unchanged.
+        reload_pragma calls this with the pragma's layout switches on
+        every pragma change, so a direct call holds only until the next
+        pragma change that sets the same switch. Any None parameter
+        leaves the current setting unchanged.
         """
 
         if layout_enabled is not None:
