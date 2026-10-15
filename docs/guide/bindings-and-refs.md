@@ -42,7 +42,11 @@ mix freely in one module:
 | `var [a b] VALUE` | `define-values [a b] VALUE` |
 | `global var NAME VALUE` | `define-global NAME VALUE` |
 | `global def NAME [FORMALS]: BODY` | `define-global [NAME FORMALS]: BODY` |
-| `syntax NAME TRANSFORMER` | `define-syntax NAME TRANSFORMER` |
+| `global syntax NAME TRANSFORMER` | `define-syntax NAME TRANSFORMER` |
+
+`syntax` inside a body scopes the transformer to the rest of that body;
+`global syntax` and `define-syntax` bind it at the module once the form
+has run.
 
 `define` takes Scheme's shape: a function's name goes inside the pair
 with its formals, as in Scheme's `(define (area w h) ...)`:

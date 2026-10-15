@@ -387,4 +387,4 @@ tags:
   - surprising
   - metaprogramming
   - pitfall
-notes: "corrective: put the syntax at module top level, or write global syntax twice inside the body"
+notes: "corrective: put the syntax at module top level, or write global syntax twice inside the body and call f before twice is used"
