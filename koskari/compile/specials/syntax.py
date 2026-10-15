@@ -184,7 +184,7 @@ def special_compile_bare_syntax(compiler, called_by, name, slot, template):
     rather than at the head of a call form. ``SLOT`` names the called-by
     capture, the only binding ``TEMPLATE`` may refer to.
 
-    Lowers to ``(build-bare-syntax NAME-STR SLOT-STR (quote
+    Lowers to ``(build-bare-syntax NAME-STR SLOT-STR (quote-syntax
     TEMPLATE))`` for recompilation. The result is a ``Syntax`` carrying
     only that arm; use ``(compile/define NAME ...)`` to bind it, or
     ``extend-syntax`` to attach it to an existing syntax.
