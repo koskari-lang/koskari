@@ -62,63 +62,114 @@ static int pair_splice_extend(PyObject *coll, PyObject *item) {
 
 
 /**
-  PAIR_SPLICE: arg = count. Stack (bottom to top) = seg_0 ... seg_{count-1}.
-  Each segment is a pair (proper list), a Python tuple (of elements), nil,
-  or any other iterable. Flatten all segments in order into a single proper
-  cons list and push the result.
+  The operand half shared by PAIR_SPLICE and BRACKET_SPLICE. Row field 0
+  is the count of stacked values; field 1 is 0, or 1 when the top value
+  of that count is a tail rather than a segment. Pop the tail when field
+  1 is set, flatten the segments below it in order into a new list, and
+  drop them. On success *tail is a new reference to the popped tail, or
+  to nil when field 1 is 0. Returns NULL with an exception set and
+  nothing held on error.
+*/
+static PyObject *pair_splice_collect(
+    KosEvalState *es,
+    const KosExtra *row,
+    const char *opname,
+    PyObject **tail) {
 
-  nil segments are skipped. The result is always a proper list (ends in nil).
-  PAIR_SPLICE 0 pushes nil.
+  size_t count = (size_t) KosExtra_IMM(row, 0);
+  size_t has_tail = (size_t) KosExtra_IMM(row, 1);
+
+  if (unlikely(has_tail > 1 || has_tail > count)) {
+    PyErr_Format(PyExc_ValueError,
+                 "%s tail field must be 0 or 1 and within count %zu,"
+                 " got %zu", opname, count, has_tail);
+    return NULL;
+  }
+
+  PyObject *end;
+  if (has_tail) {
+    /* the tail is the top stacked value; the segments sit below it */
+    end = KosEvalState_StackPopRef(es);
+    if (unlikely(! end))
+      return NULL;
+    count--;
+
+  } else {
+    Py_INCREF(KosNil);
+    end = KosNil;
+  }
+
+  PyObject *coll = PyList_New(0);
+  if (unlikely(! coll))
+    goto failure;
+
+  if (count) {
+    PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
+    if (unlikely(! ptr))
+      goto failure;
+
+    for (size_t i = 0; i < count; i++) {
+      if (unlikely(pair_splice_extend(coll, ptr[i]) < 0))
+        goto failure;
+    }
+
+    /* coll holds its own references to every flattened element */
+    if (unlikely(KosEvalState_StackDrop(es, count) < 0))
+      goto failure;
+  }
+
+  *tail = end;
+  return coll;
+
+ failure:
+  Py_XDECREF(coll);
+  Py_DECREF(end);
+  return NULL;
+}
+
+
+/**
+  PAIR_SPLICE: row = (count, tail flag). Stack (bottom to top) = seg_0
+  ... seg_{count-1}. Each segment is a pair (proper list), a Python
+  tuple (of elements), nil, or any other iterable. Flatten the segments
+  in order into one cons list and push the result; nil segments are
+  skipped.
+
+  Tail flag 0: the list ends in nil, and an empty result is nil.
+  PAIR_SPLICE (0, 0) pushes nil.
+
+  Tail flag 1: seg_{count-1} is the tail, not a segment. The last
+  cell's cdr is the tail, and an empty result is the tail itself, so
+  `(a ,@xs . b) builds what (cons a (append xs b)) does.
 
   Used by compile/quasiquote to concatenate literal segments and
   unquote-splicing results into the final list.
 */
 KOS_OP_HANDLER(PAIR_SPLICE) {
   KOS_SYNC_PC(es, insn);
-  size_t count = (size_t) KosOp_ARG(insn);
 
-  if (count == 0)
-    RESULT_PUSH(es, KosNil);
-
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
-  if (unlikely(! ptr))
-    RESULT_RAISE();
-
-  PyObject *coll = PyList_New(0);
+  PyObject *tail;
+  PyObject *coll = pair_splice_collect(
+      es, KosOp_ROW(insn), "PAIR_SPLICE", &tail);
   if (unlikely(! coll))
     RESULT_RAISE();
 
-  for (size_t i = 0; i < count; i++) {
-    if (unlikely(pair_splice_extend(coll, ptr[i]) < 0)) {
-      Py_DECREF(coll);
-      RESULT_RAISE();
-    }
-  }
-
-  PyObject *result;
   if (PyList_GET_SIZE(coll) == 0) {
-    /* All segments were empty or nil — result is nil. */
+    /* every segment was empty or nil: the result is the tail */
     Py_DECREF(coll);
-    Py_INCREF(KosNil);
-    result = KosNil;
-
-  } else {
-    /* Append nil to make the result a proper list. */
-    if (PyList_Append(coll, KosNil) < 0) {
-      Py_DECREF(coll);
-      RESULT_RAISE();
-    }
-    result = KosPair_Cons(coll);
-    Py_DECREF(coll);
-    if (! result)
-      RESULT_RAISE();
+    RESULT_STEAL(es, tail);
   }
 
-  if (unlikely(KosEvalState_StackDrop(es, count) < 0)) {
-    Py_DECREF(result);
+  /* the tail is the last cell's cdr */
+  int rc = PyList_Append(coll, tail);
+  Py_DECREF(tail);
+  if (unlikely(rc < 0)) {
+    Py_DECREF(coll);
     RESULT_RAISE();
   }
 
+  PyObject *result = KosPair_Cons(coll);
+  Py_DECREF(coll);
   RESULT_STEAL(es, result);
 }
 

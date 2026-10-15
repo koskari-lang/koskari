@@ -80,8 +80,10 @@ KIO_MAGIC = b'KIO\x00\x00\x00\x00\x00'
 # THEEND.
 # MINOR bumped: BRACKET_SPLICE inserted after PAIR_SPLICE, renumbering
 # every opcode after it.
+# MINOR bumped: PAIR_SPLICE and BRACKET_SPLICE take an EXTRA row of count
+# and tail flag instead of a COUNT operand.
 BYTECODE_ABI_MAJOR = 0
-BYTECODE_ABI_MINOR = 23
+BYTECODE_ABI_MINOR = 24
 BYTECODE_ABI_MICRO = 0
 BYTECODE_ABI_PATCH = 0
 

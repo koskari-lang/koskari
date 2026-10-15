@@ -24,9 +24,11 @@ import unittest
 
 import pytest
 
+from koskari.lib import cons, symbol
+
 from tests.corpus import (
-    CorpusTestCase, eval_values_equal, parse_eval_expected,
-    run_marked_eval_check)
+    CorpusTestCase, eval_values_equal, form_matches_pattern,
+    parse_eval_expected, run_marked_eval_check)
 
 
 pytestmark = pytest.mark.phase_corpus
@@ -110,6 +112,22 @@ class TestCorpusMarkedEvalIntegration(unittest.TestCase):
         kind, payload = parse_eval_expected('5')
         self.assertEqual(kind, 'literal')
         self.assertEqual(payload, 5)
+
+
+class TestFormMatchesPattern(unittest.TestCase):
+    """
+    An improper expected form compares against an equal improper form
+    """
+
+    def test_improper_form_matches_itself(self):
+        got = cons(symbol('a'), symbol('b'))
+        expected = cons(symbol('a'), symbol('b'))
+        self.assertTrue(form_matches_pattern(got, expected))
+
+    def test_improper_form_differs_in_tail(self):
+        got = cons(symbol('a'), symbol('b'))
+        expected = cons(symbol('a'), symbol('c'))
+        self.assertFalse(form_matches_pattern(got, expected))
 
 
 # The end.

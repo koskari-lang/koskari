@@ -452,7 +452,9 @@ def _pattern_from_form(form):
         return str(form)
     if is_pair(form):
         if not is_proper(form):
-            return (form_to_py(form),)
+            # an improper form carries no wildcards; it compares by
+            # equality against the same conversion of the result
+            return form_to_py(form)
         return [_pattern_from_form(x) for x in unpack(form)]
     return form
 

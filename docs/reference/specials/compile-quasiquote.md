@@ -26,8 +26,10 @@ data, with each escape replaced by a runtime value. The walk tracks a nesting
   in that position.
 - `(unquote-splicing INNER)` at level 0, in list position, evaluates `INNER`
   at runtime and splices its elements into the surrounding list. The value
-  must be a pair or nil. A splice in dotted-tail position, or mixed with a
-  dotted tail, is a compile-time error.
+  must be a pair or nil. A splice in dotted-tail position is a compile-time
+  error. A splice before a dotted tail ends the spliced list in that tail:
+  `` `(a ,@xs . b) `` with `xs` bound to `(1 2)` gives `(a 1 2 . b)`, and
+  `(a . b)` when `xs` is empty.
 - `(unquote INNER)` and `(unquote-splicing INNER)` at level > 0 are data, not
   escapes: the form is rebuilt with `INNER` walked at level - 1.
 - `(quasiquote INNER)` at any level is rebuilt as data with `INNER` walked at

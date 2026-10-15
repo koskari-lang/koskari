@@ -416,6 +416,59 @@ class TestQuasiquoteDottedPair(SpecialsTestCase):
         self.assertFalse(result.is_proper())
 
 
+    async def test_splice_before_atom_tail(self):
+        """
+        `(a ,@xs . b) with xs=(1 2) yields (a 1 2 . b)
+        """
+
+        expr, mod = self.compile_expr("`(a ,@xs . b)", xs=cons(1, 2, nil))
+        result = await expr()
+        self.assertEqual(cons(symbol("a"), 1, 2, symbol("b")), result)
+        self.assertFalse(result.is_proper())
+
+
+    async def test_splice_before_unquote_tail(self):
+        """
+        `(a ,@xs . ,y) with xs=(1 2) and y=5 yields (a 1 2 . 5)
+        """
+
+        expr, mod = self.compile_expr(
+            "`(a ,@xs . ,y)", xs=cons(1, 2, nil), y=5)
+        result = await expr()
+        self.assertEqual(cons(symbol("a"), 1, 2, 5), result)
+        self.assertFalse(result.is_proper())
+
+
+    async def test_empty_splice_before_tail(self):
+        """
+        `(a ,@xs . b) with xs empty yields (a . b)
+        """
+
+        expr, mod = self.compile_expr("`(a ,@xs . b)", xs=nil)
+        result = await expr()
+        self.assertEqual(cons(symbol("a"), symbol("b")), result)
+
+
+    async def test_bracket_splice_before_tail(self):
+        """
+        `[a ,@xs . b] with xs=(1 2) yields the bracket pair [a 1 2 . b]
+        """
+
+        expr, mod = self.compile_expr("`[a ,@xs . b]", xs=cons(1, 2, nil))
+        result = await expr()
+        self.assertIsInstance(result, bracket_pair)
+        self.assertEqual("[a 1 2 . b]", kos_repr(result))
+
+
+    def test_splice_in_tail_position_raises(self):
+        """
+        `(a . ,@xs) raises SpecialError
+        """
+
+        self.assertRaises(
+            SpecialError, self.compile_expr, "`(a . ,@xs)", xs=nil)
+
+
 class TestQuasiquoteNested(SpecialsTestCase):
     """
     Nested quasi-quote: inner quasiquotes increment the nesting level so

@@ -14,7 +14,9 @@ are detected by the quasiquote compiler and compiled directly; the spliced
 value is pushed onto the stack as a `PAIR_SPLICE` argument, or a
 `BRACKET_SPLICE` argument in a `[ ]` list. Not valid in the
 cdr (dotted tail) position of an improper list; the quasiquote compiler raises
-`SpecialError` if a splice form appears there.
+`SpecialError` if a splice form appears there. A splice followed by a dotted
+tail, `` `(a ,@xs . b) ``, ends the result in that tail, giving `(a . b)` when
+`xs` is empty.
 
 **Examples:**
 

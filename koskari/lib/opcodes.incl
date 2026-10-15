@@ -64,8 +64,8 @@ OP(CONS, 0, COUNT)
 OP(PROPER, 0, COUNT)
 OP(BRACKET_CONS, 0, COUNT)
 OP(BRACKET_PROPER, 0, COUNT)
-OP(PAIR_SPLICE, 0, COUNT)
-OP(BRACKET_SPLICE, 0, COUNT)
+OP(PAIR_SPLICE, 0, EXTRA, COUNT, COUNT, NOARG, NOARG)     // count, tail flag
+OP(BRACKET_SPLICE, 0, EXTRA, COUNT, COUNT, NOARG, NOARG)  // count, tail flag
 
 // mode control - all code is async, yields flag async generators
 OP(AWAIT, 0, COUNT)

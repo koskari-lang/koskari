@@ -375,7 +375,7 @@ class TestPairSpliceOpcode(CevalTest):
         """
 
         code, ns = build_expr([
-            ["PAIR_SPLICE", 0],
+            ["PAIR_SPLICE", (0, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -391,7 +391,7 @@ class TestPairSpliceOpcode(CevalTest):
         seg = cons(1, 2, nil)
         code, ns = build_expr([
             ["CONST", seg],
-            ["PAIR_SPLICE", 1],
+            ["PAIR_SPLICE", (1, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -409,7 +409,7 @@ class TestPairSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", seg1],
             ["CONST", seg2],
-            ["PAIR_SPLICE", 2],
+            ["PAIR_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -425,7 +425,7 @@ class TestPairSpliceOpcode(CevalTest):
         b = symbol("b")
         code, ns = build_expr([
             ["CONST", (a, b)],
-            ["PAIR_SPLICE", 1],
+            ["PAIR_SPLICE", (1, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -445,7 +445,7 @@ class TestPairSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", (a, b)],
             ["CONST", seg_pair],
-            ["PAIR_SPLICE", 2],
+            ["PAIR_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -462,7 +462,7 @@ class TestPairSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", nil],
             ["CONST", seg],
-            ["PAIR_SPLICE", 2],
+            ["PAIR_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -480,7 +480,7 @@ class TestPairSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", seg1],
             ["CONST", seg2],
-            ["PAIR_SPLICE", 2],
+            ["PAIR_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -499,7 +499,7 @@ class TestPairSpliceOpcode(CevalTest):
             ["CONST", (a,)],
             ["CONST", (b,)],
             ["CONST", (c,)],
-            ["PAIR_SPLICE", 3],
+            ["PAIR_SPLICE", (3, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -514,11 +514,60 @@ class TestPairSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", ()],
             ["CONST", ()],
-            ["PAIR_SPLICE", 2],
+            ["PAIR_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
         self.assertIs(result, nil)
+
+
+    async def test_pair_splice_tail_two_segments(self):
+        """
+        PAIR_SPLICE with a tail ends the last cell in the top value
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", (1, 2)],
+            ["CONST", cons(3, nil)],
+            ["CONST", b],
+            ["PAIR_SPLICE", (3, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertEqual(cons(1, 2, 3, b), result)
+
+
+    async def test_pair_splice_tail_no_segments(self):
+        """
+        PAIR_SPLICE with a tail and no segments pushes the tail itself
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", b],
+            ["PAIR_SPLICE", (1, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, b)
+
+
+    async def test_pair_splice_tail_nil_segments(self):
+        """
+        PAIR_SPLICE with a tail and only nil segments pushes the tail
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", nil],
+            ["CONST", ()],
+            ["CONST", b],
+            ["PAIR_SPLICE", (3, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, b)
 
 
 class TestBracketSpliceOpcode(CevalTest):
@@ -532,7 +581,7 @@ class TestBracketSpliceOpcode(CevalTest):
         """
 
         code, ns = build_expr([
-            ["BRACKET_SPLICE", 0],
+            ["BRACKET_SPLICE", (0, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -546,7 +595,7 @@ class TestBracketSpliceOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", cons(1, 2, nil)],
-            ["BRACKET_SPLICE", 1],
+            ["BRACKET_SPLICE", (1, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -561,7 +610,7 @@ class TestBracketSpliceOpcode(CevalTest):
 
         code, ns = build_expr([
             ["CONST", (1,)],
-            ["BRACKET_SPLICE", 1],
+            ["BRACKET_SPLICE", (1, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -578,7 +627,7 @@ class TestBracketSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", cons(1, 2, nil)],
             ["CONST", cons(3, 4, nil)],
-            ["BRACKET_SPLICE", 2],
+            ["BRACKET_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -594,7 +643,7 @@ class TestBracketSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", (1, 2)],
             ["CONST", (3,)],
-            ["BRACKET_SPLICE", 2],
+            ["BRACKET_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -616,7 +665,7 @@ class TestBracketSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", (a, b)],
             ["CONST", cons(c, nil)],
-            ["BRACKET_SPLICE", 2],
+            ["BRACKET_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -631,7 +680,7 @@ class TestBracketSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", nil],
             ["CONST", cons(1, 2, nil)],
-            ["BRACKET_SPLICE", 2],
+            ["BRACKET_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -650,7 +699,7 @@ class TestBracketSpliceOpcode(CevalTest):
             ["CONST", (a,)],
             ["CONST", (b,)],
             ["CONST", (c,)],
-            ["BRACKET_SPLICE", 3],
+            ["BRACKET_SPLICE", (3, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
@@ -665,11 +714,83 @@ class TestBracketSpliceOpcode(CevalTest):
         code, ns = build_expr([
             ["CONST", ()],
             ["CONST", nil],
-            ["BRACKET_SPLICE", 2],
+            ["BRACKET_SPLICE", (2, 0, 0, 0)],
             ["RETURN", 1],
         ])
         result = await make_callable(code, ns)()
         self.assertIs(result, bracket_nil)
+
+
+    async def test_bracket_splice_tail_two_segments(self):
+        """
+        BRACKET_SPLICE with a tail keeps the bracket head and ends the
+        last cell in the top value
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", (1, 2)],
+            ["CONST", cons(3, nil)],
+            ["CONST", b],
+            ["BRACKET_SPLICE", (3, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(type(result), bracket_pair)
+        self.assertEqual(1, result.car)
+        self.assertEqual(cons(2, 3, b), result.cdr)
+        self.assertIs(type(result.cdr), pair)
+
+
+    async def test_bracket_splice_tail_single_element(self):
+        """
+        BRACKET_SPLICE with a tail over one element gives a bracket pair
+        whose cdr is the tail
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", (1,)],
+            ["CONST", b],
+            ["BRACKET_SPLICE", (2, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(type(result), bracket_pair)
+        self.assertEqual(1, result.car)
+        self.assertIs(result.cdr, b)
+
+
+    async def test_bracket_splice_tail_no_segments(self):
+        """
+        BRACKET_SPLICE with a tail and no segments pushes the tail itself
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", b],
+            ["BRACKET_SPLICE", (1, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, b)
+
+
+    async def test_bracket_splice_tail_nil_segments(self):
+        """
+        BRACKET_SPLICE with a tail and only nil segments pushes the tail
+        """
+
+        b = symbol("b")
+        code, ns = build_expr([
+            ["CONST", nil],
+            ["CONST", ()],
+            ["CONST", b],
+            ["BRACKET_SPLICE", (3, 1, 0, 0)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, b)
 
 
 # The end.

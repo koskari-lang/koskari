@@ -27,8 +27,9 @@ twins:
 - CONST atom: push a constant symbol, keyword, number, etc.
 - PROPER n: pop N elements, build a proper list (appends nil automatically)
 - CONS n: pop N elements using the last as an explicit tail (for dotted pairs)
-- PAIR_SPLICE n: concatenate N pair/tuple segments into one proper list
-- BRACKET_PROPER n, BRACKET_CONS n, BRACKET_SPLICE n: the same three for
+- PAIR_SPLICE (n, t): concatenate pair/tuple segments into one list,
+  ending in nil (t = 0) or in the top stacked value (t = 1)
+- BRACKET_PROPER n, BRACKET_CONS n, BRACKET_SPLICE (n, t): the same three for
   a [ ] form; BRACKET_SPLICE makes only the leading cell a bracket pair
 
 When a segment of a quasi-quoted list contains only compile-time-constant
@@ -228,11 +229,14 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
 
     Walks the pair structure, accumulating elements into segments separated
     by unquote-splicing sites. Each segment is flushed via _emit_segment.
-    Splice expressions are compiled and pushed directly as PAIR_SPLICE args.
-    A final PAIR_SPLICE n (BRACKET_SPLICE n for a bracket-pair) is emitted
-    when there was at least one splice.
+    Splice expressions are compiled and pushed directly as PAIR_SPLICE
+    segments. A final PAIR_SPLICE (BRACKET_SPLICE for a bracket-pair) is
+    emitted when there was at least one splice.
 
     Dotted-pair tails use CONS instead of PROPER so the cdr is explicit.
+    With a splice, the tail value is pushed after the segments and the
+    splice's tail field is set, so `(a ,@xs . b) gives (a x1 x2 . b), or
+    (a . b) when xs is empty. A splice as the tail itself is an error.
 
     When `bracket` is True (the source is a bracket-pair), the opcodes
     are swapped for their bracket twins: BRACKET_PROPER for whole-list
@@ -257,29 +261,20 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
         elem = current.car
         current = current.cdr
 
-        # If current is now a non-nil, non-pair value, it's the dotted tail.
-        # Stop iterating: the loop condition will exit and the dotted-tail
-        # branch below will handle it.
-        if not is_nil(current) and not is_pair(current):
-
-            # elem is the last element before the dotted tail of an improper
-            # list
-            segment.append(
-                _compile_element(compiler, frag, elem, level, keep))
-            break
-
-        # Improper list whose dotted tail is (compile/unquote …): `current` is
-        # that pair without a wrapping cons(..., nil).  Proper `(,x ,y)` has
-        # current = cons(uqy, nil) after the first step (cdr is nil), so this
-        # branch does not fire there.
-        # `is_pair(nil)` is true; guard before `.cdr` (cannot get cdr of nil).
-        if (not is_nil(current)
-                and is_pair(current)
-                and not is_nil(current.cdr)
-                and strip_mark(current.car) is _symbol_unquote):
-            segment.append(
-                _compile_element(compiler, frag, elem, level, keep))
-            break
+        # elem is the last element before a dotted tail when current is a
+        # non-nil atom, or the reader's (unquote x) or (unquote-splicing x)
+        # for `. ,x` or `. ,@x`, which arrives without a wrapping
+        # cons(..., nil). Proper `(,x ,y)` has current = cons(uqy, nil)
+        # after the first step, whose car is a pair, so the test does not
+        # fire there. `is_pair(nil)` is true; guard before `.cdr`.
+        tail_follows = False
+        if not is_nil(current):
+            if not is_pair(current):
+                tail_follows = True
+            elif not is_nil(current.cdr):
+                tail_head = strip_mark(current.car)
+                tail_follows = (tail_head is _symbol_unquote
+                                or tail_head is _symbol_unquote_splicing)
 
         if _is_splice(elem, level):
             splice_inner_list = elem[1]
@@ -306,6 +301,9 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
             segment.append(
                 _compile_element(compiler, frag, elem, level, keep))
 
+        if tail_follows:
+            break
+
     # current is now the cdr after the last pair: nil (proper) or a value (dotted)
     if not is_nil(current):
         if _is_splice(current, level):
@@ -314,16 +312,19 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
                 current)
 
         if has_splice:
-            raise SpecialError(
-                "unquote-splicing cannot be mixed with a dotted tail",
-                lst)
-
-        # Emit the segment elements (no PROPER — tail will be explicit for CONS)
-        for sub_frag, is_c in segment:
-            if is_c:
-                frag.instruction(OpCode.CONST, sub_frag)
-            else:
-                frag.merge(sub_frag)
+            # the final segment joins the splice segments; the tail value
+            # follows them, and the splice's tail field makes it the last
+            # cell's cdr
+            if _emit_segment(
+                    compiler, frag, segment, as_tuple_for_splice=True):
+                splice_count += 1
+        else:
+            # the segment elements stay unclosed; CONS takes the tail
+            for sub_frag, is_c in segment:
+                if is_c:
+                    frag.instruction(OpCode.CONST, sub_frag)
+                else:
+                    frag.merge(sub_frag)
 
         # Emit the dotted tail value, an atom projected like any other
         if _is_const(current):
@@ -347,11 +348,15 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
         else:
             _qq_expr(compiler, frag, current, level, keep)
 
-        # explicit-tail build: BRACKET_CONS for [ ], CONS for ( )
-        if bracket:
-            frag.instruction(OpCode.BRACKET_CONS, len(segment) + 1)
+        if has_splice:
+            # the segments plus the tail, tail field set
+            row = (splice_count + 1, 1, 0, 0)
+            op = OpCode.BRACKET_SPLICE if bracket else OpCode.PAIR_SPLICE
+            frag.instruction(op, row)
         else:
-            frag.instruction(OpCode.CONS, len(segment) + 1)
+            # explicit-tail build: BRACKET_CONS for [ ], CONS for ( )
+            op = OpCode.BRACKET_CONS if bracket else OpCode.CONS
+            frag.instruction(op, len(segment) + 1)
         return
 
     # Proper list: flush the final segment
@@ -367,10 +372,11 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
         # literal PROPER/tuple chunks plus each splice result. BRACKET_SPLICE
         # is the [ ] twin (only its leading cell is a bracket-pair).
         if splice_count >= 1:
+            row = (splice_count, 0, 0, 0)
             if bracket:
-                frag.instruction(OpCode.BRACKET_SPLICE, splice_count)
+                frag.instruction(OpCode.BRACKET_SPLICE, row)
             else:
-                frag.instruction(OpCode.PAIR_SPLICE, splice_count)
+                frag.instruction(OpCode.PAIR_SPLICE, row)
     elif splice_count == 0:
         # Empty list: `() → nil, `[] → bracket-nil
         frag.instruction(OpCode.CONST, bracket_nil if bracket else nil)

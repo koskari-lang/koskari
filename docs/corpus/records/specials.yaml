@@ -1215,6 +1215,44 @@ tags:
   - metaprogramming
 notes: seq=(1,2,3) spliced after a; head is symbol a
 ---
+id: special-quasiquote-splice-dotted-tail-001
+feature: special/compile/quasiquote
+source: |-
+  `(a ,@seq . b)
+verify:
+  read: "(quasiquote (a (unquote-splicing seq) . b))"
+  expand: "(quasiquote (a (unquote-splicing seq) . b))"
+  eval: "improper-list:(a 1 2 3 . b)"
+references:
+  - reference/specials/compile-quasiquote.md
+  - reference/specials/compile-unquote-splicing.md
+stability: evolving
+tags:
+  - special
+  - quasiquote
+  - unquote-splicing
+  - metaprogramming
+notes: seq=(1,2,3) fixture; a splice before a dotted tail ends the spliced list in that tail, as (cons a (append seq b))
+---
+id: special-quasiquote-splice-dotted-tail-empty-002
+feature: special/compile/quasiquote
+source: |-
+  `(a ,@() . b)
+verify:
+  read: "(quasiquote (a (unquote-splicing ()) . b))"
+  expand: "(quasiquote (a (unquote-splicing ()) . b))"
+  eval: "improper-list:(a . b)"
+references:
+  - reference/specials/compile-quasiquote.md
+  - reference/specials/compile-unquote-splicing.md
+stability: evolving
+tags:
+  - special
+  - quasiquote
+  - unquote-splicing
+  - metaprogramming
+notes: an empty splice before a dotted tail leaves the tail as the cdr of the last element, giving (a . b)
+---
 id: special-thunk-add-001
 feature: reader/thunk
 source: |-
