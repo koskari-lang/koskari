@@ -18,9 +18,7 @@ Koskari's s-expression reader. The Reader reads any SourceStream (see
 koskari.reader.stream for the stream layers) with configurable reader
 macros and atom patterns; FormatStringReader is its sub-reader for the
 interior of format strings. LayoutReader, the layout coordinator built
-on Reader, lives in koskari.reader.layout. No reader method inspects
-private attributes of streams it receives; the stream interface is
-uniform and well-defined.
+on Reader, lives in koskari.reader.layout.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
