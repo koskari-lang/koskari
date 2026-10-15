@@ -397,6 +397,26 @@ NO_FALLTHROUGH = frozenset((
 CONTROL_NONE_OPS = frozenset((
     OpCode.RETURN, OpCode.BREAK, OpCode.CONTINUE, OpCode.YIELD))
 
+# the jump a short-circuit row becomes when its label lands on a
+# conditional jump, keyed by (row op, landing op). The value pushed on
+# the jumping path is known (falsy after JUMP_AND, truthy after
+# JUMP_OR), so the landing's outcome on it is fixed: True when the
+# landing would jump, and the row takes the landing's target; False
+# when the landing would fall through, and the row takes the landing's
+# fall-through label. The replacement pops the value either way.
+SHORTCUT_THREADS = {
+    (OpCode.JUMP_AND, OpCode.JUMP_FALSE): (OpCode.JUMP_FALSE, True),
+    (OpCode.JUMP_AND, OpCode.JUMP_AND): (OpCode.JUMP_AND, True),
+    (OpCode.JUMP_AND, OpCode.JUMP_TRUE): (OpCode.JUMP_FALSE, False),
+    (OpCode.JUMP_AND, OpCode.JUMP_OR): (OpCode.JUMP_FALSE, False),
+    (OpCode.JUMP_OR, OpCode.JUMP_TRUE): (OpCode.JUMP_TRUE, True),
+    (OpCode.JUMP_OR, OpCode.JUMP_OR): (OpCode.JUMP_OR, True),
+    (OpCode.JUMP_OR, OpCode.JUMP_FALSE): (OpCode.JUMP_TRUE, False),
+    (OpCode.JUMP_OR, OpCode.JUMP_AND): (OpCode.JUMP_TRUE, False),
+}
+
+SHORTCUT_OPS = frozenset((OpCode.JUMP_AND, OpCode.JUMP_OR))
+
 
 # The per-pass rule registries: trigger opcode -> candidate list of
 # (priors, rule method). Sight reading a pass means reading its
@@ -1432,6 +1452,102 @@ class ByteCodeProcessor:
         self.instructions = result
 
 
+    def thread_shortcut_jumps(self):
+        """
+        Rewrite a JUMP_AND or JUMP_OR whose label lands on a
+        conditional jump into the jump that landing performs on the
+        value the short-circuit row pushes.
+
+        The landing is the first row after the label that is not
+        POSITION or NOOP. A landing that is a JUMP_FALSE, JUMP_TRUE,
+        JUMP_AND or JUMP_OR resolves through SHORTCUT_THREADS to the
+        replacement op and whether the row takes the landing's target
+        or its fall-through; the fall-through label is the LABEL row
+        directly after the landing when one is there, and is otherwise
+        inserted from the compiler's label generator. Any other landing
+        leaves the row alone, as does a label with no LABEL row.
+
+        Sweeps repeat until none changes a row, so a nested form
+        threads once its inner landing has been rewritten. A label a
+        rewrite dereferenced goes when nothing else refers to it; every
+        other label stays. Runs before squish so the threaded jumps
+        fuse with their feeders there.
+        """
+
+        instr = self.instructions
+        if not any(op in SHORTCUT_OPS for op, _ in instr):
+            return
+
+        gen_label = self.fragment.compiler.gen_label
+        orphaned = set()
+
+        def landing(li):
+            li += 1
+            while li < len(instr) and instr[li][0] in JOIN_TRANSPARENT:
+                li += 1
+            return li if li < len(instr) else None
+
+        changed = True
+        while changed:
+            changed = False
+            labels = {
+                arg: i for i, (op, arg) in enumerate(instr)
+                if op == OpCode.LABEL}
+            inserts = {}
+            for i, (op, arg) in enumerate(instr):
+                if op not in SHORTCUT_OPS:
+                    continue
+                li = labels.get(arg)
+                if li is None:
+                    continue
+                ci = landing(li)
+                if ci is None:
+                    continue
+                thread = SHORTCUT_THREADS.get((op, instr[ci][0]))
+                if thread is None:
+                    continue
+                new_op, to_target = thread
+                if to_target:
+                    target = instr[ci][1]
+                elif ci in inserts:
+                    target = inserts[ci]
+                elif ci + 1 < len(instr) \
+                        and instr[ci + 1][0] == OpCode.LABEL:
+                    target = instr[ci + 1][1]
+                else:
+                    target = inserts[ci] = gen_label()
+                if (new_op, target) == (op, arg):
+                    continue
+                instr[i] = (new_op, target)
+                orphaned.add(arg)
+                changed = True
+            if inserts:
+                result = []
+                for i, row in enumerate(instr):
+                    result.append(row)
+                    if i in inserts:
+                        result.append((OpCode.LABEL, inserts[i]))
+                instr = result
+
+        if not orphaned:
+            self.instructions = instr
+            return
+
+        referenced = set()
+        for op, arg in instr:
+            if op.style == OpStyle.LABEL:
+                referenced.add(arg)
+            elif op.extra and OpStyle.LABEL in op.extra:
+                for v, fk in zip(arg, op.extra):
+                    if fk == OpStyle.LABEL:
+                        referenced.add(v)
+        orphaned -= referenced
+
+        self.instructions = [
+            row for row in instr
+            if not (row[0] == OpCode.LABEL and row[1] in orphaned)]
+
+
     def elide_join_constants(self):
         """
         Remove a constant every path pushes into a label whose one
@@ -1632,6 +1748,11 @@ class ByteCodeProcessor:
         """
 
         compiler = self.fragment.compiler
+
+        # a short-circuit jump landing on a conditional jump becomes
+        # that jump, so the clause's predicate and the branch sit
+        # adjacent for the squish
+        self.thread_shortcut_jumps()
 
         # first we do the peephole squish, which sounds more suggestive than
         # it actually is.

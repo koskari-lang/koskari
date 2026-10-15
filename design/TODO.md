@@ -33,16 +33,6 @@ elements.
 
 Ref: [interpreter/pair-const-opcodes.md](interpreter/pair-const-opcodes.md).
 
-### Short-circuit jump threading (implement)
-
-A `JUMP_AND`/`JUMP_OR` whose label lands on a conditional jump becomes
-that jump on the value it would have pushed, so every `and`/`or`
-clause in test position fuses to its `CHECK_*` form. Follow-ons: a
-jump-on-success polarity bit for the compare branches, and feeder-fused
-`JUMP_FALSE`/`JUMP_TRUE` twins for every bare-variable test.
-
-Ref: [interpreter/shortcut-jump-threading.md](interpreter/shortcut-jump-threading.md).
-
 ### Electors: remaining homes
 
 A `KosThreadFn` chosen once for a site's operands (a cache slot) or an

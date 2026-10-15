@@ -1,0 +1,35 @@
+;; churn_complex_branch -- and/or/not in every test position: a loop test,
+;; four if/elif arms over compares and bare variables, and a short-circuit
+;; in value position, with deliberately light arithmetic so the branch
+;; layout dominates.
+
+(define MASK32 0xffffffff)
+(define SENTINEL 0xdeadbeef)
+
+
+define churn_complex_branch [n x: 1]:
+    define acc 0
+    define v (& x MASK32)
+    define flag 0
+    define i 0
+    while (and (< i n) (!= acc SENTINEL)):
+        set! v (& (+ (* v 1103515245) i) MASK32)
+        define lo (& v 0xff)
+        define hi (>> v 24)
+        if (and (< lo 64) (< hi 64)):
+            set! acc (& (+ acc lo hi) MASK32)
+        elif (or (== lo 255) (== hi 255)):
+            set! acc (& (^ acc v) MASK32)
+        elif (and (or flag (& v 1)) (< lo hi)):
+            set! acc (& (+ acc (>> v 3)) MASK32)
+            set! flag 0
+        elif (not (and (> lo 128) (> hi 128))):
+            set! acc (& (- acc lo) MASK32)
+            set! flag 1
+        else:
+            set! acc (& (+ acc (or flag lo)) MASK32)
+        incr! i
+    acc
+
+
+;; The end.
