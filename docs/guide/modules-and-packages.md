@@ -80,6 +80,9 @@ source extensions:
 | `pkg/foo.ki` with **no** `pkg/__init__.*` | `pkg.foo` | namespace package |
 | `foo.kio` | `foo` | precompiled module |
 
+`.ki` and `.kio` modules import only from directories on `sys.path`, not
+from zip archives.
+
 ## A regular package: `__init__.ki`
 
 Give a directory an `__init__.ki` and it is a regular package. The init runs when
