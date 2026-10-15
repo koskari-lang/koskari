@@ -339,6 +339,41 @@ class TestMatcherFromTuple(unittest.TestCase):
         self.assertIsInstance(thaw(frozen), Matcher)
 
 
+    def test_optional_over_a_form_holding_a_rest_is_not_the_branch_rest(self):
+        """
+        A REST inside a form under an OPTIONAL belongs to the form's own
+        spine, so two such optionals on one branch validate; a REST on
+        the optional's own spine beside another REST does not
+        """
+
+        nodes = (
+            ("TEST", "LITERAL", 0),      # 0
+            ("REST", 0),                 # 1
+            ("MATCH", 0, 1),             # 2
+            ("FORM", 2),                 # 3
+            ("OPTIONAL", 3),             # 4
+            ("TEST", "LITERAL", 1),      # 5
+            ("REST", 0),                 # 6
+            ("MATCH", 5, 6),             # 7
+            ("FORM", 7),                 # 8
+            ("OPTIONAL", 8),             # 9
+            ("MATCH", 4, 9),             # 10
+        )
+        frozen = ("MATCHER", (), (), ("else", "finally"), nodes, 10)
+        self.assertIsInstance(thaw(frozen), Matcher)
+
+        nodes = (
+            ("REST", 0),                 # 0
+            ("OPTIONAL", 0),             # 1
+            ("REST", 0),                 # 2
+            ("MATCH", 1, 2),             # 3
+        )
+        frozen = ("MATCHER", (), (), (), nodes, 3)
+        with self.assertRaises(ValueError) as caught:
+            thaw(frozen)
+        self.assertIn("2 REST", str(caught.exception))
+
+
     def test_thaw_rejects_duplicate_child_index(self):
         """
         A frozen MATCH that names the same child twice is rejected

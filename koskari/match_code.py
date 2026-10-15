@@ -79,6 +79,9 @@ NODE_ARITY = {
 
 CONTAINERS = ('MATCH', 'GROUP', 'ONEOF', 'MAP', 'CLASS')
 
+# the kinds whose children sit on the same spine as the node itself
+SAME_SPINE = ('CAPTURE', 'MATCH', 'GROUP', 'ONEOF', 'OPTIONAL', 'REPEAT')
+
 
 def validate_frozen(frozen):
     """
@@ -370,6 +373,9 @@ def branch_chunks(nodes, widths, root):
             mn, mx = widths[idx]
             chunks.append((mn, mx, False))
         elif kind == 'OPTIONAL':
+            # a REST on the optional's own spine consumes the branch's
+            # remainder; one inside a nested form, class, map or
+            # application belongs to that node's branch
             has_rest = False
             inner = [node[1]]
             while inner:
@@ -377,7 +383,8 @@ def branch_chunks(nodes, widths, root):
                 if nodes[j][0] == 'REST':
                     has_rest = True
                     break
-                inner.extend(spine_children(nodes, j))
+                if nodes[j][0] in SAME_SPINE:
+                    inner.extend(spine_children(nodes, j))
             chunks.append((0, widths[idx][1], has_rest))
         elif kind == 'REST':
             chunks.append((node[1], None, True))
