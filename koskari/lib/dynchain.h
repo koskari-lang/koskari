@@ -1083,7 +1083,7 @@ int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame);
 
 
 /**
-   Create a generator node node.  The generator object owns the node;
+   Create a generator node.  The generator object owns the node;
    the dynchain borrows it during execution.  Caller links the frame under
    it (frame->parent = gen) before passing the frame to KosContext_New.
 

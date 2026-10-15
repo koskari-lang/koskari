@@ -2258,7 +2258,7 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
 
     case KOS_DYN_GEN:
       PyErr_SetString(PyExc_RuntimeError,
-                      "cannot clone generator node node");
+                      "cannot clone generator node");
       return NULL;
     case KOS_DYN_NEXT:
       return (KosDynNode *) kos_dyn_next_clone((KosDynNext *) node);
