@@ -246,6 +246,17 @@ define _core_type_name [val]:
     (str val)
 
 
+;; the EXTRA field that carries a core type's ordinal, by opcode; a
+;; pull names its cursor's depth in the RAW field before it
+define _CORE_TYPE_FIELD #{
+  "MATCH_CORE_TYPE": 1
+  "MATCH_CORE_TYPE_BIND_VAR": 1
+  "MATCH_CORE_TYPE_BIND_FAST": 1
+  "MATCH_NEXT_CORE_TYPE": 2
+  "MATCH_NEXT_CORE_TYPE_BIND_VAR": 2
+  "MATCH_NEXT_CORE_TYPE_BIND_FAST": 2}
+
+
 define _format_opcount [arg]:
   """
   Render a packed OPCOUNT value: the operator name from the high byte
@@ -348,8 +359,9 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
+        define ordinal_field (_CORE_TYPE_FIELD.get op_name)
         define parts:
-          list-each [[val fk] (zip ext schema)]:
+          list-each [[field val fk] (zip (range (len schema)) ext schema)]:
             switch fk:
               case [OpStyle.CONST OpStyle.ATTR OpStyle.VAR]:
                 if (and (<= 0 val) (< val (len cpool))):
@@ -371,7 +383,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
               case [OpStyle.FASTVAR]:
                 (_format_fast_part val local_names closure_names)
               case [OpStyle.COUNT OpStyle.RAW]:
-                if (and (equal? fk OpStyle.RAW) (in? "CORE_TYPE" op_name)):
+                if (equal? field ordinal_field):
                   (_core_type_name val)
                 else:
                   (str val)

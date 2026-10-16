@@ -259,15 +259,16 @@ int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor) {
 /**
    The elements left from a sequence cursor as the sequence is now: a
    list may have shrunk under user code since the descent recorded
-   its length, so an exact list answers from its live size, clamped at
-   none; a tuple cannot change and any other sequence answers its own
-   IndexError from the item read. The recorded length serves the width
-   precheck at descent and nothing after it for a list.
+   its length, so a list or list subclass answers from its live size,
+   clamped at none; a tuple cannot change and any other sequence
+   answers its own IndexError from the item read. The recorded length
+   serves the width precheck at descent and nothing after it for a
+   list.
 */
 static Py_ssize_t cursor_remaining(const KosMatchCursor *c) {
   Py_ssize_t length = c->length;
 
-  if (PyList_CheckExact(c->seq))
+  if (PyList_Check(c->seq))
     length = PyList_GET_SIZE(c->seq);
   return length > c->index ? length - c->index : 0;
 }
@@ -345,9 +346,9 @@ int KosMatch_End(PyObject *cursor) {
 
 
 /**
-   The consumed range of a sequence cursor as a tuple; a list is read
-   within its live size, so a shrink under user code shortens the
-   range instead of reading past the end. New reference.
+   The consumed range of a sequence cursor as a tuple; a list or list
+   subclass is read within its live size, so a shrink under user code
+   shortens the range instead of reading past the end. New reference.
 */
 static PyObject *step_seq_slice(
     PyObject *seq,
@@ -356,7 +357,7 @@ static PyObject *step_seq_slice(
 
   if (PyTuple_CheckExact(seq))
     return PyTuple_GetSlice(seq, start, end);
-  if (PyList_CheckExact(seq)) {
+  if (PyList_Check(seq)) {
     Py_ssize_t have = PyList_GET_SIZE(seq);
     if (end > have)
       end = have;
@@ -530,21 +531,19 @@ int KosMatch_LiteralTest(PyObject *elem, PyObject *lit) {
    an exception set on internal failure.
 */
 static PyObject *synth_match_args_39(PyObject *cls) {
-  static PyObject *dc_fields = NULL;
-
   int is_dc = PyObject_HasAttrString(cls, "__dataclass_fields__");
   if (is_dc) {
-    if (! dc_fields) {
+    if (! kos_dc_fields) {
       PyObject *dc = PyImport_ImportModule("dataclasses");
       if (! dc)
         return NULL;
-      dc_fields = PyObject_GetAttrString(dc, "fields");
+      kos_dc_fields = PyObject_GetAttrString(dc, "fields");
       Py_DECREF(dc);
-      if (! dc_fields)
+      if (! kos_dc_fields)
         return NULL;
     }
 
-    PyObject *flds = PyObject_CallOneArg(dc_fields, cls);
+    PyObject *flds = PyObject_CallOneArg(kos_dc_fields, cls);
     if (! flds)
       return NULL;
     PyObject *fast = PySequence_Fast(
@@ -727,15 +726,9 @@ static PyObject *map_probe(PyObject *mapping, PyObject *key) {
     return val;
   }
 
-  static PyObject *absent = NULL;
-  if (! absent) {
-    absent = PyObject_CallNoArgs((PyObject *) &PyBaseObject_Type);
-    if (! absent)
-      return NULL;
-  }
-
-  PyObject *val = PyObject_CallMethod(mapping, "get", "OO", key, absent);
-  if (val == absent) {
+  PyObject *val = PyObject_CallMethod(
+      mapping, "get", "OO", key, kos_map_absent);
+  if (val == kos_map_absent) {
     Py_DECREF(val);
     return NULL;
   }

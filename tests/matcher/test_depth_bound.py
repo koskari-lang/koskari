@@ -82,10 +82,7 @@ class TestMatcherDepthBound(unittest.TestCase):
         Matcher without reaching the recursion limit
         """
 
-        try:
-            m = Matcher.from_tuple(nested_forms(60000, under_not=True))
-        except RecursionError:
-            return
+        m = Matcher.from_tuple(nested_forms(60000, under_not=True))
         self.assertIsInstance(m, Matcher)
 
     def test_a_pattern_within_the_limit_matches(self):

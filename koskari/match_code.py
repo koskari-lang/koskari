@@ -290,6 +290,32 @@ def validate_frozen(frozen):
                         f"CLASS at node {i} has positional FIELD {child}"
                         f" after a keyword FIELD")
 
+    # the subnode of a map entry, an APP or a FIELD tests the one value
+    # on top of the stack; a GROUP spans a spine and has none there
+    for i, node in enumerate(nodes):
+        kind = node[0]
+        if kind in ('APP', 'MAP_ENTRY_CONST', 'MAP_ENTRY_EXTERN'):
+            sub = node[2]
+        elif kind in ('FIELD_POS', 'FIELD_KW'):
+            sub = node[1]
+        else:
+            continue
+        pending = [sub] if sub != -1 else []
+        while pending:
+            j = pending.pop()
+            inner = nodes[j]
+            if inner[0] == 'GROUP':
+                raise ValueError(
+                    f"{kind} at node {i} subnode holds a GROUP at node {j},"
+                    f" which needs a spine")
+            if inner[0] == 'CAPTURE':
+                if inner[2] != -1:
+                    pending.append(inner[2])
+            elif inner[0] in ('OPTIONAL', 'NOT'):
+                pending.append(inner[1])
+            elif inner[0] in ('ONEOF', 'MATCH'):
+                pending.extend(inner[1:])
+
     # a FIELD or a MAP_ENTRY belongs to a chain, never to a spine
     for i, node in enumerate(nodes):
         kind = node[0]

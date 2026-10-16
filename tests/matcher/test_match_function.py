@@ -552,6 +552,16 @@ def walk(pattern):
     return [(op.name, plain(arg)) for op, arg in lowering.target.instructions]
 
 
+def after_label(instructions, label):
+    """
+    The two instructions that follow a label: a miss trampoline's pop
+    and its jump
+    """
+
+    at = instructions.index(("LABEL", label))
+    return instructions[at + 1:at + 3]
+
+
 def depth_trace(pattern, index=None):
     """
     The rows of a standalone lowering that name a cursor, mark or
@@ -646,6 +656,27 @@ class TestDepthTrace(unittest.TestCase):
     def test_indexed_root_reads_captures_one_deeper(self):
         self.assertEqual(rows(depth_trace(MATCH(VALUE("x")), index=0))[-1],
                          ("MATCH_CAPTURES", {"cur": 1, "start": 2}))
+
+    def test_form_inside_an_application_misses_popping_four(self):
+        # the outer cursor, the pulled element, the call's result and
+        # the inner cursor are live when the inner form's pull misses
+        instructions = walk(MATCH(APP("f", FORM(MATCH(VALUE("a"))))))
+        binds = [arg for op, arg in instructions
+                 if op == "MATCH_NEXT_BIND_VAR"]
+        self.assertEqual(len(binds), 1)
+        self.assertEqual(after_label(instructions, binds[0][0]), [
+            ("POP", 4), ("JUMP", "match.miss_1")])
+
+    def test_last_branch_guard_misses_with_the_mark_live(self):
+        # the last branch's reservation check misses from under the
+        # outer cursor, the inner cursor and the ONEOF's mark
+        instructions = walk(MATCH(FORM(MATCH(
+            ONEOF(GROUP("g", VALUE("a"), VALUE("b")), VALUE("c")),
+            LITERAL(9)))))
+        guards = [arg for op, arg in instructions if op == "MATCH_AVAILABLE"]
+        self.assertEqual(len(guards), 2)
+        self.assertEqual(after_label(instructions, guards[1][0]), [
+            ("POP", 3), ("JUMP", "match.miss_1")])
 
     def test_trailing_oneof_branch_ends_its_form(self):
         # a ONEOF last in a form: every branch but the last tests the

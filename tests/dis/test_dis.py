@@ -30,7 +30,8 @@ import unittest
 import pytest
 
 from koskari.importer import install
-from koskari.lib import BoundMethod, Code, FormalsSpec, NamespaceSpec, OpCode
+from koskari.lib import (
+    BoundMethod, Code, CoreType, FormalsSpec, NamespaceSpec, OpCode)
 from tests import make_callable
 
 
@@ -151,6 +152,24 @@ def _make_compare_code():
     return Code(nspec, instr, "compare_fn", "file.ki")
 
 
+def _make_core_type_code():
+    """
+    Code with a core-type pull from the cursor at depth 0 and a
+    core-type peek, so the ordinal renders by name and the depth as a
+    number
+    """
+    nspec = NamespaceSpec("fn", (), ())
+    instr = (
+        [OpCode.CONST, (1,)],
+        [OpCode.MATCH_FORM, ("miss", 0xFF, 0, 0)],
+        [OpCode.MATCH_NEXT_CORE_TYPE, ("miss", 0, CoreType.SYMBOL, 0)],
+        [OpCode.MATCH_CORE_TYPE, ("miss", CoreType.INT, 0, 0)],
+        [OpCode.LABEL, "miss"],
+        [OpCode.RETURN, 1],
+    )
+    return Code(nspec, instr, "core_type_fn", "file.ki")
+
+
 def _make_expression():
     """
     Expression wrapping the truthy code, for _get_code / dis unwrapping.
@@ -238,6 +257,15 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("(LT, ", lines[0])
         self.assertNotIn("not", lines[0])
+
+    async def test_dis_core_type_names_only_the_ordinal(self):
+        code = _make_core_type_code()
+        buf = io.StringIO()
+        await _dis().dis(code, file=buf)
+        text = buf.getvalue()
+        self.assertIn("MATCH_NEXT_CORE_TYPE", text)
+        self.assertIn("(-> 4, 0, SYMBOL, 0)", text)
+        self.assertIn("(-> 4, INT, 0, 0)", text)
 
     async def test_dis_expression(self):
         """

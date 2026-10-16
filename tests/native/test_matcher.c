@@ -348,6 +348,50 @@ static int test_list_shrinks_under_the_walk(void) {
 }
 
 
+static int test_list_subclass_shrinks_under_the_walk(void) {
+  PyObject *cls = PyObject_CallFunction(
+      (PyObject *) &PyType_Type, "s(O){}", "L", (PyObject *) &PyList_Type);
+  TEST_ASSERT_NOT_NULL(cls, "a list subclass");
+  PyObject *subj = PyObject_CallNoArgs(cls);
+  TEST_ASSERT_NOT_NULL(subj, "an instance");
+  PyObject *items = Py_BuildValue("[iii]", 1, 2, 3);
+  TEST_ASSERT_EQ(PyList_SetSlice(subj, 0, 0, items), 0, "filled");
+  Py_DECREF(items);
+
+  PyObject *cursor = NULL;
+  PyObject *value = NULL;
+  PyObject *next = NULL;
+  KosMatchStep step;
+
+  TEST_ASSERT_EQ(KosMatch_Descend(subj, KOS_MATCH_PACK(3, 3), &cursor), 1,
+                 "descend records three");
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "first pull");
+  next = KosMatch_StepAdvance(&step);
+  Py_DECREF(next);
+  KosMatch_StepClear(&step);
+
+  /* user code drops the last two: the subclass answers its live size
+     as an exact list does */
+  TEST_ASSERT_EQ(PyList_SetSlice(subj, 1, 3, NULL), 0, "shrink to one");
+  TEST_ASSERT_EQ(KosMatch_Available(cursor, 1), 0, "none available");
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 0, "a pull misses");
+  TEST_ASSERT(! PyErr_Occurred(), "no IndexError");
+  TEST_ASSERT_EQ(KosMatch_Rest(cursor, KOS_MATCH_PACK(0, 0), &value, &next),
+                 1, "rest reads the live size");
+  TEST_ASSERT(PyTuple_CheckExact(value) && PyTuple_GET_SIZE(value) == 0,
+              "no elements");
+  Py_DECREF(value);
+  Py_DECREF(next);
+  TEST_ASSERT(KosMatch_End(cursor), "at the live end");
+
+  Py_DECREF(cursor);
+  TEST_ASSERT_REFCNT(subj, 1, "released");
+  Py_DECREF(subj);
+  Py_DECREF(cls);
+  return 0;
+}
+
+
 static int test_looping_spine_is_refused(void) {
   PyObject *a = make_spine(2);
   PyObject *b = KosPair_CDR(a);
@@ -933,6 +977,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_rest_over_a_spine);
   RUN_TEST(test_rest_over_a_sequence);
   RUN_TEST(test_list_shrinks_under_the_walk);
+  RUN_TEST(test_list_subclass_shrinks_under_the_walk);
   RUN_TEST(test_looping_spine_is_refused);
   RUN_TEST(test_collect_over_a_spine);
   RUN_TEST(test_advance_under_a_mark);

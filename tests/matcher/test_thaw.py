@@ -313,6 +313,30 @@ class TestMatcherFromTuple(unittest.TestCase):
                 thaw(frozen)
 
 
+    def test_thaw_rejects_a_group_over_a_single_value(self):
+        """
+        The sub-pattern of a map entry, an APP or a FIELD tests one
+        value with no spine under it, so a GROUP there, directly or
+        under a CAPTURE, is refused
+        """
+
+        group = (("TEST", "ANY", -1), ("CAPTURE", 0, 0), ("GROUP", 1))
+        shapes = (
+            ("MATCHER", ("x",), (), ("k",), group + (
+                ("MAP_ENTRY_CONST", 0, 2), ("MAP", 3), ("MATCH", 4)), 5),
+            ("MATCHER", ("x",), ("f",), (), group + (
+                ("APP", 0, 2), ("MATCH", 3)), 4),
+            ("MATCHER", ("x",), ("P",), (), group + (
+                ("FIELD_POS", 2), ("CLASS", 0, 3), ("MATCH", 4)), 5),
+            ("MATCHER", ("x", "y"), (), ("k",), group + (
+                ("CAPTURE", 1, 2), ("MAP_ENTRY_CONST", 0, 3), ("MAP", 4),
+                ("MATCH", 5)), 6),
+        )
+        for frozen in shapes:
+            with self.assertRaisesRegex(ValueError, "holds a GROUP"):
+                thaw(frozen)
+
+
     def test_thaw_rejects_rest_counts_past_the_packed_limit(self):
         """
         A REST row packs its minimum tail and the width of the fixed

@@ -216,6 +216,17 @@ static int matcher_mapping_gate(PyObject *peeled) {
    released by koskari_matcher_clear. */
 static PyObject *kos_match_args_name = NULL;
 
+/* The default a mapping probe passes to get, an object no mapping
+   holds, created by koskari_matcher_init and released by
+   koskari_matcher_clear. */
+static PyObject *kos_map_absent = NULL;
+
+#if PY_MINOR_VERSION < 10
+/* dataclasses.fields, imported on the first dataclass a 3.9 class
+   pattern meets and released by koskari_matcher_clear. */
+static PyObject *kos_dc_fields = NULL;
+#endif
+
 
 #include "matcher/step.c"
 
@@ -242,6 +253,10 @@ int koskari_matcher_init(PyObject *mod) {
 
   kos_match_args_name = PyUnicode_InternFromString("__match_args__");
   if (! kos_match_args_name)
+    return -1;
+
+  kos_map_absent = PyObject_CallNoArgs((PyObject *) &PyBaseObject_Type);
+  if (! kos_map_absent)
     return -1;
 
   kos_class_name = PyUnicode_InternFromString("__class__");
@@ -277,6 +292,10 @@ int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   match_cursor_free_list_clear();
   Py_CLEAR(kos_match_args_name);
+  Py_CLEAR(kos_map_absent);
+#if PY_MINOR_VERSION < 10
+  Py_CLEAR(kos_dc_fields);
+#endif
   Py_CLEAR(kos_class_name);
   Py_CLEAR(kos_object_class_descr);
   return 0;

@@ -405,6 +405,19 @@ class TestMatchFailedCaptures(SpecialsTestCase):
             await expr()
 
 
+    async def test_unfired_optional_leaves_its_name_unbound(self):
+        src = """
+        (match data
+          [[#[x (OPTIONAL y)]] y]
+          [else: "no"])
+        """
+        expr, mod = self.compile_expr(src, data=(5, 1))
+        self.assertEqual(await expr(), 1)
+        expr, mod = self.compile_expr(src, data=(5,))
+        with self.assertRaises(NameError):
+            await expr()
+
+
 class TestMatchGuards(SpecialsTestCase):
     """
     when: / unless: guards run after the pattern binds; a failed guard
