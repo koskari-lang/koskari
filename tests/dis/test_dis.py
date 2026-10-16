@@ -129,7 +129,9 @@ def _make_compare_code():
     Code with the two compare-check row shapes, each with the negate
     flag set and clear: a bare CHECK_COMPARE row carries the flag in its
     fourth field, a CHECK_COMPARE_FAST row in bit 6 of its CMPSRC field
-    (LT selector 0, both operands fast slots).
+    (LT selector 0, both operands fast slots). A set flag renders the
+    selector as the negated comparison. The OBJECT_COMPARE_VAR row has
+    a CMP field too, with a pool index where the check keeps its flag.
     """
 
     nspec = NamespaceSpec("fn", ("a", "b"), ())
@@ -143,7 +145,7 @@ def _make_compare_code():
         [OpCode.CHECK_COMPARE_FAST, (0x40, 0, 1, "held")],
         [OpCode.CHECK_COMPARE_FAST, (0, 0, 1, "held")],
         [OpCode.LABEL, "held"],
-        [OpCode.FAST, 0],
+        [OpCode.OBJECT_COMPARE_VAR, (0, 0, "a", 100)],
         [OpCode.RETURN, 1],
     )
     return Code(nspec, instr, "compare_fn", "file.ki")
@@ -222,11 +224,20 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         await _dis().dis(code, file=buf)
         lines = [l for l in buf.getvalue().splitlines() if "CHECK_COMPARE" in l]
         self.assertEqual(len(lines), 4)
-        self.assertIn("(LT, 2, -> 8 when held)", lines[0])
+        self.assertIn("(not LT, 2, -> 8, 1)", lines[0])
         self.assertIn("(LT, 2, -> 8, 0)", lines[1])
-        self.assertIn('(LT, fast 0 ("a"), fast 1 ("b"), -> 8 when held)',
-                      lines[2])
+        self.assertIn('(not LT, fast 0 ("a"), fast 1 ("b"), -> 8)', lines[2])
         self.assertIn('(LT, fast 0 ("a"), fast 1 ("b"), -> 8)', lines[3])
+
+    async def test_dis_value_compare_keeps_its_selector(self):
+        code = _make_compare_code()
+        buf = io.StringIO()
+        await _dis().dis(code, file=buf)
+        lines = [l for l in buf.getvalue().splitlines()
+                 if "OBJECT_COMPARE_VAR" in l]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("(LT, ", lines[0])
+        self.assertNotIn("not", lines[0])
 
     async def test_dis_expression(self):
         """

@@ -256,18 +256,28 @@ define _operand_name [sel]:
     (str sel)
 
 
+define _format_selector [sel negate]:
+  """
+  Render a comparison selector, as the negated comparison when the
+  row's negate flag is set
+  """
+
+  define name (_compare_name sel)
+  (if negate f"not {name}" name)
+
+
 define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
   """
-  Render a CMPSRC row: the selector name, then each operand per its
-  source bit (constant pool when the bit is set, else the slot's
-  declared primary kind), then the jump target, marked when the
-  negate bit is set
+  Render a CMPSRC row: the selector name, negated when the negate bit
+  is set, then each operand per its source bit (constant pool when the
+  bit is set, else the slot's declared primary kind), then the jump
+  target
   """
 
   define src ext[0]
   define bits (// src 16)
   define parts #[]
-  parts.append (_compare_name (% src 16))
+  parts.append (_format_selector (% src 16) (% (// bits 4) 2))
 
   define render_operand [slot_idx const_bit fk]:
     define val ext[slot_idx]
@@ -286,10 +296,7 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
 
   render_operand 1 (% bits 2) schema[1]
   render_operand 2 (% (// bits 2) 2) schema[2]
-  if (% (// bits 4) 2):
-    parts.append f"-> {ext[3]} when held"
-  else:
-    parts.append f"-> {ext[3]}"
+  parts.append f"-> {ext[3]}"
 
   define joined (", ".join parts)
   f"{arg} ({joined})"
@@ -330,10 +337,6 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
-        if (and (equal? schema[0] OpStyle.CMP) ext[3]):
-          define sel (_compare_name ext[0])
-          return f"{arg} ({sel}, {ext[1]}, -> {ext[2]} when held)"
-
         define parts:
           list-each [[val fk] (zip ext schema)]:
             switch fk:
@@ -359,7 +362,8 @@ define _format_arg [code op_style arg cpool local_names closure_names
               case [OpStyle.COUNT]:
                 (str val)
               case [OpStyle.CMP]:
-                (_compare_name val)
+                (_format_selector val (and (equal? schema[3] OpStyle.COUNT)
+                                           ext[3]))
               case [OpStyle.OPERAND]:
                 (_operand_name val)
               case [OpStyle.OPCOUNT]:
