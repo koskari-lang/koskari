@@ -1,6 +1,6 @@
 # KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_VAR / KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST
 
-- **Style**: EXTRA (LABEL, slot, RAW, slot)
+- **Style**: EXTRA (LABEL, RAW, RAW, slot)
 - **Stack**: No stack effect; jump to `a0` on a miss.
 - **Semantics**: `MATCH_NEXT_CORE_TYPE` with the passing element stored, boxed,
   into slot `a3`. The head of every special form's pattern and of every

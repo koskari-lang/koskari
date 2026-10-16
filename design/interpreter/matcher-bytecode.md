@@ -110,13 +110,13 @@ From one instruction list:
 - **inline**: a fragment merged into the enclosing function by
   `compile/match`, the subject on the stack across the arm chain,
   captures bound as the arm's own locals, the clause bodies and guard
-  lowering unchanged; the layout that pushes a namespace per form is
-  held behind `SCOPED_TEMPORARIES` (section 12.5).
+  lowering unchanged.
 
 ### 2.2 Pull and peek
 
-A matcher instruction either **pulls** its element from a cursor slot
-or **peeks** the element on top of the stack. A pull instruction
+A matcher instruction either **pulls** its element from a cursor the
+walk keeps on the operand stack or **peeks** the element on top of the
+stack. A pull instruction
 consumes from the cursor and leaves nothing on the stack. A peek
 instruction never pops. A miss never pops. A failure edge therefore
 lands with the stack the clause entered with, and `DUP` does not occur
@@ -127,18 +127,19 @@ the miss edge.
 
 ### 2.3 Cursors
 
-A cursor lives in a scratch fast slot, one per nesting depth, reused
-across clauses. Over a pair spine the cursor is the cell itself; a pull
-stores the cdr back and takes the car. Over a list, tuple or
-`collections.abc.Sequence` the cursor is a small native object holding
-the sequence and an index. `MATCH_FORM` decides which at descent from
-the PEP 634 gate `match_form` applies today, and every pull instruction
+A cursor is an entry on the operand stack, pushed by the gate that
+opens its spine and named by every row that reads it by its depth
+under the top (section 13). Over a pair spine the cursor is the cell
+itself; a pull writes the cdr back at that depth and takes the car.
+Over a list, tuple or `collections.abc.Sequence` the cursor is a small
+native object holding the sequence and an index. `MATCH_FORM` decides
+which at descent from the PEP 634 gate, and every pull instruction
 reads either. No spine is pre-walked and no sequence is copied.
 
-The pull instructions are the `ITER_NEXT_STORE_FAST` shape: cursor
-slot read, advanced in place, element delivered, miss jumps with the
-slot untouched. A sequence cursor advancing in place means a copy of
-the slot's value is not a saved position; a step that must read ahead
+The pull instructions are one shape: cursor read at its depth,
+advanced in place, element delivered, miss jumps with the cursor
+untouched. A sequence cursor advancing in place means a copy of
+the entry is not a saved position; a step that must read ahead
 without moving, the zero-width `NOT`, uses `MATCH_PEEK`, and a loop
 that must retry from a position, the `REPEAT` of step 2, saves the
 index rather than the cursor.
@@ -226,11 +227,10 @@ and an unfired `OPTIONAL` need no sentinel. On the syntax side it pops
 the source cell for `.source` and `.position` and builds a
 `DatumFrame`; on the runtime side it builds a dict. A `REPEAT`
 iteration ends in `MATCH_ITERATION`, which builds the iteration's
-captures from its slots, or the boxed span when none fired, and clears
-the slots; `VAR_LIST_APPEND` adds it to the list in the capture slot. A
-capture-less iteration
-appends the boxed element (`MATCH_NEXT_APPEND`), and an `x ...` at the
-end of a spine is one `MATCH_COLLECT`.
+captures from its slots, or the boxed span when none fired, clears the
+slots, and appends the value to the items list under its mark. A
+capture-less iteration appends the boxed element (`MATCH_NEXT_APPEND`),
+and an `x ...` at the end of a spine is one `MATCH_COLLECT`.
 
 ### 2.9 Calls
 
@@ -245,9 +245,10 @@ position moved off the C stack) is the frame pc.
 ## 3. Instruction set
 
 Every instruction is an EXTRA row within the four-field schema. `L` is
-the miss label. `cur` names a cursor slot and `slot` a capture or
-scratch slot; the compiler emits both as VAR fields and `convert_fast`
-lowers the row to its FAST twin where the names have fast slots, as it
+the miss label. `cur`, `mark` and `list` name entries on the operand
+stack by their depth under the top, RAW fields the lowering computes
+(section 13); `slot` names a capture slot, a VAR field `convert_fast`
+lowers to the row's FAST twin where the name has a fast slot, as it
 does for `ITER_NEXT_STORE_VAR` and the item family. At module scope
 and past the fast-slot cap the VAR form runs and stores by name, as
 `VAR_STORE` does. `type` is a VAR field (section 2.7), lowered with
@@ -263,6 +264,8 @@ tail or fixed suffix exceeds 255 is refused at validation.
 | MATCH_NEXT | L, cur | pull | push the element (section 2.4) |
 | MATCH_PEEK | L, cur | pull | push the next element without advancing; what a zero-width NOT reads |
 | MATCH_AVAILABLE | L, cur, needed | pull | at least `needed` elements remain: the reservation a suffix makes against a repeat, an optional or a branch |
+| MATCH_ITEMS | | push | an empty list, a repeat's items, pushed under the pass marks |
+| MATCH_COUNT | L, list, n | none | the list holds at least n items: a repeat's minimum |
 | MATCH_NEXT_BIND | L, cur, slot | pull | VALUE, BIND, a bare rule variable |
 | MATCH_NEXT_LITERAL | L, cur, const | pull | a keyword or literal element |
 | MATCH_NEXT_TYPE | L, cur, type | pull | anonymous `(:: T)` |
@@ -270,21 +273,21 @@ tail or fixed suffix exceeds 255 is refused at validation.
 | MATCH_NEXT_CORE_TYPE | L, cur, core | pull | anonymous `(:: int)` on a core type, the ordinal in a RAW field |
 | MATCH_NEXT_CORE_TYPE_BIND | L, cur, core, slot | pull | SYMBOL, CALLEDBY, PAIR, KEYWORD, `(x :: int)` in a spine |
 | MATCH_NEXT_SAME | L, cur, slot | pull | a repeated rule variable |
-| MATCH_MARK | cur, slot | none | the cursor's position saved: its cell, or its index |
-| MATCH_RESET | cur, slot | none | the cursor moved back to a saved position |
-| MATCH_NEXT_FORM | L, cur, inner cur, widths | pull | descend into the next element |
-| MATCH_NEXT_APPEND | L, cur, slot | pull | box one element onto the list in slot |
-| MATCH_COLLECT | L, cur, slot | pull | every remaining element boxed onto the list in slot; nil required |
+| MATCH_MARK | cur | push | the cursor's position pushed: its cell, or its index |
+| MATCH_RESET | cur, mark | none | the cursor moved back to the position at `mark` |
+| MATCH_NEXT_FORM | L, cur, widths | pull | descend into the next element; the inner cursor pushed |
+| MATCH_NEXT_APPEND | L, cur, list | pull | box one element onto the list at `list` |
+| MATCH_COLLECT | L, cur, list | pull | every remaining element boxed onto the list at `list`; nil required |
 | MATCH_REST_BIND | L, cur, min, slot | pull | BODY, `*: r`, a dotted tail |
 | MATCH_REST | L, cur, min | pull | anonymous tail |
-| MATCH_END | L, cur | pull | the cursor must be nil |
+| MATCH_END | L, cur, pop | pull | the cursor must be at its end; with `pop` set it is popped, its extent ending here |
 | MATCH_LITERAL | L, const | peek | literal test |
 | MATCH_TYPE | L, type | peek | type test |
 | MATCH_TYPE_BIND | L, type, slot | peek | the runtime root `(x :: T)`; a typed branch |
 | MATCH_CORE_TYPE | L, core | peek | core type test |
 | MATCH_CORE_TYPE_BIND | L, core, slot | peek | the root `(x :: int)` on a core type |
 | MATCH_SAME | L, slot | peek | equality with a bound slot |
-| MATCH_FORM | L, inner cur, widths | peek | the runtime root sequence pattern |
+| MATCH_FORM | L, widths | peek | the runtime root sequence pattern; the cursor pushed |
 | MATCH_CLASS | L, type, positional count | peek | isinstance, and `__match_args__` long enough for the count |
 | MATCH_FIELD_POS | L, type, position | peek | push the positional field named by `__match_args__` for a sub-pattern |
 | MATCH_FIELD_POS_BIND | L, type, position, slot | peek | a positional field captured directly |
@@ -294,27 +297,29 @@ tail or fixed suffix exceeds 255 is refused at validation.
 | MATCH_KEY | L, key | peek | push the value for a sub-pattern; CONST and VAR key forms |
 | MATCH_KEY_BIND | L, key, slot | peek | an entry captured directly; CONST and VAR key forms |
 | MATCH_BIND | slot | peek | store the element, nothing popped |
-| MATCH_CAPTURES | names, base, start, cur | push | the captures of a scope: the names tuple, the first of the scope's run of capture slots, the saved start and the cursor; a `DatumFrame` with the span as its source over a pair spine, a dict otherwise; a NAMED form reads the captures by name for the inline target |
-| MATCH_ITERATION | names, base, start, cur | push | one repeat iteration's value: the captures when any slot fired, else the boxed span; clears the slots it read; the same NAMED form |
+| MATCH_CAPTURES | names, base, start, cur | push | the captures of a scope: the names tuple, the first of the scope's run of capture slots, the start and the cursor by depth; a `DatumFrame` with the span as its source over a pair spine, a dict otherwise; a NAMED form reads the captures by name for the inline target |
+| MATCH_ITERATION | names, base, cur, mode | push or append | one repeat iteration's value, its mark on the top and its items under that: the captures when any slot fired, else the boxed span; mode 1 appends it to the items, mode 0 pushes it; clears the slots it read; the same NAMED form |
 
-Thirty-six shapes. Every shape that names a slot or a type has a VAR
-and a FAST entry in `opcodes.incl`, on the precedent of the `VAR_*` and
-`FAST_*` families; the two key shapes have a CONST key and a VAR key
-form besides; `MATCH_CAPTURES` and `MATCH_ITERATION` have the slot-run
-form the standalone target emits and a NAMED pair the inline target
-emits, whose CONST is the (keys, locals) tuple. Seventy-three opcodes
-as built, beside the retired `MATCH_CASE`. The FAST entry is the one that runs in a function body.
+Thirty-eight shapes. Every shape that names a capture slot or a type
+has a VAR and a FAST entry in `opcodes.incl`, on the precedent of the
+`VAR_*` and `FAST_*` families; the shapes whose only slot was a cursor
+keep both entries with one schema; the two key shapes have a CONST key
+and a VAR key form besides; `MATCH_CAPTURES` and `MATCH_ITERATION` have
+the slot-run form the standalone target emits and a NAMED pair the
+inline target emits, whose CONST is the (keys, locals) tuple.
+Seventy-five opcodes as built, beside the retired `MATCH_CASE`. The FAST entry is the one that runs in a function body.
 
 Handler notes:
 
-- **Miss semantics.** A pull miss leaves the cursor slot untouched and
+- **Miss semantics.** A pull miss leaves the cursor untouched and
   pushes nothing. A peek miss leaves the stack untouched. The lowering
-  knows the stack depth at every miss site and emits the `POP` count
-  on the edge where one is needed.
-- **Pair cursor.** A pull on a non-nil pair stores the cdr into the
-  slot and works on the car; on nil or a non-pair it misses. A
-  `MATCH_END` on nil succeeds; on anything else it misses, which is
-  the improper-spine miss of today.
+  knows the live entries at every miss site, cursors and marks with
+  the elements, and emits the `POP` count on the edge where one is
+  needed.
+- **Pair cursor.** A pull on a non-nil pair writes the cdr at the
+  cursor's depth and works on the car; on nil or a non-pair it misses.
+  A `MATCH_END` on nil succeeds; on anything else it misses, the
+  improper-spine miss.
 - **Sequence cursor.** The cursor object holds the sequence, its
   length and the index. A pull past the length misses. `MATCH_REST`
   slices with `PySequence_GetSlice`, producing the tuple
@@ -342,9 +347,11 @@ Handler notes:
   `map_probe` as the bodies.
 - **MATCH_CAPTURES, MATCH_ITERATION.** The names tuple is a CONST and
   the slot run starts at the first capture slot; the NAMED forms carry
-  the (keys, locals) pair. Over a pair spine the result is a
-  `DatumFrame` whose source is the span and whose position is the
-  start cell's.
+  the (keys, locals) pair. A captures row names its start and cursor
+  by depth; an iteration runs with its mark on the top and its items
+  under that, so it names the cursor alone and carries a mode. Over a
+  pair spine the result is a `DatumFrame` whose source is the span and
+  whose position is the start cell's.
 - **Naming.** Suffix composition as the item family uses: the pull,
   the test, the bind, in that order. One field kind is added: RAW, an
   immediate the instruction interprets its own way, where COUNT would
@@ -361,11 +368,11 @@ Handler notes:
 | TEST predicate | MATCH_NEXT, `CALL 1` on the extern, `JUMP_FALSE` to the edge, `POP 1` |
 | SAME | MATCH_NEXT_SAME; MATCH_SAME after a bare pull; the slot resolved statically, so depth one names the enclosing group's slot and a deeper depth is an unconditional miss |
 | CAPTURE | the fused `_BIND` form of its sub-node; MATCH_BIND after a bare pull; over a REPEAT the list, over a GROUP the captures; over a wider node MATCH_MARK, the node, and the span as MATCH_ITERATION of an empty table |
-| FORM | MATCH_NEXT_FORM into the next cursor slot, the inner children, MATCH_END on the inner cursor |
-| GROUP | MATCH_MARK, the children into the group's slots, MATCH_CAPTURES over the group's table; stored into the capturing slot or popped |
+| FORM | MATCH_NEXT_FORM pushing the inner cursor, the inner children, MATCH_END on it with the pop flag |
+| GROUP | MATCH_MARK, the children into the group's slots, MATCH_CAPTURES over the group's table; stored into the capturing slot or popped; the mark popped, unless the group took the fresh mark of the repeat around it |
 | ONEOF | branches all one element wide with no reservation: one MATCH_NEXT, each branch peeks, a branch's miss edge clears its slots and jumps to the next branch, the join pops; otherwise MATCH_MARK, each branch guarded by MATCH_AVAILABLE and pulled, its miss edge MATCH_RESET and clears, the last branch's miss edge the enclosing edge |
-| OPTIONAL | MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node pulled; its miss edge MATCH_RESET and clears |
-| REPEAT | `BUILD_LIST 0` into the capture slot or a temporary; a loop of MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node, MATCH_ITERATION, `VAR_LIST_APPEND`, `JUMP` back; the iteration's miss edge MATCH_RESET and clears; a `min_count` is `OBJECT_LEN` and `CHECK_COMPARE GE` after the loop |
+| OPTIONAL | MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node pulled, the mark popped; its miss edge MATCH_RESET, clears, the mark popped |
+| REPEAT | MATCH_ITEMS when anything keeps the passes; a loop of MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node, MATCH_ITERATION appending to the items, the mark popped, `JUMP` back; the pass's miss edge MATCH_RESET, clears, the mark popped; a `min_count` is MATCH_COUNT after the loop; the items go into the capturing slot by `VAR_STORE` or are popped |
 | REST | MATCH_REST_BIND or MATCH_REST; with a non-empty suffix, the `remaining` count feeds the min |
 | NOT | MATCH_PEEK, the inner node as peek instructions with its hit edge and miss edge exchanged, `POP 1`; captures are forbidden inside NOT already |
 | CLASS, FIELD | MATCH_CLASS, then per field MATCH_FIELD_POS_BIND or MATCH_FIELD_KW_BIND for a captured field, or MATCH_FIELD_POS or MATCH_FIELD_KW, the sub-pattern, `POP 1` |
@@ -375,66 +382,79 @@ Handler notes:
 ## 5. Examples
 
 `(define x 1)` against `MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))`,
-standalone. Formals put the subject in fast 0 and the extern `symbol`,
-a keyword formal, in fast 1; fast 2 to 4 are the slots, fast 5 the
-cursor.
+standalone. The subject is fast 0, the captures fast 1 to 3; `symbol`
+is a core type and no slot. The gate pushes the cursor above the
+subject, every pull names it at depth 0, and the captures read the
+subject at depth 1 and the cursor at depth 0.
 
 ```
- 0  FAST                  0 (subject)
- 1  FAST_STORE            5 (cur)
- 2  MATCH_NEXT_TYPE_BIND  -> 7, cur, fast 1 (symbol), 2 (called-by)
- 3  MATCH_NEXT_TYPE_BIND  -> 7, cur, fast 1 (symbol), 3 (sym)
- 4  MATCH_NEXT_BIND       -> 7, cur, 4 (expr)
- 5  MATCH_END             -> 7, cur
- 6  FAST 0 ; MATCH_CAPTURES c#table ; RETURN
- 7  CONST None ; RETURN
+ 0  FAST                           0 (subject)
+ 1  MATCH_FORM_FAST                -> 11, widths (3 . 3)
+ 2  MATCH_NEXT_CORE_TYPE_BIND_FAST -> 8, cur 0, symbol, 1 (called-by)
+ 3  MATCH_NEXT_CORE_TYPE_BIND_FAST -> 8, cur 0, symbol, 2 (sym)
+ 4  MATCH_NEXT_BIND_FAST           -> 8, cur 0, 3 (expr)
+ 5  MATCH_END_FAST                 -> 8, cur 0, keep
+ 6  MATCH_CAPTURES                 names, first 1, start 1, cur 0
+ 7  RETURN 1
+ 8  POP 1 ; JUMP 11
+11  CONST None ; RETURN 1
 ```
 
-Today the same match walks the spine into two arrays, initialises the
-engine, recurses three levels with a change record per capture, fills
-a slot array, then builds the captures and a `MatchResult`.
+The miss edge at 8 pops the cursor; the frame takes the subject.
 
 `(match v [[#[a b *: r]] a] [[(x :: int)] when: (> x 3) x] [else: None])`,
-inline. Today this is two `MATCH_CASE` instructions over frozen tuples
-with a thaw and a slot map per site. `int` is a closure name in fast
-6.
+inline. The subject stays on the stack across the arms; the first
+arm's gate pushes its cursor and its end pops it, so the hit path
+pops the subject alone.
 
 ```
- 0  FAST              0 (v)
- 1  MATCH_FORM        -> 6, cur 5, (2 . unbounded)
- 2  MATCH_NEXT_BIND   -> 6, cur 5, 1 (a)
- 3  MATCH_NEXT_BIND   -> 6, cur 5, 2 (b)
- 4  MATCH_REST_BIND   -> 6, cur 5, 0, 3 (r)
- 5  POP 1 ; FAST 1 ; JUMP 11
- 6  MATCH_TYPE_BIND   -> 9, fast 6 (int), 4 (x)
- 7  CHECK_COMPARE_FAST  GT, fast 4, c#3, -> 9
- 8  POP 1 ; FAST 4 ; JUMP 11
+ 0  FAST                  0 (v)
+ 1  MATCH_FORM_FAST       -> 7, widths (2 . unbounded)
+ 2  MATCH_NEXT_BIND_FAST  -> 6, cur 0, 1 (a)
+ 3  MATCH_NEXT_BIND_FAST  -> 6, cur 0, 2 (b)
+ 4  MATCH_REST_BIND_FAST  -> 6, cur 0, counts, 3 (r)
+ 5  MATCH_END_FAST        -> 6, cur 0, pop
+ .  POP 1 ; FAST 1 ; JUMP out
+ 6  POP 1 ; JUMP 7
+ 7  MATCH_CORE_TYPE_BIND_FAST -> 9, int, 4 (x)
+ .  CHECK_COMPARE_FAST  GT, fast 4, c#3, -> 9
+ .  POP 1 ; FAST 4 ; JUMP out
  9  POP 1 ; CONST None
-11  RETURN
+out RETURN 1
 ```
-
-Instructions 7 to 11 are today's output unchanged.
 
 `(my-or e ...)`, a `syntax-rules` pattern, which lowers to `CALLEDBY`
-then `repeat_capture("e", TEST_ANY())`.
+then `repeat_capture("e", TEST_ANY())`: the items pushed above the
+cursor, each pass marking, pulling, appending the span and popping
+its mark, the loop's miss edge resetting and popping, the items stored
+into the capture slot.
 
 ```
- 0  FAST 0 ; FAST_STORE 4 (cur)
- 2  MATCH_NEXT_TYPE_BIND  -> 6, cur, fast 1 (symbol), 2 (my-or)
- 3  BUILD_LIST 0 ; FAST_STORE 3 (e)
- 5  MATCH_COLLECT         -> 6, cur, 3 (e)
- 6  FAST 0 ; MATCH_CAPTURES c#table ; RETURN
- 7  CONST None ; RETURN
+ 0  FAST 0
+ 1  MATCH_FORM_FAST                -> 18, widths (1 . unbounded)
+ 2  MATCH_NEXT_CORE_TYPE_BIND_FAST -> 16, cur 0, symbol, 1 (called-by)
+ 3  MATCH_ITEMS
+ 4  MATCH_MARK_FAST                cur 1
+ 5  MATCH_NEXT_FAST                -> 10, cur 2
+ 6  POP 1
+ 7  MATCH_ITERATION                (), first 0, cur 2, append
+ 8  POP 1 ; JUMP 4
+10  MATCH_RESET_FAST               cur 2, mark 0
+11  POP 1 ; FAST_STORE 2 (e)
+12  MATCH_END_FAST                 -> 16, cur 0, keep
+13  MATCH_CAPTURES                 names, first 1, start 1, cur 0
+14  RETURN 1
+16  POP 1 ; JUMP 18
+18  CONST None ; RETURN 1
 ```
 
-`[x 1] ...` under `let` is the loop form: a cursor save,
-`MATCH_NEXT_FORM`, `MATCH_NEXT_TYPE_BIND` and `MATCH_NEXT_BIND` into
-the group's scratch slots, `MATCH_END` on the inner cursor,
-`MATCH_ITERATION`, `VAR_LIST_APPEND`, `JUMP` back; the iteration's miss label restores
-the cursor from the save and falls out of the loop. The
-`(expr as: name)` alternative of `BINDINGS` is where `MATCH_NEXT`, the
-peek instructions and `MATCH_BIND` appear: one pulled element tried by
-each branch and popped on the miss edge.
+`[x 1] ...` under `let` is the same loop over a form: `MATCH_NEXT_FORM`
+pushing the inner cursor, `MATCH_NEXT_TYPE_BIND` and `MATCH_NEXT_BIND`
+into the group's slots at depth 1 under it, `MATCH_END` popping it,
+`MATCH_ITERATION` appending the pass. The `(expr as: name)`
+alternative of `BINDINGS` is where `MATCH_NEXT`, the peek instructions
+and `MATCH_BIND` appear: one pulled element tried by each branch and
+popped on the miss edge.
 
 ## 6. Consumers
 
@@ -715,10 +735,10 @@ namespace before the call.
    namespace handed to them, for the REPL and for transformers built
    by hand; both entries build the same `Transform`, which keeps
    `pattern_src` for display.
-3. **`match` and `case`.** Inline, as step 1 has it: the clause
-   instructions interleave with the bodies and guards, captures are
-   the enclosing function's locals, externs its closure names, cursors
-   its temporaries. Nothing has a lifetime of its own.
+3. **`match` and `case`.** Inline: the clause instructions interleave
+   with the bodies and guards, captures are the enclosing function's
+   locals, externs its closure names, cursors and marks entries on its
+   operand stack for the walk. Nothing has a lifetime of its own.
 
 Every matcher is instructions; the cases differ in container and
 environment. Two of the three are the standard compiler lowering a
@@ -731,16 +751,17 @@ During a match the captures are fast slots and nothing else, one run
 of them after the formals in the standalone target. `MATCH_CAPTURES`
 packs them: its row is the names tuple (CONST, the slot table
 `Matcher.slots` exposes), the fast index of the first capture slot
-(FASTVAR, name `i` at `base + i`), the saved start position (FASTVAR,
-from `MATCH_MARK`) and the cursor (FASTVAR). It skips an empty slot,
-so an unfired `OPTIONAL` or the other branch of a `ONEOF` is absent;
-a pair cell as the start makes the result a `DatumFrame` whose
-`.source` is the span from the start cell to the cursor and whose
-`.position` is the start cell's, an index as the start makes it a
-plain dict. The root and a named `GROUP` are the same instruction over
-different start and cursor slots; `MATCH_ITERATION` is the same read
-of an iteration's slots, the boxed span when none fired, with the
-slots cleared, and `VAR_LIST_APPEND` adds it to the iteration list. The VAR twin reads each capture by name.
+(FASTVAR, name `i` at `base + i`), and the depths of the start
+position, the subject for the root and a mark for a group, and of the
+cursor. It skips an empty slot, so an unfired `OPTIONAL` or the other
+branch of a `ONEOF` is absent; a pair cell as the start makes the
+result a `DatumFrame` whose `.source` is the span from the start cell
+to the cursor and whose `.position` is the start cell's, an index as
+the start makes it a plain dict. The root and a named `GROUP` are the
+same instruction over different start and cursor depths;
+`MATCH_ITERATION` is the same read of an iteration's slots, the boxed
+span when none fired, with the slots cleared, appended to the items
+under its mark. The NAMED twins read each capture by name.
 
 ### 12.5 Weighed and set aside
 
@@ -755,20 +776,18 @@ slots cleared, and `VAR_LIST_APPEND` adds it to the iteration list. The VAR twin
   epilogue returns.
 - **A dynamic node per match** (`PUSH_MATCH` / `POP_MATCH`) holding
   cursors, marks and a stack mark for misses. Everything it would hold
-  is a fast slot or compile-time knowledge; the push and pop would
-  cost about 10 ns on every attempt's hit path, and no teardown or
-  continuation copy needs it.
+  is an entry on the operand stack or compile-time knowledge, and the
+  segment is already what a continuation copies; the push and pop
+  would cost about 10 ns on every attempt's hit path for nothing the
+  stack does not give (section 13).
 - **A namespace around a form's instructions** to keep the cursor
   temporaries out of the enclosing scope. Built and measured on
-  2026-10-14 behind `SCOPED_TEMPORARIES` in `compile/specials/match.py`:
-  the subject bound into the form's own namespace, every arm reading
-  it back, the matched arm's index delivered through the one pop and
-  dispatched to the bodies outside. The push is about 60 ns; the cost
-  is the write-through closure cell per capture per entry, and the
-  churn match_case kernel went from 0.21 s to 0.97 s. Off; the
-  temporaries are gensym locals of the enclosing scope, `match-cursor`,
-  `match-mark`, `match-items` and the slot's own name for a group
-  local, which at module or class scope live in that namespace.
+  2026-10-14 in `compile/specials/match.py`: the subject bound into
+  the form's own namespace, every arm reading it back, the matched
+  arm's index delivered through the one pop and dispatched to the
+  bodies outside. The push is about 60 ns; the cost is the
+  write-through closure cell per capture per entry, and the churn
+  match_case kernel went from 0.21 s to 0.97 s.
 - **Unpacking the FORM and REST widths** and the wide-pattern
   fallbacks. Held.
 
@@ -980,22 +999,20 @@ and no further behaviour is defined.
 
 ## 13. The walk's state on the operand stack
 
-**Status:** design, 2026-10-15, not implemented. The opcode review
-that follows the branch takes it up.
+**Status:** implemented 2026-10-15.
 
 ### 13.1 Model
 
 A cloned frame copies its operand segment and shares its namespace, so
 state on the stack is per resumption and state in a local is per
-frame. The matcher's cursor, mark and items temporaries are locals, so
-a continuation captured inside a predicate and resumed after the frame
-has moved on walks on from whatever the slot holds then (review item
-12), the temporaries outlive the form, and every form adds its own to
-the function's local table.
+frame. A cursor, mark or items list held in a local would be shared
+by a continuation captured inside a predicate and resumed after the
+frame moved on (review item 12), would outlive the form, and would
+add to the function's local table per form.
 
-The temporaries move onto the operand stack as entries the rows push
-when they create them, write at a depth while they live, and pop when
-their extent ends. A row names a temporary by its distance under the
+The temporaries are entries on the operand stack: the rows push them
+when they create them, write at a depth while they live, and pop them
+when their extent ends. A row names a temporary by its distance under the
 top of the stack, an immediate the lowering computes from the depth it
 already traces. The segment is the storage, so nothing is allocated,
 cloned or freed for them: a continuation copies the entries live at
@@ -1011,10 +1028,12 @@ not walk state.
 ### 13.2 Extents
 
 - **Cursor.** `MATCH_FORM` pushes the cursor above the subject;
-  `MATCH_NEXT_FORM` pushes the inner cursor; `MATCH_END` pops the
-  cursor it checks, the top at that point since a pull leaves nothing.
-  A root walk ends as `[subject]`, and the root captures start at the
-  subject at depth 0.
+  `MATCH_NEXT_FORM` pushes the inner cursor; `MATCH_END` checks the
+  cursor at its depth and, with its flag set, pops it, the top at that
+  point since a pull leaves nothing. A nested form and an inline arm
+  set the flag; the standalone root clears it and the captures read
+  the cursor at depth 0 and the subject at depth 1, the frame taking
+  both at its return.
 - **Mark.** `MATCH_MARK` pushes the position; `MATCH_RESET` reads it
   at its depth; the node's hit path pops it, the top again, and the
   miss edge pops it with everything above the subject.
@@ -1023,7 +1042,8 @@ not walk state.
   the top and goes into the capture slot or is popped.
 - **Arms.** A miss edge pops the arm's cursor and marks on its way to
   the next arm, which pushes its own. Nothing is shared between arms
-  and nothing is stale when one begins.
+  and nothing is stale when one begins. A standalone function and a
+  dispatcher push the subject once ahead of their clauses.
 
 An entry's offset at an emission site is the count of entries pushed
 above it there, elements under test and later temporaries alike,
@@ -1035,72 +1055,58 @@ own entries above and reads only those.
 
 ### 13.3 Instructions
 
-- The rows that name a cursor, mark or items slot take the offset as
+- The rows that name a cursor, mark or items entry take the depth as
   a `RAW` field: `MATCH_NEXT_FORM` (the outer cursor; the inner is
   pushed), `MATCH_NEXT`, `MATCH_PEEK`, `MATCH_NEXT_BIND`,
   `MATCH_NEXT_TYPE` and `_BIND`, `MATCH_NEXT_CORE_TYPE` and `_BIND`,
-  `MATCH_NEXT_LITERAL`, `MATCH_REST` and `_BIND`, `MATCH_END`,
-  `MATCH_AVAILABLE`, `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND` (two),
-  `MATCH_COLLECT` (two), `MATCH_MARK` (the cursor; the mark is
-  pushed), `MATCH_RESET` (two), `MATCH_CAPTURES` and `MATCH_ITERATION`
-  (start and cursor; the first capture slot stays a fast slot).
+  `MATCH_NEXT_LITERAL`, `MATCH_REST` and `_BIND`, `MATCH_END` (and a
+  pop flag), `MATCH_AVAILABLE`, `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`
+  (two), `MATCH_COLLECT` (two), `MATCH_MARK` (the cursor; the mark is
+  pushed), `MATCH_RESET` (two), `MATCH_CAPTURES` (start and cursor;
+  the first capture slot stays a fast slot) and `MATCH_ITERATION` (the
+  cursor and a mode; its mark is the top and its items under that).
   `MATCH_FORM` names nothing: it gates the subject on the top and
   pushes the cursor. A capture or type field keeps its VAR and FAST
   twins. The peek rows are untouched.
 - `MATCH_ITEMS` pushes a repeat's empty list; `MATCH_COUNT L, k, n`
-  misses when the list at depth k is shorter than n, in place of the
-  load, `OBJECT_LEN`, `CONST` and `CHECK_COMPARE` a minimum count
-  emits today.
-- The handler reads an entry through `KosEvalState_StackPeekAt` and
-  writes it through a store at depth beside it, the one primitive the
-  eval state lacks. A read is a load at an offset from the top, with
-  no slot array and no ref between. Nothing generic is added.
+  misses when the list at depth k is shorter than n.
+- The handler reads an entry through `kos_stack_peek_under_fast` and
+  writes it through `kos_stack_set_under_fast`, inlines whose underrun
+  check sits behind the out-of-line path, as the other fast accessors.
+  A read is a load at an offset from the top, with no slot array and
+  no ref between. Nothing generic is added.
 
-The family is new on this branch, so the rows change schema in
-place: no new names beside `MATCH_ITEMS` and `MATCH_COUNT`, and the
-VAR twins of the rows whose only slot was a cursor become
-schema-identical to their FAST twins and stay.
+The rows carry these schemas in place: the names are those of the
+family with `MATCH_ITEMS` and `MATCH_COUNT` added, and the VAR twins
+of the rows whose only slot was a cursor are schema-identical to their
+FAST twins.
 
 ### 13.4 Resumption
 
 Each resumption of a continuation captured in a predicate has its own
 entries, so a walk resumed twice walks on twice from the cursor it was
-captured with, over a pair spine as it stands, since a pair cursor
-advances by replacement. The sequence cursor advances in place and a
-copied entry would share it; it advances by producing a new cursor
-from a freelist, three words per element, and that can land after the
-rows.
+captured with over a pair spine, since a pair cursor advances by
+replacement. The sequence cursor advances in place and a copied entry
+shares it; advancing it by producing a new cursor from a freelist,
+three words per element, is the remaining piece.
 
 ### 13.5 What it removes and costs
 
-Removed: the cursor, mark and items locals and their gensym names in
-the `.kio`; every clear of a temporary; the retention of a cursor
-past the form; the `SCOPED_TEMPORARIES` layout and its flag; and the
-scratch-slot tiers for the matcher. The namespace of a function with
-a match holds its captures and nothing else of the walk.
+The namespace of a function with a match holds its captures and
+nothing else of the walk: no cursor, mark or items local, no gensym
+name for one in the `.kio`, no clear of one, no retention of one past
+the form. The cost is the entries on the operand stack for their
+extents, where a segment grows on demand and a spilled segment stays
+with its cached frame, against fast slots allocated for every call of
+the function, and the pops at the ends of extents against the clears
+they replace. Measured 2026-10-15: the benchmark cells at parity or
+ahead, the churn match_case kernel within its run-to-run spread, and a
+dispatcher's clauses ahead once the subject is pushed once.
 
-Cost: the entries on the operand stack for their extents, where a
-segment grows on demand and spills past its inline eight, against
-fast slots allocated for every call of the function; the pops at the
-ends of extents against the clears they replace; and the row width of
-an offset where a slot index was. Measured by the churn match_case
-kernel and matchbench before and after.
+### 13.6 Remaining
 
-### 13.6 Staging
-
-1. The lowering traces the entries first, as a dry run beside the
-   slot emission: each temporary's push point and the offset computed
-   at every site that names it, with an assertion that the depth is
-   static there. Python only; it finds the sharp edges before any row
-   changes.
-2. The store-at-depth primitive, `MATCH_ITEMS`, `MATCH_COUNT`, the
-   offset schemas and their handlers; the lowering emits the pushes,
-   the offsets and the pops; both targets. One gate, since the
-   compiler and the rows change together.
-3. The sequence cursor advancing by replacement; the resumption test
-   of item 12 extended to a second pass over a tuple.
-4. The `SCOPED_TEMPORARIES` layout and the scratch-slot tiers' matcher
-   references removed; `OPCODES.md` and the VM reference updated.
+The sequence cursor advancing by replacement, with the resumption test
+of item 12 extended to a second pass over a tuple.
 
 Pooling the temporaries as locals was weighed and set aside: textual
 non-overlap is not dynamic non-overlap once a continuation can leave a

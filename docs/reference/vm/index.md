@@ -270,7 +270,7 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_CORE_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_CORE_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_ITEMS, MATCH_COUNT, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -353,22 +353,22 @@ The opcodes by family, each linking to its section.
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-var-attr.md) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-fast-attr.md) |
 | MATCH_CASE | EXTRA | Retired; never emitted, raises when reached | [section 9.2](opcodes/kos-op-match-case.md) |
-| MATCH_FORM_VAR / MATCH_FORM_FAST | EXTRA | Peek: sequence gate and length precheck on TOS; the cursor into the slot | [section 9.2](opcodes/kos-op-match-form.md) |
-| MATCH_NEXT_FORM_VAR / MATCH_NEXT_FORM_FAST | EXTRA | Pull: the gate on the element; the inner cursor into the second slot | [section 9.2](opcodes/kos-op-match-next-form.md) |
-| MATCH_NEXT_VAR / MATCH_NEXT_FAST | EXTRA | Pull and push the element, boxed from a pair spine | [section 9.2](opcodes/kos-op-match-next.md) |
-| MATCH_PEEK_VAR / MATCH_PEEK_FAST | EXTRA | Push the next element without advancing the cursor | [section 9.2](opcodes/kos-op-match-peek.md) |
-| MATCH_NEXT_BIND_VAR / MATCH_NEXT_BIND_FAST | EXTRA | Pull and store the element into the second slot | [section 9.2](opcodes/kos-op-match-next-bind.md) |
-| MATCH_NEXT_TYPE_VAR / MATCH_NEXT_TYPE_FAST | EXTRA | Pull; the element must be an instance of the type in the second slot | [section 9.2](opcodes/kos-op-match-next-type.md) |
-| MATCH_NEXT_TYPE_BIND_VAR / MATCH_NEXT_TYPE_BIND_FAST | EXTRA | Pull, the type test, the store into the third slot | [section 9.2](opcodes/kos-op-match-next-type-bind.md) |
+| MATCH_FORM_VAR / MATCH_FORM_FAST | EXTRA | Peek: sequence gate and length precheck on TOS; the cursor pushed | [section 9.2](opcodes/kos-op-match-form.md) |
+| MATCH_NEXT_FORM_VAR / MATCH_NEXT_FORM_FAST | EXTRA | Pull from the cursor at the depth: the gate on the element; the inner cursor pushed | [section 9.2](opcodes/kos-op-match-next-form.md) |
+| MATCH_NEXT_VAR / MATCH_NEXT_FAST | EXTRA | Pull from the cursor at the depth and push the element, boxed from a pair spine | [section 9.2](opcodes/kos-op-match-next.md) |
+| MATCH_PEEK_VAR / MATCH_PEEK_FAST | EXTRA | Push the next element of the cursor at the depth without advancing it | [section 9.2](opcodes/kos-op-match-peek.md) |
+| MATCH_NEXT_BIND_VAR / MATCH_NEXT_BIND_FAST | EXTRA | Pull and store the element into the slot | [section 9.2](opcodes/kos-op-match-next-bind.md) |
+| MATCH_NEXT_TYPE_VAR / MATCH_NEXT_TYPE_FAST | EXTRA | Pull; the element must be an instance of the type in the slot | [section 9.2](opcodes/kos-op-match-next-type.md) |
+| MATCH_NEXT_TYPE_BIND_VAR / MATCH_NEXT_TYPE_BIND_FAST | EXTRA | Pull, the type test, the store into the second slot | [section 9.2](opcodes/kos-op-match-next-type-bind.md) |
 | MATCH_NEXT_CORE_TYPE_VAR / MATCH_NEXT_CORE_TYPE_FAST | EXTRA | Pull; the element must be an instance of the core type the ordinal names; no reference read | [section 9.2](opcodes/kos-op-match-next-core-type.md) |
-| MATCH_NEXT_CORE_TYPE_BIND_VAR / MATCH_NEXT_CORE_TYPE_BIND_FAST | EXTRA | Pull, the core type test, the store into the third slot | [section 9.2](opcodes/kos-op-match-next-core-type-bind.md) |
+| MATCH_NEXT_CORE_TYPE_BIND_VAR / MATCH_NEXT_CORE_TYPE_BIND_FAST | EXTRA | Pull, the core type test, the store into the slot | [section 9.2](opcodes/kos-op-match-next-core-type-bind.md) |
 | MATCH_CORE_TYPE | EXTRA | Peek: TOS must be an instance of the core type the ordinal names | [section 9.2](opcodes/kos-op-match-core-type.md) |
 | MATCH_CORE_TYPE_BIND_VAR / MATCH_CORE_TYPE_BIND_FAST | EXTRA | Peek: the core type test, then TOS stored into the slot | [section 9.2](opcodes/kos-op-match-core-type-bind.md) |
 | MATCH_NEXT_LITERAL_VAR / MATCH_NEXT_LITERAL_FAST | EXTRA | Pull; the element must equal the constant | [section 9.2](opcodes/kos-op-match-next-literal.md) |
 | MATCH_REST_VAR / MATCH_REST_FAST | EXTRA | Consume the remainder but the suffix; the minimum tail and suffix width packed | [section 9.2](opcodes/kos-op-match-rest.md) |
-| MATCH_REST_BIND_VAR / MATCH_REST_BIND_FAST | EXTRA | The remainder stored into the third slot | [section 9.2](opcodes/kos-op-match-rest-bind.md) |
-| MATCH_END_VAR / MATCH_END_FAST | EXTRA | The cursor must be at its end | [section 9.2](opcodes/kos-op-match-end.md) |
-| MATCH_AVAILABLE_VAR / MATCH_AVAILABLE_FAST | EXTRA | At least the count of elements must remain from the cursor | [section 9.2](opcodes/kos-op-match-available.md) |
+| MATCH_REST_BIND_VAR / MATCH_REST_BIND_FAST | EXTRA | The remainder stored into the slot | [section 9.2](opcodes/kos-op-match-rest-bind.md) |
+| MATCH_END_VAR / MATCH_END_FAST | EXTRA | The cursor at the depth must be at its end; popped when the flag is set | [section 9.2](opcodes/kos-op-match-end.md) |
+| MATCH_AVAILABLE_VAR / MATCH_AVAILABLE_FAST | EXTRA | At least the count of elements must remain from the cursor at the depth | [section 9.2](opcodes/kos-op-match-available.md) |
 | MATCH_LITERAL | EXTRA | Peek: TOS must equal the constant | [section 9.2](opcodes/kos-op-match-literal.md) |
 | MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | Peek: TOS must be an instance of the type in the slot | [section 9.2](opcodes/kos-op-match-type.md) |
 | MATCH_TYPE_BIND_VAR / MATCH_TYPE_BIND_FAST | EXTRA | Peek: the type test, then TOS stored into the second slot | [section 9.2](opcodes/kos-op-match-type-bind.md) |
@@ -382,13 +382,15 @@ The opcodes by family, each linking to its section.
 | MATCH_KEY_CONST / MATCH_KEY_VAR / MATCH_KEY_FAST | EXTRA | Peek: push the value under the key; an absent key is a miss | [section 9.2](opcodes/kos-op-match-key.md) |
 | MATCH_KEY_CONST_BIND_VAR / MATCH_KEY_CONST_BIND_FAST / MATCH_KEY_VAR_BIND_VAR / MATCH_KEY_FAST_BIND_FAST | EXTRA | The value under the key stored into the slot | [section 9.2](opcodes/kos-op-match-key-bind.md) |
 | MATCH_SAME_VAR / MATCH_SAME_FAST | EXTRA | Peek: TOS must equal the value bound in the slot; an unbound slot is a miss | [section 9.2](opcodes/kos-op-match-same.md) |
-| MATCH_NEXT_SAME_VAR / MATCH_NEXT_SAME_FAST | EXTRA | Pull; the element must equal the value bound in the second slot | [section 9.2](opcodes/kos-op-match-next-same.md) |
-| MATCH_NEXT_APPEND_VAR / MATCH_NEXT_APPEND_FAST | EXTRA | Pull and append the element to the list in the second slot | [section 9.2](opcodes/kos-op-match-next-append.md) |
-| MATCH_COLLECT_VAR / MATCH_COLLECT_FAST | EXTRA | Every remaining element appended to the list in the second slot | [section 9.2](opcodes/kos-op-match-collect.md) |
-| MATCH_MARK_VAR / MATCH_MARK_FAST | EXTRA | The cursor's position stored into the second slot | [section 9.2](opcodes/kos-op-match-mark.md) |
-| MATCH_RESET_VAR / MATCH_RESET_FAST | EXTRA | The cursor moved back to the position in the second slot | [section 9.2](opcodes/kos-op-match-reset.md) |
+| MATCH_NEXT_SAME_VAR / MATCH_NEXT_SAME_FAST | EXTRA | Pull; the element must equal the value bound in the slot | [section 9.2](opcodes/kos-op-match-next-same.md) |
+| MATCH_NEXT_APPEND_VAR / MATCH_NEXT_APPEND_FAST | EXTRA | Pull and append the element to the list at the second depth | [section 9.2](opcodes/kos-op-match-next-append.md) |
+| MATCH_COLLECT_VAR / MATCH_COLLECT_FAST | EXTRA | Every remaining element appended to the list at the second depth | [section 9.2](opcodes/kos-op-match-collect.md) |
+| MATCH_MARK_VAR / MATCH_MARK_FAST | EXTRA | The position of the cursor at the depth pushed | [section 9.2](opcodes/kos-op-match-mark.md) |
+| MATCH_RESET_VAR / MATCH_RESET_FAST | EXTRA | The cursor at the first depth moved back to the position at the second | [section 9.2](opcodes/kos-op-match-reset.md) |
 | MATCH_CAPTURES / MATCH_CAPTURES_NAMED_VAR / MATCH_CAPTURES_NAMED_FAST | EXTRA | Push the captures: a DatumFrame over a pair spine, a dict otherwise; an unbound slot is absent | [section 9.2](opcodes/kos-op-match-captures.md) |
-| MATCH_ITERATION / MATCH_ITERATION_NAMED_VAR / MATCH_ITERATION_NAMED_FAST | EXTRA | Push one repeat iteration's value, its captures or the span, and clear the slots it read | [section 9.2](opcodes/kos-op-match-iteration.md) |
+| MATCH_ITERATION / MATCH_ITERATION_NAMED_VAR / MATCH_ITERATION_NAMED_FAST | EXTRA | One repeat iteration's value, its captures or the span, appended to the items under its mark or pushed; the slots it read cleared | [section 9.2](opcodes/kos-op-match-iteration.md) |
+| MATCH_ITEMS | NOARG | Push an empty list, a repeat's items | [section 9.2](opcodes/kos-op-match-items.md) |
+| MATCH_COUNT | EXTRA | The list at the depth must hold at least the count of items | [section 9.2](opcodes/kos-op-match-count.md) |
 | GLOBALS | NOARG | Push globals dict | [section 10](opcodes/kos-op-globals.md) |
 | LOCALS | NOARG | Push locals dict | [section 10](opcodes/kos-op-locals.md) |
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [section 10.1](opcodes/kos-op-import.md) |
