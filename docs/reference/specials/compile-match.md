@@ -31,6 +31,7 @@ arm chain (the same discipline as [`compile/switch`](compile-switch.md));
 a non-matching arm leaves it in place and falls to the next arm. The
 captured names are bound into the enclosing scope as the pattern walks
 the value, and on the first match the body runs via `helper_begin`.
+An arm that misses after binding some captures leaves them bound.
 
 A clause may carry a **guard** between the delimiter and the body:
 `[[PATTERN] when: COND BODY...]` runs the body only when `COND` is truthy
