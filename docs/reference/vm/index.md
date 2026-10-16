@@ -1795,16 +1795,21 @@ rule to a run of these instructions, so matching a value or a source
 form is ordinary bytecode in the frame that asked for it; nothing
 interprets a pattern object at run time.
 
-- **Cursor.** A walk over a sequence keeps its position on the
-  operand stack: the pair cell itself for a pair spine, a cursor
-  object over a tuple, list or other sequence. `MATCH_FORM` pushes a
-  cursor over the element on top of the stack, above that element, and
-  `MATCH_NEXT_FORM` pushes an inner cursor over an element it pulls;
-  `MATCH_END` with its third field set pops a cursor when its extent
-  ends. `MATCH_MARK` pushes the cursor itself as its position, and
-  `MATCH_ITEMS` pushes the list a repeat's passes append to. A cursor,
-  mark or list is an entry on the operand stack the walk pushed; a RAW
-  field names it by its depth under the top, 0 the top itself. A
+- **Cursor.** A walk over a sequence keeps its position on the operand
+  stack: the pair cell itself for a pair spine, a cursor object over a
+  tuple, list or other sequence. `MATCH_FORM` pushes a cursor over the
+  element on top of the stack, above that element, and `MATCH_NEXT_FORM`
+  pushes an inner cursor over an element it pulls; `MATCH_END` with its
+  third field set pops a cursor when its extent ends. `MATCH_MARK`
+  pushes a mark at the cursor's position: the cell of a pair spine, or a
+  mark object holding the sequence and an index, which does not move
+  when the cursor advances. A repeat pushes its mark once before its
+  loop and moves it with `MATCH_REMARK` at the head of every pass;
+  `MATCH_ITEMS` pushes the list the passes append to. Over a sequence a
+  mark and a cursor are distinct kinds, and an instruction whose depth
+  names the one where it expects the other raises `RuntimeError`. A
+  cursor, mark or list is an entry on the operand stack the walk pushed;
+  a RAW field names it by its depth under the top, 0 the top itself. A
   continuation captured in the walk copies these entries with the rest
   of the stack, and none outlives the form.
 - **Pull and peek.** A pull instruction reads the next element from
@@ -2128,18 +2133,26 @@ never emits it and its handler raises.
 
 - **Style**: EXTRA (RAW)
 - **Stack**: `[...]` -> `[..., position]`; cannot miss.
-- **Semantics**: Push the cursor at depth `a0` as its position: the cell of a
-  pair spine or the sequence cursor, which no advance moves while the mark holds
-  it. The instructions that follow name the cursor one deeper while the mark
-  lives; the path that ends the mark's extent pops it.
+- **Semantics**: Push a mark at the position of the cursor at depth `a0`: the
+  cell of a pair spine, or a mark object over the sequence at the cursor's
+  index. The instructions that follow name the cursor one deeper while the
+  mark lives; the path that ends the mark's extent pops it.
+
+### KOS_OP_MATCH_REMARK_VAR / KOS_OP_MATCH_REMARK_FAST
+
+- **Style**: EXTRA (RAW, RAW)
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Move the mark at depth `a1` to the position of the cursor at
+  depth `a0`. A repeat pushes its mark once before its loop and re-marks at
+  the head of every pass, so a pass over a sequence allocates nothing.
 
 ### KOS_OP_MATCH_RESET_VAR / KOS_OP_MATCH_RESET_FAST
 
 - **Style**: EXTRA (RAW, RAW)
 - **Stack**: No stack effect; cannot miss.
-- **Semantics**: Store the position at depth `a1` as the cursor at depth `a0`.
-  A failed branch of a repeat, an optional or a `(or ...)` returns to where it
-  began.
+- **Semantics**: Move the cursor at depth `a0` back to the position of the
+  mark at depth `a1`. A failed branch of a repeat, an optional or a `(or ...)`
+  returns to where it began.
 
 ### KOS_OP_MATCH_CAPTURES / KOS_OP_MATCH_CAPTURES_NAMED_VAR / KOS_OP_MATCH_CAPTURES_NAMED_FAST
 
@@ -2152,8 +2165,8 @@ never emits it and its handler raises.
   is bound, an unbound slot absent. The start is the subject for a matcher's
   root and the position a `MATCH_MARK` pushed for a group. When it is a pair
   cell the result is a `DatumFrame` whose source is the span from that cell to
-  the cursor and whose position is the start cell's; when it is an index the
-  result is a plain dict.
+  the cursor and whose position is the start cell's; otherwise, a sequence
+  subject or a mark over one, the result is a plain dict.
 
 ### KOS_OP_MATCH_ITEMS
 

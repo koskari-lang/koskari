@@ -78,7 +78,8 @@ PyTypeObject KosMatchCursorType = {
 static PyObject *match_cursor_new(
     PyObject *seq,
     Py_ssize_t length,
-    Py_ssize_t index) {
+    Py_ssize_t index,
+    unsigned char kind) {
 
   KosMatchCursor *c;
 
@@ -100,29 +101,38 @@ static PyObject *match_cursor_new(
   c->seq = seq;
   c->length = length;
   c->index = index;
+  c->kind = kind;
   return (PyObject *) c;
 }
 
 
 /**
-   The cursor advanced by n, as a new reference for the caller to
-   store at the cursor's entry: c itself, moved in place, when held
-   holds every reference to it (the entry, and the step at the step
-   site), else a new cursor at the advanced index, since a mark or a
-   cloned segment holds c at the position it had. NULL with an
-   exception set.
+   c at index, as a new reference for the caller to store at c's
+   entry: c itself, moved in place, when held counts every reference
+   to it (the entry, and the step at the step site), else a new object
+   of the same kind at the index, since a cloned segment holds c at
+   the position it had. NULL with an exception set.
 */
-static PyObject *match_cursor_advanced(
+static PyObject *match_cursor_moved(
+    KosMatchCursor *c,
+    Py_ssize_t index,
+    Py_ssize_t held) {
+
+  if (Py_REFCNT(c) == held) {
+    c->index = index;
+    Py_INCREF(c);
+    return (PyObject *) c;
+  }
+  return match_cursor_new(c->seq, c->length, index, c->kind);
+}
+
+
+static inline PyObject *match_cursor_advanced(
     KosMatchCursor *c,
     Py_ssize_t n,
     Py_ssize_t held) {
 
-  if (Py_REFCNT(c) == held) {
-    c->index += n;
-    Py_INCREF(c);
-    return (PyObject *) c;
-  }
-  return match_cursor_new(c->seq, c->length, c->index + n);
+  return match_cursor_moved(c, c->index + n, held);
 }
 
 
@@ -238,7 +248,7 @@ int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor) {
       || (mx != KOS_MATCH_UNBOUNDED8 && have > (Py_ssize_t) mx))
     return 0;
 
-  PyObject *cursor = match_cursor_new(peeled, have, 0);
+  PyObject *cursor = match_cursor_new(peeled, have, 0, KOS_MATCH_CURSOR);
   if (! cursor)
     return -1;
   *out_cursor = cursor;
@@ -775,6 +785,36 @@ int KosMatch_SameTest(PyObject *elem, PyObject *prev) {
   if (got == prev)
     return 1;
   return PyObject_RichCompareBool(got, prev, Py_EQ);
+}
+
+
+PyObject *KosMatch_Mark(PyObject *cursor) {
+  if (KosMatchCursor_Check(cursor)) {
+    KosMatchCursor *c = (KosMatchCursor *) cursor;
+    return match_cursor_new(c->seq, c->length, c->index, KOS_MATCH_MARK);
+  }
+  Py_INCREF(cursor);
+  return cursor;
+}
+
+
+PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark) {
+  if (KosMatchCursor_Check(cursor)) {
+    Py_ssize_t index = ((KosMatchCursor *) cursor)->index;
+    return match_cursor_moved((KosMatchCursor *) mark, index, 1);
+  }
+  Py_INCREF(cursor);
+  return cursor;
+}
+
+
+PyObject *KosMatch_Reset(PyObject *cursor, PyObject *mark) {
+  if (KosMatchCursor_Check(cursor)) {
+    Py_ssize_t index = ((KosMatchCursor *) mark)->index;
+    return match_cursor_moved((KosMatchCursor *) cursor, index, 1);
+  }
+  Py_INCREF(mark);
+  return mark;
 }
 
 

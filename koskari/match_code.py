@@ -752,7 +752,7 @@ class MatchLowering:
             self.target.instruction(op, tuple(args) + (0,) * (4 - len(args)))
         else:
             self.target.instruction(op, args[0])
-        if op != OpCode.MATCH_MARK_VAR:
+        if op not in (OpCode.MATCH_MARK_VAR, OpCode.MATCH_REMARK_VAR):
             self.fresh_mark = None
         self.note_flow(op, args)
 
@@ -1643,8 +1643,9 @@ class MatchLowering:
         """
         A REPEAT: iterations of the inner node while they match and
         the suffix reservation allows, each iteration's value appended
-        to the list in the capturing slot, or to a temporary when no
-        slot captures the repeat
+        to the items list under the mark. The mark is pushed once and
+        moved to the cursor's position at the head of every pass, so a
+        pass allocates nothing over a sequence
         """
 
         node = self.nodes[idx]
@@ -1665,11 +1666,13 @@ class MatchLowering:
         if kept:
             self.emit(OpCode.MATCH_ITEMS, 0)
             self.note_push(items)
-        self.emit(OpCode.LABEL, loop)
-        self.guard(inner, cur, done, trailing)
         self.note_use(OpCode.MATCH_MARK_VAR, cur=cur)
         self.emit(OpCode.MATCH_MARK_VAR, self.at(cur))
         self.note_push(start)
+        self.emit(OpCode.LABEL, loop)
+        self.guard(inner, cur, done, trailing)
+        self.note_use(OpCode.MATCH_REMARK_VAR, cur=cur, mark=start)
+        self.emit(OpCode.MATCH_REMARK_VAR, self.at(cur), self.at(start))
         self.fresh_mark = (cur, start)
         self.emit_sequence(
             self.children(inner), cur, (fail, depth, len(self.live)), depth,
@@ -1683,17 +1686,15 @@ class MatchLowering:
             for slot in self.slots_under(inner):
                 if self.scopes.get(slot) != scope:
                     self.emit(OpCode.VAR_CLEAR, self.slot_local(slot))
-        self.emit(OpCode.POP, 1)
-        self.note_pop(start)
         self.emit(OpCode.JUMP, loop)
 
         self.emit(OpCode.LABEL, fail)
         self.note_use(OpCode.MATCH_RESET_VAR, cur=cur, mark=start)
         self.emit(OpCode.MATCH_RESET_VAR, self.at(cur), self.at(start))
         self.clear_slots(inner)
+        self.emit(OpCode.LABEL, done)
         self.emit(OpCode.POP, 1)
         self.note_pop(start)
-        self.emit(OpCode.LABEL, done)
 
         if min_count > 0:
             self.note_use(OpCode.MATCH_COUNT, items=items)

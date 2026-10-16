@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_MARK_VAR: Schema the depth of the cursor under the top. Push the cursor's position: its cell, or its index.
+  MATCH_MARK_VAR: Schema the depth of the cursor under the top. Push a mark at the cursor's position: its cell, or a mark over the sequence at its index.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_MARK_VAR) {

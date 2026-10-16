@@ -504,6 +504,7 @@ class TestDepthTrace(unittest.TestCase):
         self.assertEqual(rows(trace), [
             ("MATCH_NEXT_FORM", {"cur": 0}),
             ("MATCH_MARK", {"cur": 1}),
+            ("MATCH_REMARK", {"cur": 2, "mark": 0}),
             ("MATCH_NEXT_BIND", {"cur": 2}),
             ("MATCH_NEXT_BIND", {"cur": 2}),
             ("MATCH_CAPTURES", {"cur": 2, "start": 0}),

@@ -379,6 +379,8 @@
 #include "opcode/MATCH_COLLECT_FAST.c"
 #include "opcode/MATCH_MARK_VAR.c"
 #include "opcode/MATCH_MARK_FAST.c"
+#include "opcode/MATCH_REMARK_VAR.c"
+#include "opcode/MATCH_REMARK_FAST.c"
 #include "opcode/MATCH_RESET_VAR.c"
 #include "opcode/MATCH_RESET_FAST.c"
 #include "opcode/MATCH_ITEMS.c"

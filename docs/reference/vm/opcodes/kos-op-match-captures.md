@@ -9,8 +9,9 @@
   that is bound, an unbound slot absent. The start is the subject for a
   matcher's root and the position a `MATCH_MARK` pushed for a group. When it
   is a pair cell the result is a `DatumFrame` whose source is the span from
-  that cell to the cursor and whose position is the start cell's; when it is an
-  index the result is a plain dict.
+  that cell to the cursor and whose position is the start cell's;
+  otherwise, a sequence subject or a mark over one, the result is a plain
+  dict.
 - **Compiler form:** Emitted by the match compiler at the end of a standalone
   matcher and for each named group; the NAMED forms for a `compile/match` arm,
   whose captures are the enclosing function's locals.

@@ -111,6 +111,82 @@ KOS_OP_INLINE PyObject *kos_match_at(
 
 
 /**
+   The entry a RAW field names, which must be a cursor: a pair cell,
+   nil, or a sequence cursor whose kind is not the mark's. Borrowed;
+   NULL with an exception set on an underrun or a mark found there.
+*/
+KOS_OP_INLINE PyObject *kos_match_cursor_at(
+    KosEvalState *es,
+    const KosExtra *row,
+    int field) {
+
+  PyObject *entry = kos_match_at(es, row, field);
+
+  if (unlikely(KosMatchCursor_Check(entry)
+               && KosMatchCursor_KIND(entry) != KOS_MATCH_CURSOR)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "match instruction names a mark at depth %u, not a cursor",
+                 (unsigned) KosExtra_IMM(row, field));
+    return NULL;
+  }
+  return entry;
+}
+
+
+/**
+   The entry a RAW field names, which must be a mark: a pair cell, nil,
+   or a sequence mark. Borrowed; NULL with an exception set on an
+   underrun or a cursor found there.
+*/
+KOS_OP_INLINE PyObject *kos_match_mark_at(
+    KosEvalState *es,
+    const KosExtra *row,
+    int field) {
+
+  PyObject *entry = kos_match_at(es, row, field);
+
+  if (unlikely(KosMatchCursor_Check(entry)
+               && KosMatchCursor_KIND(entry) != KOS_MATCH_MARK)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "match instruction names a cursor at depth %u, not a mark",
+                 (unsigned) KosExtra_IMM(row, field));
+    return NULL;
+  }
+  return entry;
+}
+
+
+/**
+   The list an append instruction names by its depth under the top,
+   owned by its entry alone: the entry's list when nothing else holds
+   it, else a copy stored at the entry, so a cloned segment keeps the
+   items it had when the clone was taken. Borrowed; NULL with an
+   exception set on an underrun, a non-list, or a failed copy.
+*/
+KOS_OP_INLINE PyObject *kos_match_list_at(KosEvalState *es, size_t under) {
+  PyObject *list = KosEvalState_StackPeekUnder(es, under);
+
+  if (unlikely(! list))
+    return NULL;
+  if (unlikely(! PyList_Check(list))) {
+    PyErr_Format(PyExc_TypeError,
+                 "match append requires a list, not %.200s",
+                 Py_TYPE(list)->tp_name);
+    return NULL;
+  }
+  if (Py_REFCNT(list) == 1)
+    return list;
+
+  PyObject *copy = PyList_GetSlice(list, 0, PyList_GET_SIZE(list));
+  if (unlikely(! copy))
+    return NULL;
+  if (unlikely(KosEvalState_StackSetUnder(es, under, copy) < 0))
+    return NULL;
+  return copy;
+}
+
+
+/**
    Store an owned value into the entry a RAW field names, releasing
    what it held; consumed on every path. 0, or -1 with an exception
    set.
@@ -180,7 +256,7 @@ KOS_MATCH_BODY(kos_match_next_form) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -219,7 +295,7 @@ KOS_MATCH_BODY(kos_match_next) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -253,7 +329,7 @@ KOS_MATCH_BODY(kos_match_peek_next) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -281,7 +357,7 @@ KOS_MATCH_BODY(kos_match_next_bind) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -322,7 +398,7 @@ KOS_MATCH_BODY(kos_match_next_type) {
       || op == KOS_OP_MATCH_NEXT_TYPE_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -380,7 +456,7 @@ KOS_MATCH_BODY(kos_match_next_core_type) {
       || op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -426,7 +502,7 @@ KOS_MATCH_BODY(kos_match_next_literal) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -466,7 +542,7 @@ KOS_MATCH_BODY(kos_match_rest) {
       || op == KOS_OP_MATCH_REST_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -503,7 +579,7 @@ KOS_MATCH_BODY(kos_match_end) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
   if (! KosMatch_End(cursor))
@@ -524,7 +600,7 @@ KOS_MATCH_BODY(kos_match_available) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
   if (! KosMatch_Available(cursor, (Py_ssize_t) KosExtra_IMM(row, 2)))
@@ -937,7 +1013,7 @@ KOS_MATCH_BODY(kos_match_next_same) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_SAME_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -980,7 +1056,7 @@ KOS_MATCH_BODY(kos_match_next_append) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -991,15 +1067,8 @@ KOS_MATCH_BODY(kos_match_next_append) {
   if (! r)
     KOS_MATCH_MISS(row);
 
-  PyObject *list = kos_match_at(es, row, 2);
+  PyObject *list = kos_match_list_at(es, (size_t) KosExtra_IMM(row, 2));
   if (unlikely(! list)) {
-    KosMatch_StepClear(&step);
-    RESULT_RAISE();
-  }
-  if (unlikely(! PyList_Check(list))) {
-    PyErr_Format(PyExc_TypeError,
-                 "match append requires a list, not %.200s",
-                 Py_TYPE(list)->tp_name);
     KosMatch_StepClear(&step);
     RESULT_RAISE();
   }
@@ -1026,18 +1095,12 @@ KOS_MATCH_BODY(kos_match_collect) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  PyObject *list = kos_match_at(es, row, 2);
+  PyObject *list = kos_match_list_at(es, (size_t) KosExtra_IMM(row, 2));
   if (unlikely(! list))
     RESULT_RAISE();
-  if (unlikely(! PyList_Check(list))) {
-    PyErr_Format(PyExc_TypeError,
-                 "match collect requires a list, not %.200s",
-                 Py_TYPE(list)->tp_name);
-    RESULT_RAISE();
-  }
 
   PyObject *next = NULL;
   int r = KosMatch_Collect(cursor, list, &next);
@@ -1052,37 +1115,67 @@ KOS_MATCH_BODY(kos_match_collect) {
 
 
 /**
-   MATCH_MARK: the cursor at the depth in field 0 pushed as its
-   position, which no advance moves while the mark holds it. Row
-   depth.
+   MATCH_MARK: a mark at the position of the cursor at the depth in
+   field 0 pushed. Row depth.
 */
 KOS_MATCH_BODY(kos_match_mark) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 0);
+  PyObject *cursor = kos_match_cursor_at(es, row, 0);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  Py_INCREF(cursor);
-  RESULT_STEAL(es, cursor);
+  PyObject *mark = KosMatch_Mark(cursor);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  RESULT_STEAL(es, mark);
 }
 
 
 /**
-   MATCH_RESET: the position at the depth in field 1 stored as the
-   cursor at the depth in field 0. Row depth, depth.
+   MATCH_REMARK: the mark at the depth in field 1 moved to the
+   position of the cursor at the depth in field 0. Row depth, depth.
+*/
+KOS_MATCH_BODY(kos_match_remark) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match_cursor_at(es, row, 0);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  PyObject *mark = kos_match_mark_at(es, row, 1);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  PyObject *moved = KosMatch_Remark(cursor, mark);
+  if (unlikely(! moved))
+    RESULT_RAISE();
+  if (unlikely(kos_match_set_at(es, row, 1, moved) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH_RESET: the cursor at the depth in field 0 moved back to the
+   position of the mark at the depth in field 1. Row depth, depth.
 */
 KOS_MATCH_BODY(kos_match_reset) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *saved = kos_match_at(es, row, 1);
-  if (unlikely(! saved))
+  PyObject *cursor = kos_match_cursor_at(es, row, 0);
+  if (unlikely(! cursor))
     RESULT_RAISE();
-  Py_INCREF(saved);
-  if (unlikely(kos_match_set_at(es, row, 0, saved) < 0))
+  PyObject *mark = kos_match_mark_at(es, row, 1);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  PyObject *moved = KosMatch_Reset(cursor, mark);
+  if (unlikely(! moved))
+    RESULT_RAISE();
+  if (unlikely(kos_match_set_at(es, row, 0, moved) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -1221,11 +1314,17 @@ KOS_MATCH_BODY(kos_match_captures) {
   int append = 0;
   if (iteration) {
     start = KosEvalState_StackPeekUnder(es, 0);
-    cursor = kos_match_at(es, row, field);
+    if (unlikely(start && KosMatchCursor_Check(start)
+                 && KosMatchCursor_KIND(start) != KOS_MATCH_MARK)) {
+      PyErr_SetString(PyExc_RuntimeError,
+                      "match iteration finds a cursor on top, not its mark");
+      RESULT_RAISE();
+    }
+    cursor = kos_match_cursor_at(es, row, field);
     append = KosExtra_IMM(row, field + 1) == 1;
   } else {
-    start = kos_match_at(es, row, field);
-    cursor = kos_match_at(es, row, field + 1);
+    start = kos_match_mark_at(es, row, field);
+    cursor = kos_match_cursor_at(es, row, field + 1);
   }
   if (unlikely(! start || ! cursor))
     RESULT_RAISE();
@@ -1252,15 +1351,8 @@ KOS_MATCH_BODY(kos_match_captures) {
   if (! append)
     RESULT_STEAL(es, out);
 
-  PyObject *list = KosEvalState_StackPeekUnder(es, 1);
+  PyObject *list = kos_match_list_at(es, 1);
   if (unlikely(! list)) {
-    Py_DECREF(out);
-    RESULT_RAISE();
-  }
-  if (unlikely(! PyList_Check(list))) {
-    PyErr_Format(PyExc_TypeError,
-                 "match iteration requires a list under its mark, not %.200s",
-                 Py_TYPE(list)->tp_name);
     Py_DECREF(out);
     RESULT_RAISE();
   }

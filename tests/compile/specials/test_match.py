@@ -851,6 +851,46 @@ class TestMatchCalls(SpecialsTestCase):
         self.assertEqual((hit2, y2.datum, z2.datum), ("hit", 2, 3))
 
 
+    async def test_escaped_predicate_continuation_inside_a_repeat(self):
+        """
+        A continuation captured inside a repeat's pass and resumed
+        twice: each resumption walks on with the cursor, the mark and
+        the items the capture held. The REPEAT head reads its inner
+        pattern in the matcher dialect, hence PREDICATE
+        """
+
+        src = """
+        (begin
+          (define-global pred
+            (lambda [v]
+              (or holder.k (shift k (begin (setattr holder "k" k) False)))))
+          (define-global first
+            (reset
+              (match data
+                [[#[(REPEAT xs (PREDICATE pred) min: 0) y z]] #("hit" xs y z)]
+                [else: "miss"])))
+          #(first (call holder.k True) (call holder.k True)))
+        """
+
+        class Holder:
+            k = None
+
+        expr, mod = self.compile_expr(
+            src, data=(1, 2, 3), holder=Holder(), setattr=setattr)
+        self.assertEqual(
+            await expr(),
+            (False, ("hit", [1], 2, 3), ("hit", [1], 2, 3)))
+
+        expr, mod = self.compile_expr(
+            src, data=cons(1, 2, 3, nil), holder=Holder(), setattr=setattr)
+        first, (hit, xs, y, z), (hit2, xs2, y2, z2) = await expr()
+        self.assertIs(first, False)
+        self.assertEqual((hit, [x.datum for x in xs], y.datum, z.datum),
+                         ("hit", [1], 2, 3))
+        self.assertEqual((hit2, [x.datum for x in xs2], y2.datum, z2.datum),
+                         ("hit", [1], 2, 3))
+
+
     async def test_awaiting_extractor_awaits_in_place(self):
         src = """
         (match data

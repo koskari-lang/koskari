@@ -524,9 +524,11 @@ OP(MATCH_NEXT_APPEND_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // pull from the cu
 OP(MATCH_NEXT_APPEND_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
 OP(MATCH_COLLECT_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // every remaining element of the cursor at the first depth, boxed from a pair spine, appended to the list at the second; an improper tail is a miss
 OP(MATCH_COLLECT_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
-OP(MATCH_MARK_VAR, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // push the position of the cursor at the depth: its cell, or its index
+OP(MATCH_MARK_VAR, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // push a mark at the position of the cursor at the depth: its cell, or a mark over the sequence at its index
 OP(MATCH_MARK_FAST, 0, EXTRA, RAW, NOARG, NOARG, NOARG)
-OP(MATCH_RESET_VAR, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // the cursor at the first depth moved back to the position at the second
+OP(MATCH_REMARK_VAR, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // the mark at the second depth moved to the position of the cursor at the first
+OP(MATCH_REMARK_FAST, 0, EXTRA, RAW, RAW, NOARG, NOARG)
+OP(MATCH_RESET_VAR, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // the cursor at the first depth moved back to the position of the mark at the second
 OP(MATCH_RESET_FAST, 0, EXTRA, RAW, RAW, NOARG, NOARG)
 OP(MATCH_ITEMS, 0, NOARG)  // push an empty list: a repeat's items
 OP(MATCH_COUNT, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the list at the depth must hold at least the count of items

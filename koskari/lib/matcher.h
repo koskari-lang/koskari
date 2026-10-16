@@ -60,18 +60,27 @@ extern PyTypeObject KosDatumFrameType;
 
 /**
    A cursor over a sequence subject: the sequence, its length and the
-   index of the next element. A pair spine needs none, the cell is the
-   cursor. Opaque to Python and untracked. An advance moves the cursor
-   in place when its entry is the only holder and stores a new cursor
-   at the entry otherwise, so a mark, which is the cursor itself, and
-   a cloned segment keep the position they took.
+   index of the next element, and a mark over one, the same object
+   with the kind byte set, holding the index a walk may return to. A
+   pair spine needs neither, the cell is the cursor and the mark.
+   Opaque to Python and untracked. A write to either, an advance or a
+   re-mark, moves the object in place when its stack entry is the only
+   holder and stores a new object at the entry otherwise, so a cloned
+   segment keeps the position it took.
  */
 typedef struct KosMatchCursor {
   PyObject_HEAD
   PyObject *seq;
   Py_ssize_t length;
   Py_ssize_t index;
+  unsigned char kind;
 } KosMatchCursor;
+
+
+enum {
+  KOS_MATCH_CURSOR = 0,
+  KOS_MATCH_MARK = 1,
+};
 
 
 extern PyTypeObject KosMatchCursorType;
@@ -79,6 +88,8 @@ extern PyTypeObject KosMatchCursorType;
 
 #define KosMatchCursor_Check(obj)                                  \
   ((obj) && ((obj)->ob_type == &KosMatchCursorType))
+
+#define KosMatchCursor_KIND(obj)  (((KosMatchCursor *) (obj))->kind)
 
 
 /* The core types a pattern names by their bare spelling: a type test
@@ -244,6 +255,29 @@ int KosMatch_Available(PyObject *cursor, Py_ssize_t needed);
    Py_EQ. 1, 0, or -1.
  */
 int KosMatch_SameTest(PyObject *elem, PyObject *prev);
+
+/**
+   The mark to push for MATCH_MARK: the cell of a pair spine, or a
+   mark over the sequence at the cursor's index. New reference; NULL
+   with an exception set.
+ */
+PyObject *KosMatch_Mark(PyObject *cursor);
+
+/**
+   The mark to store for MATCH_REMARK, at the cursor's position: the
+   cell of a pair spine, or mark moved in place when its entry is its
+   only holder, else a new mark. New reference; NULL with an exception
+   set.
+ */
+PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark);
+
+/**
+   The cursor to store for MATCH_RESET, back at the mark's position:
+   the cell the mark is over a pair spine, or cursor moved in place
+   when its entry is its only holder, else a new cursor. New
+   reference; NULL with an exception set.
+ */
+PyObject *KosMatch_Reset(PyObject *cursor, PyObject *mark);
 
 /**
    Append every remaining element of cursor, boxed from a pair spine,

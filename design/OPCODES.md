@@ -288,7 +288,7 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) — MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_CORE_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_RESET, MATCH_ITEMS, MATCH_COUNT, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) — MATCH_FORM, MATCH_NEXT*, MATCH_PEEK, MATCH_REST*, MATCH_END, MATCH_AVAILABLE, MATCH_LITERAL, MATCH_TYPE*, MATCH_CORE_TYPE*, MATCH_BIND, MATCH_CLASS, MATCH_FIELD_*, MATCH_MAP, MATCH_KEY_*, MATCH_SAME, MATCH_COLLECT, MATCH_MARK, MATCH_REMARK, MATCH_RESET, MATCH_ITEMS, MATCH_COUNT, MATCH_CAPTURES*, MATCH_ITERATION*; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -405,6 +405,7 @@ When adding or changing an opcode:
 | MATCH_NEXT_APPEND_VAR / MATCH_NEXT_APPEND_FAST | EXTRA | Pull and append the element to the list at the second depth | [§9.2](#kos_op_match_next_append_var) |
 | MATCH_COLLECT_VAR / MATCH_COLLECT_FAST | EXTRA | Every remaining element appended to the list at the second depth | [§9.2](#kos_op_match_collect_var) |
 | MATCH_MARK_VAR / MATCH_MARK_FAST | EXTRA | The position of the cursor at the depth pushed | [§9.2](#kos_op_match_mark_var) |
+| MATCH_REMARK_VAR / MATCH_REMARK_FAST | EXTRA | The mark at the second depth moved to the position of the cursor at the first | [§9.2](#kos_op_match_remark_var) |
 | MATCH_RESET_VAR / MATCH_RESET_FAST | EXTRA | The cursor at the first depth moved back to the position at the second | [§9.2](#kos_op_match_reset_var) |
 | MATCH_CAPTURES / MATCH_CAPTURES_NAMED_VAR / MATCH_CAPTURES_NAMED_FAST | EXTRA | Push the captures: a DatumFrame over a pair spine, a dict otherwise; an unbound slot is absent | [§9.2](#kos_op_match_captures) |
 | MATCH_ITERATION / MATCH_ITERATION_NAMED_VAR / MATCH_ITERATION_NAMED_FAST | EXTRA | One repeat iteration's value, its captures or the span, appended to the items under its mark or pushed; the slots it read cleared | [§9.2](#kos_op_match_iteration) |
@@ -1851,17 +1852,23 @@ rule to a run of these instructions, so matching a value or a source
 form is ordinary bytecode in the frame that asked for it; nothing
 interprets a pattern object at run time.
 
-- **Cursor.** A walk over a sequence keeps its position on the
-  operand stack: the pair cell itself for a pair spine, a cursor
-  object over a tuple, list or other sequence. `MATCH_FORM` pushes a
-  cursor over the element on top of the stack and `MATCH_NEXT_FORM`
-  pushes an inner cursor over an element it pulls; `MATCH_END` pops a
-  cursor when its extent ends. A mark `MATCH_MARK` pushes and a
-  repeat's items `MATCH_ITEMS` pushes live the same way. Every row
-  that reads one names it by its depth under the top in a RAW field,
-  which the compiler computes from the entries it knows are live; a
-  continuation captured in the walk copies them with the rest of the
-  stack, and none outlives the form.
+- **Cursor.** A walk over a sequence keeps its position on the operand
+  stack: the pair cell itself for a pair spine, a cursor object over a
+  tuple, list or other sequence. `MATCH_FORM` pushes a cursor over the
+  element on top of the stack and `MATCH_NEXT_FORM` pushes an inner
+  cursor over an element it pulls; `MATCH_END` pops a cursor when its
+  extent ends. `MATCH_MARK` pushes a mark at the cursor's position: the
+  cell of a pair spine, or over a sequence an object of the cursor's
+  type with its kind byte set to mark, holding the sequence and an
+  index, which does not move when the cursor advances. A repeat pushes
+  its mark once before its loop and moves it with `MATCH_REMARK` at the
+  head of every pass; `MATCH_ITEMS` pushes the list the passes append
+  to. Over a sequence a mark and a cursor are distinct kinds, and an
+  instruction whose depth names the one where it expects the other
+  raises `RuntimeError`. Every row that reads one names it by its depth
+  under the top in a RAW field, which the compiler computes from the
+  entries it knows are live; a continuation captured in the walk copies
+  them with the rest of the stack, and none outlives the form.
 - **Pull and peek.** A pull instruction reads the next element from
   the cursor at its depth and advances the cursor only after the
   element passes; a miss leaves the cursor and the stack as they were.
@@ -2256,20 +2263,30 @@ lambda body for a syntax rule, `compile_match_function` and
 
 - **Style**: EXTRA (RAW)
 - **Stack**: `[...]` -> `[..., position]`; cannot miss.
-- **Semantics**: Push the cursor at depth `a0` as its position: the cell of a
-  pair spine or the sequence cursor, which no advance moves while the mark
-  holds it. The instructions that follow name the cursor one deeper while the mark
-  lives; the path that ends the mark's extent pops it.
+- **Semantics**: Push a mark at the position of the cursor at depth `a0`: the
+  cell of a pair spine, or a mark object over the sequence at the cursor's
+  index. The instructions that follow name the cursor one deeper while the
+  mark lives; the path that ends the mark's extent pops it.
 - **Implementation**: `koskari/lib/opcode/MATCH_MARK_VAR.c`,
   `koskari/lib/opcode/MATCH_MARK_FAST.c`
+
+### KOS_OP_MATCH_REMARK_VAR / KOS_OP_MATCH_REMARK_FAST {#kos_op_match_remark_var}
+
+- **Style**: EXTRA (RAW, RAW)
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Move the mark at depth `a1` to the position of the cursor at
+  depth `a0`. A repeat pushes its mark once before its loop and re-marks at
+  the head of every pass, so a pass over a sequence allocates nothing.
+- **Implementation**: `koskari/lib/opcode/MATCH_REMARK_VAR.c`,
+  `koskari/lib/opcode/MATCH_REMARK_FAST.c`
 
 ### KOS_OP_MATCH_RESET_VAR / KOS_OP_MATCH_RESET_FAST {#kos_op_match_reset_var}
 
 - **Style**: EXTRA (RAW, RAW)
 - **Stack**: No stack effect; cannot miss.
-- **Semantics**: Store the position at depth `a1` as the cursor at depth `a0`.
-  A failed branch of a repeat, an optional or a `(or ...)` returns to where it
-  began.
+- **Semantics**: Move the cursor at depth `a0` back to the position of the
+  mark at depth `a1`. A failed branch of a repeat, an optional or a `(or ...)`
+  returns to where it began.
 - **Implementation**: `koskari/lib/opcode/MATCH_RESET_VAR.c`,
   `koskari/lib/opcode/MATCH_RESET_FAST.c`
 
@@ -2301,8 +2318,9 @@ lambda body for a syntax rule, `compile_match_function` and
   that is bound, an unbound slot absent. The start is the subject for a
   matcher's root and the position a `MATCH_MARK` pushed for a group. When it
   is a pair cell the result is a `DatumFrame` whose source is the span from
-  that cell to the cursor and whose position is the start cell's; when it is an
-  index the result is a plain dict.
+  that cell to the cursor and whose position is the start cell's;
+  otherwise, a sequence subject or a mark over one, the result is a plain
+  dict.
 - **Implementation**: `koskari/lib/opcode/MATCH_CAPTURES.c`,
   `koskari/lib/opcode/MATCH_CAPTURES_NAMED_VAR.c`,
   `koskari/lib/opcode/MATCH_CAPTURES_NAMED_FAST.c`

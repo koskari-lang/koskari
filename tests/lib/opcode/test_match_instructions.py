@@ -679,6 +679,88 @@ class TestMarkAndCaptures(CevalTest):
         self.assertEqual((a.datum, b.datum, c.datum), (1, 1, 2))
 
 
+    async def test_remark_moves_the_mark_to_the_cursor(self):
+        # the mark pushed at 0, moved to the cursor after the first
+        # pull; the reset returns to the moved position, so the second
+        # element is read twice
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_REMARK_FAST", (1, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 1, 0)],
+            ["MATCH_RESET_FAST", (1, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 2, 0)],
+            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["POP", 3],
+            ["FAST", 0],
+            ["FAST", 1],
+            ["FAST", 2],
+            ["BUILD_ARGS", 3],
+            ["RETURN", 1],
+        ]
+        syms = ("a", "b", "c")
+        self.assertEqual(await run(prog, syms, subject=(1, 2)), (1, 2, 2))
+        self.assertEqual(await run(prog, syms, subject=[1, 2]), (1, 2, 2))
+        a, b, c = await run(prog, syms, subject=cons(1, 2, nil))
+        self.assertEqual((a.datum, b.datum, c.datum), (1, 2, 2))
+
+
+    async def test_a_mark_named_as_a_cursor_is_an_error(self):
+        # over a sequence a mark and a cursor are distinct kinds, and a
+        # depth that names the wrong one raises; a pair spine has one
+        # kind, the cell, so the walk reads on from the mark
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["POP", 2],
+            ["FAST", 0],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(RuntimeError) as caught:
+            await run(prog, ("a",), subject=(7,))
+        self.assertIn("names a mark at depth 0", str(caught.exception))
+        self.assertEqual((await run(prog, ("a",), subject=cons(7, nil))).datum, 7)
+
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_RESET_FAST", (1, 1, 0, 0)],
+            ["POP", 2],
+            ["CONST", "reset"],
+            ["RETURN", 1],
+        ]
+        with self.assertRaises(RuntimeError) as caught:
+            await run(prog, (), subject=(7,))
+        self.assertIn("names a cursor at depth 1", str(caught.exception))
+        self.assertEqual(await run(prog, (), subject=cons(7, nil)), "reset")
+
+
+    async def test_append_to_a_held_list_copies_it(self):
+        # the items list duplicated on the stack stands for a cloned
+        # segment holding it: the append and the collect write a copy
+        # stored at their depth, and the held list keeps its contents
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(3, 3), 0, 0)],
+            ["MATCH_ITEMS", 0],
+            ["DUP", 1],
+            ["MATCH_NEXT_APPEND_FAST", ("miss", 2, 0, 0)],
+            ["MATCH_COLLECT_FAST", ("miss", 2, 0, 0)],
+            ["MATCH_END_FAST", ("miss", 2, 0, 0)],
+            ["BUILD_ARGS", 2],
+            ["RETURN", 1],
+        ]
+        held, appended = await run(prog, (), subject=(1, 2, 3))
+        self.assertEqual(held, [])
+        self.assertEqual(appended, [1, 2, 3])
+        self.assertIsNot(held, appended)
+
+        held, appended = await run(prog, (), subject=cons(1, 2, 3, nil))
+        self.assertEqual(held, [])
+        self.assertEqual([d.datum for d in appended], [1, 2, 3])
+
+
     async def test_captures_over_pair_and_sequence(self):
         # the captures start at the subject, one under the cursor;
         # slots: a 0, b 1 (b never fires)

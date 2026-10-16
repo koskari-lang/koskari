@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_RESET_FAST: Schema the depths of the cursor and of a saved position under the top. The cursor moved back to the position.
+  MATCH_RESET_FAST: Schema the depths of the cursor and of a mark under the top. The cursor moved back to the mark's position.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_RESET_FAST) {

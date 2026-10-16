@@ -451,6 +451,87 @@ static int test_advance_under_a_mark(void) {
 }
 
 
+static int test_mark_remark_and_reset(void) {
+  PyObject *subj = Py_BuildValue("(iii)", 1, 2, 3);
+  PyObject *cursor = NULL;
+  KosMatchStep step;
+
+  TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
+  PyObject *mark = KosMatch_Mark(cursor);
+  TEST_ASSERT_NOT_NULL(mark, "a mark");
+  TEST_ASSERT(mark != cursor, "its own object");
+  TEST_ASSERT(KosMatchCursor_Check(mark), "of the cursor's type");
+  TEST_ASSERT_EQ(KosMatchCursor_KIND(mark), KOS_MATCH_MARK, "kind mark");
+  TEST_ASSERT_EQ(KosMatchCursor_KIND(cursor), KOS_MATCH_CURSOR, "kind cursor");
+  TEST_ASSERT_EQ(((KosMatchCursor *) mark)->index, 0, "at the cursor's index");
+  TEST_ASSERT_SAME(((KosMatchCursor *) mark)->seq, subj, "over the subject");
+
+  /* the cursor advances in place beside a separate mark */
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
+  PyObject *advanced = KosMatch_StepAdvance(&step);
+  KosMatch_StepClear(&step);
+  TEST_ASSERT_SAME(advanced, cursor, "in place");
+  Py_DECREF(advanced);
+  TEST_ASSERT_EQ(((KosMatchCursor *) mark)->index, 0, "the mark untouched");
+
+  /* a re-mark moves an unheld mark in place */
+  PyObject *moved = KosMatch_Remark(cursor, mark);
+  TEST_ASSERT_SAME(moved, mark, "the mark moved in place");
+  TEST_ASSERT_EQ(((KosMatchCursor *) mark)->index, 1, "to the cursor's index");
+  TEST_ASSERT_EQ(KosMatchCursor_KIND(mark), KOS_MATCH_MARK, "still a mark");
+  Py_DECREF(moved);
+
+  /* a held mark is replaced */
+  Py_INCREF(mark);
+  moved = KosMatch_Remark(cursor, mark);
+  TEST_ASSERT(moved != mark, "a held mark is replaced");
+  TEST_ASSERT_EQ(KosMatchCursor_KIND(moved), KOS_MATCH_MARK, "by a mark");
+  TEST_ASSERT_EQ(((KosMatchCursor *) moved)->index, 1, "at the index");
+  Py_DECREF(moved);
+  Py_DECREF(mark);
+
+  /* a reset moves an unheld cursor back in place; a held one is
+     replaced by a cursor */
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
+  advanced = KosMatch_StepAdvance(&step);
+  KosMatch_StepClear(&step);
+  Py_DECREF(advanced);
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 2, "past two");
+  PyObject *back = KosMatch_Reset(cursor, mark);
+  TEST_ASSERT_SAME(back, cursor, "the cursor moved in place");
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 1, "back at the mark");
+  Py_DECREF(back);
+  Py_INCREF(cursor);
+  back = KosMatch_Reset(cursor, mark);
+  TEST_ASSERT(back != cursor, "a held cursor is replaced");
+  TEST_ASSERT_EQ(KosMatchCursor_KIND(back), KOS_MATCH_CURSOR, "by a cursor");
+  TEST_ASSERT_EQ(((KosMatchCursor *) back)->index, 1, "at the mark");
+  Py_DECREF(back);
+  Py_DECREF(cursor);
+
+  Py_DECREF(mark);
+  Py_DECREF(cursor);
+  TEST_ASSERT_REFCNT(subj, 1, "released");
+  Py_DECREF(subj);
+
+  /* a spine: the cell is the mark, the re-mark and the reset */
+  PyObject *spine = make_spine(2);
+  PyObject *second = KosPair_CDR(spine);
+  mark = KosMatch_Mark(spine);
+  TEST_ASSERT_SAME(mark, spine, "the cell itself");
+  moved = KosMatch_Remark(second, mark);
+  TEST_ASSERT_SAME(moved, second, "the current cell");
+  Py_DECREF(moved);
+  back = KosMatch_Reset(second, mark);
+  TEST_ASSERT_SAME(back, spine, "the marked cell");
+  Py_DECREF(back);
+  Py_DECREF(mark);
+  TEST_ASSERT_REFCNT(spine, 1, "released");
+  Py_DECREF(spine);
+  return 0;
+}
+
+
 /* === captures === */
 
 
@@ -756,6 +837,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_looping_spine_is_refused);
   RUN_TEST(test_collect_over_a_spine);
   RUN_TEST(test_advance_under_a_mark);
+  RUN_TEST(test_mark_remark_and_reset);
 
   RUN_TEST(test_captures_over_a_sequence);
   RUN_TEST(test_captures_over_a_spine);

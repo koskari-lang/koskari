@@ -273,8 +273,9 @@ tail or fixed suffix exceeds 255 is refused at validation.
 | MATCH_NEXT_CORE_TYPE | L, cur, core | pull | anonymous `(:: int)` on a core type, the ordinal in a RAW field |
 | MATCH_NEXT_CORE_TYPE_BIND | L, cur, core, slot | pull | SYMBOL, CALLEDBY, PAIR, KEYWORD, `(x :: int)` in a spine |
 | MATCH_NEXT_SAME | L, cur, slot | pull | a repeated rule variable |
-| MATCH_MARK | cur | push | the cursor pushed as its position |
-| MATCH_RESET | cur, mark | none | the cursor moved back to the position at `mark` |
+| MATCH_MARK | cur | push | a mark at the cursor's position pushed: the cell, or a mark object over the sequence at the cursor's index |
+| MATCH_REMARK | cur, mark | none | the mark at `mark` moved to the cursor's position |
+| MATCH_RESET | cur, mark | none | the cursor moved back to the position of the mark at `mark` |
 | MATCH_NEXT_FORM | L, cur, widths | pull | descend into the next element; the inner cursor pushed |
 | MATCH_NEXT_APPEND | L, cur, list | pull | box one element onto the list at `list` |
 | MATCH_COLLECT | L, cur, list | pull | every remaining element boxed onto the list at `list`; nil required |
@@ -375,7 +376,7 @@ Handler notes:
 | GROUP | MATCH_MARK, the children into the group's slots, MATCH_CAPTURES over the group's table; stored into the capturing slot or popped; the mark popped, unless the group took the fresh mark of the repeat around it |
 | ONEOF | branches all one element wide with no reservation: one MATCH_NEXT, each branch peeks, a branch's miss edge clears its slots and jumps to the next branch, the join pops; otherwise MATCH_MARK, each branch guarded by MATCH_AVAILABLE and pulled, its miss edge MATCH_RESET and clears, the last branch's miss edge the enclosing edge |
 | OPTIONAL | MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node pulled, the mark popped; its miss edge MATCH_RESET, clears, the mark popped |
-| REPEAT | MATCH_ITEMS when anything keeps the passes; a loop of MATCH_AVAILABLE against the reservation, MATCH_MARK, the inner node, MATCH_ITERATION appending to the items, the mark popped, `JUMP` back; the pass's miss edge MATCH_RESET, clears, the mark popped; a `min_count` is MATCH_COUNT after the loop; the items go into the capturing slot by `VAR_STORE` or are popped |
+| REPEAT | MATCH_ITEMS when anything keeps the passes, MATCH_MARK once; a loop of MATCH_AVAILABLE against the reservation, MATCH_REMARK, the inner node, MATCH_ITERATION appending to the items, `JUMP` back; the pass's miss edge MATCH_RESET and clears; the mark popped after the loop; a `min_count` is MATCH_COUNT after that; the items go into the capturing slot by `VAR_STORE` or are popped |
 | REST | MATCH_REST_BIND or MATCH_REST; with a non-empty suffix, the `remaining` count feeds the min |
 | NOT | MATCH_PEEK, the inner node as peek instructions with its hit edge and miss edge exchanged, `POP 1`; captures are forbidden inside NOT already |
 | CLASS, FIELD | MATCH_CLASS, then per field MATCH_FIELD_POS_BIND or MATCH_FIELD_KW_BIND for a captured field, or MATCH_FIELD_POS or MATCH_FIELD_KW, the sub-pattern, `POP 1` |
@@ -427,10 +428,10 @@ out RETURN 1
 ```
 
 `(my-or e ...)`, a `syntax-rules` pattern, which lowers to `CALLEDBY`
-then `repeat_capture("e", TEST_ANY())`: the items pushed above the
-cursor, each pass marking, pulling, appending the span and popping
-its mark, the loop's miss edge resetting and popping, the items stored
-into the capture slot.
+then `repeat_capture("e", TEST_ANY())`: the items and the mark pushed
+above the cursor, each pass re-marking, pulling and appending the
+span, the loop's miss edge resetting, the mark popped after the loop,
+the items stored into the capture slot.
 
 ```
  0  FAST 0
@@ -438,15 +439,17 @@ into the capture slot.
  2  MATCH_NEXT_CORE_TYPE_BIND_FAST -> 16, cur 0, symbol, 1 (called-by)
  3  MATCH_ITEMS
  4  MATCH_MARK_FAST                cur 1
- 5  MATCH_NEXT_FAST                -> 10, cur 2
- 6  POP 1
- 7  MATCH_ITERATION                (), first 0, cur 2, append
- 8  POP 1 ; JUMP 4
+ 5  MATCH_REMARK_FAST              cur 2, mark 0
+ 6  MATCH_NEXT_FAST                -> 10, cur 2
+ 7  POP 1
+ 8  MATCH_ITERATION                (), first 0, cur 2, append
+ 9  JUMP 5
 10  MATCH_RESET_FAST               cur 2, mark 0
-11  POP 1 ; FAST_STORE 2 (e)
-12  MATCH_END_FAST                 -> 16, cur 0, keep
-13  MATCH_CAPTURES                 names, first 1, start 1, cur 0
-14  RETURN 1
+11  POP 1
+12  FAST_STORE 2 (e)
+13  MATCH_END_FAST                 -> 16, cur 0, keep
+14  MATCH_CAPTURES                 names, first 1, start 1, cur 0
+15  RETURN 1
 16  POP 1 ; JUMP 18
 18  CONST None ; RETURN 1
 ```
@@ -1038,9 +1041,13 @@ not walk state.
   set the flag; the standalone root clears it and the captures read
   the cursor at depth 0 and the subject at depth 1, the frame taking
   both at its return.
-- **Mark.** `MATCH_MARK` pushes the position; `MATCH_RESET` reads it
-  at its depth; the node's hit path pops it, the top again, and the
-  miss edge pops it with everything above the subject.
+- **Mark.** `MATCH_MARK` pushes the mark; `MATCH_RESET` reads it at
+  its depth; the node's hit path pops it, the top again, and the miss
+  edge pops it with everything above the subject. A repeat pushes its
+  mark once and `MATCH_REMARK` moves it to the cursor at the head of
+  every pass. Over a sequence a mark is a cursor object with its kind
+  byte set, moved in place under the same refcount rule as the cursor,
+  and an instruction that finds the wrong kind at a depth raises.
 - **Items.** `MATCH_ITEMS` pushes the empty list; `MATCH_ITERATION`
   appends its value at the list's depth; after the loop the list is
   the top and goes into the capture slot or is popped.
