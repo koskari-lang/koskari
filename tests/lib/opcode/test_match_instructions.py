@@ -134,7 +134,8 @@ class TestPulls(CevalTest):
 
     async def test_form_pushes_the_cursor_above_the_subject(self):
         # the gate leaves the subject in place and the cursor on top;
-        # the walk's end pops nothing, the path after it does
+        # the walk's end pops nothing with its flag clear, and pops the
+        # cursor with it set
         prog = [
             ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
@@ -144,6 +145,14 @@ class TestPulls(CevalTest):
         ]
         subject = (7,)
         self.assertIs(await run(prog, ("x",), subject=subject), subject)
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END_FAST", ("miss", 0, 1, 0)],
+            ["RETURN", 1],
+        ]
+        self.assertIs(await run(prog, ("x",), subject=subject), subject)
+        self.assertEqual(await run(prog, ("x",), subject=(7, 8)), "miss")
 
 
     async def test_length_precheck_and_end_miss(self):

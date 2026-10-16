@@ -627,6 +627,8 @@ def compile_dispatch_function(clauses, base_ns, name="dispatch"):
     seen = set()
     base_ns.store(VALUES, values)
 
+    # the subject is pushed once and stays under every clause's walk
+    target.instruction(OpCode.VAR, symbol(SUBJECT))
     for index, clause in enumerate(clauses):
         # the next clause's entry, or the miss tail after the last
         after = target.label("dispatch.next")
@@ -1125,6 +1127,7 @@ class MatchLowering:
         """
 
         miss = self.target.label("match.miss")
+        self.emit(OpCode.VAR, symbol(SUBJECT))
         self.lower_body(miss)
         self.emit(OpCode.RETURN, 1)
         self.flush_trampolines()
@@ -1148,17 +1151,19 @@ class MatchLowering:
         for slot in self.scope_slots.get(None, []):
             self.slot_local(slot)
 
-        # the subject stays under the walk: the gate pushes the cursor
-        # above it and the captures start at it
-        self.emit(OpCode.VAR, symbol(SUBJECT))
+        # the caller pushed the subject once; it stays under the walk,
+        # the gate pushes the cursor above it, the captures start at
+        # it, and a miss leaves it for the next clause
         self.emit(
             OpCode.MATCH_FORM_VAR, self.miss_at((miss, 0, 0), 1),
             pack_widths(*self.width(self.entry)))
         self.note_push(cur)
         self.emit_pull(self.entry, cur, (miss, 0, 0), 0, 1, 0)
+        # the root's cursor stays for the captures; the frame takes it
         self.note_use(OpCode.MATCH_END_VAR, cur=cur)
         self.emit(
-            OpCode.MATCH_END_VAR, self.miss_at((miss, 0, 0), 1), self.at(cur))
+            OpCode.MATCH_END_VAR, self.miss_at((miss, 0, 0), 1), self.at(cur),
+            0)
         if index is not None:
             self.emit(OpCode.CONST, index)
             self.note_push(ELEM)
@@ -1242,11 +1247,12 @@ class MatchLowering:
             self.note_push(cur)
             self.emit_sequence(
                 self.children(sub), cur, miss, depth, level + 1, 0)
-            # the end's miss edge pops the cursor the gate pushed
+            # the end pops the cursor the gate pushed; its miss edge
+            # pops it as well
             self.note_use(OpCode.MATCH_END_VAR, cur=cur)
             self.emit(
-                OpCode.MATCH_END_VAR, self.miss_at(miss, depth), self.at(cur))
-            self.emit(OpCode.POP, 1)
+                OpCode.MATCH_END_VAR, self.miss_at(miss, depth), self.at(cur),
+                1)
             self.note_pop(cur)
 
         elif kind == 'ONEOF':
@@ -1481,12 +1487,12 @@ class MatchLowering:
             self.note_push(inner)
             self.emit_sequence(
                 self.children(sub), inner, miss, depth, level + 1, 0)
-            # the end's miss edge pops the inner cursor the pull pushed
+            # the end pops the inner cursor the pull pushed; its miss
+            # edge pops it as well
             self.note_use(OpCode.MATCH_END_VAR, cur=inner)
             self.emit(
                 OpCode.MATCH_END_VAR, self.miss_at(miss, depth),
-                self.at(inner))
-            self.emit(OpCode.POP, 1)
+                self.at(inner), 1)
             self.note_pop(inner)
 
         elif kind == 'MATCH':

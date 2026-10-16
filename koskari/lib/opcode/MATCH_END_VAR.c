@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_END_VAR: Schema LABEL, then the depth of the cursor under the top. The cursor must be at its end; it stays for the path that ends its extent.
+  MATCH_END_VAR: Schema LABEL, then the depth of the cursor under the top and a flag. The cursor must be at its end; with the flag set it is popped, its extent ending here, else it stays for the captures that read it.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_END_VAR) {

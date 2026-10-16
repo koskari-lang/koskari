@@ -485,8 +485,8 @@ OP(MATCH_REST_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the remainder of the cu
 OP(MATCH_REST_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
 OP(MATCH_REST_BIND_VAR, 0, EXTRA, LABEL, RAW, RAW, VAR)  // the remainder stored into the slot
 OP(MATCH_REST_BIND_FAST, 0, EXTRA, LABEL, RAW, RAW, FASTVAR)
-OP(MATCH_END_VAR, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // the cursor at the depth must be at its end; it stays for the path that ends its extent
-OP(MATCH_END_FAST, 0, EXTRA, LABEL, RAW, NOARG, NOARG)
+OP(MATCH_END_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the cursor at the depth must be at its end; the second RAW set pops it, the top at that point, else it stays for the captures
+OP(MATCH_END_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
 OP(MATCH_AVAILABLE_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the cursor at the depth must have at least the count of elements left
 OP(MATCH_AVAILABLE_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
 OP(MATCH_LITERAL, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // peek: TOS must equal the constant

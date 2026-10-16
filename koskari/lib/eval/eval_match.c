@@ -502,8 +502,10 @@ KOS_MATCH_BODY(kos_match_rest) {
 
 
 /**
-   MATCH_END: the cursor at the depth in field 1 must be at its end;
-   it stays for the path that ends its extent. Row LABEL, depth.
+   MATCH_END: the cursor at the depth in field 1 must be at its end.
+   With field 2 set the cursor is popped, its extent ending here, and
+   the lowering places it on the top; clear, it stays for the captures
+   that read it. Row LABEL, depth, flag.
 */
 KOS_MATCH_BODY(kos_match_end) {
   KOS_SYNC_PC(es, insn);
@@ -515,6 +517,9 @@ KOS_MATCH_BODY(kos_match_end) {
     RESULT_RAISE();
   if (! KosMatch_End(cursor))
     KOS_MATCH_MISS(row);
+  if (KosExtra_IMM(row, 2)
+      && unlikely(KosEvalState_StackDropNoErr(es, 1) < 0))
+    RESULT_RAISE();
   RESULT_NEXT(es);
 }
 
