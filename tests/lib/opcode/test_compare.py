@@ -607,8 +607,8 @@ class TestCheckCompareNegate(CevalTest):
 
     NAN = float("nan")
 
-    def check(self, rows, **kwargs):
-        return build_expr(rows + [
+    def check(self, instr, **kwargs):
+        return build_expr(instr + [
             ["CONST", "continued"],
             ["RETURN", 1],
             ["LABEL", "held"],

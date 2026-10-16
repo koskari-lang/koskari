@@ -163,9 +163,9 @@ class TestJumpFeederTwins(CevalTest):
     value from the row's name or slot instead of popping it
     """
 
-    def branch(self, row, **kwargs):
+    def branch(self, insn, **kwargs):
         return build_expr([
-            row,
+            insn,
             ["CONST", "continued"],
             ["RETURN", 1],
             ["LABEL", "target"],
@@ -289,11 +289,11 @@ class TestShortCircuitFeederTwins(CevalTest):
     push nothing when they fall through
     """
 
-    def shortcircuit(self, row, **kwargs):
+    def shortcircuit(self, insn, **kwargs):
         # the jumping path returns the pushed value; the fall-through
         # path has an empty stack and returns the constant it then loads
         return build_expr([
-            row,
+            insn,
             ["CONST", "fell through"],
             ["LABEL", "done"],
             ["RETURN", 1],

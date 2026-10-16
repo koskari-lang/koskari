@@ -1557,8 +1557,9 @@ Check jumps: jump to the target label when the predicate does not hold. Jump loc
   six (LT/LE/EQ/NE/GT/GE, ordinals 0-5 == CPython's Py_LT..Py_GE) chain
   over any COUNT; the extended selectors require COUNT == 2.
 - **Compiler form:** Produced by `Compiler.compress` fusing
-  `OBJECT_COMPARE` + `JUMP_FALSE` into one row, and `OBJECT_COMPARE` +
-  `JUMP_TRUE` into the row with the flag set. Never emitted directly by
+  `OBJECT_COMPARE` + `JUMP_FALSE` into one instruction, and
+  `OBJECT_COMPARE` + `JUMP_TRUE` into the same with the flag set. Never
+  emitted directly by
   specials.
 
 **Example:** Branch unless `1 < x < 100`. Selector LT = 0.

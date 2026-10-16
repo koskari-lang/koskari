@@ -15,7 +15,7 @@
 Tests for the short-circuit jump threading pass of the bytecode
 processor: a JUMP_AND or JUMP_OR whose label lands on a conditional
 jump becomes the jump that landing performs on the value the
-short-circuit row pushes, and only labels the pass orphans are dropped
+short-circuit jump pushes, and only labels the pass orphans are dropped
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -64,7 +64,7 @@ def thread(instr):
 
 class TestLandings(unittest.TestCase):
     """
-    The eight landings: each short-circuit row becomes the landing's
+    The eight landings: each short-circuit jump becomes the landing's
     jump on the value it pushes, to the landing's target when the
     outcome is the same jump, and to the landing's fall-through when
     the pushed value would fall through
@@ -370,7 +370,7 @@ class TestLabels(unittest.TestCase):
         ])
 
 
-    def test_one_fallthrough_label_for_two_rows(self):
+    def test_one_fallthrough_label_for_two_jumps(self):
         out = thread([
             (V, "a"), (JO, "done"),
             (V, "b"), (JO, "done"),
@@ -391,9 +391,9 @@ class TestLabels(unittest.TestCase):
 
 class TestLandingSearch(unittest.TestCase):
     """
-    The landing is the first row after the label that is not POSITION,
-    NOOP or LABEL; any landing that is not a conditional jump leaves the
-    row alone
+    The landing is the first instruction after the label that is not
+    POSITION, NOOP or LABEL; any landing that is not a conditional jump
+    leaves the jump alone
     """
 
 
@@ -486,7 +486,7 @@ class TestLandingSearch(unittest.TestCase):
 class TestNotLanding(unittest.TestCase):
     """
     A landing OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
-    as that jump with its polarity swapped
+    as the opposite jump
     """
 
 
@@ -587,9 +587,10 @@ class TestNotLanding(unittest.TestCase):
         self.assertEqual(thread(instr), instr)
 
 
-def compile_function_rows(src):
+def compile_function_instructions(src):
     """
-    Compile a lambda source and return the (op, arg) rows of its body
+    Compile a lambda source and return the (op, arg) instructions of
+    its body
     """
 
     mod_ns = ModuleNamespace("test", dict(make_bootstrap()))
@@ -614,9 +615,9 @@ class TestCompiled(unittest.TestCase):
 
 
     def test_and_test_fuses_both_compares(self):
-        rows = compile_function_rows(
+        instr = compile_function_instructions(
             "(lambda [a b c d] (cond [(and (< a b) (< c d)) 1] [else: 2]))")
-        ops = [op for op, _ in rows]
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 2)
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
@@ -624,10 +625,10 @@ class TestCompiled(unittest.TestCase):
 
 
     def test_not_and_test_fuses_both_compares(self):
-        rows = compile_function_rows(
+        instr = compile_function_instructions(
             "(lambda [a b c d]"
             " (cond [(not (and (< a b) (< c d))) 1] [else: 2]))")
-        ops = [op for op, _ in rows]
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 2)
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.OBJECT_NOT, ops)
@@ -637,9 +638,9 @@ class TestCompiled(unittest.TestCase):
 
 
     def test_bare_variable_clauses_take_the_feeder_jumps(self):
-        rows = compile_function_rows(
+        instr = compile_function_instructions(
             "(lambda [a b c] (cond [(and (or a b) c) 1] [else: 2]))")
-        ops = [op for op, _ in rows]
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.JUMP_TRUE_FAST), 1)
         self.assertEqual(ops.count(OpCode.JUMP_FALSE_FAST), 2)
         self.assertNotIn(OpCode.FAST, ops)
@@ -650,17 +651,17 @@ class TestCompiled(unittest.TestCase):
 
 
     def test_value_position_or_takes_the_feeder_jump(self):
-        rows = compile_function_rows("(lambda [a b] (list (or a b)))")
-        ops = [op for op, _ in rows]
+        instr = compile_function_instructions("(lambda [a b] (list (or a b)))")
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.JUMP_OR_FAST), 1)
         self.assertNotIn(OpCode.JUMP_OR, ops)
         self.assertEqual(ops.count(OpCode.FAST), 1)
 
 
     def test_or_test_fuses_both_compares(self):
-        rows = compile_function_rows(
+        instr = compile_function_instructions(
             "(lambda [a b c d] (cond [(or (< a b) (< c d)) 1] [else: 2]))")
-        ops = [op for op, _ in rows]
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 2)
         self.assertNotIn(OpCode.JUMP_OR, ops)
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
@@ -669,10 +670,10 @@ class TestCompiled(unittest.TestCase):
 
 
     def test_nested_and_as_last_clause_fuses_every_compare(self):
-        rows = compile_function_rows(
+        instr = compile_function_instructions(
             "(lambda [a b c d e f]"
             " (cond [(and (< a b) (and (< c d) (< e f))) 1] [else: 2]))")
-        ops = [op for op, _ in rows]
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 3)
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
@@ -680,9 +681,9 @@ class TestCompiled(unittest.TestCase):
 
 
     def test_nested_or_as_last_clause_takes_the_feeder_jumps(self):
-        rows = compile_function_rows(
+        instr = compile_function_instructions(
             "(lambda [a b c] (cond [(and a (or b c)) 1] [else: 2]))")
-        ops = [op for op, _ in rows]
+        ops = [op for op, _ in instr]
         self.assertEqual(ops.count(OpCode.JUMP_FALSE_FAST), 2)
         self.assertEqual(ops.count(OpCode.JUMP_TRUE_FAST), 1)
         self.assertNotIn(OpCode.FAST, ops)

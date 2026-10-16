@@ -136,7 +136,7 @@ SWITCH_SQUASHES = {
 }
 
 
-# the jumps that take a bare VAR feeder, and the row each becomes
+# the jumps that take a bare VAR feeder, and the opcode each becomes
 JUMP_FEEDER_TWINS = {
     OpCode.JUMP_FALSE: OpCode.JUMP_FALSE_VAR,
     OpCode.JUMP_TRUE: OpCode.JUMP_TRUE_VAR,
@@ -414,13 +414,14 @@ NO_FALLTHROUGH = frozenset((
 CONTROL_NONE_OPS = frozenset((
     OpCode.RETURN, OpCode.BREAK, OpCode.CONTINUE, OpCode.YIELD))
 
-# the jump a short-circuit row becomes when its label lands on a
-# conditional jump, keyed by (row op, landing op). The value pushed on
+# the jump a short-circuit jump becomes when its label lands on a
+# conditional jump, keyed by (jump op, landing op). The value pushed on
 # the jumping path is known (falsy after JUMP_AND, truthy after
 # JUMP_OR), so the landing's outcome on it is fixed: True when the
-# landing would jump, and the row takes the landing's target; False
-# when the landing would fall through, and the row takes the landing's
-# fall-through label. The replacement pops the value either way.
+# landing would jump, and the rewrite takes the landing's target; False
+# when the landing would fall through, and the rewrite takes the
+# landing's fall-through label. The replacement pops the value either
+# way.
 SHORTCUT_THREADS = {
     (OpCode.JUMP_AND, OpCode.JUMP_FALSE): (OpCode.JUMP_FALSE, True),
     (OpCode.JUMP_AND, OpCode.JUMP_AND): (OpCode.JUMP_AND, True),
@@ -435,8 +436,8 @@ SHORTCUT_THREADS = {
 SHORTCUT_OPS = frozenset((OpCode.JUMP_AND, OpCode.JUMP_OR))
 
 # a landing OBJECT_NOT ahead of one of these jumps resolves as the
-# jump with its polarity swapped: the value the short-circuit row
-# pushes is negated before the landing tests it
+# opposite jump: the value the short-circuit jump pushes is negated
+# before the landing tests it
 NOT_LANDINGS = {
     OpCode.JUMP_FALSE: OpCode.JUMP_TRUE,
     OpCode.JUMP_TRUE: OpCode.JUMP_FALSE,
@@ -776,7 +777,7 @@ class ByteCodeProcessor:
         """
         A check-squashable predicate and its JUMP_FALSE combine into
         the single check jump. The OBJECT_NOT case comes back as a
-        JUMP_TRUE trigger so dispatch retries it against the row ahead
+        JUMP_TRUE trigger so dispatch retries it against the instruction ahead
         of the NOT, and a compare there fuses to its negated check.
         """
 
@@ -790,8 +791,8 @@ class ByteCodeProcessor:
     def jump_false_compare_fuse(self, op, arg, matched):
         """
         OBJECT_COMPARE JUMP_FALSE -> CHECK_COMPARE branching on chain
-        failure, carrying selector, count, and target in one row with
-        the negate field clear
+        failure, carrying selector, count, and target in one
+        instruction with the negate field clear
         """
 
         sel, cnt = split_cmpcount(matched[0][1])
@@ -802,7 +803,7 @@ class ByteCodeProcessor:
     def jump_true_compare_fuse(self, op, arg, matched):
         """
         OBJECT_COMPARE JUMP_TRUE -> CHECK_COMPARE branching on chain
-        success: the same row with the negate field set
+        success: the same instruction with the negate field set
         """
 
         sel, cnt = split_cmpcount(matched[0][1])
@@ -1049,8 +1050,8 @@ class ByteCodeProcessor:
         """
         lo x hi CHECK_COMPARE (arity 3 bounds shape) -> the
         bool-producing OBJECT_COMPARE_VAR plus the jump the row's
-        negate field names, since the fused row cannot also carry
-        the label
+        negate field names, since the fused instruction cannot also
+        carry the label
         """
 
         if arg[1] != 3:
@@ -1517,21 +1518,21 @@ class ByteCodeProcessor:
         """
         Rewrite a JUMP_AND or JUMP_OR whose label lands on a
         conditional jump into the jump that landing performs on the
-        value the short-circuit row pushes.
+        value the short-circuit jump pushes.
 
-        The landing is the first row after the label that is not
-        POSITION, NOOP or LABEL. A landing that is a JUMP_FALSE, JUMP_TRUE,
-        JUMP_AND or JUMP_OR resolves through SHORTCUT_THREADS to the
-        replacement op and whether the row takes the landing's target
-        or its fall-through; the fall-through label is the LABEL row
-        directly after the landing when one is there, and is otherwise
-        inserted from the compiler's label generator. A landing
-        OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves as that
-        jump with its polarity swapped, the NOT row staying for the
-        fall-through clause. Any other landing leaves the row alone, as
-        does a label with no LABEL row.
+        The landing is the first instruction after the label that is
+        not POSITION, NOOP or LABEL. A landing that is a JUMP_FALSE,
+        JUMP_TRUE, JUMP_AND or JUMP_OR resolves through SHORTCUT_THREADS
+        to the replacement op and whether the rewrite takes the
+        landing's target or its fall-through; the fall-through label is
+        the LABEL directly after the landing when one is there, and is
+        otherwise inserted from the compiler's label generator. A
+        landing OBJECT_NOT ahead of a JUMP_FALSE or JUMP_TRUE resolves
+        as the opposite jump, the NOT staying for the fall-through
+        clause. Any other landing leaves the jump alone, as does a label
+        with no LABEL.
 
-        Sweeps repeat until none changes a row, so a nested form
+        Sweeps repeat until none changes a jump, so a nested form
         threads once its inner landing has been rewritten. A label a
         rewrite dereferenced goes when nothing else refers to it; every
         other label stays. Runs before squish so the threaded jumps
@@ -1594,8 +1595,8 @@ class ByteCodeProcessor:
                 changed = True
             if inserts:
                 result = []
-                for i, row in enumerate(instr):
-                    result.append(row)
+                for i, (op, arg) in enumerate(instr):
+                    result.append((op, arg))
                     if i in inserts:
                         result.append((OpCode.LABEL, inserts[i]))
                 instr = result
@@ -1615,8 +1616,8 @@ class ByteCodeProcessor:
         orphaned -= referenced
 
         self.instructions = [
-            row for row in instr
-            if not (row[0] == OpCode.LABEL and row[1] in orphaned)]
+            (op, arg) for op, arg in instr
+            if not (op == OpCode.LABEL and arg in orphaned)]
 
 
     def elide_join_constants(self):
