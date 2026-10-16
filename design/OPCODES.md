@@ -1932,7 +1932,7 @@ lambda body for a syntax rule, `compile_match_function` and
   within the packed widths of `a1` (minimum in the high eight bits, maximum in
   the low, 255 for unbounded). A pair spine is not counted here; `MATCH_END`
   and the pulls judge its length. The cursor into the walk is pushed: the pair
-  or `nil` itself, or a cursor object over the sequence. Every row of the walk
+  or `nil` itself, or a cursor object over the sequence. Every instruction of the walk
   names it by its depth under the top, and `MATCH_END` pops it when its
   extent ends.
 - **Implementation**: `koskari/lib/opcode/MATCH_FORM_VAR.c`,
@@ -1946,7 +1946,7 @@ lambda body for a syntax rule, `compile_match_function` and
   and the length precheck of `MATCH_FORM` with the widths in `a2`, and push the
   inner cursor. The outer entry is written before the push, so its depth
   still holds; at the end of the outer walk or on a failed gate nothing
-  moves. A cursor, mark or list is an entry on the operand stack the walk pushed; a RAW field names it by its depth under the top, 0 the top itself.
+  moves.
 - **Implementation**: `koskari/lib/opcode/MATCH_NEXT_FORM_VAR.c`,
   `koskari/lib/opcode/MATCH_NEXT_FORM_FAST.c`
 
@@ -2258,7 +2258,7 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Stack**: `[...]` -> `[..., position]`; cannot miss.
 - **Semantics**: Push the cursor at depth `a0` as its position: the cell of a
   pair spine or the sequence cursor, which no advance moves while the mark
-  holds it. The rows that follow name the cursor one deeper while the mark
+  holds it. The instructions that follow name the cursor one deeper while the mark
   lives; the path that ends the mark's extent pops it.
 - **Implementation**: `koskari/lib/opcode/MATCH_MARK_VAR.c`,
   `koskari/lib/opcode/MATCH_MARK_FAST.c`

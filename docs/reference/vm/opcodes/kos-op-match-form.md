@@ -8,7 +8,7 @@
   within the packed widths of `a1` (minimum in the high eight bits, maximum in
   the low, 255 for unbounded). A pair spine is not counted here; `MATCH_END`
   and the pulls judge its length. The cursor into the walk is pushed: the pair
-  or `nil` itself, or a cursor object over the sequence. Every row of the walk
+  or `nil` itself, or a cursor object over the sequence. Every instruction of the walk
   names it by its depth under the top, and `MATCH_END` pops it when its
   extent ends.
 - **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a

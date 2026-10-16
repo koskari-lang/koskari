@@ -412,16 +412,15 @@ static int test_collect_over_a_spine(void) {
 }
 
 
-static int test_position_and_reset(void) {
+static int test_advance_under_a_mark(void) {
   PyObject *subj = Py_BuildValue("(iii)", 1, 2, 3);
   PyObject *cursor = NULL;
-  PyObject *out = NULL;
   KosMatchStep step;
 
   TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
-  PyObject *mark = KosMatch_Position(cursor);
-  TEST_ASSERT_SAME(mark, cursor, "the cursor itself");
-  TEST_ASSERT_REFCNT(cursor, 2, "a new reference");
+  /* a mark is the cursor held once more, as MATCH_MARK pushes it */
+  PyObject *mark = cursor;
+  Py_INCREF(mark);
 
   /* under a mark the advance replaces: the mark keeps its position */
   TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
@@ -434,26 +433,20 @@ static int test_position_and_reset(void) {
   TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 0, "the mark untouched");
   TEST_ASSERT_SAME(((KosMatchCursor *) advanced)->seq, subj, "same subject");
 
-  out = KosMatch_Reset(mark);
-  TEST_ASSERT_SAME(out, cursor, "the saved cursor is the cursor again");
-  Py_DECREF(out);
-  Py_DECREF(advanced);
+  /* the mark released, the cursor is again the only holder: the next
+     advance moves it in place */
   Py_DECREF(mark);
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull again");
+  PyObject *moved = KosMatch_StepAdvance(&step);
+  KosMatch_StepClear(&step);
+  TEST_ASSERT_SAME(moved, cursor, "in place");
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 1, "past one");
+  Py_DECREF(moved);
+
+  Py_DECREF(advanced);
   Py_DECREF(cursor);
   TEST_ASSERT_REFCNT(subj, 1, "released");
   Py_DECREF(subj);
-
-  /* a spine: the cell is the position, and the reset hands it back */
-  PyObject *spine = make_spine(2);
-  mark = KosMatch_Position(spine);
-  TEST_ASSERT_SAME(mark, spine, "the cell itself");
-  TEST_ASSERT_REFCNT(spine, 2, "a new reference");
-  out = KosMatch_Reset(mark);
-  TEST_ASSERT_SAME(out, spine, "the saved cell is the cursor again");
-  Py_DECREF(out);
-  Py_DECREF(mark);
-  TEST_ASSERT_REFCNT(spine, 1, "released");
-  Py_DECREF(spine);
   return 0;
 }
 
@@ -466,9 +459,10 @@ static int test_captures_over_a_sequence(void) {
   PyObject *names = Py_BuildValue("(ss)", "a", "b");
   PyObject *bound = PyList_New(0);
   PyObject *values[2] = { bound, NULL };
-  PyObject *start = PyLong_FromLong(0);
+  PyObject *start = NULL;
   PyObject *cursor = NULL;
 
+  TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &start), 1, "the start");
   TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
   PyObject *out = KosMatch_Captures(names, values, start, cursor);
   TEST_ASSERT_NOT_NULL(out, "captures");
@@ -761,7 +755,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_list_shrinks_under_the_walk);
   RUN_TEST(test_looping_spine_is_refused);
   RUN_TEST(test_collect_over_a_spine);
-  RUN_TEST(test_position_and_reset);
+  RUN_TEST(test_advance_under_a_mark);
 
   RUN_TEST(test_captures_over_a_sequence);
   RUN_TEST(test_captures_over_a_spine);

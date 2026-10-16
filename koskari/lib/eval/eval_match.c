@@ -1052,8 +1052,9 @@ KOS_MATCH_BODY(kos_match_collect) {
 
 
 /**
-   MATCH_MARK: the position of the cursor at the depth in field 0
-   pushed. Row depth.
+   MATCH_MARK: the cursor at the depth in field 0 pushed as its
+   position, which no advance moves while the mark holds it. Row
+   depth.
 */
 KOS_MATCH_BODY(kos_match_mark) {
   KOS_SYNC_PC(es, insn);
@@ -1063,16 +1064,14 @@ KOS_MATCH_BODY(kos_match_mark) {
   PyObject *cursor = kos_match_at(es, row, 0);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  PyObject *pos = KosMatch_Position(cursor);
-  if (unlikely(! pos))
-    RESULT_RAISE();
-  RESULT_STEAL(es, pos);
+  Py_INCREF(cursor);
+  RESULT_STEAL(es, cursor);
 }
 
 
 /**
-   MATCH_RESET: the cursor at the depth in field 0 moved back to the
-   position at the depth in field 1. Row depth, depth.
+   MATCH_RESET: the position at the depth in field 1 stored as the
+   cursor at the depth in field 0. Row depth, depth.
 */
 KOS_MATCH_BODY(kos_match_reset) {
   KOS_SYNC_PC(es, insn);
@@ -1082,7 +1081,8 @@ KOS_MATCH_BODY(kos_match_reset) {
   PyObject *saved = kos_match_at(es, row, 1);
   if (unlikely(! saved))
     RESULT_RAISE();
-  if (unlikely(kos_match_set_at(es, row, 0, KosMatch_Reset(saved)) < 0))
+  Py_INCREF(saved);
+  if (unlikely(kos_match_set_at(es, row, 0, saved) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }

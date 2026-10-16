@@ -246,19 +246,6 @@ int KosMatch_Available(PyObject *cursor, Py_ssize_t needed);
 int KosMatch_SameTest(PyObject *elem, PyObject *prev);
 
 /**
-   The position of cursor, for MATCH_MARK: the cursor itself, the cell
-   of a pair spine or the sequence cursor, which no later advance
-   moves while the mark holds it. New reference.
- */
-PyObject *KosMatch_Position(PyObject *cursor);
-
-/**
-   The cursor to store for MATCH_RESET: the saved position, which is
-   the cursor as it was at the mark. New reference.
- */
-PyObject *KosMatch_Reset(PyObject *saved);
-
-/**
    Append every remaining element of cursor, boxed from a pair spine,
    to list. A pair spine is counted first, so an improper tail is a
    miss before anything is appended. Returns 1 with *out_next the

@@ -6,7 +6,7 @@
   and the length precheck of `MATCH_FORM` with the widths in `a2`, and push the
   inner cursor. The outer entry is written before the push, so its depth
   still holds; at the end of the outer walk or on a failed gate nothing
-  moves. A cursor, mark or list is an entry on the operand stack the walk pushed; a RAW field names it by its depth under the top, 0 the top itself.
+  moves.
 - **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a
   special form's pattern or a `syntax-rules` rule; the `_VAR` and `_FAST`
   forms are one schema, since the row names no slot.

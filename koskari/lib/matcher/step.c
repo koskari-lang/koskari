@@ -778,18 +778,6 @@ int KosMatch_SameTest(PyObject *elem, PyObject *prev) {
 }
 
 
-PyObject *KosMatch_Position(PyObject *cursor) {
-  Py_INCREF(cursor);
-  return cursor;
-}
-
-
-PyObject *KosMatch_Reset(PyObject *saved) {
-  Py_INCREF(saved);
-  return saved;
-}
-
-
 int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next) {
   *out_next = NULL;
 
