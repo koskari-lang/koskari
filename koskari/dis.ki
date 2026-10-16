@@ -261,7 +261,7 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
   Render a CMPSRC row: the selector name, then each operand per its
   source bit (constant pool when the bit is set, else the slot's
   declared primary kind), then the jump target, marked when the
-  jump-held bit turns the exits around
+  negate bit is set
   """
 
   define src ext[0]

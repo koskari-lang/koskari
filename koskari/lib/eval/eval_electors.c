@@ -1159,8 +1159,8 @@ KOS_SLOT_STR_ELECTOR(
 
 /**
    CHECK_COMPARE without an election: chain-compare the count operands
-   under the selector, drop them, jump on failure, or on success when
-   the row's jump-held field is set.
+   under the selector, negated when the row's negate field is set,
+   drop them, and jump on failure.
 */
 KOS_ELECTOR(check_compare_generic) {
   KOS_SYNC_PC(es, insn);
@@ -1223,8 +1223,8 @@ KOS_ELECTOR(object_compare_generic) {
 /* One body per kind for each compare opcode: the stack pair under a
    richcompare selector, settled on the kind's compare over the
    extracted values. CHECK_COMPARE takes its selector from the row,
-   drops the pair, and jumps when the compare fails, or when it holds
-   under a set jump-held field; OBJECT_COMPARE takes it from the packed
+   drops the pair, and jumps when the compare, negated under a set
+   negate field, fails; OBJECT_COMPARE takes it from the packed
    argument and replaces the pair with the bool. SEL reads the selector
    after the family's prologue (ROW) has run; SETTLE takes the
    compare's result. */

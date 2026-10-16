@@ -1,9 +1,9 @@
 # KOS_OP_CHECK_COMPARE
 - **Style**: EXTRA (CMP, COUNT, LABEL, COUNT). Row = KosCompare selector,
-  operand count, target pc, jump-held flag.
+  operand count, target pc, negate flag.
 - **Stack**: `[..., a1, ..., aN] → [...]`. Chain-compare the top COUNT
-  operands under the selector; jump to LABEL when the chain fails, or
-  when it holds under a set jump-held flag. The operands are dropped
+  operands under the selector, negated when the negate flag is set;
+  jump to LABEL when the chain fails. The operands are dropped
   either way. Raises `TypeError` when `COUNT < 2`.
 - **Invariants**: Selector is a valid KosCompare ordinal. The richcompare
   six (LT/LE/EQ/NE/GT/GE, ordinals 0-5, matching CPython's Py_LT..Py_GE)

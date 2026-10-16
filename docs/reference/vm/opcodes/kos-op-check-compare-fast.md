@@ -1,11 +1,11 @@
 # KOS_OP_CHECK_COMPARE_FAST
 - **Style**: EXTRA (CMPSRC, FASTVAR, FASTVAR, LABEL). Row = packed
-  selector + source bits, two operand slots, target pc; the jump-held bit turns the exits around. A set source bit
+  selector + source bits, two operand slots, target pc; the negate bit makes the check test the negated comparison. A set source bit
   overrides that operand slot from its declared FASTVAR kind to CONST
   (pool index).
 - **Stack**: No stack effect. Arity-2 fused comparison branch: load both
   operands per the source bits (fast local slot, or constant pool),
-  compare under the selector, jump to LABEL on failure, or on success when the jump-held bit is set.
+  compare under the selector, jump to LABEL when the comparison, negated under a set negate bit, fails.
 - **Invariants**: Selector is a valid KosCompare ordinal; both-CONST rows
   are never emitted (that is a folding case).
 - **Compiler form:** Post-compile only: the CMPSRC-aware `convert_fast`

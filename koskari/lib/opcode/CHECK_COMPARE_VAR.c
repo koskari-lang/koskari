@@ -18,7 +18,7 @@
    LABEL. Arity-2 fused comparison branch: load both operands per the
    CMPSRC source bits (name lookup in the frame namespace, or constant
    pool when the bit is set), compare under the selector, jump to
-   LABEL on failure, or on success when the jump-held bit is set.
+   LABEL when the comparison, negated under a set negate bit, fails.
 */
 
 KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
@@ -59,7 +59,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
   if (unlikely(res < 0))
     RESULT_RAISE();
 
-  if ((res != 0) == KosCmpSrc_JUMP_HELD(src))
+  if ((res != 0) == KosCmpSrc_NEGATE(src))
     RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
 
   RESULT_NEXT(es);

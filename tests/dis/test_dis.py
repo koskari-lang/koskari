@@ -126,7 +126,7 @@ def _make_operand_code():
 
 def _make_compare_code():
     """
-    Code with the two compare-check row shapes, each with the jump-held
+    Code with the two compare-check row shapes, each with the negate
     flag set and clear: a bare CHECK_COMPARE row carries the flag in its
     fourth field, a CHECK_COMPARE_FAST row in bit 6 of its CMPSRC field
     (LT selector 0, both operands fast slots).
@@ -216,7 +216,7 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertIn("FAST_INPLACE", text)
         self.assertIn('(ADD, fast 0 ("a"), 0, 0)', text)
 
-    async def test_dis_marks_jump_held_compare_rows(self):
+    async def test_dis_marks_negate_compare_rows(self):
         code = _make_compare_code()
         buf = io.StringIO()
         await _dis().dis(code, file=buf)

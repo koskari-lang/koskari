@@ -280,7 +280,7 @@ class TestFuseCheckFeeders(unittest.TestCase):
             (CCV, (make_cmpsrc(LT, True, False), 0, "a", "fail")),
         ])
 
-    def test_jump_held_carried_into_cmpsrc(self):
+    def test_negate_carried_into_cmpsrc(self):
         out = fuse_ops([
             (V, "a"), (C, 100),
             (CC, (int(LT), 2, "held", 1)),
@@ -372,7 +372,7 @@ class TestFuseTernaryBounds(unittest.TestCase):
             (OpCode.JUMP_FALSE, "fail"),
         ])
 
-    def test_branch_position_jump_held_splits_to_jump_true(self):
+    def test_branch_position_negate_splits_to_jump_true(self):
         out = fuse_ops([
             (C, 0), (V, "x"), (C, 100),
             (CC, (int(LT), 3, "held", 1)),
@@ -457,7 +457,7 @@ class TestFusedCheckLowering(unittest.IsolatedAsyncioTestCase):
             (OpCode.CHECK_COMPARE_FAST, (src, 0, 1, "fail")),
         ])
 
-    async def test_jump_held_lowers_with_the_bit_kept(self):
+    async def test_negate_lowers_with_the_bit_kept(self):
         nspec = NamespaceSpec(None, ("a", "b"), ())
         src = make_cmpsrc(LT, False, False, True)
         instr = [

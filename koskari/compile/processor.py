@@ -104,22 +104,22 @@ def split_cmpcount(value):
 
 # CMPSRC packing (mirrors the KosCmpSrc_* macros in bytecode.h):
 # selector in bits 0-3, per-operand constant-source bits above, then
-# the jump-held bit: set, the row jumps when the comparison holds.
+# the negate bit: set, the check tests the negated comparison.
 CMPSRC_X_CONST = 0x10
 CMPSRC_Y_CONST = 0x20
-CMPSRC_JUMP_HELD = 0x40
+CMPSRC_NEGATE = 0x40
 
 
-def make_cmpsrc(sel, x_const, y_const, jump_held=False):
+def make_cmpsrc(sel, x_const, y_const, negate=False):
     """
     Pack a CMPSRC field from a Compare selector, two source flags, and
-    the jump-held flag
+    the negate flag
     """
 
     return ((int(getattr(sel, 'value', sel)) & 0x0f)
             | (CMPSRC_X_CONST if x_const else 0)
             | (CMPSRC_Y_CONST if y_const else 0)
-            | (CMPSRC_JUMP_HELD if jump_held else 0))
+            | (CMPSRC_NEGATE if negate else 0))
 
 
 CHECK_SQUASHES = {
@@ -777,7 +777,7 @@ class ByteCodeProcessor:
         A check-squashable predicate and its JUMP_FALSE combine into
         the single check jump. The OBJECT_NOT case comes back as a
         JUMP_TRUE trigger so dispatch retries it against the row ahead
-        of the NOT, and a compare there fuses to its jump-held check.
+        of the NOT, and a compare there fuses to its negated check.
         """
 
         fused = CHECK_SQUASHES[matched[0][0]]
@@ -791,7 +791,7 @@ class ByteCodeProcessor:
         """
         OBJECT_COMPARE JUMP_FALSE -> CHECK_COMPARE branching on chain
         failure, carrying selector, count, and target in one row with
-        the jump-held field clear
+        the negate field clear
         """
 
         sel, cnt = split_cmpcount(matched[0][1])
@@ -802,7 +802,7 @@ class ByteCodeProcessor:
     def jump_true_compare_fuse(self, op, arg, matched):
         """
         OBJECT_COMPARE JUMP_TRUE -> CHECK_COMPARE branching on chain
-        success: the same row with the jump-held field set
+        success: the same row with the negate field set
         """
 
         sel, cnt = split_cmpcount(matched[0][1])
@@ -1026,7 +1026,7 @@ class ByteCodeProcessor:
         x y CHECK_COMPARE (arity 2, not both feeders constant -- that
         is a folding case) -> CHECK_COMPARE_VAR with a CMPSRC field
         carrying the selector, per-operand source bits, and the row's
-        jump-held field
+        negate field
         """
 
         if arg[1] != 2:
@@ -1037,9 +1037,9 @@ class ByteCodeProcessor:
         y_const = y_op == OpCode.CONST
         if x_const and y_const:
             return None
-        sel, _cnt, label, jump_held = arg
+        sel, _cnt, label, negate = arg
         return [(OpCode.CHECK_COMPARE_VAR,
-                 (make_cmpsrc(sel, x_const, y_const, bool(jump_held)),
+                 (make_cmpsrc(sel, x_const, y_const, bool(negate)),
                   x_arg, y_arg, label))]
 
 
@@ -1049,17 +1049,17 @@ class ByteCodeProcessor:
         """
         lo x hi CHECK_COMPARE (arity 3 bounds shape) -> the
         bool-producing OBJECT_COMPARE_VAR plus the jump the row's
-        jump-held field names, since the fused row cannot also carry
+        negate field names, since the fused row cannot also carry
         the label
         """
 
         if arg[1] != 3:
             return None
-        sel, _cnt, label, jump_held = arg
+        sel, _cnt, label, negate = arg
         return [
             (OpCode.OBJECT_COMPARE_VAR,
              (sel, matched[0][1], matched[1][1], matched[2][1])),
-            (OpCode.JUMP_TRUE if jump_held else OpCode.JUMP_FALSE, label),
+            (OpCode.JUMP_TRUE if negate else OpCode.JUMP_FALSE, label),
         ]
 
 

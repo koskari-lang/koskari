@@ -15,9 +15,9 @@
 
 /**
    CHECK_COMPARE: arg = extra index. Schema CMP (KosCompare selector),
-   COUNT, LABEL, COUNT (jump-held flag). Chain-compare the top COUNT
-   operands under the selector; jump to LABEL if the chain fails, or if
-   it holds when the flag is set. The operands are dropped either way.
+   COUNT, LABEL, COUNT (negate flag). Chain-compare the top COUNT
+   operands under the selector, negated when the flag is set; jump to
+   LABEL if the chain fails. The operands are dropped either way.
    Prologue only: tail-call the body the site's slot elected
    (eval/eval_electors.c); an empty slot or an ungated site takes the
    electing function. One cache slot: KOS_CACHE_ELECTOR.

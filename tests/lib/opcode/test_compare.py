@@ -44,9 +44,9 @@ def cmpcount(sel, count):
     return (sel << 8) | count
 
 
-def cmpsrc(sel, x_const, y_const, jump_held=False):
+def cmpsrc(sel, x_const, y_const, negate=False):
     return ((sel & 0x0f) | (0x10 if x_const else 0) | (0x20 if y_const else 0)
-            | (0x40 if jump_held else 0))
+            | (0x40 if negate else 0))
 
 
 class TestCheckCompare(CevalTest):
@@ -598,10 +598,11 @@ class TestObjectCompareVar(CevalTest):
             await make_callable(code, ns)()
 
 
-class TestCheckCompareJumpHeld(CevalTest):
+class TestCheckCompareNegate(CevalTest):
     """
-    With the jump-held flag set, the three compare branches jump when
-    the comparison holds and continue when it fails
+    With the negate flag set, the three compare branches test the
+    negated comparison: they jump when it holds and continue when it
+    fails
     """
 
     NAN = float("nan")

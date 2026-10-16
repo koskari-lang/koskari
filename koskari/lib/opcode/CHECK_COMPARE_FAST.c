@@ -18,14 +18,14 @@
   CHECK_COMPARE_FAST: arg = extra index. Schema CMPSRC, FASTVAR,
   FASTVAR, LABEL. Arity-2 fused comparison branch: load both operands
   per the CMPSRC source bits (fast slot, or constant pool when the bit
-  is set), compare under the selector, jump to LABEL on failure, or on
-  success when the jump-held bit is set.
+  is set), compare under the selector, jump to LABEL when the
+  comparison, negated under a set negate bit, fails.
 */
 KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t src = KosExtra_IMM(row, 0);
-  int jump_held = KosCmpSrc_JUMP_HELD(src);
+  int negate = KosCmpSrc_NEGATE(src);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
@@ -50,18 +50,18 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
       long long a, b;
 
       if (sel > KOS_COMPARE_GE) {
-        if (((x == y) == (sel == KOS_COMPARE_IS)) != jump_held)
+        if (((x == y) == (sel == KOS_COMPARE_IS)) != negate)
           RESULT_NEXT(es);
         RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
       }
       if (kos_as_ll2(x, y, &a, &b)) {
-        if (kos_ll_compare(sel, a, b) != jump_held)
+        if (kos_ll_compare(sel, a, b) != negate)
           RESULT_NEXT(es);
         RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
       }
       if (PyFloat_CheckExact(x) && PyFloat_CheckExact(y)) {
         if (kos_double_compare(sel, PyFloat_AS_DOUBLE(x),
-                               PyFloat_AS_DOUBLE(y)) != jump_held)
+                               PyFloat_AS_DOUBLE(y)) != negate)
           RESULT_NEXT(es);
         RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
       }
@@ -102,7 +102,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
   if (unlikely(res < 0))
     RESULT_RAISE();
 
-  if ((res != 0) == jump_held)
+  if ((res != 0) == negate)
     RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
 
   RESULT_NEXT(es);

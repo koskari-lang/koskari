@@ -561,10 +561,10 @@ class TestCompareConstFold(unittest.TestCase):
 class TestCompareJumpTrueFusion(unittest.TestCase):
     """
     OBJECT_COMPARE followed by JUMP_TRUE fuses into a CHECK_COMPARE
-    whose jump-held field is set; the JUMP_FALSE fusion leaves it clear
+    whose negate field is set; the JUMP_FALSE fusion leaves it clear
     """
 
-    def test_jump_true_fuses_with_jump_held(self):
+    def test_jump_true_fuses_with_negate(self):
         out = squish_ops([
             (OpCode.VAR, "a"),
             (OpCode.VAR, "b"),
@@ -577,7 +577,7 @@ class TestCompareJumpTrueFusion(unittest.TestCase):
             (OpCode.CHECK_COMPARE, (int(Compare.LT), 2, "L1", 1)),
         ])
 
-    def test_jump_false_fuses_with_jump_held_clear(self):
+    def test_jump_false_fuses_with_negate_clear(self):
         out = squish_ops([
             (OpCode.VAR, "a"),
             (OpCode.VAR, "b"),
@@ -590,7 +590,7 @@ class TestCompareJumpTrueFusion(unittest.TestCase):
             (OpCode.CHECK_COMPARE, (int(Compare.LT), 2, "L1", 0)),
         ])
 
-    def test_not_then_jump_false_fuses_with_jump_held(self):
+    def test_not_then_jump_false_fuses_with_negate(self):
         # (if (not (< a b)) ...): the NOT squash retries as JUMP_TRUE,
         # which the compare ahead of it then absorbs
         out = squish_ops([
