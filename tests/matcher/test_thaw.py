@@ -57,14 +57,14 @@ class TestMatcherFromTuple(unittest.TestCase):
         Round-trip a hand-built lambda-style frozen tuple and run it
         """
 
-        m = thaw(_make_lambda_matcher_tuple())
+        m = thaw(_make_lambda_matcher_tuple(), {"symbol": symbol})
         self.assertIsInstance(m, Matcher)
         self.assertEqual(m.slots, ("name", "body"))
         self.assertEqual(m.externs, ("symbol",))
         self.assertEqual(m.consts, ("::",))
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj, symbol=symbol)
+        result = m.match(subj)
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["name"], subj[0])
@@ -436,20 +436,20 @@ class TestMatcherFromTuple(unittest.TestCase):
             ("x", "y"), ("Point",), (),
             nodes, 6)
 
-        m = thaw(frozen)
+        m = thaw(frozen, {"Point": Point})
         self.assertIsInstance(m, Matcher)
         self.assertIn("y", m.consts)
 
         p = Point()
         p.x = 10
         p.y = 20
-        result = m.match((p,), Point=Point)
+        result = m.match((p,))
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["x"], 10)
         self.assertEqual(result.captures["y"], 20)
 
         not_point = object()
-        result_bad = m.match((not_point,), Point=Point)
+        result_bad = m.match((not_point,))
         self.assertFalse(result_bad.matched)
 
 

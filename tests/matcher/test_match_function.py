@@ -77,14 +77,14 @@ class TestMatchFunction(unittest.TestCase):
         """
 
         frozen = MatchCompiler().lower(pattern)
-        matcher = make_matcher(pattern)
+        matcher = make_matcher(pattern, externs)
         fn = compile_match_function(frozen, self.base_ns)
         if externs:
             for name, value in externs.items():
                 self.base_ns.store(name, value)
         results = []
         for subject in subjects:
-            want = matcher.match(subject, **(externs or {}))
+            want = matcher.match(subject)
             got = fn(subject).demand()
             if not want.matched:
                 self.assertIsNone(got, subject)
@@ -251,7 +251,7 @@ class TestLiveSubjects(unittest.TestCase):
             return True
 
         pattern = MATCH(FORM(MATCH(PREDICATE("clear"), REST("r"))))
-        result = make_matcher(pattern).match((subject,), clear=clear)
+        result = make_matcher(pattern, {"clear": clear}).match((subject,))
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["r"], ())
 
@@ -265,13 +265,13 @@ class TestLiveSubjects(unittest.TestCase):
 
         pattern = MATCH(FORM(MATCH(
             PREDICATE("clear"), repeat_capture("xs", TEST_ANY()))))
-        result = make_matcher(pattern).match((subject,), clear=clear)
+        result = make_matcher(pattern, {"clear": clear}).match((subject,))
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["xs"], [])
 
         subject[:] = [1, 2, 3, 4]
         pattern = MATCH(FORM(MATCH(PREDICATE("clear"), TEST_ANY())))
-        result = make_matcher(pattern).match((subject,), clear=clear)
+        result = make_matcher(pattern, {"clear": clear}).match((subject,))
         self.assertFalse(result.matched)
 
 
@@ -283,7 +283,7 @@ class TestLiveSubjects(unittest.TestCase):
             return True
 
         pattern = MATCH(FORM(MATCH(PREDICATE("trim"), REST("r"), TEST_ANY())))
-        result = make_matcher(pattern).match((subject,), trim=trim)
+        result = make_matcher(pattern, {"trim": trim}).match((subject,))
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["r"], ())
 
@@ -324,7 +324,7 @@ class TestMutatedSpines(unittest.TestCase):
         pattern = MATCH(
             GROUP("g", PREDICATE("chop"), CAPTURE("y")), CAPTURE("z"))
         with self.assertRaises(ValueError) as caught:
-            make_matcher(pattern).match(subject, chop=chop)
+            make_matcher(pattern, {"chop": chop}).match(subject)
         self.assertIn("changed", str(caught.exception))
 
 
@@ -551,7 +551,7 @@ class TestPairSpineElements(unittest.TestCase):
 
         pattern = MATCH(FORM(MATCH(PREDICATE("note"))))
         subject = cons(cons(5, nil), nil)
-        self.assertTrue(make_matcher(pattern).match(subject, note=note).matched)
+        self.assertTrue(make_matcher(pattern, {"note": note}).match(subject).matched)
         self.assertIsInstance(seen[0], Datum)
         self.assertEqual(seen[0].datum, 5)
 
@@ -567,12 +567,12 @@ class TestPairSpineElements(unittest.TestCase):
         pattern = MATCH(FORM(MATCH(CLASS(
             "Point", FIELD(CAPTURE("x")), FIELD(CAPTURE("y"), name="y")))))
         subject = cons(cons(Point(3, 4), nil), nil)
-        result = make_matcher(pattern).match(subject, Point=Point)
+        result = make_matcher(pattern, {"Point": Point}).match(subject)
         self.assertTrue(result.matched)
         self.assertEqual(
             (result.captures["x"], result.captures["y"]), (3, 4))
         self.assertFalse(
-            make_matcher(pattern).match(cons(cons(7, nil), nil), Point=Point).matched)
+            make_matcher(pattern, {"Point": Point}).match(cons(cons(7, nil), nil)).matched)
 
 
     def test_rest_with_a_suffix_boxes_a_spliced_datum_once(self):

@@ -12,7 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for keyword externs on Matcher.match and Matcher.missing_externs
+Tests for the externs a Matcher takes at construction and
+Matcher.missing_externs
 """
 
 
@@ -67,37 +68,40 @@ class TestKeywordExterns(unittest.TestCase):
 
     def test_every_extern_is_a_keyword_on_every_call(self):
         """
-        A declared extern must be given by keyword on each call; a call
-        without it is refused before the match runs
+        A declared extern must be given when the matcher is made, and a
+        matcher made without it is refused; two matchers over one
+        frozen tuple each read their own externs, and match takes no
+        keywords
         """
 
-        m = thaw(_lambda_style_tuple())
+        with self.assertRaises(TypeError) as caught:
+            thaw(_lambda_style_tuple())
+        self.assertIn("symbol", str(caught.exception))
+
+        m = thaw(_lambda_style_tuple(), {"symbol": symbol})
         self.assertIsInstance(m, Matcher)
+        other = thaw(_lambda_style_tuple(), {"symbol": int})
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        good = m.match(subj, symbol=symbol)
+        good = m.match(subj)
         self.assertIsInstance(good, MatchResult)
         self.assertTrue(good.matched)
-        bad = m.match(subj, symbol=int)
-        self.assertFalse(bad.matched)
-        with self.assertRaises(TypeError) as caught:
-            m.match(subj)
-        self.assertIn("symbol", str(caught.exception))
-        # the keyword of a previous call does not carry over
-        m.match(subj, symbol=symbol)
+        self.assertFalse(other.match(subj).matched)
+        self.assertTrue(m.match(subj).matched)
         with self.assertRaises(TypeError):
-            m.match(subj)
+            m.match(subj, symbol=symbol)
 
     def test_extern_named_subject(self):
         """
         An extern spelled subject is an extern like any other: it does
-        not collide with the function's own formal, and the keyword
+        not collide with the function's own formal, and its value
         reaches the match as an extern
         """
 
         m = thaw((
-            "MATCHER", (), ("subject",), (), (("TEST", "TYPE", 0),), 0))
-        self.assertTrue(m.match((7,), subject=int).matched)
-        self.assertFalse(m.match(("s",), subject=int).matched)
+            "MATCHER", (), ("subject",), (), (("TEST", "TYPE", 0),), 0),
+            {"subject": int})
+        self.assertTrue(m.match((7,)).matched)
+        self.assertFalse(m.match(("s",)).matched)
 
 
     def test_user_type_extern(self):
@@ -105,9 +109,38 @@ class TestKeywordExterns(unittest.TestCase):
             pass
 
         m = thaw((
-            "MATCHER", (), ("Point",), (), (("TEST", "TYPE", 0),), 0))
-        self.assertTrue(m.match((Point(),), Point=Point).matched)
-        self.assertFalse(m.match((7,), Point=Point).matched)
+            "MATCHER", (), ("Point",), (), (("TEST", "TYPE", 0),), 0),
+            {"Point": Point})
+        self.assertTrue(m.match((Point(),)).matched)
+        self.assertFalse(m.match((7,)).matched)
+
+
+class TestExternsPerMatcher(unittest.TestCase):
+
+    def test_a_predicate_matching_with_another_matcher(self):
+        """
+        Two matchers over one frozen tuple each read their own externs:
+        an outer predicate that runs the inner matcher mid-walk leaves
+        the outer walk reading the outer predicate
+        """
+
+        frozen = (
+            "MATCHER", (), ("p",), (),
+            (("TEST", "PREDICATE", 0), ("TEST", "PREDICATE", 0),
+             ("MATCH", 0, 1)),
+            2)
+        inner = Matcher.from_tuple(frozen, externs={"p": lambda y: False})
+        seen = []
+
+        def outer_p(x):
+            seen.append(x)
+            if x == 1:
+                self.assertFalse(inner.match((9, 9)).matched)
+            return True
+
+        outer = Matcher.from_tuple(frozen, externs={"p": outer_p})
+        self.assertTrue(outer.match((1, 2)).matched)
+        self.assertEqual(seen, [1, 2])
 
 
 class TestMissingExterns(unittest.TestCase):
@@ -117,7 +150,7 @@ class TestMissingExterns(unittest.TestCase):
         Names absent from provided are reported in extern order
         """
 
-        m = thaw(_two_extern_tuple())
+        m = thaw(_two_extern_tuple(), {"symbol": symbol, "Point": object})
         missing = m.missing_externs(provided={"symbol": symbol("x")})
         self.assertEqual(missing, ("Point",))
 
@@ -126,7 +159,7 @@ class TestMissingExterns(unittest.TestCase):
         Non-mapping provided raises TypeError
         """
 
-        m = thaw(_two_extern_tuple())
+        m = thaw(_two_extern_tuple(), {"symbol": symbol, "Point": object})
         with self.assertRaises(TypeError):
             m.missing_externs(provided="not-a-mapping")
 
@@ -135,14 +168,14 @@ class TestKeywordsAreIgnoredByName(unittest.TestCase):
 
     def test_zero_extern_matcher_ignores_keywords(self):
         """
-        A keyword naming no extern of a matcher is ignored, whether or
-        not the matcher declares any externs
+        A name in the externs naming no extern of a matcher is ignored,
+        whether or not the matcher declares any externs
         """
 
         consts = (42,)
         nodes = (("TEST", "LITERAL", 0), ("MATCH", 0))
-        m = thaw(("MATCHER", (), (), consts, nodes, 1))
-        self.assertTrue(m.match((42,), bogus=1).matched)
+        m = thaw(("MATCHER", (), (), consts, nodes, 1), {"bogus": 1})
+        self.assertTrue(m.match((42,)).matched)
 
 
 # The end.

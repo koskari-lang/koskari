@@ -59,8 +59,8 @@ def _match_value(pattern, subject, **externs):
     Thaw a classified pattern and run it against one runtime value
     """
 
-    m = thaw(_frozen(pattern))
-    r = m.match((subject,), **externs)
+    m = thaw(_frozen(pattern), externs)
+    r = m.match((subject,))
     caps = {k: getattr(v, "datum", v) for k, v in r.captures.items()}
     return r.matched, caps
 
@@ -696,8 +696,8 @@ class TestAppMatching(unittest.TestCase):
             return v * 2
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
-        m = thaw(_frozen(pat))
-        r = m.match((5,), f=afn)
+        m = thaw(_frozen(pat), {"f": afn})
+        r = m.match((5,))
         self.assertTrue(r.matched)
         self.assertEqual(r.captures["x"], 10)
 
@@ -711,27 +711,27 @@ class TestAppMatching(unittest.TestCase):
             return v
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
-        m = thaw(_frozen(pat))
+        m = thaw(_frozen(pat), {"f": afn})
         with self.assertRaises(KoskariSyncViolation):
-            m.match((5,), f=afn)
+            m.match((5,))
 
     def test_raising_extractor_propagates(self):
         def bad(v):
             raise RuntimeError("boom")
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
-        m = thaw(_frozen(pat))
+        m = thaw(_frozen(pat), {"f": bad})
         with self.assertRaises(RuntimeError):
-            m.match((5,), f=bad)
+            m.match((5,))
 
     def test_async_predicate_driven_by_demand(self):
         async def apred(v):
             return v > 3
         pat = parse_case_pattern(_delim(
             _list(symbol("?"), symbol("p"))))
-        m = thaw(_frozen(pat))
-        self.assertTrue(m.match((5,), p=apred).matched)
-        self.assertFalse(m.match((1,), p=apred).matched)
+        m = thaw(_frozen(pat), {"p": apred})
+        self.assertTrue(m.match((5,)).matched)
+        self.assertFalse(m.match((1,)).matched)
 
 
 # The end.

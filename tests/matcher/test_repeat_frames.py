@@ -41,11 +41,11 @@ class TestRepeatCapture(unittest.TestCase):
         """
 
         pat = repeat_capture("bindings", binding_inner_pattern())
-        m = pat.build()
+        m = pat.build({"symbol": symbol})
         sa = symbol("a")
         sb = symbol("b")
         subj = ((sa, 1), (sb, 2))
-        result = m.match(subj, symbol=symbol)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         cap = result.captures["bindings"]
         frames = cap.datum if isinstance(cap, Datum) else cap
@@ -65,11 +65,11 @@ class TestRepeatCapture(unittest.TestCase):
         """
 
         pat = repeat_capture("rows", binding_inner_pattern())
-        m = pat.build()
+        m = pat.build({"symbol": symbol})
         sx = symbol("x")
         cell = (99, keyword("as"), sx)
         subj = (cell,)
-        result = m.match(subj, symbol=symbol)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         cap = result.captures["rows"]
         frames = cap.datum if isinstance(cap, Datum) else cap
@@ -89,12 +89,12 @@ class TestRepeatFramesThawRoundTrip(unittest.TestCase):
 
         pat = repeat_capture("bindings", binding_inner_pattern())
         frozen = pat.freeze()
-        m = thaw(frozen)
+        m = thaw(frozen, {"symbol": symbol})
         self.assertIsInstance(m, Matcher)
         sa = symbol("u")
         sb = symbol("v")
         subj = ((sa, 10), (sb, 20))
-        result = m.match(subj, symbol=symbol)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         cap = result.captures["bindings"]
         frames = cap.datum if isinstance(cap, Datum) else cap

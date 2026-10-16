@@ -1031,8 +1031,10 @@ class TestPairSubjectMutation(unittest.TestCase):
             setcdr(subject, nil)
             return True
 
-        m = make_matcher(MATCH(PREDICATE("chop"), CAPTURE("b"), REST("rest")))
-        result = m.match(subject, chop=chop)
+        m = make_matcher(
+            MATCH(PREDICATE("chop"), CAPTURE("b"), REST("rest")),
+            {"chop": chop})
+        result = m.match(subject)
         self.assertTrue(result.matched)
         caps = _ucaps(result)
         self.assertEqual(caps["b"], 2)

@@ -75,8 +75,9 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         field = parse_matcher(build_proper(
             symbol("FIELD"), marked_x,
             build_proper(symbol("VALUE"), symbol("v"))))
-        m = Matcher.from_tuple(MATCH(CLASS("Point", field)).freeze())
-        r = m.match((Point(7),), Point=Point)
+        m = Matcher.from_tuple(
+            MATCH(CLASS("Point", field)).freeze(), externs={"Point": Point})
+        r = m.match((Point(7),))
         self.assertTrue(r.matched)
         self.assertEqual(r.captures["v"], 7)
 

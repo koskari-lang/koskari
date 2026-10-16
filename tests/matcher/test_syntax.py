@@ -689,11 +689,11 @@ class TestRecursiveLowering(unittest.TestCase):
         self.assertIsInstance(children[1], CAPTURE)
         self.assertEqual(children[1]._slot, "expr")
 
-        m = MATCH(pat).build()
+        m = MATCH(pat).build({"symbol": symbol, "keyword": keyword})
         sa = symbol("foo")
         sv = symbol("bar")
         subj = (_list(sa, sv),)
-        result = m.match(subj, symbol=symbol, keyword=keyword)
+        result = m.match(subj)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["name"].datum, sa)
         self.assertIs(result.captures["expr"].datum, sv)
@@ -710,11 +710,10 @@ class TestRecursiveLowering(unittest.TestCase):
             _list(symbol("a"), keyword("::"), symbol("symbol")),
             _list(symbol("b"), keyword("::"), symbol("pair")))
         pat = parse_matcher(src)
-        m = MATCH(pat).build()
+        m = MATCH(pat).build({"symbol": symbol, "pair": pair})
 
         sa = symbol("hello")
-        result = m.match(
-            (sa,), symbol=symbol, pair=pair)
+        result = m.match((sa,))
         self.assertTrue(result.matched)
         self.assertIs(result.captures["a"], sa)
         self.assertNotIn("b", result.captures)
@@ -731,14 +730,13 @@ class TestRecursiveLowering(unittest.TestCase):
             _list(symbol("BINDING"), symbol("b")),
             symbol("expr"))
         pat = parse_matcher(src)
-        m = MATCH(pat).build()
+        m = MATCH(pat).build({"symbol": symbol, "keyword": keyword})
 
         sname = symbol("x")
         sval = symbol("v")
         cell = _list(sname, sval)
         outer = _list(cell, sval)
-        result = m.match(
-            (outer,), symbol=symbol, keyword=keyword)
+        result = m.match((outer,))
         self.assertTrue(result.matched)
         b = result.captures["b"]
         self.assertIsInstance(b, DatumFrame)
@@ -1004,8 +1002,7 @@ class TestMetaMatcherExposed(unittest.TestCase):
         """
 
         src = _list(symbol("quote"), symbol("x"))
-        result = META_MATCHER.match(
-            (src,), symbol=symbol, keyword=keyword)
+        result = META_MATCHER.match((src,))
         self.assertTrue(result.matched)
         self.assertIsInstance(result, MatchResult)
         self.assertIs(

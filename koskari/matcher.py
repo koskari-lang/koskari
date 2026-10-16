@@ -150,13 +150,15 @@ class MatchResult:
 class Matcher:
     """
     A frozen matcher as a function: the subject its one formal, its
-    externs closure names over a namespace of its own that each match
-    call's keyword arguments are stored into, the captures its result.
+    externs closure names over a namespace of its own whose builtins
+    are the externs given at construction, the captures its result.
     Built once from the frozen tuple, called through the demand wrapper
     so the context it runs in is reused
+
+    :raises TypeError: when an extern the matcher declares is not given
     """
 
-    def __init__(self, frozen, name=None):
+    def __init__(self, frozen, name=None, externs=None):
         validate_frozen(frozen)
         self.frozen = frozen
         self.slots = tuple(frozen[1])
@@ -165,9 +167,14 @@ class Matcher:
         self.nodes = tuple(frozen[4])
         self.entry = frozen[5]
         self.name = name or "matcher"
-        # the externs are closure names over this namespace; a match
-        # call stores its keyword arguments into it before the call
-        self.namespace = ModuleNamespace(self.name, {})
+        # the externs are closure names over this namespace, resolved
+        # through its builtins when the function is built
+        externs = dict(externs or {})
+        missing = self.missing_externs(externs)
+        if missing:
+            raise TypeError(
+                f"matcher missing extern binding: {missing[0]!r}")
+        self.namespace = ModuleNamespace(self.name, externs)
         # the function is built on the first match: a pattern nested
         # past the interpreter's limit is refused there, as the engine
         # refused it, and not when the matcher is made
@@ -189,8 +196,8 @@ class Matcher:
 
 
     @classmethod
-    def from_tuple(cls, frozen):
-        return cls(frozen)
+    def from_tuple(cls, frozen, externs=None):
+        return cls(frozen, externs=externs)
 
 
     @classmethod
@@ -231,22 +238,16 @@ class Matcher:
             f" entry={self.entry}>")
 
 
-    def match(self, subject, /, **externs):
+    def match(self, subject, /):
         """
-        Match subject, a pair spine, nil, or a sequence. A keyword
-        argument names an extern for this match; every extern the
-        matcher declares must be given on every call, and a name the
-        matcher does not declare is ignored.
+        Match subject, a pair spine, nil, or a sequence, reading the
+        externs the matcher was constructed with
 
-        :raises TypeError: when a pair subject is not a proper list, or
-            an extern has no keyword
+        :raises TypeError: when a pair subject is not a proper list
         :raises ValueError: when a pair subject loops
         """
 
         subject = check_subject(subject)
-        if self.externs:
-            self.prepare(externs)
-
         call = self._call
         if call is None:
             self.function
@@ -255,20 +256,6 @@ class Matcher:
         if captures is None:
             return MatchResult(False, {})
         return MatchResult(True, captures)
-
-
-    def prepare(self, externs):
-        """
-        Store this call's keyword externs into the namespace, every
-        extern the matcher declares among them
-
-        :raises TypeError: when an extern has no keyword
-        """
-
-        for name in self.externs:
-            if name not in externs:
-                raise TypeError(f"matcher missing extern binding: {name!r}")
-            self.namespace.store(name, externs[name])
 
 
     def missing_externs(self, provided=None):
@@ -373,12 +360,13 @@ def check_subject(subject):
     return subject
 
 
-def thaw(tagged_tuple):
+def thaw(tagged_tuple, externs=None):
     """
-    Reconstruct a Matcher from its frozen tagged-tuple representation
+    Reconstruct a Matcher from its frozen tagged-tuple representation,
+    over the externs mapping
     """
 
-    return Matcher.from_tuple(tagged_tuple)
+    return Matcher.from_tuple(tagged_tuple, externs=externs)
 
 
 # === Builder infrastructure ===
@@ -566,11 +554,11 @@ class MatchCompiler:
 
 
     @classmethod
-    def compile(cls, pattern: "Pattern") -> Matcher:
+    def compile(cls, pattern: "Pattern", externs=None) -> Matcher:
         """
-        Compile a pattern into a Matcher
+        Compile a pattern into a Matcher over the externs mapping
         """
-        return Matcher.from_tuple(cls().lower(pattern))
+        return Matcher.from_tuple(cls().lower(pattern), externs=externs)
 
 
 @runtime_checkable
@@ -602,23 +590,23 @@ class Pattern(Protocol):
         return MatchCompiler().lower(self)
 
 
-    def build(self):
+    def build(self, externs=None):
         """
-        Lower this pattern into a Matcher
+        Lower this pattern into a Matcher over the externs mapping
 
         :rtype: Matcher
         """
 
-        return Matcher.from_tuple(MatchCompiler().lower(self))
+        return Matcher.from_tuple(MatchCompiler().lower(self), externs=externs)
 
 
     def match(self, subject, /, **externs):
         """
-        Lower this pattern into a Matcher and run it against subject.
-        Returns the MatchResult
+        Lower this pattern into a Matcher over the keyword externs and
+        run it against subject. Returns the MatchResult
         """
 
-        return self.build().match(subject, **externs)
+        return self.build(externs).match(subject)
 
 
     @staticmethod
@@ -820,8 +808,8 @@ class TYPE(Pattern):
 
     def __init__(self, extern_name):
         """
-        :param extern_name: the extern binding name supplied at match
-            time, e.g. matcher.match(subj, symbol=symbol)
+        :param extern_name: the extern binding name supplied when the
+            matcher is made, e.g. make_matcher(pat, {"symbol": symbol})
         :raises TypeError: when extern_name is not a str
         :raises ValueError: when extern_name is empty
         """
@@ -1767,12 +1755,13 @@ def match1(value, patterns):
     return match(cons(value, nil), patterns)
 
 
-def make_matcher(pattern):
+def make_matcher(pattern, externs=None):
     """
     Lower a pattern AST into a Matcher. The matcher carries
     slots, externs, and consts declared by the pattern tree
 
     :param pattern: a matcher pattern object
+    :param externs: the extern names mapped to their values, or None
     :raises TypeError: when pattern is not a matcher pattern
     :rtype: Matcher
     """
@@ -1784,7 +1773,7 @@ def make_matcher(pattern):
         raise TypeError(
             f"make_matcher requires a matcher pattern, got {type(pattern).__name__!r}")
 
-    return pattern.build()
+    return pattern.build(externs)
 
 
 # === Composite matchers ===

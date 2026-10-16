@@ -81,7 +81,8 @@ define M_SEQ (thaw FROZEN_SEQ)
 define M_CLS (make_matcher
     (MATCH (CLASS "Point"
         (FIELD (CAPTURE "a"))
-        (FIELD (CAPTURE "b")))))
+        (FIELD (CAPTURE "b"))))
+    #{"Point": Point})
 
 define M_MAP (make_matcher
     (MATCH (MAP
@@ -92,10 +93,6 @@ define M_ONEOF (make_matcher
     (MATCH (ONEOF
         (LITERAL 0) (LITERAL 1) (LITERAL 2) (LITERAL 3)
         (LITERAL 4) (LITERAL 5) (LITERAL 6) (LITERAL 7))))
-
-define M_PRED (make_matcher (MATCH (PREDICATE "p")))
-
-define M_APP (make_matcher (MATCH (APP "f" (CAPTURE "x"))))
 
 define M_SYNTAX (make_matcher
     (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body")))
@@ -119,6 +116,16 @@ define ki-pred [v]:
 
 define ki-extract [v]:
     v
+
+define M_PRED_PY (make_matcher (MATCH (PREDICATE "p")) #{"p": bool})
+
+define M_PRED_KI (make_matcher (MATCH (PREDICATE "p")) #{"p": ki-pred})
+
+define M_APP_PY (make_matcher (MATCH (APP "f" (CAPTURE "x"))) #{"f": abs})
+
+define M_APP_KI (make_matcher
+    (MATCH (APP "f" (CAPTURE "x")))
+    #{"f": ki-extract})
 
 
 ;; === statement-tier consumers ===
@@ -219,10 +226,10 @@ define cell-engine-seq-miss []:
     (M_SEQ.match SUBJ_SEQ2)
 
 define cell-engine-class-hit []:
-    (M_CLS.match SUBJ_PT Point: Point)
+    (M_CLS.match SUBJ_PT)
 
 define cell-engine-class-miss []:
-    (M_CLS.match SUBJ_STR Point: Point)
+    (M_CLS.match SUBJ_STR)
 
 define cell-engine-map-hit []:
     (M_MAP.match SUBJ_MAP)
@@ -234,16 +241,16 @@ define cell-engine-oneof-backtrack []:
     (M_ONEOF.match SUBJ_SEVEN)
 
 define cell-engine-pred-py []:
-    (M_PRED.match SUBJ_SEVEN p: bool)
+    (M_PRED_PY.match SUBJ_SEVEN)
 
 define cell-engine-pred-ki []:
-    (M_PRED.match SUBJ_SEVEN p: ki-pred)
+    (M_PRED_KI.match SUBJ_SEVEN)
 
 define cell-engine-app-py []:
-    (M_APP.match SUBJ_SEVEN f: abs)
+    (M_APP_PY.match SUBJ_SEVEN)
 
 define cell-engine-app-ki []:
-    (M_APP.match SUBJ_SEVEN f: ki-extract)
+    (M_APP_KI.match SUBJ_SEVEN)
 
 define cell-thaw []:
     (thaw FROZEN_SEQ)

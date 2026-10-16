@@ -355,13 +355,13 @@ class TestBuildAndMatch(unittest.TestCase):
             TEST_ANY(),
             REST("body"),
         )
-        m = pat.build()
+        m = pat.build({"symbol": symbol})
         self.assertEqual(m.slots, ("name", "body"))
         self.assertEqual(m.externs, ())
         self.assertEqual(m.consts, ("::",))
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj, symbol=symbol)
+        result = m.match(subj)
         self.assertIsInstance(result, MatchResult)
         self.assertTrue(result.matched)
         self.assertIs(result.captures["name"], subj[0])
@@ -454,18 +454,18 @@ class TestBuildAndMatch(unittest.TestCase):
             FIELD(CAPTURE("x")),
             FIELD(CAPTURE("y"), name="y"),
         )
-        m = pat.build()
+        m = pat.build({"Point": Point})
 
         p = Point()
         p.x = 10
         p.y = 20
 
-        result = m.match((p,), Point=Point)
+        result = m.match((p,))
         self.assertTrue(result.matched)
         self.assertEqual(result.captures["x"], 10)
         self.assertEqual(result.captures["y"], 20)
 
-        result_bad = m.match((object(),), Point=Point)
+        result_bad = m.match((object(),))
         self.assertFalse(result_bad.matched)
 
 
@@ -743,14 +743,14 @@ class TestErgonomicShorthands(unittest.TestCase):
         SYMBOL captures a symbol element and rejects a non-symbol
         """
 
-        m = MATCH(SYMBOL("x")).build()
+        m = MATCH(SYMBOL("x")).build({"symbol": symbol})
 
-        r_ok = m.match([symbol("foo")], symbol=symbol)
+        r_ok = m.match([symbol("foo")])
         self.assertTrue(r_ok.matched)
         self.assertIs(
             r_ok.captures["x"], symbol("foo"))
 
-        self.assertFalse(m.match([7], symbol=symbol).matched)
+        self.assertFalse(m.match([7]).matched)
 
 
     def test_pair_matches_pair_rejects_list(self):
@@ -758,12 +758,12 @@ class TestErgonomicShorthands(unittest.TestCase):
         PAIR captures a pair element and rejects non-pair values
         """
 
-        m = MATCH(PAIR("p")).build()
+        m = MATCH(PAIR("p")).build({"pair": pair})
 
-        r_ok = m.match([cons(1, 2)], pair=pair)
+        r_ok = m.match([cons(1, 2)])
         self.assertTrue(r_ok.matched)
 
-        self.assertFalse(m.match([[1, 2]], pair=pair).matched)
+        self.assertFalse(m.match([[1, 2]]).matched)
 
 
     def test_literal_kw_matches_keyword_rejects_symbol(self):
