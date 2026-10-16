@@ -16,7 +16,7 @@
 
 | index | opcode       | arg | arg view                | comment |
 |------:|--------------|-----|-------------------------|---------|
-| 0     | JUMP_AND_VAR | 0   | (v#0 ('x'), -> 4, 0, 0) | x false: push x, pc=4 |
+| 0     | JUMP_AND_VAR | 0   | (v#0 ('x'), -> 3, 0, 0) | x false: push x, pc=3 |
 | 1     | VAR2         | 1   | (f, x)                  | stack: [..., f, x] |
 | 2     | CALL         | 1   | 1                       | stack: [..., (f x)] |
 | 3     | LABEL        | --  | --                      | |

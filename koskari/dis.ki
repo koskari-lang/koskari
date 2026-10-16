@@ -330,6 +330,10 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
+        if (and (equal? schema[0] OpStyle.CMP) ext[3]):
+          define sel (_compare_name ext[0])
+          return f"{arg} ({sel}, {ext[1]}, -> {ext[2]} when held)"
+
         define parts:
           list-each [[val fk] (zip ext schema)]:
             switch fk:

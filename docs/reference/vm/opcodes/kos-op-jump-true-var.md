@@ -11,12 +11,12 @@
   [JUMP_TRUE_FAST](kos-op-jump-true-fast.md) when the name has a fast
   slot.
 
-**Example:** `(unless x ...)` with `x` resolved by name.
+**Example:** `(if (not x) 1 2)` with `x` resolved by name.
 
 | index | opcode        | arg | arg view                | comment |
 |------:|---------------|-----|-------------------------|---------|
 | 0     | JUMP_TRUE_VAR | 0   | (v#0 ('x'), -> 3, 0, 0) | if x is true -> pc=3 |
-| 1     | CONST         | 1   | 1 (1)                   | body |
+| 1     | CONST         | 1   | 1 (1)                   | then arm |
 | 2     | JUMP          | 4   | 4 (-> 4)                | |
-| 3     | CONST         | 2   | 2 (None)                | |
+| 3     | CONST         | 2   | 2 (2)                   | else arm |
 | 4     | RETURN        | 1   | 1                       | |

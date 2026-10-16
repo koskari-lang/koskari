@@ -1,8 +1,9 @@
 # Short-circuit jump threading
 
-**Status:** proposal (2026-10-08), not implemented. One rewrite from a
-wider control-flow cleanup that was set aside; it stands on its own,
-and section 5 lists the opcodes that would extend its reach.
+**Status:** implemented (2026-10-15), with every extension of section 5.
+One rewrite from a wider control-flow cleanup that was set aside; it
+stands on its own, and section 5 lists the opcodes that extend its
+reach.
 
 ## 1. The shape today
 
@@ -226,8 +227,7 @@ pop; the fall-through path touches no refcount.
 squish rule later turns `OBJECT_NOT JUMP_FALSE` into `JUMP_TRUE`, but
 squish runs after the pass. Resolving the landing through `OBJECT_NOT`
 (a `JUMP_FALSE` behind a `NOT` is a `JUMP_TRUE` landing, and the
-reverse) is a one-row extension of the landing search, kept out of
-the first implementation.
+reverse) is a one-row extension of the landing search.
 
 ## 6. Tests and validation
 

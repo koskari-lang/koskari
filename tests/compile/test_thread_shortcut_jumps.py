@@ -70,6 +70,7 @@ class TestLandings(unittest.TestCase):
     the pushed value would fall through
     """
 
+
     def test_and_lands_on_jump_false(self):
         out = thread([
             (V, "a"), (JA, "done"),
@@ -85,6 +86,7 @@ class TestLandings(unittest.TestCase):
             (C, 1), (RET, 1),
             (L, "else"), (C, 2), (RET, 1),
         ])
+
 
     def test_and_lands_on_jump_true(self):
         out = thread([
@@ -102,6 +104,7 @@ class TestLandings(unittest.TestCase):
             (L, "then"), (C, 1), (RET, 1),
         ])
 
+
     def test_and_lands_on_jump_and(self):
         out = thread([
             (V, "a"), (JA, "inner"),
@@ -117,6 +120,7 @@ class TestLandings(unittest.TestCase):
             (V, "c"),
             (L, "outer"), (POP, 1), (RET, 0),
         ])
+
 
     def test_and_lands_on_jump_or(self):
         out = thread([
@@ -134,6 +138,7 @@ class TestLandings(unittest.TestCase):
             (L, "outer"), (POP, 1), (RET, 0),
         ])
 
+
     def test_or_lands_on_jump_true(self):
         out = thread([
             (V, "a"), (JO, "done"),
@@ -149,6 +154,7 @@ class TestLandings(unittest.TestCase):
             (C, 2), (RET, 1),
             (L, "then"), (C, 1), (RET, 1),
         ])
+
 
     def test_or_lands_on_jump_false(self):
         out = thread([
@@ -166,6 +172,7 @@ class TestLandings(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_or_lands_on_jump_or(self):
         out = thread([
             (V, "a"), (JO, "inner"),
@@ -181,6 +188,7 @@ class TestLandings(unittest.TestCase):
             (V, "c"),
             (L, "outer"), (POP, 1), (RET, 0),
         ])
+
 
     def test_or_lands_on_jump_and(self):
         out = thread([
@@ -204,6 +212,7 @@ class TestChains(unittest.TestCase):
     A nested form threads once its inner landing has been rewritten
     """
 
+
     def test_or_inside_and_in_test_position(self):
         # (if (and (or a b) c) 1 2)
         out = thread([
@@ -225,6 +234,7 @@ class TestChains(unittest.TestCase):
             (L, "l3"), (C, 2), (RET, 1),
         ])
 
+
     def test_three_clause_and(self):
         out = thread([
             (V, "a"), (JA, "done"),
@@ -242,6 +252,7 @@ class TestChains(unittest.TestCase):
             (C, 1), (RET, 1),
             (L, "else"), (C, 2), (RET, 1),
         ])
+
 
     def test_and_inside_and_as_last_clause(self):
         # (if (and a (and b c)) 1 2): the inner done label sits in
@@ -264,6 +275,7 @@ class TestChains(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_or_inside_and_as_last_clause(self):
         # (if (and a (or b c)) 1 2)
         out = thread([
@@ -284,11 +296,12 @@ class TestChains(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_landing_on_a_self_loop_terminates(self):
         instr = [
-            (L, "top"), (V, "a"), (JA, "top"),
+            (V, "a"),
             (L, "top"), (JA, "top"),
-            (RET, 0),
+            (RET, 1),
         ]
         self.assertEqual(thread(instr), instr)
 
@@ -298,6 +311,7 @@ class TestLabels(unittest.TestCase):
     Only labels the pass orphans go; a fall-through label is reused
     when one is there and inserted when not
     """
+
 
     def test_referenced_label_kept(self):
         out = thread([
@@ -321,6 +335,7 @@ class TestLabels(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_fallthrough_label_reused(self):
         out = thread([
             (V, "a"), (JO, "done"),
@@ -337,6 +352,7 @@ class TestLabels(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_fallthrough_label_inserted_before_position(self):
         out = thread([
             (V, "a"), (JO, "done"),
@@ -352,6 +368,7 @@ class TestLabels(unittest.TestCase):
             (L, FRESH), (P, 7), (C, 1), (RET, 1),
             (L, "else"), (C, 2), (RET, 1),
         ])
+
 
     def test_one_fallthrough_label_for_two_rows(self):
         out = thread([
@@ -379,6 +396,7 @@ class TestLandingSearch(unittest.TestCase):
     row alone
     """
 
+
     def test_position_and_noop_are_transparent(self):
         out = thread([
             (V, "a"), (JA, "done"),
@@ -395,6 +413,7 @@ class TestLandingSearch(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_value_consumer_landing_stays(self):
         # (f (and a b))
         instr = [
@@ -405,6 +424,7 @@ class TestLandingSearch(unittest.TestCase):
         ]
         self.assertEqual(thread(instr), instr)
 
+
     def test_pop_landing_stays(self):
         instr = [
             (V, "a"), (JO, "done"),
@@ -413,6 +433,7 @@ class TestLandingSearch(unittest.TestCase):
         ]
         self.assertEqual(thread(instr), instr)
 
+
     def test_return_landing_stays(self):
         instr = [
             (V, "a"), (JA, "done"),
@@ -420,6 +441,7 @@ class TestLandingSearch(unittest.TestCase):
             (L, "done"), (RET, 1),
         ]
         self.assertEqual(thread(instr), instr)
+
 
     def test_label_landing_threads_through(self):
         out = thread([
@@ -437,6 +459,7 @@ class TestLandingSearch(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_not_then_value_consumer_stays(self):
         # (f (not (and a b)))
         instr = [
@@ -446,6 +469,7 @@ class TestLandingSearch(unittest.TestCase):
             (L, "done"), (NOT, None), (CALL, 1), (RET, 1),
         ]
         self.assertEqual(thread(instr), instr)
+
 
     def test_not_then_jump_and_stays(self):
         # (and (not (and a b)) c) in value position
@@ -465,6 +489,7 @@ class TestNotLanding(unittest.TestCase):
     as that jump with its polarity swapped
     """
 
+
     def test_and_behind_not_lands_on_jump_false(self):
         # (if (not (and a b)) 1 2): a falsy a takes the then branch
         out = thread([
@@ -481,6 +506,7 @@ class TestNotLanding(unittest.TestCase):
             (L, FRESH), (C, 1), (RET, 1),
             (L, "else"), (C, 2), (RET, 1),
         ])
+
 
     def test_or_behind_not_lands_on_jump_false(self):
         # (if (not (or a b)) 1 2): a truthy a takes the else branch
@@ -499,6 +525,7 @@ class TestNotLanding(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_and_behind_not_lands_on_jump_true(self):
         out = thread([
             (V, "a"), (JA, "done"),
@@ -514,6 +541,7 @@ class TestNotLanding(unittest.TestCase):
             (C, 2), (RET, 1),
             (L, "then"), (C, 1), (RET, 1),
         ])
+
 
     def test_position_between_not_and_jump_is_transparent(self):
         out = thread([
@@ -531,6 +559,7 @@ class TestNotLanding(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+
     def test_not_then_return_stays(self):
         instr = [
             (V, "a"), (JA, "done"),
@@ -539,12 +568,14 @@ class TestNotLanding(unittest.TestCase):
         ]
         self.assertEqual(thread(instr), instr)
 
+
     def test_unknown_label_stays(self):
         instr = [
             (V, "a"), (JA, "elsewhere"),
             (V, "b"), (RET, 1),
         ]
         self.assertEqual(thread(instr), instr)
+
 
     def test_plain_jump_landing_stays(self):
         instr = [
@@ -581,6 +612,7 @@ class TestCompiled(unittest.TestCase):
     both clauses
     """
 
+
     def test_and_test_fuses_both_compares(self):
         rows = compile_function_rows(
             "(lambda [a b c d] (cond [(and (< a b) (< c d)) 1] [else: 2]))")
@@ -589,6 +621,7 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
+
 
     def test_not_and_test_fuses_both_compares(self):
         rows = compile_function_rows(
@@ -602,6 +635,7 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.JUMP_TRUE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
 
+
     def test_bare_variable_clauses_take_the_feeder_jumps(self):
         rows = compile_function_rows(
             "(lambda [a b c] (cond [(and (or a b) c) 1] [else: 2]))")
@@ -614,12 +648,14 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.JUMP_OR, ops)
 
+
     def test_value_position_or_takes_the_feeder_jump(self):
         rows = compile_function_rows("(lambda [a b] (list (or a b)))")
         ops = [op for op, _ in rows]
         self.assertEqual(ops.count(OpCode.JUMP_OR_FAST), 1)
         self.assertNotIn(OpCode.JUMP_OR, ops)
         self.assertEqual(ops.count(OpCode.FAST), 1)
+
 
     def test_or_test_fuses_both_compares(self):
         rows = compile_function_rows(
@@ -641,6 +677,7 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
+
 
     def test_nested_or_as_last_clause_takes_the_feeder_jumps(self):
         rows = compile_function_rows(

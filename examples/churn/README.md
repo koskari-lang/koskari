@@ -112,6 +112,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `field` | instance-attribute read/modify/write (dict path) | — |
 | `field_slots` | same, on a `__slots__` class (SLOT path) | — |
 | `branch` | four-arm if/elif/else density | — |
+| `complex_branch` | `and`/`or`/`not` in loop, if/elif and value positions over compares and bare variables | — |
 | `nbody` | float arithmetic (benchmarks-game n-body) | energy to 9 places |
 | `fannkuch` | integer array indexing + mutation | `(16, 228)` at n=7 |
 | `pidigits` | arbitrary-precision (bignum) arithmetic | first 50 digits of π |

@@ -124,6 +124,31 @@ def _make_operand_code():
     return Code(nspec, instr, "operand_fn", "file.ki")
 
 
+def _make_compare_code():
+    """
+    Code with the two compare-check row shapes, each with the jump-held
+    flag set and clear: a bare CHECK_COMPARE row carries the flag in its
+    fourth field, a CHECK_COMPARE_FAST row in bit 6 of its CMPSRC field
+    (LT selector 0, both operands fast slots).
+    """
+
+    nspec = NamespaceSpec("fn", ("a", "b"), ())
+    instr = (
+        [OpCode.FAST, 0],
+        [OpCode.FAST, 1],
+        [OpCode.CHECK_COMPARE, (0, 2, "held", 1)],
+        [OpCode.FAST, 0],
+        [OpCode.FAST, 1],
+        [OpCode.CHECK_COMPARE, (0, 2, "held", 0)],
+        [OpCode.CHECK_COMPARE_FAST, (0x40, 0, 1, "held")],
+        [OpCode.CHECK_COMPARE_FAST, (0, 0, 1, "held")],
+        [OpCode.LABEL, "held"],
+        [OpCode.FAST, 0],
+        [OpCode.RETURN, 1],
+    )
+    return Code(nspec, instr, "compare_fn", "file.ki")
+
+
 def _make_expression():
     """
     Expression wrapping the truthy code, for _get_code / dis unwrapping.
@@ -190,6 +215,18 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertIn("1026 (BIT_AND x2)", text)
         self.assertIn("FAST_INPLACE", text)
         self.assertIn('(ADD, fast 0 ("a"), 0, 0)', text)
+
+    async def test_dis_marks_jump_held_compare_rows(self):
+        code = _make_compare_code()
+        buf = io.StringIO()
+        await _dis().dis(code, file=buf)
+        lines = [l for l in buf.getvalue().splitlines() if "CHECK_COMPARE" in l]
+        self.assertEqual(len(lines), 4)
+        self.assertIn("(LT, 2, -> 8 when held)", lines[0])
+        self.assertIn("(LT, 2, -> 8, 0)", lines[1])
+        self.assertIn('(LT, fast 0 ("a"), fast 1 ("b"), -> 8 when held)',
+                      lines[2])
+        self.assertIn('(LT, fast 0 ("a"), fast 1 ("b"), -> 8)', lines[3])
 
     async def test_dis_expression(self):
         """

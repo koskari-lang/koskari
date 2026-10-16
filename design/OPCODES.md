@@ -1440,7 +1440,7 @@ bottom to top matches push order).
 - **Invariants**: Jump locality for target.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of
   [JUMP_TRUE_VAR](#kos_op_jump_true_var) when the name has a fast slot.
-  `(unless x ...)` and an `or` clause of a threaded test over a bare
+  `(if (not x) ...)` and an `or` clause of a threaded test over a bare
   variable take one dispatch.
 
 ---
@@ -1581,7 +1581,7 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: if the predicate does **not** hold, jump to the target label. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the jump-held flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), and the jump is taken when the chain fails, or when it holds under a set `a3`. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
+Check jumps: jump to the target label when the predicate does not hold, or, for a compare check with the jump-held flag set, when it holds. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, COUNT)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the jump-held flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), and the jump is taken when the chain fails, or when it holds under a set `a3`. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_COMPARE {#kos_op_check_compare}
 
