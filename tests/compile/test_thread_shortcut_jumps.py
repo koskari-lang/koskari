@@ -243,6 +243,47 @@ class TestChains(unittest.TestCase):
             (L, "else"), (C, 2), (RET, 1),
         ])
 
+    def test_and_inside_and_as_last_clause(self):
+        # (if (and a (and b c)) 1 2): the inner done label sits in
+        # front of the outer one
+        out = thread([
+            (V, "a"), (JA, "outer"),
+            (V, "b"), (JA, "inner"),
+            (V, "c"),
+            (L, "inner"),
+            (L, "outer"), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JF, "else"),
+            (V, "b"), (JF, "else"),
+            (V, "c"),
+            (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+
+    def test_or_inside_and_as_last_clause(self):
+        # (if (and a (or b c)) 1 2)
+        out = thread([
+            (V, "a"), (JA, "outer"),
+            (V, "b"), (JO, "inner"),
+            (V, "c"),
+            (L, "inner"),
+            (L, "outer"), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JF, "else"),
+            (V, "b"), (JT, FRESH),
+            (V, "c"),
+            (JF, "else"),
+            (L, FRESH), (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
+
     def test_landing_on_a_self_loop_terminates(self):
         instr = [
             (L, "top"), (V, "a"), (JA, "top"),
@@ -333,9 +374,9 @@ class TestLabels(unittest.TestCase):
 
 class TestLandingSearch(unittest.TestCase):
     """
-    The landing is the first row after the label that is not POSITION
-    or NOOP; any landing that is not a conditional jump leaves the row
-    alone
+    The landing is the first row after the label that is not POSITION,
+    NOOP or LABEL; any landing that is not a conditional jump leaves the
+    row alone
     """
 
     def test_position_and_noop_are_transparent(self):
@@ -380,15 +421,21 @@ class TestLandingSearch(unittest.TestCase):
         ]
         self.assertEqual(thread(instr), instr)
 
-    def test_label_landing_stays(self):
-        instr = [
+    def test_label_landing_threads_through(self):
+        out = thread([
             (V, "a"), (JA, "done"),
             (V, "b"),
             (L, "done"), (L, "other"), (JF, "else"),
             (C, 1), (RET, 1),
             (L, "else"), (C, 2), (RET, 1),
-        ]
-        self.assertEqual(thread(instr), instr)
+        ])
+        self.assertEqual(out, [
+            (V, "a"), (JF, "else"),
+            (V, "b"),
+            (L, "other"), (JF, "else"),
+            (C, 1), (RET, 1),
+            (L, "else"), (C, 2), (RET, 1),
+        ])
 
     def test_not_then_value_consumer_stays(self):
         # (f (not (and a b)))
@@ -583,6 +630,29 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
         self.assertNotIn(OpCode.JUMP_TRUE, ops)
         self.assertNotIn(OpCode.JUMP_FALSE, ops)
+
+
+    def test_nested_and_as_last_clause_fuses_every_compare(self):
+        rows = compile_function_rows(
+            "(lambda [a b c d e f]"
+            " (cond [(and (< a b) (and (< c d) (< e f))) 1] [else: 2]))")
+        ops = [op for op, _ in rows]
+        self.assertEqual(ops.count(OpCode.CHECK_COMPARE_FAST), 3)
+        self.assertNotIn(OpCode.JUMP_AND, ops)
+        self.assertNotIn(OpCode.OBJECT_COMPARE, ops)
+        self.assertNotIn(OpCode.JUMP_FALSE, ops)
+
+    def test_nested_or_as_last_clause_takes_the_feeder_jumps(self):
+        rows = compile_function_rows(
+            "(lambda [a b c] (cond [(and a (or b c)) 1] [else: 2]))")
+        ops = [op for op, _ in rows]
+        self.assertEqual(ops.count(OpCode.JUMP_FALSE_FAST), 2)
+        self.assertEqual(ops.count(OpCode.JUMP_TRUE_FAST), 1)
+        self.assertNotIn(OpCode.FAST, ops)
+        self.assertNotIn(OpCode.JUMP_OR_FAST, ops)
+        self.assertNotIn(OpCode.JUMP_FALSE, ops)
+        self.assertNotIn(OpCode.JUMP_OR, ops)
+        self.assertNotIn(OpCode.JUMP_AND, ops)
 
 
 # The end.

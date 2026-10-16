@@ -1520,7 +1520,7 @@ class ByteCodeProcessor:
         value the short-circuit row pushes.
 
         The landing is the first row after the label that is not
-        POSITION or NOOP. A landing that is a JUMP_FALSE, JUMP_TRUE,
+        POSITION, NOOP or LABEL. A landing that is a JUMP_FALSE, JUMP_TRUE,
         JUMP_AND or JUMP_OR resolves through SHORTCUT_THREADS to the
         replacement op and whether the row takes the landing's target
         or its fall-through; the fall-through label is the LABEL row
@@ -1544,10 +1544,11 @@ class ByteCodeProcessor:
 
         gen_label = self.fragment.compiler.gen_label
         orphaned = set()
+        transparent = JOIN_TRANSPARENT | {OpCode.LABEL}
 
         def landing(li):
             li += 1
-            while li < len(instr) and instr[li][0] in JOIN_TRANSPARENT:
+            while li < len(instr) and instr[li][0] in transparent:
                 li += 1
             return li if li < len(instr) else None
 
