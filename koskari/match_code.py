@@ -15,7 +15,8 @@
 koskari.match_code
 
 A frozen matcher lowered to the MATCH_* instructions: each node pulled
-from a cursor slot or peeked on the stack, with a miss edge to a label.
+from a cursor the walk keeps on the operand stack, named by its depth
+under the top, or peeked on the stack, with a miss edge to a label.
 Two targets take the same instructions. The inline target emits into
 a fragment of the standard compiler for a match clause, the captures
 stored into the clause's declared names. The standalone target builds
