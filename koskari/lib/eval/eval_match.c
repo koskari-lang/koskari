@@ -128,24 +128,17 @@ KOS_OP_INLINE int kos_match_set_at(
 
 /**
    Advance past a pulled element once it has passed its test: the
-   advanced pair cursor stored into the entry field 1 names, or the
-   sequence cursor stepped in place; then release the step. 0, or -1
-   with an exception set and the step released.
+   advanced cursor stored into the entry field 1 names; then release
+   the step. 0, or -1 with an exception set and the step released.
 */
 KOS_OP_INLINE int kos_match_advance(
     KosEvalState *es,
     const KosExtra *row,
     KosMatchStep *step) {
 
-  int res = 0;
+  PyObject *next = KosMatch_StepAdvance(step);
+  int res = next ? kos_match_set_at(es, row, 1, next) : -1;
 
-  if (step->next) {
-    PyObject *next = step->next;
-    step->next = NULL;
-    res = kos_match_set_at(es, row, 1, next);
-  } else {
-    KosMatch_StepAdvance(step);
-  }
   KosMatch_StepClear(step);
   return res;
 }
@@ -207,8 +200,8 @@ KOS_MATCH_BODY(kos_match_next_form) {
     KOS_MATCH_MISS(row);
   }
 
-  /* the outer cursor advances in place before the inner is pushed,
-     so the depth field 1 names still holds */
+  /* the outer entry is written before the inner is pushed, so the
+     depth field 1 names still holds */
   if (unlikely(kos_match_advance(es, row, &step) < 0)) {
     Py_DECREF(inner);
     RESULT_RAISE();
@@ -253,9 +246,7 @@ KOS_MATCH_BODY(kos_match_next) {
 /**
    MATCH_PEEK: the next element of the cursor at the depth in field 1
    pushed, boxed from a pair spine, the cursor left where it is. Row
-   LABEL, depth.
-   The zero-width NOT reads its element this way, since a sequence
-   cursor advances in place and a saved copy of it would advance too.
+   LABEL, depth. The zero-width NOT reads its element this way.
 */
 KOS_MATCH_BODY(kos_match_peek_next) {
   KOS_SYNC_PC(es, insn);
@@ -489,13 +480,13 @@ KOS_MATCH_BODY(kos_match_rest) {
 
   if (bind) {
     if (unlikely(kos_match_store(es, row, 3, fast, value) < 0)) {
-      Py_XDECREF(next);
+      Py_DECREF(next);
       RESULT_RAISE();
     }
   } else {
     Py_DECREF(value);
   }
-  if (next && unlikely(kos_match_set_at(es, row, 1, next) < 0))
+  if (unlikely(kos_match_set_at(es, row, 1, next) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -1054,7 +1045,7 @@ KOS_MATCH_BODY(kos_match_collect) {
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  if (next && unlikely(kos_match_set_at(es, row, 1, next) < 0))
+  if (unlikely(kos_match_set_at(es, row, 1, next) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -1088,17 +1079,10 @@ KOS_MATCH_BODY(kos_match_reset) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_at(es, row, 0);
-  if (unlikely(! cursor))
-    RESULT_RAISE();
   PyObject *saved = kos_match_at(es, row, 1);
   if (unlikely(! saved))
     RESULT_RAISE();
-  PyObject *restored = NULL;
-  int r = KosMatch_Reset(cursor, saved, &restored);
-  if (unlikely(r < 0))
-    RESULT_RAISE();
-  if (restored && unlikely(kos_match_set_at(es, row, 0, restored) < 0))
+  if (unlikely(kos_match_set_at(es, row, 0, KosMatch_Reset(saved)) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }

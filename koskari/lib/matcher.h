@@ -61,7 +61,10 @@ extern PyTypeObject KosDatumFrameType;
 /**
    A cursor over a sequence subject: the sequence, its length and the
    index of the next element. A pair spine needs none, the cell is the
-   cursor.
+   cursor. Opaque to Python and untracked. An advance moves the cursor
+   in place when its entry is the only holder and stores a new cursor
+   at the entry otherwise, so a mark, which is the cursor itself, and
+   a cloned segment keep the position they took.
  */
 typedef struct KosMatchCursor {
   PyObject_HEAD
@@ -112,10 +115,9 @@ typedef enum KosCoreType {
    back (NULL from a sequence cursor), every one a new reference the
    step owns until KosMatch_StepClear, so the test a body runs on the
    element, which may reach user code, cannot leave the step holding
-   a released cursor. A pull advances nothing: the caller stores next,
-   or calls KosMatch_StepAdvance for a sequence cursor, once the
-   element has passed its test, so a miss leaves the cursor where it
-   was.
+   a released cursor. A pull advances nothing: the caller stores what
+   KosMatch_StepAdvance returns once the element has passed its test,
+   so a miss leaves the cursor where it was.
  */
 typedef struct KosMatchStep {
   PyObject *elem;
@@ -149,10 +151,12 @@ int KosMatch_Pull(PyObject *cursor, KosMatchStep *out);
 PyObject *KosMatch_Box(const KosMatchStep *step);
 
 /**
-   Advance the sequence cursor a step was pulled from past its element.
-   Nothing to do for a pair spine, whose advance is the store of next.
+   The cursor to store at the entry the step was pulled from: the next
+   cell of a pair spine, taken from the step, or the sequence cursor
+   advanced past the element. New reference; NULL with an exception
+   set.
  */
-void KosMatch_StepAdvance(KosMatchStep *step);
+PyObject *KosMatch_StepAdvance(KosMatchStep *step);
 
 /**
    Release what a step owns.
@@ -170,8 +174,7 @@ int KosMatch_End(PyObject *cursor);
    tail and the suffix width. Returns 1 with *out_value the capture
    value (the boxed tail, a tuple of boxed cells, or a tuple slice of
    a sequence; new reference) and *out_next the advanced cursor (new
-   reference, or NULL when a sequence cursor advanced in place), 0 on
-   a miss, -1 with an exception set.
+   reference), 0 on a miss, -1 with an exception set.
  */
 int KosMatch_Rest(
     PyObject *cursor,
@@ -243,25 +246,25 @@ int KosMatch_Available(PyObject *cursor, Py_ssize_t needed);
 int KosMatch_SameTest(PyObject *elem, PyObject *prev);
 
 /**
-   The position of cursor, for MATCH_MARK: the cell itself for a pair
-   spine, the index as an int for a sequence. New reference.
+   The position of cursor, for MATCH_MARK: the cursor itself, the cell
+   of a pair spine or the sequence cursor, which no later advance
+   moves while the mark holds it. New reference.
  */
 PyObject *KosMatch_Position(PyObject *cursor);
 
 /**
-   Move cursor back to a saved position. For a sequence the cursor
-   object's index is set in place and *out_cursor is NULL; for a pair
-   spine *out_cursor is the saved cell (new reference) for the caller
-   to store. 0, or -1 with an exception set.
+   The cursor to store for MATCH_RESET: the saved position, which is
+   the cursor as it was at the mark. New reference.
  */
-int KosMatch_Reset(PyObject *cursor, PyObject *saved, PyObject **out_cursor);
+PyObject *KosMatch_Reset(PyObject *saved);
 
 /**
    Append every remaining element of cursor, boxed from a pair spine,
    to list. A pair spine is counted first, so an improper tail is a
    miss before anything is appended. Returns 1 with *out_next the
-   terminator to store for a pair spine (new reference; NULL for a
-   sequence, advanced in place), 0 on a miss, -1 with an exception set.
+   cursor to store, the terminator of a pair spine or the sequence
+   cursor at its end (new reference), 0 on a miss, -1 with an
+   exception set.
  */
 int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next);
 

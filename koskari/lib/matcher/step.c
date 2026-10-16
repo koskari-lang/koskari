@@ -28,21 +28,40 @@
 /* === KosMatchCursor === */
 
 
+/* The cursor is untracked: it is reached only from an operand stack
+   entry, a mark or a step, never from Python, and the peak count is
+   the pattern's nesting. Freed cursors chain through seq, up to the
+   cap. */
+#define CURSOR_MAX_FREE KOS_FREELIST_CAP(8)
+
+static KosMatchCursor *cursor_free_list = NULL;
+static int cursor_free_count = 0;
+
+
 static void match_cursor_dealloc(PyObject *self) {
   KosMatchCursor *c = (KosMatchCursor *) self;
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(c->seq);
-  PyObject_GC_Del(self);
+
+  Py_DECREF(c->seq);
+  if (cursor_free_count < CURSOR_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("cursor", 0);
+    c->seq = (PyObject *) cursor_free_list;
+    cursor_free_list = c;
+    cursor_free_count++;
+
+  } else {
+    KOS_TRACE_FL_RETURN("cursor", 1);
+    Py_TYPE(self)->tp_free(self);
+  }
 }
 
 
-static int match_cursor_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
-
-  Py_VISIT(((KosMatchCursor *) self)->seq);
-  return 0;
+static void match_cursor_free_list_clear(void) {
+  while (cursor_free_list) {
+    KosMatchCursor *c = cursor_free_list;
+    cursor_free_list = (KosMatchCursor *) c->seq;
+    PyObject_Free(c);
+  }
+  cursor_free_count = 0;
 }
 
 
@@ -50,24 +69,79 @@ PyTypeObject KosMatchCursorType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.MatchCursor",
   .tp_basicsize = sizeof(KosMatchCursor),
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_flags = Py_TPFLAGS_DEFAULT,
   .tp_doc = "A match instruction's cursor over a sequence subject",
   .tp_dealloc = match_cursor_dealloc,
-  .tp_traverse = match_cursor_traverse,
 };
 
 
-static PyObject *match_cursor_new(PyObject *seq, Py_ssize_t length) {
-  KosMatchCursor *c = PyObject_GC_New(KosMatchCursor, &KosMatchCursorType);
+static PyObject *match_cursor_new(
+    PyObject *seq,
+    Py_ssize_t length,
+    Py_ssize_t index) {
 
-  if (! c)
-    return NULL;
+  KosMatchCursor *c;
+
+  if (cursor_free_list) {
+    c = cursor_free_list;
+    cursor_free_list = (KosMatchCursor *) c->seq;
+    cursor_free_count--;
+    KOS_TRACE_FL_ALLOC("cursor", 1);
+    _Py_NewReference((PyObject *) c);
+
+  } else {
+    KOS_TRACE_FL_ALLOC("cursor", 0);
+    c = PyObject_New(KosMatchCursor, &KosMatchCursorType);
+    if (! c)
+      return NULL;
+  }
+
   Py_INCREF(seq);
   c->seq = seq;
   c->length = length;
-  c->index = 0;
-  PyObject_GC_Track((PyObject *) c);
+  c->index = index;
   return (PyObject *) c;
+}
+
+
+/**
+   The cursor advanced by n, as a new reference for the caller to
+   store at the cursor's entry: c itself, moved in place, when held
+   holds every reference to it (the entry, and the step at the step
+   site), else a new cursor at the advanced index, since a mark or a
+   cloned segment holds c at the position it had. NULL with an
+   exception set.
+*/
+static PyObject *match_cursor_advanced(
+    KosMatchCursor *c,
+    Py_ssize_t n,
+    Py_ssize_t held) {
+
+  if (Py_REFCNT(c) == held) {
+    c->index += n;
+    Py_INCREF(c);
+    return (PyObject *) c;
+  }
+  return match_cursor_new(c->seq, c->length, c->index + n);
+}
+
+
+/**
+   The element of seq at index. New reference.
+*/
+static PyObject *step_seq_item(PyObject *seq, Py_ssize_t index) {
+  PyObject *item;
+
+  if (PyTuple_CheckExact(seq)) {
+    item = PyTuple_GET_ITEM(seq, index);
+    Py_INCREF(item);
+  } else if (PyList_CheckExact(seq)) {
+    item = PyList_GET_ITEM(seq, index);
+    Py_INCREF(item);
+  } else {
+    item = PySequence_GetItem(seq, index);
+  }
+  return item;
 }
 
 
@@ -164,7 +238,7 @@ int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor) {
       || (mx != KOS_MATCH_UNBOUNDED8 && have > (Py_ssize_t) mx))
     return 0;
 
-  PyObject *cursor = match_cursor_new(peeled, have);
+  PyObject *cursor = match_cursor_new(peeled, have, 0);
   if (! cursor)
     return -1;
   *out_cursor = cursor;
@@ -197,22 +271,12 @@ int KosMatch_Pull(PyObject *cursor, KosMatchStep *out) {
 
   if (KosMatchCursor_Check(cursor)) {
     KosMatchCursor *c = (KosMatchCursor *) cursor;
-    PyObject *seq = c->seq;
-    PyObject *item;
 
     if (cursor_remaining(c) == 0)
       return 0;
-    if (PyTuple_CheckExact(seq)) {
-      item = PyTuple_GET_ITEM(seq, c->index);
-      Py_INCREF(item);
-    } else if (PyList_CheckExact(seq)) {
-      item = PyList_GET_ITEM(seq, c->index);
-      Py_INCREF(item);
-    } else {
-      item = PySequence_GetItem(seq, c->index);
-      if (! item)
-        return -1;
-    }
+    PyObject *item = step_seq_item(c->seq, c->index);
+    if (! item)
+      return -1;
     Py_INCREF(cursor);
     out->cursor = cursor;
     out->elem = item;
@@ -243,9 +307,15 @@ PyObject *KosMatch_Box(const KosMatchStep *step) {
 }
 
 
-void KosMatch_StepAdvance(KosMatchStep *step) {
-  if (step->cursor)
-    ((KosMatchCursor *) step->cursor)->index++;
+PyObject *KosMatch_StepAdvance(KosMatchStep *step) {
+  if (step->next) {
+    PyObject *next = step->next;
+    step->next = NULL;
+    return next;
+  }
+  /* the step's reference and the entry's: two when nothing else
+     holds the cursor */
+  return match_cursor_advanced((KosMatchCursor *) step->cursor, 1, 2);
 }
 
 
@@ -330,8 +400,13 @@ int KosMatch_Rest(
     PyObject *value = step_seq_slice(c->seq, c->index, c->index + consume);
     if (! value)
       return -1;
-    c->index += consume;
+    PyObject *next = match_cursor_advanced(c, consume, 1);
+    if (! next) {
+      Py_DECREF(value);
+      return -1;
+    }
     *out_value = value;
+    *out_next = next;
     return 1;
   }
 
@@ -704,25 +779,14 @@ int KosMatch_SameTest(PyObject *elem, PyObject *prev) {
 
 
 PyObject *KosMatch_Position(PyObject *cursor) {
-  if (KosMatchCursor_Check(cursor))
-    return PyLong_FromSsize_t(((KosMatchCursor *) cursor)->index);
   Py_INCREF(cursor);
   return cursor;
 }
 
 
-int KosMatch_Reset(PyObject *cursor, PyObject *saved, PyObject **out_cursor) {
-  *out_cursor = NULL;
-  if (KosMatchCursor_Check(cursor)) {
-    Py_ssize_t idx = PyLong_AsSsize_t(saved);
-    if (idx == -1 && PyErr_Occurred())
-      return -1;
-    ((KosMatchCursor *) cursor)->index = idx;
-    return 0;
-  }
+PyObject *KosMatch_Reset(PyObject *saved) {
   Py_INCREF(saved);
-  *out_cursor = saved;
-  return 0;
+  return saved;
 }
 
 
@@ -731,19 +795,22 @@ int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next) {
 
   if (KosMatchCursor_Check(cursor)) {
     KosMatchCursor *c = (KosMatchCursor *) cursor;
-    while (cursor_remaining(c) > 0) {
-      KosMatchStep step;
-      int r = KosMatch_Pull(cursor, &step);
-      if (r < 0)
+    Py_ssize_t count = 0;
+
+    while (cursor_remaining(c) > count) {
+      PyObject *item = step_seq_item(c->seq, c->index + count);
+      if (! item)
         return -1;
-      if (! r)
-        break;
-      int rc = PyList_Append(list, step.elem);
-      KosMatch_StepClear(&step);
+      int rc = PyList_Append(list, item);
+      Py_DECREF(item);
       if (rc < 0)
         return -1;
-      c->index++;
+      count++;
     }
+    PyObject *next = match_cursor_advanced(c, count, 1);
+    if (! next)
+      return -1;
+    *out_next = next;
     return 1;
   }
 
@@ -913,9 +980,13 @@ PyObject *KosMatch_Iteration(
 
   if (KosMatchCursor_Check(cursor)) {
     KosMatchCursor *c = (KosMatchCursor *) cursor;
-    Py_ssize_t from = PyLong_AsSsize_t(start);
-    if (from == -1 && PyErr_Occurred())
+    if (! KosMatchCursor_Check(start)) {
+      PyErr_Format(PyExc_TypeError,
+                   "match iteration start over a sequence is a cursor,"
+                   " not %.200s", Py_TYPE(start)->tp_name);
       return NULL;
+    }
+    Py_ssize_t from = ((KosMatchCursor *) start)->index;
     Py_ssize_t span = c->index - from;
     if (span == 1)
       return PySequence_GetItem(c->seq, from);

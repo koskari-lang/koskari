@@ -818,8 +818,10 @@ class TestMatchCalls(SpecialsTestCase):
 
     async def test_escaped_predicate_continuation_completes_the_match(self):
         """
-        A continuation captured inside a predicate and resumed once,
-        outside its delimiter, completes the walk it interrupted
+        A continuation captured inside a predicate and resumed twice,
+        outside its delimiter, completes the walk it interrupted both
+        times: each resumption walks on from the position the capture
+        held, over a sequence as over a pair spine
         """
 
         src = """
@@ -831,7 +833,7 @@ class TestMatchCalls(SpecialsTestCase):
               (match data
                 [[#[(? pred) y z]] #("hit" y z)]
                 [else: "miss"])))
-          #(first (call holder.k True)))
+          #(first (call holder.k True) (call holder.k True)))
         """
 
         class Holder:
@@ -839,12 +841,14 @@ class TestMatchCalls(SpecialsTestCase):
 
         expr, mod = self.compile_expr(
             src, data=(1, 2, 3), holder=Holder(), setattr=setattr)
-        self.assertEqual(await expr(), (False, ("hit", 2, 3)))
+        self.assertEqual(
+            await expr(), (False, ("hit", 2, 3), ("hit", 2, 3)))
 
         expr, mod = self.compile_expr(
             src, data=cons(1, 2, 3, nil), holder=Holder(), setattr=setattr)
-        first, (hit, y, z) = await expr()
+        first, (hit, y, z), (hit2, y2, z2) = await expr()
         self.assertEqual((first, hit, y.datum, z.datum), (False, "hit", 2, 3))
+        self.assertEqual((hit2, y2.datum, z2.datum), ("hit", 2, 3))
 
 
     async def test_awaiting_extractor_awaits_in_place(self):

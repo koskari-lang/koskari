@@ -2103,18 +2103,19 @@ never emits it and its handler raises.
 
 ### KOS_OP_MATCH_MARK_VAR / KOS_OP_MATCH_MARK_FAST
 
-- **Style**: EXTRA (slot, slot)
-- **Stack**: No stack effect; cannot miss.
-- **Semantics**: Store the position of the cursor in `a0` into slot `a1`: the
-  cell itself for a pair spine, the index as an int for a sequence.
+- **Style**: EXTRA (RAW)
+- **Stack**: `[...]` -> `[..., position]`; cannot miss.
+- **Semantics**: Push the cursor at depth `a0` as its position: the cell of a
+  pair spine or the sequence cursor, which no advance moves while the mark
+  holds it.
 
 ### KOS_OP_MATCH_RESET_VAR / KOS_OP_MATCH_RESET_FAST
 
-- **Style**: EXTRA (slot, slot)
+- **Style**: EXTRA (RAW, RAW)
 - **Stack**: No stack effect; cannot miss.
-- **Semantics**: Move the cursor in `a0` back to the position saved in slot
-  `a1`. A failed branch of a repeat, an optional or a `(or ...)` returns to
-  where it began.
+- **Semantics**: Store the position at depth `a1` as the cursor at depth `a0`.
+  A failed branch of a repeat, an optional or a `(or ...)` returns to where it
+  began.
 
 ### KOS_OP_MATCH_CAPTURES / KOS_OP_MATCH_CAPTURES_NAMED_VAR / KOS_OP_MATCH_CAPTURES_NAMED_FAST
 

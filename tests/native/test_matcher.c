@@ -101,7 +101,9 @@ static int test_sequence_walk(void) {
     TEST_ASSERT_SAME(boxed, step.elem, "a sequence element is raw");
     Py_DECREF(boxed);
 
-    KosMatch_StepAdvance(&step);
+    PyObject *advanced = KosMatch_StepAdvance(&step);
+    TEST_ASSERT_SAME(advanced, cursor, "the only holder advances in place");
+    Py_DECREF(advanced);
     KosMatch_StepClear(&step);
     TEST_ASSERT_NULL(step.elem, "clear releases the element");
     TEST_ASSERT_NULL(step.cursor, "and the cursor");
@@ -278,13 +280,17 @@ static int test_rest_over_a_sequence(void) {
                  1, "rest with a suffix of one");
   TEST_ASSERT(PyTuple_CheckExact(value) && PyTuple_GET_SIZE(value) == 3,
               "three consumed");
-  TEST_ASSERT_NULL(next, "a sequence cursor advances in place");
+  TEST_ASSERT_SAME(next, cursor, "the only holder advances in place");
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 3, "past the three");
+  Py_DECREF(next);
   TEST_ASSERT(! KosMatch_End(cursor), "the suffix remains");
   Py_DECREF(value);
 
   TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "the suffix element");
   TEST_ASSERT_EQ(PyLong_AsLong(step.elem), 4, "the last one");
-  KosMatch_StepAdvance(&step);
+  next = KosMatch_StepAdvance(&step);
+  TEST_ASSERT_SAME(next, cursor, "in place again");
+  Py_DECREF(next);
   KosMatch_StepClear(&step);
   TEST_ASSERT(KosMatch_End(cursor), "at the end");
 
@@ -305,7 +311,9 @@ static int test_list_shrinks_under_the_walk(void) {
   TEST_ASSERT_EQ(KosMatch_Descend(subj, KOS_MATCH_PACK(3, 3), &cursor), 1,
                  "descend records three");
   TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "first pull");
-  KosMatch_StepAdvance(&step);
+  next = KosMatch_StepAdvance(&step);
+  TEST_ASSERT_SAME(next, cursor, "in place");
+  Py_DECREF(next);
   KosMatch_StepClear(&step);
 
   /* user code drops the last element: two recorded ahead, one live */
@@ -318,6 +326,7 @@ static int test_list_shrinks_under_the_walk(void) {
               "one element");
   TEST_ASSERT_EQ(PyLong_AsLong(PyTuple_GET_ITEM(value, 0)), 2, "the second");
   Py_DECREF(value);
+  Py_DECREF(next);
   TEST_ASSERT(KosMatch_End(cursor), "at the live end");
 
   /* and then everything */
@@ -328,7 +337,8 @@ static int test_list_shrinks_under_the_walk(void) {
   PyObject *out = PyList_New(0);
   TEST_ASSERT_EQ(KosMatch_Collect(cursor, out, &next), 1, "collect");
   TEST_ASSERT_EQ(PyList_GET_SIZE(out), 0, "collects nothing");
-  TEST_ASSERT_NULL(next, "in place");
+  TEST_ASSERT_SAME(next, cursor, "in place");
+  Py_DECREF(next);
   Py_DECREF(out);
 
   Py_DECREF(cursor);
@@ -410,18 +420,27 @@ static int test_position_and_reset(void) {
 
   TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
   PyObject *mark = KosMatch_Position(cursor);
-  TEST_ASSERT_EQ(PyLong_AsSsize_t(mark), 0, "the index");
+  TEST_ASSERT_SAME(mark, cursor, "the cursor itself");
+  TEST_ASSERT_REFCNT(cursor, 2, "a new reference");
 
+  /* under a mark the advance replaces: the mark keeps its position */
   TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
-  KosMatch_StepAdvance(&step);
+  PyObject *advanced = KosMatch_StepAdvance(&step);
   KosMatch_StepClear(&step);
-  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 1, "advanced");
+  TEST_ASSERT_NOT_NULL(advanced, "advanced");
+  TEST_ASSERT(advanced != cursor, "a held cursor advances by replacement");
+  TEST_ASSERT(KosMatchCursor_Check(advanced), "a sequence cursor");
+  TEST_ASSERT_EQ(((KosMatchCursor *) advanced)->index, 1, "past one");
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 0, "the mark untouched");
+  TEST_ASSERT_SAME(((KosMatchCursor *) advanced)->seq, subj, "same subject");
 
-  TEST_ASSERT_EQ(KosMatch_Reset(cursor, mark, &out), 0, "reset");
-  TEST_ASSERT_NULL(out, "a sequence cursor moves in place");
-  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 0, "back at the mark");
+  out = KosMatch_Reset(mark);
+  TEST_ASSERT_SAME(out, cursor, "the saved cursor is the cursor again");
+  Py_DECREF(out);
+  Py_DECREF(advanced);
   Py_DECREF(mark);
   Py_DECREF(cursor);
+  TEST_ASSERT_REFCNT(subj, 1, "released");
   Py_DECREF(subj);
 
   /* a spine: the cell is the position, and the reset hands it back */
@@ -429,7 +448,7 @@ static int test_position_and_reset(void) {
   mark = KosMatch_Position(spine);
   TEST_ASSERT_SAME(mark, spine, "the cell itself");
   TEST_ASSERT_REFCNT(spine, 2, "a new reference");
-  TEST_ASSERT_EQ(KosMatch_Reset(KosNil, mark, &out), 0, "reset");
+  out = KosMatch_Reset(mark);
   TEST_ASSERT_SAME(out, spine, "the saved cell is the cursor again");
   Py_DECREF(out);
   Py_DECREF(mark);
@@ -546,7 +565,8 @@ static int test_iteration_values(void) {
   /* a sequence: the item, or the slice */
   PyObject *subj = Py_BuildValue("(iii)", 1, 2, 3);
   PyObject *cursor = NULL;
-  PyObject *start = PyLong_FromLong(0);
+  PyObject *start = NULL;
+  TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &start), 1, "the start");
   TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
   ((KosMatchCursor *) cursor)->index = 1;
   out = KosMatch_Iteration(names, values, start, cursor);

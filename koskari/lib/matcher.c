@@ -275,6 +275,7 @@ int koskari_matcher_init(PyObject *mod) {
 
 int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
+  match_cursor_free_list_clear();
   Py_CLEAR(kos_match_args_name);
   Py_CLEAR(kos_class_name);
   Py_CLEAR(kos_object_class_descr);

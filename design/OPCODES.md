@@ -1944,8 +1944,8 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Stack**: `[...]` -> `[..., cursor]`; jump to `a0` with nothing pushed on a miss.
 - **Semantics**: Pull the next element from the cursor at depth `a1`, apply the gate
   and the length precheck of `MATCH_FORM` with the widths in `a2`, and push the
-  inner cursor. The outer cursor advances in place before the push, so its
-  depth still holds; at the end of the outer walk or on a failed gate nothing
+  inner cursor. The outer entry is written before the push, so its depth
+  still holds; at the end of the outer walk or on a failed gate nothing
   moves. A cursor, mark or list is an entry on the operand stack the walk pushed; a RAW field names it by its depth under the top, 0 the top itself.
 - **Implementation**: `koskari/lib/opcode/MATCH_NEXT_FORM_VAR.c`,
   `koskari/lib/opcode/MATCH_NEXT_FORM_FAST.c`
@@ -2256,10 +2256,10 @@ lambda body for a syntax rule, `compile_match_function` and
 
 - **Style**: EXTRA (RAW)
 - **Stack**: `[...]` -> `[..., position]`; cannot miss.
-- **Semantics**: Push the position of the cursor at depth `a0`: the cell itself for
-  a pair spine, the index as an int for a sequence. The rows that follow name
-  the cursor one deeper while the mark lives; the path that ends the mark's
-  extent pops it.
+- **Semantics**: Push the cursor at depth `a0` as its position: the cell of a
+  pair spine or the sequence cursor, which no advance moves while the mark
+  holds it. The rows that follow name the cursor one deeper while the mark
+  lives; the path that ends the mark's extent pops it.
 - **Implementation**: `koskari/lib/opcode/MATCH_MARK_VAR.c`,
   `koskari/lib/opcode/MATCH_MARK_FAST.c`
 
@@ -2267,7 +2267,7 @@ lambda body for a syntax rule, `compile_match_function` and
 
 - **Style**: EXTRA (RAW, RAW)
 - **Stack**: No stack effect; cannot miss.
-- **Semantics**: Move the cursor at depth `a0` back to the position at depth `a1`.
+- **Semantics**: Store the position at depth `a1` as the cursor at depth `a0`.
   A failed branch of a repeat, an optional or a `(or ...)` returns to where it
   began.
 - **Implementation**: `koskari/lib/opcode/MATCH_RESET_VAR.c`,

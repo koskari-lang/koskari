@@ -136,13 +136,13 @@ native object holding the sequence and an index. `MATCH_FORM` decides
 which at descent from the PEP 634 gate, and every pull instruction
 reads either. No spine is pre-walked and no sequence is copied.
 
-The pull instructions are one shape: cursor read at its depth,
-advanced in place, element delivered, miss jumps with the cursor
-untouched. A sequence cursor advancing in place means a copy of
-the entry is not a saved position; a step that must read ahead
-without moving, the zero-width `NOT`, uses `MATCH_PEEK`, and a loop
-that must retry from a position, the `REPEAT` of step 2, saves the
-index rather than the cursor.
+The pull instructions are one shape: cursor read at its depth, the
+advanced cursor written back at that depth, element delivered, miss
+jumps with the cursor untouched. A sequence cursor is written back in
+place when its entry is its only holder and replaced by a new cursor
+when a mark or a cloned segment holds it, so a copy of the entry is a
+saved position for either kind. A step that must read ahead without
+moving, the zero-width `NOT`, uses `MATCH_PEEK`.
 
 ### 2.4 Elements and boxing
 
@@ -273,7 +273,7 @@ tail or fixed suffix exceeds 255 is refused at validation.
 | MATCH_NEXT_CORE_TYPE | L, cur, core | pull | anonymous `(:: int)` on a core type, the ordinal in a RAW field |
 | MATCH_NEXT_CORE_TYPE_BIND | L, cur, core, slot | pull | SYMBOL, CALLEDBY, PAIR, KEYWORD, `(x :: int)` in a spine |
 | MATCH_NEXT_SAME | L, cur, slot | pull | a repeated rule variable |
-| MATCH_MARK | cur | push | the cursor's position pushed: its cell, or its index |
+| MATCH_MARK | cur | push | the cursor pushed as its position |
 | MATCH_RESET | cur, mark | none | the cursor moved back to the position at `mark` |
 | MATCH_NEXT_FORM | L, cur, widths | pull | descend into the next element; the inner cursor pushed |
 | MATCH_NEXT_APPEND | L, cur, list | pull | box one element onto the list at `list` |
@@ -321,7 +321,10 @@ Handler notes:
   A `MATCH_END` on nil succeeds; on anything else it misses, the
   improper-spine miss.
 - **Sequence cursor.** The cursor object holds the sequence, its
-  length and the index. A pull past the length misses. `MATCH_REST`
+  length and the index, untracked and opaque to Python. A pull past
+  the length misses. An advance moves the cursor in place when its
+  entry is its only holder, else stores a new one at the entry; a
+  freelist of eight carries the replacements. `MATCH_REST`
   slices with `PySequence_GetSlice`, producing the tuple
   `wrap_slice_datums` produces today. A `collections.abc.Sequence`
   that is not a list or tuple is read through `PyObject_GetItem`, once
@@ -963,10 +966,11 @@ into a repeat iteration's captures.
 
 Review item 12 as of 2026-10-15: a predicate or extractor that
 captures its continuation and re-enters the match through it is a
-side-effecting predicate. The first resumption completes the match;
-a second pass sees the cursor, mark and captures as the first left
-them, since a frame's locals are locations shared across resumptions,
-and no further behaviour is defined.
+side-effecting predicate. Each resumption completes the match from
+the position the capture held, with the cursor and mark entries of
+its own segment, and sees the captures as the previous pass left
+them, since the slots are the frame's locals; no further behaviour is
+defined.
 
 1. **The standalone target and the remaining shapes.** `MATCH_SAME`,
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
@@ -1085,10 +1089,12 @@ FAST twins.
 
 Each resumption of a continuation captured in a predicate has its own
 entries, so a walk resumed twice walks on twice from the cursor it was
-captured with over a pair spine, since a pair cursor advances by
-replacement. The sequence cursor advances in place and a copied entry
-shares it; advancing it by producing a new cursor from a freelist,
-three words per element, is the remaining piece.
+captured with. A pair cursor advances by replacement, the next cell
+written at the entry. A sequence cursor advances in place when its
+entry holds the only reference and by a new cursor otherwise; a
+cloned segment and a mark each hold a reference, so neither sees an
+advance made after it took the cursor. The refcount is the sharing
+test: nothing is recorded, and the plain walk allocates nothing.
 
 ### 13.5 What it removes and costs
 
@@ -1103,10 +1109,7 @@ they replace. Measured 2026-10-15: the benchmark cells at parity or
 ahead, the churn match_case kernel within its run-to-run spread, and a
 dispatcher's clauses ahead once the subject is pushed once.
 
-### 13.6 Remaining
-
-The sequence cursor advancing by replacement, with the resumption test
-of item 12 extended to a second pass over a tuple.
+### 13.6 Set aside
 
 Pooling the temporaries as locals was weighed and set aside: textual
 non-overlap is not dynamic non-overlap once a continuation can leave a
