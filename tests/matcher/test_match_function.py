@@ -679,6 +679,39 @@ class TestDepthTrace(unittest.TestCase):
             ("POP", 4), ("JUMP", "match.miss_1")])
 
 
+    def test_form_inside_an_application_emits_only_targeted_trampolines(self):
+        # a trampoline is emitted only for a depth some miss edge jumps
+        # from: none pops two, since no test misses with the outer
+        # cursor and the pulled element alone above the subject
+        self.assertEqual(walk(MATCH(APP("f", FORM(MATCH(VALUE("a")))))), [
+            ("VAR", "match-subject"),
+            ("MATCH_FORM", ("match.miss_1", 257, 0, 0)),
+            ("MATCH_NEXT", ("match.pop_2", 0, 0, 0)),
+            ("DUP", 1),
+            ("CALL_VAR", ("f", 1, 0, 0)),
+            ("MATCH_FORM", ("match.pop_4", 257, 0, 0)),
+            ("MATCH_NEXT_BIND_VAR", ("match.pop_5", 0, "a", 0)),
+            ("MATCH_END", ("match.pop_5", 0, 1, 0)),
+            ("POP", 1),
+            ("POP", 1),
+            ("MATCH_END", ("match.pop_2", 0, 0, 0)),
+            ("MATCH_CAPTURES", (("a",), "a", 1, 0)),
+            ("RETURN", 1),
+            ("LABEL", "match.pop_2"),
+            ("POP", 1),
+            ("JUMP", "match.miss_1"),
+            ("LABEL", "match.pop_4"),
+            ("POP", 3),
+            ("JUMP", "match.miss_1"),
+            ("LABEL", "match.pop_5"),
+            ("POP", 4),
+            ("JUMP", "match.miss_1"),
+            ("LABEL", "match.miss_1"),
+            ("CONST", None),
+            ("RETURN", 1),
+        ])
+
+
     def test_last_branch_guard_misses_with_the_mark_live(self):
         # the last branch's reservation check misses from under the
         # outer cursor, the inner cursor and the ONEOF's mark

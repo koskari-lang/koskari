@@ -744,6 +744,9 @@ class MatchLowering:
         self.live_at = {}
         self.uses = []
         self.tramp_labels = set()
+        # the trampolines an emitted instruction names; one a miss_at
+        # registered that nothing jumps to is never emitted
+        self.tramp_used = set()
         self.in_tramp = False
         self.flow_open = True
         # the cursor and mark of a MATCH_MARK just emitted, for a group
@@ -778,6 +781,10 @@ class MatchLowering:
             self.target.instruction(op, tuple(args) + (0,) * (4 - len(args)))
         else:
             self.target.instruction(op, args[0])
+        if op != OpCode.LABEL:
+            for arg in args:
+                if isinstance(arg, str) and arg in self.tramp_labels:
+                    self.tramp_used.add(arg)
         if op not in (OpCode.MATCH_MARK, OpCode.MATCH_REMARK):
             self.fresh_mark = None
         self.note_flow(op, args)
@@ -1053,6 +1060,8 @@ class MatchLowering:
 
     def flush_trampolines(self):
         for (label, pops), tramp in self.trampolines.items():
+            if tramp not in self.tramp_used:
+                continue
             self.emit(OpCode.LABEL, tramp)
             self.emit(OpCode.POP, pops)
             self.emit(OpCode.JUMP, label)
