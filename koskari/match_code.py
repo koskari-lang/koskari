@@ -1029,11 +1029,11 @@ class MatchLowering:
         return out
 
 
-    def miss_at(self, miss, depth):
+    def miss_at(self, miss):
         """
-        The label a miss at depth jumps to: the miss label itself when
-        nothing is stacked above its base, else a trampoline that pops
-        the excess first
+        The label a miss from the current stack jumps to: the miss
+        label itself when nothing is stacked above its base, else a
+        trampoline that pops the excess first
         """
 
         label, base_live = miss[0], miss[2]
@@ -1182,14 +1182,14 @@ class MatchLowering:
         # the gate pushes the cursor above it, the captures start at
         # it, and a miss leaves it for the next clause
         self.emit(
-            OpCode.MATCH_FORM, self.miss_at((miss, 0, 0), 1),
+            OpCode.MATCH_FORM, self.miss_at((miss, 0, 0)),
             pack_widths(*self.width(self.entry)))
         self.note_push(cur)
         self.emit_pull(self.entry, cur, (miss, 0, 0), 0, 1, 0, at_end=True)
         # the root's cursor stays for the captures; the frame takes it
         self.note_use(OpCode.MATCH_END, cur=cur)
         self.emit(
-            OpCode.MATCH_END, self.miss_at((miss, 0, 0), 1), self.at(cur),
+            OpCode.MATCH_END, self.miss_at((miss, 0, 0)), self.at(cur),
             0)
         if index is not None:
             self.emit(OpCode.CONST, index)
@@ -1241,10 +1241,10 @@ class MatchLowering:
 
         node = self.nodes[idx]
         kind = node[0]
-        m = self.miss_at(miss, depth)
+        m = self.miss_at(miss)
 
         if kind == 'TEST':
-            self.emit_peek_test(node, miss, depth)
+            self.emit_peek_test(node, miss)
 
         elif kind == 'CAPTURE':
             slot = self.slot_local(node[1])
@@ -1279,7 +1279,7 @@ class MatchLowering:
             # pops it as well
             self.note_use(OpCode.MATCH_END, cur=cur)
             self.emit(
-                OpCode.MATCH_END, self.miss_at(miss, depth), self.at(cur),
+                OpCode.MATCH_END, self.miss_at(miss), self.at(cur),
                 1)
             self.note_pop(cur)
 
@@ -1339,8 +1339,8 @@ class MatchLowering:
             raise self.gap(kind)
 
 
-    def emit_peek_test(self, node, miss, depth):
-        m = self.miss_at(miss, depth)
+    def emit_peek_test(self, node, miss):
+        m = self.miss_at(miss)
         test = node[1]
         if test == 'ANY':
             return
@@ -1359,7 +1359,7 @@ class MatchLowering:
 
 
     def emit_peek_class(self, node, miss, depth, level):
-        m = self.miss_at(miss, depth)
+        m = self.miss_at(miss)
         cls = self.externs[node[1]]
         fields = [self.nodes[f] for f in node[2:]]
         npos = sum(1 for f in fields if f[0] == 'FIELD_POS')
@@ -1395,7 +1395,7 @@ class MatchLowering:
 
 
     def emit_peek_entry(self, entry, miss, depth, level):
-        m = self.miss_at(miss, depth)
+        m = self.miss_at(miss)
         if entry[0] == 'MAP_ENTRY_CONST':
             key = self.consts[entry[1]]
             push, bind = OpCode.MATCH_KEY_CONST, OpCode.MATCH_KEY_CONST_BIND_VAR
@@ -1467,7 +1467,7 @@ class MatchLowering:
 
         node = self.nodes[idx]
         kind = node[0]
-        m = self.miss_at(miss, depth)
+        m = self.miss_at(miss)
 
         if kind == 'CAPTURE':
             self.emit_pull_capture(idx, cur, miss, depth, level, trailing)
@@ -1496,7 +1496,7 @@ class MatchLowering:
                 self.note_use(OpCode.MATCH_NEXT, cur=cur)
                 self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
                 self.note_push(ELEM)
-                self.emit_peek_test(node, miss, depth + 1)
+                self.emit_peek_test(node, miss)
                 self.emit(OpCode.POP, 1)
                 self.note_pop(ELEM)
 
@@ -1529,7 +1529,7 @@ class MatchLowering:
             # edge pops it as well
             self.note_use(OpCode.MATCH_END, cur=inner)
             self.emit(
-                OpCode.MATCH_END, self.miss_at(miss, depth),
+                OpCode.MATCH_END, self.miss_at(miss),
                 self.at(inner), 1)
             self.note_pop(inner)
 
@@ -1546,7 +1546,7 @@ class MatchLowering:
                 idx, None, cur, miss, depth, level, trailing)
 
         elif kind == 'OPTIONAL':
-            self.emit_pull_optional(idx, cur, miss, depth, level, trailing)
+            self.emit_pull_optional(idx, cur, depth, level, trailing)
 
         elif kind == 'ONEOF':
             self.emit_pull_oneof(
@@ -1580,7 +1580,7 @@ class MatchLowering:
 
     def emit_pull_capture(self, idx, cur, miss, depth, level, trailing):
         node = self.nodes[idx]
-        m = self.miss_at(miss, depth)
+        m = self.miss_at(miss)
         slot = self.slot_local(node[1])
         sub = node[2]
 
@@ -1738,7 +1738,7 @@ class MatchLowering:
         if min_count > 0:
             self.note_use(OpCode.MATCH_COUNT, items=items)
             self.emit(
-                OpCode.MATCH_COUNT, self.miss_at(miss, depth), self.at(items),
+                OpCode.MATCH_COUNT, self.miss_at(miss), self.at(items),
                 min_count)
         if kept:
             # the items leave into the capturing slot, or are dropped
@@ -1749,7 +1749,7 @@ class MatchLowering:
             self.note_pop(items)
 
 
-    def emit_pull_optional(self, idx, cur, miss, depth, level, trailing):
+    def emit_pull_optional(self, idx, cur, depth, level, trailing):
         """
         An OPTIONAL: the inner node tried, the cursor restored and its
         captures cleared when it misses
@@ -1792,7 +1792,7 @@ class MatchLowering:
         node = self.nodes[idx]
         branches = node[1:]
         if all(self.width(b) == (1, 1) for b in branches) and trailing == 0:
-            m = self.miss_at(miss, depth)
+            m = self.miss_at(miss)
             self.note_use(OpCode.MATCH_NEXT, cur=cur)
             self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
             self.note_push(ELEM)
@@ -1814,7 +1814,7 @@ class MatchLowering:
             if at_end:
                 self.note_use(OpCode.MATCH_END, cur=cur)
                 self.emit(
-                    OpCode.MATCH_END, self.miss_at(edge, depth),
+                    OpCode.MATCH_END, self.miss_at(edge),
                     self.at(cur), 0)
             self.emit(OpCode.POP, 1)
             self.note_pop(start)
@@ -1824,7 +1824,7 @@ class MatchLowering:
             self.emit(OpCode.MATCH_RESET, self.at(cur), self.at(start))
             self.clear_slots(branch)
         if branches:
-            self.guard(branches[-1], cur, self.miss_at(miss, depth), trailing)
+            self.guard(branches[-1], cur, self.miss_at(miss), trailing)
             self.emit_pull(
                 branches[-1], cur, miss, depth, level + 1, trailing)
             self.emit(OpCode.POP, 1)

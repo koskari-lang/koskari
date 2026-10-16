@@ -60,9 +60,10 @@ extern PyTypeObject KosDatumFrameType;
 
 /**
    A cursor over a sequence subject: the sequence, its length and the
-   index of the next element, and a mark over one, the same object
-   with the kind byte set, holding the index a walk may return to. A
-   pair spine needs neither, the cell is the cursor and the mark.
+   index of the next element, and a mark over one, a separate object
+   of the same type with the kind byte set, holding the index a walk
+   may return to. A pair spine needs neither, the cell is the cursor
+   and the mark.
    Opaque to Python and untracked. A write to either, an advance or a
    re-mark, moves the object in place when its stack entry is the only
    holder and stores a new object at the entry otherwise, so a cloned
@@ -200,16 +201,16 @@ int KosMatch_Rest(
 int KosMatch_TypeTest(PyObject *elem, PyObject *type);
 
 /**
-   The literal test: elem read through Datum is lit by identity, a
-   gensym whose base is lit, or equal to lit. 1, 0, or -1.
- */
-/**
    The type test against a core type: elem read through Datum must be
    an instance of the type the ordinal names. 1 or 0; -1 with an
    exception set for an ordinal out of range.
  */
 int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
 
+/**
+   The literal test: elem read through Datum is lit by identity, a
+   gensym whose base is lit, or equal to lit. 1, 0, or -1.
+ */
 int KosMatch_LiteralTest(PyObject *elem, PyObject *lit);
 
 /**

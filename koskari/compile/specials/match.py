@@ -27,13 +27,13 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
 from ...lib import OpCode, keyword, symbol
+from ...match_code import lower_clause, validate_frozen
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
-from ...match_code import lower_clause, validate_frozen
 
 
 _keyword_else = keyword("else")
@@ -168,7 +168,7 @@ def special_match(compiler, caps):
                 declared.add(name)
                 fragment.declare_var(name)
 
-    def emit_tests(target, index, arm, hit, next_label):
+    def emit_tests(target, arm, hit, next_label):
         """
         One arm's tests against the subject on top of the stack, the
         guard after its captures bind; a pass jumps to hit with the
@@ -203,7 +203,7 @@ def special_match(compiler, caps):
             break
         hit = gen_label()
         next_label = gen_label()
-        emit_tests(fragment, None, arm, hit, next_label)
+        emit_tests(fragment, arm, hit, next_label)
         fragment.instruction(OpCode.LABEL, hit)
         fragment.instruction(OpCode.POP, 1)
         helper_begin(fragment, body)

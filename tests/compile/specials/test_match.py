@@ -752,7 +752,8 @@ class TestMatchTemporaries(SpecialsTestCase):
             for c in code.constants_pool
             if hasattr(c, "soften") or hasattr(c, "code"))
         names = [str(n).split("#")[0] for n in inner.namespace_spec.local_syms]
-        self.assertEqual([n for n in names if n.startswith("match-")], [])
+        self.assertEqual(
+            sorted(names), ["a", "b", "c", "d", "data", "more"])
 
 
 

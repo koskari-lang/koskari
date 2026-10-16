@@ -55,7 +55,8 @@ _Static_assert(KOS_SEGMENT_INLINE_SLOTS < BLOCK_NEW_SIZE,
 
 static size_t block_freecount = 0;
 
-/* Linked-list cache for heap segments; same pattern used for dyn nodes and context. */
+/* Linked-list cache for heap segments; same pattern used for dyn
+   nodes and context. */
 static KosSegment *block_freelist = NULL;
 
 

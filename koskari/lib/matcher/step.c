@@ -457,7 +457,8 @@ int KosMatch_Rest(
     return -1;
   PyObject *cell = cursor;
   for (Py_ssize_t i = 0; i < consume; i++) {
-    PyObject *boxed = step_box_cell(cell, matcher_peel_datum(KosPair_CAR(cell)));
+    PyObject *boxed = step_box_cell(
+        cell, matcher_peel_datum(KosPair_CAR(cell)));
     if (! boxed) {
       Py_DECREF(t);
       return -1;
@@ -864,7 +865,8 @@ int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next) {
 
   PyObject *cell = cursor;
   for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *boxed = step_box_cell(cell, matcher_peel_datum(KosPair_CAR(cell)));
+    PyObject *boxed = step_box_cell(
+        cell, matcher_peel_datum(KosPair_CAR(cell)));
     if (! boxed)
       return -1;
     int rc = PyList_Append(list, boxed);

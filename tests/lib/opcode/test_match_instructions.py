@@ -12,12 +12,14 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
+tests.lib.opcode.test_match_instructions
+
 Tests for the MATCH_* instructions: the pulls over pair and sequence
 cursors kept on the operand stack and named by their depth under the
 top, the peeks on the stacked element, the boxing rule, and the miss
-edges leaving the cursor and the stack as they were.
+edges leaving the cursor and the stack as they were
 
-:author: Christopher O'Brien <obriencj@preoccupied.net>
+:author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
@@ -34,6 +36,37 @@ pytestmark = pytest.mark.phase_lib
 
 
 UNBOUNDED = 0xFF
+
+
+# the MATCH_* family but the retired MATCH_CASE
+MATCH_FAMILY = (
+    OpCode.MATCH_FORM, OpCode.MATCH_NEXT_FORM, OpCode.MATCH_NEXT,
+    OpCode.MATCH_PEEK, OpCode.MATCH_NEXT_BIND_VAR, OpCode.MATCH_NEXT_BIND_FAST,
+    OpCode.MATCH_NEXT_TYPE_VAR, OpCode.MATCH_NEXT_TYPE_FAST,
+    OpCode.MATCH_NEXT_TYPE_BIND_VAR, OpCode.MATCH_NEXT_TYPE_BIND_FAST,
+    OpCode.MATCH_NEXT_CORE_TYPE, OpCode.MATCH_NEXT_CORE_TYPE_BIND_VAR,
+    OpCode.MATCH_NEXT_CORE_TYPE_BIND_FAST, OpCode.MATCH_NEXT_LITERAL,
+    OpCode.MATCH_REST, OpCode.MATCH_REST_BIND_VAR, OpCode.MATCH_REST_BIND_FAST,
+    OpCode.MATCH_END, OpCode.MATCH_AVAILABLE, OpCode.MATCH_LITERAL,
+    OpCode.MATCH_TYPE_VAR, OpCode.MATCH_TYPE_FAST, OpCode.MATCH_TYPE_BIND_VAR,
+    OpCode.MATCH_TYPE_BIND_FAST, OpCode.MATCH_CORE_TYPE,
+    OpCode.MATCH_CORE_TYPE_BIND_VAR, OpCode.MATCH_CORE_TYPE_BIND_FAST,
+    OpCode.MATCH_BIND_VAR, OpCode.MATCH_BIND_FAST, OpCode.MATCH_CLASS_VAR,
+    OpCode.MATCH_CLASS_FAST, OpCode.MATCH_FIELD_POS_VAR,
+    OpCode.MATCH_FIELD_POS_FAST, OpCode.MATCH_FIELD_POS_BIND_VAR,
+    OpCode.MATCH_FIELD_POS_BIND_FAST, OpCode.MATCH_FIELD_KW,
+    OpCode.MATCH_FIELD_KW_BIND_VAR, OpCode.MATCH_FIELD_KW_BIND_FAST,
+    OpCode.MATCH_MAP, OpCode.MATCH_KEY_CONST, OpCode.MATCH_KEY_VAR,
+    OpCode.MATCH_KEY_FAST, OpCode.MATCH_KEY_CONST_BIND_VAR,
+    OpCode.MATCH_KEY_CONST_BIND_FAST, OpCode.MATCH_KEY_VAR_BIND_VAR,
+    OpCode.MATCH_KEY_FAST_BIND_FAST, OpCode.MATCH_SAME_VAR,
+    OpCode.MATCH_SAME_FAST, OpCode.MATCH_NEXT_SAME_VAR,
+    OpCode.MATCH_NEXT_SAME_FAST, OpCode.MATCH_NEXT_APPEND,
+    OpCode.MATCH_COLLECT, OpCode.MATCH_MARK, OpCode.MATCH_REMARK,
+    OpCode.MATCH_RESET, OpCode.MATCH_ITEMS, OpCode.MATCH_COUNT,
+    OpCode.MATCH_CAPTURES, OpCode.MATCH_CAPTURES_NAMED, OpCode.MATCH_ITERATION,
+    OpCode.MATCH_ITERATION_NAMED,
+)
 
 
 def widths(mn, mx=UNBOUNDED):
@@ -77,9 +110,9 @@ class TestRows(CevalTest):
         self.assertIs(OpCode.MATCH_REST_BIND_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_CLASS_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_FIELD_POS_BIND_VAR.extra[2], OpStyle.RAW)
-        for op in OpCode:
-            if op.name.startswith("MATCH_") and op.name != "MATCH_CASE":
-                self.assertNotIn(OpStyle.COUNT, op.extra, op.name)
+        for op in MATCH_FAMILY:
+            self.assertNotIn(OpStyle.COUNT, op.extra, op.name)
+
 
     def test_cursor_fields_are_depths(self):
         # a cursor, mark or list is named by its depth under the top

@@ -12,6 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
+tests.syntax.test_syntax_dispatch
+
 The one function a Syntax dispatches through: every arm's matcher in
 one Function, the index and captures of the first arm that matches
 its result, whether the arm's matcher lowers inline from a frozen

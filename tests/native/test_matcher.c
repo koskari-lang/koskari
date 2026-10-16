@@ -172,8 +172,9 @@ static int test_spine_walk(void) {
                      "the box holds the element");
     Py_DECREF(boxed);
 
-    /* the handler stores next into the cursor slot and clears the
-       step; the step's reference to next moves to the slot */
+    /* the handler stores next into the cursor's stack entry and
+       clears the step; the step's reference to next moves to the
+       entry */
     PyObject *next = step.next;
     step.next = NULL;
     KosMatch_StepClear(&step);
@@ -331,7 +332,8 @@ static int test_list_shrinks_under_the_walk(void) {
 
   /* and then everything */
   TEST_ASSERT_EQ(PyList_SetSlice(subj, 0, 2, NULL), 0, "shrink to none");
-  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 0, "a pull past the live end misses");
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 0,
+                 "a pull past the live end misses");
   TEST_ASSERT(KosMatch_End(cursor), "still at the end");
 
   PyObject *out = PyList_New(0);
@@ -418,7 +420,8 @@ static int test_looping_spine_is_refused(void) {
   TEST_ASSERT(clear_expected(PyExc_ValueError), "ValueError");
 
   /* a bounded walk terminates on its own */
-  TEST_ASSERT_EQ(KosMatch_Available(a, 5), 1, "five are available around the loop");
+  TEST_ASSERT_EQ(KosMatch_Available(a, 5), 1,
+                 "five are available around the loop");
 
   KosPair_SETCDR(b, KosNil);
   Py_DECREF(out);
@@ -462,11 +465,13 @@ static int test_advance_under_a_mark(void) {
   KosMatchStep step;
 
   TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
-  /* a mark is the cursor held once more, as MATCH_MARK pushes it */
-  PyObject *mark = cursor;
-  Py_INCREF(mark);
+  /* the cursor held a second time, as a cloned segment holding its
+     stack entry would; MATCH_MARK pushes a separate mark object */
+  PyObject *held = cursor;
+  Py_INCREF(held);
 
-  /* under a mark the advance replaces: the mark keeps its position */
+  /* with a second holder the advance replaces: the held cursor keeps
+     its position */
   TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
   PyObject *advanced = KosMatch_StepAdvance(&step);
   KosMatch_StepClear(&step);
@@ -474,12 +479,13 @@ static int test_advance_under_a_mark(void) {
   TEST_ASSERT(advanced != cursor, "a held cursor advances by replacement");
   TEST_ASSERT(KosMatchCursor_Check(advanced), "a sequence cursor");
   TEST_ASSERT_EQ(((KosMatchCursor *) advanced)->index, 1, "past one");
-  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 0, "the mark untouched");
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 0,
+                 "the held cursor untouched");
   TEST_ASSERT_SAME(((KosMatchCursor *) advanced)->seq, subj, "same subject");
 
-  /* the mark released, the cursor is again the only holder: the next
-     advance moves it in place */
-  Py_DECREF(mark);
+  /* the second holder released, the cursor is again the only
+     holder: the next advance moves it in place */
+  Py_DECREF(held);
   TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull again");
   PyObject *moved = KosMatch_StepAdvance(&step);
   KosMatch_StepClear(&step);
@@ -762,7 +768,8 @@ static int test_iteration_values(void) {
 
   out = KosMatch_Iteration(names, values, spine, third);
   TEST_ASSERT_NOT_NULL(out, "two cells");
-  TEST_ASSERT(PyTuple_CheckExact(out) && PyTuple_GET_SIZE(out) == 2, "a tuple");
+  TEST_ASSERT(PyTuple_CheckExact(out) && PyTuple_GET_SIZE(out) == 2,
+              "a tuple");
   TEST_ASSERT(KosDatum_Check(PyTuple_GET_ITEM(out, 1)), "of boxes");
   Py_DECREF(out);
 
@@ -794,7 +801,8 @@ static int test_iteration_values(void) {
   ((KosMatchCursor *) cursor)->index = 3;
   out = KosMatch_Iteration(names, values, start, cursor);
   TEST_ASSERT_NOT_NULL(out, "three items");
-  TEST_ASSERT(PyTuple_CheckExact(out) && PyTuple_GET_SIZE(out) == 3, "a slice");
+  TEST_ASSERT(PyTuple_CheckExact(out) && PyTuple_GET_SIZE(out) == 3,
+              "a slice");
   Py_DECREF(out);
 
   Py_DECREF(cursor);
@@ -945,16 +953,19 @@ static int test_class_and_fields_through_the_box(void) {
                  "three positional over two match args");
   TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
 
-  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 1, &out), 1, "field by position");
+  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 1, &out), 1,
+                 "field by position");
   TEST_ASSERT_EQ(PyLong_AsLong(out), 2, "y");
   Py_DECREF(out);
-  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 2, &out), -1, "past the match args");
+  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 2, &out), -1,
+                 "past the match args");
   TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
 
   TEST_ASSERT_EQ(KosMatch_FieldKw(boxed, yname, &out), 1, "field by name");
   TEST_ASSERT_EQ(PyLong_AsLong(out), 2, "y");
   Py_DECREF(out);
-  TEST_ASSERT_EQ(KosMatch_FieldKw(boxed, zname, &out), 0, "a missing field misses");
+  TEST_ASSERT_EQ(KosMatch_FieldKw(boxed, zname, &out), 0,
+                 "a missing field misses");
 
   Py_DECREF(zname);
   Py_DECREF(yname);

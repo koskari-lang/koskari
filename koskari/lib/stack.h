@@ -642,23 +642,26 @@ void KosStackSteal_Free(KosStackSteal *s);
 
 
 /**
-   Pop count * 2 elements as key,val pairs; return a new dict. Stack layout: key_0, val_0, ..., key_{n-1}, val_{n-1}
-   with val_{n-1} at TOS. Caller owns the returned reference.
+   Pop count * 2 elements as key,val pairs; return a new dict. Stack
+   layout: key_0, val_0, ..., key_{n-1}, val_{n-1} with val_{n-1} at
+   TOS. Caller owns the returned reference.
  */
 PyObject *KosStack_PopTailDict(KosSegment **self, size_t pair_count);
 
 
 /**
-   TOS = names tuple, below it count values. Pops names and count values, returns a new dict mapping each name to
-   its value. Caller owns the returned reference.
+   TOS = names tuple, below it count values. Pops names and count
+   values, returns a new dict mapping each name to its value. Caller
+   owns the returned reference.
  */
 PyObject *KosStack_PopTailDictNames(KosSegment **self, size_t count);
 
 
 /**
-   Given a names tuple (not on stack), pop len(names) values and return a new dict mapping each name to its
-   value. Stack layout: val_0 deepest, val_{n-1} at TOS; names[i] maps
-   to val_i. Caller owns the returned reference.
+   Given a names tuple (not on stack), pop len(names) values and
+   return a new dict mapping each name to its value. Stack layout:
+   val_0 deepest, val_{n-1} at TOS; names[i] maps to val_i. Caller
+   owns the returned reference.
  */
 PyObject *KosStack_PopTailDictFromNames(
     KosSegment **self,

@@ -12,10 +12,12 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-The standalone matcher function beside the Matcher over it: the same
-frozen matcher called bare and through Matcher.match, over the same
-subjects, must yield the same captures in the same shapes, Datum and
-DatumFrame included, and the shapes are the ones the compiler reads.
+tests.matcher.test_match_function
+
+The standalone matcher function: the captures and misses a Matcher
+built over it returns for pair and sequence subjects, Datum and
+DatumFrame included, the depth trace and instructions of its
+lowering, and the temporaries it declares
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -485,18 +487,16 @@ class TestSameScopes(unittest.TestCase):
         self.assertIn("depth", str(caught.exception))
 
 
-def temporaries(pattern):
+def local_names(pattern):
     """
-    The locals a standalone lowering declares beyond the subject and
-    the captures: none, the cursors, marks and items living on the
-    operand stack
+    The locals a standalone lowering declares, each without its gensym
+    suffix
     """
 
     frozen = MatchCompiler().lower(pattern)
     fn = compile_match_function(frozen, ModuleNamespace("probe", {}))
-    names = [str(name).split("#")[0] for name in fn.code.namespace_spec.local_syms]
-    return [name for name in names
-            if name.startswith("match-") and name != "match-subject"]
+    return [str(name).split("#")[0]
+            for name in fn.code.namespace_spec.local_syms]
 
 
 class TestTemporaries(unittest.TestCase):
@@ -507,22 +507,27 @@ class TestTemporaries(unittest.TestCase):
     """
 
     def test_a_flat_pattern_declares_no_temporary(self):
-        self.assertEqual(temporaries(MATCH(LITERAL(1))), [])
+        self.assertEqual(local_names(MATCH(LITERAL(1))), ["match-subject"])
+
 
     def test_a_bare_repeat_declares_no_temporary(self):
         self.assertEqual(
-            temporaries(MATCH(FORM(MATCH(REPEAT(TYPE("int")))))), [])
+            local_names(MATCH(FORM(MATCH(REPEAT(TYPE("int")))))),
+            ["match-subject"])
+
 
     def test_a_repeat_over_a_group_declares_no_temporary(self):
-        got = temporaries(MATCH(FORM(MATCH(
+        got = local_names(MATCH(FORM(MATCH(
             repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
-        self.assertEqual(got, [])
+        self.assertEqual(got, ["match-subject", "rows", "g", "k", "v"])
+
 
     def test_bare_repeat_still_walks(self):
         m = MatchCompiler.compile(MATCH(FORM(MATCH(REPEAT(TYPE("int"))))))
         self.assertTrue(m.match(((1, 2, 3),)).matched)
         self.assertFalse(m.match(((1, "x"),)).matched)
         self.assertTrue(m.match((cons(1, 2, nil),)).matched)
+
 
     def test_boxed_subject_root_captures_keep_their_source(self):
         m = MatchCompiler.compile(MATCH(VALUE("x")))
@@ -598,6 +603,7 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
 
+
     def test_nested_form_cursor_sits_above_the_outer(self):
         self.assertEqual(
             rows(depth_trace(MATCH(FORM(MATCH(VALUE("a"), LITERAL(2)))))), [
@@ -608,6 +614,7 @@ class TestDepthTrace(unittest.TestCase):
                 ("MATCH_END", {"cur": 0}),
                 ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
             ])
+
 
     def test_form_inside_an_application_result(self):
         # the pulled element, the call's result and the inner cursor
@@ -620,6 +627,7 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_END", {"cur": 0}),
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
+
 
     def test_repeat_over_a_group(self):
         trace = depth_trace(MATCH(FORM(MATCH(
@@ -638,6 +646,7 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
 
+
     def test_optional_reads_its_cursor_under_the_mark(self):
         trace = depth_trace(MATCH(FORM(MATCH(
             OPTIONAL(CAPTURE("o", LITERAL(1))), VALUE("z")))))
@@ -653,9 +662,11 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
 
+
     def test_indexed_root_reads_captures_one_deeper(self):
         self.assertEqual(rows(depth_trace(MATCH(VALUE("x")), index=0))[-1],
                          ("MATCH_CAPTURES", {"cur": 1, "start": 2}))
+
 
     def test_form_inside_an_application_misses_popping_four(self):
         # the outer cursor, the pulled element, the call's result and
@@ -667,6 +678,7 @@ class TestDepthTrace(unittest.TestCase):
         self.assertEqual(after_label(instructions, binds[0][0]), [
             ("POP", 4), ("JUMP", "match.miss_1")])
 
+
     def test_last_branch_guard_misses_with_the_mark_live(self):
         # the last branch's reservation check misses from under the
         # outer cursor, the inner cursor and the ONEOF's mark
@@ -677,6 +689,7 @@ class TestDepthTrace(unittest.TestCase):
         self.assertEqual(len(guards), 2)
         self.assertEqual(after_label(instructions, guards[1][0]), [
             ("POP", 3), ("JUMP", "match.miss_1")])
+
 
     def test_trailing_oneof_branch_ends_its_form(self):
         # a ONEOF last in a form: every branch but the last tests the
