@@ -85,6 +85,104 @@ def rows():
 ROWS = rows()
 
 
+# the item family as the opcode table spells it, one name per row of
+# the grid; a row added to or taken from the family changes this list
+ITEM_OPCODES = (
+    "FAST_ITEM",
+    "FAST_ITEM_CLEAR",
+    "FAST_ITEM_CONST",
+    "FAST_ITEM_CONST_CLEAR",
+    "FAST_ITEM_CONST_INPLACE",
+    "FAST_ITEM_CONST_INPLACE_CONST",
+    "FAST_ITEM_CONST_REF",
+    "FAST_ITEM_CONST_STORE",
+    "FAST_ITEM_CONST_STORE_CONST",
+    "FAST_ITEM_CONST_STORE_FAST",
+    "FAST_ITEM_CONST_TAKE",
+    "FAST_ITEM_FAST",
+    "FAST_ITEM_FAST_CLEAR",
+    "FAST_ITEM_FAST_INPLACE",
+    "FAST_ITEM_FAST_INPLACE_CONST",
+    "FAST_ITEM_FAST_REF",
+    "FAST_ITEM_FAST_STORE",
+    "FAST_ITEM_FAST_STORE_CONST",
+    "FAST_ITEM_FAST_STORE_FAST",
+    "FAST_ITEM_FAST_TAKE",
+    "FAST_ITEM_INPLACE",
+    "FAST_ITEM_INPLACE_CONST",
+    "FAST_ITEM_REF",
+    "FAST_ITEM_STORE",
+    "FAST_ITEM_STORE_CONST",
+    "FAST_ITEM_STORE_FAST",
+    "FAST_ITEM_TAKE",
+    "ITEM",
+    "ITEM_CLEAR",
+    "ITEM_CONST",
+    "ITEM_CONST_CLEAR",
+    "ITEM_CONST_INPLACE",
+    "ITEM_CONST_INPLACE_CONST",
+    "ITEM_CONST_REF",
+    "ITEM_CONST_STORE",
+    "ITEM_CONST_STORE_CONST",
+    "ITEM_CONST_STORE_FAST",
+    "ITEM_CONST_STORE_VAR",
+    "ITEM_CONST_TAKE",
+    "ITEM_FAST",
+    "ITEM_FAST_CLEAR",
+    "ITEM_FAST_INPLACE",
+    "ITEM_FAST_INPLACE_CONST",
+    "ITEM_FAST_REF",
+    "ITEM_FAST_STORE",
+    "ITEM_FAST_STORE_CONST",
+    "ITEM_FAST_STORE_FAST",
+    "ITEM_FAST_TAKE",
+    "ITEM_INPLACE",
+    "ITEM_INPLACE_CONST",
+    "ITEM_REF",
+    "ITEM_STORE",
+    "ITEM_STORE_CONST",
+    "ITEM_STORE_FAST",
+    "ITEM_STORE_VAR",
+    "ITEM_TAKE",
+    "ITEM_VAR",
+    "ITEM_VAR_CLEAR",
+    "ITEM_VAR_INPLACE",
+    "ITEM_VAR_INPLACE_CONST",
+    "ITEM_VAR_REF",
+    "ITEM_VAR_STORE",
+    "ITEM_VAR_STORE_CONST",
+    "ITEM_VAR_STORE_VAR",
+    "ITEM_VAR_TAKE",
+    "VAR_ITEM",
+    "VAR_ITEM_CLEAR",
+    "VAR_ITEM_CONST",
+    "VAR_ITEM_CONST_CLEAR",
+    "VAR_ITEM_CONST_INPLACE",
+    "VAR_ITEM_CONST_INPLACE_CONST",
+    "VAR_ITEM_CONST_REF",
+    "VAR_ITEM_CONST_STORE",
+    "VAR_ITEM_CONST_STORE_CONST",
+    "VAR_ITEM_CONST_STORE_VAR",
+    "VAR_ITEM_CONST_TAKE",
+    "VAR_ITEM_INPLACE",
+    "VAR_ITEM_INPLACE_CONST",
+    "VAR_ITEM_REF",
+    "VAR_ITEM_STORE",
+    "VAR_ITEM_STORE_CONST",
+    "VAR_ITEM_STORE_VAR",
+    "VAR_ITEM_TAKE",
+    "VAR_ITEM_VAR",
+    "VAR_ITEM_VAR_CLEAR",
+    "VAR_ITEM_VAR_INPLACE",
+    "VAR_ITEM_VAR_INPLACE_CONST",
+    "VAR_ITEM_VAR_REF",
+    "VAR_ITEM_VAR_STORE",
+    "VAR_ITEM_VAR_STORE_CONST",
+    "VAR_ITEM_VAR_STORE_VAR",
+    "VAR_ITEM_VAR_TAKE",
+)
+
+
 def row_arg(op, obj, key, val, operand, key_const, val_const, count):
     """
     The arg of a row: its named fields in name order, an in-place
@@ -173,9 +271,10 @@ class TestItemMatrix(CevalTest):
 
     def test_the_grid_is_the_opcode_table(self):
         names = {name for name, *_ in ROWS}
-        table = {op.name for op in OpCode if "ITEM" in op.name}
-        self.assertEqual(names, table)
-        self.assertEqual(len(names), 92)
+        self.assertEqual(names, set(ITEM_OPCODES))
+        self.assertEqual(len(ITEM_OPCODES), 92)
+        for name in ITEM_OPCODES:
+            self.assertTrue(hasattr(OpCode, name), name)
 
 
     def test_slots_by_tier(self):
