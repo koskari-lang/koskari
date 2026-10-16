@@ -215,6 +215,7 @@ or demote tail calls when yields are present. Those happen later; see section 1.
 | Epilogue | If the stream does not end with **`KOS_OP_RETURN`**: if the last op is **`KOS_OP_CONST`** **`None`**, replace it with **`KOS_OP_RETURN`** **0**; otherwise append **`KOS_OP_RETURN`** **1**. |
 | Control feeder (fusion pass) | In the later `fuse_feeders` pass, **`KOS_OP_RETURN`** **1** or **`KOS_OP_YIELD`** **1** fed by a bare **`KOS_OP_CONST`** becomes **`KOS_OP_RETURN_CONST`** / **`KOS_OP_YIELD_CONST`**, and fed by a bare **`KOS_OP_VAR`** becomes **`KOS_OP_RETURN_VAR`** / **`KOS_OP_YIELD_VAR`**, which lower to the FAST twins; the epilogue's appended **`KOS_OP_RETURN`** **1** fuses the same way. |
 | Truth-test feeder (fusion pass) | In the later `fuse_feeders` pass, **`KOS_OP_JUMP_FALSE`** or **`KOS_OP_JUMP_TRUE`** fed by a bare **`KOS_OP_VAR`** becomes **`KOS_OP_JUMP_FALSE_VAR`** / **`KOS_OP_JUMP_TRUE_VAR`**, which lower to the FAST twins; a **`KOS_OP_CONST`** feeder was folded by the constant rules above. |
+| Short-circuit feeder (fusion pass) | In the later `fuse_feeders` pass, **`KOS_OP_JUMP_AND`** or **`KOS_OP_JUMP_OR`** fed by a bare **`KOS_OP_VAR`** becomes **`KOS_OP_JUMP_AND_VAR`** / **`KOS_OP_JUMP_OR_VAR`**, which read the value from the row and push it only on the jumping path; they lower to the FAST twins. |
 | Item feeders (fusion pass) | In the later `fuse_feeders` pass an item row folds the run of bare **`KOS_OP_VAR`** / **`KOS_OP_CONST`** loads directly ahead of it, which in stack order is the value, then the key, then the object, into the row that names them (section 15): **`KOS_OP_ITEM`** fed by `VAR obj, VAR key` becomes **`KOS_OP_VAR_ITEM_VAR`**, **`KOS_OP_ITEM_STORE`** fed by `VAR obj, CONST key, CONST value` becomes **`KOS_OP_VAR_ITEM_CONST_STORE_CONST`**, and so on for CLEAR, TAKE, REF, and INPLACE, whose value feeders are re-emitted ahead of the fused row and whose single CONST operand folds into the `_CONST` twin. A CONST in the object position never folds. The rows a special shapes with the value on the stack fold a value feeder alone. The named rows lower to their FAST twins through a written-out map. |
 
 **`_CHECK_SQUASHES`** (prior opcode -> **LABEL** opcode replacing the **`JUMP_FALSE`** pair; the fused opcode inherits the jump's label):
@@ -266,7 +267,7 @@ The opcodes by family, each linking to its section.
 - [5.1 Pair construction and access](#51-pair-construction-and-access) -- CAR, CDR, CONS, PROPER, PAIR_SPLICE, BRACKET_SPLICE
 - [6. Mode control](#6-mode-control) -- AWAIT, BREAK, CONTINUE, RAISE, RETURN, YIELD, RETURN_CONST, YIELD_CONST, YIELD_FROM
 - [7. Iteration](#7-iteration) -- ITER_NEXT, ITER_NEXT_STORE_VAR, ITER_NEXT_STORE_FAST, OBJECT_NEXT, VAR_NEXT, FAST_NEXT
-- [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR
+- [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
@@ -336,6 +337,10 @@ The opcodes by family, each linking to its section.
 | CHECK_NIL | LABEL | Pop TOS; jump when it is not an empty-list singleton | [section 8](opcodes/kos-op-check-nil.md) |
 | JUMP_AND | LABEL | Short-circuit AND | [section 8](opcodes/kos-op-jump-and.md) |
 | JUMP_OR | LABEL | Short-circuit OR | [section 8](opcodes/kos-op-jump-or.md) |
+| JUMP_AND_VAR | EXTRA | Short-circuit AND over the named value | [section 8](opcodes/kos-op-jump-and-var.md) |
+| JUMP_OR_VAR | EXTRA | Short-circuit OR over the named value | [section 8](opcodes/kos-op-jump-or-var.md) |
+| JUMP_AND_FAST | EXTRA | Short-circuit AND over the fast slot | [section 8](opcodes/kos-op-jump-and-fast.md) |
+| JUMP_OR_FAST | EXTRA | Short-circuit OR over the fast slot | [section 8](opcodes/kos-op-jump-or-fast.md) |
 | CHECK_COMPARE | EXTRA | Chain-compare N operands under a KosCompare selector; jump if chain fails | [section 9](opcodes/kos-op-check-compare.md) |
 | CHECK_COMPARE_VAR | EXTRA | Arity-2 fused check; operands from VAR/CONST per CMPSRC bits | [section 9](opcodes/kos-op-check-compare-var.md) |
 | CHECK_COMPARE_FAST | EXTRA | Arity-2 fused check; operands from FAST/CONST per CMPSRC bits | [section 9](opcodes/kos-op-check-compare-fast.md) |
@@ -1472,6 +1477,70 @@ done:
 | 3     | JUMP_OR  | 4   | 4 (-> 4) | if b -> pc=4 |
 | 4     | LABEL    | --   | --        | ok |
 | 5     | RETURN   | 1   | 1        | |
+
+### KOS_OP_JUMP_AND_VAR
+
+- **Style**: EXTRA (VAR, LABEL, NOARG, NOARG). Row = name, target pc.
+- **Stack**: `[...] -> [..., x]` on the jump, `[...] -> [...]` on the
+  fall-through. Read the value the name resolves to in the current
+  frame's namespace; if false, push it and jump to the target; if true,
+  advance with nothing pushed. Raises `NameError` when the name is
+  unbound.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders`
+  absorbing a bare `VAR` load into the `JUMP_AND` it feeds. Lowers to
+  [JUMP_AND_FAST](#kos_op_jump_and_fast) when the name has a fast slot.
+
+---
+
+### KOS_OP_JUMP_OR_VAR
+
+- **Style**: EXTRA (VAR, LABEL, NOARG, NOARG). Row = name, target pc.
+- **Stack**: `[...] -> [..., x]` on the jump, `[...] -> [...]` on the
+  fall-through. Read the value the name resolves to in the current
+  frame's namespace; if true, push it and jump to the target; if false,
+  advance with nothing pushed. Raises `NameError` when the name is
+  unbound.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders`
+  absorbing a bare `VAR` load into the `JUMP_OR` it feeds. Lowers to
+  [JUMP_OR_FAST](#kos_op_jump_or_fast) when the name has a fast slot.
+
+---
+
+### KOS_OP_JUMP_AND_FAST
+
+- **Style**: EXTRA (FASTVAR, LABEL, NOARG, NOARG). Row = fast slot,
+  target pc.
+- **Stack**: `[...] -> [..., x]` on the jump, `[...] -> [...]` on the
+  fall-through. Read the fast slot; if false, push the value and jump
+  to the target; if true, advance with nothing pushed and no reference
+  taken. Raises `NameError` when the slot is empty.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of
+  [JUMP_AND_VAR](#kos_op_jump_and_var) when the name has a fast slot.
+
+---
+
+### KOS_OP_JUMP_OR_FAST
+
+- **Style**: EXTRA (FASTVAR, LABEL, NOARG, NOARG). Row = fast slot,
+  target pc.
+- **Stack**: `[...] -> [..., x]` on the jump, `[...] -> [...]` on the
+  fall-through. Read the fast slot; if true, push the value and jump to
+  the target; if false, advance with nothing pushed and no reference
+  taken. Raises `NameError` when the slot is empty.
+- **Invariants**: Jump locality for target.
+- **Compiler form:** Post-compile only: the `convert_fast` lowering of
+  [JUMP_OR_VAR](#kos_op_jump_or_var) when the name has a fast slot.
+
+**Example:** `(or x default)` in value position, both in fast slots.
+
+| index | opcode       | arg | arg view                   | comment |
+|------:|--------------|-----|----------------------------|---------|
+| 0     | JUMP_OR_FAST | 0   | (fast 0 ("x"), -> 2, 0, 0) | x true: push x, pc=2 |
+| 1     | FAST         | 1   | 1 (local "default")        | stack: [..., default] |
+| 2     | RETURN       | 1   | 1                          | |
 
 ## 9. Check jumps
 

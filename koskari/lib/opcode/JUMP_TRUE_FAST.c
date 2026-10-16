@@ -30,9 +30,9 @@ KOS_OP_HANDLER(JUMP_TRUE_FAST) {
      refcount traffic and nothing run that could rebind the slot. Any
      other value takes the owned path, which raises for an empty slot. */
   PyObject *val = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 0));
-  if (val == Py_True || val == Py_None)
+  if (val == Py_True)
     RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
-  if (val == Py_False)
+  if (val == Py_False || val == Py_None)
     RESULT_NEXT(es);
 
   val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));

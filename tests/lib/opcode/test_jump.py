@@ -237,6 +237,20 @@ class TestJumpFeederTwins(CevalTest):
         self.assertEqual(await make_callable(code, ns)(), "continued")
 
 
+    async def test_jump_true_fast_continues_on_none(self):
+        code, ns = self.branch(
+            ["JUMP_TRUE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": None})
+        self.assertEqual(await make_callable(code, ns)(), "continued")
+
+
+    async def test_jump_false_fast_jumps_on_none(self):
+        code, ns = self.branch(
+            ["JUMP_FALSE_FAST", (0, "target", None, None)],
+            local_syms=("a",), values={"a": None})
+        self.assertEqual(await make_callable(code, ns)(), "jumped")
+
+
     async def test_jump_fast_general_truth(self):
         class Truthy:
             def __bool__(self):
@@ -263,6 +277,122 @@ class TestJumpFeederTwins(CevalTest):
     async def test_jump_fast_empty_slot_raises(self):
         code, ns = self.branch(
             ["JUMP_TRUE_FAST", (0, "target", None, None)],
+            local_syms=("a",))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+class TestShortCircuitFeederTwins(CevalTest):
+    """
+    JUMP_AND_VAR, JUMP_OR_VAR and their FAST twins read the tested value
+    from the row's name or slot, push it only on the jumping path, and
+    push nothing when they fall through
+    """
+
+    def shortcircuit(self, row, **kwargs):
+        # the jumping path returns the pushed value; the fall-through
+        # path has an empty stack and returns the constant it then loads
+        return build_expr([
+            row,
+            ["CONST", "fell through"],
+            ["LABEL", "done"],
+            ["RETURN", 1],
+        ], **kwargs)
+
+
+    async def test_jump_and_var_pushes_falsy_and_jumps(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_AND_VAR", ("a", "done", None, None)], values={"a": 0})
+        self.assertEqual(await make_callable(code, ns)(), 0)
+
+
+    async def test_jump_and_var_falls_through_on_truthy(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_AND_VAR", ("a", "done", None, None)], values={"a": 3})
+        self.assertEqual(await make_callable(code, ns)(), "fell through")
+
+
+    async def test_jump_or_var_pushes_truthy_and_jumps(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_VAR", ("a", "done", None, None)], values={"a": "x"})
+        self.assertEqual(await make_callable(code, ns)(), "x")
+
+
+    async def test_jump_or_var_falls_through_on_falsy(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_VAR", ("a", "done", None, None)], values={"a": ()})
+        self.assertEqual(await make_callable(code, ns)(), "fell through")
+
+
+    async def test_shortcircuit_var_unbound_name_raises(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_VAR", ("nope", "done", None, None)])
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
+    async def test_jump_and_fast_pushes_falsy_and_jumps(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_AND_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": None})
+        self.assertIsNone(await make_callable(code, ns)())
+
+
+    async def test_jump_and_fast_falls_through_on_truthy(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_AND_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": True})
+        self.assertEqual(await make_callable(code, ns)(), "fell through")
+
+
+    async def test_jump_or_fast_pushes_truthy_and_jumps(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": 42})
+        self.assertEqual(await make_callable(code, ns)(), 42)
+
+
+    async def test_jump_or_fast_falls_through_on_falsy(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": False})
+        self.assertEqual(await make_callable(code, ns)(), "fell through")
+
+
+    async def test_jump_or_fast_falls_through_on_none(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": None})
+        self.assertEqual(await make_callable(code, ns)(), "fell through")
+
+
+    async def test_jump_or_fast_general_truth_pushes_the_object(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        marker = Truthy()
+        code, ns = self.shortcircuit(
+            ["JUMP_OR_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": marker})
+        self.assertIs(await make_callable(code, ns)(), marker)
+
+
+    async def test_shortcircuit_fast_truth_error_propagates(self):
+        class Broken:
+            def __bool__(self):
+                raise ValueError("no truth")
+
+        code, ns = self.shortcircuit(
+            ["JUMP_AND_FAST", (0, "done", None, None)],
+            local_syms=("a",), values={"a": Broken()})
+        with self.assertRaises(ValueError):
+            await make_callable(code, ns)()
+
+
+    async def test_shortcircuit_fast_empty_slot_raises(self):
+        code, ns = self.shortcircuit(
+            ["JUMP_AND_FAST", (0, "done", None, None)],
             local_syms=("a",))
         with self.assertRaises(NameError):
             await make_callable(code, ns)()

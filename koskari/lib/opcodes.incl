@@ -470,6 +470,14 @@ OP(JUMP_TRUE_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
 OP(JUMP_FALSE_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
 OP(JUMP_TRUE_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
 
+// the short-circuit jumps with their feeder: the tested value read
+// from the row's name or fast slot and pushed only on the jumping
+// path; the VAR + JUMP_AND / JUMP_OR fusions, lowered to the FAST twins
+OP(JUMP_AND_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
+OP(JUMP_OR_VAR, 0, EXTRA, VAR, LABEL, NOARG, NOARG)
+OP(JUMP_AND_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
+OP(JUMP_OR_FAST, 0, EXTRA, FASTVAR, LABEL, NOARG, NOARG)
+
 // THEEND must always be last
 OP(THEEND, 0, NOARG)
 

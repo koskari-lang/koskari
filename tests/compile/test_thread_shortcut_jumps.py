@@ -567,6 +567,13 @@ class TestCompiled(unittest.TestCase):
         self.assertNotIn(OpCode.JUMP_AND, ops)
         self.assertNotIn(OpCode.JUMP_OR, ops)
 
+    def test_value_position_or_takes_the_feeder_jump(self):
+        rows = compile_function_rows("(lambda [a b] (list (or a b)))")
+        ops = [op for op, _ in rows]
+        self.assertEqual(ops.count(OpCode.JUMP_OR_FAST), 1)
+        self.assertNotIn(OpCode.JUMP_OR, ops)
+        self.assertEqual(ops.count(OpCode.FAST), 1)
+
     def test_or_test_fuses_both_compares(self):
         rows = compile_function_rows(
             "(lambda [a b c d] (cond [(or (< a b) (< c d)) 1] [else: 2]))")

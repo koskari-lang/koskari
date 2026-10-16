@@ -321,6 +321,10 @@
 #include "opcode/JUMP_TRUE_VAR.c"
 #include "opcode/JUMP_FALSE_FAST.c"
 #include "opcode/JUMP_TRUE_FAST.c"
+#include "opcode/JUMP_AND_VAR.c"
+#include "opcode/JUMP_OR_VAR.c"
+#include "opcode/JUMP_AND_FAST.c"
+#include "opcode/JUMP_OR_FAST.c"
 #include "opcode/THEEND.c"
 
 /* The end. */

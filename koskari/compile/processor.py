@@ -136,6 +136,15 @@ SWITCH_SQUASHES = {
 }
 
 
+# the jumps that take a bare VAR feeder, and the row each becomes
+JUMP_FEEDER_TWINS = {
+    OpCode.JUMP_FALSE: OpCode.JUMP_FALSE_VAR,
+    OpCode.JUMP_TRUE: OpCode.JUMP_TRUE_VAR,
+    OpCode.JUMP_AND: OpCode.JUMP_AND_VAR,
+    OpCode.JUMP_OR: OpCode.JUMP_OR_VAR,
+}
+
+
 # pattern atoms for rule declarations: sets match any member, a bare
 # opcode matches itself
 JUMP_PRIORS = frozenset((OpCode.JUMP_TRUE, OpCode.JUMP_FALSE))
@@ -339,6 +348,8 @@ def build_var_to_fast():
     var_to_fast[OpCode.ITER_NEXT_STORE_VAR] = OpCode.ITER_NEXT_STORE_FAST
     var_to_fast[OpCode.JUMP_FALSE_VAR] = OpCode.JUMP_FALSE_FAST
     var_to_fast[OpCode.JUMP_TRUE_VAR] = OpCode.JUMP_TRUE_FAST
+    var_to_fast[OpCode.JUMP_AND_VAR] = OpCode.JUMP_AND_FAST
+    var_to_fast[OpCode.JUMP_OR_VAR] = OpCode.JUMP_OR_FAST
 
     return var_to_fast
 
@@ -911,17 +922,18 @@ class ByteCodeProcessor:
 
     @fuse_rule(VAR_FEEDER, OpCode.JUMP_FALSE)
     @fuse_rule(VAR_FEEDER, OpCode.JUMP_TRUE)
+    @fuse_rule(VAR_FEEDER, OpCode.JUMP_AND)
+    @fuse_rule(VAR_FEEDER, OpCode.JUMP_OR)
     def fuse_jump_feeder(self, op, arg, matched):
         """
-        VAR name JUMP_FALSE / JUMP_TRUE -> the _VAR twin reading the
-        tested value from the row instead of the stack; the fast pass
-        lowers it to the FAST twin. A CONST feeder never reaches here:
-        the squish folded it to a JUMP or to nothing
+        VAR name ahead of JUMP_FALSE, JUMP_TRUE, JUMP_AND or JUMP_OR ->
+        the jump's _VAR twin reading the tested value from the row
+        instead of the stack; the fast pass lowers it to the FAST twin.
+        A CONST feeder of a truth test never reaches here: the squish
+        folded it to a JUMP or to nothing
         """
 
-        fused = (OpCode.JUMP_FALSE_VAR if op == OpCode.JUMP_FALSE
-                 else OpCode.JUMP_TRUE_VAR)
-        return [(fused, (matched[0][1], arg, None, None))]
+        return [(JUMP_FEEDER_TWINS[op], (matched[0][1], arg, None, None))]
 
 
     @fuse_rule(FEEDER, OpCode.RETURN)

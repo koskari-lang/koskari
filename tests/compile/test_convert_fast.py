@@ -105,6 +105,19 @@ class TestConvertFastVarToFast(unittest.IsolatedAsyncioTestCase):
         ])
 
 
+    async def test_shortcircuit_var_twins_lower_to_fast(self):
+        nspec = NamespaceSpec(None, ("x",), ())
+        instr = [
+            (OpCode.JUMP_AND_VAR, ("x", "L1", None, None)),
+            (OpCode.JUMP_OR_VAR, ("x", "L2", None, None)),
+        ]
+        result = convert_fast(nspec, instr)
+        self.assertEqual(result, [
+            (OpCode.JUMP_AND_FAST, (0, "L1", None, None)),
+            (OpCode.JUMP_OR_FAST, (0, "L2", None, None)),
+        ])
+
+
     async def test_jump_var_twins_without_slot_stay(self):
         nspec = NamespaceSpec(None, ("x",), ())
         instr = [

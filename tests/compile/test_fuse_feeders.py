@@ -234,6 +234,22 @@ class TestFuseJumpFeeders(unittest.TestCase):
             pos,
         ])
 
+    def test_var_jump_and_fuses(self):
+        out = fuse_ops([(V, "a"), (OpCode.JUMP_AND, "L1")])
+        self.assertEqual(out, [
+            (OpCode.JUMP_AND_VAR, ("a", "L1", None, None)),
+        ])
+
+    def test_var_jump_or_fuses(self):
+        out = fuse_ops([(V, "a"), (OpCode.JUMP_OR, "L1")])
+        self.assertEqual(out, [
+            (OpCode.JUMP_OR_VAR, ("a", "L1", None, None)),
+        ])
+
+    def test_const_shortcircuit_feeder_stays(self):
+        instr = [(C, 1), (OpCode.JUMP_OR, "L1")]
+        self.assertEqual(fuse_ops(instr), instr)
+
 
 class TestFuseCheckFeeders(unittest.TestCase):
 
