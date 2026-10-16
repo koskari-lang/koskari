@@ -737,6 +737,28 @@ class TestMarkAndCaptures(CevalTest):
         self.assertEqual(await run(prog, (), subject=cons(7, nil)), "reset")
 
 
+    async def test_a_foreign_mark_is_an_error(self):
+        # over a sequence cursor the mark must be a mark over a
+        # sequence: a list at the mark's depth raises, for the re-mark
+        # and for the reset
+        for op in ("MATCH_REMARK_FAST", "MATCH_RESET_FAST"):
+            prog = [
+                ["MATCH_FORM_FAST", ("miss", widths(0), 0, 0)],
+                ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+                ["POP", 1],
+                ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+                ["POP", 1],
+                ["BUILD_LIST", 0],
+                [op, (1, 0, 0, 0)],
+                ["POP", 3],
+                ["CONST", "moved"],
+                ["RETURN", 1],
+            ]
+            with self.assertRaises(RuntimeError) as caught:
+                await run(prog, (), subject=(1, 2, 3))
+            self.assertIn("same cursor kind, not list", str(caught.exception))
+
+
     async def test_append_to_a_held_list_copies_it(self):
         # the items list duplicated on the stack stands for a cloned
         # segment holding it: the append and the collect write a copy

@@ -798,8 +798,24 @@ PyObject *KosMatch_Mark(PyObject *cursor) {
 }
 
 
+/**
+   A mark beside a sequence cursor that is not a sequence mark,
+   refused for the instruction role. NULL with RuntimeError set.
+*/
+static PyObject *match_mark_refused(const char *role, PyObject *mark) {
+  PyErr_Format(PyExc_RuntimeError,
+               "%s requires a mark over the same cursor kind, not %.200s",
+               role, Py_TYPE(mark)->tp_name);
+  return NULL;
+}
+
+
 PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark) {
   if (KosMatchCursor_Check(cursor)) {
+    if (! KosMatchCursor_Check(mark)
+        || KosMatchCursor_KIND(mark) != KOS_MATCH_MARK)
+      return match_mark_refused("match re-mark", mark);
+
     Py_ssize_t index = ((KosMatchCursor *) cursor)->index;
     return match_cursor_moved((KosMatchCursor *) mark, index, 1);
   }
@@ -810,6 +826,10 @@ PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark) {
 
 PyObject *KosMatch_Reset(PyObject *cursor, PyObject *mark) {
   if (KosMatchCursor_Check(cursor)) {
+    if (! KosMatchCursor_Check(mark)
+        || KosMatchCursor_KIND(mark) != KOS_MATCH_MARK)
+      return match_mark_refused("match reset", mark);
+
     Py_ssize_t index = ((KosMatchCursor *) mark)->index;
     return match_cursor_moved((KosMatchCursor *) cursor, index, 1);
   }

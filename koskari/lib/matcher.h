@@ -266,16 +266,20 @@ PyObject *KosMatch_Mark(PyObject *cursor);
 /**
    The mark to store for MATCH_REMARK, at the cursor's position: the
    cell of a pair spine, or mark moved in place when its entry is its
-   only holder, else a new mark. New reference; NULL with an exception
-   set.
+   only holder, else a new mark. Beside a sequence cursor the mark
+   must be exactly a sequence mark; a pair spine takes any mark. New
+   reference; NULL with an exception set, RuntimeError for a sequence
+   cursor beside another mark.
  */
 PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark);
 
 /**
    The cursor to store for MATCH_RESET, back at the mark's position:
    the cell the mark is over a pair spine, or cursor moved in place
-   when its entry is its only holder, else a new cursor. New
-   reference; NULL with an exception set.
+   when its entry is its only holder, else a new cursor. Beside a
+   sequence cursor the mark must be exactly a sequence mark; a pair
+   spine takes any mark. New reference; NULL with an exception set,
+   RuntimeError for a sequence cursor beside another mark.
  */
 PyObject *KosMatch_Reset(PyObject *cursor, PyObject *mark);
 

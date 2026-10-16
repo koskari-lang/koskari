@@ -532,6 +532,65 @@ static int test_mark_remark_and_reset(void) {
 }
 
 
+/**
+   Remark and Reset over a sequence cursor with mark as the mark: both
+   NULL with RuntimeError set, and mark left as it was.
+*/
+static int refuse_over_a_sequence(PyObject *cursor, PyObject *mark) {
+  TEST_ASSERT_NULL(KosMatch_Remark(cursor, mark), "re-mark refused");
+  TEST_ASSERT(clear_expected(PyExc_RuntimeError), "RuntimeError");
+  TEST_ASSERT_NULL(KosMatch_Reset(cursor, mark), "reset refused");
+  TEST_ASSERT(clear_expected(PyExc_RuntimeError), "RuntimeError");
+  TEST_ASSERT_EQ(((KosMatchCursor *) cursor)->index, 1, "cursor unmoved");
+  return 0;
+}
+
+
+static int test_remark_and_reset_refuse_a_foreign_mark(void) {
+  PyObject *subj = Py_BuildValue("(iii)", 1, 2, 3);
+  PyObject *cursor = NULL;
+  PyObject *other = NULL;
+  KosMatchStep step;
+
+  TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &cursor), 1, "descend");
+  TEST_ASSERT_EQ(KosMatch_Pull(cursor, &step), 1, "pull");
+  PyObject *advanced = KosMatch_StepAdvance(&step);
+  KosMatch_StepClear(&step);
+  Py_DECREF(advanced);
+
+  /* a list the only holder of itself, where a move in place would
+     write */
+  PyObject *list = Py_BuildValue("[ii]", 7, 8);
+  if (refuse_over_a_sequence(cursor, list))
+    return -1;
+  TEST_ASSERT_EQ(PyList_GET_SIZE(list), 2, "the list keeps its size");
+  TEST_ASSERT_EQ(PyLong_AsLong(PyList_GET_ITEM(list, 0)), 7, "first item");
+  TEST_ASSERT_EQ(PyLong_AsLong(PyList_GET_ITEM(list, 1)), 8, "second item");
+  TEST_ASSERT_REFCNT(list, 1, "list released by both");
+  Py_DECREF(list);
+
+  /* a pair cell */
+  PyObject *spine = make_spine(1);
+  if (refuse_over_a_sequence(cursor, spine))
+    return -1;
+  TEST_ASSERT_REFCNT(spine, 1, "cell released by both");
+
+  /* a cursor, not a mark */
+  TEST_ASSERT_EQ(KosMatch_Descend(subj, ANY_WIDTH, &other), 1, "descend");
+  if (refuse_over_a_sequence(cursor, other))
+    return -1;
+  TEST_ASSERT_EQ(((KosMatchCursor *) other)->index, 0, "other unmoved");
+  TEST_ASSERT_REFCNT(other, 1, "other released by both");
+
+  Py_DECREF(other);
+  Py_DECREF(spine);
+  Py_DECREF(cursor);
+  TEST_ASSERT_REFCNT(subj, 1, "released");
+  Py_DECREF(subj);
+  return 0;
+}
+
+
 /* === captures === */
 
 
@@ -838,6 +897,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_collect_over_a_spine);
   RUN_TEST(test_advance_under_a_mark);
   RUN_TEST(test_mark_remark_and_reset);
+  RUN_TEST(test_remark_and_reset_refuse_a_foreign_mark);
 
   RUN_TEST(test_captures_over_a_sequence);
   RUN_TEST(test_captures_over_a_spine);
