@@ -673,6 +673,28 @@ class TestMatchExternResolution(SpecialsTestCase):
         self.assertEqual(await expr(), "two")
 
 
+    async def test_spine_looped_behind_the_cursor_is_refused(self):
+        # a predicate closes a loop behind the cursor's cell while a
+        # repeat walks the spine: the pass's span never reaches the
+        # cursor, and the iteration raises instead of walking forever
+        subject = cons(1, 2, 3, nil)
+
+        def loop(v):
+            if v.datum == 2:
+                setcdr(subject.cdr, subject)
+            return True
+
+        src = """
+        (match data
+          [[#[(REPEAT xs (PREDICATE loop) min: 0) z]] "hit"]
+          [else: "miss"])
+        """
+        expr, mod = self.compile_expr(src, data=subject, loop=loop)
+        with self.assertRaises(ValueError) as caught:
+            await expr()
+        self.assertIn("changed under the walk", str(caught.exception))
+
+
 
 
 class TestMatchTemporaries(SpecialsTestCase):

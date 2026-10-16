@@ -298,7 +298,9 @@ int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next);
    bound values (borrowed; NULL for an unbound slot), start the saved
    position the span began at and cursor its end. A pair cell as the
    start makes a DatumFrame whose source is the span and whose position
-   is the start cell's; an index makes a plain dict. New reference.
+   is the start cell's; an index makes a plain dict. New reference;
+   NULL with an exception set, ValueError when a pair span no longer
+   reaches the cursor, by a cut or a loop user code made in the spine.
  */
 PyObject *KosMatch_Captures(
     PyObject *names,
@@ -310,7 +312,8 @@ PyObject *KosMatch_Captures(
    One repeat iteration's value: KosMatch_Captures when any slot is
    bound, else the span itself, the boxed single element or a tuple of
    boxed elements, as the engine records a capture-less iteration. A
-   zero-width span is an error. New reference.
+   zero-width span is an error. New reference; NULL with an exception
+   set, ValueError for a pair span as KosMatch_Captures raises it.
  */
 PyObject *KosMatch_Iteration(
     PyObject *names,

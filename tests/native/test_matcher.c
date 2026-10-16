@@ -662,6 +662,46 @@ static int test_captures_over_a_spine(void) {
 }
 
 
+static int test_span_looping_behind_the_cursor(void) {
+  PyObject *names = Py_BuildValue("(s)", "a");
+  PyObject *bound = PyList_New(0);
+  PyObject *values[1] = { bound };
+  PyObject *unbound[1] = { NULL };
+  PyObject *spine = make_spine(3);
+  PyObject *second = KosPair_CDR(spine);
+  PyObject *third = KosPair_CDR(second);
+
+  /* a predicate's setcdr closes a loop behind the cursor's cell: the
+     span from either cell before it never reaches the cursor */
+  Py_INCREF(third);
+  KosPair_SETCDR(second, spine);
+
+  TEST_ASSERT_NULL(KosMatch_Captures(names, values, spine, third),
+                   "captures over a looping span");
+  TEST_ASSERT(clear_expected(PyExc_ValueError), "ValueError");
+  TEST_ASSERT_NULL(KosMatch_Iteration(names, unbound, second, third),
+                   "iteration over a looping span");
+  TEST_ASSERT(clear_expected(PyExc_ValueError), "ValueError");
+
+  /* a start that no longer reaches the cursor: the iteration raises
+     as the captures do */
+  PyObject *other = make_spine(1);
+  TEST_ASSERT_NULL(KosMatch_Iteration(names, unbound, other, third),
+                   "disjoint span");
+  TEST_ASSERT(clear_expected(PyExc_ValueError), "ValueError");
+  Py_DECREF(other);
+
+  KosPair_SETCDR(second, third);
+  Py_DECREF(third);
+  TEST_ASSERT_REFCNT(bound, 1, "released");
+  TEST_ASSERT_REFCNT(spine, 1, "nothing held");
+  Py_DECREF(bound);
+  Py_DECREF(names);
+  Py_DECREF(spine);
+  return 0;
+}
+
+
 static int test_iteration_values(void) {
   PyObject *names = Py_BuildValue("(s)", "x");
   PyObject *values[1] = { NULL };
@@ -901,6 +941,7 @@ int run_matcher_tests(void) {
 
   RUN_TEST(test_captures_over_a_sequence);
   RUN_TEST(test_captures_over_a_spine);
+  RUN_TEST(test_span_looping_behind_the_cursor);
   RUN_TEST(test_iteration_values);
 
   RUN_TEST(test_core_types_through_the_box);

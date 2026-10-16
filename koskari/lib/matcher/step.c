@@ -890,20 +890,32 @@ int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next) {
 
 
 /**
-   The cells of a pair span from start to the cursor's cell, counted;
-   -1 when the walk never reaches the cursor.
+   The cells of a pair span from start to the cursor's cell, counted.
+   The walk carries a half-speed second pointer, as step_count_spine
+   does, so a loop user code closed behind the cursor ends it. -1 with
+   ValueError set when the walk never reaches the cursor: user code
+   rewrote the spine between the mark and the span.
 */
 static Py_ssize_t step_span_count(PyObject *start, PyObject *cursor) {
   Py_ssize_t n = 0;
   PyObject *cell = start;
+  PyObject *slow = start;
 
   while (cell != cursor) {
     if (! KosPair_Check(cell) || KosNilP(cell))
-      return -1;
+      goto changed;
     n++;
     cell = KosPair_CDR(cell);
+    if (n & 1)
+      slow = KosPair_CDR(slow);
+    else if (cell == slow && cell != cursor)
+      goto changed;
   }
   return n;
+
+  changed:
+  PyErr_SetString(PyExc_ValueError, "match subject changed under the walk");
+  return -1;
 }
 
 
@@ -981,13 +993,8 @@ PyObject *KosMatch_Captures(
   }
 
   Py_ssize_t n = step_span_count(start, cursor);
-  if (n < 0) {
-    /* the span's start no longer reaches the cursor: user code
-       rewrote the spine between the mark and the captures */
-    PyErr_SetString(PyExc_ValueError,
-                    "match subject changed under the walk");
+  if (n < 0)
     return NULL;
-  }
 
   PyObject *out = kos_datum_frame_new();
   if (! out)
@@ -1042,6 +1049,8 @@ PyObject *KosMatch_Iteration(
       return step_seq_slice(c->seq, from, c->index);
   } else {
     Py_ssize_t span = step_span_count(start, cursor);
+    if (span < 0)
+      return NULL;
     if (span == 1)
       return step_box_cell(start, matcher_peel_datum(KosPair_CAR(start)));
     if (span > 1) {
