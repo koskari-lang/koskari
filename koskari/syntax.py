@@ -1056,10 +1056,11 @@ def build_syntax(name, *pattern_template_pairs):
 def build_rows(what, args):
     """
     The rows of a build call: ``(PATTERN TAIL)`` pairs for a pattern
-    parsed at load, or ``(FUNCTION NAMES PATTERN-SRC TAIL)`` rows for a
-    matcher the defining module compiled, NAMES being the slot names and
-    the repeat variables as pairs. Yields (pattern, tail, matcher,
-    repeat_variables), matcher None for a pattern row
+    parsed at load, or ``(FUNCTION FROZEN PATTERN-SRC TAIL)`` rows for a
+    matcher the defining module compiled, FROZEN being the frozen
+    matcher tuple paired with the repeat variables as pairs. Yields
+    (pattern, tail, matcher, repeat_variables), matcher None for a
+    pattern row
     """
 
     i = 0
@@ -1074,9 +1075,9 @@ def build_rows(what, args):
             continue
         if i + 3 >= n:
             raise ValueError(
-                f"{what} requires function, names, pattern and template")
-        slots, repeat_items = args[i + 1]
-        matcher = Matcher.from_function(head, slots, name=what)
+                f"{what} requires function, frozen matcher, pattern and template")
+        frozen, repeat_items = args[i + 1]
+        matcher = Matcher.from_function(head, frozen, name=what)
         repeat_variables = {slot: list(names) for slot, names in repeat_items}
         yield args[i + 2], args[i + 3], matcher, repeat_variables
         i += 4

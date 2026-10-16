@@ -201,24 +201,25 @@ class Matcher:
 
 
     @classmethod
-    def from_function(cls, function, slots=(), name=None):
+    def from_function(cls, function, frozen, name=None):
         """
-        A Matcher over a function a module built from a pattern: its
-        externs are the function's own closure names, so nothing is
-        stored or refused here; a keyword to match is ignored as a name
-        the matcher does not declare
+        A Matcher over a function a module built from a pattern, with
+        the frozen tuple the function was lowered from: its externs are
+        the function's own closure names, resolved in the module, so
+        nothing is bound or refused here
 
         :param function: the matcher function, one positional formal
-        :param slots: the slot names, in slot order
+        :param frozen: the frozen matcher 6-tuple
         """
 
+        validate_frozen(frozen)
         self = cls.__new__(cls)
-        self.frozen = None
-        self.slots = tuple(slots)
-        self.externs = ()
-        self.consts = ()
-        self.nodes = ()
-        self.entry = None
+        self.frozen = frozen
+        self.slots = tuple(frozen[1])
+        self.externs = tuple(frozen[2])
+        self.consts = interned_consts(frozen)
+        self.nodes = tuple(frozen[4])
+        self.entry = frozen[5]
         self.name = name or getattr(function, "__name__", "matcher")
         self.namespace = None
         self._function = function
@@ -277,27 +278,22 @@ class Dispatcher:
     """
     The matchers of a syntax's clauses as one function: the subject
     its one formal, the index and captures of the first clause that
-    matches its result. A matcher built from a frozen tuple lowers
-    into the function; a matcher a module built is called. A syntax
-    passes no externs, so a frozen matcher that declares one has no
-    binding for it and is refused here
+    matches its result. A matcher that declares no extern lowers into
+    the function from its frozen tuple; a matcher that declares one is
+    called through its own function, whose closure names resolve where
+    it was built
 
-    :raises TypeError: when a clause is not a Matcher, or a frozen
-        clause declares an extern
+    :raises TypeError: when a clause is not a Matcher
     """
 
     def __init__(self, matchers, name="dispatch"):
         self.matchers = tuple(matchers)
         self.name = name
-        for index, matcher in enumerate(self.matchers):
+        for matcher in self.matchers:
             if not isinstance(matcher, Matcher):
                 raise TypeError(
                     f"Dispatcher clause is not a Matcher:"
                     f" {type(matcher).__name__}")
-            if matcher.externs:
-                raise TypeError(
-                    f"Dispatcher clause {index} names an extern with no"
-                    f" binding: {matcher.externs[0]!r}")
         self.namespace = ModuleNamespace(name, {})
         self._function = None
         self._call = None
@@ -311,7 +307,7 @@ class Dispatcher:
 
         if self._function is None:
             clauses = [
-                m.frozen if m.frozen is not None else m.function
+                m.function if m.externs else m.frozen
                 for m in self.matchers]
             self._function = compile_dispatch_function(
                 clauses, self.namespace, name=self.name)

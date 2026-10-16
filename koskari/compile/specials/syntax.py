@@ -81,8 +81,8 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
 def emit_matcher_row(compiler, frag, pattern, pattern_src, name):
     """
     Push the three leading arguments of a build row: the matcher
-    function built in the module, the names tuple (the slot names and
-    the repeat variables as pairs), and the quoted pattern source for
+    function built in the module, the frozen matcher tuple paired with
+    the repeat variables as pairs, and the quoted pattern source for
     help text and errors
 
     :return: the number of arguments pushed
@@ -95,7 +95,7 @@ def emit_matcher_row(compiler, frag, pattern, pattern_src, name):
     repeat_variables = getattr(pattern, "repeat_variables", None) or {}
     repeat_items = tuple(
         (slot, tuple(names)) for slot, names in repeat_variables.items())
-    frag.instruction(OpCode.CONST, (tuple(frozen[1]), repeat_items))
+    frag.instruction(OpCode.CONST, (frozen, repeat_items))
     frag.merge(compiler.full_compile(
         cons(_sym_quote_syntax, pattern_src, nil)))
     return 3

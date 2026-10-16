@@ -238,6 +238,34 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(ki.b, kio.b)
 
 
+    def test_syntax_match_arm_with_an_extern_via_kio_matches_ki(self):
+        """
+        A syntax-match transformer whose arm names an extern reaches the
+        .kio with its frozen tuple, and from it expands and reports the
+        same tables as from source
+        """
+
+        source = (
+            "(define match-subject int)\n"
+            "(define-syntax ext (syntax-match\n"
+            "  [(ext (TYPE match-subject)) \"int-arm\"]\n"
+            "  [(ext (VALUE y)) \"other-arm\"]))\n"
+            "(define a (ext 7))\n"
+            "(define b (ext \"s\"))\n")
+        ki, kio = self._both('ext', source)
+        self.assertEqual("int-arm", ki.a)
+        self.assertEqual("other-arm", ki.b)
+        self.assertEqual(ki.a, kio.a)
+        self.assertEqual(ki.b, kio.b)
+
+        ki_arms = [t.matcher for t in vars(ki)['compile/ext'].transforms]
+        kio_arms = [t.matcher for t in vars(kio)['compile/ext'].transforms]
+        self.assertEqual(kio_arms[0].externs, ("match-subject",))
+        self.assertIsNotNone(kio_arms[0].frozen)
+        self.assertEqual(
+            [m.frozen for m in kio_arms], [m.frozen for m in ki_arms])
+
+
     GENERATING = (
         "(define-syntax mk-getter (syntax-rules []\n"
         "  [(mk-getter name val)\n"

@@ -45,8 +45,9 @@ def function_matcher(pattern):
     """
 
     ns = ModuleNamespace("module", {})
-    fn = compile_match_function(MatchCompiler().lower(pattern), ns)
-    return Matcher.from_function(fn, tuple(MatchCompiler().lower(pattern)[1]))
+    frozen = MatchCompiler().lower(pattern)
+    fn = compile_match_function(frozen, ns)
+    return Matcher.from_function(fn, frozen)
 
 
 def form(*items):
@@ -120,17 +121,30 @@ class TestDispatcher(unittest.TestCase):
         self.assertEqual(captures["s"], symbol("a"))
 
 
-    def test_inline_arm_with_an_extern_is_refused(self):
+    def test_arm_with_an_extern_is_called_through_its_function(self):
         """
-        A syntax passes no externs, so an arm whose pattern names a user
-        type has no binding for it and the dispatcher refuses it when
-        built, naming the extern
+        An arm whose pattern names an extern is called through its own
+        function, which reads the extern where the matcher was built;
+        an arm with no extern lowers inline
         """
 
-        with self.assertRaises(TypeError) as caught:
-            Dispatcher((
-                MatchCompiler.compile(MATCH(CAPTURE("p", TYPE("Point")))),))
-        self.assertIn("Point", str(caught.exception))
+        class Point:
+            pass
+
+        typed = MatchCompiler.compile(
+            MATCH(CAPTURE("p", TYPE("Point"))), {"Point": Point})
+        d = Dispatcher((typed, MatchCompiler.compile(MATCH(VALUE("x")))))
+        closure = d.function.code.namespace_spec.closure_syms
+        self.assertIn("clause-0", closure)
+        self.assertNotIn("clause-1", closure)
+
+        point = Point()
+        idx, captures = d.select((point,))
+        self.assertEqual(idx, 0)
+        self.assertIs(captures["p"], point)
+        idx, captures = d.select((7,))
+        self.assertEqual(idx, 1)
+        self.assertEqual(captures["x"], 7)
 
 
     def test_improper_subject_refused(self):
