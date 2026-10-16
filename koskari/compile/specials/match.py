@@ -184,10 +184,6 @@ def special_match(compiler, caps):
         frozen is not None and any(node[0] == 'FORM' for node in frozen[4])
         for _p, frozen, *_rest in arms)
 
-    # the arms are alternatives in one activation of the form, so every
-    # arm that opens a cursor at a level uses the same local for it
-    cursors = []
-
     def emit_tests(target, index, arm, hit, next_label):
         """
         One arm's tests against the subject on top of the stack, the
@@ -198,8 +194,7 @@ def special_match(compiler, caps):
         pattern, frozen, atoms, guard_kw, guard_expr, _body, clause_pos = arm
         target.position(clause_pos)
         miss_edges = lower_clause(
-            compiler, target, frozen, atoms, next_label, cursors,
-            pattern, clause_pos)
+            compiler, target, frozen, atoms, next_label, pattern, clause_pos)
         if guard_kw is not None:
             target.merge(compiler.full_compile(guard_expr))
             target.instruction(

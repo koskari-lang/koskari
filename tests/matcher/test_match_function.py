@@ -393,8 +393,9 @@ class TestSameScopes(unittest.TestCase):
 
 def temporaries(pattern):
     """
-    The temporaries a standalone lowering declares beyond the subject
-    and the captures: the cursor, mark and items locals
+    The locals a standalone lowering declares beyond the subject and
+    the captures: none, the cursors, marks and items living on the
+    operand stack
     """
 
     frozen = MatchCompiler().lower(pattern)
@@ -406,22 +407,22 @@ def temporaries(pattern):
 
 class TestTemporaries(unittest.TestCase):
     """
-    A lowering declares one cursor per open spine, a mark only where a
-    span or a reset reads it, and an items list only where a repeat's
-    iterations are kept; the root's start is the subject itself
+    A lowering declares no local for the walk: the cursors, marks and
+    items are entries on the operand stack for their extents, and the
+    root's start is the subject itself
     """
 
-    def test_a_flat_pattern_declares_its_cursor_alone(self):
-        self.assertEqual(temporaries(MATCH(LITERAL(1))), ["match-cursor"])
+    def test_a_flat_pattern_declares_no_temporary(self):
+        self.assertEqual(temporaries(MATCH(LITERAL(1))), [])
 
-    def test_a_bare_repeat_keeps_no_items_and_no_spare_mark(self):
-        got = temporaries(MATCH(FORM(MATCH(REPEAT(TYPE("int"))))))
-        self.assertEqual(sorted(got), ["match-cursor", "match-cursor", "match-mark"])
+    def test_a_bare_repeat_declares_no_temporary(self):
+        self.assertEqual(
+            temporaries(MATCH(FORM(MATCH(REPEAT(TYPE("int")))))), [])
 
-    def test_a_repeat_over_a_group_shares_the_iteration_mark(self):
+    def test_a_repeat_over_a_group_declares_no_temporary(self):
         got = temporaries(MATCH(FORM(MATCH(
             repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
-        self.assertEqual(sorted(got), ["match-cursor", "match-cursor", "match-mark"])
+        self.assertEqual(got, [])
 
     def test_bare_repeat_still_walks(self):
         m = MatchCompiler.compile(MATCH(FORM(MATCH(REPEAT(TYPE("int"))))))
@@ -440,37 +441,31 @@ class TestTemporaries(unittest.TestCase):
 
 def depth_trace(pattern, index=None):
     """
-    The rows of a standalone lowering that name a temporary, with the
-    offset under the top of the stack each would carry once the walk's
-    state lives there, and the edges whose pops would differ from
-    today's; the trace runs beside the slot emission
+    The rows of a standalone lowering that name a cursor, mark or
+    items entry, with the depth under the top of the stack each
+    carries
     """
 
     frozen = MatchCompiler().lower(pattern)
-    lowering = MatchLowering(FunctionTarget("t"), frozen, {}, [], None, None)
+    lowering = MatchLowering(FunctionTarget("t"), frozen, {}, None, None)
     if index is None:
         lowering.lower_function()
     else:
         lowering.lower_body("miss", index)
-    out = []
-    for use in lowering.uses:
-        if use[0] == "edge":
-            out.append(("edge", use[2]))
-        else:
-            out.append((use[0].replace("_VAR", ""), dict(use[1])))
-    return out
+    return [(use[0].replace("_VAR", ""), dict(use[1]))
+            for use in lowering.uses]
 
 
 def rows(trace):
-    return [u for u in trace if u[0] != "edge"]
+    return trace
 
 
 class TestDepthTrace(unittest.TestCase):
     """
     The lowering traces, at every row that names a cursor, mark or
-    items temporary, the depth that entry would sit at under the top
-    of the stack: the subject under everything, a form's cursor above
-    it, elements under test and marks above that
+    items entry, the depth that entry sits at under the top of the
+    stack: the subject under everything, a form's cursor above it,
+    elements under test and marks above that
     """
 
     def test_flat_pattern(self):
@@ -502,7 +497,6 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_END", {"cur": 0}),
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
-        self.assertIn(("edge", 4), trace)
 
     def test_repeat_over_a_group(self):
         trace = depth_trace(MATCH(FORM(MATCH(
@@ -534,14 +528,6 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_END", {"cur": 0}),
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
-
-    def test_last_branch_guard_leaves_with_the_mark_live(self):
-        # the enclosing miss is reached from under a live mark and an
-        # inner cursor: an edge that pops three where today pops none
-        trace = depth_trace(MATCH(FORM(MATCH(
-            ONEOF(GROUP("g", VALUE("a"), VALUE("b")), VALUE("c")),
-            LITERAL(9)))))
-        self.assertIn(("edge", 3), trace)
 
     def test_indexed_root_reads_captures_one_deeper(self):
         self.assertEqual(rows(depth_trace(MATCH(VALUE("x")), index=0))[-1],

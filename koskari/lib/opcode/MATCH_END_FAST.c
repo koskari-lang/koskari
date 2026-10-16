@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_END_FAST: Schema LABEL, slot. The cursor in the slot must be at its end; an improper tail or a further element jumps. The body is kos_match_end in eval/eval_match.c
+  MATCH_END_FAST: Schema LABEL, then the depth of the cursor under the top. The cursor must be at its end; it stays for the path that ends its extent.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_END_FAST) {

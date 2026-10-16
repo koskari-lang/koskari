@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_CAPTURES: Schema CONST names, then the first capture slot, the start and the cursor, or on the NAMED forms the start and the cursor with the captures read by name. Push the captures, a DatumFrame with its source over a pair spine and a dict otherwise, an unbound slot absent; the ITERATION forms push one repeat iteration's value, the captures when any slot fired and the boxed span otherwise. The body is kos_match_captures in eval/eval_match.c
+  MATCH_CAPTURES: Schema CONST names, then the first capture slot, the depth of the start under the top and the depth of the cursor. Push the captures, a DatumFrame with its source over a pair spine and a dict otherwise, an unbound slot absent. The body is kos_match_captures in eval/eval_match.c
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_CAPTURES) {

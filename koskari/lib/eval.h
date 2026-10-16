@@ -1073,6 +1073,12 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
 #define KosEvalState_StackPeekAt(es, index) \
   KosStack_PeekAt(*KosEvalState_BLOCK(es), (index))
 
+#define KosEvalState_StackPeekUnder(es, under) \
+  kos_stack_peek_under_fast(*KosEvalState_BLOCK(es), (under))
+
+#define KosEvalState_StackSetUnder(es, under, val) \
+  kos_stack_set_under_fast(*KosEvalState_BLOCK(es), (under), (val))
+
 #define KosEvalState_StackPopTailPtr(es, count, dest) \
   kos_stack_pop_tail_ptr_fast(KosEvalState_BLOCK(es), (count), (dest))
 

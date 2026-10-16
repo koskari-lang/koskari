@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_REST_FAST: Schema LABEL, slot, COUNT, slot. The remainder of the cursor in the first slot but the suffix, the minimum tail and suffix width packed in the COUNT; the BIND twins store the remainder into the second slot; miss jumps. The body is kos_match_rest in eval/eval_match.c
+  MATCH_REST_FAST: Schema LABEL, then the depth of the cursor under the top and the packed minimum tail and suffix width. The remainder of the cursor but the suffix; the cursor advances in place.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_REST_FAST) {

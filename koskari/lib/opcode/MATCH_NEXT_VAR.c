@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_VAR: Schema LABEL, slot. Pull from the slot and push the element, boxed in a Datum from a pair spine; miss jumps. The body is kos_match_next in eval/eval_match.c
+  MATCH_NEXT_VAR: Schema LABEL, then the depth of the cursor under the top. Pull from the cursor and push the element, boxed from a pair spine.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_VAR) {

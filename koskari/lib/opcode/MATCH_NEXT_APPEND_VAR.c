@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_APPEND_VAR: Schema LABEL, slot, slot. Pull from the first slot and append the element, boxed from a pair spine, to the list in the second; miss jumps at the end. The body is kos_match_next_append in eval/eval_match.c
+  MATCH_NEXT_APPEND_VAR: Schema LABEL, then the depths of the cursor and of a list under the top. Pull from the cursor and append the boxed element to the list.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_APPEND_VAR) {

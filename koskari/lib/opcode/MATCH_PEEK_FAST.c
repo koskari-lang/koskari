@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_PEEK_FAST: Schema LABEL, slot. Push the next element of the cursor in the slot, boxed in a Datum from a pair spine, without advancing the cursor; miss jumps at the end. The body is kos_match_peek_next in eval/eval_match.c
+  MATCH_PEEK_FAST: Schema LABEL, then the depth of the cursor under the top. Push the next element, boxed from a pair spine, without advancing.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_PEEK_FAST) {

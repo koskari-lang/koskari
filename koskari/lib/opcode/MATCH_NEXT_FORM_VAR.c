@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_FORM_VAR: Schema LABEL, slot, slot, COUNT. Pull from the first slot, the sequence gate on the element, the inner cursor stored into the second; miss jumps with the cursor untouched. The body is kos_match_next_form in eval/eval_match.c
+  MATCH_NEXT_FORM_VAR: Schema LABEL, then the depth of the cursor under the top and the packed widths. Pull from the cursor, the gate on the element; the cursor advances in place and the inner cursor is pushed.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_FORM_VAR) {

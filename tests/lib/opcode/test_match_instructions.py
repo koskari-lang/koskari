@@ -13,8 +13,9 @@
 
 """
 Tests for the MATCH_* instructions: the pulls over pair and sequence
-cursors, the peeks on the stacked element, the boxing rule, and the
-miss edges leaving the cursor and the stack as they were.
+cursors kept on the operand stack and named by their depth under the
+top, the peeks on the stacked element, the boxing rule, and the miss
+edges leaving the cursor and the stack as they were.
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -51,7 +52,8 @@ class Point:
         self.y = y
 
 
-# the miss edge: the subject is still on the stack
+# the miss edge: the subject is still on the stack, under whatever
+# the walk had pushed above it
 MISS = [
     ["LABEL", "miss"],
     ["POP", 1],
@@ -70,8 +72,8 @@ async def run(instrs, local_syms, values=None, subject=None):
 class TestRows(CevalTest):
 
     def test_immediates_are_raw_fields(self):
-        self.assertIs(OpCode.MATCH_FORM_FAST.extra[2], OpStyle.RAW)
-        self.assertIs(OpCode.MATCH_NEXT_FORM_FAST.extra[3], OpStyle.RAW)
+        self.assertIs(OpCode.MATCH_FORM_FAST.extra[1], OpStyle.RAW)
+        self.assertIs(OpCode.MATCH_NEXT_FORM_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_REST_BIND_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_CLASS_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_FIELD_POS_BIND_VAR.extra[2], OpStyle.RAW)
@@ -79,22 +81,35 @@ class TestRows(CevalTest):
             if op.name.startswith("MATCH_") and op.name != "MATCH_CASE":
                 self.assertNotIn(OpStyle.COUNT, op.extra, op.name)
 
+    def test_cursor_fields_are_depths(self):
+        # a cursor, mark or list is named by its depth under the top
+        for op in (OpCode.MATCH_NEXT_FAST, OpCode.MATCH_NEXT_BIND_VAR,
+                   OpCode.MATCH_END_FAST, OpCode.MATCH_REST_VAR,
+                   OpCode.MATCH_NEXT_APPEND_FAST, OpCode.MATCH_COLLECT_VAR):
+            self.assertIs(op.extra[1], OpStyle.RAW, op.name)
+        self.assertIs(OpCode.MATCH_MARK_FAST.extra[0], OpStyle.RAW)
+        self.assertEqual(
+            OpCode.MATCH_RESET_VAR.extra[:2], (OpStyle.RAW, OpStyle.RAW))
+        self.assertEqual(
+            OpCode.MATCH_CAPTURES.extra,
+            (OpStyle.CONST, OpStyle.FASTVAR, OpStyle.RAW, OpStyle.RAW))
+
 
 class TestPulls(CevalTest):
 
     async def test_two_binds_over_pair_box_datums(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["FAST", 1],
-            ["FAST", 2],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
-        a, b = await run(prog, ("cur", "a", "b"), subject=cons(1, 2, nil))
+        a, b = await run(prog, ("a", "b"), subject=cons(1, 2, nil))
         self.assertIsInstance(a, Datum)
         self.assertIsInstance(b, Datum)
         self.assertEqual((a.datum, b.datum), (1, 2))
@@ -102,32 +117,46 @@ class TestPulls(CevalTest):
 
     async def test_two_binds_over_tuple_and_list_are_raw(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["FAST", 1],
-            ["FAST", 2],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
         for subject in ((1, 2), [1, 2]):
-            got = await run(prog, ("cur", "a", "b"), subject=subject)
+            got = await run(prog, ("a", "b"), subject=subject)
             self.assertEqual(got, (1, 2))
+
+
+    async def test_form_pushes_the_cursor_above_the_subject(self):
+        # the gate leaves the subject in place and the cursor on top;
+        # the walk's end pops nothing, the path after it does
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["POP", 1],
+            ["RETURN", 1],
+        ]
+        subject = (7,)
+        self.assertIs(await run(prog, ("x",), subject=subject), subject)
 
 
     async def test_length_precheck_and_end_miss(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
+            ["POP", 2],
             ["CONST", "hit"],
             ["RETURN", 1],
         ]
-        syms = ("cur", "a", "b")
+        syms = ("a", "b")
         self.assertEqual(await run(prog, syms, subject=(1,)), "miss")
         self.assertEqual(await run(prog, syms, subject=(1, 2, 3)), "miss")
         self.assertEqual(
@@ -140,28 +169,28 @@ class TestPulls(CevalTest):
 
     async def test_sequence_gate_rejects_atoms_and_mappings(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(0), 0)],
-            ["POP", 1],
+            ["MATCH_FORM_FAST", ("miss", widths(0), 0, 0)],
+            ["POP", 2],
             ["CONST", "hit"],
             ["RETURN", 1],
         ]
         for subject in ("ab", b"ab", {"a": 1}, {1, 2}, 7):
-            self.assertEqual(await run(prog, ("cur",), subject=subject), "miss")
+            self.assertEqual(await run(prog, (), subject=subject), "miss")
         for subject in ((), [], nil, cons(1, nil)):
-            self.assertEqual(await run(prog, ("cur",), subject=subject), "hit")
+            self.assertEqual(await run(prog, (), subject=subject), "hit")
 
 
     async def test_rest_bind_tail_forms(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1), 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_REST_BIND_FAST", ("miss", 0, counts(0), 2)],
+            ["MATCH_FORM_FAST", ("miss", widths(1), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_REST_BIND_FAST", ("miss", 0, counts(0), 1)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
-            ["FAST", 2],
+            ["POP", 2],
+            ["FAST", 1],
             ["RETURN", 1],
         ]
-        syms = ("cur", "a", "r")
+        syms = ("a", "r")
         got = await run(prog, syms, subject=cons(1, 2, 3, nil))
         self.assertIsInstance(got, Datum)
         self.assertEqual(got.datum, cons(2, 3, nil))
@@ -177,19 +206,19 @@ class TestPulls(CevalTest):
 
     async def test_rest_bind_before_suffix(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2), 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_REST_BIND_FAST", ("miss", 0, counts(0, 1), 2)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 3, 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_REST_BIND_FAST", ("miss", 0, counts(0, 1), 1)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["FAST", 1],
             ["FAST", 2],
-            ["FAST", 3],
             ["BUILD_ARGS", 3],
             ["RETURN", 1],
         ]
-        syms = ("cur", "a", "mid", "b")
+        syms = ("a", "mid", "b")
         self.assertEqual(await run(prog, syms, subject=(1, 2)), (1, (), 2))
         self.assertEqual(
             await run(prog, syms, subject=(1, 2, 3)), (1, (2,), 3))
@@ -207,38 +236,36 @@ class TestPulls(CevalTest):
 
     async def test_rest_minimum_tail(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(1), 0, 0)],
             ["MATCH_REST_FAST", ("miss", 0, counts(2), 0)],
-            ["POP", 1],
+            ["POP", 2],
             ["CONST", "hit"],
             ["RETURN", 1],
         ]
-        self.assertEqual(await run(prog, ("cur",), subject=(1,)), "miss")
-        self.assertEqual(await run(prog, ("cur",), subject=(1, 2)), "hit")
-        self.assertEqual(
-            await run(prog, ("cur",), subject=cons(1, nil)), "miss")
-        self.assertEqual(
-            await run(prog, ("cur",), subject=cons(1, 2, nil)), "hit")
+        self.assertEqual(await run(prog, (), subject=(1,)), "miss")
+        self.assertEqual(await run(prog, (), subject=(1, 2)), "hit")
+        self.assertEqual(await run(prog, (), subject=cons(1, nil)), "miss")
+        self.assertEqual(await run(prog, (), subject=cons(1, 2, nil)), "hit")
 
 
     async def test_next_type_bind_miss_leaves_cursor(self):
         # a miss on the type test leaves the cursor where it was: the
         # retry from the miss label pulls the same element again
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
-            ["MATCH_NEXT_TYPE_BIND_FAST", ("retry", 0, 2, 1)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT_TYPE_BIND_FAST", ("retry", 0, 1, 0)],
+            ["POP", 2],
+            ["FAST", 0],
             ["RETURN", 1],
             ["LABEL", "retry"],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["POP", 2],
+            ["FAST", 0],
             ["CONST", "retried"],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
-        syms = ("cur", "x", "int")
+        syms = ("x", "int")
         values = {"int": int}
         self.assertEqual(await run(prog, syms, values, subject=(7,)), 7)
         self.assertEqual(
@@ -247,58 +274,71 @@ class TestPulls(CevalTest):
 
     async def test_next_literal(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_LITERAL_FAST", ("miss", 0, "k", 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["RETURN", 1],
         ]
-        syms = ("cur", "v")
-        self.assertEqual(await run(prog, syms, subject=("k", 9)), 9)
-        self.assertEqual(await run(prog, syms, subject=("j", 9)), "miss")
+        self.assertEqual(await run(prog, ("v",), subject=("k", 9)), 9)
+        self.assertEqual(await run(prog, ("v",), subject=("j", 9)), "miss")
 
 
     async def test_next_pushes_boxed_from_pair_and_raw_from_tuple(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_BIND_FAST", 1],
-            ["POP", 1],
-            ["POP", 1],
-            ["FAST", 1],
+            ["MATCH_BIND_FAST", 0],
+            ["POP", 3],
+            ["FAST", 0],
             ["RETURN", 1],
         ]
-        syms = ("cur", "x")
-        got = await run(prog, syms, subject=cons(5, nil))
+        got = await run(prog, ("x",), subject=cons(5, nil))
         self.assertIsInstance(got, Datum)
         self.assertEqual(got.datum, 5)
-        self.assertEqual(await run(prog, syms, subject=(5,)), 5)
+        self.assertEqual(await run(prog, ("x",), subject=(5,)), 5)
+
+
+    async def test_pull_names_the_cursor_under_a_pushed_element(self):
+        # with one element pushed, the cursor sits one deeper
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_BIND_FAST", 1],
+            ["POP", 3],
+            ["FAST", 0],
+            ["FAST", 1],
+            ["BUILD_ARGS", 2],
+            ["RETURN", 1],
+        ]
+        self.assertEqual(await run(prog, ("b", "a"), subject=(1, 2)), (2, 1))
 
 
     async def test_peek_does_not_advance(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_PEEK_FAST", ("miss", 0, 0, 0)],
             ["POP", 1],
             ["MATCH_PEEK_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_BIND_FAST", 1],
+            ["MATCH_BIND_FAST", 0],
             ["POP", 1],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
             ["MATCH_PEEK_FAST", ("end", 0, 0, 0)],
-            ["POP", 1],
-            ["POP", 1],
+            ["POP", 3],
             ["CONST", "not at end"],
             ["RETURN", 1],
             ["LABEL", "end"],
-            ["POP", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["FAST", 1],
-            ["FAST", 2],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
-        syms = ("cur", "a", "b")
+        syms = ("a", "b")
         self.assertEqual(await run(prog, syms, subject=(5,)), (5, 5))
         self.assertEqual(await run(prog, syms, subject=[5]), (5, 5))
         a, b = await run(prog, syms, subject=cons(5, nil))
@@ -306,20 +346,23 @@ class TestPulls(CevalTest):
 
 
     async def test_nested_form(self):
+        # the inner cursor is pushed above the outer: the inner walk
+        # names it at 0, and the outer is back at 0 once it is popped
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
-            ["MATCH_NEXT_FORM_FAST", ("miss", 0, 1, widths(1, 1))],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 2, 0)],
-            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 3, 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
             ["POP", 1],
-            ["FAST", 2],
-            ["FAST", 3],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
+            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["POP", 2],
+            ["FAST", 0],
+            ["FAST", 1],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
-        syms = ("cur", "inner", "a", "b")
+        syms = ("a", "b")
         self.assertEqual(await run(prog, syms, subject=((1,), 2)), (1, 2))
         self.assertEqual(await run(prog, syms, subject=([1], 2)), (1, 2))
         a, b = await run(prog, syms, subject=cons(cons(1, nil), 2, nil))
@@ -333,16 +376,16 @@ class TestPulls(CevalTest):
         # resolves nothing: a binding of the same name in the frame
         # is never read; a gensym passes SYMBOL and a bool passes INT
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_CORE_TYPE_BIND_FAST",
-             ("miss", 0, int(CoreType.SYMBOL), 1)],
+             ("miss", 0, int(CoreType.SYMBOL), 0)],
             ["MATCH_NEXT_CORE_TYPE_FAST", ("miss", 0, int(CoreType.INT), 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["RETURN", 1],
         ]
-        syms = ("cur", "s", "symbol", "int")
+        syms = ("s", "symbol", "int")
         values = {"symbol": 5, "int": "not a type"}
         self.assertIs(
             await run(prog, syms, values, subject=(symbol("a"), 1)),
@@ -364,37 +407,37 @@ class TestPulls(CevalTest):
 
     async def test_next_core_type_miss_leaves_cursor(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_CORE_TYPE_FAST", ("retry", 0, int(CoreType.STR), 0)],
-            ["POP", 1],
+            ["POP", 2],
             ["CONST", "str"],
             ["RETURN", 1],
             ["LABEL", "retry"],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["POP", 2],
+            ["FAST", 0],
             ["RETURN", 1],
         ]
-        self.assertEqual(await run(prog, ("cur", "x"), subject=("s",)), "str")
-        self.assertEqual(await run(prog, ("cur", "x"), subject=(7,)), 7)
-        self.assertEqual(await run(prog, ("cur", "x"), subject=[[1]]), [1])
+        self.assertEqual(await run(prog, ("x",), subject=("s",)), "str")
+        self.assertEqual(await run(prog, ("x",), subject=(7,)), 7)
+        self.assertEqual(await run(prog, ("x",), subject=[[1]]), [1])
 
 
     async def test_var_twins_store_by_name(self):
         prog = [
-            ["MATCH_FORM_VAR", ("miss", "cur", widths(2, 2), 0)],
-            ["MATCH_NEXT_BIND_VAR", ("miss", "cur", "a", 0)],
-            ["MATCH_NEXT_TYPE_BIND_VAR", ("miss", "cur", "int", "b")],
-            ["MATCH_END_VAR", ("miss", "cur", 0, 0)],
-            ["POP", 1],
+            ["MATCH_FORM_VAR", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_BIND_VAR", ("miss", 0, "a", 0)],
+            ["MATCH_NEXT_TYPE_BIND_VAR", ("miss", 0, "int", "b")],
+            ["MATCH_END_VAR", ("miss", 0, 0, 0)],
+            ["POP", 2],
             ["VAR", "a"],
             ["VAR", "b"],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
-        got = await run(prog, ("cur", "a", "b"), {"int": int}, subject=(1, 2))
+        got = await run(prog, ("a", "b"), {"int": int}, subject=(1, 2))
         self.assertEqual(got, (1, 2))
-        got = await run(prog, ("cur", "a", "b"), {"int": int}, subject=(1, "x"))
+        got = await run(prog, ("a", "b"), {"int": int}, subject=(1, "x"))
         self.assertEqual(got, "miss")
 
 
@@ -539,18 +582,17 @@ class TestSameAndCollect(CevalTest):
 
     async def test_same_against_bound_and_unbound(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_NEXT_SAME_FAST", ("miss", 0, 1, 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_NEXT_SAME_FAST", ("miss", 0, 0, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["POP", 2],
+            ["FAST", 0],
             ["RETURN", 1],
         ]
-        syms = ("cur", "a")
-        self.assertEqual(await run(prog, syms, subject=(4, 4)), 4)
-        self.assertEqual(await run(prog, syms, subject=(4, 5)), "miss")
-        got = await run(prog, syms, subject=cons(4, 4, nil))
+        self.assertEqual(await run(prog, ("a",), subject=(4, 4)), 4)
+        self.assertEqual(await run(prog, ("a",), subject=(4, 5)), "miss")
+        got = await run(prog, ("a",), subject=cons(4, 4, nil))
         self.assertEqual(got.datum, 4)
 
         prog = [
@@ -564,47 +606,64 @@ class TestSameAndCollect(CevalTest):
 
 
     async def test_collect_and_append(self):
+        # the items list is pushed above the cursor: the cursor is at
+        # 1 and the list at 0 for the rows that read both
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1), 0)],
-            ["BUILD_LIST", 0],
-            ["FAST_STORE", 1],
-            ["MATCH_NEXT_APPEND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_COLLECT_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
-            ["FAST", 1],
+            ["MATCH_FORM_FAST", ("miss", widths(1), 0, 0)],
+            ["MATCH_ITEMS", 0],
+            ["MATCH_NEXT_APPEND_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_COLLECT_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
             ["RETURN", 1],
         ]
-        syms = ("cur", "items")
-        self.assertEqual(await run(prog, syms, subject=(1, 2, 3)), [1, 2, 3])
-        self.assertEqual(await run(prog, syms, subject=[1]), [1])
-        got = await run(prog, syms, subject=cons(1, 2, nil))
+        self.assertEqual(await run(prog, (), subject=(1, 2, 3)), [1, 2, 3])
+        self.assertEqual(await run(prog, (), subject=[1]), [1])
+        got = await run(prog, (), subject=cons(1, 2, nil))
         self.assertEqual([d.datum for d in got], [1, 2])
         self.assertTrue(all(isinstance(d, Datum) for d in got))
-        self.assertEqual(await run(prog, syms, subject=cons(1, 2)), "miss")
-        self.assertEqual(await run(prog, syms, subject=()), "miss")
+        self.assertEqual(await run(prog, (), subject=cons(1, 2)), "miss")
+        self.assertEqual(await run(prog, (), subject=()), "miss")
+
+
+    async def test_count_against_the_items(self):
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(0), 0, 0)],
+            ["MATCH_ITEMS", 0],
+            ["MATCH_COUNT", ("short", 0, 1, 0)],
+            ["CONST", "long enough"],
+            ["RETURN", 1],
+            ["LABEL", "short"],
+            ["MATCH_NEXT_APPEND_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_COUNT", ("miss", 0, 1, 0)],
+            ["CONST", "one appended"],
+            ["RETURN", 1],
+        ]
+        self.assertEqual(await run(prog, (), subject=(1,)), "one appended")
+        self.assertEqual(await run(prog, (), subject=()), "miss")
 
 
 class TestMarkAndCaptures(CevalTest):
 
     async def test_mark_and_reset_on_both_cursors(self):
-        # a pull after the reset reads the marked element again
+        # the mark is pushed above the cursor, so the cursor sits at 1
+        # while it lives; a pull after the reset reads the marked
+        # element again
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
-            ["MATCH_MARK_FAST", (0, 1, 0, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
-            ["MATCH_RESET_FAST", (0, 1, 0, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 3, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 4, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["POP", 1],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_RESET_FAST", (1, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 1, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 1, 2, 0)],
+            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["POP", 3],
+            ["FAST", 0],
+            ["FAST", 1],
             ["FAST", 2],
-            ["FAST", 3],
-            ["FAST", 4],
             ["BUILD_ARGS", 3],
             ["RETURN", 1],
         ]
-        syms = ("cur", "mark", "a", "b", "c")
+        syms = ("a", "b", "c")
         self.assertEqual(await run(prog, syms, subject=(1, 2)), (1, 1, 2))
         self.assertEqual(await run(prog, syms, subject=[1, 2]), (1, 1, 2))
         a, b, c = await run(prog, syms, subject=cons(1, 2, nil))
@@ -612,16 +671,16 @@ class TestMarkAndCaptures(CevalTest):
 
 
     async def test_captures_over_pair_and_sequence(self):
-        # slots: cur 0, mark 1, a 2, b 3 (b never fires)
+        # the captures start at the subject, one under the cursor;
+        # slots: a 0, b 1 (b never fires)
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
-            ["MATCH_MARK_FAST", (0, 1, 0, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_END_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_CAPTURES", (("a", "b"), 2, 1, 0)],
+            ["MATCH_CAPTURES", (("a", "b"), 0, 1, 0)],
             ["RETURN", 1],
         ]
-        syms = ("cur", "mark", "a", "b")
+        syms = ("a", "b")
         got = await run(prog, syms, subject=(7,))
         self.assertIs(type(got), dict)
         self.assertEqual(got, {"a": 7})
@@ -635,43 +694,59 @@ class TestMarkAndCaptures(CevalTest):
 
     async def test_captures_named_by_name(self):
         prog = [
-            ["MATCH_FORM_VAR", ("miss", "cur", widths(1, 1), 0)],
-            ["MATCH_MARK_VAR", ("cur", "mark", 0, 0)],
-            ["MATCH_NEXT_BIND_VAR", ("miss", "cur", "a", 0)],
-            ["MATCH_END_VAR", ("miss", "cur", 0, 0)],
-            ["MATCH_CAPTURES_NAMED_VAR", ((("a", "b"), ("a", "b")), "mark", "cur", 0)],
+            ["MATCH_FORM_VAR", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT_BIND_VAR", ("miss", 0, "a", 0)],
+            ["MATCH_END_VAR", ("miss", 0, 0, 0)],
+            ["MATCH_CAPTURES_NAMED_VAR", ((("a", "b"), ("a", "b")), 1, 0, 0)],
             ["RETURN", 1],
         ]
-        syms = ("cur", "mark", "a", "b")
-        self.assertEqual(await run(prog, syms, subject=(7,)), {"a": 7})
+        self.assertEqual(await run(prog, ("a", "b"), subject=(7,)), {"a": 7})
 
 
-    async def test_iteration_captures_or_span(self):
-        # a group with one slot bound: its captures; none bound: the span
+    async def test_iteration_appends_captures_or_span(self):
+        # the items under the mark: a pass with one slot bound appends
+        # its captures, a pass with none appends the span; the mark is
+        # the top and the list under it when the iteration row runs
         prog = [
-            ["MATCH_FORM_FAST", ("miss", 0, widths(2, 2), 0)],
-            ["MATCH_MARK_FAST", (0, 1, 0, 0)],
-            ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
-            ["MATCH_ITERATION", (("x",), 2, 1, 0)],
-            ["FAST_CLEAR", 2],
-            ["MATCH_MARK_FAST", (0, 1, 0, 0)],
-            ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_ITEMS", 0],
+            ["MATCH_MARK_FAST", (1, 0, 0, 0)],
+            ["MATCH_NEXT_BIND_FAST", ("miss", 2, 0, 0)],
+            ["MATCH_ITERATION", (("x",), 0, 2, 1)],
             ["POP", 1],
-            ["MATCH_ITERATION", (("x",), 2, 1, 0)],
-            ["BUILD_ARGS", 2],
+            ["MATCH_MARK_FAST", (1, 0, 0, 0)],
+            ["MATCH_NEXT_FAST", ("miss", 2, 0, 0)],
+            ["POP", 1],
+            ["MATCH_ITERATION", (("x",), 0, 2, 1)],
+            ["POP", 1],
             ["RETURN", 1],
         ]
-        syms = ("cur", "mark", "x")
-        first, second = await run(prog, syms, subject=(1, 2))
+        first, second = await run(prog, ("x",), subject=(1, 2))
         self.assertEqual(first, {"x": 1})
         self.assertEqual(second, 2)
 
-        first, second = await run(prog, syms, subject=cons(1, 2, nil))
+        first, second = await run(prog, ("x",), subject=cons(1, 2, nil))
         self.assertIsInstance(first, DatumFrame)
         self.assertEqual(first["x"].datum, 1)
         self.assertEqual(first.source, 1)
         self.assertIsInstance(second, Datum)
         self.assertEqual(second.datum, 2)
+
+
+    async def test_iteration_pushes_the_span_in_mode_zero(self):
+        # an empty names tuple still names a first slot the frame has
+        prog = [
+            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_NEXT_FAST", ("miss", 1, 0, 0)],
+            ["POP", 1],
+            ["MATCH_ITERATION", ((), 0, 1, 0)],
+            ["RETURN", 1],
+        ]
+        self.assertEqual(await run(prog, ("x",), subject=(9,)), 9)
+        got = await run(prog, ("x",), subject=cons(9, nil))
+        self.assertIsInstance(got, Datum)
+        self.assertEqual(got.datum, 9)
 
 
 # The end.

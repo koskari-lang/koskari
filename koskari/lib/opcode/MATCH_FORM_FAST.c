@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_FORM_FAST: Schema LABEL, slot, COUNT. Peek: the sequence gate and length precheck on TOS, the cursor stored into the slot; miss jumps. The body is kos_match_form in eval/eval_match.c
+  MATCH_FORM_FAST: Schema LABEL, then the packed widths. Peek: the sequence gate and length precheck on TOS; the cursor for the walk is pushed. The VAR and FAST twins are one shape.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_FORM_FAST) {

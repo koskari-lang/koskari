@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_LITERAL_VAR: Schema LABEL, slot, CONST. Pull from the slot; the element must equal the constant; miss jumps with the cursor untouched. The body is kos_match_next_literal in eval/eval_match.c
+  MATCH_NEXT_LITERAL_VAR: Schema LABEL, then the depth of the cursor under the top and the constant. Pull from the cursor; the element must equal the constant.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_LITERAL_VAR) {

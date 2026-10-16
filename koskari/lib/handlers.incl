@@ -381,6 +381,8 @@
 #include "opcode/MATCH_MARK_FAST.c"
 #include "opcode/MATCH_RESET_VAR.c"
 #include "opcode/MATCH_RESET_FAST.c"
+#include "opcode/MATCH_ITEMS.c"
+#include "opcode/MATCH_COUNT.c"
 #include "opcode/MATCH_CAPTURES.c"
 #include "opcode/MATCH_CAPTURES_NAMED_VAR.c"
 #include "opcode/MATCH_CAPTURES_NAMED_FAST.c"

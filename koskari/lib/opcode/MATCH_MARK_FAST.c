@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_MARK_FAST: Schema slot, slot. The position of the cursor in the first slot, its cell or its index, stored into the second. The body is kos_match_mark in eval/eval_match.c
+  MATCH_MARK_FAST: Schema the depth of the cursor under the top. Push the cursor's position: its cell, or its index.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_MARK_FAST) {

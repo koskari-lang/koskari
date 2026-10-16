@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_AVAILABLE_VAR: Schema LABEL, slot, RAW. The cursor in the slot must have at least the RAW count of elements left, the reservation a suffix makes against a repeat, an optional or a branch; too few jumps with the cursor untouched. The body is kos_match_available in eval/eval_match.c
+  MATCH_AVAILABLE_VAR: Schema LABEL, then the depth of the cursor under the top and a count. The cursor must have at least the count of elements left.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_AVAILABLE_VAR) {

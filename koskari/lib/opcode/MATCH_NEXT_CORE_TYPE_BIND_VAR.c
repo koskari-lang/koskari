@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_CORE_TYPE_BIND_VAR: Schema LABEL, slot, RAW, slot. Pull from the first slot; the element must be an instance of the core type the RAW ordinal names; the boxed element is stored into the second slot; miss jumps with the cursor untouched. The body is kos_match_next_core_type in eval/eval_match.c
+  MATCH_NEXT_CORE_TYPE_BIND_VAR: Schema LABEL, then the depth of the cursor under the top, the core type's ordinal and the capture slot. The core-typed pull, the boxed element stored into the slot.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_CORE_TYPE_BIND_VAR) {

@@ -236,6 +236,21 @@ PyObject *KosStack_PeekAt(KosSegment *self, Py_ssize_t index);
 
 
 /**
+   Borrow the entry under the top: 0 is the top itself, 1 the entry
+   beneath it. Sets err and returns NULL on underrun.
+ */
+PyObject *KosStack_PeekUnder(KosSegment *self, size_t under);
+
+
+/**
+   Store an owned value into the entry under the top, releasing what
+   it held; val is consumed on every path. 0, or -1 with err set on
+   underrun.
+ */
+int KosStack_SetUnder(KosSegment *self, size_t under, PyObject *val);
+
+
+/**
    Remove the last count elements. Sets err on underrun.
  */
 int KosStack_Drop(KosSegment **self, size_t count);
@@ -312,6 +327,8 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 #define kos_stack_settle2_fast      KosStack_Settle2
 #define kos_stack_drop_noerr_fast   KosStack_DropNoErr
 #define kos_stack_peek_fast         KosStack_Peek
+#define kos_stack_peek_under_fast   KosStack_PeekUnder
+#define kos_stack_set_under_fast    KosStack_SetUnder
 #define kos_stack_tail_ptr_fast     KosStack_TailPtr
 #define kos_stack_pop_tail_ptr_fast KosStack_PopTailPtr
 #define kos_stack_clear_fast        KosStack_Clear
@@ -422,6 +439,36 @@ static inline PyObject *kos_stack_peek_fast(KosSegment *s) {
   if (likely(s->len))
     return s->objs[s->len - 1];
   return KosStack_Peek(s);
+}
+
+
+/* The entry under the top, borrowed; the out-of-line check runs only
+   on an underrun. */
+static inline PyObject *kos_stack_peek_under_fast(
+        KosSegment *s,
+        size_t under) {
+
+  if (likely(under < s->len))
+    return s->objs[s->len - 1 - under];
+  return KosStack_PeekUnder(s, under);
+}
+
+
+/* Store val into the entry under the top, releasing what it held;
+   the slot holds val before the release so a finalizer sees it. */
+static inline int kos_stack_set_under_fast(
+        KosSegment *s,
+        size_t under,
+        PyObject *val) {
+
+  if (likely(under < s->len)) {
+    PyObject **slot = &s->objs[s->len - 1 - under];
+    PyObject *old = *slot;
+    *slot = val;
+    Py_DECREF(old);
+    return 0;
+  }
+  return KosStack_SetUnder(s, under, val);
 }
 
 

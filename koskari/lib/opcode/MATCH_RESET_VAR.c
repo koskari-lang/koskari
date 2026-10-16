@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_RESET_VAR: Schema slot, slot. The cursor in the first slot moved back to the position saved in the second. The body is kos_match_reset in eval/eval_match.c
+  MATCH_RESET_VAR: Schema the depths of the cursor and of a saved position under the top. The cursor moved back to the position.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_RESET_VAR) {

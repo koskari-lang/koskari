@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_TYPE_BIND_VAR: Schema LABEL, slot, slot, slot. Pull from the first slot; the element must be an instance of the type in the second; the BIND twins store the boxed element into the third; miss jumps with the cursor untouched. The body is kos_match_next_type in eval/eval_match.c
+  MATCH_NEXT_TYPE_BIND_VAR: Schema LABEL, then the depth of the cursor under the top, the type's slot and the capture slot. The typed pull, the boxed element stored into the capture slot.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_TYPE_BIND_VAR) {

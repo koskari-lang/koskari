@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_SAME_FAST: Schema LABEL, slot, slot. Pull from the first slot; the element must equal the value bound in the second; miss jumps with the cursor untouched. The body is kos_match_next_same in eval/eval_match.c
+  MATCH_NEXT_SAME_FAST: Schema LABEL, then the depth of the cursor under the top and the slot of the value to equal. Pull from the cursor; the element must equal the bound value, an unbound slot a miss.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_SAME_FAST) {

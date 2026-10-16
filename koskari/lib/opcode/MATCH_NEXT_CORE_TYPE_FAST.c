@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_CORE_TYPE_FAST: Schema LABEL, slot, RAW. Pull from the slot; the element must be an instance of the core type the RAW ordinal names; miss jumps with the cursor untouched. The body is kos_match_next_core_type in eval/eval_match.c
+  MATCH_NEXT_CORE_TYPE_FAST: Schema LABEL, then the depth of the cursor under the top and the core type's ordinal. Pull from the cursor; the element must be an instance of the core type.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_CORE_TYPE_FAST) {

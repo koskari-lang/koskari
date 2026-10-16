@@ -697,10 +697,10 @@ class TestMatchTemporaries(SpecialsTestCase):
         self.assertEqual(await fn((2, 1)), ("other", 2, 1, ()))
 
 
-    def test_arms_share_one_cursor(self):
+    def test_arms_declare_no_temporaries(self):
         """
-        The arms of one match form are alternatives in one activation,
-        so every arm that walks a spine uses the same cursor local
+        An arm's cursors and marks live on the operand stack for the
+        walk's extent and leave no local behind
         """
 
         src = """
@@ -717,8 +717,7 @@ class TestMatchTemporaries(SpecialsTestCase):
             for c in code.constants_pool
             if hasattr(c, "soften") or hasattr(c, "code"))
         names = [str(n).split("#")[0] for n in inner.namespace_spec.local_syms]
-        self.assertEqual(
-            [n for n in names if n.startswith("match-")], ["match-cursor"])
+        self.assertEqual([n for n in names if n.startswith("match-")], [])
 
 
 

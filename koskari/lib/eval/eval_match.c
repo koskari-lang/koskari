@@ -97,15 +97,44 @@ KOS_OP_INLINE PyObject *kos_match_peek(KosEvalState *es) {
 
 
 /**
+   The entry a RAW field names by its depth under the top of the
+   stack: a cursor, a mark or a list the walk pushed. Borrowed; NULL
+   with an exception set on an underrun.
+*/
+KOS_OP_INLINE PyObject *kos_match_at(
+    KosEvalState *es,
+    const KosExtra *row,
+    int field) {
+
+  return KosEvalState_StackPeekUnder(es, (size_t) KosExtra_IMM(row, field));
+}
+
+
+/**
+   Store an owned value into the entry a RAW field names, releasing
+   what it held; consumed on every path. 0, or -1 with an exception
+   set.
+*/
+KOS_OP_INLINE int kos_match_set_at(
+    KosEvalState *es,
+    const KosExtra *row,
+    int field,
+    PyObject *val) {
+
+  return KosEvalState_StackSetUnder(
+      es, (size_t) KosExtra_IMM(row, field), val);
+}
+
+
+/**
    Advance past a pulled element once it has passed its test: the
-   advanced pair cursor stored back into field 1, or the sequence
-   cursor stepped in place; then release the step. 0, or -1 with an
-   exception set and the step released.
+   advanced pair cursor stored into the entry field 1 names, or the
+   sequence cursor stepped in place; then release the step. 0, or -1
+   with an exception set and the step released.
 */
 KOS_OP_INLINE int kos_match_advance(
     KosEvalState *es,
     const KosExtra *row,
-    int fast,
     KosMatchStep *step) {
 
   int res = 0;
@@ -113,7 +142,7 @@ KOS_OP_INLINE int kos_match_advance(
   if (step->next) {
     PyObject *next = step->next;
     step->next = NULL;
-    res = kos_match_store(es, row, 1, fast, next);
+    res = kos_match_set_at(es, row, 1, next);
   } else {
     KosMatch_StepAdvance(step);
   }
@@ -126,13 +155,12 @@ KOS_OP_INLINE int kos_match_advance(
 
 
 /**
-   MATCH_FORM: peek, the sequence gate and length precheck on TOS, the
-   cursor into field 1. Row LABEL, slot, widths.
+   MATCH_FORM: peek, the sequence gate and length precheck on TOS
+   against the widths in field 1; the cursor pushed. Row LABEL, widths.
 */
 KOS_MATCH_BODY(kos_match_form) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_FORM_FAST;
   (void) kos_match_delivery_;
 
   PyObject *elem = kos_match_peek(es);
@@ -140,42 +168,38 @@ KOS_MATCH_BODY(kos_match_form) {
     RESULT_RAISE();
 
   PyObject *cursor = NULL;
-  int r = KosMatch_Descend(elem, KosExtra_IMM(row, 2), &cursor);
+  int r = KosMatch_Descend(elem, KosExtra_IMM(row, 1), &cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-
-  if (unlikely(kos_match_store(es, row, 1, fast, cursor) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_STEAL(es, cursor);
 }
 
 
 /**
-   MATCH_NEXT_FORM: pull from field 1, the gate on the element, the
-   inner cursor into field 2. Row LABEL, slot, slot, widths.
+   MATCH_NEXT_FORM: pull from the cursor at the depth in field 1, the
+   gate on the element against the widths in field 2; the inner cursor
+   pushed. Row LABEL, depth, widths.
 */
 KOS_MATCH_BODY(kos_match_next_form) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_FORM_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
 
   PyObject *inner = NULL;
-  r = KosMatch_Descend(step.elem, KosExtra_IMM(row, 3), &inner);
+  r = KosMatch_Descend(step.elem, KosExtra_IMM(row, 2), &inner);
   if (r != 1) {
     KosMatch_StepClear(&step);
     if (unlikely(r < 0))
@@ -183,33 +207,31 @@ KOS_MATCH_BODY(kos_match_next_form) {
     KOS_MATCH_MISS(row);
   }
 
-  if (unlikely(kos_match_store(es, row, 2, fast, inner) < 0)) {
-    KosMatch_StepClear(&step);
+  /* the outer cursor advances in place before the inner is pushed,
+     so the depth field 1 names still holds */
+  if (unlikely(kos_match_advance(es, row, &step) < 0)) {
+    Py_DECREF(inner);
     RESULT_RAISE();
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_STEAL(es, inner);
 }
 
 
 /**
-   MATCH_NEXT: pull from field 1 and push the element, boxed from a
-   pair spine. Row LABEL, slot.
+   MATCH_NEXT: pull from the cursor at the depth in field 1 and push
+   the element, boxed from a pair spine. Row LABEL, depth.
 */
 KOS_MATCH_BODY(kos_match_next) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -220,7 +242,7 @@ KOS_MATCH_BODY(kos_match_next) {
     KosMatch_StepClear(&step);
     RESULT_RAISE();
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0)) {
+  if (unlikely(kos_match_advance(es, row, &step) < 0)) {
     Py_DECREF(boxed);
     RESULT_RAISE();
   }
@@ -229,24 +251,23 @@ KOS_MATCH_BODY(kos_match_next) {
 
 
 /**
-   MATCH_PEEK: the next element of the cursor in field 1 pushed, boxed
-   from a pair spine, the cursor left where it is. Row LABEL, slot.
+   MATCH_PEEK: the next element of the cursor at the depth in field 1
+   pushed, boxed from a pair spine, the cursor left where it is. Row
+   LABEL, depth.
    The zero-width NOT reads its element this way, since a sequence
    cursor advances in place and a saved copy of it would advance too.
 */
 KOS_MATCH_BODY(kos_match_peek_next) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_PEEK_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -259,8 +280,9 @@ KOS_MATCH_BODY(kos_match_peek_next) {
 
 
 /**
-   MATCH_NEXT_BIND: pull from field 1 and store the element, boxed
-   from a pair spine, into field 2. Row LABEL, slot, slot.
+   MATCH_NEXT_BIND: pull from the cursor at the depth in field 1 and
+   store the element, boxed from a pair spine, into the slot in field
+   2. Row LABEL, depth, slot.
 */
 KOS_MATCH_BODY(kos_match_next_bind) {
   KOS_SYNC_PC(es, insn);
@@ -268,13 +290,12 @@ KOS_MATCH_BODY(kos_match_next_bind) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -289,7 +310,7 @@ KOS_MATCH_BODY(kos_match_next_bind) {
     KosMatch_StepClear(&step);
     RESULT_RAISE();
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+  if (unlikely(kos_match_advance(es, row, &step) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -310,13 +331,12 @@ KOS_MATCH_BODY(kos_match_next_type) {
       || op == KOS_OP_MATCH_NEXT_TYPE_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -347,7 +367,7 @@ KOS_MATCH_BODY(kos_match_next_type) {
       RESULT_RAISE();
     }
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+  if (unlikely(kos_match_advance(es, row, &step) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -369,13 +389,12 @@ KOS_MATCH_BODY(kos_match_next_core_type) {
       || op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -400,29 +419,28 @@ KOS_MATCH_BODY(kos_match_next_core_type) {
       RESULT_RAISE();
     }
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+  if (unlikely(kos_match_advance(es, row, &step) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
 
 
 /**
-   MATCH_NEXT_LITERAL: pull from field 1, the element must equal the
-   constant in field 2. Row LABEL, slot, const.
+   MATCH_NEXT_LITERAL: pull from the cursor at the depth in field 1,
+   the element must equal the constant in field 2. Row LABEL, depth,
+   const.
 */
 KOS_MATCH_BODY(kos_match_next_literal) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_LITERAL_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -435,7 +453,7 @@ KOS_MATCH_BODY(kos_match_next_literal) {
       RESULT_RAISE();
     KOS_MATCH_MISS(row);
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+  if (unlikely(kos_match_advance(es, row, &step) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -457,14 +475,13 @@ KOS_MATCH_BODY(kos_match_rest) {
       || op == KOS_OP_MATCH_REST_BIND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   PyObject *value = NULL;
   PyObject *next = NULL;
   int r = KosMatch_Rest(cursor, KosExtra_IMM(row, 2), &value, &next);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -478,50 +495,43 @@ KOS_MATCH_BODY(kos_match_rest) {
   } else {
     Py_DECREF(value);
   }
-  if (next && unlikely(kos_match_store(es, row, 1, fast, next) < 0))
+  if (next && unlikely(kos_match_set_at(es, row, 1, next) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
 
 
 /**
-   MATCH_END: the cursor in field 1 must be at its end. Row LABEL,
-   slot.
+   MATCH_END: the cursor at the depth in field 1 must be at its end;
+   it stays for the path that ends its extent. Row LABEL, depth.
 */
 KOS_MATCH_BODY(kos_match_end) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_END_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
-
-  int r = KosMatch_End(cursor);
-  Py_DECREF(cursor);
-  if (! r)
+  if (! KosMatch_End(cursor))
     KOS_MATCH_MISS(row);
   RESULT_NEXT(es);
 }
 
 
 /**
-   MATCH_AVAILABLE: the cursor in field 1 must have at least the count
-   in field 2 of elements left. Row LABEL, slot, RAW.
+   MATCH_AVAILABLE: the cursor at the depth in field 1 must have at
+   least the count in field 2 of elements left. Row LABEL, depth, RAW.
 */
 KOS_MATCH_BODY(kos_match_available) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_AVAILABLE_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  int r = KosMatch_Available(cursor, (Py_ssize_t) KosExtra_IMM(row, 2));
-  Py_DECREF(cursor);
-  if (! r)
+  if (! KosMatch_Available(cursor, (Py_ssize_t) KosExtra_IMM(row, 2)))
     KOS_MATCH_MISS(row);
   RESULT_NEXT(es);
 }
@@ -921,8 +931,9 @@ KOS_MATCH_BODY(kos_match_same) {
 
 
 /**
-   MATCH_NEXT_SAME: pull from field 1; the element must equal the value
-   bound in field 2. Row LABEL, slot, slot.
+   MATCH_NEXT_SAME: pull from the cursor at the depth in field 1; the
+   element must equal the value bound in the slot in field 2. Row
+   LABEL, depth, slot.
 */
 KOS_MATCH_BODY(kos_match_next_same) {
   KOS_SYNC_PC(es, insn);
@@ -930,13 +941,12 @@ KOS_MATCH_BODY(kos_match_next_same) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_SAME_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -958,35 +968,34 @@ KOS_MATCH_BODY(kos_match_next_same) {
       RESULT_RAISE();
     KOS_MATCH_MISS(row);
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+  if (unlikely(kos_match_advance(es, row, &step) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
 
 
 /**
-   MATCH_NEXT_APPEND: pull from field 1 and append the boxed element to
-   the list in field 2. Row LABEL, slot, slot.
+   MATCH_NEXT_APPEND: pull from the cursor at the depth in field 1 and
+   append the boxed element to the list at the depth in field 2. Row
+   LABEL, depth, depth.
 */
 KOS_MATCH_BODY(kos_match_next_append) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_NEXT_APPEND_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   KosMatchStep step;
   int r = KosMatch_Pull(cursor, &step);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
 
-  PyObject *list = kos_match_load(es, row, 2, fast);
+  PyObject *list = kos_match_at(es, row, 2);
   if (unlikely(! list)) {
     KosMatch_StepClear(&step);
     RESULT_RAISE();
@@ -995,114 +1004,96 @@ KOS_MATCH_BODY(kos_match_next_append) {
     PyErr_Format(PyExc_TypeError,
                  "match append requires a list, not %.200s",
                  Py_TYPE(list)->tp_name);
-    Py_DECREF(list);
     KosMatch_StepClear(&step);
     RESULT_RAISE();
   }
   PyObject *boxed = KosMatch_Box(&step);
   int rc = boxed ? PyList_Append(list, boxed) : -1;
   Py_XDECREF(boxed);
-  Py_DECREF(list);
   if (unlikely(rc < 0)) {
     KosMatch_StepClear(&step);
     RESULT_RAISE();
   }
-  if (unlikely(kos_match_advance(es, row, fast, &step) < 0))
+  if (unlikely(kos_match_advance(es, row, &step) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
 
 
 /**
-   MATCH_COLLECT: every remaining element of the cursor in field 1,
-   boxed from a pair spine, appended to the list in field 2; an
-   improper tail is a miss. Row LABEL, slot, slot.
+   MATCH_COLLECT: every remaining element of the cursor at the depth in
+   field 1, boxed from a pair spine, appended to the list at the depth
+   in field 2; an improper tail is a miss. Row LABEL, depth, depth.
 */
 KOS_MATCH_BODY(kos_match_collect) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_COLLECT_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 1, fast);
+  PyObject *cursor = kos_match_at(es, row, 1);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  PyObject *list = kos_match_load(es, row, 2, fast);
-  if (unlikely(! list)) {
-    Py_DECREF(cursor);
+  PyObject *list = kos_match_at(es, row, 2);
+  if (unlikely(! list))
     RESULT_RAISE();
-  }
   if (unlikely(! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
                  "match collect requires a list, not %.200s",
                  Py_TYPE(list)->tp_name);
-    Py_DECREF(list);
-    Py_DECREF(cursor);
     RESULT_RAISE();
   }
 
   PyObject *next = NULL;
   int r = KosMatch_Collect(cursor, list, &next);
-  Py_DECREF(list);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  if (next && unlikely(kos_match_store(es, row, 1, fast, next) < 0))
+  if (next && unlikely(kos_match_set_at(es, row, 1, next) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
 
 
 /**
-   MATCH_MARK: the position of the cursor in field 0 stored into field
-   1. Row slot, slot.
+   MATCH_MARK: the position of the cursor at the depth in field 0
+   pushed. Row depth.
 */
 KOS_MATCH_BODY(kos_match_mark) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_MARK_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 0, fast);
+  PyObject *cursor = kos_match_at(es, row, 0);
   if (unlikely(! cursor))
     RESULT_RAISE();
   PyObject *pos = KosMatch_Position(cursor);
-  Py_DECREF(cursor);
   if (unlikely(! pos))
     RESULT_RAISE();
-  if (unlikely(kos_match_store(es, row, 1, fast, pos) < 0))
-    RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_STEAL(es, pos);
 }
 
 
 /**
-   MATCH_RESET: the cursor in field 0 moved back to the position in
-   field 1. Row slot, slot.
+   MATCH_RESET: the cursor at the depth in field 0 moved back to the
+   position at the depth in field 1. Row depth, depth.
 */
 KOS_MATCH_BODY(kos_match_reset) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  int fast = KosOp_OP(insn) == KOS_OP_MATCH_RESET_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_load(es, row, 0, fast);
+  PyObject *cursor = kos_match_at(es, row, 0);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  PyObject *saved = kos_match_load(es, row, 1, fast);
-  if (unlikely(! saved)) {
-    Py_DECREF(cursor);
+  PyObject *saved = kos_match_at(es, row, 1);
+  if (unlikely(! saved))
     RESULT_RAISE();
-  }
   PyObject *restored = NULL;
   int r = KosMatch_Reset(cursor, saved, &restored);
-  Py_DECREF(saved);
-  Py_DECREF(cursor);
   if (unlikely(r < 0))
     RESULT_RAISE();
-  if (restored && unlikely(kos_match_store(es, row, 0, fast, restored) < 0))
+  if (restored && unlikely(kos_match_set_at(es, row, 0, restored) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -1206,9 +1197,12 @@ static void kos_match_release_values(
 /**
    The MATCH_CAPTURES and MATCH_ITERATION families: the names tuple in
    field 0; on the slot-run forms the first capture slot in field 1,
-   the start in field 2 and the cursor in field 3; on the NAMED forms
-   the start in field 1 and the cursor in field 2, the captures read
-   by name. Pushes the captures, or the iteration's value.
+   then the depths; on the NAMED forms the depths from field 1, the
+   captures read by name. A captures row names the start and the
+   cursor by depth and pushes the captures. An iteration runs with its
+   mark on the top and its list under that, names the cursor alone,
+   and its last field is the mode: 0 pushes the value, 1 appends it to
+   the list.
 */
 KOS_MATCH_BODY(kos_match_captures) {
   KOS_SYNC_PC(es, insn);
@@ -1221,7 +1215,7 @@ KOS_MATCH_BODY(kos_match_captures) {
   int fast = op == KOS_OP_MATCH_CAPTURES || op == KOS_OP_MATCH_ITERATION
       || op == KOS_OP_MATCH_CAPTURES_NAMED_FAST
       || op == KOS_OP_MATCH_ITERATION_NAMED_FAST;
-  int start_field = by_name ? 1 : 2;
+  int field = by_name ? 1 : 2;
   (void) kos_match_delivery_;
 
   /* the slot-run forms name the keys; the NAMED forms carry (keys,
@@ -1229,30 +1223,34 @@ KOS_MATCH_BODY(kos_match_captures) {
   PyObject *table = KosExtra_OBJ(row, 0);
   PyObject *names = by_name ? PyTuple_GET_ITEM(table, 0) : table;
   PyObject *locals = by_name ? PyTuple_GET_ITEM(table, 1) : table;
-  PyObject *start = kos_match_load(es, row, start_field, fast);
-  if (unlikely(! start))
-    RESULT_RAISE();
-  PyObject *cursor = kos_match_load(es, row, start_field + 1, fast);
-  if (unlikely(! cursor)) {
-    Py_DECREF(start);
-    RESULT_RAISE();
+
+  /* the captures row names its start and cursor by depth; an
+     iteration runs with its mark on the top and its list under that,
+     so it names the cursor alone and carries a mode */
+  PyObject *start;
+  PyObject *cursor;
+  int append = 0;
+  if (iteration) {
+    start = KosEvalState_StackPeekUnder(es, 0);
+    cursor = kos_match_at(es, row, field);
+    append = KosExtra_IMM(row, field + 1) == 1;
+  } else {
+    start = kos_match_at(es, row, field);
+    cursor = kos_match_at(es, row, field + 1);
   }
+  if (unlikely(! start || ! cursor))
+    RESULT_RAISE();
 
   PyObject *buf[KOS_MATCH_GATHER_INLINE];
   PyObject **values = kos_match_gather_values(
       es, locals, by_name, fast, by_name ? 0 : KosExtra_IMM(row, 1), buf);
-  if (unlikely(! values)) {
-    Py_DECREF(cursor);
-    Py_DECREF(start);
+  if (unlikely(! values))
     RESULT_RAISE();
-  }
 
   PyObject *out = iteration
       ? KosMatch_Iteration(names, values, start, cursor)
       : KosMatch_Captures(names, values, start, cursor);
   kos_match_release_values(values, PyTuple_GET_SIZE(names), buf);
-  Py_DECREF(cursor);
-  Py_DECREF(start);
   if (unlikely(! out))
     RESULT_RAISE();
 
@@ -1262,7 +1260,51 @@ KOS_MATCH_BODY(kos_match_captures) {
     Py_DECREF(out);
     RESULT_RAISE();
   }
-  RESULT_STEAL(es, out);
+  if (! append)
+    RESULT_STEAL(es, out);
+
+  PyObject *list = KosEvalState_StackPeekUnder(es, 1);
+  if (unlikely(! list)) {
+    Py_DECREF(out);
+    RESULT_RAISE();
+  }
+  if (unlikely(! PyList_Check(list))) {
+    PyErr_Format(PyExc_TypeError,
+                 "match iteration requires a list under its mark, not %.200s",
+                 Py_TYPE(list)->tp_name);
+    Py_DECREF(out);
+    RESULT_RAISE();
+  }
+  int rc = PyList_Append(list, out);
+  Py_DECREF(out);
+  if (unlikely(rc < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+
+/**
+   MATCH_COUNT: the list at the depth in field 1 must hold at least the
+   count in field 2 of items. Row LABEL, RAW, RAW.
+*/
+KOS_MATCH_BODY(kos_match_count) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *list = kos_match_at(es, row, 1);
+  if (unlikely(! list))
+    RESULT_RAISE();
+  if (unlikely(! PyList_Check(list))) {
+    PyErr_Format(PyExc_TypeError,
+                 "match count requires a list, not %.200s",
+                 Py_TYPE(list)->tp_name);
+    RESULT_RAISE();
+  }
+  if (PyList_GET_SIZE(list) < (Py_ssize_t) KosExtra_IMM(row, 2))
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
 }
 
 

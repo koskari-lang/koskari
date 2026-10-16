@@ -461,34 +461,34 @@ OP(MATCH_CASE, 0, EXTRA, LABEL, CONST, CONST, COUNT)  // retired: the one-instru
 // pattern's min and max widths, eight bits each, 0xFF unbounded; the
 // REST shapes pack the minimum tail and the width of the suffix that
 // follows; CLASS carries its positional count, FIELD_POS its index.
-OP(MATCH_FORM_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // peek: the sequence gate on TOS, the cursor into the slot
-OP(MATCH_FORM_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
-OP(MATCH_NEXT_FORM_VAR, 0, EXTRA, LABEL, VAR, VAR, RAW)  // pull from the first slot, the gate, the inner cursor into the second
-OP(MATCH_NEXT_FORM_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, RAW)
-OP(MATCH_NEXT_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // pull and push the element, boxed from a pair spine
-OP(MATCH_NEXT_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
-OP(MATCH_PEEK_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // push the next element without advancing the cursor; the zero-width NOT reads it
-OP(MATCH_PEEK_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
-OP(MATCH_NEXT_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull and store the element into the second slot
-OP(MATCH_NEXT_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
-OP(MATCH_NEXT_TYPE_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull; the element must be an instance of the type in the second slot
-OP(MATCH_NEXT_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
-OP(MATCH_NEXT_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, VAR)  // pull, the type test, the store into the third slot
-OP(MATCH_NEXT_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, FASTVAR)
-OP(MATCH_NEXT_CORE_TYPE_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // pull; the element must be an instance of the core type the RAW ordinal names (KosCoreType), no reference read
-OP(MATCH_NEXT_CORE_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
-OP(MATCH_NEXT_CORE_TYPE_BIND_VAR, 0, EXTRA, LABEL, VAR, RAW, VAR)  // pull, the core type test, the store into the third slot
-OP(MATCH_NEXT_CORE_TYPE_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, FASTVAR)
-OP(MATCH_NEXT_LITERAL_VAR, 0, EXTRA, LABEL, VAR, CONST, NOARG)  // pull; the element must equal the constant
-OP(MATCH_NEXT_LITERAL_FAST, 0, EXTRA, LABEL, FASTVAR, CONST, NOARG)
-OP(MATCH_REST_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // consume the remainder but the suffix; the minimum tail and suffix width packed
-OP(MATCH_REST_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
-OP(MATCH_REST_BIND_VAR, 0, EXTRA, LABEL, VAR, RAW, VAR)  // the remainder stored into the third slot
-OP(MATCH_REST_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, FASTVAR)
-OP(MATCH_END_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // the cursor must be at its end
-OP(MATCH_END_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
-OP(MATCH_AVAILABLE_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // the cursor must have at least the RAW count of elements left: the reservation a suffix makes against a repeat, an optional or a branch
-OP(MATCH_AVAILABLE_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_FORM_VAR, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // peek: the sequence gate and length precheck on TOS against the packed widths; push the cursor
+OP(MATCH_FORM_FAST, 0, EXTRA, LABEL, RAW, NOARG, NOARG)
+OP(MATCH_NEXT_FORM_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // pull from the cursor at the depth, the gate on the element against the packed widths; advance, then push the inner cursor
+OP(MATCH_NEXT_FORM_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
+OP(MATCH_NEXT_VAR, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // pull from the cursor at the depth and push the element, boxed from a pair spine
+OP(MATCH_NEXT_FAST, 0, EXTRA, LABEL, RAW, NOARG, NOARG)
+OP(MATCH_PEEK_VAR, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // push the next element of the cursor at the depth, boxed from a pair spine, without advancing
+OP(MATCH_PEEK_FAST, 0, EXTRA, LABEL, RAW, NOARG, NOARG)
+OP(MATCH_NEXT_BIND_VAR, 0, EXTRA, LABEL, RAW, VAR, NOARG)  // pull from the cursor at the depth and store the boxed element into the slot
+OP(MATCH_NEXT_BIND_FAST, 0, EXTRA, LABEL, RAW, FASTVAR, NOARG)
+OP(MATCH_NEXT_TYPE_VAR, 0, EXTRA, LABEL, RAW, VAR, NOARG)  // pull from the cursor at the depth; the element must be an instance of the type in the slot
+OP(MATCH_NEXT_TYPE_FAST, 0, EXTRA, LABEL, RAW, FASTVAR, NOARG)
+OP(MATCH_NEXT_TYPE_BIND_VAR, 0, EXTRA, LABEL, RAW, VAR, VAR)  // the typed pull, the boxed element stored into the second slot
+OP(MATCH_NEXT_TYPE_BIND_FAST, 0, EXTRA, LABEL, RAW, FASTVAR, FASTVAR)
+OP(MATCH_NEXT_CORE_TYPE_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // pull from the cursor at the depth; the element must be an instance of the core type whose ordinal is the second RAW
+OP(MATCH_NEXT_CORE_TYPE_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
+OP(MATCH_NEXT_CORE_TYPE_BIND_VAR, 0, EXTRA, LABEL, RAW, RAW, VAR)  // the core-typed pull, the boxed element stored into the slot
+OP(MATCH_NEXT_CORE_TYPE_BIND_FAST, 0, EXTRA, LABEL, RAW, RAW, FASTVAR)
+OP(MATCH_NEXT_LITERAL_VAR, 0, EXTRA, LABEL, RAW, CONST, NOARG)  // pull from the cursor at the depth; the element must equal the constant
+OP(MATCH_NEXT_LITERAL_FAST, 0, EXTRA, LABEL, RAW, CONST, NOARG)
+OP(MATCH_REST_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the remainder of the cursor at the depth but the suffix, the minimum tail and suffix width packed in the second RAW
+OP(MATCH_REST_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
+OP(MATCH_REST_BIND_VAR, 0, EXTRA, LABEL, RAW, RAW, VAR)  // the remainder stored into the slot
+OP(MATCH_REST_BIND_FAST, 0, EXTRA, LABEL, RAW, RAW, FASTVAR)
+OP(MATCH_END_VAR, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // the cursor at the depth must be at its end; it stays for the path that ends its extent
+OP(MATCH_END_FAST, 0, EXTRA, LABEL, RAW, NOARG, NOARG)
+OP(MATCH_AVAILABLE_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the cursor at the depth must have at least the count of elements left
+OP(MATCH_AVAILABLE_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
 OP(MATCH_LITERAL, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // peek: TOS must equal the constant
 OP(MATCH_TYPE_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // peek: TOS must be an instance of the type in the slot
 OP(MATCH_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
@@ -518,22 +518,24 @@ OP(MATCH_KEY_VAR_BIND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // the value under
 OP(MATCH_KEY_FAST_BIND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
 OP(MATCH_SAME_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // peek: TOS must equal the value bound in the slot; an unbound slot is a miss
 OP(MATCH_SAME_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
-OP(MATCH_NEXT_SAME_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull; the element must equal the value bound in the second slot
-OP(MATCH_NEXT_SAME_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
-OP(MATCH_NEXT_APPEND_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // pull and append the element, boxed from a pair spine, to the list in the second slot
-OP(MATCH_NEXT_APPEND_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
-OP(MATCH_COLLECT_VAR, 0, EXTRA, LABEL, VAR, VAR, NOARG)  // every remaining element, boxed from a pair spine, appended to the list in the second slot; an improper tail is a miss
-OP(MATCH_COLLECT_FAST, 0, EXTRA, LABEL, FASTVAR, FASTVAR, NOARG)
-OP(MATCH_MARK_VAR, 0, EXTRA, VAR, VAR, NOARG, NOARG)  // the cursor's position, its cell or its index, stored into the second slot
-OP(MATCH_MARK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
-OP(MATCH_RESET_VAR, 0, EXTRA, VAR, VAR, NOARG, NOARG)  // the cursor in the first slot moved back to the position in the second
-OP(MATCH_RESET_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
-OP(MATCH_CAPTURES, 0, EXTRA, CONST, FASTVAR, FASTVAR, FASTVAR)  // push the captures: the names tuple, the first capture slot, the start position, the cursor; a DatumFrame with its source over a pair spine, a dict otherwise; an unbound slot is absent
-OP(MATCH_CAPTURES_NAMED_VAR, 0, EXTRA, CONST, VAR, VAR, NOARG)  // the captures read by name: the names tuple, the start position, the cursor
-OP(MATCH_CAPTURES_NAMED_FAST, 0, EXTRA, CONST, FASTVAR, FASTVAR, NOARG)
-OP(MATCH_ITERATION, 0, EXTRA, CONST, FASTVAR, FASTVAR, FASTVAR)  // push one repeat iteration's value, its captures or the boxed span when none fired, and clear the slots it read
-OP(MATCH_ITERATION_NAMED_VAR, 0, EXTRA, CONST, VAR, VAR, NOARG)
-OP(MATCH_ITERATION_NAMED_FAST, 0, EXTRA, CONST, FASTVAR, FASTVAR, NOARG)
+OP(MATCH_NEXT_SAME_VAR, 0, EXTRA, LABEL, RAW, VAR, NOARG)  // pull from the cursor at the depth; the element must equal the value bound in the slot
+OP(MATCH_NEXT_SAME_FAST, 0, EXTRA, LABEL, RAW, FASTVAR, NOARG)
+OP(MATCH_NEXT_APPEND_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // pull from the cursor at the first depth and append the boxed element to the list at the second
+OP(MATCH_NEXT_APPEND_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
+OP(MATCH_COLLECT_VAR, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // every remaining element of the cursor at the first depth, boxed from a pair spine, appended to the list at the second; an improper tail is a miss
+OP(MATCH_COLLECT_FAST, 0, EXTRA, LABEL, RAW, RAW, NOARG)
+OP(MATCH_MARK_VAR, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // push the position of the cursor at the depth: its cell, or its index
+OP(MATCH_MARK_FAST, 0, EXTRA, RAW, NOARG, NOARG, NOARG)
+OP(MATCH_RESET_VAR, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // the cursor at the first depth moved back to the position at the second
+OP(MATCH_RESET_FAST, 0, EXTRA, RAW, RAW, NOARG, NOARG)
+OP(MATCH_ITEMS, 0, NOARG)  // push an empty list: a repeat's items
+OP(MATCH_COUNT, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // the list at the depth must hold at least the count of items
+OP(MATCH_CAPTURES, 0, EXTRA, CONST, FASTVAR, RAW, RAW)  // push the captures: the names tuple, the first capture slot, the start depth, the cursor depth; a DatumFrame with its source over a pair spine, a dict otherwise; an unbound slot is absent
+OP(MATCH_CAPTURES_NAMED_VAR, 0, EXTRA, CONST, RAW, RAW, NOARG)  // the captures read by name: (keys, locals), the start depth, the cursor depth
+OP(MATCH_CAPTURES_NAMED_FAST, 0, EXTRA, CONST, RAW, RAW, NOARG)
+OP(MATCH_ITERATION, 0, EXTRA, CONST, FASTVAR, RAW, RAW)  // one repeat iteration's value, its mark on the top and its list under that: the names tuple, the first capture slot, the cursor depth, the mode (0 push the value, 1 append it to the list); clears the slots it read
+OP(MATCH_ITERATION_NAMED_VAR, 0, EXTRA, CONST, RAW, RAW, NOARG)  // the iteration read by name: (keys, locals), the cursor depth, the mode
+OP(MATCH_ITERATION_NAMED_FAST, 0, EXTRA, CONST, RAW, RAW, NOARG)
 
 // binary operator sites with one or both operands off the stack: the
 // left operand's source is the prefix (the stack unnamed, VAR, FAST),

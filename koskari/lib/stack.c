@@ -366,6 +366,38 @@ PyObject *KosStack_PeekAt(
 }
 
 
+PyObject *KosStack_PeekUnder(KosSegment *self, size_t under) {
+
+  size_t len = self->len;
+  if (under >= len) {
+    PyErr_Format(PyExc_RuntimeError, "stack peek underrun: %zu under",
+                 under);
+    return NULL;
+  }
+
+  /* borrowed reference */
+  return self->objs[len - 1 - under];
+}
+
+
+int KosStack_SetUnder(KosSegment *self, size_t under, PyObject *val) {
+
+  size_t len = self->len;
+  if (under >= len) {
+    Py_DECREF(val);
+    PyErr_Format(PyExc_RuntimeError, "stack store underrun: %zu under",
+                 under);
+    return -1;
+  }
+
+  PyObject **slot = &self->objs[len - 1 - under];
+  PyObject *old = *slot;
+  *slot = val;
+  Py_DECREF(old);
+  return 0;
+}
+
+
 PyObject *KosStack_PopRef(KosSegment **self) {
 
   KosSegment *s = *self;

@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_COLLECT_VAR: Schema LABEL, slot, slot. Every remaining element of the cursor in the first slot, boxed from a pair spine, appended to the list in the second, the cursor left at its end; an improper tail jumps before anything is appended. The body is kos_match_collect in eval/eval_match.c
+  MATCH_COLLECT_VAR: Schema LABEL, then the depths of the cursor and of a list under the top. Every remaining element, boxed from a pair spine, appended to the list; an improper tail is a miss.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_COLLECT_VAR) {

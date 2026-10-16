@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_NEXT_BIND_FAST: Schema LABEL, slot, slot. Pull from the first slot and store the element, boxed from a pair spine, into the second; miss jumps. The body is kos_match_next_bind in eval/eval_match.c
+  MATCH_NEXT_BIND_FAST: Schema LABEL, then the depth of the cursor under the top and the capture slot. Pull from the cursor and store the boxed element into the slot; the FAST twin names the slot by index.
   (design/interpreter/matcher-bytecode.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT_BIND_FAST) {
