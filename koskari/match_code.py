@@ -1159,7 +1159,7 @@ class MatchLowering:
             OpCode.MATCH_FORM, self.miss_at((miss, 0, 0), 1),
             pack_widths(*self.width(self.entry)))
         self.note_push(cur)
-        self.emit_pull(self.entry, cur, (miss, 0, 0), 0, 1, 0)
+        self.emit_pull(self.entry, cur, (miss, 0, 0), 0, 1, 0, at_end=True)
         # the root's cursor stays for the captures; the frame takes it
         self.note_use(OpCode.MATCH_END, cur=cur)
         self.emit(
@@ -1247,7 +1247,8 @@ class MatchLowering:
             self.emit(OpCode.MATCH_FORM, m, pack_widths(*self.width(sub)))
             self.note_push(cur)
             self.emit_sequence(
-                self.children(sub), cur, miss, depth, level + 1, 0)
+                self.children(sub), cur, miss, depth, level + 1, 0,
+                ends=True)
             # the end pops the cursor the gate pushed; its miss edge
             # pops it as well
             self.note_use(OpCode.MATCH_END, cur=cur)
@@ -1390,17 +1391,23 @@ class MatchLowering:
     # --- pull mode ---
 
 
-    def emit_sequence(self, children, cur, miss, depth, level, trailing):
+    def emit_sequence(
+            self, children, cur, miss, depth, level, trailing,
+            ends=False):
         """
         The children of a spine in order, each pulled from cur, with
         the minimum width of the siblings after it, and of whatever
-        follows the spine, as its trailing reservation
+        follows the spine, as its trailing reservation. With ends, the
+        spine's end is tested right after its last child
         """
 
         mins = [self.width(c)[0] for c in children]
+        last = len(children) - 1
         for i, child in enumerate(children):
             after = sum(mins[i + 1:]) + trailing
-            self.emit_pull(child, cur, miss, depth, level, after)
+            self.emit_pull(
+                child, cur, miss, depth, level, after,
+                at_end=ends and i == last)
 
 
     def rest_counts(self, min_tail, trailing):
@@ -1423,10 +1430,13 @@ class MatchLowering:
         self.emit(OpCode.MATCH_AVAILABLE, label, self.at(cur), needed)
 
 
-    def emit_pull(self, idx, cur, miss, depth, level, trailing):
+    def emit_pull(
+            self, idx, cur, miss, depth, level, trailing,
+            at_end=False):
         """
         One node pulled from the cursor cur; level counts the open
-        spines for the cursor and mark temporaries
+        spines for the cursor and mark temporaries. With at_end, the
+        node is the last of a spine whose end is tested after it
         """
 
         node = self.nodes[idx]
@@ -1487,7 +1497,8 @@ class MatchLowering:
                 m, self.at(cur), pack_widths(*self.width(sub)))
             self.note_push(inner)
             self.emit_sequence(
-                self.children(sub), inner, miss, depth, level + 1, 0)
+                self.children(sub), inner, miss, depth, level + 1, 0,
+                ends=True)
             # the end pops the inner cursor the pull pushed; its miss
             # edge pops it as well
             self.note_use(OpCode.MATCH_END, cur=inner)
@@ -1498,7 +1509,8 @@ class MatchLowering:
 
         elif kind == 'MATCH':
             self.emit_sequence(
-                list(node[1:]), cur, miss, depth, level, trailing)
+                list(node[1:]), cur, miss, depth, level, trailing,
+                ends=at_end)
 
         elif kind == 'GROUP':
             self.emit_pull_group(idx, cur, miss, depth, level, trailing)
@@ -1511,7 +1523,8 @@ class MatchLowering:
             self.emit_pull_optional(idx, cur, miss, depth, level, trailing)
 
         elif kind == 'ONEOF':
-            self.emit_pull_oneof(idx, cur, miss, depth, level, trailing)
+            self.emit_pull_oneof(
+                idx, cur, miss, depth, level, trailing, at_end)
 
         elif kind == 'NOT':
             # a NOT consumes nothing: the next element is read without
@@ -1739,11 +1752,15 @@ class MatchLowering:
         self.emit(OpCode.LABEL, done)
 
 
-    def emit_pull_oneof(self, idx, cur, miss, depth, level, trailing):
+    def emit_pull_oneof(
+            self, idx, cur, miss, depth, level, trailing,
+            at_end=False):
         """
         A ONEOF in a spine: branches of one element try the pulled
         element in turn; wider branches each start from a mark the
-        next branch resets to
+        next branch resets to. Last in a spine whose end is tested
+        after it, every branch but the last tests that end itself, so
+        a branch that leaves elements behind yields to the next
         """
 
         node = self.nodes[idx]
@@ -1765,10 +1782,14 @@ class MatchLowering:
         self.note_push(start)
         for branch in branches[:-1]:
             nxt = self.target.label("match.or")
+            edge = (nxt, depth, len(self.live))
             self.guard(branch, cur, nxt, trailing)
-            self.emit_pull(
-                branch, cur, (nxt, depth, len(self.live)), depth, level + 1,
-                trailing)
+            self.emit_pull(branch, cur, edge, depth, level + 1, trailing)
+            if at_end:
+                self.note_use(OpCode.MATCH_END, cur=cur)
+                self.emit(
+                    OpCode.MATCH_END, self.miss_at(edge, depth),
+                    self.at(cur), 0)
             self.emit(OpCode.POP, 1)
             self.note_pop(start)
             self.emit(OpCode.JUMP, join)

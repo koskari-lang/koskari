@@ -40,26 +40,6 @@ from koskari.reader import Reader, source_str
 pytestmark = pytest.mark.phase_infra
 
 
-def normal(value):
-    """
-    A capture value with its boxes made visible, so two results compare
-    by shape and not by identity
-    """
-
-    if isinstance(value, DatumFrame):
-        return ("frame", {k: normal(v) for k, v in value.items()},
-                normal(value.source), value.position)
-    if isinstance(value, Datum):
-        return ("datum", normal(value.datum), value.position)
-    if isinstance(value, dict):
-        return {k: normal(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [normal(v) for v in value]
-    if isinstance(value, tuple):
-        return tuple(normal(v) for v in value)
-    return value
-
-
 def read(text):
     return Reader().read(source_str(text, "<test>"))
 
@@ -70,40 +50,17 @@ class TestMatchFunction(unittest.TestCase):
         self.base_ns = ModuleNamespace("matcher", {})
 
 
-    def check(self, pattern, *subjects, externs=None):
-        """
-        Both entries over every subject; the bare function's answer
-        must be the Matcher's, captures and misses alike
-        """
-
-        frozen = MatchCompiler().lower(pattern)
-        matcher = make_matcher(pattern, externs)
-        fn = compile_match_function(frozen, self.base_ns)
-        if externs:
-            for name, value in externs.items():
-                self.base_ns.store(name, value)
-        results = []
-        for subject in subjects:
-            want = matcher.match(subject)
-            got = fn(subject).demand()
-            if not want.matched:
-                self.assertIsNone(got, subject)
-            else:
-                self.assertIsNotNone(got, subject)
-                self.assertEqual(normal(got), normal(want.captures), subject)
-            results.append(got)
-        return results
-
-
     def test_define_shape_over_source(self):
         pattern = MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))
-        hit, miss = self.check(
-            pattern, read("(define x 1)"), read("(define 1 1)"))
-        self.assertIsInstance(hit, DatumFrame)
-        self.assertIsInstance(hit["sym"], Datum)
-        self.assertEqual(hit["sym"].datum, symbol("x"))
-        self.assertIsNotNone(hit["sym"].position)
-        self.assertIsNone(miss)
+        m = make_matcher(pattern)
+        hit = m.match(read("(define x 1)"))
+        self.assertTrue(hit.matched)
+        caps = hit.captures
+        self.assertIsInstance(caps, DatumFrame)
+        self.assertIsInstance(caps["sym"], Datum)
+        self.assertEqual(caps["sym"].datum, symbol("x"))
+        self.assertIsNotNone(caps["sym"].position)
+        self.assertFalse(m.match(read("(define 1 1)")).matched)
 
         # Matcher.match refuses an improper subject before it matches;
         # the bare function treats it as a miss
@@ -112,127 +69,264 @@ class TestMatchFunction(unittest.TestCase):
 
 
     def test_body_rest(self):
-        pattern = MATCH(CALLEDBY(), BODY("body"))
-        hit, empty = self.check(
-            pattern, read("(begin 1 2 3)"), read("(begin)"))
-        self.assertEqual(hit["body"].datum, read("(1 2 3)"))
-        self.assertIsNone(empty)
+        m = make_matcher(MATCH(CALLEDBY(), BODY("body")))
+        hit = m.match(read("(begin 1 2 3)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["body"].datum, read("(1 2 3)"))
+        self.assertFalse(m.match(read("(begin)")).matched)
 
 
     def test_rest_before_suffix_and_literal_keyword(self):
-        pattern = MATCH(CALLEDBY(), REST("front"), LITERAL_KW("as"), SYMBOL("name"))
-        self.check(
-            pattern, read("(f 1 2 as: x)"), read("(f as: x)"),
-            read("(f 1 2 as: 3)"), read("(f 1 2)"))
+        m = make_matcher(MATCH(
+            CALLEDBY(), REST("front"), LITERAL_KW("as"), SYMBOL("name")))
+
+        hit = m.match(read("(f 1 2 as: x)"))
+        self.assertTrue(hit.matched)
+        caps = hit.captures
+        self.assertEqual(caps["called-by"].datum, symbol("f"))
+        self.assertIsInstance(caps["front"], tuple)
+        self.assertEqual([d.datum for d in caps["front"]], [1, 2])
+        self.assertEqual(caps["name"].datum, symbol("x"))
+
+        hit = m.match(read("(f as: x)"))
+        self.assertTrue(hit.matched)
+        caps = hit.captures
+        # an empty rest before a suffix is unpinned by the docs
+        self.assertIs(caps["front"].datum, nil)
+        self.assertEqual(caps["name"].datum, symbol("x"))
+
+        self.assertFalse(m.match(read("(f 1 2 as: 3)")).matched)
+        self.assertFalse(m.match(read("(f 1 2)")).matched)
 
 
     def test_bindings_rows(self):
-        pattern = MATCH(CALLEDBY(), BINDINGS("bindings"), BODY("body"))
-        hit, grouped, empty, bad = self.check(
-            pattern,
-            read("(let [[x 1] [y 2]] x)"),
-            read("(let [[x 1] (2 as: y)] x)"),
-            read("(let [] 1)"),
-            read("(let [[x]] x)"))
-        rows = hit["bindings"]
+        m = make_matcher(MATCH(CALLEDBY(), BINDINGS("bindings"), BODY("body")))
+        hit = m.match(read("(let [[x 1] [y 2]] x)"))
+        self.assertTrue(hit.matched)
+        rows = hit.captures["bindings"]
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["name"].datum, symbol("x"))
         self.assertEqual(rows[1]["expr"].datum, 2)
-        self.assertIsNone(bad)
+        self.assertTrue(m.match(read("(let [[x 1] (2 as: y)] x)")).matched)
+        self.assertTrue(m.match(read("(let [] 1)")).matched)
+        self.assertFalse(m.match(read("(let [[x]] x)")).matched)
 
 
     def test_formals(self):
-        pattern = MATCH(CALLEDBY(), FORMALS("formals"), BODY("body"))
-        self.check(
-            pattern,
-            read("(lambda [a b] a)"),
-            read("(lambda [a (b 2) *: rest **: kw] a)"),
-            read("(lambda [] 1)"),
-            read("(lambda a a)"))
+        m = make_matcher(MATCH(CALLEDBY(), FORMALS("formals"), BODY("body")))
+
+        hit = m.match(read("(lambda [a b] a)"))
+        self.assertTrue(hit.matched)
+        formals = hit.captures["formals"]
+        self.assertEqual(
+            [p["name"].datum for p in formals["positionals"]],
+            [symbol("a"), symbol("b")])
+        self.assertEqual(formals["defaults"], [])
+        self.assertEqual(formals["kwonly"], [])
+        self.assertNotIn("star", formals)
+        self.assertNotIn("starstar", formals)
+        self.assertEqual(hit.captures["body"].datum, read("(a)"))
+
+        hit = m.match(read("(lambda [a (b 2) *: rest **: kw] a)"))
+        self.assertTrue(hit.matched)
+        formals = hit.captures["formals"]
+        first, second = formals["positionals"]
+        self.assertEqual(first["name"].datum, symbol("a"))
+        self.assertNotIn("default", first)
+        self.assertEqual(second["name"].datum, symbol("b"))
+        self.assertEqual(second["default"].datum, 2)
+        self.assertEqual(formals["defaults"], [])
+        self.assertEqual(formals["kwonly"], [])
+        self.assertEqual(formals["star"].datum, symbol("rest"))
+        self.assertEqual(formals["starstar"].datum, symbol("kw"))
+
+        hit = m.match(read("(lambda [] 1)"))
+        self.assertTrue(hit.matched)
+        formals = hit.captures["formals"]
+        self.assertEqual(formals["positionals"], [])
+        self.assertEqual(formals["defaults"], [])
+        self.assertEqual(formals["kwonly"], [])
+        self.assertEqual(hit.captures["body"].datum, read("(1)"))
+
+        self.assertFalse(m.match(read("(lambda a a)")).matched)
 
 
     def test_using_oneof_at_root(self):
-        pattern = MATCH(CALLEDBY(), USING("using"))
-        self.check(
-            pattern,
-            read("(for-each [x xs])"),
-            read("(for-each [(a b) xs])"),
-            read("(for-each [xs as: x])"),
-            read("(for-each xs)"))
+        m = make_matcher(MATCH(CALLEDBY(), USING("using")))
+
+        hit = m.match(read("(for-each [x xs])"))
+        self.assertTrue(hit.matched)
+        using = hit.captures["using"]
+        self.assertEqual(using["name"].datum, symbol("x"))
+        self.assertEqual(using["expr"].datum, symbol("xs"))
+        self.assertNotIn("lhs", using)
+
+        hit = m.match(read("(for-each [(a b) xs])"))
+        self.assertTrue(hit.matched)
+        using = hit.captures["using"]
+        self.assertEqual(using["lhs"].datum, read("(a b)"))
+        self.assertEqual(using["expr"].datum, symbol("xs"))
+        self.assertNotIn("name", using)
+
+        hit = m.match(read("(for-each [xs as: x])"))
+        self.assertTrue(hit.matched)
+        using = hit.captures["using"]
+        self.assertEqual(using["expr"].datum, symbol("xs"))
+        self.assertEqual(using["name"].datum, symbol("x"))
+        self.assertNotIn("lhs", using)
+
+        self.assertFalse(m.match(read("(for-each xs)")).matched)
 
 
     def test_repeat_capture_rows_and_spans(self):
-        pattern = MATCH(CALLEDBY(), repeat_capture("rows", FORM(MATCH(VALUE("x"), VALUE("y")))))
-        hit, zero, odd = self.check(
-            pattern, read("(f (1 2) (3 4))"), read("(f)"), read("(f (1 2) (3))"))
-        self.assertEqual([r["x"].datum for r in hit["rows"]], [1, 3])
-        self.assertEqual(zero["rows"], [])
-        self.assertIsNone(odd)
+        m = make_matcher(MATCH(
+            CALLEDBY(),
+            repeat_capture("rows", FORM(MATCH(VALUE("x"), VALUE("y"))))))
+        hit = m.match(read("(f (1 2) (3 4))"))
+        self.assertTrue(hit.matched)
+        self.assertEqual([r["x"].datum for r in hit.captures["rows"]], [1, 3])
+        zero = m.match(read("(f)"))
+        self.assertTrue(zero.matched)
+        self.assertEqual(zero.captures["rows"], [])
+        self.assertFalse(m.match(read("(f (1 2) (3))")).matched)
 
-        pattern = MATCH(CALLEDBY(), repeat_capture("elems", TEST_ANY()))
-        hit, = self.check(pattern, read("(f 1 2 3)"))
-        self.assertEqual([e.datum for e in hit["elems"]], [1, 2, 3])
+        m = make_matcher(MATCH(CALLEDBY(), repeat_capture("elems", TEST_ANY())))
+        hit = m.match(read("(f 1 2 3)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2, 3])
 
 
     def test_repeat_stops_before_suffix(self):
-        pattern = MATCH(CALLEDBY(), repeat_capture("elems", TEST_ANY()), LITERAL_KW("end"))
-        hit, miss = self.check(pattern, read("(f 1 2 end:)"), read("(f 1 2)"))
-        self.assertEqual([e.datum for e in hit["elems"]], [1, 2])
-        self.assertIsNone(miss)
+        m = make_matcher(MATCH(
+            CALLEDBY(), repeat_capture("elems", TEST_ANY()), LITERAL_KW("end")))
+        hit = m.match(read("(f 1 2 end:)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2])
+        self.assertFalse(m.match(read("(f 1 2)")).matched)
 
 
     def test_repeat_minimum(self):
-        pattern = MATCH(CALLEDBY(), CAPTURE("elems", REPEAT(TEST_ANY(), min_count=2)))
-        self.check(pattern, read("(f 1)"), read("(f 1 2)"), read("(f 1 2 3)"))
+        m = make_matcher(MATCH(
+            CALLEDBY(), CAPTURE("elems", REPEAT(TEST_ANY(), min_count=2))))
+
+        self.assertFalse(m.match(read("(f 1)")).matched)
+
+        hit = m.match(read("(f 1 2)"))
+        self.assertTrue(hit.matched)
+        self.assertIsInstance(hit.captures["elems"], list)
+        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2])
+
+        hit = m.match(read("(f 1 2 3)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2, 3])
 
 
     def test_optional_yields_to_suffix(self):
-        pattern = MATCH(CALLEDBY(), OPTIONAL(LITERAL_KW("opt")), VALUE("x"))
-        self.check(pattern, read("(f opt: 1)"), read("(f 1)"), read("(f opt:)"))
+        m = make_matcher(MATCH(
+            CALLEDBY(), OPTIONAL(LITERAL_KW("opt")), VALUE("x")))
 
-        pattern = MATCH(CALLEDBY(), OPTIONAL(TEST_ANY()), VALUE("x"))
-        self.check(pattern, read("(f 1)"), read("(f 1 2)"), read("(f)"))
+        hit = m.match(read("(f opt: 1)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(set(hit.captures), {"called-by", "x"})
+        self.assertEqual(hit.captures["x"].datum, 1)
+
+        hit = m.match(read("(f 1)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["x"].datum, 1)
+
+        hit = m.match(read("(f opt:)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["x"].datum, keyword("opt"))
+
+        m = make_matcher(MATCH(CALLEDBY(), OPTIONAL(TEST_ANY()), VALUE("x")))
+
+        hit = m.match(read("(f 1)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["x"].datum, 1)
+
+        hit = m.match(read("(f 1 2)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["x"].datum, 2)
+
+        self.assertFalse(m.match(read("(f)")).matched)
 
 
     def test_same_and_not(self):
-        pattern = MATCH(CALLEDBY(), VALUE("a"), SAME("a"), NOT(LITERAL(3)), TEST_ANY())
-        self.check(pattern, read("(f 1 1 2)"), read("(f 1 2 2)"), read("(f 1 1 3)"))
+        m = make_matcher(MATCH(
+            CALLEDBY(), VALUE("a"), SAME("a"), NOT(LITERAL(3)), TEST_ANY()))
+
+        hit = m.match(read("(f 1 1 2)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(set(hit.captures), {"called-by", "a"})
+        self.assertEqual(hit.captures["a"].datum, 1)
+
+        self.assertFalse(m.match(read("(f 1 2 2)")).matched)
+        self.assertFalse(m.match(read("(f 1 1 3)")).matched)
 
 
     def test_wider_oneof_in_spine(self):
-        pattern = MATCH(
+        m = make_matcher(MATCH(
             CALLEDBY(),
             ONEOF(MATCH(VALUE("a"), VALUE("b")), MATCH(VALUE("a"))),
-            LITERAL_KW("end"))
-        self.check(
-            pattern, read("(f 1 2 end:)"), read("(f 1 end:)"), read("(f end:)"),
-            read("(f 1 2 3 end:)"))
+            LITERAL_KW("end")))
+
+        hit = m.match(read("(f 1 2 end:)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["a"].datum, 1)
+        self.assertEqual(hit.captures["b"].datum, 2)
+
+        hit = m.match(read("(f 1 end:)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["a"].datum, 1)
+        self.assertNotIn("b", hit.captures)
+
+        self.assertFalse(m.match(read("(f end:)")).matched)
+        self.assertFalse(m.match(read("(f 1 2 3 end:)")).matched)
 
 
     def test_sequence_subjects_bind_raw(self):
-        pattern = MATCH(VALUE("a"), CAPTURE("t", TYPE("int")), REST("r"))
-        hit, miss = self.check(pattern, (1, 2, 3, 4), (1, "x"))
-        self.assertIs(type(hit), dict)
-        self.assertEqual(hit["r"], (3, 4))
-        self.assertIsNone(miss)
+        m = make_matcher(MATCH(VALUE("a"), CAPTURE("t", TYPE("int")), REST("r")))
+        hit = m.match((1, 2, 3, 4))
+        self.assertTrue(hit.matched)
+        self.assertIs(type(hit.captures), dict)
+        self.assertEqual(hit.captures["r"], (3, 4))
+        self.assertFalse(m.match((1, "x")).matched)
 
 
     def test_core_types_read_no_namespace(self):
-        pattern = MATCH(CAPTURE("k", TYPE("keyword")), CAPTURE("s", TYPE("symbol")))
-        hit, = self.check(pattern, cons(keyword("a"), symbol("b"), nil))
-        self.assertEqual(hit["s"].datum, symbol("b"))
+        m = make_matcher(MATCH(
+            CAPTURE("k", TYPE("keyword")), CAPTURE("s", TYPE("symbol"))))
+        hit = m.match(cons(keyword("a"), symbol("b"), nil))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["s"].datum, symbol("b"))
 
 
     def test_extern_stored_into_the_namespace(self):
-        pattern = MATCH(CAPTURE("x", TYPE("T")))
-        self.check(pattern, (1,), ("s",), externs={"T": int})
+        m = make_matcher(MATCH(CAPTURE("x", TYPE("T"))), {"T": int})
+
+        hit = m.match((1,))
+        self.assertTrue(hit.matched)
+        self.assertIs(type(hit.captures), dict)
+        self.assertEqual(hit.captures, {"x": 1})
+
+        self.assertFalse(m.match(("s",)).matched)
 
 
     def test_datum_subject_cells_are_read_through(self):
-        inner = read("(define x 1)")
+        m = make_matcher(MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr")))
+
+        hit = m.match(read("(define x 1)"))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["called-by"].datum, symbol("define"))
+        self.assertEqual(hit.captures["sym"].datum, symbol("x"))
+        self.assertEqual(hit.captures["expr"].datum, 1)
+
         boxed = cons(Datum(symbol("define"), None), symbol("y"), 2, nil)
-        pattern = MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))
-        self.check(pattern, inner, boxed)
+        hit = m.match(boxed)
+        self.assertTrue(hit.matched)
+        self.assertIs(hit.captures["called-by"].datum, symbol("define"))
+        self.assertEqual(hit.captures["sym"].datum, symbol("y"))
+        self.assertEqual(hit.captures["expr"].datum, 2)
 
 
 
@@ -439,6 +533,25 @@ class TestTemporaries(unittest.TestCase):
         self.assertIs(result.captures.source, cell)
 
 
+def walk(pattern):
+    """
+    The instructions of a standalone lowering, each slot or temporary
+    name shown without its gensym suffix
+    """
+
+    def plain(value):
+        if isinstance(value, tuple):
+            return tuple(plain(v) for v in value)
+        if isinstance(value, symbol):
+            return str(value).split("#")[0]
+        return value
+
+    frozen = MatchCompiler().lower(pattern)
+    lowering = MatchLowering(FunctionTarget("t"), frozen, {}, None, None)
+    lowering.lower_function()
+    return [(op.name, plain(arg)) for op, arg in lowering.target.instructions]
+
+
 def depth_trace(pattern, index=None):
     """
     The rows of a standalone lowering that name a cursor, mark or
@@ -533,6 +646,47 @@ class TestDepthTrace(unittest.TestCase):
     def test_indexed_root_reads_captures_one_deeper(self):
         self.assertEqual(rows(depth_trace(MATCH(VALUE("x")), index=0))[-1],
                          ("MATCH_CAPTURES", {"cur": 1, "start": 2}))
+
+    def test_trailing_oneof_branch_ends_its_form(self):
+        # a ONEOF last in a form: every branch but the last tests the
+        # form's end, its flag clear, on that branch's miss edge, so a
+        # branch that leaves elements behind yields to the next
+        pattern = MATCH(FORM(MATCH(ONEOF(
+            MATCH(VALUE("a"), VALUE("b")), MATCH(VALUE("a"))))))
+        self.assertEqual(walk(pattern), [
+            ("VAR", "match-subject"),
+            ("MATCH_FORM", ("match.miss_1", 257, 0, 0)),
+            ("MATCH_NEXT_FORM", ("match.pop_2", 0, 258, 0)),
+            ("MATCH_MARK", (0, 0, 0, 0)),
+            ("MATCH_NEXT_BIND_VAR", ("match.or_5", 1, "a", 0)),
+            ("MATCH_NEXT_BIND_VAR", ("match.or_5", 1, "b", 0)),
+            ("MATCH_END", ("match.or_5", 1, 0, 0)),
+            ("POP", 1),
+            ("JUMP", "match.or_4"),
+            ("LABEL", "match.or_5"),
+            ("MATCH_RESET", (1, 0, 0, 0)),
+            ("VAR_CLEAR", "a"),
+            ("VAR_CLEAR", "b"),
+            ("MATCH_NEXT_BIND_VAR", ("match.pop_6", 1, "a", 0)),
+            ("POP", 1),
+            ("LABEL", "match.or_4"),
+            ("MATCH_END", ("match.pop_3", 0, 1, 0)),
+            ("MATCH_END", ("match.pop_2", 0, 0, 0)),
+            ("MATCH_CAPTURES", (("a", "b", "a"), "a", 1, 0)),
+            ("RETURN", 1),
+            ("LABEL", "match.pop_2"),
+            ("POP", 1),
+            ("JUMP", "match.miss_1"),
+            ("LABEL", "match.pop_3"),
+            ("POP", 2),
+            ("JUMP", "match.miss_1"),
+            ("LABEL", "match.pop_6"),
+            ("POP", 3),
+            ("JUMP", "match.miss_1"),
+            ("LABEL", "match.miss_1"),
+            ("CONST", None),
+            ("RETURN", 1),
+        ])
 
 
 class TestPairSpineElements(unittest.TestCase):
