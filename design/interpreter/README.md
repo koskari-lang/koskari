@@ -44,6 +44,7 @@ The former one-page stub [archive/compiler.md](../archive/compiler.md) is archiv
 - **kio-setuptools-build.md**: `.kio` precompilation during `bdist_wheel` (sdist `.ki` only; wheel adds `.kio` beside `.ki`), loader preference, and why not `__pycache__`
 - **scratch-slots.md**: a pool of scratch tokens a fragment hands out for a special's extent and reuses across non-overlapping uses (tier 1), their own tuple on the spec so they leave the locals set (tier 2), and a scratch node with its own instructions as an optimization to measure (tier 3); the match temporaries as the first user (design)
 - **matcher-bytecode.md**: the matcher lowered to evaluator instructions -- one lowering from the frozen tuple to a standalone `Function`, a module's lambda or an inline fragment, pull and peek instructions over fast-slot cursors, failure edges in place of the change log, the fused instruction shapes with their VAR and FAST twins, the matcher compiler's three lifetimes and the `Syntax` dispatcher, and the stages that replaced the engine (implemented)
+- **matcher-callable.md**: `Matcher` as a native KosCallable -- called with the subject, flattened from Koskari, compiled at build, a gensym formal, one constructor (design)
 
 Completed design drafts (historical) live under **[archive/](../archive/)** — e.g.
 `dynamic-node-unified-api.md` (partial dynnode migration spec), `compiler.md` (stub),
