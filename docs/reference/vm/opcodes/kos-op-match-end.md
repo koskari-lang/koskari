@@ -1,4 +1,4 @@
-# KOS_OP_MATCH_END_VAR / KOS_OP_MATCH_END_FAST
+# KOS_OP_MATCH_END
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: `[..., cursor]` -> `[...]` with `a2` set, no stack effect with it clear;
@@ -9,5 +9,4 @@
   at that point. With `a2` clear it stays, as the standalone matcher's root
   keeps it for `MATCH_CAPTURES`.
 - **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a
-  special form's pattern or a `syntax-rules` rule; the `_VAR` and `_FAST`
-  forms are one schema, since the row names no slot.
+  special form's pattern or a `syntax-rules` rule.

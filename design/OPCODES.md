@@ -372,22 +372,22 @@ When adding or changing an opcode:
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var_attr) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
 | MATCH_CASE | EXTRA | Retired; never emitted, raises when reached | [§9.2](#kos_op_match_case) |
-| MATCH_FORM_VAR / MATCH_FORM_FAST | EXTRA | Peek: sequence gate and length precheck on TOS; the cursor pushed | [§9.2](#kos_op_match_form_var) |
-| MATCH_NEXT_FORM_VAR / MATCH_NEXT_FORM_FAST | EXTRA | Pull from the cursor at the depth: the gate on the element; the inner cursor pushed | [§9.2](#kos_op_match_next_form_var) |
-| MATCH_NEXT_VAR / MATCH_NEXT_FAST | EXTRA | Pull from the cursor at the depth and push the element, boxed from a pair spine | [§9.2](#kos_op_match_next_var) |
-| MATCH_PEEK_VAR / MATCH_PEEK_FAST | EXTRA | Push the next element of the cursor at the depth without advancing it | [§9.2](#kos_op_match_peek_var) |
+| MATCH_FORM | EXTRA | Peek: sequence gate and length precheck on TOS; the cursor pushed | [§9.2](#kos_op_match_form) |
+| MATCH_NEXT_FORM | EXTRA | Pull from the cursor at the depth: the gate on the element; the inner cursor pushed | [§9.2](#kos_op_match_next_form) |
+| MATCH_NEXT | EXTRA | Pull from the cursor at the depth and push the element, boxed from a pair spine | [§9.2](#kos_op_match_next) |
+| MATCH_PEEK | EXTRA | Push the next element of the cursor at the depth without advancing it | [§9.2](#kos_op_match_peek) |
 | MATCH_NEXT_BIND_VAR / MATCH_NEXT_BIND_FAST | EXTRA | Pull and store the element into the slot | [§9.2](#kos_op_match_next_bind_var) |
 | MATCH_NEXT_TYPE_VAR / MATCH_NEXT_TYPE_FAST | EXTRA | Pull; the element must be an instance of the type in the slot | [§9.2](#kos_op_match_next_type_var) |
 | MATCH_NEXT_TYPE_BIND_VAR / MATCH_NEXT_TYPE_BIND_FAST | EXTRA | Pull, the type test, the store into the second slot | [§9.2](#kos_op_match_next_type_bind_var) |
-| MATCH_NEXT_CORE_TYPE_VAR / MATCH_NEXT_CORE_TYPE_FAST | EXTRA | Pull; the element must be an instance of the core type the ordinal names; no reference read | [§9.2](#kos_op_match_next_core_type_var) |
+| MATCH_NEXT_CORE_TYPE | EXTRA | Pull; the element must be an instance of the core type the ordinal names; no reference read | [§9.2](#kos_op_match_next_core_type) |
 | MATCH_NEXT_CORE_TYPE_BIND_VAR / MATCH_NEXT_CORE_TYPE_BIND_FAST | EXTRA | Pull, the core type test, the store into the slot | [§9.2](#kos_op_match_next_core_type_bind_var) |
 | MATCH_CORE_TYPE | EXTRA | Peek: TOS must be an instance of the core type the ordinal names | [§9.2](#kos_op_match_core_type) |
 | MATCH_CORE_TYPE_BIND_VAR / MATCH_CORE_TYPE_BIND_FAST | EXTRA | Peek: the core type test, then TOS stored into the slot | [§9.2](#kos_op_match_core_type_bind_var) |
-| MATCH_NEXT_LITERAL_VAR / MATCH_NEXT_LITERAL_FAST | EXTRA | Pull; the element must equal the constant | [§9.2](#kos_op_match_next_literal_var) |
-| MATCH_REST_VAR / MATCH_REST_FAST | EXTRA | Consume the remainder but the suffix; the minimum tail and suffix width packed | [§9.2](#kos_op_match_rest_var) |
+| MATCH_NEXT_LITERAL | EXTRA | Pull; the element must equal the constant | [§9.2](#kos_op_match_next_literal) |
+| MATCH_REST | EXTRA | Consume the remainder but the suffix; the minimum tail and suffix width packed | [§9.2](#kos_op_match_rest) |
 | MATCH_REST_BIND_VAR / MATCH_REST_BIND_FAST | EXTRA | The remainder stored into the slot | [§9.2](#kos_op_match_rest_bind_var) |
-| MATCH_END_VAR / MATCH_END_FAST | EXTRA | The cursor at the depth must be at its end; popped when the flag is set | [§9.2](#kos_op_match_end_var) |
-| MATCH_AVAILABLE_VAR / MATCH_AVAILABLE_FAST | EXTRA | At least the count of elements must remain from the cursor at the depth | [§9.2](#kos_op_match_available_var) |
+| MATCH_END | EXTRA | The cursor at the depth must be at its end; popped when the flag is set | [§9.2](#kos_op_match_end) |
+| MATCH_AVAILABLE | EXTRA | At least the count of elements must remain from the cursor at the depth | [§9.2](#kos_op_match_available) |
 | MATCH_LITERAL | EXTRA | Peek: TOS must equal the constant | [§9.2](#kos_op_match_literal) |
 | MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | Peek: TOS must be an instance of the type in the slot | [§9.2](#kos_op_match_type_var) |
 | MATCH_TYPE_BIND_VAR / MATCH_TYPE_BIND_FAST | EXTRA | Peek: the type test, then TOS stored into the second slot | [§9.2](#kos_op_match_type_bind_var) |
@@ -402,13 +402,13 @@ When adding or changing an opcode:
 | MATCH_KEY_CONST_BIND_VAR / MATCH_KEY_CONST_BIND_FAST / MATCH_KEY_VAR_BIND_VAR / MATCH_KEY_FAST_BIND_FAST | EXTRA | The value under the key stored into the slot | [§9.2](#kos_op_match_key_const_bind_var) |
 | MATCH_SAME_VAR / MATCH_SAME_FAST | EXTRA | Peek: TOS must equal the value bound in the slot; an unbound slot is a miss | [§9.2](#kos_op_match_same_var) |
 | MATCH_NEXT_SAME_VAR / MATCH_NEXT_SAME_FAST | EXTRA | Pull; the element must equal the value bound in the slot | [§9.2](#kos_op_match_next_same_var) |
-| MATCH_NEXT_APPEND_VAR / MATCH_NEXT_APPEND_FAST | EXTRA | Pull and append the element to the list at the second depth | [§9.2](#kos_op_match_next_append_var) |
-| MATCH_COLLECT_VAR / MATCH_COLLECT_FAST | EXTRA | Every remaining element appended to the list at the second depth | [§9.2](#kos_op_match_collect_var) |
-| MATCH_MARK_VAR / MATCH_MARK_FAST | EXTRA | The position of the cursor at the depth pushed | [§9.2](#kos_op_match_mark_var) |
-| MATCH_REMARK_VAR / MATCH_REMARK_FAST | EXTRA | The mark at the second depth moved to the position of the cursor at the first | [§9.2](#kos_op_match_remark_var) |
-| MATCH_RESET_VAR / MATCH_RESET_FAST | EXTRA | The cursor at the first depth moved back to the position at the second | [§9.2](#kos_op_match_reset_var) |
-| MATCH_CAPTURES / MATCH_CAPTURES_NAMED_VAR / MATCH_CAPTURES_NAMED_FAST | EXTRA | Push the captures: a DatumFrame over a pair spine, a dict otherwise; an unbound slot is absent | [§9.2](#kos_op_match_captures) |
-| MATCH_ITERATION / MATCH_ITERATION_NAMED_VAR / MATCH_ITERATION_NAMED_FAST | EXTRA | One repeat iteration's value, its captures or the span, appended to the items under its mark or pushed; the slots it read cleared | [§9.2](#kos_op_match_iteration) |
+| MATCH_NEXT_APPEND | EXTRA | Pull and append the element to the list at the second depth | [§9.2](#kos_op_match_next_append) |
+| MATCH_COLLECT | EXTRA | Every remaining element appended to the list at the second depth | [§9.2](#kos_op_match_collect) |
+| MATCH_MARK | EXTRA | The position of the cursor at the depth pushed | [§9.2](#kos_op_match_mark) |
+| MATCH_REMARK | EXTRA | The mark at the second depth moved to the position of the cursor at the first | [§9.2](#kos_op_match_remark) |
+| MATCH_RESET | EXTRA | The cursor at the first depth moved back to the position at the second | [§9.2](#kos_op_match_reset) |
+| MATCH_CAPTURES / MATCH_CAPTURES_NAMED | EXTRA | Push the captures: a DatumFrame over a pair spine, a dict otherwise; an unbound slot is absent | [§9.2](#kos_op_match_captures) |
+| MATCH_ITERATION / MATCH_ITERATION_NAMED | EXTRA | One repeat iteration's value, its captures or the span, appended to the items under its mark or pushed; the slots it read cleared | [§9.2](#kos_op_match_iteration) |
 | MATCH_ITEMS | NOARG | Push an empty list, a repeat's items | [§9.2](#kos_op_match_items) |
 | MATCH_COUNT | EXTRA | The list at the depth must hold at least the count of items | [§9.2](#kos_op_match_count) |
 | GLOBALS | NOARG | Push the module (outermost) namespace | [§10](#kos_op_globals) |
@@ -1882,10 +1882,11 @@ interprets a pattern object at run time.
 - **Twins.** An instruction that names a capture slot or a type has a
   `_VAR` form, resolving the slot by name, and a `_FAST` form, by fast
   index; `convert_fast` lowers the one to the other as for every `VAR`
-  instruction. An instruction whose only operand was a cursor keeps
-  both names with one schema. `MATCH_LITERAL`, `MATCH_FIELD_KW`,
-  `MATCH_MAP`, `MATCH_KEY_CONST`, `MATCH_ITEMS`, `MATCH_COUNT`,
-  `MATCH_CAPTURES` and `MATCH_ITERATION` have one form.
+  instruction. An instruction whose operands are only depths, widths,
+  labels and constants has one form under its bare name.
+  `MATCH_CAPTURES` and `MATCH_ITERATION` read their captures from a
+  run of fast slots; `MATCH_CAPTURES_NAMED` and `MATCH_ITERATION_NAMED`
+  read each capture by its name.
 - **Immediates.** A RAW field is a number the instruction interprets:
   the depth of a cursor, mark or list under the top of the stack, the
   packed minimum and maximum widths of a form (high and low eight
@@ -1929,7 +1930,7 @@ lambda body for a syntax rule, `compile_match_function` and
   [archive/match-case-form.md](archive/match-case-form.md).
 - **Implementation**: `koskari/lib/opcode/MATCH_CASE.c`
 
-### KOS_OP_MATCH_FORM_VAR / KOS_OP_MATCH_FORM_FAST {#kos_op_match_form_var}
+### KOS_OP_MATCH_FORM {#kos_op_match_form}
 
 - **Style**: EXTRA (LABEL, RAW)
 - **Stack**: `[..., elem]` -> `[..., elem, cursor]`; jump to `a0` with nothing pushed on a miss.
@@ -1942,10 +1943,9 @@ lambda body for a syntax rule, `compile_match_function` and
   or `nil` itself, or a cursor object over the sequence. Every instruction of the walk
   names it by its depth under the top, and `MATCH_END` pops it when its
   extent ends.
-- **Implementation**: `koskari/lib/opcode/MATCH_FORM_VAR.c`,
-  `koskari/lib/opcode/MATCH_FORM_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_FORM.c`
 
-### KOS_OP_MATCH_NEXT_FORM_VAR / KOS_OP_MATCH_NEXT_FORM_FAST {#kos_op_match_next_form_var}
+### KOS_OP_MATCH_NEXT_FORM {#kos_op_match_next_form}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: `[...]` -> `[..., cursor]`; jump to `a0` with nothing pushed on a miss.
@@ -1954,10 +1954,9 @@ lambda body for a syntax rule, `compile_match_function` and
   inner cursor. The outer entry is written before the push, so its depth
   still holds; at the end of the outer walk or on a failed gate nothing
   moves.
-- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_FORM_VAR.c`,
-  `koskari/lib/opcode/MATCH_NEXT_FORM_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_FORM.c`
 
-### KOS_OP_MATCH_NEXT_VAR / KOS_OP_MATCH_NEXT_FAST {#kos_op_match_next_var}
+### KOS_OP_MATCH_NEXT {#kos_op_match_next}
 
 - **Style**: EXTRA (LABEL, RAW)
 - **Stack**: `[...]` -> `[..., elem]`; jump to `a0` with nothing pushed at the
@@ -1965,10 +1964,9 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Semantics**: Pull the next element from the cursor at depth `a1` and push it,
   boxed as a `Datum` with its cell's position when the cursor is a pair spine,
   raw from a sequence. The cursor advances.
-- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_VAR.c`,
-  `koskari/lib/opcode/MATCH_NEXT_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_NEXT.c`
 
-### KOS_OP_MATCH_PEEK_VAR / KOS_OP_MATCH_PEEK_FAST {#kos_op_match_peek_var}
+### KOS_OP_MATCH_PEEK {#kos_op_match_peek}
 
 - **Style**: EXTRA (LABEL, RAW)
 - **Stack**: `[...]` -> `[..., elem]`; jump to `a0` with nothing pushed at the
@@ -1976,8 +1974,7 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Semantics**: Push the next element of the cursor at depth `a1` as `MATCH_NEXT`
   does, and leave the cursor where it is. A zero-width `(not ...)` reads its
   element this way.
-- **Implementation**: `koskari/lib/opcode/MATCH_PEEK_VAR.c`,
-  `koskari/lib/opcode/MATCH_PEEK_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_PEEK.c`
 
 ### KOS_OP_MATCH_NEXT_BIND_VAR / KOS_OP_MATCH_NEXT_BIND_FAST {#kos_op_match_next_bind_var}
 
@@ -2007,7 +2004,7 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Implementation**: `koskari/lib/opcode/MATCH_NEXT_TYPE_BIND_VAR.c`,
   `koskari/lib/opcode/MATCH_NEXT_TYPE_BIND_FAST.c`
 
-### KOS_OP_MATCH_NEXT_CORE_TYPE_VAR / KOS_OP_MATCH_NEXT_CORE_TYPE_FAST {#kos_op_match_next_core_type_var}
+### KOS_OP_MATCH_NEXT_CORE_TYPE {#kos_op_match_next_core_type}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` on a miss.
@@ -2017,8 +2014,7 @@ lambda body for a syntax rule, `compile_match_function` and
   subclasses included, so a scoped symbol passes `symbol` and a bool passes
   `int`. Nothing is read from the namespace; a binding of the type's name in
   scope is never consulted. The cursor advances only on a pass.
-- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_CORE_TYPE_VAR.c`,
-  `koskari/lib/opcode/MATCH_NEXT_CORE_TYPE_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_CORE_TYPE.c`
 
 ### KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_VAR / KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST {#kos_op_match_next_core_type_bind_var}
 
@@ -2049,7 +2045,7 @@ lambda body for a syntax rule, `compile_match_function` and
   `koskari/lib/opcode/MATCH_CORE_TYPE_BIND_FAST.c`; the ordinals are
   `KosCoreType` in `matcher.h`, exported as `koskari.lib.CoreType`
 
-### KOS_OP_MATCH_NEXT_LITERAL_VAR / KOS_OP_MATCH_NEXT_LITERAL_FAST {#kos_op_match_next_literal_var}
+### KOS_OP_MATCH_NEXT_LITERAL {#kos_op_match_next_literal}
 
 - **Style**: EXTRA (LABEL, RAW, CONST)
 - **Stack**: No stack effect; jump to `a0` on a miss.
@@ -2057,10 +2053,9 @@ lambda body for a syntax rule, `compile_match_function` and
   read through `Datum` must equal the constant `a2`. A scoped symbol equals the
   symbol it was derived from; otherwise `==`. The cursor advances only on a
   pass.
-- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_LITERAL_VAR.c`,
-  `koskari/lib/opcode/MATCH_NEXT_LITERAL_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_LITERAL.c`
 
-### KOS_OP_MATCH_REST_VAR / KOS_OP_MATCH_REST_FAST {#kos_op_match_rest_var}
+### KOS_OP_MATCH_REST {#kos_op_match_rest}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` on a miss.
@@ -2068,8 +2063,7 @@ lambda body for a syntax rule, `compile_match_function` and
   suffix width packed in the low eight bits of `a2`, requiring at least the
   minimum tail in the high eight bits. Too few elements, or an improper pair
   tail, is a miss.
-- **Implementation**: `koskari/lib/opcode/MATCH_REST_VAR.c`,
-  `koskari/lib/opcode/MATCH_REST_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_REST.c`
 
 ### KOS_OP_MATCH_REST_BIND_VAR / KOS_OP_MATCH_REST_BIND_FAST {#kos_op_match_rest_bind_var}
 
@@ -2080,7 +2074,7 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Implementation**: `koskari/lib/opcode/MATCH_REST_BIND_VAR.c`,
   `koskari/lib/opcode/MATCH_REST_BIND_FAST.c`
 
-### KOS_OP_MATCH_END_VAR / KOS_OP_MATCH_END_FAST {#kos_op_match_end_var}
+### KOS_OP_MATCH_END {#kos_op_match_end}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: `[..., cursor]` -> `[...]` with `a2` set, no stack effect with it clear;
@@ -2090,18 +2084,16 @@ lambda body for a syntax rule, `compile_match_function` and
   cursor is popped, its extent ending here; the compiler places it on the top
   at that point. With `a2` clear it stays, as the standalone matcher's root
   keeps it for `MATCH_CAPTURES`.
-- **Implementation**: `koskari/lib/opcode/MATCH_END_VAR.c`,
-  `koskari/lib/opcode/MATCH_END_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_END.c`
 
-### KOS_OP_MATCH_AVAILABLE_VAR / KOS_OP_MATCH_AVAILABLE_FAST {#kos_op_match_available_var}
+### KOS_OP_MATCH_AVAILABLE {#kos_op_match_available}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` on a miss.
 - **Semantics**: At least `a2` elements must remain from the cursor at depth `a1`.
   The reservation a fixed suffix makes before a repeat, an optional or a branch
   consumes elements.
-- **Implementation**: `koskari/lib/opcode/MATCH_AVAILABLE_VAR.c`,
-  `koskari/lib/opcode/MATCH_AVAILABLE_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_AVAILABLE.c`
 
 ### KOS_OP_MATCH_LITERAL {#kos_op_match_literal}
 
@@ -2238,17 +2230,16 @@ lambda body for a syntax rule, `compile_match_function` and
 - **Implementation**: `koskari/lib/opcode/MATCH_NEXT_SAME_VAR.c`,
   `koskari/lib/opcode/MATCH_NEXT_SAME_FAST.c`
 
-### KOS_OP_MATCH_NEXT_APPEND_VAR / KOS_OP_MATCH_NEXT_APPEND_FAST {#kos_op_match_next_append_var}
+### KOS_OP_MATCH_NEXT_APPEND {#kos_op_match_next_append}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` at the end of the walk.
 - **Semantics**: Pull the next element from the cursor at depth `a1` and append it,
   boxed as `MATCH_NEXT` boxes it, to the list at depth `a2`. The cursor
   advances.
-- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_APPEND_VAR.c`,
-  `koskari/lib/opcode/MATCH_NEXT_APPEND_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_NEXT_APPEND.c`
 
-### KOS_OP_MATCH_COLLECT_VAR / KOS_OP_MATCH_COLLECT_FAST {#kos_op_match_collect_var}
+### KOS_OP_MATCH_COLLECT {#kos_op_match_collect}
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` on a miss.
@@ -2256,10 +2247,9 @@ lambda body for a syntax rule, `compile_match_function` and
   from a pair spine, to the list at depth `a2`, and leave the cursor at its
   end. A pair spine is counted first, so an improper tail is a miss before
   anything is appended.
-- **Implementation**: `koskari/lib/opcode/MATCH_COLLECT_VAR.c`,
-  `koskari/lib/opcode/MATCH_COLLECT_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_COLLECT.c`
 
-### KOS_OP_MATCH_MARK_VAR / KOS_OP_MATCH_MARK_FAST {#kos_op_match_mark_var}
+### KOS_OP_MATCH_MARK {#kos_op_match_mark}
 
 - **Style**: EXTRA (RAW)
 - **Stack**: `[...]` -> `[..., position]`; cannot miss.
@@ -2267,28 +2257,25 @@ lambda body for a syntax rule, `compile_match_function` and
   cell of a pair spine, or a mark object over the sequence at the cursor's
   index. The instructions that follow name the cursor one deeper while the
   mark lives; the path that ends the mark's extent pops it.
-- **Implementation**: `koskari/lib/opcode/MATCH_MARK_VAR.c`,
-  `koskari/lib/opcode/MATCH_MARK_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_MARK.c`
 
-### KOS_OP_MATCH_REMARK_VAR / KOS_OP_MATCH_REMARK_FAST {#kos_op_match_remark_var}
+### KOS_OP_MATCH_REMARK {#kos_op_match_remark}
 
 - **Style**: EXTRA (RAW, RAW)
 - **Stack**: No stack effect; cannot miss.
 - **Semantics**: Move the mark at depth `a1` to the position of the cursor at
   depth `a0`. A repeat pushes its mark once before its loop and re-marks at
   the head of every pass, so a pass over a sequence allocates nothing.
-- **Implementation**: `koskari/lib/opcode/MATCH_REMARK_VAR.c`,
-  `koskari/lib/opcode/MATCH_REMARK_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_REMARK.c`
 
-### KOS_OP_MATCH_RESET_VAR / KOS_OP_MATCH_RESET_FAST {#kos_op_match_reset_var}
+### KOS_OP_MATCH_RESET {#kos_op_match_reset}
 
 - **Style**: EXTRA (RAW, RAW)
 - **Stack**: No stack effect; cannot miss.
 - **Semantics**: Move the cursor at depth `a0` back to the position of the
   mark at depth `a1`. A failed branch of a repeat, an optional or a `(or ...)`
   returns to where it began.
-- **Implementation**: `koskari/lib/opcode/MATCH_RESET_VAR.c`,
-  `koskari/lib/opcode/MATCH_RESET_FAST.c`
+- **Implementation**: `koskari/lib/opcode/MATCH_RESET.c`
 
 ### KOS_OP_MATCH_ITEMS {#kos_op_match_items}
 
@@ -2307,12 +2294,13 @@ lambda body for a syntax rule, `compile_match_function` and
   minimum count, checked after its loop.
 - **Implementation**: `koskari/lib/opcode/MATCH_COUNT.c`
 
-### KOS_OP_MATCH_CAPTURES / KOS_OP_MATCH_CAPTURES_NAMED_VAR / KOS_OP_MATCH_CAPTURES_NAMED_FAST {#kos_op_match_captures}
+### KOS_OP_MATCH_CAPTURES / KOS_OP_MATCH_CAPTURES_NAMED {#kos_op_match_captures}
 
 - **Style**: EXTRA (CONST, FASTVAR, RAW, RAW) on `MATCH_CAPTURES`: the
   names tuple, the first capture slot of one run, the start's depth, the
-  cursor's depth. EXTRA (CONST, RAW, RAW) on the NAMED forms: the names tuple,
-  the start's depth, the cursor's depth, each capture read by its name.
+  cursor's depth. EXTRA (CONST, RAW, RAW) on `MATCH_CAPTURES_NAMED`: the
+  names tuple, the start's depth, the cursor's depth, each capture read by
+  its name.
 - **Stack**: `[...]` -> `[..., captures]`.
 - **Semantics**: Push the captures of a scope: the value of each named slot
   that is bound, an unbound slot absent. The start is the subject for a
@@ -2322,15 +2310,14 @@ lambda body for a syntax rule, `compile_match_function` and
   otherwise, a sequence subject or a mark over one, the result is a plain
   dict.
 - **Implementation**: `koskari/lib/opcode/MATCH_CAPTURES.c`,
-  `koskari/lib/opcode/MATCH_CAPTURES_NAMED_VAR.c`,
-  `koskari/lib/opcode/MATCH_CAPTURES_NAMED_FAST.c`
+  `koskari/lib/opcode/MATCH_CAPTURES_NAMED.c`
 
-### KOS_OP_MATCH_ITERATION / KOS_OP_MATCH_ITERATION_NAMED_VAR / KOS_OP_MATCH_ITERATION_NAMED_FAST {#kos_op_match_iteration}
+### KOS_OP_MATCH_ITERATION / KOS_OP_MATCH_ITERATION_NAMED {#kos_op_match_iteration}
 
 - **Style**: EXTRA (CONST, FASTVAR, RAW, RAW) on `MATCH_ITERATION`: the names
   tuple, the first capture slot of one run, the cursor's depth, the mode. EXTRA
-  (CONST, RAW, RAW) on the NAMED forms: the names tuple, the cursor's depth, the
-  mode.
+  (CONST, RAW, RAW) on `MATCH_ITERATION_NAMED`: the names tuple, the cursor's
+  depth, the mode.
 - **Stack**: `[..., items, mark]` -> `[..., items, mark]` in mode 1, the value
   appended to `items`; `[..., mark]` -> `[..., mark, value]` in mode 0.
 - **Semantics**: One repeat iteration's value, with the slots it read cleared so
@@ -2341,8 +2328,7 @@ lambda body for a syntax rule, `compile_match_function` and
   that, which the value is appended to; in mode 0 the value is pushed, the
   form a capture over a wider pattern takes.
 - **Implementation**: `koskari/lib/opcode/MATCH_ITERATION.c`,
-  `koskari/lib/opcode/MATCH_ITERATION_NAMED_VAR.c`,
-  `koskari/lib/opcode/MATCH_ITERATION_NAMED_FAST.c`
+  `koskari/lib/opcode/MATCH_ITERATION_NAMED.c`
 
 ## 10. Introspection
 

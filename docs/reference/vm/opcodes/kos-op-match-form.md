@@ -1,4 +1,4 @@
-# KOS_OP_MATCH_FORM_VAR / KOS_OP_MATCH_FORM_FAST
+# KOS_OP_MATCH_FORM
 
 - **Style**: EXTRA (LABEL, RAW)
 - **Stack**: `[..., elem]` -> `[..., elem, cursor]`; jump to `a0` with nothing pushed on a miss.
@@ -12,5 +12,4 @@
   names it by its depth under the top, and `MATCH_END` pops it when its
   extent ends.
 - **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a
-  special form's pattern or a `syntax-rules` rule; the `_VAR` and `_FAST`
-  forms are one schema, since the row names no slot.
+  special form's pattern or a `syntax-rules` rule.

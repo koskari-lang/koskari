@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_NEXT_LITERAL_FAST: Schema LABEL, then the depth of the cursor under the top and the constant. Pull from the cursor; the element must equal the constant.
+  MATCH_NEXT_CORE_TYPE: Schema LABEL, then the depth of the cursor under the top and the core type's ordinal. Pull from the cursor; the element must be an instance of the core type.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_NEXT_LITERAL_FAST) {
+KOS_OP_HANDLER(MATCH_NEXT_CORE_TYPE) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_next_literal, es, insn, NULL);
+  TAILCALL(kos_match_next_core_type, es, insn, NULL);
 }
 
 

@@ -1,4 +1,4 @@
-# KOS_OP_MATCH_NEXT_CORE_TYPE_VAR / KOS_OP_MATCH_NEXT_CORE_TYPE_FAST
+# KOS_OP_MATCH_NEXT_CORE_TYPE
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` on a miss.
@@ -10,5 +10,4 @@
   scope is never consulted. The cursor advances only on a pass.
 - **Compiler form:** Emitted by the match compiler for a type test that names a
   core type, in a `compile/match` arm, a special form's pattern or a `syntax-
-  rules` rule; the `_VAR` and `_FAST` forms are one schema, since the row
-  names no slot.
+  rules` rule.

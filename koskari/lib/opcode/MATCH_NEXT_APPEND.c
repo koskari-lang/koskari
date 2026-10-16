@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_NEXT_CORE_TYPE_VAR: Schema LABEL, then the depth of the cursor under the top and the core type's ordinal. Pull from the cursor; the element must be an instance of the core type.
+  MATCH_NEXT_APPEND: Schema LABEL, then the depths of the cursor and of a list under the top. Pull from the cursor and append the boxed element to the list.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_NEXT_CORE_TYPE_VAR) {
+KOS_OP_HANDLER(MATCH_NEXT_APPEND) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_next_core_type, es, insn, NULL);
+  TAILCALL(kos_match_next_append, es, insn, NULL);
 }
 
 

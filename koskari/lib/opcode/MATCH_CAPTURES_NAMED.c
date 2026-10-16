@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_COLLECT_VAR: Schema LABEL, then the depths of the cursor and of a list under the top. Every remaining element, boxed from a pair spine, appended to the list; an improper tail is a miss.
+  MATCH_CAPTURES_NAMED: Schema CONST (keys, locals), then the depths of the start and of the cursor under the top. The captures read by name and pushed. The body is kos_match_captures in eval/eval_match.c
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_COLLECT_VAR) {
+KOS_OP_HANDLER(MATCH_CAPTURES_NAMED) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_collect, es, insn, NULL);
+  TAILCALL(kos_match_captures, es, insn, NULL);
 }
 
 

@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_AVAILABLE_VAR: Schema LABEL, then the depth of the cursor under the top and a count. The cursor must have at least the count of elements left.
+  MATCH_NEXT_FORM: Schema LABEL, then the depth of the cursor under the top and the packed widths. Pull from the cursor, the gate on the element; the cursor advances in place and the inner cursor is pushed.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_AVAILABLE_VAR) {
+KOS_OP_HANDLER(MATCH_NEXT_FORM) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_available, es, insn, NULL);
+  TAILCALL(kos_match_next_form, es, insn, NULL);
 }
 
 

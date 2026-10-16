@@ -1,9 +1,9 @@
-# KOS_OP_MATCH_ITERATION / KOS_OP_MATCH_ITERATION_NAMED_VAR / KOS_OP_MATCH_ITERATION_NAMED_FAST
+# KOS_OP_MATCH_ITERATION / KOS_OP_MATCH_ITERATION_NAMED
 
 - **Style**: EXTRA (CONST, FASTVAR, RAW, RAW) on `MATCH_ITERATION`: the names
   tuple, the first capture slot of one run, the cursor's depth, the mode. EXTRA
-  (CONST, RAW, RAW) on the NAMED forms: the names tuple, the cursor's depth, the
-  mode.
+  (CONST, RAW, RAW) on `MATCH_ITERATION_NAMED`: the names tuple, the cursor's
+  depth, the mode.
 - **Stack**: `[..., items, mark]` -> `[..., items, mark]` in mode 1, the value
   appended to `items`; `[..., mark]` -> `[..., mark, value]` in mode 0.
 - **Semantics**: One repeat iteration's value, with the slots it read cleared so

@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_FORM_FAST: Schema LABEL, then the packed widths. Peek: the sequence gate and length precheck on TOS; the cursor for the walk is pushed. The VAR and FAST twins are one shape.
+  MATCH_NEXT_LITERAL: Schema LABEL, then the depth of the cursor under the top and the constant. Pull from the cursor; the element must equal the constant.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_FORM_FAST) {
+KOS_OP_HANDLER(MATCH_NEXT_LITERAL) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_form, es, insn, NULL);
+  TAILCALL(kos_match_next_literal, es, insn, NULL);
 }
 
 

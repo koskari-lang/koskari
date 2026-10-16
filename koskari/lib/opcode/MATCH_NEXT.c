@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_NEXT_APPEND_FAST: Schema LABEL, then the depths of the cursor and of a list under the top. Pull from the cursor and append the boxed element to the list.
+  MATCH_NEXT: Schema LABEL, then the depth of the cursor under the top. Pull from the cursor and push the element, boxed from a pair spine.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_NEXT_APPEND_FAST) {
+KOS_OP_HANDLER(MATCH_NEXT) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_next_append, es, insn, NULL);
+  TAILCALL(kos_match_next, es, insn, NULL);
 }
 
 

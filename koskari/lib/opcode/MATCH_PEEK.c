@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_NEXT_FAST: Schema LABEL, then the depth of the cursor under the top. Pull from the cursor and push the element, boxed from a pair spine.
+  MATCH_PEEK: Schema LABEL, then the depth of the cursor under the top. Push the next element, boxed from a pair spine, without advancing.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_NEXT_FAST) {
+KOS_OP_HANDLER(MATCH_PEEK) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_next, es, insn, NULL);
+  TAILCALL(kos_match_peek_next, es, insn, NULL);
 }
 
 

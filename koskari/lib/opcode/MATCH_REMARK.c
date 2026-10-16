@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_REST_VAR: Schema LABEL, then the depth of the cursor under the top and the packed minimum tail and suffix width. The remainder of the cursor but the suffix; the cursor advances in place.
+  MATCH_REMARK: Schema the depths of the cursor and of a mark under the top. The mark moved to the cursor's position.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_REST_VAR) {
+KOS_OP_HANDLER(MATCH_REMARK) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_rest, es, insn, NULL);
+  TAILCALL(kos_match_remark, es, insn, NULL);
 }
 
 

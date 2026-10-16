@@ -231,9 +231,9 @@ class TestCaptureRunValidation(unittest.TestCase):
 
     def test_named_pair_of_equal_tuples_builds(self):
         code = self.make([
-            [OpCode.MATCH_CAPTURES_NAMED_VAR,
+            [OpCode.MATCH_CAPTURES_NAMED,
              ((("a", "b"), ("a", "b")), 1, 0, 0)],
-            [OpCode.MATCH_ITERATION_NAMED_FAST,
+            [OpCode.MATCH_ITERATION_NAMED,
              ((("a",), ("b",)), 1, 0, 0)],
             [OpCode.RETURN, 1],
         ])
@@ -244,13 +244,13 @@ class TestCaptureRunValidation(unittest.TestCase):
                     (("a",), "b")):
             with self.assertRaises(ValueError):
                 self.make([
-                    [OpCode.MATCH_CAPTURES_NAMED_VAR, (bad, 1, 0, 0)],
+                    [OpCode.MATCH_CAPTURES_NAMED, (bad, 1, 0, 0)],
                     [OpCode.RETURN, 1],
                 ])
 
     def test_named_tuples_of_unequal_length_are_refused(self):
-        for op in (OpCode.MATCH_CAPTURES_NAMED_VAR,
-                   OpCode.MATCH_ITERATION_NAMED_VAR):
+        for op in (OpCode.MATCH_CAPTURES_NAMED,
+                   OpCode.MATCH_ITERATION_NAMED):
             with self.assertRaises(ValueError):
                 self.make([
                     [op, ((("a", "b"), ("a",)), 1, 0, 0)],

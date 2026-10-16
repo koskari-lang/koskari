@@ -72,8 +72,8 @@ async def run(instrs, local_syms, values=None, subject=None):
 class TestRows(CevalTest):
 
     def test_immediates_are_raw_fields(self):
-        self.assertIs(OpCode.MATCH_FORM_FAST.extra[1], OpStyle.RAW)
-        self.assertIs(OpCode.MATCH_NEXT_FORM_FAST.extra[2], OpStyle.RAW)
+        self.assertIs(OpCode.MATCH_FORM.extra[1], OpStyle.RAW)
+        self.assertIs(OpCode.MATCH_NEXT_FORM.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_REST_BIND_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_CLASS_FAST.extra[2], OpStyle.RAW)
         self.assertIs(OpCode.MATCH_FIELD_POS_BIND_VAR.extra[2], OpStyle.RAW)
@@ -83,13 +83,13 @@ class TestRows(CevalTest):
 
     def test_cursor_fields_are_depths(self):
         # a cursor, mark or list is named by its depth under the top
-        for op in (OpCode.MATCH_NEXT_FAST, OpCode.MATCH_NEXT_BIND_VAR,
-                   OpCode.MATCH_END_FAST, OpCode.MATCH_REST_VAR,
-                   OpCode.MATCH_NEXT_APPEND_FAST, OpCode.MATCH_COLLECT_VAR):
+        for op in (OpCode.MATCH_NEXT, OpCode.MATCH_NEXT_BIND_VAR,
+                   OpCode.MATCH_END, OpCode.MATCH_REST,
+                   OpCode.MATCH_NEXT_APPEND, OpCode.MATCH_COLLECT):
             self.assertIs(op.extra[1], OpStyle.RAW, op.name)
-        self.assertIs(OpCode.MATCH_MARK_FAST.extra[0], OpStyle.RAW)
+        self.assertIs(OpCode.MATCH_MARK.extra[0], OpStyle.RAW)
         self.assertEqual(
-            OpCode.MATCH_RESET_VAR.extra[:2], (OpStyle.RAW, OpStyle.RAW))
+            OpCode.MATCH_RESET.extra[:2], (OpStyle.RAW, OpStyle.RAW))
         self.assertEqual(
             OpCode.MATCH_CAPTURES.extra,
             (OpStyle.CONST, OpStyle.FASTVAR, OpStyle.RAW, OpStyle.RAW))
@@ -99,10 +99,10 @@ class TestPulls(CevalTest):
 
     async def test_two_binds_over_pair_box_datums(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["FAST", 1],
@@ -117,10 +117,10 @@ class TestPulls(CevalTest):
 
     async def test_two_binds_over_tuple_and_list_are_raw(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["FAST", 1],
@@ -137,18 +137,18 @@ class TestPulls(CevalTest):
         # the walk's end pops nothing with its flag clear, and pops the
         # cursor with it set
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 1],
             ["RETURN", 1],
         ]
         subject = (7,)
         self.assertIs(await run(prog, ("x",), subject=subject), subject)
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 1, 0)],
+            ["MATCH_END", ("miss", 0, 1, 0)],
             ["RETURN", 1],
         ]
         self.assertIs(await run(prog, ("x",), subject=subject), subject)
@@ -157,10 +157,10 @@ class TestPulls(CevalTest):
 
     async def test_length_precheck_and_end_miss(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["CONST", "hit"],
             ["RETURN", 1],
@@ -178,7 +178,7 @@ class TestPulls(CevalTest):
 
     async def test_sequence_gate_rejects_atoms_and_mappings(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(0), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(0), 0, 0)],
             ["POP", 2],
             ["CONST", "hit"],
             ["RETURN", 1],
@@ -191,10 +191,10 @@ class TestPulls(CevalTest):
 
     async def test_rest_bind_tail_forms(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_REST_BIND_FAST", ("miss", 0, counts(0), 1)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 1],
             ["RETURN", 1],
@@ -215,11 +215,11 @@ class TestPulls(CevalTest):
 
     async def test_rest_bind_before_suffix(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_REST_BIND_FAST", ("miss", 0, counts(0, 1), 1)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 2, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["FAST", 1],
@@ -245,8 +245,8 @@ class TestPulls(CevalTest):
 
     async def test_rest_minimum_tail(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1), 0, 0)],
-            ["MATCH_REST_FAST", ("miss", 0, counts(2), 0)],
+            ["MATCH_FORM", ("miss", widths(1), 0, 0)],
+            ["MATCH_REST", ("miss", 0, counts(2), 0)],
             ["POP", 2],
             ["CONST", "hit"],
             ["RETURN", 1],
@@ -261,7 +261,7 @@ class TestPulls(CevalTest):
         # a miss on the type test leaves the cursor where it was: the
         # retry from the miss label pulls the same element again
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_TYPE_BIND_FAST", ("retry", 0, 1, 0)],
             ["POP", 2],
             ["FAST", 0],
@@ -283,10 +283,10 @@ class TestPulls(CevalTest):
 
     async def test_next_literal(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
-            ["MATCH_NEXT_LITERAL_FAST", ("miss", 0, "k", 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_LITERAL", ("miss", 0, "k", 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["RETURN", 1],
@@ -297,8 +297,8 @@ class TestPulls(CevalTest):
 
     async def test_next_pushes_boxed_from_pair_and_raw_from_tuple(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
-            ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT", ("miss", 0, 0, 0)],
             ["MATCH_BIND_FAST", 0],
             ["POP", 3],
             ["FAST", 0],
@@ -313,10 +313,10 @@ class TestPulls(CevalTest):
     async def test_pull_names_the_cursor_under_a_pushed_element(self):
         # with one element pushed, the cursor sits one deeper
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
-            ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_END", ("miss", 1, 0, 0)],
             ["MATCH_BIND_FAST", 1],
             ["POP", 3],
             ["FAST", 0],
@@ -329,14 +329,14 @@ class TestPulls(CevalTest):
 
     async def test_peek_does_not_advance(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
-            ["MATCH_PEEK_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_PEEK", ("miss", 0, 0, 0)],
             ["POP", 1],
-            ["MATCH_PEEK_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_PEEK", ("miss", 0, 0, 0)],
             ["MATCH_BIND_FAST", 0],
             ["POP", 1],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_PEEK_FAST", ("end", 0, 0, 0)],
+            ["MATCH_PEEK", ("end", 0, 0, 0)],
             ["POP", 3],
             ["CONST", "not at end"],
             ["RETURN", 1],
@@ -358,13 +358,13 @@ class TestPulls(CevalTest):
         # the inner cursor is pushed above the outer: the inner walk
         # names it at 0, and the outer is back at 0 once it is popped
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
-            ["MATCH_NEXT_FORM_FAST", ("miss", 0, widths(1, 1), 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_NEXT_FORM", ("miss", 0, widths(1, 1), 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 1],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 1, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["FAST", 1],
@@ -385,11 +385,11 @@ class TestPulls(CevalTest):
         # resolves nothing: a binding of the same name in the frame
         # is never read; a gensym passes SYMBOL and a bool passes INT
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_CORE_TYPE_BIND_FAST",
              ("miss", 0, int(CoreType.SYMBOL), 0)],
-            ["MATCH_NEXT_CORE_TYPE_FAST", ("miss", 0, int(CoreType.INT), 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_NEXT_CORE_TYPE", ("miss", 0, int(CoreType.INT), 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["RETURN", 1],
@@ -416,8 +416,8 @@ class TestPulls(CevalTest):
 
     async def test_next_core_type_miss_leaves_cursor(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
-            ["MATCH_NEXT_CORE_TYPE_FAST", ("retry", 0, int(CoreType.STR), 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_NEXT_CORE_TYPE", ("retry", 0, int(CoreType.STR), 0)],
             ["POP", 2],
             ["CONST", "str"],
             ["RETURN", 1],
@@ -434,10 +434,10 @@ class TestPulls(CevalTest):
 
     async def test_var_twins_store_by_name(self):
         prog = [
-            ["MATCH_FORM_VAR", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_BIND_VAR", ("miss", 0, "a", 0)],
             ["MATCH_NEXT_TYPE_BIND_VAR", ("miss", 0, "int", "b")],
-            ["MATCH_END_VAR", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["VAR", "a"],
             ["VAR", "b"],
@@ -591,10 +591,10 @@ class TestSameAndCollect(CevalTest):
 
     async def test_same_against_bound_and_unbound(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["MATCH_NEXT_SAME_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
             ["RETURN", 1],
@@ -618,11 +618,11 @@ class TestSameAndCollect(CevalTest):
         # the items list is pushed above the cursor: the cursor is at
         # 1 and the list at 0 for the rows that read both
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1), 0, 0)],
             ["MATCH_ITEMS", 0],
-            ["MATCH_NEXT_APPEND_FAST", ("miss", 1, 0, 0)],
-            ["MATCH_COLLECT_FAST", ("miss", 1, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_NEXT_APPEND", ("miss", 1, 0, 0)],
+            ["MATCH_COLLECT", ("miss", 1, 0, 0)],
+            ["MATCH_END", ("miss", 1, 0, 0)],
             ["RETURN", 1],
         ]
         self.assertEqual(await run(prog, (), subject=(1, 2, 3)), [1, 2, 3])
@@ -636,13 +636,13 @@ class TestSameAndCollect(CevalTest):
 
     async def test_count_against_the_items(self):
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(0), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(0), 0, 0)],
             ["MATCH_ITEMS", 0],
             ["MATCH_COUNT", ("short", 0, 1, 0)],
             ["CONST", "long enough"],
             ["RETURN", 1],
             ["LABEL", "short"],
-            ["MATCH_NEXT_APPEND_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_NEXT_APPEND", ("miss", 1, 0, 0)],
             ["MATCH_COUNT", ("miss", 0, 1, 0)],
             ["CONST", "one appended"],
             ["RETURN", 1],
@@ -658,13 +658,13 @@ class TestMarkAndCaptures(CevalTest):
         # while it lives; a pull after the reset reads the marked
         # element again
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
-            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_MARK", (0, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 0, 0)],
-            ["MATCH_RESET_FAST", (1, 0, 0, 0)],
+            ["MATCH_RESET", (1, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 1, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 2, 0)],
-            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_END", ("miss", 1, 0, 0)],
             ["POP", 3],
             ["FAST", 0],
             ["FAST", 1],
@@ -684,14 +684,14 @@ class TestMarkAndCaptures(CevalTest):
         # pull; the reset returns to the moved position, so the second
         # element is read twice
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
-            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_MARK", (0, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 0, 0)],
-            ["MATCH_REMARK_FAST", (1, 0, 0, 0)],
+            ["MATCH_REMARK", (1, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 1, 0)],
-            ["MATCH_RESET_FAST", (1, 0, 0, 0)],
+            ["MATCH_RESET", (1, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 1, 2, 0)],
-            ["MATCH_END_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_END", ("miss", 1, 0, 0)],
             ["POP", 3],
             ["FAST", 0],
             ["FAST", 1],
@@ -711,8 +711,8 @@ class TestMarkAndCaptures(CevalTest):
         # depth that names the wrong one raises; a pair spine has one
         # kind, the cell, so the walk reads on from the mark
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
-            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_MARK", (0, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
             ["POP", 2],
             ["FAST", 0],
@@ -724,9 +724,9 @@ class TestMarkAndCaptures(CevalTest):
         self.assertEqual((await run(prog, ("a",), subject=cons(7, nil))).datum, 7)
 
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
-            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
-            ["MATCH_RESET_FAST", (1, 1, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_MARK", (0, 0, 0, 0)],
+            ["MATCH_RESET", (1, 1, 0, 0)],
             ["POP", 2],
             ["CONST", "reset"],
             ["RETURN", 1],
@@ -741,12 +741,12 @@ class TestMarkAndCaptures(CevalTest):
         # over a sequence cursor the mark must be a mark over a
         # sequence: a list at the mark's depth raises, for the re-mark
         # and for the reset
-        for op in ("MATCH_REMARK_FAST", "MATCH_RESET_FAST"):
+        for op in ("MATCH_REMARK", "MATCH_RESET"):
             prog = [
-                ["MATCH_FORM_FAST", ("miss", widths(0), 0, 0)],
-                ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+                ["MATCH_FORM", ("miss", widths(0), 0, 0)],
+                ["MATCH_NEXT", ("miss", 0, 0, 0)],
                 ["POP", 1],
-                ["MATCH_NEXT_FAST", ("miss", 0, 0, 0)],
+                ["MATCH_NEXT", ("miss", 0, 0, 0)],
                 ["POP", 1],
                 ["BUILD_LIST", 0],
                 [op, (1, 0, 0, 0)],
@@ -764,12 +764,12 @@ class TestMarkAndCaptures(CevalTest):
         # segment holding it: the append and the collect write a copy
         # stored at their depth, and the held list keeps its contents
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(3, 3), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(3, 3), 0, 0)],
             ["MATCH_ITEMS", 0],
             ["DUP", 1],
-            ["MATCH_NEXT_APPEND_FAST", ("miss", 2, 0, 0)],
-            ["MATCH_COLLECT_FAST", ("miss", 2, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 2, 0, 0)],
+            ["MATCH_NEXT_APPEND", ("miss", 2, 0, 0)],
+            ["MATCH_COLLECT", ("miss", 2, 0, 0)],
+            ["MATCH_END", ("miss", 2, 0, 0)],
             ["BUILD_ARGS", 2],
             ["RETURN", 1],
         ]
@@ -787,9 +787,9 @@ class TestMarkAndCaptures(CevalTest):
         # the captures start at the subject, one under the cursor;
         # slots: a 0, b 1 (b never fires)
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 0, 0, 0)],
-            ["MATCH_END_FAST", ("miss", 0, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
             ["MATCH_CAPTURES", (("a", "b"), 0, 1, 0)],
             ["RETURN", 1],
         ]
@@ -807,10 +807,10 @@ class TestMarkAndCaptures(CevalTest):
 
     async def test_captures_named_by_name(self):
         prog = [
-            ["MATCH_FORM_VAR", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
             ["MATCH_NEXT_BIND_VAR", ("miss", 0, "a", 0)],
-            ["MATCH_END_VAR", ("miss", 0, 0, 0)],
-            ["MATCH_CAPTURES_NAMED_VAR", ((("a", "b"), ("a", "b")), 1, 0, 0)],
+            ["MATCH_END", ("miss", 0, 0, 0)],
+            ["MATCH_CAPTURES_NAMED", ((("a", "b"), ("a", "b")), 1, 0, 0)],
             ["RETURN", 1],
         ]
         self.assertEqual(await run(prog, ("a", "b"), subject=(7,)), {"a": 7})
@@ -821,14 +821,14 @@ class TestMarkAndCaptures(CevalTest):
         # its captures, a pass with none appends the span; the mark is
         # the top and the list under it when the iteration row runs
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(2, 2), 0, 0)],
+            ["MATCH_FORM", ("miss", widths(2, 2), 0, 0)],
             ["MATCH_ITEMS", 0],
-            ["MATCH_MARK_FAST", (1, 0, 0, 0)],
+            ["MATCH_MARK", (1, 0, 0, 0)],
             ["MATCH_NEXT_BIND_FAST", ("miss", 2, 0, 0)],
             ["MATCH_ITERATION", (("x",), 0, 2, 1)],
             ["POP", 1],
-            ["MATCH_MARK_FAST", (1, 0, 0, 0)],
-            ["MATCH_NEXT_FAST", ("miss", 2, 0, 0)],
+            ["MATCH_MARK", (1, 0, 0, 0)],
+            ["MATCH_NEXT", ("miss", 2, 0, 0)],
             ["POP", 1],
             ["MATCH_ITERATION", (("x",), 0, 2, 1)],
             ["POP", 1],
@@ -849,9 +849,9 @@ class TestMarkAndCaptures(CevalTest):
     async def test_iteration_pushes_the_span_in_mode_zero(self):
         # an empty names tuple still names a first slot the frame has
         prog = [
-            ["MATCH_FORM_FAST", ("miss", widths(1, 1), 0, 0)],
-            ["MATCH_MARK_FAST", (0, 0, 0, 0)],
-            ["MATCH_NEXT_FAST", ("miss", 1, 0, 0)],
+            ["MATCH_FORM", ("miss", widths(1, 1), 0, 0)],
+            ["MATCH_MARK", (0, 0, 0, 0)],
+            ["MATCH_NEXT", ("miss", 1, 0, 0)],
             ["POP", 1],
             ["MATCH_ITERATION", ((), 0, 1, 0)],
             ["RETURN", 1],

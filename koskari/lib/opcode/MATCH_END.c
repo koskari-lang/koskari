@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_REMARK_VAR: Schema the depths of the cursor and of a mark under the top. The mark moved to the cursor's position.
+  MATCH_END: Schema LABEL, then the depth of the cursor under the top and a flag. The cursor must be at its end; with the flag set it is popped, its extent ending here, else it stays for the captures that read it.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_REMARK_VAR) {
+KOS_OP_HANDLER(MATCH_END) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_remark, es, insn, NULL);
+  TAILCALL(kos_match_end, es, insn, NULL);
 }
 
 

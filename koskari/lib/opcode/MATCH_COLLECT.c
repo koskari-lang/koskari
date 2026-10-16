@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_PEEK_FAST: Schema LABEL, then the depth of the cursor under the top. Push the next element, boxed from a pair spine, without advancing.
+  MATCH_COLLECT: Schema LABEL, then the depths of the cursor and of a list under the top. Every remaining element, boxed from a pair spine, appended to the list; an improper tail is a miss.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_PEEK_FAST) {
+KOS_OP_HANDLER(MATCH_COLLECT) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_peek_next, es, insn, NULL);
+  TAILCALL(kos_match_collect, es, insn, NULL);
 }
 
 

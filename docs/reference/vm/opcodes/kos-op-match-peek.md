@@ -1,4 +1,4 @@
-# KOS_OP_MATCH_PEEK_VAR / KOS_OP_MATCH_PEEK_FAST
+# KOS_OP_MATCH_PEEK
 
 - **Style**: EXTRA (LABEL, RAW)
 - **Stack**: `[...]` -> `[..., elem]`; jump to `a0` with nothing pushed at the
@@ -7,5 +7,4 @@
   does, and leave the cursor where it is. A zero-width `(not ...)` reads its
   element this way.
 - **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a
-  special form's pattern or a `syntax-rules` rule; the `_VAR` and `_FAST`
-  forms are one schema, since the row names no slot.
+  special form's pattern or a `syntax-rules` rule.

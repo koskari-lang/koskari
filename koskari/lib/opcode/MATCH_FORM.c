@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_END_FAST: Schema LABEL, then the depth of the cursor under the top and a flag. The cursor must be at its end; with the flag set it is popped, its extent ending here, else it stays for the captures that read it.
+  MATCH_FORM: Schema LABEL, then the packed widths. Peek: the sequence gate and length precheck on TOS; the cursor for the walk is pushed.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_END_FAST) {
+KOS_OP_HANDLER(MATCH_FORM) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_end, es, insn, NULL);
+  TAILCALL(kos_match_form, es, insn, NULL);
 }
 
 

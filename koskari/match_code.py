@@ -752,7 +752,7 @@ class MatchLowering:
             self.target.instruction(op, tuple(args) + (0,) * (4 - len(args)))
         else:
             self.target.instruction(op, args[0])
-        if op not in (OpCode.MATCH_MARK_VAR, OpCode.MATCH_REMARK_VAR):
+        if op not in (OpCode.MATCH_MARK, OpCode.MATCH_REMARK):
             self.fresh_mark = None
         self.note_flow(op, args)
 
@@ -837,7 +837,7 @@ class MatchLowering:
         elif op == OpCode.RETURN:
             self.flow_open = False
         else:
-            if op in (OpCode.MATCH_AVAILABLE_VAR, OpCode.MATCH_PEEK_VAR):
+            if op in (OpCode.MATCH_AVAILABLE, OpCode.MATCH_PEEK):
                 if args[0] not in self.tramp_labels:
                     self.note_target(args[0], self.live)
             self.flow_open = True
@@ -1156,14 +1156,14 @@ class MatchLowering:
         # the gate pushes the cursor above it, the captures start at
         # it, and a miss leaves it for the next clause
         self.emit(
-            OpCode.MATCH_FORM_VAR, self.miss_at((miss, 0, 0), 1),
+            OpCode.MATCH_FORM, self.miss_at((miss, 0, 0), 1),
             pack_widths(*self.width(self.entry)))
         self.note_push(cur)
         self.emit_pull(self.entry, cur, (miss, 0, 0), 0, 1, 0)
         # the root's cursor stays for the captures; the frame takes it
-        self.note_use(OpCode.MATCH_END_VAR, cur=cur)
+        self.note_use(OpCode.MATCH_END, cur=cur)
         self.emit(
-            OpCode.MATCH_END_VAR, self.miss_at((miss, 0, 0), 1), self.at(cur),
+            OpCode.MATCH_END, self.miss_at((miss, 0, 0), 1), self.at(cur),
             0)
         if index is not None:
             self.emit(OpCode.CONST, index)
@@ -1194,8 +1194,8 @@ class MatchLowering:
             # the locals travel as spellings: the table is a constant,
             # which the operand lowering never touches, and the handler
             # reads a namespace by spelling
-            op = (OpCode.MATCH_ITERATION_NAMED_VAR if iteration
-                  else OpCode.MATCH_CAPTURES_NAMED_VAR)
+            op = (OpCode.MATCH_ITERATION_NAMED if iteration
+                  else OpCode.MATCH_CAPTURES_NAMED)
             spelled = tuple(str(local) for local in locals_)
             self.emit(op, (names, spelled), *fields)
         if not iteration:
@@ -1244,15 +1244,15 @@ class MatchLowering:
         elif kind == 'FORM':
             sub = node[1]
             cur = self.cursor(level)
-            self.emit(OpCode.MATCH_FORM_VAR, m, pack_widths(*self.width(sub)))
+            self.emit(OpCode.MATCH_FORM, m, pack_widths(*self.width(sub)))
             self.note_push(cur)
             self.emit_sequence(
                 self.children(sub), cur, miss, depth, level + 1, 0)
             # the end pops the cursor the gate pushed; its miss edge
             # pops it as well
-            self.note_use(OpCode.MATCH_END_VAR, cur=cur)
+            self.note_use(OpCode.MATCH_END, cur=cur)
             self.emit(
-                OpCode.MATCH_END_VAR, self.miss_at(miss, depth), self.at(cur),
+                OpCode.MATCH_END, self.miss_at(miss, depth), self.at(cur),
                 1)
             self.note_pop(cur)
 
@@ -1419,8 +1419,8 @@ class MatchLowering:
         if trailing <= 0:
             return
         needed = self.width(idx)[0] + trailing
-        self.note_use(OpCode.MATCH_AVAILABLE_VAR, cur=cur)
-        self.emit(OpCode.MATCH_AVAILABLE_VAR, label, self.at(cur), needed)
+        self.note_use(OpCode.MATCH_AVAILABLE, cur=cur)
+        self.emit(OpCode.MATCH_AVAILABLE, label, self.at(cur), needed)
 
 
     def emit_pull(self, idx, cur, miss, depth, level, trailing):
@@ -1439,13 +1439,13 @@ class MatchLowering:
         elif kind == 'TEST':
             test = node[1]
             if test == 'ANY':
-                self.note_use(OpCode.MATCH_NEXT_VAR, cur=cur)
-                self.emit(OpCode.MATCH_NEXT_VAR, m, self.at(cur))
+                self.note_use(OpCode.MATCH_NEXT, cur=cur)
+                self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
                 self.emit(OpCode.POP, 1)
             elif test == 'LITERAL':
-                self.note_use(OpCode.MATCH_NEXT_LITERAL_VAR, cur=cur)
+                self.note_use(OpCode.MATCH_NEXT_LITERAL, cur=cur)
                 self.emit(
-                    OpCode.MATCH_NEXT_LITERAL_VAR, m, self.at(cur),
+                    OpCode.MATCH_NEXT_LITERAL, m, self.at(cur),
                     self.consts[node[2]])
             elif test == 'TYPE':
                 self.note_use(OpCode.MATCH_NEXT_TYPE_VAR, cur=cur)
@@ -1453,12 +1453,12 @@ class MatchLowering:
                     OpCode.MATCH_NEXT_TYPE_VAR, m, self.at(cur),
                     self.externs[node[2]])
             elif test == 'CORE':
-                self.note_use(OpCode.MATCH_NEXT_CORE_TYPE_VAR, cur=cur)
+                self.note_use(OpCode.MATCH_NEXT_CORE_TYPE, cur=cur)
                 self.emit(
-                    OpCode.MATCH_NEXT_CORE_TYPE_VAR, m, self.at(cur), node[2])
+                    OpCode.MATCH_NEXT_CORE_TYPE, m, self.at(cur), node[2])
             else:
-                self.note_use(OpCode.MATCH_NEXT_VAR, cur=cur)
-                self.emit(OpCode.MATCH_NEXT_VAR, m, self.at(cur))
+                self.note_use(OpCode.MATCH_NEXT, cur=cur)
+                self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
                 self.note_push(ELEM)
                 self.emit_peek_test(node, miss, depth + 1)
                 self.emit(OpCode.POP, 1)
@@ -1475,24 +1475,24 @@ class MatchLowering:
 
         elif kind == 'REST':
             counts = self.rest_counts(node[1], trailing)
-            self.note_use(OpCode.MATCH_REST_VAR, cur=cur)
-            self.emit(OpCode.MATCH_REST_VAR, m, self.at(cur), counts)
+            self.note_use(OpCode.MATCH_REST, cur=cur)
+            self.emit(OpCode.MATCH_REST, m, self.at(cur), counts)
 
         elif kind == 'FORM':
             sub = node[1]
             inner = self.cursor(level)
-            self.note_use(OpCode.MATCH_NEXT_FORM_VAR, cur=cur)
+            self.note_use(OpCode.MATCH_NEXT_FORM, cur=cur)
             self.emit(
-                OpCode.MATCH_NEXT_FORM_VAR,
+                OpCode.MATCH_NEXT_FORM,
                 m, self.at(cur), pack_widths(*self.width(sub)))
             self.note_push(inner)
             self.emit_sequence(
                 self.children(sub), inner, miss, depth, level + 1, 0)
             # the end pops the inner cursor the pull pushed; its miss
             # edge pops it as well
-            self.note_use(OpCode.MATCH_END_VAR, cur=inner)
+            self.note_use(OpCode.MATCH_END, cur=inner)
             self.emit(
-                OpCode.MATCH_END_VAR, self.miss_at(miss, depth),
+                OpCode.MATCH_END, self.miss_at(miss, depth),
                 self.at(inner), 1)
             self.note_pop(inner)
 
@@ -1518,8 +1518,8 @@ class MatchLowering:
             # advancing the cursor, and an end is a pass
             ok = self.target.label("match.not")
             edge = (ok, depth, len(self.live))
-            self.note_use(OpCode.MATCH_PEEK_VAR, cur=cur)
-            self.emit(OpCode.MATCH_PEEK_VAR, ok, self.at(cur))
+            self.note_use(OpCode.MATCH_PEEK, cur=cur)
+            self.emit(OpCode.MATCH_PEEK, ok, self.at(cur))
             self.note_push(ELEM)
             self.emit_peek(node[1], edge, depth + 1, level)
             self.emit(OpCode.POP, 1)
@@ -1528,8 +1528,8 @@ class MatchLowering:
             self.emit(OpCode.LABEL, ok)
 
         elif kind in ('CLASS', 'MAP', 'APP'):
-            self.note_use(OpCode.MATCH_NEXT_VAR, cur=cur)
-            self.emit(OpCode.MATCH_NEXT_VAR, m, self.at(cur))
+            self.note_use(OpCode.MATCH_NEXT, cur=cur)
+            self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
             self.note_push(ELEM)
             self.emit_peek(idx, miss, depth + 1, level)
             self.emit(OpCode.POP, 1)
@@ -1571,8 +1571,8 @@ class MatchLowering:
             self.emit_pull_group(
                 sub, cur, miss, depth, level, trailing, store=slot)
         elif self.width(sub) == (1, 1):
-            self.note_use(OpCode.MATCH_NEXT_VAR, cur=cur)
-            self.emit(OpCode.MATCH_NEXT_VAR, m, self.at(cur))
+            self.note_use(OpCode.MATCH_NEXT, cur=cur)
+            self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
             self.note_push(ELEM)
             self.emit_peek(sub, miss, depth + 1, level)
             self.emit(OpCode.MATCH_BIND_VAR, slot)
@@ -1582,8 +1582,8 @@ class MatchLowering:
             # a capture over a wider node binds the span it consumed:
             # one boxed element, or a tuple of them
             start = self.mark(level)
-            self.note_use(OpCode.MATCH_MARK_VAR, cur=cur)
-            self.emit(OpCode.MATCH_MARK_VAR, self.at(cur))
+            self.note_use(OpCode.MATCH_MARK, cur=cur)
+            self.emit(OpCode.MATCH_MARK, self.at(cur))
             self.note_push(start)
             self.emit_pull(sub, cur, miss, depth, level + 1, trailing)
             self.emit_span(start, cur)
@@ -1605,7 +1605,7 @@ class MatchLowering:
         if self.target.standalone:
             self.emit(OpCode.MATCH_ITERATION, (), 0, self.at(cur), 0)
         else:
-            self.emit(OpCode.MATCH_ITERATION_NAMED_VAR, ((), ()), self.at(cur), 0)
+            self.emit(OpCode.MATCH_ITERATION_NAMED, ((), ()), self.at(cur), 0)
         self.note_push(ELEM)
 
 
@@ -1620,8 +1620,8 @@ class MatchLowering:
         own_mark = not (self.fresh_mark and self.fresh_mark[0] == cur)
         if own_mark:
             start = self.mark(level)
-            self.note_use(OpCode.MATCH_MARK_VAR, cur=cur)
-            self.emit(OpCode.MATCH_MARK_VAR, self.at(cur))
+            self.note_use(OpCode.MATCH_MARK, cur=cur)
+            self.emit(OpCode.MATCH_MARK, self.at(cur))
             self.note_push(start)
         else:
             # the position a repeat marked a moment ago, on this cursor
@@ -1666,13 +1666,13 @@ class MatchLowering:
         if kept:
             self.emit(OpCode.MATCH_ITEMS, 0)
             self.note_push(items)
-        self.note_use(OpCode.MATCH_MARK_VAR, cur=cur)
-        self.emit(OpCode.MATCH_MARK_VAR, self.at(cur))
+        self.note_use(OpCode.MATCH_MARK, cur=cur)
+        self.emit(OpCode.MATCH_MARK, self.at(cur))
         self.note_push(start)
         self.emit(OpCode.LABEL, loop)
         self.guard(inner, cur, done, trailing)
-        self.note_use(OpCode.MATCH_REMARK_VAR, cur=cur, mark=start)
-        self.emit(OpCode.MATCH_REMARK_VAR, self.at(cur), self.at(start))
+        self.note_use(OpCode.MATCH_REMARK, cur=cur, mark=start)
+        self.emit(OpCode.MATCH_REMARK, self.at(cur), self.at(start))
         self.fresh_mark = (cur, start)
         self.emit_sequence(
             self.children(inner), cur, (fail, depth, len(self.live)), depth,
@@ -1689,8 +1689,8 @@ class MatchLowering:
         self.emit(OpCode.JUMP, loop)
 
         self.emit(OpCode.LABEL, fail)
-        self.note_use(OpCode.MATCH_RESET_VAR, cur=cur, mark=start)
-        self.emit(OpCode.MATCH_RESET_VAR, self.at(cur), self.at(start))
+        self.note_use(OpCode.MATCH_RESET, cur=cur, mark=start)
+        self.emit(OpCode.MATCH_RESET, self.at(cur), self.at(start))
         self.clear_slots(inner)
         self.emit(OpCode.LABEL, done)
         self.emit(OpCode.POP, 1)
@@ -1721,8 +1721,8 @@ class MatchLowering:
         done = self.target.label("match.opt")
         start = self.mark(level)
         self.guard(sub, cur, done, trailing)
-        self.note_use(OpCode.MATCH_MARK_VAR, cur=cur)
-        self.emit(OpCode.MATCH_MARK_VAR, self.at(cur))
+        self.note_use(OpCode.MATCH_MARK, cur=cur)
+        self.emit(OpCode.MATCH_MARK, self.at(cur))
         self.note_push(start)
         self.emit_pull(
             sub, cur, (skip, depth, len(self.live)), depth, level + 1,
@@ -1731,8 +1731,8 @@ class MatchLowering:
         self.note_pop(start)
         self.emit(OpCode.JUMP, done)
         self.emit(OpCode.LABEL, skip)
-        self.note_use(OpCode.MATCH_RESET_VAR, cur=cur, mark=start)
-        self.emit(OpCode.MATCH_RESET_VAR, self.at(cur), self.at(start))
+        self.note_use(OpCode.MATCH_RESET, cur=cur, mark=start)
+        self.emit(OpCode.MATCH_RESET, self.at(cur), self.at(start))
         self.clear_slots(sub)
         self.emit(OpCode.POP, 1)
         self.note_pop(start)
@@ -1750,8 +1750,8 @@ class MatchLowering:
         branches = node[1:]
         if all(self.width(b) == (1, 1) for b in branches) and trailing == 0:
             m = self.miss_at(miss, depth)
-            self.note_use(OpCode.MATCH_NEXT_VAR, cur=cur)
-            self.emit(OpCode.MATCH_NEXT_VAR, m, self.at(cur))
+            self.note_use(OpCode.MATCH_NEXT, cur=cur)
+            self.emit(OpCode.MATCH_NEXT, m, self.at(cur))
             self.note_push(ELEM)
             self.emit_peek(idx, miss, depth + 1, level)
             self.emit(OpCode.POP, 1)
@@ -1760,8 +1760,8 @@ class MatchLowering:
 
         start = self.mark(level)
         join = self.target.label("match.or")
-        self.note_use(OpCode.MATCH_MARK_VAR, cur=cur)
-        self.emit(OpCode.MATCH_MARK_VAR, self.at(cur))
+        self.note_use(OpCode.MATCH_MARK, cur=cur)
+        self.emit(OpCode.MATCH_MARK, self.at(cur))
         self.note_push(start)
         for branch in branches[:-1]:
             nxt = self.target.label("match.or")
@@ -1773,8 +1773,8 @@ class MatchLowering:
             self.note_pop(start)
             self.emit(OpCode.JUMP, join)
             self.emit(OpCode.LABEL, nxt)
-            self.note_use(OpCode.MATCH_RESET_VAR, cur=cur, mark=start)
-            self.emit(OpCode.MATCH_RESET_VAR, self.at(cur), self.at(start))
+            self.note_use(OpCode.MATCH_RESET, cur=cur, mark=start)
+            self.emit(OpCode.MATCH_RESET, self.at(cur), self.at(start))
             self.clear_slots(branch)
         if branches:
             self.guard(branches[-1], cur, self.miss_at(miss, depth), trailing)

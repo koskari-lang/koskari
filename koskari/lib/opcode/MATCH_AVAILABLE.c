@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_CAPTURES_NAMED_FAST: Schema CONST (keys, locals), then the depths of the start and of the cursor under the top. The captures read by name and pushed. The body is kos_match_captures in eval/eval_match.c
+  MATCH_AVAILABLE: Schema LABEL, then the depth of the cursor under the top and a count. The cursor must have at least the count of elements left.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_CAPTURES_NAMED_FAST) {
+KOS_OP_HANDLER(MATCH_AVAILABLE) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_captures, es, insn, NULL);
+  TAILCALL(kos_match_available, es, insn, NULL);
 }
 
 

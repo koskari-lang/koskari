@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_END_VAR: Schema LABEL, then the depth of the cursor under the top and a flag. The cursor must be at its end; with the flag set it is popped, its extent ending here, else it stays for the captures that read it.
+  MATCH_ITERATION_NAMED: Schema CONST (keys, locals), then the depth of the cursor under the top and a mode. The iteration read by name. The body is kos_match_captures in eval/eval_match.c
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_END_VAR) {
+KOS_OP_HANDLER(MATCH_ITERATION_NAMED) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_end, es, insn, NULL);
+  TAILCALL(kos_match_captures, es, insn, NULL);
 }
 
 

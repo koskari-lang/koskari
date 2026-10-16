@@ -17,9 +17,10 @@
 /**
   koskari/lib/eval/eval_match.c
 
-  The bodies of the MATCH_* instructions, shared by each VAR and FAST
-  twin: the twin tail-calls its body, and the body reads which it is
-  off the opcode to resolve its slot operands by name or by index.
+  The bodies of the MATCH_* instructions. An instruction with a slot
+  field has VAR and FAST twins that tail-call one body, and the body
+  reads which it is off the opcode to resolve its slot operands by
+  name or by index; an instruction with no slot field has one form.
   Included into eval.c ahead of the opcode handlers. The steps
   themselves are the matcher subsystem's (matcher.h, matcher/step.c);
   a body is the interface between the row, the stack and the slots
@@ -450,8 +451,7 @@ KOS_MATCH_BODY(kos_match_next_core_type) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOpCode op = (KosOpCode) KosOp_OP(insn);
-  int fast = op == KOS_OP_MATCH_NEXT_CORE_TYPE_FAST
-      || op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
+  int fast = op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
   int bind = op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_VAR
       || op == KOS_OP_MATCH_NEXT_CORE_TYPE_BIND_FAST;
   (void) kos_match_delivery_;
@@ -536,8 +536,7 @@ KOS_MATCH_BODY(kos_match_rest) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOpCode op = (KosOpCode) KosOp_OP(insn);
-  int fast = op == KOS_OP_MATCH_REST_FAST
-      || op == KOS_OP_MATCH_REST_BIND_FAST;
+  int fast = op == KOS_OP_MATCH_REST_BIND_FAST;
   int bind = op == KOS_OP_MATCH_REST_BIND_VAR
       || op == KOS_OP_MATCH_REST_BIND_FAST;
   (void) kos_match_delivery_;
@@ -1197,7 +1196,6 @@ static PyObject **kos_match_gather_values(
     KosEvalState *es,
     PyObject *names,
     int by_name,
-    int fast,
     uint32_t base,
     PyObject **buf) {
 
@@ -1232,7 +1230,6 @@ static PyObject **kos_match_gather_values(
     }
     values[i] = val;
   }
-  (void) fast;
   return values;
 }
 
@@ -1291,12 +1288,8 @@ KOS_MATCH_BODY(kos_match_captures) {
   const KosExtra *row = KosOp_ROW(insn);
   KosOpCode op = (KosOpCode) KosOp_OP(insn);
   int iteration = op == KOS_OP_MATCH_ITERATION
-      || op == KOS_OP_MATCH_ITERATION_NAMED_VAR
-      || op == KOS_OP_MATCH_ITERATION_NAMED_FAST;
+      || op == KOS_OP_MATCH_ITERATION_NAMED;
   int by_name = op != KOS_OP_MATCH_CAPTURES && op != KOS_OP_MATCH_ITERATION;
-  int fast = op == KOS_OP_MATCH_CAPTURES || op == KOS_OP_MATCH_ITERATION
-      || op == KOS_OP_MATCH_CAPTURES_NAMED_FAST
-      || op == KOS_OP_MATCH_ITERATION_NAMED_FAST;
   int field = by_name ? 1 : 2;
   (void) kos_match_delivery_;
 
@@ -1331,7 +1324,7 @@ KOS_MATCH_BODY(kos_match_captures) {
 
   PyObject *buf[KOS_MATCH_GATHER_INLINE];
   PyObject **values = kos_match_gather_values(
-      es, locals, by_name, fast, by_name ? 0 : KosExtra_IMM(row, 1), buf);
+      es, locals, by_name, by_name ? 0 : KosExtra_IMM(row, 1), buf);
   if (unlikely(! values))
     RESULT_RAISE();
 

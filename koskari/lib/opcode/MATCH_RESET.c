@@ -14,12 +14,12 @@
 */
 
 /**
-  MATCH_MARK_FAST: Schema the depth of the cursor under the top. Push a mark at the cursor's position: its cell, or a mark over the sequence at its index.
+  MATCH_RESET: Schema the depths of the cursor and of a mark under the top. The cursor moved back to the mark's position.
   (design/interpreter/matcher-bytecode.md).
 */
-KOS_OP_HANDLER(MATCH_MARK_FAST) {
+KOS_OP_HANDLER(MATCH_RESET) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_mark, es, insn, NULL);
+  TAILCALL(kos_match_reset, es, insn, NULL);
 }
 
 

@@ -1,4 +1,4 @@
-# KOS_OP_MATCH_COLLECT_VAR / KOS_OP_MATCH_COLLECT_FAST
+# KOS_OP_MATCH_COLLECT
 
 - **Style**: EXTRA (LABEL, RAW, RAW)
 - **Stack**: No stack effect; jump to `a0` on a miss.
@@ -7,5 +7,4 @@
   end. A pair spine is counted first, so an improper tail is a miss before
   anything is appended.
 - **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a
-  special form's pattern or a `syntax-rules` rule; the `_VAR` and `_FAST`
-  forms are one schema, since the row names no slot.
+  special form's pattern or a `syntax-rules` rule.

@@ -2877,10 +2877,8 @@ static int validate_capture_run(
       KosCode_FAST_NEED(self) = (uint32_t) end;
     return 0;
   }
-  case KOS_OP_MATCH_CAPTURES_NAMED_VAR:
-  case KOS_OP_MATCH_CAPTURES_NAMED_FAST:
-  case KOS_OP_MATCH_ITERATION_NAMED_VAR:
-  case KOS_OP_MATCH_ITERATION_NAMED_FAST: {
+  case KOS_OP_MATCH_CAPTURES_NAMED:
+  case KOS_OP_MATCH_ITERATION_NAMED: {
     PyObject *keys, *locals;
     if (! table || ! PyTuple_CheckExact(table)
         || PyTuple_GET_SIZE(table) != 2
