@@ -666,6 +666,28 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         self.assertEqual(2, result)
 
 
+    async def test_compile_syntax_match_extern_named_match_subject(self):
+        # a TYPE extern spelled match-subject reads the module's binding,
+        # not the subject the rule's matcher function takes
+        src_str = """
+        (begin
+          (define match-subject int)
+          (define ext
+            (syntax-match ext
+              [(ext (TYPE match-subject)) "int-arm"]
+              [(ext (VALUE y)) "other-arm"])))
+        """
+        expr, mod = self.compile_expr(src_str, int=int)
+        await expr()
+        defn = {'compile/ext': vars(mod)['ext']}
+
+        expr, mod = self.compile_expr("(ext 7)", **defn)
+        self.assertEqual("int-arm", await expr())
+
+        expr, mod = self.compile_expr('(ext "s")', **defn)
+        self.assertEqual("other-arm", await expr())
+
+
 class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_match_value_pattern(self):

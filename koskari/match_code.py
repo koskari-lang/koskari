@@ -49,13 +49,12 @@ __all__ = (
 UNBOUNDED = 0xFF
 LIMIT = 0xFF
 
-# the standalone function's one formal; hyphenated so no keyword extern
-# a caller can pass spells it
-SUBJECT = "match-subject"
-
 # an element under test, or another value a row pushes, in the depth
 # trace: the entries that are not a temporary of the walk
 ELEM = object()
+
+# the subject in the depth trace: the entry under every live entry
+SUBJECT_ENTRY = object()
 
 
 # === validation of a frozen matcher ===
@@ -465,15 +464,18 @@ class FragmentTarget:
     """
     The inline target: the instructions go into a fragment of the
     standard compiler, which names the slots and lowers them to fast
-    indices itself
+    indices itself. A whole matcher lowered into it reads the subject
+    as the gensym the fragment declares; an inline clause has the
+    subject on the stack and names none
     """
 
     standalone = False
 
 
-    def __init__(self, compiler, fragment):
+    def __init__(self, compiler, fragment, subject=None):
         self.compiler = compiler
         self.fragment = fragment
+        self.subject = subject
 
 
     def instruction(self, op, arg):
@@ -503,14 +505,16 @@ class FunctionTarget:
     """
     The standalone target: an instruction list, labels and locals of
     its own, built into a Function over a namespace the externs
-    resolve in
+    resolve in. The subject, its one formal, is a gensym, minted here
+    when the caller passes none
     """
 
     standalone = True
 
 
-    def __init__(self, name):
+    def __init__(self, name, subject=None):
         self.name = name
+        self.subject = subject or gensym()
         self.instructions = []
         self.locals = []
         self.counter = 0
@@ -539,7 +543,8 @@ class FunctionTarget:
         :param base_ns: the namespace the externs resolve in
         """
 
-        local_syms = (SUBJECT,) + tuple(str(n) for n in self.locals)
+        subject = str(self.subject)
+        local_syms = (subject,) + tuple(str(n) for n in self.locals)
         closure_syms = tuple(str(e) for e in externs)
         findex = list(local_syms) + list(closure_syms)
 
@@ -574,7 +579,7 @@ class FunctionTarget:
 
         nspec = NamespaceSpec(self.name, local_syms, closure_syms)
         code = Code(nspec, lowered, self.name)
-        return Function(code, base_ns, FormalsSpec((SUBJECT,)))
+        return Function(code, base_ns, FormalsSpec((subject,)))
 
 
 def lower_clause(
@@ -614,8 +619,8 @@ def lower_clause(
 def lower_matcher(target, frozen, atoms, source=None, position=None):
     """
     Emit a whole matcher as a function body into either target: the
-    subject formal, declared by the caller as the body's first local
-    under the name SUBJECT, walked as a spine, the captures returned on
+    subject formal, the target's subject gensym, declared by the caller
+    as the body's first local, walked as a spine, the captures returned on
     a match, None on a miss. Into a fragment of the standard compiler
     the body becomes a lambda's; into a FunctionTarget it becomes a
     Function with no compiler in reach
@@ -649,18 +654,25 @@ def compile_dispatch_function(clauses, base_ns, name="dispatch"):
     :param name: the function's name
     """
 
-    target = FunctionTarget(name)
+    # the frozen clauses' extern atoms are interned, and held, before
+    # the subject is minted, so its spelling is none of theirs
+    clause_atoms = [
+        {n: symbol(n) for n in clause[2]} if isinstance(clause, tuple)
+        else None
+        for clause in clauses]
+    target = FunctionTarget(name, gensym())
     externs = []
     seen = set()
     base_ns.store(VALUES, values)
 
     # the subject is pushed once and stays under every clause's walk
-    target.instruction(OpCode.VAR, symbol(SUBJECT))
+    target.instruction(OpCode.VAR, target.subject)
     for index, clause in enumerate(clauses):
         # the next clause's entry, or the miss tail after the last
         after = target.label("dispatch.next")
         if isinstance(clause, tuple):
-            lowering = MatchLowering(target, clause, {}, None, None)
+            lowering = MatchLowering(
+                target, clause, clause_atoms[index], None, None)
             for extern in lowering.externs:
                 if extern not in seen:
                     seen.add(extern)
@@ -676,7 +688,7 @@ def compile_dispatch_function(clauses, base_ns, name="dispatch"):
             seen.add(called)
             externs.append(called)
             target.instruction(OpCode.CONST, index)
-            target.instruction(OpCode.VAR, symbol(SUBJECT))
+            target.instruction(OpCode.VAR, target.subject)
             target.instruction(OpCode.CALL_VAR, (called, 1, 0, 0))
             target.instruction(OpCode.DUP, 1)
             target.instruction(OpCode.CONST, None)
@@ -815,7 +827,7 @@ class MatchLowering:
         subject sits under every live entry
         """
 
-        if tag == symbol(SUBJECT):
+        if tag is SUBJECT_ENTRY:
             return len(self.live)
         for i in range(len(self.live) - 1, -1, -1):
             if self.live[i] is tag:
@@ -1163,7 +1175,7 @@ class MatchLowering:
         """
 
         miss = self.target.label("match.miss")
-        self.emit(OpCode.VAR, symbol(SUBJECT))
+        self.emit(OpCode.VAR, self.target.subject)
         self.lower_body(miss)
         self.emit(OpCode.RETURN, 1)
         self.flush_trampolines()
@@ -1203,7 +1215,7 @@ class MatchLowering:
         if index is not None:
             self.emit(OpCode.CONST, index)
             self.note_push(ELEM)
-        self.emit_captures(None, symbol(SUBJECT), cur)
+        self.emit_captures(None, SUBJECT_ENTRY, cur)
 
 
     def emit_captures(self, scope, start, cur, iteration=False, items=None):

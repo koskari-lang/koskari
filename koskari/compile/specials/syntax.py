@@ -25,8 +25,8 @@ convenience syntax to runtime call forms of builder functions.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms, function_constant
-from ...lib import FormalsSpec, OpCode, cons, keyword, nil, symbol
-from ...match_code import SUBJECT, FragmentTarget, lower_matcher, validate_frozen
+from ...lib import FormalsSpec, OpCode, cons, gensym, keyword, nil, symbol
+from ...match_code import FragmentTarget, lower_matcher, validate_frozen
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
     VALUE, MatchCompiler, parse_explicit_rule_pattern, pattern_slot_names,
@@ -63,14 +63,18 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
     atoms = extern_atoms(pattern_src, frozen[2])
     body = compiler.fragment(name)
-    body.declare_var(symbol(SUBJECT))
     for extern in frozen[2]:
         body.request_var(atoms.get(extern) or symbol(extern))
+    # minted after the extern atoms are interned and held by the
+    # requests, so its spelling is none of theirs
+    subject = gensym()
+    body.declare_var(subject)
     with compiler.resolution_scope(body, function=True):
         lower_matcher(
-            FragmentTarget(compiler, body), frozen, atoms, pattern_src)
+            FragmentTarget(compiler, body, subject), frozen, atoms,
+            pattern_src)
     constant = function_constant(
-        compiler, parent, body, name, FormalsSpec((SUBJECT,)))
+        compiler, parent, body, name, FormalsSpec((str(subject),)))
     return constant, frozen
 
 

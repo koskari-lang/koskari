@@ -30,7 +30,8 @@ import pytest
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, setcdr, symbol)
 from koskari.match_code import (
-    FunctionTarget, MatchLowering, compile_match_function)
+    FunctionTarget, MatchLowering, compile_dispatch_function,
+    compile_match_function)
 from koskari.matcher import (
     APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
     GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
@@ -489,14 +490,14 @@ class TestSameScopes(unittest.TestCase):
 
 def local_names(pattern):
     """
-    The locals a standalone lowering declares, each without its gensym
-    suffix
+    The locals a standalone lowering declares after the subject, each
+    without its gensym suffix
     """
 
     frozen = MatchCompiler().lower(pattern)
     fn = compile_match_function(frozen, ModuleNamespace("probe", {}))
     return [str(name).split("#")[0]
-            for name in fn.code.namespace_spec.local_syms]
+            for name in fn.code.namespace_spec.local_syms[1:]]
 
 
 class TestTemporaries(unittest.TestCase):
@@ -507,19 +508,19 @@ class TestTemporaries(unittest.TestCase):
     """
 
     def test_a_flat_pattern_declares_no_temporary(self):
-        self.assertEqual(local_names(MATCH(LITERAL(1))), ["match-subject"])
+        self.assertEqual(local_names(MATCH(LITERAL(1))), [])
 
 
     def test_a_bare_repeat_declares_no_temporary(self):
         self.assertEqual(
             local_names(MATCH(FORM(MATCH(REPEAT(TYPE("int")))))),
-            ["match-subject"])
+            [])
 
 
     def test_a_repeat_over_a_group_declares_no_temporary(self):
         got = local_names(MATCH(FORM(MATCH(
             repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
-        self.assertEqual(got, ["match-subject", "rows", "g", "k", "v"])
+        self.assertEqual(got, ["rows", "g", "k", "v"])
 
 
     def test_bare_repeat_still_walks(self):
@@ -540,11 +541,13 @@ class TestTemporaries(unittest.TestCase):
 
 def walk(pattern):
     """
-    The instructions of a standalone lowering, each slot or temporary
-    name shown without its gensym suffix
+    The instructions of a standalone lowering, the subject shown as
+    "subject" and each slot or temporary name without its gensym suffix
     """
 
     def plain(value):
+        if value is subject:
+            return "subject"
         if isinstance(value, tuple):
             return tuple(plain(v) for v in value)
         if isinstance(value, symbol):
@@ -553,6 +556,7 @@ def walk(pattern):
 
     frozen = MatchCompiler().lower(pattern)
     lowering = MatchLowering(FunctionTarget("t"), frozen, {}, None, None)
+    subject = lowering.target.subject
     lowering.lower_function()
     return [(op.name, plain(arg)) for op, arg in lowering.target.instructions]
 
@@ -684,7 +688,7 @@ class TestDepthTrace(unittest.TestCase):
         # from: none pops two, since no test misses with the outer
         # cursor and the pulled element alone above the subject
         self.assertEqual(walk(MATCH(APP("f", FORM(MATCH(VALUE("a")))))), [
-            ("VAR", "match-subject"),
+            ("VAR", "subject"),
             ("MATCH_FORM", ("match.miss_1", 257, 0, 0)),
             ("MATCH_NEXT", ("match.pop_2", 0, 0, 0)),
             ("DUP", 1),
@@ -731,7 +735,7 @@ class TestDepthTrace(unittest.TestCase):
         pattern = MATCH(FORM(MATCH(ONEOF(
             MATCH(VALUE("a"), VALUE("b")), MATCH(VALUE("a"))))))
         self.assertEqual(walk(pattern), [
-            ("VAR", "match-subject"),
+            ("VAR", "subject"),
             ("MATCH_FORM", ("match.miss_1", 257, 0, 0)),
             ("MATCH_NEXT_FORM", ("match.pop_2", 0, 258, 0)),
             ("MATCH_MARK", (0, 0, 0, 0)),
@@ -814,6 +818,27 @@ class TestPairSpineElements(unittest.TestCase):
         first = result.captures["r"][0]
         self.assertIsInstance(first, Datum)
         self.assertEqual(first.datum, 1)
+
+
+class TestDispatchFunction(unittest.TestCase):
+    """
+    The dispatch function over frozen clauses: the subject its one
+    formal, each clause's externs closure names resolved in the base
+    namespace
+    """
+
+    def test_extern_named_match_subject(self):
+        """
+        A clause's TYPE extern spelled match-subject reads its value in
+        the base namespace, not the subject the function takes
+        """
+
+        frozen = MatchCompiler().lower(MATCH(TYPE("match-subject")))
+        base_ns = ModuleNamespace("dispatch", {"match-subject": int})
+        fn = compile_dispatch_function([frozen], base_ns)
+        hit = fn((7,)).demand()
+        self.assertEqual(hit[0], 0)
+        self.assertIsNone(fn(("s",)).demand())
 
 
 # The end.

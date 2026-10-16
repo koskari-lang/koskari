@@ -22,7 +22,8 @@ import unittest
 import pytest
 
 from koskari.lib import symbol
-from koskari.matcher import Matcher, MatchResult, thaw
+from koskari.matcher import (
+    APP, MATCH, TYPE, VALUE, Matcher, MatchResult, make_matcher, thaw)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -102,6 +103,31 @@ class TestKeywordExterns(unittest.TestCase):
             {"subject": int})
         self.assertTrue(m.match((7,)).matched)
         self.assertFalse(m.match(("s",)).matched)
+
+
+    def test_type_extern_named_match_subject(self):
+        """
+        A TYPE extern spelled match-subject reads its extern value, not
+        the subject the matcher function takes
+        """
+
+        m = make_matcher(MATCH(TYPE("match-subject")), {"match-subject": int})
+        self.assertTrue(m.match((7,)).matched)
+        self.assertFalse(m.match(("s",)).matched)
+
+
+    def test_app_extern_named_match_subject(self):
+        """
+        An APP extractor spelled match-subject is called on the element,
+        not replaced by the subject the matcher function takes
+        """
+
+        m = make_matcher(
+            MATCH(APP("match-subject", VALUE("a"))),
+            {"match-subject": lambda v: v * 10})
+        hit = m.match((3,))
+        self.assertTrue(hit.matched)
+        self.assertEqual(hit.captures["a"], 30)
 
 
     def test_user_type_extern(self):
