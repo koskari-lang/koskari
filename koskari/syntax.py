@@ -83,7 +83,7 @@ FIRST_MATCH = Function(
             (OpCode.FAST, 4),
             (OpCode.CONST, None),
             (OpCode.CHECK_COMPARE,
-             (Compare.IS_NOT, 2, "first-match.next", None)),
+             (Compare.IS_NOT, 2, "first-match.next", 0)),
             (OpCode.FAST2, (2, 4, 0, 0)),
             (OpCode.RETURN, 2),
             (OpCode.LABEL, "first-match.next"),

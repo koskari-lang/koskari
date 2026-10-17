@@ -388,7 +388,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
                 else:
                   (str val)
               case [OpStyle.CMP]:
-                (_format_selector val (and (equal? schema[3] OpStyle.COUNT)
+                (_format_selector val (and (equal? schema[3] OpStyle.RAW)
                                            ext[3]))
               case [OpStyle.OPERAND]:
                 (_operand_name val)

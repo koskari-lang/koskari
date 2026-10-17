@@ -98,7 +98,7 @@ OP(JUMP_OR, 0, LABEL)
 // fused forms absorb their operand feeders: CMPSRC packs the selector
 // with per-operand source bits (a set bit overrides that slot from its
 // declared kind to CONST) and the same negate bit.
-OP(CHECK_COMPARE, 1, EXTRA, CMP, COUNT, LABEL, COUNT)  // cache: elector
+OP(CHECK_COMPARE, 1, EXTRA, CMP, COUNT, LABEL, RAW)  // cache: elector
 OP(CHECK_COMPARE_VAR, 0,  EXTRA, CMPSRC, VAR,     VAR,     LABEL)
 OP(CHECK_COMPARE_FAST, 0, EXTRA, CMPSRC, FASTVAR, FASTVAR, LABEL)
 

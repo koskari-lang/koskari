@@ -230,7 +230,7 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
 | `KOS_OP_NILP` | `KOS_OP_CHECK_NIL` |
 
-**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior → **EXTRA** `(CMP, COUNT, LABEL, COUNT)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field, the negate flag, set to 1, so the check tests the negated chain.
+**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior → **EXTRA** `(CMP, COUNT, LABEL, RAW)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field, the negate flag, set to 1, so the check tests the negated chain.
 
 **`_SWITCH_SQUASHES`** (prior opcode → fused switch opcode):
 
@@ -1626,11 +1626,11 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, COUNT)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the negate flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
+Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, RAW)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the negate flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_COMPARE {#kos_op_check_compare}
 
-- **Style**: EXTRA (CMP, COUNT, LABEL, COUNT). Row = KosCompare selector,
+- **Style**: EXTRA (CMP, COUNT, LABEL, RAW). Row = KosCompare selector,
   operand count, target pc, negate flag.
 - **Stack**: `[..., a1, ..., aN] → [...]`. Chain-compare the top COUNT
   operands under the selector, negated when the negate flag is set;
