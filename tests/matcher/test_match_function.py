@@ -28,8 +28,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Datum, DatumFrame, ModuleNamespace, cons, demand, keyword, nil, setcdr,
-    symbol)
+    Datum, DatumFrame, ModuleNamespace, OpCode, cons, demand, keyword, nil,
+    setcdr, symbol)
 from koskari.match_code import (
     FunctionTarget, MatchLowering, compile_match_function)
 from koskari.matcher import (
@@ -808,6 +808,44 @@ class TestPairSpineElements(unittest.TestCase):
         first = result["r"][0]
         self.assertIsInstance(first, Datum)
         self.assertEqual(first.datum, 1)
+
+
+class TestCoreTwins(unittest.TestCase):
+    """
+    The standalone target lowers the matcher core's VAR instructions
+    to their FAST twins, the extern a closure slot
+    """
+
+    def test_build_lowers_the_core_twins(self):
+        class Point:
+            __match_args__ = ("x",)
+
+            def __init__(self, x):
+                self.x = x
+
+        target = FunctionTarget("t")
+        for op, arg in (
+                (OpCode.VAR, target.subject),
+                (OpCode.MATCH2_SINGLE, 0),
+                (OpCode.MATCH2_NEXT, ("miss", 0, 0, 0)),
+                (OpCode.DUP, 1),
+                (OpCode.MATCH2_TYPE_VAR, ("miss", "Point", 0, 0)),
+                (OpCode.MATCH2_FIELD_POS_VAR, ("miss", "Point", 0, 0)),
+                (OpCode.RETURN, 1),
+                (OpCode.LABEL, "miss"),
+                (OpCode.CONST, None),
+                (OpCode.RETURN, 1)):
+            target.instruction(op, arg)
+
+        base_ns = ModuleNamespace("matcher", {"Point": Point})
+        fn = target.build((symbol("Point"),), base_ns)
+        ops = {OpCode(fn.code.oparg(i)[0]) for i in range(fn.code.length())}
+        self.assertIn(OpCode.MATCH2_TYPE_FAST, ops)
+        self.assertIn(OpCode.MATCH2_FIELD_POS_FAST, ops)
+        self.assertNotIn(OpCode.MATCH2_TYPE_VAR, ops)
+        self.assertNotIn(OpCode.MATCH2_FIELD_POS_VAR, ops)
+        self.assertEqual(demand(fn)(Point(3)), 3)
+        self.assertIsNone(demand(fn)(7))
 
 
 # The end.

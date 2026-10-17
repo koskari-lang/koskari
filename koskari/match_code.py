@@ -338,7 +338,8 @@ class FragmentTarget:
 
 
 # the simple-style VAR instructions the standalone target lowers to
-# their FAST twins, beside the MATCH_* twins named by their spelling
+# their FAST twins, beside the MATCH_* and MATCH2_* twins named by
+# their spelling
 SIMPLE_TWINS = {
     OpCode.VAR: OpCode.FAST,
     OpCode.VAR_STORE: OpCode.FAST_STORE,
@@ -408,7 +409,8 @@ class FunctionTarget:
                 else:
                     arg = idx(arg)
                 op = SIMPLE_TWINS[op]
-            elif name.startswith('MATCH_') and 'VAR' in name.split('_'):
+            elif (name.startswith(('MATCH_', 'MATCH2_'))
+                  and 'VAR' in name.split('_')):
                 twin = OpCode[name.replace('VAR', 'FAST')]
                 if op.extra:
                     arg = tuple(

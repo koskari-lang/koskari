@@ -2084,6 +2084,61 @@ static int test_mark_columns(void) {
 }
 
 
+static int test_mark_pass(void) {
+  PyObject *names = Py_BuildValue("(s)", "x");
+  PyObject *subj = Py_BuildValue("(iii)", 4101, 4102, 4103);
+  PyObject *cursor = NULL;
+  PyObject *elem;
+  PyObject *out;
+
+  /* no slot bound: the span, one element as itself, more as a tuple */
+  TEST_ASSERT_EQ(KosMatchCursor_Descend(subj, &cursor), 1, "descend");
+  PyObject *mark = KosMatchMark_New(cursor, 1);
+  elem = core_pull(&cursor);
+  out = KosMatchMark_Pass(mark, cursor, names);
+  TEST_ASSERT_SAME(out, elem, "one element: the element");
+  Py_DECREF(out);
+
+  PyObject *second = core_pull(&cursor);
+  out = KosMatchMark_Pass(mark, cursor, names);
+  TEST_ASSERT(out && PyTuple_CheckExact(out) && PyTuple_GET_SIZE(out) == 2,
+              "two elements: a tuple");
+  TEST_ASSERT_SAME(PyTuple_GET_ITEM(out, 1), second, "the elements");
+  Py_DECREF(out);
+  Py_DECREF(second);
+
+  /* a bound slot: the plain dict of the bound slots */
+  TEST_ASSERT_EQ(KosMatchMark_Store(mark, 0, elem, NULL), 0, "store");
+  out = KosMatchMark_Pass(mark, cursor, names);
+  TEST_ASSERT(out && PyDict_CheckExact(out), "a plain dict");
+  TEST_ASSERT_SAME(PyDict_GetItemString(out, "x"), KosMatchMark_SLOT(mark, 0),
+                   "bound under x");
+  Py_DECREF(out);
+  Py_DECREF(mark);
+  Py_DECREF(cursor);
+  TEST_ASSERT_REFCNT(subj, 1, "released");
+
+  /* over a spine, the span is boxed */
+  PyObject *spine = make_spine(2);
+  TEST_ASSERT_EQ(KosMatchCursor_Descend(spine, &cursor), 1, "descend");
+  mark = KosMatchMark_New(cursor, 1);
+  elem = core_pull(&cursor);
+  Py_DECREF(elem);
+  out = KosMatchMark_Pass(mark, cursor, names);
+  TEST_ASSERT(KosDatum_Check(out), "a Datum");
+  TEST_ASSERT_EQ(PyLong_AsLong(((KosDatum *) out)->datum), 1, "the car");
+  Py_DECREF(out);
+  Py_DECREF(mark);
+  Py_DECREF(cursor);
+  TEST_ASSERT_REFCNT(spine, 1, "released");
+
+  Py_DECREF(spine);
+  Py_DECREF(subj);
+  Py_DECREF(names);
+  return 0;
+}
+
+
 /* === runner === */
 
 
@@ -2131,6 +2186,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_mark_above_default_capacity);
   RUN_TEST(test_mark_freelist_reuse);
   RUN_TEST(test_mark_columns);
+  RUN_TEST(test_mark_pass);
 
   return 0;
 }

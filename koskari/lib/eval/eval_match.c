@@ -24,7 +24,10 @@
   Included into eval.c ahead of the opcode handlers. The steps
   themselves are the matcher subsystem's (matcher.h, matcher/step.c);
   a body is the interface between the row, the stack and the slots
-  (design/interpreter/matcher-bytecode.md).
+  (design/interpreter/matcher-bytecode.md). The MATCH2_* bodies at the
+  end are the matcher core's (design/interpreter/matcher-core.md):
+  their cursors, marks and items lists are stack entries named by
+  depth, and their steps are matcher/cursor.c's and matcher/mark.c's.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -1379,6 +1382,784 @@ KOS_MATCH_BODY(kos_match_count) {
   if (PyList_GET_SIZE(list) < (Py_ssize_t) KosExtra_IMM(row, 2))
     KOS_MATCH_MISS(row);
   RESULT_NEXT(es);
+}
+
+
+/* === the matcher core: entries by depth === */
+
+
+/**
+   The cursor at the depth under the top, as the instruction found the
+   stack. Borrowed; NULL with an exception set on an underrun,
+   SystemError when the entry is not a cursor.
+*/
+KOS_OP_INLINE PyObject *kos_match2_cursor_at(
+    KosEvalState *es,
+    uint32_t under) {
+
+  PyObject *entry = KosEvalState_StackPeekUnder(es, (size_t) under);
+
+  if (unlikely(entry && ! KosMatchCursor_Check(entry))) {
+    PyErr_Format(PyExc_SystemError,
+                 "match instruction finds %.200s at depth %u, not a cursor",
+                 Py_TYPE(entry)->tp_name, (unsigned) under);
+    return NULL;
+  }
+  return entry;
+}
+
+
+/**
+   The mark at the depth under the top, as the instruction found the
+   stack. Borrowed; NULL with an exception set on an underrun,
+   SystemError when the entry is not a mark.
+*/
+KOS_OP_INLINE PyObject *kos_match2_mark_at(
+    KosEvalState *es,
+    uint32_t under) {
+
+  PyObject *entry = KosEvalState_StackPeekUnder(es, (size_t) under);
+
+  if (unlikely(entry && ! KosMatchMark_Check(entry))) {
+    PyErr_Format(PyExc_SystemError,
+                 "match instruction finds %.200s at depth %u, not a mark",
+                 Py_TYPE(entry)->tp_name, (unsigned) under);
+    return NULL;
+  }
+  return entry;
+}
+
+
+/**
+   Slot i of the mark at the depth under the top: *out the bound value
+   (borrowed), or NULL for an empty slot. 0, or -1 with an exception
+   set, SystemError for an index outside the mark's slot count.
+*/
+KOS_OP_INLINE int kos_match2_slot_at(
+    KosEvalState *es,
+    uint32_t under,
+    uint32_t i,
+    PyObject **out) {
+
+  PyObject *mark = kos_match2_mark_at(es, under);
+
+  if (unlikely(! mark))
+    return -1;
+  if (unlikely((Py_ssize_t) i >= KosMatchMark_COUNT(mark))) {
+    PyErr_Format(PyExc_SystemError,
+                 "match slot %u outside a mark of %zd slots",
+                 (unsigned) i, KosMatchMark_COUNT(mark));
+    return -1;
+  }
+  *out = KosMatchMark_SLOT(mark, i);
+  return 0;
+}
+
+
+/**
+   The mark at the depth a row's field names, made writable: the mark
+   itself when its entry alone holds it, else a copy stored at the
+   entry. Borrowed; NULL with an exception set.
+*/
+KOS_OP_INLINE PyObject *kos_match2_writable_at(
+    KosEvalState *es,
+    const KosExtra *row,
+    int field) {
+
+  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, field));
+
+  if (unlikely(! mark))
+    return NULL;
+
+  PyObject *target = KosMatchMark_Writable(mark, 1);
+  if (unlikely(! target))
+    return NULL;
+  if (unlikely(kos_match_set_at(es, row, field, target) < 0))
+    return NULL;
+  return target;
+}
+
+
+/* === the matcher core: cursors === */
+
+
+/**
+   MATCH2_DESCEND: the sequence gate on TOS read through Datum; the
+   cursor over it replaces it. A miss pops TOS and jumps. Simple LABEL
+   style.
+*/
+KOS_MATCH_BODY(kos_match2_descend) {
+  KOS_SYNC_PC(es, insn);
+  (void) kos_match_delivery_;
+
+  PyObject *value = kos_match_peek(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+
+  PyObject *cursor = NULL;
+  int r = KosMatchCursor_Descend(value, &cursor);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+
+  if (! r) {
+    if (unlikely(KosEvalState_StackDrop1(es) < 0))
+      RESULT_RAISE();
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+  }
+  if (unlikely(KosEvalState_StackSetUnder(es, 0, cursor) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_SINGLE: a one-element cursor over TOS replaces it. No arg.
+*/
+KOS_MATCH_BODY(kos_match2_single) {
+  KOS_SYNC_PC(es, insn);
+  (void) kos_match_delivery_;
+
+  PyObject *value = kos_match_peek(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+
+  PyObject *cursor = KosMatchCursor_Single(value);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  if (unlikely(KosEvalState_StackSetUnder(es, 0, cursor) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_FITS: the cursor at field 1 must have at least field 2 and
+   at most field 3 elements left, KOS_MATCH_UNBOUNDED for no maximum.
+   Row LABEL, depth, min, max.
+*/
+KOS_MATCH_BODY(kos_match2_fits) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  Py_ssize_t remaining = KosMatchCursor_Remaining(cursor);
+  uint32_t max = KosExtra_IMM(row, 3);
+  if (remaining < (Py_ssize_t) KosExtra_IMM(row, 2)
+      || (max != KOS_MATCH_UNBOUNDED && remaining > (Py_ssize_t) max))
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_NEXT: the next element of the cursor at field 1 pushed, the
+   moved cursor stored back; a miss at the end. Row LABEL, depth.
+*/
+KOS_MATCH_BODY(kos_match2_next) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *elem = NULL;
+  PyObject *next = NULL;
+  int r = KosMatchCursor_Next(cursor, 1, &elem, &next);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+
+  if (unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
+    Py_DECREF(elem);
+    RESULT_RAISE();
+  }
+  RESULT_STEAL(es, elem);
+}
+
+
+/**
+   MATCH2_BOUND: a cursor at the position of the cursor at field 1,
+   ending field 2 elements before its end, pushed; a miss when fewer
+   remain. Row LABEL, depth, width.
+*/
+KOS_MATCH_BODY(kos_match2_bound) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *bound = NULL;
+  int r = KosMatchCursor_Bound(
+      cursor, (Py_ssize_t) KosExtra_IMM(row, 2), &bound);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, bound);
+}
+
+
+/**
+   MATCH2_SYNC: the cursor at field 0 moved to the position of the
+   cursor at field 1. Row depth, depth.
+*/
+KOS_MATCH_BODY(kos_match2_sync) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  PyObject *to = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! to))
+    RESULT_RAISE();
+
+  PyObject *moved = KosMatchCursor_Sync(cursor, to, 1);
+  if (unlikely(! moved))
+    RESULT_RAISE();
+  if (unlikely(kos_match_set_at(es, row, 0, moved) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_TAIL: the remaining elements of the cursor at field 1 less
+   field 2 pushed as a span, the cursor advanced past them; a miss
+   when fewer than field 2 remain or the span is shorter than field 3.
+   Row LABEL, depth, width, min.
+*/
+KOS_MATCH_BODY(kos_match2_tail) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *span = NULL;
+  PyObject *next = NULL;
+  int r = KosMatchCursor_Tail(
+      cursor, (Py_ssize_t) KosExtra_IMM(row, 2),
+      (Py_ssize_t) KosExtra_IMM(row, 3), 1, &span, &next);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+
+  if (unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
+    Py_DECREF(span);
+    RESULT_RAISE();
+  }
+  RESULT_STEAL(es, span);
+}
+
+
+/* === the matcher core: marks === */
+
+
+/**
+   MATCH2_SCOPE: a mark at the position of the cursor at field 0 with
+   field 1 empty slots pushed. Row depth, count.
+*/
+KOS_MATCH_BODY(kos_match2_scope) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  RESULT_STEAL(
+      es, KosMatchMark_New(cursor, (Py_ssize_t) KosExtra_IMM(row, 1)));
+}
+
+
+/**
+   MATCH2_RESET: the cursor at field 0 moved back to the position of
+   the mark at field 1. Row depth, depth.
+*/
+KOS_MATCH_BODY(kos_match2_reset) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+
+  PyObject *moved = KosMatchMark_Reset(cursor, mark, 1);
+  if (unlikely(! moved))
+    RESULT_RAISE();
+  if (unlikely(kos_match_set_at(es, row, 0, moved) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_AT: the element at the position of the mark at field 0
+   pushed. Row depth.
+*/
+KOS_MATCH_BODY(kos_match2_at) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  RESULT_STEAL(es, KosMatchMark_At(mark));
+}
+
+
+/**
+   MATCH2_SPAN: the span from the position of the mark at field 0 to
+   the cursor at field 1 pushed. Row depth, depth.
+*/
+KOS_MATCH_BODY(kos_match2_span) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  RESULT_STEAL(es, KosMatchMark_Span(mark, cursor));
+}
+
+
+/**
+   MATCH2_STORE: TOS popped into slot field 1 of the mark at field 0;
+   when the cursor at field 2 walks a pair spine, a Datum value takes
+   the slot's name from the names tuple in field 3 as its binding. Row
+   depth, index, depth, const.
+*/
+KOS_MATCH_BODY(kos_match2_store) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  Py_ssize_t i = (Py_ssize_t) KosExtra_IMM(row, 1);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 2));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  /* the code's validation holds the index within the names */
+  PyObject *name = KosMatchCursor_KIND(cursor) == KOS_MATCH_SPINE
+      ? PyTuple_GET_ITEM(KosExtra_OBJ(row, 3), i) : NULL;
+
+  PyObject *mark = kos_match2_writable_at(es, row, 0);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+
+  PyObject *value = KosEvalState_StackPopRef(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+  if (unlikely(KosMatchMark_Store(mark, i, value, name) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_CLEAR: the slots the index tuple in field 1 names emptied in
+   the mark at field 0. Row depth, const.
+*/
+KOS_MATCH_BODY(kos_match2_clear) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *mark = kos_match2_writable_at(es, row, 0);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  if (unlikely(KosMatchMark_Clear(mark, KosExtra_OBJ(row, 1)) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_CAPTURES and MATCH2_PASS: the captures of the mark at field
+   0, keyed by the names tuple in field 2, over the span to the cursor
+   at field 1, pushed; PASS pushes a REPEAT pass's value instead. Row
+   depth, depth, const.
+*/
+KOS_MATCH_BODY(kos_match2_captures) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  int pass = KosOp_OP(insn) == KOS_OP_MATCH2_PASS;
+  (void) kos_match_delivery_;
+
+  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *names = KosExtra_OBJ(row, 2);
+  RESULT_STEAL(es, pass
+               ? KosMatchMark_Pass(mark, cursor, names)
+               : KosMatchMark_Captures(mark, cursor, names));
+}
+
+
+/**
+   MATCH2_LOAD: slot field 2 of the mark at field 1 pushed; an empty
+   slot jumps to field 0, pushing nothing. Row LABEL, depth, index.
+*/
+KOS_MATCH_BODY(kos_match2_load) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *value = NULL;
+  if (unlikely(kos_match2_slot_at(
+          es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &value) < 0))
+    RESULT_RAISE();
+  if (! value)
+    KOS_MATCH_MISS(row);
+  RESULT_PUSH(es, value);
+}
+
+
+/* === the matcher core: items === */
+
+
+/**
+   MATCH2_APPEND: TOS popped and appended to the items list at field
+   0, which its entry alone holds once kos_match_list_at has copied a
+   shared one. Row depth.
+*/
+KOS_MATCH_BODY(kos_match2_append) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *list = kos_match_list_at(es, (size_t) KosExtra_IMM(row, 0));
+  if (unlikely(! list))
+    RESULT_RAISE();
+
+  PyObject *value = KosEvalState_StackPopRef(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+  int rc = PyList_Append(list, value);
+  Py_DECREF(value);
+  if (unlikely(rc < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/**
+   The items list at the depth under the top, read and not written.
+   Borrowed; NULL with an exception set on an underrun or a non-list.
+*/
+KOS_OP_INLINE PyObject *kos_match2_items_at(
+    KosEvalState *es,
+    uint32_t under) {
+
+  PyObject *list = KosEvalState_StackPeekUnder(es, (size_t) under);
+
+  if (unlikely(list && ! PyList_Check(list))) {
+    PyErr_Format(PyExc_TypeError,
+                 "match items must be a list, not %.200s",
+                 Py_TYPE(list)->tp_name);
+    return NULL;
+  }
+  return list;
+}
+
+
+/**
+   MATCH2_MIN: the items list at field 1 must hold at least field 2
+   items. Row LABEL, depth, count.
+*/
+KOS_MATCH_BODY(kos_match2_min) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *list = kos_match2_items_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! list))
+    RESULT_RAISE();
+  if (PyList_GET_SIZE(list) < (Py_ssize_t) KosExtra_IMM(row, 2))
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_COLUMNS: for each name of the tuple in field 2, the list of
+   its values in the passes of the items list at field 0, stored into
+   the slot at the same position in the index tuple in field 3 of the
+   mark at field 1. Row depth, depth, const, const.
+*/
+KOS_MATCH_BODY(kos_match2_columns) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *list = kos_match2_items_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! list))
+    RESULT_RAISE();
+  PyObject *mark = kos_match2_writable_at(es, row, 1);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  if (unlikely(KosMatchMark_Columns(
+          mark, list, KosExtra_OBJ(row, 2), KosExtra_OBJ(row, 3)) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
+}
+
+
+/* === the matcher core: element tests === */
+
+
+/**
+   MATCH2_LITERAL: TOS popped; it must be the constant in field 1. Row
+   LABEL, const.
+*/
+KOS_MATCH_BODY(kos_match2_literal) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *elem = KosEvalState_StackPopRef(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+
+  int r = KosMatch_LiteralTest(elem, KosExtra_OBJ(row, 1));
+  Py_DECREF(elem);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_CORE: TOS popped; it must be an instance of the core type
+   whose ordinal is field 1. Row LABEL, ordinal.
+*/
+KOS_MATCH_BODY(kos_match2_core) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *elem = KosEvalState_StackPopRef(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+
+  int r = KosMatch_CoreTypeTest(elem, KosExtra_IMM(row, 1));
+  Py_DECREF(elem);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_TYPE_VAR and MATCH2_TYPE_FAST: TOS popped; it must be an
+   instance of the type in the slot in field 1. Row LABEL, slot.
+*/
+KOS_MATCH_BODY(kos_match2_type) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  int fast = KosOp_OP(insn) == KOS_OP_MATCH2_TYPE_FAST;
+  (void) kos_match_delivery_;
+
+  PyObject *type = kos_match_load(es, row, 1, fast);
+  if (unlikely(! type))
+    RESULT_RAISE();
+  PyObject *elem = KosEvalState_StackPopRef(es);
+  if (unlikely(! elem)) {
+    Py_DECREF(type);
+    RESULT_RAISE();
+  }
+
+  int r = KosMatch_TypeTest(elem, type);
+  Py_DECREF(elem);
+  Py_DECREF(type);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_SAME: TOS popped; it must equal slot field 2 of the mark at
+   field 1, and misses when that slot is empty. Row LABEL, depth,
+   index.
+*/
+KOS_MATCH_BODY(kos_match2_same) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *prev = NULL;
+  if (unlikely(kos_match2_slot_at(
+          es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &prev) < 0))
+    RESULT_RAISE();
+
+  PyObject *elem = KosEvalState_StackPopRef(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+  if (! prev) {
+    Py_DECREF(elem);
+    KOS_MATCH_MISS(row);
+  }
+
+  /* the comparison may run user code; the value is held across it */
+  Py_INCREF(prev);
+  int r = KosMatch_SameTest(elem, prev);
+  Py_DECREF(prev);
+  Py_DECREF(elem);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/* === the matcher core: projections === */
+
+
+/**
+   MATCH2_FIELD_POS_VAR and MATCH2_FIELD_POS_FAST: the attribute of
+   TOS that __match_args__[field 2] of the class in the slot in field
+   1 names, pushed; a missing attribute is a miss, an index past the
+   end of __match_args__ a TypeError. Row LABEL, slot, index.
+*/
+KOS_MATCH_BODY(kos_match2_field_pos) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  int fast = KosOp_OP(insn) == KOS_OP_MATCH2_FIELD_POS_FAST;
+  (void) kos_match_delivery_;
+
+  PyObject *obj = kos_match_peek(es);
+  if (unlikely(! obj))
+    RESULT_RAISE();
+  PyObject *cls = kos_match_load(es, row, 1, fast);
+  if (unlikely(! cls))
+    RESULT_RAISE();
+
+  PyObject *val = NULL;
+  int r = KosMatch_FieldPos(
+      obj, cls, (Py_ssize_t) KosExtra_IMM(row, 2), &val);
+  Py_DECREF(cls);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, val);
+}
+
+
+/**
+   MATCH2_FIELD_KW: the attribute of TOS the constant in field 1
+   names, pushed; a missing attribute is a miss. Row LABEL, const.
+*/
+KOS_MATCH_BODY(kos_match2_field_kw) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *obj = kos_match_peek(es);
+  if (unlikely(! obj))
+    RESULT_RAISE();
+
+  PyObject *val = NULL;
+  int r = KosMatch_FieldKw(obj, KosExtra_OBJ(row, 1), &val);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, val);
+}
+
+
+/**
+   MATCH2_MAPPING: the mapping gate on TOS, which stays. Simple LABEL
+   style.
+*/
+KOS_MATCH_BODY(kos_match2_mapping) {
+  KOS_SYNC_PC(es, insn);
+  (void) kos_match_delivery_;
+
+  PyObject *obj = kos_match_peek(es);
+  if (unlikely(! obj))
+    RESULT_RAISE();
+
+  int r = KosMatch_MapTest(obj);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+  RESULT_NEXT(es);
+}
+
+
+/**
+   MATCH2_KEY, MATCH2_KEY_VAR and MATCH2_KEY_FAST: the value under the
+   key in field 1 (a constant on MATCH2_KEY, a slot on the twins) of
+   the mapping on TOS, pushed; an absent key is a miss. Row LABEL,
+   key.
+*/
+KOS_MATCH_BODY(kos_match2_key) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  KosOpCode op = (KosOpCode) KosOp_OP(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *obj = kos_match_peek(es);
+  if (unlikely(! obj))
+    RESULT_RAISE();
+
+  PyObject *key;
+  if (op == KOS_OP_MATCH2_KEY) {
+    key = KosExtra_OBJ(row, 1);
+    Py_INCREF(key);
+  } else {
+    key = kos_match_load(es, row, 1, op == KOS_OP_MATCH2_KEY_FAST);
+    if (unlikely(! key))
+      RESULT_RAISE();
+  }
+
+  PyObject *val = NULL;
+  int r = KosMatch_Item(obj, key, &val);
+  Py_DECREF(key);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, val);
 }
 
 

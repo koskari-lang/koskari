@@ -523,6 +523,50 @@ OP(MATCH_CAPTURES_NAMED, 0, EXTRA, CONST, RAW, RAW, NOARG)  // the captures read
 OP(MATCH_ITERATION, 0, EXTRA, CONST, FASTVAR, RAW, RAW)  // one repeat iteration's value, its mark on the top and its list under that: the names tuple, the first capture slot, the cursor depth, the mode (0 push the value, 1 append it to the list); clears the slots it read
 OP(MATCH_ITERATION_NAMED, 0, EXTRA, CONST, RAW, RAW, NOARG)  // the iteration read by name: (keys, locals), the cursor depth, the mode
 
+// the matcher core's instructions (design/interpreter/matcher-core.md),
+// beside the family above until they replace it under the MATCH_
+// prefix. A walk's cursors, marks and items lists are stack entries,
+// each named by a RAW depth counted on the stack as the instruction
+// finds it: 0 is the top, before the instruction pops or pushes. A
+// miss jumps to the LABEL in field 0, leaving the stack as it was
+// except where an instruction says it consumes its input: an element
+// test pops its element on both exits. A write to a cursor, a mark or
+// an items list goes to the entry's own object, copied first when
+// anything else holds it, and the result is stored back at the depth.
+// Widths and counts are RAW; 0xFFFF is FITS's unbounded max.
+OP(MATCH2_DESCEND, 0, LABEL)  // v -> cur: the sequence gate on v read through Datum and a cursor over it; a miss consumes v
+OP(MATCH2_SINGLE, 0, NOARG)  // v -> cur: a one-element cursor over v
+OP(MATCH2_FITS, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, min, max: misses unless min <= remaining <= max
+OP(MATCH2_NEXT, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // cur: -> e, the next element, a Datum over a spine cell; misses at the end
+OP(MATCH2_BOUND, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // cur, w: -> cur', at cur's position, ending w before cur's end; misses when fewer than w remain
+OP(MATCH2_SYNC, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, c: cur moved to c's position
+OP(MATCH2_TAIL, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, w, min: -> span, the remaining elements less w, advancing cur; misses below min
+OP(MATCH2_SCOPE, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, k: -> m, a mark at cur's position with k empty slots
+OP(MATCH2_RESET, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, m: cur moved back to m's position
+OP(MATCH2_AT, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // m: -> e, the element at m's position as NEXT gave it
+OP(MATCH2_SPAN, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // m, cur: -> span, from m's position to cur's
+OP(MATCH2_STORE, 0, EXTRA, RAW, RAW, RAW, CONST)  // s, i, cur, names: v -> ; v into slot i of the mark at s, a Datum taking names[i] as its binding when cur is a spine cursor
+OP(MATCH2_CLEAR, 0, EXTRA, RAW, CONST, NOARG, NOARG)  // s, slots: empties the slots (a tuple of indices) of the mark at s
+OP(MATCH2_CAPTURES, 0, EXTRA, RAW, RAW, CONST, NOARG)  // s, cur, names: -> caps, a dict, or a DatumFrame over a spine
+OP(MATCH2_PASS, 0, EXTRA, RAW, RAW, CONST, NOARG)  // s, cur, names: -> a REPEAT pass's value, the dict of the filled slots, or the span when none is filled
+OP(MATCH2_LOAD, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // s, i: -> v, slot i of the mark at s; jumps pushing nothing when the slot is empty
+OP(MATCH2_ITEMS, 0, NOARG)  // -> items, an empty list
+OP(MATCH2_APPEND, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // items: v -> ; appended
+OP(MATCH2_MIN, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // items, n: misses below n items
+OP(MATCH2_COLUMNS, 0, EXTRA, RAW, RAW, CONST, CONST)  // items, s, names, slots: per name, the list of its per-pass values stored into the slot of the mark at s
+OP(MATCH2_LITERAL, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // c: e -> ; e is c
+OP(MATCH2_CORE, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // n: e -> ; e is of the core type ordinal n
+OP(MATCH2_TYPE_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // t: e -> ; isinstance(e, t)
+OP(MATCH2_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH2_SAME, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // s, i: e -> ; e equals slot i of the mark at s; misses when the slot is empty
+OP(MATCH2_FIELD_POS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // t, i: o -> o a, the attribute t.__match_args__[i] names
+OP(MATCH2_FIELD_POS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH2_FIELD_KW, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // name: o -> o a, the attribute name
+OP(MATCH2_MAPPING, 0, LABEL)  // o -> o: the mapping gate
+OP(MATCH2_KEY, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // k: o -> o v, the value under the constant key
+OP(MATCH2_KEY_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // k: o -> o v, the value under the key in the closure name
+OP(MATCH2_KEY_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+
 // binary operator sites with one or both operands off the stack: the
 // left operand's source is the prefix (the stack unnamed, VAR, FAST),
 // the right operand's source the suffix (CONST, VAR, FAST); the

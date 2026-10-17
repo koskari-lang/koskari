@@ -1067,4 +1067,33 @@ class TestItemLowering(unittest.TestCase):
         ])
 
 
+class TestMatchCoreLowering(unittest.TestCase):
+    """
+    convert_fast lowers the matcher core's VAR instructions to their
+    FAST twins, found by their spelling
+    """
+
+    def test_twins(self):
+        self.assertIs(
+            VAR_TO_FAST[OpCode.MATCH2_TYPE_VAR], OpCode.MATCH2_TYPE_FAST)
+        self.assertIs(
+            VAR_TO_FAST[OpCode.MATCH2_FIELD_POS_VAR],
+            OpCode.MATCH2_FIELD_POS_FAST)
+        self.assertIs(
+            VAR_TO_FAST[OpCode.MATCH2_KEY_VAR], OpCode.MATCH2_KEY_FAST)
+
+    def test_rows_lower(self):
+        nspec = NamespaceSpec(None, ("T", "k"), ())
+        result = convert_fast(nspec, [
+            (OpCode.MATCH2_TYPE_VAR, ("miss", "T", 0, 0)),
+            (OpCode.MATCH2_FIELD_POS_VAR, ("miss", "T", 1, 0)),
+            (OpCode.MATCH2_KEY_VAR, ("miss", "k", 0, 0)),
+        ])
+        self.assertEqual(result, [
+            (OpCode.MATCH2_TYPE_FAST, ("miss", 0, 0, 0)),
+            (OpCode.MATCH2_FIELD_POS_FAST, ("miss", 0, 1, 0)),
+            (OpCode.MATCH2_KEY_FAST, ("miss", 1, 0, 0)),
+        ])
+
+
 # The end.

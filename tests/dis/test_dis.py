@@ -170,6 +170,26 @@ def _make_core_type_code():
     return Code(nspec, instr, "core_type_fn", "file.ki")
 
 
+def _make_core_instruction_code():
+    """
+    Code with the matcher core's core-type test and a slot clear, so
+    the ordinal renders by name, the indices as a tuple and the depth
+    as a number
+    """
+    nspec = NamespaceSpec("fn", (), ())
+    instr = (
+        [OpCode.CONST, (1,)],
+        [OpCode.MATCH2_DESCEND, "miss"],
+        [OpCode.MATCH2_SCOPE, (0, 2, 0, 0)],
+        [OpCode.MATCH2_CLEAR, (0, (0, 1), 0, 0)],
+        [OpCode.MATCH2_NEXT, ("miss", 1, 0, 0)],
+        [OpCode.MATCH2_CORE, ("miss", CoreType.INT, 0, 0)],
+        [OpCode.LABEL, "miss"],
+        [OpCode.RETURN, 1],
+    )
+    return Code(nspec, instr, "core_instruction_fn", "file.ki")
+
+
 def _make_expression():
     """
     Expression wrapping the truthy code, for _get_code / dis unwrapping.
@@ -266,6 +286,15 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertIn("MATCH_NEXT_CORE_TYPE", text)
         self.assertIn("(-> 4, 0, SYMBOL, 0)", text)
         self.assertIn("(-> 4, INT, 0, 0)", text)
+
+    async def test_dis_core_instructions(self):
+        code = _make_core_instruction_code()
+        buf = io.StringIO()
+        await _dis().dis(code, file=buf)
+        text = buf.getvalue()
+        self.assertIn("(-> 6, INT, 0, 0)", text)
+        self.assertIn("(0, c#1 (#(0 1)), 0, 0)", text)
+        self.assertIn("(-> 6, 1, 0, 0)", text)
 
     async def test_dis_expression(self):
         """

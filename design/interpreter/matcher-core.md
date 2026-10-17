@@ -374,6 +374,15 @@ are recorded, not a gate.
 - `MATCH_CASE` keeps the branch's form (no cache slot, a handler that
   raises).
 
+- Decided in phase 4:
+  - an uncaptured REPEAT with slots appends `MATCH_CAPTURES` on every
+    pass (always a dict, a DatumFrame over a spine) for COLUMNS to read;
+    `MATCH_PASS` (the dict of filled slots, or the span when none is
+    filled) serves a captured REPEAT;
+  - COLUMNS carries the names tuple beside the slot indices; STORE
+    carries the scope's names tuple (for a spine Datum's binding);
+  - a depth operand counts entries as the instruction finds the stack,
+    0 being the top before it pops or pushes.
 - Decided in phase 3, following master:
   - REST over a list or tuple binds a tuple;
   - a SPAN of exactly one element is that element, as AT gives it;

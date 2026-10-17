@@ -2904,6 +2904,60 @@ static int validate_capture_run(
 
 
 /**
+   The tuple constants of the matcher core's rows, which their bodies
+   index without a check: the names of MATCH2_STORE, MATCH2_CAPTURES,
+   MATCH2_PASS and MATCH2_COLUMNS, and the slot indices of MATCH2_CLEAR
+   and MATCH2_COLUMNS, each an exact tuple; MATCH2_STORE's index within
+   its names.
+
+   :return: 0, or -1 with ValueError set
+*/
+static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
+  int fields[2] = {-1, -1};
+
+  switch (op) {
+  case KOS_OP_MATCH2_STORE:
+    fields[0] = 3;
+    break;
+  case KOS_OP_MATCH2_CLEAR:
+    fields[0] = 1;
+    break;
+  case KOS_OP_MATCH2_CAPTURES:
+  case KOS_OP_MATCH2_PASS:
+    fields[0] = 2;
+    break;
+  case KOS_OP_MATCH2_COLUMNS:
+    fields[0] = 2;
+    fields[1] = 3;
+    break;
+  default:
+    return 0;
+  }
+
+  for (int j = 0; j < 2 && fields[j] >= 0; j++) {
+    PyObject *t = KosExtra_OBJ(row, fields[j]);
+    if (! t || ! PyTuple_CheckExact(t)) {
+      PyErr_Format(PyExc_ValueError,
+                   "%s field %d must be a tuple",
+                   kos_opcode_name(op), fields[j]);
+      return -1;
+    }
+  }
+
+  if (op == KOS_OP_MATCH2_STORE
+      && (Py_ssize_t) KosExtra_IMM(row, 1)
+      >= PyTuple_GET_SIZE(KosExtra_OBJ(row, 3))) {
+    PyErr_Format(PyExc_ValueError,
+                 "MATCH2_STORE slot %u outside its %zd names",
+                 (unsigned) KosExtra_IMM(row, 1),
+                 PyTuple_GET_SIZE(KosExtra_OBJ(row, 3)));
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
    Reject FASTVAR operands outside the active NamespaceSpec slot range.
 
    Called after emit when ``code`` and ``extra`` are fully materialized so we
@@ -3004,6 +3058,8 @@ static int validate_fast_slots(
       }
 
       if (validate_capture_run(self, op, row, active, depth))
+        return -1;
+      if (validate_match_tuples(op, row))
         return -1;
     }
 

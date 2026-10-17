@@ -564,6 +564,17 @@ PyObject *KosMatchMark_Captures(
     PyObject *names);
 
 /**
+   MATCH_PASS: one REPEAT pass's value, KosMatchMark_Dict when any
+   slot of mark is bound, else the pass's span from mark's position to
+   cursor's, as KosMatchMark_Span gives it. New reference; NULL with
+   an exception set.
+ */
+PyObject *KosMatchMark_Pass(
+    PyObject *mark,
+    PyObject *cursor,
+    PyObject *names);
+
+/**
    MATCH_COLUMNS: for each name in names, the list of its values in
    the pass dicts of items that bound it, in pass order, stored into
    mark's (writable) slot at the same position in slots, a tuple of

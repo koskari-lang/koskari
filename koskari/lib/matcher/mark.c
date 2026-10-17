@@ -437,6 +437,21 @@ PyObject *KosMatchMark_Captures(
 }
 
 
+PyObject *KosMatchMark_Pass(
+    PyObject *mark,
+    PyObject *cursor,
+    PyObject *names) {
+
+  KosMatchMark *m = (KosMatchMark *) mark;
+
+  for (Py_ssize_t i = 0; i < m->count; i++) {
+    if (m->slots[i])
+      return KosMatchMark_Dict(mark, names);
+  }
+  return KosMatchMark_Span(mark, cursor);
+}
+
+
 int KosMatchMark_Columns(
     PyObject *mark,
     PyObject *items,
