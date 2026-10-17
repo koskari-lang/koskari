@@ -377,5 +377,24 @@ class TestAlternativesCheckOnlyTheMinimum(unittest.TestCase):
         self.assertEqual(m((1, 2, 3)), {"p": (1, 2)})
 
 
+class TestAlternativeForms(unittest.TestCase):
+    """
+    A FORM that is a ONEOF branch or an OPTIONAL sub-pattern checks the
+    suffix's minimum before it descends, as any alternative does
+    """
+
+    def test_an_optional_form_yields_to_the_suffix(self):
+        m = built(MATCH(
+            OPTIONAL(FORM(MATCH(TEST_ANY()))), CAPTURE("b")))
+        self.assertEqual(m(((1,),)), {"b": (1,)})
+        self.assertEqual(m(((1,), 2)), {"b": 2})
+
+
+    def test_a_form_branch_yields_to_the_suffix(self):
+        m = built(MATCH(
+            ONEOF(FORM(MATCH(TEST_ANY())), MATCH()), CAPTURE("b")))
+        self.assertEqual(m(((1,),)), {"b": (1,)})
+        self.assertEqual(m(((1,), 2)), {"b": 2})
+
 
 # The end.

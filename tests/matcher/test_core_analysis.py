@@ -420,10 +420,10 @@ class TestFacts(unittest.TestCase):
         branch = nodes[oneof][1]
         self.assertEqual(found.root_fits, (3, None))
         self.assertEqual(found.fits, {
-            form: (2, 2),
             branch: (2, None),
             group: (2, None),
         })
+        self.assertEqual(found.form_fits, {form: (2, 2)})
         # the root MATCH and the MATCH under the FORM repeat their
         # owner's bounds at the same position
         self.assertNotIn(entry, found.fits)

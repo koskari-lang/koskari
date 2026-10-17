@@ -106,13 +106,14 @@ class Analysis:
         MAP value, the root, or for a REPEAT body the one pass. A
         REPEAT's w is its suffix min; a REST's w is its suffix, which
         is fixed. None where widths is None
-    :ivar fits: node to the (min, max) of its MATCH_FITS precheck: a
-        FORM's on the cursor it descends to, a MATCH, GROUP, ONEOF
-        branch or OPTIONAL sub-pattern of minimum width above 1 on its
+    :ivar fits: node to the (min, max) of its MATCH_FITS precheck on
+        the cursor it is on: a MATCH, GROUP, ONEOF branch or OPTIONAL sub-pattern of minimum width above 1 on its
         own cursor, and a ONEOF branch or OPTIONAL sub-pattern of
         minimum width 1 that a run of minimum width above 0 follows,
         with no max, omitted where the same bounds were checked at the
         same position
+    :ivar form_fits: FORM node to the (min, max) checked on the cursor
+        it descends to
     :ivar root_fits: the standalone root's (min, max), None for an arm
     :ivar scopes: the capture scopes, the root at index 0
     :ivar node_scope: the scope a node's captures store into, the
@@ -136,6 +137,7 @@ class Analysis:
     fixed: tuple
     suffix: tuple
     fits: dict
+    form_fits: dict
     root_fits: Optional[tuple]
     scopes: tuple
     node_scope: tuple
@@ -168,7 +170,8 @@ def analyse(tables, arm=False):
     check_constants(nodes, consts)
     widths = node_widths(nodes)
     check_shapes(nodes, widths, entry, arm)
-    suffix, fits, root_fits = cursor_layout(nodes, widths, entry, arm)
+    suffix, fits, form_fits, root_fits = cursor_layout(
+        nodes, widths, entry, arm)
     scopes, node_scope, pass_scope, group_scope, slot_scope, captured = \
         capture_scopes(nodes, slots, entry)
 
@@ -196,6 +199,7 @@ def analyse(tables, arm=False):
         fixed=tuple(None if w is None else w[0] == w[1] for w in widths),
         suffix=tuple(suffix),
         fits=fits,
+        form_fits=form_fits,
         root_fits=root_fits,
         scopes=scopes,
         node_scope=tuple(node_scope),
@@ -385,7 +389,7 @@ def cursor_layout(nodes, widths, entry, arm):
     subtree, a REST followed on its cursor by anything of variable
     width, and a w past FIELD_LIMIT
 
-    :return: (suffix per node, fits, root_fits)
+    :return: (suffix per node, fits, form_fits, root_fits)
     :raises ValueError: naming the node
     """
 
@@ -396,6 +400,7 @@ def cursor_layout(nodes, widths, entry, arm):
     placed = [None] * count
     suffix = [None] * count
     fits = {}
+    form_fits = {}
 
     # per node, whether it holds a REST on its own cursor; per placed
     # node, whether a REST follows it on its cursor
@@ -478,7 +483,7 @@ def cursor_layout(nodes, widths, entry, arm):
         elif kind == 'FORM':
             sub = node[1]
             bounds = fits_bounds(i, widths[sub], (0, 0), False)
-            fits[i] = bounds
+            form_fits[i] = bounds
             placed[sub] = ((0, 0), False, bounds, in_not)
         elif kind in ('CLASS', 'MAP'):
             for child in node_children(node):
@@ -489,7 +494,7 @@ def cursor_layout(nodes, widths, entry, arm):
             for child in node_children(node):
                 placed[child] = ((0, 0), False, None, in_not)
 
-    return suffix, fits, root_fits
+    return suffix, fits, form_fits, root_fits
 
 
 def capture_scopes(nodes, slots, entry):
@@ -940,7 +945,7 @@ class Emitter:
         # the position of the first entry the node pushes
         start = self.top + 1
 
-        if kind != 'FORM' and i in analysis.fits:
+        if i in analysis.fits:
             self.fits(cur, analysis.fits[i], miss)
 
         if kind in ELEMENT_KINDS:
@@ -979,7 +984,7 @@ class Emitter:
             fail = label("match.form")
             self.op(OpCode.MATCH_DESCEND, miss)
             inner = self.top
-            self.fits(inner, analysis.fits[i], fail)
+            self.fits(inner, analysis.form_fits[i], fail)
             self.emit(node[1], inner, fail)
             self.fits(inner, (0, 0), fail)
             self.op(OpCode.POP, 1, effect=-1)
