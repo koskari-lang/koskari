@@ -274,7 +274,7 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -381,6 +381,7 @@ The opcodes by family, each linking to its section.
 | MATCH_LITERAL | EXTRA | Pop TOS; it must be the constant | [section 9.2](opcodes/kos-op-match-literal.md) |
 | MATCH_CORE | EXTRA | Pop TOS; it must be an instance of the core type the ordinal names | [section 9.2](opcodes/kos-op-match-core.md) |
 | MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | Pop TOS; it must be an instance of the type in the variable | [section 9.2](opcodes/kos-op-match-type.md) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | Pop TOS; it must be an instance of the class in the variable, whose `__match_args__` must cover the positional fields | [section 9.2](opcodes/kos-op-match-class.md) |
 | MATCH_SAME | EXTRA | Pop TOS; it must equal a slot of the mark at the depth; an empty slot misses | [section 9.2](opcodes/kos-op-match-same.md) |
 | MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | EXTRA | Push the attribute the class's `__match_args__` names at the position | [section 9.2](opcodes/kos-op-match-field-pos.md) |
 | MATCH_FIELD_KW | EXTRA | Push the attribute the constant names | [section 9.2](opcodes/kos-op-match-field-kw.md) |
@@ -2072,6 +2073,21 @@ never emits it and its handler raises.
 - **Semantics**: `e` read through `Datum` must be an instance of the type in
   the variable `a1`, read by name on the `_VAR` form and by fast index on the
   `_FAST` form.
+
+### KOS_OP_MATCH_CLASS_VAR / KOS_OP_MATCH_CLASS_FAST
+
+- **Style**: EXTRA (LABEL, VAR, RAW) on `MATCH_CLASS_VAR`, (LABEL, FASTVAR,
+  RAW) on `MATCH_CLASS_FAST`: label, class, positional field count.
+- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+  way.
+- **Semantics**: `e` read through `Datum` must be an instance of the class in
+  the variable `a1`, read by name on the `_VAR` form and by fast index on the
+  `_FAST` form; a non-instance is a miss. The class's `__match_args__` must
+  then hold at least `a2` names: a class with no `__match_args__`, a
+  `__match_args__` that is not a tuple, or one shorter than `a2` raises
+  `TypeError` before any attribute of `e` is read. On Python 3.9 a dataclass
+  or named tuple without `__match_args__` reads the equivalent tuple Python
+  3.10 would generate.
 
 ### KOS_OP_MATCH_SAME
 

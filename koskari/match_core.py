@@ -1006,8 +1006,17 @@ class Emitter:
             cls = self.externs[node[1]]
             outer = label("match.class")
             inner = label("match.class")
+            positional = sum(
+                1 for field in node[2:] if nodes[field][0] == 'FIELD_POS')
             self.op(OpCode.DUP, 1, effect=1)
-            self.op(OpCode.MATCH_TYPE_VAR, outer, cls, effect=-1)
+            if positional:
+                # the __match_args__ count is checked before any field
+                # is read
+                self.op(
+                    OpCode.MATCH_CLASS_VAR, outer, cls, positional,
+                    effect=-1)
+            else:
+                self.op(OpCode.MATCH_TYPE_VAR, outer, cls, effect=-1)
             position = 0
             for field in node[2:]:
                 field = nodes[field]

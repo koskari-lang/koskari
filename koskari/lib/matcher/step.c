@@ -394,6 +394,29 @@ static PyObject *step_match_args(PyObject *cls, Py_ssize_t npos) {
 }
 
 
+int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos) {
+  int r = KosMatch_TypeTest(elem, cls);
+
+  if (r <= 0 || npos <= 0)
+    return r;
+
+  PyObject *match_args = step_match_args(cls, npos);
+  if (! match_args)
+    return -1;
+
+  Py_ssize_t have = PyTuple_GET_SIZE(match_args);
+  Py_DECREF(match_args);
+  if (have < npos) {
+    PyErr_Format(PyExc_TypeError,
+                 "%R.__match_args__ has %zd entries; cannot satisfy "
+                 "%zd positional field pattern(s)",
+                 cls, have, npos);
+    return -1;
+  }
+  return 1;
+}
+
+
 int KosMatch_FieldKw(PyObject *elem, PyObject *name, PyObject **out) {
   PyObject *val = PyObject_GetAttr(matcher_peel_datum(elem), name);
 

@@ -486,6 +486,8 @@ OP(MATCH_LITERAL, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // c: e -> ; e is c
 OP(MATCH_CORE, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // n: e -> ; e is of the core type ordinal n
 OP(MATCH_TYPE_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // t: e -> ; isinstance(e, t)
 OP(MATCH_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
+OP(MATCH_CLASS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // t, n: e -> ; isinstance(e, t), then a TypeError when t.__match_args__ holds fewer than n names
+OP(MATCH_CLASS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
 OP(MATCH_SAME, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // s, i: e -> ; e equals slot i of the mark at s; misses when the slot is empty
 OP(MATCH_FIELD_POS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // t, i: o -> o a, the attribute t.__match_args__[i] names
 OP(MATCH_FIELD_POS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)

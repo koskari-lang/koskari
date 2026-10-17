@@ -339,6 +339,8 @@
 #include "opcode/MATCH_CORE.c"
 #include "opcode/MATCH_TYPE_VAR.c"
 #include "opcode/MATCH_TYPE_FAST.c"
+#include "opcode/MATCH_CLASS_VAR.c"
+#include "opcode/MATCH_CLASS_FAST.c"
 #include "opcode/MATCH_SAME.c"
 #include "opcode/MATCH_FIELD_POS_VAR.c"
 #include "opcode/MATCH_FIELD_POS_FAST.c"

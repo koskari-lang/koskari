@@ -220,6 +220,57 @@ static int test_class_and_fields_through_the_box(void) {
 }
 
 
+static int test_class_test_through_the_box(void) {
+  PyObject *env = PyDict_New();
+
+  TEST_ASSERT_NOT_NULL(env, "env");
+  PyObject *ran = PyRun_String(
+      "class P:\n"
+      "    __match_args__ = ('x', 'y')\n"
+      "class Q:\n"
+      "    pass\n"
+      "class R:\n"
+      "    __match_args__ = ['x']\n"
+      "p = P()\n"
+      "q = Q()\n"
+      "r = R()\n",
+      Py_file_input, env, env);
+  if (! ran) {
+    PyErr_Print();
+    Py_DECREF(env);
+    return -1;
+  }
+  Py_DECREF(ran);
+  PyObject *pcls = PyDict_GetItemString(env, "P");
+  PyObject *qcls = PyDict_GetItemString(env, "Q");
+  PyObject *rcls = PyDict_GetItemString(env, "R");
+  PyObject *boxed = make_datum(PyDict_GetItemString(env, "p"));
+  PyObject *q = PyDict_GetItemString(env, "q");
+  PyObject *r = PyDict_GetItemString(env, "r");
+
+  TEST_ASSERT_EQ(KosMatch_ClassTest(boxed, pcls, 2), 1, "two positionals");
+  TEST_ASSERT_EQ(KosMatch_ClassTest(boxed, pcls, 0), 1, "no positionals");
+  TEST_ASSERT_EQ(KosMatch_ClassTest(q, pcls, 3), 0,
+                 "a non-instance misses before the count");
+  TEST_ASSERT(! PyErr_Occurred(), "no error on the miss");
+  TEST_ASSERT_EQ(KosMatch_ClassTest(boxed, pcls, 3), -1,
+                 "past the match args");
+  TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
+
+  TEST_ASSERT_EQ(KosMatch_ClassTest(q, qcls, 0), 1,
+                 "no match args and no positionals");
+  TEST_ASSERT_EQ(KosMatch_ClassTest(q, qcls, 1), -1, "no match args");
+  TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
+  TEST_ASSERT_EQ(KosMatch_ClassTest(r, rcls, 1), -1,
+                 "match args not a tuple");
+  TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
+
+  Py_DECREF(boxed);
+  Py_DECREF(env);
+  return 0;
+}
+
+
 /* === the core cursor === */
 
 
@@ -1495,6 +1546,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_literal_and_same_through_the_box);
   RUN_TEST(test_mapping_through_the_box);
   RUN_TEST(test_class_and_fields_through_the_box);
+  RUN_TEST(test_class_test_through_the_box);
 
   RUN_TEST(test_core_descend_gate);
   RUN_TEST(test_core_next_over_a_sequence);

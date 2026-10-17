@@ -115,6 +115,8 @@ class TestRows(CevalTest):
             OpCode.MATCH_CORE: (LABEL, RAW, NOARG, NOARG),
             OpCode.MATCH_TYPE_VAR: (LABEL, VAR, NOARG, NOARG),
             OpCode.MATCH_TYPE_FAST: (LABEL, FASTVAR, NOARG, NOARG),
+            OpCode.MATCH_CLASS_VAR: (LABEL, VAR, RAW, NOARG),
+            OpCode.MATCH_CLASS_FAST: (LABEL, FASTVAR, RAW, NOARG),
             OpCode.MATCH_SAME: (LABEL, RAW, RAW, NOARG),
             OpCode.MATCH_FIELD_POS_VAR: (LABEL, VAR, RAW, NOARG),
             OpCode.MATCH_FIELD_POS_FAST: (LABEL, FASTVAR, RAW, NOARG),
@@ -745,6 +747,40 @@ class TestElementTests(CevalTest):
         self.assertEqual(await run(prog, 7, values, syms), ("base", "hit"))
         self.assertEqual(
             await run(prog, "7", values, syms), ("base", "miss"))
+
+
+    async def test_class_twins(self):
+        prog = [
+            ["MATCH_CLASS_VAR", ("miss", "Point", 2, 0)],
+        ] + hit(1) + miss(1)
+        values = {"Point": Point}
+        self.assertEqual(
+            await run(prog, Point(3, 4), values), ("base", "hit"))
+        self.assertEqual(
+            await run(prog, Datum(Point(3, 4)), values), ("base", "hit"))
+        self.assertEqual(await run(prog, 7, values), ("base", "miss"))
+
+        prog[0] = ["MATCH_CLASS_FAST", ("miss", 1, 2, 0)]
+        syms = ("subject", "Point")
+        self.assertEqual(
+            await run(prog, Point(3, 4), values, syms), ("base", "hit"))
+        self.assertEqual(await run(prog, 7, values, syms), ("base", "miss"))
+
+
+    async def test_class_count_past_match_args(self):
+        # a non-instance misses; an instance raises
+        for row in (["MATCH_CLASS_VAR", ("miss", "Point", 3, 0)],
+                    ["MATCH_CLASS_FAST", ("miss", 1, 3, 0)]):
+            prog = [row] + hit(1) + miss(1)
+            values = {"Point": Point}
+            syms = ("subject", "Point")
+            self.assertEqual(
+                await run(prog, 7, values, syms), ("base", "miss"))
+            with self.assertRaises(TypeError) as caught:
+                await run(prog, Point(3, 4), values, syms)
+            self.assertIn(
+                "__match_args__ has 2 entries; cannot satisfy 3 positional "
+                "field pattern(s)", str(caught.exception))
 
 
 class TestProjections(CevalTest):

@@ -19,8 +19,9 @@ depended on how they were lowered: a NOT after an element, a NOT
 tested against the subject's remaining elements, zero-width and GROUP
 children of a one-element branch, a trailing ONEOF under a
 wrapper, SAME at any depth or after a ONEOF or REPEAT, the per-pass
-values a slot inside an uncaptured REPEAT binds, and the length check
-that runs before any extern
+values a slot inside an uncaptured REPEAT binds, the length check
+that runs before any extern, and the __match_args__ count a CLASS
+checks before it reads any field
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -32,8 +33,8 @@ import pytest
 
 from koskari.lib import DatumFrame, cons, demand, nil
 from koskari.matcher import (
-    APP, CAPTURE, FORM, GROUP, LITERAL, MATCH, NOT, ONEOF, OPTIONAL,
-    PREDICATE, REPEAT, REST, SAME, TEST_ANY, repeat_capture)
+    APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MATCH, NOT, ONEOF,
+    OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY, repeat_capture)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -41,6 +42,40 @@ pytestmark = pytest.mark.phase_infra
 
 def built(pattern, externs=None):
     return demand(pattern.build(externs))
+
+
+class Pt:
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
+class Counted:
+    """
+    A class whose positional attributes are properties recording each
+    read
+    """
+
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x, y):
+        self.reads = []
+        self._x = x
+        self._y = y
+
+
+    @property
+    def x(self):
+        self.reads.append("x")
+        return self._x
+
+
+    @property
+    def y(self):
+        self.reads.append("y")
+        return self._y
 
 
 class TestNotAfterTheElement(unittest.TestCase):
@@ -483,6 +518,70 @@ class TestNameAcrossAnAlternativeAndARepeat(unittest.TestCase):
             repeat_capture("xs", GROUP(None, CAPTURE("x"))))))
         self.assertEqual(m((7, 8, 9)), {"xs": [7, 8, 9]})
         self.assertEqual(m((7, 1)), {"x": 7})
+
+
+
+class TestClassPositionalCount(unittest.TestCase):
+    """
+    A CLASS with n positional fields tests isinstance first, a miss
+    being a plain miss, then raises TypeError when __match_args__ holds
+    fewer than n names, before any field is read
+    """
+
+    def test_first_field_failing(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(LITERAL(5)), FIELD(TEST_ANY()), FIELD(TEST_ANY()))),
+            {"Pt": Pt})
+        with self.assertRaises(TypeError) as caught:
+            m((Pt(1, 2),))
+        self.assertIn(
+            "__match_args__ has 2 entries; cannot satisfy 3 positional "
+            "field pattern(s)", str(caught.exception))
+
+
+    def test_first_field_passing(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(LITERAL(1)), FIELD(TEST_ANY()), FIELD(TEST_ANY()))),
+            {"Pt": Pt})
+        with self.assertRaises(TypeError):
+            m((Pt(2, 3),))
+
+
+    def test_non_instance_misses(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(LITERAL(1)), FIELD(TEST_ANY()), FIELD(TEST_ANY()))),
+            {"Pt": Pt})
+        self.assertIsNone(m((7,)))
+        self.assertIsNone(m(("ab",)))
+
+
+    def test_keyword_fields_only(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(CAPTURE("a"), name="x"),
+            FIELD(CAPTURE("b"), name="y"))), {"Pt": Pt})
+        self.assertEqual(m((Pt(1, 2),)), {"a": 1, "b": 2})
+
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(CAPTURE("a"), name="x"),
+            FIELD(CAPTURE("b"), name="y"), FIELD(TEST_ANY(), name="z"))),
+            {"Pt": Pt})
+        self.assertIsNone(m((Pt(1, 2),)))
+
+
+    def test_no_attribute_read_before_the_error(self):
+        m = built(MATCH(CLASS(
+            "C", FIELD(CAPTURE("a")), FIELD(CAPTURE("b")),
+            FIELD(TEST_ANY()))), {"C": Counted})
+        subject = Counted(1, 2)
+        with self.assertRaises(TypeError):
+            m((subject,))
+        self.assertEqual(subject.reads, [])
+
+        m = built(MATCH(CLASS(
+            "C", FIELD(CAPTURE("a")), FIELD(CAPTURE("b")))), {"C": Counted})
+        subject = Counted(1, 2)
+        self.assertEqual(m((subject,)), {"a": 1, "b": 2})
+        self.assertEqual(subject.reads, ["x", "y"])
 
 
 # The end.

@@ -225,6 +225,7 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_LITERAL c miss` | `e` -> | `c` a pool CONST |
 | `MATCH_CORE n miss` | `e` -> | `n` a RAW ordinal |
 | `MATCH_TYPE_VAR t miss` / `MATCH_TYPE_FAST` | `e` -> | `t` a closure name; `convert_fast` and the standalone target rewrite `_VAR` to `_FAST` |
+| `MATCH_CLASS_VAR t n miss` / `MATCH_CLASS_FAST` | `e` -> | `isinstance(e, t)`, else a miss; then TypeError when `t.__match_args__` is missing, not a tuple, or holds fewer than `n` names, before any field is read, as on master; `n` a RAW count of the CLASS's positional fields |
 | `MATCH_SAME s i miss` | `e` -> | equal to slot `i` of the mark at `s`; misses when empty |
 | `MATCH_FIELD_POS_VAR t i miss` / `_FAST` | `o` -> `o a` | the attribute named by `t.__match_args__[i]`, `t` the CLASS's closure name; TypeError when `i` is past the end, as on master |
 | `MATCH_FIELD_KW name miss` | `o` -> `o a` | the attribute `name` |
@@ -258,7 +259,8 @@ FORM sub          NEXT cur miss; DESCEND miss; FITS c' min max f
 APP e sub         NEXT cur miss; CALL_VAR e 1; SINGLE
                   <sub on c'> (-> f); FITS c' 0 0 f; POP
                   f: POP; JUMP miss
-CLASS e fields    NEXT cur miss; DUP; TYPE_VAR e f1
+CLASS e fields    NEXT cur miss; DUP; CLASS_VAR e n f1, n the positional fields
+                  (TYPE_VAR e f1 when there are none)
                   per field: FIELD_* f1; SINGLE; <sub on c'> (-> f2); FITS c' 0 0 f2; POP
                   POP
                   f2: POP; f1: POP; JUMP miss

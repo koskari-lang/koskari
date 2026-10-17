@@ -769,6 +769,39 @@ KOS_MATCH_BODY(kos_match_type) {
 
 
 /**
+   MATCH_CLASS_VAR and MATCH_CLASS_FAST: TOS popped; it must be an
+   instance of the class in the slot in field 1, and the class's
+   __match_args__ must then hold at least field 2 names, else a
+   TypeError. Row LABEL, slot, count.
+*/
+KOS_MATCH_BODY(kos_match_class) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  int fast = KosOp_OP(insn) == KOS_OP_MATCH_CLASS_FAST;
+  (void) kos_match_delivery_;
+
+  PyObject *cls = kos_match_operand(es, row, 1, fast);
+  if (unlikely(! cls))
+    RESULT_RAISE();
+  PyObject *elem = KosEvalState_StackPopRef(es);
+  if (unlikely(! elem)) {
+    Py_DECREF(cls);
+    RESULT_RAISE();
+  }
+
+  int r = KosMatch_ClassTest(
+      elem, cls, (Py_ssize_t) KosExtra_IMM(row, 2));
+  Py_DECREF(elem);
+  Py_DECREF(cls);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
+}
+
+
+/**
    MATCH_SAME: TOS popped; it must equal slot field 2 of the mark at
    field 1, and misses when that slot is empty. Row LABEL, depth,
    index.

@@ -292,7 +292,7 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -400,6 +400,7 @@ When adding or changing an opcode:
 | MATCH_LITERAL | EXTRA | Pop TOS; it must be the constant | [§9.2](#kos_op_match_literal) |
 | MATCH_CORE | EXTRA | Pop TOS; it must be an instance of the core type the ordinal names | [§9.2](#kos_op_match_core) |
 | MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | Pop TOS; it must be an instance of the type in the variable | [§9.2](#kos_op_match_type_var) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | Pop TOS; it must be an instance of the class in the variable, whose `__match_args__` must cover the positional fields | [§9.2](#kos_op_match_class_var) |
 | MATCH_SAME | EXTRA | Pop TOS; it must equal a slot of the mark at the depth; an empty slot misses | [§9.2](#kos_op_match_same) |
 | MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | EXTRA | Push the attribute the class's `__match_args__` names at the position | [§9.2](#kos_op_match_field_pos_var) |
 | MATCH_FIELD_KW | EXTRA | Push the attribute the constant names | [§9.2](#kos_op_match_field_kw) |
@@ -2166,6 +2167,23 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
   `_FAST` form.
 - **Implementation**: `koskari/lib/opcode/MATCH_TYPE_VAR.c`,
   `koskari/lib/opcode/MATCH_TYPE_FAST.c`
+
+### KOS_OP_MATCH_CLASS_VAR / KOS_OP_MATCH_CLASS_FAST {#kos_op_match_class_var}
+
+- **Style**: EXTRA (LABEL, VAR, RAW) on `MATCH_CLASS_VAR`, (LABEL, FASTVAR,
+  RAW) on `MATCH_CLASS_FAST`: label, class, positional field count.
+- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+  way.
+- **Semantics**: `e` read through `Datum` must be an instance of the class in
+  the variable `a1`, read by name on the `_VAR` form and by fast index on the
+  `_FAST` form; a non-instance is a miss. The class's `__match_args__` must
+  then hold at least `a2` names: a class with no `__match_args__`, a
+  `__match_args__` that is not a tuple, or one shorter than `a2` raises
+  `TypeError` before any attribute of `e` is read. On Python 3.9 a dataclass
+  or named tuple without `__match_args__` reads the equivalent tuple Python
+  3.10 would generate.
+- **Implementation**: `koskari/lib/opcode/MATCH_CLASS_VAR.c`,
+  `koskari/lib/opcode/MATCH_CLASS_FAST.c`
 
 ### KOS_OP_MATCH_SAME {#kos_op_match_same}
 

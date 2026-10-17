@@ -128,6 +128,14 @@ int KosMatch_TypeTest(PyObject *elem, PyObject *type);
 int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
 
 /**
+   The class test of a CLASS with npos positional fields: elem read
+   through Datum is an instance of cls, else 0; then cls.__match_args__
+   must be a tuple of at least npos names, else -1 with a TypeError
+   set, before any attribute of elem is read. 1, 0, or -1.
+ */
+int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos);
+
+/**
    The literal test: elem read through Datum is lit by identity, a
    gensym whose base is lit, or equal to lit. 1, 0, or -1.
  */

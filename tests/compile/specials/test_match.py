@@ -218,6 +218,25 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "nope")
 
 
+    async def test_match_class_too_many_positionals(self):
+        # an instance raises before any field is tested; a non-instance
+        # misses
+        src = """
+        (match data
+          [[(item Point 1 b c)] b]
+          [else: "nope"])
+        """
+        for data in (Point(2, 3), Point(1, 3)):
+            expr, mod = self.compile_expr(src, data=data, Point=Point)
+            with self.assertRaises(TypeError) as caught:
+                await expr()
+            self.assertIn(
+                "__match_args__ has 2 entries; cannot satisfy 3 positional "
+                "field pattern(s)", str(caught.exception))
+        expr, mod = self.compile_expr(src, data="zzz", Point=Point)
+        self.assertEqual(await expr(), "nope")
+
+
     async def test_match_or(self):
         src = """
         (match data
