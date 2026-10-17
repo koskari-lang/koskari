@@ -64,6 +64,13 @@ extern PyTypeObject KosDatumFrameType;
    of the same type with the kind byte set, holding the index a walk
    may return to. A pair spine needs neither, the cell is the cursor
    and the mark.
+   The matcher core's cursors (KosMatchCursor_* below) use the same
+   type with two more kinds: a spine cursor holds the current cell in
+   seq, the count of cells from the cell it was made at in length, and
+   the cells pulled in index; a single-value cursor holds the value in
+   seq with a length of one. A core sequence cursor has the sequence
+   kind. reserve is the count of elements a bounded cursor leaves
+   before its subject's end, zero for every other cursor.
    Opaque to Python and untracked. A write to either, an advance or a
    re-mark, moves the object in place when its stack entry is the only
    holder and stores a new object at the entry otherwise, so a cloned
@@ -74,6 +81,7 @@ typedef struct KosMatchCursor {
   PyObject *seq;
   Py_ssize_t length;
   Py_ssize_t index;
+  Py_ssize_t reserve;
   unsigned char kind;
 } KosMatchCursor;
 
@@ -81,6 +89,8 @@ typedef struct KosMatchCursor {
 enum {
   KOS_MATCH_CURSOR = 0,
   KOS_MATCH_MARK = 1,
+  KOS_MATCH_SPINE = 2,
+  KOS_MATCH_SINGLE = 3,
 };
 
 
@@ -328,6 +338,245 @@ PyObject *KosMatch_Iteration(
    with an exception set.
  */
 int KosMatch_Item(PyObject *elem, PyObject *key, PyObject **out);
+
+
+/* === the matcher core: cursors === */
+
+
+/* The unbounded maximum of a 16-bit width field, as MATCH_FITS reads
+   it. */
+#define KOS_MATCH_UNBOUNDED  0xFFFFu
+
+
+/* A helper that moves a cursor takes held, the references the caller
+   accounts for (1 for a cursor its stack entry alone holds), and
+   returns the moved cursor as a new reference for the caller to store
+   at the entry: the cursor itself, moved in place, when held counts
+   every reference to it, else a new cursor at the new position, so a
+   cloned segment keeps the position it took. */
+
+
+/**
+   MATCH_DESCEND: the sequence gate on value read through Datum (a
+   pair spine, a tuple, a list, or another sequence type; not a str,
+   bytes, mapping or iterator), and a cursor over it. A pair spine is
+   counted once here: a spine that loops raises ValueError, an
+   improper one is a miss. A list is read at its live length by every
+   later step. Returns 1 with *out_cursor a new reference, 0 on a
+   miss, -1 with an exception set.
+ */
+int KosMatchCursor_Descend(PyObject *value, PyObject **out_cursor);
+
+/**
+   MATCH_SINGLE: a cursor over the one-element subject value, which
+   is not read through Datum. New reference; NULL with an exception
+   set.
+ */
+PyObject *KosMatchCursor_Single(PyObject *value);
+
+/**
+   The elements left between cursor's position and its end, less its
+   reserve: the count of a spine, the live length of a list, the
+   length the cursor recorded for any other sequence. Never negative.
+ */
+Py_ssize_t KosMatchCursor_Remaining(PyObject *cursor);
+
+/**
+   MATCH_NEXT: pull one element and advance. The element is a new
+   Datum over the cell's car read through Datum, with the cell's
+   position, from a spine, and the item itself from a sequence or a
+   single value. Returns 1 with *out_elem and *out_next (the moved
+   cursor, see held above) new references, 0 at the end (no element
+   left, or a spine cell that is not a pair: user code cut the spine
+   ahead of the cursor), -1 with an exception set.
+ */
+int KosMatchCursor_Next(
+    PyObject *cursor,
+    Py_ssize_t held,
+    PyObject **out_elem,
+    PyObject **out_next);
+
+/**
+   MATCH_BOUND: a new cursor at cursor's position whose end is w
+   elements before cursor's end. Returns 1 with *out_bound a new
+   reference, 0 when fewer than w elements remain, -1 with an
+   exception set.
+ */
+int KosMatchCursor_Bound(
+    PyObject *cursor,
+    Py_ssize_t w,
+    PyObject **out_bound);
+
+/**
+   MATCH_SYNC: cursor moved to the position of to, a cursor over the
+   same subject. New reference (see held above); NULL with an
+   exception set.
+ */
+PyObject *KosMatchCursor_Sync(
+    PyObject *cursor,
+    PyObject *to,
+    Py_ssize_t held);
+
+/**
+   MATCH_TAIL: the remaining elements less w, and cursor advanced past
+   them. The span over a sequence is a tuple of the items (a list read
+   within its live length); over a single value, a tuple of the value
+   or the empty tuple; over a spine, a Datum over the terminator when
+   it is empty, a Datum over its first cell (the sub-spine) when it
+   runs to the spine's end, else a tuple of a Datum per cell. Returns
+   1 with *out_span and *out_next (see held above) new references, 0
+   when fewer than w remain or the span is shorter than min, -1 with
+   an exception set, ValueError for a spine user code cut inside the
+   span.
+ */
+int KosMatchCursor_Tail(
+    PyObject *cursor,
+    Py_ssize_t w,
+    Py_ssize_t min,
+    Py_ssize_t held,
+    PyObject **out_span,
+    PyObject **out_next);
+
+
+/* === the matcher core: marks === */
+
+
+/* The slot capacity of a default mark, the size the freelist keeps. */
+#define KOS_MATCH_MARK_SLOTS  16
+
+
+/**
+   A capture scope's mark: the position of the cursor it was made at
+   (its kind, seq and index, as the cursor held them) and the scope's
+   count slot entries, NULL for an unbound slot. A mark of up to
+   KOS_MATCH_MARK_SLOTS slots is allocated at that capacity, a larger
+   one at its count; a mark never resizes. Its position never changes.
+   A write to its slots goes to a mark its stack entry alone holds:
+   KosMatchMark_Writable gives the mark or a copy for the caller to
+   store back at the entry, so a resumed continuation writes into its
+   own copy. Opaque to Python and not subclassable; tracked by the
+   collector when it has slots.
+ */
+typedef struct KosMatchMark {
+  PyObject_VAR_HEAD
+  PyObject *seq;
+  Py_ssize_t index;
+  Py_ssize_t count;
+  unsigned char kind;
+  PyObject *slots[1];
+} KosMatchMark;
+
+
+extern PyTypeObject KosMatchMarkType;
+
+
+#define KosMatchMark_Check(obj)                                    \
+  ((obj) && ((obj)->ob_type == &KosMatchMarkType))
+
+/* The slot count, and slot i (borrowed; NULL when unbound) for
+   MATCH_LOAD and MATCH_SAME. The caller keeps i below the count. */
+#define KosMatchMark_COUNT(obj)    (((KosMatchMark *) (obj))->count)
+#define KosMatchMark_SLOT(obj, i)  (((KosMatchMark *) (obj))->slots[(i)])
+
+
+/**
+   MATCH_SCOPE: a mark at cursor's position with count unbound slots.
+   New reference; NULL with an exception set.
+ */
+PyObject *KosMatchMark_New(PyObject *cursor, Py_ssize_t count);
+
+/**
+   MATCH_RESET: cursor moved back to mark's position. New reference
+   (see held above); NULL with an exception set.
+ */
+PyObject *KosMatchMark_Reset(
+    PyObject *cursor,
+    PyObject *mark,
+    Py_ssize_t held);
+
+/**
+   MATCH_AT: the element at mark's position, as KosMatchCursor_Next
+   gave it. New reference; NULL with an exception set, ValueError when
+   the subject no longer holds the element (a list shrunk below the
+   position, a spine cell that is no longer a pair).
+ */
+PyObject *KosMatchMark_At(PyObject *mark);
+
+/**
+   MATCH_SPAN: the elements from mark's position to cursor's: the
+   empty tuple for none, the element as KosMatchMark_At gives it for
+   one, else a tuple of them (a Datum per cell over a spine). New
+   reference; NULL with an exception set, ValueError when the subject
+   no longer holds the span (a list shrunk below its end, a spine
+   that no longer reaches the cursor's cell from the mark's).
+ */
+PyObject *KosMatchMark_Span(PyObject *mark, PyObject *cursor);
+
+/**
+   The mark a write goes to: mark itself when held counts every
+   reference to it, else a copy holding the same position and slot
+   values, for the caller to store at the mark's stack entry. New
+   reference; NULL with an exception set.
+ */
+PyObject *KosMatchMark_Writable(PyObject *mark, Py_ssize_t held);
+
+/**
+   MATCH_STORE: value into slot i of mark, which must be writable,
+   consuming value on every path. When name is not NULL, a Datum value
+   and each Datum item of a tuple value take name as their binding.
+   0, or -1 with SystemError for an index outside the slot count.
+ */
+int KosMatchMark_Store(
+    PyObject *mark,
+    Py_ssize_t i,
+    PyObject *value,
+    PyObject *name);
+
+/**
+   MATCH_CLEAR: empty the slots of mark (writable) that slots, a tuple
+   of int indices, names. 0, or -1 with an exception set, SystemError
+   for an index outside the slot count.
+ */
+int KosMatchMark_Clear(PyObject *mark, PyObject *slots);
+
+/**
+   A plain dict of mark's bound slots keyed by names, a tuple of one
+   name per slot: a REPEAT pass's captures over any subject. New
+   reference; NULL with an exception set, SystemError when names does
+   not have one name per slot.
+ */
+PyObject *KosMatchMark_Dict(PyObject *mark, PyObject *names);
+
+/**
+   MATCH_CAPTURES: the scope's captures, mark's bound slots keyed by
+   names. Over a sequence or a single value a plain dict; over a pair
+   spine a DatumFrame whose source is the span from mark's position to
+   cursor's (the first cell itself when the span is empty or runs to
+   the spine's end, the car read through Datum for one cell, else a
+   tuple of the cars read through Datum) and whose position is the
+   first cell's. The frame references the span, never the mark. New
+   reference; NULL with an exception set, ValueError when the spine
+   no longer reaches the cursor's cell from the mark's.
+ */
+PyObject *KosMatchMark_Captures(
+    PyObject *mark,
+    PyObject *cursor,
+    PyObject *names);
+
+/**
+   MATCH_COLUMNS: for each name in names, the list of its values in
+   the pass dicts of items that bound it, in pass order, stored into
+   mark's (writable) slot at the same position in slots, a tuple of
+   int indices; the empty list when no pass bound it or there are no
+   passes. items is read, not written. 0, or -1 with an
+   exception set, SystemError for an index outside the slot count or
+   names and slots of different lengths.
+ */
+int KosMatchMark_Columns(
+    PyObject *mark,
+    PyObject *items,
+    PyObject *names,
+    PyObject *slots);
 
 
 /* === unit lifecycle === */

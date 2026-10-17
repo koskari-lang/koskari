@@ -101,6 +101,7 @@ static PyObject *match_cursor_new(
   c->seq = seq;
   c->length = length;
   c->index = index;
+  c->reserve = 0;
   c->kind = kind;
   return (PyObject *) c;
 }

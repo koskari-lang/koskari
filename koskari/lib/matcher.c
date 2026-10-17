@@ -21,7 +21,9 @@
    and the steps the MATCH_* instructions call, each one test or read
    over one element. A pattern is compiled to those instructions by
    koskari/match_code.py; nothing here walks a pattern
-   (design/interpreter/matcher-bytecode.md).
+   (design/interpreter/matcher-bytecode.md). The matcher core's
+   cursor steps and its MatchMark type are in matcher/cursor.c and
+   matcher/mark.c (design/interpreter/matcher-core.md).
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -229,6 +231,8 @@ static PyObject *kos_dc_fields = NULL;
 
 
 #include "matcher/step.c"
+#include "matcher/cursor.c"
+#include "matcher/mark.c"
 
 
 /* === unit lifecycle === */
@@ -249,6 +253,9 @@ int koskari_matcher_init(PyObject *mod) {
     return -1;
 
   if (PyType_Ready(&KosMatchCursorType))
+    return -1;
+
+  if (PyType_Ready(&KosMatchMarkType))
     return -1;
 
   kos_match_args_name = PyUnicode_InternFromString("__match_args__");
@@ -291,6 +298,7 @@ int koskari_matcher_init(PyObject *mod) {
 int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   match_cursor_free_list_clear();
+  match_mark_free_list_clear();
   Py_CLEAR(kos_match_args_name);
   Py_CLEAR(kos_map_absent);
 #if PY_MINOR_VERSION < 10

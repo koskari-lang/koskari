@@ -167,8 +167,8 @@ is a one-element subject walked through a cursor like any spine.
   16; a larger scope gets a mark of its exact size. A mark never resizes
   during a walk. The freelist keeps default-size marks.
 - A capture stores at a fixed depth (its scope's mark) and a fixed index
-  (the slot's position in the scope). A stored Datum gets the slot's name
-  as its binding, as on master.
+  (the slot's position in the scope). A Datum boxed by walking a pair
+  spine gets the slot's name as its binding when stored, as on master.
 - Every write to a mark (store, clear) copies the mark and its array
   first when the mark is held beyond its stack entry, and writes the
   copy back to that entry; items lists follow the same rule on append.
@@ -207,7 +207,7 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_RESET cur m` | -- | moves `cur` back to `m`'s position |
 | `MATCH_AT m` | -> `e` | the element at `m`'s position, as `NEXT` gave it |
 | `MATCH_SPAN m cur` | -> `span` | the span from `m`'s position to `cur` |
-| `MATCH_STORE s i` | `v` -> | stores into slot `i` of the mark at `s` |
+| `MATCH_STORE s i cur` | `v` -> | stores into slot `i` of the mark at `s`; a Datum from the spine cursor at `cur` gets the slot's name as its binding |
 | `MATCH_CLEAR s slots` | -- | empties the slots (a CONST tuple of indices) |
 | `MATCH_CAPTURES s cur names` | -> `caps` | a dict, or a DatumFrame over a pair spine |
 | `MATCH_LOAD s i skip` | -> `v` | slot `i` of the mark at `s`; jumps to `skip`, pushing nothing, when the slot is empty |
@@ -374,6 +374,17 @@ are recorded, not a gate.
 - `MATCH_CASE` keeps the branch's form (no cache slot, a handler that
   raises).
 
+- Decided in phase 3, following master:
+  - REST over a list or tuple binds a tuple;
+  - a SPAN of exactly one element is that element, as AT gives it;
+  - a stored Datum's binding is set only when it came from walking a
+    pair spine: `MATCH_STORE s i cur` carries the source cursor's depth
+    and sets the binding only for a spine cursor; a user's Datum inside
+    a tuple, list or single value is never changed;
+  - an uncaptured REPEAT's column for a slot lists the values of the
+    passes that bound it;
+  - a REPEAT pass that binds none of its slots appends its span (AT or
+    SPAN), not an empty dict.
 - Decided in phase 2:
   - a name binds at most once in a scope, except across the
     alternatives of one ONEOF; a second binding (a branch name reused
@@ -385,9 +396,9 @@ are recorded, not a gate.
   - a REPEAT pass's captures are a dict, as on master, over any subject;
   - a SAME that reads a slot of an open scope before the slot is bound
     is accepted and misses while the slot is empty;
-  - a CAPTURE over a sub-pattern that may consume nothing is accepted
-    and binds the (possibly empty) span, as on master; the branch's
-    refusal from 9f8daa34 goes;
+  - a CAPTURE over a sub-pattern that may consume nothing is accepted;
+    an empty span leaves the slot unbound, as on master (corrected in
+    phase 3); the branch's refusal from 9f8daa34 goes;
   - NOT testing the element after its position, every arm root kind,
     and no yield rule match master already, so they are not acceptance
     exceptions.
