@@ -344,11 +344,20 @@ for these deliberate changes:
   variable of an empty slot as it was;
 - a standalone matcher's root subject that is not a sequence misses
   (master raised TypeError, or iterated a mapping's keys);
+- a standalone matcher treats a str subject as an atom, as `match`
+  does (master walked its characters);
 - a slot inside an uncaptured REPEAT binds the list of its per-pass
-  values (master kept the last pass); a SAME after the REPEAT compares
-  against that list;
-- the root length check misses a subject too long for the pattern
-  before a PREDICATE or APP on its elements runs;
+  values (master kept the last pass, or left the slot unbound when the
+  REPEAT's body is a GROUP); a SAME after the REPEAT compares against
+  that list;
+- a captured REPEAT's pass whose only binding is an uncaptured inner
+  REPEAT gives its captures dict (`{arg: []}` when the inner REPEAT
+  took no pass), where master gave the pass's span;
+- a sequence pattern's length is checked before its elements are
+  tested: when the subject's length rules an arm out, at the root, a
+  FORM or a REPEAT's minimum, no PREDICATE, APP or CLASS under it runs
+  (master tested some elements before it missed, so an extern that
+  raised made the match raise);
 - a pair LITERAL in a `define-syntax` or `compile/match` pattern is
   refused (it already failed to reach a .kio).
 

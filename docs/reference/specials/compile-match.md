@@ -49,8 +49,10 @@ Contracts (details in
 capture that did not bind leaves its variable as it was, and a variable
 never bound raises `NameError` when read; bindings persist after the
 form; `str` / `bytes` never destructure under sequence patterns; a
-predicate or extractor is called from the enclosing function, so one
-that awaits does so in place.
+sequence pattern's length is checked before its elements are tested,
+so no predicate or extractor in it is called when the subject's length
+rules it out; a predicate or extractor is called from the enclosing
+function, so one that awaits does so in place.
 
 The head may be written as `match` or `compile/match`; compiler lookup
 resolves `match` to `compile/match`.

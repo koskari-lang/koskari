@@ -57,14 +57,19 @@ The matcher heads from [`koskari.matcher`](../reference/api/koskari-matcher.md),
 pattern position; the sugared forms above lower to them. A name inside
 a `REPEAT` that is not itself captured binds the list of its values,
 one per pass: `#[(REPEAT (FORM (MATCH k v)))]` against
-`#(#(1 2) #(3 4))` binds `k` to `[1, 3]` and `v` to `[2, 4]`.
+`#(#(1 2) #(3 4))` binds `k` to `[1, 3]` and `v` to `[2, 4]`. In a
+pattern built with the `koskari.matcher` API, a `SAME` of that name
+after the `REPEAT` compares against the list.
 
 ### Sequences
 
 A sequence pattern is the explicit `#[...]` or `#(...)` form; a bare
 list is never a sequence. The length must agree unless a `*: rest`
-marker captures the remaining elements. Inside a sequence a typed
-element is parenthesized: `#[(x :: int) y]`.
+marker captures the remaining elements. The length is checked before
+any element is tested: when the subject's length rules a sequence
+pattern out, no predicate or extractor in it is called, so
+`#[(? p) b]` against `#(1 2 3)` misses without calling `p`. Inside a
+sequence a typed element is parenthesized: `#[(x :: int) y]`.
 
 At the end of a sequence there is no element left to test. `(not PAT)`
 is one element that does not match `PAT`, so it misses there:

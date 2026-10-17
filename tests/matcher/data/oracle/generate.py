@@ -4,13 +4,17 @@ Matcher oracle corpus generator.
 Generates, from a fixed seed, standalone pattern specs with subjects and
 inline match arm cases (Koskari source), runs them on the tree it is
 started under, and writes standalone.json and inline.json to OUTDIR.
-The specs, the value codec, the extern set and the inline loader come
-from tests/matcher/oracle.py, imported as the top-level module oracle.
+With --seed N it uses seed N and writes standalone-N.json and
+inline-N.json. The specs, the value codec, the extern set and the
+inline loader come from tests/matcher/oracle.py, imported as the
+top-level module oracle.
 
-Master (the corpus):
+Master (the corpora):
 
     MASTER_PATH=$PWD/tests/matcher \
         tests/matcher/data/oracle/run-master.sh tests/matcher/data/oracle/generate.py OUTDIR
+    MASTER_PATH=$PWD/tests/matcher \
+        tests/matcher/data/oracle/run-master.sh tests/matcher/data/oracle/generate.py OUTDIR --seed 77777
 
 Branch (a self-check of the generator only):
 
@@ -38,6 +42,12 @@ from oracle import (
 MASTER = hasattr(L, "Matcher")
 
 SEED = 20261017
+# the suffix of the two file names: none for the default seed, -N for
+# --seed N
+SUFFIX = ""
+if "--seed" in sys.argv:
+    SEED = int(sys.argv[sys.argv.index("--seed") + 1])
+    SUFFIX = f"-{SEED}"
 PATTERNS = 420
 SUBJECTS = 8
 INLINE = 300
@@ -913,7 +923,7 @@ def main():
         "subjects_per_pattern": SUBJECTS,
         "nest_depths": list(NEST_DEPTHS),
     }
-    write_json(f"{outdir}/standalone.json", header, standalone)
+    write_json(f"{outdir}/standalone{SUFFIX}.json", header, standalone)
     header = {
         "seed": SEED,
         "tree": "master" if MASTER else "branch",
@@ -921,7 +931,7 @@ def main():
         "subjects_per_inline": INLINE_SUBJECTS,
         "dropped_renderings": dropped,
     }
-    write_json(f"{outdir}/inline.json", header, inline)
+    write_json(f"{outdir}/inline{SUFFIX}.json", header, inline)
     print(f"standalone records {len(standalone)}"
           f" cases {sum(len(rec['cases']) for rec in standalone)};"
           f" inline records {len(inline)}"

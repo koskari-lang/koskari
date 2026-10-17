@@ -26,8 +26,9 @@ come from EXTERNS, the one fixed set both trees use. The generator that
 wrote the corpus runs this module under master's build, so everything
 above the comparison section uses only names both trees have.
 
-compare loads the corpus, runs every case on this tree, and applies the
-deliberate changes from master as named rules. Run it by hand with
+compare loads a corpus (CORPORA lists the committed ones), runs every
+case on this tree, and applies the deliberate changes from master as
+named rules. Run it by hand on every committed corpus with
 ``uv run python3 -m tests.matcher.oracle`` from the repository root.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -52,6 +53,7 @@ from koskari.reader import source_str
 
 
 __all__ = (
+    "CORPORA",
     "EXTERNS",
     "MASTER_ALREADY",
     "ORACLE_DIR",
@@ -66,6 +68,13 @@ __all__ = (
 
 
 ORACLE_DIR = join(dirname(__file__), "data", "oracle")
+
+# the committed corpora in ORACLE_DIR: each seed and its file name
+# suffix
+CORPORA = (
+    (20261017, ""),
+    (77777, "-77777"),
+)
 
 # captures and subjects are encoded no deeper than this; a deeper value
 # is written as {"deep": true}
@@ -322,7 +331,8 @@ def decode_nest(enc):
 def decode(enc):
     """
     Rebuild a value from its encoding. Every call builds fresh objects,
-    and a Poke in a pair spine or list gets its target
+    an empty pair spine is nil, and a Poke in a pair spine or list gets
+    its target
     """
 
     if not isinstance(enc, dict):
@@ -330,6 +340,8 @@ def decode(enc):
     if "pair" in enc:
         items = [decode(v) for v in enc["pair"]]
         tail = decode(enc["tail"]) if "tail" in enc else nil
+        if not items:
+            return tail
         value = cons(*items, tail)
         cell = value
         cells = []
@@ -728,23 +740,6 @@ def variable_after_rest(spec):
     return state["bad"]
 
 
-def contains_improper(enc):
-    """
-    Whether an encoded value holds an improper pair spine
-    """
-
-    stack = [enc]
-    while stack:
-        value = stack.pop()
-        if isinstance(value, list):
-            stack.extend(value)
-        elif isinstance(value, dict):
-            if "pair" in value and "tail" in value:
-                return True
-            stack.extend(value.values())
-    return False
-
-
 def contains_tag(enc, tag):
     """
     Whether an encoded value holds an object tagged tag
@@ -773,6 +768,80 @@ def case_specs(case):
     return case["arms"]
 
 
+def peel_encoded(enc):
+    """
+    The encoding under any Datum boxes
+    """
+
+    while isinstance(enc, dict) and "datum" in enc:
+        enc = enc["datum"]
+    return enc
+
+
+def encoded_items(enc):
+    """
+    The encoded elements of a tuple, list or proper pair spine, or None
+    """
+
+    if not isinstance(enc, dict):
+        return None
+    if "pair" in enc and "tail" not in enc and "truncated" not in enc:
+        return enc["pair"]
+    for tag in ("tuple", "list"):
+        if tag in enc:
+            return enc[tag]
+    return None
+
+
+def result_label(outcome):
+    """
+    The arm label of an inline result, or None
+    """
+
+    if "result" not in outcome:
+        return None
+    return outcome["result"]["tuple"][0]
+
+
+def rebuild(spec, children):
+    """
+    spec with its sub-specs, in spec_children order, replaced by
+    children
+    """
+
+    tag = spec[0]
+    subs = iter(children)
+    if tag in ("FORM", "OPT", "NOT"):
+        return [tag, next(subs)]
+    if tag == "NEST":
+        return [tag, spec[1], next(subs)]
+    if tag == "REPEAT":
+        return [tag, next(subs), spec[2]]
+    if tag in ("APP", "CAP"):
+        return [tag, spec[1], None if spec[2] is None else next(subs)]
+    if tag == "CLASS":
+        return [tag, spec[1], *[
+            ["FIELD", next(subs), field[2]] for field in spec[2:]]]
+    if tag == "MAP":
+        return [tag, *[
+            ["ENTRY", e[1], e[2], None if e[3] is None else next(subs)]
+            for e in spec[1:]]]
+    if tag in ("MATCH", "ONEOF"):
+        return [tag, *subs]
+    if tag == "GROUP":
+        return [tag, spec[1], *subs]
+    return spec
+
+
+def run_spec(spec, subject):
+    """
+    This tree's outcome for spec, built standalone, on an encoded
+    subject
+    """
+
+    return run_standalone({"spec": spec, "cases": [{"subject": subject}]})[0]
+
+
 # === The rules ===
 #
 # A rule is (name, predicate). The predicate takes the case (a dict
@@ -783,13 +852,15 @@ def case_specs(case):
 
 def rule_improper_subject(case, master, branch):
     """
-    An improper subject is a miss: master raised TypeError for an
-    improper spine; this tree does not raise
+    An improper subject is a miss: master raised TypeError for a
+    subject that is itself an improper pair spine; this tree misses
     """
 
+    subject = case["subject"]
     return (master.get("raised") == "TypeError"
-            and contains_improper(case["subject"])
-            and ("miss" in branch or "hit" in branch or "result" in branch))
+            and isinstance(subject, dict)
+            and "pair" in subject and "tail" in subject
+            and ("miss" in branch or result_label(branch) == "miss"))
 
 
 def rule_depth_refused(case, master, branch):
@@ -892,34 +963,146 @@ def rule_non_sequence_root(case, master, branch):
     """
     A standalone matcher's root subject that is not a sequence (a pair
     spine, tuple or list, read through a Datum) misses; master raised
-    TypeError, or iterated a mapping's keys or a str
+    TypeError, or iterated a mapping's keys. A str root is
+    str_root_is_atom's
     """
 
     if case["kind"] != "standalone" or "miss" not in branch:
         return False
-    subject = case["subject"]
-    while isinstance(subject, dict) and "datum" in subject:
-        subject = subject["datum"]
+    subject = peel_encoded(case["subject"])
+    if isinstance(subject, str):
+        return False
     return not (isinstance(subject, dict)
                 and any(tag in subject for tag in SEQUENCE_TAGS))
 
 
-def bare_repeat_slots(spec):
+# a subject that is not a sequence, for the outcome a pattern gives on
+# an atom
+ATOM = 0
+
+
+def rule_str_root_is_atom(case, master, branch):
     """
-    The slots bound inside a REPEAT that no CAPTURE holds
+    A standalone matcher treats a str root subject (read through a
+    Datum) as an atom, as match does: master walked its characters,
+    and this tree gives the outcome it gives for the pattern on a
+    non-sequence atom
     """
 
-    captured = set()
+    if case["kind"] != "standalone" or "refused" in master:
+        return False
+    if not isinstance(peel_encoded(case["subject"]), str):
+        return False
+    return branch == run_spec(case["spec"], ATOM)
+
+
+# --- Columns: the slots of an uncaptured REPEAT ---
+
+
+def pass_roots(repeat):
+    """
+    The nodes one pass of a REPEAT runs: an unnamed GROUP body's
+    children, or the body
+    """
+
+    body = repeat[1]
+    if body[0] == "GROUP" and body[1] is None:
+        return body[2:]
+    return [body]
+
+
+def opens_scope(node):
+    """
+    Whether the captures under the node go to a scope of their own: a
+    GROUP, or a CAPTURE over a GROUP or a REPEAT
+    """
+
+    if node[0] == "GROUP":
+        return True
+    return (node[0] == "CAP" and node[2] is not None
+            and node[2][0] in ("GROUP", "REPEAT"))
+
+
+def scope_slots(roots):
+    """
+    The slots the scope holding roots binds, in order, each once (the
+    alternatives of a ONEOF may bind the same name): every capture node
+    down to the nodes that open a scope of their own, and the columns
+    of each uncaptured REPEAT among them
+    """
+
+    slots = []
+    stack = list(reversed(roots))
+    while stack:
+        node = stack.pop()
+        if is_capture_node(node):
+            slots.append(node[1])
+        if opens_scope(node):
+            continue
+        if node[0] == "REPEAT":
+            slots.extend(scope_slots(pass_roots(node)))
+            continue
+        stack.extend(reversed(spec_children(node)))
+    return list(dict.fromkeys(slots))
+
+
+def uncaptured_repeats(spec):
+    """
+    The REPEAT nodes under spec that no CAPTURE holds
+    """
+
+    held = {id(node[2]) for node in spec_nodes(spec)
+            if node[0] == "CAP" and node[2] is not None
+            and node[2][0] == "REPEAT"}
+    return [node for node in spec_nodes(spec)
+            if node[0] == "REPEAT" and id(node) not in held]
+
+
+def column_slots(spec):
+    """
+    The columns under spec: the slots one pass of an uncaptured REPEAT
+    binds
+    """
+
     slots = set()
-    for node in spec_nodes(spec):
-        if node[0] == "CAP" and node[2] is not None \
-                and node[2][0] == "REPEAT":
-            captured.add(id(node[2]))
-    for node in spec_nodes(spec):
-        if node[0] == "REPEAT" and id(node) not in captured:
-            slots.update(inner[1] for inner in spec_nodes(node[1])
-                         if is_capture_node(inner))
+    for node in uncaptured_repeats(spec):
+        slots.update(scope_slots(pass_roots(node)))
     return slots
+
+
+def discarded_slots(spec):
+    """
+    The columns of every uncaptured REPEAT over an unnamed GROUP body;
+    master discarded that body's captures
+    """
+
+    slots = set()
+    for node in uncaptured_repeats(spec):
+        if node[1][0] == "GROUP" and node[1][1] is None:
+            slots.update(scope_slots(pass_roots(node)))
+    return slots
+
+
+def mapping_items(enc):
+    """
+    The [key, value] items of an encoded dict or frame, or None
+    """
+
+    if isinstance(enc, dict):
+        for tag in ("dict", "frame"):
+            if tag in enc:
+                return enc[tag]
+    return None
+
+
+def binds_nothing(enc):
+    """
+    Whether an encoded column holds no value: an empty list, or a list
+    of such columns
+    """
+
+    return (isinstance(enc, dict) and "list" in enc
+            and all(binds_nothing(item) for item in enc["list"]))
 
 
 def last_pass_of(master_value, branch_value):
@@ -935,130 +1118,347 @@ def last_pass_of(master_value, branch_value):
                             or last_pass_of(master_value, items[-1]))
 
 
-def per_pass_lists(master_value, branch_value, slots):
+def unbound_column(name, value, columns):
     """
-    Whether the two encodings are equal but for slots in slots, each of
-    which holds on this tree the list of per-pass values where master
-    held the last pass, or a list where master did not bind it: the
-    empty list after no pass, or the per-pass values of a REPEAT whose
-    GROUP body's captures master discarded
+    Whether this tree's value for a column master left unbound is a
+    column list: one that binds nothing, or any list for a column of a
+    GROUP body master discarded
+    """
+
+    slots, discarded = columns
+    return name in slots and (
+        binds_nothing(value)
+        or name in discarded and isinstance(value, dict) and "list" in value)
+
+
+def pass_dict(master_item, branch_item, columns):
+    """
+    Whether a captured REPEAT's pass item is this tree's captures dict
+    where master gave the pass's span: every slot the dict binds is a
+    column master left unbound
+    """
+
+    items = mapping_items(branch_item)
+    return (bool(items) and mapping_items(master_item) is None
+            and all(isinstance(k, str) and unbound_column(k, v, columns)
+                    for k, v in items))
+
+
+def explain_columns(master_value, branch_value, columns, used):
+    """
+    Whether two encodings are equal but for columns: a column holds on
+    this tree the list of its per-pass values where master held the
+    last pass ("columns"), or where master left it unbound (no pass
+    bound it, or master discarded its REPEAT's GROUP body), and a
+    captured REPEAT's pass gives its captures dict where master gave
+    the span ("pass dict"). Each change applied is added to used
+
+    :param columns: (slots, discarded): the column slots, and those of
+        them master discarded
     """
 
     if master_value == branch_value:
         return True
+    if isinstance(master_value, list) and isinstance(branch_value, list):
+        if len(master_value) != len(branch_value):
+            return False
+        for m, b in zip(master_value, branch_value):
+            if pass_dict(m, b, columns):
+                used.add("pass dict")
+            elif not explain_columns(m, b, columns, used):
+                return False
+        return True
     if not (isinstance(master_value, dict) and isinstance(branch_value, dict)
             and master_value.keys() == branch_value.keys()):
-        if isinstance(master_value, list) and isinstance(branch_value, list) \
-                and len(master_value) == len(branch_value):
-            return all(per_pass_lists(m, b, slots)
-                       for m, b in zip(master_value, branch_value))
         return False
-    for tag in ("dict", "frame"):
-        if tag in master_value:
-            mitems = {json.dumps(k): v for k, v in master_value[tag]}
-            bitems = {json.dumps(k): v for k, v in branch_value[tag]}
-            if not set(mitems) <= set(bitems):
+    mitems = mapping_items(master_value)
+    if mitems is None:
+        return all(explain_columns(master_value[k], branch_value[k],
+                                   columns, used)
+                   for k in master_value)
+    mmap = {json.dumps(k): v for k, v in mitems}
+    bmap = {json.dumps(k): v for k, v in mapping_items(branch_value)}
+    if not set(mmap) <= set(bmap):
+        return False
+    for key, value in bmap.items():
+        name = json.loads(key)
+        if key not in mmap:
+            if not unbound_column(name, value, columns):
                 return False
-            for key, bv in bitems.items():
-                name = json.loads(key)
-                if key not in mitems:
-                    if name not in slots or not (
-                            isinstance(bv, dict) and "list" in bv):
-                        return False
-                elif mitems[key] != bv and not (
-                        name in slots and last_pass_of(mitems[key], bv)
-                        or per_pass_lists(mitems[key], bv, slots)):
-                    return False
-            return True
-    return all(per_pass_lists(master_value[k], branch_value[k], slots)
-               for k in master_value)
+            used.add("columns")
+        elif name in columns[0] and last_pass_of(mmap[key], value):
+            used.add("columns")
+        elif not explain_columns(mmap[key], value, columns, used):
+            return False
+    return True
+
+
+# --- Probes: the columns from the passes of a captured REPEAT ---
+
+
+PROBE = "probe"
+
+
+def probe_spec(spec, probes, held=False):
+    """
+    spec with every uncaptured REPEAT under it held by a CAPTURE of a
+    probe slot; probes maps each probe slot to its REPEAT
+    """
+
+    node = rebuild(spec, [probe_spec(child, probes, spec[0] == "CAP")
+                          for child in spec_children(spec)])
+    if spec[0] == "REPEAT" and not held:
+        name = f"{PROBE}{len(probes)}"
+        probes[name] = spec
+        return ["CAP", name, node]
+    return node
+
+
+def fold_probes(enc, probes):
+    """
+    The encoded captures of a probe spec with each probe slot replaced
+    by the columns of its REPEAT: for each slot one pass binds, the
+    list of the values of the passes that bound it
+    """
+
+    if isinstance(enc, list):
+        return [fold_probes(v, probes) for v in enc]
+    if not isinstance(enc, dict):
+        return enc
+    enc = {k: fold_probes(v, probes) for k, v in enc.items()}
+    items = mapping_items(enc)
+    if items is None:
+        return enc
+    out = []
+    for key, value in items:
+        if not (isinstance(key, str) and key in probes):
+            out.append([key, value])
+            continue
+        passes = [dict((k, v) for k, v in mapping_items(p))
+                  for p in value["list"] if mapping_items(p) is not None]
+        for slot in scope_slots(pass_roots(probes[key])):
+            out.append([slot, {"list": [p[slot] for p in passes
+                                        if slot in p]}])
+    out.sort(key=lambda kv: json.dumps(kv[0], sort_keys=True))
+    enc["frame" if "frame" in enc else "dict"] = out
+    return enc
+
+
+def probe_captures(spec, subject):
+    """
+    This tree's captures for spec on an encoded subject, with every
+    uncaptured REPEAT captured by a probe and folded back into its
+    columns; None when the probe does not hit
+    """
+
+    probes = {}
+    outcome = run_spec(probe_spec(spec, probes), subject)
+    if "hit" not in outcome:
+        return None
+    return fold_probes(outcome["hit"], probes)
+
+
+def columns_used(case, master, branch):
+    """
+    The column changes ("columns", "pass dict") that explain how this
+    tree's outcome differs from master's, with every column this tree
+    gives equal to the per-pass values the probe gives; None when they
+    do not
+    """
+
+    specs = case_specs(case)
+    slots, discarded = set(), set()
+    for spec in specs:
+        slots |= column_slots(spec)
+        discarded |= discarded_slots(spec)
+    if not slots:
+        return None
+    columns = (slots, discarded)
+    used = set()
+
+    if case["kind"] == "standalone":
+        if not ("hit" in master and "hit" in branch):
+            return None
+        if not explain_columns(master["hit"], branch["hit"], columns, used):
+            return None
+        if probe_captures(case["spec"], case["subject"]) != branch["hit"]:
+            return None
+        return used
+
+    label = result_label(master)
+    if label in (None, "miss") or label != result_label(branch):
+        return None
+    arm = case["arms"][int(label[len("arm"):]) - 1]
+    probe = probe_captures(["MATCH", arm], {"tuple": [case["subject"]]})
+    if probe is None:
+        return None
+    expected = {k: v for k, v in mapping_items(probe)}
+    mvalues = inline_variables(case, master)[1]
+    bvalues = inline_variables(case, branch)[1]
+    for name in case["names"]:
+        mv, bv = mvalues[name], bvalues[name]
+        if mv == bv:
+            continue
+        if case["owners"][name] != label or bv != expected.get(name, UNSET):
+            return None
+        if mv == UNSET and unbound_column(name, bv, columns):
+            used.add("columns")
+        elif name in slots and last_pass_of(mv, bv):
+            used.add("columns")
+        elif not explain_columns(mv, bv, columns, used):
+            return None
+    return used
 
 
 def rule_repeat_slot_lists(case, master, branch):
     """
     A slot inside an uncaptured REPEAT binds the list of its per-pass
-    values, where master kept the last pass (and left the slot unbound
-    after no pass)
+    values, where master kept the last pass, or left the slot unbound
+    (after no pass, or for a REPEAT over a GROUP body)
     """
 
-    slots = set()
-    for spec in case_specs(case):
-        slots |= bare_repeat_slots(spec)
-    if not slots:
-        return False
-    if "hit" in master and "hit" in branch:
-        return per_pass_lists(master["hit"], branch["hit"], slots)
-    if case["kind"] != "inline" or "result" not in master \
-            or "result" not in branch:
-        return False
-    mlabel, mvalues = master["result"]["tuple"]
-    blabel, bvalues = branch["result"]["tuple"]
-    if mlabel != blabel:
-        return False
-    for name, mv, bv in zip(
-            case["names"], mvalues["tuple"], bvalues["tuple"]):
-        if mv == bv:
-            continue
-        if name not in slots and per_pass_lists(mv, bv, slots):
-            continue
-        if name not in slots or case["owners"][name] != mlabel:
-            return False
-        if mv == UNSET and bv == {"list": []}:
-            continue
-        if not last_pass_of(mv, bv):
-            return False
-    return True
+    used = columns_used(case, master, branch)
+    return used is not None and "pass dict" not in used
+
+
+def rule_repeat_pass_dict(case, master, branch):
+    """
+    A captured REPEAT's pass whose only bindings are the columns of an
+    uncaptured inner REPEAT gives its captures dict, where master left
+    those columns unbound and gave the pass's span
+    """
+
+    used = columns_used(case, master, branch)
+    return used is not None and "pass dict" in used
+
+
+def same_as_any(spec, slots):
+    """
+    spec with every SAME naming one of slots replaced by ANY
+    """
+
+    if spec[0] == "SAME" and spec[1] in slots:
+        return ["ANY"]
+    return rebuild(spec, [same_as_any(child, slots)
+                          for child in spec_children(spec)])
 
 
 def rule_same_reads_repeat_list(case, master, branch):
     """
     A SAME after an uncaptured REPEAT compares against the list of the
     per-pass values of the slot it names, where master compared against
-    the last pass
+    the last pass: master hit and this tree missed, and with each such
+    SAME tested as ANY this tree hits with master's captures but for
+    the columns
     """
 
-    if branch.get("refused") is not None or "raised" in branch:
+    if case["kind"] != "standalone" or "hit" not in master \
+            or "miss" not in branch:
         return False
-    for spec in case_specs(case):
-        slots = bare_repeat_slots(spec)
-        if any(node[0] == "SAME" and node[1] in slots
+    spec = case["spec"]
+    slots = column_slots(spec)
+    if not any(node[0] == "SAME" and node[1] in slots
                for node in spec_nodes(spec)):
+        return False
+    loose = run_spec(same_as_any(spec, slots), case["subject"])
+    return "hit" in loose and explain_columns(
+        master["hit"], loose["hit"], (slots, discarded_slots(spec)), set())
+
+
+# --- Length: checked before the elements are tested ---
+
+
+# the exception each raising node of EXTERNS raises: (tag, name)
+RAISERS = {
+    "ValueError": ("PRED", "boom"),
+    "IndexError": ("APP", "first"),
+    "TypeError": ("CLASS", None),
+}
+
+
+def raises_in(spec, exc):
+    """
+    Whether a node under spec raises the exception type exc
+    """
+
+    if exc not in RAISERS:
+        return False
+    tag, name = RAISERS[exc]
+    return any(node[0] == tag and (name is None or node[1] == name)
+               for node in spec_nodes(spec))
+
+
+def length_rules_out(spec, items, exc):
+    """
+    Whether a sequence pattern (a root or a FORM's sub-pattern) on the
+    encoded elements items is ruled out by a length check with a node
+    that raises exc under it: its own widths (a REPEAT's minimum among
+    them), or those of a FORM at a known position
+    """
+
+    low, high = spec_width(spec)
+    if len(items) < low or high is not None and len(items) > high:
+        return raises_in(spec, exc)
+    return cursor_rules_out([spec], items, exc)
+
+
+def cursor_rules_out(nodes, items, exc):
+    """
+    Whether one of nodes, walked in order over items while each has a
+    fixed width, holds a FORM that length_rules_out
+    """
+
+    offset = 0
+    for node in nodes:
+        low, high = spec_width(node)
+        if low != high or offset + low > len(items):
+            return False
+        if node_rules_out(node, items[offset:offset + low], exc):
             return True
+        offset += low
     return False
 
 
-def encoded_length(enc):
+def node_rules_out(node, items, exc):
     """
-    The element count of an encoded tuple, list or proper pair spine,
-    or None
-    """
-
-    if not isinstance(enc, dict):
-        return None
-    if "pair" in enc and "tail" not in enc and "truncated" not in enc:
-        return len(enc["pair"])
-    for tag in ("tuple", "list"):
-        if tag in enc:
-            return len(enc[tag])
-    return None
-
-
-def rule_root_length_first(case, master, branch):
-    """
-    A standalone root checks the subject's length against its widths
-    before it tests an element: a subject of a length the root cannot
-    match misses, where master tested elements first and an extern
-    raised
+    Whether a node of fixed width on its elements items holds a FORM
+    that length_rules_out
     """
 
-    if case["kind"] != "standalone" or "raised" not in master \
-            or "miss" not in branch:
+    tag = node[0]
+    if tag == "CAP" and node[2] is not None:
+        return node_rules_out(node[2], items, exc)
+    if tag in ("MATCH", "GROUP"):
+        return cursor_rules_out(spec_children(node), items, exc)
+    if tag == "FORM":
+        inner = encoded_items(peel_encoded(items[0]))
+        return inner is not None and length_rules_out(node[1], inner, exc)
+    return False
+
+
+def rule_length_checked_first(case, master, branch):
+    """
+    A sequence pattern's length is checked before its elements are
+    tested: where the subject's length rules out the root or a FORM (a
+    REPEAT's minimum included), too long or too short, this tree misses
+    that arm, and no extern under it runs; master tested elements first
+    and an extern raised
+    """
+
+    if "raised" not in master:
         return False
-    count = encoded_length(case["subject"])
-    if count is None:
+    exc = master["raised"]
+    if case["kind"] == "standalone":
+        items = encoded_items(peel_encoded(case["subject"]))
+        return ("miss" in branch and items is not None
+                and length_rules_out(case["spec"], items, exc))
+    label = result_label(branch)
+    if label is None:
         return False
-    low, high = spec_width(case["spec"])
-    return count < low or (high is not None and count > high)
+    arms = case["arms"]
+    if label != "miss":
+        arms = arms[:int(label[len("arm"):]) - 1]
+    return any(node_rules_out(arm, [case["subject"]], exc) for arm in arms)
 
 
 UNSET = "UNB"
@@ -1146,10 +1546,12 @@ RULES = (
     ("refused_variable_after_rest", rule_variable_after_rest),
     ("refused_capture_under_not", rule_capture_under_not),
     ("element_read_when_pulled", rule_element_read_when_pulled),
+    ("str_root_is_atom", rule_str_root_is_atom),
     ("non_sequence_root_miss", rule_non_sequence_root),
     ("repeat_slot_lists", rule_repeat_slot_lists),
+    ("repeat_pass_dict", rule_repeat_pass_dict),
     ("same_reads_repeat_list", rule_same_reads_repeat_list),
-    ("root_length_first", rule_root_length_first),
+    ("length_checked_first", rule_length_checked_first),
     ("missed_arm_writes_nothing", rule_missed_arm_writes_nothing),
     ("empty_slot_left_as_was", rule_empty_slot_left),
 )
@@ -1244,30 +1646,32 @@ def divergence_class(master, branch):
     return f"{mk} differs: values"
 
 
-def load_corpus(directory=None):
+def load_corpus(directory=None, suffix=""):
     """
-    The standalone and inline records of the corpus
+    The standalone and inline records of a corpus: the files
+    standalone{suffix}.json and inline{suffix}.json
     """
 
     directory = directory or ORACLE_DIR
-    with open(join(directory, "standalone.json")) as fd:
+    with open(join(directory, f"standalone{suffix}.json")) as fd:
         standalone = json.load(fd)
-    with open(join(directory, "inline.json")) as fd:
+    with open(join(directory, f"inline{suffix}.json")) as fd:
         inline = json.load(fd)
     return standalone, inline
 
 
-def compare(directory=None):
+def compare(directory=None, suffix=""):
     """
-    Run the corpus on this tree and compare each outcome with master's
+    Run a corpus on this tree and compare each outcome with master's
 
     :param directory: the corpus directory, ORACLE_DIR by default
+    :param suffix: the corpus's file name suffix (see CORPORA)
     :return: a dict: total, agree, explained (rule name to count),
         explained_ids (rule name to case ids) and unexplained (a list
         of the divergent cases no rule covers)
     """
 
-    standalone, inline = load_corpus(directory)
+    standalone, inline = load_corpus(directory, suffix)
     report = {
         "total": 0,
         "agree": 0,
@@ -1354,7 +1758,11 @@ def format_report(report, limit=20):
 
 
 if __name__ == "__main__":
-    print(format_report(compare(), limit=int(sys.argv[1]) if len(sys.argv) > 1 else 5))
+    for seed, suffix in CORPORA:
+        print(f"seed {seed}:")
+        print(format_report(
+            compare(suffix=suffix),
+            limit=int(sys.argv[1]) if len(sys.argv) > 1 else 5))
 
 
 # The end.
