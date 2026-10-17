@@ -15,10 +15,10 @@
 
 
 /**
-  Included by matcher.c. The steps the MATCH_* instructions call: the
-  sequence cursor, the pull, the descent, the tests and the field and
-  item reads, each the engine's own body over one element instead of
-  a walk (design/interpreter/matcher-bytecode.md).
+  Included by matcher.c. The KosMatchCursor type and its freelist, the
+  sequence and spine reads the cursor and mark steps share, and the
+  element tests and the field and item reads the MATCH_* instructions
+  call, each over one element (design/interpreter/matcher-core.md).
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -29,9 +29,8 @@
 
 
 /* The cursor is untracked: it is reached only from an operand stack
-   entry, a mark or a step, never from Python, and the peak count is
-   the pattern's nesting. Freed cursors chain through seq, up to the
-   cap. */
+   entry, never from Python, and the peak count is the pattern's
+   nesting. Freed cursors chain through seq, up to the cap. */
 #define CURSOR_MAX_FREE KOS_FREELIST_CAP(8)
 
 static KosMatchCursor *cursor_free_list = NULL;
@@ -108,36 +107,6 @@ static PyObject *match_cursor_new(
 
 
 /**
-   c at index, as a new reference for the caller to store at c's
-   entry: c itself, moved in place, when held counts every reference
-   to it (the entry, and the step at the step site), else a new object
-   of the same kind at the index, since a cloned segment holds c at
-   the position it had. NULL with an exception set.
-*/
-static PyObject *match_cursor_moved(
-    KosMatchCursor *c,
-    Py_ssize_t index,
-    Py_ssize_t held) {
-
-  if (Py_REFCNT(c) == held) {
-    c->index = index;
-    Py_INCREF(c);
-    return (PyObject *) c;
-  }
-  return match_cursor_new(c->seq, c->length, index, c->kind);
-}
-
-
-static inline PyObject *match_cursor_advanced(
-    KosMatchCursor *c,
-    Py_ssize_t n,
-    Py_ssize_t held) {
-
-  return match_cursor_moved(c, c->index + n, held);
-}
-
-
-/**
    The element of seq at index. New reference.
 */
 static PyObject *step_seq_item(PyObject *seq, Py_ssize_t index) {
@@ -153,6 +122,47 @@ static PyObject *step_seq_item(PyObject *seq, Py_ssize_t index) {
     item = PySequence_GetItem(seq, index);
   }
   return item;
+}
+
+
+/**
+   The consumed range of a sequence cursor as a tuple; a list or list
+   subclass is read within its live size, so a shrink under user code
+   shortens the range instead of reading past the end. New reference.
+*/
+static PyObject *step_seq_slice(
+    PyObject *seq,
+    Py_ssize_t start,
+    Py_ssize_t end) {
+
+  if (PyTuple_CheckExact(seq))
+    return PyTuple_GetSlice(seq, start, end);
+  if (PyList_Check(seq)) {
+    Py_ssize_t have = PyList_GET_SIZE(seq);
+    if (end > have)
+      end = have;
+    if (start > end)
+      start = end;
+  }
+
+  PyObject *t = PyTuple_New(end - start);
+  if (! t)
+    return NULL;
+  for (Py_ssize_t i = start; i < end; i++) {
+    PyObject *item;
+    if (PyList_CheckExact(seq)) {
+      item = PyList_GET_ITEM(seq, i);
+      Py_INCREF(item);
+    } else {
+      item = PySequence_GetItem(seq, i);
+      if (! item) {
+        Py_DECREF(t);
+        return NULL;
+      }
+    }
+    PyTuple_SET_ITEM(t, i - start, item);
+  }
+  return t;
 }
 
 
@@ -212,266 +222,7 @@ static Py_ssize_t step_count_spine(PyObject *cursor, PyObject **out_term) {
 }
 
 
-/* === the steps === */
-
-
-int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor) {
-  PyObject *peeled = matcher_peel_datum(elem);
-  int gate = matcher_sequence_gate(peeled);
-
-  if (gate <= 0)
-    return gate;
-
-  if (KosPair_Check(peeled) || KosNilP(peeled)) {
-    /* the one walk over a spine before anything pulls from it: a
-       cycle is refused here, as the engine refused it when it built
-       the subject; an improper tail is left to miss at the end */
-    PyObject *term = NULL;
-    if (step_count_spine(peeled, &term) == -2)
-      return -1;
-    Py_INCREF(peeled);
-    *out_cursor = peeled;
-    return 1;
-  }
-
-  Py_ssize_t have;
-  if (PyList_CheckExact(peeled) || PyTuple_CheckExact(peeled)) {
-    have = Py_SIZE(peeled);
-  } else {
-    have = PyObject_Length(peeled);
-    if (have < 0)
-      return -1;
-  }
-
-  uint32_t mn = KOS_MATCH_HI(widths);
-  uint32_t mx = KOS_MATCH_LO(widths);
-  if (have < (Py_ssize_t) mn
-      || (mx != KOS_MATCH_UNBOUNDED8 && have > (Py_ssize_t) mx))
-    return 0;
-
-  PyObject *cursor = match_cursor_new(peeled, have, 0, KOS_MATCH_CURSOR);
-  if (! cursor)
-    return -1;
-  *out_cursor = cursor;
-  return 1;
-}
-
-
-/**
-   The elements left from a sequence cursor as the sequence is now: a
-   list may have shrunk under user code since the descent recorded
-   its length, so a list or list subclass answers from its live size,
-   clamped at none; a tuple cannot change and any other sequence
-   answers its own IndexError from the item read. The recorded length
-   serves the width precheck at descent and nothing after it for a
-   list.
-*/
-static Py_ssize_t cursor_remaining(const KosMatchCursor *c) {
-  Py_ssize_t length = c->length;
-
-  if (PyList_Check(c->seq))
-    length = PyList_GET_SIZE(c->seq);
-  return length > c->index ? length - c->index : 0;
-}
-
-
-int KosMatch_Pull(PyObject *cursor, KosMatchStep *out) {
-  out->elem = NULL;
-  out->cell = NULL;
-  out->cursor = NULL;
-  out->next = NULL;
-
-  if (KosMatchCursor_Check(cursor)) {
-    KosMatchCursor *c = (KosMatchCursor *) cursor;
-
-    if (cursor_remaining(c) == 0)
-      return 0;
-    PyObject *item = step_seq_item(c->seq, c->index);
-    if (! item)
-      return -1;
-    Py_INCREF(cursor);
-    out->cursor = cursor;
-    out->elem = item;
-    return 1;
-  }
-
-  if (KosNilP(cursor) || ! KosPair_Check(cursor))
-    return 0;
-
-  Py_INCREF(cursor);
-  out->cell = cursor;
-  out->elem = KosPair_CAR(cursor);
-  Py_INCREF(out->elem);
-  out->next = KosPair_CDR(cursor);
-  Py_INCREF(out->next);
-  return 1;
-}
-
-
-PyObject *KosMatch_Box(const KosMatchStep *step) {
-  if (! step->cell) {
-    Py_INCREF(step->elem);
-    return step->elem;
-  }
-  /* the engine reads a spine cell through Datum before it boxes, so
-     spliced material is boxed once, at the cell it now sits in */
-  return step_box_cell(step->cell, matcher_peel_datum(step->elem));
-}
-
-
-PyObject *KosMatch_StepAdvance(KosMatchStep *step) {
-  if (step->next) {
-    PyObject *next = step->next;
-    step->next = NULL;
-    return next;
-  }
-  /* the step's reference and the entry's: two when nothing else
-     holds the cursor */
-  return match_cursor_advanced((KosMatchCursor *) step->cursor, 1, 2);
-}
-
-
-void KosMatch_StepClear(KosMatchStep *step) {
-  Py_CLEAR(step->elem);
-  Py_CLEAR(step->next);
-  Py_CLEAR(step->cell);
-  Py_CLEAR(step->cursor);
-}
-
-
-int KosMatch_End(PyObject *cursor) {
-  if (KosMatchCursor_Check(cursor))
-    return cursor_remaining((KosMatchCursor *) cursor) == 0;
-  return KosNilP(cursor);
-}
-
-
-/**
-   The consumed range of a sequence cursor as a tuple; a list or list
-   subclass is read within its live size, so a shrink under user code
-   shortens the range instead of reading past the end. New reference.
-*/
-static PyObject *step_seq_slice(
-    PyObject *seq,
-    Py_ssize_t start,
-    Py_ssize_t end) {
-
-  if (PyTuple_CheckExact(seq))
-    return PyTuple_GetSlice(seq, start, end);
-  if (PyList_Check(seq)) {
-    Py_ssize_t have = PyList_GET_SIZE(seq);
-    if (end > have)
-      end = have;
-    if (start > end)
-      start = end;
-  }
-
-  PyObject *t = PyTuple_New(end - start);
-  if (! t)
-    return NULL;
-  for (Py_ssize_t i = start; i < end; i++) {
-    PyObject *item;
-    if (PyList_CheckExact(seq)) {
-      item = PyList_GET_ITEM(seq, i);
-      Py_INCREF(item);
-    } else {
-      item = PySequence_GetItem(seq, i);
-      if (! item) {
-        Py_DECREF(t);
-        return NULL;
-      }
-    }
-    PyTuple_SET_ITEM(t, i - start, item);
-  }
-  return t;
-}
-
-
-int KosMatch_Rest(
-    PyObject *cursor,
-    uint32_t counts,
-    PyObject **out_value,
-    PyObject **out_next) {
-
-  Py_ssize_t min_tail = (Py_ssize_t) KOS_MATCH_HI(counts);
-  Py_ssize_t suffix = (Py_ssize_t) KOS_MATCH_LO(counts);
-
-  *out_value = NULL;
-  *out_next = NULL;
-
-  if (KosMatchCursor_Check(cursor)) {
-    KosMatchCursor *c = (KosMatchCursor *) cursor;
-    Py_ssize_t avail = cursor_remaining(c);
-
-    if (avail < suffix)
-      return 0;
-    Py_ssize_t consume = avail - suffix;
-    if (consume < min_tail)
-      return 0;
-
-    PyObject *value = step_seq_slice(c->seq, c->index, c->index + consume);
-    if (! value)
-      return -1;
-    PyObject *next = match_cursor_advanced(c, consume, 1);
-    if (! next) {
-      Py_DECREF(value);
-      return -1;
-    }
-    *out_value = value;
-    *out_next = next;
-    return 1;
-  }
-
-  PyObject *term = NULL;
-  Py_ssize_t n = step_count_spine(cursor, &term);
-  if (n == -2)
-    return -1;
-  if (n < 0 || n < suffix)
-    return 0;
-  Py_ssize_t consume = n - suffix;
-  if (consume < min_tail)
-    return 0;
-
-  if (consume == 0) {
-    /* the empty remainder: the terminator, as the engine binds it */
-    PyObject *value = kos_datum_new(term, Py_None, Py_None);
-    if (! value)
-      return -1;
-    *out_value = value;
-    Py_INCREF(cursor);
-    *out_next = cursor;
-    return 1;
-  }
-
-  if (suffix == 0) {
-    PyObject *value = step_box_cell(cursor, cursor);
-    if (! value)
-      return -1;
-    *out_value = value;
-    Py_INCREF(term);
-    *out_next = term;
-    return 1;
-  }
-
-  PyObject *t = PyTuple_New(consume);
-  if (! t)
-    return -1;
-  PyObject *cell = cursor;
-  for (Py_ssize_t i = 0; i < consume; i++) {
-    PyObject *boxed = step_box_cell(
-        cell, matcher_peel_datum(KosPair_CAR(cell)));
-    if (! boxed) {
-      Py_DECREF(t);
-      return -1;
-    }
-    PyTuple_SET_ITEM(t, i, boxed);
-    cell = KosPair_CDR(cell);
-  }
-  *out_value = t;
-  Py_INCREF(cell);
-  *out_next = cell;
-  return 1;
-}
+/* === the element tests === */
 
 
 int KosMatch_TypeTest(PyObject *elem, PyObject *type) {
@@ -643,30 +394,6 @@ static PyObject *step_match_args(PyObject *cls, Py_ssize_t npos) {
 }
 
 
-int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos) {
-  int isinst = matcher_isinstance(matcher_peel_datum(elem), cls);
-
-  if (isinst <= 0)
-    return isinst;
-  if (npos <= 0)
-    return 1;
-
-  PyObject *match_args = step_match_args(cls, npos);
-  if (! match_args)
-    return -1;
-  if (PyTuple_GET_SIZE(match_args) < npos) {
-    PyErr_Format(PyExc_TypeError,
-                 "%R.__match_args__ has %zd entries; cannot satisfy "
-                 "%zd positional field pattern(s)",
-                 cls, PyTuple_GET_SIZE(match_args), npos);
-    Py_DECREF(match_args);
-    return -1;
-  }
-  Py_DECREF(match_args);
-  return 1;
-}
-
-
 int KosMatch_FieldKw(PyObject *elem, PyObject *name, PyObject **out) {
   PyObject *val = PyObject_GetAttr(matcher_peel_datum(elem), name);
 
@@ -753,24 +480,6 @@ int KosMatch_Item(PyObject *elem, PyObject *key, PyObject **out) {
 }
 
 
-
-/* === SAME, positions, COLLECT === */
-
-
-int KosMatch_Available(PyObject *cursor, Py_ssize_t needed) {
-  if (KosMatchCursor_Check(cursor)) {
-    return cursor_remaining((KosMatchCursor *) cursor) >= needed;
-  }
-  PyObject *cell = cursor;
-  for (Py_ssize_t i = 0; i < needed; i++) {
-    if (! KosPair_Check(cell) || KosNilP(cell))
-      return 0;
-    cell = KosPair_CDR(cell);
-  }
-  return 1;
-}
-
-
 int KosMatch_SameTest(PyObject *elem, PyObject *prev) {
   PyObject *got = matcher_peel_datum(elem);
 
@@ -780,298 +489,6 @@ int KosMatch_SameTest(PyObject *elem, PyObject *prev) {
   if (got == prev)
     return 1;
   return PyObject_RichCompareBool(got, prev, Py_EQ);
-}
-
-
-PyObject *KosMatch_Mark(PyObject *cursor) {
-  if (KosMatchCursor_Check(cursor)) {
-    KosMatchCursor *c = (KosMatchCursor *) cursor;
-    return match_cursor_new(c->seq, c->length, c->index, KOS_MATCH_MARK);
-  }
-  Py_INCREF(cursor);
-  return cursor;
-}
-
-
-/**
-   A mark beside a sequence cursor that is not a sequence mark,
-   refused for the instruction role. NULL with RuntimeError set.
-*/
-static PyObject *match_mark_refused(const char *role, PyObject *mark) {
-  PyErr_Format(PyExc_RuntimeError,
-               "%s requires a mark over the same cursor kind, not %.200s",
-               role, Py_TYPE(mark)->tp_name);
-  return NULL;
-}
-
-
-PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark) {
-  if (KosMatchCursor_Check(cursor)) {
-    if (! KosMatchCursor_Check(mark)
-        || KosMatchCursor_KIND(mark) != KOS_MATCH_MARK)
-      return match_mark_refused("match re-mark", mark);
-
-    Py_ssize_t index = ((KosMatchCursor *) cursor)->index;
-    return match_cursor_moved((KosMatchCursor *) mark, index, 1);
-  }
-  Py_INCREF(cursor);
-  return cursor;
-}
-
-
-PyObject *KosMatch_Reset(PyObject *cursor, PyObject *mark) {
-  if (KosMatchCursor_Check(cursor)) {
-    if (! KosMatchCursor_Check(mark)
-        || KosMatchCursor_KIND(mark) != KOS_MATCH_MARK)
-      return match_mark_refused("match reset", mark);
-
-    Py_ssize_t index = ((KosMatchCursor *) mark)->index;
-    return match_cursor_moved((KosMatchCursor *) cursor, index, 1);
-  }
-  Py_INCREF(mark);
-  return mark;
-}
-
-
-int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next) {
-  *out_next = NULL;
-
-  if (KosMatchCursor_Check(cursor)) {
-    KosMatchCursor *c = (KosMatchCursor *) cursor;
-    Py_ssize_t count = 0;
-
-    while (cursor_remaining(c) > count) {
-      PyObject *item = step_seq_item(c->seq, c->index + count);
-      if (! item)
-        return -1;
-      int rc = PyList_Append(list, item);
-      Py_DECREF(item);
-      if (rc < 0)
-        return -1;
-      count++;
-    }
-    PyObject *next = match_cursor_advanced(c, count, 1);
-    if (! next)
-      return -1;
-    *out_next = next;
-    return 1;
-  }
-
-  PyObject *term = NULL;
-  Py_ssize_t n = step_count_spine(cursor, &term);
-  if (n == -2)
-    return -1;
-  if (n < 0)
-    return 0;
-
-  PyObject *cell = cursor;
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *boxed = step_box_cell(
-        cell, matcher_peel_datum(KosPair_CAR(cell)));
-    if (! boxed)
-      return -1;
-    int rc = PyList_Append(list, boxed);
-    Py_DECREF(boxed);
-    if (rc < 0)
-      return -1;
-    cell = KosPair_CDR(cell);
-  }
-  Py_INCREF(term);
-  *out_next = term;
-  return 1;
-}
-
-
-/* === captures === */
-
-
-/**
-   The cells of a pair span from start to the cursor's cell, counted.
-   The walk carries a half-speed second pointer, as step_count_spine
-   does, so a loop user code closed behind the cursor ends it. -1 with
-   ValueError set when the walk never reaches the cursor: user code
-   rewrote the spine between the mark and the span.
-*/
-static Py_ssize_t step_span_count(PyObject *start, PyObject *cursor) {
-  Py_ssize_t n = 0;
-  PyObject *cell = start;
-  PyObject *slow = start;
-
-  while (cell != cursor) {
-    if (! KosPair_Check(cell) || KosNilP(cell))
-      goto changed;
-    n++;
-    cell = KosPair_CDR(cell);
-    if (n & 1)
-      slow = KosPair_CDR(slow);
-    else if (cell == slow && cell != cursor)
-      goto changed;
-  }
-  return n;
-
-  changed:
-  PyErr_SetString(PyExc_ValueError, "match subject changed under the walk");
-  return -1;
-}
-
-
-/**
-   The source a DatumFrame records for a span: the start cell itself
-   when the span runs to the spine's end or is empty, the peeled car
-   for one cell, else a tuple of the peeled cars. New reference.
-*/
-static PyObject *step_span_source(
-    PyObject *start,
-    PyObject *cursor,
-    Py_ssize_t n) {
-
-  if (n <= 0 || KosNilP(cursor)) {
-    Py_INCREF(start);
-    return start;
-  }
-  if (n == 1) {
-    PyObject *car = matcher_peel_datum(KosPair_CAR(start));
-    Py_INCREF(car);
-    return car;
-  }
-  PyObject *t = PyTuple_New(n);
-  if (! t)
-    return NULL;
-  PyObject *cell = start;
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *car = matcher_peel_datum(KosPair_CAR(cell));
-    Py_INCREF(car);
-    PyTuple_SET_ITEM(t, i, car);
-    cell = KosPair_CDR(cell);
-  }
-  return t;
-}
-
-
-/**
-   Fill a fresh container with the bound values under their names.
-   0, or -1 with an exception set.
-*/
-static int step_fill_captures(
-    PyObject *out,
-    PyObject *names,
-    PyObject *const *values) {
-
-  Py_ssize_t n = PyTuple_GET_SIZE(names);
-
-  for (Py_ssize_t i = 0; i < n; i++) {
-    if (! values[i])
-      continue;
-    if (PyDict_SetItem(out, PyTuple_GET_ITEM(names, i), values[i]) < 0)
-      return -1;
-  }
-  return 0;
-}
-
-
-PyObject *KosMatch_Captures(
-    PyObject *names,
-    PyObject *const *values,
-    PyObject *start,
-    PyObject *cursor) {
-
-  /* the root's start is the subject itself, which may arrive boxed */
-  start = matcher_peel_datum(start);
-  if (! (KosPair_Check(start) || KosNilP(start))) {
-    PyObject *out = PyDict_New();
-    if (! out)
-      return NULL;
-    if (step_fill_captures(out, names, values) < 0) {
-      Py_DECREF(out);
-      return NULL;
-    }
-    return out;
-  }
-
-  Py_ssize_t n = step_span_count(start, cursor);
-  if (n < 0)
-    return NULL;
-
-  PyObject *out = kos_datum_frame_new();
-  if (! out)
-    return NULL;
-  if (step_fill_captures(out, names, values) < 0) {
-    Py_DECREF(out);
-    return NULL;
-  }
-
-  PyObject *source = step_span_source(start, cursor, n);
-  if (! source) {
-    Py_DECREF(out);
-    return NULL;
-  }
-  PyObject *position = step_cell_position(start);
-  KosDatumFrame *f = (KosDatumFrame *) out;
-  PyObject *old_source = f->source;
-  PyObject *old_position = f->position;
-  f->source = source;
-  f->position = position;
-  Py_DECREF(old_source);
-  Py_DECREF(old_position);
-  return out;
-}
-
-
-PyObject *KosMatch_Iteration(
-    PyObject *names,
-    PyObject *const *values,
-    PyObject *start,
-    PyObject *cursor) {
-
-  Py_ssize_t count = PyTuple_GET_SIZE(names);
-  for (Py_ssize_t i = 0; i < count; i++) {
-    if (values[i])
-      return KosMatch_Captures(names, values, start, cursor);
-  }
-
-  if (KosMatchCursor_Check(cursor)) {
-    KosMatchCursor *c = (KosMatchCursor *) cursor;
-    if (! KosMatchCursor_Check(start)) {
-      PyErr_Format(PyExc_TypeError,
-                   "match iteration start over a sequence is a cursor,"
-                   " not %.200s", Py_TYPE(start)->tp_name);
-      return NULL;
-    }
-    Py_ssize_t from = ((KosMatchCursor *) start)->index;
-    Py_ssize_t span = c->index - from;
-    if (span == 1)
-      return PySequence_GetItem(c->seq, from);
-    if (span > 1)
-      return step_seq_slice(c->seq, from, c->index);
-  } else {
-    Py_ssize_t span = step_span_count(start, cursor);
-    if (span < 0)
-      return NULL;
-    if (span == 1)
-      return step_box_cell(start, matcher_peel_datum(KosPair_CAR(start)));
-    if (span > 1) {
-      PyObject *t = PyTuple_New(span);
-      if (! t)
-        return NULL;
-      PyObject *cell = start;
-      for (Py_ssize_t i = 0; i < span; i++) {
-        PyObject *boxed = step_box_cell(
-            cell, matcher_peel_datum(KosPair_CAR(cell)));
-        if (! boxed) {
-          Py_DECREF(t);
-          return NULL;
-        }
-        PyTuple_SET_ITEM(t, i, boxed);
-        cell = KosPair_CDR(cell);
-      }
-      return t;
-    }
-  }
-
-  PyErr_SetString(PyExc_RuntimeError,
-                  "internal: REPEAT iteration matched without advancing "
-                  "cursor");
-  return NULL;
 }
 
 

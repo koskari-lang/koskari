@@ -15,9 +15,9 @@
 
 
 /**
-  Included by matcher.c after step.c. The matcher core's cursor: one
+  Included by matcher.c after step.c. The match cursor: one
   KosMatchCursor over a pair spine, a sequence or a single value, with
-  an end bound, and the steps the core's cursor instructions call
+  an end bound, and the steps the cursor instructions call
   (design/interpreter/matcher-core.md).
 
   :author: Christopher O'Brien <obriencj@gmail.com>

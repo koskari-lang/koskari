@@ -16,7 +16,7 @@ koskari.match_core
 
 The matcher core: the analysis of a pattern's tables, the (slots,
 externs, consts, nodes, entry) tuple MatchCompiler.lower produces, and
-the emitter that lowers them to the MATCH2_* instructions.
+the emitter that lowers them to the MATCH_* instructions.
 
 One pass of the analysis gives, per node, the static widths, the
 suffix width on the node's cursor, the capture scope and slot indices,
@@ -59,7 +59,7 @@ __all__ = (
 # field holds; 0xFFFF is the unbounded max of MATCH_FITS
 FIELD_LIMIT = 0xFFFE
 
-# the max of MATCH2_FITS for no maximum
+# the max of MATCH_FITS for no maximum
 UNBOUNDED = 0xFFFF
 
 # the kinds that test one element on their cursor
@@ -815,7 +815,7 @@ class Emitter:
         if low == 0 and high is None:
             return
         self.op(
-            OpCode.MATCH2_FITS, miss, self.top - cur, low,
+            OpCode.MATCH_FITS, miss, self.top - cur, low,
             UNBOUNDED if high is None else high)
 
 
@@ -827,7 +827,7 @@ class Emitter:
 
         scope = self.analysis.slot_scope[slot]
         self.op(
-            OpCode.MATCH2_STORE, self.top - self.marks[scope],
+            OpCode.MATCH_STORE, self.top - self.marks[scope],
             self.analysis.slot_index[slot], self.top - cur,
             self.analysis.scopes[scope].names, effect=-1)
 
@@ -840,7 +840,7 @@ class Emitter:
         entries under the value
         """
 
-        self.op(OpCode.MATCH2_SINGLE)
+        self.op(OpCode.MATCH_SINGLE)
         inner = self.top
         self.emit(sub, inner, fail)
         self.fits(inner, (0, 0), fail)
@@ -862,16 +862,16 @@ class Emitter:
         miss_mark = label("match.miss")
 
         self.op(OpCode.VAR, self.target.subject, effect=1)
-        self.op(OpCode.MATCH2_DESCEND, miss_root)
+        self.op(OpCode.MATCH_DESCEND, miss_root)
         cur = self.top
         if analysis.root_fits is not None:
             self.fits(cur, analysis.root_fits, miss_cursor)
-        self.op(OpCode.MATCH2_SCOPE, self.top - cur, len(names), effect=1)
+        self.op(OpCode.MATCH_SCOPE, self.top - cur, len(names), effect=1)
         self.marks[0] = self.top
         self.emit(self.entry, cur, miss_mark)
         self.fits(cur, (0, 0), miss_mark)
         self.op(
-            OpCode.MATCH2_CAPTURES, self.top - self.marks[0], self.top - cur,
+            OpCode.MATCH_CAPTURES, self.top - self.marks[0], self.top - cur,
             names, effect=1)
         self.op(OpCode.RETURN, 1)
 
@@ -901,16 +901,16 @@ class Emitter:
         fail = self.target.label("match.arm")
 
         self.op(OpCode.DUP, 1, effect=1)
-        self.op(OpCode.MATCH2_SINGLE)
+        self.op(OpCode.MATCH_SINGLE)
         cur = self.top
-        self.op(OpCode.MATCH2_SCOPE, self.top - cur, len(names), effect=1)
+        self.op(OpCode.MATCH_SCOPE, self.top - cur, len(names), effect=1)
         self.marks[0] = self.top
         self.emit(self.entry, cur, fail)
         self.fits(cur, (0, 0), fail)
         for index, name in enumerate(names):
             skip = self.target.label("match.unbound")
             self.op(
-                OpCode.MATCH2_LOAD, skip, self.top - self.marks[0], index,
+                OpCode.MATCH_LOAD, skip, self.top - self.marks[0], index,
                 effect=1)
             self.op(OpCode.VAR_STORE, symbol(name), effect=-1)
             self.place(skip, self.top)
@@ -943,7 +943,7 @@ class Emitter:
             self.fits(cur, analysis.fits[i], miss)
 
         if kind in ELEMENT_KINDS:
-            self.op(OpCode.MATCH2_NEXT, miss, self.top - cur, effect=1)
+            self.op(OpCode.MATCH_NEXT, miss, self.top - cur, effect=1)
 
         if kind == 'TEST':
             test = node[1]
@@ -951,13 +951,13 @@ class Emitter:
                 self.op(OpCode.POP, 1, effect=-1)
             elif test == 'LITERAL':
                 self.op(
-                    OpCode.MATCH2_LITERAL, miss, self.consts[node[2]],
+                    OpCode.MATCH_LITERAL, miss, self.consts[node[2]],
                     effect=-1)
             elif test == 'CORE':
-                self.op(OpCode.MATCH2_CORE, miss, int(node[2]), effect=-1)
+                self.op(OpCode.MATCH_CORE, miss, int(node[2]), effect=-1)
             elif test == 'TYPE':
                 self.op(
-                    OpCode.MATCH2_TYPE_VAR, miss, self.externs[node[2]],
+                    OpCode.MATCH_TYPE_VAR, miss, self.externs[node[2]],
                     effect=-1)
             else:
                 self.op(OpCode.CALL_VAR, self.externs[node[2]], 1)
@@ -971,12 +971,12 @@ class Emitter:
             else:
                 scope, index = analysis.same[i]
                 self.op(
-                    OpCode.MATCH2_SAME, miss, self.top - self.marks[scope],
+                    OpCode.MATCH_SAME, miss, self.top - self.marks[scope],
                     index, effect=-1)
 
         elif kind == 'FORM':
             fail = label("match.form")
-            self.op(OpCode.MATCH2_DESCEND, miss)
+            self.op(OpCode.MATCH_DESCEND, miss)
             inner = self.top
             self.fits(inner, analysis.fits[i], fail)
             self.emit(node[1], inner, fail)
@@ -998,17 +998,17 @@ class Emitter:
             outer = label("match.class")
             inner = label("match.class")
             self.op(OpCode.DUP, 1, effect=1)
-            self.op(OpCode.MATCH2_TYPE_VAR, outer, cls, effect=-1)
+            self.op(OpCode.MATCH_TYPE_VAR, outer, cls, effect=-1)
             position = 0
             for field in node[2:]:
                 field = nodes[field]
                 if field[0] == 'FIELD_POS':
                     self.op(
-                        OpCode.MATCH2_FIELD_POS_VAR, outer, cls, position,
+                        OpCode.MATCH_FIELD_POS_VAR, outer, cls, position,
                         effect=1)
                     position += 1
                 else:
-                    self.op(OpCode.MATCH2_FIELD_KW, outer, field[2], effect=1)
+                    self.op(OpCode.MATCH_FIELD_KW, outer, field[2], effect=1)
                 self.value(field[1], inner)
             self.op(OpCode.POP, 1, effect=-1)
             self.fail(inner, 1, outer, 1, miss)
@@ -1016,16 +1016,16 @@ class Emitter:
         elif kind == 'MAP':
             outer = label("match.map")
             inner = label("match.map")
-            self.op(OpCode.MATCH2_MAPPING, outer)
+            self.op(OpCode.MATCH_MAPPING, outer)
             for entry in node[1:]:
                 entry = nodes[entry]
                 if entry[0] == 'MAP_ENTRY_CONST':
                     self.op(
-                        OpCode.MATCH2_KEY, outer, self.consts[entry[1]],
+                        OpCode.MATCH_KEY, outer, self.consts[entry[1]],
                         effect=1)
                 else:
                     self.op(
-                        OpCode.MATCH2_KEY_VAR, outer, self.externs[entry[1]],
+                        OpCode.MATCH_KEY_VAR, outer, self.externs[entry[1]],
                         effect=1)
                 if entry[2] == -1:
                     self.op(OpCode.POP, 1, effect=-1)
@@ -1044,13 +1044,13 @@ class Emitter:
             scope = analysis.group_scope[i]
             names = analysis.scopes[scope].names
             fail = label("match.group")
-            self.op(OpCode.MATCH2_SCOPE, self.top - cur, len(names), effect=1)
+            self.op(OpCode.MATCH_SCOPE, self.top - cur, len(names), effect=1)
             self.marks[scope] = start
             for child in node[1:]:
                 self.emit(child, cur, fail)
             if analysis.scopes[scope].kind == 'group':
                 self.op(
-                    OpCode.MATCH2_CAPTURES, self.top - start, self.top - cur,
+                    OpCode.MATCH_CAPTURES, self.top - start, self.top - cur,
                     names, effect=1)
                 self.store(nodes[self.captured[i]][1], cur)
             self.op(OpCode.POP, 1, effect=-1)
@@ -1060,7 +1060,7 @@ class Emitter:
         elif kind == 'CAPTURE':
             slot, sub = node[1], node[2]
             if sub == -1:
-                self.op(OpCode.MATCH2_NEXT, miss, self.top - cur, effect=1)
+                self.op(OpCode.MATCH_NEXT, miss, self.top - cur, effect=1)
                 self.store(slot, cur)
             elif nodes[sub][0] in ('REPEAT', 'REST'):
                 self.emit(sub, cur, miss)
@@ -1069,16 +1069,16 @@ class Emitter:
                 self.emit(sub, cur, miss)
             else:
                 fail = label("match.capture")
-                self.op(OpCode.MATCH2_SCOPE, self.top - cur, 0, effect=1)
+                self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
                 self.emit(sub, cur, fail)
                 if analysis.widths[sub] == (1, 1):
-                    self.op(OpCode.MATCH2_AT, self.top - start, effect=1)
+                    self.op(OpCode.MATCH_AT, self.top - start, effect=1)
                     self.store(slot, cur)
                 else:
                     # an empty span leaves the slot unbound
                     skip = label("match.empty")
                     self.op(
-                        OpCode.MATCH2_SPAN, skip, self.top - start,
+                        OpCode.MATCH_SPAN, skip, self.top - start,
                         self.top - cur, effect=1)
                     self.store(slot, cur)
                     self.place(skip, start)
@@ -1088,17 +1088,17 @@ class Emitter:
         elif kind == 'ONEOF':
             outer = self.marks[analysis.node_scope[i]]
             done = label("match.oneof")
-            self.op(OpCode.MATCH2_SCOPE, self.top - cur, 0, effect=1)
+            self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
             for branch in node[1:]:
                 nxt = label("match.oneof")
                 self.emit(branch, cur, nxt)
                 self.op(OpCode.POP, 1, effect=-1)
                 self.op(OpCode.JUMP, done)
                 self.place(nxt, start)
-                self.op(OpCode.MATCH2_RESET, self.top - cur, self.top - start)
+                self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
                 cleared = analysis.branch_slots.get(branch)
                 if cleared:
-                    self.op(OpCode.MATCH2_CLEAR, self.top - outer, cleared)
+                    self.op(OpCode.MATCH_CLEAR, self.top - outer, cleared)
             self.op(OpCode.POP, 1, effect=-1)
             self.op(OpCode.JUMP, miss)
             self.place(done, start - 1)
@@ -1107,27 +1107,27 @@ class Emitter:
             outer = self.marks[analysis.node_scope[i]]
             back = label("match.opt")
             done = label("match.opt")
-            self.op(OpCode.MATCH2_SCOPE, self.top - cur, 0, effect=1)
+            self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
             self.emit(node[1], cur, back)
             self.op(OpCode.POP, 1, effect=-1)
             self.op(OpCode.JUMP, done)
             self.place(back, start)
-            self.op(OpCode.MATCH2_RESET, self.top - cur, self.top - start)
+            self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
             cleared = analysis.branch_slots.get(node[1])
             if cleared:
-                self.op(OpCode.MATCH2_CLEAR, self.top - outer, cleared)
+                self.op(OpCode.MATCH_CLEAR, self.top - outer, cleared)
             self.op(OpCode.POP, 1, effect=-1)
             self.place(done, start - 1)
 
         elif kind == 'NOT':
             ok = label("match.not")
-            self.op(OpCode.MATCH2_SCOPE, self.top - cur, 0, effect=1)
+            self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
             self.emit(node[1], cur, ok)
-            self.op(OpCode.MATCH2_RESET, self.top - cur, self.top - start)
+            self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
             self.op(OpCode.POP, 1, effect=-1)
             self.op(OpCode.JUMP, miss)
             self.place(ok, start)
-            self.op(OpCode.MATCH2_RESET, self.top - cur, self.top - start)
+            self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
             self.op(OpCode.POP, 1, effect=-1)
 
         elif kind == 'REPEAT':
@@ -1135,7 +1135,7 @@ class Emitter:
 
         elif kind == 'REST':
             self.op(
-                OpCode.MATCH2_TAIL, miss, self.top - cur,
+                OpCode.MATCH_TAIL, miss, self.top - cur,
                 analysis.suffix[i][0], node[1], effect=1)
             if i not in self.captured:
                 self.op(OpCode.POP, 1, effect=-1)
@@ -1170,48 +1170,48 @@ class Emitter:
         pass_miss = label("match.repeat")
         done = label("match.repeat")
 
-        self.op(OpCode.MATCH2_ITEMS, effect=1)
+        self.op(OpCode.MATCH_ITEMS, effect=1)
         self.op(
-            OpCode.MATCH2_BOUND, fail, self.top - cur, analysis.suffix[i][0],
+            OpCode.MATCH_BOUND, fail, self.top - cur, analysis.suffix[i][0],
             effect=1)
 
         self.place(head, bound)
-        self.op(OpCode.MATCH2_FITS, done, self.top - bound, 1, UNBOUNDED)
-        self.op(OpCode.MATCH2_SCOPE, self.top - bound, len(names), effect=1)
+        self.op(OpCode.MATCH_FITS, done, self.top - bound, 1, UNBOUNDED)
+        self.op(OpCode.MATCH_SCOPE, self.top - bound, len(names), effect=1)
         self.marks[scope] = mark
         self.emit(node[1], bound, pass_miss)
         if captured:
-            # a GROUP body's pass is its captures, as MATCH2_CAPTURES
+            # a GROUP body's pass is its captures, as MATCH_CAPTURES
             # gives them, when it binds a slot
             group = int(self.nodes[node[1]][0] == 'GROUP')
             self.op(
-                OpCode.MATCH2_PASS, self.top - mark, self.top - bound, names,
+                OpCode.MATCH_PASS, self.top - mark, self.top - bound, names,
                 group, effect=1)
         elif names:
             self.op(
-                OpCode.MATCH2_CAPTURES, self.top - mark, self.top - bound,
+                OpCode.MATCH_CAPTURES, self.top - mark, self.top - bound,
                 names, effect=1)
         else:
             self.op(OpCode.CONST, None, effect=1)
-        self.op(OpCode.MATCH2_APPEND, self.top - items, effect=-1)
+        self.op(OpCode.MATCH_APPEND, self.top - items, effect=-1)
         self.op(OpCode.POP, 1, effect=-1)
         self.op(OpCode.JUMP, head)
 
         self.place(pass_miss, mark)
-        self.op(OpCode.MATCH2_RESET, self.top - bound, self.top - mark)
+        self.op(OpCode.MATCH_RESET, self.top - bound, self.top - mark)
         self.op(OpCode.POP, 1, effect=-1)
         del self.marks[scope]
 
         self.place(done, bound)
-        self.op(OpCode.MATCH2_SYNC, self.top - cur, self.top - bound)
+        self.op(OpCode.MATCH_SYNC, self.top - cur, self.top - bound)
         self.op(OpCode.POP, 1, effect=-1)
         if node[2]:
-            self.op(OpCode.MATCH2_MIN, fail, self.top - items, node[2])
+            self.op(OpCode.MATCH_MIN, fail, self.top - items, node[2])
         if not captured:
             if names:
                 outer = self.marks[analysis.node_scope[i]]
                 self.op(
-                    OpCode.MATCH2_COLUMNS, self.top - items,
+                    OpCode.MATCH_COLUMNS, self.top - items,
                     self.top - outer, names, analysis.columns[i])
             self.op(OpCode.POP, 1, effect=-1)
         self.fail(fail, 1, miss)

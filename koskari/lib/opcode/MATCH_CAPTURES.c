@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH_CAPTURES: Schema CONST names, then the first capture slot, the depth of the start under the top and the depth of the cursor. Push the captures, a DatumFrame with its source over a pair spine and a dict otherwise, an unbound slot absent. The body is kos_match_captures in eval/eval_match.c
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_CAPTURES: Row mark depth, cursor depth, names. Pushes the
+  mark's captures, a dict, or a DatumFrame over a pair spine.
+  The body is kos_match_captures in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_CAPTURES) {
   (void) kos_op_delivery_;

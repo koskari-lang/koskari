@@ -65,7 +65,7 @@ class FragmentTarget:
 
 
 # the simple-style VAR instructions the standalone target lowers to
-# their FAST twins, beside the MATCH2_* twins named by their spelling
+# their FAST twins, beside the MATCH_* twins named by their spelling
 SIMPLE_TWINS = {
     OpCode.VAR: OpCode.FAST,
     OpCode.CALL_VAR: OpCode.CALL_FAST,
@@ -112,7 +112,7 @@ class FunctionTarget:
         for op, arg in self.instructions:
             name = op.name
             twin = SIMPLE_TWINS.get(op)
-            if twin is None and name.startswith('MATCH2_') \
+            if twin is None and name.startswith('MATCH_') \
                     and 'VAR' in name.split('_'):
                 twin = OpCode[name.replace('VAR', 'FAST')]
             if twin is not None:

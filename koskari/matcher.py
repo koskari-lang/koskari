@@ -578,7 +578,7 @@ class LITERAL(Pattern):
 
 
 # the types a pattern names by their bare spelling and tests without a
-# reference: a MATCH_CORE_TYPE instruction carries the ordinal
+# reference: a MATCH_CORE instruction carries the ordinal
 CORE_TYPES = {name.lower(): member for name, member in CoreType.__members__.items()}
 
 

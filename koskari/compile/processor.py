@@ -336,12 +336,10 @@ def build_var_to_fast():
             var_to_fast[OpCode[varname]] = opcode
 
     for opcode in OpCode:
-        # the match instructions spell FAST in every slot position of
-        # the name (MATCH_NEXT_BIND_FAST, MATCH_KEY_FAST_BIND_FAST); the
-        # matcher core's MATCH2_ instructions follow the same spelling
+        # the match instructions spell FAST where the name spells VAR
+        # (MATCH_TYPE_FAST, MATCH_KEY_FAST)
         opname = opcode.name
-        if not (opname.startswith(('MATCH_', 'MATCH2_'))
-                and 'FAST' in opname):
+        if not (opname.startswith('MATCH_') and 'FAST' in opname):
             continue
         varname = opname.replace('FAST', 'VAR')
         if hasattr(OpCode, varname):

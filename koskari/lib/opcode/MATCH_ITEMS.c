@@ -14,9 +14,8 @@
 */
 
 /**
-  MATCH_ITEMS: no arg. Push an empty list, the items a repeat's
-  iterations append to, which sits under the repeat's mark while the
-  passes run (design/interpreter/matcher-bytecode.md).
+  MATCH_ITEMS: no arg. Pushes an empty list, a REPEAT's items
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_ITEMS) {
   KOS_SYNC_PC(es, insn);

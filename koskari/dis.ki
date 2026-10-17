@@ -235,7 +235,7 @@ define _compare_name [sel]:
     (str sel)
 
 
-define _core_type_name [val]:
+define core_type_name [val]:
   """
   Short display name for a CoreType ordinal (e.g. 1 -> "SYMBOL")
   """
@@ -246,16 +246,9 @@ define _core_type_name [val]:
     (str val)
 
 
-;; the EXTRA field that carries a core type's ordinal, by opcode; a
-;; pull names its cursor's depth in the RAW field before it
-define _CORE_TYPE_FIELD #{
-  "MATCH_CORE_TYPE": 1
-  "MATCH_CORE_TYPE_BIND_VAR": 1
-  "MATCH_CORE_TYPE_BIND_FAST": 1
-  "MATCH_NEXT_CORE_TYPE": 2
-  "MATCH_NEXT_CORE_TYPE_BIND_VAR": 2
-  "MATCH_NEXT_CORE_TYPE_BIND_FAST": 2
-  "MATCH2_CORE": 1}
+;; the EXTRA field that carries a core type's ordinal, by opcode
+define CORE_TYPE_FIELD #{
+  "MATCH_CORE": 1}
 
 
 define _format_opcount [arg]:
@@ -360,7 +353,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
-        define ordinal_field (_CORE_TYPE_FIELD.get op_name)
+        define ordinal_field (CORE_TYPE_FIELD.get op_name)
         define parts:
           list-each [[field val fk] (zip (range (len schema)) ext schema)]:
             switch fk:
@@ -385,7 +378,7 @@ define _format_arg [code op_style arg cpool local_names closure_names
                 (_format_fast_part val local_names closure_names)
               case [OpStyle.COUNT OpStyle.RAW]:
                 if (equal? field ordinal_field):
-                  (_core_type_name val)
+                  (core_type_name val)
                 else:
                   (str val)
               case [OpStyle.CMP]:

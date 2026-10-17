@@ -59,22 +59,16 @@ extern PyTypeObject KosDatumFrameType;
 
 
 /**
-   A cursor over a sequence subject: the sequence, its length and the
-   index of the next element, and a mark over one, a separate object
-   of the same type with the kind byte set, holding the index a walk
-   may return to. A pair spine needs neither, the cell is the cursor
-   and the mark.
-   The matcher core's cursors (KosMatchCursor_* below) use the same
-   type with two more kinds: a spine cursor holds the current cell in
-   seq, the count of cells from the cell it was made at in length, and
-   the cells pulled in index; a single-value cursor holds the value in
-   seq with a length of one. A core sequence cursor has the sequence
-   kind. reserve is the count of elements a bounded cursor leaves
+   A match cursor over one subject, by kind: a sequence cursor holds
+   the sequence in seq, its length, and the index of the next element;
+   a spine cursor holds the current cell in seq, the count of cells
+   from the cell it was made at in length, and the cells pulled in
+   index; a single-value cursor holds the value in seq with a length
+   of one. reserve is the count of elements a bounded cursor leaves
    before its subject's end, zero for every other cursor.
-   Opaque to Python and untracked. A write to either, an advance or a
-   re-mark, moves the object in place when its stack entry is the only
-   holder and stores a new object at the entry otherwise, so a cloned
-   segment keeps the position it took.
+   Opaque to Python and untracked. A move writes the object in place
+   when its stack entry is the only holder and stores a new object at
+   the entry otherwise, so a cloned segment keeps the position it took.
  */
 typedef struct KosMatchCursor {
   PyObject_HEAD
@@ -88,9 +82,8 @@ typedef struct KosMatchCursor {
 
 enum {
   KOS_MATCH_CURSOR = 0,
-  KOS_MATCH_MARK = 1,
-  KOS_MATCH_SPINE = 2,
-  KOS_MATCH_SINGLE = 3,
+  KOS_MATCH_SPINE = 1,
+  KOS_MATCH_SINGLE = 2,
 };
 
 
@@ -121,90 +114,6 @@ typedef enum KosCoreType {
 } KosCoreType;
 
 
-/* The packed widths of a FORM row, in one sixteen-bit immediate: min
-   in the high eight bits, max in the low, 0xFF for an unbounded max.
-   A REST row packs its minimum tail and the suffix width the same
-   way; the lowering refuses a pattern whose counts do not fit. */
-#define KOS_MATCH_PACK(hi, lo)  ((((uint32_t) (hi)) << 8) | ((lo) & 0xFFu))
-#define KOS_MATCH_HI(w)         (((w) >> 8) & 0xFFu)
-#define KOS_MATCH_LO(w)         ((w) & 0xFFu)
-#define KOS_MATCH_UNBOUNDED8    0xFFu
-
-
-/**
-   One pulled element: the element itself, the pair cell it came from
-   (NULL from a sequence cursor), the sequence cursor it came from
-   (NULL from a pair spine), and the advanced pair cursor to store
-   back (NULL from a sequence cursor), every one a new reference the
-   step owns until KosMatch_StepClear, so the test a body runs on the
-   element, which may reach user code, cannot leave the step holding
-   a released cursor. A pull advances nothing: the caller stores what
-   KosMatch_StepAdvance returns once the element has passed its test,
-   so a miss leaves the cursor where it was.
- */
-typedef struct KosMatchStep {
-  PyObject *elem;
-  PyObject *cell;
-  PyObject *cursor;
-  PyObject *next;
-} KosMatchStep;
-
-
-/**
-   The FORM descent: the PEP 634 sequence gate on elem read through
-   Datum, the length precheck against the packed widths for a
-   sequence, the loop check over a pair spine, and the cursor for the
-   walk. Returns 1 with *out_cursor a
-   new reference (the pair or nil itself, or a KosMatchCursor), 0 on a
-   miss, -1 with an exception set, ValueError for a spine that loops.
- */
-int KosMatch_Descend(PyObject *elem, uint32_t widths, PyObject **out_cursor);
-
-/**
-   Pull one element from cursor. Returns 1 with out filled, 0 at the
-   end of the spine or sequence (an improper tail is an end that
-   MATCH_END then rejects), -1 with an exception set.
- */
-int KosMatch_Pull(PyObject *cursor, KosMatchStep *out);
-
-/**
-   The element of a step as a capture binds it: Datum(elem, position)
-   from a pair cell, the element itself from a sequence. New reference.
- */
-PyObject *KosMatch_Box(const KosMatchStep *step);
-
-/**
-   The cursor to store at the entry the step was pulled from: the next
-   cell of a pair spine, taken from the step, or the sequence cursor
-   advanced past the element. New reference; NULL with an exception
-   set.
- */
-PyObject *KosMatch_StepAdvance(KosMatchStep *step);
-
-/**
-   Release what a step owns.
- */
-void KosMatch_StepClear(KosMatchStep *step);
-
-/**
-   Whether cursor is at its end: nil for a pair spine, the length for a
-   sequence. An improper tail is not an end. 1 or 0.
- */
-int KosMatch_End(PyObject *cursor);
-
-/**
-   The remainder of cursor but the suffix: counts packs the minimum
-   tail and the suffix width. Returns 1 with *out_value the capture
-   value (the boxed tail, a tuple of boxed cells, or a tuple slice of
-   a sequence; new reference) and *out_next the advanced cursor (new
-   reference), 0 on a miss, -1 with an exception set.
- */
-int KosMatch_Rest(
-    PyObject *cursor,
-    uint32_t counts,
-    PyObject **out_value,
-    PyObject **out_next);
-
 /**
    The type test: elem read through Datum is an instance of type.
    1, 0, or -1 with an exception set.
@@ -223,14 +132,6 @@ int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
    gensym whose base is lit, or equal to lit. 1, 0, or -1.
  */
 int KosMatch_LiteralTest(PyObject *elem, PyObject *lit);
-
-/**
-   The class test: elem is an instance of cls, and when npos is
-   positive cls has a __match_args__ tuple of at least npos names.
-   1, 0, or -1 with the engine's TypeError for a class that cannot
-   serve the positional fields.
- */
-int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos);
 
 /**
    The attribute of elem that cls.__match_args__[pos] names. Returns 1
@@ -254,84 +155,11 @@ int KosMatch_FieldKw(PyObject *elem, PyObject *name, PyObject **out);
 int KosMatch_MapTest(PyObject *elem);
 
 /**
-   Whether at least needed elements remain from cursor: the length
-   less the index for a sequence, a walk of needed cells for a pair
-   spine, where an improper tail inside the walk counts as too few.
-   1 or 0.
- */
-int KosMatch_Available(PyObject *cursor, Py_ssize_t needed);
-
-/**
    The equality test of SAME: elem and the bound value prev read
    through Datum; a DatumFrame on either side misses; identity, then
    Py_EQ. 1, 0, or -1.
  */
 int KosMatch_SameTest(PyObject *elem, PyObject *prev);
-
-/**
-   The mark to push for MATCH_MARK: the cell of a pair spine, or a
-   mark over the sequence at the cursor's index. New reference; NULL
-   with an exception set.
- */
-PyObject *KosMatch_Mark(PyObject *cursor);
-
-/**
-   The mark to store for MATCH_REMARK, at the cursor's position: the
-   cell of a pair spine, or mark moved in place when its entry is its
-   only holder, else a new mark. Beside a sequence cursor the mark
-   must be exactly a sequence mark; a pair spine takes any mark. New
-   reference; NULL with an exception set, RuntimeError for a sequence
-   cursor beside another mark.
- */
-PyObject *KosMatch_Remark(PyObject *cursor, PyObject *mark);
-
-/**
-   The cursor to store for MATCH_RESET, back at the mark's position:
-   the cell the mark is over a pair spine, or cursor moved in place
-   when its entry is its only holder, else a new cursor. Beside a
-   sequence cursor the mark must be exactly a sequence mark; a pair
-   spine takes any mark. New reference; NULL with an exception set,
-   RuntimeError for a sequence cursor beside another mark.
- */
-PyObject *KosMatch_Reset(PyObject *cursor, PyObject *mark);
-
-/**
-   Append every remaining element of cursor, boxed from a pair spine,
-   to list. A pair spine is counted first, so an improper tail is a
-   miss before anything is appended. Returns 1 with *out_next the
-   cursor to store, the terminator of a pair spine or the sequence
-   cursor at its end (new reference), 0 on a miss, -1 with an
-   exception set.
- */
-int KosMatch_Collect(PyObject *cursor, PyObject *list, PyObject **out_next);
-
-/**
-   The captures: names is the slot table, values the matching array of
-   bound values (borrowed; NULL for an unbound slot), start the saved
-   position the span began at and cursor its end. A pair cell as the
-   start makes a DatumFrame whose source is the span and whose position
-   is the start cell's; an index makes a plain dict. New reference;
-   NULL with an exception set, ValueError when a pair span no longer
-   reaches the cursor, by a cut or a loop user code made in the spine.
- */
-PyObject *KosMatch_Captures(
-    PyObject *names,
-    PyObject *const *values,
-    PyObject *start,
-    PyObject *cursor);
-
-/**
-   One repeat iteration's value: KosMatch_Captures when any slot is
-   bound, else the span itself, the boxed single element or a tuple of
-   boxed elements, as the engine records a capture-less iteration. A
-   zero-width span is an error. New reference; NULL with an exception
-   set, ValueError for a pair span as KosMatch_Captures raises it.
- */
-PyObject *KosMatch_Iteration(
-    PyObject *names,
-    PyObject *const *values,
-    PyObject *start,
-    PyObject *cursor);
 
 /**
    The value under key in the mapping elem, probed without inserting.
@@ -341,7 +169,7 @@ PyObject *KosMatch_Iteration(
 int KosMatch_Item(PyObject *elem, PyObject *key, PyObject **out);
 
 
-/* === the matcher core: cursors === */
+/* === cursors === */
 
 
 /* The unbounded maximum of a 16-bit width field, as MATCH_FITS reads
@@ -439,7 +267,7 @@ int KosMatchCursor_Tail(
     PyObject **out_next);
 
 
-/* === the matcher core: marks === */
+/* === marks === */
 
 
 /* The slot capacity of a default mark, the size the freelist keeps. */

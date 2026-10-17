@@ -14,8 +14,11 @@
 */
 
 /**
-  MATCH_NEXT: Schema LABEL, then the depth of the cursor under the top. Pull from the cursor and push the element, boxed from a pair spine.
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_NEXT: Row LABEL, cursor depth. Pushes the next element, a
+  Datum over a spine cell, and stores the moved cursor back; misses
+  at the end.
+  The body is kos_match_next in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_NEXT) {
   (void) kos_op_delivery_;

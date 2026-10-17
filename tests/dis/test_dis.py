@@ -152,38 +152,20 @@ def _make_compare_code():
     return Code(nspec, instr, "compare_fn", "file.ki")
 
 
-def _make_core_type_code():
-    """
-    Code with a core-type pull from the cursor at depth 0 and a
-    core-type peek, so the ordinal renders by name and the depth as a
-    number
-    """
-    nspec = NamespaceSpec("fn", (), ())
-    instr = (
-        [OpCode.CONST, (1,)],
-        [OpCode.MATCH_FORM, ("miss", 0xFF, 0, 0)],
-        [OpCode.MATCH_NEXT_CORE_TYPE, ("miss", 0, CoreType.SYMBOL, 0)],
-        [OpCode.MATCH_CORE_TYPE, ("miss", CoreType.INT, 0, 0)],
-        [OpCode.LABEL, "miss"],
-        [OpCode.RETURN, 1],
-    )
-    return Code(nspec, instr, "core_type_fn", "file.ki")
-
-
 def _make_core_instruction_code():
     """
-    Code with the matcher core's core-type test and a slot clear, so
+    Code with a core-type test and a slot clear, so
     the ordinal renders by name, the indices as a tuple and the depth
     as a number
     """
     nspec = NamespaceSpec("fn", (), ())
     instr = (
         [OpCode.CONST, (1,)],
-        [OpCode.MATCH2_DESCEND, "miss"],
-        [OpCode.MATCH2_SCOPE, (0, 2, 0, 0)],
-        [OpCode.MATCH2_CLEAR, (0, (0, 1), 0, 0)],
-        [OpCode.MATCH2_NEXT, ("miss", 1, 0, 0)],
-        [OpCode.MATCH2_CORE, ("miss", CoreType.INT, 0, 0)],
+        [OpCode.MATCH_DESCEND, "miss"],
+        [OpCode.MATCH_SCOPE, (0, 2, 0, 0)],
+        [OpCode.MATCH_CLEAR, (0, (0, 1), 0, 0)],
+        [OpCode.MATCH_NEXT, ("miss", 1, 0, 0)],
+        [OpCode.MATCH_CORE, ("miss", CoreType.INT, 0, 0)],
         [OpCode.LABEL, "miss"],
         [OpCode.RETURN, 1],
     )
@@ -277,15 +259,6 @@ class TestDisOutput(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("(LT, ", lines[0])
         self.assertNotIn("not", lines[0])
-
-    async def test_dis_core_type_names_only_the_ordinal(self):
-        code = _make_core_type_code()
-        buf = io.StringIO()
-        await _dis().dis(code, file=buf)
-        text = buf.getvalue()
-        self.assertIn("MATCH_NEXT_CORE_TYPE", text)
-        self.assertIn("(-> 4, 0, SYMBOL, 0)", text)
-        self.assertIn("(-> 4, INT, 0, 0)", text)
 
     async def test_dis_core_instructions(self):
         code = _make_core_instruction_code()

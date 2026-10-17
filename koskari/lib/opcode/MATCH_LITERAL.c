@@ -14,8 +14,9 @@
 */
 
 /**
-  MATCH_LITERAL: Schema LABEL, CONST. Peek: TOS must equal the constant; miss jumps, nothing popped. The body is kos_match_literal in eval/eval_match.c
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_LITERAL: Row LABEL, const. e -> : e must be the constant.
+  The body is kos_match_literal in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_LITERAL) {
   (void) kos_op_delivery_;

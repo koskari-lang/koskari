@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH_RESET: Schema the depths of the cursor and of a mark under the top. The cursor moved back to the mark's position.
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_RESET: Row cursor depth, mark depth. Moves the cursor back to
+  the mark's position.
+  The body is kos_match_reset in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_RESET) {
   (void) kos_op_delivery_;

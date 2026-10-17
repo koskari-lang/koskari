@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH_KEY_FAST: Schema LABEL, key, slot. Peek: the value under the key (the constant, or the value of the key slot) in the mapping on TOS, pushed, or stored into the slot by the BIND forms; an absent key jumps. The body is kos_match_key in eval/eval_match.c
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_KEY_FAST: Row LABEL, fast slot. The FAST twin of
+  MATCH_KEY_VAR.
+  The body is kos_match_key in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_KEY_FAST) {
   (void) kos_op_delivery_;

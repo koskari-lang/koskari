@@ -17,13 +17,13 @@
 /**
    koskari/lib/matcher.c
 
-   The matcher subsystem: the Datum, DatumFrame and MatchCursor types,
-   and the steps the MATCH_* instructions call, each one test or read
-   over one element. A pattern is compiled to those instructions by
-   koskari/match_code.py; nothing here walks a pattern
-   (design/interpreter/matcher-bytecode.md). The matcher core's
-   cursor steps and its MatchMark type are in matcher/cursor.c and
-   matcher/mark.c (design/interpreter/matcher-core.md).
+   The matcher subsystem: the Datum, DatumFrame, MatchCursor and
+   MatchMark types, and the steps the MATCH_* instructions call, each
+   one test, read or move over one element or one stack entry. A
+   pattern is compiled to those instructions by koskari/match_core.py;
+   nothing here walks a pattern (design/interpreter/matcher-core.md).
+   The cursor steps are in matcher/cursor.c, the mark and its steps in
+   matcher/mark.c.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3

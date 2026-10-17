@@ -646,11 +646,11 @@ class TestCoreTwins(unittest.TestCase):
         target = FunctionTarget("t")
         for op, arg in (
                 (OpCode.VAR, target.subject),
-                (OpCode.MATCH2_SINGLE, 0),
-                (OpCode.MATCH2_NEXT, ("miss", 0, 0, 0)),
+                (OpCode.MATCH_SINGLE, 0),
+                (OpCode.MATCH_NEXT, ("miss", 0, 0, 0)),
                 (OpCode.DUP, 1),
-                (OpCode.MATCH2_TYPE_VAR, ("miss", "Point", 0, 0)),
-                (OpCode.MATCH2_FIELD_POS_VAR, ("miss", "Point", 0, 0)),
+                (OpCode.MATCH_TYPE_VAR, ("miss", "Point", 0, 0)),
+                (OpCode.MATCH_FIELD_POS_VAR, ("miss", "Point", 0, 0)),
                 (OpCode.RETURN, 1),
                 (OpCode.LABEL, "miss"),
                 (OpCode.CONST, None),
@@ -660,10 +660,10 @@ class TestCoreTwins(unittest.TestCase):
         base_ns = ModuleNamespace("matcher", {"Point": Point})
         fn = target.build((symbol("Point"),), base_ns)
         ops = {OpCode(fn.code.oparg(i)[0]) for i in range(fn.code.length())}
-        self.assertIn(OpCode.MATCH2_TYPE_FAST, ops)
-        self.assertIn(OpCode.MATCH2_FIELD_POS_FAST, ops)
-        self.assertNotIn(OpCode.MATCH2_TYPE_VAR, ops)
-        self.assertNotIn(OpCode.MATCH2_FIELD_POS_VAR, ops)
+        self.assertIn(OpCode.MATCH_TYPE_FAST, ops)
+        self.assertIn(OpCode.MATCH_FIELD_POS_FAST, ops)
+        self.assertNotIn(OpCode.MATCH_TYPE_VAR, ops)
+        self.assertNotIn(OpCode.MATCH_FIELD_POS_VAR, ops)
         self.assertEqual(demand(fn)(Point(3)), 3)
         self.assertIsNone(demand(fn)(7))
 

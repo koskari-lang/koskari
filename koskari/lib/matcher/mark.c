@@ -15,7 +15,7 @@
 
 
 /**
-  Included by matcher.c after cursor.c. The matcher core's mark: a
+  Included by matcher.c after cursor.c. The match mark: a
   capture scope on the operand stack holding a cursor position and the
   scope's slots, and the steps that read a span from it, write its
   slots and build captures from them

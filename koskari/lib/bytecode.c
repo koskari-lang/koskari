@@ -2838,76 +2838,10 @@ static int namespace_spec_fast_slot_limit(
 
 
 /**
-   The names constant of a MATCH_CAPTURES or MATCH_ITERATION row and
-   its slot run: the handler reads one slot per name from the first
-   capture slot, so the run must end within the active limit. On the
-   NAMED forms the constant is the keys and the locals, two tuples of
-   one length, and no run is checked.
-
-   :return: 0, or -1 with ValueError set
-*/
-static int validate_capture_run(
-    PyObject *self,
-    KosOpCode op,
-    const KosExtra *row,
-    uint32_t active,
-    int depth) {
-
-  PyObject *table = KosExtra_OBJ(row, 0);
-
-  switch (op) {
-  case KOS_OP_MATCH_CAPTURES:
-  case KOS_OP_MATCH_ITERATION: {
-    if (! table || ! PyTuple_CheckExact(table)) {
-      PyErr_SetString(PyExc_ValueError,
-                      "capture names must be a tuple");
-      return -1;
-    }
-    uint32_t base = KosExtra_IMM(row, 1);
-    size_t count = (size_t) PyTuple_GET_SIZE(table);
-    size_t end = (size_t) base + count;
-    if (end > active) {
-      PyErr_Format(PyExc_ValueError,
-                   "FAST index %zu out of bounds (limit %u): "
-                   "capture run of %zu from %u",
-                   end - 1, (unsigned) active, count, (unsigned) base);
-      return -1;
-    }
-    if (depth == 0 && end > KosCode_FAST_NEED(self))
-      KosCode_FAST_NEED(self) = (uint32_t) end;
-    return 0;
-  }
-  case KOS_OP_MATCH_CAPTURES_NAMED:
-  case KOS_OP_MATCH_ITERATION_NAMED: {
-    PyObject *keys, *locals;
-    if (! table || ! PyTuple_CheckExact(table)
-        || PyTuple_GET_SIZE(table) != 2
-        || ! PyTuple_CheckExact(keys = PyTuple_GET_ITEM(table, 0))
-        || ! PyTuple_CheckExact(locals = PyTuple_GET_ITEM(table, 1))) {
-      PyErr_SetString(PyExc_ValueError,
-                      "named captures must be a pair of tuples, "
-                      "the keys and the locals");
-      return -1;
-    }
-    if (PyTuple_GET_SIZE(keys) != PyTuple_GET_SIZE(locals)) {
-      PyErr_Format(PyExc_ValueError,
-                   "named captures hold %zd keys for %zd locals",
-                   PyTuple_GET_SIZE(keys), PyTuple_GET_SIZE(locals));
-      return -1;
-    }
-    return 0;
-  }
-  default:
-    return 0;
-  }
-}
-
-
-/**
-   The tuple constants of the matcher core's rows, which their bodies
-   index without a check: the names of MATCH2_STORE, MATCH2_CAPTURES,
-   MATCH2_PASS and MATCH2_COLUMNS, and the slot indices of MATCH2_CLEAR
-   and MATCH2_COLUMNS, each an exact tuple; MATCH2_STORE's index within
+   The tuple constants of the match instructions, which their bodies
+   index without a check: the names of MATCH_STORE, MATCH_CAPTURES,
+   MATCH_PASS and MATCH_COLUMNS, and the slot indices of MATCH_CLEAR
+   and MATCH_COLUMNS, each an exact tuple; MATCH_STORE's index within
    its names.
 
    :return: 0, or -1 with ValueError set
@@ -2916,17 +2850,17 @@ static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
   int fields[2] = {-1, -1};
 
   switch (op) {
-  case KOS_OP_MATCH2_STORE:
+  case KOS_OP_MATCH_STORE:
     fields[0] = 3;
     break;
-  case KOS_OP_MATCH2_CLEAR:
+  case KOS_OP_MATCH_CLEAR:
     fields[0] = 1;
     break;
-  case KOS_OP_MATCH2_CAPTURES:
-  case KOS_OP_MATCH2_PASS:
+  case KOS_OP_MATCH_CAPTURES:
+  case KOS_OP_MATCH_PASS:
     fields[0] = 2;
     break;
-  case KOS_OP_MATCH2_COLUMNS:
+  case KOS_OP_MATCH_COLUMNS:
     fields[0] = 2;
     fields[1] = 3;
     break;
@@ -2944,11 +2878,11 @@ static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
     }
   }
 
-  if (op == KOS_OP_MATCH2_STORE
+  if (op == KOS_OP_MATCH_STORE
       && (Py_ssize_t) KosExtra_IMM(row, 1)
       >= PyTuple_GET_SIZE(KosExtra_OBJ(row, 3))) {
     PyErr_Format(PyExc_ValueError,
-                 "MATCH2_STORE slot %u outside its %zd names",
+                 "MATCH_STORE slot %u outside its %zd names",
                  (unsigned) KosExtra_IMM(row, 1),
                  PyTuple_GET_SIZE(KosExtra_OBJ(row, 3)));
     return -1;
@@ -3057,8 +2991,6 @@ static int validate_fast_slots(
         }
       }
 
-      if (validate_capture_run(self, op, row, active, depth))
-        return -1;
       if (validate_match_tuples(op, row))
         return -1;
     }
@@ -4180,7 +4112,7 @@ fail:
 
 /* IntEnum of the core types a pattern names by their bare spelling
    (KosCoreType, matcher.h), exposed as koskari.lib.CoreType so the match
-   compiler and the MATCH_CORE_TYPE handlers share one ordinal set. */
+   compiler and the MATCH_CORE handler share one ordinal set. */
 static PyObject *create_core_type_enum(void) {
 
   PyObject *enum_dict = PyDict_New();

@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH_FIELD_POS_FAST: Schema LABEL, slot, COUNT, slot. Peek: the attribute of TOS that __match_args__[COUNT] of the class in the first slot names, pushed, or stored into the second slot by the BIND twins; a missing attribute jumps. The body is kos_match_field_pos in eval/eval_match.c
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_FIELD_POS_FAST: Row LABEL, fast slot, index. The FAST twin
+  of MATCH_FIELD_POS_VAR.
+  The body is kos_match_field_pos in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_FIELD_POS_FAST) {
   (void) kos_op_delivery_;

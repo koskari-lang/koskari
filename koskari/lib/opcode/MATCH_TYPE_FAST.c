@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH_TYPE_FAST: Schema LABEL, slot, slot. Peek: TOS must be an instance of the type in the first slot; the BIND twins store TOS into the second; miss jumps, nothing popped. The body is kos_match_type in eval/eval_match.c
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_TYPE_FAST: Row LABEL, fast slot. The FAST twin of
+  MATCH_TYPE_VAR.
+  The body is kos_match_type in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_TYPE_FAST) {
   (void) kos_op_delivery_;

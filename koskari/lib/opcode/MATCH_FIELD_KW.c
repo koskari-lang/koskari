@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH_FIELD_KW: Schema LABEL, CONST, slot. Peek: the attribute of TOS the constant names, pushed, or stored into the slot by the BIND twins; a missing attribute jumps. The body is kos_match_field_kw in eval/eval_match.c
-  (design/interpreter/matcher-bytecode.md).
+  MATCH_FIELD_KW: Row LABEL, const. o -> o a: the attribute the
+  constant names.
+  The body is kos_match_field_kw in eval/eval_match.c
+  (design/interpreter/matcher-core.md).
 */
 KOS_OP_HANDLER(MATCH_FIELD_KW) {
   (void) kos_op_delivery_;
