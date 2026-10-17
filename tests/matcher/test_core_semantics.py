@@ -397,4 +397,42 @@ class TestAlternativeForms(unittest.TestCase):
         self.assertEqual(m(((1,), 2)), {"b": 2})
 
 
+class TestNameAcrossAnAlternativeAndARepeat(unittest.TestCase):
+    """
+    A name bound directly in one ONEOF alternative and inside a REPEAT
+    in another: the alternatives share the name's one binding, and the
+    REPEAT binds the list of its per-pass values
+    """
+
+    def test_direct_alternative_first(self):
+        m = built(MATCH(ONEOF(
+            MATCH(CAPTURE("x"), LITERAL(1)),
+            REPEAT(CAPTURE("x"), min_count=1))))
+        self.assertEqual(m((7, 1)), {"x": 7})
+        self.assertEqual(m((7, 8, 9)), {"x": [7, 8, 9]})
+
+
+    def test_repeat_alternative_first(self):
+        m = built(MATCH(ONEOF(
+            REPEAT(CAPTURE("x"), min_count=1),
+            MATCH(CAPTURE("x"), LITERAL(1)))))
+        self.assertEqual(m((7, 8, 9)), {"x": [7, 8, 9]})
+
+
+    def test_two_repeat_alternatives(self):
+        m = built(MATCH(ONEOF(
+            MATCH(REPEAT(CAPTURE("x")), LITERAL(0)),
+            REPEAT(CAPTURE("x"), min_count=1))))
+        self.assertEqual(m((5, 6, 0)), {"x": [5, 6]})
+        self.assertEqual(m((5, 6)), {"x": [5, 6]})
+
+
+    def test_captured_repeat_alternative(self):
+        m = built(MATCH(ONEOF(
+            MATCH(CAPTURE("x"), LITERAL(1)),
+            repeat_capture("xs", GROUP(None, CAPTURE("x"))))))
+        self.assertEqual(m((7, 8, 9)), {"xs": [7, 8, 9]})
+        self.assertEqual(m((7, 1)), {"x": 7})
+
+
 # The end.

@@ -151,11 +151,15 @@ class MatchCompiler:
         # branch), and for a ONEOF branch the slot index of each name
         # its ONEOF's alternatives interned; SAME resolves its name
         # through these
-        self._slot_scopes = [({}, True, None)]
+        self._slot_scopes = [({}, True, None, False)]
         self.in_class_fields = False
 
 
-    def begin_nested_claims(self, inherit_formals=True, alternatives=None):
+    def begin_nested_claims(
+            self,
+            inherit_formals=True,
+            alternatives=None,
+            boundary=False):
         """
         Begin a nested region where duplicate capture slot names are isolated
         (for example ONEOF branches or GROUP children). When
@@ -166,10 +170,13 @@ class MatchCompiler:
         :param alternatives: for a ONEOF branch, a dict the ONEOF
             shares across its branches; a name the branches bind has
             one slot index across them
+        :param boundary: for a REPEAT body: a name interned inside it
+            takes no index from a ONEOF alternative outside it
         """
 
         self.capture_scope_stack.append({})
-        self._slot_scopes.append(({}, not inherit_formals, alternatives))
+        self._slot_scopes.append(
+            ({}, not inherit_formals, alternatives, boundary))
         if inherit_formals:
             self._formal_scope_stack.append(self._formal_scope_stack[-1])
         else:
@@ -185,7 +192,7 @@ class MatchCompiler:
             raise RuntimeError(
                 "end_nested_claims underflow (unbalanced nested scope)")
         self.capture_scope_stack.pop()
-        slots, frame, _alternatives = self._slot_scopes.pop()
+        slots, frame, _alternatives, _boundary = self._slot_scopes.pop()
         self._formal_scope_stack.pop()
         if not frame:
             # a ONEOF branch's names stay visible to the nodes after
@@ -205,10 +212,13 @@ class MatchCompiler:
         # the ONEOF branches between here and the nearest frame: an
         # alternative that interned the name gave its index
         branches = []
-        for _slots, frame, alternatives in reversed(self._slot_scopes):
+        for _slots, frame, alternatives, boundary in reversed(
+                self._slot_scopes):
             if frame:
                 break
             branches.append(alternatives)
+            if boundary:
+                break
         for alternatives in branches:
             if alternatives is not None and name in alternatives:
                 idx = alternatives[name]
@@ -238,7 +248,8 @@ class MatchCompiler:
         """
 
         level = 0
-        for slots, frame, _alternatives in reversed(self._slot_scopes):
+        for slots, frame, _alternatives, _boundary in reversed(
+                self._slot_scopes):
             if level == depth and name in slots:
                 return slots[name]
             if frame:
@@ -1098,7 +1109,11 @@ class REPEAT(Pattern):
         Emit the inner pattern then a REPEAT node referencing it
         """
 
-        sub_idx = self._sub.lower(ctx)
+        ctx.begin_nested_claims(boundary=True)
+        try:
+            sub_idx = self._sub.lower(ctx)
+        finally:
+            ctx.end_nested_claims()
         return ctx.append_node(("REPEAT", sub_idx, self._min_count))
 
 

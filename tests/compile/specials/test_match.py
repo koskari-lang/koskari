@@ -270,6 +270,22 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "hi")
 
 
+
+    async def test_match_or_shares_a_name_with_a_repeat(self):
+        # a name bound inside a REPEAT in one alternative and directly
+        # in another: the REPEAT binds the list of its per-pass values
+        src = """
+        (match data
+          [[#[(or (REPEAT (MATCH (BIND "x") 2)) (MATCH (BIND "x") 1))]]
+           x]
+          [else: "none"])
+        """
+        expr, mod = self.compile_expr(src, data=(5, 2, 6, 2))
+        self.assertEqual(await expr(), [5, 6])
+        expr, mod = self.compile_expr(src, data=(5, 3))
+        self.assertEqual(await expr(), "none")
+
+
     async def test_match_predicate(self):
         src = """
         (match data
