@@ -6,5 +6,5 @@
   `a1` empty slots. A mark's position never moves.
 - **Compiler form:** Emitted by the match compiler for each capture scope (a
   matcher's root, a group, one repeat pass) with the scope's slot count, and
-  with no slots to record the position an `(or ...)`, an optional, a negation
-  or a capture returns to or reads from.
+  with no slots to record the position an `(or ...)`, an optional or a capture
+  returns to or reads from.

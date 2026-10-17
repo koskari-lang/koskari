@@ -274,7 +274,7 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -362,6 +362,7 @@ The opcodes by family, each linking to its section.
 | MATCH_FITS | EXTRA | Miss unless the cursor at the depth has between the minimum and the maximum elements left | [section 9.2](opcodes/kos-op-match-fits.md) |
 | MATCH_NEXT | EXTRA | Pull the next element from the cursor at the depth, boxed from a pair spine; a miss at the end | [section 9.2](opcodes/kos-op-match-next.md) |
 | MATCH_BOUND | EXTRA | Push a cursor at the cursor's position ending the width before its end | [section 9.2](opcodes/kos-op-match-bound.md) |
+| MATCH_UNBOUND | EXTRA | Push a cursor at the cursor's position ending at its subject's end | [section 9.2](opcodes/kos-op-match-unbound.md) |
 | MATCH_SYNC | EXTRA | Move the cursor at the first depth to the position of the cursor at the second | [section 9.2](opcodes/kos-op-match-sync.md) |
 | MATCH_TAIL | EXTRA | Push the remaining elements but the suffix width as a span, advancing the cursor | [section 9.2](opcodes/kos-op-match-tail.md) |
 | MATCH_SCOPE | EXTRA | Push a mark at the cursor's position with the count of empty slots | [section 9.2](opcodes/kos-op-match-scope.md) |
@@ -1886,6 +1887,15 @@ never emits it and its handler raises.
 - **Semantics**: Push a cursor at the position of the cursor at depth `a1`
   whose end is `a2` elements before that cursor's end. A miss when fewer than
   `a2` elements remain.
+
+### KOS_OP_MATCH_UNBOUND
+
+- **Style**: EXTRA (RAW): cursor depth.
+- **Stack**: `[...]` -> `[..., c]`; cannot miss.
+- **Semantics**: Push a cursor at the position of the cursor at depth `a0`
+  whose end is its subject's end: the elements a `MATCH_BOUND` left before
+  that cursor's end, at any depth of nesting, are left on the new cursor. The
+  cursor at `a0` does not move.
 
 ### KOS_OP_MATCH_SYNC
 

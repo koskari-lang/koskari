@@ -237,6 +237,13 @@ int KosMatchCursor_Bound(
     PyObject **out_bound);
 
 /**
+   MATCH_UNBOUND: a new cursor at cursor's position with no reserve,
+   ending at its subject's end. New reference; NULL with an exception
+   set.
+ */
+PyObject *KosMatchCursor_Unbound(PyObject *cursor);
+
+/**
    MATCH_SYNC: cursor moved to the position of to, a cursor over the
    same subject. New reference (see held above); NULL with an
    exception set.

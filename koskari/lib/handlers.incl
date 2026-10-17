@@ -319,6 +319,7 @@
 #include "opcode/MATCH_FITS.c"
 #include "opcode/MATCH_NEXT.c"
 #include "opcode/MATCH_BOUND.c"
+#include "opcode/MATCH_UNBOUND.c"
 #include "opcode/MATCH_SYNC.c"
 #include "opcode/MATCH_TAIL.c"
 #include "opcode/MATCH_SCOPE.c"

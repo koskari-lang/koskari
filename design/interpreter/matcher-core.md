@@ -111,6 +111,10 @@ is a one-element subject walked through a cursor like any spine.
   checks the remaining length against its widths plus `w` before it
   tests an element. This is master's per-element reservation: a subject
   too short for a branch never reaches the branch's PREDICATE or APP.
+- **NOT is a lookahead.** Its sub-pattern matches at the cursor against
+  the subject's real remaining elements: no suffix after it, no maximum
+  check, and no reservation, a REPEAT's bound included (master's
+  `match_not` runs its sub-pattern with a trailing minimum of 0).
 - **The end rule.** NOT and OPTIONAL test their sub-pattern at the end
   as anywhere else; a pull at the end is an ordinary miss of the
   sub-pattern. `NOT(OPTIONAL x)` at the end misses.
@@ -160,7 +164,8 @@ is a one-element subject walked through a cursor like any spine.
   the CAPTURE stores the GROUP's captures. A GROUP that is neither
   captured nor a REPEAT body opens a scope whose captures are discarded
   when it closes, as on master; it counts as a scope for SAME depth.
-  ONEOF, OPTIONAL, NOT and CAPTURE push a mark with no slots.
+  ONEOF, OPTIONAL and CAPTURE push a mark with no slots; NOT pushes an
+  unbounded copy of the cursor.
 - A mark records the cursor's position and holds an array of slot
   entries for its scope; an empty entry is unbound. The scope's slot
   count is known at lowering; the instruction that pushes the mark
@@ -203,6 +208,7 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_NEXT cur miss` | -> `e` | pulls one element, a Datum over a pair spine; misses at the end |
 | `MATCH_BOUND cur w miss` | -> `cur'` | a cursor at `cur`'s position ending `w` before `cur`'s end; misses when fewer than `w` remain |
 | `MATCH_SYNC cur c` | -- | moves `cur` to `c`'s position |
+| `MATCH_UNBOUND cur` | -> `c'` | a copy of `cur` at its position with its reservation removed |
 | `MATCH_TAIL cur w min miss` | -> `span` | the remaining elements less `w`, advancing `cur`; misses below `min` |
 | `MATCH_SCOPE cur k` | -> `m` | a mark at `cur`'s position with `k` empty slots |
 | `MATCH_RESET cur m` | -- | moves `cur` back to `m`'s position |
@@ -270,8 +276,8 @@ ONEOF b1..bn      SCOPE cur 0
                   nn: RESET cur m; CLEAR s slots(bn); POP; JUMP miss
 OPTIONAL sub      SCOPE cur 0; <sub> (-> back); POP; JUMP done
                   back: RESET cur m; CLEAR s slots(sub); POP
-NOT sub           SCOPE cur 0; <sub> (-> ok); RESET cur m; POP; JUMP miss
-                  ok: RESET cur m; POP
+NOT sub           UNBOUND cur; <sub on c'> (-> ok); POP; JUMP miss
+                  ok: POP
 REPEAT sub min    ITEMS; BOUND cur w f
                   head: FITS c' 1 max exit
                         SCOPE c' k; <sub on c'> (-> pass_miss)
@@ -313,9 +319,9 @@ group's or REPEAT's value. A named
 group's variable receives its dict or DatumFrame; a REPEAT's variable
 receives its items list.
 
-NOT is a mark, a try, a reset and an inversion; at the end of a spine
-`NEXT` misses inside the sub-pattern, so the end rule needs nothing of
-its own. `(MATCH x (NOT 1))` on the single value `1` pulls `x`, the
+NOT is a try on an unbounded copy of the cursor and an inversion; at
+the end of the subject `NEXT` misses inside the sub-pattern, so the end
+rule needs nothing of its own. `(MATCH x (NOT 1))` on the single value `1` pulls `x`, the
 NOT's `NEXT` misses at the end, and the arm hits.
 
 ## Acceptance

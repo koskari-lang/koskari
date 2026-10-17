@@ -291,6 +291,13 @@ int KosMatchCursor_Bound(
 }
 
 
+PyObject *KosMatchCursor_Unbound(PyObject *cursor) {
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+
+  return core_cursor_new(c->seq, c->length, c->index, 0, c->kind);
+}
+
+
 PyObject *KosMatchCursor_Sync(
     PyObject *cursor,
     PyObject *to,

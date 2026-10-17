@@ -256,6 +256,20 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "nine")
 
 
+    async def test_match_not_of_an_or(self):
+        src = """
+        (match data
+          [[(not (or 1 2))] "not 1 or 2"]
+          [else: "1 or 2"])
+        """
+        for data, expected in (
+                (1, "1 or 2"),
+                (2, "1 or 2"),
+                (3, "not 1 or 2")):
+            expr, mod = self.compile_expr(src, data=data)
+            self.assertEqual(await expr(), expected, data)
+
+
     async def test_match_or_shared_slot_binds(self):
         # ONEOF branches may declare the same slot; the arm's binding
         # step dedups the name and binds whichever branch matched

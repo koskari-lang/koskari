@@ -344,6 +344,22 @@ KOS_MATCH_BODY(kos_match_bound) {
 
 
 /**
+   MATCH_UNBOUND: a cursor at the position of the cursor at field 0
+   with no reserve, ending at its subject's end, pushed. Row depth.
+*/
+KOS_MATCH_BODY(kos_match_unbound) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  RESULT_STEAL(es, KosMatchCursor_Unbound(cursor));
+}
+
+
+/**
    MATCH_SYNC: the cursor at field 0 moved to the position of the
    cursor at field 1. Row depth, depth.
 */

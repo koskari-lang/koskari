@@ -630,6 +630,86 @@ static int test_core_bound_and_sync(void) {
 }
 
 
+static int test_core_unbound(void) {
+  PyObject *subj = Py_BuildValue("(iiiii)", 1, 2, 3, 4, 5);
+  PyObject *cursor = NULL;
+  PyObject *bound = NULL;
+  PyObject *inner = NULL;
+  PyObject *elem;
+
+  TEST_ASSERT_EQ(KosMatchCursor_Descend(subj, &cursor), 1, "descend");
+  TEST_ASSERT_EQ(KosMatchCursor_Bound(cursor, 2, &bound), 1, "bound");
+  TEST_ASSERT_EQ(KosMatchCursor_Bound(bound, 1, &inner), 1, "bound");
+  elem = core_pull(&inner);
+  TEST_ASSERT_EQ(PyLong_AsLong(elem), 1, "the element");
+  Py_DECREF(elem);
+
+  /* a copy at the same position, reading to the subject's end */
+  PyObject *copy = KosMatchCursor_Unbound(inner);
+  TEST_ASSERT_NOT_NULL(copy, "unbound");
+  TEST_ASSERT_NOT_SAME(copy, inner, "a cursor of its own");
+  TEST_ASSERT_EQ(KosMatchCursor_Remaining(copy), 4, "no reserve");
+  TEST_ASSERT_EQ(KosMatchCursor_Remaining(inner), 1, "the bound one stays");
+  for (long i = 2; i <= 5; i++) {
+    elem = core_pull(&copy);
+    TEST_ASSERT_EQ(PyLong_AsLong(elem), i, "past the bound");
+    Py_DECREF(elem);
+  }
+  TEST_ASSERT_NULL(core_pull(&copy), "a pull at the end misses");
+  TEST_ASSERT_EQ(KosMatchCursor_Remaining(inner), 1, "the bound one stays");
+  Py_DECREF(copy);
+
+  /* over an unbounded cursor, the same remaining elements */
+  copy = KosMatchCursor_Unbound(cursor);
+  TEST_ASSERT_NOT_NULL(copy, "unbound");
+  TEST_ASSERT_NOT_SAME(copy, cursor, "a cursor of its own");
+  TEST_ASSERT_EQ(KosMatchCursor_Remaining(copy), 5, "all of it");
+  Py_DECREF(copy);
+  Py_DECREF(inner);
+  Py_DECREF(bound);
+  Py_DECREF(cursor);
+
+  /* over a spine */
+  PyObject *spine = make_spine(4);
+  TEST_ASSERT_EQ(KosMatchCursor_Descend(spine, &cursor), 1, "descend");
+  TEST_ASSERT_EQ(KosMatchCursor_Bound(cursor, 3, &bound), 1, "bound");
+  elem = core_pull(&bound);
+  TEST_ASSERT_NOT_NULL(elem, "pull");
+  Py_DECREF(elem);
+  TEST_ASSERT_NULL(core_pull(&bound), "a pull at the bound misses");
+  copy = KosMatchCursor_Unbound(bound);
+  TEST_ASSERT_NOT_NULL(copy, "unbound");
+  TEST_ASSERT_SAME(((KosMatchCursor *) copy)->seq, KosPair_CDR(spine),
+                   "at the bound's cell");
+  TEST_ASSERT_EQ(KosMatchCursor_Remaining(copy), 3, "past the bound");
+  for (long i = 0; i < 3; i++) {
+    elem = core_pull(&copy);
+    TEST_ASSERT_NOT_NULL(elem, "pull");
+    Py_DECREF(elem);
+  }
+  TEST_ASSERT_NULL(core_pull(&copy), "a pull at the end misses");
+  Py_DECREF(copy);
+  Py_DECREF(bound);
+  Py_DECREF(cursor);
+
+  /* over a single value */
+  cursor = KosMatchCursor_Single(subj);
+  copy = KosMatchCursor_Unbound(cursor);
+  TEST_ASSERT_NOT_NULL(copy, "unbound");
+  elem = core_pull(&copy);
+  TEST_ASSERT_SAME(elem, subj, "the value");
+  Py_DECREF(elem);
+  TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 1, "the single stays");
+  Py_DECREF(copy);
+  Py_DECREF(cursor);
+
+  TEST_ASSERT_REFCNT(spine, 1, "released");
+  TEST_ASSERT_REFCNT(subj, 1, "released");
+  Py_DECREF(spine);
+  Py_DECREF(subj);
+  return 0;
+}
+
 static int test_core_tail(void) {
   PyObject *subj = Py_BuildValue("(iiiii)", 1, 2, 3, 4, 5);
   PyObject *cursor = NULL;
@@ -1423,6 +1503,7 @@ int run_matcher_tests(void) {
   RUN_TEST(test_core_single);
   RUN_TEST(test_core_list_read_live);
   RUN_TEST(test_core_bound_and_sync);
+  RUN_TEST(test_core_unbound);
   RUN_TEST(test_core_tail);
 
   RUN_TEST(test_mark_scope_and_reset);

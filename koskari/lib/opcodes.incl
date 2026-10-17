@@ -466,6 +466,7 @@ OP(MATCH_SINGLE, 0, NOARG)  // v -> cur: a one-element cursor over v
 OP(MATCH_FITS, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, min, max: misses unless min <= remaining <= max
 OP(MATCH_NEXT, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // cur: -> e, the next element, a Datum over a spine cell; misses at the end
 OP(MATCH_BOUND, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // cur, w: -> cur', at cur's position, ending w before cur's end; misses when fewer than w remain
+OP(MATCH_UNBOUND, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // cur: -> c', at cur's position with its reserve removed, ending at the subject's end
 OP(MATCH_SYNC, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, c: cur moved to c's position
 OP(MATCH_TAIL, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, w, min: -> span, the remaining elements less w, advancing cur; misses below min
 OP(MATCH_SCOPE, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, k: -> m, a mark at cur's position with k empty slots

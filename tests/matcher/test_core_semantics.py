@@ -15,8 +15,9 @@
 tests.matcher.test_core_semantics
 
 What a built matcher returns for the shapes whose meaning once
-depended on how they were lowered: a NOT after an element, zero-width
-and GROUP children of a one-element branch, a trailing ONEOF under a
+depended on how they were lowered: a NOT after an element, a NOT
+tested against the subject's remaining elements, zero-width and GROUP
+children of a one-element branch, a trailing ONEOF under a
 wrapper, SAME at any depth or after a ONEOF or REPEAT, the per-pass
 values a slot inside an uncaptured REPEAT binds, and the length check
 that runs before any extern
@@ -32,7 +33,7 @@ import pytest
 from koskari.lib import DatumFrame, cons, demand, nil
 from koskari.matcher import (
     APP, CAPTURE, FORM, GROUP, LITERAL, MATCH, NOT, ONEOF, OPTIONAL,
-    PREDICATE, REPEAT, SAME, TEST_ANY, repeat_capture)
+    PREDICATE, REPEAT, REST, SAME, TEST_ANY, repeat_capture)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -89,6 +90,55 @@ class TestNotAfterTheElement(unittest.TestCase):
         for subject in ((1,), (2,), (1, 1), (1, 2)):
             self.assertEqual(plain(subject), wrapped(subject), subject)
         self.assertEqual(wrapped((1,)), {"x": 1})
+
+
+class TestNotIsALookahead(unittest.TestCase):
+    """
+    A NOT's sub-pattern matches at the cursor against the subject's
+    remaining elements: nothing after the NOT is reserved from it, no
+    maximum is checked, and a REPEAT's bound does not shorten it
+    """
+
+    def test_oneof_of_one_element_alternatives(self):
+        m = built(MATCH(NOT(ONEOF(LITERAL(1), LITERAL(2))), TEST_ANY()))
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m((2,)))
+        self.assertEqual(m((3,)), {})
+
+
+    def test_match_of_two_elements(self):
+        m = built(MATCH(
+            NOT(MATCH(LITERAL(1), LITERAL(2))), TEST_ANY(), TEST_ANY()))
+        self.assertIsNone(m((1, 2)))
+        self.assertEqual(m((1, 3)), {})
+
+
+    def test_in_a_repeat_pass_sees_past_the_bound(self):
+        m = built(MATCH(
+            REPEAT(GROUP(None, CAPTURE("a"), NOT(LITERAL(2)))), LITERAL(2)))
+        self.assertIsNone(m((1, 2)))
+
+        m = built(MATCH(
+            CAPTURE("s", REPEAT(GROUP(None, TEST_ANY(), NOT(TEST_ANY())))),
+            TEST_ANY()))
+        self.assertIsNone(m((1, 2)))
+        self.assertEqual(m((1,)), {"s": []})
+
+
+    def test_rest_under_a_not_counts_only_the_sub_pattern(self):
+        m = built(MATCH(
+            NOT(OPTIONAL(REST())), TEST_ANY(),
+            CAPTURE("s1", REST(min_tail=2))))
+        for subject in ((), (1,), (1, 2, 3), (1, 2, 3, 4)):
+            self.assertIsNone(m(subject), subject)
+
+        m = built(MATCH(CAPTURE("r", REST()), NOT(REST(min_tail=1))))
+        self.assertEqual(m(()), {"r": ()})
+        self.assertEqual(m((1, 2)), {"r": (1, 2)})
+
+        m = built(MATCH(NOT(REST(min_tail=3)), CAPTURE("r", REST())))
+        self.assertEqual(m((1, 2)), {"r": (1, 2)})
+        self.assertIsNone(m((1, 2, 3)))
 
 
 class TestOneElementBranches(unittest.TestCase):

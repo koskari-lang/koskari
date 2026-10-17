@@ -96,6 +96,7 @@ class TestRows(CevalTest):
             OpCode.MATCH_FITS: (LABEL, RAW, RAW, RAW),
             OpCode.MATCH_NEXT: (LABEL, RAW, NOARG, NOARG),
             OpCode.MATCH_BOUND: (LABEL, RAW, RAW, NOARG),
+            OpCode.MATCH_UNBOUND: (RAW, NOARG, NOARG, NOARG),
             OpCode.MATCH_SYNC: (RAW, RAW, NOARG, NOARG),
             OpCode.MATCH_TAIL: (LABEL, RAW, RAW, RAW),
             OpCode.MATCH_SCOPE: (RAW, RAW, NOARG, NOARG),
@@ -277,6 +278,59 @@ class TestCursors(CevalTest):
         self.assertEqual((got[0], got[2]), ("base", "miss"))
         got = await run(prog, cons(1, 2, 3, nil))
         self.assertEqual((got[0], got[3]), ("base", "hit"))
+
+
+    async def test_unbound_drops_the_reserve(self):
+        # a bound cursor ending two early, one element pulled from it,
+        # then its unbound copy: the copy's span runs to the subject's
+        # end from the same position, and the bound cursor's span still
+        # stops at its bound
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["MATCH_BOUND", ("miss", 0, 2, 0)],
+            ["MATCH_NEXT", ("miss", 0, 0, 0)],
+            ["POP", 1],
+            ["MATCH_UNBOUND", (0, 0, 0, 0)],
+            ["MATCH_TAIL", ("miss", 0, 0, 0)],
+            ["MATCH_TAIL", ("miss", 2, 0, 0)],
+        ] + hit(6) + miss(3)
+        for subject in ((1, 2, 3, 4), [1, 2, 3, 4]):
+            got = await run(prog, subject)
+            self.assertEqual(got[0], "base")
+            self.assertIsNot(got[3], got[2])
+            self.assertEqual(got[4:], ((2, 3, 4), (2,), "hit"))
+
+        spine = cons(1, 2, 3, 4, nil)
+        got = await run(prog, spine)
+        self.assertIsInstance(got[4], Datum)
+        self.assertIs(got[4].datum, spine.cdr)
+        self.assertEqual([d.datum for d in got[5]], [2])
+        self.assertEqual(got[6], "hit")
+
+
+    async def test_unbound_over_an_unbounded_cursor(self):
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["MATCH_NEXT", ("miss", 0, 0, 0)],
+            ["POP", 1],
+            ["MATCH_UNBOUND", (0, 0, 0, 0)],
+            ["MATCH_TAIL", ("miss", 0, 0, 0)],
+            ["MATCH_TAIL", ("miss", 2, 0, 0)],
+        ] + hit(5) + miss(2)
+        got = await run(prog, (1, 2, 3))
+        self.assertEqual(got[0], "base")
+        self.assertIsNot(got[2], got[1])
+        self.assertEqual(got[3:], ((2, 3), (2, 3), "hit"))
+
+        prog = [
+            ["MATCH_SINGLE", 0],
+            ["MATCH_UNBOUND", (0, 0, 0, 0)],
+            ["MATCH_NEXT", ("miss", 0, 0, 0)],
+            ["MATCH_FITS", ("miss", 1, 0, 0)],
+            ["MATCH_FITS", ("miss", 2, 1, 1)],
+        ] + hit(4) + miss(3)
+        got = await run(prog, "v")
+        self.assertEqual((got[0], got[3], got[4]), ("base", "v", "hit"))
 
 
     async def test_tail_forms(self):

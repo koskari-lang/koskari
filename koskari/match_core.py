@@ -71,7 +71,7 @@ VALUE_KINDS = ('APP', 'MAP_ENTRY_CONST', 'MAP_ENTRY_EXTERN')
 FIELD_KINDS = ('FIELD_POS', 'FIELD_KW')
 
 # the kinds whose children run on the node's own cursor
-SAME_CURSOR_KINDS = ('MATCH', 'GROUP', 'ONEOF', 'OPTIONAL', 'NOT', 'CAPTURE')
+SAME_CURSOR_KINDS = ('MATCH', 'GROUP', 'ONEOF', 'OPTIONAL', 'CAPTURE')
 
 
 @dataclass(frozen=True)
@@ -471,14 +471,17 @@ def cursor_layout(nodes, widths, entry, arm):
                 branches.add(child)
                 placed[child] = (after, True, checked, in_not)
                 rest_after[child] = rest_after.get(i, False)
-        elif kind in ('CAPTURE', 'OPTIONAL', 'NOT'):
+        elif kind in ('CAPTURE', 'OPTIONAL'):
             for child in node_children(node):
                 if kind == 'OPTIONAL':
                     branches.add(child)
                 placed[child] = (
                     after, open_end or kind == 'OPTIONAL', checked, in_not)
                 rest_after[child] = rest_after.get(i, False)
-        elif kind == 'REPEAT':
+        elif kind in ('NOT', 'REPEAT'):
+            # a REPEAT pass's bound cursor, or the copy of the cursor
+            # without its reserve that a NOT looks ahead on: nothing
+            # follows the sub-pattern there
             placed[node[1]] = ((0, 0), True, None, in_not)
         elif kind == 'FORM':
             sub = node[1]
@@ -1126,14 +1129,13 @@ class Emitter:
             self.place(done, start - 1)
 
         elif kind == 'NOT':
+            # the sub-pattern moves only the copy, which both exits pop
             ok = label("match.not")
-            self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
-            self.emit(node[1], cur, ok)
-            self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
+            self.op(OpCode.MATCH_UNBOUND, self.top - cur, effect=1)
+            self.emit(node[1], start, ok)
             self.op(OpCode.POP, 1, effect=-1)
             self.op(OpCode.JUMP, miss)
             self.place(ok, start)
-            self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
             self.op(OpCode.POP, 1, effect=-1)
 
         elif kind == 'REPEAT':
