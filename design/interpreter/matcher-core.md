@@ -1,6 +1,6 @@
 # Matcher core
 
-Status: design; prep done, execution from phase 1.
+Status: implemented through phase 8.
 
 ## Why
 

@@ -54,7 +54,10 @@ in `(app splitext #[base "." "ki"])`.
 
 The matcher heads from [`koskari.matcher`](../reference/api/koskari-matcher.md),
 `FORM`, `ONEOF`, `REST`, `CLASS`, and the rest, are also accepted in
-pattern position; the sugared forms above lower to them.
+pattern position; the sugared forms above lower to them. A name inside
+a `REPEAT` that is not itself captured binds the list of its values,
+one per pass: `#[(REPEAT (FORM (MATCH k v)))]` against
+`#(#(1 2) #(3 4))` binds `k` to `[1, 3]` and `v` to `[2, 4]`.
 
 ### Sequences
 
@@ -62,6 +65,13 @@ A sequence pattern is the explicit `#[...]` or `#(...)` form; a bare
 list is never a sequence. The length must agree unless a `*: rest`
 marker captures the remaining elements. Inside a sequence a typed
 element is parenthesized: `#[(x :: int) y]`.
+
+At the end of a sequence there is no element left to test. `(not PAT)`
+is one element that does not match `PAT`, so it misses there:
+`#[a (not 2)]` does not match `#(1)`. The `NOT` head is zero width: it
+consumes nothing and succeeds where `PAT` does not match, so
+`#[a (NOT 2)]` matches `#(1)`. `(OPTIONAL PAT)` at the end matches zero
+elements, so `(NOT (OPTIONAL PAT))` misses there.
 
 Only sequences destructure. A sequence pattern matches lists, tuples,
 and other `collections.abc.Sequence` instances such as `range`, the
@@ -167,10 +177,20 @@ Captured names stay bound when a guard fails, as after Python's
 - Captured names are bound in the enclosing scope and stay visible after
   the `match` form, like every other binding and like Python's `match`.
   Arms are not scopes.
-- Captures are sparse: a slot that did not bind, an `OPTIONAL` arm that
-  did not fire, is left unbound, and reading it raises `NameError`. Bind
-  a default before the match, or guard on the shape, when a slot may be
-  absent.
+- An arm that does not match writes no variable, even when part of its
+  pattern matched before the miss.
+- Captures are sparse: a capture that did not bind, under an `OPTIONAL`
+  that did not fire, leaves its variable as it was, and a variable never
+  bound raises `NameError` when read. Bind a default before the match,
+  or guard on the shape, when a slot may be absent:
+
+  ```koskari
+  define unit "px"
+
+  match #(12):
+    case #[n (OPTIONAL unit)]:
+      (#str n unit)          ; "12px"; on #(12 "em"), "12em"
+  ```
 - Arms are tried in order and the first match wins. With no matching arm
   and no `else:`, the value is `None`.
 

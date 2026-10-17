@@ -1,19 +1,18 @@
-# KOS_OP_MATCH_CAPTURES / KOS_OP_MATCH_CAPTURES_NAMED
+# KOS_OP_MATCH_CAPTURES
 
-- **Style**: EXTRA (CONST, FASTVAR, RAW, RAW) on `MATCH_CAPTURES`: the
-  names tuple, the first capture slot of one run, the start's depth, the
-  cursor's depth. EXTRA (CONST, RAW, RAW) on `MATCH_CAPTURES_NAMED`: the
-  names tuple, the start's depth, the cursor's depth, each capture read by
-  its name.
-- **Stack**: `[...]` -> `[..., captures]`.
-- **Semantics**: Push the captures of a scope: the value of each named slot
-  that is bound, an unbound slot absent. The start is the subject for a
-  matcher's root and the position a `MATCH_MARK` pushed for a group. When it
-  is a pair cell the result is a `DatumFrame` whose source is the span from
-  that cell to the cursor and whose position is the start cell's;
-  otherwise, a sequence subject or a mark over one, the result is a plain
-  dict.
+- **Style**: EXTRA (RAW, RAW, CONST): mark depth, cursor depth, names tuple.
+- **Stack**: `[...]` -> `[..., caps]`; cannot miss.
+- **Semantics**: Push the captures of the mark at depth `a0`: each filled slot
+  under its name in `a2`, an empty slot absent. Over a tuple, list, other
+  sequence or single value `caps` is a dict. Over a pair spine it is a
+  `DatumFrame` whose position is the first cell's and whose source is the span
+  from the mark's position to the cursor at depth `a1`: the first cell itself
+  when the span is empty or runs to the spine's end, the car read through
+  `Datum` for one cell, otherwise a tuple of the cars. Raises `ValueError`
+  when the spine no longer reaches the cursor's cell from the mark's.
+- **Invariants**: `a2` is a tuple; Code construction raises `ValueError`
+  otherwise. A names tuple without one name per slot of the mark raises
+  `SystemError`.
 - **Compiler form:** Emitted by the match compiler at the end of a standalone
-  matcher and for each named group; `MATCH_CAPTURES_NAMED` for a
-  `compile/match` arm and for a rule's matcher compiled in a module, whose
-  captures are the function's locals.
+  matcher, for a named group, and at the end of each pass of an uncaptured
+  repeat that captures.

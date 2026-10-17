@@ -1,9 +1,9 @@
 # KOS_OP_MATCH_LITERAL
 
-- **Style**: EXTRA (LABEL, CONST)
-- **Stack**: `[..., elem]` -> `[..., elem]`; jump to `a0` on a miss.
-- **Semantics**: Peek. `elem` read through `Datum` must equal the constant
-  `a1`, as `MATCH_NEXT_LITERAL` compares.
-- **Compiler form:** Emitted by the match compiler for a `compile/match` arm, a
-  special form's pattern or a `syntax-rules` rule; the `_VAR` form pre-compile,
-  the `_FAST` twin once `convert_fast` has lowered the slot.
+- **Style**: EXTRA (LABEL, CONST): label, constant.
+- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+  way.
+- **Semantics**: `e` read through `Datum` must be the constant `a1`, a gensym
+  whose base is `a1`, or equal to `a1`.
+- **Compiler form:** Emitted by the match compiler for a literal pattern,
+  after the `MATCH_NEXT` that pulls the element.
