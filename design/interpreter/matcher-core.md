@@ -384,6 +384,10 @@ are recorded, not a gate.
   branch that matches is taken; master checks no maximum in its walk.
   USING lists its three-element `as:` form first, so a two-element
   cell skips it by that minimum.
+- Dropped in verification (I3): a pattern whose maximum width passes
+  0xFFFE has at least that many element nodes, so its code passes the
+  16-bit instruction limit and the build refuses it with OverflowError
+  before the length bound matters.
 - Decided in phase 5:
   - a ONEOF branch or OPTIONAL sub-pattern followed by a suffix of
     minimum width above 0 gets a minimum-only FITS (its minimum plus the
