@@ -1729,20 +1729,24 @@ KOS_MATCH_BODY(kos_match2_at) {
 
 
 /**
-   MATCH2_SPAN: the span from the position of the mark at field 0 to
-   the cursor at field 1 pushed. Row depth, depth.
+   MATCH2_SPAN: the span from the position of the mark at field 1 to
+   the cursor at field 2 pushed; an empty span jumps to field 0,
+   pushing nothing. Row LABEL, depth, depth.
 */
 KOS_MATCH_BODY(kos_match2_span) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, 0));
+  PyObject *mark = kos_match2_mark_at(es, KosExtra_IMM(row, 1));
   if (unlikely(! mark))
     RESULT_RAISE();
-  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 1));
+  PyObject *cursor = kos_match2_cursor_at(es, KosExtra_IMM(row, 2));
   if (unlikely(! cursor))
     RESULT_RAISE();
+
+  if (KosMatchCursor_INDEX(cursor) == KosMatchMark_INDEX(mark))
+    KOS_MATCH_MISS(row);
   RESULT_STEAL(es, KosMatchMark_Span(mark, cursor));
 }
 
@@ -1801,8 +1805,9 @@ KOS_MATCH_BODY(kos_match2_clear) {
 /**
    MATCH2_CAPTURES and MATCH2_PASS: the captures of the mark at field
    0, keyed by the names tuple in field 2, over the span to the cursor
-   at field 1, pushed; PASS pushes a REPEAT pass's value instead. Row
-   depth, depth, const.
+   at field 1, pushed; PASS pushes a REPEAT pass's value instead, the
+   captures in their MATCH2_CAPTURES form when field 3 is set. Row
+   depth, depth, const, flag.
 */
 KOS_MATCH_BODY(kos_match2_captures) {
   KOS_SYNC_PC(es, insn);
@@ -1819,7 +1824,8 @@ KOS_MATCH_BODY(kos_match2_captures) {
 
   PyObject *names = KosExtra_OBJ(row, 2);
   RESULT_STEAL(es, pass
-               ? KosMatchMark_Pass(mark, cursor, names)
+               ? KosMatchMark_Pass(
+                   mark, cursor, names, KosExtra_IMM(row, 3) != 0)
                : KosMatchMark_Captures(mark, cursor, names));
 }
 

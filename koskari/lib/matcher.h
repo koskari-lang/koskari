@@ -101,6 +101,7 @@ extern PyTypeObject KosMatchCursorType;
   ((obj) && ((obj)->ob_type == &KosMatchCursorType))
 
 #define KosMatchCursor_KIND(obj)  (((KosMatchCursor *) (obj))->kind)
+#define KosMatchCursor_INDEX(obj)  (((KosMatchCursor *) (obj))->index)
 
 
 /* The core types a pattern names by their bare spelling: a type test
@@ -478,6 +479,10 @@ extern PyTypeObject KosMatchMarkType;
 #define KosMatchMark_COUNT(obj)    (((KosMatchMark *) (obj))->count)
 #define KosMatchMark_SLOT(obj, i)  (((KosMatchMark *) (obj))->slots[(i)])
 
+/* The position's index, for MATCH_SPAN's test for an empty span
+   against a cursor's index. */
+#define KosMatchMark_INDEX(obj)    (((KosMatchMark *) (obj))->index)
+
 
 /**
    MATCH_SCOPE: a mark at cursor's position with count unbound slots.
@@ -564,15 +569,17 @@ PyObject *KosMatchMark_Captures(
     PyObject *names);
 
 /**
-   MATCH_PASS: one REPEAT pass's value, KosMatchMark_Dict when any
-   slot of mark is bound, else the pass's span from mark's position to
-   cursor's, as KosMatchMark_Span gives it. New reference; NULL with
-   an exception set.
+   MATCH_PASS: one REPEAT pass's value. When any slot of mark is
+   bound, KosMatchMark_Dict, or KosMatchMark_Captures when captures is
+   set (a REPEAT whose body is a GROUP); else the pass's span from
+   mark's position to cursor's, as KosMatchMark_Span gives it. New
+   reference; NULL with an exception set.
  */
 PyObject *KosMatchMark_Pass(
     PyObject *mark,
     PyObject *cursor,
-    PyObject *names);
+    PyObject *names,
+    int captures);
 
 /**
    MATCH_COLUMNS: for each name in names, the list of its values in

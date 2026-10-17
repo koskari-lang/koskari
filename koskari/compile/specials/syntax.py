@@ -22,6 +22,7 @@ convenience syntax to runtime call forms of builder functions.
 """
 
 
+from ... import match_core
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms, function_constant
@@ -58,8 +59,11 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
 
     tables = MatchCompiler().lower(pattern)
     try:
-        check_nodes(tables[3], tables[4])
-    except ValueError as exc:
+        if match_core.SELECTED:
+            match_core.analyse(tables)
+        else:
+            check_nodes(tables[3], tables[4])
+    except (TypeError, ValueError) as exc:
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
     atoms = extern_atoms(pattern_src, tables[1])
     body = compiler.fragment(name)

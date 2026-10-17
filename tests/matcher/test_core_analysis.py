@@ -27,8 +27,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import nil, pair, symbol
-from koskari.match_core import FIELD_LIMIT, analyse
+from koskari.lib import ModuleNamespace, demand, nil, pair, symbol
+from koskari.match_code import FunctionTarget
+from koskari.match_core import FIELD_LIMIT, Emitter, analyse
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MAP, MAP_ENTRY, MATCH,
     NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY, TYPE,
@@ -50,7 +51,6 @@ REFUSAL_RULES = (
     'refused_repeat_zero_body',
     'refused_variable_after_rest',
     'refused_capture_under_not',
-    'refused_same_outside_scope',
 )
 
 
@@ -167,27 +167,50 @@ class TestRefusals(unittest.TestCase):
 
 
     def test_same_at_depth_zero_in_a_repeat_naming_an_outer_slot(self):
+        # MATCH(CAPTURE("x"), REPEAT(GROUP(None, SAME("x")))): a pass
+        # over a GROUP body is a depth of its own, so depth 0 in it
+        # does not reach the root's slot, and the SAME always misses
+        slots = ('x',)
+        nodes = (
+            ('CAPTURE', 0, -1),
+            ('SAME', 0, 0),
+            ('GROUP', 1),
+            ('REPEAT', 2, 0),
+            ('MATCH', 0, 3),
+        )
+        self.assertEqual(analyse((slots, (), (), nodes, 4)).same, {1: None})
+
+        # any other pass shares the depth of the scope around it
         tables = MatchCompiler().lower(
             MATCH(CAPTURE("x"), REPEAT(SAME("x"))))
-        with self.assertRaisesRegex(ValueError, "outside every open scope"):
-            analyse(tables)
+        found = analyse(tables)
+        same = [i for i, n in enumerate(tables[3]) if n[0] == 'SAME'][0]
+        self.assertEqual(found.same[same], (0, 0))
 
 
     def test_same_past_the_root(self):
-        # MATCH(CAPTURE("x"), SAME("x", depth=1))
+        # MATCH(CAPTURE("x"), SAME("x", depth=1)): the depth passes the
+        # root, so the SAME always misses, as on master
         slots = ('x',)
         nodes = (
             ('CAPTURE', 0, -1),
             ('SAME', 0, 1),
             ('MATCH', 0, 1),
         )
-        with self.assertRaisesRegex(ValueError, "outside every open scope"):
-            analyse((slots, (), (), nodes, 2))
+        tables = (slots, (), (), nodes, 2)
+        self.assertEqual(analyse(tables).same, {1: None})
+
+        target = FunctionTarget("matcher")
+        Emitter(target, tables, {}).standalone()
+        matcher = demand(target.build((), ModuleNamespace("probe", {})))
+        self.assertIsNone(matcher((1, 1)))
+        self.assertIsNone(matcher((1, 2)))
 
 
     def test_same_at_depth_zero_in_an_anonymous_group(self):
         # MATCH(CAPTURE("x"), GROUP(None, SAME("x"))): the anonymous
-        # GROUP's scope is depth 0 and does not bind x
+        # GROUP's scope is depth 0 and does not bind x, so the SAME
+        # always misses
         slots = ('x',)
         nodes = (
             ('CAPTURE', 0, -1),
@@ -195,13 +218,13 @@ class TestRefusals(unittest.TestCase):
             ('GROUP', 1),
             ('MATCH', 0, 2),
         )
-        with self.assertRaisesRegex(ValueError, "outside every open scope"):
-            analyse((slots, (), (), nodes, 3))
+        self.assertEqual(analyse((slots, (), (), nodes, 3)).same, {1: None})
 
 
     def test_same_naming_a_closed_group_slot(self):
         # MATCH(GROUP("g", CAPTURE("x")), SAME("x")) with the SAME
-        # resolved by name, as MatchCompiler does not
+        # resolved by name, as MatchCompiler does not: the root binds
+        # no x, so the SAME always misses
         slots = ('g', 'x')
         nodes = (
             ('CAPTURE', 1, -1),
@@ -210,8 +233,7 @@ class TestRefusals(unittest.TestCase):
             ('SAME', 1, 0),
             ('MATCH', 2, 3),
         )
-        with self.assertRaisesRegex(ValueError, "outside every open scope"):
-            analyse((slots, (), (), nodes, 4))
+        self.assertEqual(analyse((slots, (), (), nodes, 4)).same, {3: None})
 
 
     def test_branch_name_reused_after_its_oneof(self):
@@ -406,6 +428,27 @@ class TestFacts(unittest.TestCase):
         # owner's bounds at the same position
         self.assertNotIn(entry, found.fits)
         self.assertNotIn(nodes[form][1], found.fits)
+
+
+    def test_fits_of_a_one_wide_alternative(self):
+        # a ONEOF branch or OPTIONAL sub-pattern of minimum width 1
+        # checks the suffix's minimum after its element, with no max;
+        # with nothing after it on its cursor it checks nothing
+        tables = MatchCompiler().lower(MATCH(
+            OPTIONAL(CAPTURE("a")),
+            ONEOF(CAPTURE("b"), MATCH()),
+            CAPTURE("c"),
+            OPTIONAL(CAPTURE("d"))))
+        found = analyse(tables)
+        nodes = tables[3]
+        first, last = [n[1] for n in nodes if n[0] == 'OPTIONAL']
+        oneof = [i for i, n in enumerate(nodes) if n[0] == 'ONEOF'][0]
+        branch = nodes[oneof][1]
+        self.assertEqual(found.fits, {
+            first: (2, None),
+            branch: (2, None),
+        })
+        self.assertNotIn(last, found.fits)
 
 
     def test_named_group_scope(self):

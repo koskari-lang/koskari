@@ -1878,6 +1878,19 @@ static int test_mark_captures(void) {
   KosPair_SETCDR(spine, second);
   Py_DECREF(second);
 
+  /* a span to the end is its first cell, the cells after it unread,
+     so a cut behind the cursor leaves it whole */
+  elem = core_pull(&cursor);
+  Py_DECREF(elem);
+  Py_INCREF(second);
+  KosPair_SETCDR(spine, KosNil);
+  out = KosMatchMark_Captures(mark, cursor, names);
+  TEST_ASSERT_NOT_NULL(out, "captures to the end");
+  TEST_ASSERT_SAME(((KosDatumFrame *) out)->source, spine, "the first cell");
+  Py_DECREF(out);
+  KosPair_SETCDR(spine, second);
+  Py_DECREF(second);
+
   Py_DECREF(mark);
   Py_DECREF(cursor);
   TEST_ASSERT_REFCNT(spine, 1, "released");
@@ -2095,12 +2108,12 @@ static int test_mark_pass(void) {
   TEST_ASSERT_EQ(KosMatchCursor_Descend(subj, &cursor), 1, "descend");
   PyObject *mark = KosMatchMark_New(cursor, 1);
   elem = core_pull(&cursor);
-  out = KosMatchMark_Pass(mark, cursor, names);
+  out = KosMatchMark_Pass(mark, cursor, names, 0);
   TEST_ASSERT_SAME(out, elem, "one element: the element");
   Py_DECREF(out);
 
   PyObject *second = core_pull(&cursor);
-  out = KosMatchMark_Pass(mark, cursor, names);
+  out = KosMatchMark_Pass(mark, cursor, names, 0);
   TEST_ASSERT(out && PyTuple_CheckExact(out) && PyTuple_GET_SIZE(out) == 2,
               "two elements: a tuple");
   TEST_ASSERT_SAME(PyTuple_GET_ITEM(out, 1), second, "the elements");
@@ -2109,7 +2122,7 @@ static int test_mark_pass(void) {
 
   /* a bound slot: the plain dict of the bound slots */
   TEST_ASSERT_EQ(KosMatchMark_Store(mark, 0, elem, NULL), 0, "store");
-  out = KosMatchMark_Pass(mark, cursor, names);
+  out = KosMatchMark_Pass(mark, cursor, names, 0);
   TEST_ASSERT(out && PyDict_CheckExact(out), "a plain dict");
   TEST_ASSERT_SAME(PyDict_GetItemString(out, "x"), KosMatchMark_SLOT(mark, 0),
                    "bound under x");
@@ -2124,9 +2137,20 @@ static int test_mark_pass(void) {
   mark = KosMatchMark_New(cursor, 1);
   elem = core_pull(&cursor);
   Py_DECREF(elem);
-  out = KosMatchMark_Pass(mark, cursor, names);
+  out = KosMatchMark_Pass(mark, cursor, names, 0);
   TEST_ASSERT(KosDatum_Check(out), "a Datum");
   TEST_ASSERT_EQ(PyLong_AsLong(((KosDatum *) out)->datum), 1, "the car");
+
+  /* a bound slot over a spine: a plain dict, or with captures set the
+     DatumFrame MATCH_CAPTURES gives */
+  TEST_ASSERT_EQ(KosMatchMark_Store(mark, 0, out, NULL), 0, "store");
+  out = KosMatchMark_Pass(mark, cursor, names, 0);
+  TEST_ASSERT(out && PyDict_CheckExact(out), "a plain dict");
+  Py_DECREF(out);
+  out = KosMatchMark_Pass(mark, cursor, names, 1);
+  TEST_ASSERT(KosDatumFrame_Check(out), "a DatumFrame");
+  TEST_ASSERT_SAME(PyDict_GetItemString(out, "x"), KosMatchMark_SLOT(mark, 0),
+                   "bound under x");
   Py_DECREF(out);
   Py_DECREF(mark);
   Py_DECREF(cursor);

@@ -23,6 +23,7 @@ compiled per pattern and an optional else clause.
 """
 
 
+from ... import match_core
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
@@ -98,9 +99,11 @@ def special_match(compiler, caps):
     gen_label = compiler.gen_label
     done = gen_label()
 
-    # each arm's pattern, lowered ahead of emission
+    # each arm's pattern, lowered ahead of emission, and the names its
+    # captures bind in order
     clauses = caps["clauses"]
     arms = []
+    bound = []
     remaining = len(clauses)
     for clause in clauses:
         remaining -= 1
@@ -131,7 +134,14 @@ def special_match(compiler, caps):
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         tables = MatchCompiler().lower(arm)
         try:
-            check_nodes(tables[3], tables[4])
+            if match_core.SELECTED:
+                # only the root scope's slots become variables; a name
+                # inside a group or REPEAT is reached through its value
+                analysis = match_core.analyse(tables, arm=True)
+                bound.extend(analysis.scopes[0].names)
+            else:
+                check_nodes(tables[3], tables[4])
+                bound.extend(tables[0])
         except (TypeError, ValueError) as exc:
             raise SpecialError(
                 f"invalid match pattern: {exc}", pattern, position=clause_pos)
@@ -155,18 +165,10 @@ def special_match(compiler, caps):
             for extern in tables[1]:
                 target.request_var(atoms.get(extern) or symbol(extern))
 
-    declared = set()
-    for pattern, tables, atoms, _kw, _expr, _body, _pos in arms:
-        if tables is None:
-            continue
-        # tables[0] is the full slot table in emission order -- the
-        # one lowering yields both the instructions and the binding
-        # names. Ordered dedup: ONEOF branches may declare the same
-        # slot in mutually exclusive clauses.
-        for name in dict.fromkeys(symbol(n) for n in tables[0]):
-            if name not in declared:
-                declared.add(name)
-                fragment.declare_var(name)
+    # ordered dedup: ONEOF branches and other arms may bind the same
+    # name
+    for name in dict.fromkeys(symbol(n) for n in bound):
+        fragment.declare_var(name)
 
     def emit_tests(target, arm, hit, next_label):
         """

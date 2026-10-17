@@ -149,8 +149,9 @@ is a one-element subject walked through a cursor like any spine.
 - a node of variable width after a REST on the same cursor (a REST's
   length is the remaining elements less a fixed suffix);
 - a CAPTURE anywhere in a NOT subtree;
-- a SAME naming a slot outside every open scope (a closed sibling
-  GROUP's slot is read through the group's value).
+- (no SAME is refused: a SAME whose depth passes the root, or whose
+  resolved scope never binds the name, builds and always misses, as on
+  master)
 
 ## Captures: the mark is the accumulator
 
@@ -338,6 +339,8 @@ for these deliberate changes:
 - a slot inside an uncaptured REPEAT binds the list of its per-pass
   values (master kept the last pass); a SAME after the REPEAT compares
   against that list;
+- the root length check misses a subject too long for the pattern
+  before a PREDICATE or APP on its elements runs;
 - a pair LITERAL in a `define-syntax` or `compile/match` pattern is
   refused (it already failed to reach a .kio).
 
@@ -351,8 +354,9 @@ are recorded, not a gate.
 - A named group is a CAPTURE over a GROUP node in the tables. A GROUP
   that is neither captured nor a REPEAT body opens a scope whose
   captures are discarded (decided in phase 2, as on master).
-- A SAME at depth 0 inside a REPEAT pass that names a slot of an outer
-  scope is refused (master's "outside its frame").
+- No SAME is refused at build; one that resolves to no binding always
+  misses, as on master. A pass over a body that is not a GROUP shares
+  its enclosing scope's depth (decided in phase 5).
 - An element is read when it is pulled. A list or tuple is read at its
   live length; a list that shrinks under the walk raises "match subject
   changed under the walk" as today. A pair spine is counted once by
@@ -374,6 +378,18 @@ are recorded, not a gate.
 - `MATCH_CASE` keeps the branch's form (no cache slot, a handler that
   raises).
 
+- Decided in phase 5:
+  - a ONEOF branch or OPTIONAL sub-pattern followed by a suffix of
+    minimum width above 0 gets a minimum-only FITS (its minimum plus the
+    suffix's); "minimum width exceeds 1" in "Length precheck" is
+    superseded;
+  - a REPEAT pass over a GROUP body gives its captures as a GROUP does
+    (a DatumFrame over a pair spine); other bodies give a dict;
+    `MATCH_PASS` carries a RAW group flag; a pass binding nothing gives
+    its span;
+  - a REPEAT pass counts as a scope for SAME depth only when its body is
+    a GROUP, as master counts frames;
+  - `MATCH_SPAN` jumps to a label on an empty span, pushing nothing.
 - Decided in phase 4:
   - an uncaptured REPEAT with slots appends `MATCH_CAPTURES` on every
     pass (always a dict, a DatumFrame over a spine) for COLUMNS to read;

@@ -370,16 +370,19 @@ static PyObject *mark_span_source(
     KosMatchCursor *c,
     Py_ssize_t n) {
 
+  /* a span empty or running to the spine's end is its first cell,
+     which the mark holds; the cells after it are not read */
+  if (n == 0 || c->index == c->length) {
+    Py_INCREF(m->seq);
+    return m->seq;
+  }
+
   if (core_spine_walk(m->seq, n) != c->seq) {
     if (! PyErr_Occurred())
       core_changed();
     return NULL;
   }
 
-  if (n == 0 || c->index == c->length) {
-    Py_INCREF(m->seq);
-    return m->seq;
-  }
   if (n == 1) {
     PyObject *car = matcher_peel_datum(KosPair_CAR(m->seq));
     Py_INCREF(car);
@@ -440,13 +443,17 @@ PyObject *KosMatchMark_Captures(
 PyObject *KosMatchMark_Pass(
     PyObject *mark,
     PyObject *cursor,
-    PyObject *names) {
+    PyObject *names,
+    int captures) {
 
   KosMatchMark *m = (KosMatchMark *) mark;
 
   for (Py_ssize_t i = 0; i < m->count; i++) {
-    if (m->slots[i])
-      return KosMatchMark_Dict(mark, names);
+    if (! m->slots[i])
+      continue;
+    if (captures)
+      return KosMatchMark_Captures(mark, cursor, names);
+    return KosMatchMark_Dict(mark, names);
   }
   return KosMatchMark_Span(mark, cursor);
 }

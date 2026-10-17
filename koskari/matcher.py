@@ -27,6 +27,7 @@ function is built from
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from koskari import match_core
 from koskari.compile.compiler import _is_const
 from koskari.lib import (
     CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,
@@ -146,24 +147,30 @@ class MatchCompiler:
         self.capture_scope_stack = [{}]
         self._formal_scope_stack = [True]
         # per capture scope, the slot index of each name interned in
-        # it, and whether the scope is a frame of its own (the root, a
+        # it, whether the scope is a frame of its own (the root, a
         # GROUP or a REPEAT) or shares the enclosing frame (a ONEOF
-        # branch); SAME resolves its name through these
-        self._slot_scopes = [({}, True)]
+        # branch), and for a ONEOF branch the slot index of each name
+        # its ONEOF's alternatives interned; SAME resolves its name
+        # through these
+        self._slot_scopes = [({}, True, None)]
         self.in_class_fields = False
 
 
-    def begin_nested_claims(self, inherit_formals=True):
+    def begin_nested_claims(self, inherit_formals=True, alternatives=None):
         """
         Begin a nested region where duplicate capture slot names are isolated
         (for example ONEOF branches or GROUP children). When
         ``inherit_formals`` is false, slots interned inside the region are
         omitted from :data:`formal_slot_names`: a GROUP or REPEAT row's
         slots are fields of the row, and a ONEOF branch's are formals
+
+        :param alternatives: for a ONEOF branch, a dict the ONEOF
+            shares across its branches; under the matcher core a name
+            the branches bind has one slot index across them
         """
 
         self.capture_scope_stack.append({})
-        self._slot_scopes.append(({}, not inherit_formals))
+        self._slot_scopes.append(({}, not inherit_formals, alternatives))
         if inherit_formals:
             self._formal_scope_stack.append(self._formal_scope_stack[-1])
         else:
@@ -179,8 +186,13 @@ class MatchCompiler:
             raise RuntimeError(
                 "end_nested_claims underflow (unbalanced nested scope)")
         self.capture_scope_stack.pop()
-        self._slot_scopes.pop()
+        slots, frame, _alternatives = self._slot_scopes.pop()
         self._formal_scope_stack.pop()
+        if match_core.SELECTED and not frame:
+            # under the matcher core a ONEOF branch's names stay
+            # visible to the nodes after the ONEOF
+            for name, idx in slots.items():
+                self._slot_scopes[-1][0].setdefault(name, idx)
 
 
     def intern_slot(self, name):
@@ -189,6 +201,23 @@ class MatchCompiler:
         are allowed (distinct indices); use claim_slot_name to forbid
         duplicates within a capture scope
         """
+
+        if match_core.SELECTED:
+            # the ONEOF branches between here and the nearest frame:
+            # an alternative that interned the name gave its index
+            branches = []
+            for _slots, frame, alternatives in reversed(self._slot_scopes):
+                if frame:
+                    break
+                branches.append(alternatives)
+            for alternatives in branches:
+                if alternatives is not None and name in alternatives:
+                    idx = alternatives[name]
+                    self._slot_scopes[-1][0][name] = idx
+                    return idx
+            for alternatives in branches:
+                if alternatives is not None:
+                    alternatives[name] = len(self.slot_names)
 
         idx = len(self.slot_names)
         self.slot_names.append(name)
@@ -206,16 +235,23 @@ class MatchCompiler:
         the name gives the slot
 
         :raises ValueError: when no scope at that depth binds the name
+            and the matcher core is not selected
         """
 
         level = 0
-        for slots, frame in reversed(self._slot_scopes):
+        for slots, frame, _alternatives in reversed(self._slot_scopes):
             if level == depth and name in slots:
                 return slots[name]
             if frame:
                 level += 1
                 if level > depth:
                     break
+        if match_core.SELECTED:
+            # under the matcher core a SAME may read a slot before its
+            # binding; the analysis finds the scope that binds the name
+            idx = len(self.slot_names)
+            self.slot_names.append(name)
+            return idx
         raise ValueError(
             f"SAME slot {name!r} is not bound earlier in this pattern at"
             f" depth {depth}")
@@ -341,7 +377,10 @@ class Pattern(Protocol):
         """
 
         tables = MatchCompiler().lower(self)
-        check_nodes(tables[3], tables[4])
+        if match_core.SELECTED:
+            match_core.analyse(tables)
+        else:
+            check_nodes(tables[3], tables[4])
         consts = tables[2]
         for node in tables[3]:
             if node[:2] == ('TEST', 'LITERAL'):
@@ -1024,8 +1063,9 @@ class ONEOF(Pattern):
         """
 
         idxs = []
+        alternatives = {}
         for b in self._branches:
-            ctx.begin_nested_claims()
+            ctx.begin_nested_claims(alternatives=alternatives)
             try:
                 idxs.append(b.lower(ctx))
             finally:

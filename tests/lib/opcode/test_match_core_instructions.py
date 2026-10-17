@@ -101,11 +101,11 @@ class TestRows(CevalTest):
             OpCode.MATCH2_SCOPE: (RAW, RAW, NOARG, NOARG),
             OpCode.MATCH2_RESET: (RAW, RAW, NOARG, NOARG),
             OpCode.MATCH2_AT: (RAW, NOARG, NOARG, NOARG),
-            OpCode.MATCH2_SPAN: (RAW, RAW, NOARG, NOARG),
+            OpCode.MATCH2_SPAN: (LABEL, RAW, RAW, NOARG),
             OpCode.MATCH2_STORE: (RAW, RAW, RAW, CONST),
             OpCode.MATCH2_CLEAR: (RAW, CONST, NOARG, NOARG),
             OpCode.MATCH2_CAPTURES: (RAW, RAW, CONST, NOARG),
-            OpCode.MATCH2_PASS: (RAW, RAW, CONST, NOARG),
+            OpCode.MATCH2_PASS: (RAW, RAW, CONST, RAW),
             OpCode.MATCH2_LOAD: (LABEL, RAW, RAW, NOARG),
             OpCode.MATCH2_APPEND: (RAW, NOARG, NOARG, NOARG),
             OpCode.MATCH2_MIN: (LABEL, RAW, RAW, NOARG),
@@ -332,24 +332,26 @@ class TestMarks(CevalTest):
             ["MATCH2_NEXT", ("miss", 0, 0, 0)],
             ["POP", 1],
             ["MATCH2_SCOPE", (0, 0, 0, 0)],
-            ["MATCH2_SPAN", (0, 1, 0, 0)],
+            ["MATCH2_SPAN", ("empty", 0, 1, 0)],
+            ["CONST", "an empty span pushed"],
+            ["RETURN", 1],
+            ["LABEL", "empty"],
+            ["MATCH2_NEXT", ("miss", 1, 0, 0)],
+            ["POP", 1],
+            ["MATCH2_SPAN", ("miss", 0, 1, 0)],
             ["MATCH2_NEXT", ("miss", 2, 0, 0)],
             ["POP", 1],
-            ["MATCH2_SPAN", (1, 2, 0, 0)],
-            ["MATCH2_NEXT", ("miss", 3, 0, 0)],
-            ["POP", 1],
-            ["MATCH2_SPAN", (2, 3, 0, 0)],
-            ["MATCH2_AT", (3, 0, 0, 0)],
-            ["MATCH2_RESET", (5, 4, 0, 0)],
-            ["MATCH2_NEXT", ("miss", 5, 0, 0)],
-        ] + hit(8) + miss(0)
+            ["MATCH2_SPAN", ("miss", 1, 2, 0)],
+            ["MATCH2_AT", (2, 0, 0, 0)],
+            ["MATCH2_RESET", (4, 3, 0, 0)],
+            ["MATCH2_NEXT", ("miss", 4, 0, 0)],
+        ] + hit(7) + miss(0)
         got = await run(prog, (1, 2, 3, 4))
         self.assertEqual(got[0], "base")
-        self.assertEqual(got[3:], ((), 2, (2, 3), 2, 2, "hit"))
+        self.assertEqual(got[3:], (2, (2, 3), 2, 2, "hit"))
 
         got = await run(prog, cons(1, 2, 3, 4, nil))
-        empty, one, two, at, again = got[3:8]
-        self.assertEqual(empty, ())
+        one, two, at, again = got[3:7]
         self.assertEqual(one.datum, 2)
         self.assertEqual([d.datum for d in two], [2, 3])
         self.assertEqual((at.datum, again.datum), (2, 2))
@@ -421,7 +423,7 @@ class TestMarks(CevalTest):
 
 
     async def test_pass_is_the_dict_or_the_span(self):
-        def prog(width, fill):
+        def prog(width, fill, group=0):
             body = [
                 ["MATCH2_DESCEND", "miss"],
                 ["MATCH2_SCOPE", (0, 1, 0, 0)],
@@ -433,7 +435,7 @@ class TestMarks(CevalTest):
                 else:
                     body += [["POP", 1]]
             return body + [
-                ["MATCH2_PASS", (0, 1, ("x",), 0)],
+                ["MATCH2_PASS", (0, 1, ("x",), group)],
             ] + hit(4) + miss(0)
 
         self.assertEqual((await run(prog(1, True), (7,)))[3], {"x": 7})
@@ -445,6 +447,16 @@ class TestMarks(CevalTest):
         got = (await run(prog(1, True), cons(7, nil)))[3]
         self.assertIs(type(got), dict)
         self.assertEqual(got["x"].datum, 7)
+
+        # with the group flag, the captures as MATCH2_CAPTURES gives
+        # them: a DatumFrame over a spine, a dict otherwise
+        got = (await run(prog(1, True, 1), cons(7, nil)))[3]
+        self.assertIsInstance(got, DatumFrame)
+        self.assertEqual(got["x"].datum, 7)
+        got = (await run(prog(1, True, 1), (7,)))[3]
+        self.assertIs(type(got), dict)
+        got = (await run(prog(1, False, 1), cons(7, nil)))[3]
+        self.assertIsInstance(got, Datum)
 
 
     async def test_load_pushes_or_skips(self):

@@ -26,6 +26,7 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from typing import Any
 
+from koskari import match_core
 from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
@@ -912,7 +913,7 @@ def _claim_repeat_variable(sym, owners, variables, source_ctx):
 
 
 def _syntax_elem_pattern(
-        pat, literals, source_ctx, owners, variables, scope):
+        pat, literals, source_ctx, owners, variables, scope, path=()):
     """
     The matcher spec for one pattern element
 
@@ -923,6 +924,8 @@ def _syntax_elem_pattern(
     :param variables: pattern-wide map from each bound variable name
         to its source symbol, in the order the variables are bound
     :param scope: the token of the scope being parsed
+    :param path: the element's position in the pattern, the index of
+        each element on the way down from the top level spine
     :raises ValueError: when a variable is bound in two scopes, where
         the second occurrence is a sequence or another iteration's
         value and equality has no meaning
@@ -961,7 +964,8 @@ def _syntax_elem_pattern(
 
     items, tail = _spine_items(pat)
     return FORM(MATCH(*_syntax_pattern_specs(
-        items, literals, source_ctx, owners, variables, scope, tail)))
+        items, literals, source_ctx, owners, variables, scope, tail,
+        path)))
 
 
 def _spine_items(pattern):
@@ -988,7 +992,8 @@ def _syntax_pattern_specs(
         owners,
         variables,
         scope,
-        tail=None):
+        tail=None,
+        path=()):
     """
     The matcher specs for a pattern spine's elements, and for its dotted
     tail when it has one: a tail symbol that is not a literal binds the
@@ -1002,6 +1007,8 @@ def _syntax_pattern_specs(
     :param scope: the token of the scope this spine is in; a pair
         sub-pattern under an ellipsis opens a scope of its own
     :param tail: the datum after the dot, or None for a proper spine
+    :param path: the spine's position in the pattern, see
+        _syntax_elem_pattern
     :raises ValueError: when the dotted tail is not a pattern variable,
         or a variable is bound in two scopes
     """
@@ -1019,15 +1026,23 @@ def _syntax_pattern_specs(
                 else:
                     specs.append(repeat_capture(name, TEST_ANY()))
             else:
-                slot = str(gensym(_REPEAT_SLOT_PREFIX))
+                if match_core.SELECTED:
+                    # under the matcher core the slot's name is its
+                    # position, since it reaches a names constant
+                    slot = _REPEAT_SLOT_PREFIX + "#" + ".".join(
+                        str(index) for index in path + (i,))
+                else:
+                    slot = str(gensym(_REPEAT_SLOT_PREFIX))
                 inner = _syntax_elem_pattern(
-                    pat, literals, source_ctx, owners, variables, slot)
+                    pat, literals, source_ctx, owners, variables, slot,
+                    path + (i,))
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
         specs.append(_syntax_elem_pattern(
-            p_items[i], literals, source_ctx, owners, variables, scope))
+            p_items[i], literals, source_ctx, owners, variables, scope,
+            path + (i,)))
         i += 1
 
     if tail is not None:

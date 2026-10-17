@@ -14,8 +14,10 @@
 */
 
 /**
-  MATCH2_PASS: Row mark depth, cursor depth, names. Pushes a REPEAT
-  pass's value: the dict of the filled slots, else the pass's span.
+  MATCH2_PASS: Row mark depth, cursor depth, names, flag. Pushes a
+  REPEAT pass's value: the captures of the filled slots, a dict or,
+  with the flag set, in their MATCH2_CAPTURES form; else the pass's
+  span.
   The body is kos_match2_captures in eval/eval_match.c
   (design/interpreter/matcher-core.md).
 */

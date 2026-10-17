@@ -14,8 +14,9 @@
 */
 
 /**
-  MATCH2_SPAN: Row mark depth, cursor depth. Pushes the span from the
-  mark's position to the cursor's.
+  MATCH2_SPAN: Row LABEL, mark depth, cursor depth. Pushes the span
+  from the mark's position to the cursor's; an empty span jumps,
+  pushing nothing.
   The body is kos_match2_span in eval/eval_match.c
   (design/interpreter/matcher-core.md).
 */

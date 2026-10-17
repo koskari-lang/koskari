@@ -544,11 +544,11 @@ OP(MATCH2_TAIL, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, w, min: -> span, the re
 OP(MATCH2_SCOPE, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, k: -> m, a mark at cur's position with k empty slots
 OP(MATCH2_RESET, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, m: cur moved back to m's position
 OP(MATCH2_AT, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // m: -> e, the element at m's position as NEXT gave it
-OP(MATCH2_SPAN, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // m, cur: -> span, from m's position to cur's
+OP(MATCH2_SPAN, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // m, cur: -> span, from m's position to cur's; an empty span jumps, pushing nothing
 OP(MATCH2_STORE, 0, EXTRA, RAW, RAW, RAW, CONST)  // s, i, cur, names: v -> ; v into slot i of the mark at s, a Datum taking names[i] as its binding when cur is a spine cursor
 OP(MATCH2_CLEAR, 0, EXTRA, RAW, CONST, NOARG, NOARG)  // s, slots: empties the slots (a tuple of indices) of the mark at s
 OP(MATCH2_CAPTURES, 0, EXTRA, RAW, RAW, CONST, NOARG)  // s, cur, names: -> caps, a dict, or a DatumFrame over a spine
-OP(MATCH2_PASS, 0, EXTRA, RAW, RAW, CONST, NOARG)  // s, cur, names: -> a REPEAT pass's value, the dict of the filled slots, or the span when none is filled
+OP(MATCH2_PASS, 0, EXTRA, RAW, RAW, CONST, RAW)  // s, cur, names, group: -> a REPEAT pass's value, the filled slots as a dict, or with group set as MATCH2_CAPTURES gives them; the span when none is filled
 OP(MATCH2_LOAD, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // s, i: -> v, slot i of the mark at s; jumps pushing nothing when the slot is empty
 OP(MATCH2_ITEMS, 0, NOARG)  // -> items, an empty list
 OP(MATCH2_APPEND, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // items: v -> ; appended

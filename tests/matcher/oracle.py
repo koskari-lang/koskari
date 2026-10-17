@@ -40,6 +40,7 @@ import sys
 
 from os.path import dirname, join
 
+from koskari import match_core
 from koskari.lib import (
     Datum, DatumFrame, cons, demand, keyword, nil, pair, setcar, symbol)
 from koskari.matcher import (
@@ -728,71 +729,6 @@ def variable_after_rest(spec):
     return state["bad"]
 
 
-def close_scope(scope, state):
-    """
-    Set state["outside"] when a SAME read a slot of scope that scope
-    never binds. A SAME that read a slot the scope binds later is
-    accepted and misses while the slot is empty
-    """
-
-    if any(slot not in scope["names"] for slot in scope["pending"]):
-        state["outside"] = True
-
-
-def scan_scopes(spec, scopes, state, captured=False, owned=False):
-    """
-    Walk spec in match order with the open capture scopes (each a dict
-    of the names bound so far and the SAMEs that read a name it had not
-    bound), setting state["outside"] for a SAME whose scope never binds
-    its slot. The slots of an uncaptured REPEAT's passes become slots of the
-    enclosing scope after it (their per-pass value lists); captured
-    marks a REPEAT under a CAPTURE. An anonymous GROUP opens a scope of
-    its own whose names stay in it, unless owned marks it as a REPEAT
-    body or the GROUP under a CAPTURE, whose scope is already open
-    """
-
-    tag = spec[0]
-    if tag == "SAME":
-        slot, depth = spec[1], spec[2]
-        if depth >= len(scopes):
-            state["outside"] = True
-        elif slot not in scopes[-1 - depth]["names"]:
-            scopes[-1 - depth]["pending"].append(slot)
-        return
-
-    named_group = tag == "GROUP" and spec[1] is not None \
-        or tag == "CAP" and spec[2] is not None and spec[2][0] == "GROUP"
-    discarded = tag == "GROUP" and spec[1] is None and not owned
-    if tag == "REPEAT" or named_group or discarded:
-        inner = {"names": set(), "pending": []}
-        for child in spec_children(spec):
-            scan_scopes(child, scopes + [inner], state,
-                        owned=tag in ("REPEAT", "CAP"))
-        close_scope(inner, state)
-        if tag == "REPEAT" and not captured:
-            scopes[-1]["names"].update(inner["names"])
-    elif tag == "CAP" and spec[2] is not None and spec[2][0] == "REPEAT":
-        scan_scopes(spec[2], scopes, state, captured=True)
-    else:
-        for child in spec_children(spec):
-            scan_scopes(child, scopes, state)
-
-    if is_capture_node(spec):
-        scopes[-1]["names"].add(spec[1])
-
-
-def same_outside_scope(spec):
-    """
-    Whether a SAME in spec names a slot outside every open scope
-    """
-
-    state = {"outside": False}
-    root = {"names": set(), "pending": []}
-    scan_scopes(spec, [root], state)
-    close_scope(root, state)
-    return state["outside"]
-
-
 def contains_improper(enc):
     """
     Whether an encoded value holds an improper pair spine
@@ -938,16 +874,6 @@ def rule_capture_under_not(case, master, branch):
                     for inner in spec_nodes(node[1])))
 
 
-def rule_same_outside_scope(case, master, branch):
-    """
-    A SAME naming a slot outside every open scope is refused, including
-    a SAME at depth 0 in a REPEAT pass naming an outer slot
-    """
-
-    return (branch.get("refused") is not None
-            and any(same_outside_scope(s) for s in case_specs(case)))
-
-
 def rule_element_read_when_pulled(case, master, branch):
     """
     An element is read when it is pulled: a poke predicate edits an
@@ -1014,7 +940,9 @@ def per_pass_lists(master_value, branch_value, slots):
     """
     Whether the two encodings are equal but for slots in slots, each of
     which holds on this tree the list of per-pass values where master
-    held the last pass, or the empty list where master did not bind it
+    held the last pass, or a list where master did not bind it: the
+    empty list after no pass, or the per-pass values of a REPEAT whose
+    GROUP body's captures master discarded
     """
 
     if master_value == branch_value:
@@ -1035,7 +963,8 @@ def per_pass_lists(master_value, branch_value, slots):
             for key, bv in bitems.items():
                 name = json.loads(key)
                 if key not in mitems:
-                    if name not in slots or bv != {"list": []}:
+                    if name not in slots or not (
+                            isinstance(bv, dict) and "list" in bv):
                         return False
                 elif mitems[key] != bv and not (
                         name in slots and last_pass_of(mitems[key], bv)
@@ -1071,6 +1000,8 @@ def rule_repeat_slot_lists(case, master, branch):
             case["names"], mvalues["tuple"], bvalues["tuple"]):
         if mv == bv:
             continue
+        if name not in slots and per_pass_lists(mv, bv, slots):
+            continue
         if name not in slots or case["owners"][name] != mlabel:
             return False
         if mv == UNSET and bv == {"list": []}:
@@ -1078,6 +1009,57 @@ def rule_repeat_slot_lists(case, master, branch):
         if not last_pass_of(mv, bv):
             return False
     return True
+
+
+def rule_same_reads_repeat_list(case, master, branch):
+    """
+    A SAME after an uncaptured REPEAT compares against the list of the
+    per-pass values of the slot it names, where master compared against
+    the last pass
+    """
+
+    if branch.get("refused") is not None or "raised" in branch:
+        return False
+    for spec in case_specs(case):
+        slots = bare_repeat_slots(spec)
+        if any(node[0] == "SAME" and node[1] in slots
+               for node in spec_nodes(spec)):
+            return True
+    return False
+
+
+def encoded_length(enc):
+    """
+    The element count of an encoded tuple, list or proper pair spine,
+    or None
+    """
+
+    if not isinstance(enc, dict):
+        return None
+    if "pair" in enc and "tail" not in enc and "truncated" not in enc:
+        return len(enc["pair"])
+    for tag in ("tuple", "list"):
+        if tag in enc:
+            return len(enc[tag])
+    return None
+
+
+def rule_root_length_first(case, master, branch):
+    """
+    A standalone root checks the subject's length against its widths
+    before it tests an element: a subject of a length the root cannot
+    match misses, where master tested elements first and an extern
+    raised
+    """
+
+    if case["kind"] != "standalone" or "raised" not in master \
+            or "miss" not in branch:
+        return False
+    count = encoded_length(case["subject"])
+    if count is None:
+        return False
+    low, high = spec_width(case["spec"])
+    return count < low or (high is not None and count > high)
 
 
 UNSET = "UNB"
@@ -1164,10 +1146,11 @@ RULES = (
     ("refused_repeat_zero_body", rule_repeat_zero_body),
     ("refused_variable_after_rest", rule_variable_after_rest),
     ("refused_capture_under_not", rule_capture_under_not),
-    ("refused_same_outside_scope", rule_same_outside_scope),
     ("element_read_when_pulled", rule_element_read_when_pulled),
     ("non_sequence_root_miss", rule_non_sequence_root),
     ("repeat_slot_lists", rule_repeat_slot_lists),
+    ("same_reads_repeat_list", rule_same_reads_repeat_list),
+    ("root_length_first", rule_root_length_first),
     ("missed_arm_writes_nothing", rule_missed_arm_writes_nothing),
     ("empty_slot_left_as_was", rule_empty_slot_left),
 )
@@ -1279,13 +1262,22 @@ def compare(selector=None, directory=None):
     """
     Run the corpus on this tree and compare each outcome with master's
 
-    :param selector: chooses the matcher path the cases run on; unused
-        until the core path exists
+    :param selector: chooses the matcher path the cases run on: true
+        for the matcher core, false for the current path, None for the
+        path match_core.SELECTED names
     :param directory: the corpus directory, ORACLE_DIR by default
     :return: a dict: total, agree, explained (rule name to count),
         explained_ids (rule name to case ids) and unexplained (a list
         of the divergent cases no rule covers)
     """
+
+    if selector is not None:
+        selected = match_core.SELECTED
+        match_core.SELECTED = bool(selector)
+        try:
+            return compare(None, directory)
+        finally:
+            match_core.SELECTED = selected
 
     standalone, inline = load_corpus(directory)
     report = {

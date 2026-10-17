@@ -28,6 +28,7 @@ reach, whose result is the captures.
 """
 
 
+from . import match_core
 from .exceptions import SpecialError
 from .lib import (
     Code, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle,
@@ -459,6 +460,11 @@ def lower_clause(
         a label, the pops down to the subject, and the jump to miss
     """
 
+    if match_core.SELECTED:
+        emitter = match_core.Emitter(
+            FragmentTarget(compiler, fragment), tables, atoms, arm=True)
+        return emitter.arm(miss)
+
     lowering = MatchLowering(
         FragmentTarget(compiler, fragment), tables, atoms, source, position)
     lowering.lower_root(miss)
@@ -474,6 +480,10 @@ def lower_matcher(target, tables, atoms, source=None):
     the body becomes a lambda's; into a FunctionTarget it becomes a
     Function with no compiler in reach
     """
+
+    if match_core.SELECTED:
+        match_core.Emitter(target, tables, atoms).standalone()
+        return
 
     lowering = MatchLowering(target, tables, atoms, source, None)
     lowering.lower_function()
