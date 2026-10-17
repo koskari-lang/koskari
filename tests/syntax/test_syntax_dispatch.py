@@ -26,7 +26,8 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
-from koskari.matcher import CALLEDBY, LITERAL, MATCH, VALUE
+from koskari.matcher import (
+    CALLEDBY, CAPTURE, LITERAL, MATCH, PREDICATE, TYPE, VALUE)
 from koskari.syntax import SpecialTransform, Syntax, first_match
 
 
@@ -121,6 +122,28 @@ class TestFirstMatch(unittest.TestCase):
 
     def test_no_callables(self):
         self.assertEqual(first_match(5, ()), (-1, None))
+
+
+    def test_matchers_with_and_without_externs(self):
+        """
+        Built matchers, some declaring externs and some none, are tried
+        in order over one subject, each reading its own externs
+        """
+
+        def big(v):
+            return isinstance(v, int) and v > 9
+
+        arms = (
+            MATCH(CAPTURE("a", PREDICATE("big"))).build({"big": big}),
+            MATCH(LITERAL(5)).build(),
+            MATCH(CAPTURE("t", TYPE("Kind"))).build({"Kind": str}),
+            MATCH(CAPTURE("any")).build(),
+        )
+        self.assertEqual(first_match((50,), arms), (0, {"a": 50}))
+        self.assertEqual(first_match((5,), arms), (1, {}))
+        self.assertEqual(first_match(("s",), arms), (2, {"t": "s"}))
+        self.assertEqual(first_match((7,), arms), (3, {"any": 7}))
+        self.assertEqual(first_match((1, 2), arms), (-1, None))
 
 
 # The end.

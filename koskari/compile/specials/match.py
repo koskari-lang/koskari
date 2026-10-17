@@ -132,8 +132,8 @@ def special_match(compiler, caps):
             guard_expr, body = tail
 
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
-        tables = MatchCompiler().lower(arm)
         try:
+            tables = MatchCompiler().lower(arm)
             analysis = analyse(tables, arm=True)
         except (TypeError, ValueError) as exc:
             raise SpecialError(

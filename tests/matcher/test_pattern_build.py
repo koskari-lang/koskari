@@ -17,7 +17,7 @@ tests.matcher.test_pattern_build
 Pattern.build compiles the pattern to a Function: one positional
 formal, the subject; the captures on a match and None on a miss, a
 dict for a sequence subject and Datum values over a pair spine; a
-missing extern refused at build
+missing extern refused at build; Pattern.match gives a MatchResult
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -29,7 +29,8 @@ import pytest
 
 from koskari.lib import Datum, Function, cons, demand, nil
 from koskari.matcher import (
-    CAPTURE, GROUP, LITERAL, MATCH, ONEOF, REST, TYPE, VALUE, make_matcher)
+    APP, CAPTURE, GROUP, LITERAL, MATCH, ONEOF, PREDICATE, REST, TYPE, VALUE,
+    MatchResult, make_matcher)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -53,6 +54,25 @@ class TestPatternBuild(unittest.TestCase):
         with self.assertRaises(TypeError) as caught:
             MATCH(TYPE("Point")).build()
         self.assertIn("Point", str(caught.exception))
+
+
+    def test_one_missing_extern_among_given_ones_is_refused(self):
+        pattern = MATCH(PREDICATE("p"), TYPE("T"), APP("f", CAPTURE("x")))
+        with self.assertRaises(TypeError) as caught:
+            pattern.build({"p": bool, "f": abs})
+        self.assertIn("T", str(caught.exception))
+        m = demand(pattern.build({"p": bool, "f": abs, "T": int}))
+        self.assertEqual(m((1, 2, -3)), {"x": 3})
+
+
+    def test_match_returns_a_match_result(self):
+        pattern = MATCH(CAPTURE("x", PREDICATE("p")))
+        hit = pattern.match((4,), p=lambda v: v > 3)
+        self.assertIsInstance(hit, MatchResult)
+        self.assertEqual((hit.matched, hit.captures), (True, {"x": 4}))
+        miss = pattern.match((1,), p=lambda v: v > 3)
+        self.assertIsInstance(miss, MatchResult)
+        self.assertEqual((miss.matched, miss.captures), (False, {}))
 
 
 class TestBuiltCaptures(unittest.TestCase):

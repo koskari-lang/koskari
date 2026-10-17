@@ -636,6 +636,26 @@ class TestCopyOnShare(CevalTest):
         self.assertEqual(got[2:4], ([], [1]))
 
 
+    async def test_append_to_a_list_held_twice_copies_it_once_per_writer(self):
+        prog = [
+            ["MATCH_ITEMS", 0],
+            ["DUP", 1],
+            ["DUP", 1],
+            # the top entry takes its own copy
+            ["CONST", 1],
+            ["MATCH_APPEND", (1, 0, 0, 0)],
+            # the middle entry, still sharing with the bottom, takes
+            # another
+            ["CONST", 2],
+            ["MATCH_APPEND", (2, 0, 0, 0)],
+            # the top entry's copy is its own; it grows in place
+            ["CONST", 3],
+            ["MATCH_APPEND", (1, 0, 0, 0)],
+        ] + hit(5)
+        got = await run(prog, "v")
+        self.assertEqual(got[2:5], ([], [2], [1, 3]))
+
+
 class TestElementTests(CevalTest):
 
     async def test_literal(self):

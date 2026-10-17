@@ -57,8 +57,8 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
     :return: the function constant
     """
 
-    tables = MatchCompiler().lower(pattern)
     try:
+        tables = MatchCompiler().lower(pattern)
         analyse(tables)
     except (TypeError, ValueError) as exc:
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)

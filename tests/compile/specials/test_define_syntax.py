@@ -22,7 +22,7 @@ Integration tests for define with syntax and macro transformers.
 import pytest
 
 from koskari.compile import Compiler
-from koskari.exceptions import CompilerError
+from koskari.exceptions import CompilerError, SpecialError
 from koskari.lib import OpCode, build_list, build_tuple, cons, nil, symbol
 from koskari.syntax import (
     Syntax, build_macro, build_special, build_syntax, parse_match_pattern,
@@ -293,6 +293,29 @@ class TestRulePatternValidation(DefineSyntaxCompileHelpers):
         with self.assertRaises(CompilerError) as caught:
             self.compile_expr(src_str)
         self.assertIn("REPEAT", str(caught.exception))
+
+
+    def test_core_refusals_at_definition(self):
+        # each pattern the matcher core refuses is refused where the
+        # rule is written, as a SpecialError at the pattern
+        for head in ("syntax-match", "macro-match", "special-match"):
+            for pattern in (
+                    "(m (FORM a (LITERAL (1 2))))",
+                    "(m (ONEOF a (LITERAL (1 2))))",
+                    "(m (FORM a (NOT (VALUE x))))",
+                    "(m (FORM a (REST r) (REPEAT xs (VALUE e) min: 0)))",
+                    "(m (REPEAT xs (VALUE x) min: 70000))"):
+                src_str = f"(define m ({head} m [{pattern} 1]))"
+                with self.assertRaises(SpecialError, msg=src_str):
+                    self.compile_expr(src_str)
+
+
+    def test_name_bound_twice_is_refused_at_definition(self):
+        for pattern in ("(m (VALUE x) (VALUE x))",
+                        "(m (ONEOF (VALUE x) 1) (VALUE x))"):
+            src_str = f"(define m (syntax-match m [{pattern} 1]))"
+            with self.assertRaises(SpecialError, msg=src_str):
+                self.compile_expr(src_str)
 
 
 class TestRepeatedVariableInEllipsis(DefineSyntaxCompileHelpers):

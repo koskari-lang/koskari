@@ -298,9 +298,12 @@ class TestKioImporterParity(unittest.TestCase):
 
         pool = KioFile.read(
             os.path.join(self._tmpdir, 'matchers_out.kio')).pool
+        # a gensym spells its mark in unpadded hex; the positional repeat
+        # slot names are plain strings that also carry a "#"
         spelled = {
             value for value in pool
-            if isinstance(value, str) and re.search(r'#[0-9a-f]{8}$', value)}
+            if isinstance(value, str) and re.search(r'#[0-9a-f]+$', value)
+            and not value.startswith('_repeat#')}
         formals = {
             str(name) for value in pool if isinstance(value, FormalsSpec)
             for name in value.pos or ()}

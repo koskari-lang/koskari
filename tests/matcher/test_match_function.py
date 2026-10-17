@@ -668,4 +668,48 @@ class TestCoreTwins(unittest.TestCase):
         self.assertIsNone(demand(fn)(7))
 
 
+class TestReentry(unittest.TestCase):
+    """
+    A matcher called again from its own walk, by a predicate or by a
+    type's __instancecheck__, returns the captures of its own subject,
+    and the interrupted walk then completes with its own
+    """
+
+    def test_reentered_from_its_predicate(self):
+        inner = []
+        holder = {}
+
+        def p(v):
+            if v == 1:
+                inner.append(holder["m"]((5, 6)))
+            return True
+
+        m = demand(make_matcher(
+            MATCH(CAPTURE("a", PREDICATE("p")), CAPTURE("b")), {"p": p}))
+        holder["m"] = m
+        self.assertEqual(m((1, 2)), {"a": 1, "b": 2})
+        self.assertEqual(inner, [{"a": 5, "b": 6}])
+
+
+    def test_reentered_from_an_instance_check(self):
+        inner = []
+        holder = {}
+
+        class Meta(type):
+            def __instancecheck__(cls, instance):
+                if instance == 1:
+                    inner.append(holder["m"]((7, 8)))
+                return True
+
+        class Kind(metaclass=Meta):
+            pass
+
+        m = demand(make_matcher(
+            MATCH(CAPTURE("a", TYPE("Kind")), CAPTURE("b", TYPE("Kind"))),
+            {"Kind": Kind}))
+        holder["m"] = m
+        self.assertEqual(m((1, 2)), {"a": 1, "b": 2})
+        self.assertEqual(inner, [{"a": 7, "b": 8}])
+
+
 # The end.

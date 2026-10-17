@@ -28,7 +28,7 @@ from koskari.lib import (
     Datum, cdr, cons, demand, keyword, nil, setcar, setcdr, symbol)
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORM, FORMALS, LITERAL,
-    MATCH, PREDICATE,
+    MATCH, PREDICATE, REPEAT, TEST_ANY,
     REST, TYPE, USING, VALUE, DatumFrame,
     MatchCompiler, make_matcher)
 from koskari.types import build_proper
@@ -1005,6 +1005,60 @@ class TestPairSubjectMutation(unittest.TestCase):
         self.assertEqual(caps["b"], 2)
         self.assertEqual(list(caps["rest"].unpack()), [3, 4])
         self.assertEqual(list(subject.unpack()), [1])
+
+
+    def test_predicate_swaps_the_next_car(self):
+        """
+        An element is read when the walk pulls it: a car a predicate
+        replaces ahead of the cursor is read as replaced
+        """
+
+        subject = cons(1, "two", 3, nil)
+
+        def swap(v):
+            setcar(cdr(subject), "swapped")
+            return True
+
+        m = make_matcher(
+            MATCH(PREDICATE("swap"), CAPTURE("b"), CAPTURE("c")),
+            {"swap": swap})
+        self.assertEqual(_ucaps(demand(m)(subject)), {"b": "swapped", "c": 3})
+
+
+    def test_predicate_loops_the_spine_ahead_of_the_cursor(self):
+        """
+        The subject's length is counted when the walk descends into it,
+        so a spine a predicate loops ahead of the cursor afterwards is
+        walked to that count and no further
+        """
+
+        def looper(subject):
+            def loop(v):
+                last = cdr(cdr(cdr(subject)))
+                setcdr(last, cdr(subject))
+                return True
+            return loop
+
+        subject = cons(0, 1, 2, 3, nil)
+        m = make_matcher(
+            MATCH(CAPTURE("a", PREDICATE("loop")), CAPTURE("xs", REPEAT(
+                TEST_ANY()))),
+            {"loop": looper(subject)})
+        caps = _ucaps(demand(m)(subject))
+        self.assertEqual(caps["a"], 0)
+        self.assertEqual(caps["xs"], [1, 2, 3])
+
+        subject = cons(0, 1, 2, 3, nil)
+        m = make_matcher(
+            MATCH(PREDICATE("loop"), REPEAT(TEST_ANY())),
+            {"loop": looper(subject)})
+        self.assertEqual(demand(m)(subject), {})
+
+        subject = cons(0, 1, 2, 3, nil)
+        m = make_matcher(
+            MATCH(PREDICATE("loop"), TEST_ANY(), TEST_ANY(), CAPTURE("z")),
+            {"loop": looper(subject)})
+        self.assertEqual(_ucaps(demand(m)(subject)), {"z": 3})
 
 
 # The end.

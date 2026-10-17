@@ -361,6 +361,81 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "two")
 
 
+    async def test_match_not_after_the_element_tests_the_next(self):
+        # the root is a single value walked as a one-element subject:
+        # the NOT after x tests the end, as it does in a sequence and
+        # in an or branch
+        src = """
+        (match data
+          [[(MATCH x (NOT 1))] #("root" x)]
+          [else: "else"])
+        """
+        for data in (1, 2):
+            expr, mod = self.compile_expr(src, data=data)
+            self.assertEqual(await expr(), ("root", data))
+
+        src = """
+        (match data
+          [[#[(MATCH x (NOT 1))]] #("plain" x)]
+          [else: "else"])
+        """
+        expr, mod = self.compile_expr(src, data=(1,))
+        self.assertEqual(await expr(), ("plain", 1))
+
+        src = """
+        (match data
+          [[#[(or (MATCH x (NOT 1)) 9)]] #("or" x)]
+          [else: "else"])
+        """
+        expr, mod = self.compile_expr(src, data=(1,))
+        self.assertEqual(await expr(), ("or", 1))
+
+
+    async def test_match_arm_roots_of_each_kind(self):
+        # a root of any kind whose width range includes 1 walks the
+        # subject as a one-element sequence
+        for root, expected in (
+                ('(GROUP g (BIND "a"))', {"a": 7}),
+                ('(REPEAT g (BIND "a") min: 0)', [{"a": 7}]),
+                ('(OPTIONAL (BIND "g"))', 7),
+                ("(REST g)", (7,))):
+            src = f"""
+            (match data
+              [[{root}] g]
+              [else: "else"])
+            """
+            expr, mod = self.compile_expr(src, data=7)
+            self.assertEqual(await expr(), expected, root)
+
+
+    async def test_match_not_beside_an_or_with_a_not(self):
+        src = """
+        (match data
+          [[#[#[(not 2)] (or _ (not 9))]] "hit"]
+          [else: "other"])
+        """
+        for data, expected in (
+                (((1,), 5), "hit"),
+                (((1,), 9), "hit"),
+                (((2,), 5), "other"),
+                (((1,),), "other"),
+                (((), 5), "other")):
+            expr, mod = self.compile_expr(src, data=data)
+            self.assertEqual(await expr(), expected, data)
+
+
+    async def test_match_repeat_slot_binds_the_per_pass_values(self):
+        src = """
+        (match data
+          [[#[(REPEAT a) z]] #(a z)]
+          [else: "else"])
+        """
+        expr, mod = self.compile_expr(src, data=(1, 2, 3))
+        self.assertEqual(await expr(), ([1, 2], 3))
+        expr, mod = self.compile_expr(src, data=(3,))
+        self.assertEqual(await expr(), ([], 3))
+
+
     async def test_match_bare_multi_token_raises(self):
         src = """
         (match data
@@ -401,6 +476,21 @@ class TestMatchFailedCaptures(SpecialsTestCase):
         self.assertEqual(await expr(), 100)
         expr, mod = self.compile_expr(src, data=(5, 3))
         self.assertEqual(await expr(), 100)
+
+
+    async def test_unfired_optional_leaves_the_variable_as_it_was(self):
+        src = """
+        (let [[b "default"]]
+          (match data
+            [[#[a (OPTIONAL (BIND "b"))]] #(a b)]
+            [else: #("else" b)]))
+        """
+        expr, mod = self.compile_expr(src, data=(1,))
+        self.assertEqual(await expr(), (1, "default"))
+        expr, mod = self.compile_expr(src, data=(1, 2))
+        self.assertEqual(await expr(), (1, 2))
+        expr, mod = self.compile_expr(src, data="x")
+        self.assertEqual(await expr(), ("else", "default"))
 
 
     async def test_unfired_optional_leaves_its_name_unbound(self):
@@ -775,6 +865,66 @@ class TestPatternValidation(SpecialsTestCase):
         self.assertIn("REST", str(caught.exception))
 
 
+    def assertRefused(self, pattern):
+        src = f"(match data [[{pattern}] 1] [else: 0])"
+        with self.assertRaises(SpecialError, msg=pattern):
+            self.compile_expr(src, data=1, f=abs, P=int)
+
+
+    def test_root_width_without_one_is_refused(self):
+        # an arm's subject is a single value; the case dialect writes
+        # a NOT that consumes the value as (not p)
+        for pattern in ("(NOT 1)", "(MATCH a b)", "(MATCH)"):
+            self.assertRefused(pattern)
+
+
+    def test_single_value_width_without_one_is_refused(self):
+        for pattern in ("(app f (MATCH a b))", "(app f (NOT 1))",
+                        '#{"k": (MATCH a b)}', '#{"k": (NOT 1)}'):
+            self.assertRefused(pattern)
+
+
+    def test_field_width_not_one_is_refused(self):
+        for pattern in ("(item P (REST r))", "(item P (MATCH a b))",
+                        "(item P (OPTIONAL a))"):
+            self.assertRefused(pattern)
+
+
+    def test_pair_literal_is_refused(self):
+        for pattern in ("(LITERAL (1 2))", "#[a (LITERAL (1 2))]"):
+            self.assertRefused(pattern)
+
+
+    def test_repeat_body_of_minimum_width_zero_is_refused(self):
+        for pattern in ("#[(REPEAT xs (OPTIONAL a) min: 0)]",
+                        "#[(REPEAT xs (NOT 1) min: 0)]"):
+            self.assertRefused(pattern)
+
+
+    def test_variable_width_after_rest_is_refused(self):
+        for pattern in ("#[*: r (REPEAT xs a min: 0)]",
+                        "#[*: r (REST s)]",
+                        "#[*: r (or a (MATCH b c))]"):
+            self.assertRefused(pattern)
+
+
+    def test_capture_anywhere_under_not_is_refused(self):
+        for pattern in ("#[(not #[a]) b]", "#[(NOT (MATCH a)) b]",
+                        "#[(not (app f a)) b]"):
+            self.assertRefused(pattern)
+
+
+    def test_name_bound_twice_in_one_scope_is_refused(self):
+        for pattern in ("#[x x]", "#[(or x 1) x]"):
+            self.assertRefused(pattern)
+
+
+    def test_count_past_the_field_limit_is_refused(self):
+        for pattern in ("#[(REPEAT xs a min: 70000)]",
+                        "#[(REST r min: 70000)]"):
+            self.assertRefused(pattern)
+
+
 class TestMatchCalls(SpecialsTestCase):
     """
     A predicate or extractor the pattern calls runs in the matcher's
@@ -923,6 +1073,37 @@ class TestMatchCalls(SpecialsTestCase):
                          ("hit", [1], 2, 3))
         self.assertEqual((hit2, [x.datum for x in xs2], y2.datum, z2.datum),
                          ("hit", [1], 2, 3))
+
+
+    async def test_escaped_continuation_inside_a_capturing_repeat(self):
+        """
+        A continuation captured inside a repeat pass that binds a slot,
+        resumed twice: each resumption completes the pass with its own
+        binding, so both give the same items
+        """
+
+        src = """
+        (begin
+          (define-global pred
+            (lambda [v]
+              (or holder.k (shift k (begin (setattr holder "k" k) False)))))
+          (define-global first
+            (reset
+              (match data
+                [[#[(REPEAT xs (MATCH (BIND "a") (PREDICATE pred)) min: 0) y]]
+                 #("hit" xs y)]
+                [else: "miss"])))
+          #(first (call holder.k True) (call holder.k True)))
+        """
+
+        class Holder:
+            k = None
+
+        expr, mod = self.compile_expr(
+            src, data=(1, 2, 3), holder=Holder(), setattr=setattr)
+        self.assertEqual(
+            await expr(),
+            (False, ("hit", [{"a": 1}], 3), ("hit", [{"a": 1}], 3)))
 
 
     async def test_awaiting_extractor_awaits_in_place(self):
