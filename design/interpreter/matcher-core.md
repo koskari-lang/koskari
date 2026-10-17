@@ -83,7 +83,7 @@ Spine composites act on the cursor:
 |---|---|
 | `MATCH children` | the children in order on the same cursor |
 | `GROUP g children` | the same, in a capture scope of its own; its captures become the value of `g` |
-| `GROUP children` (anonymous) | the same as MATCH; its slots belong to the enclosing scope |
+| `GROUP children` (anonymous) | the same, in a scope of its own whose captures are discarded |
 | `ONEOF branches` | the first branch that matches; a failed branch restores the cursor and empties its slots |
 | `OPTIONAL sub` | `sub` if it matches, else zero elements |
 | `REPEAT sub min` | `sub` repeated, at least `min` times; each pass is one iteration |
@@ -107,7 +107,7 @@ is a one-element subject walked through a cursor like any spine.
   A REPEAT followed by a REST: the REPEAT collects the elements its body
   matches, and the REST takes the tail after the first miss.
 - **Length precheck.** A FORM, a root, and every same-cursor composite
-  (MATCH, named GROUP, ONEOF branch) whose minimum width exceeds 1
+  (MATCH, GROUP, ONEOF branch) whose minimum width exceeds 1
   checks the remaining length against its widths plus `w` before it
   tests an element. This is master's per-element reservation: a subject
   too short for a branch never reaches the branch's PREDICATE or APP.
@@ -157,8 +157,9 @@ is a one-element subject walked through a cursor like any spine.
 - A capture scope -- the root, a GROUP node, one REPEAT pass -- pushes
   a mark. In the node tables a named group is a CAPTURE over a GROUP:
   the CAPTURE stores the GROUP's captures. A GROUP that is neither
-  captured nor a REPEAT body opens no scope; its slots belong to the
-  enclosing scope. ONEOF, OPTIONAL, NOT and CAPTURE push a mark with no slots.
+  captured nor a REPEAT body opens a scope whose captures are discarded
+  when it closes, as on master; it counts as a scope for SAME depth.
+  ONEOF, OPTIONAL, NOT and CAPTURE push a mark with no slots.
 - A mark records the cursor's position and holds an array of slot
   entries for its scope; an empty entry is unbound. The scope's slot
   count is known at lowering; the instruction that pushes the mark
@@ -259,7 +260,7 @@ MAP entries       NEXT cur miss; MAPPING f1
                   POP
                   f2: POP; f1: POP; JUMP miss
 MATCH children    [FITS cur min+w max+w miss]; <children in order on cur>
-GROUP (anonymous) as MATCH
+GROUP (anonymous) SCOPE cur k; [FITS]; <children> (-> f); POP  ; captures discarded
 GROUP g children  SCOPE cur k; [FITS]; <children> (-> f); CAPTURES s' cur names; STORE s i_g; POP
                   f: POP; JUMP miss
 ONEOF b1..bn      SCOPE cur 0
@@ -348,7 +349,8 @@ are recorded, not a gate.
 ## Decisions from the prep inventory
 
 - A named group is a CAPTURE over a GROUP node in the tables. A GROUP
-  that is neither captured nor a REPEAT body opens no scope.
+  that is neither captured nor a REPEAT body opens a scope whose
+  captures are discarded (decided in phase 2, as on master).
 - A SAME at depth 0 inside a REPEAT pass that names a slot of an outer
   scope is refused (master's "outside its frame").
 - An element is read when it is pulled. A list or tuple is read at its
@@ -372,6 +374,13 @@ are recorded, not a gate.
 - `MATCH_CASE` keeps the branch's form (no cache slot, a handler that
   raises).
 
+- Decided in phase 2:
+  - a name binds at most once in a scope, except across the
+    alternatives of one ONEOF; a second binding (a branch name reused
+    after its ONEOF, a REPEAT column equal to an outer name) is refused
+    at build, so a failed branch's CLEAR never empties another binding;
+  - phase 6's `MatchCompiler` changes also make `resolve_slot` accept a
+    SAME before its binding.
 - Decided in phase 1, from the oracle against the current path:
   - a REPEAT pass's captures are a dict, as on master, over any subject;
   - a SAME that reads a slot of an open scope before the slot is bound

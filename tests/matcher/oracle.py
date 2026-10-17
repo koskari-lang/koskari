@@ -739,14 +739,16 @@ def close_scope(scope, state):
         state["outside"] = True
 
 
-def scan_scopes(spec, scopes, state, captured=False):
+def scan_scopes(spec, scopes, state, captured=False, owned=False):
     """
     Walk spec in match order with the open capture scopes (each a dict
     of the names bound so far and the SAMEs that read a name it had not
     bound), setting state["outside"] for a SAME whose scope never binds
     its slot. The slots of an uncaptured REPEAT's passes become slots of the
     enclosing scope after it (their per-pass value lists); captured
-    marks a REPEAT under a CAPTURE
+    marks a REPEAT under a CAPTURE. An anonymous GROUP opens a scope of
+    its own whose names stay in it, unless owned marks it as a REPEAT
+    body or the GROUP under a CAPTURE, whose scope is already open
     """
 
     tag = spec[0]
@@ -760,10 +762,12 @@ def scan_scopes(spec, scopes, state, captured=False):
 
     named_group = tag == "GROUP" and spec[1] is not None \
         or tag == "CAP" and spec[2] is not None and spec[2][0] == "GROUP"
-    if tag == "REPEAT" or named_group:
+    discarded = tag == "GROUP" and spec[1] is None and not owned
+    if tag == "REPEAT" or named_group or discarded:
         inner = {"names": set(), "pending": []}
         for child in spec_children(spec):
-            scan_scopes(child, scopes + [inner], state)
+            scan_scopes(child, scopes + [inner], state,
+                        owned=tag in ("REPEAT", "CAP"))
         close_scope(inner, state)
         if tag == "REPEAT" and not captured:
             scopes[-1]["names"].update(inner["names"])
