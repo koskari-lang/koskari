@@ -12,8 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for CAPTURE(REPEAT(inner)) frame lists, binding_inner_pattern,
-and thaw round-trip (matcher phase 4.5).
+Tests for CAPTURE(REPEAT(inner)) frame lists and binding_inner_pattern
 """
 
 
@@ -21,10 +20,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, keyword, symbol
+from koskari.lib import Datum, demand, keyword, symbol
 from koskari.matcher import (
-    GROUP, MATCH, ONEOF, SYMBOL, VALUE, Matcher, binding_inner_pattern,
-    parse_explicit_rule_pattern, pattern_slot_names, repeat_capture, thaw)
+    GROUP, MATCH, ONEOF, SYMBOL, VALUE, binding_inner_pattern,
+    parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
 from koskari.types import build_proper
 
 
@@ -45,17 +44,17 @@ class TestRepeatCapture(unittest.TestCase):
         sa = symbol("a")
         sb = symbol("b")
         subj = ((sa, 1), (sb, 2))
-        result = m.match(subj)
-        self.assertTrue(result.matched)
-        cap = result.captures["bindings"]
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
+        cap = result["bindings"]
         frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 1)
         self.assertEqual(frames[1]["name"], sb)
         self.assertEqual(frames[1]["expr"], 2)
-        self.assertNotIn("name", result.captures)
-        self.assertNotIn("expr", result.captures)
+        self.assertNotIn("name", result)
+        self.assertNotIn("expr", result)
 
 
     def test_repeat_capture_expr_as_name_branch(self):
@@ -69,38 +68,13 @@ class TestRepeatCapture(unittest.TestCase):
         sx = symbol("x")
         cell = (99, keyword("as"), sx)
         subj = (cell,)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
-        cap = result.captures["rows"]
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
+        cap = result["rows"]
         frames = cap.datum if isinstance(cap, Datum) else cap
         self.assertEqual(len(frames), 1)
         self.assertEqual(frames[0]["expr"], 99)
         self.assertEqual(frames[0]["name"], sx)
-
-
-class TestRepeatFramesThawRoundTrip(unittest.TestCase):
-
-
-    def test_thaw_repeat_capture_same_frames(self):
-        """
-        Frozen tuple from repeat_capture round-trips through thaw and
-        matches with the same list-of-dicts captures shape
-        """
-
-        pat = repeat_capture("bindings", binding_inner_pattern())
-        frozen = pat.freeze()
-        m = thaw(frozen, {"symbol": symbol})
-        self.assertIsInstance(m, Matcher)
-        sa = symbol("u")
-        sb = symbol("v")
-        subj = ((sa, 10), (sb, 20))
-        result = m.match(subj)
-        self.assertTrue(result.matched)
-        cap = result.captures["bindings"]
-        frames = cap.datum if isinstance(cap, Datum) else cap
-        self.assertEqual(len(frames), 2)
-        self.assertEqual(frames[0]["name"], sa)
-        self.assertEqual(frames[0]["expr"], 10)
 
 
 class TestPatternSlotNames(unittest.TestCase):

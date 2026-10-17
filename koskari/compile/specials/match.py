@@ -27,7 +27,7 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
 from ...lib import OpCode, keyword, symbol
-from ...match_code import lower_clause, validate_frozen
+from ...match_code import check_nodes, lower_clause
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
@@ -129,15 +129,15 @@ def special_match(compiler, caps):
             guard_expr, body = tail
 
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
-        frozen = MatchCompiler().lower(arm)
+        tables = MatchCompiler().lower(arm)
         try:
-            validate_frozen(frozen)
+            check_nodes(tables[3], tables[4])
         except (TypeError, ValueError) as exc:
             raise SpecialError(
                 f"invalid match pattern: {exc}", pattern, position=clause_pos)
-        atoms = extern_atoms(pattern, frozen[2])
+        atoms = extern_atoms(pattern, tables[1])
         arms.append(
-            (pattern, frozen, atoms, guard_kw, guard_expr, body, clause_pos))
+            (pattern, tables, atoms, guard_kw, guard_expr, body, clause_pos))
 
     def request_externs(target):
         """
@@ -149,21 +149,21 @@ def special_match(compiler, caps):
         pattern wrote, so a name a template binds resolves to it
         """
 
-        for _pattern, frozen, atoms, *_rest in arms:
-            if frozen is None:
+        for _pattern, tables, atoms, *_rest in arms:
+            if tables is None:
                 continue
-            for extern in frozen[2]:
+            for extern in tables[1]:
                 target.request_var(atoms.get(extern) or symbol(extern))
 
     declared = set()
-    for pattern, frozen, atoms, _kw, _expr, _body, _pos in arms:
-        if frozen is None:
+    for pattern, tables, atoms, _kw, _expr, _body, _pos in arms:
+        if tables is None:
             continue
-        # frozen[1] is the full slot table in emission order -- the
+        # tables[0] is the full slot table in emission order -- the
         # one lowering yields both the instructions and the binding
         # names. Ordered dedup: ONEOF branches may declare the same
         # slot in mutually exclusive clauses.
-        for name in dict.fromkeys(symbol(n) for n in frozen[1]):
+        for name in dict.fromkeys(symbol(n) for n in tables[0]):
             if name not in declared:
                 declared.add(name)
                 fragment.declare_var(name)
@@ -175,10 +175,10 @@ def special_match(compiler, caps):
         subject still on the stack, a miss to next_label the same way
         """
 
-        pattern, frozen, atoms, guard_kw, guard_expr, _body, clause_pos = arm
+        pattern, tables, atoms, guard_kw, guard_expr, _body, clause_pos = arm
         target.position(clause_pos)
         miss_edges = lower_clause(
-            compiler, target, frozen, atoms, next_label, pattern, clause_pos)
+            compiler, target, tables, atoms, next_label, pattern, clause_pos)
         if guard_kw is not None:
             target.merge(compiler.full_compile(guard_expr))
             target.instruction(
@@ -194,8 +194,8 @@ def special_match(compiler, caps):
     request_externs(fragment)
     fragment.merge(compiler.full_compile(caps["subject"].datum))
     for arm in arms:
-        pattern, frozen, atoms, guard_kw, guard_expr, body, clause_pos = arm
-        if frozen is None:
+        pattern, tables, atoms, guard_kw, guard_expr, body, clause_pos = arm
+        if tables is None:
             fragment.position(clause_pos)
             fragment.instruction(OpCode.POP, 1)
             helper_begin(fragment, body)

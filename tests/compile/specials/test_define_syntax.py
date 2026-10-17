@@ -688,32 +688,6 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         self.assertEqual("other-arm", await expr())
 
 
-    async def test_compile_syntax_match_arm_reports_its_tables(self):
-        # a matcher the module compiled carries its frozen tuple: its
-        # slots, externs and consts are the pattern's own
-        src_str = """
-        (begin
-          (define match-subject int)
-          (define ext
-            (syntax-match ext
-              [(ext (TYPE match-subject)) "int-arm"]
-              [(ext (LITERAL hello) (VALUE y)) "hello-arm"])))
-        """
-        expr, mod = self.compile_expr(src_str, int=int)
-        await expr()
-        first, second = (t.matcher for t in vars(mod)['ext'].transforms)
-
-        self.assertIsNotNone(first.frozen)
-        self.assertEqual(first.slots, ())
-        self.assertEqual(first.externs, ("match-subject",))
-        self.assertEqual(first.consts, (symbol("ext"),))
-
-        self.assertIsNotNone(second.frozen)
-        self.assertEqual(second.slots, ("y",))
-        self.assertEqual(second.externs, ())
-        self.assertEqual(second.consts, (symbol("ext"), symbol("hello")))
-
-
 class TestCompileMacroMatch(DefineSyntaxCompileHelpers):
 
     async def test_compile_macro_match_value_pattern(self):

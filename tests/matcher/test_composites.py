@@ -25,12 +25,12 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Datum, cdr, cons, keyword, nil, setcar, setcdr, symbol)
+    Datum, cdr, cons, demand, keyword, nil, setcar, setcdr, symbol)
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORM, FORMALS, LITERAL,
     MATCH, PREDICATE,
     REST, TYPE, USING, VALUE, DatumFrame,
-    MatchCompiler, Matcher, MatchResult, make_matcher)
+    MatchCompiler, make_matcher)
 from koskari.types import build_proper
 
 
@@ -86,7 +86,7 @@ def _ucaps(result):
     """
 
     out = {}
-    for k, v in result.captures.items():
+    for k, v in result.items():
         out[str(k)] = _peel_capture_value(v)
     return out
 
@@ -112,8 +112,8 @@ class TestDEFINE(unittest.TestCase):
         pat = MATCH(DEFINE("name"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match((sa,))
-        self.assertTrue(result.matched)
+        result = demand(m)((sa,))
+        self.assertIsNotNone(result)
         self.assertIs(_ucaps(result)["name"], sa)
 
 
@@ -124,16 +124,7 @@ class TestDEFINE(unittest.TestCase):
 
         pat = MATCH(DEFINE("name"))
         m = pat.build()
-        self.assertFalse(m.match((42,)).matched)
-
-
-    def test_define_returns_native_matcher(self):
-        """
-        Building a DEFINE-bearing pattern yields a native Matcher
-        """
-
-        m = MATCH(DEFINE("name")).build()
-        self.assertIsInstance(m, Matcher)
+        self.assertIsNone(demand(m)((42,)))
 
 
 class TestDECL(unittest.TestCase):
@@ -147,9 +138,9 @@ class TestDECL(unittest.TestCase):
         pat = MATCH(DECL("d"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match(build_proper(sa))
-        self.assertTrue(result.matched)
-        d = result.captures["d"]
+        result = demand(m)(build_proper(sa))
+        self.assertIsNotNone(result)
+        d = result["d"]
         self.assertIsInstance(d, DatumFrame)
         self.assertEqual(d.source, build_proper(sa))
 
@@ -163,9 +154,9 @@ class TestDECL(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         inner = _list(sa)
-        result = m.match(build_proper(inner))
-        self.assertTrue(result.matched)
-        d = result.captures["d"]
+        result = demand(m)(build_proper(inner))
+        self.assertIsNotNone(result)
+        d = result["d"]
         self.assertIsInstance(d, DatumFrame)
         self.assertEqual(d.source, build_proper(inner))
         self.assertIs(_ucaps(result)["d"]["name"], sa)
@@ -181,8 +172,8 @@ class TestDECL(unittest.TestCase):
         sa = symbol("Foo")
         sb = symbol("bar")
         subj = (_list(sa, keyword("as"), sb),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
         self.assertIs(_ucaps(result)["d"]["type"], sa)
         self.assertIs(_ucaps(result)["d"]["name"], sb)
 
@@ -199,8 +190,8 @@ class TestDECL(unittest.TestCase):
         kt = keyword("type")
         st = symbol("Bar")
         tail_form = _list(sa, kt, st)
-        result = m.match((tail_form,))
-        self.assertTrue(result.matched)
+        result = demand(m)((tail_form,))
+        self.assertIsNotNone(result)
         self.assertIs(_ucaps(result)["d"]["name"], sa)
         self.assertEqual(_ucaps(result)["d"]["decl_tail"], cons(kt, st, nil))
 
@@ -213,8 +204,8 @@ class TestDECL(unittest.TestCase):
 
         pat = MATCH(DECL("d"))
         m = pat.build()
-        result = m.match((42,))
-        self.assertFalse(result.matched)
+        result = demand(m)((42,))
+        self.assertIsNone(result)
 
 
 class TestBINDING(unittest.TestCase):
@@ -230,9 +221,9 @@ class TestBINDING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         cell = _list(sa, 7)
-        result = m.match(build_proper(cell))
-        self.assertTrue(result.matched)
-        b = result.captures["b"]
+        result = demand(m)(build_proper(cell))
+        self.assertIsNotNone(result)
+        b = result["b"]
         self.assertIsInstance(b, DatumFrame)
         self.assertEqual(b.source, build_proper(cell))
         self.assertIs(_ucaps(result)["b"]["name"], sa)
@@ -248,8 +239,8 @@ class TestBINDING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(7, keyword("as"), sa),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
         self.assertEqual(_ucaps(result)["b"]["expr"], 7)
         self.assertIs(_ucaps(result)["b"]["name"], sa)
 
@@ -263,8 +254,8 @@ class TestBINDING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 1, 2),)
-        result = m.match(subj)
-        self.assertFalse(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNone(result)
 
 
 class TestBINDINGS(unittest.TestCase):
@@ -285,9 +276,9 @@ class TestBINDINGS(unittest.TestCase):
         c1 = _list(sa, 1)
         c2 = _list(sb, 2)
         subj = build_proper(_list(c1, c2), "tail")
-        result = m.match(subj)
-        self.assertTrue(result.matched)
-        frames_raw = result.captures["bs"]
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
+        frames_raw = result["bs"]
         self.assertIsInstance(frames_raw, list)
         self.assertEqual(len(frames_raw), 2)
         self.assertIsInstance(frames_raw[0], DatumFrame)
@@ -310,8 +301,8 @@ class TestBINDINGS(unittest.TestCase):
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
-        result = m.match(build_proper(nil, "tail"))
-        self.assertTrue(result.matched)
+        result = demand(m)(build_proper(nil, "tail"))
+        self.assertIsNotNone(result)
         self.assertIs(_ucaps(result)["bs"], nil)
         self.assertEqual(_ucaps(result)["tail"], "tail")
 
@@ -325,7 +316,7 @@ class TestBINDINGS(unittest.TestCase):
 
         pat = MATCH(BINDINGS("bs"), CAPTURE("tail"))
         m = pat.build()
-        self.assertFalse(m.match((42, "tail")).matched)
+        self.assertIsNone(demand(m)((42, "tail")))
 
 
 class TestUSING(unittest.TestCase):
@@ -341,8 +332,8 @@ class TestUSING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(sa, 7),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
         c = _ucaps(result)
         self.assertIs(c["u"]["name"], sa)
         self.assertEqual(c["u"]["expr"], 7)
@@ -359,8 +350,8 @@ class TestUSING(unittest.TestCase):
         m = pat.build()
         sa = symbol("foo")
         subj = (_list(7, keyword("as"), sa),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
         c = _ucaps(result)
         self.assertEqual(c["u"]["expr"], 7)
         self.assertIs(c["u"]["name"], sa)
@@ -375,8 +366,8 @@ class TestUSING(unittest.TestCase):
         pat = MATCH(USING("u"))
         m = pat.build()
         subj = (_list(7),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
         c = _ucaps(result)
         self.assertEqual(c["u"]["expr"], 7)
         self.assertNotIn("name", c["u"])
@@ -394,8 +385,8 @@ class TestUSING(unittest.TestCase):
         sb = symbol("b")
         lhs = _list(sa, sb)
         subj = (_list(lhs, 7),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
         c = _ucaps(result)
         self.assertEqual(c["u"]["lhs"], lhs)
         self.assertEqual(c["u"]["expr"], 7)
@@ -409,8 +400,8 @@ class TestUSING(unittest.TestCase):
 
         pat = MATCH(USING("u"))
         m = pat.build()
-        result = m.match((42,))
-        self.assertFalse(result.matched)
+        result = demand(m)((42,))
+        self.assertIsNone(result)
 
 
 class TestFORMALS(unittest.TestCase):
@@ -424,8 +415,8 @@ class TestFORMALS(unittest.TestCase):
         pat = MATCH(FORMALS("f"))
         m = pat.build()
         sa = symbol("rest")
-        result = m.match((sa,))
-        self.assertFalse(result.matched)
+        result = demand(m)((sa,))
+        self.assertIsNone(result)
 
 
     def test_formals_empty_list(self):
@@ -437,9 +428,9 @@ class TestFORMALS(unittest.TestCase):
 
         pat = MATCH(FORMALS("f"))
         m = pat.build()
-        result = m.match(build_proper(nil))
-        self.assertTrue(result.matched)
-        f = result.captures["f"]
+        result = demand(m)(build_proper(nil))
+        self.assertIsNotNone(result)
+        f = result["f"]
         self.assertIsInstance(f, DatumFrame)
         self.assertEqual(f.source, build_proper(nil))
         c = _ucaps(result)
@@ -463,9 +454,9 @@ class TestFORMALS(unittest.TestCase):
         sb = symbol("b")
         sc = symbol("c")
         formals = _list(sa, sb, sc)
-        result = m.match(build_proper(formals))
-        self.assertTrue(result.matched)
-        fr = result.captures["f"]
+        result = demand(m)(build_proper(formals))
+        self.assertIsNotNone(result)
+        fr = result["f"]
         self.assertIsInstance(fr, DatumFrame)
         self.assertEqual(fr.source, build_proper(formals))
         u = _ucaps(result)
@@ -487,8 +478,8 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         sself = symbol("self")
         formals = _list(sself)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sself)
@@ -508,8 +499,8 @@ class TestFORMALS(unittest.TestCase):
         kann = keyword("")
         sint = symbol("int")
         formals = _list(_list(sx, kann, sint), _list(ky, 1, kann, sint))
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         u = _ucaps(result)
         positionals = u["f"]["positionals"]
         self.assertEqual(len(positionals), 2)
@@ -535,8 +526,8 @@ class TestFORMALS(unittest.TestCase):
         sself = symbol("self")
         kthresh = keyword("threshold")
         formals = _list(sself, kthresh, 0.6)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         u = _ucaps(result)
         positionals = u["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
@@ -558,8 +549,8 @@ class TestFORMALS(unittest.TestCase):
         kalive = keyword("alive")
         kdead = keyword("dead")
         formals = _list(kalive, "O", kdead, " ")
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         u = _ucaps(result)
         self.assertEqual(u["f"]["positionals"], [])
         defaults = u["f"]["defaults"]
@@ -580,8 +571,8 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         kargv = keyword("argv")
         formals = _list(kargv, None)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         defaults = _ucaps(result)["f"]["defaults"]
         self.assertEqual(len(defaults), 1)
         self.assertIs(defaults[0]["kw"], kargv)
@@ -597,8 +588,8 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         rest = symbol("rest")
         formals = _list(keyword("*"), rest)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         c = _ucaps(result)["f"]
         self.assertEqual(c["positionals"], [])
         self.assertIs(c["star"], rest)
@@ -614,8 +605,8 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         skw = symbol("kw")
         formals = _list(keyword("**"), skw)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         c = _ucaps(result)["f"]
         self.assertEqual(c["positionals"], [])
         self.assertIs(c["starstar"], skw)
@@ -632,8 +623,8 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         sx = symbol("x")
         formals = _list(_list(sx))
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sx)
@@ -651,8 +642,8 @@ class TestFORMALS(unittest.TestCase):
         sx = symbol("x")
         st = symbol("T")
         formals = _list(_list(sx, keyword("::"), st))
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["name"], sx)
@@ -674,8 +665,8 @@ class TestFORMALS(unittest.TestCase):
         sb = symbol("b")
         sc = symbol("c")
         improper = cons(sa, sb, sc)
-        result = m.match((improper,))
-        self.assertFalse(result.matched)
+        result = demand(m)((improper,))
+        self.assertIsNone(result)
 
 
     def test_formals_rejects_non_symbol_non_list(self):
@@ -686,8 +677,8 @@ class TestFORMALS(unittest.TestCase):
 
         pat = MATCH(FORMALS("f"))
         m = pat.build()
-        result = m.match((42,))
-        self.assertFalse(result.matched)
+        result = demand(m)((42,))
+        self.assertIsNone(result)
 
 
     def test_formals_star_segment(self):
@@ -700,8 +691,8 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         rest = symbol("rest")
         formals = _list(sa, keyword("*"), rest)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         c = _ucaps(result)["f"]
         self.assertEqual(len(c["positionals"]), 1)
         self.assertIs(c["positionals"][0]["name"], sa)
@@ -720,8 +711,8 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         kw = symbol("kw")
         formals = _list(sa, keyword("**"), kw)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         c = _ucaps(result)["f"]
         self.assertIs(c["starstar"], kw)
         self.assertNotIn("star", c)
@@ -739,8 +730,8 @@ class TestFORMALS(unittest.TestCase):
         foo = keyword("foo")
         bar = keyword("bar")
         formals = _list(sa, foo, 1, bar, 2)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         defaults = _ucaps(result)["f"]["defaults"]
         self.assertIsInstance(defaults, list)
         self.assertEqual(len(defaults), 2)
@@ -765,8 +756,8 @@ class TestFORMALS(unittest.TestCase):
         skw = symbol("kw")
         formals = _list(
             sa, keyword("*"), rest, sx, ky, 2, keyword("**"), skw)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         u = _ucaps(result)["f"]
         self.assertIs(u["star"], rest)
         kwonly = u["kwonly"]
@@ -788,8 +779,8 @@ class TestFORMALS(unittest.TestCase):
         m = pat.build()
         sa = symbol("a")
         formals = _list(sa, keyword("*"), nil)
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         self.assertIs(_ucaps(result)["f"]["star"], nil)
 
 
@@ -804,8 +795,8 @@ class TestFORMALS(unittest.TestCase):
         sa = symbol("a")
         sb = symbol("b")
         formals = _list(sa, _list(sb, 1))
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 2)
         self.assertIs(positionals[0]["name"], sa)
@@ -824,8 +815,8 @@ class TestFORMALS(unittest.TestCase):
         st = symbol("T")
         sn = symbol("n")
         formals = _list(_list(st, keyword("as"), sn))
-        result = m.match((formals,))
-        self.assertTrue(result.matched)
+        result = demand(m)((formals,))
+        self.assertIsNotNone(result)
         positionals = _ucaps(result)["f"]["positionals"]
         self.assertEqual(len(positionals), 1)
         self.assertIs(positionals[0]["type"], st)
@@ -843,8 +834,8 @@ class TestBODY(unittest.TestCase):
 
         pat = MATCH(CAPTURE("head"), BODY("body"))
         m = pat.build()
-        result = m.match((1, 2, 3))
-        self.assertTrue(result.matched)
+        result = demand(m)((1, 2, 3))
+        self.assertIsNotNone(result)
         self.assertEqual(_ucaps(result)["head"], 1)
         self.assertEqual(_ucaps(result)["body"], (2, 3))
 
@@ -860,8 +851,8 @@ class TestVALUE(unittest.TestCase):
 
         pat = MATCH(CAPTURE("head"), VALUE("expr"))
         m = pat.build()
-        result = m.match((1, 2))
-        self.assertTrue(result.matched)
+        result = demand(m)((1, 2))
+        self.assertIsNotNone(result)
         self.assertEqual(_ucaps(result)["head"], 1)
         self.assertEqual(_ucaps(result)["expr"], 2)
 
@@ -878,8 +869,8 @@ class TestComposition(unittest.TestCase):
         pat = MATCH(DEFINE("name"), BODY("body"))
         m = pat.build()
         sa = symbol("foo")
-        result = m.match((sa, 1, 2, 3))
-        self.assertTrue(result.matched)
+        result = demand(m)((sa, 1, 2, 3))
+        self.assertIsNotNone(result)
         self.assertIs(_ucaps(result)["name"], sa)
         self.assertEqual(_ucaps(result)["body"], (1, 2, 3))
 
@@ -896,11 +887,11 @@ class TestComposition(unittest.TestCase):
         sx = symbol("x")
         sy = symbol("y")
         formals = _list(sx, sy)
-        result = m.match(build_proper(sa, formals, "b1", "b2"))
-        self.assertTrue(result.matched)
+        result = demand(m)(build_proper(sa, formals, "b1", "b2"))
+        self.assertIsNotNone(result)
         u = _ucaps(result)
         self.assertIs(u["name"], sa)
-        fr = result.captures["formals"]
+        fr = result["formals"]
         self.assertIsInstance(fr, DatumFrame)
         self.assertIs(fr.source, formals)
         self.assertEqual(u["body"], build_proper("b1", "b2"))
@@ -918,47 +909,22 @@ class TestComposition(unittest.TestCase):
         m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
-        result = m.match((_list(_list(sa, 1), _list(sb, 2)), "b1", "b2"))
-        self.assertTrue(result.matched)
+        result = demand(m)((_list(_list(sa, 1), _list(sb, 2)), "b1", "b2"))
+        self.assertIsNotNone(result)
         frames = _ucaps(result)["bs"]
         self.assertEqual(len(frames), 2)
         self.assertEqual(_ucaps(result)["body"], ("b1", "b2"))
 
 
-class TestMakeMatcher(unittest.TestCase):
-
-
-    def test_make_matcher_returns_native_matcher(self):
-        """
-        make_matcher returns a native Matcher and never a wrapper
-        """
-
-        pat = MATCH(DEFINE("name"))
-        m = make_matcher(pat)
-        self.assertIsInstance(m, Matcher)
-
-
-    def test_make_matcher_returns_native_match_result(self):
-        """
-        make_matcher's matcher returns native MatchResult instances
-        """
-
-        pat = MATCH(DEFINE("name"))
-        m = make_matcher(pat)
-        sa = symbol("foo")
-        result = m.match((sa,))
-        self.assertIsInstance(result, MatchResult)
-
-
 class TestCyclicPairSubject(unittest.TestCase):
     """
     A pair spine mutated into a cycle is not a proper list, and the
-    subject adapter rejects it rather than walking it forever
+    walk rejects it rather than walking it forever
     """
 
     def test_match_refuses_a_cyclic_spine(self):
         """
-        Matcher.match on a cyclic pair raises instead of hanging
+        The matcher on a cyclic pair raises instead of hanging
         """
 
         subject = cons(1, 2, nil)
@@ -966,7 +932,7 @@ class TestCyclicPairSubject(unittest.TestCase):
 
         m = make_matcher(MATCH(CAPTURE("a"), REST("rest")))
         with self.assertRaises(ValueError):
-            m.match(subject)
+            demand(m)(subject)
 
 
     def test_match_refuses_a_self_looped_cell(self):
@@ -979,7 +945,7 @@ class TestCyclicPairSubject(unittest.TestCase):
 
         m = make_matcher(MATCH(CAPTURE("a")))
         with self.assertRaises(ValueError):
-            m.match(subject)
+            demand(m)(subject)
 
 
 class BrokenSequence(collections.abc.Sequence):
@@ -1004,17 +970,16 @@ class TestFormSubjectErrors(unittest.TestCase):
     def test_sequence_whose_reads_raise_propagates(self):
         m = make_matcher(MATCH(FORM(MATCH(CAPTURE("a")))))
         with self.assertRaises(RuntimeError):
-            m.match((BrokenSequence(),))
+            demand(m)((BrokenSequence(),))
 
     def test_improper_pair_is_a_no_match(self):
         m = make_matcher(MATCH(FORM(MATCH(CAPTURE("a"), CAPTURE("b")))))
-        self.assertFalse(m.match((cons(1, 2),)).matched)
-        self.assertTrue(m.match((cons(1, 2, nil),)).matched)
+        self.assertIsNone(demand(m)((cons(1, 2),)))
+        self.assertIsNotNone(demand(m)((cons(1, 2, nil),)))
 
-    def test_improper_root_subject_is_refused(self):
+    def test_improper_root_subject_is_a_miss(self):
         m = make_matcher(MATCH(CAPTURE("a")))
-        with self.assertRaises(TypeError):
-            m.match(cons(1, 2))
+        self.assertIsNone(demand(m)(cons(1, 2)))
 
 
 class TestPairSubjectMutation(unittest.TestCase):
@@ -1034,8 +999,8 @@ class TestPairSubjectMutation(unittest.TestCase):
         m = make_matcher(
             MATCH(PREDICATE("chop"), CAPTURE("b"), REST("rest")),
             {"chop": chop})
-        result = m.match(subject)
-        self.assertTrue(result.matched)
+        result = demand(m)(subject)
+        self.assertIsNotNone(result)
         caps = _ucaps(result)
         self.assertEqual(caps["b"], 2)
         self.assertEqual(list(caps["rest"].unpack()), [3, 4])

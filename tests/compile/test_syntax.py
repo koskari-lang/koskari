@@ -31,7 +31,7 @@ import pytest
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import (
-    Module, ModuleNamespace, car, cdr, gensym, symbol)
+    Module, ModuleNamespace, car, cdr, demand, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
     RulePattern, Syntax, SyntaxTransform, build_syntax,
@@ -269,8 +269,8 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
             symbol('set!'),
             symbol('a'),
             build_proper(symbol('+'), symbol('b'), 1))
-        self.assertTrue(matcher.match(ok).matched)
-        self.assertFalse(matcher.match(bad).matched)
+        self.assertIsNotNone(demand(matcher)(ok))
+        self.assertIsNone(demand(matcher)(bad))
 
 
     def test_inplace_set_rule_expands(self):

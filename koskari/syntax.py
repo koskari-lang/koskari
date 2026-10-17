@@ -35,7 +35,7 @@ from koskari.lib import (
     NamespaceSpec, OpCode, cons, demand, demand_call, gensym, nil, symbol)
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-    MatchCompiler, Matcher, MatchResult, Pattern,
+    MatchResult, Pattern,
     check_pattern_arg, parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
@@ -140,8 +140,8 @@ class Syntax(Compiled):
 
         self.bare = bare
 
-        # each arm's matcher callable, in try order, for FIRST_MATCH
-        self.matchers = tuple(t.matcher.function for t in self.transforms)
+        # each arm's matcher function, in try order, for FIRST_MATCH
+        self.matchers = tuple(t.matcher for t in self.transforms)
 
 
     @property
@@ -287,20 +287,21 @@ class Syntax(Compiled):
 
 class Transform(ABC):
     """
-    One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern
-    and matcher-backed ``try_expand``
+    One clause of a ``Syntax`` dispatcher: its ``matcher`` function,
+    and ``try_expand`` through it
     """
 
     pattern: Any
-    matcher: Matcher
+    matcher: Any
 
 
     def __init__(self, pattern, matcher=None, repeat_variables=None):
         """
-        :param pattern: matcher pattern tree, compiled here when no
+        :param pattern: matcher pattern tree, built here when no
             matcher is given; with a matcher, the pattern's source form,
             kept for help text and errors
-        :param matcher: a Matcher a module built from the pattern
+        :param matcher: the matcher function a module compiled from the
+            pattern
         :param repeat_variables: the variables each anonymous repeat
             slot binds, when the pattern is a form and cannot say
         """
@@ -310,7 +311,7 @@ class Transform(ABC):
                 raise TypeError(
                     "Transform pattern must be a matcher pattern,"
                     f" got {type(pattern)}")
-            matcher = MatchCompiler.compile(pattern)
+            matcher = pattern.build()
             if repeat_variables is None:
                 repeat_variables = _repeat_variables(pattern)
 
@@ -329,10 +330,11 @@ class Transform(ABC):
             pattern does not match
         """
 
-        result = self.matcher.match(source_obj)
-        if not result.matched:
+        captures = demand(self.matcher)(source_obj)
+        if captures is None:
             return None
-        return self.handle_expand(compiler, source_obj, result)
+        return self.handle_expand(
+            compiler, source_obj, MatchResult(True, captures))
 
 
     @abstractmethod
@@ -361,7 +363,8 @@ class SyntaxTransform(Transform):
             a matcher
         :param template: syntax-rules template form (often contains pattern vars)
         :param pattern_src: original RULE or MATCH pattern datum for errors
-        :param matcher: a Matcher a module built from the pattern
+        :param matcher: the matcher function a module compiled from
+            the pattern
         :param repeat_variables: see Transform
         """
 
@@ -460,7 +463,8 @@ class MacroTransform(Transform):
         :param handler:
             ``(compiler, **captures)`` procedure returning expanded form;
             ``captures`` are string-keyed match slots from ``match_result.captures``
-        :param matcher: a Matcher a module built from the pattern
+        :param matcher: the matcher function a module compiled from
+            the pattern
         :param repeat_variables: see Transform
         """
 
@@ -501,7 +505,8 @@ class SpecialTransform(Transform):
         :param handler:
             ``(compiler, source_obj, match_result)`` procedure; use
             :func:`special` if you need other calling conventions
-        :param matcher: a Matcher a module built from the pattern
+        :param matcher: the matcher function a module compiled from
+            the pattern
         :param repeat_variables: see Transform
         """
 
@@ -1088,11 +1093,10 @@ def build_syntax(name, *pattern_template_pairs):
 def build_rows(what, args):
     """
     The rows of a build call: ``(PATTERN TAIL)`` pairs for a pattern
-    parsed at load, or ``(FUNCTION FROZEN PATTERN-SRC TAIL)`` rows for a
-    matcher the defining module compiled, FROZEN being the frozen
-    matcher tuple paired with the repeat variables as pairs. Yields
-    (pattern, tail, matcher, repeat_variables), matcher None for a
-    pattern row
+    parsed at load, or ``(FUNCTION REPEATS PATTERN-SRC TAIL)`` rows for
+    a matcher function the defining module compiled, REPEATS being the
+    repeat variables as pairs. Yields (pattern, tail, matcher,
+    repeat_variables), matcher None for a pattern row
     """
 
     i = 0
@@ -1107,11 +1111,10 @@ def build_rows(what, args):
             continue
         if i + 3 >= n:
             raise ValueError(
-                f"{what} requires function, frozen matcher, pattern and template")
-        frozen, repeat_items = args[i + 1]
-        matcher = Matcher.from_function(head, frozen, name=what)
-        repeat_variables = {slot: list(names) for slot, names in repeat_items}
-        yield args[i + 2], args[i + 3], matcher, repeat_variables
+                f"{what} requires function, repeat variables, pattern and"
+                " template")
+        repeat_variables = {slot: list(names) for slot, names in args[i + 1]}
+        yield args[i + 2], args[i + 3], head, repeat_variables
         i += 4
 
 

@@ -16,34 +16,32 @@
 koskari.matcher
 
 The matcher: the pattern builders and the registry of pattern forms,
-the compiler that lowers a pattern to its frozen tables, and the
-Matcher that runs the function those tables compile to
+and the compiler that lowers a pattern to the tables its matcher
+function is built from
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from koskari.compile.compiler import _is_const
 from koskari.lib import (
     CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,
     kos_repr, nil, pair, symbol)
-from koskari.match_code import compile_match_function, validate_frozen
+from koskari.match_code import check_nodes, compile_match_function
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
 
 __all__ = (
-    "thaw",
     "make_matcher",
     "match_pattern_raw",
     "match",
     "match1",
 
-    "Matcher",
     "MatchResult",
     "Datum",
     "DatumFrame",
@@ -111,27 +109,7 @@ __all__ = (
 )
 
 
-# === The matcher: a function built from the frozen tuple ===
-
-
-def interned_consts(frozen):
-    """
-    The consts of a frozen matcher as the function reads them:
-    the frozen pool, then each keyword FIELD's attribute name appended
-    once in node order, an equal const of the same type being one entry
-    """
-
-    consts = list(frozen[3])
-    for node in frozen[4]:
-        if node[0] != 'FIELD_KW':
-            continue
-        name = node[2]
-        for existing in consts:
-            if type(existing) is type(name) and existing == name:
-                break
-        else:
-            consts.append(name)
-    return tuple(consts)
+# === The result of Pattern.match ===
 
 
 @dataclass
@@ -145,170 +123,14 @@ class MatchResult:
     captures: Any
 
 
-class Matcher:
-    """
-    A frozen matcher as a function: the subject its one formal, its
-    externs closure names over a namespace of its own whose builtins
-    are the externs given at construction, the captures its result.
-    Built once from the frozen tuple, called through the demand wrapper
-    so the context it runs in is reused
-
-    :raises TypeError: when an extern the matcher declares is not given
-    """
-
-    def __init__(self, frozen, name=None, externs=None):
-        validate_frozen(frozen)
-        self.frozen = frozen
-        self.slots = tuple(frozen[1])
-        self.externs = tuple(frozen[2])
-        self.consts = interned_consts(frozen)
-        self.nodes = tuple(frozen[4])
-        self.entry = frozen[5]
-        self.name = name or "matcher"
-        # the externs are closure names over this namespace, resolved
-        # through its builtins when the function is built
-        externs = dict(externs or {})
-        missing = self.missing_externs(externs)
-        if missing:
-            raise TypeError(
-                f"matcher missing extern binding: {missing[0]!r}")
-        self.namespace = ModuleNamespace(self.name, externs)
-        # the function is built on the first match: a pattern nested
-        # past the interpreter's limit is refused there, as the engine
-        # refused it, and not when the matcher is made
-        self._function = None
-        self._call = None
-
-
-    @property
-    def function(self):
-        """
-        The Function the matcher runs, built on first use
-        """
-
-        if self._function is None:
-            self._function = compile_match_function(
-                self.frozen, self.namespace, name=self.name)
-            self._call = demand(self._function)
-        return self._function
-
-
-    @classmethod
-    def from_tuple(cls, frozen, externs=None):
-        return cls(frozen, externs=externs)
-
-
-    @classmethod
-    def from_function(cls, function, frozen, name=None):
-        """
-        A Matcher over a function a module built from a pattern, with
-        the frozen tuple the function was lowered from: its externs are
-        the function's own closure names, resolved in the module, so
-        nothing is bound or refused here
-
-        :param function: the matcher function, one positional formal
-        :param frozen: the frozen matcher 6-tuple
-        """
-
-        validate_frozen(frozen)
-        self = cls.__new__(cls)
-        self.frozen = frozen
-        self.slots = tuple(frozen[1])
-        self.externs = tuple(frozen[2])
-        self.consts = interned_consts(frozen)
-        self.nodes = tuple(frozen[4])
-        self.entry = frozen[5]
-        self.name = name or getattr(function, "__name__", "matcher")
-        self.namespace = None
-        self._function = function
-        self._call = demand(function)
-        return self
-
-
-    @property
-    def node_count(self):
-        return len(self.nodes)
-
-
-    def __repr__(self):
-        return (
-            f"<Matcher nodes={len(self.nodes)} slots={len(self.slots)}"
-            f" externs={len(self.externs)} consts={len(self.consts)}"
-            f" entry={self.entry}>")
-
-
-    def match(self, subject, /):
-        """
-        Match subject, a pair spine, nil, or a sequence, reading the
-        externs the matcher was constructed with
-
-        :raises TypeError: when a pair subject is not a proper list
-        :raises ValueError: when a pair subject loops
-        """
-
-        subject = check_subject(subject)
-        call = self._call
-        if call is None:
-            self.function
-            call = self._call
-        captures = call(subject)
-        if captures is None:
-            return MatchResult(False, {})
-        return MatchResult(True, captures)
-
-
-    def missing_externs(self, provided=None):
-        """
-        The externs not in provided, in extern order
-
-        :param provided: a mapping of extern names, or None
-        :raises TypeError: when provided is neither None nor a mapping
-        """
-
-        if provided is not None and not isinstance(provided, Mapping):
-            raise TypeError("provided must be None or a mapping")
-        return tuple(
-            name for name in self.externs
-            if provided is None or name not in provided)
-
-
-def check_subject(subject):
-    """
-    The subject a match runs on: read through Datum, and a pair spine
-    refused when it loops or is improper
-
-    :raises ValueError: when a pair subject loops
-    :raises TypeError: when a pair subject is not a proper list
-    """
-
-    while isinstance(subject, Datum):
-        subject = subject.datum
-    if is_pair(subject):
-        if subject.is_recursive():
-            raise ValueError("looping spine in match subject")
-        if not subject.is_proper():
-            raise TypeError(
-                "match subject must be a proper list (nil-terminated)")
-    return subject
-
-
-def thaw(tagged_tuple, externs=None):
-    """
-    Reconstruct a Matcher from its frozen tagged-tuple representation,
-    over the externs mapping
-    """
-
-    return Matcher.from_tuple(tagged_tuple, externs=externs)
-
-
 # === Builder infrastructure ===
 
 
 class MatchCompiler:
     """
-    Baseline freeze-time compiler for one lowering pass. Holds the four
-    insertion-ordered tables that become the slots, externs, consts, and
-    nodes of the frozen 6-tuple, plus capture-scope bookkeeping
+    Baseline compiler for one lowering pass. Holds the four
+    insertion-ordered tables, the slots, externs, consts, and nodes,
+    that the lowering takes, plus capture-scope bookkeeping
     """
 
     def __init__(self):
@@ -467,30 +289,21 @@ class MatchCompiler:
 
     def lower(self, root):
         """
-        Lower root into this compiler and return the frozen matcher tuple
+        Lower root into this compiler and return its tables, the
+        lowering's input
 
         :param root: pattern to lower
-        :rtype: tuple
+        :return: (slots, externs, consts, nodes, entry)
         """
 
         entry = root.lower(self)
-        frozen = (
-            "MATCHER",
+        return (
             tuple(Pattern._slot_names(self)),
             tuple(Pattern._extern_names(self)),
             tuple(self.consts),
             tuple(self.nodes),
             entry,
         )
-        return frozen
-
-
-    @classmethod
-    def compile(cls, pattern: "Pattern", externs=None) -> Matcher:
-        """
-        Compile a pattern into a Matcher over the externs mapping
-        """
-        return Matcher.from_tuple(cls().lower(pattern), externs=externs)
 
 
 @runtime_checkable
@@ -499,8 +312,8 @@ class Pattern(Protocol):
     Structural base for matcher pattern builders. Implementations define
     lower(ctx); the compiler passes itself as ctx when lowering a root
     pattern. GROUP and ONEOF bracket nested lowering with
-    begin_nested_claims and end_nested_claims. Methods freeze and build use
-    MatchCompiler by default for standalone compilation
+    begin_nested_claims and end_nested_claims. build lowers through
+    MatchCompiler and compiles the matcher function
     """
 
 
@@ -513,32 +326,48 @@ class Pattern(Protocol):
         ...
 
 
-    def freeze(self):
-        """
-        Lower this pattern to a frozen 6-tuple suitable for
-        Matcher.from_tuple
-        """
-
-        return MatchCompiler().lower(self)
-
-
     def build(self, externs=None):
         """
-        Lower this pattern into a Matcher over the externs mapping
+        Compile this pattern to its matcher function: one positional
+        formal, the subject; the captures on a match, None on a miss.
+        Its externs are closure names resolved in a namespace whose
+        builtins are the externs mapping
 
-        :rtype: Matcher
+        :param externs: the extern names mapped to their values, or None
+        :raises TypeError: when a LITERAL value is not one the constant
+            pool holds, or an extern the pattern declares is not given
+        :raises ValueError: when the pattern is one the lowering refuses
+        :rtype: Function
         """
 
-        return Matcher.from_tuple(MatchCompiler().lower(self), externs=externs)
+        tables = MatchCompiler().lower(self)
+        check_nodes(tables[3], tables[4])
+        consts = tables[2]
+        for node in tables[3]:
+            if node[:2] == ('TEST', 'LITERAL'):
+                value = consts[node[2]]
+                if not _is_const(value):
+                    raise TypeError(
+                        "matcher literal is not a constant:"
+                        f" {type(value).__name__}")
+        externs = dict(externs or {})
+        for name in tables[1]:
+            if name not in externs:
+                raise TypeError(f"matcher missing extern binding: {name!r}")
+        return compile_match_function(
+            tables, ModuleNamespace("matcher", externs))
 
 
     def match(self, subject, /, **externs):
         """
-        Lower this pattern into a Matcher over the keyword externs and
-        run it against subject. Returns the MatchResult
+        Build this pattern over the keyword externs and run it against
+        subject. Returns the MatchResult
         """
 
-        return self.build(externs).match(subject)
+        captures = demand(self.build(externs))(subject)
+        if captures is None:
+            return MatchResult(False, {})
+        return MatchResult(True, captures)
 
 
     @staticmethod
@@ -688,7 +517,7 @@ class LITERAL(Pattern):
     def __init__(self, value):
         """
         Capture the literal value to be referenced through the consts
-        table at freeze time
+        table when the pattern is lowered
 
         :param value: any concrete value, must not be a pattern; an
             atom is held by its bare spelling, since a literal names
@@ -1662,10 +1491,9 @@ def match_pattern_raw(source, patterns):
         if not isinstance(pat, Pattern):
             raise TypeError(
                 f"match_pattern_raw expects a matcher Pattern, got {pat!r}")
-        bm = MatchCompiler.compile(pat)
-        m = bm.match(source)
-        if m.matched:
-            return m.captures
+        captures = demand(pat.build())(source)
+        if captures is not None:
+            return captures
 
     return None
 
@@ -1689,13 +1517,13 @@ def match1(value, patterns):
 
 def make_matcher(pattern, externs=None):
     """
-    Lower a pattern AST into a Matcher. The matcher carries
-    slots, externs, and consts declared by the pattern tree
+    Compile a pattern AST to its matcher function, as
+    :meth:`Pattern.build` does
 
     :param pattern: a matcher pattern object
     :param externs: the extern names mapped to their values, or None
     :raises TypeError: when pattern is not a matcher pattern
-    :rtype: Matcher
+    :rtype: Function
     """
 
     if isinstance(pattern, (pair, symbol)):
@@ -2342,7 +2170,9 @@ META_PATTERN = ONEOF(
 )
 
 
-META_MATCHER = make_matcher(MATCH(META_PATTERN))
+# the matcher functions the parsers run from Python, each wrapped with
+# demand once
+META_MATCHER = demand(make_matcher(MATCH(META_PATTERN)))
 
 
 def parse_matcher(elem):
@@ -2361,12 +2191,10 @@ def parse_matcher(elem):
             "nil is not a valid matcher pattern element")
     # the element is source, so it is walked as a one-cell spine:
     # captures come back as Datum with position intact
-    result = META_MATCHER.match(
-        cons(elem, nil))
-    if not result.matched:
+    c = META_MATCHER(cons(elem, nil))
+    if c is None:
         raise ValueError(
             f"not a valid matcher pattern: {elem!r}")
-    c = result.captures
 
     if "bare_symbol" in c:
         return CAPTURE(str(c["bare_symbol"].datum))
@@ -3027,7 +2855,7 @@ CASE_ELEMENT_PATTERN = ONEOF(
 )
 
 
-CASE_ELEMENT_MATCHER = make_matcher(MATCH(CASE_ELEMENT_PATTERN))
+CASE_ELEMENT_MATCHER = demand(make_matcher(MATCH(CASE_ELEMENT_PATTERN)))
 
 
 CASE_DELIM_PATTERN = ONEOF(
@@ -3045,7 +2873,7 @@ CASE_DELIM_PATTERN = ONEOF(
 )
 
 
-CASE_DELIM_MATCHER = make_matcher(MATCH(CASE_DELIM_PATTERN))
+CASE_DELIM_MATCHER = demand(make_matcher(MATCH(CASE_DELIM_PATTERN)))
 
 
 _symbol_hash_tuple = symbol("#tuple")
@@ -3151,12 +2979,10 @@ def parse_case_element(elem):
     if is_nil(elem):
         raise ValueError(
             "nil is not a valid case pattern element")
-    result = CASE_ELEMENT_MATCHER.match(
-        cons(elem, nil))
-    if not result.matched:
+    c = CASE_ELEMENT_MATCHER(cons(elem, nil))
+    if c is None:
         raise ValueError(
             f"not a valid case pattern: {elem!r}")
-    c = result.captures
 
     if "atom_symbol" in c:
         return CAPTURE(str(c["atom_symbol"].datum))
@@ -3249,13 +3075,11 @@ def parse_case_pattern(content):
 
     if is_nil(content):
         raise ValueError("empty case pattern")
-    result = CASE_DELIM_MATCHER.match(
-        cons(content, nil))
-    if not result.matched:
+    c = CASE_DELIM_MATCHER(cons(content, nil))
+    if c is None:
         raise ValueError(
             f"invalid case pattern {content!r};"
             " sequence patterns use #[...] or #(...)")
-    c = result.captures
 
     if "single" in c:
         return parse_case_element(c["single"].datum)

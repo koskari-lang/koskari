@@ -23,13 +23,13 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, pair, symbol
+from koskari.lib import cons, demand, keyword, nil, pair, symbol
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE,
     FIELD, FORM, FORMALS, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, MATCHER_REGISTRY, META_MATCHER, META_PATTERN, NOT,
     ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST, SYMBOL, TEST_ANY, TYPE,
-    USING, VALUE, DatumFrame, Matcher, MatchResult, lookup_matcher,
+    USING, VALUE, DatumFrame, lookup_matcher,
     parse_matcher, register_matcher)
 
 
@@ -693,10 +693,10 @@ class TestRecursiveLowering(unittest.TestCase):
         sa = symbol("foo")
         sv = symbol("bar")
         subj = (_list(sa, sv),)
-        result = m.match(subj)
-        self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"].datum, sa)
-        self.assertIs(result.captures["expr"].datum, sv)
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
+        self.assertIs(result["name"].datum, sa)
+        self.assertIs(result["expr"].datum, sv)
 
 
     def test_oneof_with_alternative_arms(self):
@@ -713,10 +713,10 @@ class TestRecursiveLowering(unittest.TestCase):
         m = MATCH(pat).build({"symbol": symbol, "pair": pair})
 
         sa = symbol("hello")
-        result = m.match((sa,))
-        self.assertTrue(result.matched)
-        self.assertIs(result.captures["a"], sa)
-        self.assertNotIn("b", result.captures)
+        result = demand(m)((sa,))
+        self.assertIsNotNone(result)
+        self.assertIs(result["a"], sa)
+        self.assertNotIn("b", result)
 
 
     def test_binding_inside_form(self):
@@ -736,13 +736,13 @@ class TestRecursiveLowering(unittest.TestCase):
         sval = symbol("v")
         cell = _list(sname, sval)
         outer = _list(cell, sval)
-        result = m.match((outer,))
-        self.assertTrue(result.matched)
-        b = result.captures["b"]
+        result = demand(m)((outer,))
+        self.assertIsNotNone(result)
+        b = result["b"]
         self.assertIsInstance(b, DatumFrame)
         self.assertIs(b.source, cell)
-        self.assertIs(result.captures["b"]["name"].datum, sname)
-        self.assertIs(result.captures["b"]["expr"].datum, sval)
+        self.assertIs(result["b"]["name"].datum, sname)
+        self.assertIs(result["b"]["expr"].datum, sval)
 
 
 class TestRegistry(unittest.TestCase):
@@ -985,13 +985,12 @@ class TestParseErrors(unittest.TestCase):
 class TestMetaMatcherExposed(unittest.TestCase):
 
 
-    def test_meta_matcher_is_native_matcher(self):
+    def test_meta_pattern_is_the_oneof_builder(self):
         """
-        META_MATCHER is a built native Matcher and META_PATTERN is
-        the underlying ONEOF builder
+        META_PATTERN, the pattern META_MATCHER is built from, is the
+        underlying ONEOF builder
         """
 
-        self.assertIsInstance(META_MATCHER, Matcher)
         self.assertIsInstance(META_PATTERN, ONEOF)
 
 
@@ -1002,11 +1001,10 @@ class TestMetaMatcherExposed(unittest.TestCase):
         """
 
         src = _list(symbol("quote"), symbol("x"))
-        result = META_MATCHER.match((src,))
-        self.assertTrue(result.matched)
-        self.assertIsInstance(result, MatchResult)
+        result = META_MATCHER((src,))
+        self.assertIsNotNone(result)
         self.assertIs(
-            result.captures["quoted_symbol"].datum,
+            result["quoted_symbol"].datum,
             symbol("x"))
 
 # The end.

@@ -14,10 +14,10 @@
 """
 tests.matcher.test_match_function
 
-The standalone matcher function: the captures and misses a Matcher
-built over it returns for pair and sequence subjects, Datum and
-DatumFrame included, the depth trace and instructions of its
-lowering, and the temporaries it declares
+The standalone matcher function: the captures and misses it returns
+for pair and sequence subjects, Datum and DatumFrame included, the
+depth trace and instructions of its lowering, and the temporaries it
+declares
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,7 +28,8 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, setcdr, symbol)
+    Datum, DatumFrame, ModuleNamespace, cons, demand, keyword, nil, setcdr,
+    symbol)
 from koskari.match_code import (
     FunctionTarget, MatchLowering, compile_match_function)
 from koskari.matcher import (
@@ -55,71 +56,69 @@ class TestMatchFunction(unittest.TestCase):
     def test_define_shape_over_source(self):
         pattern = MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))
         m = make_matcher(pattern)
-        hit = m.match(read("(define x 1)"))
-        self.assertTrue(hit.matched)
-        caps = hit.captures
+        hit = demand(m)(read("(define x 1)"))
+        self.assertIsNotNone(hit)
+        caps = hit
         self.assertIsInstance(caps, DatumFrame)
         self.assertIsInstance(caps["sym"], Datum)
         self.assertEqual(caps["sym"].datum, symbol("x"))
         self.assertIsNotNone(caps["sym"].position)
-        self.assertFalse(m.match(read("(define 1 1)")).matched)
+        self.assertIsNone(demand(m)(read("(define 1 1)")))
 
-        # Matcher.match refuses an improper subject before it matches;
-        # the bare function treats it as a miss
-        fn = compile_match_function(MatchCompiler().lower(pattern), self.base_ns)
-        self.assertIsNone(fn(cons(symbol("define"), symbol("x"))).demand())
+        # an improper subject is a miss
+        self.assertIsNone(demand(m)(cons(symbol("define"), symbol("x"))))
 
 
     def test_body_rest(self):
         m = make_matcher(MATCH(CALLEDBY(), BODY("body")))
-        hit = m.match(read("(begin 1 2 3)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["body"].datum, read("(1 2 3)"))
-        self.assertFalse(m.match(read("(begin)")).matched)
+        hit = demand(m)(read("(begin 1 2 3)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["body"].datum, read("(1 2 3)"))
+        self.assertIsNone(demand(m)(read("(begin)")))
 
 
     def test_rest_before_suffix_and_literal_keyword(self):
         m = make_matcher(MATCH(
             CALLEDBY(), REST("front"), LITERAL_KW("as"), SYMBOL("name")))
 
-        hit = m.match(read("(f 1 2 as: x)"))
-        self.assertTrue(hit.matched)
-        caps = hit.captures
+        hit = demand(m)(read("(f 1 2 as: x)"))
+        self.assertIsNotNone(hit)
+        caps = hit
         self.assertEqual(caps["called-by"].datum, symbol("f"))
         self.assertIsInstance(caps["front"], tuple)
         self.assertEqual([d.datum for d in caps["front"]], [1, 2])
         self.assertEqual(caps["name"].datum, symbol("x"))
 
-        hit = m.match(read("(f as: x)"))
-        self.assertTrue(hit.matched)
-        caps = hit.captures
+        hit = demand(m)(read("(f as: x)"))
+        self.assertIsNotNone(hit)
+        caps = hit
         # an empty rest before a suffix is unpinned by the docs
         self.assertIs(caps["front"].datum, nil)
         self.assertEqual(caps["name"].datum, symbol("x"))
 
-        self.assertFalse(m.match(read("(f 1 2 as: 3)")).matched)
-        self.assertFalse(m.match(read("(f 1 2)")).matched)
+        self.assertIsNone(demand(m)(read("(f 1 2 as: 3)")))
+        self.assertIsNone(demand(m)(read("(f 1 2)")))
 
 
     def test_bindings_rows(self):
         m = make_matcher(MATCH(CALLEDBY(), BINDINGS("bindings"), BODY("body")))
-        hit = m.match(read("(let [[x 1] [y 2]] x)"))
-        self.assertTrue(hit.matched)
-        rows = hit.captures["bindings"]
+        hit = demand(m)(read("(let [[x 1] [y 2]] x)"))
+        self.assertIsNotNone(hit)
+        rows = hit["bindings"]
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["name"].datum, symbol("x"))
         self.assertEqual(rows[1]["expr"].datum, 2)
-        self.assertTrue(m.match(read("(let [[x 1] (2 as: y)] x)")).matched)
-        self.assertTrue(m.match(read("(let [] 1)")).matched)
-        self.assertFalse(m.match(read("(let [[x]] x)")).matched)
+        self.assertIsNotNone(demand(m)(read("(let [[x 1] (2 as: y)] x)")))
+        self.assertIsNotNone(demand(m)(read("(let [] 1)")))
+        self.assertIsNone(demand(m)(read("(let [[x]] x)")))
 
 
     def test_formals(self):
         m = make_matcher(MATCH(CALLEDBY(), FORMALS("formals"), BODY("body")))
 
-        hit = m.match(read("(lambda [a b] a)"))
-        self.assertTrue(hit.matched)
-        formals = hit.captures["formals"]
+        hit = demand(m)(read("(lambda [a b] a)"))
+        self.assertIsNotNone(hit)
+        formals = hit["formals"]
         self.assertEqual(
             [p["name"].datum for p in formals["positionals"]],
             [symbol("a"), symbol("b")])
@@ -127,11 +126,11 @@ class TestMatchFunction(unittest.TestCase):
         self.assertEqual(formals["kwonly"], [])
         self.assertNotIn("star", formals)
         self.assertNotIn("starstar", formals)
-        self.assertEqual(hit.captures["body"].datum, read("(a)"))
+        self.assertEqual(hit["body"].datum, read("(a)"))
 
-        hit = m.match(read("(lambda [a (b 2) *: rest **: kw] a)"))
-        self.assertTrue(hit.matched)
-        formals = hit.captures["formals"]
+        hit = demand(m)(read("(lambda [a (b 2) *: rest **: kw] a)"))
+        self.assertIsNotNone(hit)
+        formals = hit["formals"]
         first, second = formals["positionals"]
         self.assertEqual(first["name"].datum, symbol("a"))
         self.assertNotIn("default", first)
@@ -142,128 +141,128 @@ class TestMatchFunction(unittest.TestCase):
         self.assertEqual(formals["star"].datum, symbol("rest"))
         self.assertEqual(formals["starstar"].datum, symbol("kw"))
 
-        hit = m.match(read("(lambda [] 1)"))
-        self.assertTrue(hit.matched)
-        formals = hit.captures["formals"]
+        hit = demand(m)(read("(lambda [] 1)"))
+        self.assertIsNotNone(hit)
+        formals = hit["formals"]
         self.assertEqual(formals["positionals"], [])
         self.assertEqual(formals["defaults"], [])
         self.assertEqual(formals["kwonly"], [])
-        self.assertEqual(hit.captures["body"].datum, read("(1)"))
+        self.assertEqual(hit["body"].datum, read("(1)"))
 
-        self.assertFalse(m.match(read("(lambda a a)")).matched)
+        self.assertIsNone(demand(m)(read("(lambda a a)")))
 
 
     def test_using_oneof_at_root(self):
         m = make_matcher(MATCH(CALLEDBY(), USING("using")))
 
-        hit = m.match(read("(for-each [x xs])"))
-        self.assertTrue(hit.matched)
-        using = hit.captures["using"]
+        hit = demand(m)(read("(for-each [x xs])"))
+        self.assertIsNotNone(hit)
+        using = hit["using"]
         self.assertEqual(using["name"].datum, symbol("x"))
         self.assertEqual(using["expr"].datum, symbol("xs"))
         self.assertNotIn("lhs", using)
 
-        hit = m.match(read("(for-each [(a b) xs])"))
-        self.assertTrue(hit.matched)
-        using = hit.captures["using"]
+        hit = demand(m)(read("(for-each [(a b) xs])"))
+        self.assertIsNotNone(hit)
+        using = hit["using"]
         self.assertEqual(using["lhs"].datum, read("(a b)"))
         self.assertEqual(using["expr"].datum, symbol("xs"))
         self.assertNotIn("name", using)
 
-        hit = m.match(read("(for-each [xs as: x])"))
-        self.assertTrue(hit.matched)
-        using = hit.captures["using"]
+        hit = demand(m)(read("(for-each [xs as: x])"))
+        self.assertIsNotNone(hit)
+        using = hit["using"]
         self.assertEqual(using["expr"].datum, symbol("xs"))
         self.assertEqual(using["name"].datum, symbol("x"))
         self.assertNotIn("lhs", using)
 
-        self.assertFalse(m.match(read("(for-each xs)")).matched)
+        self.assertIsNone(demand(m)(read("(for-each xs)")))
 
 
     def test_repeat_capture_rows_and_spans(self):
         m = make_matcher(MATCH(
             CALLEDBY(),
             repeat_capture("rows", FORM(MATCH(VALUE("x"), VALUE("y"))))))
-        hit = m.match(read("(f (1 2) (3 4))"))
-        self.assertTrue(hit.matched)
-        self.assertEqual([r["x"].datum for r in hit.captures["rows"]], [1, 3])
-        zero = m.match(read("(f)"))
-        self.assertTrue(zero.matched)
-        self.assertEqual(zero.captures["rows"], [])
-        self.assertFalse(m.match(read("(f (1 2) (3))")).matched)
+        hit = demand(m)(read("(f (1 2) (3 4))"))
+        self.assertIsNotNone(hit)
+        self.assertEqual([r["x"].datum for r in hit["rows"]], [1, 3])
+        zero = demand(m)(read("(f)"))
+        self.assertIsNotNone(zero)
+        self.assertEqual(zero["rows"], [])
+        self.assertIsNone(demand(m)(read("(f (1 2) (3))")))
 
         m = make_matcher(MATCH(CALLEDBY(), repeat_capture("elems", TEST_ANY())))
-        hit = m.match(read("(f 1 2 3)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2, 3])
+        hit = demand(m)(read("(f 1 2 3)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual([e.datum for e in hit["elems"]], [1, 2, 3])
 
 
     def test_repeat_stops_before_suffix(self):
         m = make_matcher(MATCH(
             CALLEDBY(), repeat_capture("elems", TEST_ANY()), LITERAL_KW("end")))
-        hit = m.match(read("(f 1 2 end:)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2])
-        self.assertFalse(m.match(read("(f 1 2)")).matched)
+        hit = demand(m)(read("(f 1 2 end:)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual([e.datum for e in hit["elems"]], [1, 2])
+        self.assertIsNone(demand(m)(read("(f 1 2)")))
 
 
     def test_repeat_minimum(self):
         m = make_matcher(MATCH(
             CALLEDBY(), CAPTURE("elems", REPEAT(TEST_ANY(), min_count=2))))
 
-        self.assertFalse(m.match(read("(f 1)")).matched)
+        self.assertIsNone(demand(m)(read("(f 1)")))
 
-        hit = m.match(read("(f 1 2)"))
-        self.assertTrue(hit.matched)
-        self.assertIsInstance(hit.captures["elems"], list)
-        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2])
+        hit = demand(m)(read("(f 1 2)"))
+        self.assertIsNotNone(hit)
+        self.assertIsInstance(hit["elems"], list)
+        self.assertEqual([e.datum for e in hit["elems"]], [1, 2])
 
-        hit = m.match(read("(f 1 2 3)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual([e.datum for e in hit.captures["elems"]], [1, 2, 3])
+        hit = demand(m)(read("(f 1 2 3)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual([e.datum for e in hit["elems"]], [1, 2, 3])
 
 
     def test_optional_yields_to_suffix(self):
         m = make_matcher(MATCH(
             CALLEDBY(), OPTIONAL(LITERAL_KW("opt")), VALUE("x")))
 
-        hit = m.match(read("(f opt: 1)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(set(hit.captures), {"called-by", "x"})
-        self.assertEqual(hit.captures["x"].datum, 1)
+        hit = demand(m)(read("(f opt: 1)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(set(hit), {"called-by", "x"})
+        self.assertEqual(hit["x"].datum, 1)
 
-        hit = m.match(read("(f 1)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["x"].datum, 1)
+        hit = demand(m)(read("(f 1)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["x"].datum, 1)
 
-        hit = m.match(read("(f opt:)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["x"].datum, keyword("opt"))
+        hit = demand(m)(read("(f opt:)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["x"].datum, keyword("opt"))
 
         m = make_matcher(MATCH(CALLEDBY(), OPTIONAL(TEST_ANY()), VALUE("x")))
 
-        hit = m.match(read("(f 1)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["x"].datum, 1)
+        hit = demand(m)(read("(f 1)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["x"].datum, 1)
 
-        hit = m.match(read("(f 1 2)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["x"].datum, 2)
+        hit = demand(m)(read("(f 1 2)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["x"].datum, 2)
 
-        self.assertFalse(m.match(read("(f)")).matched)
+        self.assertIsNone(demand(m)(read("(f)")))
 
 
     def test_same_and_not(self):
         m = make_matcher(MATCH(
             CALLEDBY(), VALUE("a"), SAME("a"), NOT(LITERAL(3)), TEST_ANY()))
 
-        hit = m.match(read("(f 1 1 2)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(set(hit.captures), {"called-by", "a"})
-        self.assertEqual(hit.captures["a"].datum, 1)
+        hit = demand(m)(read("(f 1 1 2)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(set(hit), {"called-by", "a"})
+        self.assertEqual(hit["a"].datum, 1)
 
-        self.assertFalse(m.match(read("(f 1 2 2)")).matched)
-        self.assertFalse(m.match(read("(f 1 1 3)")).matched)
+        self.assertIsNone(demand(m)(read("(f 1 2 2)")))
+        self.assertIsNone(demand(m)(read("(f 1 1 3)")))
 
 
     def test_wider_oneof_in_spine(self):
@@ -272,63 +271,63 @@ class TestMatchFunction(unittest.TestCase):
             ONEOF(MATCH(VALUE("a"), VALUE("b")), MATCH(VALUE("a"))),
             LITERAL_KW("end")))
 
-        hit = m.match(read("(f 1 2 end:)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["a"].datum, 1)
-        self.assertEqual(hit.captures["b"].datum, 2)
+        hit = demand(m)(read("(f 1 2 end:)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["a"].datum, 1)
+        self.assertEqual(hit["b"].datum, 2)
 
-        hit = m.match(read("(f 1 end:)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["a"].datum, 1)
-        self.assertNotIn("b", hit.captures)
+        hit = demand(m)(read("(f 1 end:)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["a"].datum, 1)
+        self.assertNotIn("b", hit)
 
-        self.assertFalse(m.match(read("(f end:)")).matched)
-        self.assertFalse(m.match(read("(f 1 2 3 end:)")).matched)
+        self.assertIsNone(demand(m)(read("(f end:)")))
+        self.assertIsNone(demand(m)(read("(f 1 2 3 end:)")))
 
 
     def test_sequence_subjects_bind_raw(self):
         m = make_matcher(MATCH(VALUE("a"), CAPTURE("t", TYPE("int")), REST("r")))
-        hit = m.match((1, 2, 3, 4))
-        self.assertTrue(hit.matched)
-        self.assertIs(type(hit.captures), dict)
-        self.assertEqual(hit.captures["r"], (3, 4))
-        self.assertFalse(m.match((1, "x")).matched)
+        hit = demand(m)((1, 2, 3, 4))
+        self.assertIsNotNone(hit)
+        self.assertIs(type(hit), dict)
+        self.assertEqual(hit["r"], (3, 4))
+        self.assertIsNone(demand(m)((1, "x")))
 
 
     def test_core_types_read_no_namespace(self):
         m = make_matcher(MATCH(
             CAPTURE("k", TYPE("keyword")), CAPTURE("s", TYPE("symbol"))))
-        hit = m.match(cons(keyword("a"), symbol("b"), nil))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["s"].datum, symbol("b"))
+        hit = demand(m)(cons(keyword("a"), symbol("b"), nil))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["s"].datum, symbol("b"))
 
 
     def test_extern_stored_into_the_namespace(self):
         m = make_matcher(MATCH(CAPTURE("x", TYPE("T"))), {"T": int})
 
-        hit = m.match((1,))
-        self.assertTrue(hit.matched)
-        self.assertIs(type(hit.captures), dict)
-        self.assertEqual(hit.captures, {"x": 1})
+        hit = demand(m)((1,))
+        self.assertIsNotNone(hit)
+        self.assertIs(type(hit), dict)
+        self.assertEqual(hit, {"x": 1})
 
-        self.assertFalse(m.match(("s",)).matched)
+        self.assertIsNone(demand(m)(("s",)))
 
 
     def test_datum_subject_cells_are_read_through(self):
         m = make_matcher(MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr")))
 
-        hit = m.match(read("(define x 1)"))
-        self.assertTrue(hit.matched)
-        self.assertEqual(hit.captures["called-by"].datum, symbol("define"))
-        self.assertEqual(hit.captures["sym"].datum, symbol("x"))
-        self.assertEqual(hit.captures["expr"].datum, 1)
+        hit = demand(m)(read("(define x 1)"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["called-by"].datum, symbol("define"))
+        self.assertEqual(hit["sym"].datum, symbol("x"))
+        self.assertEqual(hit["expr"].datum, 1)
 
         boxed = cons(Datum(symbol("define"), None), symbol("y"), 2, nil)
-        hit = m.match(boxed)
-        self.assertTrue(hit.matched)
-        self.assertIs(hit.captures["called-by"].datum, symbol("define"))
-        self.assertEqual(hit.captures["sym"].datum, symbol("y"))
-        self.assertEqual(hit.captures["expr"].datum, 2)
+        hit = demand(m)(boxed)
+        self.assertIsNotNone(hit)
+        self.assertIs(hit["called-by"].datum, symbol("define"))
+        self.assertEqual(hit["sym"].datum, symbol("y"))
+        self.assertEqual(hit["expr"].datum, 2)
 
 
 
@@ -347,9 +346,9 @@ class TestLiveSubjects(unittest.TestCase):
             return True
 
         pattern = MATCH(FORM(MATCH(PREDICATE("clear"), REST("r"))))
-        result = make_matcher(pattern, {"clear": clear}).match((subject,))
-        self.assertTrue(result.matched)
-        self.assertEqual(result.captures["r"], ())
+        result = demand(make_matcher(pattern, {"clear": clear}))((subject,))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["r"], ())
 
 
     def test_collect_and_end_after_the_list_is_cleared(self):
@@ -361,14 +360,14 @@ class TestLiveSubjects(unittest.TestCase):
 
         pattern = MATCH(FORM(MATCH(
             PREDICATE("clear"), repeat_capture("xs", TEST_ANY()))))
-        result = make_matcher(pattern, {"clear": clear}).match((subject,))
-        self.assertTrue(result.matched)
-        self.assertEqual(result.captures["xs"], [])
+        result = demand(make_matcher(pattern, {"clear": clear}))((subject,))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["xs"], [])
 
         subject[:] = [1, 2, 3, 4]
         pattern = MATCH(FORM(MATCH(PREDICATE("clear"), TEST_ANY())))
-        result = make_matcher(pattern, {"clear": clear}).match((subject,))
-        self.assertFalse(result.matched)
+        result = demand(make_matcher(pattern, {"clear": clear}))((subject,))
+        self.assertIsNone(result)
 
 
     def test_rest_with_a_suffix_after_the_list_shrinks(self):
@@ -379,9 +378,9 @@ class TestLiveSubjects(unittest.TestCase):
             return True
 
         pattern = MATCH(FORM(MATCH(PREDICATE("trim"), REST("r"), TEST_ANY())))
-        result = make_matcher(pattern, {"trim": trim}).match((subject,))
-        self.assertTrue(result.matched)
-        self.assertEqual(result.captures["r"], ())
+        result = demand(make_matcher(pattern, {"trim": trim}))((subject,))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["r"], ())
 
 
 class TestLoopingSpines(unittest.TestCase):
@@ -395,12 +394,12 @@ class TestLoopingSpines(unittest.TestCase):
         setcdr(cyclic.cdr, cyclic)
         pattern = MATCH(FORM(MATCH(CAPTURE("xs", REPEAT(TYPE("int"))))))
         with self.assertRaises(ValueError) as caught:
-            make_matcher(pattern).match((cyclic,))
+            demand(make_matcher(pattern))((cyclic,))
         self.assertIn("looping", str(caught.exception))
 
         pattern = MATCH(FORM(MATCH(REST("r"))))
         with self.assertRaises(ValueError):
-            make_matcher(pattern).match((cyclic,))
+            demand(make_matcher(pattern))((cyclic,))
 
 
 class TestMutatedSpines(unittest.TestCase):
@@ -420,7 +419,7 @@ class TestMutatedSpines(unittest.TestCase):
         pattern = MATCH(
             GROUP("g", PREDICATE("chop"), CAPTURE("y")), CAPTURE("z"))
         with self.assertRaises(ValueError) as caught:
-            make_matcher(pattern, {"chop": chop}).match(subject)
+            demand(make_matcher(pattern, {"chop": chop}))(subject)
         self.assertIn("changed", str(caught.exception))
 
 
@@ -434,15 +433,15 @@ class TestRepeatScopes(unittest.TestCase):
     def test_group_slots_do_not_carry_across_iterations(self):
         pattern = MATCH(repeat_capture("rows", FORM(MATCH(
             GROUP("g", OPTIONAL(CAPTURE("b", LITERAL(1)))), CAPTURE("c")))))
-        result = make_matcher(pattern).match(((1, "x"), ("y",)))
-        self.assertTrue(result.matched)
+        result = demand(make_matcher(pattern))(((1, "x"), ("y",)))
+        self.assertIsNotNone(result)
         self.assertEqual(
-            result.captures["rows"],
+            result["rows"],
             [{"g": {"b": 1}, "c": "x"}, {"g": {}, "c": "y"}])
 
-        result = make_matcher(pattern).match(
+        result = demand(make_matcher(pattern))(
             cons(cons(1, "x", nil), cons("y", nil), nil))
-        rows = result.captures["rows"]
+        rows = result["rows"]
         self.assertEqual(list(rows[0]["g"].keys()), ["b"])
         self.assertEqual(list(rows[1]["g"].keys()), [])
 
@@ -458,25 +457,25 @@ class TestSameScopes(unittest.TestCase):
         pattern = MATCH(CAPTURE("x"), repeat_capture(
             "rows", FORM(MATCH(CAPTURE("x"), SAME("x")))))
         m = make_matcher(pattern)
-        self.assertTrue(m.match((1, (2, 2), (3, 3))).matched)
-        self.assertFalse(m.match((1, (2, 3))).matched)
-        self.assertTrue(m.match((1, (1, 1))).matched)
+        self.assertIsNotNone(demand(m)((1, (2, 2), (3, 3))))
+        self.assertIsNone(demand(m)((1, (2, 3))))
+        self.assertIsNotNone(demand(m)((1, (1, 1))))
 
 
     def test_same_at_depth_one_reads_the_enclosing_capture(self):
         pattern = MATCH(CAPTURE("x"), repeat_capture(
             "rows", FORM(MATCH(SAME("x", depth=1)))))
         m = make_matcher(pattern)
-        self.assertTrue(m.match((1, (1,), (1,))).matched)
-        self.assertFalse(m.match((1, (1,), (2,))).matched)
+        self.assertIsNotNone(demand(m)((1, (1,), (1,))))
+        self.assertIsNone(demand(m)((1, (1,), (2,))))
 
 
     def test_same_in_a_oneof_branch_shares_the_frame(self):
         pattern = MATCH(CAPTURE("x"), ONEOF(SAME("x"), LITERAL(0)))
         m = make_matcher(pattern)
-        self.assertTrue(m.match((5, 5)).matched)
-        self.assertTrue(m.match((5, 0)).matched)
-        self.assertFalse(m.match((5, 6)).matched)
+        self.assertIsNotNone(demand(m)((5, 5)))
+        self.assertIsNotNone(demand(m)((5, 0)))
+        self.assertIsNone(demand(m)((5, 6)))
 
 
     def test_same_outside_its_frame_is_refused(self):
@@ -523,19 +522,19 @@ class TestTemporaries(unittest.TestCase):
 
 
     def test_bare_repeat_still_walks(self):
-        m = MatchCompiler.compile(MATCH(FORM(MATCH(REPEAT(TYPE("int"))))))
-        self.assertTrue(m.match(((1, 2, 3),)).matched)
-        self.assertFalse(m.match(((1, "x"),)).matched)
-        self.assertTrue(m.match((cons(1, 2, nil),)).matched)
+        m = MATCH(FORM(MATCH(REPEAT(TYPE("int"))))).build()
+        self.assertIsNotNone(demand(m)(((1, 2, 3),)))
+        self.assertIsNone(demand(m)(((1, "x"),)))
+        self.assertIsNotNone(demand(m)((cons(1, 2, nil),)))
 
 
     def test_boxed_subject_root_captures_keep_their_source(self):
-        m = MatchCompiler.compile(MATCH(VALUE("x")))
+        m = MATCH(VALUE("x")).build()
         cell = cons(1, nil)
-        result = m.match(Datum(cell))
-        self.assertTrue(result.matched)
-        self.assertIsInstance(result.captures, DatumFrame)
-        self.assertIs(result.captures.source, cell)
+        result = demand(m)(Datum(cell))
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, DatumFrame)
+        self.assertIs(result.source, cell)
 
 
 def walk(pattern):
@@ -785,7 +784,7 @@ class TestPairSpineElements(unittest.TestCase):
 
         pattern = MATCH(FORM(MATCH(PREDICATE("note"))))
         subject = cons(cons(5, nil), nil)
-        self.assertTrue(make_matcher(pattern, {"note": note}).match(subject).matched)
+        self.assertIsNotNone(demand(make_matcher(pattern, {"note": note}))(subject))
         self.assertIsInstance(seen[0], Datum)
         self.assertEqual(seen[0].datum, 5)
 
@@ -801,20 +800,20 @@ class TestPairSpineElements(unittest.TestCase):
         pattern = MATCH(FORM(MATCH(CLASS(
             "Point", FIELD(CAPTURE("x")), FIELD(CAPTURE("y"), name="y")))))
         subject = cons(cons(Point(3, 4), nil), nil)
-        result = make_matcher(pattern, {"Point": Point}).match(subject)
-        self.assertTrue(result.matched)
+        result = demand(make_matcher(pattern, {"Point": Point}))(subject)
+        self.assertIsNotNone(result)
         self.assertEqual(
-            (result.captures["x"], result.captures["y"]), (3, 4))
+            (result["x"], result["y"]), (3, 4))
         self.assertFalse(
-            make_matcher(pattern, {"Point": Point}).match(cons(cons(7, nil), nil)).matched)
+            (demand(make_matcher(pattern, {"Point": Point}))(cons(cons(7, nil), nil)) is not None))
 
 
     def test_rest_with_a_suffix_boxes_a_spliced_datum_once(self):
         pattern = MATCH(REST("r"), BIND("z"))
         subject = cons(Datum(1, None), 2, 3, nil)
-        result = make_matcher(pattern).match(subject)
-        self.assertTrue(result.matched)
-        first = result.captures["r"][0]
+        result = demand(make_matcher(pattern))(subject)
+        self.assertIsNotNone(result)
+        first = result["r"][0]
         self.assertIsInstance(first, Datum)
         self.assertEqual(first.datum, 1)
 

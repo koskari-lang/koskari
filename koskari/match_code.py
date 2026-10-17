@@ -14,7 +14,7 @@
 """
 koskari.match_code
 
-A frozen matcher lowered to the MATCH_* instructions: each node pulled
+A pattern's tables lowered to the MATCH_* instructions: each node pulled
 from a cursor the walk keeps on the operand stack, named by its depth
 under the top, or peeked on the stack, with a miss edge to a label.
 Two targets take the same instructions. The inline target emits into
@@ -30,7 +30,7 @@ reach, whose result is the captures.
 
 from .exceptions import SpecialError
 from .lib import (
-    Code, CoreType, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle,
+    Code, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle,
     gensym, symbol)
 
 
@@ -40,7 +40,6 @@ __all__ = (
     'compile_match_function',
     'lower_clause',
     'lower_matcher',
-    'validate_frozen',
 )
 
 
@@ -55,167 +54,35 @@ ELEM = object()
 SUBJECT_ENTRY = object()
 
 
-# === validation of a frozen matcher ===
+# === checks on a pattern's node table ===
 
-
-NODE_ARITY = {
-    'TEST': (3, 3),
-    'CAPTURE': (3, 3),
-    'FORM': (2, 2),
-    'APP': (3, 3),
-    'MAP_ENTRY_CONST': (3, 3),
-    'MAP_ENTRY_EXTERN': (3, 3),
-    'REPEAT': (3, 3),
-    'OPTIONAL': (2, 2),
-    'REST': (2, 2),
-    'NOT': (2, 2),
-    'SAME': (3, 3),
-    'CLASS': (2, None),
-    'FIELD_POS': (2, 2),
-    'FIELD_KW': (3, 3),
-    'MATCH': (1, None),
-    'GROUP': (1, None),
-    'ONEOF': (1, None),
-    'MAP': (1, None),
-}
-
-CONTAINERS = ('MATCH', 'GROUP', 'ONEOF', 'MAP', 'CLASS')
 
 # the kinds whose children sit on the same spine as the node itself
 SAME_SPINE = ('CAPTURE', 'MATCH', 'GROUP', 'ONEOF', 'OPTIONAL', 'REPEAT')
 
 
-def validate_frozen(frozen):
+def check_nodes(nodes, entry):
     """
-    Check a frozen matcher tuple before anything is emitted from it:
-    the tuple shape, every node's arity and references, the
-    chains, the subnodes a kind requires, a REPEAT that consumes, no
-    capture under NOT, at most one REST per branch with a fixed suffix
-    after it, and the CLASS and FIELD structure. Iterative throughout,
-    so a pattern nested past any limit is checked, not overflowed.
+    Refuse a pattern whose node table the lowering cannot emit: a REST
+    tail or a suffix past what a row's packed counts hold, a REPEAT
+    that consumes nothing, a FIELD that is not one value wide, a
+    CAPTURE over a subnode that may consume nothing, a value subnode
+    of an APP, MAP entry or FIELD that is a spine shape or holds a
+    GROUP, a positional FIELD after a keyword one, a CAPTURE under a
+    NOT, and more than one REST per branch or a variable-width chunk
+    after it. Iterative throughout, so a pattern nested past any limit
+    is checked, not overflowed.
 
-    :raises TypeError: when the tuple or a node is not the right type
-    :raises ValueError: when the matcher is malformed
+    :param nodes: the node table, every child at a lower index
+    :param entry: the index of the root node
+    :raises ValueError: when the pattern is one the lowering refuses
     """
 
-    if not isinstance(frozen, tuple):
-        raise TypeError("frozen matcher must be a tuple")
-    if len(frozen) != 6:
-        raise ValueError(f"frozen matcher must be 6-tuple, got {len(frozen)}")
-    tag, slots, externs, consts, nodes, entry = frozen
-    if tag != "MATCHER":
-        raise ValueError("frozen matcher must start with 'MATCHER' tag")
-    for part in (slots, externs, consts, nodes):
-        if not isinstance(part, tuple):
-            raise TypeError("slots/externs/consts/nodes must be tuples")
-    if not isinstance(entry, int):
-        raise TypeError("entry must be int")
-    total = len(nodes)
-    if total and not (0 <= entry < total):
-        raise ValueError(f"entry index out of range: {entry}")
-
-    def ref(value, size, what, i):
-        if not isinstance(value, int):
-            raise TypeError(f"{what} must be an int, got {type(value).__name__}")
-        if not (0 <= value < size):
-            raise ValueError(f"{what} out of range (size={size}) at node {i}")
-
-    def subnode(value, i, required):
-        if value == -1:
-            if required:
-                raise ValueError(f"{nodes[i][0]} at node {i} has no subnode")
-            return
-        ref(value, i, "subnode", i)
-
-    # one pass over the nodes: arity, references, subnodes; a child is
-    # always a lower index, so a cycle through the nodes is impossible
-    claimed = {}
     for i, node in enumerate(nodes):
-        if not isinstance(node, tuple) or not node:
-            raise ValueError("frozen node must be a non-empty tuple")
-        kind = node[0]
-        if not isinstance(kind, str):
-            raise TypeError("node kind tag must be str")
-        arity = NODE_ARITY.get(kind)
-        if arity is None:
-            raise ValueError(f"unknown frozen node tag: {kind!r}")
-        lo, hi = arity
-        if len(node) < lo or (hi is not None and len(node) > hi):
+        if node[0] == 'REST' and node[1] > LIMIT:
             raise ValueError(
-                f"{kind} node tuple has {len(node)} entries at node {i}")
-        if kind == 'TEST':
-            test = node[1]
-            if test == 'LITERAL':
-                ref(node[2], len(consts), "TEST_LITERAL ref_index", i)
-            elif test in ('TYPE', 'PREDICATE'):
-                ref(node[2], len(externs), "TEST ref_index", i)
-            elif test == 'CORE':
-                ref(node[2], len(CoreType), "TEST_CORE ordinal", i)
-            elif test != 'ANY':
-                raise ValueError(f"unknown test_kind: {test!r}")
-        elif kind == 'CAPTURE':
-            ref(node[1], len(slots), "CAPTURE slot", i)
-            subnode(node[2], i, False)
-        elif kind == 'SAME':
-            ref(node[1], len(slots), "SAME slot", i)
-            if not isinstance(node[2], int) or node[2] < 0:
-                raise ValueError(f"SAME depth out of range at node {i}")
-        elif kind in ('FORM', 'OPTIONAL', 'NOT'):
-            subnode(node[1], i, True)
-        elif kind == 'REPEAT':
-            subnode(node[1], i, True)
-            if not isinstance(node[2], int) or node[2] < 0:
-                raise ValueError(f"REPEAT min_count out of range at node {i}")
-        elif kind == 'REST':
-            if not isinstance(node[1], int) or node[1] < 0:
-                raise ValueError(f"REST min_tail out of range at node {i}")
-            if node[1] > LIMIT:
-                raise ValueError(
-                    f"REST min_tail {node[1]} at node {i} is past the"
-                    f" {LIMIT} a row's packed counts hold")
-        elif kind == 'APP':
-            ref(node[1], len(externs), "APP fn_extern", i)
-            subnode(node[2], i, False)
-        elif kind == 'MAP_ENTRY_CONST':
-            ref(node[1], len(consts), "MAP_ENTRY const key_ref", i)
-            subnode(node[2], i, False)
-        elif kind == 'MAP_ENTRY_EXTERN':
-            ref(node[1], len(externs), "MAP_ENTRY extern key_ref", i)
-            subnode(node[2], i, False)
-        elif kind == 'FIELD_POS':
-            subnode(node[1], i, True)
-        elif kind == 'FIELD_KW':
-            subnode(node[1], i, True)
-            if not isinstance(node[2], str):
-                raise TypeError(
-                    f"FIELD_KW attr name must be str (got"
-                    f" {type(node[2]).__name__})")
-        elif kind == 'CLASS':
-            ref(node[1], len(externs), "CLASS type_extern", i)
-        if kind in CONTAINERS:
-            children = node[2:] if kind == 'CLASS' else node[1:]
-            seen = set()
-            for child in children:
-                ref(child, i, f"{kind} child", i)
-                if child in seen:
-                    raise ValueError(
-                        f"{kind} at node {i} names child {child} twice")
-                seen.add(child)
-                owner = claimed.get(child)
-                if owner is not None:
-                    raise ValueError(
-                        f"node {child} already participates in the chain"
-                        f" of node {owner}; node {i} cannot claim it")
-                claimed[child] = i
-                if kind == 'CLASS' and nodes[child][0] not in (
-                        'FIELD_POS', 'FIELD_KW'):
-                    raise ValueError(
-                        f"CLASS at node {i} references non-FIELD node"
-                        f" {child}")
-                if kind == 'MAP' and not nodes[child][0].startswith(
-                        'MAP_ENTRY'):
-                    raise ValueError(
-                        f"MAP at node {i} references non-entry node {child}")
+                f"REST min_tail {node[1]} at node {i} is past the"
+                f" {LIMIT} a row's packed counts hold")
 
     # widths, bottom up: every child index is lower than its parent
     widths = []
@@ -313,14 +180,6 @@ def validate_frozen(frozen):
             elif inner[0] in ('ONEOF', 'MATCH'):
                 pending.extend(inner[1:])
 
-    # a FIELD or a MAP_ENTRY belongs to a chain, never to a spine
-    for i, node in enumerate(nodes):
-        kind = node[0]
-        if kind in ('FIELD_POS', 'FIELD_KW') and i not in claimed:
-            raise ValueError(f"FIELD at node {i} is not referenced by any CLASS")
-        if kind.startswith('MAP_ENTRY') and i not in claimed:
-            raise ValueError(f"MAP_ENTRY at node {i} is not referenced by any MAP")
-
     # no capture under a NOT; iterative over the subtree
     for i, node in enumerate(nodes):
         if node[0] != 'NOT':
@@ -349,11 +208,7 @@ def validate_frozen(frozen):
             continue
         for root in roots:
             check_branch(nodes, widths, root)
-    if total:
-        check_branch(nodes, widths, entry)
-    for i, node in enumerate(nodes):
-        if node[0] in ('FIELD_POS', 'FIELD_KW') and i == entry:
-            raise ValueError(f"FIELD at node {i} may not appear on a spine")
+    check_branch(nodes, widths, entry)
 
 
 def spine_children(nodes, idx):
@@ -416,12 +271,6 @@ def branch_chunks(nodes, widths, root):
             chunks.append((0, widths[idx][1], has_rest))
         elif kind == 'REST':
             chunks.append((node[1], None, True))
-        elif kind in ('FIELD_POS', 'FIELD_KW'):
-            raise ValueError(
-                f"FIELD at node {idx} may not appear on a spine branch")
-        elif kind.startswith('MAP_ENTRY'):
-            raise ValueError(
-                f"MAP_ENTRY at node {idx} may not appear on a spine branch")
     return chunks
 
 
@@ -583,20 +432,21 @@ class FunctionTarget:
 def lower_clause(
         compiler,
         fragment,
-        frozen,
+        tables,
         atoms,
         miss,
         source,
         position=None):
     """
     Emit the instructions that match the subject on top of the stack
-    against the frozen matcher, jumping to miss with the subject still
+    against the pattern's tables, jumping to miss with the subject still
     on the stack when it does not match. Captures store into the slot
     names; externs are read from the atoms the pattern wrote.
 
     :param compiler: the compiler, for labels
     :param fragment: the fragment to emit into
-    :param frozen: the frozen matcher 6-tuple, whose entry is a MATCH
+    :param tables: the slots, externs, consts, nodes and entry
+        MatchCompiler lowered the pattern to, whose entry is a MATCH
         of one width-1 node
     :param atoms: the extern names mapped to the atoms the pattern
         wrote them as
@@ -609,12 +459,12 @@ def lower_clause(
     """
 
     lowering = MatchLowering(
-        FragmentTarget(compiler, fragment), frozen, atoms, source, position)
+        FragmentTarget(compiler, fragment), tables, atoms, source, position)
     lowering.lower_root(miss)
     return lowering.flush_trampolines
 
 
-def lower_matcher(target, frozen, atoms, source=None, position=None):
+def lower_matcher(target, tables, atoms, source=None, position=None):
     """
     Emit a whole matcher as a function body into either target: the
     subject formal, the target's subject gensym, declared by the caller
@@ -624,17 +474,18 @@ def lower_matcher(target, frozen, atoms, source=None, position=None):
     Function with no compiler in reach
     """
 
-    lowering = MatchLowering(target, frozen, atoms, source, position)
+    lowering = MatchLowering(target, tables, atoms, source, position)
     lowering.lower_function()
 
 
-def compile_match_function(frozen, base_ns, atoms=None, name="matcher"):
+def compile_match_function(tables, base_ns, atoms=None, name="matcher"):
     """
-    The frozen matcher as a Function over base_ns: one positional
+    The pattern's tables as a Function over base_ns: one positional
     formal, the subject; the externs closure names resolved in base_ns;
     the captures returned on a match and None on a miss
 
-    :param frozen: the frozen matcher 6-tuple
+    :param tables: the slots, externs, consts, nodes and entry
+        MatchCompiler lowered the pattern to
     :param base_ns: the namespace the externs resolve in
     :param atoms: the extern names mapped to the atoms the pattern
         wrote them as, when a template wrote them; None reads each by
@@ -643,22 +494,22 @@ def compile_match_function(frozen, base_ns, atoms=None, name="matcher"):
     """
 
     atoms = atoms or {}
-    externs = [atoms.get(n) or symbol(n) for n in frozen[2]]
+    externs = [atoms.get(n) or symbol(n) for n in tables[1]]
     target = FunctionTarget(name)
-    lower_matcher(target, frozen, atoms)
+    lower_matcher(target, tables, atoms)
     return target.build(externs, base_ns)
 
 
 class MatchLowering:
     """
-    The emission state for one matcher: the frozen tables, the slot
+    The emission state for one matcher: the pattern's tables, the slot
     scopes and their locals, the cursor and position temporaries, and
     the miss trampolines that pop what a nested peek pushed before
     jumping on
     """
 
-    def __init__(self, target, frozen, atoms, source, position):
-        _tag, slots, externs, consts, nodes, entry = frozen
+    def __init__(self, target, tables, atoms, source, position):
+        slots, externs, consts, nodes, entry = tables
         self.target = target
         self.slot_names = list(slots)
         self.externs = [atoms.get(name) or symbol(name) for name in externs]

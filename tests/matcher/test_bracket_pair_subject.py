@@ -26,7 +26,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import bracket_nil, bracket_pair, cons, nil
+from koskari.lib import bracket_nil, bracket_pair, cons, demand, nil
 from koskari.matcher import CAPTURE, MATCH, REST
 
 
@@ -50,32 +50,32 @@ class TestBracketPairSubject(unittest.TestCase):
 
         m = MATCH(CAPTURE("head"), REST("tail")).build()
 
-        r = m.match(_blist(1, 2, 3))
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["head"].datum, 1)
+        r = demand(m)(_blist(1, 2, 3))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["head"].datum, 1)
         # the captured tail is the [2 3] sub-spine, equal to (2 3)
-        self.assertEqual(r.captures["tail"].datum, cons(2, 3, nil))
+        self.assertEqual(r["tail"].datum, cons(2, 3, nil))
 
     def test_fixed_arity_proper_match(self):
         """a fixed-arity pattern matches a proper, nil-terminated bracket list"""
 
         m = MATCH(CAPTURE("a"), CAPTURE("b"), CAPTURE("c")).build()
 
-        r = m.match(_blist(1, 2, 3))
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"].datum, 1)
-        self.assertEqual(r.captures["b"].datum, 2)
-        self.assertEqual(r.captures["c"].datum, 3)
+        r = demand(m)(_blist(1, 2, 3))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["a"].datum, 1)
+        self.assertEqual(r["b"].datum, 2)
+        self.assertEqual(r["c"].datum, 3)
 
     def test_bracket_nil_terminator_is_proper(self):
         """a bracket-nil terminator counts as a proper list end"""
 
         m = MATCH(CAPTURE("a"), CAPTURE("b")).build()
 
-        r = m.match(_blist(1, 2, tail=bracket_nil))
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"].datum, 1)
-        self.assertEqual(r.captures["b"].datum, 2)
+        r = demand(m)(_blist(1, 2, tail=bracket_nil))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["a"].datum, 1)
+        self.assertEqual(r["b"].datum, 2)
 
 
 # The end.

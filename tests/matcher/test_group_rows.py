@@ -25,7 +25,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum
+from koskari.lib import Datum, demand
 from koskari.matcher import (
     CAPTURE, GROUP, LIST, LITERAL, MATCH, ONEOF, REPEAT, VALUE,
     repeat_capture)
@@ -43,9 +43,9 @@ class TestGroupRows(unittest.TestCase):
     def test_named_group_inside_a_repeat_row_keeps_its_captures(self):
         pat = repeat_capture(
             "rows", LIST(VALUE("head"), GROUP("g", VALUE("a"), VALUE("b"))))
-        result = pat.build().match(((1, 2, 3), (4, 5, 6)))
-        self.assertTrue(result.matched)
-        rows = plain(result.captures["rows"])
+        result = demand(pat.build())(((1, 2, 3), (4, 5, 6)))
+        self.assertIsNotNone(result)
+        rows = plain(result["rows"])
         self.assertEqual(2, len(rows))
         self.assertEqual(1, plain(rows[0]["head"]))
         self.assertEqual({"a": 2, "b": 3},
@@ -56,9 +56,9 @@ class TestGroupRows(unittest.TestCase):
 
     def test_named_group_as_the_whole_repeat_row(self):
         pat = repeat_capture("rows", GROUP("g", VALUE("a")))
-        result = pat.build().match((7, 8))
-        self.assertTrue(result.matched)
-        rows = plain(result.captures["rows"])
+        result = demand(pat.build())((7, 8))
+        self.assertIsNotNone(result)
+        rows = plain(result["rows"])
         self.assertEqual([{"a": 7}, {"a": 8}],
                          [{k: plain(v) for k, v in row["g"].items()}
                           for row in rows])
@@ -68,19 +68,19 @@ class TestGroupRows(unittest.TestCase):
         pat = MATCH(ONEOF(
             MATCH(GROUP("g", VALUE("a")), LITERAL("never")),
             MATCH(VALUE("x"), VALUE("y"))))
-        result = pat.build().match((1, 2))
-        self.assertTrue(result.matched)
-        self.assertNotIn("g", result.captures)
-        self.assertEqual(1, plain(result.captures["x"]))
-        self.assertEqual(2, plain(result.captures["y"]))
+        result = demand(pat.build())((1, 2))
+        self.assertIsNotNone(result)
+        self.assertNotIn("g", result)
+        self.assertEqual(1, plain(result["x"]))
+        self.assertEqual(2, plain(result["y"]))
 
 
     def test_group_captured_outside_a_repeat(self):
         pat = MATCH(VALUE("head"), CAPTURE("g", GROUP(None, VALUE("a"))))
-        result = pat.build().match((1, 2))
-        self.assertTrue(result.matched)
+        result = demand(pat.build())((1, 2))
+        self.assertIsNotNone(result)
         self.assertEqual({"a": 2},
-                         {k: plain(v) for k, v in result.captures["g"].items()})
+                         {k: plain(v) for k, v in result["g"].items()})
 
 
 # The end.

@@ -26,7 +26,7 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms, function_constant
 from ...lib import FormalsSpec, OpCode, cons, gensym, keyword, nil, symbol
-from ...match_code import FragmentTarget, lower_matcher, validate_frozen
+from ...match_code import FragmentTarget, check_nodes, lower_matcher
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
     VALUE, MatchCompiler, parse_explicit_rule_pattern, pattern_slot_names,
@@ -53,17 +53,17 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
     :param pattern: the lowered pattern
     :param pattern_src: the pattern's source form
     :param name: the function's name
-    :return: (function constant, frozen tuple)
+    :return: the function constant
     """
 
-    frozen = MatchCompiler().lower(pattern)
+    tables = MatchCompiler().lower(pattern)
     try:
-        validate_frozen(frozen)
-    except (TypeError, ValueError) as exc:
+        check_nodes(tables[3], tables[4])
+    except ValueError as exc:
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
-    atoms = extern_atoms(pattern_src, frozen[2])
+    atoms = extern_atoms(pattern_src, tables[1])
     body = compiler.fragment(name)
-    for extern in frozen[2]:
+    for extern in tables[1]:
         body.request_var(atoms.get(extern) or symbol(extern))
     # minted after the extern atoms are interned and held by the
     # requests, so its spelling is none of theirs
@@ -71,31 +71,29 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
     body.declare_var(subject)
     with compiler.resolution_scope(body, function=True):
         lower_matcher(
-            FragmentTarget(compiler, body, subject), frozen, atoms,
+            FragmentTarget(compiler, body, subject), tables, atoms,
             pattern_src)
-    constant = function_constant(
+    return function_constant(
         compiler, parent, body, name, FormalsSpec((str(subject),)))
-    return constant, frozen
 
 
 def emit_matcher_row(compiler, frag, pattern, pattern_src, name):
     """
     Push the three leading arguments of a build row: the matcher
-    function built in the module, the frozen matcher tuple paired with
-    the repeat variables as pairs, and the quoted pattern source for
-    help text and errors
+    function built in the module, the repeat variables as pairs, and
+    the quoted pattern source for help text and errors
 
     :return: the number of arguments pushed
     """
 
-    constant, frozen = matcher_function(
+    constant = matcher_function(
         compiler, frag, pattern, pattern_src, name)
     frag.instruction(OpCode.CONST, constant)
     frag.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
     repeat_variables = getattr(pattern, "repeat_variables", None) or {}
     repeat_items = tuple(
         (slot, tuple(names)) for slot, names in repeat_variables.items())
-    frag.instruction(OpCode.CONST, (frozen, repeat_items))
+    frag.instruction(OpCode.CONST, repeat_items)
     frag.merge(compiler.full_compile(
         cons(_sym_quote_syntax, pattern_src, nil)))
     return 3

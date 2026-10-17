@@ -16,9 +16,8 @@ matchbench -- matcher and match/case micro-benchmarks.
 
 Three tiers of timing cells over the one matcher:
 
-  engine-*   Matcher.match on matchers built ahead of the run -- the
-             compiled function entered from Python, hit and miss paths
-             per node family
+  engine-*   matcher functions built ahead of the run, called from
+             koskari -- hit and miss paths per node family
   syntax-*   one matcher over a let form, and a three-arm Syntax
              trying each arm's matcher in order
   match-*    compiled koskari match functions -- the arm chain of
@@ -52,7 +51,7 @@ import-from time perf_counter
 
 import-from koskari.matcher:
     APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
-    MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
+    MATCH ONEOF PREDICATE SYMBOL make_matcher
 import-from koskari.syntax SpecialTransform Syntax
 
 
@@ -73,10 +72,8 @@ define SUBJ_MAP #(#{"kind": "job" "url": "http://x"})
 define SUBJ_TUP #(#(1 2))
 define SUBJ_SEVEN #(7)
 
-define FROZEN_SEQ ((MatchCompiler).lower
+define M_SEQ (make_matcher
     (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
-
-define M_SEQ (thaw FROZEN_SEQ)
 
 define M_CLS (make_matcher
     (MATCH (CLASS "Point"
@@ -220,43 +217,40 @@ define cell-noop []:
 
 
 define cell-engine-seq-hit []:
-    (M_SEQ.match SUBJ_SEQ3)
+    (M_SEQ SUBJ_SEQ3)
 
 define cell-engine-seq-miss []:
-    (M_SEQ.match SUBJ_SEQ2)
+    (M_SEQ SUBJ_SEQ2)
 
 define cell-engine-class-hit []:
-    (M_CLS.match SUBJ_PT)
+    (M_CLS SUBJ_PT)
 
 define cell-engine-class-miss []:
-    (M_CLS.match SUBJ_STR)
+    (M_CLS SUBJ_STR)
 
 define cell-engine-map-hit []:
-    (M_MAP.match SUBJ_MAP)
+    (M_MAP SUBJ_MAP)
 
 define cell-engine-map-miss []:
-    (M_MAP.match SUBJ_TUP)
+    (M_MAP SUBJ_TUP)
 
 define cell-engine-oneof-backtrack []:
-    (M_ONEOF.match SUBJ_SEVEN)
+    (M_ONEOF SUBJ_SEVEN)
 
 define cell-engine-pred-py []:
-    (M_PRED_PY.match SUBJ_SEVEN)
+    (M_PRED_PY SUBJ_SEVEN)
 
 define cell-engine-pred-ki []:
-    (M_PRED_KI.match SUBJ_SEVEN)
+    (M_PRED_KI SUBJ_SEVEN)
 
 define cell-engine-app-py []:
-    (M_APP_PY.match SUBJ_SEVEN)
+    (M_APP_PY SUBJ_SEVEN)
 
 define cell-engine-app-ki []:
-    (M_APP_KI.match SUBJ_SEVEN)
-
-define cell-thaw []:
-    (thaw FROZEN_SEQ)
+    (M_APP_KI SUBJ_SEVEN)
 
 define cell-syntax-dispatch []:
-    (M_SYNTAX.match FORM_LET)
+    (M_SYNTAX FORM_LET)
 
 define cell-syntax-select []:
     (S_SYNTAX.match_transformer FORM_LET)
@@ -300,7 +294,6 @@ define CELLS #(
     #("engine-pred-ki" cell-engine-pred-ki)
     #("engine-app-py" cell-engine-app-py)
     #("engine-app-ki" cell-engine-app-ki)
-    #("thaw" cell-thaw)
     #("syntax-dispatch" cell-syntax-dispatch)
     #("syntax-select" cell-syntax-select)
     #("match-first-arm" cell-match-first-arm)

@@ -241,8 +241,7 @@ class TestKioImporterParity(unittest.TestCase):
     def test_syntax_match_arm_with_an_extern_via_kio_matches_ki(self):
         """
         A syntax-match transformer whose arm names an extern reaches the
-        .kio with its frozen tuple, and from it expands and reports the
-        same tables as from source
+        .kio and expands the same way from it
         """
 
         source = (
@@ -257,13 +256,6 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual("other-arm", ki.b)
         self.assertEqual(ki.a, kio.a)
         self.assertEqual(ki.b, kio.b)
-
-        ki_arms = [t.matcher for t in vars(ki)['compile/ext'].transforms]
-        kio_arms = [t.matcher for t in vars(kio)['compile/ext'].transforms]
-        self.assertEqual(kio_arms[0].externs, ("match-subject",))
-        self.assertIsNotNone(kio_arms[0].frozen)
-        self.assertEqual(
-            [m.frozen for m in kio_arms], [m.frozen for m in ki_arms])
 
 
     GENERATING = (
