@@ -569,7 +569,7 @@ def after_label(instructions, label):
     return instructions[at + 1:at + 3]
 
 
-def depth_trace(pattern, index=None):
+def depth_trace(pattern):
     """
     The rows of a standalone lowering that name a cursor, mark or
     items entry, with the depth under the top of the stack each
@@ -578,10 +578,7 @@ def depth_trace(pattern, index=None):
 
     frozen = MatchCompiler().lower(pattern)
     lowering = MatchLowering(FunctionTarget("t"), frozen, {}, None, None)
-    if index is None:
-        lowering.lower_function()
-    else:
-        lowering.lower_body("miss", index)
+    lowering.lower_function()
     return [(use[0].replace("_VAR", ""), dict(use[1]))
             for use in lowering.uses]
 
@@ -663,11 +660,6 @@ class TestDepthTrace(unittest.TestCase):
             ("MATCH_END", {"cur": 0}),
             ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
         ])
-
-
-    def test_indexed_root_reads_captures_one_deeper(self):
-        self.assertEqual(rows(depth_trace(MATCH(VALUE("x")), index=0))[-1],
-                         ("MATCH_CAPTURES", {"cur": 1, "start": 2}))
 
 
     def test_form_inside_an_application_misses_popping_four(self):

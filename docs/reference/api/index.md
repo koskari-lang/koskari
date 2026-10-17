@@ -31,7 +31,7 @@ layout handler, or driven by tooling.
 | [`koskari.syntax`](koskari-syntax.md) | Syntax transformers: rules, match, and bare forms |
 | [`koskari.hygiene`](koskari-hygiene.md) | Template expansion, marking, and finalize for macro expansion |
 | [`koskari.matcher`](koskari-matcher.md) | The pattern matcher behind specials, macros, and `match` |
-| [`koskari.match_code`](koskari-match-code.md) | The compiler from a frozen pattern to match instructions |
+| [`koskari.match_code`](koskari-match-code.md) | Pattern lowering to match instructions |
 | [`koskari.serialize`](koskari-serialize.md) | The codex format for `.kio` files |
 | [`koskari.dis`](koskari-dis.md) | The bytecode disassembler |
 | [`koskari.help`](koskari-help.md) | The help system |

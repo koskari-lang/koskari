@@ -3,13 +3,13 @@
 
 **Syntax:** `(special-match NAME (PATTERN BODY ...) ...)`
 
-**Use-case:** **MATCH**-dialect special rules (same **`build-special`**
-lowering as **`compile/special-rules`** -- same overall shape as
-**`compile/macro-match`**). Rule bodies receive **`compiler`** and
-matcher slots, as for **`compile/special-rules`**.
+**Use-case:** **MATCH**-dialect special rules, as **`compile/special-rules`**
+takes **RULE**-dialect ones. Rule bodies receive **`compiler`** and the
+matcher slots, as for **`compile/macro-match`**.
 
-**Behaviour:** Each rule's pattern column must be **`(compiler-formal pattern)`**;
-the inner **`pattern`** is lowered by **`parse_explicit_rule_pattern`** (explicit
-MATCH syntax). If that inner pattern is a bare symbol, it is wrapped as
-**`(REST sym)`** before parsing (same convenience as **`compile/macro-match`**).
-Emits **`build-special`** with the lowered pattern and rule lambda pairs.
+**Behaviour:** Each rule's pattern column must be **`(compiler-formal pattern)`**,
+the inner **`pattern`** in the explicit matcher dialect. A bare symbol as the
+inner pattern matches any form and binds its elements under that name. The
+body of the first rule whose pattern matches runs with the compiler bound to
+**`compiler-formal`** and one parameter per pattern slot, and its result is
+the compile result.

@@ -18,7 +18,7 @@ flowchart LR
 | Reader | `koskari.reader` | S-expressions, layout blocks |
 | Compiler | `koskari.compile` | Special forms, bytecode emission |
 | Syntax | `koskari.syntax` | Syntax-rule transformers |
-| Matcher | `koskari.matcher` | Pattern matching for specials |
+| Pattern matcher | `koskari.matcher` | Pattern matching for specials and `match` |
 | VM | `koskari.lib` | Native types, bytecode, evaluator |
 | CLI | `koskari.cli` | REPL and script runner |
 | Builtins | `koskari.builtins` | Standard library (virtual module) |

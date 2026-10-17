@@ -399,16 +399,16 @@ def check_pattern_arg(arg, what):
             f"{what} must be a matcher pattern, got {type(arg).__name__!r}")
 
 
-def check_str_arg(arg, what, *, allow_empty=False):
+def check_str_arg(arg, what):
     """
-    Validate that arg is a non-empty (by default) str. Raises TypeError
-    for the wrong type and ValueError for the empty-string case
+    Validate that arg is a non-empty str. Raises TypeError for the
+    wrong type and ValueError for the empty-string case
     """
 
     if not isinstance(arg, str):
         raise TypeError(
             f"{what} must be a str, got {type(arg).__name__!r}")
-    if not allow_empty and not arg:
+    if not arg:
         raise ValueError(f"{what} must be a non-empty str")
 
 
@@ -939,7 +939,7 @@ class MATCH(Pattern):
 
 class GROUP(Pattern):
     """
-    Nested capture frame: inner captures go into a sub-dict. The native
+    Nested capture frame: inner captures go into a sub-dict. The
     GROUP node has no slot; when ``slot`` is a non-empty str this pattern
     lowers to ``CAPTURE(slot, GROUP(children...))`` so naming stays on
     CAPTURE only. When ``slot`` is None the sub-dict is matched and then
@@ -1345,10 +1345,9 @@ class FIELD(Pattern):
 def repeat_capture(slot, inner):
     """
     Capture the results of repeating inner across successive subject
-    elements. The native engine stores matched.captures[slot] as a bare
-    Python list: each element is one iteration result (often a dict for
-    a GROUP row dict, or a sparse change dict / Datum when inner
-    does not use that shape)
+    elements. captures[slot] is a Python list: each element is one
+    iteration result (often a dict for a GROUP row dict, or a sparse
+    change dict / Datum when inner does not use that shape)
 
     :param slot: outer slot receiving the list of per-iteration values
     :param inner: pattern run once per repetition (often FORM around
@@ -1477,7 +1476,7 @@ def LIST(*specs, key=None):
 def match_pattern_raw(source, patterns):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Return the ``MatchResult.captures`` of the first match, else ``None``
+    Return the captures of the first match, else ``None``
     """
 
     if not is_nil(source) and not is_pair(source):
@@ -1501,7 +1500,7 @@ def match_pattern_raw(source, patterns):
 def match(source, patterns):
     """
     Try each matcher pattern against ``source`` (pair spine or ``nil``).
-    Returns the ``MatchResult.captures`` of the first match, else ``None``.
+    Returns the captures of the first match, else ``None``.
     """
 
     return match_pattern_raw(source, patterns)
@@ -1630,7 +1629,7 @@ class DECL(Composite):
     one-element list naming the symbol, the (type as: name) form,
     or a (name . tail) form where tail captures the keyword
     attribute pairs verbatim. After a successful match captures[slot]
-    is a dict (native GROUP) or :class:`DatumFrame` for KosPair-backed
+    is a dict (the GROUP's captures) or :class:`DatumFrame` for KosPair-backed
     subjects. Keys include ``name`` where applicable, ``type`` from the
     as-form, ``decl_tail`` from the dotted tail arm; other keys are omitted.
     The whole declaration cell spine is available as ``.source`` on
@@ -1671,7 +1670,7 @@ class BINDING(Composite):
     """
     Capture a single binding-shaped cell, (NAME EXPR) or
     (EXPR as: NAME). After a successful match captures[slot] is a dict
-    (native GROUP) or :class:`DatumFrame` with ``name`` and ``expr`` as
+    (the GROUP's captures) or :class:`DatumFrame` with ``name`` and ``expr`` as
     produced by binding_inner_pattern. For KosPair-backed subjects the
     whole binding cell spine is ``.source`` on :class:`DatumFrame`
     """
@@ -1894,7 +1893,7 @@ class FORMALS(Composite):
     decompose its structure into a nested capture dict. Improper-list
     formals are rejected because koskari does not allow them as a
     function-formals shape. After a successful match captures[slot] is
-    a dict (native GROUP) or :class:`DatumFrame` whose keys include:
+    a dict (the GROUP's captures) or :class:`DatumFrame` whose keys include:
 
     * 'positionals': bare Python list of frame dicts (one per positional formal)
     * 'defaults': bare Python list of frame dicts (one per default keyword/value)
@@ -1939,7 +1938,7 @@ class USING(Composite):
     3. (EXPR as: NAME)     -- as form, captures expr and name
     4. (EXPR)              -- bare expression, captures expr only
 
-    After a successful match captures[slot] is a dict (native GROUP) or
+    After a successful match captures[slot] is a dict (the GROUP's captures) or
     :class:`DatumFrame` with whichever of ``lhs``, ``name``, ``expr`` the
     winning arm binds. For KosPair-backed subjects the whole cell spine is
     ``.source`` on :class:`DatumFrame`
@@ -1975,7 +1974,7 @@ class USING(Composite):
 class USING_UNPACK(Composite):
     """
     Capture ``((PATTERN...) EXPR)`` for unpack bindings (e.g. for-each).
-    After a successful match captures[slot] is a dict (native GROUP) or
+    After a successful match captures[slot] is a dict (the GROUP's captures) or
     :class:`DatumFrame` with ``lhs`` and ``expr``. For KosPair-backed
     subjects the whole cell spine is ``.source`` on :class:`DatumFrame`
     """
@@ -2005,7 +2004,7 @@ class USING_UNPACK(Composite):
 class VALUE(Pattern):
     """
     Single-element capture of a slot holding an expression the form
-    evaluates. Lowers to the same native ``CAPTURE`` node as
+    evaluates. Lowers to the same ``CAPTURE`` node as
     ``BIND(slot)``; the spelling records the slot's role
     """
 
@@ -2040,7 +2039,7 @@ class VALUE(Pattern):
 class BODY(Pattern):
     """
     Remainder capture of a slot holding the forms a body evaluates.
-    Lowers to the same native ``REST`` node as ``REST(slot, min_tail=1)``
+    Lowers to the same ``REST`` node as ``REST(slot, min_tail=1)``
     (minimum one spine cell in the body tail); the spelling records
     the slot's role
     """

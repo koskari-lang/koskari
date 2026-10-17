@@ -201,11 +201,12 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
     Each rule's pattern is parsed here and lowered to a matcher
     function, a lambda of this module whose externs close over the
     module's bindings; the form lowers to a call of ``build-syntax``
-    with, per rule, that function, its names, the quoted pattern and
-    the quoted template. ``LITERALS`` is the literals list form from the
-    source; the macro name is not a literal. The head of each pattern
-    lowers to a CALLEDBY capture under its own name, binding the symbol
-    the macro was invoked as, so a template may use it. The built
+    with, per rule, that function, its repeat variables, the quoted
+    pattern and the quoted template. ``LITERALS`` is the literals list
+    form from the source; the macro name is not a literal. The head of
+    each pattern lowers to a CALLEDBY capture under its own name,
+    binding the symbol the macro was invoked as, so a template may use
+    it. The built
     transformer is the value of the expression; use
     ``(compile/define NAME ...)`` to bind it.
     """
@@ -282,9 +283,9 @@ def special_compile_macro_rules(compiler, called_by, name, literals, rules):
 
     Rules are ``(PATTERN BODY...)``; the patterns are parsed here and
     lowered to matcher functions of this module. Lowers to a call of
-    ``build-macro`` with, per rule, the function, its names, the quoted
-    pattern and ``(lambda FORMALS . BODY)``, the formals being the
-    pattern's variables. The built transformer is the value of the
+    ``build-macro`` with, per rule, the function, its repeat variables,
+    the quoted pattern and ``(lambda FORMALS . BODY)``, the formals
+    being the pattern's variables. The built transformer is the value of the
     expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
@@ -325,9 +326,10 @@ def special_compile_syntax_match(compiler, called_by, name, rules):
     Rule rows are ``(PATTERN TEMPLATE)``; each pattern is lowered here
     through :func:`koskari.matcher.parse_explicit_rule_pattern` to a
     matcher function of this module. Lowers to a call of
-    ``build-syntax`` with, per rule, the function, its names, the quoted
-    pattern and the quoted template. The built transformer is the value
-    of the expression; use ``(compile/define NAME ...)`` to bind it.
+    ``build-syntax`` with, per rule, the function, its repeat variables,
+    the quoted pattern and the quoted template. The built transformer is
+    the value of the expression; use ``(compile/define NAME ...)`` to
+    bind it.
     """
 
     namesym = name.datum
@@ -366,7 +368,7 @@ def special_compile_macro_match(compiler, called_by, name, rules):
     through :func:`koskari.matcher.parse_explicit_rule_pattern` to a
     matcher function of this module, and its slot order gives the
     generated formals. Lowers to a call of ``build-macro`` with, per
-    rule, the function, its names, the quoted pattern and
+    rule, the function, its repeat variables, the quoted pattern and
     ``(lambda FORMALS . BODY)``. The built transformer is the value of
     the expression; use ``(compile/define NAME ...)`` to bind it.
     """
@@ -413,7 +415,8 @@ def special_compile_special_rules(compiler, called_by, name, literals, rules):
     the nested RULE pattern, lowered here with
     :func:`parse_syntax_rules_pattern` to a matcher function of this
     module. Lowers to a call of ``build-special`` with, per rule, the
-    function, its names, the quoted pattern and ``(lambda ...)``. The
+    function, its repeat variables, the quoted pattern and
+    ``(lambda ...)``. The
     built transformer is the value of the expression; use
     ``(compile/define NAME ...)`` to bind it.
     """
@@ -463,10 +466,10 @@ def special_compile_special_match(compiler, called_by, name, rules):
     subform names the compiler parameter (any symbol), the second is
     the nested MATCH pattern for parse_explicit_rule_pattern, lowered
     here to a matcher function of this module. Lowers to a call of
-    ``build-special`` with, per rule, the function, its names, the
-    quoted pattern and ``(lambda ...)``, as ``compile/macro-match``
-    does. The built transformer is the value of the expression; use
-    ``(compile/define NAME ...)`` to bind it.
+    ``build-special`` with, per rule, the function, its repeat
+    variables, the quoted pattern and ``(lambda ...)``, as
+    ``compile/macro-match`` does. The built transformer is the value of
+    the expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum

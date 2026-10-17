@@ -15,4 +15,5 @@
   dict.
 - **Compiler form:** Emitted by the match compiler at the end of a standalone
   matcher and for each named group; `MATCH_CAPTURES_NAMED` for a
-  `compile/match` arm, whose captures are the enclosing function's locals.
+  `compile/match` arm and for a rule's matcher compiled in a module, whose
+  captures are the function's locals.

@@ -396,7 +396,7 @@ class SyntaxTransform(Transform):
 
 class _BareResult:
     """
-    Stand-in for a native ``MatchResult`` on the bare path, where the matcher
+    Stand-in for a ``MatchResult`` on the bare path, where the matcher
     is bypassed and the called-by symbol is the only capture
     """
 
@@ -553,7 +553,7 @@ def _captures_to_bindings(captures):
     """
     Map string capture keys to koskari symbols for template expansion.
 
-    Values are native matcher captures (often ``Datum``-wrapped); they are
+    Values are the matcher's captures (often ``Datum``-wrapped); they are
     stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
     peels at use sites. Macro handlers receive the same ``Datum``-bearing
     ``MatchResult.captures`` mapping unchanged from the matcher.

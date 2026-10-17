@@ -352,16 +352,15 @@ class FunctionTarget:
     """
     The standalone target: an instruction list, labels and locals of
     its own, built into a Function over a namespace the externs
-    resolve in. The subject, its one formal, is a gensym, minted here
-    when the caller passes none
+    resolve in. The subject, its one formal, is a gensym minted here
     """
 
     standalone = True
 
 
-    def __init__(self, name, subject=None):
+    def __init__(self, name):
         self.name = name
-        self.subject = subject or gensym()
+        self.subject = gensym()
         self.instructions = []
         self.locals = []
         self.counter = 0
@@ -464,7 +463,7 @@ def lower_clause(
     return lowering.flush_trampolines
 
 
-def lower_matcher(target, tables, atoms, source=None, position=None):
+def lower_matcher(target, tables, atoms, source=None):
     """
     Emit a whole matcher as a function body into either target: the
     subject formal, the target's subject gensym, declared by the caller
@@ -474,11 +473,11 @@ def lower_matcher(target, tables, atoms, source=None, position=None):
     Function with no compiler in reach
     """
 
-    lowering = MatchLowering(target, tables, atoms, source, position)
+    lowering = MatchLowering(target, tables, atoms, source, None)
     lowering.lower_function()
 
 
-def compile_match_function(tables, base_ns, atoms=None, name="matcher"):
+def compile_match_function(tables, base_ns):
     """
     The pattern's tables as a Function over base_ns: one positional
     formal, the subject; the externs closure names resolved in base_ns;
@@ -487,16 +486,11 @@ def compile_match_function(tables, base_ns, atoms=None, name="matcher"):
     :param tables: the slots, externs, consts, nodes and entry
         MatchCompiler lowered the pattern to
     :param base_ns: the namespace the externs resolve in
-    :param atoms: the extern names mapped to the atoms the pattern
-        wrote them as, when a template wrote them; None reads each by
-        its bare name
-    :param name: the function's name
     """
 
-    atoms = atoms or {}
-    externs = [atoms.get(n) or symbol(n) for n in tables[1]]
-    target = FunctionTarget(name)
-    lower_matcher(target, tables, atoms)
+    externs = [symbol(n) for n in tables[1]]
+    target = FunctionTarget("matcher")
+    lower_matcher(target, tables, {})
     return target.build(externs, base_ns)
 
 
@@ -959,13 +953,11 @@ class MatchLowering:
         self.emit(OpCode.RETURN, 1)
 
 
-    def lower_body(self, miss, index=None):
+    def lower_body(self, miss):
         """
         The entry node against the subject formal walked as a spine,
         leaving the captures on the stack on a match and jumping to
-        miss with nothing left on it otherwise. With an index, the
-        clause's index in its dispatcher is pushed under the captures,
-        the two arguments of the values the dispatcher returns
+        miss with nothing left on it otherwise
         """
 
         cur = self.cursor(0)
@@ -975,8 +967,8 @@ class MatchLowering:
             self.slot_local(slot)
 
         # the caller pushed the subject once; it stays under the walk,
-        # the gate pushes the cursor above it, the captures start at
-        # it, and a miss leaves it for the next clause
+        # the gate pushes the cursor above it, and the captures start
+        # at it
         self.emit(
             OpCode.MATCH_FORM, self.miss_at((miss, 0, 0)),
             pack_widths(*self.width(self.entry)))
@@ -987,9 +979,6 @@ class MatchLowering:
         self.emit(
             OpCode.MATCH_END, self.miss_at((miss, 0, 0)), self.at(cur),
             0)
-        if index is not None:
-            self.emit(OpCode.CONST, index)
-            self.note_push(ELEM)
         self.emit_captures(None, SUBJECT_ENTRY, cur)
 
 
