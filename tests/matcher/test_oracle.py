@@ -36,7 +36,7 @@ pytestmark = pytest.mark.phase_infra
 class TestOracle(unittest.TestCase):
 
     def test_core_agrees_with_master(self):
-        report = compare(selector=True)
+        report = compare()
         self.assertFalse(
             report["unexplained"], "\n" + format_report(report, limit=5))
 

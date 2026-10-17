@@ -373,13 +373,13 @@ class TestMatchSpecial(SpecialsTestCase):
 
 class TestMatchFailedCaptures(SpecialsTestCase):
     """
-    A capture name is the arm's own local: an attempt that binds it and
-    then misses leaves its value behind, and a failed or-alternative
-    leaves its names unbound, so a binding of that name made before the
-    match is overwritten either way
+    A missed arm writes no variable, and a hit writes only the slots
+    it filled: a binding of a capture name made before the match keeps
+    its value through a miss and through a hit that leaves the name's
+    slot empty
     """
 
-    async def test_plain_miss_leaves_the_captured_value(self):
+    async def test_plain_miss_writes_no_variable(self):
         src = """
         (let [[x 100]]
           (match data
@@ -387,10 +387,10 @@ class TestMatchFailedCaptures(SpecialsTestCase):
             [else: x]))
         """
         expr, mod = self.compile_expr(src, data=(5, 3))
-        self.assertEqual(await expr(), 5)
+        self.assertEqual(await expr(), 100)
 
 
-    async def test_failed_alternative_leaves_its_names_unbound(self):
+    async def test_failed_alternative_leaves_the_variable_as_it_was(self):
         src = """
         (let [[x 100]]
           (match data
@@ -398,11 +398,9 @@ class TestMatchFailedCaptures(SpecialsTestCase):
             [else: x]))
         """
         expr, mod = self.compile_expr(src, data=(5, 2))
-        with self.assertRaises(NameError):
-            await expr()
+        self.assertEqual(await expr(), 100)
         expr, mod = self.compile_expr(src, data=(5, 3))
-        with self.assertRaises(NameError):
-            await expr()
+        self.assertEqual(await expr(), 100)
 
 
     async def test_unfired_optional_leaves_its_name_unbound(self):
@@ -751,7 +749,7 @@ class TestMatchTemporaries(SpecialsTestCase):
             c.code if hasattr(c, "code") else c
             for c in code.constants_pool
             if hasattr(c, "soften") or hasattr(c, "code"))
-        names = [str(n).split("#")[0] for n in inner.namespace_spec.local_syms]
+        names = [str(n) for n in inner.namespace_spec.local_syms]
         self.assertEqual(
             sorted(names), ["a", "b", "c", "d", "data", "more"])
 

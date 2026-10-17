@@ -40,7 +40,6 @@ import sys
 
 from os.path import dirname, join
 
-from koskari import match_core
 from koskari.lib import (
     Datum, DatumFrame, cons, demand, keyword, nil, pair, setcar, symbol)
 from koskari.matcher import (
@@ -1258,26 +1257,15 @@ def load_corpus(directory=None):
     return standalone, inline
 
 
-def compare(selector=None, directory=None):
+def compare(directory=None):
     """
     Run the corpus on this tree and compare each outcome with master's
 
-    :param selector: chooses the matcher path the cases run on: true
-        for the matcher core, false for the current path, None for the
-        path match_core.SELECTED names
     :param directory: the corpus directory, ORACLE_DIR by default
     :return: a dict: total, agree, explained (rule name to count),
         explained_ids (rule name to case ids) and unexplained (a list
         of the divergent cases no rule covers)
     """
-
-    if selector is not None:
-        selected = match_core.SELECTED
-        match_core.SELECTED = bool(selector)
-        try:
-            return compare(None, directory)
-        finally:
-            match_core.SELECTED = selected
 
     standalone, inline = load_corpus(directory)
     report = {

@@ -40,7 +40,6 @@ depth under the top as the instruction finds the stack.
 
 
 from dataclasses import dataclass
-from os import environ
 from typing import Optional
 
 from koskari.compile.compiler import _is_const
@@ -49,18 +48,12 @@ from koskari.lib import OpCode, symbol
 
 __all__ = (
     'FIELD_LIMIT',
-    'SELECTED',
     'Analysis',
     'Emitter',
     'Scope',
     'analyse',
 )
 
-
-# whether compile_match_function, lower_clause, lower_matcher and the
-# MatchCompiler read the core path rather than the current one; set
-# from KOSKARI_MATCH_CORE (any value but empty or 0 selects the core)
-SELECTED = environ.get('KOSKARI_MATCH_CORE', '') not in ('', '0')
 
 # the largest width, count or slot count an instruction's 16-bit RAW
 # field holds; 0xFFFF is the unbounded max of MATCH_FITS

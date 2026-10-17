@@ -15,9 +15,8 @@
 tests.matcher.test_match_function
 
 The standalone matcher function: the captures and misses it returns
-for pair and sequence subjects, Datum and DatumFrame included, the
-depth trace and instructions of its lowering, and the temporaries it
-declares
+for pair and sequence subjects, Datum and DatumFrame included, and the
+locals it declares
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -30,8 +29,7 @@ import pytest
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, OpCode, cons, demand, keyword, nil,
     setcdr, symbol)
-from koskari.match_code import (
-    FunctionTarget, MatchLowering, compile_match_function)
+from koskari.match_code import FunctionTarget, compile_match_function
 from koskari.matcher import (
     APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
     GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
@@ -478,31 +476,33 @@ class TestSameScopes(unittest.TestCase):
         self.assertIsNone(demand(m)((5, 6)))
 
 
-    def test_same_outside_its_frame_is_refused(self):
+    def test_same_outside_its_frame_always_misses(self):
+        # the pass of a REPEAT over a group is a frame of its own, and
+        # nothing in it binds x: the SAME builds and never matches
         pattern = MATCH(CAPTURE("x"), repeat_capture(
             "rows", FORM(MATCH(SAME("x")))))
-        with self.assertRaises(ValueError) as caught:
-            MatchCompiler().lower(pattern)
-        self.assertIn("depth", str(caught.exception))
+        m = make_matcher(pattern)
+        self.assertEqual(demand(m)((1,)), {"x": 1, "rows": []})
+        self.assertIsNone(demand(m)((1, (1,))))
+        self.assertIsNone(demand(m)((1, (2,))))
+        self.assertIsNone(demand(m)((1, (1,), (1,))))
 
 
 def local_names(pattern):
     """
-    The locals a standalone lowering declares after the subject, each
-    without its gensym suffix
+    The locals a standalone lowering declares after the subject
     """
 
     frozen = MatchCompiler().lower(pattern)
     fn = compile_match_function(frozen, ModuleNamespace("probe", {}))
-    return [str(name).split("#")[0]
-            for name in fn.code.namespace_spec.local_syms[1:]]
+    return [str(name) for name in fn.code.namespace_spec.local_syms[1:]]
 
 
 class TestTemporaries(unittest.TestCase):
     """
-    A lowering declares no local for the walk: the cursors, marks and
-    items are entries on the operand stack for their extents, and the
-    root's start is the subject itself
+    A lowering declares no local beyond its subject formal: the
+    cursors, marks and items are entries on the operand stack for
+    their extents, and the captures live in the marks
     """
 
     def test_a_flat_pattern_declares_no_temporary(self):
@@ -516,9 +516,12 @@ class TestTemporaries(unittest.TestCase):
 
 
     def test_a_repeat_over_a_group_declares_no_temporary(self):
-        got = local_names(MATCH(FORM(MATCH(
-            repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
-        self.assertEqual(got, ["rows", "g", "k", "v"])
+        pattern = MATCH(FORM(MATCH(
+            repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v"))))))
+        self.assertEqual(local_names(pattern), [])
+        result = demand(pattern.build())(((1, 2, 3, 4),))
+        self.assertEqual(
+            result["rows"], [{"g": {"k": 1, "v": 2}}, {"g": {"k": 3, "v": 4}}])
 
 
     def test_bare_repeat_still_walks(self):
@@ -537,227 +540,44 @@ class TestTemporaries(unittest.TestCase):
         self.assertIs(result.source, cell)
 
 
-def walk(pattern):
+class TestNestedMisses(unittest.TestCase):
     """
-    The instructions of a standalone lowering, the subject shown as
-    "subject" and each slot or temporary name without its gensym suffix
-    """
-
-    def plain(value):
-        if value is subject:
-            return "subject"
-        if isinstance(value, tuple):
-            return tuple(plain(v) for v in value)
-        if isinstance(value, symbol):
-            return str(value).split("#")[0]
-        return value
-
-    frozen = MatchCompiler().lower(pattern)
-    lowering = MatchLowering(FunctionTarget("t"), frozen, {}, None, None)
-    subject = lowering.target.subject
-    lowering.lower_function()
-    return [(op.name, plain(arg)) for op, arg in lowering.target.instructions]
-
-
-def after_label(instructions, label):
-    """
-    The two instructions that follow a label: a miss trampoline's pop
-    and its jump
+    A miss deep in the walk, under the entries the nodes above it
+    pushed, gives None and leaves the matcher whole for the next call
     """
 
-    at = instructions.index(("LABEL", label))
-    return instructions[at + 1:at + 3]
+    def test_miss_inside_a_form_over_an_application_result(self):
+        m = demand(make_matcher(
+            MATCH(APP("f", FORM(MATCH(VALUE("a"))))), {"f": lambda v: v}))
+        self.assertEqual(m(((1,),)), {"a": 1})
+        self.assertIsNone(m(((1, 2),)))
+        self.assertIsNone(m(((),)))
+        self.assertIsNone(m((5,)))
+        self.assertIsNone(m(((1,), 2)))
+        self.assertEqual(m(((3,),)), {"a": 3})
 
 
-def depth_trace(pattern):
-    """
-    The rows of a standalone lowering that name a cursor, mark or
-    items entry, with the depth under the top of the stack each
-    carries
-    """
-
-    frozen = MatchCompiler().lower(pattern)
-    lowering = MatchLowering(FunctionTarget("t"), frozen, {}, None, None)
-    lowering.lower_function()
-    return [(use[0].replace("_VAR", ""), dict(use[1]))
-            for use in lowering.uses]
-
-
-def rows(trace):
-    return trace
-
-
-class TestDepthTrace(unittest.TestCase):
-    """
-    The lowering traces, at every row that names a cursor, mark or
-    items entry, the depth that entry sits at under the top of the
-    stack: the subject under everything, a form's cursor above it,
-    elements under test and marks above that
-    """
-
-    def test_flat_pattern(self):
-        self.assertEqual(rows(depth_trace(MATCH(VALUE("x")))), [
-            ("MATCH_NEXT_BIND", {"cur": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
-        ])
-
-
-    def test_nested_form_cursor_sits_above_the_outer(self):
-        self.assertEqual(
-            rows(depth_trace(MATCH(FORM(MATCH(VALUE("a"), LITERAL(2)))))), [
-                ("MATCH_NEXT_FORM", {"cur": 0}),
-                ("MATCH_NEXT_BIND", {"cur": 0}),
-                ("MATCH_NEXT_LITERAL", {"cur": 0}),
-                ("MATCH_END", {"cur": 0}),
-                ("MATCH_END", {"cur": 0}),
-                ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
-            ])
-
-
-    def test_form_inside_an_application_result(self):
-        # the pulled element, the call's result and the inner cursor
-        # all sit above the outer cursor while the inner form walks
-        trace = depth_trace(MATCH(APP("f", FORM(MATCH(VALUE("a"))))))
-        self.assertEqual(rows(trace), [
-            ("MATCH_NEXT", {"cur": 0}),
-            ("MATCH_NEXT_BIND", {"cur": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
-        ])
-
-
-    def test_repeat_over_a_group(self):
-        trace = depth_trace(MATCH(FORM(MATCH(
-            repeat_capture("rows", GROUP("g", VALUE("k"), VALUE("v")))))))
-        self.assertEqual(rows(trace), [
-            ("MATCH_NEXT_FORM", {"cur": 0}),
-            ("MATCH_MARK", {"cur": 1}),
-            ("MATCH_REMARK", {"cur": 2, "mark": 0}),
-            ("MATCH_NEXT_BIND", {"cur": 2}),
-            ("MATCH_NEXT_BIND", {"cur": 2}),
-            ("MATCH_CAPTURES", {"cur": 2, "start": 0}),
-            ("MATCH_ITERATION", {"cur": 2, "items": 1, "start": 0}),
-            ("MATCH_RESET", {"cur": 2, "mark": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
-        ])
-
-
-    def test_optional_reads_its_cursor_under_the_mark(self):
-        trace = depth_trace(MATCH(FORM(MATCH(
-            OPTIONAL(CAPTURE("o", LITERAL(1))), VALUE("z")))))
-        self.assertEqual(rows(trace), [
-            ("MATCH_NEXT_FORM", {"cur": 0}),
-            ("MATCH_AVAILABLE", {"cur": 0}),
-            ("MATCH_MARK", {"cur": 0}),
-            ("MATCH_NEXT", {"cur": 1}),
-            ("MATCH_RESET", {"cur": 1, "mark": 0}),
-            ("MATCH_NEXT_BIND", {"cur": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_END", {"cur": 0}),
-            ("MATCH_CAPTURES", {"cur": 0, "start": 1}),
-        ])
-
-
-    def test_form_inside_an_application_misses_popping_four(self):
-        # the outer cursor, the pulled element, the call's result and
-        # the inner cursor are live when the inner form's pull misses
-        instructions = walk(MATCH(APP("f", FORM(MATCH(VALUE("a"))))))
-        binds = [arg for op, arg in instructions
-                 if op == "MATCH_NEXT_BIND_VAR"]
-        self.assertEqual(len(binds), 1)
-        self.assertEqual(after_label(instructions, binds[0][0]), [
-            ("POP", 4), ("JUMP", "match.miss_1")])
-
-
-    def test_form_inside_an_application_emits_only_targeted_trampolines(self):
-        # a trampoline is emitted only for a depth some miss edge jumps
-        # from: none pops two, since no test misses with the outer
-        # cursor and the pulled element alone above the subject
-        self.assertEqual(walk(MATCH(APP("f", FORM(MATCH(VALUE("a")))))), [
-            ("VAR", "subject"),
-            ("MATCH_FORM", ("match.miss_1", 257, 0, 0)),
-            ("MATCH_NEXT", ("match.pop_2", 0, 0, 0)),
-            ("DUP", 1),
-            ("CALL_VAR", ("f", 1, 0, 0)),
-            ("MATCH_FORM", ("match.pop_4", 257, 0, 0)),
-            ("MATCH_NEXT_BIND_VAR", ("match.pop_5", 0, "a", 0)),
-            ("MATCH_END", ("match.pop_5", 0, 1, 0)),
-            ("POP", 1),
-            ("POP", 1),
-            ("MATCH_END", ("match.pop_2", 0, 0, 0)),
-            ("MATCH_CAPTURES", (("a",), "a", 1, 0)),
-            ("RETURN", 1),
-            ("LABEL", "match.pop_2"),
-            ("POP", 1),
-            ("JUMP", "match.miss_1"),
-            ("LABEL", "match.pop_4"),
-            ("POP", 3),
-            ("JUMP", "match.miss_1"),
-            ("LABEL", "match.pop_5"),
-            ("POP", 4),
-            ("JUMP", "match.miss_1"),
-            ("LABEL", "match.miss_1"),
-            ("CONST", None),
-            ("RETURN", 1),
-        ])
-
-
-    def test_last_branch_guard_misses_with_the_mark_live(self):
-        # the last branch's reservation check misses from under the
-        # outer cursor, the inner cursor and the ONEOF's mark
-        instructions = walk(MATCH(FORM(MATCH(
+    def test_miss_on_the_last_oneof_branch_length(self):
+        m = demand(make_matcher(MATCH(FORM(MATCH(
             ONEOF(GROUP("g", VALUE("a"), VALUE("b")), VALUE("c")),
-            LITERAL(9)))))
-        guards = [arg for op, arg in instructions if op == "MATCH_AVAILABLE"]
-        self.assertEqual(len(guards), 2)
-        self.assertEqual(after_label(instructions, guards[1][0]), [
-            ("POP", 3), ("JUMP", "match.miss_1")])
+            LITERAL(9))))))
+        self.assertEqual(m(((1, 2, 9),)), {"g": {"a": 1, "b": 2}})
+        self.assertEqual(m(((1, 9),)), {"c": 1})
+        self.assertIsNone(m(((9,),)))
+        self.assertIsNone(m(((),)))
+        self.assertIsNone(m(((1, 2, 3),)))
+        self.assertEqual(m(((4, 9),)), {"c": 4})
 
 
-    def test_trailing_oneof_branch_ends_its_form(self):
-        # a ONEOF last in a form: every branch but the last tests the
-        # form's end, its flag clear, on that branch's miss edge, so a
-        # branch that leaves elements behind yields to the next
-        pattern = MATCH(FORM(MATCH(ONEOF(
-            MATCH(VALUE("a"), VALUE("b")), MATCH(VALUE("a"))))))
-        self.assertEqual(walk(pattern), [
-            ("VAR", "subject"),
-            ("MATCH_FORM", ("match.miss_1", 257, 0, 0)),
-            ("MATCH_NEXT_FORM", ("match.pop_2", 0, 258, 0)),
-            ("MATCH_MARK", (0, 0, 0, 0)),
-            ("MATCH_NEXT_BIND_VAR", ("match.or_5", 1, "a", 0)),
-            ("MATCH_NEXT_BIND_VAR", ("match.or_5", 1, "b", 0)),
-            ("MATCH_END", ("match.or_5", 1, 0, 0)),
-            ("POP", 1),
-            ("JUMP", "match.or_4"),
-            ("LABEL", "match.or_5"),
-            ("MATCH_RESET", (1, 0, 0, 0)),
-            ("VAR_CLEAR", "a"),
-            ("VAR_CLEAR", "b"),
-            ("MATCH_NEXT_BIND_VAR", ("match.pop_6", 1, "a", 0)),
-            ("POP", 1),
-            ("LABEL", "match.or_4"),
-            ("MATCH_END", ("match.pop_3", 0, 1, 0)),
-            ("MATCH_END", ("match.pop_2", 0, 0, 0)),
-            ("MATCH_CAPTURES", (("a", "b", "a"), "a", 1, 0)),
-            ("RETURN", 1),
-            ("LABEL", "match.pop_2"),
-            ("POP", 1),
-            ("JUMP", "match.miss_1"),
-            ("LABEL", "match.pop_3"),
-            ("POP", 2),
-            ("JUMP", "match.miss_1"),
-            ("LABEL", "match.pop_6"),
-            ("POP", 3),
-            ("JUMP", "match.miss_1"),
-            ("LABEL", "match.miss_1"),
-            ("CONST", None),
-            ("RETURN", 1),
-        ])
+    def test_trailing_oneof_branch_wider_first(self):
+        # the wider branch is skipped by its length check when one
+        # element remains, and the narrower branch takes it
+        m = demand(make_matcher(MATCH(FORM(MATCH(ONEOF(
+            MATCH(VALUE("a"), VALUE("b")), MATCH(VALUE("a"))))))))
+        self.assertEqual(m(((1,),)), {"a": 1})
+        self.assertEqual(m(((1, 2),)), {"a": 1, "b": 2})
+        self.assertIsNone(m(((1, 2, 3),)))
+        self.assertIsNone(m(((),)))
 
 
 class TestPairSpineElements(unittest.TestCase):

@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the koskari.matcher builder API: per-primitive freeze
-shapes, slot/extern/const interning, build->match round-trips, eager
+Tests for the koskari.matcher builder API: per-primitive matches and
+misses, slot/extern/const interning, build->match round-trips, eager
 validation negatives, ergonomic shorthand semantics, and cross-cutting
 integration.
 """
@@ -23,235 +23,249 @@ import unittest
 
 import pytest
 
-from koskari.lib import CoreType, cons, demand, keyword, nil, pair, symbol
+from koskari.lib import cons, demand, keyword, nil, pair, symbol
 from koskari.matcher import (
     BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
-    SYMBOL, TEST_ANY, TYPE, VALUE, MatchCompiler, make_matcher)
+    SYMBOL, TEST_ANY, TYPE, VALUE, MatchCompiler, make_matcher,
+    pattern_slot_names)
+from koskari.types import is_symbol
 
 
 pytestmark = pytest.mark.phase_infra
 
 
-# === Per-primitive freeze shape tests ===
+# === Per-primitive matches and misses ===
 
 
-class TestPrimitiveFreezeShapes(unittest.TestCase):
+class Point:
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x=0, y=0, color=None):
+        self.x = x
+        self.y = y
+        if color is not None:
+            self.color = color
 
 
-    def test_test_any_emits_any_node(self):
+class TestPrimitiveMatches(unittest.TestCase):
+
+
+    def test_test_any_matches_any_one_element(self):
         """
-        TEST_ANY emits a single ('TEST', 'ANY', -1) node
-        """
-
-        tables = MatchCompiler().lower(TEST_ANY())
-        self.assertEqual(tables[3], (("TEST", "ANY", -1),))
-        self.assertEqual(tables[4], 0)
-
-
-    def test_literal_interns_const(self):
-        """
-        LITERAL writes its value into consts and emits a TEST/LITERAL
-        node referencing that index
-        """
-
-        tables = MatchCompiler().lower(LITERAL(7))
-        self.assertEqual(tables[2], (7,))
-        self.assertEqual(tables[3], (("TEST", "LITERAL", 0),))
-
-
-    def test_type_interns_extern(self):
-        """
-        TYPE writes its extern name into externs and emits a TEST/TYPE
-        node referencing that index
+        TEST_ANY matches one element of any value
         """
 
-        tables = MatchCompiler().lower(TYPE("Point"))
-        self.assertEqual(tables[1], ("Point",))
-        self.assertEqual(tables[3], (("TEST", "TYPE", 0),))
+        m = demand(make_matcher(MATCH(TEST_ANY())))
+        self.assertEqual(m((1,)), {})
+        self.assertEqual(m(("x",)), {})
+        self.assertIsNone(m(()))
+        self.assertIsNone(m((1, 2)))
+
+
+    def test_literal_matches_its_value(self):
+        """
+        LITERAL matches an element equal to its value, of its type
+        """
+
+        m = demand(make_matcher(MATCH(LITERAL(7))))
+        self.assertEqual(m((7,)), {})
+        self.assertIsNone(m((8,)))
+        self.assertIsNone(m(("7",)))
+
+
+    def test_type_tests_the_extern(self):
+        """
+        TYPE matches an instance of the type its extern names, and the
+        extern must be given at build
+        """
+
+        m = demand(make_matcher(MATCH(TYPE("Point")), {"Point": Point}))
+        self.assertEqual(m((Point(),)), {})
+        self.assertIsNone(m((1,)))
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(TYPE("Point")).build()
 
 
     def test_core_type_is_an_ordinal_not_an_extern(self):
         """
-        A core type name lowers to a TEST/CORE node carrying the
-        CoreType ordinal and interns nothing
+        A core type name needs no extern: it builds with none and
+        matches a value of that core type
         """
 
-        for name in ("pair", "symbol", "keyword", "int", "str", "tuple", "list"):
-            tables = MatchCompiler().lower(TYPE(name))
-            self.assertEqual(tables[1], (), name)
-            self.assertEqual(
-                tables[3], (("TEST", "CORE", int(CoreType[name.upper()])),),
-                name)
+        for name, value in (
+                ("pair", cons(1, nil)),
+                ("symbol", symbol("a")),
+                ("keyword", keyword("k")),
+                ("int", 1),
+                ("str", "s"),
+                ("tuple", (1,)),
+                ("list", [1])):
+            m = demand(make_matcher(MATCH(TYPE(name))))
+            self.assertEqual(m((value,)), {}, name)
+            self.assertIsNone(m((1.5,)), name)
 
 
-    def test_predicate_interns_extern(self):
+    def test_predicate_calls_the_extern(self):
         """
-        PREDICATE writes its extern name into externs and emits a
-        TEST/PREDICATE node referencing that index
-        """
-
-        tables = MatchCompiler().lower(PREDICATE("is_symbol"))
-        self.assertEqual(tables[1], ("is_symbol",))
-        self.assertEqual(tables[3], (("TEST", "PREDICATE", 0),))
-
-
-    def test_capture_no_subnode_emits_minus_one(self):
-        """
-        CAPTURE without a sub-pattern emits subnode -1
+        PREDICATE matches an element its extern returns true for
         """
 
-        tables = MatchCompiler().lower(CAPTURE("x"))
-        self.assertEqual(tables[0], ("x",))
-        self.assertEqual(tables[3], (("CAPTURE", 0, -1),))
+        m = demand(make_matcher(
+            MATCH(PREDICATE("is_symbol")), {"is_symbol": is_symbol}))
+        self.assertEqual(m((symbol("a"),)), {})
+        self.assertIsNone(m((1,)))
 
 
-    def test_capture_with_sub_emits_post_order(self):
+    def test_capture_no_subnode_binds_one_element(self):
         """
-        CAPTURE wrapping TYPE emits the TYPE node first then a CAPTURE
-        whose subnode index references the TYPE
-        """
-
-        tables = MatchCompiler().lower(CAPTURE("x", TYPE("Point")))
-        self.assertEqual(tables[0], ("x",))
-        self.assertEqual(tables[1], ("Point",))
-        self.assertEqual(
-            tables[3],
-            (("TEST", "TYPE", 0), ("CAPTURE", 0, 0)))
-        self.assertEqual(tables[4], 1)
-
-
-    def test_form_emits_post_order(self):
-        """
-        FORM emits its subnode first then a FORM node referencing it
+        CAPTURE without a sub-pattern binds any one element
         """
 
-        tables = MatchCompiler().lower(FORM(TEST_ANY()))
-        self.assertEqual(
-            tables[3], (("TEST", "ANY", -1), ("FORM", 0)))
-        self.assertEqual(tables[4], 1)
+        m = demand(make_matcher(MATCH(CAPTURE("x"))))
+        self.assertEqual(m((1,)), {"x": 1})
+        self.assertIsNone(m(()))
 
 
-    def test_match_collects_children(self):
+    def test_capture_with_sub_binds_what_the_sub_matched(self):
         """
-        MATCH emits each child then a MATCH node listing them in order
-        """
-
-        tables = MatchCompiler().lower(MATCH(TEST_ANY(), TEST_ANY()))
-        self.assertEqual(
-            tables[3],
-            (("TEST", "ANY", -1),
-             ("TEST", "ANY", -1),
-             ("MATCH", 0, 1)))
-        self.assertEqual(tables[4], 2)
-
-
-    def test_named_group_emits_group_node_with_slot_index(self):
-        """
-        GROUP(slot, ...) reserves the slot name and lowers to GROUP
-        children plus a wrapping CAPTURE for the outer slot
+        CAPTURE wrapping TYPE binds the element the TYPE matched
         """
 
-        tables = MatchCompiler().lower(GROUP("g", CAPTURE("a")))
-        self.assertEqual(tables[0], ("g", "a"))
-        self.assertEqual(
-            tables[3],
-            (("CAPTURE", 1, -1),
-             ("GROUP", 0),
-             ("CAPTURE", 0, 1)))
-        self.assertEqual(tables[4], 2)
+        m = demand(make_matcher(
+            MATCH(CAPTURE("x", TYPE("Point"))), {"Point": Point}))
+        p = Point()
+        self.assertIs(m((p,))["x"], p)
+        self.assertIsNone(m((1,)))
 
 
-    def test_rest_emits_rest_then_capture_when_named(self):
+    def test_form_matches_a_nested_sequence(self):
         """
-        REST with a slot lowers to REST(min_tail) then CAPTURE
+        FORM matches an element that is a sequence its sub-pattern
+        matches all of; a str is not a sequence
         """
 
-        tables = MatchCompiler().lower(REST("rest"))
-        self.assertEqual(tables[0], ("rest",))
-        self.assertEqual(
-            tables[3], (("REST", 0), ("CAPTURE", 0, 0)))
+        m = demand(make_matcher(MATCH(FORM(TEST_ANY()))))
+        self.assertEqual(m(((1,),)), {})
+        self.assertEqual(m(([1],)), {})
+        self.assertIsNone(m(((1, 2),)))
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m(("a",)))
 
 
-    def test_oneof_collects_branches(self):
+    def test_match_runs_its_children_in_order(self):
         """
-        ONEOF emits each branch then a ONEOF node listing them in order
-        """
-
-        tables = MatchCompiler().lower(ONEOF(TEST_ANY(), TEST_ANY()))
-        self.assertEqual(
-            tables[3],
-            (("TEST", "ANY", -1),
-             ("TEST", "ANY", -1),
-             ("ONEOF", 0, 1)))
-
-
-    def test_repeat_emits_post_order(self):
-        """
-        REPEAT emits its subnode first then a REPEAT referencing it
+        MATCH matches its children one after another and the whole of
+        the subject
         """
 
-        tables = MatchCompiler().lower(REPEAT(TEST_ANY()))
-        self.assertEqual(
-            tables[3], (("TEST", "ANY", -1), ("REPEAT", 0, 0)))
+        m = demand(make_matcher(MATCH(LITERAL(1), LITERAL(2))))
+        self.assertEqual(m((1, 2)), {})
+        self.assertIsNone(m((2, 1)))
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m((1, 2, 3)))
 
 
-    def test_optional_emits_post_order(self):
+    def test_named_group_captures_its_children(self):
         """
-        OPTIONAL emits its subnode first then an OPTIONAL referencing it
-        """
-
-        tables = MatchCompiler().lower(OPTIONAL(TEST_ANY()))
-        self.assertEqual(
-            tables[3], (("TEST", "ANY", -1), ("OPTIONAL", 0)))
-
-
-    def test_not_emits_post_order(self):
-        """
-        NOT emits its subnode first then a NOT referencing it
+        GROUP(slot, ...) binds the slot to its children's captures
         """
 
-        tables = MatchCompiler().lower(NOT(TEST_ANY()))
-        self.assertEqual(
-            tables[3], (("TEST", "ANY", -1), ("NOT", 0)))
+        m = demand(make_matcher(MATCH(GROUP("g", CAPTURE("a")))))
+        self.assertEqual(m((1,)), {"g": {"a": 1}})
+        self.assertIsNone(m(()))
 
 
-    def test_class_empty_emits_extern_only(self):
+    def test_rest_binds_the_remaining_elements(self):
         """
-        CLASS with no field children emits ('CLASS', extern_idx)
+        REST with a slot binds the remaining elements, none included
         """
 
-        tables = MatchCompiler().lower(CLASS("Point"))
-        self.assertEqual(tables[1], ("Point",))
-        self.assertEqual(tables[3], (("CLASS", 0),))
+        m = demand(make_matcher(MATCH(REST("rest"))))
+        self.assertEqual(m((1, 2)), {"rest": (1, 2)})
+        self.assertEqual(m(()), {"rest": ()})
+
+
+    def test_oneof_takes_the_first_branch_that_matches(self):
+        """
+        ONEOF tries its branches in order and takes the first that
+        matches
+        """
+
+        m = demand(make_matcher(MATCH(ONEOF(LITERAL(1), CAPTURE("x")))))
+        self.assertEqual(m((1,)), {})
+        self.assertEqual(m((2,)), {"x": 2})
+        self.assertIsNone(m(()))
+
+
+    def test_repeat_matches_zero_or_more(self):
+        """
+        REPEAT matches its sub-pattern any number of times
+        """
+
+        m = demand(make_matcher(MATCH(REPEAT(LITERAL(1)))))
+        self.assertEqual(m(()), {})
+        self.assertEqual(m((1, 1, 1)), {})
+        self.assertIsNone(m((1, 2)))
+
+
+    def test_optional_matches_zero_or_one(self):
+        """
+        OPTIONAL matches its sub-pattern once or not at all
+        """
+
+        m = demand(make_matcher(MATCH(OPTIONAL(LITERAL(1)), LITERAL(2))))
+        self.assertEqual(m((2,)), {})
+        self.assertEqual(m((1, 2)), {})
+        self.assertIsNone(m((1, 1, 2)))
+
+
+    def test_not_consumes_nothing(self):
+        """
+        NOT succeeds where its sub-pattern does not match and consumes
+        no element
+        """
+
+        m = demand(make_matcher(MATCH(NOT(LITERAL(1)), TEST_ANY())))
+        self.assertEqual(m((2,)), {})
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m(()))
+
+
+    def test_class_empty_is_an_isinstance_test(self):
+        """
+        CLASS with no field children matches an instance of its type
+        """
+
+        m = demand(make_matcher(MATCH(CLASS("Point")), {"Point": Point}))
+        self.assertEqual(m((Point(),)), {})
+        self.assertIsNone(m((1,)))
 
 
     def test_class_with_positional_field(self):
         """
-        CLASS containing a positional FIELD emits FIELD_POS then CLASS
+        A positional FIELD matches the attribute at its __match_args__
+        position
         """
 
-        tables = MatchCompiler().lower(CLASS("Point", FIELD(TEST_ANY())))
-        self.assertEqual(
-            tables[3],
-            (("TEST", "ANY", -1),
-             ("FIELD_POS", 0),
-             ("CLASS", 0, 1)))
+        m = demand(make_matcher(
+            MATCH(CLASS("Point", FIELD(LITERAL(3)))), {"Point": Point}))
+        self.assertEqual(m((Point(3),)), {})
+        self.assertIsNone(m((Point(4),)))
 
 
     def test_class_with_keyword_field(self):
         """
-        CLASS containing a keyword FIELD emits FIELD_KW carrying the
-        attribute name as a literal third tuple element
+        A keyword FIELD matches the attribute it names, and misses an
+        instance without it
         """
 
-        tables = MatchCompiler().lower(CLASS(
-            "Point", FIELD(TEST_ANY(), name="color")))
-        self.assertEqual(
-            tables[3],
-            (("TEST", "ANY", -1),
-             ("FIELD_KW", 0, "color"),
-             ("CLASS", 0, 1)))
+        m = demand(make_matcher(
+            MATCH(CLASS("Point", FIELD(LITERAL("red"), name="color"))),
+            {"Point": Point}))
+        self.assertEqual(m((Point(color="red"),)), {})
+        self.assertIsNone(m((Point(color="blue"),)))
+        self.assertIsNone(m((Point(),)))
 
 
 # === Slot/extern/const interning tests ===
@@ -262,12 +276,14 @@ class TestInterning(unittest.TestCase):
 
     def test_distinct_slots_in_declaration_order(self):
         """
-        Two CAPTURE patterns with distinct slot names are appended in
-        declaration order
+        Two CAPTURE patterns with distinct slot names are formals in
+        declaration order, and the captures keep that order
         """
 
-        tables = MatchCompiler().lower(MATCH(CAPTURE("a"), CAPTURE("b")))
-        self.assertEqual(tables[0], ("a", "b"))
+        pattern = MATCH(CAPTURE("a"), CAPTURE("b"))
+        self.assertEqual(pattern_slot_names(pattern), ["a", "b"])
+        captures = demand(make_matcher(pattern))((1, 2))
+        self.assertEqual(list(captures), ["a", "b"])
 
 
     def test_const_dedup_same_value(self):
@@ -805,15 +821,19 @@ class TestErgonomicShorthands(unittest.TestCase):
         self.assertEqual(r["lst"], (1, 2))
 
 
-    def test_bind_and_value_produce_identical_freeze(self):
+    def test_bind_and_value_capture_the_same_element(self):
         """
-        BIND and VALUE produce identical tables for the same
-        slot name
+        BIND and VALUE capture the same one element for the same slot
+        name
         """
 
-        self.assertEqual(
-            MatchCompiler().lower(BIND("x")),
-            MatchCompiler().lower(VALUE("x")))
+        bind = demand(make_matcher(MATCH(BIND("x"))))
+        value = demand(make_matcher(MATCH(VALUE("x"))))
+        for subject in ((1,), (), (1, 2)):
+            self.assertEqual(bind(subject), value(subject), subject)
+        self.assertEqual(bind((1,)), {"x": 1})
+        spine = cons(symbol("a"), nil)
+        self.assertIs(bind(spine)["x"].datum, value(spine)["x"].datum)
 
 
 # === Cross-cutting integration ===
@@ -822,9 +842,10 @@ class TestErgonomicShorthands(unittest.TestCase):
 class TestCrossCutting(unittest.TestCase):
 
 
-    def test_freeze_is_deterministic(self):
+    def test_build_is_deterministic(self):
         """
-        Lowering the same pattern twice produces equal tables
+        Building the same pattern twice gives matchers that return
+        equal captures and miss alike
         """
 
         def make_pattern():
@@ -836,9 +857,14 @@ class TestCrossCutting(unittest.TestCase):
                 REST("body"),
             )
 
+        first = demand(make_matcher(make_pattern()))
+        second = demand(make_matcher(make_pattern()))
+        hit = (symbol("f"), "::", 1, 2, 3, 4)
+        self.assertEqual(first(hit), second(hit))
         self.assertEqual(
-            MatchCompiler().lower(make_pattern()),
-            MatchCompiler().lower(make_pattern()))
+            first(hit), {"name": symbol("f"), "body": (3, 4)})
+        self.assertIsNone(first((symbol("f"), ":", 1, 2)))
+        self.assertIsNone(second((symbol("f"), ":", 1, 2)))
 
 
     def test_make_matcher_equivalent_to_build(self):

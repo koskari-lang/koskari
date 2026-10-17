@@ -22,12 +22,12 @@ convenience syntax to runtime call forms of builder functions.
 """
 
 
-from ... import match_core
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms, function_constant
 from ...lib import FormalsSpec, OpCode, cons, gensym, keyword, nil, symbol
-from ...match_code import FragmentTarget, check_nodes, lower_matcher
+from ...match_code import FragmentTarget, lower_matcher
+from ...match_core import analyse
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
     VALUE, MatchCompiler, parse_explicit_rule_pattern, pattern_slot_names,
@@ -59,10 +59,7 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
 
     tables = MatchCompiler().lower(pattern)
     try:
-        if match_core.SELECTED:
-            match_core.analyse(tables)
-        else:
-            check_nodes(tables[3], tables[4])
+        analyse(tables)
     except (TypeError, ValueError) as exc:
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
     atoms = extern_atoms(pattern_src, tables[1])
@@ -74,9 +71,7 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
     subject = gensym()
     body.declare_var(subject)
     with compiler.resolution_scope(body, function=True):
-        lower_matcher(
-            FragmentTarget(compiler, body, subject), tables, atoms,
-            pattern_src)
+        lower_matcher(FragmentTarget(compiler, body, subject), tables, atoms)
     return function_constant(
         compiler, parent, body, name, FormalsSpec((str(subject),)))
 

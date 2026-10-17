@@ -23,12 +23,12 @@ compiled per pattern and an optional else clause.
 """
 
 
-from ... import match_core
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
 from ...lib import OpCode, keyword, symbol
-from ...match_code import check_nodes, lower_clause
+from ...match_code import lower_clause
+from ...match_core import analyse
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
@@ -134,17 +134,13 @@ def special_match(compiler, caps):
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         tables = MatchCompiler().lower(arm)
         try:
-            if match_core.SELECTED:
-                # only the root scope's slots become variables; a name
-                # inside a group or REPEAT is reached through its value
-                analysis = match_core.analyse(tables, arm=True)
-                bound.extend(analysis.scopes[0].names)
-            else:
-                check_nodes(tables[3], tables[4])
-                bound.extend(tables[0])
+            analysis = analyse(tables, arm=True)
         except (TypeError, ValueError) as exc:
             raise SpecialError(
                 f"invalid match pattern: {exc}", pattern, position=clause_pos)
+        # only the root scope's slots become variables; a name inside
+        # a group or REPEAT is reached through its value
+        bound.extend(analysis.scopes[0].names)
         atoms = extern_atoms(pattern, tables[1])
         arms.append(
             (pattern, tables, atoms, guard_kw, guard_expr, body, clause_pos))
@@ -180,7 +176,7 @@ def special_match(compiler, caps):
         pattern, tables, atoms, guard_kw, guard_expr, _body, clause_pos = arm
         target.position(clause_pos)
         miss_edges = lower_clause(
-            compiler, target, tables, atoms, next_label, pattern, clause_pos)
+            compiler, target, tables, atoms, next_label)
         if guard_kw is not None:
             target.merge(compiler.full_compile(guard_expr))
             target.instruction(

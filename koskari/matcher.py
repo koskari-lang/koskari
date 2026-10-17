@@ -27,12 +27,11 @@ function is built from
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from koskari import match_core
-from koskari.compile.compiler import _is_const
 from koskari.lib import (
     CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,
     kos_repr, nil, pair, symbol)
-from koskari.match_code import check_nodes, compile_match_function
+from koskari.match_code import compile_match_function
+from koskari.match_core import analyse
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
@@ -165,8 +164,8 @@ class MatchCompiler:
         slots are fields of the row, and a ONEOF branch's are formals
 
         :param alternatives: for a ONEOF branch, a dict the ONEOF
-            shares across its branches; under the matcher core a name
-            the branches bind has one slot index across them
+            shares across its branches; a name the branches bind has
+            one slot index across them
         """
 
         self.capture_scope_stack.append({})
@@ -188,9 +187,9 @@ class MatchCompiler:
         self.capture_scope_stack.pop()
         slots, frame, _alternatives = self._slot_scopes.pop()
         self._formal_scope_stack.pop()
-        if match_core.SELECTED and not frame:
-            # under the matcher core a ONEOF branch's names stay
-            # visible to the nodes after the ONEOF
+        if not frame:
+            # a ONEOF branch's names stay visible to the nodes after
+            # the ONEOF
             for name, idx in slots.items():
                 self._slot_scopes[-1][0].setdefault(name, idx)
 
@@ -198,26 +197,26 @@ class MatchCompiler:
     def intern_slot(self, name):
         """
         Append a capture slot name and return its index. Duplicate names
-        are allowed (distinct indices); use claim_slot_name to forbid
-        duplicates within a capture scope
+        are allowed (distinct indices), but for the alternatives of one
+        ONEOF, which share one index for a name; use claim_slot_name to
+        forbid duplicates within a capture scope
         """
 
-        if match_core.SELECTED:
-            # the ONEOF branches between here and the nearest frame:
-            # an alternative that interned the name gave its index
-            branches = []
-            for _slots, frame, alternatives in reversed(self._slot_scopes):
-                if frame:
-                    break
-                branches.append(alternatives)
-            for alternatives in branches:
-                if alternatives is not None and name in alternatives:
-                    idx = alternatives[name]
-                    self._slot_scopes[-1][0][name] = idx
-                    return idx
-            for alternatives in branches:
-                if alternatives is not None:
-                    alternatives[name] = len(self.slot_names)
+        # the ONEOF branches between here and the nearest frame: an
+        # alternative that interned the name gave its index
+        branches = []
+        for _slots, frame, alternatives in reversed(self._slot_scopes):
+            if frame:
+                break
+            branches.append(alternatives)
+        for alternatives in branches:
+            if alternatives is not None and name in alternatives:
+                idx = alternatives[name]
+                self._slot_scopes[-1][0][name] = idx
+                return idx
+        for alternatives in branches:
+            if alternatives is not None:
+                alternatives[name] = len(self.slot_names)
 
         idx = len(self.slot_names)
         self.slot_names.append(name)
@@ -232,10 +231,10 @@ class MatchCompiler:
         The slot a SAME names: the scopes from the innermost down to
         and including the nearest frame are depth 0, the next frame
         depth 1, and the first scope at the requested depth holding
-        the name gives the slot
-
-        :raises ValueError: when no scope at that depth binds the name
-            and the matcher core is not selected
+        the name gives the slot. A SAME may read a slot before its
+        binding, or one no scope at its depth binds: the name gets a
+        slot of its own, and the analysis finds the scope that binds
+        the name, or none, a SAME that always misses
         """
 
         level = 0
@@ -246,15 +245,9 @@ class MatchCompiler:
                 level += 1
                 if level > depth:
                     break
-        if match_core.SELECTED:
-            # under the matcher core a SAME may read a slot before its
-            # binding; the analysis finds the scope that binds the name
-            idx = len(self.slot_names)
-            self.slot_names.append(name)
-            return idx
-        raise ValueError(
-            f"SAME slot {name!r} is not bound earlier in this pattern at"
-            f" depth {depth}")
+        idx = len(self.slot_names)
+        self.slot_names.append(name)
+        return idx
 
 
     def intern_extern(self, name):
@@ -370,25 +363,15 @@ class Pattern(Protocol):
         builtins are the externs mapping
 
         :param externs: the extern names mapped to their values, or None
-        :raises TypeError: when a LITERAL value is not one the constant
-            pool holds, or an extern the pattern declares is not given
-        :raises ValueError: when the pattern is one the lowering refuses
+        :raises TypeError: when a LITERAL value or a MAP entry key is
+            not one the constant pool holds, or an extern the pattern
+            declares is not given
+        :raises ValueError: when the pattern is one the core refuses
         :rtype: Function
         """
 
         tables = MatchCompiler().lower(self)
-        if match_core.SELECTED:
-            match_core.analyse(tables)
-        else:
-            check_nodes(tables[3], tables[4])
-        consts = tables[2]
-        for node in tables[3]:
-            if node[:2] == ('TEST', 'LITERAL'):
-                value = consts[node[2]]
-                if not _is_const(value):
-                    raise TypeError(
-                        "matcher literal is not a constant:"
-                        f" {type(value).__name__}")
+        analyse(tables)
         externs = dict(externs or {})
         for name in tables[1]:
             if name not in externs:
@@ -478,7 +461,8 @@ class SAME(Pattern):
 
     def __init__(self, slot, depth=0):
         """
-        :param slot: capture slot name bound earlier in the pattern
+        :param slot: capture slot name; a SAME that reads it while it
+            is unbound misses
         :param depth: 0 for current capture dict, 1 for parent GROUP frame
         :raises TypeError: when slot is not a str or depth is not an int
         :raises ValueError: when slot is empty or depth is negative

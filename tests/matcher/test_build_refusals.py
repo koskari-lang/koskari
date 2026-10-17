@@ -14,8 +14,9 @@
 """
 tests.matcher.test_build_refusals
 
-The patterns Pattern.build refuses: shapes the lowering cannot emit,
-and LITERAL values the constant pool does not hold
+The patterns Pattern.build refuses, shapes the matcher core does not
+lower and LITERAL values the constant pool does not hold, and shapes
+near those refusals that it builds
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -39,67 +40,98 @@ class TestRefusedAtBuild(unittest.TestCase):
 
     def test_capture_over_a_zero_width_node(self):
         """
-        A CAPTURE over a node that may consume nothing has no span to
-        bind: OPTIONAL and NOT under a CAPTURE are refused
+        A CAPTURE over a node that may consume nothing builds; an empty
+        span leaves the slot unbound
         """
 
-        for inner in (OPTIONAL(TEST_ANY()), NOT(TEST_ANY())):
-            with self.assertRaises(ValueError):
-                MATCH(CAPTURE("x", inner)).build()
+        m = demand(MATCH(CAPTURE("x", OPTIONAL(TEST_ANY()))).build())
+        self.assertEqual(m(()), {})
+        self.assertEqual(m((1,)), {"x": 1})
+        self.assertIsNone(m((1, 2)))
+
+        m = demand(MATCH(CAPTURE("x", NOT(TEST_ANY()))).build())
+        self.assertEqual(m(()), {})
+        self.assertIsNone(m((1,)))
 
 
     def test_spine_shapes_over_a_single_value(self):
         """
-        The sub-pattern of an APP or a map entry tests one value, so a
-        REST or a REPEAT there is refused
+        The sub-pattern of an APP or a map entry tests one value: a
+        REST or a REPEAT there builds when its width range includes 1,
+        and is refused when its minimum width is above 1
         """
 
         for inner in (REST(), REPEAT(TEST_ANY())):
-            with self.assertRaises(ValueError):
+            m = demand(MATCH(APP("f", inner)).build({"f": abs}))
+            self.assertEqual(m((-3,)), {})
+            m = demand(MATCH(MAP(MAP_ENTRY("k", inner))).build())
+            self.assertEqual(m(({"k": 1},)), {})
+            self.assertIsNone(m(({"j": 1},)))
+
+        m = demand(MATCH(APP("f", REST("r"))).build({"f": abs}))
+        self.assertEqual(m((-3,)), {"r": (3,)})
+        m = demand(MATCH(MAP(MAP_ENTRY(
+            "k", CAPTURE("r", REPEAT(TEST_ANY()))))).build())
+        self.assertEqual(m(({"k": 1},)), {"r": [1]})
+
+        for inner in (REST(min_tail=2), REPEAT(TEST_ANY(), min_count=2)):
+            with self.assertRaisesRegex(ValueError, "does not include 1"):
                 MATCH(APP("f", inner)).build({"f": abs})
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "does not include 1"):
                 MATCH(MAP(MAP_ENTRY("k", inner))).build()
 
 
     def test_a_group_over_a_single_value(self):
         """
-        The sub-pattern of a map entry, an APP or a FIELD tests one
-        value with no spine under it, so a GROUP there, directly or
-        under a CAPTURE, is refused
+        The sub-pattern of a map entry, an APP or a FIELD is a single
+        value walked as a one-element subject, so a GROUP there,
+        directly or under a CAPTURE, builds and captures that value
         """
+
+        class P:
+            __match_args__ = ("a",)
+
+            def __init__(self, a):
+                self.a = a
 
         shapes = (
-            (MATCH(MAP(MAP_ENTRY("k", GROUP("g", CAPTURE("x"))))), {}),
-            (MATCH(APP("f", GROUP("g", CAPTURE("x")))), {"f": abs}),
-            (MATCH(CLASS("P", FIELD(GROUP("g", CAPTURE("x"))))),
-             {"P": object}),
+            (MATCH(MAP(MAP_ENTRY("k", GROUP("g", CAPTURE("x"))))), {},
+             ({"k": 1},), {"g": {"x": 1}}, ({"j": 1},)),
+            (MATCH(APP("f", GROUP("g", CAPTURE("x")))), {"f": abs},
+             (-3,), {"g": {"x": 3}}, (-3, 4)),
+            (MATCH(CLASS("P", FIELD(GROUP("g", CAPTURE("x"))))), {"P": P},
+             (P(4),), {"g": {"x": 4}}, (4,)),
             (MATCH(MAP(MAP_ENTRY(
-                "k", CAPTURE("y", GROUP("g", CAPTURE("x")))))), {}),
+                "k", CAPTURE("y", GROUP("g", CAPTURE("x")))))), {},
+             ({"k": 1},), {"y": 1, "g": {"x": 1}}, ({"j": 1},)),
         )
-        for pattern, externs in shapes:
-            with self.assertRaisesRegex(ValueError, "holds a GROUP"):
-                pattern.build(externs)
+        for pattern, externs, subject, expected, missed in shapes:
+            m = demand(pattern.build(externs))
+            self.assertEqual(m(subject), expected)
+            self.assertIsNone(m(missed))
 
 
-    def test_rest_counts_past_the_packed_limit(self):
+    def test_rest_counts_past_the_field_limit(self):
         """
-        A REST row packs its minimum tail and the width of the fixed
-        suffix after it into eight bits each, so a minimum tail past
-        255, or more than 255 fixed elements after a rest, is refused
-        when the pattern is built
+        A REST's minimum tail and the fixed suffix after it are fields
+        of their own: a minimum tail of 300 and 256 fixed elements
+        after a rest build and match, and a minimum tail past 65534 is
+        refused when the pattern is built
         """
 
-        with self.assertRaises(ValueError) as caught:
-            MATCH(REST(min_tail=300)).build()
-        self.assertIn("255", str(caught.exception))
+        m = demand(MATCH(REST(min_tail=300)).build())
+        self.assertEqual(m((1,) * 300), {})
+        self.assertIsNone(m((1,) * 299))
 
         anys = [TEST_ANY() for _ in range(256)]
-        with self.assertRaises(ValueError) as caught:
-            MATCH(REST(), *anys).build()
-        self.assertIn("255", str(caught.exception))
+        m = demand(MATCH(REST(), *anys).build())
+        self.assertEqual(m((1,) * 256), {})
+        self.assertEqual(m((1,) * 300), {})
+        self.assertIsNone(m((1,) * 255))
 
-        anys = [TEST_ANY() for _ in range(255)]
-        MATCH(REST(min_tail=255), *anys).build()
+        with self.assertRaises(ValueError) as caught:
+            MATCH(REST(min_tail=70000)).build()
+        self.assertIn("65534", str(caught.exception))
 
 
     def test_optional_over_a_form_holding_a_rest_is_not_the_branch_rest(self):

@@ -26,7 +26,6 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from typing import Any
 
-from koskari import match_core
 from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
@@ -1026,13 +1025,10 @@ def _syntax_pattern_specs(
                 else:
                     specs.append(repeat_capture(name, TEST_ANY()))
             else:
-                if match_core.SELECTED:
-                    # under the matcher core the slot's name is its
-                    # position, since it reaches a names constant
-                    slot = _REPEAT_SLOT_PREFIX + "#" + ".".join(
-                        str(index) for index in path + (i,))
-                else:
-                    slot = str(gensym(_REPEAT_SLOT_PREFIX))
+                # the slot's name is its position, since it reaches a
+                # names constant
+                slot = _REPEAT_SLOT_PREFIX + "#" + ".".join(
+                    str(index) for index in path + (i,))
                 inner = _syntax_elem_pattern(
                     pat, literals, source_ctx, owners, variables, slot,
                     path + (i,))

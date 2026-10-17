@@ -511,9 +511,9 @@ class TestFacts(unittest.TestCase):
         tables = MatchCompiler().lower(MATCH(ONEOF(
             CAPTURE("x"), MATCH(CAPTURE("y"), CAPTURE("x")))))
         found = analyse(tables)
-        self.assertEqual(tables[0], ('x', 'y', 'x'))
+        self.assertEqual(tables[0], ('x', 'y'))
         self.assertEqual(found.scopes[0].names, ('x', 'y'))
-        self.assertEqual(found.slot_index, (0, 1, 0))
+        self.assertEqual(found.slot_index, (0, 1))
         oneof = tables[3][tables[3][tables[4]][1]]
         self.assertEqual(found.branch_slots[oneof[1]], (0,))
         self.assertEqual(found.branch_slots[oneof[2]], (0, 1))
