@@ -1957,10 +1957,14 @@ class USING(Composite):
     Capture one element shaped as a using-form. Four inner shapes
     are recognised through an ordered ONEOF; first match wins:
 
-    1. ((PATTERN...) EXPR) -- unpack form, captures lhs and expr
-    2. (NAME EXPR)         -- named binding, captures name and expr
-    3. (EXPR as: NAME)     -- as form, captures expr and name
+    1. (EXPR as: NAME)     -- as form, captures expr and name
+    2. ((PATTERN...) EXPR) -- unpack form, captures lhs and expr
+    3. (NAME EXPR)         -- named binding, captures name and expr
     4. (EXPR)              -- bare expression, captures expr only
+
+    The as form comes first: a two-element shape is committed to once
+    it matches, and the as form's three elements skip it on a
+    two-element cell
 
     After a successful match captures[slot] is a dict (the GROUP's captures) or
     :class:`DatumFrame` with whichever of ``lhs``, ``name``, ``expr`` the
@@ -1988,9 +1992,9 @@ class USING(Composite):
 
     def _expand(self):
         return GROUP(self._slot, FORM(ONEOF(
+            MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
             MATCH(PAIR("lhs"), VALUE("expr")),
             MATCH(SYMBOL("name"), VALUE("expr")),
-            MATCH(VALUE("expr"), LITERAL_KW("as"), SYMBOL("name")),
             MATCH(VALUE("expr")),
         )))
 
