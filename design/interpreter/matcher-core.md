@@ -178,8 +178,8 @@ is a one-element subject walked through a cursor like any spine.
   mark's position to the cursor and whose position is the span's first
   cell. The DatumFrame references the span, never the mark. The value
   is stored into the parent scope's slot for the group.
-- A REPEAT pass with slots builds its captures the same way and appends
-  them to the REPEAT's items list.
+- A REPEAT pass with slots builds a dict from its filled entries (over
+  any subject, as on master) and appends it to the REPEAT's items list.
 - The root's captures are the standalone matcher's result, or are
   written to an inline arm's variables.
 - Popping a mark discards its scope's captures.
@@ -328,13 +328,15 @@ for these deliberate changes:
 - a pattern nested past the depth limit, and a non-pool LITERAL, are
   refused at build;
 - the refusals listed above;
-- NOT tests the element after its position;
-- `match` arm roots of every node kind are lowered;
-- no trailing-ONEOF yield rule;
 - an element is read when it is pulled (a car edited ahead of the
   cursor is read as edited);
 - a missed inline arm writes no variable, and a hit leaves the
   variable of an empty slot as it was;
+- a standalone matcher's root subject that is not a sequence misses
+  (master raised TypeError, or iterated a mapping's keys);
+- a slot inside an uncaptured REPEAT binds the list of its per-pass
+  values (master kept the last pass); a SAME after the REPEAT compares
+  against that list;
 - a pair LITERAL in a `define-syntax` or `compile/match` pattern is
   refused (it already failed to reach a .kio).
 
@@ -369,6 +371,17 @@ are recorded, not a gate.
   the field-kind section in phase 8; `CHECK_COMPARE` uses it.
 - `MATCH_CASE` keeps the branch's form (no cache slot, a handler that
   raises).
+
+- Decided in phase 1, from the oracle against the current path:
+  - a REPEAT pass's captures are a dict, as on master, over any subject;
+  - a SAME that reads a slot of an open scope before the slot is bound
+    is accepted and misses while the slot is empty;
+  - a CAPTURE over a sub-pattern that may consume nothing is accepted
+    and binds the (possibly empty) span, as on master; the branch's
+    refusal from 9f8daa34 goes;
+  - NOT testing the element after its position, every arm root kind,
+    and no yield rule match master already, so they are not acceptance
+    exceptions.
 
 ## Implementation plan
 
