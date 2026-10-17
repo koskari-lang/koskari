@@ -127,9 +127,9 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         self.assertNotIn("(CALLEDBY)", explained)
 
 
-    def test_improper_list_raises_type_error(self):
+    def test_improper_list_misses(self):
         """
-        Non-nil-terminated spine is rejected when building the subject
+        A non-nil-terminated spine matches no arm
         """
 
         primary = symbol("compile/ng-improper")
@@ -142,9 +142,8 @@ class TestSpecialFullFormIntegration(unittest.TestCase):
         b = symbol("b")
         bad = cons(a, b)
         comp = _StubCompiler()
-        with self.assertRaises(TypeError) as ctx:
+        with self.assertRaises(SyntaxMatchError):
             h.compile_impl(comp, bad)
-        self.assertIn("proper list", str(ctx.exception).lower())
 
 
     def test_unpack_none_passes_identity_source_obj(self):

@@ -17,7 +17,7 @@ koskari.matcher
 
 The matcher: the pattern builders and the registry of pattern forms,
 the compiler that lowers a pattern to its frozen tables, and the
-Matcher and Dispatcher that run the function those tables compile to
+Matcher that runs the function those tables compile to
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -31,8 +31,7 @@ from typing import Any, Protocol, runtime_checkable
 from koskari.lib import (
     CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,
     kos_repr, nil, pair, symbol)
-from koskari.match_code import (
-    compile_dispatch_function, compile_match_function, validate_frozen)
+from koskari.match_code import compile_match_function, validate_frozen
 from koskari.types import (
     is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark, unpack)
 
@@ -44,7 +43,6 @@ __all__ = (
     "match",
     "match1",
 
-    "Dispatcher",
     "Matcher",
     "MatchResult",
     "Datum",
@@ -272,68 +270,6 @@ class Matcher:
         return tuple(
             name for name in self.externs
             if provided is None or name not in provided)
-
-
-class Dispatcher:
-    """
-    The matchers of a syntax's clauses as one function: the subject
-    its one formal, the index and captures of the first clause that
-    matches its result. A matcher that declares no extern lowers into
-    the function from its frozen tuple; a matcher that declares one is
-    called through its own function, whose closure names resolve where
-    it was built
-
-    :raises TypeError: when a clause is not a Matcher
-    """
-
-    def __init__(self, matchers, name="dispatch"):
-        self.matchers = tuple(matchers)
-        self.name = name
-        for matcher in self.matchers:
-            if not isinstance(matcher, Matcher):
-                raise TypeError(
-                    f"Dispatcher clause is not a Matcher:"
-                    f" {type(matcher).__name__}")
-        self.namespace = ModuleNamespace(name, {})
-        self._function = None
-        self._call = None
-
-
-    @property
-    def function(self):
-        """
-        The Function the dispatcher runs, built on first use
-        """
-
-        if self._function is None:
-            clauses = [
-                m.function if m.externs else m.frozen
-                for m in self.matchers]
-            self._function = compile_dispatch_function(
-                clauses, self.namespace, name=self.name)
-            self._call = demand(self._function)
-        return self._function
-
-
-    def select(self, subject):
-        """
-        The first clause matching subject, a pair spine, nil or a
-        sequence
-
-        :return: (index, captures) for the first match, or (-1, None)
-        :raises TypeError: when a pair subject is not a proper list
-        :raises ValueError: when a pair subject loops
-        """
-
-        subject = check_subject(subject)
-        call = self._call
-        if call is None:
-            self.function
-            call = self._call
-        result = call(subject)
-        if result is None:
-            return -1, None
-        return result[0], result[1]
 
 
 def check_subject(subject):

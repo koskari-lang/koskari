@@ -14,10 +14,8 @@
 """
 tests.syntax.test_syntax_dispatch
 
-The one function a Syntax dispatches through: every arm's matcher in
-one Function, the index and captures of the first arm that matches
-its result, whether the arm's matcher lowers inline from a frozen
-tuple or calls a function a module built
+A Syntax tries each arm's matcher in order; the first arm that
+matches expands
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -27,140 +25,21 @@ import unittest
 
 import pytest
 
-from koskari.lib import DatumFrame, ModuleNamespace, cons, nil, symbol
-from koskari.match_code import compile_match_function
-from koskari.matcher import (
-    CALLEDBY, CAPTURE, LITERAL, MATCH, SYMBOL, TYPE, VALUE, Dispatcher,
-    MatchCompiler, Matcher)
-from koskari.syntax import SpecialTransform, Syntax
+from koskari.lib import cons, nil, symbol
+from koskari.matcher import CALLEDBY, LITERAL, MATCH, VALUE
+from koskari.syntax import SpecialTransform, Syntax, first_match
 
 
 pytestmark = pytest.mark.phase_infra
-
-
-def function_matcher(pattern):
-    """
-    A Matcher over a standalone function, as a module's build row
-    hands one to build-syntax
-    """
-
-    ns = ModuleNamespace("module", {})
-    frozen = MatchCompiler().lower(pattern)
-    fn = compile_match_function(frozen, ns)
-    return Matcher.from_function(fn, frozen)
 
 
 def form(*items):
     return cons(*items, nil)
 
 
-class TestDispatcher(unittest.TestCase):
-
-    def test_first_arm_wins(self):
-        d = Dispatcher((
-            MatchCompiler.compile(MATCH(LITERAL(42))),
-            MatchCompiler.compile(MATCH(LITERAL(99)))))
-        idx, captures = d.select((42,))
-        self.assertEqual(idx, 0)
-        self.assertEqual(captures, {})
-        idx, captures = d.select((99,))
-        self.assertEqual(idx, 1)
-        self.assertEqual(captures, {})
-
-
-    def test_no_arm_matches(self):
-        d = Dispatcher((MatchCompiler.compile(MATCH(LITERAL(42))),))
-        self.assertEqual(d.select((1,)), (-1, None))
-        self.assertEqual(d.select(nil), (-1, None))
-
-
-    def test_function_arms_between_inline_arms(self):
-        called = symbol("f")
-        d = Dispatcher((
-            MatchCompiler.compile(MATCH(CALLEDBY(), SYMBOL("s"), VALUE("e"))),
-            function_matcher(MATCH(CALLEDBY(), VALUE("one"))),
-            MatchCompiler.compile(MATCH(CALLEDBY()))))
-
-        idx, captures = d.select(form(called, symbol("x"), 1))
-        self.assertEqual(idx, 0)
-        self.assertEqual(captures["s"].datum, symbol("x"))
-
-        idx, captures = d.select(form(called, 1))
-        self.assertEqual(idx, 1)
-        self.assertIsInstance(captures, DatumFrame)
-        self.assertEqual(captures["one"].datum, 1)
-
-        idx, captures = d.select(form(called))
-        self.assertEqual(idx, 2)
-        self.assertEqual(captures["called-by"].datum, called)
-
-        self.assertEqual(d.select(form(called, 1, 2, 3)), (-1, None))
-
-
-    def test_function_arm_hit_with_no_captures(self):
-        """
-        A function arm's empty captures are a hit, not a miss
-        """
-
-        d = Dispatcher((
-            function_matcher(MATCH(LITERAL(1))),
-            MatchCompiler.compile(MATCH(VALUE("x")))))
-        idx, captures = d.select((1,))
-        self.assertEqual(idx, 0)
-        self.assertEqual(captures, {})
-
-
-    def test_core_type_arms_read_no_extern(self):
-        matchers = (
-            MatchCompiler.compile(MATCH(CAPTURE("k", TYPE("keyword")))),
-            MatchCompiler.compile(MATCH(CAPTURE("s", TYPE("symbol")))))
-        self.assertEqual([m.externs for m in matchers], [(), ()])
-        d = Dispatcher(matchers)
-        idx, captures = d.select((symbol("a"),))
-        self.assertEqual(idx, 1)
-        self.assertEqual(captures["s"], symbol("a"))
-
-
-    def test_arm_with_an_extern_is_called_through_its_function(self):
-        """
-        An arm whose pattern names an extern is called through its own
-        function, which reads the extern where the matcher was built;
-        an arm with no extern lowers inline
-        """
-
-        class Point:
-            pass
-
-        typed = MatchCompiler.compile(
-            MATCH(CAPTURE("p", TYPE("Point"))), {"Point": Point})
-        d = Dispatcher((typed, MatchCompiler.compile(MATCH(VALUE("x")))))
-        closure = d.function.code.namespace_spec.closure_syms
-        self.assertIn("clause-0", closure)
-        self.assertNotIn("clause-1", closure)
-
-        point = Point()
-        idx, captures = d.select((point,))
-        self.assertEqual(idx, 0)
-        self.assertIs(captures["p"], point)
-        idx, captures = d.select((7,))
-        self.assertEqual(idx, 1)
-        self.assertEqual(captures["x"], 7)
-
-
-    def test_improper_subject_refused(self):
-        d = Dispatcher((MatchCompiler.compile(MATCH(CALLEDBY())),))
-        with self.assertRaises(TypeError):
-            d.select(cons(symbol("f"), 1))
-
-
-    def test_clauses_must_be_matchers(self):
-        with self.assertRaises(TypeError):
-            Dispatcher((MatchCompiler.compile(MATCH(LITERAL(1))), "no"))
-
-
 class TestSyntaxDispatch(unittest.TestCase):
 
-    def test_syntax_builds_its_function_once(self):
+    def test_syntax_selects_and_expands(self):
         name = symbol("compile/d")
         s = Syntax(name, (
             SpecialTransform(
@@ -169,7 +48,6 @@ class TestSyntaxDispatch(unittest.TestCase):
             SpecialTransform(
                 MATCH(CALLEDBY()),
                 lambda c, src, mr: "none")))
-        self.assertIs(s.dispatcher, s.dispatcher)
         self.assertEqual(s.compile_impl(None, form(name, 5)), ("one", 5))
         self.assertEqual(s.compile_impl(None, form(name)), "none")
 
@@ -182,8 +60,8 @@ class TestSyntaxDispatch(unittest.TestCase):
 
     def test_composed_syntax_dispatches_across_both(self):
         """
-        An extension prepended with + is tried first, and the composed
-        syntax has a function of its own over every arm
+        An extension prepended with + is tried first, then the arms of
+        the syntax it extends
         """
 
         name = symbol("compile/d")
@@ -203,8 +81,46 @@ class TestSyntaxDispatch(unittest.TestCase):
         self.assertEqual(composed.compile_impl(None, form(name, 2)), "base")
         self.assertEqual(composed.compile_impl(None, form(name, 1, 2)), "wide")
         self.assertEqual(base.compile_impl(None, form(name, 1)), "base")
-        self.assertIsNot(composed.dispatcher, base.dispatcher)
-        self.assertEqual(len(composed.dispatcher.matchers), 3)
+
+
+class TestFirstMatch(unittest.TestCase):
+    """
+    The function a Syntax selects its arm with: each callable is called
+    with the subject in order, and the first result that is not None
+    gives the arm's index and the captures
+    """
+
+    def test_first_hit_wins(self):
+        seen = []
+
+        def miss(subject):
+            seen.append("miss")
+            return None
+
+        def hit(subject):
+            seen.append("hit")
+            return {"s": subject}
+
+        def later(subject):
+            seen.append("later")
+            return {}
+
+        self.assertEqual(first_match(5, (miss, hit, later)), (1, {"s": 5}))
+        self.assertEqual(seen, ["miss", "hit"])
+
+
+    def test_empty_captures_are_a_hit(self):
+        self.assertEqual(
+            first_match(5, (lambda s: None, lambda s: {})), (1, {}))
+
+
+    def test_miss(self):
+        self.assertEqual(
+            first_match(5, (lambda s: None, lambda s: None)), (-1, None))
+
+
+    def test_no_callables(self):
+        self.assertEqual(first_match(5, ()), (-1, None))
 
 
 # The end.

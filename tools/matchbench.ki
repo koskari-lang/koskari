@@ -20,7 +20,7 @@ Three tiers of timing cells over the one matcher:
              compiled function entered from Python, hit and miss paths
              per node family
   syntax-*   one matcher over a let form, and a three-arm Syntax
-             dispatching through its one function
+             trying each arm's matcher in order
   match-*    compiled koskari match functions -- the arm chain of
              MATCH_* instructions inline, captures into fast slots
   anchor-*   the same 8-way literal dispatch as match, switch, and
@@ -102,8 +102,8 @@ define FORM_LET '(mylet [[x 1] [y 2]] (+ x y))
 define syntax-arm [compiler source result]:
     None
 
-;; a syntax of three arms, the let shape last: one dispatch through
-;; the syntax's function tries all three
+;; a syntax of three arms, the let shape last: the syntax tries each
+;; arm's matcher in order
 define S_SYNTAX (Syntax "mylet" #(
     (SpecialTransform (MATCH (SYMBOL "head") (LITERAL 0)) syntax-arm)
     (SpecialTransform (MATCH (SYMBOL "head") (SYMBOL "only")) syntax-arm)

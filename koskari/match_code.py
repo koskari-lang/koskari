@@ -21,8 +21,7 @@ Two targets take the same instructions. The inline target emits into
 a fragment of the standard compiler for a match clause, the captures
 stored into the clause's declared names. The standalone target builds
 a Function of its own from the instructions, with no compiler in
-reach, whose result is the captures, or the index and captures of the
-first clause that matches when a dispatcher is built over several.
+reach, whose result is the captures.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -31,14 +30,13 @@ first clause that matches when a dispatcher is built over several.
 
 from .exceptions import SpecialError
 from .lib import (
-    Code, Compare, CoreType, FormalsSpec, Function, NamespaceSpec, OpCode,
-    OpStyle, gensym, symbol, values)
+    Code, CoreType, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle,
+    gensym, symbol)
 
 
 __all__ = (
     'FragmentTarget',
     'FunctionTarget',
-    'compile_dispatch_function',
     'compile_match_function',
     'lower_clause',
     'lower_matcher',
@@ -628,80 +626,6 @@ def lower_matcher(target, frozen, atoms, source=None, position=None):
 
     lowering = MatchLowering(target, frozen, atoms, source, position)
     lowering.lower_function()
-
-
-# the closure names a dispatcher reads: the values type its result is
-# built with, and each clause a module compiled to a function of its own
-VALUES = "values"
-
-
-def clause_name(index):
-    return f"clause-{index}"
-
-
-def compile_dispatch_function(clauses, base_ns, name="dispatch"):
-    """
-    The clauses of a syntax as one Function over base_ns: one
-    positional formal, the subject; the clauses tried in order; the
-    result (values index captures) for the first that matches, None
-    when none does. A frozen clause lowers inline, its externs closure
-    names resolved in base_ns; a clause a module compiled to a
-    function is called, and is stored into base_ns under the closure
-    name the call reads. The values type is stored there as well
-
-    :param clauses: frozen matcher 6-tuples and Functions, in try order
-    :param base_ns: the namespace the closure names resolve in
-    :param name: the function's name
-    """
-
-    # the frozen clauses' extern atoms are interned, and held, before
-    # the subject is minted, so its spelling is none of theirs
-    clause_atoms = [
-        {n: symbol(n) for n in clause[2]} if isinstance(clause, tuple)
-        else None
-        for clause in clauses]
-    target = FunctionTarget(name, gensym())
-    externs = []
-    seen = set()
-    base_ns.store(VALUES, values)
-
-    # the subject is pushed once and stays under every clause's walk
-    target.instruction(OpCode.VAR, target.subject)
-    for index, clause in enumerate(clauses):
-        # the next clause's entry, or the miss tail after the last
-        after = target.label("dispatch.next")
-        if isinstance(clause, tuple):
-            lowering = MatchLowering(
-                target, clause, clause_atoms[index], None, None)
-            for extern in lowering.externs:
-                if extern not in seen:
-                    seen.add(extern)
-                    externs.append(extern)
-            lowering.lower_body(after, index)
-            target.instruction(OpCode.CALL_VAR, (symbol(VALUES), 2, 0, 0))
-            target.instruction(OpCode.RETURN, 1)
-            lowering.flush_trampolines()
-            target.instruction(OpCode.LABEL, after)
-        else:
-            called = symbol(clause_name(index))
-            base_ns.store(str(called), clause)
-            seen.add(called)
-            externs.append(called)
-            target.instruction(OpCode.CONST, index)
-            target.instruction(OpCode.VAR, target.subject)
-            target.instruction(OpCode.CALL_VAR, (called, 1, 0, 0))
-            target.instruction(OpCode.DUP, 1)
-            target.instruction(OpCode.CONST, None)
-            target.instruction(
-                OpCode.CHECK_COMPARE, (Compare.IS_NOT, 2, after, None))
-            target.instruction(OpCode.CALL_VAR, (symbol(VALUES), 2, 0, 0))
-            target.instruction(OpCode.RETURN, 1)
-            target.instruction(OpCode.LABEL, after)
-            target.instruction(OpCode.POP, 2)
-
-    target.instruction(OpCode.CONST, None)
-    target.instruction(OpCode.RETURN, 1)
-    return target.build(externs + [symbol(VALUES)], base_ns)
 
 
 def compile_match_function(frozen, base_ns, atoms=None, name="matcher"):

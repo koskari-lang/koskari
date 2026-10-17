@@ -30,8 +30,7 @@ import pytest
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, cons, keyword, nil, setcdr, symbol)
 from koskari.match_code import (
-    FunctionTarget, MatchLowering, compile_dispatch_function,
-    compile_match_function)
+    FunctionTarget, MatchLowering, compile_match_function)
 from koskari.matcher import (
     APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
     GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
@@ -818,27 +817,6 @@ class TestPairSpineElements(unittest.TestCase):
         first = result.captures["r"][0]
         self.assertIsInstance(first, Datum)
         self.assertEqual(first.datum, 1)
-
-
-class TestDispatchFunction(unittest.TestCase):
-    """
-    The dispatch function over frozen clauses: the subject its one
-    formal, each clause's externs closure names resolved in the base
-    namespace
-    """
-
-    def test_extern_named_match_subject(self):
-        """
-        A clause's TYPE extern spelled match-subject reads its value in
-        the base namespace, not the subject the function takes
-        """
-
-        frozen = MatchCompiler().lower(MATCH(TYPE("match-subject")))
-        base_ns = ModuleNamespace("dispatch", {"match-subject": int})
-        fn = compile_dispatch_function([frozen], base_ns)
-        hit = fn((7,)).demand()
-        self.assertEqual(hit[0], 0)
-        self.assertIsNone(fn(("s",)).demand())
 
 
 # The end.

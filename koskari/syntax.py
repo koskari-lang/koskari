@@ -30,10 +30,12 @@ from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
 from koskari.hygiene import expand_template_with_hygiene, finalize_expansion
-from koskari.lib import Datum, cons, demand_call, gensym, nil, symbol
+from koskari.lib import (
+    Code, Compare, Datum, FormalsSpec, Function, ModuleNamespace,
+    NamespaceSpec, OpCode, cons, demand, demand_call, gensym, nil, symbol)
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-    Dispatcher, MatchCompiler, Matcher, MatchResult, Pattern,
+    MatchCompiler, Matcher, MatchResult, Pattern,
     check_pattern_arg, parse_explicit_rule_pattern, repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
@@ -58,6 +60,45 @@ __all__ = (
 )
 
 
+# the first arm whose matcher matches a subject: called with the
+# subject and a tuple of the arms' matcher callables, it calls each in
+# order and returns the index and the captures of the first result
+# that is not None, or -1 and None when none is. The fast slots are
+# subject, callables, index, fn and captures, then enumerate
+FIRST_MATCH = Function(
+    Code(
+        NamespaceSpec(
+            "first-match",
+            ("subject", "callables", "index", "fn", "captures"),
+            ("enumerate",)),
+        [
+            (OpCode.FAST, 1),
+            (OpCode.CALL_FAST, (5, 1, 0, 0)),
+            (OpCode.PUSH_FOREACH, None),
+            (OpCode.ITER_NEXT, "first-match.miss"),
+            (OpCode.UNPACK_FAST, (2, 3, 0, 0)),
+            (OpCode.FAST, 0),
+            (OpCode.CALL_FAST, (3, 1, 0, 0)),
+            (OpCode.FAST_STORE, 4),
+            (OpCode.FAST, 4),
+            (OpCode.CONST, None),
+            (OpCode.CHECK_COMPARE,
+             (Compare.IS_NOT, 2, "first-match.next", None)),
+            (OpCode.FAST2, (2, 4, 0, 0)),
+            (OpCode.RETURN, 2),
+            (OpCode.LABEL, "first-match.next"),
+            (OpCode.CONTINUE, 0),
+            (OpCode.LABEL, "first-match.miss"),
+            (OpCode.RETURN_CONST, (-1, None)),
+            (OpCode.POP_FOREACH, None),
+            (OpCode.RETURN, 0),
+        ],
+        "first-match"),
+    ModuleNamespace("first-match", {"enumerate": enumerate}),
+    FormalsSpec(("subject", "callables")))
+
+# FIRST_MATCH for the Python callers, reusing the context it runs in
+first_match = demand(FIRST_MATCH)
 
 
 class Syntax(Compiled):
@@ -99,16 +140,8 @@ class Syntax(Compiled):
 
         self.bare = bare
 
-        # the one function over every arm's matcher, built on first use
-        self._dispatcher = None
-
-
-    @property
-    def dispatcher(self):
-        if self._dispatcher is None:
-            self._dispatcher = Dispatcher(
-                (t.matcher for t in self.transforms), name=str(self.name))
-        return self._dispatcher
+        # each arm's matcher callable, in try order, for FIRST_MATCH
+        self.matchers = tuple(t.matcher.function for t in self.transforms)
 
 
     @property
@@ -118,17 +151,18 @@ class Syntax(Compiled):
 
     def match_transformer(self, form):
         """
-        Match ``form`` against the first arm whose matcher succeeds.
+        Match ``form`` against each arm's matcher in order through
+        FIRST_MATCH; the first that matches selects its arm
 
         :param form: special form pair spine
         :return: ``(transform, result)`` where ``transform`` is the matching
             transform and ``result`` is the match result, or (None, None)
         """
 
-        idx, captures = self.dispatcher.select(form)
-        if captures is None:
+        index, captures = first_match(form, self.matchers)
+        if index < 0:
             return None, None
-        return self.transforms[idx], MatchResult(True, captures)
+        return self.transforms[index], MatchResult(True, captures)
 
 
     def compile_impl(self, compiler, source_obj):
@@ -181,8 +215,8 @@ class Syntax(Compiled):
             fill_position(reemitted, get_position(source_obj))
             return reemitted
 
-        idx, captures = self.dispatcher.select(source_obj)
-        if captures is None:
+        tf, result = self.match_transformer(source_obj)
+        if tf is None:
             raise SyntaxMatchError(
                 "no matching syntax rule",
                 source_obj,
@@ -190,9 +224,7 @@ class Syntax(Compiled):
                 patterns=tuple(t.pattern for t in self.transforms),
             )
 
-        tf = self.transforms[idx]
-        expansion = tf.handle_expand(
-            compiler, source_obj, MatchResult(True, captures))
+        expansion = tf.handle_expand(compiler, source_obj, result)
         if is_pair(expansion):
             # a template arm builds its output with no position; the
             # form it expands names the line, as for the bare path

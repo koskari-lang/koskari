@@ -73,8 +73,7 @@ An improper spine is a miss, as in `compile/match`.
 ### Formal name
 
 `compile_match_function` names the formal with a gensym. No capture or
-extern can name it. `compile_dispatch_function` builds through the same
-`FunctionTarget` and takes the same gensym.
+extern can name it.
 
 ### Construction
 
@@ -111,8 +110,9 @@ removed and `consts` reads the frozen pool.
 
 ## Unchanged
 
-- `Dispatcher` stays a Python compile helper: `select` runs only when the
-  compiler expands a syntax.
+- A `Syntax` passes its arms' Matchers, in order, to one shared
+  first-match function built once from bytecode; the first that
+  matches selects the arm.
 - `compile/match` arms lower inline and take no Matcher.
 
 ## Callers
@@ -124,14 +124,9 @@ the TypeError on an improper spine.
 
 ## Open
 
-- A `Syntax` arm holds a Matcher, but no production code calls it.
-  `Dispatcher` lowers an arm with no externs inline from its `frozen`,
-  and calls the `function` of an arm with externs.
-  `SyntaxTransform.try_expand` is its only caller, and only tests call
-  `try_expand`. Under compile at
-  build, each frozen arm compiles a function that only those tests run.
-  The arm could hold the frozen tuple or the module function, and
-  `Dispatcher` take those directly.
+- A `Syntax` arm holds a Matcher. The `Syntax` passes its arms'
+  Matchers to the shared first-match function, which calls each in
+  order; no function merges the arms.
 - The module-compiled path (`compile/specials/syntax.py`) also names its
   formal `match-subject`, and that function is serialized into the kio,
   which holds plain names only. A gensym cannot go there.
