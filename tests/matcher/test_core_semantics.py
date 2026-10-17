@@ -345,4 +345,37 @@ class TestLengthBeforeExterns(unittest.TestCase):
         self.assertEqual(m(((4,), 1)), {"x": 4})
 
 
+class TestAlternativesCheckOnlyTheMinimum(unittest.TestCase):
+    """
+    A ONEOF branch is taken when it matches at the cursor, whatever the
+    length of what follows; the first matching branch is committed to
+    """
+
+    def test_a_branch_is_not_skipped_for_a_long_subject(self):
+        m = built(MATCH(
+            ONEOF(MATCH(TEST_ANY(), TEST_ANY()),
+                  MATCH(TEST_ANY(), TEST_ANY(), TEST_ANY())),
+            TEST_ANY()))
+        self.assertIsNone(m((1, 2, 3, 4)))
+        self.assertEqual(m((1, 2, 3)), {})
+
+
+    def test_a_branch_before_a_repeat_branch_is_committed(self):
+        m = built(MATCH(ONEOF(
+            MATCH(TEST_ANY(), CAPTURE("a")),
+            CAPTURE("r", REPEAT(TEST_ANY())))))
+        self.assertIsNone(m((1, 2, 3)))
+        self.assertEqual(m((1, 2)), {"a": 2})
+
+
+    def test_a_captured_match_in_a_branch_is_committed(self):
+        m = built(MATCH(
+            ONEOF(CAPTURE("p", MATCH(TEST_ANY(), TEST_ANY())),
+                  MATCH(TEST_ANY(), TEST_ANY(), TEST_ANY())),
+            TEST_ANY()))
+        self.assertIsNone(m((1, 2, 3, 4)))
+        self.assertEqual(m((1, 2, 3)), {"p": (1, 2)})
+
+
+
 # The end.

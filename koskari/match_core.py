@@ -464,13 +464,14 @@ def cursor_layout(nodes, widths, entry, arm):
         elif kind == 'ONEOF':
             for child in node[1:]:
                 branches.add(child)
-                placed[child] = (after, open_end, checked, in_not)
+                placed[child] = (after, True, checked, in_not)
                 rest_after[child] = rest_after.get(i, False)
         elif kind in ('CAPTURE', 'OPTIONAL', 'NOT'):
             for child in node_children(node):
                 if kind == 'OPTIONAL':
                     branches.add(child)
-                placed[child] = (after, open_end, checked, in_not)
+                placed[child] = (
+                    after, open_end or kind == 'OPTIONAL', checked, in_not)
                 rest_after[child] = rest_after.get(i, False)
         elif kind == 'REPEAT':
             placed[node[1]] = ((0, 0), True, None, in_not)
