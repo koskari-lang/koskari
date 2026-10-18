@@ -231,7 +231,6 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_CLEAR s slots` | -- | empties the slots (a CONST tuple of indices) |
 | `MATCH_CAPTURES s cur names` | -> `caps` | a dict, or a DatumFrame over a pair spine |
 | `MATCH_LOAD s i skip` | -> `v` | slot `i` of the mark at `s`; jumps to `skip`, pushing nothing, when the slot is empty; reads an uncaptured REPEAT's columns in an inline arm |
-| `MATCH_ITEMS` | -> `items` | an empty list |
 | `MATCH_APPEND items` | `v` -> | appends |
 | `MATCH_MIN items n miss` | -- | misses below `n` items |
 | `MATCH_COLUMNS items s slots` | -- | stores, for each slot, the list of its per-pass values into the mark at `s` |
@@ -311,7 +310,7 @@ OPTIONAL sub      SCOPE cur 0; <sub> (-> back); POP; JUMP done
                   back: RESET cur m; CLEAR s slots(sub); POP
 NOT sub           UNBOUND cur; <sub on c'> (-> ok); POP; JUMP miss
                   ok: POP
-REPEAT sub min    ITEMS; BOUND cur w miss
+REPEAT sub min    BUILD_LIST 0; BOUND cur w miss
                   head: FITS c' 1 max exit
                         SCOPE c' k; <sub on c'> (-> pass_miss)
                         CAPTURES s' c' names | AT m | SPAN m c'
@@ -691,15 +690,17 @@ committed oracle corpora and the six verification corpora
 
 ### Performance next, in order
 
-1. The element tests (LITERAL, CORE, TYPE, SAME, CLASS) keep their
-   operand on both exits and the emitter pops at the value's last
-   use; with it, a ONEOF of one-element branches pulls its element
-   once (E7) and fail blocks are placed after the body (E5).
+1. Done (4978a595, 2b9eb9a7): the element tests (LITERAL, CORE, TYPE,
+   SAME, CLASS) keep their operand on both exits and the emitter pops at
+   the value's last use; with it, a ONEOF of one-element branches pulls
+   its element once (E7) and fail blocks are placed after the body (E5).
    Analysis: tmp/matcher-core/stack-effects.md.
-2. Replace matcher instructions that duplicate generic ones
-   (MATCH_ITEMS, MATCH_APPEND, MATCH_MIN; MATCH_RESET with
-   MATCH_SYNC), keeping copy-before-write where a list or cursor is
-   shared.
+2. Done: MATCH_ITEMS was the only duplicate of a generic instruction
+   and became BUILD_LIST 0. MATCH_APPEND keeps its copy of a list a
+   resumed continuation shares and appends below the top, MATCH_MIN
+   is one instruction where the generic form takes three or four,
+   and MATCH_RESET and MATCH_SYNC move a cursor to a mark and to a
+   cursor without a type branch.
 3. Re-profile, then an opgram pass over the emitted code; fused
    instructions only where sequences recur.
 4. Handler adjustments still worth measuring after 1-3: a Datum

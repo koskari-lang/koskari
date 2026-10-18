@@ -274,7 +274,7 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -374,7 +374,6 @@ The opcodes by family, each linking to its section.
 | MATCH_CAPTURES | EXTRA | Push the mark's filled slots: a DatumFrame over a pair spine, a dict otherwise | [section 9.2](opcodes/kos-op-match-captures.md) |
 | MATCH_PASS | EXTRA | Push a repeat pass's value: its captures, or its span when no slot is filled | [section 9.2](opcodes/kos-op-match-pass.md) |
 | MATCH_LOAD | EXTRA | Push a slot of the mark at the depth; jump when it is empty | [section 9.2](opcodes/kos-op-match-load.md) |
-| MATCH_ITEMS | NOARG | Push an empty list, a repeat's items | [section 9.2](opcodes/kos-op-match-items.md) |
 | MATCH_APPEND | EXTRA | Pop TOS and append it to the list at the depth | [section 9.2](opcodes/kos-op-match-append.md) |
 | MATCH_MIN | EXTRA | Miss unless the list at the depth holds at least the count of items | [section 9.2](opcodes/kos-op-match-min.md) |
 | MATCH_COLUMNS | EXTRA | Store each name's per-pass values, as a list, into a slot of the mark | [section 9.2](opcodes/kos-op-match-columns.md) |
@@ -1798,7 +1797,7 @@ interpreted at run time.
   the position of the cursor it was made at, which never moves, and a
   fixed count of slots, each empty or holding one capture; it is the
   record of one capture scope. An **items list** collects a repeat's
-  passes.
+  passes; the repeat pushes it empty with `BUILD_LIST 0`.
 - **Depths.** A RAW field names a walk entry by its depth: the count of
   entries above it as the instruction finds the stack, 0 the top before
   the instruction pops or pushes. A depth that names a cursor or mark
@@ -2017,12 +2016,6 @@ never emits it and its handler raises.
   slot is empty.
 - **Semantics**: Push the value in slot `a2` of the mark at depth `a1`. An
   index outside the mark's slots raises `SystemError`.
-
-### KOS_OP_MATCH_ITEMS
-
-- **Style**: NOARG
-- **Stack**: `[...]` -> `[..., items]`; cannot miss.
-- **Semantics**: Push a new empty list.
 
 ### KOS_OP_MATCH_APPEND
 

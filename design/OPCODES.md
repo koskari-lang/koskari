@@ -292,7 +292,7 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_ITEMS, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -393,7 +393,6 @@ When adding or changing an opcode:
 | MATCH_CAPTURES | EXTRA | Push the mark's filled slots: a DatumFrame over a pair spine, a dict otherwise | [§9.2](#kos_op_match_captures) |
 | MATCH_PASS | EXTRA | Push a repeat pass's value: its captures, or its span when no slot is filled | [§9.2](#kos_op_match_pass) |
 | MATCH_LOAD | EXTRA | Push a slot of the mark at the depth; jump when it is empty | [§9.2](#kos_op_match_load) |
-| MATCH_ITEMS | NOARG | Push an empty list, a repeat's items | [§9.2](#kos_op_match_items) |
 | MATCH_APPEND | EXTRA | Pop TOS and append it to the list at the depth | [§9.2](#kos_op_match_append) |
 | MATCH_MIN | EXTRA | Miss unless the list at the depth holds at least the count of items | [§9.2](#kos_op_match_min) |
 | MATCH_COLUMNS | EXTRA | Store each name's per-pass values, as a list, into a slot of the mark | [§9.2](#kos_op_match_columns) |
@@ -1854,7 +1853,7 @@ interpreted at run time.
   the position of the cursor it was made at, which never moves, and a
   fixed count of slots, each empty or holding one capture; it is the
   record of one capture scope. An **items list** collects a repeat's
-  passes.
+  passes; the repeat pushes it empty with `BUILD_LIST 0`.
 - **Depths.** A RAW field names a walk entry by its depth: the count of
   entries above it as the instruction finds the stack, 0 the top before
   the instruction pops or pushes. A depth that names a cursor or mark
@@ -1892,8 +1891,8 @@ interpreted at run time.
 preceded this family, keeps its number in the table. The compiler
 never emits it and its handler raises.
 
-Each `koskari/lib/opcode/MATCH_*.c` handler but `MATCH_CASE`'s and
-`MATCH_ITEMS`'s tail-calls its body in `koskari/lib/eval/eval_match.c`,
+Each `koskari/lib/opcode/MATCH_*.c` handler but `MATCH_CASE`'s
+tail-calls its body in `koskari/lib/eval/eval_match.c`,
 shared by the VAR and FAST twins, and the body calls the matcher
 subsystem's step
 (`koskari/lib/matcher/cursor.c`, `mark.c`, `step.c`; `matcher.h`). The
@@ -2103,13 +2102,6 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 - **Semantics**: Push the value in slot `a2` of the mark at depth `a1`. An
   index outside the mark's slots raises `SystemError`.
 - **Implementation**: `koskari/lib/opcode/MATCH_LOAD.c`
-
-### KOS_OP_MATCH_ITEMS {#kos_op_match_items}
-
-- **Style**: NOARG
-- **Stack**: `[...]` -> `[..., items]`; cannot miss.
-- **Semantics**: Push a new empty list.
-- **Implementation**: `koskari/lib/opcode/MATCH_ITEMS.c`
 
 ### KOS_OP_MATCH_APPEND {#kos_op_match_append}
 

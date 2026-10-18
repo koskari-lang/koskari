@@ -131,7 +131,6 @@ class TestRows(CevalTest):
         self.assertIs(OpCode.MATCH_DESCEND.style, OpStyle.LABEL)
         self.assertIs(OpCode.MATCH_MAPPING.style, OpStyle.LABEL)
         self.assertIs(OpCode.MATCH_SINGLE.style, OpStyle.NOARG)
-        self.assertIs(OpCode.MATCH_ITEMS.style, OpStyle.NOARG)
 
 
     def test_store_index_must_name_a_slot(self):
@@ -573,7 +572,7 @@ class TestItems(CevalTest):
 
     async def test_items_append_min(self):
         prog = [
-            ["MATCH_ITEMS", 0],
+            ["BUILD_LIST", 0],
             ["CONST", 1],
             ["MATCH_APPEND", (1, 0, 0, 0)],
             ["CONST", 2],
@@ -590,7 +589,7 @@ class TestItems(CevalTest):
         prog = [
             ["MATCH_SINGLE", 0],
             ["MATCH_SCOPE", (0, 3, 0, 0)],
-            ["MATCH_ITEMS", 0],
+            ["BUILD_LIST", 0],
             ["VAR", "first"],
             ["MATCH_APPEND", (1, 0, 0, 0)],
             ["VAR", "second"],
@@ -631,7 +630,7 @@ class TestCopyOnShare(CevalTest):
             ["DUP", 1],
             ["MATCH_CLEAR", (0, (0,), 0, 0)],
             ["DUP", 1],
-            ["MATCH_ITEMS", 0],
+            ["BUILD_LIST", 0],
             ["MATCH_COLUMNS", (0, 1, ("x",), (1,))],
             ["POP", 1],
             # base, cursor, the mark, its cleared copy, the copy's copy
@@ -701,7 +700,7 @@ class TestCopyOnShare(CevalTest):
 
     async def test_append_to_a_held_list_copies_it(self):
         prog = [
-            ["MATCH_ITEMS", 0],
+            ["BUILD_LIST", 0],
             ["DUP", 1],
             ["CONST", 1],
             ["MATCH_APPEND", (1, 0, 0, 0)],
@@ -712,7 +711,7 @@ class TestCopyOnShare(CevalTest):
 
     async def test_append_to_a_list_held_twice_copies_it_once_per_writer(self):
         prog = [
-            ["MATCH_ITEMS", 0],
+            ["BUILD_LIST", 0],
             ["DUP", 1],
             ["DUP", 1],
             # the top entry takes its own copy

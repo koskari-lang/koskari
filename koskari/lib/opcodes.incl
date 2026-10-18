@@ -478,7 +478,6 @@ OP(MATCH_CLEAR, 0, EXTRA, RAW, CONST, NOARG, NOARG)  // s, slots: empties the sl
 OP(MATCH_CAPTURES, 0, EXTRA, RAW, RAW, CONST, NOARG)  // s, cur, names: -> caps, a dict, or a DatumFrame over a spine
 OP(MATCH_PASS, 0, EXTRA, RAW, RAW, CONST, RAW)  // s, cur, names, group: -> a REPEAT pass's value, the filled slots as a dict, or with group set as MATCH_CAPTURES gives them; the span when none is filled
 OP(MATCH_LOAD, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // s, i: -> v, slot i of the mark at s; jumps pushing nothing when the slot is empty
-OP(MATCH_ITEMS, 0, NOARG)  // -> items, an empty list
 OP(MATCH_APPEND, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // items: v -> ; appended
 OP(MATCH_MIN, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // items, n: misses below n items
 OP(MATCH_COLUMNS, 0, EXTRA, RAW, RAW, CONST, CONST)  // items, s, names, slots: per name, the list of its per-pass values stored into the slot of the mark at s

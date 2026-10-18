@@ -331,7 +331,6 @@
 #include "opcode/MATCH_CAPTURES.c"
 #include "opcode/MATCH_PASS.c"
 #include "opcode/MATCH_LOAD.c"
-#include "opcode/MATCH_ITEMS.c"
 #include "opcode/MATCH_APPEND.c"
 #include "opcode/MATCH_MIN.c"
 #include "opcode/MATCH_COLUMNS.c"

@@ -1525,7 +1525,7 @@ class Emitter:
         pass_miss = self.join("match.repeat", mark)
         done = label("match.repeat")
 
-        self.op(OpCode.MATCH_ITEMS, effect=1)
+        self.op(OpCode.BUILD_LIST, 0, effect=1)
         self.op(
             OpCode.MATCH_BOUND, self.miss_at(miss), self.top - cur,
             analysis.suffix[i][0], effect=1)
