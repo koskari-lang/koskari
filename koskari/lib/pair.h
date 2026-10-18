@@ -70,14 +70,20 @@ extern KosPair _KosBracketNil;
 /* === type check macros === */
 
 
+/* The pair family is closed: none of the four types is BASETYPE, so a
+   type compare covers every pair. */
 #define KosPair_Check(obj)                                      \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosPairType))
+  ((obj) && (Py_TYPE(obj) == &KosPairType                       \
+             || Py_TYPE(obj) == &KosBracketPairType             \
+             || Py_TYPE(obj) == &KosNilType                     \
+             || Py_TYPE(obj) == &KosBracketNilType))
 
 #define KosPair_CheckExact(obj)                 \
   ((obj) && ((obj)->ob_type == &KosPairType))
 
 #define KosBracketPair_Check(obj)                               \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosBracketPairType))
+  ((obj) && (Py_TYPE(obj) == &KosBracketPairType                \
+             || Py_TYPE(obj) == &KosBracketNilType))
 
 #define KosBracketPair_CheckExact(obj)                  \
   ((obj) && ((obj)->ob_type == &KosBracketPairType))

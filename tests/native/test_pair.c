@@ -428,6 +428,24 @@ static int test_nil_in_pair(void) {
 }
 
 
+static int test_pair_family_closed(void) {
+    /*
+      Test that no pair type admits a subclass, so the pair checks'
+      type compares cover every pair.
+    */
+    TEST_ASSERT(! (KosPairType.tp_flags & Py_TPFLAGS_BASETYPE),
+                "pair is not a base type");
+    TEST_ASSERT(! (KosBracketPairType.tp_flags & Py_TPFLAGS_BASETYPE),
+                "bracket pair is not a base type");
+    TEST_ASSERT(! (KosNilType.tp_flags & Py_TPFLAGS_BASETYPE),
+                "nil is not a base type");
+    TEST_ASSERT(! (KosBracketNilType.tp_flags & Py_TPFLAGS_BASETYPE),
+                "bracket nil is not a base type");
+
+    return 0;
+}
+
+
 /* === KosPair_Cons tests === */
 
 
@@ -580,6 +598,7 @@ int run_pair_tests(void) {
     /* Nil tests */
     RUN_TEST(test_nil_singleton);
     RUN_TEST(test_nil_in_pair);
+    RUN_TEST(test_pair_family_closed);
 
     /* Cons tests */
     RUN_TEST(test_cons_empty);
