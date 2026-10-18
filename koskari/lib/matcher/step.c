@@ -265,6 +265,19 @@ int KosMatch_LiteralTest(PyObject *elem, PyObject *lit) {
      the symbol it spells */
   if (KosGensym_Check(got) && KosGensym_BASE(got) == lit)
     return 1;
+
+  /* an exact int or str against one of its own exact type: the type's
+     own comparison answers, with no reflected operand or subclass to
+     consult */
+  PyTypeObject *t = Py_TYPE(lit);
+  if (Py_TYPE(got) == t && (t == &PyLong_Type || t == &PyUnicode_Type)) {
+    PyObject *res = t->tp_richcompare(lit, got, Py_EQ);
+    if (! res)
+      return -1;
+    int r = (res == Py_True);
+    Py_DECREF(res);
+    return r;
+  }
   return PyObject_RichCompareBool(lit, got, Py_EQ);
 }
 

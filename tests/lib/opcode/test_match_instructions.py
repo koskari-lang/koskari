@@ -744,6 +744,37 @@ class TestElementTests(CevalTest):
         self.assertEqual(await run(prog, 8), ("base", 8, "miss"))
 
 
+    async def test_literal_equal_values_of_one_type(self):
+        # equal ints and strs that are not the same object, and values
+        # of another type that compare equal, all hit
+        big = 10 ** 20
+        prog = [
+            ["MATCH_LITERAL", ("miss", big, 0, 0)],
+        ] + hit(2) + miss(2)
+        other = int(str(big))
+        self.assertIsNot(other, big)
+        self.assertEqual(await run(prog, other), ("base", other, "hit"))
+        self.assertEqual(
+            await run(prog, big + 1), ("base", big + 1, "miss"))
+
+        prog[0] = ["MATCH_LITERAL", ("miss", "spelling", 0, 0)]
+        word = "".join(["spell", "ing"])
+        self.assertEqual(await run(prog, word), ("base", word, "hit"))
+        self.assertEqual(await run(prog, "spell"), ("base", "spell", "miss"))
+
+        prog[0] = ["MATCH_LITERAL", ("miss", 1, 0, 0)]
+        self.assertEqual(await run(prog, 1.0), ("base", 1.0, "hit"))
+        self.assertEqual(await run(prog, True), ("base", True, "hit"))
+
+        class Anything:
+            def __eq__(self, other):
+                return True
+
+        anything = Anything()
+        self.assertEqual(
+            await run(prog, anything), ("base", anything, "hit"))
+
+
     async def test_core(self):
         prog = [
             ["MATCH_CORE", ("miss", int(CoreType.TUPLE), 0, 0)],
