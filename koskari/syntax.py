@@ -30,13 +30,12 @@ from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
 from koskari.hygiene import expand_template_with_hygiene, finalize_expansion
-from koskari.lib import (
-    Code, Compare, Datum, FormalsSpec, Function, ModuleNamespace,
-    NamespaceSpec, OpCode, cons, demand, demand_call, gensym, nil, symbol)
+from koskari.lib import Datum, cons, demand, demand_call, gensym, nil, symbol
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
     MatchResult, Pattern,
-    check_pattern_arg, parse_explicit_rule_pattern, repeat_capture)
+    check_pattern_arg, first_match, parse_explicit_rule_pattern,
+    repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
     fill_position, get_position, is_nil, is_pair, is_proper, is_symbol,
@@ -60,45 +59,6 @@ __all__ = (
 )
 
 
-# the first arm whose matcher matches a subject: called with the
-# subject and a tuple of the arms' matcher callables, it calls each in
-# order and returns the index and the captures of the first result
-# that is not None, or -1 and None when none is. The fast slots are
-# subject, callables, index, fn and captures, then enumerate
-FIRST_MATCH = Function(
-    Code(
-        NamespaceSpec(
-            "first-match",
-            ("subject", "callables", "index", "fn", "captures"),
-            ("enumerate",)),
-        [
-            (OpCode.FAST, 1),
-            (OpCode.CALL_FAST, (5, 1, 0, 0)),
-            (OpCode.PUSH_FOREACH, None),
-            (OpCode.ITER_NEXT, "first-match.miss"),
-            (OpCode.UNPACK_FAST, (2, 3, 0, 0)),
-            (OpCode.FAST, 0),
-            (OpCode.CALL_FAST, (3, 1, 0, 0)),
-            (OpCode.FAST_STORE, 4),
-            (OpCode.FAST, 4),
-            (OpCode.CONST, None),
-            (OpCode.CHECK_COMPARE,
-             (Compare.IS_NOT, 2, "first-match.next", 0)),
-            (OpCode.FAST2, (2, 4, 0, 0)),
-            (OpCode.RETURN, 2),
-            (OpCode.LABEL, "first-match.next"),
-            (OpCode.CONTINUE, 0),
-            (OpCode.LABEL, "first-match.miss"),
-            (OpCode.RETURN_CONST, (-1, None)),
-            (OpCode.POP_FOREACH, None),
-            (OpCode.RETURN, 0),
-        ],
-        "first-match"),
-    ModuleNamespace("first-match", {"enumerate": enumerate}),
-    FormalsSpec(("subject", "callables")))
-
-# FIRST_MATCH for the Python callers, reusing the context it runs in
-first_match = demand(FIRST_MATCH)
 
 
 class Syntax(Compiled):

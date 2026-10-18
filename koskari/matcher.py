@@ -28,8 +28,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from koskari.lib import (
-    CoreType, Datum, DatumFrame, ModuleNamespace, cons, demand, keyword,
-    kos_repr, nil, pair, symbol)
+    Code, Compare, CoreType, Datum, DatumFrame, FormalsSpec, Function,
+    ModuleNamespace, NamespaceSpec, OpCode, cons, demand, keyword, kos_repr,
+    nil, pair, symbol)
 from koskari.match_code import compile_match_function
 from koskari.match_core import analyse
 from koskari.types import (
@@ -1574,6 +1575,47 @@ def make_matcher(pattern, externs=None):
     return pattern.build(externs)
 
 
+# the first arm whose matcher matches a subject: called with the
+# subject and a tuple of the arms' matcher callables, it calls each in
+# order and returns the index and the captures of the first result
+# that is not None, or -1 and None when none is. The fast slots are
+# subject, callables, index, fn and captures, then enumerate
+FIRST_MATCH = Function(
+    Code(
+        NamespaceSpec(
+            "first-match",
+            ("subject", "callables", "index", "fn", "captures"),
+            ("enumerate",)),
+        [
+            (OpCode.FAST, 1),
+            (OpCode.CALL_FAST, (5, 1, 0, 0)),
+            (OpCode.PUSH_FOREACH, None),
+            (OpCode.ITER_NEXT, "first-match.miss"),
+            (OpCode.UNPACK_FAST, (2, 3, 0, 0)),
+            (OpCode.FAST, 0),
+            (OpCode.CALL_FAST, (3, 1, 0, 0)),
+            (OpCode.FAST_STORE, 4),
+            (OpCode.FAST, 4),
+            (OpCode.CONST, None),
+            (OpCode.CHECK_COMPARE,
+             (Compare.IS_NOT, 2, "first-match.next", 0)),
+            (OpCode.FAST2, (2, 4, 0, 0)),
+            (OpCode.RETURN, 2),
+            (OpCode.LABEL, "first-match.next"),
+            (OpCode.CONTINUE, 0),
+            (OpCode.LABEL, "first-match.miss"),
+            (OpCode.RETURN_CONST, (-1, None)),
+            (OpCode.POP_FOREACH, None),
+            (OpCode.RETURN, 0),
+        ],
+        "first-match"),
+    ModuleNamespace("first-match", {"enumerate": enumerate}),
+    FormalsSpec(("subject", "callables")))
+
+# FIRST_MATCH for the Python callers, reusing the context it runs in
+first_match = demand(FIRST_MATCH)
+
+
 # === Composite matchers ===
 
 
@@ -2129,6 +2171,11 @@ USING_FORMS = (
     *BINDING_FORMS,
     LIST(VALUE("expr")),
 )
+
+# the forms' matchers, built once, for first_match over a one-cell
+# spine of the form
+BINDING_MATCHERS = tuple(make_matcher(form) for form in BINDING_FORMS)
+USING_MATCHERS = tuple(make_matcher(form) for form in USING_FORMS)
 
 
 # === Self-describing matcher syntax: registry, meta-matcher, parser ===

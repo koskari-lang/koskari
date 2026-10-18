@@ -27,8 +27,8 @@ import pytest
 
 from koskari.lib import cons, nil, symbol
 from koskari.matcher import (
-    CALLEDBY, CAPTURE, LITERAL, MATCH, PREDICATE, TYPE, VALUE)
-from koskari.syntax import SpecialTransform, Syntax, first_match
+    CALLEDBY, CAPTURE, LITERAL, MATCH, PREDICATE, TYPE, VALUE, first_match)
+from koskari.syntax import SpecialTransform, Syntax
 
 
 pytestmark = pytest.mark.phase_infra
