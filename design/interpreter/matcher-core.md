@@ -1,6 +1,6 @@
 # Matcher core
 
-Status: implemented through phase 8.
+Status: implemented through phase 8; verified against master; performance work in progress (see "After the end point").
 
 ## Why
 
@@ -635,6 +635,58 @@ matchbench (four-cell runs) and churn against phase 0 and stops. Any
 fused instruction, and the resumption of the halted review rollup for
 the items the core does not subsume, are proposed to the maintainer,
 not implemented.
+
+## After the end point
+
+### Verification (done)
+
+Differential runs against master over about 230,000 cases, two blind
+reviews and stress runs found I1-I4 and G1-G4 (f9a1dbbd through
+744fe720) and the deliberate differences now in "Acceptance". Both
+committed oracle corpora and the six verification corpora
+(tmp/matcher-core/verify/) show 0 unexplained (8ddd90ed).
+
+### Performance principles
+
+- Emit as few instructions as possible, each doing as much as makes
+  sense; prune any work environment that is never used.
+- Reuse existing instructions; the difficult logic belongs in the
+  emitter, not in the opcodes.
+- Each instruction gets one fixed stack effect; no mode fields.
+- Measure by exact instruction counts (callgrind, micro.py under
+  tmp/matcher-core/perf/), not wall time.
+- Every change is gated by the oracle corpora.
+
+### Performance done
+
+- H1 (e9041d77): an unshared cursor or mark moves in place inline.
+- H2 (80e3aacd): Datum, DatumFrame and symbol checks by identity.
+- H3 (20d31a64): a mark taken from its freelist inline.
+- H4: dropped (link-time optimization had already inlined it).
+- Frame mode with E1 (ef2f5aea): an inline arm's root captures are
+  ordinary variable stores; one-element single values are tested in
+  place; churn 61.2 to 26.4 executed instructions per iteration.
+
+### Performance next, in order
+
+1. The element tests (LITERAL, CORE, TYPE, SAME, CLASS) keep their
+   operand on both exits and the emitter pops at the value's last
+   use; with it, a ONEOF of one-element branches pulls its element
+   once (E7) and fail blocks are placed after the body (E5).
+   Analysis: tmp/matcher-core/stack-effects.md.
+2. Replace matcher instructions that duplicate generic ones
+   (MATCH_ITEMS, MATCH_APPEND, MATCH_MIN; MATCH_RESET with
+   MATCH_SYNC), keeping copy-before-write where a list or cursor is
+   shared.
+3. Re-profile, then an opgram pass over the emitted code; fused
+   instructions only where sequences recur.
+4. Handler adjustments still worth measuring after 1-3: a Datum
+   freelist (H5), a DatumFrame built directly (H8), a LITERAL fast
+   path (H6), a __match_args__ cache (H9), a cached final-miss answer
+   (H7), the small items (H10), pair type checks over the four known
+   pair types (H2b). Analysis: tmp/matcher-core/perf/HANDLERS.md.
+5. The generic DUP 1 and POP 2 calling out of line (outside the
+   matcher), re-measured after 1.
 
 ## Execution
 
