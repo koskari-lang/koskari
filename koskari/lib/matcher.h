@@ -39,8 +39,10 @@ typedef struct KosDatum {
 extern PyTypeObject KosDatumType;
 
 
+/* Datum is not a base type and has no subtype, so the check is one
+   pointer compare */
 #define KosDatum_Check(obj)                                       \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumType))
+  ((obj) && Py_IS_TYPE((obj), &KosDatumType))
 
 
 /* === DatumFrame (capture dict + source provenance) === */
@@ -56,8 +58,10 @@ typedef struct KosDatumFrame {
 extern PyTypeObject KosDatumFrameType;
 
 
+/* DatumFrame is not a base type and has no subtype, so the check is
+   one pointer compare */
 #define KosDatumFrame_Check(obj)                                       \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumFrameType))
+  ((obj) && Py_IS_TYPE((obj), &KosDatumFrameType))
 
 
 /**

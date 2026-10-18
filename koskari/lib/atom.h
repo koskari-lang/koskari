@@ -66,8 +66,11 @@ extern PyTypeObject KosGensymType;
 /* === type check macros === */
 
 
+/* neither symbol nor gensym is a base type, so gensym is the one
+   subtype and the check is two pointer compares */
 #define KosSymbol_Check(obj)                                    \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosSymbolType))
+  ((obj) && ((obj)->ob_type == &KosSymbolType                   \
+             || (obj)->ob_type == &KosGensymType))
 
 #define KosSymbol_CheckExact(obj)               \
   ((obj) && ((obj)->ob_type == &KosSymbolType))
