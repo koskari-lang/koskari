@@ -166,29 +166,37 @@ def special_match(compiler, caps):
     for name in dict.fromkeys(symbol(n) for n in bound):
         fragment.declare_var(name)
 
-    def emit_tests(target, arm, hit, next_label):
+    def emit_tests(target, arm, next_label):
         """
         One arm's tests against the subject on top of the stack, the
-        guard after its captures bind; a pass jumps to hit with the
-        subject still on the stack, a miss to next_label the same way
+        guard after its captures bind; a pass falls through with the
+        subject consumed, a miss jumps to next_label with the subject
+        still on the stack
         """
 
         pattern, tables, atoms, guard_kw, guard_expr, _body, clause_pos = arm
         target.position(clause_pos)
-        miss_edges = lower_clause(
-            compiler, target, tables, atoms, next_label)
-        if guard_kw is not None:
+        guarded = guard_kw is not None
+        fail_blocks = lower_clause(
+            compiler, target, tables, atoms, next_label, guarded)
+        if guarded:
+            # a guarded arm's walk keeps the subject for the guard's
+            # miss; the pass pops it
             target.merge(compiler.full_compile(guard_expr))
             target.instruction(
                 OpCode.JUMP_FALSE if guard_kw is _keyword_when
                 else OpCode.JUMP_TRUE,
                 next_label)
-        target.instruction(OpCode.JUMP, hit)
-        miss_edges()
+            target.instruction(OpCode.POP, 1)
+        if fail_blocks is not None:
+            hit = gen_label()
+            target.instruction(OpCode.JUMP, hit)
+            fail_blocks()
+            target.instruction(OpCode.LABEL, hit)
 
-    # the subject stays on the stack across the arm chain; a hit pops
-    # it and runs the body in place, and an arm's walk leaves nothing
-    # of its own behind
+    # the subject stays on the stack across the arm chain; a hit
+    # consumes it and runs the body in place, and a miss leaves it for
+    # the next arm
     request_externs(fragment)
     fragment.merge(compiler.full_compile(caps["subject"].datum))
     for arm in arms:
@@ -199,11 +207,8 @@ def special_match(compiler, caps):
             helper_begin(fragment, body)
             fragment.instruction(OpCode.JUMP, done)
             break
-        hit = gen_label()
         next_label = gen_label()
-        emit_tests(fragment, arm, hit, next_label)
-        fragment.instruction(OpCode.LABEL, hit)
-        fragment.instruction(OpCode.POP, 1)
+        emit_tests(fragment, arm, next_label)
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
         fragment.instruction(OpCode.LABEL, next_label)

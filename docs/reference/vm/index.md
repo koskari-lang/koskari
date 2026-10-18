@@ -1962,7 +1962,9 @@ never emits it and its handler raises.
 - **Semantics**: Pop `v` into slot `a1` of the mark at depth `a0`, replacing
   what the slot held. When the cursor at depth `a2` walks a pair spine, a
   `Datum` `v`, and each `Datum` in a tuple `v`, takes the name `a3[a1]` as its
-  binding; a `Datum` from a tuple, list or single value is stored unchanged.
+  binding; a `Datum` from a tuple, list or single value is stored unchanged. A
+  cursor depth `a2` of 0 names no cursor: `v` was tested where it lay, and is
+  stored unchanged.
 - **Invariants**: `a3` is a tuple with an entry at `a1`; Code construction
   raises `ValueError` otherwise. An index outside the mark's slots raises
   `SystemError`.

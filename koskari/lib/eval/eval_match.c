@@ -510,22 +510,26 @@ KOS_MATCH_BODY(kos_match_span) {
 /**
    MATCH_STORE: TOS popped into slot field 1 of the mark at field 0;
    when the cursor at field 2 walks a pair spine, a Datum value takes
-   the slot's name from the names tuple in field 3 as its binding. Row
-   depth, index, depth, const.
+   the slot's name from the names tuple in field 3 as its binding.
+   Field 2 is 0 for a value no cursor produced, depth 0 being the value
+   itself. Row depth, index, depth, const.
 */
 KOS_MATCH_BODY(kos_match_store) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   Py_ssize_t i = (Py_ssize_t) KosExtra_IMM(row, 1);
+  uint32_t under = KosExtra_IMM(row, 2);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 2));
-  if (unlikely(! cursor))
-    RESULT_RAISE();
-
   /* the code's validation holds the index within the names */
-  PyObject *name = KosMatchCursor_KIND(cursor) == KOS_MATCH_SPINE
-      ? PyTuple_GET_ITEM(KosExtra_OBJ(row, 3), i) : NULL;
+  PyObject *name = NULL;
+  if (under) {
+    PyObject *cursor = kos_match_cursor_at(es, under);
+    if (unlikely(! cursor))
+      RESULT_RAISE();
+    if (KosMatchCursor_KIND(cursor) == KOS_MATCH_SPINE)
+      name = PyTuple_GET_ITEM(KosExtra_OBJ(row, 3), i);
+  }
 
   PyObject *mark = kos_match_writable_at(es, row, 0);
   if (unlikely(! mark))

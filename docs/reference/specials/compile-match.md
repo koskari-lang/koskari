@@ -32,11 +32,12 @@ kind may be an arm's root, provided it can match one element; a root
 that cannot, such as the zero-width `NOT` head or a `MATCH` of two
 elements, raises `SpecialError` at compile time.
 
-When an arm matches, each name its pattern captured is stored into the
-variable of that name in the enclosing scope, and the body runs. A name
-whose capture did not bind, under an `OPTIONAL` that did not fire,
-leaves its variable as it was. An arm that does not match writes no
-variable, even when part of its pattern matched before the miss.
+Each name an arm's pattern captures is stored into the variable of that
+name in the enclosing scope as the pattern walks the value, and on the
+first match the body runs. A name whose capture did not bind, under an
+`OPTIONAL` that did not fire, leaves its variable as it was. An arm that
+misses after binding some captures leaves them bound, as does an
+`(or ...)` alternative that misses after binding.
 
 A clause may carry a **guard** between the delimiter and the body:
 `[[PATTERN] when: COND BODY...]` runs the body only when `COND` is truthy

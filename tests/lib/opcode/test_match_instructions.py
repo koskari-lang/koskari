@@ -449,6 +449,22 @@ class TestMarks(CevalTest):
         self.assertIsNone(mine.binding)
 
 
+    async def test_store_with_no_cursor_leaves_the_datum(self):
+        # cursor depth 0 names no cursor: a spine element is stored as
+        # it was, with no binding
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["MATCH_SCOPE", (0, 1, 0, 0)],
+            ["MATCH_NEXT", ("miss", 1, 0, 0)],
+            ["MATCH_STORE", (1, 0, 0, ("a",))],
+            ["MATCH_CAPTURES", (0, 1, ("a",), 0)],
+        ] + hit(4) + miss(0)
+        got = await run(prog, cons(5, nil))
+        self.assertEqual(list(got[3]), ["a"])
+        self.assertEqual(got[3]["a"].datum, 5)
+        self.assertIsNone(got[3]["a"].binding)
+
+
     async def test_store_consumes_the_value(self):
         prog = [
             ["MATCH_SINGLE", 0],

@@ -8,4 +8,5 @@
   otherwise. An index outside the mark's slots raises `SystemError`.
 - **Compiler form:** Emitted by the match compiler where a branch of an
   `(or ...)` or an optional misses, emptying the slots that branch could have
-  filled.
+  filled. The root captures of a `match` arm are its variables, which keep
+  what the branch stored.

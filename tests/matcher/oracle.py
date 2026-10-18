@@ -1477,50 +1477,118 @@ def inline_variables(case, outcome):
     return label, dict(zip(case["names"], values["tuple"]))
 
 
-def inline_variable_rule(case, master, branch, hit_arm_rule):
+def differing_variables(case, master, branch):
     """
-    Whether the arm labels agree and every variable that differs is the
-    unset marker on this tree and, under hit_arm_rule, belongs to the
-    hit arm and is empty on master, or otherwise belongs to an arm that
-    missed and was written on master
+    The hit arm's label and, for each variable that differs, its name
+    with master's and this tree's encoded values, when both outcomes
+    are inline results with the same arm label; None otherwise
     """
 
     if case["kind"] != "inline":
-        return False
+        return None
     mv = inline_variables(case, master)
     bv = inline_variables(case, branch)
     if mv is None or bv is None or mv[0] != bv[0]:
-        return False
-    label = mv[0]
-    differing = [n for n in case["names"] if mv[1][n] != bv[1][n]]
-    if not differing:
-        return False
-    for name in differing:
-        if bv[1][name] != UNSET:
-            return False
-        owner = case["owners"][name]
-        if hit_arm_rule:
-            if owner != label or mv[1][name] != EMPTY:
-                return False
-        elif owner == label:
-            return False
-    return True
+        return None
+    return mv[0], [
+        (n, mv[1][n], bv[1][n]) for n in case["names"]
+        if mv[1][n] != bv[1][n]]
 
 
-def rule_missed_arm_writes_nothing(case, master, branch):
+def without_binding(enc, name):
     """
-    A missed inline arm writes no variable
+    An encoded capture with the binding name removed from it, when it is
+    a Datum, or from each Datum of it, when it is a span's tuple
     """
 
-    return inline_variable_rule(case, master, branch, False)
+    if isinstance(enc, dict) and "datum" in enc:
+        if enc.get("binding") != name:
+            return enc
+        return {k: v for k, v in enc.items() if k != "binding"}
+    if isinstance(enc, dict) and "tuple" in enc:
+        return {"tuple": [without_binding(v, name) for v in enc["tuple"]]}
+    return enc
+
+
+def explained_with(case, master, branch, taken, rule):
+    """
+    Whether the outcomes agree, or a rule other than rule explains
+    them, once master's variables named in taken hold this tree's
+    values
+    """
+
+    label, values = master["result"]["tuple"]
+    values = dict(zip(case["names"], values["tuple"]))
+    values.update(taken)
+    master = {"result": {"tuple": [
+        label, {"tuple": [values[n] for n in case["names"]]}]}}
+    return same_outcome(master, branch) or any(
+        predicate(case, master, branch) for _name, predicate in RULES
+        if predicate is not rule)
+
+
+def rule_arm_capture_unbound(case, master, branch):
+    """
+    A match arm's root capture of elements of a pair spine, one or a
+    span of them, carries no binding: some variable that differs is
+    master's value with the variable's name removed as the binding of
+    its Datums, and with each such variable taken as this tree's, the
+    outcomes agree or another rule explains them
+    """
+
+    found = differing_variables(case, master, branch)
+    if not found:
+        return False
+    taken = {
+        name: got for name, value, got in found[1]
+        if without_binding(value, name) == got}
+    return bool(taken) and explained_with(
+        case, master, branch, taken, rule_arm_capture_unbound)
+
+
+def rule_failed_attempt_stored(case, master, branch):
+    """
+    A missed arm, or a failed alternative in the hit arm, leaves the
+    variables it stored: some variable that differs is unwritten on
+    master (unset or empty) and holds a value on this tree, and belongs
+    to an arm that missed, or to the hit arm when that arm holds an
+    alternative (a ONEOF or OPTIONAL); with each such variable taken as
+    this tree's, the outcomes agree or another rule explains them
+    """
+
+    found = differing_variables(case, master, branch)
+    if not found:
+        return False
+    label, differing = found
+    hit = len(case["arms"]) + 1 if label == "miss" \
+        else int(label[len("arm"):])
+    taken = {}
+    for name, value, got in differing:
+        if value not in (UNSET, EMPTY) or got in (UNSET, EMPTY):
+            continue
+        owner = int(case["owners"][name][len("arm"):])
+        if owner < hit or (owner == hit and any(
+                node[0] in ("ONEOF", "OPT")
+                for node in spec_nodes(case["arms"][owner - 1]))):
+            taken[name] = got
+    return bool(taken) and explained_with(
+        case, master, branch, taken, rule_failed_attempt_stored)
 
 
 def rule_empty_slot_left(case, master, branch):
     """
-    A hit leaves the variable of an empty slot as it was
+    A hit leaves the variable of an empty slot as it was: every
+    variable that differs belongs to the hit arm, is empty on master
+    and is the unset marker on this tree
     """
 
-    return inline_variable_rule(case, master, branch, True)
+    found = differing_variables(case, master, branch)
+    if not found or not found[1]:
+        return False
+    label, differing = found
+    return all(
+        got == UNSET and value == EMPTY and case["owners"][name] == label
+        for name, value, got in differing)
 
 
 def rule_pair_literal_inline(case, master, branch):
@@ -1552,8 +1620,9 @@ RULES = (
     ("repeat_pass_dict", rule_repeat_pass_dict),
     ("same_reads_repeat_list", rule_same_reads_repeat_list),
     ("length_checked_first", rule_length_checked_first),
-    ("missed_arm_writes_nothing", rule_missed_arm_writes_nothing),
+    ("arm_capture_unbound", rule_arm_capture_unbound),
     ("empty_slot_left_as_was", rule_empty_slot_left),
+    ("failed_attempt_leaves_stores", rule_failed_attempt_stored),
 )
 
 

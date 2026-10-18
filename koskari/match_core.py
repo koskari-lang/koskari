@@ -28,11 +28,14 @@ widths and slot sets are computed in ascending index order and the
 cursor and scope facts a parent hands its children in descending
 order, without recursion.
 
-The emitter walks the nodes from the root. Every node runs against a
-cursor on the operand stack and leaves the stack as it found it on a
-hit and on a miss; every capture is stored into the mark of its scope
-on the stack. An instruction names a cursor, mark or items list by its
-depth under the top as the instruction finds the stack.
+The emitter walks the nodes from the root. A node on a cursor leaves
+the stack as it found it on a hit and on a miss. A single value whose
+pattern is one element test is tested in place, with no cursor. A
+capture is stored into the mark of its scope on the stack, except in a
+match arm, whose root scope has no mark: a root capture is stored into
+its variable as soon as its value is tested. An instruction names a
+cursor, mark or items list by its depth under the top as the
+instruction finds the stack.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -309,7 +312,9 @@ def check_shapes(nodes, widths, entry, arm):
     Refuse the shapes the widths alone decide: a REPEAT whose body may
     consume nothing, a count past FIELD_LIMIT, a FIELD value not one
     element wide, an APP or MAP value or an arm root whose width range
-    does not include 1, and a positional FIELD after a keyword FIELD
+    does not include 1, a positional FIELD after a keyword FIELD, and a
+    SAME in a match arm, whose root captures are variables, not slots
+    of a mark
 
     :raises ValueError: naming the node
     """
@@ -354,6 +359,11 @@ def check_shapes(nodes, widths, entry, arm):
                         f" after a keyword FIELD")
 
     if arm:
+        for i, node in enumerate(nodes):
+            if node[0] == 'SAME':
+                raise ValueError(
+                    f"SAME at node {i} is in a match arm, which does not"
+                    f" lower a back-reference")
         low, high = widths[entry]
         if low > 1 or high == 0:
             raise ValueError(
@@ -729,11 +739,12 @@ class Emitter:
     """
     The emission of one matcher's walk into a target: the pattern's
     tables and analysis, the position of the top stack entry the walk
-    pushed, the entry holding each open scope's mark, and the fail
-    blocks emitted after the walk. A stack entry is named by its
-    position from the bottom of the walk's entries, the first at 0; an
-    instruction names it by its depth under the top, the top's
-    position less the entry's
+    pushed, the entry holding each open scope's mark, the POPs not yet
+    emitted, and the fail blocks emitted after the walk. A stack entry
+    is named by its position from the bottom of the walk's entries, the
+    first at 0; an instruction names it by its depth under the top, the
+    top's position less the entry's. In a match arm the root scope has
+    no mark: its captures are stored into the arm's variables
     """
 
     def __init__(self, target, tables, atoms, arm=False):
@@ -755,8 +766,10 @@ class Emitter:
         self.entry = entry
         self.externs = [atoms.get(name) or symbol(name) for name in externs]
         self.analysis = analyse(tables, arm=arm)
+        self.frame = arm
         self.top = -1
         self.marks = {}
+        self.pops = 0
         self.blocks = []
         # the CAPTURE over each captured node: a GROUP stores its own
         # captures, and a REPEAT or REST leaves its value for the store
@@ -769,15 +782,30 @@ class Emitter:
     def op(self, opcode, *fields, effect=0):
         """
         Emit one instruction, its EXTRA fields padded to four, and
-        count its effect on the stack where it falls through
+        count its effect on the stack where it falls through. A POP is
+        held and merged with the POPs that follow it
         """
 
+        self.top += effect
+        if opcode is OpCode.POP:
+            self.pops += fields[0]
+            return
+        self.settle()
         if opcode.extra:
             arg = fields + (0,) * (4 - len(fields))
         else:
             arg = fields[0] if fields else 0
         self.target.instruction(opcode, arg)
-        self.top += effect
+
+
+    def settle(self):
+        """
+        Emit the POPs held since the last instruction
+        """
+
+        if self.pops:
+            self.target.instruction(OpCode.POP, self.pops)
+            self.pops = 0
 
 
     def place(self, label, top):
@@ -785,6 +813,7 @@ class Emitter:
         Emit a label that the stack reaches with its top entry at top
         """
 
+        self.settle()
         self.target.instruction(OpCode.LABEL, label)
         self.top = top
 
@@ -809,6 +838,7 @@ class Emitter:
         Emit the fail blocks recorded during the walk
         """
 
+        self.settle()
         for opcode, arg in self.blocks:
             self.target.instruction(opcode, arg)
         self.blocks.clear()
@@ -828,17 +858,25 @@ class Emitter:
             UNBOUNDED if high is None else high)
 
 
-    def store(self, slot, cur):
+    def store(self, slot, cur=None):
         """
-        Store the value on top of the stack into a slot's entry in the
-        mark of its scope; cur is the cursor the value came from
+        Store the value on top of the stack into a slot: a root slot of
+        a match arm by the store an assignment to its name emits, any
+        other into its entry in the mark of its scope. cur is the
+        cursor the value came from, None for a value tested in place
         """
 
-        scope = self.analysis.slot_scope[slot]
+        analysis = self.analysis
+        scope = analysis.slot_scope[slot]
+        index = analysis.slot_index[slot]
+        names = analysis.scopes[scope].names
+        if self.frame and scope == 0:
+            self.op(OpCode.VAR_STORE, symbol(names[index]), effect=-1)
+            return
+        # depth 0 is the value itself, so it names no cursor
         self.op(
-            OpCode.MATCH_STORE, self.top - self.marks[scope],
-            self.analysis.slot_index[slot], self.top - cur,
-            self.analysis.scopes[scope].names, effect=-1)
+            OpCode.MATCH_STORE, self.top - self.marks[scope], index,
+            0 if cur is None else self.top - cur, names, effect=-1)
 
 
     def value(self, sub, fail):
@@ -854,6 +892,211 @@ class Emitter:
         self.emit(sub, inner, fail)
         self.fits(inner, (0, 0), fail)
         self.op(OpCode.POP, 1, effect=-1)
+
+
+    def in_place(self, i):
+        """
+        Whether node i, in a single-value position, is tested on the
+        value with no cursor: one element test, under CAPTUREs and
+        one-child MATCHes only
+        """
+
+        node = self.nodes[i]
+        kind = node[0]
+        if kind in ELEMENT_KINDS:
+            return True
+        if kind == 'CAPTURE':
+            return node[2] == -1 or self.in_place(node[2])
+        return kind == 'MATCH' and len(node) == 2 and self.in_place(node[1])
+
+
+    def single(self, sub, miss, fail):
+        """
+        Match the value on top of the stack against sub, a single
+        value's pattern, consuming it on both exits: in place when sub
+        is one element test, which misses to miss, else on a cursor of
+        its own, which misses to fail with the cursor in the value's
+        place
+
+        :return: whether fail was used
+        """
+
+        if self.in_place(sub):
+            self.test(sub, miss, 'consume')
+            return False
+        self.value(sub, fail)
+        return True
+
+
+    def test(self, i, miss, mode):
+        """
+        Match node i, one element test under CAPTUREs and one-child
+        MATCHes, against the value on top of the stack, with no
+        cursor. mode is where the value is after the node: 'consume',
+        gone on a hit and on a miss; 'keep', gone on a hit and left on
+        a miss; 'hold', left on both
+        """
+
+        nodes = self.nodes
+        node = nodes[i]
+        kind = node[0]
+
+        if kind == 'MATCH':
+            self.test(node[1], miss, mode)
+
+        elif kind == 'CAPTURE':
+            slot, sub = node[1], node[2]
+            if sub == -1:
+                if mode == 'hold':
+                    self.op(OpCode.DUP, 1, effect=1)
+            elif mode == 'consume':
+                fail = self.target.label("match.capture")
+                self.test(sub, fail, 'hold')
+                self.fail(fail, 1, miss)
+            else:
+                self.test(sub, miss, 'hold')
+                if mode == 'hold':
+                    self.op(OpCode.DUP, 1, effect=1)
+            self.store(slot)
+
+        elif kind in ('CLASS', 'MAP'):
+            self.gate(i, miss, mode)
+
+        elif kind == 'TEST' and node[1] == 'ANY':
+            if mode != 'hold':
+                self.op(OpCode.POP, 1, effect=-1)
+
+        elif kind == 'SAME' and self.analysis.same[i] is None:
+            # no scope at its depth binds the name: always a miss
+            if mode == 'consume':
+                self.op(OpCode.POP, 1, effect=-1)
+            self.op(OpCode.JUMP, miss, effect=-1 if mode == 'keep' else 0)
+
+        else:
+            if mode != 'consume':
+                self.op(OpCode.DUP, 1, effect=1)
+            self.consume(i, miss)
+            if mode == 'keep':
+                self.op(OpCode.POP, 1, effect=-1)
+
+
+    def consume(self, i, miss):
+        """
+        Test the value on top of the stack against node i, a TEST other
+        than ANY, a resolved SAME, a FORM or an APP, consuming the
+        value on a hit and on a miss
+        """
+
+        analysis = self.analysis
+        node = self.nodes[i]
+        kind = node[0]
+
+        if kind == 'TEST':
+            test = node[1]
+            if test == 'LITERAL':
+                self.op(
+                    OpCode.MATCH_LITERAL, miss, self.consts[node[2]],
+                    effect=-1)
+            elif test == 'CORE':
+                self.op(OpCode.MATCH_CORE, miss, int(node[2]), effect=-1)
+            elif test == 'TYPE':
+                self.op(
+                    OpCode.MATCH_TYPE_VAR, miss, self.externs[node[2]],
+                    effect=-1)
+            else:
+                self.op(OpCode.CALL_VAR, self.externs[node[2]], 1)
+                self.op(OpCode.JUMP_FALSE, miss, effect=-1)
+
+        elif kind == 'SAME':
+            scope, index = analysis.same[i]
+            self.op(
+                OpCode.MATCH_SAME, miss, self.top - self.marks[scope],
+                index, effect=-1)
+
+        elif kind == 'FORM':
+            fail = self.target.label("match.form")
+            self.op(OpCode.MATCH_DESCEND, miss)
+            inner = self.top
+            self.fits(inner, analysis.form_fits[i], fail)
+            self.emit(node[1], inner, fail)
+            self.fits(inner, (0, 0), fail)
+            self.op(OpCode.POP, 1, effect=-1)
+            self.fail(fail, 1, miss)
+
+        else:
+            self.op(OpCode.CALL_VAR, self.externs[node[1]], 1)
+            if node[2] == -1:
+                self.op(OpCode.POP, 1, effect=-1)
+            else:
+                fail = self.target.label("match.app")
+                if self.single(node[2], miss, fail):
+                    self.fail(fail, 1, miss)
+
+
+    def gate(self, i, miss, mode):
+        """
+        A CLASS or MAP against the value on top of the stack, mode as
+        for test: the gate, then each field or entry value pushed over
+        the object and matched as a single value
+        """
+
+        nodes = self.nodes
+        node = nodes[i]
+        label = self.target.label
+        outer = label("match.gate") if mode == 'consume' else miss
+        inner = label("match.gate")
+        used = False
+
+        if node[0] == 'CLASS':
+            cls = self.externs[node[1]]
+            positional = sum(
+                1 for field in node[2:] if nodes[field][0] == 'FIELD_POS')
+            self.op(OpCode.DUP, 1, effect=1)
+            if positional:
+                # the __match_args__ count is checked before any field
+                # is read
+                self.op(
+                    OpCode.MATCH_CLASS_VAR, outer, cls, positional,
+                    effect=-1)
+            else:
+                self.op(OpCode.MATCH_TYPE_VAR, outer, cls, effect=-1)
+            position = 0
+            for field in node[2:]:
+                field = nodes[field]
+                if field[0] == 'FIELD_POS':
+                    self.op(
+                        OpCode.MATCH_FIELD_POS_VAR, outer, cls, position,
+                        effect=1)
+                    position += 1
+                else:
+                    self.op(OpCode.MATCH_FIELD_KW, outer, field[2], effect=1)
+                used = self.single(field[1], outer, inner) or used
+
+        else:
+            self.op(OpCode.MATCH_MAPPING, outer)
+            for entry in node[1:]:
+                entry = nodes[entry]
+                if entry[0] == 'MAP_ENTRY_CONST':
+                    self.op(
+                        OpCode.MATCH_KEY, outer, self.consts[entry[1]],
+                        effect=1)
+                else:
+                    self.op(
+                        OpCode.MATCH_KEY_VAR, outer, self.externs[entry[1]],
+                        effect=1)
+                if entry[2] == -1:
+                    self.op(OpCode.POP, 1, effect=-1)
+                else:
+                    used = self.single(entry[2], outer, inner) or used
+
+        if mode != 'hold':
+            self.op(OpCode.POP, 1, effect=-1)
+        if used and mode == 'consume':
+            self.fail(inner, 1, outer, 1, miss)
+        elif used:
+            self.fail(inner, 1, miss)
+        elif mode == 'consume':
+            self.fail(outer, 1, miss)
 
 
     def standalone(self):
@@ -894,42 +1137,39 @@ class Emitter:
         self.flush()
 
 
-    def arm(self, miss):
+    def arm(self, miss, guarded=False):
         """
-        The walk of a match arm over the subject on top of the stack,
-        which stays there: on a hit each filled root slot is written to
-        its variable by the store an assignment emits, and the walk
-        falls through; on a miss it jumps to miss writing nothing
+        The walk of a match arm over the subject on top of the stack.
+        Each root capture is stored into its variable, by the store an
+        assignment to its name emits, as soon as its value is tested;
+        a miss leaves what was stored. On a hit the walk falls through
+        with the subject consumed, or for a guarded arm kept; on a miss
+        it jumps to miss with the subject kept
 
         :return: a function the caller invokes where code after the
             arm's hit path is unreachable, emitting the arm's fail
-            blocks
+            blocks, or None when the arm has none
         """
 
-        names = self.analysis.scopes[0].names
-        fail = self.target.label("match.arm")
+        self.top = 0
+        if self.in_place(self.entry):
+            self.test(self.entry, miss, 'hold' if guarded else 'keep')
+        else:
+            fail = self.target.label("match.arm")
+            self.op(OpCode.DUP, 1, effect=1)
+            self.op(OpCode.MATCH_SINGLE)
+            cur = self.top
+            self.emit(self.entry, cur, fail)
+            self.fits(cur, (0, 0), fail)
+            self.op(OpCode.POP, 1, effect=-1)
+            if not guarded:
+                self.op(OpCode.POP, 1, effect=-1)
+            self.fail(fail, 1, miss)
+        self.settle()
 
-        self.op(OpCode.DUP, 1, effect=1)
-        self.op(OpCode.MATCH_SINGLE)
-        cur = self.top
-        self.op(OpCode.MATCH_SCOPE, self.top - cur, len(names), effect=1)
-        self.marks[0] = self.top
-        self.emit(self.entry, cur, fail)
-        self.fits(cur, (0, 0), fail)
-        for index, name in enumerate(names):
-            skip = self.target.label("match.unbound")
-            self.op(
-                OpCode.MATCH_LOAD, skip, self.top - self.marks[0], index,
-                effect=1)
-            self.op(OpCode.VAR_STORE, symbol(name), effect=-1)
-            self.place(skip, self.top)
-        self.op(OpCode.POP, 2, effect=-2)
-
-        def fail_blocks():
-            self.fail(fail, 2, miss)
-            self.flush()
-
-        return fail_blocks
+        if not self.blocks:
+            return None
+        return self.flush
 
 
     def emit(self, i, cur, miss):
@@ -951,106 +1191,13 @@ class Emitter:
         if i in analysis.fits:
             self.fits(cur, analysis.fits[i], miss)
 
-        if kind in ELEMENT_KINDS:
+        if kind == 'SAME' and analysis.same[i] is None:
+            # no scope at its depth binds the name: always a miss
+            self.op(OpCode.JUMP, miss)
+
+        elif kind in ELEMENT_KINDS:
             self.op(OpCode.MATCH_NEXT, miss, self.top - cur, effect=1)
-
-        if kind == 'TEST':
-            test = node[1]
-            if test == 'ANY':
-                self.op(OpCode.POP, 1, effect=-1)
-            elif test == 'LITERAL':
-                self.op(
-                    OpCode.MATCH_LITERAL, miss, self.consts[node[2]],
-                    effect=-1)
-            elif test == 'CORE':
-                self.op(OpCode.MATCH_CORE, miss, int(node[2]), effect=-1)
-            elif test == 'TYPE':
-                self.op(
-                    OpCode.MATCH_TYPE_VAR, miss, self.externs[node[2]],
-                    effect=-1)
-            else:
-                self.op(OpCode.CALL_VAR, self.externs[node[2]], 1)
-                self.op(OpCode.JUMP_FALSE, miss, effect=-1)
-
-        elif kind == 'SAME':
-            if analysis.same[i] is None:
-                # no scope at its depth binds the name: always a miss
-                self.op(OpCode.POP, 1, effect=-1)
-                self.op(OpCode.JUMP, miss)
-            else:
-                scope, index = analysis.same[i]
-                self.op(
-                    OpCode.MATCH_SAME, miss, self.top - self.marks[scope],
-                    index, effect=-1)
-
-        elif kind == 'FORM':
-            fail = label("match.form")
-            self.op(OpCode.MATCH_DESCEND, miss)
-            inner = self.top
-            self.fits(inner, analysis.form_fits[i], fail)
-            self.emit(node[1], inner, fail)
-            self.fits(inner, (0, 0), fail)
-            self.op(OpCode.POP, 1, effect=-1)
-            self.fail(fail, 1, miss)
-
-        elif kind == 'APP':
-            self.op(OpCode.CALL_VAR, self.externs[node[1]], 1)
-            if node[2] == -1:
-                self.op(OpCode.POP, 1, effect=-1)
-            else:
-                fail = label("match.app")
-                self.value(node[2], fail)
-                self.fail(fail, 1, miss)
-
-        elif kind == 'CLASS':
-            cls = self.externs[node[1]]
-            outer = label("match.class")
-            inner = label("match.class")
-            positional = sum(
-                1 for field in node[2:] if nodes[field][0] == 'FIELD_POS')
-            self.op(OpCode.DUP, 1, effect=1)
-            if positional:
-                # the __match_args__ count is checked before any field
-                # is read
-                self.op(
-                    OpCode.MATCH_CLASS_VAR, outer, cls, positional,
-                    effect=-1)
-            else:
-                self.op(OpCode.MATCH_TYPE_VAR, outer, cls, effect=-1)
-            position = 0
-            for field in node[2:]:
-                field = nodes[field]
-                if field[0] == 'FIELD_POS':
-                    self.op(
-                        OpCode.MATCH_FIELD_POS_VAR, outer, cls, position,
-                        effect=1)
-                    position += 1
-                else:
-                    self.op(OpCode.MATCH_FIELD_KW, outer, field[2], effect=1)
-                self.value(field[1], inner)
-            self.op(OpCode.POP, 1, effect=-1)
-            self.fail(inner, 1, outer, 1, miss)
-
-        elif kind == 'MAP':
-            outer = label("match.map")
-            inner = label("match.map")
-            self.op(OpCode.MATCH_MAPPING, outer)
-            for entry in node[1:]:
-                entry = nodes[entry]
-                if entry[0] == 'MAP_ENTRY_CONST':
-                    self.op(
-                        OpCode.MATCH_KEY, outer, self.consts[entry[1]],
-                        effect=1)
-                else:
-                    self.op(
-                        OpCode.MATCH_KEY_VAR, outer, self.externs[entry[1]],
-                        effect=1)
-                if entry[2] == -1:
-                    self.op(OpCode.POP, 1, effect=-1)
-                else:
-                    self.value(entry[2], inner)
-            self.op(OpCode.POP, 1, effect=-1)
-            self.fail(inner, 1, outer, 1, miss)
+            self.test(i, miss, 'consume')
 
         elif kind == 'MATCH' or (kind == 'GROUP'
                                  and i not in analysis.group_scope):
@@ -1104,7 +1251,10 @@ class Emitter:
                 self.fail(fail, 1, miss)
 
         elif kind == 'ONEOF':
-            outer = self.marks[analysis.node_scope[i]]
+            # a failed branch empties the slots it could have bound,
+            # but for an arm's root scope, whose variables keep what
+            # the branch stored
+            scope = analysis.node_scope[i]
             done = label("match.oneof")
             self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
             for branch in node[1:]:
@@ -1114,15 +1264,12 @@ class Emitter:
                 self.op(OpCode.JUMP, done)
                 self.place(nxt, start)
                 self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
-                cleared = analysis.branch_slots.get(branch)
-                if cleared:
-                    self.op(OpCode.MATCH_CLEAR, self.top - outer, cleared)
+                self.clear(scope, branch)
             self.op(OpCode.POP, 1, effect=-1)
             self.op(OpCode.JUMP, miss)
             self.place(done, start - 1)
 
         elif kind == 'OPTIONAL':
-            outer = self.marks[analysis.node_scope[i]]
             back = label("match.opt")
             done = label("match.opt")
             self.op(OpCode.MATCH_SCOPE, self.top - cur, 0, effect=1)
@@ -1131,9 +1278,7 @@ class Emitter:
             self.op(OpCode.JUMP, done)
             self.place(back, start)
             self.op(OpCode.MATCH_RESET, self.top - cur, self.top - start)
-            cleared = analysis.branch_slots.get(node[1])
-            if cleared:
-                self.op(OpCode.MATCH_CLEAR, self.top - outer, cleared)
+            self.clear(analysis.node_scope[i], node[1])
             self.op(OpCode.POP, 1, effect=-1)
             self.place(done, start - 1)
 
@@ -1161,6 +1306,19 @@ class Emitter:
             raise ValueError(
                 f"matcher node kind {kind!r} at node {i} is not on a"
                 f" cursor")
+
+
+    def clear(self, scope, branch):
+        """
+        Empty the slots a failed alternative could have bound in the
+        mark of scope; an arm's root scope has no mark, and its
+        variables keep what the alternative stored
+        """
+
+        cleared = self.analysis.branch_slots.get(branch)
+        if cleared and not (self.frame and scope == 0):
+            self.op(
+                OpCode.MATCH_CLEAR, self.top - self.marks[scope], cleared)
 
 
     def emit_repeat(self, i, cur, miss):
@@ -1225,13 +1383,36 @@ class Emitter:
         if node[2]:
             self.op(OpCode.MATCH_MIN, fail, self.top - items, node[2])
         if not captured:
-            if names:
+            if names and self.frame and analysis.node_scope[i] == 0:
+                self.store_columns(i, cur, items)
+            elif names:
                 outer = self.marks[analysis.node_scope[i]]
                 self.op(
                     OpCode.MATCH_COLUMNS, self.top - items,
                     self.top - outer, names, analysis.columns[i])
             self.op(OpCode.POP, 1, effect=-1)
         self.fail(fail, 1, miss)
+
+
+    def store_columns(self, i, cur, items):
+        """
+        Store the columns of an uncaptured REPEAT into the variables of
+        a match arm's root scope: rolled up in a mark of their own,
+        then each loaded and stored by the store an assignment to its
+        name emits
+        """
+
+        names = self.analysis.scopes[self.analysis.pass_scope[i]].names
+        self.op(OpCode.MATCH_SCOPE, self.top - cur, len(names), effect=1)
+        self.op(
+            OpCode.MATCH_COLUMNS, self.top - items, 0, names,
+            tuple(range(len(names))))
+        for index, name in enumerate(names):
+            skip = self.target.label("match.unbound")
+            self.op(OpCode.MATCH_LOAD, skip, 0, index, effect=1)
+            self.op(OpCode.VAR_STORE, symbol(name), effect=-1)
+            self.place(skip, self.top)
+        self.op(OpCode.POP, 1, effect=-1)
 
 
 # The end.

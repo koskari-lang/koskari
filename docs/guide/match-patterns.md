@@ -182,8 +182,9 @@ Captured names stay bound when a guard fails, as after Python's
 - Captured names are bound in the enclosing scope and stay visible after
   the `match` form, like every other binding and like Python's `match`.
   Arms are not scopes.
-- An arm that does not match writes no variable, even when part of its
-  pattern matched before the miss.
+- A capture is stored into its variable as the pattern walks the value,
+  so an arm that misses after binding some captures leaves them bound, as
+  does an `(or ...)` alternative that misses after binding.
 - Captures are sparse: a capture that did not bind, under an `OPTIONAL`
   that did not fire, leaves its variable as it was, and a variable never
   bound raises `NameError` when read. Bind a default before the match,

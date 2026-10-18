@@ -130,12 +130,14 @@ class FunctionTarget:
         return Function(code, base_ns, FormalsSpec((subject,)))
 
 
-def lower_clause(compiler, fragment, tables, atoms, miss):
+def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
     """
-    Emit the walk of a match arm over the subject on top of the stack,
-    which stays there: on a hit each filled root slot is written to
-    its variable and the walk falls through, on a miss it jumps to miss
-    writing nothing. Externs are read from the atoms the pattern wrote.
+    Emit the walk of a match arm over the subject on top of the stack.
+    Each root capture is stored into its variable as soon as its value
+    is tested, and a miss leaves what was stored. On a hit the walk
+    falls through with the subject consumed, or for a guarded arm
+    kept; on a miss it jumps to miss with the subject kept. Externs
+    are read from the atoms the pattern wrote.
 
     :param compiler: the compiler, for labels
     :param fragment: the fragment to emit into
@@ -144,8 +146,10 @@ def lower_clause(compiler, fragment, tables, atoms, miss):
     :param atoms: the extern names mapped to the atoms the pattern
         wrote them as
     :param miss: the arm's miss label
+    :param guarded: whether a guard follows, which needs the subject
     :return: a function the caller invokes where code after the arm's
-        hit path is unreachable, emitting the arm's fail blocks
+        hit path is unreachable, emitting the arm's fail blocks, or
+        None when the arm has none
     :raises TypeError: when a LITERAL value or a MAP entry key is not
         a constant the pool holds
     :raises ValueError: when the pattern is one the core refuses
@@ -153,7 +157,7 @@ def lower_clause(compiler, fragment, tables, atoms, miss):
 
     emitter = Emitter(
         FragmentTarget(compiler, fragment), tables, atoms, arm=True)
-    return emitter.arm(miss)
+    return emitter.arm(miss, guarded)
 
 
 def lower_matcher(target, tables, atoms):

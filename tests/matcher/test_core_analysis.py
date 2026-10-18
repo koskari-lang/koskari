@@ -135,6 +135,14 @@ class TestRefusals(unittest.TestCase):
                 analyse(tables, arm=True)
 
 
+    def test_same_in_an_arm(self):
+        tables = MatchCompiler().lower(MATCH(
+            FORM(MATCH(CAPTURE("x"), SAME("x")))))
+        analyse(tables)
+        with self.assertRaisesRegex(ValueError, "SAME at node 1"):
+            analyse(tables, arm=True)
+
+
     def test_positional_field_after_keyword(self):
         tables = MatchCompiler().lower(MATCH(CLASS(
             "Pt", FIELD(TEST_ANY(), name="y"), FIELD(TEST_ANY()))))

@@ -93,7 +93,10 @@ Spine composites act on the cursor:
 
 A whole matcher is a root that reaches the end of its subject. A single
 value -- a `match` arm's subject, an APP result, a FIELD or MAP value --
-is a one-element subject walked through a cursor like any spine.
+is a one-element subject walked through a cursor like any spine, unless
+its pattern is one element test (TEST, SAME, FORM, APP, CLASS or MAP,
+under CAPTUREs and one-child MATCHes only), which tests the value in
+place with no cursor.
 
 ## Semantics
 
@@ -130,11 +133,16 @@ is a one-element subject walked through a cursor like any spine.
     `depth`-th enclosing scope. The branches of a ONEOF share the
     enclosing scope, so a SAME after the ONEOF reads a slot an earlier
     branch bound, and misses when the slot is empty.
-  - Nothing outside the stack is written during a walk. A resumed
-    continuation sees its own captures.
-- **Inline arms.** On a hit, the root scope's filled slots are written
-  to the arm's variables; an empty slot leaves its variable as it was.
-  A missed arm writes no variable.
+  - Nothing outside the stack is written during a standalone walk or
+    into a mark. A resumed continuation sees its own captures.
+- **Inline arms.** An arm's root scope has no mark: each root capture
+  is stored into the arm's variable by the compiler's ordinary store
+  for that name as soon as its value is tested, including a capture
+  under a cursor. A missed arm, or a failed alternative, leaves what it
+  stored (Python's semantics); an untouched slot leaves its variable as
+  it was. A named group or REPEAT rolls up in its own mark and its
+  finished value is stored into the variable. A root capture of a pair
+  spine's element carries no binding.
 
 ## Refusals at build
 
@@ -153,7 +161,11 @@ is a one-element subject walked through a cursor like any spine.
 - a node of variable width after a REST on the same cursor (a REST's
   length is the remaining elements less a fixed suffix);
 - a CAPTURE anywhere in a NOT subtree;
-- (no SAME is refused: a SAME whose depth passes the root, or whose
+- a SAME in a `match` arm (the case dialect writes none; its root
+  captures are variables, which MATCH_SAME cannot read, and
+  CHECK_COMPARE EQ does not give MATCH_SAME's answers on spine Datums,
+  identical nan or a user Datum against a raw value);
+- (no other SAME is refused: a SAME whose depth passes the root, or whose
   resolved scope never binds the name, builds and always misses, as on
   master)
 
@@ -187,13 +199,14 @@ is a one-element subject walked through a cursor like any spine.
   is stored into the parent scope's slot for the group.
 - A REPEAT pass with slots builds a dict from its filled entries (over
   any subject, as on master) and appends it to the REPEAT's items list.
-- The root's captures are the standalone matcher's result, or are
-  written to an inline arm's variables.
+- The root's captures are the standalone matcher's result. An inline
+  arm's root scope has no mark: its captures are stored into the arm's
+  variables as the walk tests them.
 - Popping a mark discards its scope's captures.
 
-The stack holds the marks and the marks hold the captures: the frame
-namespace is not written during the walk, a store is one indexed write,
-and a miss discards by popping.
+The stack holds the marks and the marks hold the captures: a store is
+one indexed write, and a miss discards by popping. An inline arm's root
+captures are the exception; they are frame variables.
 
 ## Instructions
 
@@ -214,10 +227,10 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_RESET cur m` | -- | moves `cur` back to `m`'s position |
 | `MATCH_AT m` | -> `e` | the element at `m`'s position, as `NEXT` gave it |
 | `MATCH_SPAN m cur` | -> `span` | the span from `m`'s position to `cur` |
-| `MATCH_STORE s i cur` | `v` -> | stores into slot `i` of the mark at `s`; a Datum from the spine cursor at `cur` gets the slot's name as its binding |
+| `MATCH_STORE s i cur` | `v` -> | stores into slot `i` of the mark at `s`; a Datum from the spine cursor at `cur` gets the slot's name as its binding; `cur` 0 names no cursor (a value tested in place) and sets no binding |
 | `MATCH_CLEAR s slots` | -- | empties the slots (a CONST tuple of indices) |
 | `MATCH_CAPTURES s cur names` | -> `caps` | a dict, or a DatumFrame over a pair spine |
-| `MATCH_LOAD s i skip` | -> `v` | slot `i` of the mark at `s`; jumps to `skip`, pushing nothing, when the slot is empty |
+| `MATCH_LOAD s i skip` | -> `v` | slot `i` of the mark at `s`; jumps to `skip`, pushing nothing, when the slot is empty; reads an uncaptured REPEAT's columns in an inline arm |
 | `MATCH_ITEMS` | -> `items` | an empty list |
 | `MATCH_APPEND items` | `v` -> | appends |
 | `MATCH_MIN items n miss` | -- | misses below `n` items |
@@ -303,23 +316,46 @@ Roots:
 standalone        VAR subject; DESCEND m0; FITS c min max f1; SCOPE c k
                   <root on c> (-> f2); FITS c 0 0 f2; CAPTURES s c names; RETURN
                   f2: POP; f1: POP; m0: CONST None; RETURN
-inline arm        DUP; SINGLE; SCOPE c k
-                  <root on c> (-> f2); FITS c 0 0 f2
-                  per root slot i: LOAD s i skip_i; <store to its variable>; skip_i:
-                  POP 2
+inline arm, one element test at the root, tested in place:
+                  [int]          DUP; CORE int next; POP
+                  [(x :: int)]   DUP; CORE int next; STORE_VAR x
+                  [Point[a b]]   DUP; CLASS_VAR Point 2 next; FIELD_POS next 0;
+                                 STORE_VAR a; FIELD_POS next 1; STORE_VAR b; POP
+inline arm, any other root, on a cursor:
+                  DUP; SINGLE; <root on c> (-> f); FITS c 0 0 f; POP 2
                   <arm body>
-                  f2: POP; POP; JUMP next_arm
+                  f: POP; JUMP next_arm
+uncaptured REPEAT with columns at the root:
+                  ... MIN items n f; SCOPE cur k; COLUMNS items 0 names (0..k-1)
+                  per name i: LOAD skip_i 0 i; STORE_VAR name; skip_i:
+                  POP 2
 ```
 
-The subject stays on the stack across arms (`DUP`). Each root slot is
-written by an ordinary store the compiler emits for that name -- the
-store an assignment in the arm would emit -- so it follows that
+The subject stays on the stack across arms. An arm consumes it on a
+hit and leaves it on a miss; a guarded arm keeps it on a hit (a root
+tested in place in hold mode: `[m :: int when ...]` is `DUP; CORE int
+next; DUP; STORE_VAR m`), and the special pops it after the guard
+passes. The special's POP moved into the arm: the arm pops only when
+its last step did not consume the subject. An in-place value is in
+one of three modes: consumed on both exits (an APP result, a FIELD or
+MAP value, an element pulled by NEXT), consumed on a hit and kept on a
+miss (an unguarded arm root), or kept on both (a guarded arm root).
+`STORE_VAR` is the ordinary store the compiler emits for that name --
+the store an assignment in the arm would emit -- so it follows that
 variable's path (a fast local, a cell, a module variable) and
-`convert_fast` treats it as any other store. Only root slots become
-variables; names inside a group or REPEAT are reached through the
-group's or REPEAT's value. A named
-group's variable receives its dict or DatumFrame; a REPEAT's variable
-receives its items list.
+`convert_fast` treats it as any other store; it is emitted as soon as
+the capture's value is tested, under a cursor too (`#[a b *: rest]`
+is `DUP; DESCEND next; FITS c' 2 0xFFFF f; NEXT c' f; STORE_VAR a; NEXT
+c' f; STORE_VAR b; TAIL c' 0 0 f; STORE_VAR rest; FITS c' 0 0 f; POP
+2`). There is no root mark: no SCOPE, STORE, LOAD or CLEAR for a root
+slot, and a failed alternative's CLEAR is not emitted for the root.
+Only root slots become variables; names inside a group or REPEAT are
+reached through the group's or REPEAT's value. A named group's
+variable receives its dict or DatumFrame; a REPEAT's variable
+receives its items list. A value tested in place inside a mark scope
+is stored by `STORE s i 0`. The emitter merges adjacent POPs into one
+POP n, and the special emits `JUMP hit` over an arm's fail blocks only
+when it has some.
 
 NOT is a try on an unbounded copy of the cursor and an inversion; at
 the end of the subject `NEXT` misses inside the sub-pattern, so the end
@@ -340,8 +376,12 @@ for these deliberate changes:
 - the refusals listed above;
 - an element is read when it is pulled (a car edited ahead of the
   cursor is read as edited);
-- a missed inline arm writes no variable, and a hit leaves the
-  variable of an empty slot as it was;
+- a missed inline arm, or a failed alternative in an arm, may leave
+  variables it stored, and a hit leaves the variable of an empty slot
+  as it was;
+- an inline arm's root capture of an element of a pair spine, or of
+  a span of them, carries no binding (master gave each Datum the
+  slot's name);
 - a standalone matcher's root subject that is not a sequence misses
   (master raised TypeError, or iterated a mapping's keys);
 - a standalone matcher treats a str subject as an atom, as `match`

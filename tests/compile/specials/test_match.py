@@ -497,13 +497,13 @@ class TestMatchSpecial(SpecialsTestCase):
 
 class TestMatchFailedCaptures(SpecialsTestCase):
     """
-    A missed arm writes no variable, and a hit writes only the slots
-    it filled: a binding of a capture name made before the match keeps
-    its value through a miss and through a hit that leaves the name's
-    slot empty
+    A capture is stored into its variable as soon as its value is
+    tested: an arm that misses, or an or-alternative that misses, after
+    storing a capture leaves its value, and a capture that never bound
+    leaves a binding of its name made before the match as it was
     """
 
-    async def test_plain_miss_writes_no_variable(self):
+    async def test_missed_arm_leaves_what_it_stored(self):
         src = """
         (let [[x 100]]
           (match data
@@ -511,10 +511,10 @@ class TestMatchFailedCaptures(SpecialsTestCase):
             [else: x]))
         """
         expr, mod = self.compile_expr(src, data=(5, 3))
-        self.assertEqual(await expr(), 100)
+        self.assertEqual(await expr(), 5)
 
 
-    async def test_failed_alternative_leaves_the_variable_as_it_was(self):
+    async def test_failed_alternative_leaves_what_it_stored(self):
         src = """
         (let [[x 100]]
           (match data
@@ -522,9 +522,9 @@ class TestMatchFailedCaptures(SpecialsTestCase):
             [else: x]))
         """
         expr, mod = self.compile_expr(src, data=(5, 2))
-        self.assertEqual(await expr(), 100)
+        self.assertEqual(await expr(), 5)
         expr, mod = self.compile_expr(src, data=(5, 3))
-        self.assertEqual(await expr(), 100)
+        self.assertEqual(await expr(), 5)
 
 
     async def test_unfired_optional_leaves_the_variable_as_it_was(self):

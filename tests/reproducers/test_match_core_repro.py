@@ -150,8 +150,8 @@ class TestResumedContinuations(unittest.IsolatedAsyncioTestCase):
 class TestModuleVariables(unittest.IsolatedAsyncioTestCase):
     """
     A module variable named like a capture keeps its value through an
-    OPTIONAL that did not fire, a missed arm, and an or branch that
-    did not bind it
+    OPTIONAL that did not fire and a missed arm that did not store it,
+    and holds what an or branch stored before it missed
     """
 
     async def test_unbound_slots_leave_module_variables(self):
@@ -165,7 +165,7 @@ class TestModuleVariables(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mod["missed"], "else")
         self.assertEqual(mod["after-missed"], "default")
         self.assertEqual(mod["or-hit"], "hit")
-        self.assertEqual(mod["after-or-hit"], "default")
+        self.assertEqual(mod["after-or-hit"], 5)
 
 
 # The end.

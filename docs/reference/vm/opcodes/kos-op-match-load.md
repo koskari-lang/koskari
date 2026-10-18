@@ -5,6 +5,6 @@
   slot is empty.
 - **Semantics**: Push the value in slot `a2` of the mark at depth `a1`. An
   index outside the mark's slots raises `SystemError`.
-- **Compiler form:** Emitted by the match compiler when a `match` arm matches,
-  once per captured name, ahead of the store that writes the value to its
-  variable; the jump skips that store.
+- **Compiler form:** Emitted by the match compiler after an uncaptured repeat
+  in a `match` arm, once per name of the repeat, ahead of the store that
+  writes the list of its values to the variable; the jump skips that store.
