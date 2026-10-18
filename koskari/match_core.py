@@ -765,10 +765,12 @@ class Emitter:
     are stored into the arm's variables
     """
 
-    def __init__(self, target, tables, atoms, arm=False):
+    def __init__(self, target, tables, analysis, atoms, arm=False):
         """
         :param target: a FragmentTarget
         :param tables: (slots, externs, consts, nodes, entry)
+        :param analysis: the Analysis analyse made of the tables, with
+            the same arm
         :param atoms: the extern names mapped to the atoms the pattern
             wrote them as
         :param arm: whether the root is a match arm's single value
@@ -783,7 +785,7 @@ class Emitter:
         self.consts = consts
         self.entry = entry
         self.externs = [atoms.get(name) or symbol(name) for name in externs]
-        self.analysis = analyse(tables, arm=arm)
+        self.analysis = analysis
         self.frame = arm
         self.top = -1
         self.marks = {}

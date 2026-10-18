@@ -117,7 +117,8 @@ def special_match(compiler, caps):
                 raise SpecialError(
                     "else: must be last clause", pattern,
                     position=clause_pos)
-            arms.append((None, None, None, None, None, body, clause_pos))
+            arms.append(
+                (None, None, None, None, None, None, body, clause_pos))
             break
 
         guard_kw = None
@@ -142,8 +143,9 @@ def special_match(compiler, caps):
         # a group or REPEAT is reached through its value
         bound.extend(analysis.scopes[0].names)
         atoms = extern_atoms(pattern, tables[1])
-        arms.append(
-            (pattern, tables, atoms, guard_kw, guard_expr, body, clause_pos))
+        arms.append((
+            pattern, tables, analysis, atoms, guard_kw, guard_expr, body,
+            clause_pos))
 
     def request_externs(target):
         """
@@ -155,7 +157,7 @@ def special_match(compiler, caps):
         pattern wrote, so a name a template binds resolves to it
         """
 
-        for _pattern, tables, atoms, *_rest in arms:
+        for _pattern, tables, _analysis, atoms, *_rest in arms:
             if tables is None:
                 continue
             for extern in tables[1]:
@@ -177,11 +179,12 @@ def special_match(compiler, caps):
             after the arm's body, or None when it has none
         """
 
-        pattern, tables, atoms, guard_kw, guard_expr, _body, clause_pos = arm
+        (_pattern, tables, analysis, atoms, guard_kw, guard_expr, _body,
+         clause_pos) = arm
         target.position(clause_pos)
         guarded = guard_kw is not None
         fail_entries = lower_clause(
-            compiler, target, tables, atoms, next_label, guarded)
+            compiler, target, tables, analysis, atoms, next_label, guarded)
         if guarded:
             # a guarded arm's walk keeps the subject for the guard's
             # miss; the pass pops it
@@ -199,7 +202,8 @@ def special_match(compiler, caps):
     request_externs(fragment)
     fragment.merge(compiler.full_compile(caps["subject"].datum))
     for arm in arms:
-        pattern, tables, atoms, guard_kw, guard_expr, body, clause_pos = arm
+        (_pattern, tables, _analysis, _atoms, _guard_kw, _guard_expr, body,
+         clause_pos) = arm
         if tables is None:
             fragment.position(clause_pos)
             fragment.instruction(OpCode.POP, 1)

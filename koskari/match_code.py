@@ -61,7 +61,14 @@ class FragmentTarget:
         return self.compiler.gen_label(text)
 
 
-def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
+def lower_clause(
+        compiler,
+        fragment,
+        tables,
+        analysis,
+        atoms,
+        miss,
+        guarded=False):
     """
     Emit the walk of a match arm over the subject on top of the stack.
     Each root capture is stored into its variable as soon as its value
@@ -74,6 +81,7 @@ def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
     :param fragment: the fragment to emit into
     :param tables: the slots, externs, consts, nodes and entry
         MatchCompiler lowered the pattern to
+    :param analysis: the Analysis analyse made of the tables as an arm
     :param atoms: the extern names mapped to the atoms the pattern
         wrote them as
     :param miss: the arm's miss label
@@ -87,11 +95,12 @@ def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
     """
 
     emitter = Emitter(
-        FragmentTarget(compiler, fragment), tables, atoms, arm=True)
+        FragmentTarget(compiler, fragment), tables, analysis, atoms,
+        arm=True)
     return emitter.arm(miss, guarded)
 
 
-def lower_matcher(target, tables, atoms):
+def lower_matcher(target, tables, analysis, atoms):
     """
     Emit a whole matcher as a function body into a fragment target:
     the subject formal, the target's subject gensym, declared by the
@@ -103,10 +112,10 @@ def lower_matcher(target, tables, atoms):
     :raises ValueError: when the pattern is one the core refuses
     """
 
-    Emitter(target, tables, atoms).standalone()
+    Emitter(target, tables, analysis, atoms).standalone()
 
 
-def matcher_body(compiler, tables, atoms, name):
+def matcher_body(compiler, tables, analysis, atoms, name):
     """
     A whole matcher lowered into a function body fragment of compiler:
     every extern the pattern names requested under the atom the pattern
@@ -116,6 +125,7 @@ def matcher_body(compiler, tables, atoms, name):
     :param compiler: the compiler the body is a fragment of
     :param tables: the slots, externs, consts, nodes and entry
         MatchCompiler lowered the pattern to
+    :param analysis: the Analysis analyse made of the tables
     :param atoms: the extern names mapped to the atoms the pattern
         wrote them as
     :param name: the body's name
@@ -133,7 +143,8 @@ def matcher_body(compiler, tables, atoms, name):
     subject = gensym()
     body.declare_var(subject)
     with compiler.resolution_scope(body, function=True):
-        lower_matcher(FragmentTarget(compiler, body, subject), tables, atoms)
+        lower_matcher(
+            FragmentTarget(compiler, body, subject), tables, analysis, atoms)
     return body, subject
 
 
@@ -143,7 +154,7 @@ def matcher_body(compiler, tables, atoms, name):
 standalone_compiler = None
 
 
-def compile_match_function(tables, base_ns):
+def compile_match_function(tables, analysis, base_ns):
     """
     The pattern's tables as a Function over base_ns: one positional
     formal, the subject; the externs closure names resolved in base_ns;
@@ -151,6 +162,7 @@ def compile_match_function(tables, base_ns):
 
     :param tables: the slots, externs, consts, nodes and entry
         MatchCompiler lowered the pattern to
+    :param analysis: the Analysis analyse made of the tables
     :param base_ns: the namespace the externs resolve in
     """
 
@@ -161,7 +173,7 @@ def compile_match_function(tables, base_ns):
         standalone_compiler = Compiler.from_pragma(
             "matcher", ModuleNamespace("matcher", {}))
     compiler = standalone_compiler
-    body, subject = matcher_body(compiler, tables, {}, "matcher")
+    body, subject = matcher_body(compiler, tables, analysis, {}, "matcher")
     code = compiler.complete_function(body, ())
     return Function(code, base_ns, FormalsSpec((str(subject),)))
 

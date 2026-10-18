@@ -383,13 +383,13 @@ class Pattern(Protocol):
         """
 
         tables = MatchCompiler().lower(self)
-        analyse(tables)
+        analysis = analyse(tables)
         externs = dict(externs or {})
         for name in tables[1]:
             if name not in externs:
                 raise TypeError(f"matcher missing extern binding: {name!r}")
         return compile_match_function(
-            tables, ModuleNamespace("matcher", externs))
+            tables, analysis, ModuleNamespace("matcher", externs))
 
 
     def match(self, subject, /, **externs):

@@ -209,7 +209,8 @@ class TestRefusals(unittest.TestCase):
         self.assertEqual(analyse(tables).same, {1: None})
 
         matcher = demand(
-            compile_match_function(tables, ModuleNamespace("probe", {})))
+            compile_match_function(
+                tables, analyse(tables), ModuleNamespace("probe", {})))
         self.assertIsNone(matcher((1, 1)))
         self.assertIsNone(matcher((1, 2)))
 

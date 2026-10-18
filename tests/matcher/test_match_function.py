@@ -30,6 +30,7 @@ from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, OpCode, cons, demand, keyword, nil,
     setcdr, symbol)
 from koskari.match_code import compile_match_function
+from koskari.match_core import analyse
 from koskari.matcher import (
     APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
     GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
@@ -494,7 +495,8 @@ def local_names(pattern):
     """
 
     frozen = MatchCompiler().lower(pattern)
-    fn = compile_match_function(frozen, ModuleNamespace("probe", {}))
+    fn = compile_match_function(
+        frozen, analyse(frozen), ModuleNamespace("probe", {}))
     return [str(name) for name in fn.code.namespace_spec.local_syms[1:]]
 
 
