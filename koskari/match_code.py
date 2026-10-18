@@ -14,30 +14,27 @@
 """
 koskari.match_code
 
-The targets the matcher core emits a pattern's walk into, and the
-entry points that lower a pattern's tables through it. The inline
-target emits into a fragment of the standard compiler, for a match
-arm or for a whole matcher as a lambda body. The standalone target
-builds a Function of its own from the instructions, with no compiler
-in reach, whose result is the captures.
+The target the matcher core emits a pattern's walk into, a fragment
+of the standard compiler, and the entry points that lower a pattern's
+tables through it: a match arm, a whole matcher as a lambda body of
+the module defining it, and a whole matcher built from Python, whose
+body one shared compiler completes.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
 
-from .lib import (
-    Code, FormalsSpec, Function, NamespaceSpec, OpCode, OpStyle, gensym,
-    symbol)
+from .lib import FormalsSpec, Function, ModuleNamespace, gensym, symbol
 from .match_core import Emitter
 
 
 __all__ = (
     'FragmentTarget',
-    'FunctionTarget',
     'compile_match_function',
     'lower_clause',
     'lower_matcher',
+    'matcher_body',
 )
 
 
@@ -62,72 +59,6 @@ class FragmentTarget:
 
     def label(self, text):
         return self.compiler.gen_label(text)
-
-
-# the simple-style VAR instructions the standalone target lowers to
-# their FAST twins, beside the MATCH_* twins named by their spelling
-SIMPLE_TWINS = {
-    OpCode.VAR: OpCode.FAST,
-    OpCode.CALL_VAR: OpCode.CALL_FAST,
-}
-
-
-class FunctionTarget:
-    """
-    The standalone target: an instruction list and labels of its own,
-    built into a Function over a namespace the externs resolve in. The
-    subject, its one formal and its one local, is a gensym minted here
-    """
-
-    def __init__(self, name):
-        self.name = name
-        self.subject = gensym()
-        self.instructions = []
-        self.counter = 0
-
-
-    def instruction(self, op, arg):
-        self.instructions.append((op, arg))
-
-
-    def label(self, text):
-        self.counter += 1
-        return f"{text}_{self.counter:x}"
-
-
-    def build(self, externs, base_ns):
-        """
-        The Function: the subject its one formal and its one local, the
-        externs its closure names resolved in base_ns
-
-        :param externs: the extern atoms, in extern-table order
-        :param base_ns: the namespace the externs resolve in
-        """
-
-        subject = str(self.subject)
-        closure_syms = tuple(str(e) for e in externs)
-        findex = [subject, *closure_syms]
-
-        lowered = []
-        for op, arg in self.instructions:
-            name = op.name
-            twin = SIMPLE_TWINS.get(op)
-            if twin is None and name.startswith('MATCH_') \
-                    and 'VAR' in name.split('_'):
-                twin = OpCode[name.replace('VAR', 'FAST')]
-            if twin is not None:
-                if op.extra:
-                    arg = tuple(
-                        findex.index(str(v)) if fk == OpStyle.VAR else v
-                        for v, fk in zip(arg, op.extra))
-                else:
-                    arg = findex.index(str(arg))
-                op = twin
-            lowered.append((op, arg))
-
-        nspec = NamespaceSpec(self.name, (subject,), closure_syms)
-        code = Code(nspec, lowered, self.name)
-        return Function(code, base_ns, FormalsSpec((subject,)))
 
 
 def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
@@ -162,12 +93,10 @@ def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
 
 def lower_matcher(target, tables, atoms):
     """
-    Emit a whole matcher as a function body into either target: the
-    subject formal, the target's subject gensym, declared by the caller
-    as the body's first local, walked as a sequence, the captures
-    returned on a match, None on a miss. Into a fragment of the
-    standard compiler the body becomes a lambda's; into a
-    FunctionTarget it becomes a Function with no compiler in reach
+    Emit a whole matcher as a function body into a fragment target:
+    the subject formal, the target's subject gensym, declared by the
+    caller as the body's first local, walked as a sequence, the
+    captures returned on a match, None on a miss
 
     :raises TypeError: when a LITERAL value or a MAP entry key is not
         a constant the pool holds
@@ -175,6 +104,43 @@ def lower_matcher(target, tables, atoms):
     """
 
     Emitter(target, tables, atoms).standalone()
+
+
+def matcher_body(compiler, tables, atoms, name):
+    """
+    A whole matcher lowered into a function body fragment of compiler:
+    every extern the pattern names requested under the atom the pattern
+    wrote, or its plain symbol, and the subject a gensym declared as the
+    body's one local, ready to complete as any lambda body
+
+    :param compiler: the compiler the body is a fragment of
+    :param tables: the slots, externs, consts, nodes and entry
+        MatchCompiler lowered the pattern to
+    :param atoms: the extern names mapped to the atoms the pattern
+        wrote them as
+    :param name: the body's name
+    :return: the body fragment and its subject gensym
+    :raises TypeError: when a LITERAL value or a MAP entry key is not
+        a constant the pool holds
+    :raises ValueError: when the pattern is one the core refuses
+    """
+
+    body = compiler.fragment(name)
+    for extern in tables[1]:
+        body.request_var(atoms.get(extern) or symbol(extern))
+    # minted after the extern atoms are interned and held by the
+    # requests, so its spelling is none of theirs
+    subject = gensym()
+    body.declare_var(subject)
+    with compiler.resolution_scope(body, function=True):
+        lower_matcher(FragmentTarget(compiler, body, subject), tables, atoms)
+    return body, subject
+
+
+# the compiler that completes the bodies of matchers built from
+# Python, made on the first such build: a body names no module value
+# and the Function is bound to its own build's namespace
+standalone_compiler = None
 
 
 def compile_match_function(tables, base_ns):
@@ -188,10 +154,16 @@ def compile_match_function(tables, base_ns):
     :param base_ns: the namespace the externs resolve in
     """
 
-    externs = [symbol(n) for n in tables[1]]
-    target = FunctionTarget("matcher")
-    lower_matcher(target, tables, {})
-    return target.build(externs, base_ns)
+    global standalone_compiler
+
+    if standalone_compiler is None:
+        from .compile.compiler import Compiler
+        standalone_compiler = Compiler.from_pragma(
+            "matcher", ModuleNamespace("matcher", {}))
+    compiler = standalone_compiler
+    body, subject = matcher_body(compiler, tables, {}, "matcher")
+    code = compiler.complete_function(body, ())
+    return Function(code, base_ns, FormalsSpec((str(subject),)))
 
 
 # The end.

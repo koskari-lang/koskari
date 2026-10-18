@@ -29,7 +29,7 @@ import pytest
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, OpCode, cons, demand, keyword, nil,
     setcdr, symbol)
-from koskari.match_code import FunctionTarget, compile_match_function
+from koskari.match_code import compile_match_function
 from koskari.matcher import (
     APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
     GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
@@ -632,8 +632,8 @@ class TestPairSpineElements(unittest.TestCase):
 
 class TestCoreTwins(unittest.TestCase):
     """
-    The standalone target lowers the matcher core's VAR instructions
-    to their FAST twins, the extern a closure slot
+    A built matcher's compiler lowers the matcher core's VAR
+    instructions to their FAST twins, the extern a closure slot
     """
 
     def test_build_lowers_the_core_twins(self):
@@ -643,29 +643,15 @@ class TestCoreTwins(unittest.TestCase):
             def __init__(self, x):
                 self.x = x
 
-        target = FunctionTarget("t")
-        for op, arg in (
-                (OpCode.VAR, target.subject),
-                (OpCode.MATCH_SINGLE, 0),
-                (OpCode.MATCH_NEXT, ("miss", 0, 0, 0)),
-                (OpCode.DUP, 1),
-                (OpCode.MATCH_TYPE_VAR, ("miss", "Point", 0, 0)),
-                (OpCode.MATCH_FIELD_POS_VAR, ("miss", "Point", 0, 0)),
-                (OpCode.RETURN, 1),
-                (OpCode.LABEL, "miss"),
-                (OpCode.CONST, None),
-                (OpCode.RETURN, 1)):
-            target.instruction(op, arg)
-
-        base_ns = ModuleNamespace("matcher", {"Point": Point})
-        fn = target.build((symbol("Point"),), base_ns)
+        pattern = MATCH(CLASS("Point", FIELD(CAPTURE("x"))))
+        fn = make_matcher(pattern, {"Point": Point})
         ops = {OpCode(fn.code.oparg(i)[0]) for i in range(fn.code.length())}
-        self.assertIn(OpCode.MATCH_TYPE_FAST, ops)
+        self.assertIn(OpCode.MATCH_CLASS_FAST, ops)
         self.assertIn(OpCode.MATCH_FIELD_POS_FAST, ops)
-        self.assertNotIn(OpCode.MATCH_TYPE_VAR, ops)
+        self.assertNotIn(OpCode.MATCH_CLASS_VAR, ops)
         self.assertNotIn(OpCode.MATCH_FIELD_POS_VAR, ops)
-        self.assertEqual(demand(fn)(Point(3)), 3)
-        self.assertIsNone(demand(fn)(7))
+        self.assertEqual(demand(fn)((Point(3),))["x"], 3)
+        self.assertIsNone(demand(fn)((7,)))
 
 
 class TestReentry(unittest.TestCase):

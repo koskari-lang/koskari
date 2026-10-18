@@ -767,7 +767,7 @@ class Emitter:
 
     def __init__(self, target, tables, atoms, arm=False):
         """
-        :param target: a FunctionTarget or FragmentTarget
+        :param target: a FragmentTarget
         :param tables: (slots, externs, consts, nodes, entry)
         :param atoms: the extern names mapped to the atoms the pattern
             wrote them as

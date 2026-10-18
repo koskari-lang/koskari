@@ -28,7 +28,7 @@ import unittest
 import pytest
 
 from koskari.lib import ModuleNamespace, demand, nil, pair, symbol
-from koskari.match_code import FunctionTarget
+from koskari.match_code import compile_match_function
 from koskari.match_core import FIELD_LIMIT, Emitter, analyse
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MAP, MAP_ENTRY, MATCH,
@@ -208,9 +208,8 @@ class TestRefusals(unittest.TestCase):
         tables = (slots, (), (), nodes, 2)
         self.assertEqual(analyse(tables).same, {1: None})
 
-        target = FunctionTarget("matcher")
-        Emitter(target, tables, {}).standalone()
-        matcher = demand(target.build((), ModuleNamespace("probe", {})))
+        matcher = demand(
+            compile_match_function(tables, ModuleNamespace("probe", {})))
         self.assertIsNone(matcher((1, 1)))
         self.assertIsNone(matcher((1, 2)))
 
