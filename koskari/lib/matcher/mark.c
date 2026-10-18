@@ -178,17 +178,6 @@ PyObject *KosMatchMark_New(PyObject *cursor, Py_ssize_t count) {
 }
 
 
-PyObject *KosMatchMark_Reset(
-    PyObject *cursor,
-    PyObject *mark,
-    Py_ssize_t held) {
-
-  KosMatchMark *m = (KosMatchMark *) mark;
-
-  return core_cursor_moved((KosMatchCursor *) cursor, m->seq, m->index, held);
-}
-
-
 PyObject *KosMatchMark_At(PyObject *mark) {
   KosMatchMark *m = (KosMatchMark *) mark;
 
@@ -245,15 +234,11 @@ PyObject *KosMatchMark_Span(PyObject *mark, PyObject *cursor) {
 }
 
 
-PyObject *KosMatchMark_Writable(PyObject *mark, Py_ssize_t held) {
+/* Out of line, as KosMatchCursor_CopyAt is. */
+KOS_NOINLINE PyObject *KosMatchMark_Copy(PyObject *mark) {
   KosMatchMark *m = (KosMatchMark *) mark;
-
-  if (Py_REFCNT(m) == held) {
-    Py_INCREF(m);
-    return mark;
-  }
-
   KosMatchMark *copy = match_mark_new(m->seq, m->index, m->kind, m->count);
+
   if (! copy)
     return NULL;
   for (Py_ssize_t i = 0; i < m->count; i++) {

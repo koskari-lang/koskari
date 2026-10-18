@@ -208,7 +208,8 @@ KOS_OP_INLINE PyObject *kos_match_writable_at(
   PyObject *target = KosMatchMark_Writable(mark, 1);
   if (unlikely(! target))
     return NULL;
-  if (unlikely(kos_match_set_at(es, row, field, target) < 0))
+  if (unlikely(target != mark)
+      && unlikely(kos_match_set_at(es, row, field, target) < 0))
     return NULL;
   return target;
 }
@@ -291,7 +292,8 @@ KOS_MATCH_BODY(kos_match_fits) {
 
 /**
    MATCH_NEXT: the next element of the cursor at field 1 pushed, the
-   moved cursor stored back; a miss at the end. Row LABEL, depth.
+   cursor moved in place or its copy stored back; a miss at the end.
+   Row LABEL, depth.
 */
 KOS_MATCH_BODY(kos_match_next) {
   KOS_SYNC_PC(es, insn);
@@ -310,7 +312,8 @@ KOS_MATCH_BODY(kos_match_next) {
   if (! r)
     KOS_MATCH_MISS(row);
 
-  if (unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
+  if (unlikely(next != cursor)
+      && unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
     Py_DECREF(elem);
     RESULT_RAISE();
   }
@@ -378,7 +381,8 @@ KOS_MATCH_BODY(kos_match_sync) {
   PyObject *moved = KosMatchCursor_Sync(cursor, to, 1);
   if (unlikely(! moved))
     RESULT_RAISE();
-  if (unlikely(kos_match_set_at(es, row, 0, moved) < 0))
+  if (unlikely(moved != cursor)
+      && unlikely(kos_match_set_at(es, row, 0, moved) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }
@@ -409,7 +413,8 @@ KOS_MATCH_BODY(kos_match_tail) {
   if (! r)
     KOS_MATCH_MISS(row);
 
-  if (unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
+  if (unlikely(next != cursor)
+      && unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
     Py_DECREF(span);
     RESULT_RAISE();
   }
@@ -456,7 +461,8 @@ KOS_MATCH_BODY(kos_match_reset) {
   PyObject *moved = KosMatchMark_Reset(cursor, mark, 1);
   if (unlikely(! moved))
     RESULT_RAISE();
-  if (unlikely(kos_match_set_at(es, row, 0, moved) < 0))
+  if (unlikely(moved != cursor)
+      && unlikely(kos_match_set_at(es, row, 0, moved) < 0))
     RESULT_RAISE();
   RESULT_NEXT(es);
 }

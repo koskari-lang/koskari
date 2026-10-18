@@ -43,27 +43,15 @@ static PyObject *core_cursor_new(
 }
 
 
-/**
-   c at seq and index, as a new reference for the caller to store at
-   c's entry: c itself, moved in place, when held counts every
-   reference to it, else a new cursor of the same kind, length and
-   reserve. NULL with an exception set.
-*/
-static PyObject *core_cursor_moved(
-    KosMatchCursor *c,
+/* Out of line, so the in-place move KosMatchCursor_MoveTo inlines
+   carries none of the allocation's register pressure. */
+KOS_NOINLINE PyObject *KosMatchCursor_CopyAt(
+    PyObject *cursor,
     PyObject *seq,
-    Py_ssize_t index,
-    Py_ssize_t held) {
+    Py_ssize_t index) {
 
-  if (Py_REFCNT(c) == held) {
-    if (c->seq != seq) {
-      Py_INCREF(seq);
-      Py_SETREF(c->seq, seq);
-    }
-    c->index = index;
-    Py_INCREF(c);
-    return (PyObject *) c;
-  }
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+
   return core_cursor_new(seq, c->length, index, c->reserve, c->kind);
 }
 
@@ -263,7 +251,7 @@ int KosMatchCursor_Next(
       return -1;
   }
 
-  PyObject *next = core_cursor_moved(c, seq, c->index + 1, held);
+  PyObject *next = KosMatchCursor_MoveTo(cursor, seq, c->index + 1, held);
   if (! next) {
     Py_DECREF(elem);
     return -1;
@@ -295,18 +283,6 @@ PyObject *KosMatchCursor_Unbound(PyObject *cursor) {
   KosMatchCursor *c = (KosMatchCursor *) cursor;
 
   return core_cursor_new(c->seq, c->length, c->index, 0, c->kind);
-}
-
-
-PyObject *KosMatchCursor_Sync(
-    PyObject *cursor,
-    PyObject *to,
-    Py_ssize_t held) {
-
-  KosMatchCursor *t = (KosMatchCursor *) to;
-
-  return core_cursor_moved(
-      (KosMatchCursor *) cursor, t->seq, t->index, held);
 }
 
 
@@ -367,7 +343,8 @@ int KosMatchCursor_Tail(
     }
   }
 
-  PyObject *next = core_cursor_moved(c, end, c->index + consume, held);
+  PyObject *next = KosMatchCursor_MoveTo(
+      cursor, end, c->index + consume, held);
   if (! next) {
     Py_DECREF(span);
     return -1;

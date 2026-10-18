@@ -299,9 +299,9 @@ static long datum_line(PyObject *datum) {
 
 
 /**
-   Pull one element from *cursor, its stack entry the only holder, and
-   store the moved cursor back. The element as a new reference; NULL
-   at the end or on an error.
+   Pull one element from *cursor, its stack entry the only holder;
+   a copy the step makes is stored back. The element as a new
+   reference; NULL at the end or on an error.
 */
 static PyObject *core_pull(PyObject **cursor) {
   PyObject *elem = NULL;
@@ -309,7 +309,8 @@ static PyObject *core_pull(PyObject **cursor) {
 
   if (KosMatchCursor_Next(*cursor, 1, &elem, &next) != 1)
     return NULL;
-  Py_SETREF(*cursor, next);
+  if (next != *cursor)
+    Py_SETREF(*cursor, next);
   return elem;
 }
 
@@ -401,8 +402,7 @@ static int test_core_next_over_a_sequence(void) {
     TEST_ASSERT_EQ(KosMatchCursor_Next(cursor, 1, &elem, &next), 1, "next");
     TEST_ASSERT_SAME(elem, PyTuple_GET_ITEM(subj, i - 1), "the item itself");
     TEST_ASSERT_SAME(next, cursor, "the only holder moves in place");
-    TEST_ASSERT_REFCNT(cursor, 2, "the entry's and the returned reference");
-    Py_DECREF(next);
+    TEST_ASSERT_REFCNT(cursor, 1, "no new reference");
     Py_DECREF(elem);
     TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 3 - i, "remaining");
   }
@@ -537,13 +537,11 @@ static int test_core_single(void) {
   TEST_ASSERT(PyTuple_CheckExact(span) && PyTuple_GET_SIZE(span) == 0,
               "the empty tuple");
   Py_DECREF(span);
-  Py_DECREF(next);
   TEST_ASSERT_EQ(KosMatchCursor_Tail(cursor, 0, 0, 1, &span, &next), 1,
                  "the whole tail");
   TEST_ASSERT(PyTuple_CheckExact(span) && PyTuple_GET_SIZE(span) == 1
               && PyTuple_GET_ITEM(span, 0) == val, "a tuple of the value");
   Py_DECREF(span);
-  Py_DECREF(next);
   Py_DECREF(cursor);
 
   TEST_ASSERT_REFCNT(val, 1, "released");
@@ -582,7 +580,6 @@ static int test_core_list_read_live(void) {
               "nothing is left");
   TEST_ASSERT_SAME(next, cursor, "moved in place");
   Py_DECREF(span);
-  Py_DECREF(next);
 
   TEST_ASSERT_NULL(KosMatchMark_At(mid), "the element is gone");
   TEST_ASSERT(clear_expected(PyExc_ValueError), "ValueError");
@@ -640,7 +637,6 @@ static int test_core_bound_and_sync(void) {
 
   PyObject *synced = KosMatchCursor_Sync(cursor, bound, 1);
   TEST_ASSERT_SAME(synced, cursor, "moved in place");
-  Py_DECREF(synced);
   TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 2, "at the bound's end");
   elem = core_pull(&cursor);
   TEST_ASSERT_EQ(PyLong_AsLong(elem), 4, "the suffix");
@@ -784,7 +780,6 @@ static int test_core_tail(void) {
   TEST_ASSERT_SAME(next, cursor, "moved in place");
   TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 1, "the suffix is left");
   Py_DECREF(span);
-  Py_DECREF(next);
   Py_DECREF(cursor);
 
   /* a list's tail is a tuple, as the engine's REST binds it */
@@ -795,7 +790,6 @@ static int test_core_tail(void) {
   TEST_ASSERT(PyTuple_CheckExact(span) && PyTuple_GET_SIZE(span) == 3,
               "a tuple");
   Py_DECREF(span);
-  Py_DECREF(next);
   Py_DECREF(cursor);
   Py_DECREF(lst);
 
@@ -814,7 +808,6 @@ static int test_core_tail(void) {
   TEST_ASSERT_EQ(datum_line(span), 2, "at its first cell's position");
   TEST_ASSERT(KosNilP(((KosMatchCursor *) next)->seq), "at the end");
   Py_DECREF(span);
-  Py_DECREF(next);
   Py_DECREF(cursor);
 
   /* before a suffix, a tuple of a Datum per cell */
@@ -832,7 +825,6 @@ static int test_core_tail(void) {
   TEST_ASSERT_SAME(((KosMatchCursor *) next)->seq, fourth, "at the suffix");
   TEST_ASSERT_EQ(KosMatchCursor_Remaining(next), 1, "one left");
   Py_DECREF(span);
-  Py_DECREF(next);
 
   /* an empty tail is the terminator, wherever it sits */
   TEST_ASSERT_EQ(KosMatchCursor_Tail(cursor, 1, 0, 1, &span, &next), 1,
@@ -841,7 +833,6 @@ static int test_core_tail(void) {
   TEST_ASSERT(KosNilP(((KosDatum *) span)->datum), "over the terminator");
   TEST_ASSERT_SAME(((KosMatchCursor *) next)->seq, fourth, "not moved");
   Py_DECREF(span);
-  Py_DECREF(next);
   Py_DECREF(cursor);
 
   TEST_ASSERT_REFCNT(spine, 1, "released");
@@ -875,7 +866,6 @@ static int test_mark_scope_and_reset(void) {
   Py_DECREF(elem);
   PyObject *reset = KosMatchMark_Reset(cursor, mark, 1);
   TEST_ASSERT_SAME(reset, cursor, "moved in place");
-  Py_DECREF(reset);
   TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 3, "back at the mark");
 
   elem = core_pull(&cursor);
@@ -908,8 +898,8 @@ static int test_mark_scope_and_reset(void) {
   elem = core_pull(&cursor);
   Py_DECREF(elem);
   TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 0, "at the end");
-  reset = KosMatchMark_Reset(cursor, mark, 1);
-  Py_DECREF(reset);
+  TEST_ASSERT_SAME(KosMatchMark_Reset(cursor, mark, 1), cursor,
+                   "moved in place");
   TEST_ASSERT_SAME(((KosMatchCursor *) cursor)->seq, second, "the cell");
   TEST_ASSERT_EQ(KosMatchCursor_Remaining(cursor), 2, "the count");
 
@@ -949,8 +939,8 @@ static int test_mark_at_and_span(void) {
               "two are a tuple");
   Py_DECREF(out);
   PyObject *later = KosMatchMark_New(cursor, 0);
-  PyObject *reset = KosMatchMark_Reset(cursor, mark, 1);
-  Py_DECREF(reset);
+  TEST_ASSERT_SAME(KosMatchMark_Reset(cursor, mark, 1), cursor,
+                   "moved in place");
   TEST_ASSERT_NULL(KosMatchMark_Span(later, cursor),
                    "a cursor behind the mark");
   TEST_ASSERT(clear_expected(PyExc_SystemError), "SystemError");
@@ -1112,8 +1102,7 @@ static int test_mark_writable_copies_when_shared(void) {
   /* the stack entry alone holds it: the mark itself */
   PyObject *w = KosMatchMark_Writable(mark, 1);
   TEST_ASSERT_SAME(w, mark, "unshared");
-  TEST_ASSERT_REFCNT(mark, 2, "a new reference to it");
-  Py_DECREF(w);
+  TEST_ASSERT_REFCNT(mark, 1, "no new reference");
 
   /* a cloned segment holds it too: a copy */
   Py_INCREF(mark);

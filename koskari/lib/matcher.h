@@ -21,6 +21,8 @@
 #include <Python.h>
 #include <stdint.h>
 
+#include "hints.h"
+
 
 
 /* === Datum (matched value + optional source position) === */
@@ -187,10 +189,45 @@ int KosMatch_Item(PyObject *elem, PyObject *key, PyObject **out);
 
 /* A helper that moves a cursor takes held, the references the caller
    accounts for (1 for a cursor its stack entry alone holds), and
-   returns the moved cursor as a new reference for the caller to store
-   at the entry: the cursor itself, moved in place, when held counts
-   every reference to it, else a new cursor at the new position, so a
-   cloned segment keeps the position it took. */
+   returns the moved cursor: the cursor itself, moved in place and
+   borrowed, when held counts every reference to it; else a new cursor
+   at the new position, a new reference for the caller to store at the
+   entry, so a cloned segment keeps the position it took. */
+
+
+/**
+   The copy a move of a shared cursor takes: a new cursor of cursor's
+   kind, length and reserve at seq and index. New reference; NULL with
+   an exception set.
+ */
+PyObject *KosMatchCursor_CopyAt(
+    PyObject *cursor,
+    PyObject *seq,
+    Py_ssize_t index);
+
+
+/**
+   cursor moved to seq and index (see held above). NULL with an
+   exception set.
+ */
+static inline PyObject *KosMatchCursor_MoveTo(
+    PyObject *cursor,
+    PyObject *seq,
+    Py_ssize_t index,
+    Py_ssize_t held) {
+
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+
+  if (unlikely(Py_REFCNT(c) != held))
+    return KosMatchCursor_CopyAt(cursor, seq, index);
+
+  if (c->seq != seq) {
+    Py_INCREF(seq);
+    Py_SETREF(c->seq, seq);
+  }
+  c->index = index;
+  return cursor;
+}
 
 
 /**
@@ -222,10 +259,10 @@ Py_ssize_t KosMatchCursor_Remaining(PyObject *cursor);
    MATCH_NEXT: pull one element and advance. The element is a new
    Datum over the cell's car read through Datum, with the cell's
    position, from a spine, and the item itself from a sequence or a
-   single value. Returns 1 with *out_elem and *out_next (the moved
-   cursor, see held above) new references, 0 at the end (no element
-   left, or a spine cell that is not a pair: user code cut the spine
-   ahead of the cursor), -1 with an exception set.
+   single value. Returns 1 with *out_elem a new reference and
+   *out_next the moved cursor (see held above), 0 at the end (no
+   element left, or a spine cell that is not a pair: user code cut the
+   spine ahead of the cursor), -1 with an exception set.
  */
 int KosMatchCursor_Next(
     PyObject *cursor,
@@ -251,15 +288,21 @@ int KosMatchCursor_Bound(
  */
 PyObject *KosMatchCursor_Unbound(PyObject *cursor);
 
+
 /**
    MATCH_SYNC: cursor moved to the position of to, a cursor over the
-   same subject. New reference (see held above); NULL with an
-   exception set.
+   same subject (see held above). NULL with an exception set.
  */
-PyObject *KosMatchCursor_Sync(
+static inline PyObject *KosMatchCursor_Sync(
     PyObject *cursor,
     PyObject *to,
-    Py_ssize_t held);
+    Py_ssize_t held) {
+
+  KosMatchCursor *t = (KosMatchCursor *) to;
+
+  return KosMatchCursor_MoveTo(cursor, t->seq, t->index, held);
+}
+
 
 /**
    MATCH_TAIL: the remaining elements less w, and cursor advanced past
@@ -268,10 +311,10 @@ PyObject *KosMatchCursor_Sync(
    or the empty tuple; over a spine, a Datum over the terminator when
    it is empty, a Datum over its first cell (the sub-spine) when it
    runs to the spine's end, else a tuple of a Datum per cell. Returns
-   1 with *out_span and *out_next (see held above) new references, 0
-   when fewer than w remain or the span is shorter than min, -1 with
-   an exception set, ValueError for a spine user code cut inside the
-   span.
+   1 with *out_span a new reference and *out_next the moved cursor
+   (see held above), 0 when fewer than w remain or the span is
+   shorter than min, -1 with an exception set, ValueError for a spine
+   user code cut inside the span.
  */
 int KosMatchCursor_Tail(
     PyObject *cursor,
@@ -333,14 +376,21 @@ extern PyTypeObject KosMatchMarkType;
  */
 PyObject *KosMatchMark_New(PyObject *cursor, Py_ssize_t count);
 
+
 /**
-   MATCH_RESET: cursor moved back to mark's position. New reference
-   (see held above); NULL with an exception set.
+   MATCH_RESET: cursor moved back to mark's position (see held above).
+   NULL with an exception set.
  */
-PyObject *KosMatchMark_Reset(
+static inline PyObject *KosMatchMark_Reset(
     PyObject *cursor,
     PyObject *mark,
-    Py_ssize_t held);
+    Py_ssize_t held) {
+
+  KosMatchMark *m = (KosMatchMark *) mark;
+
+  return KosMatchCursor_MoveTo(cursor, m->seq, m->index, held);
+}
+
 
 /**
    MATCH_AT: the element at mark's position, as KosMatchCursor_Next
@@ -361,12 +411,28 @@ PyObject *KosMatchMark_At(PyObject *mark);
 PyObject *KosMatchMark_Span(PyObject *mark, PyObject *cursor);
 
 /**
-   The mark a write goes to: mark itself when held counts every
-   reference to it, else a copy holding the same position and slot
-   values, for the caller to store at the mark's stack entry. New
-   reference; NULL with an exception set.
+   A new mark holding mark's position and slot values, for a write to
+   a mark another entry also holds. New reference; NULL with an
+   exception set.
  */
-PyObject *KosMatchMark_Writable(PyObject *mark, Py_ssize_t held);
+PyObject *KosMatchMark_Copy(PyObject *mark);
+
+
+/**
+   The mark a write goes to: mark itself, borrowed, when held counts
+   every reference to it, else KosMatchMark_Copy's copy, a new
+   reference for the caller to store at the mark's stack entry. NULL
+   with an exception set.
+ */
+static inline PyObject *KosMatchMark_Writable(
+    PyObject *mark,
+    Py_ssize_t held) {
+
+  if (unlikely(Py_REFCNT(mark) != held))
+    return KosMatchMark_Copy(mark);
+  return mark;
+}
+
 
 /**
    MATCH_STORE: value into slot i of mark, which must be writable,
