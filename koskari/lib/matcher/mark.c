@@ -30,11 +30,14 @@
 
 
 /* Freed default-size marks chain through seq, up to the cap; a larger
-   mark goes back to the allocator. */
+   mark goes back to the allocator. Every slot of a mark on the chain
+   is NULL: KosMatchMark_Allocate makes a mark with every slot NULL,
+   and a freed mark empties each slot as it releases it, so
+   KosMatchMark_New takes one from the chain with no clear. */
 #define MARK_MAX_FREE KOS_FREELIST_CAP(8)
 
-static KosMatchMark *mark_free_list = NULL;
-static int mark_free_count = 0;
+KosMatchMark *kos_match_mark_free_list = NULL;
+int kos_match_mark_free_count = 0;
 
 
 static int match_mark_traverse(PyObject *self, visitproc visit, void *arg) {
@@ -60,15 +63,17 @@ static int match_mark_clear(PyObject *self) {
 static void match_mark_dealloc(PyObject *self) {
   KosMatchMark *m = (KosMatchMark *) self;
 
-  PyObject_GC_UnTrack(self);
+  /* a mark with no slots is never tracked */
+  if (m->count)
+    PyObject_GC_UnTrack(self);
   match_mark_clear(self);
 
   if (Py_SIZE(m) == KOS_MATCH_MARK_SLOTS
-      && mark_free_count < MARK_MAX_FREE) {
+      && kos_match_mark_free_count < MARK_MAX_FREE) {
     KOS_TRACE_FL_RETURN("mark", 0);
-    m->seq = (PyObject *) mark_free_list;
-    mark_free_list = m;
-    mark_free_count++;
+    m->seq = (PyObject *) kos_match_mark_free_list;
+    kos_match_mark_free_list = m;
+    kos_match_mark_free_count++;
 
   } else {
     KOS_TRACE_FL_RETURN("mark", 1);
@@ -78,12 +83,12 @@ static void match_mark_dealloc(PyObject *self) {
 
 
 static void match_mark_free_list_clear(void) {
-  while (mark_free_list) {
-    KosMatchMark *m = mark_free_list;
-    mark_free_list = (KosMatchMark *) m->seq;
+  while (kos_match_mark_free_list) {
+    KosMatchMark *m = kos_match_mark_free_list;
+    kos_match_mark_free_list = (KosMatchMark *) m->seq;
     PyObject_GC_Del(m);
   }
-  mark_free_count = 0;
+  kos_match_mark_free_count = 0;
 }
 
 
@@ -100,19 +105,13 @@ PyTypeObject KosMatchMarkType = {
 };
 
 
-/**
-   A mark at seq, index and kind with count unbound slots, from the
-   freelist when count fits a default mark. A mark with slots is
-   tracked; one without holds only its position, as a cursor does, and
-   is left untracked. New reference; NULL with an exception set.
-*/
-static KosMatchMark *match_mark_new(
+/* Out of line, so the freelist hit KosMatchMark_New inlines carries
+   none of the allocation's register pressure. */
+KOS_NOINLINE PyObject *KosMatchMark_Allocate(
     PyObject *seq,
     Py_ssize_t index,
     unsigned char kind,
     Py_ssize_t count) {
-
-  KosMatchMark *m;
 
   if (count < 0) {
     PyErr_Format(PyExc_SystemError,
@@ -120,33 +119,25 @@ static KosMatchMark *match_mark_new(
     return NULL;
   }
 
-  if (count <= KOS_MATCH_MARK_SLOTS && mark_free_list) {
-    m = mark_free_list;
-    mark_free_list = (KosMatchMark *) m->seq;
-    mark_free_count--;
-    KOS_TRACE_FL_ALLOC("mark", 1);
-    _Py_NewReference((PyObject *) m);
+  Py_ssize_t size =
+      count <= KOS_MATCH_MARK_SLOTS ? KOS_MATCH_MARK_SLOTS : count;
 
-  } else {
-    KOS_TRACE_FL_ALLOC("mark", 0);
-    m = PyObject_GC_NewVar(
-        KosMatchMark, &KosMatchMarkType,
-        count <= KOS_MATCH_MARK_SLOTS ? KOS_MATCH_MARK_SLOTS : count);
-    if (! m)
-      return NULL;
-  }
+  KOS_TRACE_FL_ALLOC("mark", 0);
+  KosMatchMark *m = PyObject_GC_NewVar(KosMatchMark, &KosMatchMarkType, size);
+  if (! m)
+    return NULL;
 
   Py_INCREF(seq);
   m->seq = seq;
   m->index = index;
   m->kind = kind;
   m->count = count;
-  for (Py_ssize_t i = 0; i < count; i++)
+  for (Py_ssize_t i = 0; i < size; i++)
     m->slots[i] = NULL;
 
   if (count)
     PyObject_GC_Track((PyObject *) m);
-  return m;
+  return (PyObject *) m;
 }
 
 
@@ -169,13 +160,6 @@ static Py_ssize_t mark_slot_index(KosMatchMark *m, PyObject *item) {
 
 
 /* === the mark steps === */
-
-
-PyObject *KosMatchMark_New(PyObject *cursor, Py_ssize_t count) {
-  KosMatchCursor *c = (KosMatchCursor *) cursor;
-
-  return (PyObject *) match_mark_new(c->seq, c->index, c->kind, count);
-}
 
 
 PyObject *KosMatchMark_At(PyObject *mark) {
@@ -237,7 +221,8 @@ PyObject *KosMatchMark_Span(PyObject *mark, PyObject *cursor) {
 /* Out of line, as KosMatchCursor_CopyAt is. */
 KOS_NOINLINE PyObject *KosMatchMark_Copy(PyObject *mark) {
   KosMatchMark *m = (KosMatchMark *) mark;
-  KosMatchMark *copy = match_mark_new(m->seq, m->index, m->kind, m->count);
+  KosMatchMark *copy = (KosMatchMark *) KosMatchMark_Allocate(
+      m->seq, m->index, m->kind, m->count);
 
   if (! copy)
     return NULL;

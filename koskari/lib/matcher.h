@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 #include "hints.h"
+#include "tracing.h"
 
 
 
@@ -374,11 +375,60 @@ extern PyTypeObject KosMatchMarkType;
 #define KosMatchMark_INDEX(obj)    (((KosMatchMark *) (obj))->index)
 
 
+/* The freed default-capacity marks KosMatchMark_New takes from,
+   chained through seq, and their count; matcher/mark.c frees into the
+   chain. Every slot of a mark on it is NULL. */
+extern KosMatchMark *kos_match_mark_free_list;
+extern int kos_match_mark_free_count;
+
+
 /**
-   MATCH_SCOPE: a mark at cursor's position with count unbound slots.
-   New reference; NULL with an exception set.
+   A mark at seq, index and kind with count unbound slots from the
+   allocator, at the default capacity or at count when that is larger,
+   every slot NULL; tracked when count is not zero. The path
+   KosMatchMark_New takes when the freelist is empty or count is past
+   the default capacity. New reference; NULL with an exception set,
+   SystemError for a negative count.
  */
-PyObject *KosMatchMark_New(PyObject *cursor, Py_ssize_t count);
+PyObject *KosMatchMark_Allocate(
+    PyObject *seq,
+    Py_ssize_t index,
+    unsigned char kind,
+    Py_ssize_t count);
+
+
+/**
+   MATCH_SCOPE: a mark at cursor's position with count unbound slots,
+   from the freelist when count fits a default mark. A mark with slots
+   is tracked; one without holds only its position, as a cursor does,
+   and is left untracked. New reference; NULL with an exception set.
+ */
+static inline PyObject *KosMatchMark_New(
+    PyObject *cursor,
+    Py_ssize_t count) {
+
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+  KosMatchMark *m = kos_match_mark_free_list;
+
+  /* the unsigned compare sends a negative count to the allocator's
+     SystemError as well */
+  if (unlikely(! m || (size_t) count > KOS_MATCH_MARK_SLOTS))
+    return KosMatchMark_Allocate(c->seq, c->index, c->kind, count);
+
+  kos_match_mark_free_list = (KosMatchMark *) m->seq;
+  kos_match_mark_free_count--;
+  KOS_TRACE_FL_ALLOC("mark", 1);
+  _Py_NewReference((PyObject *) m);
+
+  Py_INCREF(c->seq);
+  m->seq = c->seq;
+  m->index = c->index;
+  m->kind = c->kind;
+  m->count = count;
+  if (count)
+    PyObject_GC_Track((PyObject *) m);
+  return (PyObject *) m;
+}
 
 
 /**
