@@ -858,15 +858,17 @@ class Emitter:
         """
         The label a jump to the miss target takes from a stack whose
         top entry is at top, the current top by default: the target
-        itself from its own top, else the fail entry for that top
+        itself from its own top or for the standalone miss, whose
+        return leaves the stack to the frame, else the fail entry for
+        that top
 
         :raises ValueError: when top is below the target's
         """
 
         if top is None:
             top = self.top
-        home = self.targets[miss][0]
-        if top == home:
+        home, _base, cont = self.targets[miss]
+        if top == home or cont is None:
             return miss
         if top < home:
             raise ValueError(
@@ -883,16 +885,29 @@ class Emitter:
         """
         Leave for the miss target from the current top where the code
         falls through: the POPs down to its base and the jump to where
-        it goes on, or the return of None for the standalone miss
+        it goes on, or for the standalone miss the return of None in
+        place, the stack left to the frame
         """
 
         _home, base, cont = self.targets[miss]
-        self.op(OpCode.POP, self.top - base, effect=base - self.top)
         if cont is None:
-            self.op(OpCode.CONST, None, effect=1)
-            self.op(OpCode.RETURN, 1)
+            self.op(OpCode.RETURN, 0)
+            return
+        self.op(OpCode.POP, self.top - base, effect=base - self.top)
+        self.op(OpCode.JUMP, cont)
+
+
+    def always_miss(self, miss):
+        """
+        Leave for the miss target from a test that cannot pass: the
+        jump to its entry for the current top, or for the standalone
+        miss the return of None in place
+        """
+
+        if self.targets[miss][2] is None:
+            self.op(OpCode.RETURN, 0)
         else:
-            self.op(OpCode.JUMP, cont)
+            self.op(OpCode.JUMP, self.miss_at(miss))
 
 
     def land(self, label):
@@ -944,10 +959,7 @@ class Emitter:
             self.placed.add(entry)
             self.target.instruction(OpCode.LABEL, entry)
             self.target.instruction(OpCode.POP, top - base)
-            if cont is None:
-                self.target.instruction(OpCode.CONST, None)
-                self.target.instruction(OpCode.RETURN, 1)
-            elif cont != follow or n < len(pending):
+            if cont != follow or n < len(pending):
                 self.target.instruction(OpCode.JUMP, cont)
 
 
@@ -1063,7 +1075,7 @@ class Emitter:
 
         elif kind == 'SAME' and self.analysis.same[i] is None:
             # no scope at its depth binds the name: always a miss
-            self.op(OpCode.JUMP, self.miss_at(miss))
+            self.always_miss(miss)
             if not keep:
                 self.top -= 1
 
@@ -1309,9 +1321,8 @@ class Emitter:
             names, effect=1)
         self.op(OpCode.RETURN, 1)
 
-        self.land(miss)
-        self.op(OpCode.CONST, None, effect=1)
-        self.op(OpCode.RETURN, 1)
+        self.place(miss, -1)
+        self.op(OpCode.RETURN, 0)
         self.flush()
 
 
@@ -1372,7 +1383,7 @@ class Emitter:
 
         if kind == 'SAME' and analysis.same[i] is None:
             # no scope at its depth binds the name: always a miss
-            self.op(OpCode.JUMP, self.miss_at(miss))
+            self.always_miss(miss)
 
         elif self.in_place(i) and self.stores(i) < 2:
             # the element pulled once, then tested on the stack
