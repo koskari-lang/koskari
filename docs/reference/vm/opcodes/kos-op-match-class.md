@@ -2,7 +2,7 @@
 
 - **Style**: EXTRA (LABEL, VAR, RAW) on `MATCH_CLASS_VAR`, (LABEL, FASTVAR,
   RAW) on `MATCH_CLASS_FAST`: label, class, positional field count.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` read through `Datum` must be an instance of the class in
   the variable `a1`, read by name on the `_VAR` form and by fast index on the

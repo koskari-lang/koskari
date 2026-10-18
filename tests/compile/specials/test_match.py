@@ -247,6 +247,36 @@ class TestMatchSpecial(SpecialsTestCase):
         self.assertEqual(await expr(), "low")
 
 
+    async def test_match_or_takes_the_first_branch(self):
+        # each branch tests the one element in turn: True is a bool and
+        # an int, and the first branch takes it; the element is gone
+        # from the stack before the values around the match
+        src = """
+        (lambda [data]
+          (define a None)
+          (define b None)
+          (define c None)
+          #("before"
+            (match data
+              [[#[(or (a :: bool) (b :: int) c) 9]] #(a b c)]
+              [[(or (a :: bool) (b :: int))] #("root" a b)]
+              [else: "miss"])
+            "after"))
+        """
+        expr, mod = self.compile_expr(src, bool=bool, int=int)
+        fn = await expr()
+        for data, expected in (
+                ((True, 9), (True, None, None)),
+                ((5, 9), (None, 5, None)),
+                (("s", 9), (None, None, "s")),
+                ((5, 8), "miss"),
+                (True, ("root", True, None)),
+                (7, ("root", None, 7)),
+                ("x", "miss")):
+            self.assertEqual(
+                await fn(data), ("before", expected, "after"), data)
+
+
     async def test_match_not(self):
         src = """
         (match data

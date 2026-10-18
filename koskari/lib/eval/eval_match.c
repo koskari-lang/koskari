@@ -703,20 +703,19 @@ KOS_MATCH_BODY(kos_match_columns) {
 
 
 /**
-   MATCH_LITERAL: TOS popped; it must be the constant in field 1. Row
-   LABEL, const.
+   MATCH_LITERAL: TOS, which stays, must be the constant in field 1.
+   Row LABEL, const.
 */
 KOS_MATCH_BODY(kos_match_literal) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *elem = KosEvalState_StackPopRef(es);
+  PyObject *elem = kos_match_peek(es);
   if (unlikely(! elem))
     RESULT_RAISE();
 
   int r = KosMatch_LiteralTest(elem, KosExtra_OBJ(row, 1));
-  Py_DECREF(elem);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -726,7 +725,7 @@ KOS_MATCH_BODY(kos_match_literal) {
 
 
 /**
-   MATCH_CORE: TOS popped; it must be an instance of the core type
+   MATCH_CORE: TOS, which stays, must be an instance of the core type
    whose ordinal is field 1. Row LABEL, ordinal.
 */
 KOS_MATCH_BODY(kos_match_core) {
@@ -734,12 +733,11 @@ KOS_MATCH_BODY(kos_match_core) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *elem = KosEvalState_StackPopRef(es);
+  PyObject *elem = kos_match_peek(es);
   if (unlikely(! elem))
     RESULT_RAISE();
 
   int r = KosMatch_CoreTypeTest(elem, KosExtra_IMM(row, 1));
-  Py_DECREF(elem);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
@@ -749,7 +747,7 @@ KOS_MATCH_BODY(kos_match_core) {
 
 
 /**
-   MATCH_TYPE_VAR and MATCH_TYPE_FAST: TOS popped; it must be an
+   MATCH_TYPE_VAR and MATCH_TYPE_FAST: TOS, which stays, must be an
    instance of the type in the slot in field 1. Row LABEL, slot.
 */
 KOS_MATCH_BODY(kos_match_type) {
@@ -758,17 +756,14 @@ KOS_MATCH_BODY(kos_match_type) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_TYPE_FAST;
   (void) kos_match_delivery_;
 
+  PyObject *elem = kos_match_peek(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
   PyObject *type = kos_match_operand(es, row, 1, fast);
   if (unlikely(! type))
     RESULT_RAISE();
-  PyObject *elem = KosEvalState_StackPopRef(es);
-  if (unlikely(! elem)) {
-    Py_DECREF(type);
-    RESULT_RAISE();
-  }
 
   int r = KosMatch_TypeTest(elem, type);
-  Py_DECREF(elem);
   Py_DECREF(type);
   if (unlikely(r < 0))
     RESULT_RAISE();
@@ -779,7 +774,7 @@ KOS_MATCH_BODY(kos_match_type) {
 
 
 /**
-   MATCH_CLASS_VAR and MATCH_CLASS_FAST: TOS popped; it must be an
+   MATCH_CLASS_VAR and MATCH_CLASS_FAST: TOS, which stays, must be an
    instance of the class in the slot in field 1, and the class's
    __match_args__ must then hold at least field 2 names, else a
    TypeError. Row LABEL, slot, count.
@@ -790,18 +785,15 @@ KOS_MATCH_BODY(kos_match_class) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_CLASS_FAST;
   (void) kos_match_delivery_;
 
+  PyObject *elem = kos_match_peek(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
   PyObject *cls = kos_match_operand(es, row, 1, fast);
   if (unlikely(! cls))
     RESULT_RAISE();
-  PyObject *elem = KosEvalState_StackPopRef(es);
-  if (unlikely(! elem)) {
-    Py_DECREF(cls);
-    RESULT_RAISE();
-  }
 
   int r = KosMatch_ClassTest(
       elem, cls, (Py_ssize_t) KosExtra_IMM(row, 2));
-  Py_DECREF(elem);
   Py_DECREF(cls);
   if (unlikely(r < 0))
     RESULT_RAISE();
@@ -812,8 +804,8 @@ KOS_MATCH_BODY(kos_match_class) {
 
 
 /**
-   MATCH_SAME: TOS popped; it must equal slot field 2 of the mark at
-   field 1, and misses when that slot is empty. Row LABEL, depth,
+   MATCH_SAME: TOS, which stays, must equal slot field 2 of the mark
+   at field 1, and misses when that slot is empty. Row LABEL, depth,
    index.
 */
 KOS_MATCH_BODY(kos_match_same) {
@@ -826,19 +818,17 @@ KOS_MATCH_BODY(kos_match_same) {
           es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &prev) < 0))
     RESULT_RAISE();
 
-  PyObject *elem = KosEvalState_StackPopRef(es);
+  PyObject *elem = kos_match_peek(es);
   if (unlikely(! elem))
     RESULT_RAISE();
-  if (! prev) {
-    Py_DECREF(elem);
+  if (! prev)
     KOS_MATCH_MISS(row);
-  }
 
-  /* the comparison may run user code; the value is held across it */
+  /* the comparison may run user code; the slot's value is held across
+     it, the element by its stack entry */
   Py_INCREF(prev);
   int r = KosMatch_SameTest(elem, prev);
   Py_DECREF(prev);
-  Py_DECREF(elem);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)

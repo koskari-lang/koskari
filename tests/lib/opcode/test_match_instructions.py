@@ -555,16 +555,18 @@ class TestMarks(CevalTest):
             ["MATCH_STORE", (1, 0, 2, ("a", "b"))],
             ["MATCH_NEXT", ("miss", 1, 0, 0)],
             ["MATCH_SAME", ("miss", 1, 0, 0)],
-        ] + hit(3) + miss(3)
-        self.assertEqual((await run(prog, (1, 1)))[3], "hit")
-        self.assertEqual((await run(prog, (1, 2)))[3], "miss")
-        self.assertEqual((await run(prog, cons(1, 1, nil)))[3], "hit")
-        self.assertEqual((await run(prog, cons(1, 2, nil)))[3], "miss")
+        ] + hit(4) + miss(4)
+        self.assertEqual((await run(prog, (1, 1)))[3:], (1, "hit"))
+        self.assertEqual((await run(prog, (1, 2)))[3:], (2, "miss"))
+        got = await run(prog, cons(1, 1, nil))
+        self.assertEqual((got[3].datum, got[4]), (1, "hit"))
+        got = await run(prog, cons(1, 2, nil))
+        self.assertEqual((got[3].datum, got[4]), (2, "miss"))
 
-        # an empty slot misses, the element consumed
+        # an empty slot misses, the element left on top
         prog[5] = ["MATCH_SAME", ("miss", 1, 1, 0)]
         got = await run(prog, (1, 1))
-        self.assertEqual((got[0], got[3]), ("base", "miss"))
+        self.assertEqual((got[0], got[3], got[4]), ("base", 1, "miss"))
 
 
 class TestItems(CevalTest):
@@ -729,22 +731,26 @@ class TestCopyOnShare(CevalTest):
 
 
 class TestElementTests(CevalTest):
+    """
+    Each element test reads TOS and leaves it, on a hit and on a miss
+    """
 
     async def test_literal(self):
         prog = [
             ["MATCH_LITERAL", ("miss", 7, 0, 0)],
-        ] + hit(1) + miss(1)
-        self.assertEqual(await run(prog, 7), ("base", "hit"))
-        self.assertEqual(await run(prog, Datum(7)), ("base", "hit"))
-        self.assertEqual(await run(prog, 8), ("base", "miss"))
+        ] + hit(2) + miss(2)
+        self.assertEqual(await run(prog, 7), ("base", 7, "hit"))
+        datum = Datum(7)
+        self.assertEqual(await run(prog, datum), ("base", datum, "hit"))
+        self.assertEqual(await run(prog, 8), ("base", 8, "miss"))
 
 
     async def test_core(self):
         prog = [
             ["MATCH_CORE", ("miss", int(CoreType.TUPLE), 0, 0)],
-        ] + hit(1) + miss(1)
-        self.assertEqual(await run(prog, (1,)), ("base", "hit"))
-        self.assertEqual(await run(prog, [1]), ("base", "miss"))
+        ] + hit(2) + miss(2)
+        self.assertEqual(await run(prog, (1,)), ("base", (1,), "hit"))
+        self.assertEqual(await run(prog, [1]), ("base", [1], "miss"))
         prog[0] = ["MATCH_CORE", ("miss", len(CoreType), 0, 0)]
         with self.assertRaises(SystemError):
             await run(prog, 1)
@@ -753,50 +759,94 @@ class TestElementTests(CevalTest):
     async def test_type_twins(self):
         prog = [
             ["MATCH_TYPE_VAR", ("miss", "int", 0, 0)],
-        ] + hit(1) + miss(1)
+        ] + hit(2) + miss(2)
         values = {"int": int}
-        self.assertEqual(await run(prog, 7, values), ("base", "hit"))
-        self.assertEqual(await run(prog, "7", values), ("base", "miss"))
+        self.assertEqual(await run(prog, 7, values), ("base", 7, "hit"))
+        self.assertEqual(
+            await run(prog, "7", values), ("base", "7", "miss"))
 
         prog[0] = ["MATCH_TYPE_FAST", ("miss", 1, 0, 0)]
         syms = ("subject", "int")
-        self.assertEqual(await run(prog, 7, values, syms), ("base", "hit"))
         self.assertEqual(
-            await run(prog, "7", values, syms), ("base", "miss"))
+            await run(prog, 7, values, syms), ("base", 7, "hit"))
+        self.assertEqual(
+            await run(prog, "7", values, syms), ("base", "7", "miss"))
 
 
     async def test_class_twins(self):
         prog = [
             ["MATCH_CLASS_VAR", ("miss", "Point", 2, 0)],
-        ] + hit(1) + miss(1)
+        ] + hit(2) + miss(2)
         values = {"Point": Point}
+        p = Point(3, 4)
+        self.assertEqual(await run(prog, p, values), ("base", p, "hit"))
+        datum = Datum(p)
         self.assertEqual(
-            await run(prog, Point(3, 4), values), ("base", "hit"))
-        self.assertEqual(
-            await run(prog, Datum(Point(3, 4)), values), ("base", "hit"))
-        self.assertEqual(await run(prog, 7, values), ("base", "miss"))
+            await run(prog, datum, values), ("base", datum, "hit"))
+        self.assertEqual(await run(prog, 7, values), ("base", 7, "miss"))
 
         prog[0] = ["MATCH_CLASS_FAST", ("miss", 1, 2, 0)]
         syms = ("subject", "Point")
         self.assertEqual(
-            await run(prog, Point(3, 4), values, syms), ("base", "hit"))
-        self.assertEqual(await run(prog, 7, values, syms), ("base", "miss"))
+            await run(prog, p, values, syms), ("base", p, "hit"))
+        self.assertEqual(
+            await run(prog, 7, values, syms), ("base", 7, "miss"))
 
 
     async def test_class_count_past_match_args(self):
         # a non-instance misses; an instance raises
         for row in (["MATCH_CLASS_VAR", ("miss", "Point", 3, 0)],
                     ["MATCH_CLASS_FAST", ("miss", 1, 3, 0)]):
-            prog = [row] + hit(1) + miss(1)
+            prog = [row] + hit(2) + miss(2)
             values = {"Point": Point}
             syms = ("subject", "Point")
             self.assertEqual(
-                await run(prog, 7, values, syms), ("base", "miss"))
+                await run(prog, 7, values, syms), ("base", 7, "miss"))
             with self.assertRaises(TypeError) as caught:
                 await run(prog, Point(3, 4), values, syms)
             self.assertIn(
                 "__match_args__ has 2 entries; cannot satisfy 3 positional "
                 "field pattern(s)", str(caught.exception))
+
+
+    async def test_tests_in_turn_on_one_element(self):
+        # the element stays for the next test on either exit: a miss
+        # of the first test falls to the second on the same element,
+        # and a hit of both leaves it for the POP
+        prog = [
+            ["MATCH_CORE", ("second", int(CoreType.INT), 0, 0)],
+            ["MATCH_LITERAL", ("miss", 7, 0, 0)],
+            ["POP", 1],
+        ] + hit(1) + [
+            ["LABEL", "second"],
+            ["MATCH_TYPE_VAR", ("miss", "str", 0, 0)],
+            ["MATCH_LITERAL", ("miss", "7", 0, 0)],
+            ["POP", 1],
+        ] + ending("str", 1) + miss(2)
+        values = {"str": str}
+        self.assertEqual(await run(prog, 7, values), ("base", "hit"))
+        self.assertEqual(await run(prog, "7", values), ("base", "str"))
+        self.assertEqual(await run(prog, 8, values), ("base", 8, "miss"))
+        self.assertEqual(await run(prog, "8", values), ("base", "8", "miss"))
+        self.assertEqual(
+            await run(prog, 7.0, values), ("base", 7.0, "miss"))
+
+
+    async def test_same_leaves_a_spine_datum(self):
+        # the Datum NEXT gave is the one left on top, on both exits
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["MATCH_SCOPE", (0, 1, 0, 0)],
+            ["MATCH_NEXT", ("miss", 1, 0, 0)],
+            ["MATCH_STORE", (1, 0, 2, ("a",))],
+            ["MATCH_NEXT", ("miss", 1, 0, 0)],
+            ["DUP", 1],
+            ["MATCH_SAME", ("miss", 2, 0, 0)],
+        ] + hit(5) + miss(5)
+        for second, tag in ((1, "hit"), (2, "miss")):
+            got = await run(prog, cons(1, second, nil))
+            self.assertIs(got[3], got[4])
+            self.assertEqual((got[4].datum, got[5]), (second, tag))
 
 
 class TestProjections(CevalTest):

@@ -17,8 +17,9 @@ tests.matcher.test_core_semantics
 What a built matcher returns for the shapes whose meaning once
 depended on how they were lowered: a NOT after an element, a NOT
 tested against the subject's remaining elements, zero-width and GROUP
-children of a one-element branch, a trailing ONEOF under a
-wrapper, SAME at any depth or after a ONEOF or REPEAT, the per-pass
+children of a one-element branch, a ONEOF of one-element tests
+taking its first matching branch, a trailing ONEOF under a wrapper,
+SAME at any depth or after a ONEOF or REPEAT, the per-pass
 values a slot inside an uncaptured REPEAT binds, the length check
 that runs before any extern, and the __match_args__ count a CLASS
 checks before it reads any field
@@ -31,7 +32,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import DatumFrame, cons, demand, nil
+from koskari.lib import Datum, DatumFrame, cons, demand, nil
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MATCH, NOT, ONEOF,
     OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY, repeat_capture)
@@ -225,6 +226,52 @@ class TestOneElementBranches(unittest.TestCase):
         self.assertEqual(m((1,)), {})
         self.assertEqual(m((1, 9)), {})
         self.assertIsNone(m((1, 2)))
+
+
+class TestOneofOfOneElementTests(unittest.TestCase):
+    """
+    A ONEOF whose branches each test one element pulls the element
+    once and tries the branches on it in order: the first that matches
+    is taken, and the element is gone before what follows the ONEOF
+    """
+
+    def test_first_matching_branch_is_taken(self):
+        calls = []
+
+        def peeled(v):
+            return v.datum if isinstance(v, Datum) else v
+
+        def big(v):
+            calls.append(("big", peeled(v)))
+            return peeled(v) > 5
+
+        def even(v):
+            calls.append(("even", peeled(v)))
+            return peeled(v) % 2 == 0
+
+        m = built(MATCH(
+            ONEOF(
+                CAPTURE("a", PREDICATE("big")),
+                CAPTURE("b", PREDICATE("even")),
+                CAPTURE("c", TEST_ANY())),
+            CAPTURE("d"),
+            ONEOF(LITERAL(1), CAPTURE("e", LITERAL(2)))),
+            {"big": big, "even": even})
+
+        self.assertEqual(m((8, "x", 1)), {"a": 8, "d": "x"})
+        self.assertEqual(calls, [("big", 8)])
+        del calls[:]
+        self.assertEqual(m((4, "x", 2)), {"b": 4, "d": "x", "e": 2})
+        self.assertEqual(calls, [("big", 4), ("even", 4)])
+        self.assertEqual(m((3, "x", 1)), {"c": 3, "d": "x"})
+        self.assertIsNone(m((3, "x", 3)))
+        self.assertIsNone(m((3, "x")))
+
+        result = m(cons(4, "x", 2, nil))
+        self.assertIsInstance(result, DatumFrame)
+        self.assertEqual(
+            {name: (v.datum, v.binding) for name, v in result.items()},
+            {"b": (4, "b"), "d": ("x", "d"), "e": (2, "e")})
 
 
 class TestJoinedMisses(unittest.TestCase):

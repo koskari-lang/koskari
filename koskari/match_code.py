@@ -148,8 +148,8 @@ def lower_clause(compiler, fragment, tables, atoms, miss, guarded=False):
     :param miss: the arm's miss label
     :param guarded: whether a guard follows, which needs the subject
     :return: a function the caller invokes where code after the arm's
-        hit path is unreachable, emitting the arm's fail blocks, or
-        None when the arm has none
+        hit path is unreachable and just ahead of miss, emitting the
+        arm's fail entries, or None when the arm has none
     :raises TypeError: when a LITERAL value or a MAP entry key is not
         a constant the pool holds
     :raises ValueError: when the pattern is one the core refuses

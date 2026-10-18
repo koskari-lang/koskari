@@ -397,11 +397,11 @@ When adding or changing an opcode:
 | MATCH_APPEND | EXTRA | Pop TOS and append it to the list at the depth | [§9.2](#kos_op_match_append) |
 | MATCH_MIN | EXTRA | Miss unless the list at the depth holds at least the count of items | [§9.2](#kos_op_match_min) |
 | MATCH_COLUMNS | EXTRA | Store each name's per-pass values, as a list, into a slot of the mark | [§9.2](#kos_op_match_columns) |
-| MATCH_LITERAL | EXTRA | Pop TOS; it must be the constant | [§9.2](#kos_op_match_literal) |
-| MATCH_CORE | EXTRA | Pop TOS; it must be an instance of the core type the ordinal names | [§9.2](#kos_op_match_core) |
-| MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | Pop TOS; it must be an instance of the type in the variable | [§9.2](#kos_op_match_type_var) |
-| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | Pop TOS; it must be an instance of the class in the variable, whose `__match_args__` must cover the positional fields | [§9.2](#kos_op_match_class_var) |
-| MATCH_SAME | EXTRA | Pop TOS; it must equal a slot of the mark at the depth; an empty slot misses | [§9.2](#kos_op_match_same) |
+| MATCH_LITERAL | EXTRA | TOS, which stays, must be the constant | [§9.2](#kos_op_match_literal) |
+| MATCH_CORE | EXTRA | TOS, which stays, must be an instance of the core type the ordinal names | [§9.2](#kos_op_match_core) |
+| MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | TOS, which stays, must be an instance of the type in the variable | [§9.2](#kos_op_match_type_var) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | TOS, which stays, must be an instance of the class in the variable, whose `__match_args__` must cover the positional fields | [§9.2](#kos_op_match_class_var) |
+| MATCH_SAME | EXTRA | TOS, which stays, must equal a slot of the mark at the depth; an empty slot misses | [§9.2](#kos_op_match_same) |
 | MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | EXTRA | Push the attribute the class's `__match_args__` names at the position | [§9.2](#kos_op_match_field_pos_var) |
 | MATCH_FIELD_KW | EXTRA | Push the attribute the constant names | [§9.2](#kos_op_match_field_kw) |
 | MATCH_MAPPING | LABEL | The mapping gate on TOS | [§9.2](#kos_op_match_mapping) |
@@ -1866,6 +1866,9 @@ interpreted at run time.
   at its entry and writes the copy, so a resumed continuation sees the
   cursors, marks and items it captured.
 - **Misses.** An instruction with a LABEL field jumps there on a miss.
+- **Tests.** `MATCH_LITERAL`, `MATCH_CORE`, `MATCH_TYPE_*`,
+  `MATCH_CLASS_*`, `MATCH_SAME` and `MATCH_MAPPING` read TOS and leave
+  it on a hit and on a miss; the code after the test removes the value.
 - **Boxing.** An element pulled from a pair spine is a `Datum` carrying
   its cell's position; an element of a tuple, list or single value is
   the item itself. Every test reads through `Datum`.
@@ -2142,7 +2145,7 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 ### KOS_OP_MATCH_LITERAL {#kos_op_match_literal}
 
 - **Style**: EXTRA (LABEL, CONST): label, constant.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` read through `Datum` must be the constant `a1`, a gensym
   whose base is `a1`, or equal to `a1`.
@@ -2151,7 +2154,7 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 ### KOS_OP_MATCH_CORE {#kos_op_match_core}
 
 - **Style**: EXTRA (LABEL, RAW): label, core type ordinal.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` read through `Datum` must be an instance of the core type
   whose ordinal is `a1`: 0 `pair`, 1 `symbol`, 2 `keyword`, 3 `int`, 4 `str`,
@@ -2162,7 +2165,7 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 
 - **Style**: EXTRA (LABEL, VAR) on `MATCH_TYPE_VAR`, (LABEL, FASTVAR) on
   `MATCH_TYPE_FAST`: label, type.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` read through `Datum` must be an instance of the type in
   the variable `a1`, read by name on the `_VAR` form and by fast index on the
@@ -2174,7 +2177,7 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 
 - **Style**: EXTRA (LABEL, VAR, RAW) on `MATCH_CLASS_VAR`, (LABEL, FASTVAR,
   RAW) on `MATCH_CLASS_FAST`: label, class, positional field count.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` read through `Datum` must be an instance of the class in
   the variable `a1`, read by name on the `_VAR` form and by fast index on the
@@ -2190,7 +2193,7 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 ### KOS_OP_MATCH_SAME {#kos_op_match_same}
 
 - **Style**: EXTRA (LABEL, RAW, RAW): label, mark depth, slot index.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` must equal the value in slot `a2` of the mark at depth
   `a1`, both read through `Datum`: the same object, or equal under `==`. An

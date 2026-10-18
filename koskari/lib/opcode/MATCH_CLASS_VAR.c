@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_CLASS_VAR: Row LABEL, slot, count. e -> : e must be an
+  MATCH_CLASS_VAR: Row LABEL, slot, count. e -> e: e must be an
   instance of the class in the slot, whose __match_args__ must then
   hold at least count names, else a TypeError.
   The body is kos_match_class in eval/eval_match.c

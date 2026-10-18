@@ -2,7 +2,7 @@
 
 - **Style**: EXTRA (LABEL, VAR) on `MATCH_TYPE_VAR`, (LABEL, FASTVAR) on
   `MATCH_TYPE_FAST`: label, type.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` read through `Datum` must be an instance of the type in
   the variable `a1`, read by name on the `_VAR` form and by fast index on the

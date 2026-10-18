@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_TYPE_VAR: Row LABEL, slot. e -> : e must be an instance of
+  MATCH_TYPE_VAR: Row LABEL, slot. e -> e: e must be an instance of
   the type in the slot.
   The body is kos_match_type in eval/eval_match.c
   (design/interpreter/matcher-core.md).

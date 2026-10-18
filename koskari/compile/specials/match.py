@@ -172,12 +172,15 @@ def special_match(compiler, caps):
         guard after its captures bind; a pass falls through with the
         subject consumed, a miss jumps to next_label with the subject
         still on the stack
+
+        :return: the function emitting the arm's fail entries, for
+            after the arm's body, or None when it has none
         """
 
         pattern, tables, atoms, guard_kw, guard_expr, _body, clause_pos = arm
         target.position(clause_pos)
         guarded = guard_kw is not None
-        fail_blocks = lower_clause(
+        fail_entries = lower_clause(
             compiler, target, tables, atoms, next_label, guarded)
         if guarded:
             # a guarded arm's walk keeps the subject for the guard's
@@ -188,11 +191,7 @@ def special_match(compiler, caps):
                 else OpCode.JUMP_TRUE,
                 next_label)
             target.instruction(OpCode.POP, 1)
-        if fail_blocks is not None:
-            hit = gen_label()
-            target.instruction(OpCode.JUMP, hit)
-            fail_blocks()
-            target.instruction(OpCode.LABEL, hit)
+        return fail_entries
 
     # the subject stays on the stack across the arm chain; a hit
     # consumes it and runs the body in place, and a miss leaves it for
@@ -208,9 +207,14 @@ def special_match(compiler, caps):
             fragment.instruction(OpCode.JUMP, done)
             break
         next_label = gen_label()
-        emit_tests(fragment, arm, next_label)
+        fail_entries = emit_tests(fragment, arm, next_label)
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
+        if fail_entries is not None:
+            # after the body, so the hit path jumps over nothing; the
+            # last entry falls into the next arm
+            fragment.position(clause_pos)
+            fail_entries()
         fragment.instruction(OpCode.LABEL, next_label)
     else:
         fragment.instruction(OpCode.POP, 1)

@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_SAME: Row LABEL, mark depth, index. e -> : e must equal the
+  MATCH_SAME: Row LABEL, mark depth, index. e -> e: e must equal the
   slot's value; an empty slot misses.
   The body is kos_match_same in eval/eval_match.c
   (design/interpreter/matcher-core.md).

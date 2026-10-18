@@ -1,7 +1,7 @@
 # KOS_OP_MATCH_SAME
 
 - **Style**: EXTRA (LABEL, RAW, RAW): label, mark depth, slot index.
-- **Stack**: `[..., e]` -> `[...]`; jump to `a0` on a miss, `e` popped either
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
   way.
 - **Semantics**: `e` must equal the value in slot `a2` of the mark at depth
   `a1`, both read through `Datum`: the same object, or equal under `==`. An

@@ -14,7 +14,7 @@
 */
 
 /**
-  MATCH_LITERAL: Row LABEL, const. e -> : e must be the constant.
+  MATCH_LITERAL: Row LABEL, const. e -> e: e must be the constant.
   The body is kos_match_literal in eval/eval_match.c
   (design/interpreter/matcher-core.md).
 */

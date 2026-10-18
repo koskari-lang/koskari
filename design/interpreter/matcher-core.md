@@ -94,9 +94,9 @@ Spine composites act on the cursor:
 A whole matcher is a root that reaches the end of its subject. A single
 value -- a `match` arm's subject, an APP result, a FIELD or MAP value --
 is a one-element subject walked through a cursor like any spine, unless
-its pattern is one element test (TEST, SAME, FORM, APP, CLASS or MAP,
-under CAPTUREs and one-child MATCHes only), which tests the value in
-place with no cursor.
+its pattern is one element test (TEST, SAME, FORM, APP, CLASS or MAP),
+or a ONEOF whose branches are each one, under CAPTUREs and one-child
+MATCHes only, which tests the value in place with no cursor.
 
 ## Semantics
 
@@ -235,57 +235,75 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_APPEND items` | `v` -> | appends |
 | `MATCH_MIN items n miss` | -- | misses below `n` items |
 | `MATCH_COLUMNS items s slots` | -- | stores, for each slot, the list of its per-pass values into the mark at `s` |
-| `MATCH_LITERAL c miss` | `e` -> | `c` a pool CONST |
-| `MATCH_CORE n miss` | `e` -> | `n` a RAW ordinal |
-| `MATCH_TYPE_VAR t miss` / `MATCH_TYPE_FAST` | `e` -> | `t` a closure name; `convert_fast` and the standalone target rewrite `_VAR` to `_FAST` |
-| `MATCH_CLASS_VAR t n miss` / `MATCH_CLASS_FAST` | `e` -> | `isinstance(e, t)`, else a miss; then TypeError when `t.__match_args__` is missing, not a tuple, or holds fewer than `n` names, before any field is read, as on master; `n` a RAW count of the CLASS's positional fields |
-| `MATCH_SAME s i miss` | `e` -> | equal to slot `i` of the mark at `s`; misses when empty |
+| `MATCH_LITERAL c miss` | `e` -> `e` | `c` a pool CONST |
+| `MATCH_CORE n miss` | `e` -> `e` | `n` a RAW ordinal |
+| `MATCH_TYPE_VAR t miss` / `MATCH_TYPE_FAST` | `e` -> `e` | `t` a closure name; `convert_fast` and the standalone target rewrite `_VAR` to `_FAST` |
+| `MATCH_CLASS_VAR t n miss` / `MATCH_CLASS_FAST` | `e` -> `e` | `isinstance(e, t)`, else a miss; then TypeError when `t.__match_args__` is missing, not a tuple, or holds fewer than `n` names, before any field is read, as on master; `n` a RAW count of the CLASS's positional fields |
+| `MATCH_SAME s i miss` | `e` -> `e` | equal to slot `i` of the mark at `s`; misses when empty |
 | `MATCH_FIELD_POS_VAR t i miss` / `_FAST` | `o` -> `o a` | the attribute named by `t.__match_args__[i]`, `t` the CLASS's closure name; TypeError when `i` is past the end, as on master |
 | `MATCH_FIELD_KW name miss` | `o` -> `o a` | the attribute `name` |
 | `MATCH_MAPPING miss` | `o` -> `o` | mapping gate |
 | `MATCH_KEY k miss` | `o` -> `o v` | `k` a pool CONST |
 | `MATCH_KEY_VAR k miss` / `MATCH_KEY_FAST` | `o` -> `o v` | `k` a closure name |
 
-PREDICATE and APP use `CALL_VAR`, `JUMP_FALSE`, `DUP`, `POP`.
+The tests (`LITERAL`, `CORE`, `TYPE_*`, `CLASS_*`, `SAME`, `MAPPING`)
+leave their operand on both exits; the value's last user removes it.
+`DESCEND` consumes its value on a miss. PREDICATE and APP use
+`CALL_VAR`, `JUMP_FALSE`, `DUP`, `POP`.
 `MATCH_DESCEND`, `MATCH_CORE` and `MATCH_SAME` are primitives. A fused instruction combines a cursor operation with a
 test (`NEXT` with `LITERAL`); fused instructions wait for the core to
 pass and a benchmark to justify each.
 
 ## Lowering
 
-Conventions: a node leaves the stack as it found it on a hit and on a
-miss; a node that pushes has a fail label that pops what it pushed and
-jumps to its parent's miss. `w` is the suffix width: its minimum for a
-REPEAT, its fixed width for a REST; `s` is the
-enclosing scope's mark; `c'` is a cursor the node pushed.
+Conventions: a node on a cursor leaves the stack as it found it on a
+hit. A test leaves its operand on both exits, and the value's last user
+removes it: a variable store or `STORE`, a `POP`, or an arm's hit
+consuming the subject. A miss jumps from the stack as the failing
+instruction leaves it to the fail entry for (target, depth), which pops
+down to the target's depth and jumps to it; `miss` below names that
+entry. An entry into a target that opens with `POP`s merges with them
+(NOT's `ok`), and an entry into the standalone miss returns None
+itself. Fail entries go after the walk, one per target falling into it
+where the code before the target never falls through. `w` is the
+suffix width: its minimum for a REPEAT, its fixed width for a REST;
+`s` is the enclosing scope's mark; `c'` is a cursor the node pushed;
+`e` is the pulled element.
 
 ```
 TEST ANY          NEXT cur miss; POP
-TEST LITERAL c    NEXT cur miss; LITERAL c miss
-TEST CORE n       NEXT cur miss; CORE n miss
-TEST TYPE t       NEXT cur miss; TYPE_VAR t miss
+TEST LITERAL c    NEXT cur miss; LITERAL c miss; POP
+TEST CORE n       NEXT cur miss; CORE n miss; POP
+TEST TYPE t       NEXT cur miss; TYPE_VAR t miss; POP
 PREDICATE e       NEXT cur miss; CALL_VAR e 1; JUMP_FALSE miss
-SAME slot d       NEXT cur miss; SAME s_d i miss
-FORM sub          NEXT cur miss; DESCEND miss; FITS c' min max f
-                  <sub on c'> (-> f); FITS c' 0 0 f; POP
-                  f: POP; JUMP miss
-APP e sub         NEXT cur miss; CALL_VAR e 1; SINGLE
-                  <sub on c'> (-> f); FITS c' 0 0 f; POP
-                  f: POP; JUMP miss
-CLASS e fields    NEXT cur miss; DUP; CLASS_VAR e n f1, n the positional fields
-                  (TYPE_VAR e f1 when there are none)
-                  per field: FIELD_* f1; SINGLE; <sub on c'> (-> f2); FITS c' 0 0 f2; POP
+SAME slot d       NEXT cur miss; SAME s_d i miss; POP
+                  unresolved: JUMP miss
+FORM sub          NEXT cur miss; DESCEND miss; FITS c' min max miss
+                  <sub on c'>; FITS c' 0 0 miss; POP
+APP e sub         NEXT cur miss; CALL_VAR e 1; <sub on the value>
+CLASS e fields    NEXT cur miss; CLASS_VAR e n miss, n the positional fields
+                  (TYPE_VAR e miss when there are none)
+                  per field: FIELD_* miss; <sub on the value>
                   POP
-                  f2: POP; f1: POP; JUMP miss
-MAP entries       NEXT cur miss; MAPPING f1
-                  per entry: KEY k f1 | KEY_VAR k f1; SINGLE; <sub on c'> (-> f2); FITS c' 0 0 f2; POP
+MAP entries       NEXT cur miss; MAPPING miss
+                  per entry: KEY k miss | KEY_VAR k miss; <sub on the value> | POP
                   POP
-                  f2: POP; f1: POP; JUMP miss
+<sub on the value>
+                  sub tested in place: its test on the value, consuming it on a hit
+                  otherwise: SINGLE; <sub on c'>; FITS c' 0 0 miss; POP
 MATCH children    [FITS cur min+w max+w miss]; <children in order on cur>
-GROUP (anonymous) SCOPE cur k; [FITS]; <children> (-> f); POP  ; captures discarded
-GROUP g children  SCOPE cur k; [FITS]; <children> (-> f); CAPTURES s' cur names; STORE s i_g; POP
-                  f: POP; JUMP miss
-ONEOF b1..bn      SCOPE cur 0
+GROUP (anonymous) SCOPE cur k; [FITS]; <children>; POP  ; captures discarded
+GROUP g children  SCOPE cur k; [FITS]; <children>; CAPTURES s' cur names; STORE s i_g; POP
+ONEOF b1..bn      branches each tested in place (one element wide):
+                  [FITS b1]; NEXT cur miss
+                  <b1 on e> (-> n1); JUMP done
+                  n1: [CLEAR s slots(b1)]; <b2 on e> (-> n2); JUMP done ...
+                  <bn on e> (-> miss)
+                  done:
+                  a branch's hit removes e (POP or store); its miss leaves e
+                  for the next; CLEAR only where a store in the branch can
+                  precede one of its misses, never for an arm's root scope
+ONEOF b1..bn      any other: SCOPE cur 0
                   [FITS b1]; <b1> (-> n1); POP; JUMP done
                   n1: RESET cur m; CLEAR s slots(b1); [FITS b2]; <b2> (-> n2) ...
                   nn: RESET cur m; CLEAR s slots(bn); POP; JUMP miss
@@ -293,69 +311,73 @@ OPTIONAL sub      SCOPE cur 0; <sub> (-> back); POP; JUMP done
                   back: RESET cur m; CLEAR s slots(sub); POP
 NOT sub           UNBOUND cur; <sub on c'> (-> ok); POP; JUMP miss
                   ok: POP
-REPEAT sub min    ITEMS; BOUND cur w f
+REPEAT sub min    ITEMS; BOUND cur w miss
                   head: FITS c' 1 max exit
                         SCOPE c' k; <sub on c'> (-> pass_miss)
                         CAPTURES s' c' names | AT m | SPAN m c'
                         APPEND items; POP; JUMP head
                   pass_miss: RESET c' m; POP
-                  exit: SYNC cur c'; POP; MIN items min f
+                  exit: SYNC cur c'; POP; MIN items min miss
                   captured: the items list stays for the CAPTURE
                   uncaptured, k > 0: COLUMNS items s slots; POP
                   uncaptured, k = 0: POP
-                  f: POP; JUMP miss
 REST              TAIL cur w min miss; the span stays for the CAPTURE, else POP
-CAPTURE slot sub  sub is REPEAT or REST: <sub>; STORE s i
-                  otherwise: SCOPE cur 0; <sub> (-> f); AT m | SPAN m cur; STORE s i; POP
-                  f: POP; JUMP miss
+CAPTURE slot sub  sub tested in place: NEXT cur miss; <sub on e, e kept>; STORE s i cur
+                    a test keeps e; FORM, APP and PREDICATE test a DUP of it
+                  two CAPTUREs storing one element on a cursor: the outer
+                    as below, so each stored spine Datum has its own binding
+                  sub is REPEAT or REST: <sub>; STORE s i
+                  otherwise: SCOPE cur 0; <sub>; AT m | SPAN m cur; STORE s i; POP
 ```
 
 Roots:
 
 ```
-standalone        VAR subject; DESCEND m0; FITS c min max f1; SCOPE c k
-                  <root on c> (-> f2); FITS c 0 0 f2; CAPTURES s c names; RETURN
-                  f2: POP; f1: POP; m0: CONST None; RETURN
-inline arm, one element test at the root, tested in place:
-                  [int]          DUP; CORE int next; POP
-                  [(x :: int)]   DUP; CORE int next; STORE_VAR x
-                  [Point[a b]]   DUP; CLASS_VAR Point 2 next; FIELD_POS next 0;
+standalone        VAR subject; DESCEND m0; FITS c min max m0; SCOPE c k
+                  <root on c>; FITS c 0 0 m0; CAPTURES s c names; RETURN
+                  m0: CONST None; RETURN
+                  an entry into m0: POP n; CONST None; RETURN
+inline arm, root tested in place:
+                  [int]          CORE int next; POP
+                  [(x :: int)]   CORE int next; STORE_VAR x
+                  [Point[a b]]   CLASS_VAR Point 2 next; FIELD_POS next 0;
                                  STORE_VAR a; FIELD_POS next 1; STORE_VAR b; POP
+                  [(or 1 2)]     LITERAL 1 n1; POP; JUMP hit
+                                 n1: LITERAL 2 next; POP; hit:
 inline arm, any other root, on a cursor:
-                  DUP; SINGLE; <root on c> (-> f); FITS c 0 0 f; POP 2
-                  <arm body>
-                  f: POP; JUMP next_arm
+                  DUP; SINGLE; <root on c>; FITS c 0 0 next; POP 2
+                  <arm body>; JUMP done
+                  <the arm's fail entries>, the last falling into next
+                  next: <the next arm>
 uncaptured REPEAT with columns at the root:
-                  ... MIN items n f; SCOPE cur k; COLUMNS items 0 names (0..k-1)
+                  ... MIN items n miss; SCOPE cur k; COLUMNS items 0 names (0..k-1)
                   per name i: LOAD skip_i 0 i; STORE_VAR name; skip_i:
                   POP 2
 ```
 
 The subject stays on the stack across arms. An arm consumes it on a
-hit and leaves it on a miss; a guarded arm keeps it on a hit (a root
-tested in place in hold mode: `[m :: int when ...]` is `DUP; CORE int
-next; DUP; STORE_VAR m`), and the special pops it after the guard
-passes. The special's POP moved into the arm: the arm pops only when
-its last step did not consume the subject. An in-place value is in
-one of three modes: consumed on both exits (an APP result, a FIELD or
-MAP value, an element pulled by NEXT), consumed on a hit and kept on a
-miss (an unguarded arm root), or kept on both (a guarded arm root).
-`STORE_VAR` is the ordinary store the compiler emits for that name --
-the store an assignment in the arm would emit -- so it follows that
-variable's path (a fast local, a cell, a module variable) and
-`convert_fast` treats it as any other store; it is emitted as soon as
-the capture's value is tested, under a cursor too (`#[a b *: rest]`
-is `DUP; DESCEND next; FITS c' 2 0xFFFF f; NEXT c' f; STORE_VAR a; NEXT
-c' f; STORE_VAR b; TAIL c' 0 0 f; STORE_VAR rest; FITS c' 0 0 f; POP
-2`). There is no root mark: no SCOPE, STORE, LOAD or CLEAR for a root
-slot, and a failed alternative's CLEAR is not emitted for the root.
-Only root slots become variables; names inside a group or REPEAT are
-reached through the group's or REPEAT's value. A named group's
-variable receives its dict or DatumFrame; a REPEAT's variable
-receives its items list. A value tested in place inside a mark scope
-is stored by `STORE s i 0`. The emitter merges adjacent POPs into one
-POP n, and the special emits `JUMP hit` over an arm's fail blocks only
-when it has some.
+hit and leaves it on a miss; a guarded arm keeps it on a hit
+(`[m :: int when ...]` is `CORE int next; DUP; STORE_VAR m`), and the
+special pops it after the guard passes. A FORM, APP or PREDICATE root
+consumes its value, so it tests a `DUP` of the subject, as does a
+FORM, APP or PREDICATE branch of a one-element ONEOF, whose miss
+leaves the value for the next branch. `STORE_VAR` is the ordinary
+store the compiler emits for that name -- the store an assignment in
+the arm would emit -- so it follows that variable's path (a fast
+local, a cell, a module variable) and `convert_fast` treats it as any
+other store; it is emitted as soon as the capture's value is tested,
+under a cursor too (`#[a b *: rest]` is `DUP; DESCEND next; FITS c' 2
+0xFFFF f; NEXT c' f; STORE_VAR a; NEXT c' f; STORE_VAR b; TAIL c' 0 0
+f; STORE_VAR rest; FITS c' 0 0 f; POP 2`, `f` the entry `POP; JUMP
+next`). There is no root mark: no SCOPE, STORE, LOAD or CLEAR for a
+root slot, and a failed alternative's CLEAR is not emitted for the
+root. Only root slots become variables; names inside a group or REPEAT
+are reached through the group's or REPEAT's value. A named group's
+variable receives its dict or DatumFrame; a REPEAT's variable receives
+its items list. A value tested in place inside a mark scope is stored
+by `STORE s i 0`. The emitter merges adjacent POPs into one POP n, and
+an arm's fail entries follow its body, so its hit path jumps over
+nothing.
 
 NOT is a try on an unbounded copy of the cursor and an inversion; at
 the end of the subject `NEXT` misses inside the sub-pattern, so the end
