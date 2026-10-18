@@ -172,7 +172,8 @@ int KosMatch_MapTest(PyObject *elem);
 /**
    The equality test of SAME: elem and the bound value prev read
    through Datum; a DatumFrame on either side misses; identity, then
-   Py_EQ. 1, 0, or -1.
+   Py_EQ, with prev held across the comparison so a borrowed value
+   may be passed. 1, 0, or -1.
  */
 int KosMatch_SameTest(PyObject *elem, PyObject *prev);
 
@@ -258,7 +259,15 @@ PyObject *KosMatchCursor_Single(PyObject *value);
    reserve: the count of a spine, the live length of a list, the
    length the cursor recorded for any other sequence. Never negative.
  */
-Py_ssize_t KosMatchCursor_Remaining(PyObject *cursor);
+static inline Py_ssize_t KosMatchCursor_Remaining(PyObject *cursor) {
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+  Py_ssize_t length = c->length;
+
+  if (c->kind == KOS_MATCH_CURSOR && PyList_Check(c->seq))
+    length = PyList_GET_SIZE(c->seq);
+  length -= c->reserve + c->index;
+  return length > 0 ? length : 0;
+}
 
 /**
    MATCH_NEXT: pull one element and advance. The element is a new

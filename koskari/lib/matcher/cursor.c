@@ -56,16 +56,6 @@ KOS_NOINLINE PyObject *KosMatchCursor_CopyAt(
 }
 
 
-static Py_ssize_t core_remaining(const KosMatchCursor *c) {
-  Py_ssize_t length = c->length;
-
-  if (c->kind == KOS_MATCH_CURSOR && PyList_Check(c->seq))
-    length = PyList_GET_SIZE(c->seq);
-  length -= c->reserve + c->index;
-  return length > 0 ? length : 0;
-}
-
-
 /**
    The ValueError a step raises when the subject no longer holds what
    the walk took from it. NULL.
@@ -211,11 +201,6 @@ PyObject *KosMatchCursor_Single(PyObject *value) {
 }
 
 
-Py_ssize_t KosMatchCursor_Remaining(PyObject *cursor) {
-  return core_remaining((KosMatchCursor *) cursor);
-}
-
-
 int KosMatchCursor_Next(
     PyObject *cursor,
     Py_ssize_t held,
@@ -229,7 +214,7 @@ int KosMatchCursor_Next(
   *out_elem = NULL;
   *out_next = NULL;
 
-  if (core_remaining(c) == 0)
+  if (KosMatchCursor_Remaining(cursor) == 0)
     return 0;
 
   if (c->kind == KOS_MATCH_SPINE) {
@@ -270,7 +255,7 @@ int KosMatchCursor_Bound(
   KosMatchCursor *c = (KosMatchCursor *) cursor;
 
   *out_bound = NULL;
-  if (core_remaining(c) < w)
+  if (KosMatchCursor_Remaining(cursor) < w)
     return 0;
 
   *out_bound = core_cursor_new(
@@ -295,7 +280,7 @@ int KosMatchCursor_Tail(
     PyObject **out_next) {
 
   KosMatchCursor *c = (KosMatchCursor *) cursor;
-  Py_ssize_t avail = core_remaining(c);
+  Py_ssize_t avail = KosMatchCursor_Remaining(cursor);
   PyObject *span;
   PyObject *end = c->seq;
 

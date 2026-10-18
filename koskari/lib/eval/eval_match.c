@@ -273,13 +273,12 @@ KOS_MATCH_BODY(kos_match_single) {
    Row LABEL, depth, min, max.
 */
 KOS_MATCH_BODY(kos_match_fits) {
-  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
   PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
   if (unlikely(! cursor))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
 
   Py_ssize_t remaining = KosMatchCursor_Remaining(cursor);
   uint32_t max = KosExtra_IMM(row, 3);
@@ -595,14 +594,13 @@ KOS_MATCH_BODY(kos_match_captures) {
    slot jumps to field 0, pushing nothing. Row LABEL, depth, index.
 */
 KOS_MATCH_BODY(kos_match_load) {
-  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
   PyObject *value = NULL;
   if (unlikely(kos_match_slot_at(
           es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &value) < 0))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
   if (! value)
     KOS_MATCH_MISS(row);
   RESULT_PUSH(es, value);
@@ -662,13 +660,12 @@ KOS_OP_INLINE PyObject *kos_match_items_at(
    items. Row LABEL, depth, count.
 */
 KOS_MATCH_BODY(kos_match_min) {
-  KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
   PyObject *list = kos_match_items_at(es, KosExtra_IMM(row, 1));
   if (unlikely(! list))
-    RESULT_RAISE();
+    RESULT_RAISE_AT(es, insn);
   if (PyList_GET_SIZE(list) < (Py_ssize_t) KosExtra_IMM(row, 2))
     KOS_MATCH_MISS(row);
   RESULT_NEXT(es);
@@ -824,11 +821,7 @@ KOS_MATCH_BODY(kos_match_same) {
   if (! prev)
     KOS_MATCH_MISS(row);
 
-  /* the comparison may run user code; the slot's value is held across
-     it, the element by its stack entry */
-  Py_INCREF(prev);
   int r = KosMatch_SameTest(elem, prev);
-  Py_DECREF(prev);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)

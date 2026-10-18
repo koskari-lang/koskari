@@ -524,7 +524,13 @@ int KosMatch_SameTest(PyObject *elem, PyObject *prev) {
     return 0;
   if (got == prev)
     return 1;
-  return PyObject_RichCompareBool(got, prev, Py_EQ);
+
+  /* the comparison may run user code; prev is held across it, the
+     element by its stack entry */
+  Py_INCREF(prev);
+  int r = PyObject_RichCompareBool(got, prev, Py_EQ);
+  Py_DECREF(prev);
+  return r;
 }
 
 
