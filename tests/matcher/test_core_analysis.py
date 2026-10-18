@@ -459,6 +459,21 @@ class TestFacts(unittest.TestCase):
         self.assertNotIn(last, found.fits)
 
 
+    def test_a_check_implied_by_an_earlier_one_is_omitted(self):
+        # a FORM checks its exact length (2, 2); the ONEOF branch at the
+        # same position needs only (2, None), which that check implies
+        tables = MatchCompiler().lower(MATCH(FORM(MATCH(ONEOF(
+            MATCH(TEST_ANY(), TEST_ANY()),
+            MATCH(LITERAL(1), TEST_ANY()))))))
+        found = analyse(tables)
+        nodes = tables[3]
+        form = [i for i, n in enumerate(nodes) if n[0] == 'FORM'][0]
+        oneof = [i for i, n in enumerate(nodes) if n[0] == 'ONEOF'][0]
+        self.assertEqual(found.form_fits, {form: (2, 2)})
+        for branch in nodes[oneof][1:]:
+            self.assertNotIn(branch, found.fits)
+
+
     def test_named_group_scope(self):
         tables = MatchCompiler().lower(MATCH(
             CAPTURE("a"), GROUP("g", CAPTURE("b"), SAME("a", depth=1))))

@@ -115,11 +115,11 @@ class Analysis:
         REPEAT's w is its suffix min; a REST's w is its suffix, which
         is fixed. None where widths is None
     :ivar fits: node to the (min, max) of its MATCH_FITS precheck on
-        the cursor it is on: a MATCH, GROUP, ONEOF branch or OPTIONAL sub-pattern of minimum width above 1 on its
-        own cursor, and a ONEOF branch or OPTIONAL sub-pattern of
-        minimum width 1 that a run of minimum width above 0 follows,
-        with no max, omitted where the same bounds were checked at the
-        same position
+        the cursor it is on: a MATCH, GROUP, ONEOF branch or OPTIONAL
+        sub-pattern of minimum width above 1 on its own cursor, and a
+        ONEOF branch or OPTIONAL sub-pattern of minimum width 1 that a
+        run of minimum width above 0 follows, with no max; omitted where
+        a check already made at the same position implies the bounds
     :ivar form_fits: FORM node to the (min, max) checked on the cursor
         it descends to
     :ivar root_fits: the standalone root's (min, max), None for an arm
@@ -467,7 +467,14 @@ def cursor_layout(nodes, widths, entry, arm):
             # the element the alternative pulls, and the suffix's
             # minimum after it
             bounds = fits_bounds(i, widths[i], after, True)
-        if bounds is not None and bounds != checked:
+        # a check already made at this position that implies the bounds
+        # (at least the minimum, at most a bounded maximum) makes them
+        # redundant
+        implied = checked is not None and bounds is not None and (
+            checked[0] >= bounds[0]
+            and (bounds[1] is None
+                 or (checked[1] is not None and checked[1] <= bounds[1])))
+        if bounds is not None and not implied:
             fits[i] = bounds
             checked = bounds
 
