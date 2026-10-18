@@ -225,4 +225,28 @@ static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
 #define koskari_HashPointer _Py_HashPointer
 
 
+/* === Type version tags === */
+
+
+/* The type's version for a cache guard: 0 means no valid version, so
+   an entry always carries a nonzero one and a cleared tag never
+   matches it. From 3.12 the validity flag is deprecated (3.14 stops
+   setting it) and a nonzero tp_version_tag is itself the signal;
+   PyType_Modified zeroes it on change. */
+static inline uint64_t kos_type_version(PyTypeObject *tp) {
+  return (uint64_t) tp->tp_version_tag;
+}
+
+
+/* The type's version for a cache populate, 0 when it cannot be
+   versioned. From 3.12 a lookup assigns a tag only conditionally, so
+   it is forced through PyUnstable_Type_AssignVersionTag; otherwise a
+   guard could never match. */
+static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
+  if (! PyUnstable_Type_AssignVersionTag(tp))
+    return 0;
+  return (uint64_t) tp->tp_version_tag;
+}
+
+
 // The end.

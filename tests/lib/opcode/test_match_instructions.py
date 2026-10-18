@@ -824,6 +824,49 @@ class TestElementTests(CevalTest):
             await run(prog, "7", values, syms), ("base", "7", "miss"))
 
 
+    async def test_type_miss_is_redecided_after_a_class_change(self):
+        # a miss is final until the subject's class, or a base of it,
+        # changes how __class__ is read
+        class Target:
+            pass
+
+        class Named:
+            @property
+            def __class__(self):
+                return Target
+
+        def read_class(self, name):
+            if name == "__class__":
+                return Target
+            return object.__getattribute__(self, name)
+
+        def own(plain, base):
+            plain.__getattribute__ = read_class
+
+        def on_base(plain, base):
+            base.__getattribute__ = read_class
+
+        def rebased(plain, base):
+            plain.__bases__ = (Named,)
+
+        prog = [
+            ["MATCH_TYPE_VAR", ("miss", "Target", 0, 0)],
+        ] + hit(2) + miss(2)
+        for change in (own, on_base, rebased):
+            class Base:
+                pass
+
+            class Plain(Base):
+                pass
+
+            subject = Plain()
+            got = await run_each(
+                prog, [subject, subject], {"Target": Target}, (),
+                lambda index: change(Plain, Base))
+            self.assertEqual(
+                [r[-1] for r in got], ["miss", "hit"], change.__name__)
+
+
     async def test_class_twins(self):
         prog = [
             ["MATCH_CLASS_VAR", ("miss", "Point", 2, 0)],

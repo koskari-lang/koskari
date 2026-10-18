@@ -48,22 +48,53 @@ static PyObject *kos_object_class_descr = NULL;
 
 
 /**
+   The subject types whose nominal miss has been proved final, direct
+   mapped by address and shared by every test site: a borrowed type
+   and the version it was proved at. A modified type, or a type at a
+   reused address, carries another version and fails the compare
+   before the entry is trusted. A non-final verdict is never kept.
+*/
+#define FINAL_MISS_SLOTS 64
+
+static struct {
+  PyTypeObject *tp;
+  uint64_t version;
+} final_miss[FINAL_MISS_SLOTS];
+
+
+/**
    Whether isinstance's virtual-subclass fallback can change a nominal
    miss for inst. object_isinstance reads inst.__class__ and accepts
    when that is a subtype of cls, so the miss is final when the read
    provably yields Py_TYPE(inst): the type resolves attributes
    generically and __class__ on its MRO is object's own data
-   descriptor, which outranks any instance dict entry.
+   descriptor, which outranks any instance dict entry. The proof
+   depends on the type alone and is kept per type and version.
 */
 static int matcher_nominal_miss_is_final(PyObject *inst) {
 
   PyTypeObject *tp = Py_TYPE(inst);
+  size_t at = (size_t) (((uint64_t) (uintptr_t) tp
+                         * UINT64_C(0x9E3779B97F4A7C15)) >> 58);
+  uint64_t version = kos_type_version(tp);
+
+  if (version && final_miss[at].tp == tp
+      && final_miss[at].version == version)
+    return 1;
 
   if (tp->tp_getattro != PyObject_GenericGetAttr)
     return 0;
   if (! kos_object_class_descr)
     return 0;
-  return PyType_Lookup(tp, kos_class_name) == kos_object_class_descr;
+  if (PyType_Lookup(tp, kos_class_name) != kos_object_class_descr)
+    return 0;
+
+  version = kos_type_version_assign(tp);
+  if (version) {
+    final_miss[at].tp = tp;
+    final_miss[at].version = version;
+  }
+  return 1;
 }
 
 
@@ -307,6 +338,7 @@ int koskari_matcher_clear(PyObject *mod) {
 #endif
   Py_CLEAR(kos_class_name);
   Py_CLEAR(kos_object_class_descr);
+  memset(final_miss, 0, sizeof(final_miss));
   return 0;
 }
 
