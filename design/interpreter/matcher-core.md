@@ -224,6 +224,7 @@ top of the stack; `miss` and `label` are jump targets.
 | `MATCH_UNBOUND cur` | -> `c'` | a copy of `cur` at its position with its reservation removed |
 | `MATCH_TAIL cur w min miss` | -> `span` | the remaining elements less `w`, advancing `cur`; misses below `min` |
 | `MATCH_SCOPE cur k` | -> `m` | a mark at `cur`'s position with `k` empty slots |
+| `MATCH_SCOPE_NEXT cur k miss` | -> `m e` | `MATCH_SCOPE cur k` then `MATCH_NEXT` on `cur` under the mark, fused by the bytecode processor where the two are adjacent; a miss leaves the mark |
 | `MATCH_RESET cur m` | -- | moves `cur` back to `m`'s position |
 | `MATCH_AT m` | -> `e` | the element at `m`'s position, as `NEXT` gave it |
 | `MATCH_SPAN m cur` | -> `span` | the span from `m`'s position to `cur` |

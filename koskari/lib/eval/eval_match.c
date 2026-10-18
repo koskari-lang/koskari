@@ -327,28 +327,48 @@ KOS_MATCH_BODY(kos_match_fits) {
    cursor moved in place or its copy stored back; a miss at the end.
    Row LABEL, depth.
 */
+/**
+   The next element of the cursor at depth under, the cursor moved in
+   place or its copy stored back at under: 1 with *out the element, a
+   new reference; 0 at the end; -1 with an exception set. The pull of
+   MATCH_NEXT and MATCH_SCOPE_NEXT.
+*/
+KOS_OP_INLINE int kos_match_pull(
+    KosEvalState *es,
+    PyObject *cursor,
+    size_t under,
+    PyObject **out) {
+
+  PyObject *next = NULL;
+  int r = KosMatchCursor_Next(cursor, 1, out, &next);
+  if (r <= 0)
+    return r;
+
+  if (unlikely(next != cursor)
+      && unlikely(KosEvalState_StackSetUnder(es, under, next) < 0)) {
+    Py_CLEAR(*out);
+    return -1;
+  }
+  return 1;
+}
+
+
 KOS_MATCH_BODY(kos_match_next) {
   KOS_SYNC_PC(es, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_match_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  uint32_t under = KosExtra_IMM(row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, under);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   PyObject *elem = NULL;
-  PyObject *next = NULL;
-  int r = KosMatchCursor_Next(cursor, 1, &elem, &next);
+  int r = kos_match_pull(es, cursor, (size_t) under, &elem);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-
-  if (unlikely(next != cursor)
-      && unlikely(kos_match_set_at(es, row, 1, next) < 0)) {
-    Py_DECREF(elem);
-    RESULT_RAISE();
-  }
   RESULT_STEAL(es, elem);
 }
 
@@ -471,6 +491,39 @@ KOS_MATCH_BODY(kos_match_scope) {
     RESULT_RAISE();
   RESULT_STEAL(
       es, KosMatchMark_New(cursor, (Py_ssize_t) KosExtra_IMM(row, 1)));
+}
+
+
+/**
+   MATCH_SCOPE_NEXT: MATCH_SCOPE on the cursor at field 1 with field 2
+   empty slots, then MATCH_NEXT on that cursor, one entry deeper under
+   the mark; a miss at the end leaves the mark for the fail entry the
+   NEXT's miss label names. Row LABEL, depth, count.
+*/
+KOS_MATCH_BODY(kos_match_scope_next) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  (void) kos_match_delivery_;
+
+  uint32_t under = KosExtra_IMM(row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, under);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *mark = KosMatchMark_New(
+      cursor, (Py_ssize_t) KosExtra_IMM(row, 2));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  if (unlikely(KosEvalState_StackPUSH(es, mark) < 0))
+    RESULT_RAISE();
+
+  PyObject *elem = NULL;
+  int r = kos_match_pull(es, cursor, (size_t) under + 1, &elem);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, elem);
 }
 
 

@@ -121,6 +121,7 @@ class TestRows(CevalTest):
             OpCode.MATCH_SYNC: (RAW, RAW, NOARG, NOARG),
             OpCode.MATCH_TAIL: (LABEL, RAW, RAW, RAW),
             OpCode.MATCH_SCOPE: (RAW, RAW, NOARG, NOARG),
+            OpCode.MATCH_SCOPE_NEXT: (LABEL, RAW, RAW, NOARG),
             OpCode.MATCH_RESET: (RAW, RAW, NOARG, NOARG),
             OpCode.MATCH_AT: (RAW, NOARG, NOARG, NOARG),
             OpCode.MATCH_SPAN: (LABEL, RAW, RAW, NOARG),
@@ -433,6 +434,33 @@ class TestMarks(CevalTest):
         self.assertEqual((at.datum, again.datum), (2, 2))
 
 
+    async def test_scope_next_pushes_the_mark_then_the_element(self):
+        # the mark is at the cursor's position before the pull
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["MATCH_SCOPE_NEXT", ("miss", 0, 0, 0)],
+            ["MATCH_NEXT", ("miss", 2, 0, 0)],
+            ["MATCH_AT", (2, 0, 0, 0)],
+        ] + hit(6) + miss(0)
+        got = await run(prog, (1, 2))
+        self.assertEqual((got[0], got[6]), ("base", "hit"))
+        self.assertEqual(got[3:6], (1, 2, 1))
+        got = await run(prog, cons(1, 2, nil))
+        self.assertEqual([d.datum for d in got[3:6]], [1, 2, 1])
+
+
+    async def test_scope_next_miss_leaves_the_mark(self):
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["MATCH_SCOPE_NEXT", ("end", 0, 0, 0)],
+        ] + hit(4) + miss(0) + [["LABEL", "end"]] + ending("end", 3)
+        for subject in ((), nil):
+            got = await run(prog, subject)
+            self.assertEqual(len(got), 4)
+            self.assertEqual((got[0], got[3]), ("base", "end"))
+            self.assertEqual(type(got[2]).__name__, "MatchMark")
+
+
     async def test_store_binds_a_spine_datum(self):
         prog = [
             ["MATCH_DESCEND", "miss"],
@@ -675,6 +703,21 @@ class TestCopyOnShare(CevalTest):
         self.assertEqual(got[3:], (1, 1, "hit"))
         got = await run(prog, cons(1, 2, nil))
         self.assertEqual((got[3].datum, got[4].datum), (1, 1))
+
+
+    async def test_scope_next_on_a_held_cursor_copies_it(self):
+        # the copy is stored back under the mark; the original cursor
+        # pulls the first element again
+        prog = [
+            ["MATCH_DESCEND", "miss"],
+            ["DUP", 1],
+            ["MATCH_SCOPE_NEXT", ("miss", 0, 0, 0)],
+            ["MATCH_NEXT", ("miss", 3, 0, 0)],
+        ] + hit(6) + miss(0)
+        got = await run(prog, (1, 2))
+        self.assertEqual(got[4:], (1, 1, "hit"))
+        got = await run(prog, cons(1, 2, nil))
+        self.assertEqual((got[4].datum, got[5].datum), (1, 1))
 
 
     async def test_sync_on_a_held_cursor_copies_it(self):

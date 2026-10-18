@@ -1303,6 +1303,21 @@ class ByteCodeProcessor:
                  (matched[0][1], arg, None, None))]
 
 
+    @fuse_rule(OpCode.MATCH_SCOPE, OpCode.MATCH_NEXT)
+    def fuse_scope_next(self, op, arg, matched):
+        """
+        MATCH_SCOPE cur k, MATCH_NEXT miss cur+1 -> MATCH_SCOPE_NEXT
+        miss cur k: the mark, then the next element of the cursor it was
+        made at, now one entry deeper. A NEXT on another cursor is left
+        """
+
+        depth, count = matched[0][1][:2]
+        miss, under = arg[:2]
+        if under != depth + 1:
+            return None
+        return [(OpCode.MATCH_SCOPE_NEXT, (miss, depth, count, 0))]
+
+
     def squish(self):
         """
         The peephole half of the compress pipeline: the squish rule set
@@ -1335,8 +1350,9 @@ class ByteCodeProcessor:
     def fuse_feeders(self):
         """
         The feeder-absorption half of the compress pipeline: the fuse
-        rule set over the shared driver. Every pattern requires the
-        immediately preceding value rows to be bare VAR or CONST loads;
+        rule set over the shared driver. Every pattern but the match
+        walk's MATCH_SCOPE, MATCH_NEXT pair requires the immediately
+        preceding value rows to be bare VAR or CONST loads;
         POSITION rows are transparent, with the fused row keeping the
         position in effect at the first feeder and the latest interior
         position re-emitted after the row. The fast pass later lowers

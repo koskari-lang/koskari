@@ -470,6 +470,7 @@ OP(MATCH_UNBOUND, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // cur: -> c', at cur's p
 OP(MATCH_SYNC, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, c: cur moved to c's position
 OP(MATCH_TAIL, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, w, min: -> span, the remaining elements less w, advancing cur; misses below min
 OP(MATCH_SCOPE, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, k: -> m, a mark at cur's position with k empty slots
+OP(MATCH_SCOPE_NEXT, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // cur, k: -> m e, MATCH_SCOPE cur k then MATCH_NEXT on cur under the mark; a miss leaves the mark
 OP(MATCH_RESET, 0, EXTRA, RAW, RAW, NOARG, NOARG)  // cur, m: cur moved back to m's position
 OP(MATCH_AT, 0, EXTRA, RAW, NOARG, NOARG, NOARG)  // m: -> e, the element at m's position as NEXT gave it
 OP(MATCH_SPAN, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // m, cur: -> span, from m's position to cur's; an empty span jumps, pushing nothing

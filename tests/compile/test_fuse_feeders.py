@@ -1096,4 +1096,35 @@ class TestMatchCoreLowering(unittest.TestCase):
         ])
 
 
+class TestFuseScopeNext(unittest.TestCase):
+    """
+    A MATCH_SCOPE followed by a MATCH_NEXT on the cursor the mark was
+    made at fuses to MATCH_SCOPE_NEXT; a NEXT on another cursor, or one
+    a jump lands on, is left
+    """
+
+    def test_same_cursor_fuses(self):
+        out = fuse_ops([
+            (OpCode.MATCH_SCOPE, (2, 3, 0, 0)),
+            (OpCode.MATCH_NEXT, ("miss", 3, 0, 0)),
+        ])
+        self.assertEqual(out, [
+            (OpCode.MATCH_SCOPE_NEXT, ("miss", 2, 3, 0))])
+
+    def test_another_cursor_is_left(self):
+        rows = [
+            (OpCode.MATCH_SCOPE, (2, 3, 0, 0)),
+            (OpCode.MATCH_NEXT, ("miss", 1, 0, 0)),
+        ]
+        self.assertEqual(fuse_ops(list(rows)), rows)
+
+    def test_a_jump_target_is_left(self):
+        rows = [
+            (OpCode.MATCH_SCOPE, (0, 0, 0, 0)),
+            (OpCode.LABEL, "again"),
+            (OpCode.MATCH_NEXT, ("miss", 1, 0, 0)),
+        ]
+        self.assertEqual(fuse_ops(list(rows)), rows)
+
+
 # The end.

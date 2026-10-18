@@ -323,6 +323,7 @@
 #include "opcode/MATCH_SYNC.c"
 #include "opcode/MATCH_TAIL.c"
 #include "opcode/MATCH_SCOPE.c"
+#include "opcode/MATCH_SCOPE_NEXT.c"
 #include "opcode/MATCH_RESET.c"
 #include "opcode/MATCH_AT.c"
 #include "opcode/MATCH_SPAN.c"
