@@ -485,11 +485,11 @@ OP(MATCH_LITERAL, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // c: e -> e; e is c
 OP(MATCH_CORE, 0, EXTRA, LABEL, RAW, NOARG, NOARG)  // n: e -> e; e is of the core type ordinal n
 OP(MATCH_TYPE_VAR, 0, EXTRA, LABEL, VAR, NOARG, NOARG)  // t: e -> e; isinstance(e, t)
 OP(MATCH_TYPE_FAST, 0, EXTRA, LABEL, FASTVAR, NOARG, NOARG)
-OP(MATCH_CLASS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // t, n: e -> e; isinstance(e, t), then a TypeError when t.__match_args__ holds fewer than n names
-OP(MATCH_CLASS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_CLASS_VAR, 1, EXTRA, LABEL, VAR, RAW, NOARG)  // t, n: e -> e; isinstance(e, t), then a TypeError when t.__match_args__ holds fewer than n names
+OP(MATCH_CLASS_FAST, 1, EXTRA, LABEL, FASTVAR, RAW, NOARG)
 OP(MATCH_SAME, 0, EXTRA, LABEL, RAW, RAW, NOARG)  // s, i: e -> e; e equals slot i of the mark at s; misses when the slot is empty
-OP(MATCH_FIELD_POS_VAR, 0, EXTRA, LABEL, VAR, RAW, NOARG)  // t, i: o -> o a, the attribute t.__match_args__[i] names
-OP(MATCH_FIELD_POS_FAST, 0, EXTRA, LABEL, FASTVAR, RAW, NOARG)
+OP(MATCH_FIELD_POS_VAR, 1, EXTRA, LABEL, VAR, RAW, NOARG)  // t, i: o -> o a, the attribute t.__match_args__[i] names
+OP(MATCH_FIELD_POS_FAST, 1, EXTRA, LABEL, FASTVAR, RAW, NOARG)
 OP(MATCH_FIELD_KW, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // name: o -> o a, the attribute name
 OP(MATCH_MAPPING, 0, LABEL)  // o -> o: the mapping gate
 OP(MATCH_KEY, 0, EXTRA, LABEL, CONST, NOARG, NOARG)  // k: o -> o v, the value under the constant key

@@ -157,13 +157,13 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 #include "eval/eval_call.c"
 #include "eval/eval_iter.c"
 #include "eval/eval_obj.c"
-#include "eval/eval_match.c"
 
 
 int KosEval_IsFuture(PyObject *val) {
   return kos_isfuture(val);
 }
 #include "eval/eval_cache.c"
+#include "eval/eval_match.c"
 
 
 /**

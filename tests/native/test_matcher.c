@@ -198,11 +198,16 @@ static int test_class_and_fields_through_the_box(void) {
   PyObject *yname = PyUnicode_FromString("y");
   PyObject *zname = PyUnicode_FromString("z");
 
-  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 1, &out), 1,
+  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 1, NULL, &out), 1,
                  "field by position");
   TEST_ASSERT_EQ(PyLong_AsLong(out), 2, "y");
   Py_DECREF(out);
-  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 2, &out), -1,
+  TEST_ASSERT_EQ(
+      KosMatch_FieldPos(boxed, cls, 1, KosMatch_PlainMatchArgs(cls), &out),
+      1, "field by position through the given tuple");
+  TEST_ASSERT_EQ(PyLong_AsLong(out), 2, "y");
+  Py_DECREF(out);
+  TEST_ASSERT_EQ(KosMatch_FieldPos(boxed, cls, 2, NULL, &out), -1,
                  "past the match args");
   TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
 
@@ -246,24 +251,33 @@ static int test_class_test_through_the_box(void) {
   PyObject *rcls = PyDict_GetItemString(env, "R");
   PyObject *boxed = make_datum(PyDict_GetItemString(env, "p"));
   PyObject *q = PyDict_GetItemString(env, "q");
-  PyObject *r = PyDict_GetItemString(env, "r");
 
-  TEST_ASSERT_EQ(KosMatch_ClassTest(boxed, pcls, 2), 1, "two positionals");
-  TEST_ASSERT_EQ(KosMatch_ClassTest(boxed, pcls, 0), 1, "no positionals");
-  TEST_ASSERT_EQ(KosMatch_ClassTest(q, pcls, 3), 0,
-                 "a non-instance misses before the count");
+  TEST_ASSERT_EQ(KosMatch_TypeTest(boxed, pcls), 1, "an instance");
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(pcls, 2, NULL), 0, "two positionals");
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(pcls, 0, NULL), 0, "no positionals");
+  TEST_ASSERT_EQ(KosMatch_TypeTest(q, pcls), 0, "a non-instance misses");
   TEST_ASSERT(! PyErr_Occurred(), "no error on the miss");
-  TEST_ASSERT_EQ(KosMatch_ClassTest(boxed, pcls, 3), -1,
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(pcls, 3, NULL), -1,
                  "past the match args");
   TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
 
-  TEST_ASSERT_EQ(KosMatch_ClassTest(q, qcls, 0), 1,
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(qcls, 0, NULL), 0,
                  "no match args and no positionals");
-  TEST_ASSERT_EQ(KosMatch_ClassTest(q, qcls, 1), -1, "no match args");
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(qcls, 1, NULL), -1, "no match args");
   TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
-  TEST_ASSERT_EQ(KosMatch_ClassTest(r, rcls, 1), -1,
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(rcls, 1, NULL), -1,
                  "match args not a tuple");
   TEST_ASSERT(clear_expected(PyExc_TypeError), "TypeError");
+
+  PyObject *plain = KosMatch_PlainMatchArgs(pcls);
+  TEST_ASSERT(plain == PyDict_GetItemString(
+                  ((PyTypeObject *) pcls)->tp_dict, "__match_args__"),
+              "the class dict's tuple");
+  TEST_ASSERT_EQ(KosMatch_ClassArgs(pcls, 2, plain), 0,
+                 "two positionals through the given tuple");
+  TEST_ASSERT(KosMatch_PlainMatchArgs(qcls) == NULL, "no match args");
+  TEST_ASSERT(KosMatch_PlainMatchArgs(rcls) == NULL, "a list");
+  TEST_ASSERT(! PyErr_Occurred(), "no error from the plain reads");
 
   Py_DECREF(boxed);
   Py_DECREF(env);

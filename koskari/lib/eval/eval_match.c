@@ -54,6 +54,39 @@ KOS_OP_INLINE PyObject *kos_match_operand(
 
 
 /**
+   cls.__match_args__ for an instruction whose subject has passed cls's
+   type test, from its cache slot when the slot holds cls at its current
+   version; otherwise the slot is filled from KosMatch_PlainMatchArgs
+   when that decides the tuple. Borrowed, or NULL for the step to read
+   it from cls; never an exception.
+*/
+KOS_OP_INLINE PyObject *kos_match_args_cached(void *insn, PyObject *cls) {
+  KosCacheSlot *slot = KosOp_SLOT(insn);
+
+  if (unlikely(! slot))
+    return NULL;
+  if (likely(slot->kind == KOS_CACHE_MATCH_ARGS
+             && slot->u.match_args.cls == cls
+             && slot->u.match_args.type_version
+                == kos_type_version((PyTypeObject *) cls)))
+    return slot->u.match_args.match_args;
+
+  PyObject *match_args = KosMatch_PlainMatchArgs(cls);
+  if (! match_args)
+    return NULL;
+  uint64_t version = kos_type_version_assign((PyTypeObject *) cls);
+  if (version && (slot->kind == KOS_CACHE_EMPTY
+                  || slot->kind == KOS_CACHE_MATCH_ARGS)) {
+    slot->kind = KOS_CACHE_MATCH_ARGS;
+    slot->u.match_args.cls = cls;
+    slot->u.match_args.type_version = version;
+    slot->u.match_args.match_args = match_args;
+  }
+  return match_args;
+}
+
+
+/**
    The element a peek instruction tests: top of stack, borrowed. NULL
    with an exception set on an empty stack.
 */
@@ -774,7 +807,8 @@ KOS_MATCH_BODY(kos_match_type) {
    MATCH_CLASS_VAR and MATCH_CLASS_FAST: TOS, which stays, must be an
    instance of the class in the slot in field 1, and the class's
    __match_args__ must then hold at least field 2 names, else a
-   TypeError. Row LABEL, slot, count.
+   TypeError. The tuple is read through the cache slot only after the
+   type test passes. Row LABEL, slot, count.
 */
 KOS_MATCH_BODY(kos_match_class) {
   KOS_SYNC_PC(es, insn);
@@ -789,8 +823,11 @@ KOS_MATCH_BODY(kos_match_class) {
   if (unlikely(! cls))
     RESULT_RAISE();
 
-  int r = KosMatch_ClassTest(
-      elem, cls, (Py_ssize_t) KosExtra_IMM(row, 2));
+  int r = KosMatch_TypeTest(elem, cls);
+  if (r > 0)
+    r = KosMatch_ClassArgs(
+        cls, (Py_ssize_t) KosExtra_IMM(row, 2),
+        kos_match_args_cached(insn, cls)) < 0 ? -1 : 1;
   Py_DECREF(cls);
   if (unlikely(r < 0))
     RESULT_RAISE();
@@ -837,7 +874,9 @@ KOS_MATCH_BODY(kos_match_same) {
    MATCH_FIELD_POS_VAR and MATCH_FIELD_POS_FAST: the attribute of
    TOS that __match_args__[field 2] of the class in the slot in field
    1 names, pushed; a missing attribute is a miss, an index past the
-   end of __match_args__ a TypeError. Row LABEL, slot, index.
+   end of __match_args__ a TypeError. Emitted after its CLASS's hit,
+   so the tuple is read through the cache slot behind the type test.
+   Row LABEL, slot, index.
 */
 KOS_MATCH_BODY(kos_match_field_pos) {
   KOS_SYNC_PC(es, insn);
@@ -854,7 +893,8 @@ KOS_MATCH_BODY(kos_match_field_pos) {
 
   PyObject *val = NULL;
   int r = KosMatch_FieldPos(
-      obj, cls, (Py_ssize_t) KosExtra_IMM(row, 2), &val);
+      obj, cls, (Py_ssize_t) KosExtra_IMM(row, 2),
+      kos_match_args_cached(insn, cls), &val);
   Py_DECREF(cls);
   if (unlikely(r < 0))
     RESULT_RAISE();

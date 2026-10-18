@@ -89,6 +89,27 @@ async def run(prog, subject=None, values=None, syms=()):
     return await make_callable(code, ns)()
 
 
+async def run_each(prog, subjects, values=None, syms=(), between=None):
+    """
+    Run prog once per subject through one built code, so its cache
+    slots carry from one run to the next; between, when given, is
+    called with the run's index before each run after the first
+    """
+
+    vals = {"subject": None}
+    vals.update(values or {})
+    code, ns = build_expr(
+        [["CONST", "base"], ["VAR", "subject"]] + prog,
+        local_syms=tuple(syms), values=vals)
+    results = []
+    for index, subject in enumerate(subjects):
+        if between and index:
+            between(index)
+        ns.store("subject", subject)
+        results.append(await make_callable(code, ns)())
+    return results
+
+
 class TestRows(CevalTest):
 
     def test_field_kinds(self):
@@ -837,6 +858,82 @@ class TestElementTests(CevalTest):
             self.assertIn(
                 "__match_args__ has 2 entries; cannot satisfy 3 positional "
                 "field pattern(s)", str(caught.exception))
+
+
+    async def test_class_against_varied_subjects(self):
+        # subjects of other types miss at the type test; a subclass
+        # instance reads the pattern class's __match_args__
+        class Sub(Point):
+            __match_args__ = ("y", "x")
+
+        prog = [
+            ["MATCH_CLASS_VAR", ("miss", "Point", 1, 0)],
+            ["MATCH_FIELD_POS_VAR", ("miss", "Point", 0, 0)],
+        ] + hit(3) + miss(2)
+        subjects = [Point(1, 2), 7, "s", Sub(3, 4), None, Datum(Point(5, 6)),
+                    Point(7, 8)]
+        got = await run_each(prog, subjects, {"Point": Point})
+        self.assertEqual(
+            [r[-1] if r[-1] == "miss" else r[2] for r in got],
+            [1, "miss", "miss", 3, "miss", 5, 7])
+
+
+    async def test_class_sees_reassigned_match_args(self):
+        class P:
+            __match_args__ = ("x", "y")
+
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+        def reassign(index):
+            P.__match_args__ = (("y", "x"), ("x",))[index - 1]
+
+        for cls_row, pos_row in (
+                (["MATCH_CLASS_VAR", ("miss", "P", 1, 0)],
+                 ["MATCH_FIELD_POS_VAR", ("miss", "P", 0, 0)]),
+                (["MATCH_CLASS_FAST", ("miss", 1, 1, 0)],
+                 ["MATCH_FIELD_POS_FAST", ("miss", 1, 0, 0)])):
+            P.__match_args__ = ("x", "y")
+            prog = [cls_row, pos_row] + hit(3) + miss(2)
+            got = await run_each(
+                prog, [P(3, 4)] * 3, {"P": P}, ("subject", "P"), reassign)
+            self.assertEqual([r[2] for r in got], [3, 4, 3])
+
+        # a shortened __match_args__ raises through the same code
+        P.__match_args__ = ("x", "y")
+        prog = [["MATCH_CLASS_VAR", ("miss", "P", 2, 0)]] + hit(2) + miss(2)
+
+        def shorten(index):
+            P.__match_args__ = ("x",)
+
+        with self.assertRaises(TypeError) as caught:
+            await run_each(prog, [P(3, 4)] * 2, {"P": P}, (), shorten)
+        self.assertIn(
+            "__match_args__ has 1 entries; cannot satisfy 2 positional "
+            "field pattern(s)", str(caught.exception))
+
+
+    async def test_class_match_args_from_a_metaclass(self):
+        # a metaclass property answers on every read
+        answers = iter([("x",), ("x",), ("y",), ("y",)])
+
+        class Meta(type):
+            @property
+            def __match_args__(cls):
+                return next(answers)
+
+        class Q(metaclass=Meta):
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+        prog = [
+            ["MATCH_CLASS_VAR", ("miss", "Q", 1, 0)],
+            ["MATCH_FIELD_POS_VAR", ("miss", "Q", 0, 0)],
+        ] + hit(3) + miss(2)
+        got = await run_each(prog, [Q(3, 4)] * 2, {"Q": Q})
+        self.assertEqual([r[2] for r in got], [3, 4])
 
 
     async def test_tests_in_turn_on_one_element(self):

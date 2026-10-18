@@ -469,6 +469,7 @@ typedef enum KosCacheKind {
   KOS_CACHE_ELECTOR,     /* handler elected for the site */
   KOS_CACHE_ITEM,        /* item body elected for the site */
   KOS_CACHE_TARGET,      /* the pc closing a region push's extent */
+  KOS_CACHE_MATCH_ARGS,  /* a class pattern's __match_args__ */
 } KosCacheKind;
 
 
@@ -635,6 +636,19 @@ struct KosCacheSlot {
     struct {
       uint32_t pop_pc;
     } target;
+
+    /* KOS_CACHE_MATCH_ARGS: the __match_args__ tuple of a class
+       pattern's class, read once a subject has passed the class's type
+       test. ``cls`` and ``match_args`` are BORROWED, as KOS_CACHE_FIELD's
+       type is: the version tag is monotonic, a reassigned
+       __match_args__ or a reused class address fails the guard before
+       either is read, and the instruction holds the class it compares.
+       Owns nothing. */
+    struct {
+      PyObject *cls;           /* guard class; borrowed */
+      uint64_t type_version;   /* guard: the class's version at populate */
+      PyObject *match_args;    /* the class dict's tuple; borrowed */
+    } match_args;
   } u;
 };
 

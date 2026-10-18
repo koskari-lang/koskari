@@ -371,11 +371,22 @@ static PyObject *synth_match_args_39(PyObject *cls) {
 
 
 /**
-   cls.__match_args__ as a new tuple reference, with the 3.9 synthesis
-   for dataclasses and namedtuples. NULL with an exception set when the
-   class has none or it is not a tuple.
+   cls.__match_args__ as a new tuple reference: held, the tuple given,
+   which a later read of an attribute may drop from the class; else read
+   from cls, with the 3.9 synthesis for dataclasses and namedtuples.
+   NULL with an exception set when the class has none or it is not a
+   tuple.
 */
-static PyObject *step_match_args(PyObject *cls, Py_ssize_t npos) {
+static PyObject *step_match_args(
+    PyObject *cls,
+    Py_ssize_t npos,
+    PyObject *held) {
+
+  if (held) {
+    Py_INCREF(held);
+    return held;
+  }
+
   PyObject *match_args = PyObject_GetAttr(cls, kos_match_args_name);
 
   if (! match_args) {
@@ -407,13 +418,27 @@ static PyObject *step_match_args(PyObject *cls, Py_ssize_t npos) {
 }
 
 
-int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos) {
-  int r = KosMatch_TypeTest(elem, cls);
+PyObject *KosMatch_PlainMatchArgs(PyObject *cls) {
+  if (Py_TYPE(cls) != &PyType_Type)
+    return NULL;
 
-  if (r <= 0 || npos <= 0)
-    return r;
+  PyObject *match_args = PyType_Lookup((PyTypeObject *) cls,
+                                       kos_match_args_name);
+  if (match_args && PyTuple_CheckExact(match_args))
+    return match_args;
+  return NULL;
+}
 
-  PyObject *match_args = step_match_args(cls, npos);
+
+int KosMatch_ClassArgs(
+    PyObject *cls,
+    Py_ssize_t npos,
+    PyObject *match_args) {
+
+  if (npos <= 0)
+    return 0;
+
+  match_args = step_match_args(cls, npos, match_args);
   if (! match_args)
     return -1;
 
@@ -426,7 +451,7 @@ int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos) {
                  cls, have, npos);
     return -1;
   }
-  return 1;
+  return 0;
 }
 
 
@@ -449,9 +474,10 @@ int KosMatch_FieldPos(
     PyObject *elem,
     PyObject *cls,
     Py_ssize_t pos,
+    PyObject *match_args,
     PyObject **out) {
 
-  PyObject *match_args = step_match_args(cls, pos + 1);
+  match_args = step_match_args(cls, pos + 1, match_args);
   if (! match_args)
     return -1;
   if (pos >= PyTuple_GET_SIZE(match_args)) {

@@ -3265,6 +3265,9 @@ static void cache_slot_release(KosCacheSlot *slot) {
   case KOS_CACHE_TARGET:
     /* ref-free: one pc. */
     break;
+  case KOS_CACHE_MATCH_ARGS:
+    /* ref-free: a borrowed class and tuple under a version guard. */
+    break;
   }
   memset(slot, 0, sizeof(*slot));
 }
@@ -3282,6 +3285,7 @@ static int cache_slot_visit(KosCacheSlot *slot, visitproc visit, void *arg) {
   case KOS_CACHE_ELECTOR:
   case KOS_CACHE_ITEM:
   case KOS_CACHE_TARGET:
+  case KOS_CACHE_MATCH_ARGS:
     break;
   case KOS_CACHE_METHOD:
     Py_VISIT(slot->u.method.type);

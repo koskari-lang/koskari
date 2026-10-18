@@ -135,12 +135,25 @@ int KosMatch_TypeTest(PyObject *elem, PyObject *type);
 int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
 
 /**
-   The class test of a CLASS with npos positional fields: elem read
-   through Datum is an instance of cls, else 0; then cls.__match_args__
-   must be a tuple of at least npos names, else -1 with a TypeError
-   set, before any attribute of elem is read. 1, 0, or -1.
+   The count check of a CLASS with npos positional fields, run after
+   its type test: cls.__match_args__ must be a tuple of at least npos
+   names. match_args is that tuple, borrowed, when the caller holds it
+   (see KosMatch_PlainMatchArgs), else NULL and it is read from cls. 0,
+   or -1 with a TypeError set.
  */
-int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos);
+int KosMatch_ClassArgs(
+    PyObject *cls,
+    Py_ssize_t npos,
+    PyObject *match_args);
+
+/**
+   cls.__match_args__ when a plain lookup decides it: cls's metaclass
+   is exactly type and its MRO holds an exact tuple under the name, so
+   no descriptor or metaclass hook can answer otherwise. Borrowed from
+   the class's dict, valid while the class's version tag is unchanged;
+   NULL with no exception set otherwise.
+ */
+PyObject *KosMatch_PlainMatchArgs(PyObject *cls);
 
 /**
    The literal test: elem read through Datum is lit by identity, a
@@ -149,14 +162,16 @@ int KosMatch_ClassTest(PyObject *elem, PyObject *cls, Py_ssize_t npos);
 int KosMatch_LiteralTest(PyObject *elem, PyObject *lit);
 
 /**
-   The attribute of elem that cls.__match_args__[pos] names. Returns 1
-   with *out a new reference, 0 when the attribute is missing, -1 with
-   an exception set.
+   The attribute of elem that cls.__match_args__[pos] names, the tuple
+   given or read as KosMatch_ClassArgs takes it. Returns 1 with *out a
+   new reference, 0 when the attribute is missing, -1 with an
+   exception set.
  */
 int KosMatch_FieldPos(
     PyObject *elem,
     PyObject *cls,
     Py_ssize_t pos,
+    PyObject *match_args,
     PyObject **out);
 
 /**
