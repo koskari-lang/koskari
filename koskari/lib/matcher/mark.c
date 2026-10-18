@@ -392,20 +392,14 @@ PyObject *KosMatchMark_Captures(
   if (! source)
     return NULL;
 
-  PyObject *out = kos_datum_frame_new();
-  if (! out) {
-    Py_DECREF(source);
+  PyObject *out = kos_datum_frame_new(
+      source, step_cell_position(m->seq));
+  if (! out)
     return NULL;
-  }
   if (mark_fill(out, m, names) < 0) {
-    Py_DECREF(source);
     Py_DECREF(out);
     return NULL;
   }
-
-  KosDatumFrame *f = (KosDatumFrame *) out;
-  Py_SETREF(f->source, source);
-  Py_SETREF(f->position, step_cell_position(m->seq));
   return out;
 }
 
