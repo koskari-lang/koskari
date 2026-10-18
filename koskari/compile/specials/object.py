@@ -49,10 +49,17 @@ _COMPARE_PATTERNS = [
     MATCH(CALLEDBY("called_by"), REST("short")),
 ]
 
-# A value and one or more types
 _BINARY_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("a"), VALUE("b")),
 ]
+
+# A subject and one or more types
+_TYPE_CHECK_PATTERNS = [
+    MATCH(CALLEDBY("called_by"), VALUE("subject"), BODY("types")),
+]
+
+# the head of a tuple literal as the reader produces it
+_symbol_tuple = symbol("#tuple")
 
 _UNARY_PATTERNS = [
     MATCH(CALLEDBY("called_by"), VALUE("obj")),
@@ -590,30 +597,76 @@ def special_is_not(compiler, called_by, a, b):
         opa=(Compare.IS_NOT, 2))
 
 
-@builtin("compile/instance?")
-@special("compile/instance?", patterns=_BINARY_PATTERNS, unpack="kwargs")
-def special_isinstance(compiler, called_by, a, b):
+def emit_type_check(compiler, called_by, subject, types, sel):
     """
-    Compile (compile/instance? OBJ TYPE). Instance type check with the
-    runtime instance? signature: TYPE is one type or a tuple of types
+    Compile a type check: the subject, then one or more type operands,
+    then OBJECT_COMPARE under sel over the whole count. A type operand
+    written as a tuple literal of one or more plain elements is spliced
+    into the operand list, so the tuple is never built; an empty
+    literal, a literal with a keyword or splat, and every other operand
+    are pushed as written.
     """
 
-    return emit_binary_op(
-        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
-        opa=(Compare.IS_INSTANCE, 2))
+    frag = compiler.fragment(called_by.datum)
+    frag.position(subject.position)
+    frag.merge(compiler.full_compile(subject.datum))
+
+    count = 1
+    current = types.datum
+    while not is_nil(current):
+        frag.position_of(current)
+        expr, current = current
+        for element in _tuple_literal_elements(expr):
+            frag.merge(compiler.full_compile(element))
+            count += 1
+
+    frag.instruction(OpCode.OBJECT_COMPARE, (sel, count))
+    return frag
+
+
+def _tuple_literal_elements(expr):
+    """
+    The elements of a tuple literal that splices into a type check, or
+    expr itself as the one element when it is not such a literal
+    """
+
+    if not is_pair(expr):
+        return [expr]
+    head, body = expr
+    if not (is_symbol(head) and getattr(head, 'base', head) is _symbol_tuple):
+        return [expr]
+    if is_nil(body):
+        return [expr]
+    elements = list(unpack(body))
+    if any(is_keyword(fm) for fm in elements):
+        return [expr]
+    return elements
+
+
+@builtin("compile/instance?")
+@special("compile/instance?", patterns=_TYPE_CHECK_PATTERNS,
+         unpack="kwargs")
+def special_isinstance(compiler, called_by, subject, types):
+    """
+    Compile (compile/instance? OBJ TYPE ...). Instance check against
+    one or more types; a tuple operand is opened one level
+    """
+
+    return emit_type_check(
+        compiler, called_by, subject, types, Compare.IS_INSTANCE)
 
 
 @builtin("compile/subclass?")
-@special("compile/subclass?", patterns=_BINARY_PATTERNS, unpack="kwargs")
-def special_issubclass(compiler, called_by, a, b):
+@special("compile/subclass?", patterns=_TYPE_CHECK_PATTERNS,
+         unpack="kwargs")
+def special_issubclass(compiler, called_by, subject, types):
     """
-    Compile (compile/subclass? CLS BASE). Subclass check with the
-    runtime subclass? signature: BASE is one class or a tuple of classes
+    Compile (compile/subclass? CLS BASE ...). Subclass check against
+    one or more bases; a tuple operand is opened one level
     """
 
-    return emit_binary_op(
-        compiler, called_by, a, b, OpCode.OBJECT_COMPARE,
-        opa=(Compare.IS_SUBCLASS, 2))
+    return emit_type_check(
+        compiler, called_by, subject, types, Compare.IS_SUBCLASS)
 
 
 # ---------------------------------------------------------------------------

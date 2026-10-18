@@ -256,7 +256,6 @@ def make_bootstrap():
     _bind('hex', hex)
     _bind('id', id)
     _bind('input', input)
-    _bind('instance?', isinstance)
     _bind('iter', iter)
     _bind('len', len)
     _ty('py-map', map)
@@ -275,7 +274,6 @@ def make_bootstrap():
     _bind('setattr', setattr)
     _bind('sorted', sorted)
     _bind('super', super)
-    _bind('subclass?', issubclass)
     _bind('sum', sum)
     _bind('vars', vars)
     _ty('py-zip', zip)
@@ -290,6 +288,8 @@ def make_bootstrap():
         val = getattr(kl, name)
         _bind(name, val)
         _bind(alias, val)
+    for name in ('instance?', 'subclass?'):
+        _bind(name, getattr(kl, name))
 
     _bind("is?", _op.is_)
     _bind("is-not?", _op.is_not)

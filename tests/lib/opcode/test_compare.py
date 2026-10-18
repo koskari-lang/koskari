@@ -38,6 +38,7 @@ IS_NOT = int(Compare.IS_NOT)
 IN = int(Compare.IN)
 NOT_IN = int(Compare.NOT_IN)
 IS_INSTANCE = int(Compare.IS_INSTANCE)
+IS_SUBCLASS = int(Compare.IS_SUBCLASS)
 
 
 def cmpcount(sel, count):
@@ -313,10 +314,10 @@ class TestObjectCompare(CevalTest):
         self.assertIs(result, True)
 
 
-    async def test_is_instance_rejects_three_operands(self):
+    async def test_is_instance_three_operands(self):
         """
-        IS_INSTANCE is binary in the value form as in the truth form:
-        several classes travel as one tuple operand
+        IS_INSTANCE takes one or more types after the subject and holds
+        when any of them matches
         """
 
         code, ns = build_expr([
@@ -326,8 +327,43 @@ class TestObjectCompare(CevalTest):
             ["OBJECT_COMPARE", cmpcount(IS_INSTANCE, 3)],
             ["RETURN", 1],
         ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, True)
+
+
+    async def test_is_instance_opens_a_tuple_operand_once(self):
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["CONST", (str, bytes)],
+            ["CONST", (float, int)],
+            ["OBJECT_COMPARE", cmpcount(IS_INSTANCE, 3)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, True)
+
+
+    async def test_is_instance_nested_tuple_raises(self):
+        code, ns = build_expr([
+            ["CONST", 5],
+            ["CONST", ((int,), str)],
+            ["OBJECT_COMPARE", cmpcount(IS_INSTANCE, 2)],
+            ["RETURN", 1],
+        ])
         with self.assertRaises(TypeError):
             await make_callable(code, ns)()
+
+
+    async def test_is_subclass_three_operands(self):
+        code, ns = build_expr([
+            ["CONST", bool],
+            ["CONST", str],
+            ["CONST", int],
+            ["OBJECT_COMPARE", cmpcount(IS_SUBCLASS, 3)],
+            ["RETURN", 1],
+        ])
+        result = await make_callable(code, ns)()
+        self.assertIs(result, True)
 
 
 class TestCheckCompareFast(CevalTest):

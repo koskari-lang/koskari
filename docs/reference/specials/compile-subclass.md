@@ -1,16 +1,19 @@
 # compile/subclass?
 **Symbol:** `compile/subclass?`
 
-**Syntax:** `(subclass? CLS BASE)`
+**Syntax:** `(subclass? CLS BASE ...)`
 
-**Use-case:** Whether `CLS` is a subclass of `BASE`, with the signature of
-the runtime `subclass?` (Python's `issubclass`): `BASE` is one class or a
-tuple of classes, and a tuple succeeds for any of them.
+**Use-case:** Whether `CLS` is a subclass of any of one or more bases.
+A base operand may be a tuple of classes, opened one level: a tuple
+inside a tuple raises `TypeError`. A tuple written as a literal is
+spliced into the operands at compile time. The runtime `subclass?` has
+the same signature.
 
 **Examples:**
 
 ```koskari
 (subclass? list object)
+(subclass? bool int str)
 (subclass? bool #(int str))
 ```
 

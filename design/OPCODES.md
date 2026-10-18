@@ -1581,7 +1581,7 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, COUNT)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the negate flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. The extended selectors (IS, IS_NOT, IN, NOT_IN, IS_INSTANCE, IS_SUBCLASS) are strictly binary at this opcode. The remaining checks (exception, nil) take a single **LABEL** arg.
+Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, COUNT)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the negate flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_COMPARE {#kos_op_check_compare}
 
@@ -1593,7 +1593,8 @@ Check jumps: jump to the target label when the predicate does not hold. Jump loc
   either way. Raises `TypeError` when `COUNT < 2`.
 - **Invariants**: Selector is a valid KosCompare ordinal. The richcompare
   six (LT/LE/EQ/NE/GT/GE, ordinals 0-5 == CPython's Py_LT..Py_GE) chain
-  over any COUNT; the extended selectors require COUNT == 2.
+  over any COUNT; IS, IS_NOT, IN and NOT_IN require COUNT == 2;
+  IS_INSTANCE and IS_SUBCLASS take any COUNT >= 2.
 - **Compiler form:** Produced by `Compiler.compress` fusing
   `OBJECT_COMPARE` + `JUMP_FALSE` into one instruction, and
   `OBJECT_COMPARE` + `JUMP_TRUE` into the same with the flag set. Never
@@ -4157,8 +4158,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   richcompare six (LT/LE/EQ/NE/GT/GE, ordinals 0-5 == Py_LT..Py_GE)
   chain left-to-right and push the last richcompare result. The extended
   selectors push a bool: IS / IS_NOT / IN / NOT_IN are strictly binary;
-  IS_INSTANCE / IS_SUBCLASS treat operands past the first as the match
-  (tupled when `N > 2`).
+  IS_INSTANCE / IS_SUBCLASS test the first operand against each operand
+  after it, a tuple operand opened one level, and hold on the first
+  match.
 - **Compiler form:** Emitted by the comparison, predicate, and type-check
   specials with a `(selector, count)` pair, merged to the packed uint16
   by `normalize_opcount`. When immediately followed by `JUMP_FALSE`,

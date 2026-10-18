@@ -2674,21 +2674,23 @@ Examples:
 | `(is-not A B)`             | `OBJECT_IS_NOT` | `A is not B`             |
 
 
-**Type checks (binary, exactly 2 args):**
+**Type checks (a subject and one or more types):**
 
 ```scheme
-(instance? OBJ TYPE)
-(subclass? CLS BASE)
+(instance? OBJ TYPE ...)
+(subclass? CLS BASE ...)
 ```
 
-Both carry the signature of their runtime copies, `isinstance` and
-`issubclass`: the second operand is one type or a tuple of types, and
-a tuple succeeds for any of them. A third argument is a compile error.
-Each emits `OBJECT_COMPARE` with its selector and count 2; in
-condition position the pair fuses into `CHECK_COMPARE`, which reduces
-through the same binary chain as the value form. A variadic form is
-recorded in `TODO.md`: it needs runtime copies with the same signature
-first.
+The subject is tested against each operand after it and the first
+match holds. A tuple operand is opened one level and each item tested;
+a tuple inside it raises `TypeError`. A `#tuple` literal of one or more
+plain elements is spliced into the operands at compile time, so no
+tuple is built; an empty literal, a literal with a keyword or splat,
+and every other operand are pushed as written. Each special emits
+`OBJECT_COMPARE` with its selector and the full count; in condition
+position the instruction fuses into `CHECK_COMPARE`, which reduces
+through the same chain as the value form. The runtime `instance?` and
+`subclass?` are the C operator exports with the same operands.
 
 
 | Special               | Opcode                            |

@@ -934,6 +934,10 @@ PyObject *KosOperator_In(PyObject *const *values, size_t count);
 
 PyObject *KosOperator_NotIn(PyObject *const *value, size_t count);
 
+PyObject *KosOperator_IsInstance(PyObject *const *values, size_t count);
+
+PyObject *KosOperator_IsSubclass(PyObject *const *values, size_t count);
+
 PyObject *KosOperator_BuildStr(PyObject *const *value, size_t count);
 
 

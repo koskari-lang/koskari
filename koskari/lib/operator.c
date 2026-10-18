@@ -505,6 +505,50 @@ static int compare_require_2(KosCompare sel, size_t count) {
 }
 
 
+/* Test the subject against each of the types after it, the first
+   match ending the walk. A tuple operand is opened once and each item
+   tested; a tuple inside it is refused, so the depth is one level and
+   never CPython's own recursion. Anything else goes to the check
+   whole, which validates it as a type or union. */
+static int type_check_each(
+    KosCompare sel,
+    int (*check)(PyObject *, PyObject *),
+    PyObject *const *args,
+    size_t count) {
+
+  if (count < 2) {
+    PyErr_Format(PyExc_TypeError, "%s requires a subject and a type",
+                 compare_names[sel]);
+    return -1;
+  }
+
+  PyObject *subject = args[0];
+  for (size_t i = 1; i < count; i++) {
+    PyObject *arg = args[i];
+    if (! PyTuple_Check(arg)) {
+      int res = check(subject, arg);
+      if (res)
+        return res;
+      continue;
+    }
+    Py_ssize_t n = PyTuple_GET_SIZE(arg);
+    for (Py_ssize_t j = 0; j < n; j++) {
+      PyObject *item = PyTuple_GET_ITEM(arg, j);
+      if (PyTuple_Check(item)) {
+        PyErr_Format(PyExc_TypeError,
+                     "%s takes types, not a tuple inside a tuple",
+                     compare_names[sel]);
+        return -1;
+      }
+      int res = check(subject, item);
+      if (res)
+        return res;
+    }
+  }
+  return 0;
+}
+
+
 /* Cold extended tail of kos_compare_chain (see operator.h): everything
    past the richcompare six. */
 KOS_NOINLINE int kos_compare_chain_ext(
@@ -532,13 +576,9 @@ KOS_NOINLINE int kos_compare_chain_ext(
       return (r < 0) ? -1 : ! r;
     }
     case KOS_COMPARE_IS_INSTANCE:
-      if (compare_require_2(sel, count))
-        return -1;
-      return PyObject_IsInstance(args[0], args[1]);
+      return type_check_each(sel, PyObject_IsInstance, args, count);
     case KOS_COMPARE_IS_SUBCLASS:
-      if (compare_require_2(sel, count))
-        return -1;
-      return PyObject_IsSubclass(args[0], args[1]);
+      return type_check_each(sel, PyObject_IsSubclass, args, count);
     default:
       PyErr_Format(PyExc_SystemError,
                    "bad comparison selector: %i", (int) sel);
@@ -548,9 +588,8 @@ KOS_NOINLINE int kos_compare_chain_ext(
 
 
 /* Cold extended tail of kos_compare_reduce: the truth of the chain as
-   a bool. Every extended selector is binary, isinstance and issubclass
-   included, which take a tuple as their second operand the way the
-   runtime instance? and subclass? do. */
+   a bool. The identity and membership selectors are binary; instance?
+   and subclass? take one or more types after the subject. */
 static KOS_NOINLINE PyObject *compare_reduce_ext(
     KosCompare sel,
     PyObject *const *args,
@@ -582,6 +621,16 @@ PyObject *KosOperator_In(PyObject *const *values, size_t count) {
 
 PyObject *KosOperator_NotIn(PyObject *const *values, size_t count) {
   return kos_compare_reduce(KOS_COMPARE_NOT_IN, values, count);
+}
+
+
+PyObject *KosOperator_IsInstance(PyObject *const *values, size_t count) {
+  return kos_compare_reduce(KOS_COMPARE_IS_INSTANCE, values, count);
+}
+
+
+PyObject *KosOperator_IsSubclass(PyObject *const *values, size_t count) {
+  return kos_compare_reduce(KOS_COMPARE_IS_SUBCLASS, values, count);
 }
 
 
@@ -662,6 +711,8 @@ VAR_FUNC(KosOperator_Lt);
 VAR_FUNC(KosOperator_Le);
 VAR_FUNC(KosOperator_Gt);
 VAR_FUNC(KosOperator_Ge);
+VAR_FUNC(KosOperator_IsInstance);
+VAR_FUNC(KosOperator_IsSubclass);
 
 
 static PyMethodDef operators[] = {
@@ -718,6 +769,12 @@ static PyMethodDef operators[] = {
 
   { ">=", PICK_FUNC(KosOperator_Ge), METHOD_TYPE,
     "(>= VAL1 VAL2 *: VALS)" },
+
+  { "instance?", PICK_FUNC(KosOperator_IsInstance), METHOD_TYPE,
+    "(instance? OBJ TYPE *: TYPES)" },
+
+  { "subclass?", PICK_FUNC(KosOperator_IsSubclass), METHOD_TYPE,
+    "(subclass? CLS BASE *: BASES)" },
 
   { NULL, },
 };

@@ -456,14 +456,42 @@ class TestObjectIsInstance(SpecialsTestCase):
         self.assertEqual(2, count)
 
 
-    async def test_isinstance_rejects_a_third_argument(self):
-        """
-        instance? has the runtime copy's signature: a value and one
-        type, several types as a tuple
-        """
+    async def test_isinstance_several_types(self):
+        expr, mod = self.compile_expr(
+            "(instance? a b c)", a="hello", b=int, c=str)
+        self.assertTrue(await expr())
+        expr, mod = self.compile_expr(
+            "(instance? a b c)", a=1.5, b=int, c=str)
+        self.assertFalse(await expr())
+        code = self.compile_to_code("(instance? a b c)")
+        self.assertEqual(3, _find_compare(code, Compare.IS_INSTANCE))
 
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(instance? a b c)")
+
+    async def test_isinstance_literal_tuple_splices(self):
+        code = self.compile_to_code("(instance? a #(b c))")
+        self.assertEqual(3, _find_compare(code, Compare.IS_INSTANCE))
+        self.assertNotIn(OpCode.BUILD_ARGS, _opcodes(code))
+
+
+    async def test_isinstance_empty_literal_tuple_is_false(self):
+        expr, mod = self.compile_expr("(instance? a #())", a=1)
+        self.assertFalse(await expr())
+
+
+    async def test_isinstance_tuple_variable_opens_one_level(self):
+        expr, mod = self.compile_expr(
+            "(instance? a b)", a="hello", b=(int, str))
+        self.assertTrue(await expr())
+        expr, mod = self.compile_expr(
+            "(instance? a b c)", a="hello", b=(int, float), c=str)
+        self.assertTrue(await expr())
+
+
+    async def test_isinstance_nested_tuple_raises(self):
+        expr, mod = self.compile_expr(
+            "(instance? a b)", a="hello", b=((int,), str))
+        with self.assertRaises(TypeError):
+            await expr()
 
 
     async def test_isinstance_tuple_of_types_as_value(self):
@@ -511,9 +539,28 @@ class TestObjectIsSubclass(SpecialsTestCase):
         self.assertEqual(2, count)
 
 
-    async def test_issubclass_rejects_a_third_argument(self):
-        with self.assertRaises(SpecialError):
-            self.compile_to_code("(subclass? a b c)")
+    async def test_issubclass_several_bases(self):
+        expr, mod = self.compile_expr(
+            "(subclass? a b c)", a=bool, b=str, c=int)
+        self.assertTrue(await expr())
+        expr, mod = self.compile_expr(
+            "(subclass? a b c)", a=float, b=str, c=int)
+        self.assertFalse(await expr())
+        code = self.compile_to_code("(subclass? a b c)")
+        self.assertEqual(3, _find_compare(code, Compare.IS_SUBCLASS))
+
+
+    async def test_issubclass_literal_tuple_splices(self):
+        code = self.compile_to_code("(subclass? a #(b c))")
+        self.assertEqual(3, _find_compare(code, Compare.IS_SUBCLASS))
+        self.assertNotIn(OpCode.BUILD_ARGS, _opcodes(code))
+
+
+    async def test_issubclass_nested_tuple_raises(self):
+        expr, mod = self.compile_expr(
+            "(subclass? a b)", a=bool, b=((int,), str))
+        with self.assertRaises(TypeError):
+            await expr()
 
 
     async def test_issubclass_tuple_of_bases_as_condition(self):
