@@ -326,6 +326,8 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 #define kos_stack_replace2_fast     KosStack_Replace2
 #define kos_stack_settle2_fast      KosStack_Settle2
 #define kos_stack_drop_noerr_fast   KosStack_DropNoErr
+#define kos_stack_drop_fast         KosStack_Drop
+#define kos_stack_dup1_fast(block)  KosStack_Duplicate((block), 1)
 #define kos_stack_peek_fast         KosStack_Peek
 #define kos_stack_peek_under_fast   KosStack_PeekUnder
 #define kos_stack_set_under_fast    KosStack_SetUnder
@@ -430,6 +432,39 @@ static inline int kos_stack_drop_noerr_fast(
     return 0;
   }
   return KosStack_DropNoErr(block, count);
+}
+
+
+/* As drop_noerr, with an underrun reported by KosStack_Drop. */
+KOS_OP_INLINE int kos_stack_drop_fast(KosSegment **block, size_t count) {
+
+  KosSegment *s = *block;
+  if (likely(s && count <= s->len)) {
+    size_t len = s->len;
+    s->len = len - count;
+    KOS_LOOP_SCALAR
+    while (count--)
+      Py_DECREF(s->objs[--len]);
+    return 0;
+  }
+  return KosStack_Drop(block, count);
+}
+
+
+/* TOS pushed again when the segment has room by KosStack_Duplicate's
+   own grow test; an underrun or a grow goes out of line. */
+static inline int kos_stack_dup1_fast(KosSegment **block) {
+
+  KosSegment *s = *block;
+  if (likely(s && s->len && s->len + 1 < s->max)) {
+    size_t len = s->len;
+    PyObject *top = s->objs[len - 1];
+    Py_INCREF(top);
+    s->objs[len] = top;
+    s->len = len + 1;
+    return 0;
+  }
+  return KosStack_Duplicate(block, 1);
 }
 
 
