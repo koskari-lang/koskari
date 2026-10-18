@@ -24,6 +24,25 @@
 
 /* === Datum === */
 
+
+/* Freed Datums chain through datum, up to the cap; kos_datum_new sets
+   every field of one it takes from the chain. */
+#define DATUM_MAX_FREE KOS_FREELIST_CAP(64)
+
+static KosDatum *datum_free_list = NULL;
+static int datum_free_count = 0;
+
+
+static void match_datum_free_list_clear(void) {
+  while (datum_free_list) {
+    KosDatum *d = datum_free_list;
+    datum_free_list = (KosDatum *) d->datum;
+    PyObject_GC_Del(d);
+  }
+  datum_free_count = 0;
+}
+
+
 static PyObject *kos_datum_new(
     PyObject *datum,
     PyObject *position,
@@ -118,7 +137,17 @@ static void datum_dealloc(PyObject *self) {
   Py_CLEAR(d->datum);
   Py_CLEAR(d->position);
   Py_CLEAR(d->binding);
-  Py_TYPE(self)->tp_free(self);
+
+  if (datum_free_count < DATUM_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("datum", 0);
+    d->datum = (PyObject *) datum_free_list;
+    datum_free_list = d;
+    datum_free_count++;
+
+  } else {
+    KOS_TRACE_FL_RETURN("datum", 1);
+    PyObject_GC_Del(self);
+  }
 }
 
 
@@ -257,9 +286,21 @@ static PyObject *kos_datum_new(
     PyObject *position,
     PyObject *binding) {
 
-  KosDatum *d = PyObject_GC_New(KosDatum, &KosDatumType);
-  if (! d)
-    return NULL;
+  KosDatum *d = datum_free_list;
+
+  if (d) {
+    datum_free_list = (KosDatum *) d->datum;
+    datum_free_count--;
+    KOS_TRACE_FL_ALLOC("datum", 1);
+    _Py_NewReference((PyObject *) d);
+
+  } else {
+    KOS_TRACE_FL_ALLOC("datum", 0);
+    d = PyObject_GC_New(KosDatum, &KosDatumType);
+    if (! d)
+      return NULL;
+  }
+
   if (! binding)
     binding = Py_None;
   Py_INCREF(datum);

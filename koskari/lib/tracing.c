@@ -353,6 +353,9 @@ typedef struct {
 #define KOS_FL_NAME_STACK_BLOCK  "stack_block"
 #define KOS_FL_NAME_PAIR         "pair"
 #define KOS_FL_NAME_NAMESPACE    "namespace"
+#define KOS_FL_NAME_CURSOR       "cursor"
+#define KOS_FL_NAME_MARK         "mark"
+#define KOS_FL_NAME_DATUM        "datum"
 
 static kos_fl_counters_t fl_dyn_node     = {0, 0, 0, 0};
 static kos_fl_counters_t fl_continuation = {0, 0, 0, 0};
@@ -360,6 +363,9 @@ static kos_fl_counters_t fl_context      = {0, 0, 0, 0};
 static kos_fl_counters_t fl_stack_block  = {0, 0, 0, 0};
 static kos_fl_counters_t fl_pair         = {0, 0, 0, 0};
 static kos_fl_counters_t fl_namespace    = {0, 0, 0, 0};
+static kos_fl_counters_t fl_cursor       = {0, 0, 0, 0};
+static kos_fl_counters_t fl_mark         = {0, 0, 0, 0};
+static kos_fl_counters_t fl_datum        = {0, 0, 0, 0};
 
 
 static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
@@ -375,6 +381,12 @@ static kos_fl_counters_t *kos_trace_fl_lookup(const char *name) {
     return &fl_pair;
   if (strcmp(name, KOS_FL_NAME_NAMESPACE) == 0)
     return &fl_namespace;
+  if (strcmp(name, KOS_FL_NAME_CURSOR) == 0)
+    return &fl_cursor;
+  if (strcmp(name, KOS_FL_NAME_MARK) == 0)
+    return &fl_mark;
+  if (strcmp(name, KOS_FL_NAME_DATUM) == 0)
+    return &fl_datum;
   return NULL;
 }
 
@@ -413,6 +425,9 @@ void kos_trace_init(void) {
   memset(&fl_stack_block, 0, sizeof(fl_stack_block));
   memset(&fl_pair, 0, sizeof(fl_pair));
   memset(&fl_namespace, 0, sizeof(fl_namespace));
+  memset(&fl_cursor, 0, sizeof(fl_cursor));
+  memset(&fl_mark, 0, sizeof(fl_mark));
+  memset(&fl_datum, 0, sizeof(fl_datum));
 #endif
 #if KOS_TRACE_EVENTS
   memset(kos_te_counters, 0, sizeof(kos_te_counters));
@@ -497,6 +512,9 @@ static int add_fl_section(PyObject *report) {
   ADD_FL_ENTRY(KOS_FL_NAME_STACK_BLOCK, fl_stack_block);
   ADD_FL_ENTRY(KOS_FL_NAME_PAIR, fl_pair);
   ADD_FL_ENTRY(KOS_FL_NAME_NAMESPACE, fl_namespace);
+  ADD_FL_ENTRY(KOS_FL_NAME_CURSOR, fl_cursor);
+  ADD_FL_ENTRY(KOS_FL_NAME_MARK, fl_mark);
+  ADD_FL_ENTRY(KOS_FL_NAME_DATUM, fl_datum);
 
 #undef ADD_FL_ENTRY
 

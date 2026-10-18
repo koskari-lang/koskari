@@ -299,6 +299,7 @@ int koskari_matcher_clear(PyObject *mod) {
   (void) mod;
   match_cursor_free_list_clear();
   match_mark_free_list_clear();
+  match_datum_free_list_clear();
   Py_CLEAR(kos_match_args_name);
   Py_CLEAR(kos_map_absent);
 #if PY_MINOR_VERSION < 10
