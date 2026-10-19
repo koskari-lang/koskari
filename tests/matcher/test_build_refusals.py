@@ -187,6 +187,12 @@ class TestLiteralConstants(unittest.TestCase):
         self.assertIn("dict", str(caught.exception))
 
 
+    def test_a_list_literal_is_refused(self):
+        with self.assertRaises(TypeError) as caught:
+            MATCH(LITERAL([1])).build()
+        self.assertIn("list", str(caught.exception))
+
+
     def test_a_pair_literal_is_refused(self):
         with self.assertRaises(TypeError) as caught:
             MATCH(LITERAL(cons(1, 2, nil))).build()

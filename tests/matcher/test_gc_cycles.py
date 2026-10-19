@@ -79,15 +79,4 @@ class TestMatcherGCCycles(unittest.TestCase):
         self._assert_collected(build)
 
 
-    def test_list_literal_is_refused_at_build(self):
-        """
-        A matcher cannot hold a list literal, which could route a cycle
-        through its constants: the build refuses it
-        """
-
-        with self.assertRaises(TypeError) as caught:
-            MATCH(LITERAL([Sentinel()])).build()
-        self.assertIn("list", str(caught.exception))
-
-
 # The end.
