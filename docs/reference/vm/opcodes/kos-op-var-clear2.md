@@ -4,6 +4,5 @@
   2 `VAR_CLEAR` would; an already empty one stays empty.
 - **Compiler form:** Never emitted by specials. Produced only by
   `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
-  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
-  lowers it to `FAST_CLEAR2` when every name has a fast slot.
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
 

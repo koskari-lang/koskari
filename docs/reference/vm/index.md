@@ -2478,8 +2478,7 @@ row: `("os.path", 0, 0, 0)`.
   2 `VAR_CLEAR` would; an already empty one stays empty.
 - **Compiler form:** Never emitted by specials. Produced only by
   `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
-  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
-  lowers it to `FAST_CLEAR2` when every name has a fast slot.
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
 
 ### KOS_OP_VAR_CLEAR3
 
@@ -2488,8 +2487,7 @@ row: `("os.path", 0, 0, 0)`.
   3 `VAR_CLEAR` would; an already empty one stays empty.
 - **Compiler form:** Never emitted by specials. Produced only by
   `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
-  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
-  lowers it to `FAST_CLEAR3` when every name has a fast slot.
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
 
 ### KOS_OP_VAR_CLEAR4
 
@@ -2498,8 +2496,7 @@ row: `("os.path", 0, 0, 0)`.
   4 `VAR_CLEAR` would; an already empty one stays empty.
 - **Compiler form:** Never emitted by specials. Produced only by
   `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
-  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
-  lowers it to `FAST_CLEAR4` when every name has a fast slot.
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
 
 ### KOS_OP_VAR_TAKE
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
