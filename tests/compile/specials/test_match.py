@@ -1203,4 +1203,73 @@ class TestMatchCalls(SpecialsTestCase):
         self.assertEqual(await expr(), 4)
 
 
+
+class TestMatchKnownOutcomes(SpecialsTestCase):
+    """
+    An arm whose gate, its first type test, misses goes past the
+    following arms whose gate tests the same type on the subject, and
+    an arm that misses after its CORE gate passed goes past the next
+    arm's same CORE; every arm's outcome is as if each were tried
+    """
+
+    async def test_type_miss_passes_a_class_on_the_same_variable(self):
+        calls = []
+
+        class Meta(type):
+            def __instancecheck__(cls, inst):
+                calls.append(inst)
+                return type.__instancecheck__(cls, inst)
+
+        class P(metaclass=Meta):
+            __match_args__ = ("a", "b")
+
+            def __init__(self, a, b):
+                self.a = a
+                self.b = b
+
+        src = """
+        (match data
+          [[p :: P] when: (zero p) "zero"]
+          [[(item P a b)] b]
+          [[s :: str] "str"]
+          [else: "other"])
+        """
+        zero = lambda p: p.a == 0  # noqa: E731
+        # an instance of P itself passes without __instancecheck__; a
+        # miss asks it once, the CLASS on P skipped
+        for data, want, tests in ((P(0, 2), "zero", 0), (P(1, 2), 2, 0),
+                                  ("s", "str", 1), (7, "other", 1)):
+            calls.clear()
+            expr, mod = self.compile_expr(src, data=data, P=P, zero=zero)
+            self.assertEqual(await expr(), want)
+            self.assertEqual(len(calls), tests, data)
+
+
+    async def test_core_gates_in_a_chain(self):
+        src = """
+        (match data
+          [[m :: int] when: (big m) "big"]
+          [[m :: int] "int"]
+          [[s :: str] "str"]
+          [else: "other"])
+        """
+        big = lambda v: v > 10  # noqa: E731
+        for data, want in ((50, "big"), (5, "int"), ("s", "str"),
+                           (1.5, "other")):
+            expr, mod = self.compile_expr(src, data=data, int=int, big=big)
+            self.assertEqual(await expr(), want)
+
+
+    async def test_a_guard_storing_the_class_variable(self):
+        # the next arm's CLASS reads the variable as the guard left it
+        src = """
+        (match data
+          [[p :: P] when: (begin (setq P Q) False) "first"]
+          [[(item P a b)] b]
+          [else: "other"])
+        """
+        expr, mod = self.compile_expr(src, data=Point(1, 2), P=Point, Q=int)
+        self.assertEqual(await expr(), "other")
+
+
 # The end.

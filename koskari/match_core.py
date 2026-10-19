@@ -60,6 +60,7 @@ __all__ = (
     'Emitter',
     'Scope',
     'analyse',
+    'arm_gate',
 )
 
 
@@ -395,6 +396,34 @@ def fits_bounds(i, width, after, open_end):
             f"length bounds ({low}, {high}) at node {i} are past"
             f" {FIELD_LIMIT}")
     return (low, high)
+
+
+def arm_gate(tables):
+    """
+    The test a match arm applies first, in place, to its subject, when
+    it is a type test: ('CORE', ordinal), or ('TYPE', extern name) for
+    a TYPE or a CLASS on an extern, CLASS testing the type before
+    anything else. None when the arm starts with any other test
+
+    :param tables: the arm's (slots, externs, consts, nodes, entry)
+    """
+
+    _slots, externs, _consts, nodes, i = tables
+    while True:
+        node = nodes[i]
+        if node[0] == 'MATCH' and len(node) == 2:
+            i = node[1]
+        elif node[0] == 'CAPTURE' and node[2] != -1:
+            i = node[2]
+        else:
+            break
+    if node[0] == 'CLASS':
+        return ('TYPE', externs[node[1]])
+    if node[0] == 'TEST' and node[1] == 'CORE':
+        return ('CORE', int(node[2]))
+    if node[0] == 'TEST' and node[1] == 'TYPE':
+        return ('TYPE', externs[node[2]])
+    return None
 
 
 def cursor_layout(nodes, widths, entry, arm):
@@ -799,6 +828,9 @@ class Emitter:
         # requested, and the labels of the entries already emitted
         self.entries = {}
         self.placed = set()
+        # an arm's (gate miss, label after the gate) until its first
+        # type test, the gate, takes them
+        self.gate_labels = None
         # the CAPTURE over each captured node: a GROUP stores its own
         # captures, and a REPEAT or REST leaves its value for the store
         self.captured = {}
@@ -1103,11 +1135,10 @@ class Emitter:
                     OpCode.MATCH_LITERAL, self.miss_at(miss),
                     self.consts[node[2]])
             elif node[1] == 'CORE':
-                self.op(OpCode.MATCH_CORE, self.miss_at(miss), int(node[2]))
+                self.type_test(OpCode.MATCH_CORE, miss, int(node[2]))
             elif node[1] == 'TYPE':
-                self.op(
-                    OpCode.MATCH_TYPE_VAR, self.miss_at(miss),
-                    self.externs[node[2]])
+                self.type_test(
+                    OpCode.MATCH_TYPE_VAR, miss, self.externs[node[2]])
             # TEST ANY tests nothing
             if not keep:
                 self.op(OpCode.POP, 1, effect=-1)
@@ -1148,6 +1179,23 @@ class Emitter:
                 self.single(node[2], miss)
 
 
+    def type_test(self, opcode, miss, *fields):
+        """
+        A CORE, TYPE or CLASS test on the value on top of the stack. The
+        first one of an arm given gate labels is its gate: its miss goes
+        to the gate miss, and the label after the gate is placed past it
+        """
+
+        gate, self.gate_labels = self.gate_labels, None
+        if gate is None:
+            self.op(opcode, self.miss_at(miss), *fields)
+            return
+        gate_miss, after_gate = gate
+        self.op(opcode, gate_miss, *fields)
+        if after_gate is not None:
+            self.place(after_gate, self.top)
+
+
     def gate(self, i, miss):
         """
         A CLASS or MAP against the value on top of the stack, which
@@ -1165,11 +1213,10 @@ class Emitter:
             if positional:
                 # the __match_args__ count is checked before any field
                 # is read
-                self.op(
-                    OpCode.MATCH_CLASS_VAR, self.miss_at(miss), cls,
-                    positional)
+                self.type_test(
+                    OpCode.MATCH_CLASS_VAR, miss, cls, positional)
             else:
-                self.op(OpCode.MATCH_TYPE_VAR, self.miss_at(miss), cls)
+                self.type_test(OpCode.MATCH_TYPE_VAR, miss, cls)
             position = 0
             for field in node[2:]:
                 field = nodes[field]
@@ -1333,23 +1380,35 @@ class Emitter:
         self.flush()
 
 
-    def arm(self, miss, guarded=False):
+    def arm(
+            self,
+            miss,
+            guarded=False,
+            gate_miss=None,
+            after_gate=None,
+            follow=None):
         """
         The walk of a match arm over the subject on top of the stack.
         Each root capture is stored into its variable, by the store an
         assignment to its name emits, as soon as its value is tested;
         a miss leaves what was stored. On a hit the walk falls through
         with the subject consumed, or for a guarded arm kept; on a miss
-        it jumps to miss with the subject kept
+        it jumps to miss with the subject kept. An arm with a gate
+        (arm_gate) sends the gate's own miss to gate_miss and places
+        after_gate just past it, each when given
 
+        :param follow: the label the caller places right after the fail
+            entries, miss by default
         :return: a function the caller invokes where code after the
-            arm's hit path is unreachable and just ahead of miss,
+            arm's hit path is unreachable and just ahead of follow,
             emitting the arm's fail entries, or None when the arm has
             none
         """
 
         self.top = 0
         self.targets[miss] = (0, 0, miss)
+        if gate_miss is not None or after_gate is not None:
+            self.gate_labels = (gate_miss or miss, after_gate)
         if self.in_place(self.entry):
             self.test(self.entry, miss, guarded)
         else:
@@ -1362,10 +1421,13 @@ class Emitter:
             if not guarded:
                 self.op(OpCode.POP, 1, effect=-1)
         self.settle()
+        if self.gate_labels is not None:
+            raise ValueError(
+                "match arm gate labels given to an arm with no gate")
 
         if not self.pending():
             return None
-        return partial(self.flush, miss)
+        return partial(self.flush, miss if follow is None else follow)
 
 
     def emit(self, i, cur, miss):

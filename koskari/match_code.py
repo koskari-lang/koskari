@@ -68,7 +68,10 @@ def lower_clause(
         analysis,
         atoms,
         miss,
-        guarded=False):
+        guarded=False,
+        gate_miss=None,
+        after_gate=None,
+        follow=None):
     """
     Emit the walk of a match arm over the subject on top of the stack.
     Each root capture is stored into its variable as soon as its value
@@ -86,8 +89,13 @@ def lower_clause(
         wrote them as
     :param miss: the arm's miss label
     :param guarded: whether a guard follows, which needs the subject
+    :param gate_miss: where the arm's gate (arm_gate) jumps on its own
+        miss, miss by default
+    :param after_gate: a label to place just past the gate, or None
+    :param follow: the label the caller places right after the fail
+        entries, miss by default
     :return: a function the caller invokes where code after the arm's
-        hit path is unreachable and just ahead of miss, emitting the
+        hit path is unreachable and just ahead of follow, emitting the
         arm's fail entries, or None when the arm has none
     :raises TypeError: when a LITERAL value or a MAP entry key is not
         a constant the pool holds
@@ -97,7 +105,7 @@ def lower_clause(
     emitter = Emitter(
         FragmentTarget(compiler, fragment), tables, analysis, atoms,
         arm=True)
-    return emitter.arm(miss, guarded)
+    return emitter.arm(miss, guarded, gate_miss, after_gate, follow)
 
 
 def lower_matcher(target, tables, analysis, atoms):

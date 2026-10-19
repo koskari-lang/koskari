@@ -28,7 +28,7 @@ from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
 from ...lib import OpCode, keyword, symbol
 from ...match_code import lower_clause
-from ...match_core import analyse
+from ...match_core import analyse, arm_gate
 from ...matcher import (
     BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
     repeat_capture)
@@ -168,23 +168,67 @@ def special_match(compiler, caps):
     for name in dict.fromkeys(symbol(n) for n in bound):
         fragment.declare_var(name)
 
-    def emit_tests(target, arm, next_label):
+    def gate_of(arm):
         """
-        One arm's tests against the subject on top of the stack, the
+        The arm's gate (arm_gate) with a TYPE's extern as the atom the
+        pattern wrote, so two arms naming one variable compare equal;
+        None for the else arm or an arm with no gate
+        """
+
+        _pattern, tables, _analysis, atoms, *_rest = arm
+        gate = None if tables is None else arm_gate(tables)
+        if gate is not None and gate[0] == 'TYPE':
+            gate = ('TYPE', atoms.get(gate[1]) or symbol(gate[1]))
+        return gate
+
+    # the label after each arm, where the next one starts. An arm whose
+    # gate misses goes past every following arm whose gate must then
+    # miss too: a type test of the same kind on the same core type or
+    # variable, nothing running between the two. An arm that misses
+    # after its CORE gate passed goes past the next arm's same CORE,
+    # which an object's type keeps passing
+    gates = [gate_of(arm) for arm in arms]
+    after = [gen_label() for _arm in arms]
+    gate_miss = list(after)
+    later_miss = list(after)
+    after_gate = [None] * len(arms)
+    for k in range(len(arms) - 2, -1, -1):
+        gate, following = gates[k], gates[k + 1]
+        if gate is None or following is None or gate[0] != following[0]:
+            continue
+        # a CORE names its type by ordinal, a TYPE by the atom
+        if gate[1] != following[1] if gate[0] == 'CORE' \
+                else gate[1] is not following[1]:
+            continue
+        gate_miss[k] = gate_miss[k + 1]
+        if gate[0] == 'CORE':
+            after_gate[k + 1] = gen_label()
+            later_miss[k] = after_gate[k + 1]
+
+    def emit_tests(target, k):
+        """
+        Arm k's tests against the subject on top of the stack, the
         guard after its captures bind; a pass falls through with the
-        subject consumed, a miss jumps to next_label with the subject
-        still on the stack
+        subject consumed, a miss jumps with the subject still on the
+        stack, to the arm whose outcome is not yet known
 
         :return: the function emitting the arm's fail entries, for
             after the arm's body, or None when it has none
         """
 
         (_pattern, tables, analysis, atoms, guard_kw, guard_expr, _body,
-         clause_pos) = arm
+         clause_pos) = arms[k]
         target.position(clause_pos)
         guarded = guard_kw is not None
-        fail_entries = lower_clause(
-            compiler, target, tables, analysis, atoms, next_label, guarded)
+        miss = later_miss[k]
+        if gates[k] is None:
+            fail_entries = lower_clause(
+                compiler, target, tables, analysis, atoms, miss, guarded,
+                follow=after[k])
+        else:
+            fail_entries = lower_clause(
+                compiler, target, tables, analysis, atoms, miss, guarded,
+                gate_miss[k], after_gate[k], after[k])
         if guarded:
             # a guarded arm's walk keeps the subject for the guard's
             # miss; the pass pops it
@@ -192,7 +236,7 @@ def special_match(compiler, caps):
             target.instruction(
                 OpCode.JUMP_FALSE if guard_kw is _keyword_when
                 else OpCode.JUMP_TRUE,
-                next_label)
+                miss)
             target.instruction(OpCode.POP, 1)
         return fail_entries
 
@@ -201,7 +245,7 @@ def special_match(compiler, caps):
     # the next arm
     request_externs(fragment)
     fragment.merge(compiler.full_compile(caps["subject"].datum))
-    for arm in arms:
+    for k, arm in enumerate(arms):
         (_pattern, tables, _analysis, _atoms, _guard_kw, _guard_expr, body,
          clause_pos) = arm
         if tables is None:
@@ -210,16 +254,15 @@ def special_match(compiler, caps):
             helper_begin(fragment, body)
             fragment.instruction(OpCode.JUMP, done)
             break
-        next_label = gen_label()
-        fail_entries = emit_tests(fragment, arm, next_label)
+        fail_entries = emit_tests(fragment, k)
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
         if fail_entries is not None:
-            # after the body, so the hit path jumps over nothing; the
-            # last entry falls into the next arm
+            # after the body, so the hit path jumps over nothing; an
+            # entry going on to the next arm falls into it
             fragment.position(clause_pos)
             fail_entries()
-        fragment.instruction(OpCode.LABEL, next_label)
+        fragment.instruction(OpCode.LABEL, after[k])
     else:
         fragment.instruction(OpCode.POP, 1)
         fragment.instruction(OpCode.CONST, None)
