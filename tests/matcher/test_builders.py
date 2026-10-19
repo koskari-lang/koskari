@@ -515,7 +515,7 @@ class TestBuildAndMatch(unittest.TestCase):
 
     def test_repeat_zero_or_more_with_deterministic_suffix(self):
         """
-        REPEAT is zero-or-more at the engine level. It greedily
+        REPEAT matches zero or more elements. It greedily
         consumes matching elements, then yields to a deterministic
         suffix
         """

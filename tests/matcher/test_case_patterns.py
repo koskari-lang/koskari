@@ -251,7 +251,7 @@ class TestClassifyCombinators(unittest.TestCase):
 
     def test_not_is_consuming(self):
         # the case dialect's (not p) is a whole-element pattern: the
-        # engine's zero-width NOT paired with a consuming any, so it can
+        # matcher's zero-width NOT paired with a consuming any, so it can
         # match (and reject) a value on its own
         pat = parse_case_pattern(_delim(_list(symbol("not"), 5)))
         self.assertIsInstance(pat, MATCH)
@@ -425,7 +425,7 @@ class TestCasePatternMatching(unittest.TestCase):
         sys.version_info < (3, 10),
         "3.10+ generates __match_args__; the synthesis gate is 3.9-only")
     def test_class_positional_synthesized_on_39(self):
-        # Python 3.9 predates __match_args__; the engine synthesizes the
+        # Python 3.9 predates __match_args__; the matcher synthesizes the
         # 3.10-equivalent tuple for dataclasses (init fields) and
         # namedtuples (_fields)
         import collections

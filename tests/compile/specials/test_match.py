@@ -844,7 +844,7 @@ class TestMatchSubjectErrors(SpecialsTestCase):
 
     async def test_looping_spine_in_the_subject_is_refused(self):
         # the descent into the subject refuses a looping spine for any
-        # arm shape, as the engine refused it before any arm ran
+        # arm shape, before any arm runs
         cyclic = cons(1, 2, nil)
         setcdr(cyclic.cdr, cyclic)
         src = """

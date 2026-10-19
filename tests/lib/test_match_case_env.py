@@ -14,9 +14,9 @@
 """
 tests.lib.test_match_case_env
 
-A match site's first element tests: the clauses answer as the engine
-would, for every root shape, a subject whose __class__ lies, and a
-Datum-boxed subject.
+A match site's first element tests: each root shape selects its
+clause, as does a subject whose __class__ lies and a Datum-boxed
+subject.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -79,7 +79,7 @@ class TestMatchCaseEnv(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC)
         return vars(module)
 
-    async def test_every_root_shape_answers_as_the_engine(self):
+    async def test_every_root_shape_selects_its_clause(self):
         mod = await self.load()
         shapes = mod["shapes"]
         Point = mod["Point"]
