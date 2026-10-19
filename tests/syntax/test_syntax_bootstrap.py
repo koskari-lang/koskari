@@ -306,7 +306,7 @@ class TestSyntaxCompileImpl(unittest.TestCase):
         self.assertEqual(out, symbol("wide"))
 
 
-class TestTransformFreeze(unittest.TestCase):
+class TestTransformConstruction(unittest.TestCase):
 
 
     def test_transform_has_matcher(self):
