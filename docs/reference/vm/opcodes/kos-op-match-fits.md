@@ -8,4 +8,5 @@
   With `a2` and `a3` both 0 it is the end test.
 - **Compiler form:** Emitted by the match compiler as the length check of a
   sequence, a matcher's root and a composite pattern ahead of their elements'
-  tests, as the end test after each walk, and at the head of each repeat pass.
+  tests, as the end test after a walk of variable width, and at the head of
+  each repeat pass.

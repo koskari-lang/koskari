@@ -8,4 +8,5 @@
   standalone matcher's root, a group, one repeat pass) with the scope's slot
   count; after an uncaptured repeat in a `match` arm, for the lists of its
   values; and with no slots, to record the position an `(or ...)`, an optional
-  or a capture returns to or reads from.
+  or a capture returns to or reads from. Followed by a `MATCH_NEXT` on the same
+  cursor, the pair is fused into `MATCH_SCOPE_NEXT`.

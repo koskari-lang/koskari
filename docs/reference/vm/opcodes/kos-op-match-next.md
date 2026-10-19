@@ -10,4 +10,5 @@
   at the cursor's end, or when the spine cell at the cursor is no longer a
   pair.
 - **Compiler form:** Emitted by the match compiler for each pattern that
-  consumes one element, ahead of its test.
+  consumes one element, ahead of its test. Right after a `MATCH_SCOPE` on the
+  same cursor, the pair is fused into `MATCH_SCOPE_NEXT`.
