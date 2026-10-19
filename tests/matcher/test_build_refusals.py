@@ -150,6 +150,17 @@ class TestRefusedAtBuild(unittest.TestCase):
         self.assertIn("2 REST", str(caught.exception))
 
 
+    def test_repeat_under_a_field(self):
+        """
+        A FIELD tests one attribute value, and a REPEAT has no upper
+        bound, so a FIELD over a REPEAT is refused whatever its minimum
+        """
+
+        for repeat in (REPEAT(TEST_ANY()), REPEAT(TEST_ANY(), min_count=1)):
+            with self.assertRaisesRegex(ValueError, "FIELD at node"):
+                MATCH(CLASS("Pt", FIELD(repeat))).build()
+
+
 class TestLiteralConstants(unittest.TestCase):
     """
     A LITERAL value is a constant of the matcher function, so it must
