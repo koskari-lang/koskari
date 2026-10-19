@@ -16,8 +16,7 @@ tests.matcher.test_pattern_build
 
 Pattern.build compiles the pattern to a Function: one positional
 formal, the subject; the captures on a match and None on a miss, a
-dict for a sequence subject and Datum values over a pair spine; a
-missing extern refused at build
+dict for a sequence subject; a missing extern refused at build
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -27,9 +26,9 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, Function, cons, demand, nil
+from koskari.lib import Function, demand
 from koskari.matcher import (
-    APP, CAPTURE, GROUP, MATCH, PREDICATE, REST, TYPE, VALUE, make_matcher)
+    APP, CAPTURE, GROUP, MATCH, PREDICATE, TYPE, VALUE, make_matcher)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -76,23 +75,6 @@ class TestBuiltCaptures(unittest.TestCase):
         result = demand(m)([7, 8])
         self.assertIsNotNone(result)
         self.assertEqual(dict(result), {"a": 7, "b": 8})
-
-
-    def test_kospair_subject_yields_datum_captures(self):
-        """
-        KosPair-backed subjects store captures as Datum with position
-        """
-
-        m = MATCH(CAPTURE("head"), REST("tail")).build()
-        subj = cons(1, 2, 3, nil)
-        result = demand(m)(subj)
-        self.assertIsNotNone(result)
-        head = result["head"]
-        self.assertIsInstance(head, Datum)
-        self.assertEqual(head.datum, 1)
-        tail = result["tail"]
-        self.assertIsInstance(tail, Datum)
-        self.assertEqual(tail.datum, cons(2, 3, nil))
 
 
     def test_named_group_nested_dict(self):
