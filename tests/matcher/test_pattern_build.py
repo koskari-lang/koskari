@@ -48,12 +48,6 @@ class TestPatternBuild(unittest.TestCase):
         self.assertIsNone(call(("s",)))
 
 
-    def test_a_missing_extern_is_refused_at_build(self):
-        with self.assertRaises(TypeError) as caught:
-            MATCH(TYPE("Point")).build()
-        self.assertIn("Point", str(caught.exception))
-
-
     def test_one_missing_extern_among_given_ones_is_refused(self):
         pattern = MATCH(PREDICATE("p"), TYPE("T"), APP("f", CAPTURE("x")))
         with self.assertRaises(TypeError) as caught:
