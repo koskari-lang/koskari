@@ -334,8 +334,30 @@ class TestMatchFunction(unittest.TestCase):
 class TestLiveSubjects(unittest.TestCase):
     """
     A list that user code shrinks during the match is read as it is at
-    each step, and never past its end
+    each step, and never past its end. A FORM of fixed width checks the
+    length once, before its elements are tested, so a list that grows
+    after that check still matches, the added elements unread
     """
+
+    def test_fixed_width_form_after_the_list_grows(self):
+        subject = [1, 2]
+
+        def grow(v):
+            subject.append(3)
+            return True
+
+        pattern = MATCH(FORM(MATCH(PREDICATE("grow"), CAPTURE("b"))))
+        result = demand(make_matcher(pattern, {"grow": grow}))((subject,))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["b"], 2)
+        self.assertEqual(subject, [1, 2, 3])
+
+        # a FORM of variable width reads the list to its live end
+        subject[:] = [1, 2]
+        pattern = MATCH(FORM(MATCH(PREDICATE("grow"), REST("r"))))
+        result = demand(make_matcher(pattern, {"grow": grow}))((subject,))
+        self.assertEqual(result["r"], (2, 3))
+
 
     def test_rest_after_the_list_is_cleared(self):
         subject = [1, 2, 3, 4]

@@ -1134,7 +1134,10 @@ class Emitter:
             inner = self.top
             self.fits(inner, analysis.form_fits[i], miss)
             self.emit(node[1], inner, miss)
-            self.fits(inner, (0, 0), miss)
+            # a fixed width was checked exactly before the elements were
+            # tested, and the body pulls exactly that many
+            if not analysis.fixed[node[1]]:
+                self.fits(inner, (0, 0), miss)
             self.op(OpCode.POP, 1, effect=-1)
 
         else:
@@ -1317,7 +1320,9 @@ class Emitter:
         self.op(OpCode.MATCH_SCOPE, self.top - cur, len(names), effect=1)
         self.marks[0] = self.top
         self.emit(self.entry, cur, miss)
-        self.fits(cur, (0, 0), miss)
+        # as a FORM's: a fixed width was checked exactly at the root
+        if not analysis.fixed[self.entry]:
+            self.fits(cur, (0, 0), miss)
         self.op(
             OpCode.MATCH_CAPTURES, self.top - self.marks[0], self.top - cur,
             names, effect=1)

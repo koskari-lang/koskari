@@ -438,7 +438,10 @@ are recorded, not a gate.
   its enclosing scope's depth (decided in phase 5).
 - An element is read when it is pulled. A list or tuple is read at its
   live length; a list that shrinks under the walk raises "match subject
-  changed under the walk" as today. A pair spine is counted once by
+  changed under the walk" as today. A FORM or root of fixed width
+  checks the length once, before its elements are tested, and has no
+  end check: a list that grows under its walk still matches, the added
+  elements unread (decided 2026-10-19). A pair spine is counted once by
   DESCEND; a loop found by the count raises as today. A car edited
   ahead of the cursor is read as edited (master read it when the
   subject was built; added to the acceptance exceptions).
