@@ -666,13 +666,15 @@ class TestEagerValidation(unittest.TestCase):
 
     def test_same_references_prior_slot_freezes(self):
         """
-        MATCH(BIND x, SAME x) lowers and freezes
+        MATCH(CAPTURE x, SAME x) builds and matches only an element
+        equal to the earlier capture
         """
 
         from koskari.matcher import SAME
 
-        pat = MATCH(CAPTURE("x"), SAME("x"))
-        TableBuilder().lower(pat)
+        m = demand(MATCH(CAPTURE("x"), SAME("x")).build())
+        self.assertEqual(m((1, 1)), {"x": 1})
+        self.assertIsNone(m((1, 2)))
 
 
     def test_duplicate_incompatible_capture_rejected_on_freeze(self):
