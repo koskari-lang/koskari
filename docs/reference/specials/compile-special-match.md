@@ -4,8 +4,7 @@
 **Syntax:** `(special-match NAME (PATTERN BODY ...) ...)`
 
 **Use-case:** **MATCH**-dialect special rules, as **`compile/special-rules`**
-takes **RULE**-dialect ones. Rule bodies receive **`compiler`** and the
-matcher slots, as for **`compile/macro-match`**.
+takes **RULE**-dialect ones.
 
 **Behaviour:** Each rule's pattern column must be **`(compiler-formal pattern)`**,
 the inner **`pattern`** in the explicit matcher dialect. A bare symbol as the
