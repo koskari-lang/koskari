@@ -20,7 +20,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, demand, keyword, symbol
+from koskari.lib import demand, keyword, symbol
 from koskari.matcher import (
     GROUP, MATCH, ONEOF, SYMBOL, VALUE, parse_explicit_rule_pattern,
     pattern_slot_names, repeat_capture)
@@ -47,8 +47,7 @@ class TestRepeatCapture(unittest.TestCase):
         subj = ((sa, 1), (sb, 2))
         result = demand(m)(subj)
         self.assertIsNotNone(result)
-        cap = result["bindings"]
-        frames = cap.datum if isinstance(cap, Datum) else cap
+        frames = result["bindings"]
         self.assertEqual(len(frames), 2)
         self.assertEqual(frames[0]["name"], sa)
         self.assertEqual(frames[0]["expr"], 1)
@@ -71,8 +70,7 @@ class TestRepeatCapture(unittest.TestCase):
         subj = (cell,)
         result = demand(m)(subj)
         self.assertIsNotNone(result)
-        cap = result["rows"]
-        frames = cap.datum if isinstance(cap, Datum) else cap
+        frames = result["rows"]
         self.assertEqual(len(frames), 1)
         self.assertEqual(frames[0]["expr"], 99)
         self.assertEqual(frames[0]["name"], sx)

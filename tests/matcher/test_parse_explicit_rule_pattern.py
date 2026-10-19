@@ -20,7 +20,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cons, demand, gensym, keyword, nil, symbol
+from koskari.lib import cons, demand, gensym, keyword, nil, symbol
 from koskari.matcher import (
     CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, parse_explicit_rule_pattern)
 from koskari.matcher.heads import parse_matcher
@@ -163,8 +163,7 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         xa = symbol("x")
         ok = demand(m)([xa, xa])
         self.assertIsNotNone(ok)
-        cap = ok["xs"]
-        frames = cap.datum if isinstance(cap, Datum) else cap
+        frames = ok["xs"]
         self.assertEqual(len(frames), 2)
         bad_one = demand(m)([xa])
         self.assertIsNone(bad_one)
