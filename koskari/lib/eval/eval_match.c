@@ -22,11 +22,10 @@
   reads which it is off the opcode to resolve its slot operands by
   name or by index; an instruction with no slot field has one form.
   Included into eval.c ahead of the opcode handlers. A walk's
-  cursors, marks and items lists are stack entries named by depth
-  (design/interpreter/matcher-core.md). The steps themselves are the
-  matcher subsystem's (matcher.h, matcher/step.c, matcher/cursor.c,
-  matcher/mark.c); a body is the interface between the row and the
-  stack.
+  cursors, marks and items lists are stack entries named by depth.
+  The steps themselves are the matcher subsystem's (matcher.h,
+  matcher/step.c, matcher/cursor.c, matcher/mark.c); a body is the
+  interface between the row and the stack.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3

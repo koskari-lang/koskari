@@ -18,8 +18,7 @@
   REPEAT pass's value: the captures of the filled slots, a dict or,
   with the flag set, in their MATCH_CAPTURES form; else the pass's
   span.
-  The body is kos_match_captures in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_captures in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_PASS) {
   (void) kos_op_delivery_;

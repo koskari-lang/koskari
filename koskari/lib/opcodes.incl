@@ -450,17 +450,16 @@ OP(UNPACK_FAST, 0, EXTRA, FASTVAR, FASTVAR, NOARG, NOARG)
 // runtime match/case dispatch — subject held on the stack across arms
 OP(MATCH_CASE, 0, EXTRA, LABEL, CONST, CONST, COUNT)  // retired: the one-instruction arm over the matcher that preceded the MATCH_* family; never emitted, the handler raises
 
-// the match instructions (design/interpreter/matcher-core.md): a
-// pattern lowered to straight-line code. A walk's cursors, marks and
-// items lists are stack entries, each named by a RAW depth counted on
-// the stack as the instruction finds it: 0 is the top, before the
-// instruction pops or pushes. A miss jumps to the LABEL in field 0,
-// leaving the stack as it was except where an instruction says it
-// consumes its input: an element test pops its element on both exits.
-// A write to a cursor, a mark or an items list goes to the entry's own
-// object, copied first when anything else holds it, and the result is
-// stored back at the depth. Widths and counts are RAW; 0xFFFF is
-// FITS's unbounded max.
+// the match instructions: a pattern lowered to straight-line code. A
+// walk's cursors, marks and items lists are stack entries, each named
+// by a RAW depth counted on the stack as the instruction finds it: 0 is
+// the top, before the instruction pops or pushes. A miss jumps to the
+// LABEL in field 0, leaving the stack as it was except where an
+// instruction says it consumes its input; an element test leaves its
+// element on both exits. A write to a cursor, a mark or an items list
+// goes to the entry's own object, copied first when anything else holds
+// it, and the result is stored back at the depth. Widths and counts are
+// RAW; 0xFFFF is FITS's unbounded max.
 OP(MATCH_DESCEND, 0, LABEL)  // v -> cur: the sequence gate on v read through Datum and a cursor over it; a miss consumes v
 OP(MATCH_SINGLE, 0, NOARG)  // v -> cur: a one-element cursor over v
 OP(MATCH_FITS, 0, EXTRA, LABEL, RAW, RAW, RAW)  // cur, min, max: misses unless min <= remaining <= max

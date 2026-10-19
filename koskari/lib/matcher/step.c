@@ -18,7 +18,7 @@
   Included by matcher.c. The KosMatchCursor type and its freelist, the
   sequence and spine reads the cursor and mark steps share, and the
   element tests and the field and item reads the MATCH_* instructions
-  call, each over one element (design/interpreter/matcher-core.md).
+  call, each over one element.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3

@@ -16,8 +16,7 @@
 /**
   MATCH_FIELD_POS_VAR: Row LABEL, slot, index. o -> o a: the
   attribute __match_args__[index] of the class in the slot names.
-  The body is kos_match_field_pos in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_field_pos in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_FIELD_POS_VAR) {
   (void) kos_op_delivery_;

@@ -16,8 +16,7 @@
 /**
   MATCH_FITS: Row LABEL, cursor depth, min, max. Misses unless the
   cursor has between min and max elements left, 0xFFFF no maximum.
-  The body is kos_match_fits in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_fits in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_FITS) {
   (void) kos_op_delivery_;

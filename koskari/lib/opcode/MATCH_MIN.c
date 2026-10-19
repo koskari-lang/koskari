@@ -15,8 +15,7 @@
 
 /**
   MATCH_MIN: Row LABEL, items depth, count. Misses below count items.
-  The body is kos_match_min in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_min in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_MIN) {
   (void) kos_op_delivery_;

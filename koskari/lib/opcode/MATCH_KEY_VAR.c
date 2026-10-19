@@ -16,8 +16,7 @@
 /**
   MATCH_KEY_VAR: Row LABEL, slot. o -> o v: the value under the key
   in the slot.
-  The body is kos_match_key in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_key in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_KEY_VAR) {
   (void) kos_op_delivery_;

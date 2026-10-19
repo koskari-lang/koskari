@@ -17,8 +17,7 @@
 /**
   Included by matcher.c after step.c. The match cursor: one
   KosMatchCursor over a pair spine, a sequence or a single value, with
-  an end bound, and the steps the cursor instructions call
-  (design/interpreter/matcher-core.md).
+  an end bound, and the steps the cursor instructions call.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -294,7 +293,7 @@ int KosMatchCursor_Tail(
   switch (c->kind) {
   case KOS_MATCH_SPINE:
     if (consume == 0) {
-      /* the empty remainder: the spine's terminator, as the engine
+      /* the empty remainder: the spine's terminator, as an empty REST
          binds it */
       PyObject *term = core_spine_walk(c->seq, c->length - c->index);
       if (! term)

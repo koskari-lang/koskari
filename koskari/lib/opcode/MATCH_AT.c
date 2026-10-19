@@ -15,8 +15,7 @@
 
 /**
   MATCH_AT: Row mark depth. Pushes the element at the mark's position.
-  The body is kos_match_at in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_at in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_AT) {
   (void) kos_op_delivery_;

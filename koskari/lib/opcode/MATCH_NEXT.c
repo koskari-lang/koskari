@@ -17,8 +17,7 @@
   MATCH_NEXT: Row LABEL, cursor depth. Pushes the next element, a
   Datum over a spine cell, and stores the moved cursor back; misses
   at the end.
-  The body is kos_match_next in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_next in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_NEXT) {
   (void) kos_op_delivery_;

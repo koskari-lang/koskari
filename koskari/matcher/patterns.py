@@ -323,15 +323,15 @@ CORE_TYPES = {name.lower(): member for name, member in CoreType.__members__.item
 class TYPE(Pattern):
     """
     Match a single element which is an instance of the named type: a
-    core type by its ordinal, any other name as an extern resolved at
-    match time
+    core type by its ordinal, any other name as an extern, a variable of
+    the code the pattern runs in
     """
 
 
     def __init__(self, extern_name):
         """
         :param extern_name: the extern binding name supplied when the
-            matcher is made, e.g. make_matcher(pat, {"symbol": symbol})
+            matcher is made, e.g. make_matcher(pat, {"Point": Point})
         :raises TypeError: when extern_name is not a str
         :raises ValueError: when extern_name is empty
         """
@@ -423,7 +423,8 @@ class CAPTURE(Pattern):
 
     def _claim_signature(self):
         """
-        Freeze-time tuple so repeated identical captures share a signature
+        The signature a slot claim records, equal for repeated identical
+        captures
         """
 
         if self._sub is None:
@@ -896,7 +897,7 @@ class REST(Pattern):
     Consume the remainder of the current spine subject. ``min_tail`` is
     the minimum number of spine cells this REST must take (default 0).
     When ``slot`` is set, lowering emits ``CAPTURE(slot, REST(...))`` so
-    only CAPTURE carries a slot index on the wire
+    only CAPTURE carries the slot
     """
 
 
@@ -1145,8 +1146,8 @@ def BIND(slot):
 
 def SYMBOL(slot):
     """
-    Capture a symbol element into the named slot. Requires the
-    'symbol' extern at match time
+    Capture a symbol element into the named slot; symbol is a core type,
+    tested with no extern
     """
 
     return CAPTURE(slot, TYPE("symbol"))
@@ -1154,8 +1155,8 @@ def SYMBOL(slot):
 
 def KEYWORD(slot):
     """
-    Capture a keyword element into the named slot. Requires the
-    'keyword' extern at match time
+    Capture a keyword element into the named slot; keyword is a core
+    type, tested with no extern
     """
 
     return CAPTURE(slot, TYPE("keyword"))
@@ -1163,8 +1164,8 @@ def KEYWORD(slot):
 
 def PAIR(slot):
     """
-    Capture a pair element into the named slot. Requires the 'pair'
-    extern at match time
+    Capture a pair element into the named slot; pair is a core type,
+    tested with no extern
     """
 
     return CAPTURE(slot, TYPE("pair"))

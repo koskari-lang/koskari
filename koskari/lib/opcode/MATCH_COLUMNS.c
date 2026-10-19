@@ -16,8 +16,7 @@
 /**
   MATCH_COLUMNS: Row items depth, mark depth, names, index tuple.
   Stores each name's list of per-pass values into the mark's slot.
-  The body is kos_match_columns in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_columns in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_COLUMNS) {
   (void) kos_op_delivery_;

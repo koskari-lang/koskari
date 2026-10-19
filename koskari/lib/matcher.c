@@ -20,8 +20,8 @@
    The matcher subsystem: the Datum, DatumFrame, MatchCursor and
    MatchMark types, and the steps the MATCH_* instructions call, each
    one test, read or move over one element or one stack entry. A
-   pattern is compiled to those instructions by koskari/match_core.py;
-   nothing here walks a pattern (design/interpreter/matcher-core.md).
+   pattern is compiled to those instructions by koskari/matcher/emitter.py;
+   nothing here walks a pattern.
    The cursor steps are in matcher/cursor.c, the mark and its steps in
    matcher/mark.c.
 
@@ -106,8 +106,7 @@ static int matcher_nominal_miss_is_final(PyObject *inst) {
    which cannot carry a custom ``__instancecheck__``, so a nominal
    identity/MRO hit is the answer isinstance would give, and a nominal
    miss is final when matcher_nominal_miss_is_final proves the virtual
-   ``__class__`` read cannot change it. The root pre-test uses this so
-   the engine's own test is the one place such code runs.
+   ``__class__`` read cannot change it.
 */
 static int matcher_isinstance_pure(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls)) && Py_TYPE(cls) == &PyType_Type) {

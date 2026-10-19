@@ -121,8 +121,7 @@ def quoted(compiler, form):
 # Opaque one-cell rows for compile-time parsing of ``syntax-rules`` /
 # ``macro-rules`` / ``syntax-match`` surfaces (Koskari rules are not
 # always two-element ``(pattern template)`` lists), split later by
-# _syntax_rules_row_pattern_and_template. Inner REPEAT binds rename to
-# ``rule__sr`` in the native matcher.
+# _syntax_rules_row_pattern_and_template.
 _RULE_ROWS = repeat_capture("rules", REPEAT(BIND("rule"), min_count=1))
 
 # Rows of ``(PATTERN BODY...)`` for the match-dialect surfaces
@@ -152,8 +151,8 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     Rows from the reader layout are normally ``(pattern-column template)`` of
     length two (same shape ``compile/syntax-rules`` expects). Koskari sources
     can also supply longer proper lists; then the
-    template is the last top-level form and all preceding forms are grouped
-    like :func:`koskari.reader.layouts.define_syntax._pattern_template_from_rule`.
+    template is the last top-level form and the forms before it are grouped
+    as the pattern.
     """
 
     if not is_pair(raw_rule):

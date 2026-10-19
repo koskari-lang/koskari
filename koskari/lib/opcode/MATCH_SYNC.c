@@ -16,8 +16,7 @@
 /**
   MATCH_SYNC: Row cursor depth, cursor depth. Moves the first cursor
   to the second's position.
-  The body is kos_match_sync in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_sync in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_SYNC) {
   (void) kos_op_delivery_;

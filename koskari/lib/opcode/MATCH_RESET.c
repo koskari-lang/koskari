@@ -16,8 +16,7 @@
 /**
   MATCH_RESET: Row cursor depth, mark depth. Moves the cursor back to
   the mark's position.
-  The body is kos_match_reset in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_reset in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_RESET) {
   (void) kos_op_delivery_;

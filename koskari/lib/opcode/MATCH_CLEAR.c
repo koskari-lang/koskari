@@ -16,8 +16,7 @@
 /**
   MATCH_CLEAR: Row mark depth, index tuple. Empties the slots the
   tuple names.
-  The body is kos_match_clear in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_clear in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_CLEAR) {
   (void) kos_op_delivery_;

@@ -16,8 +16,7 @@
 /**
   MATCH_LOAD: Row LABEL, mark depth, index. Pushes the slot's value;
   an empty slot jumps, pushing nothing.
-  The body is kos_match_load in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_load in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_LOAD) {
   (void) kos_op_delivery_;

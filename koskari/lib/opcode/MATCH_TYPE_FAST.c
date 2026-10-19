@@ -16,8 +16,7 @@
 /**
   MATCH_TYPE_FAST: Row LABEL, fast slot. The FAST twin of
   MATCH_TYPE_VAR.
-  The body is kos_match_type in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_type in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_TYPE_FAST) {
   (void) kos_op_delivery_;

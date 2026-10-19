@@ -17,8 +17,7 @@
   MATCH_TAIL: Row LABEL, cursor depth, width, min. Pushes the
   remaining elements less width as a span, advancing the cursor;
   misses below min.
-  The body is kos_match_tail in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_tail in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_TAIL) {
   (void) kos_op_delivery_;

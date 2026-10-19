@@ -43,7 +43,7 @@ def _define_name_type_pos_from_match(matched):
     Prefer the DEFINE arm when ``name`` is present so ``decl`` is never
     mistaken for a declaration result on patterns that only bind ``name``.
 
-    DECL composite captures are native GROUP dicts or :class:`DatumFrame`
+    DECL composite captures are plain dicts or :class:`DatumFrame`
     values; compile match may adapt the decl slot like a FORMALS group.
     When the adapted value has no name attribute, recover the symbol and
     optional type with parse_decl on ``decl.source`` (whole-cell spine).

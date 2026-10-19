@@ -15,8 +15,7 @@
 
 /**
   MATCH_SINGLE: no arg. v -> cur: a one-element cursor over v.
-  The body is kos_match_single in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_single in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_SINGLE) {
   (void) kos_op_delivery_;

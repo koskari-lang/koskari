@@ -16,8 +16,7 @@
 /**
   MATCH_UNBOUND: Row cursor depth. Pushes a cursor at the cursor's
   position with no reserve, ending at its subject's end.
-  The body is kos_match_unbound in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_unbound in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_UNBOUND) {
   (void) kos_op_delivery_;

@@ -17,8 +17,7 @@
   MATCH_CLASS_VAR: Row LABEL, slot, count. e -> e: e must be an
   instance of the class in the slot, whose __match_args__ must then
   hold at least count names, else a TypeError.
-  The body is kos_match_class in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_class in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_CLASS_VAR) {
   (void) kos_op_delivery_;

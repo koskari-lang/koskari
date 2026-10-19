@@ -18,8 +18,7 @@
   into the mark's slot; a Datum takes the slot's name as its binding
   when the cursor walks a pair spine. A cursor depth of 0 names no
   cursor: the value was tested in place, and takes no binding.
-  The body is kos_match_store in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_store in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_STORE) {
   (void) kos_op_delivery_;

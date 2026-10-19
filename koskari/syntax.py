@@ -758,7 +758,7 @@ def parse_syntax_rules_pattern(
     """
     Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
-    RULE dialect only; does not implement MATCH-dialect ``matcher/foo`` forms.
+    RULE dialect only; does not implement the MATCH dialect's registry heads.
     The ``build-syntax`` Koskari builtin and :func:`parse_rule_pattern` call this
     when lowering pattern source.
 

@@ -16,8 +16,7 @@
 /**
   MATCH_DESCEND: simple LABEL. v -> cur: the sequence gate on v read
   through Datum and a cursor over it; a miss pops v and jumps.
-  The body is kos_match_descend in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_descend in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_DESCEND) {
   (void) kos_op_delivery_;

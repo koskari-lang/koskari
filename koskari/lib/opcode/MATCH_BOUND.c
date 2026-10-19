@@ -17,8 +17,7 @@
   MATCH_BOUND: Row LABEL, cursor depth, width. Pushes a cursor at the
   cursor's position ending width elements before its end; misses when
   fewer remain.
-  The body is kos_match_bound in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_bound in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_BOUND) {
   (void) kos_op_delivery_;

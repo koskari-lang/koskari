@@ -284,7 +284,7 @@ def parse_case_element(elem):
         return ONEOF(*branches)
 
     if "not_operand" in c:
-        # the engine's NOT is a zero-width lookahead; the case dialect's
+        # the NOT pattern is a zero-width lookahead; the case dialect's
         # (not p) is a whole-element pattern, so pair the check with a
         # consuming any -- the element must be present and must not
         # match p. (The canonical registry (NOT ...) head keeps the raw

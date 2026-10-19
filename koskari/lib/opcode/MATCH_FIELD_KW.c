@@ -16,8 +16,7 @@
 /**
   MATCH_FIELD_KW: Row LABEL, const. o -> o a: the attribute the
   constant names.
-  The body is kos_match_field_kw in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_field_kw in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_FIELD_KW) {
   (void) kos_op_delivery_;

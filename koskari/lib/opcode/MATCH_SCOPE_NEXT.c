@@ -18,8 +18,7 @@
   MATCH_NEXT on the same cursor, fused by the bytecode processor:
   pushes a mark at the cursor's position with count empty slots, then
   the cursor's next element; a miss at the end leaves the mark.
-  The body is kos_match_scope_next in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_scope_next in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_SCOPE_NEXT) {
   (void) kos_op_delivery_;

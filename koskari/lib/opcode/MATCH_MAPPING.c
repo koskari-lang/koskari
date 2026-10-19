@@ -15,8 +15,7 @@
 
 /**
   MATCH_MAPPING: simple LABEL. o -> o: the mapping gate.
-  The body is kos_match_mapping in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_mapping in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_MAPPING) {
   (void) kos_op_delivery_;

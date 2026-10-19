@@ -16,8 +16,7 @@
 /**
   MATCH_SCOPE: Row cursor depth, count. Pushes a mark at the cursor's
   position with count empty slots.
-  The body is kos_match_scope in eval/eval_match.c
-  (design/interpreter/matcher-core.md).
+  The body is kos_match_scope in eval/eval_match.c.
 */
 KOS_OP_HANDLER(MATCH_SCOPE) {
   (void) kos_op_delivery_;
