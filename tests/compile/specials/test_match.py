@@ -836,6 +836,12 @@ class TestMatchExternResolution(SpecialsTestCase):
         self.assertEqual(0, await expr())
 
 
+class TestMatchSubjectErrors(SpecialsTestCase):
+    """
+    A subject whose spine loops, or is made to loop while a walk is on
+    it, raises ValueError instead of walking forever
+    """
+
     async def test_looping_spine_in_the_subject_is_refused(self):
         # the descent into the subject refuses a looping spine for any
         # arm shape, as the engine refused it before any arm ran
@@ -873,8 +879,6 @@ class TestMatchExternResolution(SpecialsTestCase):
         with self.assertRaises(ValueError) as caught:
             await expr()
         self.assertIn("changed under the walk", str(caught.exception))
-
-
 
 
 class TestMatchTemporaries(SpecialsTestCase):
