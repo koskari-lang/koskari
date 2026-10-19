@@ -650,7 +650,7 @@ class TestEagerValidation(unittest.TestCase):
         """
 
         with self.assertRaises(ValueError):
-            TableBuilder().lower(FIELD(TEST_ANY()))
+            FIELD(TEST_ANY()).build()
 
 
     def test_duplicate_plain_capture_rejected_on_freeze(self):
@@ -660,7 +660,7 @@ class TestEagerValidation(unittest.TestCase):
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x"))
         with self.assertRaises(ValueError) as ctx:
-            TableBuilder().lower(pat)
+            pat.build()
         self.assertIn("SAME", str(ctx.exception))
 
 
@@ -683,7 +683,7 @@ class TestEagerValidation(unittest.TestCase):
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x", TYPE("symbol")))
         with self.assertRaises(ValueError) as ctx:
-            TableBuilder().lower(pat)
+            pat.build()
         self.assertIn("differing matcher type", str(ctx.exception))
 
 
@@ -695,7 +695,7 @@ class TestEagerValidation(unittest.TestCase):
 
         pat = MATCH(CAPTURE("x"), REST("x"))
         with self.assertRaises(ValueError):
-            TableBuilder().lower(pat)
+            pat.build()
 
 
     def test_field_rejects_empty_name(self):
