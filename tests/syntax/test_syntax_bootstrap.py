@@ -420,24 +420,6 @@ class TestSpecialDecorator(unittest.TestCase):
         self.assertEqual(len(h.transforms), 2)
 
 
-class TestDatum(unittest.TestCase):
-
-
-    def test_datum_iter_delegates_to_wrapped_pair(self):
-        from koskari.lib import Datum
-
-        a = symbol("a")
-        b = symbol("b")
-        lst = build_proper(a, b)
-        d = Datum(lst)
-        out = list(d)
-        self.assertEqual(len(out), 2)
-        self.assertIsInstance(out[0], Datum)
-        self.assertIs(out[0].datum, a)
-        self.assertIsInstance(out[1], Datum)
-        self.assertIs(out[1].datum, b)
-
-
 class TestDatumFrame(unittest.TestCase):
 
 

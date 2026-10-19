@@ -162,8 +162,10 @@ class TestDatumIteration(unittest.TestCase):
             next(it)
 
     def test_iteration_yields_every_element_in_order(self):
-        out = [d.datum for d in Datum(cons(1, 2, 3, nil))]
-        self.assertEqual([1, 2, 3], out)
+        items = list(Datum(cons(1, 2, 3, nil)))
+        for item in items:
+            self.assertIsInstance(item, Datum)
+        self.assertEqual([1, 2, 3], [d.datum for d in items])
 
 
 # The end.
