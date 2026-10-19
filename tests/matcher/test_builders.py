@@ -644,18 +644,18 @@ class TestEagerValidation(unittest.TestCase):
             CLASS("Point", TEST_ANY())
 
 
-    def test_field_outside_class_freeze_rejected(self):
+    def test_field_outside_class_refused_at_build(self):
         """
-        FIELD freeze raises ValueError when not nested inside a CLASS
+        build raises ValueError for a FIELD not nested inside a CLASS
         """
 
         with self.assertRaises(ValueError):
             FIELD(TEST_ANY()).build()
 
 
-    def test_duplicate_plain_capture_rejected_on_freeze(self):
+    def test_duplicate_plain_capture_refused_at_build(self):
         """
-        Two plain CAPTURE nodes for the same slot raise at freeze; use SAME
+        Two plain CAPTURE nodes for the same slot raise at build; use SAME
         """
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x"))
@@ -664,7 +664,7 @@ class TestEagerValidation(unittest.TestCase):
         self.assertIn("SAME", str(ctx.exception))
 
 
-    def test_same_references_prior_slot_freezes(self):
+    def test_same_references_prior_slot(self):
         """
         MATCH(CAPTURE x, SAME x) builds and matches only an element
         equal to the earlier capture
@@ -677,10 +677,10 @@ class TestEagerValidation(unittest.TestCase):
         self.assertIsNone(m((1, 2)))
 
 
-    def test_duplicate_incompatible_capture_rejected_on_freeze(self):
+    def test_duplicate_incompatible_capture_refused_at_build(self):
         """
         Two CAPTURE nodes for the same slot with different capture kinds
-        raise ValueError at freeze time
+        raise ValueError at build
         """
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x", TYPE("symbol")))
@@ -692,7 +692,7 @@ class TestEagerValidation(unittest.TestCase):
     def test_duplicate_capture_rest_slot_rejected(self):
         """
         CAPTURE followed by REST sharing the same slot name raises
-        ValueError at freeze time
+        ValueError at build
         """
 
         pat = MATCH(CAPTURE("x"), REST("x"))
@@ -884,7 +884,7 @@ class TestCrossCutting(unittest.TestCase):
 
     def test_deep_nesting_does_not_overflow(self):
         """
-        A pattern with around twenty nested OPTIONAL layers freezes
+        A pattern with around twenty nested OPTIONAL layers builds
         and matches without issue
         """
 
