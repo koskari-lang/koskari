@@ -14,7 +14,7 @@
 """
 Tests for matcher composite matchers built from primitives only.
 DEFINE, DECL, BINDING, BINDINGS, FORMALS, USING, and BODY lower into
-trees of base nodes; captures are produced by the native engine and
+trees of base nodes; captures are produced by the built matcher and
 asserted directly
 """
 
@@ -119,7 +119,7 @@ class TestDEFINE(unittest.TestCase):
 
     def test_define_rejects_non_symbol(self):
         """
-        DEFINE rejects non-symbol elements at the native engine level
+        DEFINE misses on a non-symbol element
         """
 
         pat = MATCH(DEFINE("name"))
@@ -829,7 +829,7 @@ class TestBODY(unittest.TestCase):
     def test_body_captures_rest_like_rest(self):
         """
         BODY captures the remainder of the source list into the named
-        slot, identical to REST at the engine level
+        slot, as REST does
         """
 
         pat = MATCH(CAPTURE("head"), BODY("body"))
@@ -845,8 +845,7 @@ class TestVALUE(unittest.TestCase):
 
     def test_value_captures_one_element_like_bind(self):
         """
-        VALUE captures a single spine element, identical to BIND at the
-        engine level
+        VALUE captures a single spine element, as BIND does
         """
 
         pat = MATCH(CAPTURE("head"), VALUE("expr"))
