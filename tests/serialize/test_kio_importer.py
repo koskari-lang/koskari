@@ -24,7 +24,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import types
 import unittest
 
 import pytest
