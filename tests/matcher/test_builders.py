@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, demand, keyword, nil, pair, symbol
+from koskari.lib import cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
@@ -361,7 +361,7 @@ class TestBuildAndMatch(unittest.TestCase):
             TEST_ANY(),
             REST("body"),
         )
-        m = pat.build({"symbol": symbol})
+        m = pat.build()
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
         result = demand(m)(subj)
@@ -747,7 +747,7 @@ class TestErgonomicShorthands(unittest.TestCase):
         SYMBOL captures a symbol element and rejects a non-symbol
         """
 
-        m = MATCH(SYMBOL("x")).build({"symbol": symbol})
+        m = MATCH(SYMBOL("x")).build()
 
         r_ok = demand(m)([symbol("foo")])
         self.assertIsNotNone(r_ok)
@@ -762,7 +762,7 @@ class TestErgonomicShorthands(unittest.TestCase):
         PAIR captures a pair element and rejects non-pair values
         """
 
-        m = MATCH(PAIR("p")).build({"pair": pair})
+        m = MATCH(PAIR("p")).build()
 
         r_ok = demand(m)([cons(1, 2)])
         self.assertIsNotNone(r_ok)

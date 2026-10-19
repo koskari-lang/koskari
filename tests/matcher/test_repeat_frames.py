@@ -41,7 +41,7 @@ class TestRepeatCapture(unittest.TestCase):
         """
 
         pat = repeat_capture("bindings", binding_inner_pattern())
-        m = pat.build({"symbol": symbol})
+        m = pat.build()
         sa = symbol("a")
         sb = symbol("b")
         subj = ((sa, 1), (sb, 2))
@@ -65,7 +65,7 @@ class TestRepeatCapture(unittest.TestCase):
         """
 
         pat = repeat_capture("rows", binding_inner_pattern())
-        m = pat.build({"symbol": symbol})
+        m = pat.build()
         sx = symbol("x")
         cell = (99, keyword("as"), sx)
         subj = (cell,)

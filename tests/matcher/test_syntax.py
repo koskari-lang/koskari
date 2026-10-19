@@ -23,7 +23,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import DatumFrame, cons, demand, keyword, nil, pair, symbol
+from koskari.lib import DatumFrame, cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE, FIELD, FORM,
     FORMALS, GROUP, LIST, LITERAL, LITERAL_KW, LITERAL_SYM, MATCH, NOT, ONEOF,
@@ -690,7 +690,7 @@ class TestRecursiveLowering(unittest.TestCase):
         self.assertIsInstance(children[1], CAPTURE)
         self.assertEqual(children[1]._slot, "expr")
 
-        m = MATCH(pat).build({"symbol": symbol, "keyword": keyword})
+        m = MATCH(pat).build()
         sa = symbol("foo")
         sv = symbol("bar")
         subj = (_list(sa, sv),)
@@ -711,7 +711,7 @@ class TestRecursiveLowering(unittest.TestCase):
             _list(symbol("a"), keyword("::"), symbol("symbol")),
             _list(symbol("b"), keyword("::"), symbol("pair")))
         pat = parse_matcher(src)
-        m = MATCH(pat).build({"symbol": symbol, "pair": pair})
+        m = MATCH(pat).build()
 
         sa = symbol("hello")
         result = demand(m)((sa,))
@@ -731,7 +731,7 @@ class TestRecursiveLowering(unittest.TestCase):
             _list(symbol("BINDING"), symbol("b")),
             symbol("expr"))
         pat = parse_matcher(src)
-        m = MATCH(pat).build({"symbol": symbol, "keyword": keyword})
+        m = MATCH(pat).build()
 
         sname = symbol("x")
         sval = symbol("v")
