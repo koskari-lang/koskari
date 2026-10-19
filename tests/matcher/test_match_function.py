@@ -92,7 +92,7 @@ class TestMatchFunction(unittest.TestCase):
         hit = demand(m)(read("(f as: x)"))
         self.assertIsNotNone(hit)
         caps = hit
-        # an empty rest before a suffix is unpinned by the docs
+        # an empty rest over a spine is a Datum over the spine's terminator
         self.assertIs(caps["front"].datum, nil)
         self.assertEqual(caps["name"].datum, symbol("x"))
 
