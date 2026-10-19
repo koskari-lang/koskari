@@ -292,7 +292,7 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_SCOPE_NEXT, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_SCOPE_NEXT, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -375,7 +375,6 @@ When adding or changing an opcode:
 | SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast) |
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var_attr) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
-| MATCH_CASE | EXTRA | Retired; never emitted, raises when reached | [§9.2](#kos_op_match_case) |
 | MATCH_DESCEND | LABEL | Sequence gate on TOS; a cursor over it replaces it; a miss pops it | [§9.2](#kos_op_match_descend) |
 | MATCH_SINGLE | NOARG | A one-element cursor over TOS replaces it | [§9.2](#kos_op_match_single) |
 | MATCH_FITS | EXTRA | Miss unless the cursor at the depth has between the minimum and the maximum elements left | [§9.2](#kos_op_match_fits) |
@@ -1891,29 +1890,18 @@ interpreted at run time.
   `MATCH_NEXT` on the cursor the mark was made at into
   `MATCH_SCOPE_NEXT`; both are also emitted apart.
 
-`MATCH_CASE`, the one-instruction form of an arm over the matcher that
-preceded this family, keeps its number in the table. The compiler
-never emits it and its handler raises.
-
-Each `koskari/lib/opcode/MATCH_*.c` handler but `MATCH_CASE`'s
-tail-calls its body in `koskari/lib/eval/eval_match.c`,
-shared by the VAR and FAST twins, and the body calls the matcher
-subsystem's step
-(`koskari/lib/matcher/cursor.c`, `mark.c`, `step.c`; `matcher.h`). The
+Each `koskari/lib/opcode/MATCH_*.c` handler holds its instruction's
+body, except where handlers share one: the VAR and FAST twins, and
+MATCH_CAPTURES with MATCH_PASS, tail-call a body in
+`koskari/lib/eval/eval_match.c`. A body calls the matcher subsystem's
+step (`koskari/lib/matcher/cursor.c`, `mark.c`, `step.c`;
+`matcher.h`). The
 lowering is the `Emitter` in `koskari/matcher/emitter.py`, entered by
 `lower_arm` inline for a `compile/match` arm and `lower_matcher` into a
 function body, which `koskari/matcher/build.py` completes as a syntax
 rule's lambda or, through `build_matcher`, as a standalone `Function`.
 Design:
 [archive/matcher-core.md](archive/matcher-core.md).
-
-### KOS_OP_MATCH_CASE {#kos_op_match_case}
-
-- **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT).
-- **Status**: retired. The handler raises `RuntimeError`; the compiler
-  never emits it. The design record is
-  [archive/match-case-form.md](archive/match-case-form.md).
-- **Implementation**: `koskari/lib/opcode/MATCH_CASE.c`
 
 ### KOS_OP_MATCH_DESCEND {#kos_op_match_descend}
 
