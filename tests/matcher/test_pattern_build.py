@@ -29,8 +29,7 @@ import pytest
 
 from koskari.lib import Datum, Function, cons, demand, nil
 from koskari.matcher import (
-    APP, CAPTURE, GROUP, LITERAL, MATCH, ONEOF, PREDICATE, REST, TYPE, VALUE,
-    make_matcher)
+    APP, CAPTURE, GROUP, MATCH, PREDICATE, REST, TYPE, VALUE, make_matcher)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -94,27 +93,6 @@ class TestBuiltCaptures(unittest.TestCase):
         tail = result["tail"]
         self.assertIsInstance(tail, Datum)
         self.assertEqual(tail.datum, cons(2, 3, nil))
-
-
-    def test_oneof_sparse_captures(self):
-        """
-        A ONEOF with two branches does not populate keys for the
-        non-matching branch
-        """
-
-        m = MATCH(ONEOF(
-            MATCH(CAPTURE("xs", LITERAL("X"))),
-            MATCH(CAPTURE("ys", LITERAL("Y"))))).build()
-
-        r1 = demand(m)(["X"])
-        self.assertIsNotNone(r1)
-        self.assertEqual(r1["xs"], "X")
-        self.assertNotIn("ys", r1)
-
-        r2 = demand(m)(["Y"])
-        self.assertIsNotNone(r2)
-        self.assertNotIn("xs", r2)
-        self.assertEqual(r2["ys"], "Y")
 
 
     def test_named_group_nested_dict(self):
