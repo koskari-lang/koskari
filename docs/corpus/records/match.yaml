@@ -354,7 +354,7 @@ tags:
   - predicate
   - branch
   - higher-order
-notes: the predicate is called from the walk and an awaitable result is awaited in place; a plain koskari lambda works directly
+notes: the predicate is called from the function the match is in, as a call in the arm body would be; a plain koskari lambda works directly
 ---
 id: match-app-001
 feature: special/compile/match
