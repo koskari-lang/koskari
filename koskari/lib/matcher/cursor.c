@@ -80,7 +80,7 @@ static PyObject *core_element(
   case KOS_MATCH_SPINE:
     if (! KosPair_Check(seq) || KosNilP(seq))
       return core_changed();
-    return step_box_cell(seq, matcher_peel_datum(KosPair_CAR(seq)));
+    return step_box_cell(seq);
 
   case KOS_MATCH_SINGLE:
     if (index != 0)
@@ -134,8 +134,7 @@ static PyObject *core_spine_boxes(PyObject *start, Py_ssize_t n) {
       return core_changed();
     }
 
-    PyObject *boxed = step_box_cell(
-        cell, matcher_peel_datum(KosPair_CAR(cell)));
+    PyObject *boxed = step_box_cell(cell);
     if (! boxed) {
       Py_DECREF(cell);
       Py_DECREF(t);
@@ -165,13 +164,24 @@ int KosMatchCursor_Descend(PyObject *value, PyObject **out_cursor) {
     return gate;
 
   if (KosPair_Check(peeled) || KosNilP(peeled)) {
-    /* the one walk over the spine: the count every later step reads */
-    PyObject *term = NULL;
-    Py_ssize_t count = step_count_spine(peeled, &term);
+    /* the one walk over the spine, counting its cells: the count every
+       later step reads. A second pointer a cell behind on every other
+       step finds a looping spine; an improper tail is a miss */
+    Py_ssize_t count = 0;
+    PyObject *slow = peeled;
+    PyObject *fast = peeled;
 
-    if (count == -2)
-      return -1;
-    if (count == -1)
+    while (KosPair_Check(fast) && ! KosNilP(fast)) {
+      count++;
+      fast = KosPair_CDR(fast);
+      if (count & 1) {
+        slow = KosPair_CDR(slow);
+      } else if (fast == slow && KosPair_Check(fast) && ! KosNilP(fast)) {
+        PyErr_SetString(PyExc_ValueError, "looping spine in match subject");
+        return -1;
+      }
+    }
+    if (! KosNilP(fast))
       return 0;
     cursor = core_cursor_new(peeled, count, 0, 0, KOS_MATCH_SPINE);
 
@@ -219,7 +229,7 @@ int KosMatchCursor_Next(
   if (c->kind == KOS_MATCH_SPINE) {
     if (! KosPair_Check(seq) || KosNilP(seq))
       return 0;
-    elem = step_box_cell(seq, matcher_peel_datum(KosPair_CAR(seq)));
+    elem = step_box_cell(seq);
     if (! elem)
       return -1;
     /* read after the box, whose allocation may run a finalizer */
@@ -300,7 +310,9 @@ int KosMatchCursor_Tail(
         return -1;
       span = kos_datum_new(term, Py_None, Py_None);
     } else if (c->index + consume == c->length) {
-      span = step_box_cell(c->seq, c->seq);
+      PyObject *pos = step_cell_position(c->seq);
+      span = kos_datum_new(c->seq, pos, Py_None);
+      Py_DECREF(pos);
     } else {
       span = core_spine_boxes(c->seq, consume);
     }

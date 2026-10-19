@@ -14,12 +14,23 @@
 */
 
 /**
-  MATCH_MAPPING: simple LABEL. o -> o: the mapping gate.
-  The body is kos_match_mapping in eval/eval_match.c.
+  MATCH_MAPPING: the mapping gate on TOS, which stays. Simple LABEL
+  style.
 */
 KOS_OP_HANDLER(MATCH_MAPPING) {
+  KOS_SYNC_PC(es, insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_mapping, es, insn, NULL);
+
+  PyObject *obj = KosEvalState_StackPeek(es);
+  if (unlikely(! obj))
+    RESULT_RAISE();
+
+  int r = KosMatch_MapTest(obj);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+  RESULT_NEXT(es);
 }
 
 

@@ -419,32 +419,6 @@ PyTypeObject KosDatumFrameType = {
 
 
 /**
-   A DatumFrame over source with position, both references taken; on
-   failure both are released. Built by dict's own tp_new, with no type
-   call and no tp_init: an empty dict needs neither.
-*/
-static PyObject *kos_datum_frame_new(PyObject *source, PyObject *position) {
-  PyObject *args = PyTuple_New(0);
-  PyObject *self = NULL;
-
-  if (args) {
-    self = PyDict_Type.tp_new(&KosDatumFrameType, args, NULL);
-    Py_DECREF(args);
-  }
-  if (! self) {
-    Py_DECREF(source);
-    Py_DECREF(position);
-    return NULL;
-  }
-
-  KosDatumFrame *f = (KosDatumFrame *) self;
-  f->source = source;
-  f->position = position;
-  return self;
-}
-
-
-/**
    Borrow through outer ``Datum`` layers for KosPair spine reads. The
    underlying pair tree and the boxes are unchanged; only matching
    sees the inner value. A gensym is a symbol and is never peeled: it

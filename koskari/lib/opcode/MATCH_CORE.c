@@ -14,12 +14,24 @@
 */
 
 /**
-  MATCH_CORE: Row LABEL, ordinal. e -> e: e must be of the core type.
-  The body is kos_match_core in eval/eval_match.c.
+  MATCH_CORE: TOS, which stays, must be an instance of the core type
+  whose ordinal is field 1. Row LABEL, ordinal.
 */
 KOS_OP_HANDLER(MATCH_CORE) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_core, es, insn, NULL);
+
+  PyObject *elem = KosEvalState_StackPeek(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+
+  int r = KosMatch_CoreTypeTest(elem, KosExtra_IMM(row, 1));
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
 }
 
 

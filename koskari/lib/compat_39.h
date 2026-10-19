@@ -188,4 +188,46 @@ static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
 }
 
 
+/* === PEP 634 type tests === */
+
+
+/* collections.abc's class of that name, resolved on first use into
+   *cache and then held: the type flags that decide a sequence or a
+   mapping arrive in 3.10. Borrowed, or NULL with an exception set. */
+static inline PyObject *kos_abc_class(const char *name, PyObject **cache) {
+  if (! *cache) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    *cache = PyObject_GetAttrString(abc, name);
+    Py_DECREF(abc);
+  }
+  return *cache;
+}
+
+
+/* 1 when obj is a collections.abc.Sequence, else 0; -1 with an
+   exception set. The isinstance reads __class__ and can run user
+   code. */
+static inline int kos_type_is_sequence(PyObject *obj) {
+  static PyObject *sequence = NULL;
+  PyObject *cls = kos_abc_class("Sequence", &sequence);
+
+  if (! cls)
+    return -1;
+  return PyObject_IsInstance(obj, cls);
+}
+
+
+/* 1 when obj is a collections.abc.Mapping, as above. */
+static inline int kos_type_is_mapping(PyObject *obj) {
+  static PyObject *mapping = NULL;
+  PyObject *cls = kos_abc_class("Mapping", &mapping);
+
+  if (! cls)
+    return -1;
+  return PyObject_IsInstance(obj, cls);
+}
+
+
 // The end.

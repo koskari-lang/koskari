@@ -14,14 +14,27 @@
 */
 
 /**
-  MATCH_BOUND: Row LABEL, cursor depth, width. Pushes a cursor at the
-  cursor's position ending width elements before its end; misses when
-  fewer remain.
-  The body is kos_match_bound in eval/eval_match.c.
+  MATCH_BOUND: a cursor at the position of the cursor at field 1,
+  ending field 2 elements before its end, pushed; a miss when fewer
+  remain. Row LABEL, depth, width.
 */
 KOS_OP_HANDLER(MATCH_BOUND) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_bound, es, insn, NULL);
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *bound = NULL;
+  int r = KosMatchCursor_Bound(
+      cursor, (Py_ssize_t) KosExtra_IMM(row, 2), &bound);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, bound);
 }
 
 

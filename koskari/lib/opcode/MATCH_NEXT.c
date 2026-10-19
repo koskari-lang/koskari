@@ -14,14 +14,27 @@
 */
 
 /**
-  MATCH_NEXT: Row LABEL, cursor depth. Pushes the next element, a
-  Datum over a spine cell, and stores the moved cursor back; misses
-  at the end.
-  The body is kos_match_next in eval/eval_match.c.
+  MATCH_NEXT: the next element of the cursor at field 1 pushed, the
+  cursor moved in place or its copy stored back; a miss at the end.
+  Row LABEL, depth.
 */
 KOS_OP_HANDLER(MATCH_NEXT) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_next, es, insn, NULL);
+
+  uint32_t under = KosExtra_IMM(row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, under);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *elem = NULL;
+  int r = kos_match_pull(es, cursor, (size_t) under, &elem);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, elem);
 }
 
 

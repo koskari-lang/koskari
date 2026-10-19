@@ -14,12 +14,24 @@
 */
 
 /**
-  MATCH_LITERAL: Row LABEL, const. e -> e: e must be the constant.
-  The body is kos_match_literal in eval/eval_match.c.
+  MATCH_LITERAL: TOS, which stays, must be the constant in field 1.
+  Row LABEL, const.
 */
 KOS_OP_HANDLER(MATCH_LITERAL) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_literal, es, insn, NULL);
+
+  PyObject *elem = KosEvalState_StackPeek(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+
+  int r = KosMatch_LiteralTest(elem, KosExtra_OBJ(row, 1));
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
 }
 
 

@@ -14,12 +14,18 @@
 */
 
 /**
-  MATCH_AT: Row mark depth. Pushes the element at the mark's position.
-  The body is kos_match_at in eval/eval_match.c.
+  MATCH_AT: the element at the position of the mark at field 0
+  pushed. Row depth.
 */
 KOS_OP_HANDLER(MATCH_AT) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_at, es, insn, NULL);
+
+  PyObject *mark = kos_match_mark_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  RESULT_STEAL(es, KosMatchMark_At(mark));
 }
 
 

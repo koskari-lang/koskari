@@ -99,148 +99,48 @@ static int matcher_nominal_miss_is_final(PyObject *inst) {
 
 
 /**
-   The isinstance answer when it is decided by the type walk alone: 1 or
-   0, or -2 when deciding it would run user code (a metaclass
-   __instancecheck__, or a __class__ read on a subject whose nominal miss
-   is not final). cls is a type whose metaclass is exactly ``type``,
-   which cannot carry a custom ``__instancecheck__``, so a nominal
-   identity/MRO hit is the answer isinstance would give, and a nominal
-   miss is final when matcher_nominal_miss_is_final proves the virtual
-   ``__class__`` read cannot change it.
+   isinstance for pattern tests. cls a type whose metaclass is exactly
+   ``type``, which cannot carry a custom ``__instancecheck__``, is
+   decided by the type walk: a nominal identity/MRO hit is the answer
+   isinstance would give, and a nominal miss is final when
+   matcher_nominal_miss_is_final proves the virtual ``__class__`` read
+   cannot change it. Anything else is PyObject_IsInstance, which can
+   run user code. 1, 0, or -1 with an exception set.
 */
-static int matcher_isinstance_pure(PyObject *inst, PyObject *cls) {
+static int matcher_isinstance(PyObject *inst, PyObject *cls) {
   if (likely(PyType_Check(cls)) && Py_TYPE(cls) == &PyType_Type) {
     if (PyObject_TypeCheck(inst, (PyTypeObject *) cls))
       return 1;
     if (matcher_nominal_miss_is_final(inst))
       return 0;
   }
-  return -2;
-}
-
-
-/**
-   isinstance for pattern tests: the type walk's answer where it has
-   one, and PyObject_IsInstance where deciding runs user code.
-*/
-static int matcher_isinstance(PyObject *inst, PyObject *cls) {
-  int r = matcher_isinstance_pure(inst, cls);
-  if (r != -2)
-    return r;
   return PyObject_IsInstance(inst, cls);
 }
 
 
-#ifndef Py_TPFLAGS_SEQUENCE
-/**
-   Cached collections.abc.Sequence, resolved lazily on the first
-   sequence gate that the type alone cannot decide and then immortal:
-   that path runs for every such element that flows past a sequence
-   arm. Returns a borrowed reference, or NULL with an exception set.
-*/
-static PyObject *get_abc_sequence(void) {
-  static PyObject *abc_sequence_type = NULL;
-
-  if (! abc_sequence_type) {
-    PyObject *abc = PyImport_ImportModule("collections.abc");
-    if (! abc)
-      return NULL;
-    abc_sequence_type = PyObject_GetAttrString(abc, "Sequence");
-    Py_DECREF(abc);
-  }
-  return abc_sequence_type;
-}
-#endif
-
-
-#ifndef Py_TPFLAGS_MAPPING
-/**
-   Cached collections.abc.Mapping, resolved lazily on the first mapping
-   gate that the type alone cannot decide and then immortal; a
-   double-resolve race under the GIL at worst leaks one reference.
-   Returns a borrowed reference, or NULL with an exception set.
-*/
-static PyObject *get_abc_mapping(void) {
-  static PyObject *abc_mapping_type = NULL;
-
-  if (! abc_mapping_type) {
-    PyObject *abc = PyImport_ImportModule("collections.abc");
-    if (! abc)
-      return NULL;
-    abc_mapping_type = PyObject_GetAttrString(abc, "Mapping");
-    Py_DECREF(abc);
-  }
-  return abc_mapping_type;
-}
-#endif
-
-
-/* The sequence-pattern gate on a peeled element (PEP 634), decided by
-   the type alone: str, bytes and bytearray are atoms; the KosPair
-   spine, list and tuple descend; any other type descends when
-   sequence-flagged (3.10+). On 3.9 the answer for any other type is a
-   collections.abc.Sequence isinstance, which reads __class__ and can run
-   user code: -2, for the caller to take or leave. Returns 1 to descend,
-   0 for no match, -2 undecided. */
-static int matcher_sequence_gate_pure(PyObject *peeled) {
+/* The sequence-pattern gate on a peeled element (PEP 634): str, bytes
+   and bytearray are atoms; the KosPair spine, list and tuple descend;
+   any other type descends when it is a sequence by the version's own
+   test. Mappings, sets and iterators are a soft no-match. Returns 1 to
+   descend, 0 for no match, -1 on error. */
+static int matcher_sequence_gate(PyObject *peeled) {
   if (PyUnicode_Check(peeled) || PyBytes_Check(peeled)
       || PyByteArray_Check(peeled))
     return 0;
   if (KosPair_Check(peeled) || KosNilP(peeled)
       || PyList_Check(peeled) || PyTuple_Check(peeled))
     return 1;
-#ifdef Py_TPFLAGS_SEQUENCE
-  return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_SEQUENCE) ? 1 : 0;
-#else
-  return -2;
-#endif
+  return kos_type_is_sequence(peeled);
 }
 
 
-/* The sequence gate with the undecided case settled by the ABC
-   isinstance. Mappings, sets and iterators are a soft no-match.
-   Returns 1 to descend, 0 for no match, -1 on error. */
-static int matcher_sequence_gate(PyObject *peeled) {
-  int r = matcher_sequence_gate_pure(peeled);
-#ifndef Py_TPFLAGS_SEQUENCE
-  if (r == -2) {
-    PyObject *seq_type = get_abc_sequence();
-    if (! seq_type)
-      return -1;
-    return PyObject_IsInstance(peeled, seq_type);
-  }
-#endif
-  return r;
-}
-
-
-/* The mapping-pattern gate on a peeled element (PEP 634), decided by
-   the type alone: a dict, else a mapping-flagged type (3.10+). On 3.9
-   any other type is undecided, -2, as for the sequence gate. */
-static int matcher_mapping_gate_pure(PyObject *peeled) {
+/* The mapping-pattern gate on a peeled element (PEP 634): a dict, else
+   a mapping by the version's own test. Returns 1 to descend, 0 for no
+   match, -1 on error. */
+static int matcher_mapping_gate(PyObject *peeled) {
   if (PyDict_Check(peeled))
     return 1;
-#ifdef Py_TPFLAGS_MAPPING
-  return PyType_HasFeature(Py_TYPE(peeled), Py_TPFLAGS_MAPPING) ? 1 : 0;
-#else
-  return -2;
-#endif
-}
-
-
-/* The mapping gate with the undecided case settled by the ABC
-   isinstance. Returns 1 to descend, 0 for no match, -1 on error. */
-static int matcher_mapping_gate(PyObject *peeled) {
-  int r = matcher_mapping_gate_pure(peeled);
-#ifndef Py_TPFLAGS_MAPPING
-  if (r == -2) {
-    PyObject *mapping_type = get_abc_mapping();
-    if (! mapping_type)
-      return -1;
-    return PyObject_IsInstance(peeled, mapping_type);
-  }
-#endif
-  return r;
+  return kos_type_is_mapping(peeled);
 }
 
 

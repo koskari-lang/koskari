@@ -14,13 +14,28 @@
 */
 
 /**
-  MATCH_RESET: Row cursor depth, mark depth. Moves the cursor back to
-  the mark's position.
-  The body is kos_match_reset in eval/eval_match.c.
+  MATCH_RESET: the cursor at field 0 moved back to the position of
+  the mark at field 1. Row depth, depth.
 */
 KOS_OP_HANDLER(MATCH_RESET) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_reset, es, insn, NULL);
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  PyObject *mark = kos_match_mark_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+
+  PyObject *moved = KosMatchMark_Reset(cursor, mark, 1);
+  if (unlikely(! moved))
+    RESULT_RAISE();
+  if (unlikely(moved != cursor)
+      && unlikely(KosEvalState_StackSetUnder(es, KosExtra_IMM(row, 0), moved) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

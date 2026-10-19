@@ -14,13 +14,24 @@
 */
 
 /**
-  MATCH_FITS: Row LABEL, cursor depth, min, max. Misses unless the
-  cursor has between min and max elements left, 0xFFFF no maximum.
-  The body is kos_match_fits in eval/eval_match.c.
+  MATCH_FITS: the cursor at field 1 must have at least field 2 and
+  at most field 3 elements left, KOS_MATCH_UNBOUNDED for no maximum.
+  Row LABEL, depth, min, max.
 */
 KOS_OP_HANDLER(MATCH_FITS) {
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_fits, es, insn, NULL);
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE_AT(es, insn);
+
+  Py_ssize_t remaining = KosMatchCursor_Remaining(cursor);
+  uint32_t max = KosExtra_IMM(row, 3);
+  if (remaining < (Py_ssize_t) KosExtra_IMM(row, 2)
+      || (max != KOS_MATCH_UNBOUNDED && remaining > (Py_ssize_t) max))
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
 }
 
 

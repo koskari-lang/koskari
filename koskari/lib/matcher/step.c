@@ -184,41 +184,16 @@ static PyObject *step_cell_position(PyObject *cell) {
 
 
 /**
-   Datum(car, position) for one spine cell. New reference.
+   Datum(car, position) for one spine cell, the car peeled. New
+   reference.
 */
-static PyObject *step_box_cell(PyObject *cell, PyObject *car) {
+static PyObject *step_box_cell(PyObject *cell) {
   PyObject *pos = step_cell_position(cell);
-  PyObject *out = kos_datum_new(car, pos, Py_None);
+  PyObject *out = kos_datum_new(
+      matcher_peel_datum(KosPair_CAR(cell)), pos, Py_None);
 
   Py_DECREF(pos);
   return out;
-}
-
-
-/**
-   Count the cells of the spine from cursor. Returns the count with
-   *out_term the terminator, or -1 with no exception set for an
-   improper tail, or -2 with an exception set for a looping spine.
-*/
-static Py_ssize_t step_count_spine(PyObject *cursor, PyObject **out_term) {
-  Py_ssize_t n = 0;
-  PyObject *slow = cursor;
-  PyObject *fast = cursor;
-
-  while (KosPair_Check(fast) && ! KosNilP(fast)) {
-    n++;
-    fast = KosPair_CDR(fast);
-    if (n & 1) {
-      slow = KosPair_CDR(slow);
-    } else if (fast == slow && KosPair_Check(fast) && ! KosNilP(fast)) {
-      PyErr_SetString(PyExc_ValueError, "looping spine in match subject");
-      return -2;
-    }
-  }
-  if (! KosNilP(fast))
-    return -1;
-  *out_term = fast;
-  return n;
 }
 
 
@@ -430,6 +405,23 @@ PyObject *KosMatch_PlainMatchArgs(PyObject *cls) {
 }
 
 
+/**
+   The TypeError for a __match_args__ of have entries asked for need
+   positional field patterns. Returns -1.
+*/
+static int step_short_match_args(
+    PyObject *cls,
+    Py_ssize_t have,
+    Py_ssize_t need) {
+
+  PyErr_Format(PyExc_TypeError,
+               "%R.__match_args__ has %zd entries; cannot satisfy "
+               "%zd positional field pattern(s)",
+               cls, have, need);
+  return -1;
+}
+
+
 int KosMatch_ClassArgs(
     PyObject *cls,
     Py_ssize_t npos,
@@ -444,13 +436,8 @@ int KosMatch_ClassArgs(
 
   Py_ssize_t have = PyTuple_GET_SIZE(match_args);
   Py_DECREF(match_args);
-  if (have < npos) {
-    PyErr_Format(PyExc_TypeError,
-                 "%R.__match_args__ has %zd entries; cannot satisfy "
-                 "%zd positional field pattern(s)",
-                 cls, have, npos);
-    return -1;
-  }
+  if (have < npos)
+    return step_short_match_args(cls, have, npos);
   return 0;
 }
 
@@ -481,12 +468,9 @@ int KosMatch_FieldPos(
   if (! match_args)
     return -1;
   if (pos >= PyTuple_GET_SIZE(match_args)) {
-    PyErr_Format(PyExc_TypeError,
-                 "%R.__match_args__ has %zd entries; cannot satisfy "
-                 "%zd positional field pattern(s)",
-                 cls, PyTuple_GET_SIZE(match_args), pos + 1);
+    Py_ssize_t have = PyTuple_GET_SIZE(match_args);
     Py_DECREF(match_args);
-    return -1;
+    return step_short_match_args(cls, have, pos + 1);
   }
 
   PyObject *attr_name = PyTuple_GET_ITEM(match_args, pos);

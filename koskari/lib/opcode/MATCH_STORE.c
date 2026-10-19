@@ -14,15 +14,39 @@
 */
 
 /**
-  MATCH_STORE: Row mark depth, index, cursor depth, names. v -> : v
-  into the mark's slot; a Datum takes the slot's name as its binding
-  when the cursor walks a pair spine. A cursor depth of 0 names no
-  cursor: the value was tested in place, and takes no binding.
-  The body is kos_match_store in eval/eval_match.c.
+  MATCH_STORE: TOS popped into slot field 1 of the mark at field 0;
+  when the cursor at field 2 walks a pair spine, a Datum value takes
+  the slot's name from the names tuple in field 3 as its binding.
+  Field 2 is 0 for a value no cursor produced, depth 0 being the value
+  itself. Row depth, index, depth, const.
 */
 KOS_OP_HANDLER(MATCH_STORE) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
+  Py_ssize_t i = (Py_ssize_t) KosExtra_IMM(row, 1);
+  uint32_t under = KosExtra_IMM(row, 2);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_store, es, insn, NULL);
+
+  /* the code's validation holds the index within the names */
+  PyObject *name = NULL;
+  if (under) {
+    PyObject *cursor = kos_match_cursor_at(es, under);
+    if (unlikely(! cursor))
+      RESULT_RAISE();
+    if (KosMatchCursor_KIND(cursor) == KOS_MATCH_SPINE)
+      name = PyTuple_GET_ITEM(KosExtra_OBJ(row, 3), i);
+  }
+
+  PyObject *mark = kos_match_writable_at(es, row, 0);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+
+  PyObject *value = KosEvalState_StackPopRef(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+  if (unlikely(KosMatchMark_Store(mark, i, value, name) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

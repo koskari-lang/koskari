@@ -14,13 +14,19 @@
 */
 
 /**
-  MATCH_SCOPE: Row cursor depth, count. Pushes a mark at the cursor's
-  position with count empty slots.
-  The body is kos_match_scope in eval/eval_match.c.
+  MATCH_SCOPE: a mark at the position of the cursor at field 0 with
+  field 1 empty slots pushed. Row depth, count.
 */
 KOS_OP_HANDLER(MATCH_SCOPE) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_scope, es, insn, NULL);
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  RESULT_STEAL(
+      es, KosMatchMark_New(cursor, (Py_ssize_t) KosExtra_IMM(row, 1)));
 }
 
 

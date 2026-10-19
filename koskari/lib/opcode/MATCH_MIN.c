@@ -14,12 +14,19 @@
 */
 
 /**
-  MATCH_MIN: Row LABEL, items depth, count. Misses below count items.
-  The body is kos_match_min in eval/eval_match.c.
+  MATCH_MIN: the items list at field 1 must hold at least field 2
+  items. Row LABEL, depth, count.
 */
 KOS_OP_HANDLER(MATCH_MIN) {
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_min, es, insn, NULL);
+
+  PyObject *list = kos_match_items_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! list))
+    RESULT_RAISE_AT(es, insn);
+  if (PyList_GET_SIZE(list) < (Py_ssize_t) KosExtra_IMM(row, 2))
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
 }
 
 

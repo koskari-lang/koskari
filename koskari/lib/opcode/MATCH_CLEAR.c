@@ -14,13 +14,20 @@
 */
 
 /**
-  MATCH_CLEAR: Row mark depth, index tuple. Empties the slots the
-  tuple names.
-  The body is kos_match_clear in eval/eval_match.c.
+  MATCH_CLEAR: the slots the index tuple in field 1 names emptied in
+  the mark at field 0. Row depth, const.
 */
 KOS_OP_HANDLER(MATCH_CLEAR) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_clear, es, insn, NULL);
+
+  PyObject *mark = kos_match_writable_at(es, row, 0);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  if (unlikely(KosMatchMark_Clear(mark, KosExtra_OBJ(row, 1)) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

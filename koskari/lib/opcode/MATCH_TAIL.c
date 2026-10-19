@@ -14,14 +14,36 @@
 */
 
 /**
-  MATCH_TAIL: Row LABEL, cursor depth, width, min. Pushes the
-  remaining elements less width as a span, advancing the cursor;
-  misses below min.
-  The body is kos_match_tail in eval/eval_match.c.
+  MATCH_TAIL: the remaining elements of the cursor at field 1 less
+  field 2 pushed as a span, the cursor advanced past them; a miss
+  when fewer than field 2 remain or the span is shorter than field 3.
+  Row LABEL, depth, width, min.
 */
 KOS_OP_HANDLER(MATCH_TAIL) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_tail, es, insn, NULL);
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *span = NULL;
+  PyObject *next = NULL;
+  int r = KosMatchCursor_Tail(
+      cursor, (Py_ssize_t) KosExtra_IMM(row, 2),
+      (Py_ssize_t) KosExtra_IMM(row, 3), 1, &span, &next);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+
+  if (unlikely(next != cursor)
+      && unlikely(KosEvalState_StackSetUnder(es, KosExtra_IMM(row, 1), next) < 0)) {
+    Py_DECREF(span);
+    RESULT_RAISE();
+  }
+  RESULT_STEAL(es, span);
 }
 
 

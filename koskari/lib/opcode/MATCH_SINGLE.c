@@ -14,12 +14,22 @@
 */
 
 /**
-  MATCH_SINGLE: no arg. v -> cur: a one-element cursor over v.
-  The body is kos_match_single in eval/eval_match.c.
+  MATCH_SINGLE: a one-element cursor over TOS replaces it. No arg.
 */
 KOS_OP_HANDLER(MATCH_SINGLE) {
+  KOS_SYNC_PC(es, insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_single, es, insn, NULL);
+
+  PyObject *value = KosEvalState_StackPeek(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+
+  PyObject *cursor = KosMatchCursor_Single(value);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  if (unlikely(KosEvalState_StackSetUnder(es, 0, cursor) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

@@ -233,29 +233,6 @@ KOS_NOINLINE PyObject *KosMatchMark_Copy(PyObject *mark) {
 }
 
 
-/**
-   The binding a stored value takes: name on a Datum, and on each
-   Datum item of a tuple.
-*/
-static void mark_bind_datum(PyObject *value, PyObject *name) {
-  if (KosDatum_Check(value)) {
-    Py_INCREF(name);
-    Py_SETREF(((KosDatum *) value)->binding, name);
-    return;
-  }
-
-  if (PyTuple_Check(value)) {
-    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(value); i++) {
-      PyObject *item = PyTuple_GET_ITEM(value, i);
-      if (KosDatum_Check(item)) {
-        Py_INCREF(name);
-        Py_SETREF(((KosDatum *) item)->binding, name);
-      }
-    }
-  }
-}
-
-
 int KosMatchMark_Store(
     PyObject *mark,
     Py_ssize_t i,
@@ -271,8 +248,21 @@ int KosMatchMark_Store(
     return -1;
   }
 
-  if (name)
-    mark_bind_datum(value, name);
+  /* the binding a stored value takes: name on a Datum, and on each
+     Datum item of a tuple */
+  if (name && KosDatum_Check(value)) {
+    Py_INCREF(name);
+    Py_SETREF(((KosDatum *) value)->binding, name);
+
+  } else if (name && PyTuple_Check(value)) {
+    for (Py_ssize_t j = 0; j < PyTuple_GET_SIZE(value); j++) {
+      PyObject *item = PyTuple_GET_ITEM(value, j);
+      if (KosDatum_Check(item)) {
+        Py_INCREF(name);
+        Py_SETREF(((KosDatum *) item)->binding, name);
+      }
+    }
+  }
   Py_XSETREF(m->slots[i], value);
   return 0;
 }
@@ -326,52 +316,6 @@ PyObject *KosMatchMark_Dict(PyObject *mark, PyObject *names) {
 }
 
 
-/**
-   The source a DatumFrame records for the n cells from m's cell to
-   c's: the first cell itself when the span is empty or runs to the
-   spine's end, the car read through Datum for one cell, else a tuple
-   of the cars read through Datum. New reference; NULL with an
-   exception set, ValueError when the spine no longer reaches c's cell
-   from m's.
-*/
-static PyObject *mark_span_source(
-    KosMatchMark *m,
-    KosMatchCursor *c,
-    Py_ssize_t n) {
-
-  /* a span empty or running to the spine's end is its first cell,
-     which the mark holds; the cells after it are not read */
-  if (n == 0 || c->index == c->length) {
-    Py_INCREF(m->seq);
-    return m->seq;
-  }
-
-  if (core_spine_walk(m->seq, n) != c->seq) {
-    if (! PyErr_Occurred())
-      core_changed();
-    return NULL;
-  }
-
-  if (n == 1) {
-    PyObject *car = matcher_peel_datum(KosPair_CAR(m->seq));
-    Py_INCREF(car);
-    return car;
-  }
-
-  PyObject *t = PyTuple_New(n);
-  if (! t)
-    return NULL;
-  PyObject *cell = m->seq;
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *car = matcher_peel_datum(KosPair_CAR(cell));
-    Py_INCREF(car);
-    PyTuple_SET_ITEM(t, i, car);
-    cell = KosPair_CDR(cell);
-  }
-  return t;
-}
-
-
 PyObject *KosMatchMark_Captures(
     PyObject *mark,
     PyObject *cursor,
@@ -387,14 +331,55 @@ PyObject *KosMatchMark_Captures(
   if (n < 0)
     return NULL;
 
-  PyObject *source = mark_span_source(m, c, n);
-  if (! source)
+  /* the source the frame records: the first cell itself when the span
+     is empty or runs to the spine's end, which the mark holds and whose
+     later cells are not read; the car read through Datum for one cell;
+     else a tuple of the cars. ValueError when the spine no longer
+     reaches c's cell from m's */
+  PyObject *source;
+  if (n == 0 || c->index == c->length) {
+    Py_INCREF(m->seq);
+    source = m->seq;
+
+  } else if (core_spine_walk(m->seq, n) != c->seq) {
+    if (! PyErr_Occurred())
+      core_changed();
     return NULL;
 
-  PyObject *out = kos_datum_frame_new(
-      source, step_cell_position(m->seq));
-  if (! out)
+  } else if (n == 1) {
+    source = matcher_peel_datum(KosPair_CAR(m->seq));
+    Py_INCREF(source);
+
+  } else {
+    source = PyTuple_New(n);
+    if (! source)
+      return NULL;
+    PyObject *cell = m->seq;
+    for (Py_ssize_t i = 0; i < n; i++) {
+      PyObject *car = matcher_peel_datum(KosPair_CAR(cell));
+      Py_INCREF(car);
+      PyTuple_SET_ITEM(source, i, car);
+      cell = KosPair_CDR(cell);
+    }
+  }
+
+  /* the frame built by dict's own tp_new, with no type call and no
+     tp_init: an empty dict needs neither */
+  PyObject *position = step_cell_position(m->seq);
+  PyObject *args = PyTuple_New(0);
+  PyObject *out = NULL;
+  if (args) {
+    out = PyDict_Type.tp_new(&KosDatumFrameType, args, NULL);
+    Py_DECREF(args);
+  }
+  if (! out) {
+    Py_DECREF(source);
+    Py_DECREF(position);
     return NULL;
+  }
+  ((KosDatumFrame *) out)->source = source;
+  ((KosDatumFrame *) out)->position = position;
+
   if (mark_fill(out, m, names) < 0) {
     Py_DECREF(out);
     return NULL;

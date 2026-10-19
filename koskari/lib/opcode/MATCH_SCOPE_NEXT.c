@@ -14,15 +14,35 @@
 */
 
 /**
-  MATCH_SCOPE_NEXT: Row LABEL, cursor depth, count. MATCH_SCOPE then
-  MATCH_NEXT on the same cursor, fused by the bytecode processor:
-  pushes a mark at the cursor's position with count empty slots, then
-  the cursor's next element; a miss at the end leaves the mark.
-  The body is kos_match_scope_next in eval/eval_match.c.
+  MATCH_SCOPE_NEXT: MATCH_SCOPE on the cursor at field 1 with field 2
+  empty slots, then MATCH_NEXT on that cursor, one entry deeper under
+  the mark; a miss at the end leaves the mark for the fail entry the
+  NEXT's miss label names. Row LABEL, depth, count.
 */
 KOS_OP_HANDLER(MATCH_SCOPE_NEXT) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_scope_next, es, insn, NULL);
+
+  uint32_t under = KosExtra_IMM(row, 1);
+  PyObject *cursor = kos_match_cursor_at(es, under);
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  PyObject *mark = KosMatchMark_New(
+      cursor, (Py_ssize_t) KosExtra_IMM(row, 2));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  if (unlikely(KosEvalState_StackPUSH(es, mark) < 0))
+    RESULT_RAISE();
+
+  PyObject *elem = NULL;
+  int r = kos_match_pull(es, cursor, (size_t) under + 1, &elem);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, elem);
 }
 
 

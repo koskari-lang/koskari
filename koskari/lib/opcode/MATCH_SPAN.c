@@ -14,14 +14,25 @@
 */
 
 /**
-  MATCH_SPAN: Row LABEL, mark depth, cursor depth. Pushes the span
-  from the mark's position to the cursor's; an empty span jumps,
-  pushing nothing.
-  The body is kos_match_span in eval/eval_match.c.
+  MATCH_SPAN: the span from the position of the mark at field 1 to
+  the cursor at field 2 pushed; an empty span jumps to field 0,
+  pushing nothing. Row LABEL, depth, depth.
 */
 KOS_OP_HANDLER(MATCH_SPAN) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_span, es, insn, NULL);
+
+  PyObject *mark = kos_match_mark_at(es, KosExtra_IMM(row, 1));
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 2));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+
+  if (KosMatchCursor_INDEX(cursor) == KosMatchMark_INDEX(mark))
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, KosMatchMark_Span(mark, cursor));
 }
 
 

@@ -14,13 +14,32 @@
 */
 
 /**
-  MATCH_SAME: Row LABEL, mark depth, index. e -> e: e must equal the
-  slot's value; an empty slot misses.
-  The body is kos_match_same in eval/eval_match.c.
+  MATCH_SAME: TOS, which stays, must equal slot field 2 of the mark
+  at field 1, and misses when that slot is empty. Row LABEL, depth,
+  index.
 */
 KOS_OP_HANDLER(MATCH_SAME) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_same, es, insn, NULL);
+
+  PyObject *prev = NULL;
+  if (unlikely(kos_match_slot_at(
+          es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &prev) < 0))
+    RESULT_RAISE();
+
+  PyObject *elem = KosEvalState_StackPeek(es);
+  if (unlikely(! elem))
+    RESULT_RAISE();
+  if (! prev)
+    KOS_MATCH_MISS(row);
+
+  int r = KosMatch_SameTest(elem, prev);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_NEXT(es);
 }
 
 

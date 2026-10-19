@@ -14,13 +14,18 @@
 */
 
 /**
-  MATCH_UNBOUND: Row cursor depth. Pushes a cursor at the cursor's
-  position with no reserve, ending at its subject's end.
-  The body is kos_match_unbound in eval/eval_match.c.
+  MATCH_UNBOUND: a cursor at the position of the cursor at field 0
+  with no reserve, ending at its subject's end, pushed. Row depth.
 */
 KOS_OP_HANDLER(MATCH_UNBOUND) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_unbound, es, insn, NULL);
+
+  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! cursor))
+    RESULT_RAISE();
+  RESULT_STEAL(es, KosMatchCursor_Unbound(cursor));
 }
 
 

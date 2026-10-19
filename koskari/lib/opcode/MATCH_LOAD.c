@@ -14,13 +14,20 @@
 */
 
 /**
-  MATCH_LOAD: Row LABEL, mark depth, index. Pushes the slot's value;
-  an empty slot jumps, pushing nothing.
-  The body is kos_match_load in eval/eval_match.c.
+  MATCH_LOAD: slot field 2 of the mark at field 1 pushed; an empty
+  slot jumps to field 0, pushing nothing. Row LABEL, depth, index.
 */
 KOS_OP_HANDLER(MATCH_LOAD) {
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_load, es, insn, NULL);
+
+  PyObject *value = NULL;
+  if (unlikely(kos_match_slot_at(
+          es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &value) < 0))
+    RESULT_RAISE_AT(es, insn);
+  if (! value)
+    KOS_MATCH_MISS(row);
+  RESULT_PUSH(es, value);
 }
 
 

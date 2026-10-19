@@ -209,4 +209,20 @@ static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
 }
 
 
+/* === PEP 634 type tests === */
+
+
+/* 1 when obj's type is flagged a sequence, else 0; the flag decides it
+   on this version, so it never raises. */
+static inline int kos_type_is_sequence(PyObject *obj) {
+  return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_SEQUENCE) ? 1 : 0;
+}
+
+
+/* 1 when obj's type is flagged a mapping, else 0, as above. */
+static inline int kos_type_is_mapping(PyObject *obj) {
+  return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MAPPING) ? 1 : 0;
+}
+
+
 // The end.

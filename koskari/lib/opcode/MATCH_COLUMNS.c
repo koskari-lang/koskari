@@ -14,13 +14,26 @@
 */
 
 /**
-  MATCH_COLUMNS: Row items depth, mark depth, names, index tuple.
-  Stores each name's list of per-pass values into the mark's slot.
-  The body is kos_match_columns in eval/eval_match.c.
+  MATCH_COLUMNS: for each name of the tuple in field 2, the list of
+  its values in the passes of the items list at field 0, stored into
+  the slot at the same position in the index tuple in field 3 of the
+  mark at field 1. Row depth, depth, const, const.
 */
 KOS_OP_HANDLER(MATCH_COLUMNS) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_columns, es, insn, NULL);
+
+  PyObject *list = kos_match_items_at(es, KosExtra_IMM(row, 0));
+  if (unlikely(! list))
+    RESULT_RAISE();
+  PyObject *mark = kos_match_writable_at(es, row, 1);
+  if (unlikely(! mark))
+    RESULT_RAISE();
+  if (unlikely(KosMatchMark_Columns(
+          mark, list, KosExtra_OBJ(row, 2), KosExtra_OBJ(row, 3)) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

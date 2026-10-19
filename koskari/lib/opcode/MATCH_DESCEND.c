@@ -14,13 +14,31 @@
 */
 
 /**
-  MATCH_DESCEND: simple LABEL. v -> cur: the sequence gate on v read
-  through Datum and a cursor over it; a miss pops v and jumps.
-  The body is kos_match_descend in eval/eval_match.c.
+  MATCH_DESCEND: the sequence gate on TOS read through Datum; the
+  cursor over it replaces it. A miss pops TOS and jumps. Simple LABEL
+  style.
 */
 KOS_OP_HANDLER(MATCH_DESCEND) {
+  KOS_SYNC_PC(es, insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_descend, es, insn, NULL);
+
+  PyObject *value = KosEvalState_StackPeek(es);
+  if (unlikely(! value))
+    RESULT_RAISE();
+
+  PyObject *cursor = NULL;
+  int r = KosMatchCursor_Descend(value, &cursor);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+
+  if (! r) {
+    if (unlikely(KosEvalState_StackDrop1(es) < 0))
+      RESULT_RAISE();
+    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+  }
+  if (unlikely(KosEvalState_StackSetUnder(es, 0, cursor) < 0))
+    RESULT_RAISE();
+  RESULT_NEXT(es);
 }
 
 

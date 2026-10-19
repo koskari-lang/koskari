@@ -14,13 +14,25 @@
 */
 
 /**
-  MATCH_FIELD_KW: Row LABEL, const. o -> o a: the attribute the
-  constant names.
-  The body is kos_match_field_kw in eval/eval_match.c.
+  MATCH_FIELD_KW: the attribute of TOS the constant in field 1
+  names, pushed; a missing attribute is a miss. Row LABEL, const.
 */
 KOS_OP_HANDLER(MATCH_FIELD_KW) {
+  KOS_SYNC_PC(es, insn);
+  const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_field_kw, es, insn, NULL);
+
+  PyObject *obj = KosEvalState_StackPeek(es);
+  if (unlikely(! obj))
+    RESULT_RAISE();
+
+  PyObject *val = NULL;
+  int r = KosMatch_FieldKw(obj, KosExtra_OBJ(row, 1), &val);
+  if (unlikely(r < 0))
+    RESULT_RAISE();
+  if (! r)
+    KOS_MATCH_MISS(row);
+  RESULT_STEAL(es, val);
 }
 
 
