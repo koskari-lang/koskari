@@ -30,7 +30,7 @@ import pytest
 from koskari.lib import cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MAP, MAP_ENTRY, MATCH,
-    NOT, OPTIONAL, REPEAT, REST, TEST_ANY)
+    NOT, ONEOF, OPTIONAL, REPEAT, REST, TEST_ANY)
 
 
 pytestmark = pytest.mark.phase_infra
@@ -159,6 +159,20 @@ class TestRefusedAtBuild(unittest.TestCase):
         for repeat in (REPEAT(TEST_ANY()), REPEAT(TEST_ANY(), min_count=1)):
             with self.assertRaisesRegex(ValueError, "FIELD at node"):
                 MATCH(CLASS("Pt", FIELD(repeat))).build()
+
+
+    def test_a_rest_in_each_of_two_branches(self):
+        """
+        Two ONEOF branches are separate spines, so a REST in each builds
+        and either branch matches its own tail
+        """
+
+        m = demand(MATCH(ONEOF(
+            MATCH(LITERAL(1), REST()),
+            MATCH(LITERAL(2), REST()))).build())
+        self.assertEqual(m((1, 7, 8)), {})
+        self.assertEqual(m((2,)), {})
+        self.assertIsNone(m((3,)))
 
 
 class TestLiteralConstants(unittest.TestCase):
