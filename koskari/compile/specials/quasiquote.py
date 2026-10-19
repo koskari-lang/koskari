@@ -78,9 +78,12 @@ def _qq_expr(compiler, frag, expr, level, keep=False):
     if not keep:
         expr = strip_mark(expr)
 
-    if is_const(expr) or not is_pair(expr):
+    if is_const(expr):
         frag.instruction(OpCode.CONST, expr)
         return
+    if not is_pair(expr):
+        raise SpecialError(
+            f"cannot quote a {type(expr).__name__} value", expr)
 
     head, tail = expr
     head = strip_mark(head)

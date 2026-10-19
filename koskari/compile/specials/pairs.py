@@ -23,10 +23,11 @@ compile/cons.
 
 
 from ...bootstrap import builtin
+from ...exceptions import SpecialError
 from ...lib import OpCode, symbol
 from ...matcher import BODY, CALLEDBY, MATCH, REST, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair, strip_mark
+from ...types import is_const, is_nil, is_pair, strip_mark
 from ..helpers import requote, splat_call_form
 
 
@@ -75,9 +76,15 @@ def special_quote(compiler, called_by, expr):
         body.fill_position(called_by.position)
         return body
 
+    body = strip_mark(body)
+    if not is_const(body):
+        raise SpecialError(
+            f"cannot quote a {type(body).__name__} value", body,
+            position=called_by.position)
+
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)
-    frag.instruction(OpCode.CONST, strip_mark(body))
+    frag.instruction(OpCode.CONST, body)
     return frag
 
 
@@ -101,6 +108,11 @@ def special_quote_syntax(compiler, called_by, expr):
         body = requote(body, quote_sym=_sym_quote_syntax)
         body.fill_position(called_by.position)
         return body
+
+    if not is_const(body):
+        raise SpecialError(
+            f"cannot quote a {type(body).__name__} value", body,
+            position=called_by.position)
 
     frag = compiler.fragment(called_by.datum)
     frag.position(called_by.position)

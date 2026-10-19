@@ -178,7 +178,7 @@ CONST_TYPES = (
     bool, int, float, complex,
     slice,
     type(None), type(...),
-    symbol, keyword, type(nil), type(bracket_nil),
+    symbol, gensym, keyword, type(nil), type(bracket_nil),
     FunctionSpec,
     NamespaceSpec,
 )
@@ -188,13 +188,15 @@ CONST_CONTAINER_TYPES = (tuple, frozenset)
 
 def is_const(value):
     """
-    Returns True if value is constant-pool material: one of the
-    CONST_TYPES, or a tuple or frozenset of such values
+    Returns True if value is constant-pool material: exactly one of the
+    CONST_TYPES, or exactly a tuple or frozenset of such values. A
+    subclass is refused, since the pool keeps only its builtin kind
     """
 
-    if isinstance(value, CONST_TYPES):
+    kind = type(value)
+    if kind in CONST_TYPES:
         return True
-    return (isinstance(value, CONST_CONTAINER_TYPES)
+    return (kind in CONST_CONTAINER_TYPES
             and all(is_const(x) for x in value))
 
 

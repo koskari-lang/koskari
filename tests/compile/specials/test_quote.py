@@ -18,7 +18,10 @@ Tests for koskari.compile quote special form.
 
 import pytest
 
-from koskari.lib import symbol
+from koskari.exceptions import SpecialError
+from koskari.lib import cons, nil, symbol
+from koskari.matcher import CALLEDBY, MATCH
+from koskari.syntax import special
 
 from . import SpecialsTestCase
 
@@ -84,6 +87,30 @@ class TestQuoteSpecial(SpecialsTestCase):
         self.assertEqual(1, head)
         self.assertEqual(2, tail)
         self.assertFalse(result.is_proper())
+
+
+def inserting(name, form):
+    """
+    A special named compile/NAME that expands to form, as a macro
+    expansion places a value the reader never produces
+    """
+
+    return special(symbol(f"compile/{name}"), patterns=MATCH(CALLEDBY()))(
+        lambda compiler, source: form)
+
+
+class TestQuoteRefusesNonPoolData(SpecialsTestCase):
+
+    def test_quote_refuses_a_list(self):
+        syn = inserting("ql", cons(symbol("quote"), [1, 2], nil))
+        with self.assertRaises(SpecialError):
+            self.compile_expr("(ql)", **{"compile/ql": syn})
+
+
+    def test_quote_syntax_refuses_a_list(self):
+        syn = inserting("qsl", cons(symbol("quote-syntax"), [1, 2], nil))
+        with self.assertRaises(SpecialError):
+            self.compile_expr("(qsl)", **{"compile/qsl": syn})
 
 
 # The end.
