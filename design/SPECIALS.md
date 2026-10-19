@@ -534,10 +534,10 @@ pair/list (`"match clause must be a list"`) whose first element is the
 `pair`/`nil` checks only. Classification errors from the dialect surface as
 `SpecialError` at the clause's position.
 
-Per arm the pattern is lowered to a frozen tuple
-(`TableBuilder().lower(MATCH(...))`) and from that to instructions. The
-frozen slot table supplies the
-binding names (ordered dedup — `ONEOF` branches may declare the same slot);
+Per arm the pattern is lowered to its node tables
+(`TableBuilder().lower(MATCH(...))`), analysed as an arm
+(`analyse(tables, arm=True)`), and from that to instructions. The root
+scope's slot names supply the binding names (ordered dedup — `ONEOF` branches may declare the same slot);
 the extern table lists every name the pattern resolves at match time (types,
 classes, predicates, extractors, symbol mapping keys). Each extern is passed
 through `request_var` so closure-bound names used only in a pattern are still
@@ -545,11 +545,15 @@ captured.
 
 The subject stays on the stack across the arm chain (same discipline as
 `compile/switch`). Each arm's instructions are emitted in place by
-`lower_arm` (`koskari/matcher/emitter.py`): the root test peeks the subject,
-a form opens a cursor in a temporary of the function, every test jumps to
-the next arm's label on a miss, and a capture stores into the local the
-pattern names as the walk reaches it. A hit pops the subject and falls into
-the body; the miss edges a nested peek needs are emitted after the body.
+`lower_arm` (`koskari/matcher/emitter.py`): a root that is one element test
+tests the subject in place, any other root walks a cursor over a copy, and a
+miss jumps with the subject on the stack to the next arm whose outcome is
+not yet known -- past the following arms whose gate, their first type test,
+must miss too, or just past the next arm's same `CORE` gate when this arm
+passed it. A root capture is stored into its variable as soon as its value
+is tested, so a missed arm may leave variables it stored. A hit consumes the
+subject and falls into the body; the arm's fail entries are emitted after
+the body.
 Only a slot that fired is written -- an unbound optional slot raises
 `NameError` when read. Binding names are `declare_var`'d in the enclosing
 scope; bindings persist after the form (arms are not isolated scopes).

@@ -6,7 +6,7 @@ before a continuation captured in the first resumes, since a resumed
 frame shares its locals, so the matcher keeps a gensym local per
 distinct slot, uncleared, until its walk state moves onto the operand
 stack as entries addressed by depth
-([matcher-bytecode.md](matcher-bytecode.md) section 13), which a
+([archive/matcher-bytecode.md](../archive/matcher-bytecode.md) section 13), which a
 continuation copies. The tiers stand for a consumer whose extent no
 continuation can leave.
 
@@ -98,5 +98,5 @@ Against it, the schema change across the `MATCH_*` family and the
 measurement after tiers 1 and 2 says the retention or the clone
 semantics are worth it.
 
-Ref: [matcher-bytecode.md](matcher-bytecode.md) section 12.5 for the
+Ref: [archive/matcher-bytecode.md](../archive/matcher-bytecode.md) section 12.5 for the
 measured namespace layout this replaces.

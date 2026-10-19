@@ -1,9 +1,11 @@
 # Koskari matcher reference
 
 Canonical reference for the matcher: the Python pattern builders in
-`koskari.matcher`, the match compiler in `koskari.matcher.emitter` that lowers a
-pattern to `MATCH_*` instructions, the `Matcher` and `Dispatcher` that run
-the compiled function, the capture wrappers (`Datum`, `DatumFrame`), the
+`koskari.matcher`, the tables, analysis and emitter
+(`koskari.matcher.tables`, `.analysis`, `.emitter`) that lower a pattern to
+`MATCH_*` instructions, the matcher functions `koskari.matcher.build`
+completes and the first-match function a `Syntax` tries its arms through,
+the capture wrappers (`Datum`, `DatumFrame`), the
 scoped symbols (`koskari.lib.gensym`) that carry macro hygiene, and the
 **runtime match/case system** (the case-pattern dialect and `compile/match`
 / `layout/match`).
@@ -17,8 +19,10 @@ scoped symbols (`koskari.lib.gensym`) that carry macro hygiene, and the
 
 **Related design (deeper or historical):**
 
-- [interpreter/matcher-bytecode.md](interpreter/matcher-bytecode.md) -- the matcher as bytecode: the instruction set, the lowering, the three lifetimes of a compiled pattern
-- [api/pattern-matching.md](api/pattern-matching.md) -- tagged-tuple IR and migration notes
+- [archive/matcher-core.md](archive/matcher-core.md) -- the matcher core design: every node against a cursor, captures in marks on the operand stack, the instruction set and the per-node lowering (implemented)
+- [archive/matcher-callable.md](archive/matcher-callable.md) -- the matcher as the `Function` its lowering builds (implemented)
+- [archive/matcher-bytecode.md](archive/matcher-bytecode.md) -- the first lowering to bytecode, which the core replaced (implemented)
+- [api/pattern-matching.md](api/pattern-matching.md) -- the pattern-authoring API and its design notes
 - [archive/matcher-hygiene-extensions.md](archive/matcher-hygiene-extensions.md) -- the superseded discovery-by-pattern hygiene design
 - [archive/matcher-ng-rollup.md](archive/matcher-ng-rollup.md) -- rollout notes and as-built sketches from before hygiene by marks; the hygiene names it uses are gone
 - [archive/macro-hygiene-syntax-boxes.md](archive/macro-hygiene-syntax-boxes.md) -- `Datum` in macro expansion
@@ -36,29 +40,30 @@ of koskari source cells (usually `KosPair`) at compile time, or **runtime
 sequences** (tuple, list) at run time. The same lowering serves both: macro /
 special-form dispatch matches source forms, and the runtime `match`/`case`
 statement matches values. Patterns are built in Python (`MATCH(...)`,
-`BINDINGS(...)`, …) or parsed from surface syntax, lowered to a frozen
-**6-tuple** IR, and compiled from that to `MATCH_*` instructions
-([OPCODES.md](OPCODES.md) section 9.2). The instructions live in one of
-three containers:
+`BINDINGS(...)`, …) or parsed from surface syntax. `TableBuilder` lowers a
+pattern to its node tables, `analyse` computes what the emitter needs and
+refuses at build what the core does not lower, and the `Emitter` lowers the
+tables to `MATCH_*` instructions ([OPCODES.md](OPCODES.md) section 9.2). The
+instructions live in one of three containers:
 
-- a standalone `Function` over a namespace of its own, for a pattern built
-  in Python (`Matcher`, whose `match` stores its keyword externs into that
-  namespace before each call, and the one `Dispatcher` function a `Syntax`
-  tries its arms through, which passes none and so refuses an arm that
-  declares one);
-- a lambda the defining module's compile builds, for a `syntax-rules` or
-  `syntax-match` rule, its externs closure names of the module;
-- the enclosing function itself, for a `match`/`case` arm, its captures the
-  function's locals.
-
-Two compilation paths: `TableBuilder` lowers a pattern to the frozen tuple,
-and `koskari.matcher.emitter` lowers the tuple to instructions.
+- a standalone `Function`, for a pattern built in Python (`Pattern.build`,
+  `make_matcher`): its body is completed by one shared compiler and bound to
+  a namespace whose builtins are the externs given to the build, and a call
+  with the subject returns the captures or `None`;
+- a lambda the defining module's compiler builds, for a `syntax-rules` or
+  `syntax-match` rule, its externs closure names of the module, sealed with
+  the module's code;
+- the enclosing function itself, for a `match`/`case` arm, its root captures
+  stored into the function's variables.
 
 ```python
 from koskari.matcher import MATCH, DEFINE, BODY, make_matcher
+from koskari.matcher.analysis import analyse
 from koskari.matcher.tables import TableBuilder
 
-matcher = TableBuilder.compile(MATCH(DEFINE("name"), BODY("body")))
+tables = TableBuilder().lower(MATCH(DEFINE("name"), BODY("body")))
+analysis = analyse(tables)
+matcher = make_matcher(MATCH(DEFINE("name"), BODY("body")))
 ```
 
 `make_matcher(pattern)` and `Pattern.build()` are the same call. A pattern
@@ -67,32 +72,35 @@ business, and hygiene is provenance on the atoms themselves (see
 [Hygiene model](#hygiene-model)).
 
 Special forms and syntax macros attach patterns via `@special(..., patterns=...)`
-or `Syntax(...)`. Each arm stores its `matcher` on its `Transform`, built in
-`koskari.syntax.Transform.__init__`; the `Syntax` dispatches through one
-function over every arm's matcher.
+or `Syntax(...)`. Each arm stores its matcher function on its `Transform`,
+built in `koskari.syntax.Transform.__init__` or compiled by the defining
+module; the `Syntax` tries the arms through `first_match`.
 
 ---
 
-## Frozen matcher IR
+## Node tables
 
 Lowering emits:
 
 ```text
-("MATCHER", slot_names, extern_names, consts, nodes, entry_index)
+(slot_names, extern_names, consts, nodes, entry_index)
 ```
 
 - A `TEST` node is `ANY`, `LITERAL` (a const index), `TYPE` or
   `PREDICATE` (an extern index), or `CORE` (a `CoreType` ordinal: one of
   `pair`, `symbol`, `keyword`, `int`, `str`, `tuple`, `list`, which
   `TYPE(name)` lowers to without interning an extern).
-- The lowering to instructions uses only this tuple; `validate_frozen`
-  checks it (indices in range, widths, a REST's position, no capture under
-  NOT) before anything is emitted.
-- `thaw(frozen)` and `Matcher.from_tuple(frozen)` build a `Matcher` over it;
-  the function is compiled on the first match.
+- `analyse(tables, arm=False)` gives the emitter the widths, the length
+  prechecks, the capture scopes and slot indices, and the slots of each
+  alternative, and refuses at build: a non-pool constant, a REPEAT body
+  that may consume nothing, a REST followed on its cursor by another REST
+  or a run of variable width, a CAPTURE under NOT, a slot bound twice in
+  one scope, a positional FIELD after a keyword FIELD, a SAME in a match
+  arm, and a bound past the 16-bit field limit.
+- The tables are an in-memory handoff; nothing serializes or thaws them.
 
-`MatchResult.captures` is a **sparse** dict: only slots that actually bound appear.
-Check membership before use.
+`MatchResult.captures`, from `Pattern.match`, is a **sparse** dict: only
+slots that actually bound appear. Check membership before use.
 
 ---
 
@@ -224,14 +232,14 @@ Built-ins registered in `MATCHER_REGISTRY` include:
 
 ## Structural primitives
 
-These lower to nodes of the frozen tuple.
+These lower to nodes of the node tables.
 
 | Pattern | Match behaviour | Capture |
 |---------|-----------------|---------|
 | `TEST_ANY()` | Any one spine element | No |
-| `SAME(slot, depth=0)` | One element equal to prior `slot` bind in current capture dict (`depth` 1 = parent `GROUP` frame; `depth` > 1 fails). `DatumFrame` operands are unsupported (match fails). Duplicate `BIND`/`CAPTURE` for the same slot is a freeze error — use `SAME`. RULE patterns lower repeats to `SAME`. | No |
+| `SAME(slot, depth=0)` | One element equal to the value bound to `slot` in the capture scope `depth` levels out (0 the scope the SAME sits in: the root, a GROUP or a REPEAT pass); when no such scope binds `slot` it always misses. `DatumFrame` operands are unsupported (match fails). Duplicate `BIND`/`CAPTURE` for the same slot is refused at build -- use `SAME`. RULE patterns lower repeats to `SAME`. Refused in a match arm. | No |
 | `LITERAL(v)` | Equal to `v` | No |
-| `TYPE(extern)` | Extern predicate (`symbol`, `pair`, `keyword`, …) | No |
+| `TYPE(extern)` | Instance of the extern type; a core type name (`symbol`, `pair`, `keyword`, `int`, `str`, `tuple`, `list`) lowers to `CORE` with no extern | No |
 | `PREDICATE(name)` | Named extern predicate | No |
 | `LITERAL_KW(s)` | Keyword `keyword(s)` | No |
 | `LITERAL_SYM(s)` | Symbol `symbol(s)` | No |
@@ -245,19 +253,15 @@ These lower to nodes of the frozen tuple.
 | `NOT(sub)` | Fails if `sub` matches current cell | No |
 | `LIST(p1, …, key=slot)` | One list element matching `FORM(MATCH(...))` | Optional `CAPTURE(slot, …)` |
 | `CLASS(name, FIELD…)` | Extern-typed object with fields | Via `FIELD` captures |
-| `FIELD(pat)` / `FIELD(name, pat)` | One field | Inner slot |
+| `FIELD(pat)` / `FIELD(pat, name=n)` | One positional field (by `__match_args__`) or the named attribute | Inner slot |
 | `APP(fn, sub=None)` | Call extern `fn` on the element, match `sub` against the result in a projected single-element subject; a raising extractor propagates | Via `sub` |
 | `MAP(MAP_ENTRY…)` | One mapping element (dict or `collections.abc.Mapping`); each entry's key must be present with value matching the entry's sub-pattern; extra keys ignored (PEP 634) | Via entry sub-patterns |
 | `MAP_ENTRY(key, sub=None, extern=False)` | One MAP entry; key is a const, or an extern name resolved at match time when `extern` | Via `sub` |
 
-**Callable externs today run on the demand path** (`Koskari_DemandSync`):
-`PREDICATE` and `APP` externs may be plain koskari callables with no
-wrapping; a plain Python awaitable result is eagerly stepped, and a genuine
-async suspension raises `KoskariSyncViolation`. That is a flattening gap,
-not the design: a Koskari callable runs a nested evaluator per call because
-the walk holds its position on the C stack. The fix, the match row, is
-section 8 of [interpreter/resumable-reads.md](interpreter/resumable-reads.md)
-and the entry in [FLATTENING.md](FLATTENING.md).
+**Callable externs.** A `PREDICATE` or `APP` extern is a `CALL` from the
+function that matches, so a Koskari callable flattens into the running
+evaluator and one that awaits does so in place, as any call does
+([FLATTENING.md](FLATTENING.md)).
 
 ### Ergonomic shorthands (primitives)
 
@@ -282,7 +286,6 @@ one row (usually a `dict` or `DatumFrame`).
 | Helper | Purpose |
 |--------|---------|
 | `binding_inner_pattern()` | `(name expr)` or `(expr as: name)` inside `FORM` |
-| `binding_group_capture_pattern()` | Same as single `BINDING` row |
 | `bindings_grouped_list_cell_pattern()` | `((name expr))` grouped let cell |
 | `formals_inner_pattern()` | Full proper-list formals decomposition |
 
@@ -478,18 +481,19 @@ spelling records the slot's role for the reader.
 
 Each transform arm:
 
-1. Lowers `pattern` with `TableBuilder` and stores the `matcher`, or takes
-   the function a module compiled for the rule (`Matcher.from_function`,
-   the `build-*` builtins' function rows).
-2. `try_expand` runs `matcher.match(source_obj)` then `handle_expand`.
+1. Builds its matcher function from `pattern` with `Pattern.build`, or
+   takes the function a module compiled for the rule (the `build-*`
+   builtins' function rows).
+2. `try_expand` calls the matcher function on `source_obj` and, on a hit,
+   `handle_expand` with the captures.
 
-The `Syntax` itself does not try the arms one by one. Its `dispatcher`, a
-`Dispatcher` built on first use over every arm's matcher, is one `Function`:
-a frozen matcher lowers inline with the next arm's entry as its miss edge, a
-module-built matcher is called and its result tested against None, and the
-first hit returns `(values index captures)`. `compile_impl` makes one call
-per form compiled. Composition with `+` makes a new `Syntax` and so a new
-dispatcher over the combined arms.
+The `Syntax` itself does not try the arms one by one in Python. It calls
+`first_match`, the hand-written Koskari function `FIRST_MATCH`
+(`koskari.matcher.build`), with the form and the tuple of its arms'
+matcher functions: each is called in order, flattening, and the first
+result that is not `None` returns with its index; `(-1, None)` when no arm
+matches. `compile_impl` makes one call per form compiled. Composition with
+`+` makes a new `Syntax` over the combined arms.
 
 `SyntaxTransform.handle_expand` transcribes the template with a fresh mark;
 `MacroTransform.handle_expand` runs the handler and marks its output. Both
@@ -549,8 +553,8 @@ registry-headed forms back to `parse_matcher`.
 
 The runtime `match` statement is the value-matching consumer of the
 lowering: `compile/match` (s-expr) and `layout/match` (block syntax) lower
-each arm's pattern to a frozen tuple and emit its instructions inline,
-through `lower_arm`, between the arm tests of the enclosing function.
+each arm's pattern to its node tables, analyse them as an arm, and emit its
+instructions inline, through `lower_arm`, in the enclosing function.
 
 ### The case-pattern dialect
 
@@ -584,11 +588,11 @@ The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 
 | Piece | Behaviour |
 |-------|-----------|
-| The arm | The subject stays on the stack across the arm chain. `lower_arm` emits the arm's `MATCH_*` instructions in place: the root test peeks the subject, a form opens a cursor in a temporary of the enclosing function, each pull or peek test jumps to the next arm's label on a miss, and a capture stores straight into the local the pattern names. A hit falls through to the arm body after a `POP` of the subject; the miss edges that a nested peek needs (a label, the pops down to the subject, the jump) are emitted after the body. |
-| Captures | Fast slots of the enclosing function, declared in the enclosing scope. Only a slot that fired is written; an unbound optional slot raises `NameError` when read. The subject is a single runtime value, never a source spine, so captures are raw. |
+| The arm | The subject stays on the stack across the arm chain. `lower_arm` emits the arm's `MATCH_*` instructions in place: a root that is one element test tests the subject in place; any other root walks a one-element cursor over a copy. A miss jumps with the subject on the stack to the next arm whose outcome is not yet known: an arm whose gate, its first type test, misses goes past the following arms whose gate tests the same core type or class variable, and an arm that misses after a passed `CORE` gate enters the next arm just past its same `CORE`. A hit consumes the subject and falls into the arm body; the arm's fail entries (the pops down to the subject, the jump) are emitted after the body. |
+| Captures | A root capture is stored into its variable of the enclosing function as soon as its value is tested, so a missed arm may leave variables it stored; a capture inside a GROUP or REPEAT is reached through that node's value. Binding names are declared in the enclosing scope. Only a slot that fired is written; an unbound optional slot raises `NameError` when read. The subject is a single runtime value, never a source spine, so captures are raw. |
 | Guards | `[[PATTERN] when:/unless: COND BODY...]`. The guard compiles after the arm's instructions with the subject still on the stack; `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
 | Externs | Every name the pattern resolves is requested through `request_var` and read from the enclosing scope, so closure capture works and a store into a user type is seen. A predicate or extractor is a `CALL` from the same frame and flattens; one that awaits does so in place. |
-| Core types | `int`, `str`, `list`, `tuple`, `pair`, `symbol` and `keyword` are not externs: a test against one is a `MATCH_CORE_TYPE` instruction carrying the type's ordinal, with no reference read, so a binding of the name in any scope never reaches a pattern. `CALLEDBY`, `SYMBOL`, `KEYWORD`, `PAIR`, `BINDINGS` and `FORMALS` rest on these, which is what lets a module bind `symbol` without breaking the macros it defines. |
+| Core types | `int`, `str`, `list`, `tuple`, `pair`, `symbol` and `keyword` are not externs: a test against one is a `MATCH_CORE` instruction carrying the type's ordinal, with no reference read, so a binding of the name in any scope never reaches a pattern. `CALLEDBY`, `SYMBOL`, `KEYWORD`, `PAIR`, `BINDINGS` and `FORMALS` rest on these, which is what lets a module bind `symbol` without breaking the macros it defines. |
 
 Behavioural contracts: bindings land in the **enclosing scope** and persist
 after the form (Python-consistent; arms are not isolated scopes); first arm
@@ -601,33 +605,29 @@ patterns.
 
 ```python
 from koskari.matcher import (
-    make_matcher, thaw, pattern_slot_names, Matcher, Dispatcher,
+    make_matcher, first_match, pattern_slot_names, MatchResult,
     MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS,
 )
+from koskari.matcher.analysis import analyse
+from koskari.matcher.build import build_matcher
 from koskari.matcher.tables import TableBuilder
-from koskari.matcher.build import (
-    build_matcher, compile_dispatch_function, validate_frozen,
-)
 from koskari.hygiene import (
     expand_template_with_hygiene, mark_expansion, peel_datums,
     finalize_expansion, candidates, Resolver, Deferred,
     HygieneFunctionSpec, function_constant, equal_by_base,
 )
 from koskari.types import strip_mark, strip_marks
-from koskari.compile.helpers import match, match_pattern_raw
 ```
 
 | Function | Role |
 |----------|------|
-| `make_matcher(pat)` | Compile a pattern to a `Matcher` |
-| `Matcher.match(subject, **externs)` | Run the compiled function; every extern the pattern declares is given by keyword and stored into the matcher's namespace for the call |
-| `Dispatcher(matchers).select(subject)` | The first matching index and its captures, or `(-1, None)` |
-| `build_matcher(frozen, ns)` | A frozen tuple as a `Function` over `ns` |
-| `compile_dispatch_function(clauses, ns)` | Frozen tuples and functions as one `Function` returning `(values index captures)` |
-| `validate_frozen(frozen)` | Refuse a malformed frozen tuple |
+| `make_matcher(pat, externs=None)` | The pattern's matcher `Function`; `Pattern.build(externs)` is the same call |
+| `Pattern.match(subject, **externs)` | Build and run the matcher; a `MatchResult` |
+| `first_match(subject, matchers)` | Call each matcher function in order; the first hit's index and captures, or `(-1, None)` |
+| `TableBuilder().lower(pat)` | The pattern's node tables |
+| `analyse(tables, arm=False)` | The tables' `Analysis`; raises on a pattern the core refuses |
+| `build_matcher(tables, analysis, ns)` | The tables as a `Function` over `ns` |
 | `pattern_slot_names(pat)` | Slot names in declaration order |
-| `match(source, patterns)` | Try patterns; optional `with_specs` |
-| `match_pattern_raw(source, patterns)` | First capture dict or `None` |
 | `expand_template_with_hygiene(tpl, bindings, mark)` | Transcribe and scope |
 | `mark_expansion(form, mark)` | Scope a procedural arm's output |
 | `finalize_expansion(form, mark=None)` | Scope when given, then peel `Datum` |
@@ -655,8 +655,11 @@ from koskari.compile.helpers import match, match_pattern_raw
 | Special patterns | `koskari/compile/specials/` |
 | Case-pattern dialect, `APP`, `MAP` | `tests/matcher/test_case_patterns.py` |
 | `MATCH_*` instructions | `tests/lib/opcode/test_match_instructions.py` |
+| Analysis and refusals | `tests/matcher/test_core_analysis.py` |
+| Differential corpus against master | `tests/matcher/test_oracle.py` |
+| The processor's matcher fusions | `tests/compile/test_fuse_feeders.py` |
 | The compiled function's capture shapes | `tests/matcher/test_match_function.py` |
-| The `Syntax` dispatcher | `tests/syntax/test_syntax_dispatch.py` |
+| The `Syntax` first match | `tests/syntax/test_syntax_dispatch.py` |
 | `compile/match` (incl. guards, layout eval) | `tests/compile/specials/test_match.py` |
 | `layout/match` structure | `tests/reader/layouts/test_match_layout.py` |
 
@@ -671,12 +674,13 @@ When adding a new composite:
    `parse_matcher` / rule patterns.
 3. Add tests for the match shape.
 
-A composite needs no change below the frozen tuple. A new primitive node
-kind needs a lowering in `koskari/matcher/emitter.py`, a rule in
-`validate_frozen`, and, when no existing instruction does its test, an
-instruction: the `OP` row in `opcodes.incl`, the step in
-`koskari/lib/matcher/step.c`, the body in `koskari/lib/eval/eval_match.c`,
-the thin handlers, and the `convert_fast` twin rule.
+A composite needs no change below the node tables. A new primitive node
+kind needs its node in `TableBuilder`'s lowering, its width and refusals in
+`koskari/matcher/analysis.py`, a lowering in `koskari/matcher/emitter.py`,
+and, when no existing instruction does its test, an instruction: the `OP`
+row in `opcodes.incl`, the step in `koskari/lib/matcher/step.c`, the body in
+`koskari/lib/eval/eval_match.c`, the thin handlers, and a `_VAR` / `_FAST`
+twin pair when it reads a variable, which `convert_fast` pairs by name.
 
 When writing a special that reads a name out of the form by hand, apply the
 table under [Reading a scoped atom](#reading-a-scoped-atom): the key for a

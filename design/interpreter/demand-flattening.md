@@ -201,7 +201,7 @@ are CPython slots: boundary.
 
 **D10. Runtime match predicates nest.**
 Closed by the matcher as bytecode
-([matcher-bytecode.md](matcher-bytecode.md)): a `(? pred)` or
+([archive/matcher-bytecode.md](../archive/matcher-bytecode.md)): a `(? pred)` or
 `(app f ...)` in a runtime `match` is a `CALL` from the matching frame
 and flattens. The text below records the gap as it stood.
 `MATCH_CASE` -> `KOS_MATCH_TEST_PREDICATE` -> `matcher_call_extern` ->

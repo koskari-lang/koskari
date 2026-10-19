@@ -67,7 +67,7 @@ stored into the enclosing function's locals as the pattern walks.
   or extractor is a call from the matching frame and flattens.
 
 See [MATCHER.md](MATCHER.md) § Runtime match/case and
-[interpreter/matcher-bytecode.md](interpreter/matcher-bytecode.md);
+[archive/matcher-bytecode.md](archive/matcher-bytecode.md);
 `koskari/compile/specials/match.py`, `koskari/matcher/emitter.py`,
 `koskari/reader/layouts/conditionals.py`.
 

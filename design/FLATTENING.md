@@ -62,9 +62,9 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 - **Match predicates and extractors.** A pattern is `MATCH_*`
   instructions in the frame that matches, and a `(? pred)` or
   `(app f ...)` is a `CALL` from that frame
-  ([interpreter/matcher-bytecode.md](interpreter/matcher-bytecode.md)).
-  A matcher entered from Python (`Matcher.match`, the compiler's own
-  dispatch) is one `Function` call through the demand entry, and the
+  ([archive/matcher-bytecode.md](archive/matcher-bytecode.md)).
+  A matcher entered from Python (`Pattern.match`, a `Syntax`'s
+  `first_match`) is one `Function` call through the demand entry, and the
   calls inside it flatten as in any function.
 - **Continuations.** `call/cc`, `prompt` / `shift` transfers run on the
   running chain. A continuation invoked from a code-less resume frame

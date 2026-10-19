@@ -292,7 +292,7 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
+- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_SCOPE_NEXT, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST; MATCH_CASE (retired)
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
 - [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
@@ -385,6 +385,7 @@ When adding or changing an opcode:
 | MATCH_SYNC | EXTRA | Move the cursor at the first depth to the position of the cursor at the second | [§9.2](#kos_op_match_sync) |
 | MATCH_TAIL | EXTRA | Push the remaining elements but the suffix width as a span, advancing the cursor | [§9.2](#kos_op_match_tail) |
 | MATCH_SCOPE | EXTRA | Push a mark at the cursor's position with the count of empty slots | [§9.2](#kos_op_match_scope) |
+| MATCH_SCOPE_NEXT | EXTRA | Push a mark at the cursor's position, then the cursor's next element; a miss leaves the mark | [§9.2](#kos_op_match_scope_next) |
 | MATCH_RESET | EXTRA | Move the cursor at the first depth back to the position of the mark at the second | [§9.2](#kos_op_match_reset) |
 | MATCH_AT | EXTRA | Push the element at the mark's position | [§9.2](#kos_op_match_at) |
 | MATCH_SPAN | EXTRA | Push the span from the mark to the cursor; jump when it is empty | [§9.2](#kos_op_match_span) |
@@ -1886,6 +1887,9 @@ interpreted at run time.
   binding of one of those names in scope is never read by a pattern.
 - **Widths.** Width and count fields are 16 bits; in `MATCH_FITS` a
   maximum of `0xFFFF` is unbounded.
+- **Fusion.** The bytecode processor fuses a `MATCH_SCOPE` followed by a
+  `MATCH_NEXT` on the cursor the mark was made at into
+  `MATCH_SCOPE_NEXT`; both are also emitted apart.
 
 `MATCH_CASE`, the one-instruction form of an arm over the matcher that
 preceded this family, keeps its number in the table. The compiler
@@ -1896,11 +1900,12 @@ tail-calls its body in `koskari/lib/eval/eval_match.c`,
 shared by the VAR and FAST twins, and the body calls the matcher
 subsystem's step
 (`koskari/lib/matcher/cursor.c`, `mark.c`, `step.c`; `matcher.h`). The
-lowering is the `Emitter` in `koskari/matcher/emitter.py`, over the
-targets in `koskari/matcher/emitter.py` and `koskari/matcher/build.py`: `lower_arm` inline for a `compile/match`
-arm, `lower_matcher` into a lambda body for a syntax rule,
-`build_matcher` for a standalone `Function`. Design:
-[interpreter/matcher-core.md](interpreter/matcher-core.md).
+lowering is the `Emitter` in `koskari/matcher/emitter.py`, entered by
+`lower_arm` inline for a `compile/match` arm and `lower_matcher` into a
+function body, which `koskari/matcher/build.py` completes as a syntax
+rule's lambda or, through `build_matcher`, as a standalone `Function`.
+Design:
+[archive/matcher-core.md](archive/matcher-core.md).
 
 ### KOS_OP_MATCH_CASE {#kos_op_match_case}
 
@@ -2007,6 +2012,16 @@ arm, `lower_matcher` into a lambda body for a syntax rule,
 - **Semantics**: Push a mark at the position of the cursor at depth `a0` with
   `a1` empty slots. A mark's position never moves.
 - **Implementation**: `koskari/lib/opcode/MATCH_SCOPE.c`
+
+### KOS_OP_MATCH_SCOPE_NEXT {#kos_op_match_scope_next}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, cursor depth, slot count.
+- **Stack**: `[...]` -> `[..., m, e]`; jump to `a0` with `m` pushed on a
+  miss.
+- **Semantics**: `MATCH_SCOPE a1 a2` then `MATCH_NEXT a0` on the same cursor,
+  one entry deeper under the mark. Fused by the bytecode processor; never
+  emitted directly.
+- **Implementation**: `koskari/lib/opcode/MATCH_SCOPE_NEXT.c`
 
 ### KOS_OP_MATCH_RESET {#kos_op_match_reset}
 

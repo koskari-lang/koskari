@@ -259,7 +259,7 @@ install and the match resume at the test. The engine it would have
 driven is gone: a pattern is `MATCH_*` instructions in the frame that
 matches, and a `(? pred)` or `(app f ...)` is a `CALL` from that frame
 with the pattern's continuation in the frame's own pc
-([matcher-bytecode.md](matcher-bytecode.md)). There is no walk to
+([archive/matcher-bytecode.md](../archive/matcher-bytecode.md)). There is no walk to
 resume and no row to add.
 
 ## Scope limits

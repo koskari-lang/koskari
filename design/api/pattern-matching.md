@@ -15,7 +15,7 @@ All pattern and template structures use **tagged tuples**: every element is `(ta
 
 **MATCH macro patterns vs this document’s `MATCH(...)`:** The **MATCH** pattern
 language used in **`syntax-match`** / **`macro-match`** (per-rule **`PATTERN`**
-forms, lowered by `parse_explicit_rule_pattern` in `koskari/syntax.py`) is
+forms, lowered by `parse_explicit_rule_pattern` in `koskari/matcher/heads.py`) is
 **Koskari syntax for the same matcher IR** described here. Specials build
 matchers with the Python **`MATCH(...)`** combinator below; macro authors build
 **the same structures** from source. The names align **by design**—expressive
@@ -25,20 +25,20 @@ fidelity is the point.
 
 ## Implementation
 
-The Tags tables, Match Result Types and Match Result sections further down
-record the IR of the Python matcher this note was written against
-(`matcher/...` tags, results carrying `.source`, `with_specs`); the matcher
-has none of it, and the frozen IR in [MATCHER.md](../MATCHER.md)
-supersedes those sections.
+The Tagged Tuple Representation, Tags, Match Result Types and Match Result
+sections further down record the design this note proposed and the IR of
+the Python matcher it was written against (`matcher/...` tags,
+`to_tuple()` / `from_tuple()`, results carrying `.source`, `with_specs`);
+the shipped matcher has none of it. Patterns lower to node tables, and
+[MATCHER.md](../MATCHER.md) supersedes those sections.
 
-A frozen matcher tuple is compiled to `MATCH_*` instructions by **`koskari.matcher.emitter`** ([../interpreter/matcher-bytecode.md](../interpreter/matcher-bytecode.md)); **`koskari.matcher.Matcher`** runs the compiled function. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
+A pattern is lowered to its node tables by **`koskari.matcher.tables`**, analysed by **`koskari.matcher.analysis`**, and emitted as `MATCH_*` instructions by **`koskari.matcher.emitter`** ([../archive/matcher-core.md](../archive/matcher-core.md)); **`koskari.matcher.build`** completes the instructions into a matcher `Function`, which returns the captures or `None`. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`gather_bindings`, `gather_formals`, …).
 
 `koskari.hygiene` holds template transcription, marking, and resolution; `koskari.syntax` the transformer types.
 
 ```python
-from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS
-from koskari.matcher.tables import TableBuilder
-from koskari.compile.helpers import match_pattern_raw, gather_formals
+from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, make_matcher
+from koskari.compile.helpers import gather_formals
 ```
 
 Compile-specific composites (e.g. **BINDINGS**, **FORMALS**) are defined in **`koskari.matcher.forms`** and imported through **`koskari.compile.helpers`** where compile code needs a single import surface.
@@ -287,68 +287,25 @@ Serialized:
 
 ### Builder Objects
 
-Construct patterns ergonomically:
+Construct patterns ergonomically and build each pattern's matcher once:
 
 ```python
-from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL
-from koskari.matcher.tables import TableBuilder
-from koskari.lib import Matcher
+from koskari.lib import cons, demand, nil
+from koskari.matcher import LIST, LITERAL_KW, MATCH, SYMBOL, make_matcher
 
-mc = TableBuilder()
-# pattern = ...  # matcher Pattern tree
-frozen = mc.lower(pattern)
-matcher_obj = Matcher.from_tuple(frozen)
+matcher = demand(make_matcher(MATCH(LIST(SYMBOL("name"), LITERAL_KW("as")))))
+captures = matcher(cons(form, nil))   # the captures, or None
 ```
 
-Serialization and thaw use the same frozen tuple representation the match compiler lowers. At match time, use **`koskari.matcher.Matcher.from_tuple`** on the frozen pattern and call **`.match(source)`** on the result (see `koskari.compile.helpers.match_pattern_raw` for the compile-time wrapper).
+`Pattern.match(subject, **externs)` builds the matcher and returns a
+`MatchResult`. `first_match(subject, matchers)` tries several matcher
+functions in order and returns the first hit's index and captures, or
+`(-1, None)`. A matcher function is reentrant and holds no state, so a
+module builds each pattern's matcher once at import, as
+`koskari.matcher.forms` does for `BINDING_MATCHERS`.
 
-The snippet below is illustrative; exact combinator names live in **`koskari.matcher`** (see module exports).
-
-```python
-# Illustrative: build a matcher pattern, lower with TableBuilder,
-# then match a source spine with koskari.matcher.Matcher.from_tuple(...).match(...)
-pass
-```
-
-### Match Function
-
-```python
-def match(source, patterns, literals=None, with_specs=False):
-    """
-    Try each pattern against source (pair or unpacked list).
-    Returns dict of bindings on first match, else None.
-
-    :param source: pair (proper list) or iterable of elements
-    :param patterns: single matcher, tagged tuple, or sequence of patterns
-    :param literals: set/frozenset of symbols to match literally; default empty
-    :param with_specs: if True, return (result_dict, specs_dict) on match
-    :return: dict mapping slot names (str) to values; or (dict, dict) if with_specs
-        True; or None on no match
-    """
-```
-
-### from_tuple and match_tuple
-
-```python
-def from_tuple(tup):
-    """
-    Deserialize tagged tuple into matcher object. Dispatches via MATCHERS registry.
-
-    :param tup: tagged tuple (tag, ...payload)
-    :return: matcher object with match() and to_tuple()
-    :raises ValueError: when tup is not a valid matcher tuple
-    """
-
-def match_tuple(source, tup, literals=None):
-    """
-    Deserialize tagged tuple to matcher, then match. Convenience for from_tuple + match.
-
-    :param source: pair or iterable
-    :param tup: tagged tuple pattern
-    :param literals: set/frozenset; default empty
-    :return: dict of bindings, or None
-    """
-```
+The tagged-tuple `match`, `from_tuple` and `match_tuple` functions this note
+proposed were never the shipped API.
 
 ### Expand Function (Future)
 
@@ -416,7 +373,7 @@ These expand to the same tagged tuples the matcher expects.
 2. Special handler receives `source_obj` (the full form, e.g. `(compile/let ...)`).
 3. **With patterns**: Handler calls `match(tail, PATTERNS, literals)`; on success, uses bindings to compile.
 
-**Current adopters**: specials under `compile/specials/` use `syntax` patterns and `helpers` (`match`, `match_pattern_raw`, `gather_bindings`, …). Legacy `compile/helpers.py` and the Python `koskari.matcher` stack are removed.
+**Current adopters**: specials under `compile/specials/` declare `patterns=` on `@special`, matched through the `Syntax`'s `first_match`, and use `helpers` (`gather_bindings`, `gather_formals`, …) with matchers built once at import.
 
 ### Future Macros
 
@@ -438,7 +395,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### MATCHERS Registry
 
-Pattern forms register in `MATCHER_REGISTRY` and lower through **`TableBuilder`** to the frozen tuple (see `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.matcher.emitter`** only.
+Pattern heads register in `MATCHER_REGISTRY` (`koskari.matcher.heads`) and lower through **`TableBuilder`** to node tables, which **`koskari.matcher.emitter`** alone consumes. Legacy Python `@matcher` registration is gone.
 
 ### Const-Pool Friendliness
 
