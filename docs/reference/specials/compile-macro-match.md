@@ -6,8 +6,8 @@
 **Use-case:** **MATCH**-dialect procedural rules, as **`compile/macro-rules`**
 takes **RULE**-dialect ones.
 
-**Behaviour:** Each rule row is **`(PATTERN BODY ...)`**, the pattern in the
-explicit matcher dialect (see [`koskari.matcher`](../api/koskari-matcher.md)).
-The body of the first rule whose pattern matches runs with one parameter per
-pattern slot, in pattern order, each bound to what the slot matched or to
-`None` when the match left it unbound. The body returns the expansion.
+**Behaviour:** As [`compile/macro-rules`](compile-macro-rules.md), except
+that there is no `LITERALS` list, each pattern is in the explicit matcher
+dialect (see [`koskari.matcher`](../api/koskari-matcher.md)), and the body
+takes one parameter per pattern slot, in pattern order, bound to `None`
+when the match left the slot unbound.
