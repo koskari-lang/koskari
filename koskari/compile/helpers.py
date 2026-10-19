@@ -36,9 +36,9 @@ from ..matcher import (
     REST, SYMBOL, USING, USING_MATCHERS, USING_UNPACK, VALUE, first_match,
     frame_formal_name, make_matcher)
 from ..types import (
-    is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark,
-    unpack)
-from .compiler import ByteCodeFragment, _is_const
+    is_const, is_keyword, is_nil, is_pair, is_proper, is_symbol,
+    strip_mark, unpack)
+from .compiler import ByteCodeFragment
 
 
 __all__ = (
@@ -444,8 +444,8 @@ def feeder_expr(fragment):
     single VAR naming atom, (None, None) for anything else
     """
 
-    is_const, value = const_only_expr(fragment)
-    if is_const:
+    found, value = const_only_expr(fragment)
+    if found:
         return ('const', value)
     is_var, name = var_only_expr(fragment)
     if is_var:
@@ -572,7 +572,7 @@ def partition_collection_runs(compiler, args_seq):
                                         iterable on the stack
 
     An element is treated as constant only when it compiles to a single
-    CONST whose value is valid constant-pool material (:func:`_is_const`);
+    CONST whose value is valid constant-pool material (:func:`koskari.types.is_const`);
     this excludes bare symbols (which compile to variable loads) while
     folding literals and quoted constants. Adjacent constants merge into one
     tuple; adjacent plain expressions gather into one list; a splat always
@@ -602,7 +602,7 @@ def partition_collection_runs(compiler, args_seq):
 
         frag = compiler.full_compile(element)
         found, value = const_only_expr(frag)
-        if found and _is_const(value):
+        if found and is_const(value):
             flush_expr()
             const_run.append(value)
         else:

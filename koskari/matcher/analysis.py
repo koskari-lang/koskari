@@ -36,7 +36,7 @@ order, without recursion
 from dataclasses import dataclass
 from typing import Optional
 
-from koskari.compile.compiler import _is_const
+from koskari.types import is_const
 
 
 __all__ = (
@@ -219,7 +219,7 @@ def check_constants(nodes, consts):
             value = consts[node[1]]
         else:
             continue
-        if not _is_const(value):
+        if not is_const(value):
             raise TypeError(
                 f"matcher {what} at node {i} is not a constant:"
                 f" {type(value).__name__}")

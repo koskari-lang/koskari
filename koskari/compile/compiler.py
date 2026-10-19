@@ -31,11 +31,11 @@ from ..exceptions import CompilerError, UncaughtCompilerError
 from ..hygiene import Deferred, Resolver, candidates, equal_by_base
 from ..lib import (
     Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
-    ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_nil,
-    bracket_pair, cons, keyword, kos_repr, nil, symbol)
+    ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_pair,
+    cons, kos_repr, nil, symbol)
 from ..types import (
-    fill_position, get_position, is_keyword, is_nil, is_pair, is_proper,
-    is_symbol, parameterize)
+    fill_position, get_position, is_const, is_keyword, is_nil, is_pair,
+    is_proper, is_symbol, parameterize)
 from .pragma import (
     BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
     StrayColon)
@@ -51,29 +51,6 @@ class Compiled(ABC):
         """
 
         ...
-
-
-CONST_TYPES = (
-    str, bytes,
-    bool, int, float, complex,
-    slice,
-    type(None), type(...),
-    symbol, keyword, type(nil), type(bracket_nil),
-    FunctionSpec,
-    NamespaceSpec,
-)
-
-CONST_CONTAINER_TYPES = (tuple, frozenset)
-
-
-def _is_const_container(value):
-    if not isinstance(value, CONST_CONTAINER_TYPES):
-        return False
-    return all(_is_const(x) for x in value)
-
-
-def _is_const(value):
-    return isinstance(value, CONST_TYPES) or _is_const_container(value)
 
 
 def _label_generator(formatstr="label_%04x"):
@@ -1026,7 +1003,7 @@ class Compiler:
             dispatch = self.compile_symbol
         elif is_pair(source_obj):
             dispatch = self.compile_pair
-        elif _is_const(source_obj):
+        elif is_const(source_obj):
             if is_keyword(source_obj):
                 self.check_keyword_literal(source_obj)
             dispatch = self.compile_const

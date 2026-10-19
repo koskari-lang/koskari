@@ -47,8 +47,7 @@ from ...exceptions import SpecialError
 from ...lib import OpCode, bracket_nil, bracket_pair, nil, symbol
 from ...matcher import CALLEDBY, MATCH, VALUE
 from ...syntax import special
-from ...types import is_nil, is_pair, strip_mark
-from ..compiler import _is_const
+from ...types import is_const, is_nil, is_pair, strip_mark
 
 
 _symbol_quasiquote = symbol("quasiquote")
@@ -79,7 +78,7 @@ def _qq_expr(compiler, frag, expr, level, keep=False):
     if not keep:
         expr = strip_mark(expr)
 
-    if _is_const(expr) or not is_pair(expr):
+    if is_const(expr) or not is_pair(expr):
         frag.instruction(OpCode.CONST, expr)
         return
 
@@ -212,7 +211,7 @@ def _compile_element(compiler, frag, expr, level, keep=False):
     if not keep:
         expr = strip_mark(expr)
 
-    if _is_const(expr):
+    if is_const(expr):
         return (expr, True)
 
     if is_nil(expr):
@@ -327,7 +326,7 @@ def _qq_list(compiler, frag, lst, level, bracket=False, keep=False):
                     frag.merge(sub_frag)
 
         # Emit the dotted tail value, an atom projected like any other
-        if _is_const(current):
+        if is_const(current):
             frag.instruction(
                 OpCode.CONST, current if keep else strip_mark(current))
         elif (is_pair(current)
