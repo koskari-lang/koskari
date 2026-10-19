@@ -1135,7 +1135,7 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of stack elements to pop before jumping.
 - **Stack**: Pops `arg` elements; control transfers to continue target of innermost LOOP/FOREACH extent.
-- **Invariants**: Must be inside a LOOP or FOREACH extent. The compiler's one back-edge, and so a cooperation point: the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
+- **Invariants**: Must be inside a LOOP or FOREACH extent. The back-edge of every compiled loop, and so a cooperation point (a matcher REPEAT's back-edge polls at `MATCH_APPEND`): the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
 
 **Example:** Inside a loop; pop 0 and jump to extent continue_pc (e.g. loop head).
 
@@ -2123,7 +2123,9 @@ Design:
 - **Style**: EXTRA (RAW): list depth.
 - **Stack**: `[..., v]` -> `[...]`; cannot miss.
 - **Semantics**: Pop `v` and append it to the list at depth `a0`. Raises
-  `TypeError` when that entry is not a list.
+  `TypeError` when that entry is not a list. Every REPEAT pass that goes on
+  ends here, ahead of its back-edge, so the handler ends in
+  **`RESULT_NEXT_POLL`**: the REPEAT loop's cooperation point.
 - **Implementation**: `koskari/lib/opcode/MATCH_APPEND.c`
 
 ### KOS_OP_MATCH_MIN {#kos_op_match_min}

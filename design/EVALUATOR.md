@@ -193,7 +193,8 @@ fetch and tail call.
 
 | Point | Where | Why it is enough |
 | ----- | ----- | ---------------- |
-| **`CONTINUE`** | `opcode/CONTINUE.c`, after the unwind resolves the target | The compiler's one back-edge: `while` and `for-each` bodies end in `CONTINUE 1`; conditionals and exception forms emit forward jumps only. `BREAK` leaves the loop and needs nothing. |
+| **`CONTINUE`** | `opcode/CONTINUE.c`, after the unwind resolves the target | The back-edge of every compiled loop: `while` and `for-each` bodies end in `CONTINUE 1`; conditionals and exception forms emit forward jumps only. `BREAK` leaves the loop and needs nothing. |
+| **`MATCH_APPEND`** | `eval/eval_match.c`, `kos_match_append` | A matcher REPEAT's back-edge is a plain `JUMP` to the pass head, and every pass that goes on appends its value with `MATCH_APPEND` just before it, once per pass. |
 | **Frame install** | The install arms of the call core (`kos_call_invoke_impl`, `kos_call_invoke_self_steal`, §7.6) | Covers every CALL and TAIL_CALL opcode from one place; a tail-recursive loop has no `CONTINUE`. Python callables are not checked: Python polls inside its own frames and a C call cannot be interrupted. |
 | **Resume hop** | `RESUME_HOP` in `eval.h` | A filter rejecting every element, or a map over an infinite source, runs resume to resume with no instruction between. |
 | **Prologue entry** | The head of `kos_eval_prologue`, and each further pass of its loop | Plan transfers, continuation replays, raise walks, staged deliveries, and a resume hop that found the breaker up all tail into the prologue; it polls before the pass delivers, so a staged delivery never runs ahead of a pending signal, and a pass that goes round again polls in place, so a chain of resume hops inside one entry cannot spin without polling. |

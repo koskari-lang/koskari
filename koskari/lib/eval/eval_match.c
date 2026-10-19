@@ -698,7 +698,8 @@ KOS_MATCH_BODY(kos_match_load) {
 /**
    MATCH_APPEND: TOS popped and appended to the items list at field
    0, which its entry alone holds once kos_match_list_at has copied a
-   shared one. Row depth.
+   shared one. Row depth. Every REPEAT pass that goes on ends here,
+   ahead of its back-edge, so this is the loop's cooperation point.
 */
 KOS_MATCH_BODY(kos_match_append) {
   KOS_SYNC_PC(es, insn);
@@ -716,7 +717,7 @@ KOS_MATCH_BODY(kos_match_append) {
   Py_DECREF(value);
   if (unlikely(rc < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT_POLL(es);
 }
 
 
