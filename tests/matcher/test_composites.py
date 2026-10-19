@@ -28,9 +28,8 @@ from koskari.lib import (
     Datum, DatumFrame, cdr, cons, demand, keyword, nil, setcar, setcdr,
     symbol)
 from koskari.matcher import (
-    BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORM, FORMALS, LITERAL,
-    MATCH, PREDICATE, REPEAT, REST, TEST_ANY, TYPE, USING, VALUE, make_matcher)
-from koskari.matcher.tables import TableBuilder
+    BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORM, FORMALS, MATCH,
+    PREDICATE, REPEAT, REST, TEST_ANY, USING, VALUE, make_matcher)
 from koskari.types import build_proper
 
 
