@@ -36,13 +36,7 @@ from .patterns import (
 
 
 __all__ = (
-    'MATCHER_REGISTRY',
-    'META_MATCHER',
-    'META_PATTERN',
-    'lookup_matcher',
     'parse_explicit_rule_pattern',
-    'parse_matcher',
-    'register_matcher',
 )
 
 

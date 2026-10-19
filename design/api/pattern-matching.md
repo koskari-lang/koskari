@@ -297,12 +297,11 @@ matcher = demand(make_matcher(MATCH(LIST(SYMBOL("name"), LITERAL_KW("as")))))
 captures = matcher(cons(form, nil))   # the captures, or None
 ```
 
-`Pattern.match(subject, **externs)` builds the matcher and returns a
-`MatchResult`. `first_match(subject, matchers)` tries several matcher
-functions in order and returns the first hit's index and captures, or
-`(-1, None)`. A matcher function is reentrant and holds no state, so a
-module builds each pattern's matcher once at import, as
-`koskari.matcher.forms` does for `BINDING_MATCHERS`.
+`first_match(subject, matchers)` tries several matcher functions in
+order and returns the first hit's index and captures, or `(-1, None)`.
+A matcher function is reentrant and holds no state, so a module builds
+each pattern's matcher once at import, as `koskari.matcher.forms` does
+for `BINDING_MATCHERS`.
 
 The tagged-tuple `match`, `from_tuple` and `match_tuple` functions this note
 proposed were never the shipped API.

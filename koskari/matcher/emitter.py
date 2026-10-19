@@ -45,10 +45,7 @@ from .analysis import ELEMENT_KINDS, UNBOUNDED, node_children
 
 
 __all__ = (
-    'Emitter',
-    'FragmentTarget',
     'lower_arm',
-    'lower_matcher',
 )
 
 

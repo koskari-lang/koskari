@@ -45,17 +45,16 @@ class TestSyntaxDispatch(unittest.TestCase):
         s = Syntax(name, (
             SpecialTransform(
                 MATCH(CALLEDBY(), VALUE("x")),
-                lambda c, src, mr: ("one", mr.captures["x"].datum)),
+                lambda c, src, caps: ("one", caps["x"].datum)),
             SpecialTransform(
                 MATCH(CALLEDBY()),
-                lambda c, src, mr: "none")))
+                lambda c, src, caps: "none")))
         self.assertEqual(s.compile_impl(None, form(name, 5)), ("one", 5))
         self.assertEqual(s.compile_impl(None, form(name)), "none")
 
-        tf, mr = s.match_transformer(form(name, 5))
+        tf, caps = s.match_transformer(form(name, 5))
         self.assertIs(tf, s.transforms[0])
-        self.assertTrue(mr.matched)
-        self.assertEqual(mr.captures["x"].datum, 5)
+        self.assertEqual(caps["x"].datum, 5)
         self.assertEqual(s.match_transformer(form(name, 1, 2)), (None, None))
 
 

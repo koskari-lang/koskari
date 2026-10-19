@@ -33,8 +33,6 @@ from .emitter import FragmentTarget, lower_matcher
 
 
 __all__ = (
-    'FIRST_MATCH',
-    'build_matcher',
     'first_match',
     'matcher_body',
 )

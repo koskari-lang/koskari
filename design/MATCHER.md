@@ -99,8 +99,8 @@ Lowering emits:
   arm, and a bound past the 16-bit field limit.
 - The tables are an in-memory handoff; nothing serializes or thaws them.
 
-`MatchResult.captures`, from `Pattern.match`, is a **sparse** dict: only
-slots that actually bound appear. Check membership before use.
+A matcher's captures are a **sparse** dict: only slots that actually
+bound appear. Check membership before use.
 
 ---
 
@@ -605,7 +605,7 @@ patterns.
 
 ```python
 from koskari.matcher import (
-    make_matcher, first_match, pattern_slot_names, MatchResult,
+    make_matcher, first_match, pattern_slot_names,
     MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS,
 )
 from koskari.matcher.analysis import analyse
@@ -622,7 +622,6 @@ from koskari.types import strip_mark, strip_marks
 | Function | Role |
 |----------|------|
 | `make_matcher(pat, externs=None)` | The pattern's matcher `Function`; `Pattern.build(externs)` is the same call |
-| `Pattern.match(subject, **externs)` | Build and run the matcher; a `MatchResult` |
 | `first_match(subject, matchers)` | Call each matcher function in order; the first hit's index and captures, or `(-1, None)` |
 | `TableBuilder().lower(pat)` | The pattern's node tables |
 | `analyse(tables, arm=False)` | The tables' `Analysis`; raises on a pattern the core refuses |

@@ -28,11 +28,13 @@ from ...hygiene import extern_atoms, function_constant
 from ...lib import FormalsSpec, OpCode, cons, keyword, nil, symbol
 from ...matcher import (
     BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL, VALUE,
-    parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
+    parse_explicit_rule_pattern, repeat_capture)
 from ...matcher.analysis import analyse
 from ...matcher.build import matcher_body
 from ...matcher.tables import TableBuilder
-from ...syntax import parse_rule_pattern, parse_syntax_rules_pattern, special
+from ...syntax import (
+    _repeat_variables, parse_rule_pattern, parse_syntax_rules_pattern,
+    special)
 from ...types import (
     build_proper, is_pair, is_proper, is_symbol, unpack)
 
@@ -40,82 +42,89 @@ from ...types import (
 _sym_quote_syntax = symbol("quote-syntax")
 
 
-def matcher_function(compiler, parent, pattern, pattern_src, name):
+def lower_rule(pattern, pattern_src):
+    """
+    Lower a rule pattern once: the names of its top-level slots in
+    declaration order, for the formals of a procedural arm, and the
+    tables and analysis its matcher function is built from
+
+    :param pattern: the lowered pattern
+    :param pattern_src: the pattern's source form, for errors
+    :return: ``(slot_names, tables, analysis)``
+    :raises SpecialError: when the pattern is one the core refuses
+    """
+
+    builder = TableBuilder()
+    try:
+        tables = builder.lower(pattern)
+        analysis = analyse(tables)
+    except (TypeError, ValueError) as exc:
+        raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
+    return builder.formal_slot_names, tables, analysis
+
+
+def matcher_function(compiler, parent, tables, analysis, pattern_src, name):
     """
     The matcher of a rule as a function constant of the defining
-    module: the pattern lowered through the match compiler's inline
-    target into a lambda body whose one formal is the subject, every
-    extern the pattern names requested from the module through the
-    closure apparatus under the atom the pattern wrote, and the body
-    completed as any lambda's is, marks included
+    module: the pattern's tables lowered through the match compiler's
+    inline target into a lambda body whose one formal is the subject,
+    every extern the pattern names requested from the module through
+    the closure apparatus under the atom the pattern wrote, and the
+    body completed as any lambda's is, marks included
 
     :param compiler: the compiler
     :param parent: the fragment the CONST row is emitted into
-    :param pattern: the lowered pattern
+    :param tables: the pattern's tables, from lower_rule
+    :param analysis: the tables' analysis, from lower_rule
     :param pattern_src: the pattern's source form
     :param name: the function's name
     :return: the function constant
     """
 
-    try:
-        tables = TableBuilder().lower(pattern)
-        analysis = analyse(tables)
-    except (TypeError, ValueError) as exc:
-        raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
     atoms = extern_atoms(pattern_src, tables[1])
     body, subject = matcher_body(compiler, tables, analysis, atoms, name)
     return function_constant(
         compiler, parent, body, name, FormalsSpec((str(subject),)))
 
 
-def emit_matcher_row(compiler, frag, pattern, pattern_src, name):
-    """
-    Push the three leading arguments of a build row: the matcher
-    function built in the module, the repeat variables as pairs, and
-    the quoted pattern source for help text and errors
-
-    :return: the number of arguments pushed
-    """
-
-    constant = matcher_function(
-        compiler, frag, pattern, pattern_src, name)
-    frag.instruction(OpCode.CONST, constant)
-    frag.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
-    repeat_variables = getattr(pattern, "repeat_variables", None) or {}
-    repeat_items = tuple(
-        (slot, tuple(names)) for slot, names in repeat_variables.items())
-    frag.instruction(OpCode.CONST, repeat_items)
-    frag.merge(compiler.full_compile(
-        cons(_sym_quote_syntax, pattern_src, nil)))
-    return 3
-
-
 def emit_build(compiler, called_by, builtin_name, name_str, rows):
     """
-    The call of a build builtin: the transformer name, then each row's
-    arguments, then the call
+    The call of a build builtin: the transformer name, then per rule
+    the matcher function built in the module, the repeat variables as
+    pairs, the quoted pattern source for help text and errors, and the
+    rule's tail, then the call
 
-    :param rows: functions of the fragment, each pushing a row's
-        arguments and returning their count
+    :param rows: per rule ``(pattern, pattern_src, lowered, tail_form)``,
+        lowered being lower_rule's result and tail_form the quoted
+        template or the lambda form
     """
 
     frag = compiler.fragment(called_by)
     frag.instruction(OpCode.CONST, name_str)
-    count = 1
-    for row in rows:
-        count += row(frag)
+    for pattern, pattern_src, lowered, tail_form in rows:
+        _names, tables, analysis = lowered
+        constant = matcher_function(
+            compiler, frag, tables, analysis, pattern_src, name_str)
+        frag.instruction(OpCode.CONST, constant)
+        frag.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
+        repeat_items = tuple(
+            (slot, tuple(names))
+            for slot, names in _repeat_variables(pattern).items())
+        frag.instruction(OpCode.CONST, repeat_items)
+        frag.merge(compiler.full_compile(quoted(pattern_src)))
+        frag.merge(compiler.full_compile(tail_form))
     sym = symbol(builtin_name)
     frag.request_var(sym)
-    frag.instruction(OpCode.CALL_VAR, (sym, count, 0, 0))
+    frag.instruction(OpCode.CALL_VAR, (sym, 1 + 4 * len(rows), 0, 0))
     return frag
 
 
-def quoted(compiler, form):
+def quoted(form):
     """
-    The fragment of (quote-syntax FORM)
+    The form (quote-syntax FORM)
     """
 
-    return compiler.full_compile(cons(_sym_quote_syntax, form, nil))
+    return cons(_sym_quote_syntax, form, nil)
 
 
 # Opaque one-cell rows for compile-time parsing of ``syntax-rules`` /
@@ -132,12 +141,6 @@ _MATCH_RULE_ROWS = repeat_capture(
 # Rows of ``((COMPILER-FORMAL PATTERN) BODY...)`` for the special
 # surfaces, whose pattern column names the compiler parameter
 _SPECIAL_RULE_ROWS = repeat_capture(
-    "rules",
-    REPEAT(
-        LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
-        min_count=1))
-
-_SPECIAL_MATCH_RULE_ROWS = repeat_capture(
     "rules",
     REPEAT(
         LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
@@ -210,15 +213,9 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         pattern = parse_rule_pattern(pattern_src, literals_expr, raw_rule)
-
-        def row(frag, pattern=pattern, pattern_src=pattern_src,
-                template_expr=template_expr):
-            count = emit_matcher_row(
-                compiler, frag, pattern, pattern_src, str(namesym))
-            frag.merge(quoted(compiler, template_expr))
-            return count + 1
-
-        rows.append(row)
+        rows.append((
+            pattern, pattern_src, lower_rule(pattern, pattern_src),
+            quoted(template_expr)))
 
     return emit_build(compiler, called_by, "build-syntax", str(namesym), rows)
 
@@ -255,17 +252,8 @@ def special_compile_bare_syntax(compiler, called_by, name, slot, template):
                 nil)
 
 
-_MACRO_RULES_PATTERNS = [
-    MATCH(
-        CALLEDBY("called_by"),
-        SYMBOL("name"),
-        BIND("literals"),
-        _RULE_ROWS),
-]
-
-
 @builtin("compile/macro-rules")
-@special("compile/macro-rules", patterns=_MACRO_RULES_PATTERNS,
+@special("compile/macro-rules", patterns=_SYNTAX_RULES_PATTERNS,
          unpack="kwargs")
 def special_compile_macro_rules(compiler, called_by, name, literals, rules):
     """
@@ -282,21 +270,13 @@ def special_compile_macro_rules(compiler, called_by, name, literals, rules):
     namesym = name.datum
     literals_expr = literals.datum
     raw_rules = [res["rule"].datum for res in rules]
-    _literal_set, parsed = parse_macro_rules_rows(
-        namesym, literals_expr, raw_rules)
 
     rows = []
-    for pattern, pattern_src, formals, body_forms in parsed:
-        lambda_form = cons(symbol("lambda"), build_proper(*formals), body_forms)
-
-        def row(frag, pattern=pattern, pattern_src=pattern_src,
-                lambda_form=lambda_form):
-            count = emit_matcher_row(
-                compiler, frag, pattern, pattern_src, str(namesym))
-            frag.merge(compiler.full_compile(lambda_form))
-            return count + 1
-
-        rows.append(row)
+    for pattern, pattern_src, formals, body_forms in parse_macro_rules_rows(
+            namesym, literals_expr, raw_rules):
+        rows.append((
+            pattern, pattern_src, lower_rule(pattern, pattern_src),
+            cons(symbol("lambda"), build_proper(*formals), body_forms)))
 
     return emit_build(compiler, called_by, "build-macro", str(namesym), rows)
 
@@ -329,15 +309,9 @@ def special_compile_syntax_match(compiler, called_by, name, rules):
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
         pattern = parse_explicit_rule_pattern(pattern_src)
-
-        def row(frag, pattern=pattern, pattern_src=pattern_src,
-                template_expr=template_expr):
-            count = emit_matcher_row(
-                compiler, frag, pattern, pattern_src, str(namesym))
-            frag.merge(quoted(compiler, template_expr))
-            return count + 1
-
-        rows.append(row)
+        rows.append((
+            pattern, pattern_src, lower_rule(pattern, pattern_src),
+            quoted(template_expr)))
 
     return emit_build(compiler, called_by, "build-syntax", str(namesym), rows)
 
@@ -369,17 +343,11 @@ def special_compile_macro_match(compiler, called_by, name, rules):
         pattern_src = sub_res["pattern"].datum
         body_src = sub_res["body"].datum
         pattern = parse_explicit_rule_pattern(pattern_src)
-        lambda_form = cons(
-            symbol("lambda"), build_proper(*slot_formals(pattern)), body_src)
-
-        def row(frag, pattern=pattern, pattern_src=pattern_src,
-                lambda_form=lambda_form):
-            count = emit_matcher_row(
-                compiler, frag, pattern, pattern_src, str(namesym))
-            frag.merge(compiler.full_compile(lambda_form))
-            return count + 1
-
-        rows.append(row)
+        lowered = lower_rule(pattern, pattern_src)
+        rows.append((
+            pattern, pattern_src, lowered,
+            cons(symbol("lambda"), build_proper(*slot_formals(lowered[0])),
+                 body_src)))
 
     return emit_build(compiler, called_by, "build-macro", str(namesym), rows)
 
@@ -423,25 +391,18 @@ def special_compile_special_rules(compiler, called_by, name, literals, rules):
         variables = {}
         pattern = parse_syntax_rules_pattern(
             inner, literal_set, inner, variables)
-        lambda_form = cons(
-            symbol("lambda"),
-            build_proper(compiler_formal, *variables.values()),
-            body_forms)
-
-        def row(frag, pattern=pattern, inner=inner, lambda_form=lambda_form):
-            count = emit_matcher_row(
-                compiler, frag, pattern, inner, str(namesym))
-            frag.merge(compiler.full_compile(lambda_form))
-            return count + 1
-
-        rows.append(row)
+        rows.append((
+            pattern, inner, lower_rule(pattern, inner),
+            cons(symbol("lambda"),
+                 build_proper(compiler_formal, *variables.values()),
+                 body_forms)))
 
     return emit_build(
         compiler, called_by, "build-special", str(namesym), rows)
 
 
 _SPECIAL_MATCH_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _SPECIAL_MATCH_RULE_ROWS),
+    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _SPECIAL_RULE_ROWS),
 ]
 
 
@@ -471,37 +432,32 @@ def special_compile_special_match(compiler, called_by, name, rules):
         if is_symbol(inner):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
         pattern = parse_explicit_rule_pattern(inner)
-        lambda_form = cons(
-            symbol("lambda"),
-            build_proper(compiler_formal, *slot_formals(pattern)),
-            body_src)
-
-        def row(frag, pattern=pattern, inner=inner, lambda_form=lambda_form):
-            count = emit_matcher_row(
-                compiler, frag, pattern, inner, str(namesym))
-            frag.merge(compiler.full_compile(lambda_form))
-            return count + 1
-
-        rows.append(row)
+        lowered = lower_rule(pattern, inner)
+        rows.append((
+            pattern, inner, lowered,
+            cons(symbol("lambda"),
+                 build_proper(compiler_formal, *slot_formals(lowered[0])),
+                 body_src)))
 
     return emit_build(
         compiler, called_by, "build-special", str(namesym), rows)
 
 
-def slot_formals(pattern_matcher):
+def slot_formals(slot_names):
     """
     The formals an explicit-pattern arm takes for its captures: each
     slot once, in slot-table order, as a keyword formal defaulting to
-    None. A match result is sparse, so a slot behind TAIL or an
+    None. The captures are sparse, so a slot behind TAIL or an
     unmatched ONEOF branch arrives as None, and a slot the table lists
     once per branch (BINDINGS) is one formal
 
-    :param pattern_matcher: the lowered rule pattern
+    :param slot_names: the pattern's top-level slot names, from
+        lower_rule
     :return: the formals list items, keyword and default alternating
     """
 
     out = []
-    for name in dict.fromkeys(pattern_slot_names(pattern_matcher)):
+    for name in dict.fromkeys(slot_names):
         out.append(keyword(name))
         out.append(None)
     return out
@@ -518,8 +474,8 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
     :param literals_expr: literals list expression (same position as in
         ``(macro-rules LITERALS RULE ...)``)
     :param raw_rules: the rule row datums, in source order
-    :return: ``(literals, rows)`` where each row is ``(pattern_matcher,
-        pattern_src, formals_tuple, list of body forms)``
+    :return: the rows, each ``(pattern_matcher, pattern_src,
+        formals_tuple, list of body forms)``
     :raises SpecialError: when the rules are not valid macro-rules rows
     """
 
@@ -544,7 +500,7 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
         rows.append(
             (pattern, pattern_src, tuple(variables.values()), body_forms))
 
-    return literals, tuple(rows)
+    return tuple(rows)
 
 
 # The end.

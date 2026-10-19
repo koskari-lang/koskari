@@ -53,21 +53,6 @@ _MATCH_PATTERNS = [
 ]
 
 
-def _lower_pattern(pattern, source, position=None):
-    """
-    Lower one clause delimiter's content through the runtime
-    case-pattern dialect. parse_case_pattern classifies by head symbol
-    or marker (#list / #tuple sequences, item class sugar, ::-typed,
-    combinators, atoms) -- the special makes no shape decisions of its
-    own.
-    """
-
-    try:
-        return parse_case_pattern(pattern)
-    except ValueError as exc:
-        raise SpecialError(str(exc), source, position=position) from exc
-
-
 @builtin("compile/match")
 @special("compile/match", patterns=_MATCH_PATTERNS, unpack="match")
 def special_match(compiler, caps):
@@ -132,7 +117,14 @@ def special_match(compiler, caps):
                     position=clause_pos)
             guard_expr, body = tail
 
-        arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
+        # the case-pattern dialect classifies the delimiter's content
+        # by head symbol or marker; the special makes no shape
+        # decisions of its own
+        try:
+            arm = MATCH(parse_case_pattern(pattern))
+        except ValueError as exc:
+            raise SpecialError(
+                str(exc), pattern, position=clause_pos) from exc
         try:
             tables = TableBuilder().lower(arm)
             analysis = analyse(tables, arm=True)
@@ -146,22 +138,6 @@ def special_match(compiler, caps):
         arms.append((
             pattern, tables, analysis, atoms, guard_kw, guard_expr, body,
             clause_pos))
-
-    def request_externs(target):
-        """
-        Every extern (a user type, a predicate, a mapping key) is a
-        name the pattern wrote: requested from the scope the tests
-        run in, so a closure captures it, and read by the match
-        instructions from the slot it lowers to. The extern table
-        names each by its base spelling; the request is the atom the
-        pattern wrote, so a name a template binds resolves to it
-        """
-
-        for _pattern, tables, _analysis, atoms, *_rest in arms:
-            if tables is None:
-                continue
-            for extern in tables[1]:
-                target.request_var(atoms.get(extern) or symbol(extern))
 
     # ordered dedup: ONEOF branches and other arms may bind the same
     # name
@@ -205,48 +181,24 @@ def special_match(compiler, caps):
             after_gate[k + 1] = gen_label()
             later_miss[k] = after_gate[k + 1]
 
-    def emit_tests(target, k):
-        """
-        Arm k's tests against the subject on top of the stack, the
-        guard after its captures bind; a pass falls through with the
-        subject consumed, a miss jumps with the subject still on the
-        stack, to the arm whose outcome is not yet known
-
-        :return: the function emitting the arm's fail entries, for
-            after the arm's body, or None when it has none
-        """
-
-        (_pattern, tables, analysis, atoms, guard_kw, guard_expr, _body,
-         clause_pos) = arms[k]
-        target.position(clause_pos)
-        guarded = guard_kw is not None
-        miss = later_miss[k]
-        if gates[k] is None:
-            fail_entries = lower_arm(
-                compiler, target, tables, analysis, atoms, miss, guarded,
-                follow=after[k])
-        else:
-            fail_entries = lower_arm(
-                compiler, target, tables, analysis, atoms, miss, guarded,
-                gate_miss[k], after_gate[k], after[k])
-        if guarded:
-            # a guarded arm's walk keeps the subject for the guard's
-            # miss; the pass pops it
-            target.merge(compiler.full_compile(guard_expr))
-            target.instruction(
-                OpCode.JUMP_FALSE if guard_kw is _keyword_when
-                else OpCode.JUMP_TRUE,
-                miss)
-            target.instruction(OpCode.POP, 1)
-        return fail_entries
+    # every extern (a user type, a predicate, a mapping key) is a name
+    # the pattern wrote: requested from the scope the tests run in, so
+    # a closure captures it, and read by the match instructions from
+    # the slot it lowers to. The extern table names each by its base
+    # spelling; the request is the atom the pattern wrote, so a name a
+    # template binds resolves to it
+    for _pattern, tables, _analysis, atoms, *_rest in arms:
+        if tables is None:
+            continue
+        for extern in tables[1]:
+            fragment.request_var(atoms.get(extern) or symbol(extern))
 
     # the subject stays on the stack across the arm chain; a hit
     # consumes it and runs the body in place, and a miss leaves it for
     # the next arm
-    request_externs(fragment)
     fragment.merge(compiler.full_compile(caps["subject"].datum))
     for k, arm in enumerate(arms):
-        (_pattern, tables, _analysis, _atoms, _guard_kw, _guard_expr, body,
+        (_pattern, tables, analysis, atoms, guard_kw, guard_expr, body,
          clause_pos) = arm
         if tables is None:
             fragment.position(clause_pos)
@@ -254,7 +206,32 @@ def special_match(compiler, caps):
             helper_begin(fragment, body)
             fragment.instruction(OpCode.JUMP, done)
             break
-        fail_entries = emit_tests(fragment, k)
+
+        # the arm's tests against the subject on top of the stack, the
+        # guard after its captures bind; a pass falls through with the
+        # subject consumed, a miss jumps with the subject still on the
+        # stack, to the arm whose outcome is not yet known
+        fragment.position(clause_pos)
+        guarded = guard_kw is not None
+        miss = later_miss[k]
+        if gates[k] is None:
+            fail_entries = lower_arm(
+                compiler, fragment, tables, analysis, atoms, miss, guarded,
+                follow=after[k])
+        else:
+            fail_entries = lower_arm(
+                compiler, fragment, tables, analysis, atoms, miss, guarded,
+                gate_miss[k], after_gate[k], after[k])
+        if guarded:
+            # a guarded arm's walk keeps the subject for the guard's
+            # miss; the pass pops it
+            fragment.merge(compiler.full_compile(guard_expr))
+            fragment.instruction(
+                OpCode.JUMP_FALSE if guard_kw is _keyword_when
+                else OpCode.JUMP_TRUE,
+                miss)
+            fragment.instruction(OpCode.POP, 1)
+
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
         if fail_entries is not None:

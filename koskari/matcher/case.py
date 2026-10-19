@@ -36,11 +36,6 @@ from .patterns import (
 
 
 __all__ = (
-    'CASE_DELIM_MATCHER',
-    'CASE_DELIM_PATTERN',
-    'CASE_ELEMENT_MATCHER',
-    'CASE_ELEMENT_PATTERN',
-    'parse_case_element',
     'parse_case_pattern',
 )
 

@@ -364,8 +364,7 @@ class TestSpecialUnpack(unittest.TestCase):
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr: fn(
-                compiler, mr.captures))
+            lambda compiler, source_obj, caps: fn(compiler, caps))
         slot = symbol("slot")
         src = cons(head, slot, nil)
         out = st.try_expand(None, src)
@@ -386,8 +385,7 @@ class TestSpecialUnpack(unittest.TestCase):
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr: fn(
-                compiler, **mr.captures))
+            lambda compiler, source_obj, caps: fn(compiler, **caps))
         slot = symbol("slot")
         src = cons(head, slot, nil)
         out = st.try_expand(None, src)

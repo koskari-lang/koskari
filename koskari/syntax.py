@@ -33,7 +33,7 @@ from koskari.hygiene import expand_template_with_hygiene, finalize_expansion
 from koskari.lib import Datum, cons, demand, demand_call, gensym, nil, symbol
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-    MatchResult, Pattern,
+    Pattern,
     check_pattern_arg, first_match, parse_explicit_rule_pattern,
     repeat_capture)
 from koskari.reader.layouts import apply_layout
@@ -44,7 +44,6 @@ from koskari.types import (
 
 __all__ = (
     "BareTransform",
-    "Datum",
     "MacroTransform",
     "SpecialTransform",
     "Syntax",
@@ -115,14 +114,15 @@ class Syntax(Compiled):
         FIRST_MATCH; the first that matches selects its arm
 
         :param form: special form pair spine
-        :return: ``(transform, result)`` where ``transform`` is the matching
-            transform and ``result`` is the match result, or (None, None)
+        :return: ``(transform, captures)`` where ``transform`` is the
+            matching transform and ``captures`` its captures, or
+            (None, None)
         """
 
         index, captures = first_match(form, self.matchers)
         if index < 0:
             return None, None
-        return self.transforms[index], MatchResult(True, captures)
+        return self.transforms[index], captures
 
 
     def compile_impl(self, compiler, source_obj):
@@ -175,7 +175,7 @@ class Syntax(Compiled):
             fill_position(reemitted, get_position(source_obj))
             return reemitted
 
-        tf, result = self.match_transformer(source_obj)
+        tf, captures = self.match_transformer(source_obj)
         if tf is None:
             raise SyntaxMatchError(
                 "no matching syntax rule",
@@ -184,7 +184,7 @@ class Syntax(Compiled):
                 patterns=tuple(t.pattern for t in self.transforms),
             )
 
-        expansion = tf.handle_expand(compiler, source_obj, result)
+        expansion = tf.handle_expand(compiler, source_obj, captures)
         if is_pair(expansion):
             # a template arm builds its output with no position; the
             # form it expands names the line, as for the bare path
@@ -293,12 +293,11 @@ class Transform(ABC):
         captures = demand(self.matcher)(source_obj)
         if captures is None:
             return None
-        return self.handle_expand(
-            compiler, source_obj, MatchResult(True, captures))
+        return self.handle_expand(compiler, source_obj, captures)
 
 
     @abstractmethod
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         When the pattern matches, handle the expansion.
         """
@@ -334,17 +333,17 @@ class SyntaxTransform(Transform):
         self.pattern_src = pattern_src
 
 
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         expand ``template`` with the captures
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
-        :param result: match result from ``self._matcher``
+        :param captures: the captures of ``self.matcher``
         :return: expanded form after finalize
         """
 
-        bindings = _captures_to_bindings(result.captures)
+        bindings = _captures_to_bindings(captures)
         bindings = _promote_repeat_frame_bindings(
             bindings, repeat_variables=self.repeat_variables)
 
@@ -354,30 +353,11 @@ class SyntaxTransform(Transform):
         return _finalize_macro_output(compiler, subst)
 
 
-class _BareResult:
-    """
-    Stand-in for a ``MatchResult`` on the bare path, where the matcher
-    is bypassed and the called-by symbol is the only capture
-    """
-
-    __slots__ = ("captures", "matched")
-
-
-    def __init__(self, captures):
-        """
-        :param captures: slot name to capture value mapping
-        """
-
-        self.captures = captures
-        self.matched = True
-
-
 class BareTransform(SyntaxTransform):
     """
     Bare arm: template expansion for the syntax name used as a lone atom
     rather than at the head of a call form. The called-by symbol is the only
-    capture, bound to ``slot``; the matcher is never consulted for dispatch,
-    it stands in for the ``(NAME)`` call form the template usually rewrites to
+    capture, bound to ``slot``, so the arm has no pattern and no matcher
     """
 
     def __init__(self, slot, template):
@@ -387,7 +367,11 @@ class BareTransform(SyntaxTransform):
         """
 
         self.slot = str(slot)
-        super().__init__(MATCH(CALLEDBY(self.slot)), template)
+        self.pattern = None
+        self.matcher = None
+        self.repeat_variables = {}
+        self.template = template
+        self.pattern_src = nil
 
 
     def expand_bare(self, compiler, sym, position=None):
@@ -404,8 +388,8 @@ class BareTransform(SyntaxTransform):
         :return: expanded form after finalize
         """
 
-        result = _BareResult({self.slot: Datum(sym, position)})
-        expansion = self.handle_expand(compiler, sym, result)
+        expansion = self.handle_expand(
+            compiler, sym, {self.slot: Datum(sym, position)})
         if position and is_pair(expansion):
             fill_position(expansion, position)
         return expansion
@@ -422,7 +406,7 @@ class MacroTransform(Transform):
             a matcher
         :param handler:
             ``(compiler, **captures)`` procedure returning expanded form;
-            ``captures`` are string-keyed match slots from ``match_result.captures``
+            ``captures`` are the string-keyed match slots
         :param matcher: the matcher function a module compiled from
             the pattern
         :param repeat_variables: see Transform
@@ -436,19 +420,19 @@ class MacroTransform(Transform):
         self.handler = handler
 
 
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         Run handler, then mark and finalize the result
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
-        :param result: match result from ``self._matcher``
+        :param captures: the captures of ``self.matcher``
         :return: expanded form after finalize
         """
 
         expanded = self.handler(
             compiler, **_captures_for_procedure(
-                result.captures, self.repeat_variables))
+                captures, self.repeat_variables))
         return _finalize_macro_output(
             compiler, expanded, gensym.next_mark())
 
@@ -463,7 +447,7 @@ class SpecialTransform(Transform):
         :param pattern: matcher pattern tree, or its source form with
             a matcher
         :param handler:
-            ``(compiler, source_obj, match_result)`` procedure; use
+            ``(compiler, source_obj, captures)`` procedure; use
             :func:`special` if you need other calling conventions
         :param matcher: the matcher function a module compiled from
             the pattern
@@ -478,17 +462,17 @@ class SpecialTransform(Transform):
         self.handler = handler
 
 
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         Return handler result unchanged
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
-        :param result: match result from ``self._matcher``
+        :param captures: the captures of ``self.matcher``
         :return: compile product from the handler
         """
 
-        return self.handler(compiler, source, result)
+        return self.handler(compiler, source, captures)
 
 
 def _join_docs(base, extra):
@@ -516,7 +500,7 @@ def _captures_to_bindings(captures):
     Values are the matcher's captures (often ``Datum``-wrapped); they are
     stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
     peels at use sites. Macro handlers receive the same ``Datum``-bearing
-    ``MatchResult.captures`` mapping unchanged from the matcher.
+    captures unchanged from the matcher.
     """
 
     return {symbol(k): v for k, v in captures.items()}
@@ -706,16 +690,16 @@ def special(form_symbol, *, patterns, unpack=None):
 
         plist = _normalize_special_patterns(patterns)
         if unpack is None:
-            def wrapped(compiler, source_obj, match_result):
+            def wrapped(compiler, source_obj, captures):
                 return fn(compiler, source_obj)
 
         elif unpack == "match":
-            def wrapped(compiler, source_obj, match_result):
-                return fn(compiler, match_result.captures)
+            def wrapped(compiler, source_obj, captures):
+                return fn(compiler, captures)
 
         elif unpack == "kwargs":
-            def wrapped(compiler, source_obj, match_result):
-                return fn(compiler, **match_result.captures)
+            def wrapped(compiler, source_obj, captures):
+                return fn(compiler, **captures)
 
         else:
             raise ValueError(f"internal: bad unpack {unpack!r}")
@@ -1035,10 +1019,10 @@ def _wrap_special_handler(raw, repeat_variables):
     """
 
     @wraps(raw)
-    def handler(compiler, source_obj, match_result):
+    def handler(compiler, source_obj, captures):
         return demand_call(
             raw, compiler, **_captures_for_procedure(
-                match_result.captures, repeat_variables))
+                captures, repeat_variables))
 
     return handler
 

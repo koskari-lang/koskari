@@ -25,8 +25,7 @@ matcher function
 """
 
 
-from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from koskari.lib import (
     CoreType, ModuleNamespace, cons, demand, keyword, kos_repr, nil, pair,
@@ -65,7 +64,6 @@ __all__ = (
     'SYMBOL',
     'TEST_ANY',
     'TYPE',
-    'MatchResult',
     'Pattern',
     'check_pattern_arg',
     'make_matcher',
@@ -75,20 +73,6 @@ __all__ = (
     'pattern_slot_names',
     'repeat_capture',
 )
-
-
-# === The result of Pattern.match ===
-
-
-@dataclass
-class MatchResult:
-    """
-    The outcome of a match: whether it matched, and the captures, a
-    dict or a DatumFrame, sparse over the slots that fired
-    """
-
-    matched: bool
-    captures: Any
 
 
 @runtime_checkable
@@ -134,18 +118,6 @@ class Pattern(Protocol):
                 raise TypeError(f"matcher missing extern binding: {name!r}")
         return build_matcher(
             tables, analysis, ModuleNamespace("matcher", externs))
-
-
-    def match(self, subject, /, **externs):
-        """
-        Build this pattern over the keyword externs and run it against
-        subject. Returns the MatchResult
-        """
-
-        captures = demand(self.build(externs))(subject)
-        if captures is None:
-            return MatchResult(False, {})
-        return MatchResult(True, captures)
 
 
 def check_pattern_arg(arg, what):

@@ -40,10 +40,6 @@ from koskari.compile.compiler import _is_const
 
 
 __all__ = (
-    'FIELD_LIMIT',
-    'UNBOUNDED',
-    'Analysis',
-    'Scope',
     'analyse',
     'arm_gate',
 )

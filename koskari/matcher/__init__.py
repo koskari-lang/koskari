@@ -34,9 +34,8 @@ from .heads import parse_explicit_rule_pattern
 from .patterns import (
     APP, BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, KEYWORD, LIST, LITERAL,
     LITERAL_KW, LITERAL_SYM, MAP, MAP_ENTRY, MATCH, NOT, ONEOF, OPTIONAL, PAIR,
-    PREDICATE, REPEAT, REST, SAME, SYMBOL, TEST_ANY, TYPE, MatchResult,
-    Pattern, check_pattern_arg, make_matcher, pattern_slot_names,
-    repeat_capture)
+    PREDICATE, REPEAT, REST, SAME, SYMBOL, TEST_ANY, TYPE, Pattern,
+    check_pattern_arg, make_matcher, pattern_slot_names, repeat_capture)
 
 
 __all__ = (
@@ -63,7 +62,6 @@ __all__ = (
     'MAP',
     'MAP_ENTRY',
     'MATCH',
-    'MatchResult',
     'NOT',
     'ONEOF',
     'OPTIONAL',
