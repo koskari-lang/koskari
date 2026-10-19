@@ -46,7 +46,7 @@ Highlights (not an exhaustive list):
 ### Runtime match/case
 
 Value-level pattern matching through the matcher compiler
-(`koskari.match_code`), the same lowering that drives macro and
+(`koskari.matcher.emitter`), the same lowering that drives macro and
 special-form dispatch. **`compile/match`** (s-expr) and **`layout/match`**
 (block syntax) lower each arm's pattern to its **`MATCH_*`** instructions
 inline, a chain of arms each jumping to the next on a miss, the captures
@@ -68,7 +68,7 @@ stored into the enclosing function's locals as the pattern walks.
 
 See [MATCHER.md](MATCHER.md) § Runtime match/case and
 [interpreter/matcher-bytecode.md](interpreter/matcher-bytecode.md);
-`koskari/compile/specials/match.py`, `koskari/match_code.py`,
+`koskari/compile/specials/match.py`, `koskari/matcher/emitter.py`,
 `koskari/reader/layouts/conditionals.py`.
 
 ### Slices

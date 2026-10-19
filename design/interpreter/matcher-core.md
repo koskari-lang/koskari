@@ -27,7 +27,7 @@ exits.
 - A matcher is a Koskari Function: a gensym positional formal, the
   captures on a match, None on a miss. The shared first-match function
   and a Syntax's arms are unchanged.
-- Pattern and `MatchCompiler` produce the node tables (slots, externs,
+- Pattern and `TableBuilder` produce the node tables (slots, externs,
   consts, nodes, entry). Pattern is a compile-time helper. Two changes:
   the slots a ONEOF's branches bind under one name share one index in
   their scope, and a branch's names stay visible to the nodes after the
@@ -507,7 +507,7 @@ are recorded, not a gate.
     alternatives of one ONEOF; a second binding (a branch name reused
     after its ONEOF, a REPEAT column equal to an outer name) is refused
     at build, so a failed branch's CLEAR never empties another binding;
-  - phase 6's `MatchCompiler` changes also make `resolve_slot` accept a
+  - phase 6's `TableBuilder` changes also make `resolve_slot` accept a
     SAME before its binding.
 - Decided in phase 1, from the oracle against the current path:
   - a REPEAT pass's captures are a dict, as on master, over any subject;
@@ -556,7 +556,7 @@ Logs in tmp/matcher-core/.
 - Gate: `make lint test` green; the comparison runs against the current
   path and its divergences are recorded in tmp/matcher-core/STATUS.md.
 
-### Phase 2 -- analysis (koskari/match_core.py, new)
+### Phase 2 -- analysis (koskari/matcher/analysis.py, new)
 
 - One pass over the tables produces per node: static widths and
   fixedness; the suffix width `w` (minimum after a REPEAT, fixed after a
@@ -597,13 +597,13 @@ Logs in tmp/matcher-core/.
   stack effect, hit and miss, copy on share.
 - Gate: as phase 3.
 
-### Phase 5 -- the emitter (koskari/match_core.py)
+### Phase 5 -- the emitter (koskari/matcher/emitter.py)
 
 - One recursive `emit(node, cur, miss)` following the lowering table and
   the stack-neutral convention, over the existing `FunctionTarget` and
   `FragmentTarget`; the standalone root and the inline arm root.
 - A temporary selector chooses the core path for
-  `compile_match_function`, `lower_clause` and `lower_matcher`; tests
+  `build_matcher`, `lower_arm` and `lower_matcher`; tests
   and the oracle run with it on; it is removed in phase 6.
 - tests/matcher/test_oracle.py added, running the corpus on the core
   path.
@@ -616,9 +616,9 @@ Logs in tmp/matcher-core/.
 - Every path runs on the core: `Pattern.build`, `compile/match`, the
   `define-syntax` specials, the Syntax first-match function. The
   selector goes.
-- `MatchCompiler` gets its two changes (one slot index per name across
+- `TableBuilder` gets its two changes (one slot index per name across
   a ONEOF's branches; branch names visible after the ONEOF).
-- Removed: the current lowering in koskari/match_code.py (peek and pull
+- Removed: the current lowering in koskari/matcher/emitter.py (peek and pull
   paths, trampolines, depth trace, capture locals), every current
   `MATCH_*` row and its handler, body, helpers and tests (INVENTORY.md
   REPLACE / REMOVE), the `validate_capture_run` names in bytecode.c;

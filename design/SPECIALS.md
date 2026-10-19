@@ -535,7 +535,7 @@ pair/list (`"match clause must be a list"`) whose first element is the
 `SpecialError` at the clause's position.
 
 Per arm the pattern is lowered to a frozen tuple
-(`MatchCompiler().lower(MATCH(...))`) and from that to instructions. The
+(`TableBuilder().lower(MATCH(...))`) and from that to instructions. The
 frozen slot table supplies the
 binding names (ordered dedup — `ONEOF` branches may declare the same slot);
 the extern table lists every name the pattern resolves at match time (types,
@@ -545,7 +545,7 @@ captured.
 
 The subject stays on the stack across the arm chain (same discipline as
 `compile/switch`). Each arm's instructions are emitted in place by
-`lower_clause` (`koskari/match_code.py`): the root test peeks the subject,
+`lower_arm` (`koskari/matcher/emitter.py`): the root test peeks the subject,
 a form opens a cursor in a temporary of the function, every test jumps to
 the next arm's label on a miss, and a capture stores into the local the
 pattern names as the walk reaches it. A hit pops the subject and falls into
@@ -1847,7 +1847,7 @@ and **[MATCHER.md](MATCHER.md)** (`parse_explicit_rule_pattern`, surface heads).
 **Behaviour:** Each rule row is **`(PATTERN BODY …)`**; **`PATTERN`** is passed to
 **`parse_explicit_rule_pattern`**. Per-rule **`compile/lambda`** formals are
 **`matcher_slot_names(pattern_matcher)`** in consume order (see
-`koskari/matcher.py` and [MATCHER.md](MATCHER.md)). Macro procedures are invoked
+`koskari/matcher/` and [MATCHER.md](MATCHER.md)). Macro procedures are invoked
 with **keyword** arguments from the match result (`koskari/syntax.py`:
 **`MacroRule.expand`**).
 

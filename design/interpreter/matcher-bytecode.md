@@ -91,7 +91,7 @@ Facts the lowering reproduces, read from `matcher.c` and `matcher/`.
 
 ### 2.1 One lowering, two shapes
 
-`MatchCompiler` and the frozen 6-tuple stay as the IR. The new step is
+`TableBuilder` and the frozen 6-tuple stay as the IR. The new step is
 tuple to instruction list, in Python, with no dependency on
 `Compiler`. It builds a `Code` the way `serialize/codex.py` does, so
 the reader layouts and the Python-defined special patterns have it
@@ -216,7 +216,7 @@ pattern is compiled, changes nothing the pattern tests. This closes the
 implicit-extern defect the 2026-10-14 review found, where every
 `syntax-rules` head resolved `symbol` in the defining module, and the
 hygiene collision of a macro's `int` with a user sub-pattern's `int`.
-The decision is `MatchCompiler.lower`'s, so the frozen tuple's extern
+The decision is `TableBuilder.lower`'s, so the frozen tuple's extern
 table lists only real externs. CONST never holds a type.
 
 ### 2.8 Captures and repeat iterations
@@ -682,15 +682,15 @@ and hides its complexity in the DSL without touching the compiler.
 - **The frozen tuple** stays as a form's lowered value: serializable,
   what `Pattern.freeze`, `thaw` and `Matcher.from_tuple` exchange, and
   the input of code emission. Nothing stores it.
-- **The compiler**, `MatchCompiler` grown to its name: forms to the
+- **The compiler**, `TableBuilder` grown to its name: forms to the
   tuple, as today, and the tuple to instructions through one handler
   per primitive kind, with two targets. The inline target emits into a
   fragment of the standard compiler and leaves the names to
   `convert_fast`; the standalone target allocates its own labels and
   fast slots and builds `Code`, `FunctionSpec` and a `Function` with
   nothing but `koskari.lib`, so it exists before the standard compiler
-  does. The handlers are the emitter of `match_code.py`, which moves
-  to `koskari/match_code.py` below both `koskari.matcher` and
+  does. The handlers are the emitter, which moves
+  to `koskari/matcher/emitter.py` below both `koskari.matcher` and
   `koskari.compile`.
 - **There are no default externs.** The seven builtin type names are
   core types, tested by ordinal with no reference; every other extern of
@@ -799,7 +799,7 @@ under its mark. The NAMED twins read each capture by name.
 
 ### 12.6 Stages
 
-Stage 1 completed 2026-10-14. `koskari/match_code.py` holds both
+Stage 1 completed 2026-10-14. `koskari/matcher/emitter.py` holds both
 targets; sixty-six opcodes; `tests/matcher/test_match_function.py`
 and `tests/corpus/test_match_function_oracle.py` run the standalone
 function beside the engine, the oracle over 8889 forms of the corpus,
@@ -944,7 +944,7 @@ failed branch, a missed optional or a repeat's fail path, is one
 dispatch.
 
 Review item 5 as of 2026-10-14: `SAME` resolves its name by frame
-when the pattern lowers, through `MatchCompiler.resolve_slot`: the
+when the pattern lowers, through `TableBuilder.resolve_slot`: the
 root, a GROUP or a REPEAT iteration is a frame, a ONEOF branch shares
 the frame around it, depth 0 is the innermost frame and depth 1 the
 one enclosing it, as the engine's frame dicts read by name. A name
@@ -979,7 +979,7 @@ defined.
    `MATCH_NEXT_SAME`, `MATCH_NEXT_APPEND`, `MATCH_COLLECT`,
    `MATCH_CAPTURES`, `MATCH_ITERATION`, `MATCH_MARK`,
    `MATCH_RESET`; the `REPEAT`, `GROUP`, `OPTIONAL`, `SAME` and root
-   lowerings; the emitter moved to `koskari/match_code.py` with its
+   lowerings; the emitter moved to `koskari/matcher/emitter.py` with its
    two targets. Gate: `tests/matcher` against the function.
 2. **The Python path.** `Matcher` and `MatchResult` as Python classes
    in `koskari.matcher` over the function, the base namespace from the

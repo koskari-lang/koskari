@@ -1896,10 +1896,10 @@ tail-calls its body in `koskari/lib/eval/eval_match.c`,
 shared by the VAR and FAST twins, and the body calls the matcher
 subsystem's step
 (`koskari/lib/matcher/cursor.c`, `mark.c`, `step.c`; `matcher.h`). The
-lowering is the `Emitter` in `koskari/match_core.py`, over the targets
-in `koskari/match_code.py`: `lower_clause` inline for a `compile/match`
+lowering is the `Emitter` in `koskari/matcher/emitter.py`, over the
+targets in `koskari/matcher/emitter.py` and `koskari/matcher/build.py`: `lower_arm` inline for a `compile/match`
 arm, `lower_matcher` into a lambda body for a syntax rule,
-`compile_match_function` for a standalone `Function`. Design:
+`build_matcher` for a standalone `Function`. Design:
 [interpreter/matcher-core.md](interpreter/matcher-core.md).
 
 ### KOS_OP_MATCH_CASE {#kos_op_match_case}

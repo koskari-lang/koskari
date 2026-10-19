@@ -128,7 +128,7 @@ minimally declared. The alternatives worth weighing before committing:
   factory protocol, resolved decision 3 (composites always inline).
 - [match-pattern-language.md](../archive/match-pattern-language.md) — the case
   dialect a template body would likely be written in.
-- `koskari/matcher.py` — the Python composites this generalizes
+- `koskari/matcher/forms.py` — the Python composites this generalizes
   (`BINDING`, `BINDINGS`, `FORMALS`, `USING`) and
   `MATCHER_REGISTRY` / `register_matcher`.
 - `koskari/compile/specials/syntax.py`, `koskari/syntax.py` — the

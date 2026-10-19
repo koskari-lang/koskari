@@ -159,7 +159,7 @@ An earlier sketch used s-expression markers in the default slot: `col: (new
 list)`, `col: (copy #[])`. Rejected.
 
 Formals already recognize marker forms structurally -- `formal_param_pattern`
-in [matcher.py](../../koskari/matcher.py) matches `(compile/ref <sym>)` and
+in [matcher/forms.py](../../koskari/matcher/forms.py) matches `(compile/ref <sym>)` and
 `(ref <sym>)` -- but that precedent does not transfer, because of a position
 asymmetry. The *binding* position can only ever name a variable, so a call form
 there has no competing reading. The *default* position is an arbitrary

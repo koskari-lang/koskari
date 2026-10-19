@@ -36,7 +36,7 @@ type.
 `Pattern` is a compile-time helper: it describes a pattern and lowers
 it. Nothing holds a Pattern at runtime to match with.
 
-The frozen tuple is an in-memory handoff from `MatchCompiler` to
+The frozen tuple is an in-memory handoff from `TableBuilder` to
 `MatchLowering` only. It has no public form.
 
 ## Stages
@@ -59,14 +59,14 @@ The frozen tuple is an in-memory handoff from `MatchCompiler` to
      constant (a list, dict, set, pair, Datum or user object): TypeError
      at build.
    - Removed: the Python `Matcher` class, `Matcher.match`, `from_tuple`,
-     `from_function`, `MatchCompiler.compile`, `missing_externs`,
+     `from_function`, `TableBuilder.compile`, `missing_externs`,
      `interned_consts`, `check_subject`, and the frozen tuple's public
      surface: `thaw`, `validate_frozen`, the `"MATCHER"` tag.
-     `MatchCompiler` hands its tables to the lowering directly.
+     `TableBuilder` hands its tables to the lowering directly.
    - The checks of `validate_frozen` that refuse a pattern a user can
      write stay, as `check_nodes(nodes, entry)`, called where
      `validate_frozen` was: `Pattern.build`, `compile/match` and the
-     module path. Errors raised by `MatchCompiler.lower` itself keep
+     module path. Errors raised by `TableBuilder.lower` itself keep
      their own path.
    - A module-compiled arm passes its `FunctionSpec` (`CONST`,
      `BUILD_FUNCTION`) and its repeat variables; no frozen tuple.
@@ -80,4 +80,4 @@ The frozen tuple is an in-memory handoff from `MatchCompiler` to
 ## Out of scope
 
 Patterns emitting instructions directly, as Specials do, with no node
-tables between `MatchCompiler` and `MatchLowering`.
+tables between `TableBuilder` and `MatchLowering`.

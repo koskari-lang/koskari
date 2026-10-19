@@ -1,14 +1,14 @@
 # Koskari matcher reference
 
 Canonical reference for the matcher: the Python pattern builders in
-`koskari.matcher`, the match compiler in `koskari.match_code` that lowers a
+`koskari.matcher`, the match compiler in `koskari.matcher.emitter` that lowers a
 pattern to `MATCH_*` instructions, the `Matcher` and `Dispatcher` that run
 the compiled function, the capture wrappers (`Datum`, `DatumFrame`), the
 scoped symbols (`koskari.lib.gensym`) that carry macro hygiene, and the
 **runtime match/case system** (the case-pattern dialect and `compile/match`
 / `layout/match`).
 
-**Implementation:** `koskari/matcher.py`, `koskari/match_code.py`,
+**Implementation:** `koskari/matcher/`,
 `koskari/hygiene.py`, `koskari/syntax.py`, `koskari/lib/matcher.{c,h}`,
 `koskari/lib/matcher/step.c`, `koskari/lib/eval/eval_match.c`,
 `koskari/lib/opcode/MATCH_*.c`; runtime match/case:
@@ -51,13 +51,14 @@ three containers:
 - the enclosing function itself, for a `match`/`case` arm, its captures the
   function's locals.
 
-Two compilation paths: `MatchCompiler` lowers a pattern to the frozen tuple,
-and `koskari.match_code` lowers the tuple to instructions.
+Two compilation paths: `TableBuilder` lowers a pattern to the frozen tuple,
+and `koskari.matcher.emitter` lowers the tuple to instructions.
 
 ```python
-from koskari.matcher import MATCH, DEFINE, BODY, MatchCompiler, make_matcher
+from koskari.matcher import MATCH, DEFINE, BODY, make_matcher
+from koskari.matcher.tables import TableBuilder
 
-matcher = MatchCompiler.compile(MATCH(DEFINE("name"), BODY("body")))
+matcher = TableBuilder.compile(MATCH(DEFINE("name"), BODY("body")))
 ```
 
 `make_matcher(pattern)` and `Pattern.build()` are the same call. A pattern
@@ -201,7 +202,7 @@ markers in its argument list is an error.
 ### Rule-level patterns (`parse_explicit_rule_pattern`)
 
 Used for **syntax-match / macro-match** rule patterns (MATCH dialect,
-`koskari/matcher.py`); syntax-rules and macro-rules take the RULE dialect
+`koskari/matcher/heads.py`); syntax-rules and macro-rules take the RULE dialect
 through `parse_syntax_rules_pattern` in `koskari/syntax.py`:
 
 - Walks a **proper list** spine; each cell is lowered with `parse_explicit_rule_pattern`.
@@ -477,7 +478,7 @@ spelling records the slot's role for the reader.
 
 Each transform arm:
 
-1. Lowers `pattern` with `MatchCompiler` and stores the `matcher`, or takes
+1. Lowers `pattern` with `TableBuilder` and stores the `matcher`, or takes
    the function a module compiled for the rule (`Matcher.from_function`,
    the `build-*` builtins' function rows).
 2. `try_expand` runs `matcher.match(source_obj)` then `handle_expand`.
@@ -549,14 +550,14 @@ registry-headed forms back to `parse_matcher`.
 The runtime `match` statement is the value-matching consumer of the
 lowering: `compile/match` (s-expr) and `layout/match` (block syntax) lower
 each arm's pattern to a frozen tuple and emit its instructions inline,
-through `lower_clause`, between the arm tests of the enclosing function.
+through `lower_arm`, between the arm tests of the enclosing function.
 
 ### The case-pattern dialect
 
 `parse_case_pattern(delimiter_content)` classifies one clause's pattern;
 `parse_case_element(elem)` classifies one element. Both are meta-matchers plus
 walkers, the same architecture as `parse_matcher` (`CASE_ELEMENT_MATCHER`,
-`CASE_DELIM_MATCHER` in `koskari/matcher.py`). Pattern *kind* is decided by
+`CASE_DELIM_MATCHER` in `koskari/matcher/case.py`). Pattern *kind* is decided by
 head symbol or marker — **never by bracket or cell type**; the reader sugars
 mint the distinguishing heads:
 
@@ -583,7 +584,7 @@ The delimiter is a pure container: the special reads it with `pair`/`nil` only.
 
 | Piece | Behaviour |
 |-------|-----------|
-| The arm | The subject stays on the stack across the arm chain. `lower_clause` emits the arm's `MATCH_*` instructions in place: the root test peeks the subject, a form opens a cursor in a temporary of the enclosing function, each pull or peek test jumps to the next arm's label on a miss, and a capture stores straight into the local the pattern names. A hit falls through to the arm body after a `POP` of the subject; the miss edges that a nested peek needs (a label, the pops down to the subject, the jump) are emitted after the body. |
+| The arm | The subject stays on the stack across the arm chain. `lower_arm` emits the arm's `MATCH_*` instructions in place: the root test peeks the subject, a form opens a cursor in a temporary of the enclosing function, each pull or peek test jumps to the next arm's label on a miss, and a capture stores straight into the local the pattern names. A hit falls through to the arm body after a `POP` of the subject; the miss edges that a nested peek needs (a label, the pops down to the subject, the jump) are emitted after the body. |
 | Captures | Fast slots of the enclosing function, declared in the enclosing scope. Only a slot that fired is written; an unbound optional slot raises `NameError` when read. The subject is a single runtime value, never a source spine, so captures are raw. |
 | Guards | `[[PATTERN] when:/unless: COND BODY...]`. The guard compiles after the arm's instructions with the subject still on the stack; `JUMP_FALSE`/`JUMP_TRUE` to the next arm (subject intact) or `POP` and commit. Captures persist on guard failure. |
 | Externs | Every name the pattern resolves is requested through `request_var` and read from the enclosing scope, so closure capture works and a store into a user type is seen. A predicate or extractor is a `CALL` from the same frame and flattens; one that awaits does so in place. |
@@ -601,10 +602,11 @@ patterns.
 ```python
 from koskari.matcher import (
     make_matcher, thaw, pattern_slot_names, Matcher, Dispatcher,
-    MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS, MatchCompiler,
+    MATCH, BIND, VALUE, BODY, DEFINE, BINDINGS, FORMALS,
 )
-from koskari.match_code import (
-    compile_match_function, compile_dispatch_function, validate_frozen,
+from koskari.matcher.tables import TableBuilder
+from koskari.matcher.build import (
+    build_matcher, compile_dispatch_function, validate_frozen,
 )
 from koskari.hygiene import (
     expand_template_with_hygiene, mark_expansion, peel_datums,
@@ -620,7 +622,7 @@ from koskari.compile.helpers import match, match_pattern_raw
 | `make_matcher(pat)` | Compile a pattern to a `Matcher` |
 | `Matcher.match(subject, **externs)` | Run the compiled function; every extern the pattern declares is given by keyword and stored into the matcher's namespace for the call |
 | `Dispatcher(matchers).select(subject)` | The first matching index and its captures, or `(-1, None)` |
-| `compile_match_function(frozen, ns)` | A frozen tuple as a `Function` over `ns` |
+| `build_matcher(frozen, ns)` | A frozen tuple as a `Function` over `ns` |
 | `compile_dispatch_function(clauses, ns)` | Frozen tuples and functions as one `Function` returning `(values index captures)` |
 | `validate_frozen(frozen)` | Refuse a malformed frozen tuple |
 | `pattern_slot_names(pat)` | Slot names in declaration order |
@@ -670,7 +672,7 @@ When adding a new composite:
 3. Add tests for the match shape.
 
 A composite needs no change below the frozen tuple. A new primitive node
-kind needs a lowering in `koskari/match_code.py`, a rule in
+kind needs a lowering in `koskari/matcher/emitter.py`, a rule in
 `validate_frozen`, and, when no existing instruction does its test, an
 instruction: the `OP` row in `opcodes.incl`, the step in
 `koskari/lib/matcher/step.c`, the body in `koskari/lib/eval/eval_match.c`,

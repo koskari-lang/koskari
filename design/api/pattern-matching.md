@@ -31,16 +31,17 @@ record the IR of the Python matcher this note was written against
 has none of it, and the frozen IR in [MATCHER.md](../MATCHER.md)
 supersedes those sections.
 
-A frozen matcher tuple is compiled to `MATCH_*` instructions by **`koskari.match_code`** ([../interpreter/matcher-bytecode.md](../interpreter/matcher-bytecode.md)); **`koskari.matcher.Matcher`** runs the compiled function. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
+A frozen matcher tuple is compiled to `MATCH_*` instructions by **`koskari.matcher.emitter`** ([../interpreter/matcher-bytecode.md](../interpreter/matcher-bytecode.md)); **`koskari.matcher.Matcher`** runs the compiled function. Python-side pattern authoring uses **`koskari.matcher`** (builders such as `LIST`, `MATCH`, `FORM`, `SYMBOL`, `FORMALS`, …) and **`koskari.compile.helpers`** for compile helpers (`match_pattern_raw`, `gather_bindings`, `gather_formals`, …).
 
 `koskari.hygiene` holds template transcription, marking, and resolution; `koskari.syntax` the transformer types.
 
 ```python
-from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS, MatchCompiler
+from koskari.matcher import LIST, MATCH, SYMBOL, FORMALS
+from koskari.matcher.tables import TableBuilder
 from koskari.compile.helpers import match_pattern_raw, gather_formals
 ```
 
-Compile-specific composites (e.g. **BINDINGS**, **FORMALS**) are defined in **`koskari.matcher`** and imported through **`koskari.compile.helpers`** where compile code needs a single import surface.
+Compile-specific composites (e.g. **BINDINGS**, **FORMALS**) are defined in **`koskari.matcher.forms`** and imported through **`koskari.compile.helpers`** where compile code needs a single import surface.
 
 **Current usage**: specials use `syntax` and `helpers`; see [`koskari/compile/specials/`](../../koskari/compile/specials/) and [`koskari/syntax.py`](../../koskari/syntax.py).
 
@@ -289,10 +290,11 @@ Serialized:
 Construct patterns ergonomically:
 
 ```python
-from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL, MatchCompiler
+from koskari.matcher import LIST, MATCH, LITERAL_KW, SYMBOL
+from koskari.matcher.tables import TableBuilder
 from koskari.lib import Matcher
 
-mc = MatchCompiler()
+mc = TableBuilder()
 # pattern = ...  # matcher Pattern tree
 frozen = mc.lower(pattern)
 matcher_obj = Matcher.from_tuple(frozen)
@@ -303,7 +305,7 @@ Serialization and thaw use the same frozen tuple representation the match compil
 The snippet below is illustrative; exact combinator names live in **`koskari.matcher`** (see module exports).
 
 ```python
-# Illustrative: build a matcher pattern, lower with MatchCompiler,
+# Illustrative: build a matcher pattern, lower with TableBuilder,
 # then match a source spine with koskari.matcher.Matcher.from_tuple(...).match(...)
 pass
 ```
@@ -436,7 +438,7 @@ These expand to the same tagged tuples the matcher expects.
 
 ### MATCHERS Registry
 
-Pattern forms register in `MATCHER_REGISTRY` and lower through **`MatchCompiler`** to the frozen tuple (see `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.match_code`** only.
+Pattern forms register in `MATCHER_REGISTRY` and lower through **`TableBuilder`** to the frozen tuple (see `Matcher.from_tuple`). Legacy Python `@matcher` registration on **`koskari.matcher`** is gone; tagged tuples produced today are consumed by **`koskari.matcher.emitter`** only.
 
 ### Const-Pool Friendliness
 
