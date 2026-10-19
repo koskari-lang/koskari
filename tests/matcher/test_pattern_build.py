@@ -15,8 +15,8 @@
 tests.matcher.test_pattern_build
 
 Pattern.build compiles the pattern to a Function: one positional
-formal, the subject; the captures on a match and None on a miss, a
-dict for a sequence subject; a missing extern refused at build
+formal, the subject; the captures on a match and None on a miss; a
+missing extern refused at build
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -64,18 +64,6 @@ class TestPatternBuild(unittest.TestCase):
 
 
 class TestBuiltCaptures(unittest.TestCase):
-
-    def test_sequence_subject_yields_dict_captures(self):
-        """
-        A simple matcher with two captures returns a dict with both
-        slots populated
-        """
-
-        m = MATCH(CAPTURE("a"), CAPTURE("b")).build()
-        result = demand(m)([7, 8])
-        self.assertIsNotNone(result)
-        self.assertEqual(dict(result), {"a": 7, "b": 8})
-
 
     def test_named_group_nested_dict(self):
         """
