@@ -27,8 +27,9 @@ import pytest
 
 from koskari.lib import Datum, DatumFrame, demand, gensym, keyword, symbol
 from koskari.matcher import (
-    BIND, BINDING, CAPTURE, FORM, FORMALS, LITERAL, LITERAL_SYM, MATCH,
-    REST, SYMBOL, TEST_ANY, VALUE, parse_matcher, repeat_capture)
+    BIND, BINDING, CAPTURE, FORM, FORMALS, LITERAL, LITERAL_SYM, MATCH, REST,
+    SYMBOL, TEST_ANY, VALUE, repeat_capture)
+from koskari.matcher.heads import parse_matcher
 from koskari.types import build_proper, unpack
 
 

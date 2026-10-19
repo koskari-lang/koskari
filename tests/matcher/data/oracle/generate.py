@@ -31,7 +31,8 @@ if "--path" in sys.argv:
 import koskari  # noqa: F401
 import koskari.lib as L
 from koskari.lib import cons, demand, nil
-from koskari.matcher import MATCH, MatchCompiler, parse_case_pattern
+from koskari.matcher import MATCH, parse_case_pattern
+from koskari.matcher.tables import TableBuilder
 from koskari.reader import IndentAwareStream, default_reader, source_str
 
 import oracle
@@ -801,8 +802,8 @@ def renders_as_spec(text, spec):
     """
 
     parsed = parse_case_pattern(read_delimiter(text))
-    return (MatchCompiler().lower(MATCH(parsed))
-            == MatchCompiler().lower(MATCH(build_pattern(spec))))
+    return (TableBuilder().lower(MATCH(parsed))
+            == TableBuilder().lower(MATCH(build_pattern(spec))))
 
 
 def inline_records(r):

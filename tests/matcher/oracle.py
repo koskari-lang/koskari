@@ -44,9 +44,8 @@ from os.path import dirname, join
 from koskari.lib import (
     Datum, DatumFrame, cons, demand, keyword, nil, pair, setcar, symbol)
 from koskari.matcher import (
-    APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MAP, MAP_ENTRY,
-    MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY,
-    TYPE)
+    APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MAP, MAP_ENTRY, MATCH,
+    NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY, TYPE)
 from koskari.module import (
     compile_top_level, load_facets, new_module, run_codes_demand)
 from koskari.reader import source_str

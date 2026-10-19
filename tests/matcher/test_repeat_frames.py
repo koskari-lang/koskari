@@ -22,8 +22,9 @@ import pytest
 
 from koskari.lib import Datum, demand, keyword, symbol
 from koskari.matcher import (
-    GROUP, MATCH, ONEOF, SYMBOL, VALUE, binding_inner_pattern,
-    parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
+    GROUP, MATCH, ONEOF, SYMBOL, VALUE, parse_explicit_rule_pattern,
+    pattern_slot_names, repeat_capture)
+from koskari.matcher.forms import binding_inner_pattern
 from koskari.types import build_proper
 
 

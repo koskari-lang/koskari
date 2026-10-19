@@ -29,13 +29,14 @@ import pytest
 from koskari.lib import (
     Datum, DatumFrame, ModuleNamespace, OpCode, cons, demand, keyword, nil,
     setcdr, symbol)
-from koskari.match_code import compile_match_function
-from koskari.match_core import analyse
 from koskari.matcher import (
     APP, BIND, BINDINGS, BODY, CALLEDBY, CAPTURE, CLASS, FIELD, FORM, FORMALS,
     GROUP, LITERAL, LITERAL_KW, MATCH, NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT,
-    REST, SAME, SYMBOL, TEST_ANY, TYPE, USING, VALUE, MatchCompiler,
-    make_matcher, repeat_capture)
+    REST, SAME, SYMBOL, TEST_ANY, TYPE, USING, VALUE, make_matcher,
+    repeat_capture)
+from koskari.matcher.analysis import analyse
+from koskari.matcher.build import build_matcher
+from koskari.matcher.tables import TableBuilder
 from koskari.reader import Reader, source_str
 
 
@@ -516,8 +517,8 @@ def local_names(pattern):
     The locals a standalone lowering declares after the subject
     """
 
-    frozen = MatchCompiler().lower(pattern)
-    fn = compile_match_function(
+    frozen = TableBuilder().lower(pattern)
+    fn = build_matcher(
         frozen, analyse(frozen), ModuleNamespace("probe", {}))
     return [str(name) for name in fn.code.namespace_spec.local_syms[1:]]
 

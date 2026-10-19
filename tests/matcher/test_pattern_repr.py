@@ -24,8 +24,9 @@ import pytest
 
 from koskari.lib import kos_repr, nil
 from koskari.matcher import (
-    CAPTURE, LITERAL, MATCH, REPEAT, TEST_ANY, TYPE, lookup_matcher,
-    parse_explicit_rule_pattern, parse_matcher)
+    CAPTURE, LITERAL, MATCH, REPEAT, TEST_ANY, TYPE,
+    parse_explicit_rule_pattern)
+from koskari.matcher.heads import lookup_matcher, parse_matcher
 from koskari.reader.parser import default_reader, source_str
 from koskari.syntax import parse_match_pattern
 from koskari.types import is_pair, is_proper, is_symbol

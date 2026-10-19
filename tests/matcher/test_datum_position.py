@@ -25,8 +25,8 @@ import weakref
 
 import pytest
 
-from koskari.lib import Datum, cdr, cons, demand, nil, symbol
-from koskari.matcher import CAPTURE, MATCH, REST, VALUE, DatumFrame
+from koskari.lib import Datum, DatumFrame, cdr, cons, demand, nil, symbol
+from koskari.matcher import CAPTURE, MATCH, REST, VALUE
 from koskari.types import build_proper, set_position
 
 

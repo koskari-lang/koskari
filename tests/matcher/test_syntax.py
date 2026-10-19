@@ -23,13 +23,14 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, demand, keyword, nil, pair, symbol
+from koskari.lib import DatumFrame, cons, demand, keyword, nil, pair, symbol
 from koskari.matcher import (
-    BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE,
-    FIELD, FORM, FORMALS, GROUP, LIST, LITERAL, LITERAL_KW,
-    LITERAL_SYM, MATCH, MATCHER_REGISTRY, META_MATCHER, META_PATTERN, NOT,
-    ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST, SYMBOL, TEST_ANY, TYPE,
-    USING, VALUE, DatumFrame, lookup_matcher,
+    BINDING, BINDINGS, BODY, CAPTURE, CLASS, DECL, DEFINE, FIELD, FORM,
+    FORMALS, GROUP, LIST, LITERAL, LITERAL_KW, LITERAL_SYM, MATCH, NOT, ONEOF,
+    OPTIONAL, PAIR, PREDICATE, REPEAT, REST, SYMBOL, TEST_ANY, TYPE, USING,
+    VALUE)
+from koskari.matcher.heads import (
+    MATCHER_REGISTRY, META_MATCHER, META_PATTERN, lookup_matcher,
     parse_matcher, register_matcher)
 
 

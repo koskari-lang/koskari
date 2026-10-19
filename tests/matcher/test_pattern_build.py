@@ -29,8 +29,8 @@ import pytest
 
 from koskari.lib import Datum, Function, cons, demand, nil
 from koskari.matcher import (
-    APP, CAPTURE, GROUP, LITERAL, MATCH, ONEOF, PREDICATE, REST, TYPE, VALUE,
-    MatchResult, make_matcher)
+    APP, CAPTURE, GROUP, LITERAL, MATCH, MatchResult, ONEOF, PREDICATE, REST,
+    TYPE, VALUE, make_matcher)
 
 
 pytestmark = pytest.mark.phase_infra

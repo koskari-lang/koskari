@@ -27,11 +27,11 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
 from ...lib import OpCode, keyword, symbol
-from ...match_code import lower_clause
-from ...match_core import analyse, arm_gate
 from ...matcher import (
-    BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
-    repeat_capture)
+    BODY, CALLEDBY, FORM, MATCH, VALUE, parse_case_pattern, repeat_capture)
+from ...matcher.analysis import analyse, arm_gate
+from ...matcher.emitter import lower_arm
+from ...matcher.tables import TableBuilder
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
@@ -134,7 +134,7 @@ def special_match(compiler, caps):
 
         arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
         try:
-            tables = MatchCompiler().lower(arm)
+            tables = TableBuilder().lower(arm)
             analysis = analyse(tables, arm=True)
         except (TypeError, ValueError) as exc:
             raise SpecialError(
@@ -222,11 +222,11 @@ def special_match(compiler, caps):
         guarded = guard_kw is not None
         miss = later_miss[k]
         if gates[k] is None:
-            fail_entries = lower_clause(
+            fail_entries = lower_arm(
                 compiler, target, tables, analysis, atoms, miss, guarded,
                 follow=after[k])
         else:
-            fail_entries = lower_clause(
+            fail_entries = lower_arm(
                 compiler, target, tables, analysis, atoms, miss, guarded,
                 gate_miss[k], after_gate[k], after[k])
         if guarded:

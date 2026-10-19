@@ -21,9 +21,8 @@ import unittest
 import pytest
 
 from koskari.exceptions import SyntaxMatchError
-from koskari.lib import Datum, cons, demand, nil, symbol
-from koskari.matcher import (
-    FORM, GROUP, MATCH, VALUE, DatumFrame, repeat_capture)
+from koskari.lib import Datum, DatumFrame, cons, demand, nil, symbol
+from koskari.matcher import FORM, GROUP, MATCH, VALUE, repeat_capture
 from koskari.syntax import (
     MacroTransform, SpecialTransform, Syntax, SyntaxTransform, Transform,
     parse_syntax_rules_pattern, special)

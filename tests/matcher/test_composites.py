@@ -25,12 +25,12 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Datum, cdr, cons, demand, keyword, nil, setcar, setcdr, symbol)
+    Datum, DatumFrame, cdr, cons, demand, keyword, nil, setcar, setcdr,
+    symbol)
 from koskari.matcher import (
     BINDING, BINDINGS, BODY, CAPTURE, DECL, DEFINE, FORM, FORMALS, LITERAL,
-    MATCH, PREDICATE, REPEAT, TEST_ANY,
-    REST, TYPE, USING, VALUE, DatumFrame,
-    MatchCompiler, make_matcher)
+    MATCH, PREDICATE, REPEAT, REST, TEST_ANY, TYPE, USING, VALUE, make_matcher)
+from koskari.matcher.tables import TableBuilder
 from koskari.types import build_proper
 
 

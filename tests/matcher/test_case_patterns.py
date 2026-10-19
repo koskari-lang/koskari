@@ -31,8 +31,9 @@ import pytest
 from koskari.lib import cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FORM, LITERAL, MAP, MATCH, NOT, ONEOF, PREDICATE,
-    REST, parse_case_element, parse_case_pattern, parse_matcher,
-    pattern_slot_names)
+    REST, parse_case_pattern, pattern_slot_names)
+from koskari.matcher.case import parse_case_element
+from koskari.matcher.heads import parse_matcher
 
 
 pytestmark = pytest.mark.phase_infra

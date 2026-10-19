@@ -27,8 +27,8 @@ from koskari.lib import cons, demand, keyword, nil, pair, symbol
 from koskari.matcher import (
     BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
-    SYMBOL, TEST_ANY, TYPE, VALUE, MatchCompiler, make_matcher,
-    pattern_slot_names)
+    SYMBOL, TEST_ANY, TYPE, VALUE, make_matcher, pattern_slot_names)
+from koskari.matcher.tables import TableBuilder
 from koskari.types import is_symbol
 
 
@@ -291,7 +291,7 @@ class TestInterning(unittest.TestCase):
         Two LITERAL(7) references share const idx 0
         """
 
-        tables = MatchCompiler().lower(ONEOF(LITERAL(7), LITERAL(7)))
+        tables = TableBuilder().lower(ONEOF(LITERAL(7), LITERAL(7)))
         self.assertEqual(tables[2], (7,))
         self.assertEqual(
             tables[3][0], ("TEST", "LITERAL", 0))
@@ -305,7 +305,7 @@ class TestInterning(unittest.TestCase):
         as 7 and '7'
         """
 
-        tables = MatchCompiler().lower(ONEOF(LITERAL(7), LITERAL("7")))
+        tables = TableBuilder().lower(ONEOF(LITERAL(7), LITERAL("7")))
         self.assertEqual(tables[2], (7, "7"))
         self.assertEqual(
             tables[3][0], ("TEST", "LITERAL", 0))
@@ -318,7 +318,7 @@ class TestInterning(unittest.TestCase):
         LITERAL(0) and LITERAL(False) intern to separate consts
         """
 
-        tables = MatchCompiler().lower(ONEOF(LITERAL(0), LITERAL(False)))
+        tables = TableBuilder().lower(ONEOF(LITERAL(0), LITERAL(False)))
         self.assertEqual(tables[2], (0, False))
 
 
@@ -327,7 +327,7 @@ class TestInterning(unittest.TestCase):
         Two TYPE('Point') references share extern idx 0
         """
 
-        tables = MatchCompiler().lower(ONEOF(TYPE("Point"), TYPE("Point")))
+        tables = TableBuilder().lower(ONEOF(TYPE("Point"), TYPE("Point")))
         self.assertEqual(tables[1], ("Point",))
 
 
@@ -338,7 +338,7 @@ class TestInterning(unittest.TestCase):
         """
 
         pat = CLASS("Point", FIELD(TYPE("Coord"), name="x"))
-        tables = MatchCompiler().lower(pat)
+        tables = TableBuilder().lower(pat)
         self.assertEqual(tables[1], ("Point", "Coord"))
 
 
@@ -650,7 +650,7 @@ class TestEagerValidation(unittest.TestCase):
         """
 
         with self.assertRaises(ValueError):
-            MatchCompiler().lower(FIELD(TEST_ANY()))
+            TableBuilder().lower(FIELD(TEST_ANY()))
 
 
     def test_duplicate_plain_capture_rejected_on_freeze(self):
@@ -660,7 +660,7 @@ class TestEagerValidation(unittest.TestCase):
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x"))
         with self.assertRaises(ValueError) as ctx:
-            MatchCompiler().lower(pat)
+            TableBuilder().lower(pat)
         self.assertIn("SAME", str(ctx.exception))
 
 
@@ -672,7 +672,7 @@ class TestEagerValidation(unittest.TestCase):
         from koskari.matcher import SAME
 
         pat = MATCH(CAPTURE("x"), SAME("x"))
-        MatchCompiler().lower(pat)
+        TableBuilder().lower(pat)
 
 
     def test_duplicate_incompatible_capture_rejected_on_freeze(self):
@@ -683,7 +683,7 @@ class TestEagerValidation(unittest.TestCase):
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x", TYPE("symbol")))
         with self.assertRaises(ValueError) as ctx:
-            MatchCompiler().lower(pat)
+            TableBuilder().lower(pat)
         self.assertIn("differing matcher type", str(ctx.exception))
 
 
@@ -695,7 +695,7 @@ class TestEagerValidation(unittest.TestCase):
 
         pat = MATCH(CAPTURE("x"), REST("x"))
         with self.assertRaises(ValueError):
-            MatchCompiler().lower(pat)
+            TableBuilder().lower(pat)
 
 
     def test_field_rejects_empty_name(self):

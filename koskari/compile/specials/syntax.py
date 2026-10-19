@@ -26,12 +26,12 @@ from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms, function_constant
 from ...lib import FormalsSpec, OpCode, cons, keyword, nil, symbol
-from ...match_code import matcher_body
-from ...match_core import analyse
 from ...matcher import (
-    BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
-    VALUE, MatchCompiler, parse_explicit_rule_pattern, pattern_slot_names,
-    repeat_capture)
+    BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL, VALUE,
+    parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
+from ...matcher.analysis import analyse
+from ...matcher.build import matcher_body
+from ...matcher.tables import TableBuilder
 from ...syntax import parse_rule_pattern, parse_syntax_rules_pattern, special
 from ...types import (
     build_proper, is_pair, is_proper, is_symbol, unpack)
@@ -58,7 +58,7 @@ def matcher_function(compiler, parent, pattern, pattern_src, name):
     """
 
     try:
-        tables = MatchCompiler().lower(pattern)
+        tables = TableBuilder().lower(pattern)
         analysis = analyse(tables)
     except (TypeError, ValueError) as exc:
         raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)

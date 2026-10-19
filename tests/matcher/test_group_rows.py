@@ -27,8 +27,7 @@ import pytest
 
 from koskari.lib import Datum, demand
 from koskari.matcher import (
-    CAPTURE, GROUP, LIST, LITERAL, MATCH, ONEOF, REPEAT, VALUE,
-    repeat_capture)
+    CAPTURE, GROUP, LIST, LITERAL, MATCH, ONEOF, REPEAT, VALUE, repeat_capture)
 
 
 pytestmark = pytest.mark.phase_infra
