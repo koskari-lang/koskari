@@ -23,7 +23,7 @@ import pytest
 
 from koskari.compile import Compiler
 from koskari.exceptions import CompilerError, SpecialError
-from koskari.lib import OpCode, build_list, build_tuple, cons, nil, symbol
+from koskari.lib import build_list, build_tuple, cons, nil, symbol
 from koskari.syntax import (
     Syntax, build_macro, build_special, build_syntax, parse_match_pattern,
     parse_rule_pattern)
