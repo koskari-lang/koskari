@@ -49,10 +49,6 @@ def read(text):
 
 class TestMatchFunction(unittest.TestCase):
 
-    def setUp(self):
-        self.base_ns = ModuleNamespace("matcher", {})
-
-
     def test_define_shape_over_source(self):
         pattern = MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))
         m = make_matcher(pattern)
