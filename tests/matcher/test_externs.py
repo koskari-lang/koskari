@@ -31,7 +31,7 @@ pytestmark = pytest.mark.phase_infra
 LAMBDA_STYLE = MATCH(CAPTURE("name", TYPE("Kind")), REST("body"))
 
 
-class TestKeywordExterns(unittest.TestCase):
+class TestExternsAtBuild(unittest.TestCase):
 
     def test_every_extern_is_given_at_build(self):
         """
@@ -124,12 +124,11 @@ class TestExternsPerMatcher(unittest.TestCase):
         self.assertEqual(seen, [1, 2])
 
 
-class TestKeywordsAreIgnoredByName(unittest.TestCase):
+class TestUnusedExternsAreIgnored(unittest.TestCase):
 
-    def test_zero_extern_matcher_ignores_keywords(self):
+    def test_an_extern_naming_nothing_is_ignored(self):
         """
-        A name in the externs naming no extern of a matcher is ignored,
-        whether or not the matcher declares any externs
+        A name in the externs naming no extern of a matcher is ignored
         """
 
         m = make_matcher(MATCH(LITERAL(42)), {"bogus": 1})
