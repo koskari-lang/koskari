@@ -52,9 +52,8 @@ class TestMatchFunction(unittest.TestCase):
     def test_define_shape_over_source(self):
         pattern = MATCH(CALLEDBY(), SYMBOL("sym"), VALUE("expr"))
         m = make_matcher(pattern)
-        hit = demand(m)(read("(define x 1)"))
-        self.assertIsNotNone(hit)
-        caps = hit
+        caps = demand(m)(read("(define x 1)"))
+        self.assertIsNotNone(caps)
         self.assertIsInstance(caps, DatumFrame)
         self.assertIsInstance(caps["sym"], Datum)
         self.assertEqual(caps["sym"].datum, symbol("x"))
@@ -77,17 +76,15 @@ class TestMatchFunction(unittest.TestCase):
         m = make_matcher(MATCH(
             CALLEDBY(), REST("front"), LITERAL_KW("as"), SYMBOL("name")))
 
-        hit = demand(m)(read("(f 1 2 as: x)"))
-        self.assertIsNotNone(hit)
-        caps = hit
+        caps = demand(m)(read("(f 1 2 as: x)"))
+        self.assertIsNotNone(caps)
         self.assertEqual(caps["called-by"].datum, symbol("f"))
         self.assertIsInstance(caps["front"], tuple)
         self.assertEqual([d.datum for d in caps["front"]], [1, 2])
         self.assertEqual(caps["name"].datum, symbol("x"))
 
-        hit = demand(m)(read("(f as: x)"))
-        self.assertIsNotNone(hit)
-        caps = hit
+        caps = demand(m)(read("(f as: x)"))
+        self.assertIsNotNone(caps)
         # an empty rest over a spine is a Datum over the spine's terminator
         self.assertIs(caps["front"].datum, nil)
         self.assertEqual(caps["name"].datum, symbol("x"))
