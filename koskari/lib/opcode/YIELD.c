@@ -21,7 +21,7 @@
   Resumption (send value) is handled by py_resume_inject at re-entry.
 */
 KOS_OP_HANDLER(YIELD) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *val = NULL;
 
@@ -30,21 +30,21 @@ KOS_OP_HANDLER(YIELD) {
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosEvalState_StackPopRef(es);
+    val = KosEvalState_StackPopRef(ctx);
     if (unlikely(! val)) {
       SAY("[eval] YIELD pop underrun\n");
       RESULT_RAISE();
     }
 
   } else {
-    val = KosEvalState_StackPopTail(es, (size_t) opa);
+    val = KosEvalState_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! val)) {
       SAY("[eval] YIELD PopTail underrun\n");
       RESULT_RAISE();
     }
   }
 
-  TAILCALL(kos_yield_deliver, es, insn, val);
+  TAILCALL(kos_yield_deliver, ctx, insn, val);
 }
 
 

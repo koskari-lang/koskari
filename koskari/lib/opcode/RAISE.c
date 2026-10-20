@@ -19,7 +19,7 @@
   Set the current exception; control will transfer to a handler by the eval loop.
 */
 KOS_OP_HANDLER(RAISE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned n = KosOp_ARG(insn);
 
   if (n == 0) {
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(RAISE) {
     PyErr_Restore(typ, val, tb);
 
   } else if (n == 1) {
-    PyObject *exc = KosEvalState_StackPopRef(es);
+    PyObject *exc = KosEvalState_StackPopRef(ctx);
     if (unlikely(! exc))
       RESULT_RAISE();
 

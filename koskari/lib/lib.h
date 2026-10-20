@@ -63,7 +63,6 @@ struct KosDynNode;          typedef struct KosDynNode          KosDynNode;
 struct KosContinuation;     typedef struct KosContinuation     KosContinuation;
 struct KosXferGoal;         typedef struct KosXferGoal         KosXferGoal;
 struct KosEvaluatorToken;   typedef struct KosEvaluatorToken   KosEvaluatorToken;
-struct KosEvalState;        typedef struct KosEvalState        KosEvalState;
 struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
 

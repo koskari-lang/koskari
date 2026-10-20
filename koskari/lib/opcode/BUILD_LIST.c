@@ -20,7 +20,7 @@
   Pop n elements into a new list and push it.
 */
 KOS_OP_HANDLER(BUILD_LIST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
   size_t count = (size_t) opa;
 
@@ -30,13 +30,13 @@ KOS_OP_HANDLER(BUILD_LIST) {
 
   if (count) {
     if (unlikely(KosEvalState_StackPopTailPtr(
-          es, count, &PyList_GET_ITEM(built, 0)) < 0)) {
+          ctx, count, &PyList_GET_ITEM(built, 0)) < 0)) {
       Py_DECREF(built);
       RESULT_RAISE();
     }
   }
 
-  RESULT_STEAL(es, built);
+  RESULT_STEAL(ctx, built);
 }
 
 

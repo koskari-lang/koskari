@@ -441,7 +441,7 @@ PyObject *KosFunction_VectorCall(
    place. Reported through the install contract (evaluated.h).
 */
 KosOpResult KosFunction_Install(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,

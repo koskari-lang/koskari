@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_COMPARE_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(OBJECT_COMPARE_FAST) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

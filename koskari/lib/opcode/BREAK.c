@@ -21,7 +21,7 @@
   expression value. Raises RuntimeError if no LOOP/FOREACH region on chain.
 */
 KOS_OP_HANDLER(BREAK) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;
 
@@ -30,14 +30,14 @@ KOS_OP_HANDLER(BREAK) {
     Py_INCREF(result);
 
   } else if (opa == 1) {
-    result = KosEvalState_StackPopRef(es);
+    result = KosEvalState_StackPopRef(ctx);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
       RESULT_RAISE();
     }
 
   } else {
-    result = KosEvalState_StackPopTail(es, (size_t) opa);
+    result = KosEvalState_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK PopTail underrun");
       RESULT_RAISE();
@@ -45,7 +45,7 @@ KOS_OP_HANDLER(BREAK) {
   }
 
   /* the walk consumes result on every answer */
-  RESULT_RELAY(es, kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_BREAK, result));
+  RESULT_RELAY(ctx, kos_dyn_unwind_to_loop(ctx, KOS_XFER_EVENT_BREAK, result));
 }
 
 

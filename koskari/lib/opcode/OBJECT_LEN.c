@@ -18,10 +18,10 @@
   OBJECT_LEN: arg unused. Pop TOS, push len(TOS) as an integer.
 */
 KOS_OP_HANDLER(OBJECT_LEN) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -35,7 +35,7 @@ KOS_OP_HANDLER(OBJECT_LEN) {
   if (unlikely(! res))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

@@ -23,9 +23,9 @@
   KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(ITEM_CONST_INPLACE_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KosSegment **bl = KosEvalState_BLOCK(ctx);
   PyObject *const *tail;
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   PyObject *rhs = KosExtra_OBJ(row, 2);
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(ITEM_CONST_INPLACE_CONST) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, 1);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

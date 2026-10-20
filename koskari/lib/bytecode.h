@@ -325,7 +325,7 @@ typedef enum KosCodeFlag {
    NULL when there is none.
 */
 typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
-    KosEvalState *es, void *arg, PyObject *value);
+    KosContext *ctx, void *arg, PyObject *value);
 
 
 /**

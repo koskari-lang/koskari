@@ -32,19 +32,19 @@ static inline void continue_store_result(PyObject **home, PyObject *result) {
   no LOOP/FOREACH region on the chain.
 */
 KOS_OP_HANDLER(CONTINUE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
   PyObject *result = NULL;   /* NULL stands for None until it is needed */
 
   if (opa == 1) {
-    result = KosEvalState_StackPopRef(es);
+    result = KosEvalState_StackPopRef(ctx);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
       RESULT_RAISE();
     }
 
   } else if (opa > 1) {
-    result = KosEvalState_StackPopTail(es, (size_t) opa);
+    result = KosEvalState_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
       RESULT_RAISE();
@@ -61,8 +61,8 @@ KOS_OP_HANDLER(CONTINUE) {
      Anything above the region takes the walk, where the offer and the
      suspension handling live. */
   {
-    KosDynNode *region = KosEvalState_DYN_TOP(es);
-    KosDynFrame *frame = KosEvalState_FRAME(es);
+    KosDynNode *region = KosEvalState_DYN_TOP(ctx);
+    KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
 #if KOS_EVAL_SAFETYNET
     if (region && frame && ! KosDynNode_IS_FRAME(region)) {
@@ -82,52 +82,52 @@ KOS_OP_HANDLER(CONTINUE) {
     if (likely(frame && region) && KosDynNode_IS_LOOP(region)
         && KosDynLoop_ENABLED(region)) {
       continue_store_result(&KosDynLoop_RESULT(region), result);
-      kos_stack_clear_fast(KosEvalState_BLOCK(es));
-      KosEvalState_SET_PC(es, KosDynLoop_CONTINUE_PC(region));
-      RESULT_NEXT_POLL(es);
+      kos_stack_clear_fast(KosEvalState_BLOCK(ctx));
+      KosEvalState_SET_PC(ctx, KosDynLoop_CONTINUE_PC(region));
+      RESULT_NEXT_POLL(ctx);
     }
 
     if (likely(frame && region) && KosDynNode_IS_FOREACH(region)
         && KosDynForeach_ENABLED(region)) {
       uint32_t cpc = KosDynForeach_CONTINUE_PC(region);
-      KosOp *step = &KosEvalState_OPS(es)[cpc];
+      KosOp *step = &KosEvalState_OPS(ctx)[cpc];
       PyObject *out = NULL;
 
       continue_store_result(&KosDynForeach_RESULT(region), result);
-      kos_stack_clear_fast(KosEvalState_BLOCK(es));
+      kos_stack_clear_fast(KosEvalState_BLOCK(ctx));
 
       if (unlikely(KosOp_OP(step) != KOS_OP_ITER_NEXT
                    && KosOp_OP(step) != KOS_OP_ITER_NEXT_STORE_FAST
                    && KosOp_OP(step) != KOS_OP_ITER_NEXT_STORE_VAR)) {
-        KosEvalState_SET_PC(es, cpc);
-        RESULT_NEXT_POLL(es);
+        KosEvalState_SET_PC(ctx, cpc);
+        RESULT_NEXT_POLL(ctx);
       }
 
       /* As the step instruction: its else pc is recorded before the
          step, and the live pcs placed as a dispatch of it would place
          them, so a suspended step resumes past it. */
       kos_foreach_record_else(region, step);
-      KosEvalState_ACTING_PC(es) = cpc;
-      KosEvalState_SET_PC(es, cpc + 1u);
+      KosEvalState_ACTING_PC(ctx) = cpc;
+      KosEvalState_SET_PC(ctx, cpc + 1u);
 
-      switch (kos_foreach_request_next(es, region, &out)) {
+      switch (kos_foreach_request_next(ctx, region, &out)) {
         case KOS_IREQ_DELIVERED:
-          if (unlikely(kos_foreach_deliver_in_hand(es, step, out) < 0))
+          if (unlikely(kos_foreach_deliver_in_hand(ctx, step, out) < 0))
             RESULT_RAISE();
-          RESULT_NEXT_POLL(es);
+          RESULT_NEXT_POLL(ctx);
 
         case KOS_IREQ_EXHAUSTED:
           Py_XDECREF(out);
           KosDynForeach_EXHAUSTED(region) = 1;
-          RESULT_JUMP_AT(es, kos_foreach_step_else(step));
+          RESULT_JUMP_AT(ctx, kos_foreach_step_else(step));
 
         case KOS_IREQ_CONTINUES:
           kos_foreach_defer_step(frame, step);
-          RESULT_RELAY(es, kos_iter_installed(es));
+          RESULT_RELAY(ctx, kos_iter_installed(ctx));
 
         case KOS_IREQ_EXIT:
           kos_foreach_defer_step(frame, step);
-          RESULT_AWAIT(es, out);
+          RESULT_AWAIT(ctx, out);
 
         case KOS_IREQ_ERROR:
         default:
@@ -138,7 +138,7 @@ KOS_OP_HANDLER(CONTINUE) {
 
   {
     /* the walk consumes result on every answer */
-    KosOpResult wr = kos_dyn_unwind_to_loop(es, KOS_XFER_EVENT_CONTINUE,
+    KosOpResult wr = kos_dyn_unwind_to_loop(ctx, KOS_XFER_EVENT_CONTINUE,
                                             result ? result
                                                    : Py_NewRef(Py_None));
     if (unlikely(wr.kind != KOS_RES_NORMAL))
@@ -148,7 +148,7 @@ KOS_OP_HANDLER(CONTINUE) {
        an instruction, so it is where a running loop cooperates: a GIL
        request or a pending signal is polled here before the next
        iteration. */
-    RESULT_NEXT_POLL(es);
+    RESULT_NEXT_POLL(ctx);
   }
 }
 

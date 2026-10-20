@@ -23,14 +23,14 @@
 */
 
 KOS_OP_HANDLER(BUILD_LIST_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *seq = KosOp_OBJ(insn);
 
   PyObject *built = PySequence_List(seq);
   if (unlikely(! built))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, built);
+  RESULT_STEAL(ctx, built);
 }
 
 

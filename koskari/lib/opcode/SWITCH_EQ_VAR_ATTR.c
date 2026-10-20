@@ -23,13 +23,13 @@
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *var_name = KosExtra_OBJ(row, 1);
   PyObject *attr_name = KosExtra_OBJ(row, 2);
 
-  PyObject *obj = frame_ns_deref(es, var_name);
+  PyObject *obj = frame_ns_deref(ctx, var_name);
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
   if (unlikely(! rhs))
     RESULT_RAISE();
 
-  PyObject *value = KosEvalState_StackPeek(es);
+  PyObject *value = KosEvalState_StackPeek(ctx);
   if (unlikely(! value)) {
     Py_DECREF(rhs);
     RESULT_RAISE();
@@ -50,11 +50,11 @@ KOS_OP_HANDLER(SWITCH_EQ_VAR_ATTR) {
     RESULT_RAISE();
 
   if (res) {
-    KosEvalState_StackDropNoErr(es, 1);
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 0));
+    KosEvalState_StackDropNoErr(ctx, 1);
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 0));
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

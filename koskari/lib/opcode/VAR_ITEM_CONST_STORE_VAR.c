@@ -23,17 +23,17 @@
   the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_CONST_STORE_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key = KosExtra_OBJ(row, 1);
   PyObject *val;
   int rc;
 
-  obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  obj = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! obj))
     RESULT_RAISE();
-  val = frame_ns_deref(es, KosExtra_OBJ(row, 2));
+  val = frame_ns_deref(ctx, KosExtra_OBJ(row, 2));
   if (unlikely(! val)) {
     Py_DECREF(obj);
     RESULT_RAISE();
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(VAR_ITEM_CONST_STORE_VAR) {
 
   if (unlikely(rc < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

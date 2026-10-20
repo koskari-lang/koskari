@@ -18,13 +18,13 @@
 */
 
 KOS_OP_HANDLER(POP_PARAM) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  KosDynNode *top = KosEvalState_CurrentNode(es);
-  if (unlikely(kos_dyn_pop_param(es, (KosDynParam *) top) < 0))
+  KosDynNode *top = KosEvalState_CurrentNode(ctx);
+  if (unlikely(kos_dyn_pop_param(ctx, (KosDynParam *) top) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -23,9 +23,9 @@
   JUMP_AND_FAST when the name has a fast slot.
 */
 KOS_OP_HANDLER(JUMP_AND_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *val = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  PyObject *val = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -36,13 +36,13 @@ KOS_OP_HANDLER(JUMP_AND_VAR) {
   }
 
   if (res) {
-    if (unlikely(KosEvalState_StackPUSH(es, val) < 0))
+    if (unlikely(KosEvalState_StackPUSH(ctx, val) < 0))
       RESULT_RAISE();
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   }
 
   Py_DECREF(val);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

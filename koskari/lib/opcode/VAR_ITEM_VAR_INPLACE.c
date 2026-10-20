@@ -23,9 +23,9 @@
   (eval/eval_item.c) with no slot; the cold twin of the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_VAR_INPLACE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KosSegment **bl = KosEvalState_BLOCK(ctx);
   PyObject *const *tail;
   uint32_t opc = KosExtra_IMM(row, 0);
   KosOperand op = (KosOperand) KosOpCount_TYPE(opc);
@@ -34,10 +34,10 @@ KOS_OP_HANDLER(VAR_ITEM_VAR_INPLACE) {
   PyObject *key;
   int rc;
 
-  obj = frame_ns_deref(es, KosExtra_OBJ(row, 1));
+  obj = frame_ns_deref(ctx, KosExtra_OBJ(row, 1));
   if (unlikely(! obj))
     RESULT_RAISE();
-  key = frame_ns_deref(es, KosExtra_OBJ(row, 2));
+  key = frame_ns_deref(ctx, KosExtra_OBJ(row, 2));
   if (unlikely(! key)) {
     Py_DECREF(obj);
     RESULT_RAISE();
@@ -58,7 +58,7 @@ KOS_OP_HANDLER(VAR_ITEM_VAR_INPLACE) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, (size_t) count);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -18,10 +18,10 @@
    OBJECT_TYPE: arg unused. Pop TOS, push type(TOS).
 */
 KOS_OP_HANDLER(OBJECT_TYPE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -29,7 +29,7 @@ KOS_OP_HANDLER(OBJECT_TYPE) {
   Py_INCREF(res);
   Py_DECREF(val);
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

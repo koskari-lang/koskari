@@ -342,7 +342,6 @@ static int test_dyngen_bootstrap_no_active(void) {
 static int test_dynyieldfrom_pop_closes_delegate(void) {
 
     KosContext *ctx;
-    KosEvalState es;
     PyObject *ns;
     KosDynFrame *frame;
     PyObject *tuple;
@@ -359,8 +358,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
+    KosContext_BeginDrive(ctx, NULL);
 
     {
         PyObject *item = PyLong_FromLong(100001);
@@ -375,13 +373,13 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
 
     rc_before = Py_REFCNT(delegate);
 
-    yf = kos_dyn_push_yield_from(&es, delegate, (uint8_t) 0);
+    yf = kos_dyn_push_yield_from(ctx, delegate, (uint8_t) 0);
     TEST_ASSERT_NOT_NULL(yf, "push YIELD_FROM");
 
-    TEST_ASSERT(kos_dyn_pop_yield_from(&es, yf) == 0, "pop YIELD_FROM");
+    TEST_ASSERT(kos_dyn_pop_yield_from(ctx, yf) == 0, "pop YIELD_FROM");
     TEST_ASSERT_EQ(Py_REFCNT(delegate), rc_before, "delegate refcount restored");
 
-    KosEvalState_FreezeToContext(&es);
+    KosContext_EndDrive(ctx);
     Py_DECREF(delegate);
     Py_DECREF(ctx);
 
@@ -392,7 +390,6 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
 static int test_dynwith_free_exc_unconditional(void) {
 
     KosContext *ctx;
-    KosEvalState es;
     PyObject *ns;
     KosDynFrame *frame;
     PyObject *mgr;
@@ -409,8 +406,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
+    KosContext_BeginDrive(ctx, NULL);
 
     mgr = PyLong_FromLong(200001);
     enter = PyLong_FromLong(200002);
@@ -420,7 +416,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     TEST_ASSERT_NOT_NULL(exit, "exit");
 
     with_node = kos_dyn_push_with_provisional(
-        &es, mgr, enter, exit, 0, NULL, 0, KOS_DYN_WITH_SHOT_MULTI);
+        ctx, mgr, enter, exit, 0, NULL, 0, KOS_DYN_WITH_SHOT_MULTI);
     TEST_ASSERT_NOT_NULL(with_node, "push WITH provisional");
 
     KosDynWith_PHASE(with_node) = KOS_WITH_PHASE_IDLE;
@@ -434,12 +430,12 @@ static int test_dynwith_free_exc_unconditional(void) {
         NULL) == 0,
         "store exception on WITH");
 
-    TEST_ASSERT(kos_dyn_pop_with(&es, with_node) == -1,
+    TEST_ASSERT(kos_dyn_pop_with(ctx, with_node) == -1,
         "pop WITH re-raises the stored exception");
     TEST_ASSERT(PyErr_Occurred() != NULL, "stored exception pending");
     PyErr_Clear();
 
-    KosEvalState_FreezeToContext(&es);
+    KosContext_EndDrive(ctx);
     Py_DECREF(ctx);
 
     return 0;

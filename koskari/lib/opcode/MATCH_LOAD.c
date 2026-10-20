@@ -23,11 +23,11 @@ KOS_OP_HANDLER(MATCH_LOAD) {
 
   PyObject *value = NULL;
   if (unlikely(kos_match_slot_at(
-          es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &value) < 0))
-    RESULT_RAISE_AT(es, insn);
+          ctx, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &value) < 0))
+    RESULT_RAISE_AT(ctx, insn);
   if (! value)
     KOS_MATCH_MISS(row);
-  RESULT_PUSH(es, value);
+  RESULT_PUSH(ctx, value);
 }
 
 

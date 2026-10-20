@@ -21,10 +21,10 @@
 */
 
 KOS_OP_HANDLER(POP_WITH) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  KosDynNode *top = KosEvalState_CurrentNode(es);
+  KosDynNode *top = KosEvalState_CurrentNode(ctx);
   if (unlikely(! top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WITH: dyn_top is NULL");
     RESULT_RAISE();
@@ -38,21 +38,22 @@ KOS_OP_HANDLER(POP_WITH) {
     RESULT_RAISE();
   }
 
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
+  KosDynFrame *const caller = KosEvalState_FRAME(ctx);
   /* the body value, when the body left one, waits on the node for the
      unlink to deliver; a with in statement position leaves none */
   {
-    KosSegment *seg = KosEvalState_BLOCK(es) ? *KosEvalState_BLOCK(es) : NULL;
+    KosSegment *seg =
+        KosEvalState_BLOCK(ctx) ? *KosEvalState_BLOCK(ctx) : NULL;
 
     if (seg && KosSegment_LEN(seg)) {
-      PyObject *body_result = KosEvalState_StackPopRef(es);
+      PyObject *body_result = KosEvalState_StackPopRef(ctx);
 
       if (! body_result || kos_dyn_ob_store_value(top, body_result) < 0)
         RESULT_RAISE();
     }
   }
 
-  KosOpResult kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
+  KosOpResult kr = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_NONE, 0);
 
   if (kr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
@@ -60,8 +61,8 @@ KOS_OP_HANDLER(POP_WITH) {
   /* __exit__ suspended on an awaitable; the revive settles and unlinks
      the node and continues past this opcode. */
   if (kr.kind == KOS_RES_AWAIT) {
-    uint32_t same_pc = KosEvalState_ACTING_PC(es);
-    KosEvalState_SET_PC(es, same_pc);
+    uint32_t same_pc = KosEvalState_ACTING_PC(ctx);
+    KosEvalState_SET_PC(ctx, same_pc);
     return kr;
   }
 
@@ -71,12 +72,12 @@ KOS_OP_HANDLER(POP_WITH) {
      settles and unlinks the node and sets the pc past this opcode. A
      goal pushed by the install is the prologue's to drain. */
   if (kr.kind == KOS_RES_REPROLOGUE) {
-    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
-      RESULT_CONTINUE(es);
+    if (KosEvalState_FRAME(ctx) != caller && ! KosEvalState_GOAL(ctx))
+      RESULT_CONTINUE(ctx);
     return kr;
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

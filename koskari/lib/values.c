@@ -188,7 +188,7 @@ static PyObject *values_vectorcall(
   merge is one borrowed vector, built beside the call.
 */
 static KosOpResult values_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -211,7 +211,7 @@ static KosOpResult values_kos_vinstall(
       kwnames, small, 16) < 0)
   return EVAL_RAISE();
   r = KosEvalState_Call(
-    es, args[0], spread.argv, spread.nargs, spread.kwnames, tail_call,
+    ctx, args[0], spread.argv, spread.nargs, spread.kwnames, tail_call,
     NULL, NULL);
   KosArgSpread_Clear(&spread);
   return r;

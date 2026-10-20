@@ -22,15 +22,15 @@
 */
 
 KOS_OP_HANDLER(VAR_INPLACE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   PyObject *name = KosExtra_OBJ(row, 1);
 
-  if (unlikely(kos_var_inplace_operand(es, op, name) < 0))
+  if (unlikely(kos_var_inplace_operand(ctx, op, name) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

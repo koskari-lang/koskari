@@ -20,16 +20,16 @@
 */
 
 KOS_OP_HANDLER(POP_COLLECT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  KosDynCollect *top = (KosDynCollect *) KosEvalState_CurrentNode(es);
+  KosDynCollect *top = (KosDynCollect *) KosEvalState_CurrentNode(ctx);
   PyObject *collector;
 
-  if (unlikely(kos_dyn_pop_collect(es, top, &collector) < 0))
+  if (unlikely(kos_dyn_pop_collect(ctx, top, &collector) < 0))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, collector);
+  RESULT_STEAL(ctx, collector);
 }
 
 

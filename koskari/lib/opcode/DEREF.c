@@ -19,10 +19,10 @@
   dispatch; push result. Fails if TOS has no deref handler.
 */
 KOS_OP_HANDLER(DEREF) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *ref = KosEvalState_StackPopRef(es);
+  PyObject *ref = KosEvalState_StackPopRef(ctx);
   if (unlikely(! ref))
     RESULT_RAISE();
 
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(DEREF) {
   if (unlikely(! val))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

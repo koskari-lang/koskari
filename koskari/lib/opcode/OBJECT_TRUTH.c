@@ -18,10 +18,10 @@
   OBJECT_TRUTH: pop TOS, call PyObject_IsTrue, push Py_True/Py_False.
 */
 KOS_OP_HANDLER(OBJECT_TRUTH) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(OBJECT_TRUTH) {
     RESULT_RAISE();
 
   PyObject *res = (r ? Py_True : Py_False);
-  RESULT_PUSH(es, res);
+  RESULT_PUSH(ctx, res);
 }
 
 

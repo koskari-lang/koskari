@@ -20,15 +20,15 @@
   held across a failed push.
 */
 KOS_OP_HANDLER(CONST4) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   /* the row's four fields are the pool objects, one pointer each,
      so the row is the vector */
   if (unlikely(kos_stack_push_ref_n_fast(
-                   KosEvalState_BLOCK(es), KosExtra_OBJS(row), 4) < 0))
+                   KosEvalState_BLOCK(ctx), KosExtra_OBJS(row), 4) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

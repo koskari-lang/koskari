@@ -49,7 +49,7 @@ Every row that derefs slots and then does work -- the `FAST_ATTR`,
 `FAST_ITEM_FAST`, `CALL_FAST` (and its NAMES, STAR, ATTR forms), FORMAT,
 ITER, NEXT, COMPARE, SWITCH, LIST_APPEND and INPLACE families, and
 their VAR twins -- splits into the deref prologue it has now and a
-`static inline <op>_apply(es, insn, a, b, ...)` taking the derefed
+`static inline <op>_apply(ctx, insn, a, b, ...)` taking the derefed
 operands as separate owned arguments. The handler's fast path derefs
 into locals and calls apply, as it does today in one body; nothing
 moves through the stack, and the inline compiles to the handler it
@@ -85,10 +85,10 @@ to the getter; NULL with an error set. `kos_ns_fast_deref` and
 no error for "call this".
 
 At every deref site the cold branch `RESULT_RAISE()` becomes
-`RESULT_READ_FAILED(es, insn, k)`, `k` being the index of the lookup
+`RESULT_READ_FAILED(ctx, insn, k)`, `k` being the index of the lookup
 that failed among the row's lookups, after the handler has pushed the
 operands it already holds (the DECREF lists on those branches become
-pushes; a push that fails raises). `kos_read_failed(es, insn, k)` is
+pushes; a push that fails raises). `kos_read_failed(ctx, insn, k)` is
 a thread function:
 
 - with an error set, it tails into the raise, as the branch did;
@@ -198,7 +198,7 @@ generic iterable segment, `COMBINE_ARGS`, `BUILD_LIST_EXTEND` and
 and `#[*: (gen)]` run the generator on the demand path and fail the
 same way when its body awaits (probed 2026-10-04). The nested
 evaluation runs on the generator's own context, or on a host the
-adapter owns, never on the calling eval state's stack, so the operand
+adapter owns, never on the calling context's stack, so the operand
 pointers `PAIR_SPLICE` and `COMBINE_ARGS` hold into their segment
 across the iteration are not invalidated by it. These rows take the
 collecting shape below when it is built.

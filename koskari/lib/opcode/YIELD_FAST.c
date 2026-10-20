@@ -20,13 +20,13 @@
   lowering of YIELD_VAR.  Marks the code as yielding.  Stack unchanged.
 */
 KOS_OP_HANDLER(YIELD_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *val = kos_ns_fast_deref(ns, (size_t) KosOp_ARG(insn));
   if (unlikely(! val))
     RESULT_RAISE();
-  TAILCALL(kos_yield_deliver, es, insn, val);
+  TAILCALL(kos_yield_deliver, ctx, insn, val);
 }
 
 

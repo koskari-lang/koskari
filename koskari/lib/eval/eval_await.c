@@ -68,12 +68,12 @@ static PyObject *eager_step_awaitable(
 
 
 static inline PyObject *KosEvalState_EagerStepAwaitable(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *awaitable,
     int *suspended,
     PyObject **yielded) {
 
-  return eager_step_awaitable(awaitable, KosEvalState_CONTEXT(es), suspended, yielded);
+  return eager_step_awaitable(awaitable, KosEvalState_CONTEXT(ctx), suspended, yielded);
 }
 
 
@@ -110,8 +110,8 @@ static PyObject *get_await_next(PyObject *val) {
    inherited by kos_dyn_push_frame at install time, so the current frame always
    answers for the entire demand extent.
 */
-static int kos_eval_in_demand(KosEvalState *es) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+static int kos_eval_in_demand(KosContext *ctx) {
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
   return frame && (KosDynFrame_FLAGS(frame) & KOS_FRAME_DEMAND);
 }
 
@@ -124,13 +124,13 @@ static int kos_eval_in_demand(KosEvalState *es) {
    inflight, PC flush) must not occur when denying. All other suspension
    paths are intercepted centrally in eval_event_await / eval_event_yield.
 */
-static int kos_eval_demand_deny_suspend(KosEvalState *es, const char *msg) {
-  if (! kos_eval_in_demand(es))
+static int kos_eval_demand_deny_suspend(KosContext *ctx, const char *msg) {
+  if (! kos_eval_in_demand(ctx))
     return 0;
 
   /* The eager step stored the __await__ iterator for a resumption
      that is now refused; nothing will drive it again. */
-  KosEvalState_PythonAwaitClearIter(es);
+  KosEvalState_PythonAwaitClearIter(ctx);
   kos_demand_set_sync_violation(msg);
   return 1;
 }
@@ -176,13 +176,13 @@ static int kos_isfuture(PyObject *val) {
    after fetch; a path that pops the stack in C before the next opcode
    must not fuse.
 */
-static inline int push_fuse_pop1(KosEvalState *es, PyObject *val) {
-  uint32_t pc = KosEvalState_PC(es);
-  KosOp *next = &KosEvalState_OPS(es)[pc];
+static inline int push_fuse_pop1(KosContext *ctx, PyObject *val) {
+  uint32_t pc = KosEvalState_PC(ctx);
+  KosOp *next = &KosEvalState_OPS(ctx)[pc];
 
   if (next->op == KOS_OP_POP && next->arg == 1) {
     Py_DECREF(val);
-    KosEvalState_SET_PC(es, pc + 1u);
+    KosEvalState_SET_PC(ctx, pc + 1u);
     return 1;
   }
   return 0;
@@ -192,13 +192,13 @@ static inline int push_fuse_pop1(KosEvalState *es, PyObject *val) {
 /* Push val, or fuse it away when fuse is set and the peephole applies.
    val is consumed. */
 static inline KosOpResult push_or_fuse(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val,
     int fuse) {
 
-  if (fuse && push_fuse_pop1(es, val))
+  if (fuse && push_fuse_pop1(ctx, val))
     return EVAL_NORMAL();
-  return (KosEvalState_StackPUSH(es, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  return (KosEvalState_StackPUSH(ctx, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
@@ -214,7 +214,7 @@ static inline KosOpResult push_or_fuse(
    value, or RAISE. val is consumed.
 */
 static inline KosOpResult kos_settle_value(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val,
     int await_defer,
     PyObject **out) {
@@ -255,7 +255,7 @@ static inline KosOpResult kos_settle_value(
     PyObject *ns;
 
     if (KosCoroutine_TakeFresh(val, &code, &ns)) {
-      KosOpResult r = KosEvalState_InstallCallFrame(es, code, ns, 0);
+      KosOpResult r = KosEvalState_InstallCallFrame(ctx, code, ns, 0);
       Py_DECREF((PyObject *) code);
       Py_DECREF(val);
       return r.kind == KOS_RES_RAISE ? r : EVAL_REPROLOGUE();
@@ -283,7 +283,7 @@ static inline KosOpResult kos_settle_value(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(es, val, &suspended, &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(ctx, val, &suspended, &yielded);
   Py_DECREF(val);
 
   if (result) {
@@ -292,7 +292,7 @@ static inline KosOpResult kos_settle_value(
   }
 
   if (suspended && yielded) {
-    KosEvalState_MarkSuspendedNotRunning(es);
+    KosEvalState_MarkSuspendedNotRunning(ctx);
     SAYF("[eval] settle set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
@@ -325,60 +325,60 @@ static inline KosOpResult kos_settle_value(
    :return: EVAL_NORMAL, EVAL_REPROLOGUE, EVAL_AWAIT, or EVAL_RAISE
 */
 static inline KosOpResult push_or_await(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val,
     int await_defer,
     int fuse) {
 
   PyObject *settled;
-  KosOpResult r = kos_settle_value(es, val, await_defer, &settled);
+  KosOpResult r = kos_settle_value(ctx, val, await_defer, &settled);
 
   if (r.kind != KOS_RES_NORMAL)
     return r;
-  return push_or_fuse(es, settled, fuse);
+  return push_or_fuse(ctx, settled, fuse);
 }
 
 
-KosOpResult KosEvalState_Settle(KosEvalState *es, PyObject *val, PyObject **out) {
+KosOpResult KosEvalState_Settle(KosContext *ctx, PyObject *val, PyObject **out) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return kos_settle_value(es, val, 0, out);
+  return kos_settle_value(ctx, val, 0, out);
 }
 
 
-KosOpResult KosEvalState_PushOrAwait(KosEvalState *es, PyObject *val) {
+KosOpResult KosEvalState_PushOrAwait(KosContext *ctx, PyObject *val) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return push_or_await(es, val, 0, 0);
+  return push_or_await(ctx, val, 0, 0);
 }
 
 
-KosOpResult KosEvalState_SettleStage(KosEvalState *es, PyObject *val) {
+KosOpResult KosEvalState_SettleStage(KosContext *ctx, PyObject *val) {
 
   PyObject *settled = NULL;
-  KosOpResult r = KosEvalState_Settle(es, val, &settled);
+  KosOpResult r = KosEvalState_Settle(ctx, val, &settled);
 
   /* REPROLOGUE: an installed callee delivers. AWAIT: the revive
      delivers. RAISE: the walk propagates. */
   if (r.kind != KOS_RES_NORMAL)
     return r;
 
-  KosEvalState_PENDING_VALUE(es) = settled;
+  KosEvalState_PENDING_VALUE(ctx) = settled;
   return EVAL_REPROLOGUE();
 }
 
 
 /* KosOpResult variant of kos_op_outcome_PUSH_OR_AWAIT. */
 static inline KosOpResult kos_op_result_PUSH_OR_AWAIT(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val) {
 
   if (unlikely(! val))
     return EVAL_RAISE();
 
-  return push_or_await(es, val, 0, 1);
+  return push_or_await(ctx, val, 0, 1);
 }
 
 

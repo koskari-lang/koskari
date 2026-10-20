@@ -21,18 +21,18 @@
 */
 
 KOS_OP_HANDLER(COMBINE_ARGS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
 
   if (opa == 0) {
     PyObject *empty = PyTuple_New(0);
     if (! empty)
       RESULT_RAISE();
-    RESULT_STEAL(es, empty);
+    RESULT_STEAL(ctx, empty);
   }
 
   if (opa == 1) {
-    PyObject *v = KosEvalState_StackPopRef(es);
+    PyObject *v = KosEvalState_StackPopRef(ctx);
     if (! v)
       RESULT_RAISE();
 
@@ -45,10 +45,10 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     if (! v)
       RESULT_RAISE();
 
-    RESULT_STEAL(es, v);
+    RESULT_STEAL(ctx, v);
   }
 
-  PyObject *const *vals = KosEvalState_StackTailPtr(es,
+  PyObject *const *vals = KosEvalState_StackTailPtr(ctx,
                                                  (size_t) opa);
   if (! vals)
     RESULT_RAISE();
@@ -61,20 +61,20 @@ KOS_OP_HANDLER(COMBINE_ARGS) {
     PyObject *nb = PySequence_InPlaceConcat(built, vals[i]);
     Py_DECREF(built);
     if (! nb) {
-      KosEvalState_StackDropNoErr(es, (size_t) opa);
+      KosEvalState_StackDropNoErr(ctx, (size_t) opa);
       RESULT_RAISE();
     }
     built = nb;
   }
 
-  KosEvalState_StackDropNoErr(es, (size_t) opa);
+  KosEvalState_StackDropNoErr(ctx, (size_t) opa);
 
   PyObject *result = PySequence_Tuple(built);
   Py_DECREF(built);
   if (! result)
     RESULT_RAISE();
 
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

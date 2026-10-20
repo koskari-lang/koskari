@@ -21,13 +21,13 @@
   push the result; count 0 pushes nil.
 */
 KOS_OP_HANDLER(CONS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   if (count == 0)
-    RESULT_PUSH(es, KosNil);
+    RESULT_PUSH(ctx, KosNil);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count);
   if (! ptr)
     RESULT_RAISE();
 
@@ -35,12 +35,12 @@ KOS_OP_HANDLER(CONS) {
   if (! result)
     RESULT_RAISE();
 
-  if (KosEvalState_StackDrop(es, count) < 0) {
+  if (KosEvalState_StackDrop(ctx, count) < 0) {
     Py_DECREF(result);
     RESULT_RAISE();
   }
 
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

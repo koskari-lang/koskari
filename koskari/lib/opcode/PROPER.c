@@ -21,19 +21,19 @@
   requiring an explicit CONST nil before the CONS.
 */
 KOS_OP_HANDLER(PROPER) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
   /* Push nil onto the stack as the implicit proper tail. */
-  if (unlikely(KosEvalState_StackPushRef(es, KosNil)))
+  if (unlikely(KosEvalState_StackPushRef(ctx, KosNil)))
     RESULT_RAISE();
 
   /* PROPER 0 just returns nil, which we already pushed */
   if (unlikely(count == 0))
-    RESULT_NEXT(es);
+    RESULT_NEXT(ctx);
 
   /* Now the stack has count elements + nil = count+1 items. */
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count + 1);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -41,9 +41,9 @@ KOS_OP_HANDLER(PROPER) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  KosEvalState_StackDropNoErr(es, count + 1);
+  KosEvalState_StackDropNoErr(ctx, count + 1);
 
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

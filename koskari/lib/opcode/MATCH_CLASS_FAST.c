@@ -20,7 +20,7 @@
 */
 KOS_OP_HANDLER(MATCH_CLASS_FAST) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_class, es, insn, NULL);
+  TAILCALL(kos_match_class, ctx, insn, NULL);
 }
 
 

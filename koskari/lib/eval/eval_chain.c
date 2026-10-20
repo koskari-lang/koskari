@@ -33,11 +33,9 @@
   :return: 1 when a throw was taken, 0 when none pending
 */
 static inline int KosEvalState_TakeInjectThrow(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **type_out,
     PyObject **value_out) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (KosContext_INJECT_MODE(ctx) != KOS_INJECT_THROW)
     return 0;
@@ -50,10 +48,9 @@ static inline int KosEvalState_TakeInjectThrow(
 }
 
 
-int KosEvalState_ThrowIntoResume(KosEvalState *es) {
+int KosEvalState_ThrowIntoResume(KosContext *ctx) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
   PyObject *exc;
 
   if (! frame || ! KosDynFrame_RESUME_KIND(frame))
@@ -70,13 +67,13 @@ int KosEvalState_ThrowIntoResume(KosEvalState *es) {
   /* The resume runs on a delivery; the throw it takes first makes the
      value moot. */
   Py_INCREF(Py_None);
-  KosEvalState_StageDelivery(es, Py_None);
+  KosEvalState_StageDelivery(ctx, Py_None);
   return 1;
 }
 
 
 int KosEvalState_SetFrameCodeAndNamespace(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynFrame *frame,
     KosCode *code,
     PyObject *ns) {
@@ -92,28 +89,26 @@ int KosEvalState_SetFrameCodeAndNamespace(
     KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
   else
     KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
-  if (KosEvalState_FRAME(es) == frame) {
-    KosEvalState_NAMESPACE(es) = ns;
-    KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
-    KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
+  if (KosEvalState_FRAME(ctx) == frame) {
+    KosEvalState_NAMESPACE(ctx) = ns;
+    KosEvalState_CODE(ctx) = KosDynFrame_CODE(frame);
+    KosEvalState_BLOCK(ctx) = &KosDynFrame_STACK(frame);
   }
   return 0;
 }
 
 
-void KosEvalState_PythonAwaitClearIter(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+void KosEvalState_PythonAwaitClearIter(KosContext *ctx) {
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
 }
 
 
-PyObject *KosEvalState_PythonAwaitIter(KosEvalState *es) {
-  return KosContext_PY_AWAIT_ITER(KosEvalState_CONTEXT(es));
+PyObject *KosEvalState_PythonAwaitIter(KosContext *ctx) {
+  return KosContext_PY_AWAIT_ITER(KosEvalState_CONTEXT(ctx));
 }
 
 
-void KosEvalState_PythonResumeSet(KosEvalState *es, PyObject *val, uint8_t kind) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+void KosEvalState_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind) {
 
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   KosContext_PY_RESUME_INJECT(ctx) = val;
@@ -122,10 +117,8 @@ void KosEvalState_PythonResumeSet(KosEvalState *es, PyObject *val, uint8_t kind)
 
 
 static inline void KosEvalState_PythonAwaitSetIter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *iter) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
   KosContext_PY_AWAIT_ITER(ctx) = iter;
@@ -133,11 +126,9 @@ static inline void KosEvalState_PythonAwaitSetIter(
 
 
 static inline int KosEvalState_PythonResumeTake(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **out_val,
     uint8_t *out_kind) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
 
   if (out_val)
     *out_val = KosContext_PY_RESUME_INJECT(ctx);
@@ -149,10 +140,10 @@ static inline int KosEvalState_PythonResumeTake(
 }
 
 
-KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
-  if (! es)
+KosEvaluatorToken *KosEvalState_Token(const KosContext *ctx) {
+  if (! ctx)
     return NULL;
-  return KosContext_TOKEN(KosEvalState_CONTEXT(es));
+  return KosContext_TOKEN(KosEvalState_CONTEXT(ctx));
 }
 
 
@@ -166,14 +157,14 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
            EVAL_REPROLOGUE when a leave or enter installed a frame;
            EVAL_AWAIT / EVAL_RAISE / EVAL_FATAL otherwise
 */
-static KosOpResult kos_eval_drain_goal(KosEvalState *es) {
+static KosOpResult kos_eval_drain_goal(KosContext *ctx) {
 
   int boundary = 0;
-  KosOpResult r = kos_xfer_goal_drive(es, &boundary);
+  KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
 
   if (boundary)
     return r;
-  return kos_eval_walk_outcome(es, r);
+  return kos_eval_walk_outcome(ctx, r);
 }
 
 

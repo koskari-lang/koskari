@@ -103,13 +103,11 @@ static KosIterStepResult iterate_suite_step(
     return KOS_ITER_ERROR;
 
   {
-    KosEvalState es;
     KosIterStepResult r;
 
-    KosEvalState_Init(&es, *host, NULL);
-    KosEvalState_ThawFromContext(&es);
-    r = islots->ki_step(&es, provider, send_val, out);
-    KosEvalState_FreezeToContext(&es);
+    KosContext_BeginDrive(*host, NULL);
+    r = islots->ki_step(*host, provider, send_val, out);
+    KosContext_EndDrive(*host);
     return r;
   }
 }
@@ -128,13 +126,11 @@ static KosIterStepResult iterate_suite_throw(
     return KOS_ITER_ERROR;
 
   {
-    KosEvalState es;
     KosIterStepResult r;
 
-    KosEvalState_Init(&es, *host, NULL);
-    KosEvalState_ThawFromContext(&es);
-    r = islots->ki_throw(&es, provider, throw_typ, throw_exc, out);
-    KosEvalState_FreezeToContext(&es);
+    KosContext_BeginDrive(*host, NULL);
+    r = islots->ki_throw(*host, provider, throw_typ, throw_exc, out);
+    KosContext_EndDrive(*host);
     return r;
   }
 }
@@ -1448,7 +1444,7 @@ static PyMethodDef pyiter_methods[] = {
 
 
 static KosIterStepResult pyiter_ki_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
@@ -1459,12 +1455,12 @@ static KosIterStepResult pyiter_ki_step(
     *out = NULL;
     return KOS_ITER_EXHAUSTED;
   }
-  return gen->islots->ki_step(es, gen->provider, send_val, out);
+  return gen->islots->ki_step(ctx, gen->provider, send_val, out);
 }
 
 
 static KosIterStepResult pyiter_ki_throw(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *throw_typ,
     PyObject *throw_exc,
@@ -1476,7 +1472,7 @@ static KosIterStepResult pyiter_ki_throw(
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_ITER_ERROR;
   }
-  return gen->islots->ki_throw(es, gen->provider, throw_typ, throw_exc,
+  return gen->islots->ki_throw(ctx, gen->provider, throw_typ, throw_exc,
                                out);
 }
 

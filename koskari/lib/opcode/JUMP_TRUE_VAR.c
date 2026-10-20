@@ -22,9 +22,9 @@
   JUMP_TRUE_FAST when the name has a fast slot. Stack unchanged.
 */
 KOS_OP_HANDLER(JUMP_TRUE_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *val = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  PyObject *val = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -34,9 +34,9 @@ KOS_OP_HANDLER(JUMP_TRUE_VAR) {
   if (unlikely(res < 0))
     RESULT_RAISE();
   if (res)
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

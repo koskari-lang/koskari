@@ -89,11 +89,11 @@ static int dynnode_to_dict_loop(KosDynNode *node, PyObject *data) {
 /**
    Push LOOP as DYN_TOP. Callers: opcode PUSH_LOOP.
 */
-KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosDynLoop *node = kos_dynloop_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
+KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
+  KosDynLoop *node = kos_dynloop_new(KosEvalState_DYN_TOP(ctx), break_pc, continue_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynloop_free(node);
     return NULL;
   }
@@ -104,15 +104,15 @@ KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t cont
 /**
    Pop LOOP when top. Callers: opcode POP_LOOP, kos_dyn_unwind_to_loop.
 */
-int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node) {
+  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "LOOP node is not at top of chain");
     return -1;
   }
   {
     KosDynNode *parent = KosDynNode_PARENT(node);
 
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT(node) = NULL;
     kos_dynloop_free(node);
   }

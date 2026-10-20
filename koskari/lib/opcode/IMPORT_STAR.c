@@ -74,12 +74,12 @@ static PyObject *kos_import_star_names(PyObject *mod) {
 
 
 KOS_OP_HANDLER(IMPORT_STAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
+  PyObject *mod = kos_import_module(ctx, name, (long) KosExtra_IMM(row, 1), 1);
   if (! mod)
     RESULT_RAISE();
 
@@ -111,7 +111,7 @@ KOS_OP_HANDLER(IMPORT_STAR) {
     if (! val)
       goto fail;
 
-    if (frame_ns_store(es, bind, val) < 0) {
+    if (frame_ns_store(ctx, bind, val) < 0) {
       Py_DECREF(val);
       goto fail;
     }
@@ -120,7 +120,7 @@ KOS_OP_HANDLER(IMPORT_STAR) {
 
   Py_DECREF(fast);
   Py_DECREF(mod);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 
  fail:
   Py_DECREF(fast);

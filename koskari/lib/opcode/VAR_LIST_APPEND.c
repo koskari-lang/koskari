@@ -20,11 +20,11 @@
   a list.
 */
 KOS_OP_HANDLER(VAR_LIST_APPEND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *list = frame_ns_deref(es, name);
+  PyObject *list = frame_ns_deref(ctx, name);
   if (unlikely(! list))
     RESULT_RAISE();
 
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(VAR_LIST_APPEND) {
     RESULT_RAISE();
   }
 
-  PyObject *value = KosEvalState_StackPopRef(es);
+  PyObject *value = KosEvalState_StackPopRef(ctx);
   if (unlikely(! value)) {
     Py_DECREF(list);
     RESULT_RAISE();
@@ -52,7 +52,7 @@ KOS_OP_HANDLER(VAR_LIST_APPEND) {
 
   Py_DECREF(list);
   Py_DECREF(value);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

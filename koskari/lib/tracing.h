@@ -28,7 +28,7 @@
    Compile-flag enabled tracing for Koskari freelists, events, and timing.
    Include this header in .c files that use tracing macros. Not included from
    lib.h; opt-in per file (same pattern as debug.h). eval.h includes this
-   header when instrumenting KosEvalState sync entry points with
+   header when instrumenting the live register sync steps with
    KOS_TRACE_EVAL_SYNC.
 
    Event counters use KosTraceEventId; increment with KOS_TRACE_EVENTS_INC.

@@ -21,7 +21,7 @@
   lowering of JUMP_FALSE_VAR. Stack unchanged.
 */
 KOS_OP_HANDLER(JUMP_FALSE_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -31,9 +31,9 @@ KOS_OP_HANDLER(JUMP_FALSE_FAST) {
      other value takes the owned path, which raises for an empty slot. */
   PyObject *val = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 0));
   if (val == Py_False || val == Py_None)
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   if (val == Py_True)
-    RESULT_NEXT(es);
+    RESULT_NEXT(ctx);
 
   val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! val))
@@ -45,9 +45,9 @@ KOS_OP_HANDLER(JUMP_FALSE_FAST) {
   if (unlikely(res < 0))
     RESULT_RAISE();
   if (res)
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

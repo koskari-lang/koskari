@@ -45,9 +45,9 @@ typedef struct {
 
 
 static KOS_PRESERVE_NONE KosOpResult resume_probe(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
-  (void) es;
+  (void) ctx;
   ResumeProbe *p = (ResumeProbe *) state;
   p->calls++;
 
@@ -78,25 +78,23 @@ static int test_cg_prologue_delivers_staged_resume(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   PyObject *staged = PyLong_FromLong(7);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
-  TEST_ASSERT(KosEvalState_StackPushRef(&es, staged) >= 0,
+  TEST_ASSERT(KosEvalState_StackPushRef(ctx, staged) >= 0,
               "push staged value onto the frame's own stack");
 
   ResumeProbe probe = { 0, 0, 0, NULL };
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
 
   KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
@@ -118,9 +116,9 @@ static int test_cg_prologue_delivers_staged_resume(void) {
 /* a thread function (the KosThreadFn prototype DISPATCH requires) that
    dispatches the probe kind with the given state */
 static KOS_PRESERVE_NONE KosOpResult stage_via_dispatch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
-  DISPATCH(&resume_probe_kind, es, state, value);
+  DISPATCH(&resume_probe_kind, ctx, state, value);
 }
 
 
@@ -132,13 +130,11 @@ static int test_dispatch_delivers_through_prologue(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   PyObject *staged = PyLong_FromLong(11);
@@ -146,20 +142,20 @@ static int test_dispatch_delivers_through_prologue(void) {
   Py_INCREF(staged);  /* DISPATCH consumes one reference */
 
   ResumeProbe probe = { 0, 0, 0, NULL };
-  KosOpResult r = stage_via_dispatch(&es, &probe, staged);
+  KosOpResult r = stage_via_dispatch(ctx, &probe, staged);
 
   TEST_ASSERT_EQ(probe.calls, 1, "the prologue delivered to the resume");
   TEST_ASSERT_EQ(probe.seen_null, 0, "delivered a real value, not NULL");
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN, "resume's terminal result relayed");
   TEST_ASSERT_SAME(r.val, staged, "delivered value is the staged value");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "slot consumed");
-  TEST_ASSERT(! KosEvalState_StackHead(&es)
-              || KosEvalState_StackLen(&es) == 0,
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx), "slot consumed");
+  TEST_ASSERT(! KosEvalState_StackHead(ctx)
+              || KosEvalState_StackLen(ctx) == 0,
               "the frame stack was not touched");
 
   Py_XDECREF(r.val);
   Py_DECREF(staged);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -169,13 +165,11 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   PyObject *lst = PyList_New(1);
@@ -185,15 +179,15 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   TEST_ASSERT_NOT_NULL(it, "acquire iterator");
 
   ResumeProbe probe = { 0, 0, 0, NULL };
-  KosOpResult r = KosEvalState_NextResume(&es, it, NULL, &resume_probe_kind, &probe);
+  KosOpResult r = KosEvalState_NextResume(ctx, it, NULL, &resume_probe_kind, &probe);
 
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
                  "a delivered, settled element is reported in hand");
   TEST_ASSERT_NOT_NULL(r.val, "the element rides the result");
   TEST_ASSERT_EQ(PyLong_AsLong(r.val), 42, "element value");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "nothing staged");
-  TEST_ASSERT(! KosEvalState_StackHead(&es)
-              || KosEvalState_StackLen(&es) == 0,
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx), "nothing staged");
+  TEST_ASSERT(! KosEvalState_StackHead(ctx)
+              || KosEvalState_StackLen(ctx) == 0,
               "the frame stack was not touched");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame),
                    "no resume set: the caller tail-calls the resume itself");
@@ -202,7 +196,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   Py_DECREF(r.val);
   Py_DECREF(it);
   Py_DECREF(lst);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -238,14 +232,12 @@ static int test_return_into_resume_parent(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   /* the parent: a codeless frame waiting on a resume */
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *parent = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *parent = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(parent, "push codeless parent frame");
 
   ResumeProbe probe = { 0, 0, 0, NULL };
@@ -269,10 +261,10 @@ static int test_return_into_resume_parent(void) {
 
   PyObject *child_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(child_ns, "create child ns");
-  KosDynFrame *child = kos_dyn_push_frame(&es, (KosCode *) code, child_ns);
+  KosDynFrame *child = kos_dyn_push_frame(ctx, (KosCode *) code, child_ns);
   TEST_ASSERT_NOT_NULL(child, "push bytecode child frame");
 
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
 
   /* run: the child returns 42; the parent's resume receives it and
      hands it back as the eval's result */
@@ -304,9 +296,7 @@ static int test_prologue_idle_threads_into_code(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *forty_two = PyLong_FromLong(42);
   PyObject *one = PyLong_FromLong(1);
@@ -324,10 +314,10 @@ static int test_prologue_idle_threads_into_code(void) {
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, (KosCode *) code, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, (KosCode *) code, ns);
   TEST_ASSERT_NOT_NULL(frame, "push bytecode frame");
 
-  KosOpResult r = kos_eval_prologue(&es, NULL, NULL);
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN, "the body ran to its return");
   TEST_ASSERT_NOT_NULL(r.val, "a value came back");
   TEST_ASSERT_EQ(PyLong_AsLong(r.val), 42, "the body's return value");
@@ -335,7 +325,7 @@ static int test_prologue_idle_threads_into_code(void) {
   Py_XDECREF(r.val);
   Py_DECREF(forty_two);
   Py_DECREF(code);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -347,13 +337,11 @@ static int test_prologue_delivers_staged(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   PyObject *staged = PyLong_FromLong(23);
@@ -363,20 +351,20 @@ static int test_prologue_delivers_staged(void) {
   ResumeProbe probe = { 0, 0, 0, NULL };
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
-  KosEvalState_PENDING_VALUE(&es) = staged;
+  KosEvalState_PENDING_VALUE(ctx) = staged;
 
   /* the probe returns EVAL_RETURN(value); with a root frame that is
      the terminal result the re-entry hands back */
-  KosOpResult r = kos_eval_prologue(&es, NULL, NULL);
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
   TEST_ASSERT_EQ(probe.calls, 1, "the staged delivery reached the resume");
   TEST_ASSERT_EQ(probe.seen_null, 0, "with its value");
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN, "resume's terminal result relayed");
   TEST_ASSERT_SAME(r.val, staged, "delivered value");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es), "slot consumed");
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx), "slot consumed");
 
   Py_XDECREF(r.val);
   Py_DECREF(staged);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -386,31 +374,29 @@ static int test_prologue_runs_pending_exception(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   /* a staged delivery under a pending exception is dropped, and the
      raise walk runs; with no handler on the chain it propagates */
   PyObject *staged = PyLong_FromLong(5);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
-  KosEvalState_PENDING_VALUE(&es) = staged;
+  KosEvalState_PENDING_VALUE(ctx) = staged;
   PyErr_SetString(PyExc_ValueError, "pending");
 
-  KosOpResult r = kos_eval_prologue(&es, NULL, NULL);
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
   TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "unhandled exception propagates");
   TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
               "the pending exception is the one propagating");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(&es),
+  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx),
                    "the staged delivery was dropped");
 
   PyErr_Clear();
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -432,9 +418,7 @@ static int test_raise_walk_resume_propagates(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *bottom_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
@@ -450,12 +434,12 @@ static int test_raise_walk_resume_propagates(void) {
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosEvalState_FRAME(&es) = bottom;
-  KosEvalState_DYN_TOP(&es) = (KosDynNode *) frame;
+  KosEvalState_FRAME(ctx) = bottom;
+  KosEvalState_DYN_TOP(ctx) = (KosDynNode *) frame;
 
   PyErr_SetString(PyExc_ValueError, "boom");
 
-  KosOpResult ev = kos_dyn_unwind_raise(&es);
+  KosOpResult ev = kos_dyn_unwind_raise(ctx);
 
   TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
   TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
@@ -465,7 +449,7 @@ static int test_raise_walk_resume_propagates(void) {
 
   /* frame was popped and freed by the walk's own pop path */
   PyErr_Clear();
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -475,9 +459,7 @@ static int test_raise_walk_resume_handles(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *bottom_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
@@ -493,12 +475,12 @@ static int test_raise_walk_resume_handles(void) {
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosEvalState_FRAME(&es) = bottom;
-  KosEvalState_DYN_TOP(&es) = (KosDynNode *) frame;
+  KosEvalState_FRAME(ctx) = bottom;
+  KosEvalState_DYN_TOP(ctx) = (KosDynNode *) frame;
 
   PyErr_SetString(PyExc_ValueError, "boom");
 
-  KosOpResult ev = kos_dyn_unwind_raise(&es);
+  KosOpResult ev = kos_dyn_unwind_raise(ctx);
 
   TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
   TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
@@ -509,7 +491,7 @@ static int test_raise_walk_resume_handles(void) {
 
   /* frame is still on the chain (not popped); context teardown frees
      the whole chain, frame and bottom together */
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -632,13 +614,11 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *live = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *live = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(live, "push live frame");
   KosDynFrame *tmpl = kos_dynframe_new(NULL, NULL, ns);
   TEST_ASSERT_NOT_NULL(tmpl, "create template frame");
@@ -663,13 +643,13 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosDynFrame_RESUME_KIND(live) = &resume_recording_kind;
   KosDynFrame_RESUME_STATE(live) = &prior;
 
-  kos_xfer_goal_push(&es, goal);
+  kos_xfer_goal_push(ctx, goal);
   {
     int boundary = 0;
-    KosOpResult r = kos_xfer_goal_drive(&es, &boundary);
+    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
     TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
   }
-  TEST_ASSERT_NULL(KosEvalState_GOAL(&es), "the goal retired");
+  TEST_ASSERT_NULL(KosEvalState_GOAL(ctx), "the goal retired");
   TEST_ASSERT_EQ(recorded_clear_calls, 1,
                  "the live frame's prior resume was cleared once");
   TEST_ASSERT_SAME(recorded_clear_in, &prior,
@@ -678,9 +658,9 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
                    "the live frame carries the record's kind");
   TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(live), &recorded_clone_out,
                    "the live frame carries the record's clone");
-  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(&es), exc,
+  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(ctx), exc,
                    "the payload is staged for the record's resume");
-  Py_CLEAR(KosEvalState_PENDING_VALUE(&es));
+  Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
 
   KosDynFrame_RESUME_KIND(live) = NULL;
   KosDynFrame_RESUME_STATE(live) = NULL;
@@ -688,7 +668,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosDynFrame_RESUME_STATE(tmpl) = NULL;
   kos_dynframe_free(tmpl);
   Py_DECREF(exc);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
@@ -703,13 +683,11 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *live = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *live = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(live, "push live frame");
 
   int marker = 0;
@@ -722,26 +700,26 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
                                         (uint32_t) -1, NULL, 0);
   TEST_ASSERT_NOT_NULL(goal, "create goal");
 
-  kos_xfer_goal_push(&es, goal);
+  kos_xfer_goal_push(ctx, goal);
   {
     int boundary = 0;
-    KosOpResult r = kos_xfer_goal_drive(&es, &boundary);
+    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
     TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
   }
-  TEST_ASSERT_NULL(KosEvalState_GOAL(&es), "the goal retired");
-  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(&es), payload,
+  TEST_ASSERT_NULL(KosEvalState_GOAL(ctx), "the goal retired");
+  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(ctx), payload,
                    "the payload is staged for the resume");
-  TEST_ASSERT(! KosEvalState_StackHead(&es)
-              || KosEvalState_StackLen(&es) == 0,
+  TEST_ASSERT(! KosEvalState_StackHead(ctx)
+              || KosEvalState_StackLen(ctx) == 0,
               "the frame stack was not touched");
   TEST_ASSERT_SAME(KosDynFrame_RESUME_KIND(live), &resume_recording_kind,
                    "the resume is still set for the delivery");
 
-  Py_CLEAR(KosEvalState_PENDING_VALUE(&es));
+  Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
   KosDynFrame_RESUME_KIND(live) = NULL;
   KosDynFrame_RESUME_STATE(live) = NULL;
   Py_DECREF(payload);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
@@ -871,13 +849,11 @@ static int test_call_resume_null_returns_value_in_hand(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   PyObject *builtins = PyImport_ImportModule("builtins");
@@ -892,7 +868,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
   /* a plain Python callable's result comes back in hand; resume == NULL
      relays that RETURN untouched, and nothing lands on the stack */
   KosOpResult r = KosEvalState_Call(
-      &es, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
+      ctx, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
 
   Py_DECREF(neg5);
   Py_DECREF(abs_fn);
@@ -907,7 +883,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
               || KosSegment_LEN(KosDynFrame_STACK(frame)) == 0,
               "nothing landed on the caller's stack");
 
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -917,13 +893,11 @@ static int test_next_resume_null_pushes_and_continues(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
 
   PyObject *lst = PyList_New(1);
@@ -932,7 +906,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   PyObject *it = kos_iter_acquire(lst);
   TEST_ASSERT_NOT_NULL(it, "acquire iterator");
 
-  KosOpResult r = KosEvalState_NextResume(&es, it, NULL, NULL, NULL);
+  KosOpResult r = KosEvalState_NextResume(ctx, it, NULL, NULL, NULL);
 
   TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
                  "delivered element with no resume: NORMAL, matching"
@@ -940,7 +914,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "no resume set");
 
   {
-    PyObject *popped = KosEvalState_StackPopRef(&es);
+    PyObject *popped = KosEvalState_StackPopRef(ctx);
     TEST_ASSERT_NOT_NULL(popped, "element landed on the caller's stack");
     TEST_ASSERT_EQ(PyLong_AsLong(popped), 42, "element value");
     Py_DECREF(popped);
@@ -948,7 +922,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
 
   Py_DECREF(it);
   Py_DECREF(lst);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }

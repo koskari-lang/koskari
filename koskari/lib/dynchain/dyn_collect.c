@@ -94,15 +94,15 @@ static int dynnode_to_dict_collect(KosDynNode *node, PyObject *data) {
    Push COLLECT as DYN_TOP. Callers: PUSH_COLLECT.
 */
 KosDynCollect *kos_dyn_push_collect(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *ns) {
   // CONTEXT: dirty, touches context directly
   KosDynCollect *col_node = kos_dyncollect_new(
-      KosEvalState_DYN_TOP(es), ns);
+      KosEvalState_DYN_TOP(ctx), ns);
   if (! col_node)
     return NULL;
 
-  if (kos_dyn_push(es, (KosDynNode *) col_node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) col_node) < 0) {
     kos_dyncollect_free(col_node);
     return NULL;
   }
@@ -117,12 +117,12 @@ KosDynCollect *kos_dyn_push_collect(
    POP_COLLECT.
 */
 int kos_dyn_pop_collect(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynCollect *node,
     PyObject **out_ns) {
 
-  if (! KosEvalState_DYN_TOP(es) ||
-      KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+  if (! KosEvalState_DYN_TOP(ctx) ||
+      KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
     return -1;
   }
@@ -132,7 +132,7 @@ int kos_dyn_pop_collect(
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
     *out_ns = KosNamespace_Reveal(KosDynNode_NS(node));
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyncollect_free(node);
   }

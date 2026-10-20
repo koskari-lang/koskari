@@ -23,18 +23,18 @@
   pending wind thunk.
 */
 KOS_OP_HANDLER(CALL) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned n = KosOp_ARG(insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, n + 1);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, n + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
   SAYF("CALL: callable=%R", ptr[0]);
 
-  RESULT_RELAY(es, kos_call_invoke_from_handler(
-      es, tail, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
+  RESULT_RELAY(ctx, kos_call_invoke_from_handler(
+      ctx, tail, ptr[0], NULL, n ? ptr + 1 : NULL, (Py_ssize_t) n, NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE));
 }
 

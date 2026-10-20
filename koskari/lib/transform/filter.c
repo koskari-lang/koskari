@@ -67,11 +67,11 @@ static inline int filter_keeps(KosFilter *f, int ok) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step",
                 filter_resume_after_verdict, kos_transform_step_clear, NULL);
@@ -87,8 +87,8 @@ KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
    next fetch by discarding its own frame, never by nesting, and never
    by a bounce through the trampoline.
 */
-#define filter_refetch(es, f) \
-  RESUME_HOP(&filter_resume_do_fetch_kind, (es), (f), NULL)
+#define filter_refetch(ctx, f) \
+  RESUME_HOP(&filter_resume_do_fetch_kind, (ctx), (f), NULL)
 
 
 /**
@@ -100,7 +100,7 @@ KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
    conversion, StopIteration truncation parity included).
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *f = (KosTransform *) state;
 
@@ -110,9 +110,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosEvalState_NextResume(es, f->source, NULL,
+    KosOpResult r = KosEvalState_NextResume(ctx, f->source, NULL,
                                             &filter_resume_do_invoke_kind, f);
-    RESULT_ENTRY(es, r, &filter_resume_do_invoke_kind, f);
+    RESULT_ENTRY(ctx, r, &filter_resume_do_invoke_kind, f);
   }
 }
 
@@ -124,7 +124,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
    is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransform *f = (KosTransform *) state;
 
@@ -140,10 +140,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
       return EVAL_RAISE();
     }
     if (filter_keeps((KosFilter *) state, ok))
-      return KosNativeFrame_ReturnToCache(es, element, &f->cached_frame);
+      return KosNativeFrame_ReturnToCache(ctx, element, &f->cached_frame);
 
     Py_DECREF(element);
-    filter_refetch(es, f);
+    filter_refetch(ctx, f);
   }
 
   /* Every calling shape goes through the one entry --
@@ -156,9 +156,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
   f->pending = element;
   {
     KosOpResult r = KosEvalState_Call(
-        es, f->fn.cs_callable, &element, 1, NULL, 0,
+        ctx, f->fn.cs_callable, &element, 1, NULL, 0,
         &filter_resume_after_verdict_kind, f);
-    RESULT_ENTRY(es, r, &filter_resume_after_verdict_kind, f);
+    RESULT_ENTRY(ctx, r, &filter_resume_after_verdict_kind, f);
   }
 }
 
@@ -168,7 +168,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
    false one releases it and fetches again. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *f = (KosTransform *) state;
   int ok;
@@ -185,11 +185,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     PyObject *element = f->pending;
 
     f->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, element, &f->cached_frame);
+    return KosNativeFrame_ReturnToCache(ctx, element, &f->cached_frame);
   }
 
   Py_CLEAR(f->pending);
-  filter_refetch(es, f);
+  filter_refetch(ctx, f);
 }
 
 
@@ -197,13 +197,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
 
 
 static KosIterStepResult filter_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransform *f = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(f, send_val, out, &early))
@@ -213,7 +213,7 @@ static KosIterStepResult filter_iter_step(
     for (;;) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(es, f, f->source, &filter_resume_do_fetch_kind, pre_top, out,
+      KOS_TRANSFORM_FETCH(ctx, f, f->source, &filter_resume_do_fetch_kind, pre_top, out,
                           element);
 
       if (! f->fn.cs_callable) {
@@ -239,7 +239,7 @@ static KosIterStepResult filter_iter_step(
          itself -- which can install a callee or need an await -- must
          happen from inside that later dispatch, not here. */
       if (f->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-        return kos_transform_stage(es, f, element,
+        return kos_transform_stage(ctx, f, element,
                                    &filter_resume_do_invoke_kind, pre_top);
 
       /* A plain python predicate needs no evaluator at all. */
@@ -274,7 +274,7 @@ static KosIterStepResult filter_iter_step(
                element is held on the filter until the verdict
                settles. */
             KosIterStepResult staged = kos_transform_stage(
-                es, f, result, &filter_resume_after_verdict_kind, pre_top);
+                ctx, f, result, &filter_resume_after_verdict_kind, pre_top);
 
             if (staged != KOS_ITER_INSTALLED_VALUE) {
               Py_DECREF(element);

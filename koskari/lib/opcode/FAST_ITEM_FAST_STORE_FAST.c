@@ -22,9 +22,9 @@
   (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(FAST_ITEM_FAST_STORE_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
+  PyObject *ns = KosEvalState_NAMESPACE(ctx);
   PyObject *obj, *obj_ref;
   PyObject *key, *key_ref;
   PyObject *val;
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_STORE_FAST) {
 
   if (unlikely(rc < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

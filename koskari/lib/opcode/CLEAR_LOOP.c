@@ -19,8 +19,8 @@
 */
 
 KOS_OP_HANDLER(CLEAR_LOOP) {
-  KOS_SYNC_PC(es, insn);
-  KosDynNode *region = KosEvalState_CurrentNode(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosDynNode *region = KosEvalState_CurrentNode(ctx);
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_LOOP: top is not a LOOP region");
@@ -28,11 +28,11 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
   }
 
   KosDynLoop_ENABLED((KosDynLoop *) region) = 0;
-  if (KosEvalState_StackClear(es) < 0)
+  if (KosEvalState_StackClear(ctx) < 0)
     RESULT_RAISE();
 
   (void) insn;
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -23,18 +23,18 @@
 */
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
-  KOS_SYNC_PC(es, insn);
-  uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
+  KOS_SYNC_PC(ctx, insn);
+  uint32_t continue_pc = KosEvalState_PC(ctx);  /* next insn; fetch advanced */
   uint32_t pop_pc;
 
-  PyObject *iterable = KosEvalState_StackPopRef(es);
+  PyObject *iterable = KosEvalState_StackPopRef(ctx);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
     RESULT_RAISE();
   }
 
   /* break lands after the POP_FOREACH that closes the extent */
-  if (kos_site_extent_close(es, insn, KOS_EXT_FOREACH, "PUSH_FOREACH",
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_FOREACH, "PUSH_FOREACH",
                             &pop_pc) < 0) {
     Py_DECREF(iterable);
     RESULT_RAISE();
@@ -48,7 +48,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
 
   /* Push region */
   KosDynNode *region = (KosDynNode *) kos_dyn_push_foreach(
-    es, pop_pc + 1u, continue_pc);
+    ctx, pop_pc + 1u, continue_pc);
   if (! region) {
     Py_DECREF(iter);
     PyErr_NoMemory();
@@ -61,7 +61,7 @@ KOS_OP_HANDLER(PUSH_FOREACH) {
      iterator reference; per-step drives only touch the mode. */
   kos_dyn_iter_request_bind_iter(KosDynForeach_REQ(region), iter);
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

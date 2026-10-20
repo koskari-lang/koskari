@@ -22,21 +22,21 @@
 */
 
 KOS_OP_HANDLER(PUSH_PROMPT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   uint32_t prompt_id;
   uint32_t pop_pc;
 
-  if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(ctx, insn, &prompt_id) < 0)
     RESULT_RAISE();
 
   /* the POP_PROMPT closing the extent, for POP_SHIFT's live reset */
-  if (kos_site_extent_close(es, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_PROMPT, "PUSH_PROMPT",
                             &pop_pc) < 0)
     RESULT_RAISE();
 
-  if (! kos_dyn_push_prompt(es, prompt_id, pop_pc))
+  if (! kos_dyn_push_prompt(ctx, prompt_id, pop_pc))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

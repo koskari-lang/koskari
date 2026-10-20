@@ -200,7 +200,7 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
    Push DELIM marker via kos_dyn_push.
 */
 KosDynDelim *kos_dyn_push_delim(
-    KosEvalState *es,
+    KosContext *ctx,
     uint8_t mode,
     KosDynNode *chain,
     uint32_t pc,
@@ -208,7 +208,7 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynNode *node) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynDelim *delim = kos_dyndelim_new(KosEvalState_DYN_TOP(es),
+  KosDynDelim *delim = kos_dyndelim_new(KosEvalState_DYN_TOP(ctx),
                                         mode,
                                         chain,
                                         pc,
@@ -217,7 +217,7 @@ KosDynDelim *kos_dyn_push_delim(
   if (! delim)
     return NULL;
 
-  if (kos_dyn_push(es, (KosDynNode *) delim) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) delim) < 0) {
     kos_dyndelim_free(delim);
     return NULL;
   }
@@ -229,17 +229,17 @@ KosDynDelim *kos_dyn_push_delim(
 /**
    Pop DELIM marker from top of chain.
 */
-int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
+int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
+  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) delim) {
     PyErr_SetString(PyExc_RuntimeError, "DELIM node is not at top of chain");
     return -1;
   }
 
-  kos_dyn_uninstall_handler(es, (KosDynNode *) delim, KOS_XFER_EVENT_NONE);
+  kos_dyn_uninstall_handler(ctx, (KosDynNode *) delim, KOS_XFER_EVENT_NONE);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) delim);
 
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
   }

@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
@@ -52,7 +52,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
 
   PyObject *const *argv = NULL;
   if (ntotal) {
-    argv = KosEvalState_StackTailPtr(es, ntotal);
+    argv = KosEvalState_StackTailPtr(ctx, ntotal);
     if (! argv) {
       Py_DECREF(obj);
       RESULT_RAISE();
@@ -70,11 +70,11 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
      resolution injects obj as self via the core's prepend. */
   KosOpResult r = kos_call_invoke_from_handler(
-      es, tail, resolved, (send_self == 0) ? obj : NULL, argv, npos,
+      ctx, tail, resolved, (send_self == 0) ? obj : NULL, argv, npos,
       nkwds ? names : NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  RESULT_RELAY(es, r);
+  RESULT_RELAY(ctx, r);
 }
 
 

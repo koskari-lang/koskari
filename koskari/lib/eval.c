@@ -118,36 +118,35 @@ static PyObject *_import_fromlist = NULL;
 
 static void inject_eval_frame_traceback(
     KosContext *ctx,
-    KosEvalState *es,
     PyObject **exc_type,
     PyObject **exc_val,
     PyObject **exc_tb);
 
 static void kos_eval_mark_context_dead(KosContext *ctx);
 
-static KosOpResult process_raise(KosEvalState *es);
+static KosOpResult process_raise(KosContext *ctx);
 
-static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res);
+static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res);
 
-static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r);
+static KosOpResult kos_eval_walk_outcome(KosContext *ctx, KosOpResult r);
 
-static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val);
+static KosOpResult eval_parent_return_deliver(KosContext *ctx, PyObject *val);
 
 static KosOpResult eval_event_yield(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynGen *gen,
     PyObject *val);
 
-static KosOpResult eval_event_await(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_await(KosContext *ctx, PyObject *val);
 
-static KosOpResult eval_event_return_unwind(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_return_unwind(KosContext *ctx, PyObject *val);
 
-static KosOpResult eval_event_return_at_frame(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_return_at_frame(KosContext *ctx, PyObject *val);
 
-static KosOpResult eval_event_return(KosEvalState *es, PyObject *val);
+static KosOpResult eval_event_return(KosContext *ctx, PyObject *val);
 
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
-        KosEvalState *es);
+        KosContext *ctx);
 
 
 
@@ -170,15 +169,15 @@ int KosEval_IsFuture(PyObject *val) {
    On exception: if we are inside a Koskari async gen step (NEXT or ITER_NEXT),
    detach the gen frame, close the gen, and clear NEXT / FOREACH node state.
 */
-static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
+static void clear_kos_agen_iter_node_on_error(KosContext *ctx) {
 
   KosDynFrame *cf;
   KosDynNode *top;
   KosDynNode *node;
   KosPyAsyncGen *agen;
 
-  cf = KosEvalState_FRAME(es);
-  top = KosEvalState_DYN_TOP(es);
+  cf = KosEvalState_FRAME(ctx);
+  top = KosEvalState_DYN_TOP(ctx);
 
   if (! cf || ! top || ! KosDynNode_IS_FRAME(top))
     return;
@@ -188,7 +187,7 @@ static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
       return;
   }
 
-  node = kos_dyn_find_iter_node(es);
+  node = kos_dyn_find_iter_node(ctx);
   if (! node)
     return;
 
@@ -198,7 +197,8 @@ static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
 
   {
     KosDynFrame *detached_frame = NULL;
-    if (kos_dyn_detach_top_frame(es, &detached_frame) == 0 && detached_frame) {
+    if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0
+        && detached_frame) {
       KosIterSlots *islots;
       if (KosIter_CheckSlots((PyObject *) agen, &islots))
         islots->ki_finish((PyObject *) agen, 1);
@@ -206,7 +206,7 @@ static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
     }
   }
 
-  kos_dyn_iter_node_abort(es, node);
+  kos_dyn_iter_node_abort(ctx, node);
 }
 
 
@@ -223,7 +223,7 @@ static void clear_kos_agen_iter_node_on_error(KosEvalState *es) {
    DELIVERED/EXHAUSTED, and the awaitable payload on EXIT.
 */
 KosIterRequestStatus KosIterRequest_Next(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *node,
     PyObject *send_val,
     PyObject **fast_out) {
@@ -251,7 +251,7 @@ KosIterRequestStatus KosIterRequest_Next(
        through the iteration node, and deliveries can elect it mid-step. */
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_INSTALLED);
 
-    switch (islots->ki_step(es, iter, send_val, &out)) {
+    switch (islots->ki_step(ctx, iter, send_val, &out)) {
       case KOS_ITER_VALUE:
         kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
         *fast_out = out;
@@ -293,7 +293,7 @@ KosIterRequestStatus KosIterRequest_Next(
     PyObject *value = NULL;
     PyObject *_await = NULL;
 
-    switch (op_get_next_from_bound(es, req->kind, &_await, iter, &value)) {
+    switch (op_get_next_from_bound(ctx, req->kind, &_await, iter, &value)) {
       case GET_NEXT_VALUE:
         *fast_out = value;
         return KOS_IREQ_DELIVERED;
@@ -326,7 +326,7 @@ KosIterRequestStatus KosIterRequest_Next(
             EVAL_RAISE with PyErr set, EVAL_FATAL on delivery failure
 */
 KosOpResult KosIterRequest_Deliver(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *node,
     KosIterWakeEvent ev,
     PyObject *value) {
@@ -342,18 +342,18 @@ KosOpResult KosIterRequest_Deliver(
 
   switch (ev) {
     case KOS_IWAKE_VALUE:
-      if (kos_dyn_iter_node_deliver_yield(es, node, value) < 0)
+      if (kos_dyn_iter_node_deliver_yield(ctx, node, value) < 0)
         return EVAL_FATAL();
       return EVAL_NORMAL();
 
     case KOS_IWAKE_END: {
       /* A generator completing at the site's iteration node arrives with its
          frame chain still installed; unwind it before delivering. */
-      KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
-      if (child && KosEvalState_DYN_TOP(es) == child) {
+      KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(ctx);
+      if (child && KosEvalState_DYN_TOP(ctx) == child) {
         KosDynNode *parent = KosDynNode_PARENT(child);
         if (parent && KosDynNode_IS_GEN(parent)) {
-          if (kos_dyn_teardown_gen_exhausted(es) < 0) {
+          if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
             Py_XDECREF(value);
             return EVAL_FATAL();
           }
@@ -364,7 +364,7 @@ KosOpResult KosIterRequest_Deliver(
          what the failure branch needs from it is read first */
       int is_yield_from = KosDynNode_IS_YIELD_FROM(node);
 
-      if (kos_dyn_iter_node_deliver_exhausted(es, node, value) < 0) {
+      if (kos_dyn_iter_node_deliver_exhausted(ctx, node, value) < 0) {
         /* A re-emitting site (1-arg NEXT) completes by raising; a
            delivery failure without an exception is fatal. */
         if (is_yield_from || PyErr_Occurred())
@@ -401,7 +401,7 @@ KosOpResult KosIterRequest_Deliver(
    :return: EVAL_NORMAL, EVAL_AWAIT (with re-suspend value), or EVAL_RAISE
 */
 static KosOpResult revive_await(
-        KosEvalState *es,
+        KosContext *ctx,
         PyObject *send_val,
         PyObject *throw_typ,
         PyObject *throw_exc,
@@ -414,7 +414,7 @@ static KosOpResult revive_await(
     SAYF("[await] revive_await throw typ=%p exc=%p\n",
          (void *) throw_typ, (void *) throw_exc);
 
-    if (! KosEvalState_PythonAwaitIter(es)) {
+    if (! KosEvalState_PythonAwaitIter(ctx)) {
       PyErr_SetObject(typ_eff, throw_exc);
       return EVAL_RAISE();
     }
@@ -428,7 +428,7 @@ static KosOpResult revive_await(
       Py_INCREF(val);
       Py_INCREF(tb);
       PyErr_NormalizeException(&typ, &val, &tb);
-      step = kos_iter_throw(KosEvalState_PythonAwaitIter(es), val, &res);
+      step = kos_iter_throw(KosEvalState_PythonAwaitIter(ctx), val, &res);
       Py_DECREF(typ);
       Py_DECREF(val);
       Py_XDECREF(tb);
@@ -436,13 +436,13 @@ static KosOpResult revive_await(
         return EVAL_AWAIT(res);
       if (step == PYGEN_RETURN) {
         PyObject *await_result = res;
-        KosEvalState_PythonAwaitClearIter(es);
-        KosEvalState_PythonResumeSet(es, await_result, KOS_RESUME_AWAIT);
+        KosEvalState_PythonAwaitClearIter(ctx);
+        KosEvalState_PythonResumeSet(ctx, await_result, KOS_RESUME_AWAIT);
         PyErr_Clear();
         /* Fall through: push inject like a normal successful resume */
       }
       else {
-        KosEvalState_PythonAwaitClearIter(es);
+        KosEvalState_PythonAwaitClearIter(ctx);
         return EVAL_RAISE();
       }
     }
@@ -451,13 +451,14 @@ static KosOpResult revive_await(
   uint8_t resume_kind_unused;
   /* Take transfers the stored inject's reference to us (owned == 1);
      the send_val fallback is borrowed from the caller. */
-  int owned = KosEvalState_PythonResumeTake(es, &to_push, &resume_kind_unused);
+  int owned = KosEvalState_PythonResumeTake(
+      ctx, &to_push, &resume_kind_unused);
   (void) resume_kind_unused;
   if (to_push == NULL && send_val != NULL) {
     to_push = send_val;
   }
-  if (to_push != NULL && KosEvalState_FRAME(es)) {
-    KosDynNode *node = kos_dyn_find_iter_node(es);
+  if (to_push != NULL && KosEvalState_FRAME(ctx)) {
+    KosDynNode *node = kos_dyn_find_iter_node(ctx);
     if (node && kos_dyn_iter_node_awaiting_py(node)) {
       /* The pending await belongs to the iteration node whose request is
          set: a python async step's awaited result IS the element. */
@@ -465,7 +466,7 @@ static KosOpResult revive_await(
 
       if (! owned)
         Py_INCREF(to_push);
-      dr = KosIterRequest_Deliver(es, node, KOS_IWAKE_VALUE, to_push);
+      dr = KosIterRequest_Deliver(ctx, node, KOS_IWAKE_VALUE, to_push);
       if (dr.kind == KOS_RES_FATAL) {
         if (! PyErr_Occurred())
           PyErr_SetString(PyExc_RuntimeError,
@@ -477,14 +478,14 @@ static KosOpResult revive_await(
       return EVAL_NORMAL();
     }
 
-    if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
+    if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx))) {
       /* the frame is waiting on a resume: the awaited value is its
          delivery, staged for the entry's delivery step */
       if (! owned)
         Py_INCREF(to_push);
-      KosEvalState_StageDelivery(es, to_push);
+      KosEvalState_StageDelivery(ctx, to_push);
       owned = 0;
-    } else if (KosEvalState_StackPushRef(es, to_push) < 0) {
+    } else if (KosEvalState_StackPushRef(ctx, to_push) < 0) {
       if (owned)
         Py_DECREF(to_push);
       return EVAL_RAISE();
@@ -495,7 +496,7 @@ static KosOpResult revive_await(
   {
     /* the awaited value may complete a node's pending leave; a return
        stored on that node is handed back for the entry phase to resume */
-    KosOpResult sr = kos_dyn_settle_top(es, out_return);
+    KosOpResult sr = kos_dyn_settle_top(ctx, out_return);
     if (sr.kind != KOS_RES_NORMAL)
       return sr;
   }
@@ -510,7 +511,7 @@ static KosOpResult revive_await(
    kos_dyn_gen_install before koskari_eval (e.g. KosPyAsyncGen drivers, tests).
 */
 static KosEvalMode revive_yield(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc) {
@@ -519,10 +520,10 @@ static KosEvalMode revive_yield(
 
   SAYF("[gen] revive_yield ENTER suspend=%d send_val=%p "
        "throw_typ=%p throw_exc=%p dyn_top=%p frame_top=%p\n",
-       KosEvalState_SuspensionEvent(es),
+       KosEvalState_SuspensionEvent(ctx),
        (void *) send_val, (void *) throw_typ, (void *) throw_exc,
-       (void *) KosEvalState_DYN_TOP(es),
-       (void *) KosEvalState_FRAME(es));
+       (void *) KosEvalState_DYN_TOP(ctx),
+       (void *) KosEvalState_FRAME(ctx));
 
   /* A frame waiting on a resume (a yield-from delegation in flight)
      took no placeholder at install and takes its delivery through the
@@ -530,37 +531,37 @@ static KosEvalMode revive_yield(
      throws it into the delegate; GeneratorExit raises at the frame
      instead, and the raise walk closes the delegate and clears the
      resume when it unwinds the delegation's node. */
-  if (KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
+  if (KosEvalState_FRAME(ctx)
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx))) {
     if (throw_exc != NULL) {
       PyErr_SetObject(throw_typ, throw_exc);
-      return KosEvalState_ThrowIntoResume(es)
+      return KosEvalState_ThrowIntoResume(ctx)
           ? KOS_MODE_NORMAL : KOS_MODE_EXCEPTION;
     }
     to_push = (send_val != NULL) ? send_val : Py_None;
     Py_INCREF(to_push);
-    KosEvalState_StageDelivery(es, to_push);
+    KosEvalState_StageDelivery(ctx, to_push);
     return KOS_MODE_NORMAL;
   }
   if (throw_exc != NULL) {
-    if (KosEvalState_FRAME(es))
-      Py_XDECREF(KosEvalState_StackPopRef(es));
+    if (KosEvalState_FRAME(ctx))
+      Py_XDECREF(KosEvalState_StackPopRef(ctx));
     PyErr_SetObject(throw_typ, throw_exc);
     return KOS_MODE_EXCEPTION;
   }
-  if (KosEvalState_FRAME(es)) {
+  if (KosEvalState_FRAME(ctx)) {
     /* pop_ref hands back an owned reference: releasing it here is
        what pays off the placeholder push -- a drive that staged the
        sent value ahead of us leaves that value on top, and dropping
        the reference silently leaked one per send. */
-    Py_XDECREF(KosEvalState_StackPopRef(es));
+    Py_XDECREF(KosEvalState_StackPopRef(ctx));
     to_push = (send_val != NULL) ? send_val : Py_None;
-    if (KosEvalState_StackPushRef(es, to_push) < 0)
+    if (KosEvalState_StackPushRef(ctx, to_push) < 0)
       return KOS_MODE_EXCEPTION;
   }
   SAYF("[gen] revive_yield DONE frame_top=%p dyn_top=%p\n",
-       (void *) KosEvalState_FRAME(es),
-       (void *) KosEvalState_DYN_TOP(es));
+       (void *) KosEvalState_FRAME(ctx),
+       (void *) KosEvalState_DYN_TOP(ctx));
   return KOS_MODE_NORMAL;
 }
 
@@ -675,12 +676,8 @@ static void decorate_exception_with_dynchain(
   }
 
   {
-    KosEvalState *active_es = kos_tls_active_eval_for_ctx(ctx);
-    KosDynNode *chain_top = active_es
-        ? KosEvalState_DYN_TOP(active_es)
-        : KosContext_DYN_TOP(ctx);
-
-    for (KosDynNode *node = chain_top; node; node = KosDynNode_PARENT(node)) {
+    for (KosDynNode *node = KosContext_DYN_TOP(ctx); node;
+         node = KosDynNode_PARENT(node)) {
       if (! KosDynNode_IS_FRAME(node)) {
         continue;
       }
@@ -710,14 +707,14 @@ static void decorate_exception_with_dynchain(
    preserved across the call; failures are swallowed (trace decoration is
    best-effort). See eval.h.
 */
-void kos_eval_note_crossed_frame(KosEvalState *es) {
+void kos_eval_note_crossed_frame(KosContext *ctx) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
 
-  if (! es || ! KosEvalState_FRAME(es) || ! PyErr_Occurred())
+  if (! ctx || ! KosEvalState_FRAME(ctx) || ! PyErr_Occurred())
     return;
 
-  KosEvalState_FlushLiveRegsToFrame(es);
+  KosEvalState_FlushLiveRegsToFrame(ctx);
   PyErr_Fetch(&typ, &val, &tb);
   PyErr_NormalizeException(&typ, &val, &tb);
 
@@ -736,12 +733,12 @@ void kos_eval_note_crossed_frame(KosEvalState *es) {
 
     if (! frames) {
       PyErr_Clear();
-    } else if (dynchain_record_has_frame(frames, KosEvalState_FRAME(es))) {
+    } else if (dynchain_record_has_frame(frames, KosEvalState_FRAME(ctx))) {
       /* a handler in this frame recorded it when it caught the
          exception; the re-raise crossing it adds nothing */
       Py_DECREF(frames);
     } else {
-      PyObject *meta = dynchain_frame_meta(KosEvalState_FRAME(es), 1);
+      PyObject *meta = dynchain_frame_meta(KosEvalState_FRAME(ctx), 1);
       if (meta) {
         PyList_Append(frames, meta);
         Py_DECREF(meta);
@@ -861,7 +858,6 @@ void kos_eval_inject_recorded_frames(
 
 static void inject_eval_frame_traceback(
     KosContext *ctx,
-    KosEvalState *es,
     PyObject **exc_type,
     PyObject **exc_val,
     PyObject **exc_tb) {
@@ -894,9 +890,9 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
 
 /**
    Inject traceback into the current PyErr in-place, leave PyErr set, and
-   mark the context dead.  Call only when PyErr is set.  When es is non-NULL,
-   flushes live pc/acting_pc onto the top frame first so traceback sees the
-   current instruction.
+   mark the context dead.  Call only when PyErr is set.  Flushes live
+   pc/acting_pc onto the top frame first so traceback sees the current
+   instruction.
 
    An exact GeneratorExit is not decorated. It is the close protocol's
    signal: every close drive throws one in and clears whatever comes
@@ -905,21 +901,17 @@ static void kos_eval_mark_context_dead(KosContext *ctx) {
    abandoned generator. A subclass, or any exception a finally raises in
    its place, is a different type and is decorated as usual.
 */
-void kos_eval_prepare_boundary_raise(
-    KosContext *ctx,
-    KosEvalState *es) {
+void kos_eval_prepare_boundary_raise(KosContext *ctx) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
 
-  if (es)
-    KosEvalState_FlushLiveRegsToFrame(es);
+  KosEvalState_FlushLiveRegsToFrame(ctx);
   PyErr_Fetch(&typ, &val, &tb);
   if (typ != PyExc_GeneratorExit)
-    inject_eval_frame_traceback(ctx, es, &typ, &val, &tb);
+    inject_eval_frame_traceback(ctx, &typ, &val, &tb);
   PyErr_Restore(typ, val, tb);
   kos_eval_mark_context_dead(ctx);
-  if (es)
-    es->terminal = 1;
+  ctx->terminal = 1;
 }
 
 
@@ -939,9 +931,7 @@ void kos_eval_prepare_boundary_raise(
 
    :return: EVAL_REPROLOGUE on success, EVAL_RAISE on error
 */
-static KosOpResult handle_continuation_apply(KosEvalState *es) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+static KosOpResult handle_continuation_apply(KosContext *ctx) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_Fetch(&typ, &val, &tb);
@@ -999,7 +989,7 @@ static KosOpResult handle_continuation_apply(KosEvalState *es) {
       Py_INCREF(resume_val);
     }
 
-    if (kos_invoke_continuation(es, k, resume_val, cont_obj) == 0) {
+    if (kos_invoke_continuation(ctx, k, resume_val, cont_obj) == 0) {
       Py_DECREF(resume_val);
       Py_DECREF(args_obj);
       Py_DECREF(typ);
@@ -1007,7 +997,7 @@ static KosOpResult handle_continuation_apply(KosEvalState *es) {
       Py_DECREF(cont_obj);
       return EVAL_REPROLOGUE();
     }
-    kos_xfer_goal_abandon_all(es);
+    kos_xfer_goal_abandon_all(ctx);
     if (! PyErr_Occurred())
       PyErr_SetString(PyExc_RuntimeError,
                       "KoskariContinuationApply: invoke failed without PyErr");
@@ -1031,7 +1021,7 @@ own_fail:
      is its GEN, which is the driver boundary; anywhere else the root is
      the empty chain. */
   {
-    KosDynNode *seam = KosEvalState_DYN_TOP(es);
+    KosDynNode *seam = KosEvalState_DYN_TOP(ctx);
     KosXferGoal *goal;
 
     while (seam && KosDynNode_PARENT(seam))
@@ -1044,7 +1034,7 @@ own_fail:
     Py_DECREF(val);
     if (! goal)
       return EVAL_RAISE();
-    kos_xfer_goal_push(es, goal);
+    kos_xfer_goal_push(ctx, goal);
   }
   return EVAL_REPROLOGUE();
 }
@@ -1087,13 +1077,12 @@ own_fail:
             fault, or the applied return's own result (EVAL_RETURN at
             the drive root)
 */
-static KosOpResult process_raise(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+static KosOpResult process_raise(KosContext *ctx) {
 
   if (! PyErr_Occurred()) {
     PyErr_SetString(PyExc_SystemError,
                     "process_raise: no exception set");
-    kos_eval_prepare_boundary_raise(ctx, es);
+    kos_eval_prepare_boundary_raise(ctx);
     return EVAL_RAISE();
   }
 
@@ -1101,18 +1090,18 @@ static KosOpResult process_raise(KosEvalState *es) {
      for may be popped or replaced by a transfer. Every ingress into
      the raise machinery passes here, so this is the one place the slot
      drops. */
-  Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+  Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
 
   int is_cc_apply = (KoskariContinuationApply
                      && PyErr_ExceptionMatches(KoskariContinuationApply));
 
-  if (! is_cc_apply && KosEvalState_GOAL(es))
-    kos_xfer_goal_abandon_all(es);
+  if (! is_cc_apply && KosEvalState_GOAL(ctx))
+    kos_xfer_goal_abandon_all(ctx);
 
   if (is_cc_apply)
-    return handle_continuation_apply(es);
+    return handle_continuation_apply(ctx);
 
-  clear_kos_agen_iter_node_on_error(es);
+  clear_kos_agen_iter_node_on_error(ctx);
 
   /* A code-less step frame's resume gets the failure before the walk
      does, delivered through the prologue rather than called from
@@ -1123,19 +1112,19 @@ static KosOpResult process_raise(KosEvalState *es) {
      that one path: this entry is reached straight from
      apply_kos_op_result, never through the prologue. It terminates
      because the delivery clears the resume. */
-  if (KosEvalState_FRAME(es)
-      && ! KosDynFrame_CODE(KosEvalState_FRAME(es))
-      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)))
+  if (KosEvalState_FRAME(ctx)
+      && ! KosDynFrame_CODE(KosEvalState_FRAME(ctx))
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx)))
     return EVAL_REPROLOGUE();
 
   {
-    KosOpResult tl = kos_dyn_unwind_raise(es);
+    KosOpResult tl = kos_dyn_unwind_raise(ctx);
     switch (tl.kind) {
     case KOS_RES_REPROLOGUE:
       return EVAL_REPROLOGUE();
     case KOS_RES_AWAIT:
-      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-      KosEvalState_MarkSuspendedNotRunning(es);
+      KosEvalState_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT);
+      KosEvalState_MarkSuspendedNotRunning(ctx);
       return tl;
     case KOS_RES_FATAL:
       kos_eval_mark_context_dead(ctx);
@@ -1153,7 +1142,7 @@ static KosOpResult process_raise(KosEvalState *es) {
    Returns -1 on error, 0 on success with *out_prompt_id set.
 */
 static int get_prompt_id_from_insn(
-    KosEvalState *es,
+    KosContext *ctx,
     KosOp *insn,
     uint32_t *out_prompt_id) {
 
@@ -1316,8 +1305,8 @@ PyObject *KoskariContinuationError = NULL;
 /**
    Deref name in the current frame namespace. New reference or NULL.
 */
-static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
+static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name) {
+  PyObject *ns = KosEvalState_CurrentNamespace(ctx);
 
   if (KosNamespace_Check(ns))
     return KosNamespace_Resolve(ns, name);
@@ -1332,8 +1321,8 @@ static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name) {
    Store value into name in the current frame namespace. Caller retains
    ownership of val.
 */
-static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val) {
+  PyObject *ns = KosEvalState_CurrentNamespace(ctx);
 
   if (KosNamespace_Check(ns))
     return KosNamespace_Store(ns, name, val);
@@ -1347,8 +1336,8 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val) {
 /**
    Bind name to reference in the current frame namespace.
 */
-static int frame_ns_bind(KosEvalState *es, PyObject *name, PyObject *ref) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
+static int frame_ns_bind(KosContext *ctx, PyObject *name, PyObject *ref) {
+  PyObject *ns = KosEvalState_CurrentNamespace(ctx);
 
   if (KosNamespace_Check(ns))
     return KosNamespace_Bind(ns, name, ref);
@@ -1362,8 +1351,8 @@ static int frame_ns_bind(KosEvalState *es, PyObject *name, PyObject *ref) {
 /**
    Clear name from the current frame namespace.
 */
-static int frame_ns_clear(KosEvalState *es, PyObject *name) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
+static int frame_ns_clear(KosContext *ctx, PyObject *name) {
+  PyObject *ns = KosEvalState_CurrentNamespace(ctx);
   if (KosNamespace_Check(ns))
     return KosNamespace_Clear(ns, name);
   PyErr_Format(PyExc_TypeError,
@@ -1376,8 +1365,8 @@ static int frame_ns_clear(KosEvalState *es, PyObject *name) {
    Deref name in the current frame namespace, clear the binding, and
    return the value. New reference or NULL.
 */
-static PyObject *frame_ns_take(KosEvalState *es, PyObject *name) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
+static PyObject *frame_ns_take(KosContext *ctx, PyObject *name) {
+  PyObject *ns = KosEvalState_CurrentNamespace(ctx);
   if (! KosNamespace_Check(ns)) {
     PyErr_Format(PyExc_TypeError,
                 "frame namespace must be Namespace, got %R", ns);
@@ -1400,8 +1389,8 @@ static PyObject *frame_ns_take(KosEvalState *es, PyObject *name) {
    Get reference for name in the current frame namespace. Namespace only.
    Borrowed reference; caller must INCREF if keeping.
 */
-static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
-  PyObject *ns = KosEvalState_CurrentNamespace(es);
+static PyObject *frame_ns_ref(KosContext *ctx, PyObject *name) {
+  PyObject *ns = KosEvalState_CurrentNamespace(ctx);
 
   if (! KosNamespace_Check(ns)) {
     PyErr_Format(PyExc_TypeError,
@@ -1430,14 +1419,14 @@ static PyObject *frame_ns_ref(KosEvalState *es, PyObject *name) {
    that level: the compiler emits None for it, and the import machinery
    takes the empty string, as Python's own "from .. import x" passes.
 
-   :param es: eval state (supplies frame globals for relative anchors)
+   :param ctx: context (supplies frame globals for relative anchors)
    :param name: module name str, or Py_None for a bare relative import
    :param level: number of leading dots; 0 = absolute
    :param leaf: non-zero to return the leaf module; zero for the root
    :return: new module reference, or NULL with error set
 */
 static PyObject *kos_import_module(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *name,
     long level,
     int leaf) {
@@ -1449,7 +1438,7 @@ static PyObject *kos_import_module(
     name = level > 0 ? str_empty : NULL;
 
   if (level > 0) {
-    PyObject *globals_ns = KosEvalState_GlobalsNamespace(es);
+    PyObject *globals_ns = KosEvalState_GlobalsNamespace(ctx);
 
     PyObject *name_val = KosNamespace_Deref(globals_ns, str_name);
     if (! name_val)
@@ -1505,8 +1494,8 @@ static PyObject *kos_import_module(
  */
 
 
-static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
-  return push_or_await(es, value, 1, 0);
+static KosOpResult kos_await_dispatch(KosContext *ctx, PyObject *value) {
+  return push_or_await(ctx, value, 1, 0);
 }
 
 
@@ -1520,14 +1509,14 @@ static KosOpResult kos_await_dispatch(KosEvalState *es, PyObject *value) {
    consumes a walk's raw result; a result that has already been through
    here must not come back.
 */
-static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r) {
+static KosOpResult kos_eval_walk_outcome(KosContext *ctx, KosOpResult r) {
   if (r.kind == KOS_RES_RAISE) {
     KosOpResult pr;
-    KOS_TRACE_POST_OP_WRAP(event_raise, pr = process_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, pr = process_raise(ctx));
     return pr;
   }
   if (r.kind == KOS_RES_AWAIT)
-    return eval_event_await(es, r.val);
+    return eval_event_await(ctx, r.val);
   return r;
 }
 
@@ -1546,7 +1535,7 @@ static KosOpResult kos_eval_walk_outcome(KosEvalState *es, KosOpResult r) {
             code-less resume frame; EVAL_RAISE on error
 */
 static KosOpResult kos_eval_route_delim_return(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynDelim *ret_delim,
     PyObject *val) {
 
@@ -1557,7 +1546,7 @@ static KosOpResult kos_eval_route_delim_return(
   {
     KosOpResult wr;
     KosDynNode *pending = NULL;
-    wr = kos_dyn_unwind_to_node(es, KosDynDelim_RETURN_NODE(ret_delim),
+    wr = kos_dyn_unwind_to_node(ctx, KosDynDelim_RETURN_NODE(ret_delim),
                                 KOS_XFER_EVENT_SHIFT, &pending);
     if (wr.kind == KOS_RES_REPROLOGUE || wr.kind == KOS_RES_AWAIT) {
       /* a leave went into a thunk or onto an awaitable; val is stored on
@@ -1576,16 +1565,16 @@ static KosOpResult kos_eval_route_delim_return(
   }
 
   SAYF("[eval] route_delim_return after unwind: dyn_top=%p kind=%s",
-       (void *) KosEvalState_CurrentNode(es),
-       KosEvalState_CurrentNode(es)
+       (void *) KosEvalState_CurrentNode(ctx),
+       KosEvalState_CurrentNode(ctx)
            ? kos_dynnode_kind_name(
-                 KosDynNode_KIND(KosEvalState_CurrentNode(es)))
+                 KosDynNode_KIND(KosEvalState_CurrentNode(ctx)))
            : "NULL");
 
   if (KosDynDelim_MODE(ret_delim) == KOS_DYN_DELIM_MODE_INPLACE) {
-    if (kos_dyn_finish_inplace_pop_return(es, ret_delim, val) < 0)
+    if (kos_dyn_finish_inplace_pop_return(ctx, ret_delim, val) < 0)
       return EVAL_RAISE();
-  } else if (kos_dyn_finish_delimited_pop_return(es, ret_delim, val) < 0) {
+  } else if (kos_dyn_finish_delimited_pop_return(ctx, ret_delim, val) < 0) {
     return EVAL_RAISE();
   }
 
@@ -1593,7 +1582,7 @@ static KosOpResult kos_eval_route_delim_return(
      invoker (a resume frame that called the continuation) has no pc to
      continue at: the prologue delivers the value on its stack to the
      resume set on it, the way a callee's return reaches it. */
-  if (! KosEvalState_CODE(es))
+  if (! KosEvalState_CODE(ctx))
     return EVAL_REPROLOGUE();
   return EVAL_NORMAL();
 }
@@ -1604,7 +1593,7 @@ static KosOpResult kos_eval_route_delim_return(
 */
 /* The THEEND barrier handler reports the same fault as an off-the-end fetch;
    the reporter is defined below (with the dispatch loop). */
-static void kos_eval_report_pc_bounds_error(KosEvalState *es);
+static void kos_eval_report_pc_bounds_error(KosContext *ctx);
 /* Every handler has the KosThreadFn prototype: insn is the handler's
    own KosOp (read through KosOp_ARG, KosOp_OBJ, KosOp_ROW, KosOp_SLOT),
    and the delivery
@@ -1614,11 +1603,11 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
    instructions that name it. */
 #define KOS_OP_HANDLER(name)                                            \
   static KOS_PRESERVE_NONE KosOpResult op_##name(                       \
-      KosEvalState *es, void *insn, PyObject *kos_op_delivery_)
+      KosContext *ctx, void *insn, PyObject *kos_op_delivery_)
 
-#define CURRENT_NS() KosEvalState_NAMESPACE(es)
+#define CURRENT_NS() KosEvalState_NAMESPACE(ctx)
 
-/* Namespace-presence guard for opcode handlers.  es->namespace is a live
+/* Namespace-presence guard for opcode handlers.  ctx->namespace is a live
    register, always set during valid execution, so this catches only an
    internal state-machine bug — compiled out unless KOS_EVAL_SAFETYNET.
    Keeping it a macro keeps the 35+ (and growing) ns-touching handlers slim
@@ -1639,19 +1628,19 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es);
    The signal that ends an in-eval delivery (a control-returned hook, a
    flattened generator's yield landing on its consumer). The delivery
    left a plain bytecode frame current with nothing staged, no error,
-   and no goal active: DISPATCH, so the trampoline threads from es->pc
+   and no goal active: DISPATCH, so the trampoline threads from ctx->pc
    without a prologue pass, and a handler that ran the delivery itself
    threads on directly. Anything else (a value staged for a resume, a
    codeless frame, a plan) is the prologue's to deliver.
 */
-static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+static inline KosOpResult kos_eval_delivery_done(KosContext *ctx) {
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
   if (likely(frame
              && KosDynFrame_CODE(frame)
              && ! KosDynFrame_RESUME_KIND(frame)
-             && ! KosEvalState_PENDING_VALUE(es)
-             && ! KosEvalState_GOAL(es)
+             && ! KosEvalState_PENDING_VALUE(ctx)
+             && ! KosEvalState_GOAL(ctx)
              && ! PyErr_Occurred()))
     return EVAL_DISPATCH();
   return EVAL_REPROLOGUE();
@@ -1666,7 +1655,7 @@ static inline KosOpResult kos_eval_delivery_done(KosEvalState *es) {
    OBJECT_NEXT step core lives in OBJECT_NEXT.c but VAR_NEXT / FAST_NEXT
    precede it. */
 static KosOpResult object_next_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *iter,
     PyObject *default_val,
     uint16_t n);
@@ -1675,30 +1664,30 @@ static KosOpResult object_next_step(
    return machinery below; the trampoline's own fast arm uses the same
    functions for every other producer of a RETURN signal). */
 static inline int kos_return_is_plain(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode **out_child,
     KosDynNode **out_parent);
 KOS_OP_INLINE int kos_return_is_region(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode **out_child,
     KosDynNode **out_parent,
     KosDynFrame **out_ft);
 KOS_OP_INLINE KosOpResult eval_plain_return(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *child,
     KosDynNode *parent,
     PyObject *val);
 KOS_OP_INLINE KosOpResult eval_region_return(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *child,
     KosDynNode *parent,
     KosDynFrame *ft,
     PyObject *val);
 KOS_OP_INLINE int kos_return_is_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode **out_parent);
 static int kos_return_take_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *parent,
     PyObject *val,
     const KosResumeKind **out_resume,
@@ -1719,7 +1708,7 @@ static int kos_return_take_resume(
    call result for RESULT_RELAY, or a raise.
 */
 static KosOpResult kos_op_call_star(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *subject,
     PyObject *attr_name,
     KosCacheSlot *cache,
@@ -1733,19 +1722,19 @@ static KosOpResult kos_op_call_star(
   KosOpResult res = EVAL_RAISE();
 
   if (opa & 2) {
-    kwd = KosEvalState_StackPopRef(es);
+    kwd = KosEvalState_StackPopRef(ctx);
     if (! kwd)
       goto done;
   }
 
   if (opa & 1) {
-    pos = KosEvalState_StackPopRef(es);
+    pos = KosEvalState_StackPopRef(ctx);
     if (! pos)
       goto done;
   }
 
   if (! subject) {
-    subject = KosEvalState_StackPopRef(es);
+    subject = KosEvalState_StackPopRef(ctx);
     if (! subject)
       goto done;
   }
@@ -1823,7 +1812,7 @@ static KosOpResult kos_op_call_star(
     }
   }
 
-  res = kos_call_push_args(es, callable, args, kwd, tail);
+  res = kos_call_push_args(ctx, callable, args, kwd, tail);
 
  done:
   Py_XDECREF(kwd);
@@ -1850,7 +1839,7 @@ static KosOpResult kos_op_call_star(
    is unused.
 */
 KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
@@ -1860,33 +1849,33 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
 
   (void) insn;
 
-  if (likely(kos_return_is_plain(es, &child, &parent))) {
+  if (likely(kos_return_is_plain(ctx, &child, &parent))) {
     KOS_TRACE_POST_OP_WRAP(plain_return,
-        r = eval_plain_return(es, child, parent, val));
+        r = eval_plain_return(ctx, child, parent, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_CONTINUE(es);
+      RESULT_CONTINUE(ctx);
     if (r.kind == KOS_RES_REPROLOGUE)
-      TAILCALL(kos_eval_prologue, es, NULL, NULL);
+      TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
     return r;
   }
 
-  if (kos_return_is_region(es, &child, &parent, &ft)) {
+  if (kos_return_is_region(ctx, &child, &parent, &ft)) {
     KOS_TRACE_POST_OP_WRAP(plain_return,
-        r = eval_region_return(es, child, parent, ft, val));
+        r = eval_region_return(ctx, child, parent, ft, val));
     if (likely(r.kind == KOS_RES_DISPATCH))
-      RESULT_CONTINUE(es);
+      RESULT_CONTINUE(ctx);
     if (r.kind == KOS_RES_REPROLOGUE)
-      TAILCALL(kos_eval_prologue, es, NULL, NULL);
+      TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
     return r;
   }
 
-  if (kos_return_is_resume(es, &parent)) {
+  if (kos_return_is_resume(ctx, &parent)) {
     const KosResumeKind *resume;
     void *state;
-    int took = kos_return_take_resume(es, parent, val, &resume, &state);
+    int took = kos_return_take_resume(ctx, parent, val, &resume, &state);
 
     if (took > 0)
-      RESUME_HOP(resume, es, state, val);
+      RESUME_HOP(resume, ctx, state, val);
     if (unlikely(took < 0))
       RESULT_RAISE();
   }
@@ -1896,11 +1885,11 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
      root. Its own plain case is the transition above. The arms above
      are the RETURN row's own work; from here on is the signal's. */
   KOS_TRACE_TRAMPOLINE_STEP();
-  KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(es, val));
+  KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(ctx, val));
   if (likely(r.kind == KOS_RES_DISPATCH))
-    RESULT_CONTINUE(es);
+    RESULT_CONTINUE(ctx);
   if (r.kind == KOS_RES_REPROLOGUE)
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
 }
 
@@ -1914,11 +1903,11 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
    row; insn is unused.
 */
 KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
-  KosDynGen *gen = kos_dyn_find_gen(es);
+  KosDynGen *gen = kos_dyn_find_gen(ctx);
   KosOpResult r;
 
   (void) insn;
@@ -1936,20 +1925,20 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
      signal's. */
   if (! KosDynGen_IS_FLATTENED(gen))
     KOS_TRACE_TRAMPOLINE_STEP();
-  KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(es, gen, val));
+  KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(ctx, gen, val));
   if (likely(r.kind == KOS_RES_DISPATCH))
-    RESULT_CONTINUE(es);
+    RESULT_CONTINUE(ctx);
   if (unlikely(r.kind == KOS_RES_YIELD && KosDynGen_IS_FLATTENED(gen))) {
     /* The freeze found no consumer for a generator that had one:
        never hand the trampoline a YIELD it would deliver again. */
     Py_DECREF(r.val);
-    es->terminal = 0;
+    ctx->terminal = 0;
     PyErr_SetString(PyExc_SystemError,
                     "flattened generator yield found no consumer");
     RESULT_RAISE();
   }
   if (r.kind == KOS_RES_REPROLOGUE)
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
 }
 
@@ -1989,7 +1978,7 @@ static void kos_eval_poll_now(void) {
 
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
@@ -1999,13 +1988,13 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_poll(
   KOS_TRACE_TRAMPOLINE_STEP();
   kos_eval_poll_now();
   if (unlikely(PyErr_Occurred()))
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
-  KOS_THREAD_NEXT(es);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+  KOS_THREAD_NEXT(ctx);
 }
 
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
@@ -2015,15 +2004,15 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
   (void) val;
 
   KOS_TRACE_TRAMPOLINE_STEP();
-  KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
+  KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
   if (r.kind == KOS_RES_REPROLOGUE)
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
 }
 
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_await(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
@@ -2032,15 +2021,15 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_await(
   (void) insn;
 
   KOS_TRACE_TRAMPOLINE_STEP();
-  KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(es, val));
+  KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(ctx, val));
   if (r.kind == KOS_RES_REPROLOGUE)
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
 }
 
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
@@ -2050,38 +2039,38 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_control_returned(
   (void) val;
 
   KOS_TRACE_TRAMPOLINE_STEP();
-  r = kos_eval_post_opcode_control_returned_after_hook(es);
+  r = kos_eval_post_opcode_control_returned_after_hook(ctx);
   if (likely(r.kind == KOS_RES_DISPATCH))
-    RESULT_CONTINUE(es);
+    RESULT_CONTINUE(ctx);
   if (r.kind == KOS_RES_REPROLOGUE)
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
 }
 
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
-    KosEvalState *es,
+    KosContext *ctx,
     void *kind,
     PyObject *val) {
 
   switch ((KosOpResultKind) (uintptr_t) kind) {
   case KOS_RES_POLL:
-    TAILCALL(kos_eval_poll, es, NULL, NULL);
+    TAILCALL(kos_eval_poll, ctx, NULL, NULL);
   case KOS_RES_RAISE:
-    TAILCALL(kos_eval_raise, es, NULL, NULL);
+    TAILCALL(kos_eval_raise, ctx, NULL, NULL);
   case KOS_RES_AWAIT:
-    TAILCALL(kos_eval_await, es, NULL, val);
+    TAILCALL(kos_eval_await, ctx, NULL, val);
   case KOS_RES_RETURN:
-    TAILCALL(kos_return_deliver, es, NULL, val);
+    TAILCALL(kos_return_deliver, ctx, NULL, val);
   case KOS_RES_YIELD:
-    TAILCALL(kos_yield_deliver, es, NULL, val);
+    TAILCALL(kos_yield_deliver, ctx, NULL, val);
   case KOS_RES_CONTROL_RETURNED:
-    TAILCALL(kos_eval_control_returned, es, NULL, NULL);
+    TAILCALL(kos_eval_control_returned, ctx, NULL, NULL);
   case KOS_RES_DISPATCH:
   case KOS_RES_NORMAL:
-    KOS_THREAD_NEXT(es);
+    KOS_THREAD_NEXT(ctx);
   case KOS_RES_REPROLOGUE:
-    TAILCALL(kos_eval_prologue, es, NULL, NULL);
+    TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   case KOS_RES_FATAL:
   default:
     return EVAL_FATAL();
@@ -2119,11 +2108,11 @@ const KosThreadFn kos_op_handlers[] = {
    consumed.
 */
 KosOpResult KosNativeFrame_ReturnToCache(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *value,
     KosDynFrame **cache) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
   if (cache) {
     KosDynFrame_CACHE_SLOT(frame) = (void *) cache;
@@ -2145,7 +2134,7 @@ KosOpResult KosNativeFrame_ReturnToCache(
    register. KosResumeFrame_Install sets the resume kind on it.
 */
 static KosDynFrame *kos_push_or_reuse_codeless_frame(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynFrame **cache) {
 
   if (cache && *cache) {
@@ -2154,26 +2143,26 @@ static KosDynFrame *kos_push_or_reuse_codeless_frame(
 
     if (! empty)
       return NULL;
-    if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
+    if (kos_eval_check_frame_room(ctx, KosEvalState_FRAME(ctx), 1) < 0)
       return NULL;
     *cache = NULL;
     Py_INCREF(empty);
     KosDynFrame_NS(frame) = empty;
-    kos_dyn_push_ready_frame(es, frame);
+    kos_dyn_push_ready_frame(ctx, frame);
     return frame;
   }
 
-  return kos_dyn_push_frame_native(es);
+  return kos_dyn_push_frame_native(ctx);
 }
 
 
 KosDynFrame *KosResumeFrame_Install(
-    KosEvalState *es,
+    KosContext *ctx,
     const KosResumeKind *kind,
     void *state,
     KosDynFrame **cache) {
 
-  KosDynFrame *frame = kos_push_or_reuse_codeless_frame(es, cache);
+  KosDynFrame *frame = kos_push_or_reuse_codeless_frame(ctx, cache);
   if (! frame)
     return NULL;
 
@@ -2191,7 +2180,7 @@ KosDynFrame *KosResumeFrame_Install(
    per-status contract.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *iter,
     PyObject **out) {
 
@@ -2202,17 +2191,17 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
   if (kos_iter_next_plain(iter, out, &status))
     return status;
 
-  if (kos_dyn_push_next_node(es, iter, NULL, 1) < 0)
+  if (kos_dyn_push_next_node(ctx, iter, NULL, 1) < 0)
     return KOS_IREQ_ERROR;
 
-  switch (KosIterRequest_Next(es, KosEvalState_DYN_TOP(es), NULL, out)) {
+  switch (KosIterRequest_Next(ctx, KosEvalState_DYN_TOP(ctx), NULL, out)) {
     case KOS_IREQ_DELIVERED:
-      kos_dyn_next_abort_after_failed_attach(es);
+      kos_dyn_next_abort_after_failed_attach(ctx);
       return KOS_IREQ_DELIVERED;
 
     case KOS_IREQ_EXHAUSTED:
       Py_CLEAR(*out);
-      kos_dyn_next_abort_after_failed_attach(es);
+      kos_dyn_next_abort_after_failed_attach(ctx);
       return KOS_IREQ_EXHAUSTED;
 
     case KOS_IREQ_CONTINUES:
@@ -2223,33 +2212,33 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 
     case KOS_IREQ_ERROR:
     default:
-      kos_dyn_next_abort_after_failed_attach(es);
+      kos_dyn_next_abort_after_failed_attach(ctx);
       return KOS_IREQ_ERROR;
   }
 }
 
 
 KosOpResult KosEvalState_NextResume(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *iter,
     PyObject *send_val,
     const KosResumeKind *resume,
     void *state) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
   PyObject *out = NULL;
 
   (void) send_val;  /* no caller sends into Next yet; matches the
                         design's future Send entry point */
 
-  switch (KosNativeFrame_RequestNext(es, iter, &out)) {
+  switch (KosNativeFrame_RequestNext(ctx, iter, &out)) {
     case KOS_IREQ_DELIVERED:
       if (! resume) {
         /* OBJECT_NEXT's own default: the element lands on the stack */
-        return KosEvalState_StackPUSH(es, out) < 0
+        return KosEvalState_StackPUSH(ctx, out) < 0
             ? EVAL_RAISE() : EVAL_NORMAL();
       }
-      return kos_entry_value(es, frame, out, resume, state);
+      return kos_entry_value(ctx, frame, out, resume, state);
 
     case KOS_IREQ_CONTINUES: {
       /* A frame the install left current is threaded into only when
@@ -2261,7 +2250,7 @@ KosOpResult KosEvalState_NextResume(
         KosDynFrame_RESUME_KIND(frame) = resume;
         KosDynFrame_RESUME_STATE(frame) = state;
       }
-      return kos_iter_installed(es);
+      return kos_iter_installed(ctx);
     }
 
     case KOS_IREQ_EXIT:
@@ -2300,7 +2289,7 @@ KosOpResult KosEvalState_NextResume(
 
 
 /* Forward declaration: defined below. */
-static KosOpResult eval_step_resume_delivery(KosEvalState *es);
+static KosOpResult eval_step_resume_delivery(KosContext *ctx);
 
 
 /**
@@ -2310,19 +2299,19 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es);
    EVAL_NORMAL.
 */
 static KosOpResult entry_revive_await(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc,
     KosEvalMode *mode,
     KosObligation *out_return) {
 
-  KosOpResult ra = revive_await(es, send_val, throw_typ, throw_exc,
+  KosOpResult ra = revive_await(ctx, send_val, throw_typ, throw_exc,
                                 out_return);
 
   if (ra.kind == KOS_RES_AWAIT) {
-    KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT);
-    KosEvalState_MarkSuspendedNotRunning(es);
+    KosEvalState_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT);
+    KosEvalState_MarkSuspendedNotRunning(ctx);
     return ra;
   }
   *mode = (ra.kind == KOS_RES_RAISE) ? KOS_MODE_EXCEPTION : KOS_MODE_NORMAL;
@@ -2333,7 +2322,7 @@ static KosOpResult entry_revive_await(
 /**
    Phase 0: the entry call a Python-boundary entry recorded on a fresh
    context. Takes it off the context and installs it through
-   KosEvalState_CallInto on this eval state; a value back in hand is
+   KosEvalState_CallInto on this context; a value back in hand is
    staged for the resume, which the entry phase delivers. An outcome
    other than an install is applied as the trampoline would apply it.
    Out of line so koskari_eval's own frame carries none of it.
@@ -2341,20 +2330,19 @@ static KosOpResult entry_revive_await(
    :return: EVAL_NORMAL when eval should proceed to the entry phase;
             terminal KosOpResult when eval should stop.
 */
-static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosEvalState *es) {
+static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
   const KosEntryCall *call = KosContext_ENTRY_CALL(ctx);
   KosOpResult r;
 
   KosContext_ENTRY_CALL(ctx) = NULL;
   r = KosEvalState_CallInto(
-      es, call->callable, call->args, call->nargs, call->kwnames,
+      ctx, call->callable, call->args, call->nargs, call->kwnames,
       call->resume, NULL, call->frame_flags, 0);
   if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
 
-  r = apply_kos_op_result(es, r);
+  r = apply_kos_op_result(ctx, r);
   if (r.kind == KOS_RES_DISPATCH || r.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
   return r;
@@ -2374,7 +2362,7 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosEvalState *es) {
             terminal KosOpResult when eval should stop.
 */
 static KosOpResult eval_phase_entry(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc,
@@ -2386,16 +2374,16 @@ static KosOpResult eval_phase_entry(
   resume_return.kind = KOS_OB_NONE;
   if (send_val == NULL && throw_typ == NULL && throw_exc == NULL) {
     SAYF("[eval] phase_entry branch: send/throw all NULL, suspend=%d\n",
-         KosEvalState_SuspensionEvent(es));
-    switch (KosEvalState_SuspensionEvent(es)) {
+         KosEvalState_SuspensionEvent(ctx));
+    switch (KosEvalState_SuspensionEvent(ctx)) {
       case KOS_SUSP_NONE:
         mode = KOS_MODE_NORMAL;
         break;
       case KOS_SUSP_AWAIT:
-        if (KosEvalState_PythonAwaitIter(es)) {
+        if (KosEvalState_PythonAwaitIter(ctx)) {
           mode = KOS_MODE_NORMAL;
         } else {
-          KosOpResult _ra = entry_revive_await(es, Py_None, NULL, NULL,
+          KosOpResult _ra = entry_revive_await(ctx, Py_None, NULL, NULL,
                                                &mode, &resume_return);
           if (_ra.kind == KOS_RES_AWAIT)
             return _ra;
@@ -2404,7 +2392,7 @@ static KosOpResult eval_phase_entry(
       case KOS_SUSP_YIELD:
         /* anext() passes NULL for send; treat as Py_None per async gen protocol */
         SAY("[eval] phase_entry -> revive_yield(Py_None)");
-        mode = revive_yield(es, Py_None, throw_typ, throw_exc);
+        mode = revive_yield(ctx, Py_None, throw_typ, throw_exc);
         break;
       default:
         mode = KOS_MODE_NORMAL;
@@ -2415,15 +2403,15 @@ static KosOpResult eval_phase_entry(
     SAYF("[eval] phase_entry branch: send_val=%p throw_typ=%p throw_exc=%p "
          "suspend=%d\n",
          (void *) send_val, (void *) throw_typ, (void *) throw_exc,
-         KosEvalState_SuspensionEvent(es));
-    switch (KosEvalState_SuspensionEvent(es)) {
+         KosEvalState_SuspensionEvent(ctx));
+    switch (KosEvalState_SuspensionEvent(ctx)) {
       case KOS_SUSP_YIELD:
         SAY("[eval] phase_entry -> revive_yield(send_val)");
-        mode = revive_yield(es, send_val, throw_typ, throw_exc);
+        mode = revive_yield(ctx, send_val, throw_typ, throw_exc);
         break;
       case KOS_SUSP_AWAIT:
       default: {
-        KosOpResult _ra = entry_revive_await(es, send_val, throw_typ,
+        KosOpResult _ra = entry_revive_await(ctx, send_val, throw_typ,
                                              throw_exc, &mode,
                                              &resume_return);
         if (_ra.kind == KOS_RES_AWAIT)
@@ -2432,10 +2420,10 @@ static KosOpResult eval_phase_entry(
       }
     }
   }
-  KosEvalState_ClearSuspensionEvent(es);
+  KosEvalState_ClearSuspensionEvent(ctx);
 
   if (mode == KOS_MODE_EXCEPTION) {
-    KosOpResult pr = process_raise(es);
+    KosOpResult pr = process_raise(ctx);
     SAYF("[eval] phase_entry process_raise kind=%d\n", (int) pr.kind);
 
     if (pr.kind == KOS_RES_REPROLOGUE) {
@@ -2452,7 +2440,7 @@ static KosOpResult eval_phase_entry(
      the transfer continues instead of the frame's bytecode. The answer has been through the ingress:
      a RAISE or an AWAIT is terminal, anything else goes on to dispatch. */
   if (mode == KOS_MODE_NORMAL && resume_return.kind == KOS_OB_RETURN) {
-    KosOpResult rr = KosEval_ResumeReturn(es, &resume_return);
+    KosOpResult rr = KosEval_ResumeReturn(ctx, &resume_return);
     switch (rr.kind) {
     case KOS_RES_NORMAL:
     case KOS_RES_REPROLOGUE:
@@ -2467,12 +2455,12 @@ static KosOpResult eval_phase_entry(
 
   /* Revived with a value (given, or staged by the revive) and the top
      frame is waiting on one: deliver. */
-  if ((send_val != NULL || KosEvalState_PENDING_VALUE(es))
+  if ((send_val != NULL || KosEvalState_PENDING_VALUE(ctx))
       && mode == KOS_MODE_NORMAL
-      && KosEvalState_FRAME(es)
-      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
+      && KosEvalState_FRAME(ctx)
+      && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx))) {
 
-    KosOpResult rs = eval_step_resume_delivery(es);
+    KosOpResult rs = eval_step_resume_delivery(ctx);
     if (rs.kind != KOS_RES_NORMAL
         && rs.kind != KOS_RES_REPROLOGUE
         && rs.kind != KOS_RES_DISPATCH
@@ -2498,20 +2486,19 @@ static KosOpResult eval_phase_entry(
    :return: EVAL_NORMAL when the dispatch loop should start;
             terminal KosOpResult when eval should stop.
 */
-static KosOpResult eval_phase_transfer(KosEvalState *es) {
+static KosOpResult eval_phase_transfer(KosContext *ctx) {
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  KosOpResult xfer = kos_eval_drain_goal(es);
+  KosOpResult xfer = kos_eval_drain_goal(ctx);
 
   if (xfer.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
   if (xfer.kind != KOS_RES_NORMAL)
     return xfer;  /* AWAIT / RAISE / FATAL */
 
-  if (! KosEvalState_FRAME(es)) {
+  if (! KosEvalState_FRAME(ctx)) {
     kos_eval_mark_context_dead(ctx);
     Py_INCREF(Py_None);
-    es->terminal = 1;
+    ctx->terminal = 1;
     return EVAL_RETURN(Py_None);
   }
 
@@ -2535,28 +2522,28 @@ static KosOpResult eval_phase_transfer(KosEvalState *es) {
    is the terminal EVAL_YIELD the adapters drive.
 */
 static KosOpResult eval_event_yield(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynGen *gen,
     PyObject *val) {
 
   /* No flush here: the freeze's retarget flushes the outgoing frame's
      pcs when it switches to the consumer's. */
   SAYF("[eval] post_opcode KOS_RES_YIELD -> freeze gen=%p dyn_top=%p\n",
-       (void *) gen, (void *) KosEvalState_CurrentNode(es));
-  if (kos_dyn_gen_freeze(es, gen) < 0) {
+       (void *) gen, (void *) KosEvalState_CurrentNode(ctx));
+  if (kos_dyn_gen_freeze(ctx, gen) < 0) {
     Py_DECREF(val);
     return EVAL_FATAL();
   }
   {
-    KosDynNode *node = kos_dyn_find_iter_node(es);
+    KosDynNode *node = kos_dyn_find_iter_node(ctx);
     if (node) {
-      KosOpResult dr = KosIterRequest_Deliver(es, node,
+      KosOpResult dr = KosIterRequest_Deliver(ctx, node,
                                               KOS_IWAKE_VALUE, val);
       if (dr.kind == KOS_RES_NORMAL)
-        return kos_eval_delivery_done(es);
+        return kos_eval_delivery_done(ctx);
       if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
         return rs;
       }
       return dr;
@@ -2565,9 +2552,9 @@ static KosOpResult eval_event_yield(
   /* Only a yield that stops the evaluator leaves the context not
      running; a delivered yield keeps threading, and the context stays
      RUNNING so the context's GC traverse keeps visiting the live state. */
-  KosEvalState_MarkDeadAfterYield(es);
-  KosEvalState_SetSuspensionEvent(es, KOS_SUSP_YIELD);
-  es->terminal = 1;
+  KosEvalState_MarkDeadAfterYield(ctx);
+  KosEvalState_SetSuspensionEvent(ctx, KOS_SUSP_YIELD);
+  ctx->terminal = 1;
   return EVAL_YIELD(val);
 }
 
@@ -2577,26 +2564,26 @@ static KosOpResult eval_event_yield(
    suspension event.  val ownership transfers on success, or is released on
    demand denial.
 */
-static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
-  if (kos_eval_in_demand(es)) {
+static KosOpResult eval_event_await(KosContext *ctx, PyObject *val) {
+  if (kos_eval_in_demand(ctx)) {
     Py_DECREF(val);
-    KosContext_FLAGS(KosEvalState_CONTEXT(es)) &= ~KOS_CTX_DEAD;
-    KosContext_FLAGS(KosEvalState_CONTEXT(es)) |= KOS_CTX_RUNNING;
+    KosContext_FLAGS(KosEvalState_CONTEXT(ctx)) &= ~KOS_CTX_DEAD;
+    KosContext_FLAGS(KosEvalState_CONTEXT(ctx)) |= KOS_CTX_RUNNING;
 
     /* The eager step stored the __await__ iterator for a resumption
        that is now refused; nothing will drive it again. */
-    KosEvalState_PythonAwaitClearIter(es);
+    KosEvalState_PythonAwaitClearIter(ctx);
     kos_demand_set_sync_violation(
         "async suspension is not allowed in demand_sync");
     KosOpResult rs;
-    KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
     return rs;
   }
 
-  KosEvalState_MarkSuspendedNotRunning(es);
+  KosEvalState_MarkSuspendedNotRunning(ctx);
   KOS_TRACE_POST_OP_WRAP(event_await,
-      KosEvalState_SetSuspensionEvent(es, KOS_SUSP_AWAIT));
-  es->terminal = 1;
+      KosEvalState_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT));
+  ctx->terminal = 1;
   return EVAL_AWAIT(val);
 }
 
@@ -2607,28 +2594,28 @@ static KosOpResult eval_event_await(KosEvalState *es, PyObject *val) {
    them, then delegates to eval_event_return_at_frame.  val consumed.
 */
 static inline KosOpResult eval_event_return_unwind(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val) {
 
   KosDynDelim *took = NULL;
-  KosOpResult unw = kos_dyn_unwind_return(es, KosEvalState_FRAME(es), val,
+  KosOpResult unw = kos_dyn_unwind_return(ctx, KosEvalState_FRAME(ctx), val,
                                           KOS_PENDING_RETURN_FRAME, &took);
 
   /* a FINALLY took the return, a leave is in flight with val stored, or
      a leave raised; the walk consumed val on each */
   if (unw.kind != KOS_RES_NORMAL)
-    return kos_eval_walk_outcome(es, unw);
+    return kos_eval_walk_outcome(ctx, unw);
   if (took) {
     /* The return crossed a delimiting reset: the walk stopped at a DELIM
        with a live invoke bookmark (at dyn_top).  Deliver val to the
        k-invocation site instead of the frame's parent. */
-    KosOpResult rr = kos_eval_route_delim_return(es, took, val);
+    KosOpResult rr = kos_eval_route_delim_return(ctx, took, val);
     if (rr.kind == KOS_RES_NORMAL)
       return EVAL_REPROLOGUE();
-    return kos_eval_walk_outcome(es, rr);
+    return kos_eval_walk_outcome(ctx, rr);
   }
 
-  return eval_event_return_at_frame(es, val);
+  return eval_event_return_at_frame(ctx, val);
 }
 
 
@@ -2638,7 +2625,7 @@ static inline KosOpResult eval_event_return_unwind(
    DYN_TOP == FRAME is already established.  The single definition, shared
    by eval_event_return_at_frame and kos_return_is_plain.
 
-   eval_plain_return sets es->code from the parent, pushes the value
+   eval_plain_return sets ctx->code from the parent, pushes the value
    and returns EVAL_DISPATCH(), bypassing the prologue entirely. Both
    conjuncts below guard that, for separate reasons: without code there
    is nothing to dispatch, and with a resume pending the prologue is
@@ -2666,14 +2653,14 @@ static inline int kos_return_parent_is_plain(KosDynNode *parent) {
    miss can never do more than fall through to the general path.
 */
 static inline int kos_return_is_plain(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode **out_child,
     KosDynNode **out_parent) {
 
-  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(ctx);
   KosDynNode *parent;
 
-  if (unlikely(! child || KosEvalState_DYN_TOP(es) != child))
+  if (unlikely(! child || KosEvalState_DYN_TOP(ctx) != child))
     return 0;
 
   parent = KosDynNode_PARENT(child);
@@ -2725,7 +2712,7 @@ KOS_OP_INLINE void kos_dynframe_free_fast(KosDynFrame *frame) {
    reachable from a frame whose parent is itself a frame).  val consumed.
 */
 KOS_OP_INLINE KosOpResult eval_plain_return(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *child,
     KosDynNode *parent,
     PyObject *val) {
@@ -2733,16 +2720,16 @@ KOS_OP_INLINE KosOpResult eval_plain_return(
   /* Inline retarget: equivalent to commit_dyn_top + apply_live(flush=0),
      but with no chain walk — parent is a known FRAME node, so every live
      register is read directly from it. */
-  KosEvalState_DYN_TOP(es) = parent;
-  KosEvalState_FRAME(es) = (KosDynFrame *) parent;
-  KosEvalState_BLOCK(es) = &KosDynNode_STACK(parent);
-  KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
-  KosEvalState_CODE(es) = KosDynFrame_CODE((KosDynFrame *) parent);
-  es->pc = KosDynFrame_PC((KosDynFrame *) parent);
-  es->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
+  KosEvalState_DYN_TOP(ctx) = parent;
+  KosEvalState_FRAME(ctx) = (KosDynFrame *) parent;
+  KosEvalState_BLOCK(ctx) = &KosDynNode_STACK(parent);
+  KosEvalState_NAMESPACE(ctx) = KosDynNode_NS(parent);
+  KosEvalState_CODE(ctx) = KosDynFrame_CODE((KosDynFrame *) parent);
+  ctx->pc = KosDynFrame_PC((KosDynFrame *) parent);
+  ctx->acting_pc = KosDynFrame_ACTING_PC((KosDynFrame *) parent);
   kos_dynframe_free_fast((KosDynFrame *) child);
 
-  if (KosEvalState_StackPUSH(es, val) < 0)
+  if (KosEvalState_StackPUSH(ctx, val) < 0)
     return EVAL_FATAL();
 
   /* No control-returned hook: parent (now dyn_top) is a frame, and a
@@ -2768,16 +2755,16 @@ KOS_OP_INLINE KosOpResult eval_plain_return(
    the cache-or-walk split in kos_dyn_resync_after_pop.
 */
 KOS_OP_INLINE int kos_return_is_region(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode **out_child,
     KosDynNode **out_parent,
     KosDynFrame **out_ft) {
 
-  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(ctx);
   KosDynNode *parent;
   KosDynFrame *ft;
 
-  if (! child || KosEvalState_DYN_TOP(es) != child)
+  if (! child || KosEvalState_DYN_TOP(ctx) != child)
     return 0;
 
   parent = KosDynNode_PARENT(child);
@@ -2816,7 +2803,7 @@ KOS_OP_INLINE int kos_return_is_region(
    without the hook dispatches directly. val consumed.
 */
 KOS_OP_INLINE KosOpResult eval_region_return(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *child,
     KosDynNode *parent,
     KosDynFrame *ft,
@@ -2824,21 +2811,21 @@ KOS_OP_INLINE KosOpResult eval_region_return(
 
   KosSegment **bl = KosSegment_BACK(KosDynNode_STACK(child));
 
-  KosEvalState_DYN_TOP(es) = parent;
-  KosEvalState_FRAME(es) = ft;
-  KosEvalState_BLOCK(es) = bl;
-  KosEvalState_NAMESPACE(es) = KosDynNode_NS(parent);
-  KosEvalState_CODE(es) = KosDynFrame_CODE(ft);
-  es->pc = KosDynFrame_PC(ft);
-  es->acting_pc = KosDynFrame_ACTING_PC(ft);
+  KosEvalState_DYN_TOP(ctx) = parent;
+  KosEvalState_FRAME(ctx) = ft;
+  KosEvalState_BLOCK(ctx) = bl;
+  KosEvalState_NAMESPACE(ctx) = KosDynNode_NS(parent);
+  KosEvalState_CODE(ctx) = KosDynFrame_CODE(ft);
+  ctx->pc = KosDynFrame_PC(ft);
+  ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
   kos_dynframe_free((KosDynFrame *) child);
 
-  if (KosEvalState_StackPUSH(es, val) < 0)
+  if (KosEvalState_StackPUSH(ctx, val) < 0)
     return EVAL_FATAL();
 
   if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
-    return kos_eval_post_opcode_control_returned_after_hook(es);
-  return kos_eval_delivery_done(es);
+    return kos_eval_post_opcode_control_returned_after_hook(ctx);
+  return kos_eval_delivery_done(ctx);
 }
 
 
@@ -2849,14 +2836,14 @@ KOS_OP_INLINE KosOpResult eval_region_return(
    returns 1 when it holds.
 */
 KOS_OP_INLINE int kos_return_is_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode **out_parent) {
 
-  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(ctx);
   KosDynNode *parent;
   KosDynNode *pp;
 
-  if (! child || KosEvalState_DYN_TOP(es) != child)
+  if (! child || KosEvalState_DYN_TOP(ctx) != child)
     return 0;
 
   parent = KosDynNode_PARENT(child);
@@ -2886,7 +2873,7 @@ KOS_OP_INLINE int kos_return_is_resume(
    fails or the pop does.
 */
 static int kos_return_take_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *parent,
     PyObject *val,
     const KosResumeKind **out_resume,
@@ -2902,7 +2889,7 @@ static int kos_return_take_resume(
       return -1;
   }
 
-  if (kos_dyn_pop_frame(es) < 0) {
+  if (kos_dyn_pop_frame(ctx) < 0) {
     Py_DECREF(val);
     return -1;
   }
@@ -2924,10 +2911,10 @@ static int kos_return_take_resume(
    then the consumer node above the GEN is the real terminus.  val consumed.
 */
 static KosOpResult eval_event_return_at_frame(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val) {
 
-  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(es);
+  KosDynNode *child = (KosDynNode *) KosEvalState_FRAME(ctx);
   KosDynNode *parent = KosDynNode_PARENT(child);
 
   /* Case 1: plain frame-to-frame — the dominant hot path.  Normally taken
@@ -2937,7 +2924,7 @@ static KosOpResult eval_event_return_at_frame(
   if (likely(kos_return_parent_is_plain(parent))) {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(parent_return,
-        r = eval_plain_return(es, child, parent, val));
+        r = eval_plain_return(ctx, child, parent, val));
     return r;
   }
 
@@ -2947,19 +2934,19 @@ static KosOpResult eval_event_return_at_frame(
     KosDynNode *consumer = KosDynNode_PARENT(parent);
 
     if (! consumer) {
-      KosEvalState_MarkDeadAfterReturn(es);
-      es->terminal = 1;
+      KosEvalState_MarkDeadAfterReturn(ctx);
+      ctx->terminal = 1;
       return EVAL_RETURN(val);
     }
 
     if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_ITER_RECEIVER)) {
-      KosOpResult dr = KosIterRequest_Deliver(es, consumer,
+      KosOpResult dr = KosIterRequest_Deliver(ctx, consumer,
                                               KOS_IWAKE_END, val);
       if (dr.kind == KOS_RES_NORMAL)
         return EVAL_REPROLOGUE();
       if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
         return rs;
       }
       return dr;
@@ -2980,19 +2967,19 @@ static KosOpResult eval_event_return_at_frame(
       && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER)
       && kos_dyn_iter_node_value_mode(parent)) {
 
-    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
+    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
       Py_DECREF(val);
       return EVAL_FATAL();
     }
 
     {
-      KosOpResult dr = KosIterRequest_Deliver(es, parent,
+      KosOpResult dr = KosIterRequest_Deliver(ctx, parent,
                                               KOS_IWAKE_VALUE, val);
       if (dr.kind == KOS_RES_NORMAL)
         return EVAL_REPROLOGUE();
       if (dr.kind == KOS_RES_RAISE) {
         KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
         return rs;
       }
       return dr;
@@ -3003,16 +2990,16 @@ static KosOpResult eval_event_return_at_frame(
      frame, etc.) — pop the callee frame and let eval_parent_return_deliver
      handle the context transition and any control-return hooks. */
   if (parent) {
-    if (unlikely(kos_dyn_pop_frame(es) < 0)) {
+    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
       Py_DECREF(val);
       return EVAL_FATAL();
     }
-    return eval_parent_return_deliver(es, val);
+    return eval_parent_return_deliver(ctx, val);
   }
 
   /* Case 4: no parent — root frame, eval done. */
-  KosEvalState_MarkDeadAfterReturn(es);
-  es->terminal = 1;
+  KosEvalState_MarkDeadAfterReturn(ctx);
+  ctx->terminal = 1;
   return EVAL_RETURN(val);
 }
 
@@ -3024,14 +3011,14 @@ static KosOpResult eval_event_return_at_frame(
    it and converges on the same dispatch on completion.  val consumed.
 */
 static inline KosOpResult eval_event_return(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *val) {
 
-  if (unlikely(KosEvalState_DYN_TOP(es)
-               != (KosDynNode *) KosEvalState_FRAME(es)))
-    return eval_event_return_unwind(es, val);
+  if (unlikely(KosEvalState_DYN_TOP(ctx)
+               != (KosDynNode *) KosEvalState_FRAME(ctx)))
+    return eval_event_return_unwind(ctx, val);
 
-  return eval_event_return_at_frame(es, val);
+  return eval_event_return_at_frame(ctx, val);
 }
 
 
@@ -3039,7 +3026,7 @@ static inline KosOpResult eval_event_return(
    Resume a return that was stored on a node whose leave went
    asynchronous, now that the node is gone. See eval.h.
 */
-KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
+KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob) {
 
   PyObject *val = ob->u.ret.value;
   KosPendingReturnKind kind = (KosPendingReturnKind) ob->u.ret.path;
@@ -3054,15 +3041,15 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
      more, or the walk reaches the frame and delivers. */
   switch (kind) {
   case KOS_PENDING_RETURN_FRAME:
-    return eval_event_return(es, val);
+    return eval_event_return(ctx, val);
 
   case KOS_PENDING_RETURN_DELIM:
-    if (delim && kos_dyn_reaches(es, (KosDynNode *) delim)) {
+    if (delim && kos_dyn_reaches(ctx, (KosDynNode *) delim)) {
       /* The route lands val at the invoke site inside the evaluator;
          its NORMAL is a re-entry there, as eval_event_return_unwind maps it,
          never a boundary result. */
       KosOpResult rr = kos_eval_walk_outcome(
-          es, kos_eval_route_delim_return(es, delim, val));
+          ctx, kos_eval_route_delim_return(ctx, delim, val));
       if (rr.kind == KOS_RES_NORMAL)
         return EVAL_REPROLOGUE();
       return rr;
@@ -3070,15 +3057,15 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
     Py_DECREF(val);
     PyErr_SetString(PyExc_SystemError,
                     "pending return lost its delimited-invoke bookmark");
-    return kos_eval_walk_outcome(es, EVAL_RAISE());
+    return kos_eval_walk_outcome(ctx, EVAL_RAISE());
 
   case KOS_PENDING_RETURN_BREAK:
   case KOS_PENDING_RETURN_CONTINUE: {
     /* The loop walk finishes in the loop's own frame with the pc set,
        so its NORMAL is a re-entry of that frame, not a boundary. */
     KosOpResult lr = kos_eval_walk_outcome(
-        es, kos_dyn_unwind_to_loop(
-            es,
+        ctx, kos_dyn_unwind_to_loop(
+            ctx,
             (kind == KOS_PENDING_RETURN_BREAK)
                 ? KOS_XFER_EVENT_BREAK : KOS_XFER_EVENT_CONTINUE,
             val));
@@ -3090,7 +3077,7 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
   default:
     Py_DECREF(val);
     PyErr_SetString(PyExc_SystemError, "pending return with no return path");
-    return kos_eval_walk_outcome(es, EVAL_RAISE());
+    return kos_eval_walk_outcome(ctx, EVAL_RAISE());
   }
 }
 
@@ -3105,30 +3092,30 @@ KosOpResult KosEval_ResumeReturn(KosEvalState *es, KosObligation *ob) {
    from its own callees must leave the pending phase alone.
 */
 static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
-    KosEvalState *es) {
+    KosContext *ctx) {
 
-  KosDynNode *node = KosEvalState_CurrentNode(es);
+  KosDynNode *node = KosEvalState_CurrentNode(ctx);
   if (likely(! node || KosDynNode_IS_FRAME(node)))
-    return kos_eval_delivery_done(es);
+    return kos_eval_delivery_done(ctx);
 
   KosOpResult r;
   KosObligation resume_return;
 
   resume_return.kind = KOS_OB_NONE;
   KOS_TRACE_POST_OP_WRAP(control_returned,
-      r = kos_dyn_settle_top(es, &resume_return));
+      r = kos_dyn_settle_top(ctx, &resume_return));
   if (r.kind == KOS_RES_RAISE) {
     KosOpResult rs;
-    KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
     return rs;
   }
 
   /* The unlink handed back a return that was stored on the node it
      settled: the node is gone, so the return continues from there. */
   if (resume_return.kind == KOS_OB_RETURN)
-    return KosEval_ResumeReturn(es, &resume_return);
+    return KosEval_ResumeReturn(ctx, &resume_return);
 
-  return kos_eval_delivery_done(es);
+  return kos_eval_delivery_done(ctx);
 }
 
 
@@ -3140,27 +3127,27 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
    consumed by this function.
 */
 static inline KosOpResult eval_parent_return_deliver_impl(
-    KosEvalState *es, PyObject *val) {
+    KosContext *ctx, PyObject *val) {
 
-  KosDynFrame *parent = KosEvalState_FRAME(es);
+  KosDynFrame *parent = KosEvalState_FRAME(ctx);
 
   /* Destination by one field: a parent waiting on a resume takes the
      value through the pending slot; a bytecode parent takes it on its
      stack, where its next instruction finds it. */
   if (parent && KosDynFrame_RESUME_KIND(parent)) {
-    KosEvalState_StageDelivery(es, val);
-  } else if (KosEvalState_StackPUSH(es, val) < 0) {
+    KosEvalState_StageDelivery(ctx, val);
+  } else if (KosEvalState_StackPUSH(ctx, val) < 0) {
     return EVAL_FATAL();
   }
 
-  return kos_eval_post_opcode_control_returned_after_hook(es);
+  return kos_eval_post_opcode_control_returned_after_hook(ctx);
 }
 
 
-static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val) {
+static KosOpResult eval_parent_return_deliver(KosContext *ctx, PyObject *val) {
   KosOpResult ret;
   KOS_TRACE_POST_OP_WRAP(parent_return,
-      ret = eval_parent_return_deliver_impl(es, val));
+      ret = eval_parent_return_deliver_impl(ctx, val));
   return ret;
 }
 
@@ -3168,10 +3155,10 @@ static KosOpResult eval_parent_return_deliver(KosEvalState *es, PyObject *val) {
 /**
    Top-of-loop transfer drain.
 */
-static KosOpResult eval_step_drain_goal(KosEvalState *es) {
-  if (! KosEvalState_GOAL(es))
+static KosOpResult eval_step_drain_goal(KosContext *ctx) {
+  if (! KosEvalState_GOAL(ctx))
     return EVAL_NORMAL();
-  return kos_eval_drain_goal(es);
+  return kos_eval_drain_goal(ctx);
 }
 
 
@@ -3209,8 +3196,8 @@ static KosOpResult eval_step_drain_goal(KosEvalState *es) {
    that does not come through here is a resume frame the walk reaches
    above the live frame; dyn_walk.c calls that one directly.
 */
-static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+static KosOpResult eval_step_resume_delivery(KosContext *ctx) {
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
   const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
   PyObject *val;
@@ -3221,23 +3208,23 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
   /* The pending slot is the live transit. The frame stack carries a
-     delivery only as storage: across a suspension (freeze moved the
-     slot there), or from a landing site that still pushes -- an
+     delivery only as storage: across a suspension (a drive's exit
+     moved the slot there), or from a landing site that still pushes -- an
      iteration node's element, a native frame's return. */
-  val = KosEvalState_PENDING_VALUE(es);
-  KosEvalState_PENDING_VALUE(es) = NULL;
+  val = KosEvalState_PENDING_VALUE(ctx);
+  KosEvalState_PENDING_VALUE(ctx) = NULL;
 
   /* Only a code-less step frame keeps its delivery on its stack; a
      bytecode frame's stack holds its operands, and its delivery is
      always the slot. */
-  if (! val && ! KosDynFrame_CODE(frame) && KosEvalState_StackLen(es) > 0) {
-    val = KosEvalState_StackPopRef(es);
+  if (! val && ! KosDynFrame_CODE(frame) && KosEvalState_StackLen(ctx) > 0) {
+    val = KosEvalState_StackPopRef(ctx);
     if (! val) {
       res = EVAL_RAISE();
       have_res = 1;
 
 #if KOS_EVAL_SAFETYNET
-    } else if (KosEvalState_StackLen(es) > 0) {
+    } else if (KosEvalState_StackLen(ctx) > 0) {
       /* The empty-stack test above is the cold-start discriminator;
          a second staged value would make it lie. */
       Py_DECREF(val);
@@ -3263,7 +3250,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
            the staged outcome is delivered on a later pass. */
         KosDynFrame_RESUME_KIND(frame) = resume;
         KosDynFrame_RESUME_STATE(frame) = state;
-        res = KosEvalState_SettleStage(es, val);
+        res = KosEvalState_SettleStage(ctx, val);
         have_res = 1;
         break;
 
@@ -3277,7 +3264,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
 
   if (! have_res) {
     KOS_TRACE_RESUME_STEP();
-    res = resume->fn(es, state, val);
+    res = resume->fn(ctx, state, val);
   }
 
   /* Every outcome routes through the one hub: a RAISE from here is an
@@ -3292,11 +3279,11 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
 
   /* A resume that threaded into a chain hands back what the chain
      did; a result already through its event leaves as it is. */
-  if (es->terminal)
+  if (ctx->terminal)
     return res;
 
   {
-    KosOpResult ar = apply_kos_op_result(es, res);
+    KosOpResult ar = apply_kos_op_result(ctx, res);
     if (ar.kind == KOS_RES_DISPATCH)
       return EVAL_REPROLOGUE();
     return ar;
@@ -3308,7 +3295,7 @@ static KosOpResult eval_step_resume_delivery(KosEvalState *es) {
    Route a non-NORMAL opcode result through the appropriate event handler.
    NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (re-enter through the prologue).
 */
-static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
+static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   switch (res.kind) {
   case KOS_RES_NORMAL:
   case KOS_RES_REPROLOGUE:
@@ -3317,13 +3304,13 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 
   case KOS_RES_RAISE: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(es));
+    KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
     return r;
   }
 
   case KOS_RES_YIELD: {
     KosOpResult r;
-    KosDynGen *gen = kos_dyn_find_gen(es);
+    KosDynGen *gen = kos_dyn_find_gen(ctx);
 
     if (unlikely(! gen)) {
       Py_DECREF(res.val);
@@ -3332,24 +3319,24 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
       return EVAL_FATAL();
     }
     KOS_TRACE_POST_OP_WRAP(event_yield,
-        r = eval_event_yield(es, gen, res.val));
+        r = eval_event_yield(ctx, gen, res.val));
     return r;
   }
 
   case KOS_RES_AWAIT: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(es, res.val));
+    KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(ctx, res.val));
     return r;
   }
 
   case KOS_RES_RETURN: {
     KosOpResult r;
-    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(es, res.val));
+    KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(ctx, res.val));
     return r;
   }
 
   case KOS_RES_CONTROL_RETURNED:
-    return kos_eval_post_opcode_control_returned_after_hook(es);
+    return kos_eval_post_opcode_control_returned_after_hook(ctx);
 
   case KOS_RES_FATAL:
   default:
@@ -3359,9 +3346,9 @@ static KosOpResult apply_kos_op_result(KosEvalState *es, KosOpResult res) {
 }
 
 
-static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
+static void kos_eval_report_pc_bounds_error(KosContext *ctx) {
 
-  KosDynFrame *rep_pf = KosEvalState_FRAME(es);
+  KosDynFrame *rep_pf = KosEvalState_FRAME(ctx);
 
   if (! rep_pf) {
     PyErr_SetString(PyExc_SystemError,
@@ -3370,10 +3357,10 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
     return;
   }
 
-  KosCode *rep_code = KosEvalState_CODE(es);
+  KosCode *rep_code = KosEvalState_CODE(ctx);
   if (! rep_code)
     rep_code = KosDynFrame_CODE(rep_pf);
-  uint32_t rep_pc = KosEvalState_PC(es);
+  uint32_t rep_pc = KosEvalState_PC(ctx);
 
   if (! rep_code) {
     PyErr_Format(PyExc_SystemError,
@@ -3402,7 +3389,7 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
    Build with -DKOS_EVAL_SAFETYNET=1 to turn a would-be segfault from such an
    internal misfire into a clean diagnostic while tracking down the cause. */
 #if KOS_EVAL_SAFETYNET
-/* es->code can be transiently NULL only through an internal bug (e.g. a
+/* ctx->code can be transiently NULL only through an internal bug (e.g. a
    tail reset that failed to retarget it); guard the fetch against
    dereferencing it. */
 # define KOS_EVAL_SAFETYNET_NULLCODE(code, on_bad)                         \
@@ -3415,20 +3402,20 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
    (appended in KosCode_New), and jump targets are validated in-bounds, so
    straight-line dispatch always hits a terminal RETURN or THEEND before pc
    could reach code_len -- arr[pc] is provably valid. THEEND faults exactly as
-   an off-the-end fetch would. The es->code null check is an
+   an off-the-end fetch would. The ctx->code null check is an
    internal-invariant guard, gated behind KOS_EVAL_SAFETYNET (off by
    default). */
-#define KOS_EVAL_PREPARE_NEXT_INSN(es, insn_lvalue, on_bad)                \
+#define KOS_EVAL_PREPARE_NEXT_INSN(ctx, insn_lvalue, on_bad)               \
   do {                                                                     \
-    KosCode *_kos_code = KosEvalState_CODE(es);                            \
-    uint32_t _kos_pc = KosEvalState_PC(es);                                \
+    KosCode *_kos_code = KosEvalState_CODE(ctx);                           \
+    uint32_t _kos_pc = KosEvalState_PC(ctx);                               \
     KOS_EVAL_SAFETYNET_NULLCODE(_kos_code, on_bad);                        \
     KosOp *_kos_insn = &KosCode_CODE(_kos_code)[_kos_pc];                  \
     SAYF("[eval] pc=%u op=%s arg=%u\n",                                    \
          (unsigned) _kos_pc, kos_opcode_name(_kos_insn->op),               \
          (unsigned) _kos_insn->arg);                                       \
-    (es)->acting_pc = _kos_pc;                                             \
-    (es)->pc = _kos_pc + 1u;                                               \
+    (ctx)->acting_pc = _kos_pc;                                            \
+    (ctx)->pc = _kos_pc + 1u;                                              \
     (insn_lvalue) = _kos_insn;                                             \
   } while (0)
 
@@ -3440,16 +3427,16 @@ static void kos_eval_report_pc_bounds_error(KosEvalState *es) {
    forever with the word still up. So a pass polls first when the
    breaker is up. Not a do-while: the continue must reach the
    enclosing for. */
-#define KOS_REENTER_AGAIN(es)                                           \
+#define KOS_REENTER_AGAIN(ctx)                                          \
   {                                                                     \
-    if (KOS_EVAL_BREAKER_UP(es))                                        \
+    if (KOS_EVAL_BREAKER_UP(ctx))                                       \
       kos_eval_poll_now();                                              \
     continue;                                                           \
   }
 
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
-    KosEvalState *es,
+    KosContext *ctx,
     void *insn,
     PyObject *val) {
 
@@ -3460,16 +3447,16 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
      a continuation replay, or a staged delivery arrives here, and the
      poll runs before the pass delivers, so a pending signal is seen
      ahead of a staged delivery. */
-  if (KOS_EVAL_BREAKER_UP(es))
+  if (KOS_EVAL_BREAKER_UP(ctx))
     kos_eval_poll_now();
 
-  /* es live fields via Init, kos_dyn_* retarget after chain surgery,
-     freeze at cleanup; chain errors propagate without rebuild. */
+  /* the live registers are retargeted by kos_dyn_* after chain
+     surgery; chain errors propagate without rebuild. */
   for (;;) {
 
     #if KOS_STACK_TRACE
     {
-      KosSegment **_kos_tr = KosEvalState_BLOCK(es);
+      KosSegment **_kos_tr = KosEvalState_BLOCK(ctx);
       trace_stack("  after ",
                   (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
     }
@@ -3481,17 +3468,17 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        restarts the loop. A pass with no goal skips the probe. */
     PyObject *const err = PyErr_Occurred();
     const int will_drive =
-        KosEvalState_GOAL(es) && kos_xfer_goal_will_drive(es);
+        KosEvalState_GOAL(ctx) && kos_xfer_goal_will_drive(ctx);
 
     /* Slim bounce: a staged delivery with no pending exception and no
        goal about to drive goes straight to its resume. The two checks
        below exist for chain surgery, which a staged handoff performs
        none of. A goal waiting on a running thunk is dormant: the thunk's
        own deliveries go through here like anyone else's. */
-    if (KosEvalState_PENDING_VALUE(es) && ! will_drive && ! err) {
-      KosOpResult rs = eval_step_resume_delivery(es);
+    if (KosEvalState_PENDING_VALUE(ctx) && ! will_drive && ! err) {
+      KosOpResult rs = eval_step_resume_delivery(ctx);
       if (rs.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(es);
+        KOS_REENTER_AGAIN(ctx);
       return rs;
     }
 
@@ -3510,13 +3497,13 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        transfer still reaches abandon first, and the offer still
        fires. */
     if (err
-        && ! KosEvalState_GOAL(es)
-        && KosEvalState_FRAME(es)
-        && ! KosDynFrame_CODE(KosEvalState_FRAME(es))
-        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es))) {
-      KosOpResult rs = eval_step_resume_delivery(es);
+        && ! KosEvalState_GOAL(ctx)
+        && KosEvalState_FRAME(ctx)
+        && ! KosDynFrame_CODE(KosEvalState_FRAME(ctx))
+        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx))) {
+      KosOpResult rs = eval_step_resume_delivery(ctx);
       if (rs.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(es);
+        KOS_REENTER_AGAIN(ctx);
       return rs;
     }
 
@@ -3525,10 +3512,10 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        the plan; otherwise the wind EXTENT_ACTION can complete while
        PyErr is still set. */
     if (err) {
-      KosOpResult pend = process_raise(es);
+      KosOpResult pend = process_raise(ctx);
       if (pend.kind != KOS_RES_NORMAL) {
         if (pend.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(es);
+        KOS_REENTER_AGAIN(ctx);
         return pend;
       }
     }
@@ -3541,22 +3528,22 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        meant for. Only ahead of a drive: while the goal waits on a
        running thunk the slot belongs to the thunk's code. */
     if (will_drive)
-      Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+      Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
 
     {
-      KosOpResult xfer = eval_step_drain_goal(es);
+      KosOpResult xfer = eval_step_drain_goal(ctx);
       if (xfer.kind != KOS_RES_NORMAL) {
         if (xfer.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(es);
+        KOS_REENTER_AGAIN(ctx);
         return xfer;
       }
     }
 
-    if (KosEvalState_FRAME(es)
-        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(es)) != NULL) {
-      KosOpResult rs = eval_step_resume_delivery(es);
+    if (KosEvalState_FRAME(ctx)
+        && KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx)) != NULL) {
+      KosOpResult rs = eval_step_resume_delivery(ctx);
       if (rs.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(es);
+        KOS_REENTER_AGAIN(ctx);
       return rs;
     }
 
@@ -3564,8 +3551,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     /* Instruction dispatch never runs over a staged delivery: the slot
        is consumed in the trip that staged it, so a capture made by an
        opcode can never observe one. */
-    if (unlikely(KosEvalState_PENDING_VALUE(es))) {
-      Py_CLEAR(KosEvalState_PENDING_VALUE(es));
+    if (unlikely(KosEvalState_PENDING_VALUE(ctx))) {
+      Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
       PyErr_SetString(PyExc_SystemError,
                       "CPS delivery staged with no resume to take it");
       return EVAL_FATAL();
@@ -3574,7 +3561,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
 
     #if KOS_STACK_TRACE
     {
-      KosSegment **_kos_tr = KosEvalState_BLOCK(es);
+      KosSegment **_kos_tr = KosEvalState_BLOCK(ctx);
       trace_stack("  before",
                   (_kos_tr && *_kos_tr) ? *_kos_tr : NULL);
     }
@@ -3583,15 +3570,15 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     {
       KosOp *next;
 
-      KOS_EVAL_PREPARE_NEXT_INSN(es, next, kos_eval_prologue_bad_code);
+      KOS_EVAL_PREPARE_NEXT_INSN(ctx, next, kos_eval_prologue_bad_code);
       KOS_TRACE_THREAD_STEP(next->op);
-      TAILCALL(next->fn, es, next, NULL);
+      TAILCALL(next->fn, ctx, next, NULL);
     }
   }
 
 #if KOS_EVAL_SAFETYNET
 kos_eval_prologue_bad_code:
-  kos_eval_report_pc_bounds_error(es);
+  kos_eval_report_pc_bounds_error(ctx);
   return EVAL_FATAL();
 #endif
 }
@@ -3600,15 +3587,15 @@ kos_eval_prologue_bad_code:
 /**
    The evaluator entry: entry and revive normalization, transfer-plan
    synchronization, then the trampoline that threaded dispatch returns
-   to.  Threading enters from es.pc; a chain then runs handler to
+   to.  Threading enters from ctx->pc; a chain then runs handler to
    handler by tail calls and comes back here only with a signal.
-   NORMAL means the chain stopped with the next instruction at es.pc --
-   a cooperation point that found the eval breaker up, or a step with
-   no way to continue -- so poll if the breaker is up and thread again.  Everything else is applied through
-   apply_kos_op_result, and whatever that yields either threads
-   (DISPATCH), re-enters through the prologue (REPROLOGUE), or leaves
-   through the cleanup below.  The eval state is this function's own
-   local; handlers and helpers take its address.
+   NORMAL means the chain stopped with the next instruction at ctx->pc
+   -- a cooperation point that found the eval breaker up, or a step
+   with no way to continue -- so poll if the breaker is up and thread
+   again.  Everything else is applied through apply_kos_op_result, and
+   whatever that yields either threads (DISPATCH), re-enters through
+   the prologue (REPROLOGUE), or leaves through the cleanup below.
+   Handlers and helpers take ctx itself.
 */
 KosOpResult koskari_eval(
     KosContext *ctx,
@@ -3618,7 +3605,6 @@ KosOpResult koskari_eval(
 
   KosOpResult eval_ret = EVAL_RAISE();
   KosExcState host_exc;
-  KosEvalState es;
   KosTlsState *tls;
   KosOpResult r;
 
@@ -3629,11 +3615,10 @@ KosOpResult koskari_eval(
 
   /* FAST-slot code needs a namespace with fast slots. Checked here,
      before anything below is set up, so a refusal returns with nothing
-     to unwind: the cleanup label pops the thread-local eval and context
-     entries that only the pushes below create, and reaching
-     it from an earlier point would pop an enclosing eval's entries
-     instead. A resume was checked on its first entry, and a native
-     frame carries no code. */
+     to unwind: the cleanup label pops the thread-local context entry
+     that only the push below creates, and reaching it from an earlier
+     point would pop an enclosing eval's entry instead. A resume was
+     checked on its first entry, and a native frame carries no code. */
   {
     KosDynFrame *top = KosContext_FRAME_TOP(ctx);
     KosCode *code = top ? KosDynFrame_CODE(top) : NULL;
@@ -3664,17 +3649,15 @@ KosOpResult koskari_eval(
   /* The drive holds the context: a holder that drops its reference
      while bytecode runs (a coroutine collected from inside its own
      body, a provider cleared under its stepper) leaves the context
-     alive until the drive has frozen back onto it below. */
+     alive until the drive's cleanup below. */
   Py_INCREF(ctx);
 
-  /* The thread record is resolved first so the state takes the
-     thread's breaker from it; the record holds es by address only
-     until KOS_CTX_RUNNING is set below. */
-  tls = kos_tls_enter_drive(ctx, &es);
-  KosEvalState_Init(&es, ctx, kos_tls_breaker(tls));
-  KosEvalState_ThawFromContext(&es);
-  if (KosEvalState_DYN_TOP(&es))
-    kos_dyn_resync_chain(&es);
+  /* The thread record is resolved first so the drive takes the
+     thread's breaker from it. */
+  tls = kos_tls_enter_drive(ctx);
+  KosContext_BeginDrive(ctx, kos_tls_breaker(tls));
+  if (KosEvalState_DYN_TOP(ctx))
+    kos_dyn_resync_chain(ctx);
 
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
   KOS_TRACE_EVAL_PUSH();
@@ -3682,7 +3665,7 @@ KosOpResult koskari_eval(
 
   /* Phase 0: a boundary entry's call, recorded on the context */
   if (unlikely(KosContext_ENTRY_CALL(ctx))) {
-    r = eval_phase_entry_call(&es);
+    r = eval_phase_entry_call(ctx);
     if (r.kind != KOS_RES_NORMAL) {
       eval_ret = r;
       goto koskari_eval_cleanup;
@@ -3692,7 +3675,7 @@ KosOpResult koskari_eval(
   /* Phase 1: entry/revive normalization */
   {
     KosEvalMode mode = KOS_MODE_NORMAL;
-    KosOpResult pe = eval_phase_entry(&es, send_val, throw_typ, throw_exc,
+    KosOpResult pe = eval_phase_entry(ctx, send_val, throw_typ, throw_exc,
                                       &mode);
     if (pe.kind != KOS_RES_NORMAL && pe.kind != KOS_RES_REPROLOGUE) {
       eval_ret = pe;
@@ -3701,8 +3684,8 @@ KosOpResult koskari_eval(
 
     /* Phase 2: transfer goal drive (only when mode warrants it) */
     if (mode == KOS_MODE_NORMAL) {
-      if (unlikely(KosEvalState_GOAL(&es))) {
-        KosOpResult pt = eval_phase_transfer(&es);
+      if (unlikely(KosEvalState_GOAL(ctx))) {
+        KosOpResult pt = eval_phase_transfer(ctx);
         if (pt.kind != KOS_RES_NORMAL && pt.kind != KOS_RES_REPROLOGUE) {
           eval_ret = pt;
           goto koskari_eval_cleanup;
@@ -3715,19 +3698,19 @@ KosOpResult koskari_eval(
      and taken by the revive; an entry that skipped the revive (an await
      iterator still pending) clears it here, so the trampoline and the
      chain never touch it. */
-  KosEvalState_PythonResumeSet(&es, NULL, KOS_RESUME_NONE);
+  KosEvalState_PythonResumeSet(ctx, NULL, KOS_RESUME_NONE);
 
   /* === the trampoline === */
 
   /* One call into the prologue, which threads into the instruction
      stream; a chain comes back only with a boundary result, marked as
-     such on the eval state by the event that made it one. A result
+     such on the context by the event that made it one. A result
      that reached here unmarked came from a producer that returned it
      raw instead of tailing into its event, and is applied here as the
      loop-bodied evaluator did. */
   for (;;) {
-    r = kos_eval_prologue(&es, NULL, NULL);
-    if (es.terminal || r.kind == KOS_RES_FATAL) {
+    r = kos_eval_prologue(ctx, NULL, NULL);
+    if (ctx->terminal || r.kind == KOS_RES_FATAL) {
       eval_ret = r;
       break;
     }
@@ -3735,7 +3718,7 @@ KosOpResult koskari_eval(
       continue;
 
     KOS_TRACE_TRAMPOLINE_STEP();
-    r = apply_kos_op_result(&es, r);
+    r = apply_kos_op_result(ctx, r);
     if (r.kind == KOS_RES_DISPATCH || r.kind == KOS_RES_REPROLOGUE)
       continue;
     eval_ret = r;
@@ -3745,9 +3728,7 @@ KosOpResult koskari_eval(
 koskari_eval_cleanup:
   KOS_TRACE_OP_EXIT();
   KOS_TRACE_EVAL_POP();
-  kos_tls_pop_active_eval(tls);
-  KosEvalState_FlushLiveRegsToFrame(&es);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   kos_tls_leave_drive(tls, ctx);
 

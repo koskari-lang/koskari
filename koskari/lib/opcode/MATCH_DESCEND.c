@@ -19,10 +19,10 @@
   style.
 */
 KOS_OP_HANDLER(MATCH_DESCEND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) kos_op_delivery_;
 
-  PyObject *value = KosEvalState_StackPeek(es);
+  PyObject *value = KosEvalState_StackPeek(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
 
@@ -32,13 +32,13 @@ KOS_OP_HANDLER(MATCH_DESCEND) {
     RESULT_RAISE();
 
   if (! r) {
-    if (unlikely(KosEvalState_StackDrop1(es) < 0))
+    if (unlikely(KosEvalState_StackDrop1(ctx) < 0))
       RESULT_RAISE();
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
   }
-  if (unlikely(KosEvalState_StackSetUnder(es, 0, cursor) < 0))
+  if (unlikely(KosEvalState_StackSetUnder(ctx, 0, cursor) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

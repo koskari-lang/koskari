@@ -21,22 +21,22 @@
 */
 
 KOS_OP_HANDLER(POP_TRY) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
-  KosDynNode *top = KosEvalState_CurrentNode(es);
+  KosDynNode *top = KosEvalState_CurrentNode(ctx);
 
   PyErr_Clear();
 
-  PyObject *value = KosEvalState_StackPopRef(es);
+  PyObject *value = KosEvalState_StackPopRef(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
 
-  if (unlikely(kos_dyn_pop_try(es, (KosDynTry *) top) < 0)) {
+  if (unlikely(kos_dyn_pop_try(ctx, (KosDynTry *) top) < 0)) {
     Py_DECREF(value);
     RESULT_RAISE();
   }
 
-  RESULT_STEAL(es, value);
+  RESULT_STEAL(ctx, value);
 }
 
 

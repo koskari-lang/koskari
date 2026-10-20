@@ -21,11 +21,11 @@
 */
 
 KOS_OP_HANDLER(BUILD_LIST_APPEND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
   size_t count = (size_t) opa;
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count + 1);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -41,8 +41,8 @@ KOS_OP_HANDLER(BUILD_LIST_APPEND) {
       RESULT_RAISE();
   }
 
-  KosEvalState_StackDropNoErr(es, count);
-  RESULT_NEXT(es);
+  KosEvalState_StackDropNoErr(ctx, count);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -23,10 +23,10 @@
 */
 
 KOS_OP_HANDLER(BUILD_LIST_APPEND_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *val = KosOp_OBJ(insn);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
+  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -40,7 +40,7 @@ KOS_OP_HANDLER(BUILD_LIST_APPEND_CONST) {
   if (unlikely(PyList_Append(list, val) < 0))
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

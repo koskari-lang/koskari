@@ -20,8 +20,8 @@
   access runs through kos_item_take (eval/eval_item.c).
 */
 KOS_OP_HANDLER(ITEM_CONST_TAKE) {
-  KOS_SYNC_PC(es, insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosSegment **bl = KosEvalState_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key = KosOp_OBJ(insn);
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(ITEM_CONST_TAKE) {
     RESULT_RAISE();
 
   kos_item_replace_top(bl, out);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

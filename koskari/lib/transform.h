@@ -227,7 +227,7 @@ int kos_transform_source_spent(void);
    across the unwind.
 */
 KosIterStepResult kos_transform_step_abort(
-    KosEvalState *es,
+    KosContext *ctx,
     KosTransform *t,
     KosDynNode *pre_top);
 
@@ -241,7 +241,7 @@ KosIterStepResult kos_transform_step_abort(
    the step to pre_top and returns KOS_ITER_ERROR.
 */
 KosIterStepResult kos_transform_stage(
-    KosEvalState *es,
+    KosContext *ctx,
     KosTransform *t,
     PyObject *value,
     const KosResumeKind *resume,
@@ -256,9 +256,9 @@ KosIterStepResult kos_transform_stage(
    and the step reports its work installed; on ERROR the step aborts
    to pre_top. The kind of the source is the request entry's business.
 */
-#define KOS_TRANSFORM_FETCH(es, t, source, resume, pre_top, out, element) \
+#define KOS_TRANSFORM_FETCH(ctx, t, source, resume, pre_top, out, element) \
   do {                                                                  \
-    switch (KosEvalState_NextOrDefer((es), (source), (resume), (t),    \
+    switch (KosEvalState_NextOrDefer((ctx), (source), (resume), (t),   \
                                      &(t)->cached_frame, &(element))) { \
       case KOS_IREQ_DELIVERED:                                          \
         break;                                                          \
@@ -270,14 +270,14 @@ KosIterStepResult kos_transform_stage(
         (t)->busy = 1;                                                  \
         return KOS_ITER_INSTALLED_VALUE;                                \
       default:                                                          \
-        return kos_transform_step_abort((es), (t), (pre_top));          \
+        return kos_transform_step_abort((ctx), (t), (pre_top));         \
     }                                                                   \
   } while (0)
 
 
 /* The suite functions other than ki_step, shared by every provider. */
 KosIterStepResult kos_transform_throw(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *throw_typ,
     PyObject *throw_exc,

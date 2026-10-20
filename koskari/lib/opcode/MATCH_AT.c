@@ -18,14 +18,14 @@
   pushed. Row depth.
 */
 KOS_OP_HANDLER(MATCH_AT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *mark = kos_match_mark_at(es, KosExtra_IMM(row, 0));
+  PyObject *mark = kos_match_mark_at(ctx, KosExtra_IMM(row, 0));
   if (unlikely(! mark))
     RESULT_RAISE();
-  RESULT_STEAL(es, KosMatchMark_At(mark));
+  RESULT_STEAL(ctx, KosMatchMark_At(mark));
 }
 
 

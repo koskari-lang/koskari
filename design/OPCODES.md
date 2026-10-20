@@ -2302,7 +2302,7 @@ POP. See `koskari/compile/specials/imports.py` (`special_import`,
 `special_import_from`, `special_import_all_from`, `special_use`) for the
 compiler forms.
 
-`kos_import_module(es, name, level, leaf)` builds, for a relative import
+`kos_import_module(ctx, name, level, leaf)` builds, for a relative import
 (`level > 0`), a temporary globals dict holding `__name__` / `__package__`
 from the frame's globals namespace (Python requires a dict, not a
 KosNamespace) so `PyImport_ImportModuleLevelObject` can resolve the anchor
@@ -4108,7 +4108,7 @@ popped.
 
 **Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval/eval_call.c):
 
-- **Stack arrangement**: `ptr = KosEvalState_StackTailPtr(es, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
+- **Stack arrangement**: `ptr = KosEvalState_StackTailPtr(ctx, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
 
 - **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound function found on the type -- the call becomes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. -- the call is `callable(*args)`). The resolution goes through the row's cache slot.
 
@@ -4153,7 +4153,7 @@ popped.
 ### KOS_OP_CALL_VAR_ATTR {#kos_op_call_var_attr}
 
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), ATTR (attr name), COUNT (npos), NOARG.
-- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(es, var_name)` (owned reference); the handler releases it with `Py_DECREF(obj)` on every exit path.
+- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(ctx, var_name)` (owned reference); the handler releases it with `Py_DECREF(obj)` on every exit path.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, then `kos_call_invoke` with `obj` as `self_arg` when `send_self=0`).
 - **Compiler form:** Emitted by `compile/call-attr` when the receiver is a symbol that reads a variable and the call has only positional arguments. Lowers to **CALL_FAST_ATTR**.
 
@@ -4186,7 +4186,7 @@ popped.
 ### KOS_OP_CALL_VAR_ATTR_STAR {#kos_op_call_var_attr_star}
 
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
-- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(es, var_name)` (owned reference, stolen by `kos_op_call_star`). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `kos_op_call_star` resolves, prepends `obj` to the tuple args when the resolution asks for it, and calls through the shared core.
+- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(ctx, var_name)` (owned reference, stolen by `kos_op_call_star`). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `kos_op_call_star` resolves, prepends `obj` to the tuple args when the resolution asks for it, and calls through the shared core.
 - **Invariants**: `var_name` and attr name in constant pool; same opa bit meanings as CALL_ATTR_STAR.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR_STAR.c): Parallel to CALL_ATTR_STAR with VAR receiver semantics (see [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr)).
 - **Compiler form:** Emitted by `compile/call-attr` for a variable receiver with `*:` or `**:`. Lowers to **CALL_FAST_ATTR_STAR**.

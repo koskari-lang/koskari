@@ -22,7 +22,7 @@
 */
 
 KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t src = KosExtra_IMM(row, 0);
 
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
     ops[0] = KosExtra_OBJ(row, 1);   /* borrowed */
   } else {
     PyObject *name = KosExtra_OBJ(row, 1);
-    ops[0] = frame_ns_deref(es, name);
+    ops[0] = frame_ns_deref(ctx, name);
     if (! ops[0])
       RESULT_RAISE();
   }
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
     ops[1] = KosExtra_OBJ(row, 2);   /* borrowed */
   } else {
     PyObject *name = KosExtra_OBJ(row, 2);
-    ops[1] = frame_ns_deref(es, name);
+    ops[1] = frame_ns_deref(ctx, name);
     if (! ops[1]) {
       if (! KosCmpSrc_X_CONST(src))
         Py_DECREF(ops[0]);
@@ -60,9 +60,9 @@ KOS_OP_HANDLER(CHECK_COMPARE_VAR) {
     RESULT_RAISE();
 
   if ((res != 0) == KosCmpSrc_NEGATE(src))
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 3));
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -39,7 +39,7 @@
 */
 
 
-KosDynNode *kos_dyn_find_iter_node(KosEvalState *es) {
+KosDynNode *kos_dyn_find_iter_node(KosContext *ctx) {
 
   /* Prefer dyn_top.  After the yield freeze the yielding generator's GEN
      node has detached, so its parent, the receiver that was directly
@@ -47,14 +47,14 @@ KosDynNode *kos_dyn_find_iter_node(KosEvalState *es) {
      receiver.  It must win: a YIELD_FROM delegating to this generator
      beats an outer FOREACH awaiting an *enclosing* generator, otherwise
      the delegate's yields are misrouted and the delegate is torn down. */
-  KosDynNode *const top = KosEvalState_DYN_TOP(es);
+  KosDynNode *const top = KosEvalState_DYN_TOP(ctx);
   if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER))
     return top;
 
   /* Otherwise (the gen frame is still installed) walk outward from the
      running frame and take the nearest receiver of any kind. */
   {
-    KosDynFrame *cf = KosEvalState_FRAME(es);
+    KosDynFrame *cf = KosEvalState_FRAME(ctx);
     KosDynNode *n;
     if (! cf)
       return NULL;
@@ -102,20 +102,20 @@ void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
 
 
 int kos_dyn_iter_node_deliver_yield(
-    KosEvalState *es, KosDynNode *node, PyObject *val) {
+    KosContext *ctx, KosDynNode *node, PyObject *val) {
 
   if (KosDynNode_IS_NEXT(node))
-    return kos_dyn_next_deliver_yield(es, (KosDynNext *) node, val);
+    return kos_dyn_next_deliver_yield(ctx, (KosDynNext *) node, val);
 
   if (KosDynNode_IS_FOREACH(node))
     return kos_dyn_foreach_deliver_yield_kos_agen(
-        es, (KosDynForeach *) node, val);
+        ctx, (KosDynForeach *) node, val);
 
   if (KosDynNode_IS_YIELD_FROM(node))
     /* Hand the value to the delegating generator; it re-emits as its own
        yield on the next handler dispatch. */
     return kos_dyn_yield_from_deliver_inner_yield(
-        es, (KosDynYieldFrom *) node, val);
+        ctx, (KosDynYieldFrom *) node, val);
 
   PyErr_Format(PyExc_RuntimeError,
                "iteration-node yield to unexpected receiver kind %u",
@@ -126,18 +126,18 @@ int kos_dyn_iter_node_deliver_yield(
 
 
 int kos_dyn_iter_node_deliver_exhausted(
-    KosEvalState *es, KosDynNode *node, PyObject *val) {
+    KosContext *ctx, KosDynNode *node, PyObject *val) {
 
   if (KosDynNode_IS_NEXT(node))
-    return kos_dyn_next_deliver_exhausted(es, (KosDynNext *) node, val);
+    return kos_dyn_next_deliver_exhausted(ctx, (KosDynNext *) node, val);
 
   if (KosDynNode_IS_FOREACH(node))
     return kos_dyn_foreach_deliver_exhausted(
-        es, (KosDynForeach *) node, val);
+        ctx, (KosDynForeach *) node, val);
 
   if (KosDynNode_IS_YIELD_FROM(node))
     return kos_dyn_yield_from_deliver_exhausted(
-        es, (KosDynYieldFrom *) node, val);
+        ctx, (KosDynYieldFrom *) node, val);
 
   PyErr_Format(PyExc_RuntimeError,
                "iteration-node exhaustion to unexpected receiver kind %u",
@@ -188,14 +188,14 @@ PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node) {
 }
 
 
-void kos_dyn_iter_node_abort(KosEvalState *es, KosDynNode *node) {
+void kos_dyn_iter_node_abort(KosContext *ctx, KosDynNode *node) {
 
   if (KosDynNode_IS_NEXT(node)) {
-    kos_dyn_unlink_next_node(es, (KosDynNext *) node);
+    kos_dyn_unlink_next_node(ctx, (KosDynNext *) node);
   } else if (KosDynNode_IS_FOREACH(node)) {
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
   } else if (KosDynNode_IS_YIELD_FROM(node)) {
-    (void) kos_dyn_unlink_yield_from(es, (KosDynYieldFrom *) node);
+    (void) kos_dyn_unlink_yield_from(ctx, (KosDynYieldFrom *) node);
   }
 }
 

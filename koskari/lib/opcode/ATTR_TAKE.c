@@ -18,10 +18,10 @@
 */
 
 KOS_OP_HANDLER(ATTR_TAKE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *obj = KosEvalState_StackPopRef(es);
+  PyObject *obj = KosEvalState_StackPopRef(ctx);
   if (! obj)
     RESULT_RAISE();
 
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(ATTR_TAKE) {
     RESULT_RAISE();
   }
 
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

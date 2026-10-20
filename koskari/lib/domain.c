@@ -59,9 +59,6 @@ struct KosTlsState {
   KosContext **ctx_stack;
   size_t ctx_depth;
   size_t ctx_cap;
-  KosEvalState **eval_stack;
-  size_t eval_depth;
-  size_t eval_cap;
   PyObject **python_domain_stack;
   size_t python_domain_depth;
   size_t python_domain_cap;
@@ -103,7 +100,6 @@ static void tls_state_release(KosTlsState *s) {
   if (--s->refs > 0)
     return;
   PyMem_Free(s->ctx_stack);
-  PyMem_Free(s->eval_stack);
   PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
 }
@@ -227,7 +223,7 @@ static void pop_active_ctx(void) {
 }
 
 
-KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es) {
+KosTlsState *kos_tls_enter_drive(KosContext *ctx) {
   KosTlsState *s = get_or_alloc_tls_state();
   if (! s)
     Py_FatalError("koskari: TLS state allocation failed");
@@ -235,9 +231,6 @@ KosTlsState *kos_tls_enter_drive(KosContext *ctx, KosEvalState *es) {
   s->ctx_stack = (KosContext **) tls_stack_reserve(
       s->ctx_stack, &s->ctx_cap, s->ctx_depth);
   s->ctx_stack[s->ctx_depth++] = ctx;
-  s->eval_stack = (KosEvalState **) tls_stack_reserve(
-      s->eval_stack, &s->eval_cap, s->eval_depth);
-  s->eval_stack[s->eval_depth++] = es;
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
   return s;
 }
@@ -248,35 +241,11 @@ const volatile KosBreakerWord *kos_tls_breaker(const KosTlsState *s) {
 }
 
 
-void kos_tls_pop_active_eval(KosTlsState *s) {
-  if (s->eval_depth > 0)
-    s->eval_depth--;
-}
-
-
 void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx) {
   KosEvaluatorToken_DecrementLiveDepth(KosContext_TOKEN(ctx));
   if (s->ctx_depth > 0)
     s->ctx_depth--;
   tls_state_release(s);
-}
-
-
-KosEvalState *kos_tls_active_eval_for_ctx(const KosContext *ctx) {
-  KosTlsState *s;
-  size_t i;
-
-  if (! ctx)
-    return NULL;
-  s = tls_state_current();
-  if (! s)
-    return NULL;
-  for (i = s->eval_depth; i > 0; i--) {
-    KosEvalState *es = s->eval_stack[i - 1];
-    if (es && KosEvalState_CONTEXT(es) == ctx)
-      return es;
-  }
-  return NULL;
 }
 
 

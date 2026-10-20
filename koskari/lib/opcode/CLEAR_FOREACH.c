@@ -19,8 +19,8 @@
 */
 
 KOS_OP_HANDLER(CLEAR_FOREACH) {
-  KOS_SYNC_PC(es, insn);
-  KosDynNode *region = KosEvalState_CurrentNode(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosDynNode *region = KosEvalState_CurrentNode(ctx);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "CLEAR_FOREACH: top is not a FOREACH region");
@@ -28,11 +28,11 @@ KOS_OP_HANDLER(CLEAR_FOREACH) {
   }
 
   KosDynForeach_ENABLED((KosDynForeach *) region) = 0;
-  if (KosEvalState_StackClear(es) < 0)
+  if (KosEvalState_StackClear(ctx) < 0)
     RESULT_RAISE();
 
   (void) insn;
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

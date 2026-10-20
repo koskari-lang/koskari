@@ -20,7 +20,7 @@
   list.
 */
 KOS_OP_HANDLER(FAST_LIST_APPEND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -40,7 +40,7 @@ KOS_OP_HANDLER(FAST_LIST_APPEND) {
     RESULT_RAISE();
   }
 
-  PyObject *value = KosEvalState_StackPopRef(es);
+  PyObject *value = KosEvalState_StackPopRef(ctx);
   if (unlikely(! value)) {
     Py_XDECREF(list_ref);
     RESULT_RAISE();
@@ -51,7 +51,7 @@ KOS_OP_HANDLER(FAST_LIST_APPEND) {
   Py_DECREF(value);
   if (unlikely(rc < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

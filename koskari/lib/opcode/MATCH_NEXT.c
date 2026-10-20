@@ -19,22 +19,22 @@
   Row LABEL, depth.
 */
 KOS_OP_HANDLER(MATCH_NEXT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
   uint32_t under = KosExtra_IMM(row, 1);
-  PyObject *cursor = kos_match_cursor_at(es, under);
+  PyObject *cursor = kos_match_cursor_at(ctx, under);
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   PyObject *elem = NULL;
-  int r = kos_match_pull(es, cursor, (size_t) under, &elem);
+  int r = kos_match_pull(ctx, cursor, (size_t) under, &elem);
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  RESULT_STEAL(es, elem);
+  RESULT_STEAL(ctx, elem);
 }
 
 

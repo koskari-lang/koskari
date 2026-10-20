@@ -112,11 +112,11 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
 /**
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */
-KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
+KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
+  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(ctx), break_pc, continue_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynforeach_free(node);
     return NULL;
   }
@@ -127,16 +127,16 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 /**
    Pop FOREACH when top. Callers: opcode POP_FOREACH, kos_dyn_unwind_to_loop.
 */
-int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
+  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
     return -1;
   }
-  kos_dyn_foreach_clear_store_resume(es);
+  kos_dyn_foreach_clear_store_resume(ctx);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynforeach_free(node);
   }
@@ -144,8 +144,8 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
 }
 
 
-void kos_dyn_foreach_clear_store_resume(KosEvalState *es) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+void kos_dyn_foreach_clear_store_resume(KosContext *ctx) {
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
   if (frame
       && KosDynFrame_RESUME_KIND(frame) == &kos_foreach_store_resume_kind) {
@@ -155,9 +155,9 @@ void kos_dyn_foreach_clear_store_resume(KosEvalState *es) {
 }
 
 
-void kos_dyn_foreach_unwind(KosEvalState *es, KosDynForeach *node) {
+void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
   (void) node;
-  kos_dyn_foreach_clear_store_resume(es);
+  kos_dyn_foreach_clear_store_resume(ctx);
 }
 
 
@@ -166,23 +166,23 @@ void kos_dyn_foreach_unwind(KosEvalState *es, KosDynForeach *node) {
    being live again by the time it arrives: staged for the resume a
    STORE step set, else pushed. Consumes val, failure included.
 */
-static int foreach_deliver_deferred(KosEvalState *es, PyObject *val) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+static int foreach_deliver_deferred(KosContext *ctx, PyObject *val) {
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
   if (frame && KosDynFrame_RESUME_KIND(frame)) {
-    KosEvalState_StageDelivery(es, val);
+    KosEvalState_StageDelivery(ctx, val);
     return 0;
   }
-  return KosEvalState_StackPUSH(es, val);
+  return KosEvalState_StackPUSH(ctx, val);
 }
 
 
 int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynForeach *fe,
     PyObject *val) {
 
-  if (foreach_deliver_deferred(es, val) < 0)
+  if (foreach_deliver_deferred(ctx, val) < 0)
     return -1;
 
   kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 0);
@@ -198,16 +198,16 @@ int kos_dyn_foreach_deliver_yield_kos_agen(
    else pc. val consumed.
 */
 int kos_dyn_foreach_deliver_exhausted(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynForeach *fe,
     PyObject *val) {
 
   kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 1);
 
   /* no element is coming: a store resume the step set goes with it */
-  kos_dyn_foreach_clear_store_resume(es);
+  kos_dyn_foreach_clear_store_resume(ctx);
   KosDynForeach_EXHAUSTED(fe) = 1;
-  KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
+  KosEvalState_SET_PC(ctx, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
   kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
 
   Py_XDECREF(val);

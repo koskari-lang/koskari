@@ -18,14 +18,14 @@
   VAR_REF: arg = constant index (name). Push name reference (for closure).
 */
 KOS_OP_HANDLER(VAR_REF) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *ref = frame_ns_ref(es, name);
+  PyObject *ref = frame_ns_ref(ctx, name);
   if (unlikely(! ref))
     RESULT_RAISE();
 
-  RESULT_PUSH(es, ref);
+  RESULT_PUSH(ctx, ref);
 }
 
 

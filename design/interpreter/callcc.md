@@ -111,7 +111,7 @@ typedef struct {
 The `kos_shift_capture()` function handles capture:
 
 ```c
-int kos_shift_capture(KosEvalState *es, uint32_t prompt_id,
+int kos_shift_capture(KosContext *ctx, uint32_t prompt_id,
         uint32_t resume_pc, KosContinuation **out_k);
 ```
 
@@ -148,7 +148,7 @@ int kos_shift_capture(KosEvalState *es, uint32_t prompt_id,
 The `kos_invoke_continuation()` function handles resumption:
 
 ```c
-int kos_invoke_continuation(KosEvalState *es, KosContinuation *k,
+int kos_invoke_continuation(KosContext *ctx, KosContinuation *k,
         PyObject *value, int is_throw, PyObject *continuation_ref);
 ```
 

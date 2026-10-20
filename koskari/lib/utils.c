@@ -187,7 +187,7 @@ static int kos_apply_build_args_tuple(
    unchanged, and fn's own install reports the outcome.
 */
 static KosOpResult kos_apply_install_core(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *fn,
     PyObject *arglist,
     PyObject *kwds,
@@ -209,14 +209,14 @@ static KosOpResult kos_apply_install_core(
   }
 
   r = KosEvalState_CallArgs(
-      es, fn, seq_args, kwds, tail_call, NULL, NULL);
+      ctx, fn, seq_args, kwds, tail_call, NULL, NULL);
   Py_DECREF(seq_args);
   return r;
 }
 
 
 static KosOpResult kos_vinstall_apply(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -231,7 +231,7 @@ static KosOpResult kos_vinstall_apply(
   }
 
   return kos_apply_install_core(
-      es,
+      ctx,
       args[0],
       (nargs >= 2) ? args[1] : NULL,
       (nargs >= 3) ? args[2] : NULL,

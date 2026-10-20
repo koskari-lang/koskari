@@ -45,9 +45,9 @@ typedef struct KosPairwise {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(pairwise_resume_deliver_kind, "pairwise-step",
                 pairwise_resume_deliver, kos_transform_step_clear, NULL);
@@ -62,7 +62,7 @@ KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
    every fetch here is a request.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
 
@@ -72,9 +72,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
                                             &pairwise_resume_deliver_kind, t);
-    RESULT_ENTRY(es, r, &pairwise_resume_deliver_kind, t);
+    RESULT_ENTRY(ctx, r, &pairwise_resume_deliver_kind, t);
   }
 }
 
@@ -90,7 +90,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
    before the raise carries the exhaustion to the stepping node.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosPairwise *p = (KosPairwise *) state;
   KosTransform *t = &p->base;
@@ -106,7 +106,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
 
   if (! p->held) {
     p->held = element;  /* steals */
-    RESUME_HOP(&pairwise_resume_fetch_kind, es, p, NULL);
+    RESUME_HOP(&pairwise_resume_fetch_kind, ctx, p, NULL);
   }
 
   row = PyTuple_Pack(2, p->held, element);
@@ -118,7 +118,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
   Py_DECREF(p->held);
   p->held = element;  /* steals */
 
-  return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
+  return KosNativeFrame_ReturnToCache(ctx, row, &t->cached_frame);
 }
 
 
@@ -126,14 +126,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
 
 
 static KosIterStepResult pairwise_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosPairwise *p = (KosPairwise *) self;
   KosTransform *t = &p->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -146,7 +146,7 @@ static KosIterStepResult pairwise_iter_step(
     /* Prime the pair on the first step. A source of fewer than two
        elements never yields, exactly as Python's does. */
     if (! p->held) {
-      KOS_TRANSFORM_FETCH(es, t, t->source, &pairwise_resume_fetch_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, t->source, &pairwise_resume_fetch_kind,
                           pre_top, out, p->held);
     }
 
@@ -156,7 +156,7 @@ static KosIterStepResult pairwise_iter_step(
     PyObject *held = p->held;
     Py_INCREF(held);
 
-    switch (KosEvalState_NextOrDefer(es, t->source,
+    switch (KosEvalState_NextOrDefer(ctx, t->source,
                                      &pairwise_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
@@ -174,7 +174,7 @@ static KosIterStepResult pairwise_iter_step(
         return KOS_ITER_INSTALLED_VALUE;
       default:
         Py_DECREF(held);
-        return kos_transform_step_abort(es, t, pre_top);
+        return kos_transform_step_abort(ctx, t, pre_top);
     }
 
     row = PyTuple_Pack(2, held, element);

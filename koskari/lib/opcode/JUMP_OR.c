@@ -19,8 +19,8 @@
   stack and jump; else pop and continue.
 */
 KOS_OP_HANDLER(JUMP_OR) {
-  KOS_SYNC_PC(es, insn);
-  PyObject *val = KosEvalState_StackPopRef(es);
+  KOS_SYNC_PC(ctx, insn);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -31,19 +31,19 @@ KOS_OP_HANDLER(JUMP_OR) {
   }
 
   if (res) {
-    if (unlikely(KosEvalState_StackPushRef(es, val) < 0)) {
+    if (unlikely(KosEvalState_StackPushRef(ctx, val) < 0)) {
       Py_DECREF(val);
       RESULT_RAISE();
     }
 
     Py_DECREF(val);
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
 
   } else {
     Py_DECREF(val);
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

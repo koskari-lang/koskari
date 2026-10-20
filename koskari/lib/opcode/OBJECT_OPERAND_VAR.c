@@ -21,16 +21,16 @@
 */
 
 KOS_OP_HANDLER(OBJECT_OPERAND_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KosSegment **bl = KosEvalState_BLOCK(ctx);
   PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *pair[2];
   PyObject *result;
 
   if (unlikely(! top))
     RESULT_RAISE();
-  pair[1] = frame_ns_deref(es, KosExtra_OBJ(row, 1));
+  pair[1] = frame_ns_deref(ctx, KosExtra_OBJ(row, 1));
   if (unlikely(! pair[1]))
     RESULT_RAISE();
   pair[0] = top[0];
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(OBJECT_OPERAND_VAR) {
   if (unlikely(! result))
     RESULT_RAISE();
   kos_stack_drop1_fast(bl);
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

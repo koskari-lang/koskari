@@ -32,7 +32,7 @@
 
 
 /* defined later in eval.c; the deliver helper stores by name through it */
-static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val);
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
 
 
 /**
@@ -162,7 +162,7 @@ int KosEval_ResultIsValue(PyObject *result) {
    reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_async_iter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **await_out,
     PyObject *iter,
     PyObject **result_out,
@@ -171,12 +171,12 @@ static KosGetNextResult next_from_python_async_iter(
   (void) iter;
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(es, awaitable, &suspended,
-                                                     &yielded);
+  PyObject *result = KosEvalState_EagerStepAwaitable(
+      ctx, awaitable, &suspended, &yielded);
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
-    KosEvalState_MarkSuspendedNotRunning(es);
+    KosEvalState_MarkSuspendedNotRunning(ctx);
     *await_out = yielded;
     return GET_NEXT_SUSPEND;
   }
@@ -200,12 +200,12 @@ static KosGetNextResult next_from_python_async_iter(
    *result_out is set with a new reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_sync_iter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **await_out,
     PyObject *iter,
     PyObject **result_out) {
 
-  (void) es;
+  (void) ctx;
   (void) await_out;
 
   PyObject *n = PyIter_Next(iter);
@@ -227,7 +227,7 @@ static KosGetNextResult next_from_python_sync_iter(
    *result_out set only on GET_NEXT_VALUE (caller pushes and DECREF).
 */
 static inline KosGetNextResult op_get_next_from_iter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **await_out,
     PyObject *iter,
     PyObject **result_out) {
@@ -236,7 +236,7 @@ static inline KosGetNextResult op_get_next_from_iter(
 
   PyObject *awaitable = get_await_next(iter);
   if (awaitable) {
-    KosGetNextResult r = next_from_python_async_iter(es, await_out, iter,
+    KosGetNextResult r = next_from_python_async_iter(ctx, await_out, iter,
                                                       result_out, awaitable);
     return r;
   }
@@ -254,7 +254,7 @@ static inline KosGetNextResult op_get_next_from_iter(
   }
 
   if (PyIter_Check(iter))
-    return next_from_python_sync_iter(es, await_out, iter, result_out);
+    return next_from_python_sync_iter(ctx, await_out, iter, result_out);
 
   PyErr_SetString(PyExc_TypeError, "not an iterator");
   return GET_NEXT_ERROR;
@@ -287,7 +287,7 @@ static KOS_NOINLINE KosGetNextResult op_get_next_sync_ended(int had_next) {
 
 
 static inline KosGetNextResult op_get_next_from_bound(
-    KosEvalState *es,
+    KosContext *ctx,
     uint8_t kind,
     PyObject **await_out,
     PyObject *iter,
@@ -306,7 +306,7 @@ static inline KosGetNextResult op_get_next_from_bound(
   if (kind == KOS_IREQ_KIND_PY_ASYNC) {
     PyObject *awaitable = get_await_next(iter);
     if (awaitable)
-      return next_from_python_async_iter(es, await_out, iter, result_out,
+      return next_from_python_async_iter(ctx, await_out, iter, result_out,
                                          awaitable);
     /* No error: the type lost its __anext__ since the bind classified
        it; take the sync step, which raises for an iterator with neither.
@@ -314,7 +314,7 @@ static inline KosGetNextResult op_get_next_from_bound(
        StopAsyncIteration synchronously, which is this iterator's
        exhaustion. */
     if (! PyErr_Occurred())
-      return op_get_next_from_bound(es, KOS_IREQ_KIND_PY_SYNC, await_out,
+      return op_get_next_from_bound(ctx, KOS_IREQ_KIND_PY_SYNC, await_out,
                                     iter, result_out);
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyErr_Clear();
@@ -336,7 +336,7 @@ static inline KosGetNextResult op_get_next_from_bound(
    DELIVERED *fast_out is the element (new ref), else NULL.
 */
 KOS_OP_INLINE KosIterRequestStatus kos_foreach_request_next(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *region,
     PyObject **fast_out) {
 
@@ -370,7 +370,7 @@ KOS_OP_INLINE KosIterRequestStatus kos_foreach_request_next(
     return KOS_IREQ_EXHAUSTED;
   }
 
-  return KosIterRequest_Next(es, region, NULL, fast_out);
+  return KosIterRequest_Next(ctx, region, NULL, fast_out);
 }
 
 
@@ -406,7 +406,7 @@ KOS_OP_INLINE KosOp *kos_foreach_step_else(const KosOp *step) {
    the current frame namespace. Consumes val, failure included. 0/-1.
 */
 KOS_OP_INLINE int kos_foreach_store_element(
-    KosEvalState *es,
+    KosContext *ctx,
     const KosOp *step,
     PyObject *val) {
 
@@ -414,10 +414,10 @@ KOS_OP_INLINE int kos_foreach_store_element(
 
   if (KosOp_OP(step) == KOS_OP_ITER_NEXT_STORE_FAST)
     return kos_ns_fast_store_steal(
-        KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 0), val);
+        KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0), val);
 
   {
-    int res = frame_ns_store(es, KosExtra_OBJ(row, 0), val);
+    int res = frame_ns_store(ctx, KosExtra_OBJ(row, 0), val);
     Py_DECREF(val);
     return res;
   }
@@ -430,13 +430,13 @@ KOS_OP_INLINE int kos_foreach_store_element(
    instruction (the CONTINUE back-edge). Consumes val. 0/-1.
 */
 KOS_OP_INLINE int kos_foreach_deliver_in_hand(
-    KosEvalState *es,
+    KosContext *ctx,
     const KosOp *step,
     PyObject *val) {
 
   if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    return KosEvalState_StackPUSH(es, val);
-  return kos_foreach_store_element(es, step, val);
+    return KosEvalState_StackPUSH(ctx, val);
+  return kos_foreach_store_element(ctx, step, val);
 }
 
 
@@ -451,13 +451,13 @@ KOS_OP_INLINE int kos_foreach_deliver_in_hand(
    resume at exhaustion and at its teardown.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult foreach_store_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     void *state,
     PyObject *value) {
 
   if (unlikely(! value))
     return EVAL_RAISE();
-  if (unlikely(kos_foreach_store_element(es, (const KosOp *) state, value) < 0))
+  if (unlikely(kos_foreach_store_element(ctx, (const KosOp *) state, value) < 0))
     return EVAL_RAISE();
   return EVAL_NORMAL();
 }
@@ -488,9 +488,9 @@ KOS_OP_INLINE void kos_foreach_defer_step(
 /**
   Globals
 */
-static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
+static inline PyObject *KosEvalState_GlobalsNamespace(KosContext *ctx) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
   PyObject *ns;
 
   if (! frame) {

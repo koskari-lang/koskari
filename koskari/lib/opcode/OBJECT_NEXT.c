@@ -22,7 +22,7 @@
 */
 
 static KosOpResult object_next_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *iter,
     PyObject *default_val,
     uint16_t n) {
@@ -33,19 +33,19 @@ static KosOpResult object_next_step(
     KosDynNode *bnode;
     PyObject *out = NULL;
 
-    if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
+    if (kos_dyn_push_next_node(ctx, iter, default_val, (int) n) < 0) {
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_RAISE();
     }
-    bnode = KosEvalState_DYN_TOP(es);
+    bnode = KosEvalState_DYN_TOP(ctx);
     Py_DECREF(iter);
     Py_XDECREF(default_val);
 
-    switch (KosIterRequest_Next(es, bnode, NULL, &out)) {
+    switch (KosIterRequest_Next(ctx, bnode, NULL, &out)) {
       case KOS_IREQ_DELIVERED:
-        kos_dyn_next_abort_after_failed_attach(es);
-        if (KosEvalState_StackPUSH(es, out) < 0)
+        kos_dyn_next_abort_after_failed_attach(ctx);
+        if (KosEvalState_StackPUSH(ctx, out) < 0)
           return EVAL_RAISE();
         return EVAL_NORMAL();
 
@@ -53,14 +53,14 @@ static KosOpResult object_next_step(
         Py_XDECREF(out);
         if (n == 2) {
           PyObject *dv = KosDynNext_DEFAULT_VAL(bnode);
-          if (dv && KosEvalState_StackPushRef(es, dv) < 0) {
-            kos_dyn_next_abort_after_failed_attach(es);
+          if (dv && KosEvalState_StackPushRef(ctx, dv) < 0) {
+            kos_dyn_next_abort_after_failed_attach(ctx);
             return EVAL_RAISE();
           }
-          kos_dyn_next_abort_after_failed_attach(es);
+          kos_dyn_next_abort_after_failed_attach(ctx);
           return EVAL_NORMAL();
         }
-        kos_dyn_next_abort_after_failed_attach(es);
+        kos_dyn_next_abort_after_failed_attach(ctx);
         PyErr_SetNone(PyExc_StopIteration);
         return EVAL_RAISE();
 
@@ -69,7 +69,7 @@ static KosOpResult object_next_step(
            it can be: a code-less native frame takes the entry
            sequence, and a frame suspended inside a yield-from runs that
            node's phase resume first. */
-        return kos_iter_installed(es);
+        return kos_iter_installed(ctx);
       }
 
       case KOS_IREQ_EXIT:
@@ -77,17 +77,17 @@ static KosOpResult object_next_step(
 
       case KOS_IREQ_ERROR:
       default:
-        kos_dyn_next_abort_after_failed_attach(es);
+        kos_dyn_next_abort_after_failed_attach(ctx);
         return EVAL_RAISE();
     }
   }
 
   PyObject *value = NULL;
   PyObject *_await = NULL;
-  KosGetNextResult get_res = op_get_next_from_iter(es, &_await, iter, &value);
+  KosGetNextResult get_res = op_get_next_from_iter(ctx, &_await, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
-      if (KosEvalState_StackPushRef(es, value) < 0) {
+      if (KosEvalState_StackPushRef(ctx, value) < 0) {
         Py_DECREF(value);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
@@ -101,7 +101,7 @@ static KosOpResult object_next_step(
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
-        if (KosEvalState_StackPushRef(es, default_val) < 0) {
+        if (KosEvalState_StackPushRef(ctx, default_val) < 0) {
           Py_XDECREF(default_val);
           return EVAL_RAISE();
         }
@@ -118,14 +118,14 @@ static KosOpResult object_next_step(
          value revives through the iteration node (revive_await election);
          StopAsyncIteration from the suspended step converts to exhaustion
          at the raise walk. Nothing rides the operand stack. */
-      if (kos_dyn_push_next_node(es, iter, default_val, (int) n) < 0) {
+      if (kos_dyn_push_next_node(ctx, iter, default_val, (int) n) < 0) {
         Py_DECREF(iter);
         Py_XDECREF(default_val);
         Py_XDECREF(_await);
         return EVAL_RAISE();
       }
       kos_dyn_iter_request_set_mode(
-          KosEvalState_DYN_TOP(es), KOS_IREQ_AWAITING_PY);
+          KosEvalState_DYN_TOP(ctx), KOS_IREQ_AWAITING_PY);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_AWAIT(_await);
@@ -149,7 +149,7 @@ static KosOpResult object_next_step(
 */
 
 KOS_OP_HANDLER(OBJECT_NEXT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   uint16_t n = KosOp_ARG(insn);
   if (n != 1 && n != 2) {
     PyErr_Format(PyExc_ValueError, "OBJECT_NEXT arg must be 1 or 2, got %u", n);
@@ -158,17 +158,17 @@ KOS_OP_HANDLER(OBJECT_NEXT) {
 
   PyObject *default_val = NULL;
   if (n == 2) {
-    default_val = KosEvalState_StackPopRef(es);
+    default_val = KosEvalState_StackPopRef(ctx);
     if (! default_val)
       RESULT_RAISE();
   }
-  PyObject *iter = KosEvalState_StackPopRef(es);
+  PyObject *iter = KosEvalState_StackPopRef(ctx);
   if (! iter) {
     Py_XDECREF(default_val);
     RESULT_RAISE();
   }
 
-  RESULT_RELAY(es, object_next_step(es, iter, default_val, n));
+  RESULT_RELAY(ctx, object_next_step(ctx, iter, default_val, n));
 }
 
 

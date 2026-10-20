@@ -23,7 +23,7 @@
    the core turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_FAST_ATTR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   uint32_t slot_idx = KosExtra_IMM(row, 0);
@@ -58,16 +58,16 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   if (! tail) {
     KosOpResult r;
     int taken = kos_call_cached_frame_install(
-        es, resolved, self_arg, self_arg != NULL, (Py_ssize_t) n, &r);
+        ctx, resolved, self_arg, self_arg != NULL, (Py_ssize_t) n, &r);
 
     if (likely(taken > 0)) {
       if (! self_arg)
         Py_DECREF(obj);
-      RESULT_RELAY(es, r);
+      RESULT_RELAY(ctx, r);
     }
     if (unlikely(taken < 0)) {
       if (n)
-        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), n);
+        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(ctx), n);
       Py_DECREF(resolved);
       Py_DECREF(obj);
       RESULT_RAISE();
@@ -80,7 +80,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
      core's prepend. */
   PyObject *const *argv = NULL;
   if (n > 0) {
-    argv = KosEvalState_StackTailPtr(es, (size_t) n);
+    argv = KosEvalState_StackTailPtr(ctx, (size_t) n);
     if (unlikely(! argv)) {
       Py_DECREF(resolved);
       Py_DECREF(obj);
@@ -89,10 +89,10 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
   }
 
   KosOpResult r = kos_call_invoke_from_handler(
-      es, tail, resolved, self_arg, argv, (Py_ssize_t) n, NULL,
+      ctx, tail, resolved, self_arg, argv, (Py_ssize_t) n, NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  RESULT_RELAY(es, r);
+  RESULT_RELAY(ctx, r);
 }
 
 

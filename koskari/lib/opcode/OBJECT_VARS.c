@@ -18,10 +18,10 @@
   OBJECT_VARS: arg unused. Pop TOS, push getattr(TOS, "__dict__").
 */
 KOS_OP_HANDLER(OBJECT_VARS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(OBJECT_VARS) {
     RESULT_RAISE();
   }
 
-  RESULT_STEAL(es, d);
+  RESULT_STEAL(ctx, d);
 }
 
 

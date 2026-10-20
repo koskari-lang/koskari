@@ -205,19 +205,19 @@ int kos_transform_step_ready(
 
 
 KosIterStepResult kos_transform_step_abort(
-    KosEvalState *es,
+    KosContext *ctx,
     KosTransform *t,
     KosDynNode *pre_top) {
 
   Py_CLEAR(t->pending);
 
-  if (KosEvalState_DYN_TOP(es) != pre_top) {
+  if (KosEvalState_DYN_TOP(ctx) != pre_top) {
     PyObject *ftyp, *fval, *ftb;
 
     PyErr_Fetch(&ftyp, &fval, &ftb);
     {
       /* a leave in flight here is abandoned with the step */
-      KosOpResult wr = kos_dyn_unwind_to_node(es, pre_top,
+      KosOpResult wr = kos_dyn_unwind_to_node(ctx, pre_top,
                                               KOS_XFER_EVENT_RAISE, NULL);
       if (wr.kind == KOS_RES_AWAIT)
         Py_XDECREF(wr.val);
@@ -229,26 +229,26 @@ KosIterStepResult kos_transform_step_abort(
 
 
 KosIterStepResult kos_transform_stage(
-    KosEvalState *es,
+    KosContext *ctx,
     KosTransform *t,
     PyObject *value,
     const KosResumeKind *resume,
     KosDynNode *pre_top) {
 
   KosDynFrame *frame = KosResumeFrame_Install(
-      es, resume, t, &t->cached_frame);
+      ctx, resume, t, &t->cached_frame);
 
   if (! frame) {
     Py_XDECREF(value);
-    return kos_transform_step_abort(es, t, pre_top);
+    return kos_transform_step_abort(ctx, t, pre_top);
   }
   /* the frame carries the kind and the record from here; an abort
      below tears it down through the kind's clear */
   t->busy = 1;
   if (value) {
-    if (KosEvalState_StackPushRef(es, value) < 0) {
+    if (KosEvalState_StackPushRef(ctx, value) < 0) {
       Py_DECREF(value);
-      return kos_transform_step_abort(es, t, pre_top);
+      return kos_transform_step_abort(ctx, t, pre_top);
     }
     Py_DECREF(value);
   }
@@ -278,7 +278,7 @@ static void close_sources(KosTransform *t) {
 
 
 KosIterStepResult kos_transform_throw(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *throw_typ,
     PyObject *throw_exc,
@@ -286,7 +286,7 @@ KosIterStepResult kos_transform_throw(
 
   KosTransform *t = (KosTransform *) self;
 
-  (void) es;
+  (void) ctx;
   (void) out;
 
   if (t->busy) {

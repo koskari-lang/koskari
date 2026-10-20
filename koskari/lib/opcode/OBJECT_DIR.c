@@ -18,17 +18,17 @@
   OBJECT_DIR: pop TOS, call PyObject_Dir, push result.
 */
 KOS_OP_HANDLER(OBJECT_DIR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (! val) RESULT_RAISE();
 
   PyObject *res = PyObject_Dir(val);
   Py_DECREF(val);
 
   if (! res) RESULT_RAISE();
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

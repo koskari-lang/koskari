@@ -116,7 +116,7 @@ Exactly two blank lines between top-level function or variable definitions.
 A call into Koskari made from Koskari flattens. It installs into the
 running evaluator and delivers its result through a resume
 (`KosEvalState_CallInto`, `KosEvalState_Call`). Never create a new
-context or eval state and run a nested `koskari_eval` for it.
+context and run a nested `koskari_eval` for it.
 
 A path that fails to flatten is a bug. Any design, comment or document
 that describes nesting as acceptable is heresy.

@@ -19,18 +19,18 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_CLEAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  PyObject *obj = frame_ns_deref(es, var_name);
+  PyObject *obj = frame_ns_deref(ctx, var_name);
   if (! obj)
     RESULT_RAISE();
   int res = PyObject_DelAttr(obj, attr_name);
   Py_DECREF(obj);
   if (res < 0)
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

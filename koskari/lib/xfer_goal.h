@@ -151,14 +151,14 @@ int kos_xfer_goal_capture_restore(
 /**
    Make goal the active goal; whatever was active waits as its outer.
 */
-void kos_xfer_goal_push(KosEvalState *es, KosXferGoal *goal);
+void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal);
 
 
 /**
    Free the active goal and every outer behind it. The chain is left as
    it is.
 */
-void kos_xfer_goal_abandon_all(KosEvalState *es);
+void kos_xfer_goal_abandon_all(KosContext *ctx);
 
 
 /**
@@ -173,13 +173,13 @@ void kos_xfer_goal_abandon_all(KosEvalState *es);
      EVAL_AWAIT with the awaitable when one suspended; EVAL_RAISE with
      PyErr set when a step failed, or on a boundary raise
 */
-KosOpResult kos_xfer_goal_drive(KosEvalState *es, int *out_boundary);
+KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary);
 
 
 /**
    1 when the active goal waits on node.
 */
-int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node);
+int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node);
 
 
 /**
@@ -187,7 +187,7 @@ int kos_xfer_goal_waits_on(KosEvalState *es, const KosDynNode *node);
    ahead of that region leaving the chain, so the next drive continues
    LEAVING from the new dyn_top. Caller: opcode/POP_FINALLY.c.
 */
-void kos_xfer_goal_resume_after_finally(KosEvalState *es);
+void kos_xfer_goal_resume_after_finally(KosContext *ctx);
 
 /**
    1 when a goal is active and the next drive will act on it: it is not
@@ -195,7 +195,7 @@ void kos_xfer_goal_resume_after_finally(KosEvalState *es);
    wait_top). A waiting goal whose thunk is still running is dormant, and
    the code in that thunk owns the evaluator's staged deliveries.
 */
-int kos_xfer_goal_will_drive(KosEvalState *es);
+int kos_xfer_goal_will_drive(KosContext *ctx);
 
 
 int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg);

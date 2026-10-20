@@ -49,8 +49,7 @@
    entry (PEP 590 shape); tuple+dict callers spread onto this shape
    through KosArgSpread.
 
-   es is the live KosEvalState of the running evaluator. Use
-   KosEvalState_CONTEXT(es) when the heap context is needed.
+   ctx is the context of the running evaluator.
 
    The install owns its frame and reports what it did, one of:
 
@@ -73,7 +72,7 @@
    resets a frame on its own.
 */
 typedef KosOpResult (*KosVectorInstallFunc)(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -124,7 +123,7 @@ typedef enum {
 
 
 typedef KosIterStepResult (*KosIterStepFunc)(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,        /* borrowed; NULL for plain next. A
                                   PROTOCOL send only (a generator's
@@ -132,7 +131,7 @@ typedef KosIterStepResult (*KosIterStepFunc)(
     PyObject **out);
 
 typedef KosIterStepResult (*KosIterThrowFunc)(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *throw_typ,       /* borrowed */
     PyObject *throw_exc,       /* borrowed */
@@ -329,7 +328,7 @@ KOS_OP_INLINE int kos_iter_next_plain(
    kind of the source is decided here, never by the provider.
 */
 KOS_OP_INLINE KosIterRequestStatus KosEvalState_NextOrDefer(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *iter,
     const KosResumeKind *resume,
     void *state,
@@ -343,7 +342,7 @@ KOS_OP_INLINE KosIterRequestStatus KosEvalState_NextOrDefer(
   if (kos_iter_next_plain(iter, out, &status))
     return status;
 
-  if (! KosResumeFrame_Install(es, resume, state, cache))
+  if (! KosResumeFrame_Install(ctx, resume, state, cache))
     return KOS_IREQ_ERROR;
   return KOS_IREQ_CONTINUES;
 }

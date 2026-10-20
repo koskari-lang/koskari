@@ -131,16 +131,16 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
      when the thunk's frame is installed; EVAL_NORMAL when the thunk ran
      to completion in hand, its result already dropped
 */
-static KosOpResult kos_dyn_wind_fire(KosEvalState *es, PyObject *thunk) {
+static KosOpResult kos_dyn_wind_fire(KosContext *ctx, PyObject *thunk) {
   KosOpResult wr = KosEvalState_Call(
-      es, thunk, NULL, 0, NULL, 0, NULL, NULL);
+      ctx, thunk, NULL, 0, NULL, 0, NULL, NULL);
 
   /* A value in hand is settled, or awaited onto the block; settled, it
      is not the wind's business. */
   if (wr.kind == KOS_RES_RETURN) {
     PyObject *val;
 
-    wr = KosEvalState_Settle(es, wr.val, &val);
+    wr = KosEvalState_Settle(ctx, wr.val, &val);
     if (wr.kind == KOS_RES_NORMAL) {
       Py_DECREF(val);
       return EVAL_NORMAL();
@@ -157,7 +157,7 @@ static KosOpResult kos_dyn_wind_fire(KosEvalState *es, PyObject *thunk) {
    Enter: run the before-thunk once. See the extent contract in
    dynchain.h.
 */
-static KosOpResult kos_dyn_wind_enter(KosEvalState *es, KosDynWind *node) {
+static KosOpResult kos_dyn_wind_enter(KosContext *ctx, KosDynWind *node) {
 
   if (KosDynWind_ENTERED(node))
     return EVAL_NORMAL();
@@ -171,7 +171,7 @@ static KosOpResult kos_dyn_wind_enter(KosEvalState *es, KosDynWind *node) {
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_BEGIN;
   {
-    KosOpResult wr = kos_dyn_wind_fire(es, KosDynWind_BEFORE_THUNK(node));
+    KosOpResult wr = kos_dyn_wind_fire(ctx, KosDynWind_BEFORE_THUNK(node));
     if (wr.kind != KOS_RES_NORMAL)
       return wr;
   }
@@ -187,7 +187,7 @@ static KosOpResult kos_dyn_wind_enter(KosEvalState *es, KosDynWind *node) {
    that after the node is gone.
 */
 static KosOpResult kos_dyn_wind_leave(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynWind *node,
     KosXferEvent ev) {
 
@@ -217,7 +217,7 @@ static KosOpResult kos_dyn_wind_leave(
 
   KosDynWind_PHASE(node) = KOS_WIND_PHASE_PRE_AFTER;
   {
-    KosOpResult wr = kos_dyn_wind_fire(es, KosDynWind_AFTER_THUNK(node));
+    KosOpResult wr = kos_dyn_wind_fire(ctx, KosDynWind_AFTER_THUNK(node));
     if (wr.kind != KOS_RES_NORMAL)
       return wr;
   }
@@ -229,15 +229,15 @@ static KosOpResult kos_dyn_wind_leave(
 /**
    The pending thunk returned; its result is the top of the live block.
 */
-static int kos_dyn_wind_settle(KosEvalState *es, KosDynWind *node) {
+static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
 
   if (KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_BEGIN
       && KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_AFTER)
     return 0;
 
-  if (KosEvalState_BLOCK(es) && *KosEvalState_BLOCK(es)
-      && KosSegment_LEN(*KosEvalState_BLOCK(es))) {
-    PyObject *val = KosEvalState_StackPopRef(es);
+  if (KosEvalState_BLOCK(ctx) && *KosEvalState_BLOCK(ctx)
+      && KosSegment_LEN(*KosEvalState_BLOCK(ctx))) {
+    PyObject *val = KosEvalState_StackPopRef(ctx);
     if (! val)
       return -1;
     Py_DECREF(val);
@@ -269,16 +269,16 @@ static void kos_dyn_wind_abort(KosDynWind *node) {
    some paths). Callers: opcode PUSH_WIND.
 */
 KosDynWind *kos_dyn_push_wind(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *before_thunk,
     PyObject *after_thunk) {
 
-  KosDynWind *wind = kos_dynwind_new(KosEvalState_DYN_TOP(es),
+  KosDynWind *wind = kos_dynwind_new(KosEvalState_DYN_TOP(ctx),
                                      before_thunk, after_thunk);
   if (! wind)
     return NULL;
 
-  if (kos_dyn_push(es, (KosDynNode *) wind) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) wind) < 0) {
     kos_dynwind_free(wind);
     return NULL;
   }

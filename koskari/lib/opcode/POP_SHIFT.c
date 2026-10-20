@@ -23,13 +23,13 @@
 */
 
 KOS_OP_HANDLER(POP_SHIFT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *result;
   uint32_t prompt_pop_pc;
   KosDynPrompt *prompt = NULL;
   KosXferGoal *goal;
 
-  KosDynNode *top = KosEvalState_CurrentNode(es);
+  KosDynNode *top = KosEvalState_CurrentNode(ctx);
   if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
     RESULT_RAISE();
@@ -38,11 +38,11 @@ KOS_OP_HANDLER(POP_SHIFT) {
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
-       (void *) KosEvalState_FRAME(es),
-       (void *) KosEvalState_StackHead(es),
-       KosEvalState_StackLen(es),
-       (unsigned) KosEvalState_PC(es));
-  result = KosEvalState_StackPopRef(es);
+       (void *) KosEvalState_FRAME(ctx),
+       (void *) KosEvalState_StackHead(ctx),
+       KosEvalState_StackLen(ctx),
+       (unsigned) KosEvalState_PC(ctx));
+  result = KosEvalState_StackPopRef(ctx);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
     RESULT_RAISE();
@@ -102,7 +102,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
     SAYF("[POP_SHIFT] invocation prompt %u: delivering to paired delim %p",
          (unsigned) kos_dynnode_id((KosDynNode *) prompt),
          (void *) pair);
-    RESULT_RELAY(es, kos_eval_route_delim_return(es, pair, result));
+    RESULT_RELAY(ctx, kos_eval_route_delim_return(ctx, pair, result));
   }
 
   /* Live reset: the prompt recorded its region's closing pc when
@@ -125,9 +125,9 @@ KOS_OP_HANDLER(POP_SHIFT) {
     RESULT_RAISE();
   SAYF("[POP_SHIFT] goal active: resume_pc=%u (first instr after POP_PROMPT)",
        (unsigned) (prompt_pop_pc + 1));
-  kos_xfer_goal_push(es, goal);
+  kos_xfer_goal_push(ctx, goal);
 
-  RESULT_REPROLOGUE(es);
+  RESULT_REPROLOGUE(ctx);
 }
 
 

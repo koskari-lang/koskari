@@ -23,26 +23,26 @@
   Creates nothing in either store.
 */
 KOS_OP_HANDLER(PARAM) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
+  PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(ctx), name);
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
 
   if (value) {
     Py_INCREF(value);
-    if (KosExtra_IMM(row, 1) && unlikely(KosEvalState_StackDrop1(es) < 0)) {
+    if (KosExtra_IMM(row, 1) && unlikely(KosEvalState_StackDrop1(ctx) < 0)) {
       Py_DECREF(value);
       RESULT_RAISE();
     }
-    RESULT_STEAL(es, value);
+    RESULT_STEAL(ctx, value);
   }
 
   if (likely(KosExtra_IMM(row, 1))) {
     // the stacked default is already in result position
-    RESULT_NEXT(es);
+    RESULT_NEXT(ctx);
 
   } else {
     PyErr_Format(

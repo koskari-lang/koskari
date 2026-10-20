@@ -79,7 +79,6 @@ static KosDynParam *push_dyn_param(
     PyObject *key,
     PyObject *value) {
 
-    KosEvalState es;
     KosDynParam *node;
     PyObject *bindings = PyDict_New();
 
@@ -90,10 +89,9 @@ static KosDynParam *push_dyn_param(
         return NULL;
     }
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
-    node = kos_dyn_push_param_dict(&es, bindings);
-    KosEvalState_FreezeToContext(&es);
+    KosContext_BeginDrive(ctx, NULL);
+    node = kos_dyn_push_param_dict(ctx, bindings);
+    KosContext_EndDrive(ctx);
     Py_DECREF(bindings);
     return node;
 }
@@ -115,13 +113,11 @@ static int assert_param_unbound(PyObject *param_ref, const char *what) {
 
 static int pop_dyn_param(KosContext *ctx, KosDynParam *node) {
 
-    KosEvalState es;
     int r;
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
-    r = kos_dyn_pop_param(&es, node);
-    KosEvalState_FreezeToContext(&es);
+    KosContext_BeginDrive(ctx, NULL);
+    r = kos_dyn_pop_param(ctx, node);
+    KosContext_EndDrive(ctx);
     return r;
 }
 

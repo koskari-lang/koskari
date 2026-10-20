@@ -21,14 +21,14 @@
   (eval/eval_item.c).
 */
 KOS_OP_HANDLER(ITEM_VAR_TAKE) {
-  KOS_SYNC_PC(es, insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosSegment **bl = KosEvalState_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
   PyObject *out;
 
-  key = frame_ns_deref(es, KosOp_OBJ(insn));
+  key = frame_ns_deref(ctx, KosOp_OBJ(insn));
   if (unlikely(! key))
     RESULT_RAISE();
 
@@ -46,7 +46,7 @@ KOS_OP_HANDLER(ITEM_VAR_TAKE) {
     RESULT_RAISE();
 
   kos_item_replace_top(bl, out);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

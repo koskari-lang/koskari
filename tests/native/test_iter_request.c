@@ -180,35 +180,33 @@ static int test_native_install_fresh_and_cached(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   /* a base frame with a namespace, so the fill has a live value */
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create base ns");
   Py_INCREF(ns);
-  KosDynFrame *base = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *base = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(base, "push base frame");
 
   PyObject *staged = PyLong_FromLong(42);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
 
   KosDynFrame *frame = KosResumeFrame_Install(
-      &es, &iterreq_kind, NULL, NULL);
+      ctx, &iterreq_kind, NULL, NULL);
   TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
   TEST_ASSERT(KosDynFrame_RESUME_NAME(frame)
               && ! strcmp(KosDynFrame_RESUME_NAME(frame), "iterreq-test"),
               "resume name set");
-  TEST_ASSERT(KosEvalState_StackPushRef(&es, staged) >= 0,
+  TEST_ASSERT(KosEvalState_StackPushRef(ctx, staged) >= 0,
               "stage a value on the new frame");
   TEST_ASSERT_SAME(KosDynFrame_NS(frame), KosNamespace_Empty(),
                    "frame carries the empty namespace");
-  TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(&es), frame,
+  TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(ctx), frame,
                    "native frame is dyn_top");
 
   {
-    PyObject *popped = KosEvalState_StackPopRef(&es);
+    PyObject *popped = KosEvalState_StackPopRef(ctx);
     TEST_ASSERT_SAME(popped, staged, "staged value lands on the stack");
     Py_XDECREF(popped);
   }
@@ -222,14 +220,14 @@ static int test_native_install_fresh_and_cached(void) {
     TEST_ASSERT_EQ(kos_dynframe_cache_inert(spare, &cache), 1, "cache spare");
 
     KosDynFrame *reused = KosResumeFrame_Install(
-        &es, &iterreq_kind, NULL, &cache);
+        ctx, &iterreq_kind, NULL, &cache);
     TEST_ASSERT_SAME(reused, spare, "cached frame is reinstalled");
     TEST_ASSERT_NULL(cache, "cache emptied by the reinstall");
     TEST_ASSERT_SAME(KosDynFrame_NS(reused), KosNamespace_Empty(),
                      "reinstall attaches the empty namespace");
   }
 
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
@@ -246,14 +244,12 @@ static int test_native_install_clear_sees_state(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create base ns");
   Py_INCREF(ns);
-  KosDynFrame *base = kos_dyn_push_frame(&es, NULL, ns);
+  KosDynFrame *base = kos_dyn_push_frame(ctx, NULL, ns);
   TEST_ASSERT_NOT_NULL(base, "push base frame");
 
   int marker = 0;
@@ -261,7 +257,7 @@ static int test_native_install_clear_sees_state(void) {
   cleared_calls = 0;
 
   KosDynFrame *frame = KosResumeFrame_Install(
-      &es, &recording_kind, &marker, NULL);
+      ctx, &recording_kind, &marker, NULL);
   TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
   TEST_ASSERT_SAME(KosDynFrame_RESUME_KIND(frame), &recording_kind,
                    "the install set the kind");
@@ -269,7 +265,7 @@ static int test_native_install_clear_sees_state(void) {
                    "the install set the state with the kind");
 
   /* tear the frame down as the step abort would, before any delivery */
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
 
   TEST_ASSERT_EQ(cleared_calls, 1, "the kind's clear ran once");
@@ -285,12 +281,10 @@ static int test_request_next_sync_lifecycle(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  KosEvalState_ThawFromContext(&es);
+  KosContext_BeginDrive(ctx, NULL);
 
   KosDynFrame *frame = KosResumeFrame_Install(
-      &es, &iterreq_kind, NULL, NULL);
+      ctx, &iterreq_kind, NULL, NULL);
   TEST_ASSERT_NOT_NULL(frame, "install code-less frame");
 
   PyObject *lst = make_list123();
@@ -300,28 +294,28 @@ static int test_request_next_sync_lifecycle(void) {
 
   for (long expect = 1; expect <= 3; expect++) {
     PyObject *out = NULL;
-    KosIterRequestStatus st = KosNativeFrame_RequestNext(&es, it, &out);
+    KosIterRequestStatus st = KosNativeFrame_RequestNext(ctx, it, &out);
     TEST_ASSERT_EQ(st, KOS_IREQ_DELIVERED, "request delivers");
     TEST_ASSERT_NOT_NULL(out, "element out");
     TEST_ASSERT_EQ(PyLong_AsLong(out), expect, "element value");
     Py_DECREF(out);
-    TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(&es), frame,
+    TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(ctx), frame,
                      "tracking node cleaned up after delivery");
   }
 
   {
     PyObject *out = NULL;
-    KosIterRequestStatus st = KosNativeFrame_RequestNext(&es, it, &out);
+    KosIterRequestStatus st = KosNativeFrame_RequestNext(ctx, it, &out);
     TEST_ASSERT_EQ(st, KOS_IREQ_EXHAUSTED, "request reports exhaustion");
     TEST_ASSERT_NULL(out, "no element on exhaustion");
     TEST_ASSERT(! PyErr_Occurred(), "exhaustion sets no exception");
-    TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(&es), frame,
+    TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(ctx), frame,
                      "tracking node cleaned up after exhaustion");
   }
 
   Py_DECREF(it);
   Py_DECREF(lst);
-  KosEvalState_FreezeToContext(&es);
+  KosContext_EndDrive(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -335,11 +329,9 @@ static int test_context_recycle(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   {
-    KosEvalState es;
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
-    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(&es), "push a frame");
-    KosEvalState_FreezeToContext(&es);
+    KosContext_BeginDrive(ctx, NULL);
+    TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push a frame");
+    KosContext_EndDrive(ctx);
   }
 
   TEST_ASSERT_NOT_NULL(KosContext_DYN_TOP(ctx), "chain holds the frame");

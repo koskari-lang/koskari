@@ -19,11 +19,11 @@
   remain. Row LABEL, depth, width.
 */
 KOS_OP_HANDLER(MATCH_BOUND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  PyObject *cursor = kos_match_cursor_at(ctx, KosExtra_IMM(row, 1));
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -34,7 +34,7 @@ KOS_OP_HANDLER(MATCH_BOUND) {
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  RESULT_STEAL(es, bound);
+  RESULT_STEAL(ctx, bound);
 }
 
 

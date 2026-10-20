@@ -22,19 +22,19 @@
   (eval/eval_item.c) with no slot; the cold twin of the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_STORE_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KosSegment **bl = KosEvalState_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
   PyObject *val;
   int rc;
 
-  obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  obj = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! obj))
     RESULT_RAISE();
-  val = frame_ns_deref(es, KosExtra_OBJ(row, 1));
+  val = frame_ns_deref(ctx, KosExtra_OBJ(row, 1));
   if (unlikely(! val)) {
     Py_DECREF(obj);
     RESULT_RAISE();
@@ -55,7 +55,7 @@ KOS_OP_HANDLER(VAR_ITEM_STORE_VAR) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, 1);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

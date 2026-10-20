@@ -19,12 +19,12 @@
 */
 
 KOS_OP_HANDLER(EXCEPTION) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_GetExcInfo(&typ, &val, &tb);
 
   if (! typ) {
-    RESULT_PUSH(es, Py_None);
+    RESULT_PUSH(ctx, Py_None);
   }
 
   if (! val)
@@ -33,7 +33,7 @@ KOS_OP_HANDLER(EXCEPTION) {
   Py_DECREF(typ);
   Py_XDECREF(tb);
 
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

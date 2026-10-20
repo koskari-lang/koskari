@@ -20,7 +20,7 @@
   and seq[1].
 */
 KOS_OP_HANDLER(UNPACK_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   size_t idx0 = (size_t) KosExtra_IMM(row, 0);
   size_t idx1 = (size_t) KosExtra_IMM(row, 1);
@@ -34,7 +34,7 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     RESULT_RAISE();
   }
 
-  PyObject *seq = KosEvalState_PopUnpackSequence(es, 2, 1, "UNPACK_FAST");
+  PyObject *seq = KosEvalState_PopUnpackSequence(ctx, 2, 1, "UNPACK_FAST");
   if (unlikely(! seq))
     RESULT_RAISE();
 
@@ -52,7 +52,7 @@ KOS_OP_HANDLER(UNPACK_FAST) {
   if (unlikely(res))
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -21,8 +21,8 @@
 */
 
 KOS_OP_HANDLER(SWITCH_EQ) {
-  KOS_SYNC_PC(es, insn);
-  PyObject *const *tail = KosEvalState_StackTailPtr(es, 2);
+  KOS_SYNC_PC(ctx, insn);
+  PyObject *const *tail = KosEvalState_StackTailPtr(ctx, 2);
   if (unlikely(! tail))
     RESULT_RAISE();
 
@@ -31,13 +31,13 @@ KOS_OP_HANDLER(SWITCH_EQ) {
     RESULT_RAISE();
 
   if (res) {
-    KosEvalState_StackDropNoErr(es, 2);
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+    KosEvalState_StackDropNoErr(ctx, 2);
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
   } else {
-    KosEvalState_StackDropNoErr(es, 1);
+    KosEvalState_StackDropNoErr(ctx, 1);
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

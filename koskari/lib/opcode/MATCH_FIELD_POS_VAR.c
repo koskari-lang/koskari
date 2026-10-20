@@ -20,7 +20,7 @@
 */
 KOS_OP_HANDLER(MATCH_FIELD_POS_VAR) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_field_pos, es, insn, NULL);
+  TAILCALL(kos_match_field_pos, ctx, insn, NULL);
 }
 
 

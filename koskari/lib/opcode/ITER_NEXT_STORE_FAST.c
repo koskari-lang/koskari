@@ -24,8 +24,8 @@
   stored when it arrives.
 */
 KOS_OP_HANDLER(ITER_NEXT_STORE_FAST) {
-  KOS_SYNC_PC(es, insn);
-  KosDynNode *region = kos_dyn_find_loop(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosDynNode *region = kos_dyn_find_loop(ctx);
 
   if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -37,27 +37,27 @@ KOS_OP_HANDLER(ITER_NEXT_STORE_FAST) {
   kos_foreach_record_else(region, insn);
 
   {
-    KosDynFrame *frame = KosEvalState_FRAME(es);
+    KosDynFrame *frame = KosEvalState_FRAME(ctx);
     PyObject *out = NULL;
 
-    switch (kos_foreach_request_next(es, region, &out)) {
+    switch (kos_foreach_request_next(ctx, region, &out)) {
       case KOS_IREQ_DELIVERED:
-        if (unlikely(kos_foreach_store_element(es, insn, out) < 0))
+        if (unlikely(kos_foreach_store_element(ctx, insn, out) < 0))
           RESULT_RAISE();
-        RESULT_NEXT(es);
+        RESULT_NEXT(ctx);
 
       case KOS_IREQ_EXHAUSTED:
         Py_XDECREF(out);
         KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-        RESULT_JUMP_AT(es, KosExtra_TARGET(KosOp_ROW(insn), 1));
+        RESULT_JUMP_AT(ctx, KosExtra_TARGET(KosOp_ROW(insn), 1));
 
       case KOS_IREQ_CONTINUES:
         kos_foreach_defer_step(frame, insn);
-        RESULT_RELAY(es, kos_iter_installed(es));
+        RESULT_RELAY(ctx, kos_iter_installed(ctx));
 
       case KOS_IREQ_EXIT:
         kos_foreach_defer_step(frame, insn);
-        RESULT_AWAIT(es, out);
+        RESULT_AWAIT(ctx, out);
 
       case KOS_IREQ_ERROR:
       default:

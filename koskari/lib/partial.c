@@ -96,7 +96,7 @@ static PyObject *kospartial_vectorcall(
    borrowed vector, built beside the call.
 */
 static KosOpResult kospartial_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -112,7 +112,7 @@ static KosOpResult kospartial_kos_vinstall(
           &spread, p->args, p->keywords, args, nargs, kwnames, small, 16) < 0)
     return EVAL_RAISE();
   r = KosEvalState_Call(
-      es, p->func, spread.argv, spread.nargs, spread.kwnames, tail_call,
+      ctx, p->func, spread.argv, spread.nargs, spread.kwnames, tail_call,
       NULL, NULL);
   KosArgSpread_Clear(&spread);
   return r;

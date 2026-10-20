@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   unsigned opa = KosExtra_IMM(row, 3);
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   PyObject *name = KosExtra_OBJ(row, 0);
 
   // owned reference
-  PyObject *obj = frame_ns_deref(es, name);
+  PyObject *obj = frame_ns_deref(ctx, name);
   if (! obj)
     RESULT_RAISE();
 
@@ -53,7 +53,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   PyObject *const *ptr = NULL;
   if (npos + nkwds > 0) {
-    ptr = KosEvalState_StackTailPtr(es, (size_t)(npos + nkwds));
+    ptr = KosEvalState_StackTailPtr(ctx, (size_t)(npos + nkwds));
     if (! ptr) {
       Py_DECREF(obj);
       RESULT_RAISE();
@@ -71,11 +71,11 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   /* Prologue only: kos_call_invoke owns the window drop; an unbound
      resolution injects obj as self via the core's prepend. */
   KosOpResult r = kos_call_invoke_from_handler(
-      es, tail, resolved, (send_self == 0) ? obj : NULL, ptr, npos,
+      ctx, tail, resolved, (send_self == 0) ? obj : NULL, ptr, npos,
       nkwds ? names : NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
   Py_DECREF(obj);
-  RESULT_RELAY(es, r);
+  RESULT_RELAY(ctx, r);
 }
 
 

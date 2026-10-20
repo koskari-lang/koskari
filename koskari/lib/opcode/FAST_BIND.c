@@ -18,7 +18,7 @@
 */
 
 KOS_OP_HANDLER(FAST_BIND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(FAST_BIND) {
     RESULT_RAISE();
   }
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(FAST_BIND) {
 
   if (unlikely(res < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

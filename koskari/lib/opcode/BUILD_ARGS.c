@@ -20,14 +20,14 @@
   Pop n elements and push a tuple of them.
 */
 KOS_OP_HANDLER(BUILD_ARGS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
-  PyObject *built = KosEvalState_StackPopTail(es, (size_t) opa);
+  PyObject *built = KosEvalState_StackPopTail(ctx, (size_t) opa);
 
   if (unlikely(! built))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, built);
+  RESULT_STEAL(ctx, built);
 }
 
 

@@ -19,7 +19,7 @@
   Store the value into the name in the current frame namespace.
 */
 KOS_OP_HANDLER(FAST_STORE_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   const KosExtra *row = KosOp_ROW(insn);
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(FAST_STORE_CONST) {
   if (unlikely(kos_ns_fast_store(ns, idx, val) < 0))
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

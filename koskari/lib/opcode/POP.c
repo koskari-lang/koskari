@@ -22,14 +22,14 @@ KOS_OP_HANDLER(POP) {
 
   unsigned n = KosOp_ARG(insn);
   if (likely(n == 1)) {
-    if (unlikely(KosEvalState_StackDrop1(es) < 0))
-      RESULT_RAISE_AT(es, insn);
-    RESULT_NEXT(es);
+    if (unlikely(KosEvalState_StackDrop1(ctx) < 0))
+      RESULT_RAISE_AT(ctx, insn);
+    RESULT_NEXT(ctx);
   }
 
-  if (unlikely(KosEvalState_StackDrop(es, (size_t) n) < 0))
-    RESULT_RAISE_AT(es, insn);
-  RESULT_NEXT(es);
+  if (unlikely(KosEvalState_StackDrop(ctx, (size_t) n) < 0))
+    RESULT_RAISE_AT(ctx, insn);
+  RESULT_NEXT(ctx);
 }
 
 

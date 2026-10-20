@@ -55,11 +55,11 @@ static PyObject *starmap_unpack(PyObject *element) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_after_result(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(starmap_resume_after_result_kind, "starmap-step",
                 starmap_resume_after_result, kos_transform_step_clear, NULL);
@@ -74,14 +74,14 @@ KOS_RESUME_KIND(starmap_resume_start_fetch_kind, "starmap-step",
    completes with it directly. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_after_result(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
 
   if (! value)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnToCache(es, value, &t->cached_frame);
+  return KosNativeFrame_ReturnToCache(ctx, value, &t->cached_frame);
 }
 
 
@@ -92,7 +92,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_after_result(
    Python boundary. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransform *t = (KosTransform *) state;
   PyObject *args;
@@ -106,11 +106,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
     return EVAL_RAISE();
 
   r = KosEvalState_Call(
-      es, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
+      ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
       PyTuple_GET_SIZE(args), NULL, 0,
       &starmap_resume_after_result_kind, t);
   Py_DECREF(args);
-  RESULT_ENTRY(es, r, &starmap_resume_after_result_kind, t);
+  RESULT_ENTRY(ctx, r, &starmap_resume_after_result_kind, t);
 }
 
 
@@ -120,7 +120,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
    own dispatch rather than from the step. Always invoked with NULL.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosOpResult r;
 
@@ -130,9 +130,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
     return EVAL_RAISE();
 
   r = KosEvalState_NextResume(
-      es, ((KosTransform *) state)->source, NULL,
+      ctx, ((KosTransform *) state)->source, NULL,
       &starmap_resume_invoke_kind, state);
-  RESULT_ENTRY(es, r, &starmap_resume_invoke_kind, state);
+  RESULT_ENTRY(ctx, r, &starmap_resume_invoke_kind, state);
 }
 
 
@@ -140,13 +140,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
 
 
 static KosIterStepResult starmap_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransform *t = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -156,7 +156,7 @@ static KosIterStepResult starmap_iter_step(
     PyObject *element;
     PyObject *args;
 
-    KOS_TRANSFORM_FETCH(es, t, t->source, &starmap_resume_start_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, t->source, &starmap_resume_start_fetch_kind, pre_top, out,
                         element);
 
     /* A FRAME-shaped function's call must run inside koskari_eval's
@@ -164,7 +164,7 @@ static KosIterStepResult starmap_iter_step(
        starmap_resume_invoke. The direct-return shape below is the one
        exception: its install needs no helper frame. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN && ! t->fn.cs_direct)
-      return kos_transform_stage(es, t, element,
+      return kos_transform_stage(ctx, t, element,
                                  &starmap_resume_invoke_kind, pre_top);
 
     args = starmap_unpack(element);
@@ -176,14 +176,14 @@ static KosIterStepResult starmap_iter_step(
        generic call entry with no helper frame. */
     if (t->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
       KosOpResult r = KosEvalState_Call(
-          es, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
+          ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
           PyTuple_GET_SIZE(args), NULL, 0, NULL, NULL);
       Py_DECREF(args);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
         t->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       }
-      return kos_transform_step_abort(es, t, pre_top);
+      return kos_transform_step_abort(ctx, t, pre_top);
     }
 
     /* A plain python callable needs no evaluator at all. */
@@ -206,7 +206,7 @@ static KosIterStepResult starmap_iter_step(
              needs must happen from inside koskari_eval's own
              dispatch. */
           return kos_transform_stage(
-              es, t, result, &starmap_resume_after_result_kind, pre_top);
+              ctx, t, result, &starmap_resume_after_result_kind, pre_top);
         default:
           Py_DECREF(result);
           return KOS_ITER_ERROR;

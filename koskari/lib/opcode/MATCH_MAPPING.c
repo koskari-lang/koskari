@@ -18,10 +18,10 @@
   style.
 */
 KOS_OP_HANDLER(MATCH_MAPPING) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) kos_op_delivery_;
 
-  PyObject *obj = KosEvalState_StackPeek(es);
+  PyObject *obj = KosEvalState_StackPeek(ctx);
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -29,8 +29,8 @@ KOS_OP_HANDLER(MATCH_MAPPING) {
   if (unlikely(r < 0))
     RESULT_RAISE();
   if (! r)
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
-  RESULT_NEXT(es);
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
+  RESULT_NEXT(ctx);
 }
 
 

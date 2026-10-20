@@ -45,14 +45,14 @@
    The back field is an unwind cache: the owning slot (the address of
    the enclosing owner's stack field) of the segment that was live
    when this segment's owner was installed.  It serves two distinct
-   consumers: (a) uninstall restoration -- re-aiming the eval state's
+   consumers: (a) uninstall restoration -- re-aiming the context's
    live block slot when the owner pops, a read-only use -- and (b)
    parent delivery, pushing a value through the enclosing slot, the
    tolerated mutation of a non-active segment noted above.  It is set
    at install time only; DeepCopy results are born with back NULL; a
    NULL back means fall back to the dynamic-chain walk, which remains
    the semantic definition.  The link is meaningful only while the
-   owner is on the live chain of the current eval state: any operation
+   owner is on the live chain of the current context: any operation
    that detaches a span must clear the backs of the segments it
    detaches.  While a segment sits on the freelist the field is reused
    as the freelist link.

@@ -57,7 +57,7 @@ them and does not re-derive them.
 
 A stencil is produced per opcode handler, at koskari's own build time, from
 the musttail-threaded handler form ([../archive/threaded-dispatch.md](../archive/threaded-dispatch.md)
-§2, §6): a function of `(KosEvalState *es, void *insn, PyObject *value)`
+§2, §6): a function of `(KosContext *ctx, void *insn, PyObject *value)`
 that ends by tail-calling the successor instruction's handler. Each
 handler is compiled as its own translation unit; the compiled object's
 relocations against known symbols -- the operand read (`KosOp_ARG(insn)`),
@@ -150,7 +150,7 @@ INPLACE surgery. The copy-and-patch pass records `offsets[pc]` for every
 pc regardless of whether it is externally enterable (the array falls out
 of the layout loop for free), so continuation resume, the raise walk, and
 frame revival jump directly into `native_buf + offsets[pc]` the same way
-today's dispatch loop sets `es->pc` and re-enters. A native frame handed a
+today's dispatch loop sets `ctx->pc` and re-enters. A native frame handed a
 pc outside the legal resume set is a chain-surgery bug either way; nothing
 about stenciling changes that failure mode or its severity.
 

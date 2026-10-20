@@ -68,7 +68,7 @@ KosDomain *KosDomain_New(void);
 
    The lookup variant takes the context from the caller, which is how
    the evaluator resolves (no TLS on that path). The ambient variant is
-   for Python-side entry with no eval state in hand: it discovers the
+   for Python-side entry with no context in hand: it discovers the
    active context, falling back to the innermost python-scope domain's
    root scope.
 

@@ -20,7 +20,7 @@
   PyObject_Format(obj, rules) where obj is the fast local's value.
 */
 KOS_OP_HANDLER(FAST_FORMAT_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -37,7 +37,7 @@ KOS_OP_HANDLER(FAST_FORMAT_CONST) {
   if (unlikely(! res))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

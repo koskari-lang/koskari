@@ -75,9 +75,9 @@ static inline void zip_row_retrack(PyObject *row) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(zip_resume_deliver_kind, "zip-step",
                 zip_resume_deliver, kos_transform_step_clear, NULL);
@@ -92,7 +92,7 @@ KOS_RESUME_KIND(zip_resume_fetch_kind, "zip-step",
    Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransformMulti *z = (KosTransformMulti *) state;
   KosTransform *t = &z->base;
@@ -108,8 +108,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
        consumer's iteration node, and the partial row is cleared by
        ki_finish */
     KosOpResult r = KosEvalState_NextResume(
-        es, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
-    RESULT_ENTRY(es, r, &zip_resume_deliver_kind, z);
+        ctx, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
+    RESULT_ENTRY(ctx, r, &zip_resume_deliver_kind, z);
   }
 
   {
@@ -117,7 +117,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
 
     t->pending = NULL;
     zip_row_retrack(row);
-    return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(ctx, row, &t->cached_frame);
   }
 }
 
@@ -128,7 +128,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
    call, so a row of driven sources stays flat. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransformMulti *z = (KosTransformMulti *) state;
   KosTransform *t = &z->base;
@@ -139,7 +139,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   zip_row_set(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
 
-  RESUME_HOP(&zip_resume_fetch_kind, es, z, NULL);
+  RESUME_HOP(&zip_resume_fetch_kind, ctx, z, NULL);
 }
 
 
@@ -147,14 +147,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
 
 
 static KosIterStepResult zip_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransformMulti *z = (KosTransformMulti *) self;
   KosTransform *t = &z->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
   PyObject *row;
 
@@ -195,7 +195,7 @@ static KosIterStepResult zip_iter_step(
     for (i = 0; i < t->nsrc; i++) {
       PyObject *element;
 
-      switch (KosEvalState_NextOrDefer(es, t->sources[i],
+      switch (KosEvalState_NextOrDefer(ctx, t->sources[i],
                                        &zip_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:
@@ -213,7 +213,7 @@ static KosIterStepResult zip_iter_step(
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(row);
-          return kos_transform_step_abort(es, t, pre_top);
+          return kos_transform_step_abort(ctx, t, pre_top);
       }
     }
 

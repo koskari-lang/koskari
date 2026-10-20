@@ -75,11 +75,11 @@ static int chain_take_source(KosChain *c, PyObject *iterable) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step",
                 chain_resume_deliver, kos_transform_step_clear, NULL);
@@ -96,7 +96,7 @@ KOS_RESUME_KIND(chain_resume_series_kind, "chain-step",
    by chain_resume_deliver. Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosChain *c = (KosChain *) state;
   KosTransform *t = &c->base;
@@ -114,17 +114,17 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
       }
       /* the next iterable is requested from the series; its
          delivery lands in chain_resume_series */
-      KosOpResult r = KosEvalState_NextResume(es, c->series, NULL,
+      KosOpResult r = KosEvalState_NextResume(ctx, c->series, NULL,
                                               &chain_resume_series_kind, c);
-      RESULT_ENTRY(es, r, &chain_resume_series_kind, c);
+      RESULT_ENTRY(ctx, r, &chain_resume_series_kind, c);
     }
 
     /* the element lands in chain_resume_deliver; a spent source is
        released there and the walk re-enters here */
     {
-      KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+      KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
                                               &chain_resume_deliver_kind, c);
-      RESULT_ENTRY(es, r, &chain_resume_deliver_kind, c);
+      RESULT_ENTRY(ctx, r, &chain_resume_deliver_kind, c);
     }
   }
 }
@@ -137,7 +137,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
    consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosChain *c = (KosChain *) state;
   KosTransform *t = &c->base;
@@ -149,10 +149,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
     PyErr_Clear();
     Py_CLEAR(t->source);
 
-    RESUME_HOP(&chain_resume_fetch_kind, es, c, NULL);
+    RESUME_HOP(&chain_resume_fetch_kind, ctx, c, NULL);
   }
 
-  return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
+  return KosNativeFrame_ReturnToCache(ctx, element, &t->cached_frame);
 }
 
 
@@ -162,7 +162,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
    out ends the chain. iterable is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
-    KosEvalState *es, void *state, PyObject *iterable) {
+    KosContext *ctx, void *state, PyObject *iterable) {
 
   KosChain *c = (KosChain *) state;
   int r;
@@ -182,7 +182,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
   if (r < 0)
     return EVAL_RAISE();
 
-  RESUME_HOP(&chain_resume_fetch_kind, es, c, NULL);
+  RESUME_HOP(&chain_resume_fetch_kind, ctx, c, NULL);
 }
 
 
@@ -190,14 +190,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
 
 
 static KosIterStepResult chain_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosChain *c = (KosChain *) self;
   KosTransform *t = &c->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -218,7 +218,7 @@ static KosIterStepResult chain_iter_step(
         *out = NULL;
         return KOS_ITER_EXHAUSTED;
       }
-      switch (KosEvalState_NextOrDefer(es, c->series,
+      switch (KosEvalState_NextOrDefer(ctx, c->series,
                                        &chain_resume_fetch_kind, t,
                                        &t->cached_frame, &iterable)) {
         case KOS_IREQ_DELIVERED:
@@ -232,7 +232,7 @@ static KosIterStepResult chain_iter_step(
           t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
-          return kos_transform_step_abort(es, t, pre_top);
+          return kos_transform_step_abort(ctx, t, pre_top);
       }
       r = chain_take_source(c, iterable);
       Py_DECREF(iterable);
@@ -241,7 +241,7 @@ static KosIterStepResult chain_iter_step(
       continue;
     }
 
-    switch (KosEvalState_NextOrDefer(es, t->source,
+    switch (KosEvalState_NextOrDefer(ctx, t->source,
                                      &chain_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
@@ -255,7 +255,7 @@ static KosIterStepResult chain_iter_step(
         t->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       default:
-        return kos_transform_step_abort(es, t, pre_top);
+        return kos_transform_step_abort(ctx, t, pre_top);
     }
   }
 }

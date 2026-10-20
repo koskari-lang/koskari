@@ -33,7 +33,7 @@ macros must include it explicitly (same opt-in pattern as `debug.h`).
 | `KOS_TRACE_EVENTS` | 0 | VM / dynchain event counters (`events` key) |
 | `KOS_TRACE_OPCACHE` | 0 | Per-site opcode-cache counters for the method, field, and elector caches (`opcache` key) |
 | `KOS_TRACE_TIMING` | 0 | Per-opcode and post-handler timing (`opcode_timing`, `post_handler_timing`, and summaries) |
-| `KOS_TRACE_EVAL_SYNC` | 0 | `KosEvalState` sync API call counts and wall time (`eval_state_sync` key) |
+| `KOS_TRACE_EVAL_SYNC` | 0 | Live register sync step call counts and wall time (`eval_state_sync` key) |
 
 Flags are defaulted in `tracing.h` with `#ifndef`. Override at build time:
 
@@ -300,7 +300,7 @@ with only **`count`** and **`total_ns`** (no share fields). Wall time is
 
 | Key | Instrumented API / site |
 |-----|-------------------------|
-| **init** | `KosEvalState_Init` (`eval/eval_state.c`) |
+| **init** | `KosContext_BeginDrive` (`eval/eval_state.c`) |
 | **unused_sync_from_context** | Reserved slot (removed API; never incremented) |
 | **flush_live_regs** | `KosEvalState_FlushLiveRegsToFrame` (inline in `eval.h`) |
 | **unused_apply_dyn_caches** | Reserved slot (removed API; never incremented) |

@@ -173,7 +173,7 @@ static PyObject *demand_finish_value(PyObject *value) {
    called callable's result. A failed delivery propagates.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     void *state,
     PyObject *value) {
 
@@ -182,7 +182,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
   if (! value)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnToCache(es, value, NULL);
+  return KosNativeFrame_ReturnToCache(ctx, value, NULL);
 }
 
 
@@ -613,7 +613,7 @@ static int demand_clear(PyObject *self) {
    guards fire under either.
 */
 static KosOpResult demand_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -630,7 +630,7 @@ static KosOpResult demand_kos_vinstall(
   }
 
   r = KosEvalState_Call(
-      es, inner, args, nargs, kwnames, tail_call, NULL, NULL);
+      ctx, inner, args, nargs, kwnames, tail_call, NULL, NULL);
   switch (r.kind) {
     case KOS_RES_RETURN:
       switch (KosEval_ResultIsValue(r.val)) {
@@ -640,7 +640,7 @@ static KosOpResult demand_kos_vinstall(
           /* an awaitable in hand settles under a demand-marked frame,
              so a suspension is denied in-eval at the guard */
           return KosEvalState_SettleInto(
-              es, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
+              ctx, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
         default:
           Py_DECREF(r.val);
           return EVAL_RAISE();
@@ -649,7 +649,7 @@ static KosOpResult demand_kos_vinstall(
     case KOS_RES_NORMAL:
     case KOS_RES_POLL:
     case KOS_RES_REPROLOGUE: {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
+      KosDynFrame *frame = KosEvalState_FRAME(ctx);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
       return r;

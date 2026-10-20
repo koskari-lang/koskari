@@ -73,9 +73,9 @@ static PyObject *batched_short(KosBatched *b) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(batched_resume_deliver_kind, "batched-step",
                 batched_resume_deliver, kos_transform_step_clear, NULL);
@@ -88,7 +88,7 @@ KOS_RESUME_KIND(batched_resume_fill_kind, "batched-step",
    step's value. Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosBatched *b = (KosBatched *) state;
   KosTransform *t = &b->base;
@@ -102,16 +102,16 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
      pending, and re-entered from batched_resume_deliver: every fetch
      here is a request. */
   while (b->filled < b->n) {
-    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
                                             &batched_resume_deliver_kind, b);
-    RESULT_ENTRY(es, r, &batched_resume_deliver_kind, b);
+    RESULT_ENTRY(ctx, r, &batched_resume_deliver_kind, b);
   }
 
   {
     PyObject *batch = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, batch, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(ctx, batch, &t->cached_frame);
   }
 }
 
@@ -124,7 +124,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
    consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosBatched *b = (KosBatched *) state;
   KosTransform *t = &b->base;
@@ -140,13 +140,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
     if (! shorter)
       return EVAL_RAISE();
 
-    return KosNativeFrame_ReturnToCache(es, shorter, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(ctx, shorter, &t->cached_frame);
   }
 
   PyTuple_SET_ITEM(t->pending, b->filled, element);
   b->filled++;
 
-  RESUME_HOP(&batched_resume_fill_kind, es, b, NULL);
+  RESUME_HOP(&batched_resume_fill_kind, ctx, b, NULL);
 }
 
 
@@ -154,14 +154,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
 
 
 static KosIterStepResult batched_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosBatched *b = (KosBatched *) self;
   KosTransform *t = &b->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
   PyObject *batch;
 
@@ -180,7 +180,7 @@ static KosIterStepResult batched_iter_step(
     for (i = 0; i < b->n; i++) {
       PyObject *element;
 
-      switch (KosEvalState_NextOrDefer(es, t->source,
+      switch (KosEvalState_NextOrDefer(ctx, t->source,
                                        &batched_resume_fill_kind, b,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:
@@ -205,7 +205,7 @@ static KosIterStepResult batched_iter_step(
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(batch);
-          return kos_transform_step_abort(es, t, pre_top);
+          return kos_transform_step_abort(ctx, t, pre_top);
       }
     }
 

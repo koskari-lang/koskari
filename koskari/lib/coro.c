@@ -385,9 +385,7 @@ static PyObject *coroutine_result(KosCoroutine *coro, KosOpResult res) {
    is delivered at the await point and the frame's handler chain runs
    (mirror revive_await's EVAL_RAISE ingress).
 */
-static KosOpResult coroutine_drive_await_error(
-    KosCoroutine *coro,
-    KosEvalState *coro_es) {
+static KosOpResult coroutine_drive_await_error(KosCoroutine *coro) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   PyErr_Fetch(&typ, &val, &tb);
@@ -395,7 +393,7 @@ static KosOpResult coroutine_drive_await_error(
   if (val && tb)
     PyException_SetTraceback(val, tb);
 
-  KosEvalState_PythonAwaitClearIter(coro_es);
+  KosEvalState_PythonAwaitClearIter(coro->ctx);
 
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
@@ -410,11 +408,8 @@ static KosOpResult coroutine_drive_await_error(
 }
 
 
-static PyObject *coroutine_raise_at_await(
-    KosCoroutine *coro,
-    KosEvalState *coro_es) {
-
-  return coroutine_result(coro, coroutine_drive_await_error(coro, coro_es));
+static PyObject *coroutine_raise_at_await(KosCoroutine *coro) {
+  return coroutine_result(coro, coroutine_drive_await_error(coro));
 }
 
 
@@ -476,9 +471,7 @@ static int coroutine_step(
      from inside the step are refused: either can otherwise clear the
      context's reference to the iterator while it runs. */
   if (coro->state == KOS_CORO_WAITING_PY) {
-    KosEvalState coro_es;
-    KosEvalState_Init(&coro_es, coro->ctx, NULL);
-    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       PyObject *await_result = NULL;
       Py_INCREF(await_iter);
@@ -493,12 +486,12 @@ static int coroutine_step(
       }
       if (step == PYGEN_ERROR)
         return coroutine_settle(
-            coro, coroutine_drive_await_error(coro, &coro_es), out);
+            coro, coroutine_drive_await_error(coro), out);
       /* PYGEN_RETURN: await_result is the completion, owned, never NULL */
       /* Python awaitable completed: its value is the send value for
          the drive. await_result is uniformly owned; the XDECREF after
          the drive releases it. */
-      KosEvalState_PythonAwaitClearIter(&coro_es);
+      KosEvalState_PythonAwaitClearIter(coro->ctx);
       coro->state = KOS_CORO_RUNNING;
       send_val = await_result;
     }
@@ -574,9 +567,7 @@ static PyObject *coroutine_throw_pair(
   /* If waiting on Python awaitable, forward throw; the iterator is held
      and in_send set across it, as in coroutine_step */
   if (coro->state == KOS_CORO_WAITING_PY) {
-    KosEvalState coro_es;
-    KosEvalState_Init(&coro_es, coro->ctx, NULL);
-    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
@@ -591,12 +582,13 @@ static PyObject *coroutine_throw_pair(
 
       if (step == PYGEN_RETURN) {
         /* await_result is uniformly owned; PythonResumeSet steals it. */
-        KosEvalState_PythonAwaitClearIter(&coro_es);
+        KosEvalState_PythonAwaitClearIter(coro->ctx);
         coro->state = KOS_CORO_RUNNING;
-        KosEvalState_PythonResumeSet(&coro_es, await_result, KOS_RESUME_AWAIT);
+        KosEvalState_PythonResumeSet(
+            coro->ctx, await_result, KOS_RESUME_AWAIT);
         return coroutine_send((PyObject *) coro, Py_None);
       } else {
-        return coroutine_raise_at_await(coro, &coro_es);
+        return coroutine_raise_at_await(coro);
       }
     }
   }
@@ -650,16 +642,14 @@ static PyObject *coroutine_close(PyObject *self) {
      in_send set across the call, as in coroutine_step: its close can
      run user code that calls back into this coroutine. */
   {
-    KosEvalState coro_es;
-    KosEvalState_Init(&coro_es, coro->ctx, NULL);
-    PyObject *await_iter = KosEvalState_PythonAwaitIter(&coro_es);
+    PyObject *await_iter = KosEvalState_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
       kos_iter_close(await_iter);
       coro->in_send = 0;
       Py_DECREF(await_iter);
-      KosEvalState_PythonAwaitClearIter(&coro_es);
+      KosEvalState_PythonAwaitClearIter(coro->ctx);
     }
   }
 

@@ -20,7 +20,7 @@
   this is the loop's cooperation point.
 */
 KOS_OP_HANDLER(MATCH_APPEND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
@@ -28,7 +28,7 @@ KOS_OP_HANDLER(MATCH_APPEND) {
      nothing else holds it, else a copy stored at the entry, so a cloned
      segment keeps the items it had when the clone was taken */
   size_t under = KosExtra_IMM(row, 0);
-  PyObject *list = KosEvalState_StackPeekUnder(es, under);
+  PyObject *list = KosEvalState_StackPeekUnder(ctx, under);
   if (unlikely(! list))
     RESULT_RAISE();
   if (unlikely(! PyList_Check(list))) {
@@ -41,18 +41,18 @@ KOS_OP_HANDLER(MATCH_APPEND) {
     list = PyList_GetSlice(list, 0, PyList_GET_SIZE(list));
     if (unlikely(! list))
       RESULT_RAISE();
-    if (unlikely(KosEvalState_StackSetUnder(es, under, list) < 0))
+    if (unlikely(KosEvalState_StackSetUnder(ctx, under, list) < 0))
       RESULT_RAISE();
   }
 
-  PyObject *value = KosEvalState_StackPopRef(es);
+  PyObject *value = KosEvalState_StackPopRef(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
   int rc = PyList_Append(list, value);
   Py_DECREF(value);
   if (unlikely(rc < 0))
     RESULT_RAISE();
-  RESULT_NEXT_POLL(es);
+  RESULT_NEXT_POLL(ctx);
 }
 
 

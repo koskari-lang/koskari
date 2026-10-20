@@ -22,7 +22,7 @@
   StopIteration, auto-await.
 */
 KOS_OP_HANDLER(VAR_NEXT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
   if (unlikely(n != 1 && n != 2)) {
@@ -34,18 +34,18 @@ KOS_OP_HANDLER(VAR_NEXT) {
 
   PyObject *default_val = NULL;
   if (n == 2) {
-    default_val = KosEvalState_StackPopRef(es);
+    default_val = KosEvalState_StackPopRef(ctx);
     if (unlikely(! default_val))
       RESULT_RAISE();
   }
 
-  PyObject *iter = frame_ns_deref(es, var_name);
+  PyObject *iter = frame_ns_deref(ctx, var_name);
   if (unlikely(! iter)) {
     Py_XDECREF(default_val);
     RESULT_RAISE();
   }
 
-  RESULT_RELAY(es, object_next_step(es, iter, default_val, n));
+  RESULT_RELAY(ctx, object_next_step(ctx, iter, default_val, n));
 }
 
 

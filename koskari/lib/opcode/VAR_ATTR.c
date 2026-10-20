@@ -19,11 +19,11 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  PyObject *obj = frame_ns_deref(es, var_name);
+  PyObject *obj = frame_ns_deref(ctx, var_name);
   if (! obj)
     RESULT_RAISE();
 
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(VAR_ATTR) {
     if (hit) {
       Py_INCREF(hit);
       Py_DECREF(obj);
-      RESULT_STEAL(es, hit);
+      RESULT_STEAL(ctx, hit);
     }
     /* unset/materialized: fall through (AttributeError, __getattr__,
        materialized dict, or a shadowed class attribute). */
@@ -54,7 +54,7 @@ KOS_OP_HANDLER(VAR_ATTR) {
   Py_DECREF(obj);
   if (! val)
     RESULT_RAISE();
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

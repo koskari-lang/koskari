@@ -18,14 +18,14 @@
   cursor at field 1. Row depth, depth.
 */
 KOS_OP_HANDLER(MATCH_SYNC) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 0));
+  PyObject *cursor = kos_match_cursor_at(ctx, KosExtra_IMM(row, 0));
   if (unlikely(! cursor))
     RESULT_RAISE();
-  PyObject *to = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  PyObject *to = kos_match_cursor_at(ctx, KosExtra_IMM(row, 1));
   if (unlikely(! to))
     RESULT_RAISE();
 
@@ -33,9 +33,9 @@ KOS_OP_HANDLER(MATCH_SYNC) {
   if (unlikely(! moved))
     RESULT_RAISE();
   if (unlikely(moved != cursor)
-      && unlikely(KosEvalState_StackSetUnder(es, KosExtra_IMM(row, 0), moved) < 0))
+      && unlikely(KosEvalState_StackSetUnder(ctx, KosExtra_IMM(row, 0), moved) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

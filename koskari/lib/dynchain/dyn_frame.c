@@ -254,15 +254,16 @@ static int dynnode_to_dict_frame(KosDynNode *node, PyObject *data) {
    when entering a Python function.
 */
 KosDynFrame *kos_dyn_push_frame(
-    KosEvalState *es,
+    KosContext *ctx,
     KosCode *code,
     PyObject *ns) {
 
-  if (unlikely(kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)) {
+  if (unlikely(kos_eval_check_frame_room(
+          ctx, KosEvalState_FRAME(ctx), 1) < 0)) {
     Py_XDECREF(ns);
     return NULL;
   }
-  return kos_dyn_push_frame_unchecked(es, code, ns);
+  return kos_dyn_push_frame_unchecked(ctx, code, ns);
 }
 
 
@@ -272,14 +273,14 @@ KosDynFrame *kos_dyn_push_frame(
    their miss install must not test it again.
 */
 KosDynFrame *kos_dyn_push_frame_unchecked(
-    KosEvalState *es,
+    KosContext *ctx,
     KosCode *code,
     PyObject *ns) {
 
-  KosDynFrame *cur = KosEvalState_FRAME(es);
+  KosDynFrame *cur = KosEvalState_FRAME(ctx);
 
   // CONTEXT: dirty, touches context directly
-  KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(es), code, ns);
+  KosDynFrame *frame = kos_dynframe_new(KosEvalState_DYN_TOP(ctx), code, ns);
   if (! frame)
     return NULL;
 
@@ -297,17 +298,17 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
      from kos_dynframe_new).  Mirror of the return-side inline retarget
      in eval_plain_return. */
   if (cur)
-    KosEvalState_FlushLiveRegsToFrame(es);
+    KosEvalState_FlushLiveRegsToFrame(ctx);
   kos_dyn_stamp_installed_segment(KosDynNode_STACK((KosDynNode *) frame),
-                                  KosEvalState_BLOCK(es));
+                                  KosEvalState_BLOCK(ctx));
   KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) cur;
-  KosEvalState_DYN_TOP(es) = (KosDynNode *) frame;
-  KosEvalState_FRAME(es) = frame;
-  KosEvalState_BLOCK(es) = &KosDynNode_STACK((KosDynNode *) frame);
-  KosEvalState_NAMESPACE(es) = KosDynNode_NS((KosDynNode *) frame);
-  KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
-  es->pc = KosDynFrame_PC(frame);
-  es->acting_pc = KosDynFrame_ACTING_PC(frame);
+  KosEvalState_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosEvalState_FRAME(ctx) = frame;
+  KosEvalState_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) frame);
+  KosEvalState_NAMESPACE(ctx) = KosDynNode_NS((KosDynNode *) frame);
+  KosEvalState_CODE(ctx) = KosDynFrame_CODE(frame);
+  ctx->pc = KosDynFrame_PC(frame);
+  ctx->acting_pc = KosDynFrame_ACTING_PC(frame);
 
   return frame;
 }
@@ -317,8 +318,8 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
    Push frame with NULL code/ns (placeholder). Callers: setup paths needing a
    frame before code is bound.
 */
-KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es) {
-  return kos_dyn_push_frame(es, NULL, NULL);
+KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx) {
+  return kos_dyn_push_frame(ctx, NULL, NULL);
 }
 
 
@@ -330,14 +331,14 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es) {
    says exactly that: nothing is visible through it and nothing can be
    stored through it.
 */
-KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es) {
+KosDynFrame *kos_dyn_push_frame_native(KosContext *ctx) {
 
   PyObject *empty = KosNamespace_Empty();
 
   if (! empty)
     return NULL;
   Py_INCREF(empty);
-  return kos_dyn_push_frame(es, NULL, empty);
+  return kos_dyn_push_frame(ctx, NULL, empty);
 }
 
 
@@ -393,8 +394,8 @@ int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
 
    :return: 0 on success (DYN_TOP == frame), -1 with an exception set
 */
-int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame) {
-  KosDynNode *top = KosEvalState_DYN_TOP(es);
+int kos_dyn_teardown_to_frame(KosContext *ctx, KosDynFrame *frame) {
+  KosDynNode *top = KosEvalState_DYN_TOP(ctx);
 
   while (top && top != (KosDynNode *) frame) {
     switch (KosDynNode_KIND(top)) {
@@ -411,7 +412,7 @@ int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame) {
 
     {
       KosDynNode *parent = KosDynNode_PARENT(top);
-      kos_dyn_commit_dyn_top(es, parent);
+      kos_dyn_commit_dyn_top(ctx, parent);
       KosDynNode_PARENT(top) = NULL;
       kos_dynnode_free(top);
       top = parent;
@@ -457,22 +458,22 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
    Pop top if it is a FRAME; refresh frame_top. Does not run full uninstall
    (no extent teardown). Callers: simple frame exit when no extra nodes on top.
 */
-int kos_dyn_pop_frame(KosEvalState *es) {
-  if (! KosEvalState_DYN_TOP(es)) {
+int kos_dyn_pop_frame(KosContext *ctx) {
+  if (! KosEvalState_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to pop");
     return -1;
   }
 
-  if (! KosDynNode_IS_FRAME(KosEvalState_DYN_TOP(es))) {
+  if (! KosDynNode_IS_FRAME(KosEvalState_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
     return -1;
   }
 
   {
-    KosDynNode *old_top = KosEvalState_DYN_TOP(es);
+    KosDynNode *old_top = KosEvalState_DYN_TOP(ctx);
     KosDynNode *parent = KosDynNode_PARENT(old_top);
 
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     kos_dynnode_free(old_top);
   }
 
@@ -483,29 +484,29 @@ int kos_dyn_pop_frame(KosEvalState *es) {
 /**
    Detach the top frame from the context's dynamic chain without freeing it.
 
-   Sets KosEvalState_DYN_TOP(es) to the frame's parent and updates frame_top. Clears the
+   Sets KosEvalState_DYN_TOP(ctx) to the frame's parent and updates frame_top. Clears the
    detached frame's parent link so it is fully disconnected from the chain.
    The frame is returned in *frame_out; caller may keep it (e.g. for async
    gen storage in agen->ctx).
 
-   :param es: eval state
+   :param ctx: context
    :param frame_out: output; set to the detached frame (may be NULL)
 
    :return: 0 on success, -1 if top is not a frame
 */
-int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out) {
-  if (! KosEvalState_DYN_TOP(es)) {
+int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
+  if (! KosEvalState_DYN_TOP(ctx)) {
     PyErr_SetString(PyExc_RuntimeError, "no node to detach");
     return -1;
   }
-  if (! KosDynNode_IS_FRAME(KosEvalState_DYN_TOP(es))) {
+  if (! KosDynNode_IS_FRAME(KosEvalState_DYN_TOP(ctx))) {
     PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
     return -1;
   }
-  KosDynFrame *frame = (KosDynFrame *) KosEvalState_DYN_TOP(es);
+  KosDynFrame *frame = (KosDynFrame *) KosEvalState_DYN_TOP(ctx);
   KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
 
-  kos_dyn_commit_dyn_top(es, parent);
+  kos_dyn_commit_dyn_top(ctx, parent);
   KosDynNode_PARENT(frame) = NULL;
   if (frame_out)
     *frame_out = frame;

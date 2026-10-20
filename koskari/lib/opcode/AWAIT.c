@@ -22,11 +22,11 @@
   (await) compiles to AWAIT 0 alone.
 */
 KOS_OP_HANDLER(AWAIT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   uint32_t arg = KosOp_ARG(insn);
 
   if (arg == 0u)
-    RESULT_AWAIT(es, Py_NewRef(Py_None));
+    RESULT_AWAIT(ctx, Py_NewRef(Py_None));
 
   if (unlikely(arg != 1u)) {
     PyErr_Format(PyExc_RuntimeError,
@@ -35,11 +35,11 @@ KOS_OP_HANDLER(AWAIT) {
     RESULT_RAISE();
   }
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
-  RESULT_RELAY(es, kos_await_dispatch(es, val));
+  RESULT_RELAY(ctx, kos_await_dispatch(ctx, val));
 }
 
 

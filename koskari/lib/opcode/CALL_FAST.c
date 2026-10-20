@@ -24,7 +24,7 @@
   turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   unsigned n = KosExtra_IMM(row, 1);
@@ -43,13 +43,13 @@ KOS_OP_HANDLER(CALL_FAST) {
   if (! tail) {
     KosOpResult r;
     int taken = kos_call_cached_frame_install(
-        es, callable, NULL, 0, (Py_ssize_t) n, &r);
+        ctx, callable, NULL, 0, (Py_ssize_t) n, &r);
 
     if (likely(taken > 0))
-      RESULT_RELAY(es, r);
+      RESULT_RELAY(ctx, r);
     if (unlikely(taken < 0)) {
       if (n)
-        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(es), n);
+        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(ctx), n);
       Py_DECREF(callable);
       RESULT_RAISE();
     }
@@ -57,15 +57,15 @@ KOS_OP_HANDLER(CALL_FAST) {
 
   PyObject *const *argv = NULL;
   if (n) {
-    argv = KosEvalState_StackTailPtr(es, n);
+    argv = KosEvalState_StackTailPtr(ctx, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
       RESULT_RAISE();
     }
   }
 
-  RESULT_RELAY(es, kos_call_invoke_from_handler(
-      es, tail, callable, NULL, argv, (Py_ssize_t) n, NULL,
+  RESULT_RELAY(ctx, kos_call_invoke_from_handler(
+      ctx, tail, callable, NULL, argv, (Py_ssize_t) n, NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
 }
 

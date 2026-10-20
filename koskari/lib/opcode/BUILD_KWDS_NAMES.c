@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *names = KosOp_OBJ(insn);
 
   if (! PyTuple_CheckExact(names)) {
@@ -29,13 +29,13 @@ KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
     RESULT_RAISE();
   }
 
-  PyObject *kwds = KosEvalState_StackPopTailDictFromNames(es,
+  PyObject *kwds = KosEvalState_StackPopTailDictFromNames(ctx,
                                                        names);
 
   if (! kwds)
     RESULT_RAISE();
 
-  RESULT_STEAL(es, kwds);
+  RESULT_STEAL(ctx, kwds);
 }
 
 

@@ -39,11 +39,11 @@
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(takewhile_resume_fetch_kind, "takewhile-step",
                 takewhile_resume_fetch, kos_transform_step_clear, NULL);
@@ -72,7 +72,7 @@ static KosOpResult takewhile_stop(KosTransform *t) {
    trampoline.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
   KosOpResult r;
@@ -82,9 +82,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosEvalState_NextResume(es, t->source, NULL,
+  r = KosEvalState_NextResume(ctx, t->source, NULL,
                               &takewhile_resume_invoke_kind, t);
-  RESULT_ENTRY(es, r, &takewhile_resume_invoke_kind, t);
+  RESULT_ENTRY(ctx, r, &takewhile_resume_invoke_kind, t);
 }
 
 
@@ -92,7 +92,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
    INVOKE: test element against the predicate. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransform *t = (KosTransform *) state;
 
@@ -104,9 +104,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
   t->pending = element;
   {
     KosOpResult r = KosEvalState_Call(
-        es, t->fn.cs_callable, &element, 1, NULL, 0,
+        ctx, t->fn.cs_callable, &element, 1, NULL, 0,
         &takewhile_resume_verdict_kind, t);
-    RESULT_ENTRY(es, r, &takewhile_resume_verdict_kind, t);
+    RESULT_ENTRY(ctx, r, &takewhile_resume_verdict_kind, t);
   }
 }
 
@@ -116,7 +116,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
    the run. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
   int ok;
@@ -136,7 +136,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
     PyObject *element = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
+    return KosNativeFrame_ReturnToCache(ctx, element, &t->cached_frame);
   }
 }
 
@@ -145,13 +145,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
 
 
 static KosIterStepResult takewhile_iter_step(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransform *t = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -160,7 +160,7 @@ static KosIterStepResult takewhile_iter_step(
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(es, t, t->source, &takewhile_resume_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, t->source, &takewhile_resume_fetch_kind, pre_top, out,
                         element);
 
     /* Any KosCallable predicate's verdict must come back to this
@@ -168,7 +168,7 @@ static KosIterStepResult takewhile_iter_step(
        is staged raw for takewhile_resume_invoke, which makes the call
        in this evaluator. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-      return kos_transform_stage(es, t, element,
+      return kos_transform_stage(ctx, t, element,
                                  &takewhile_resume_invoke_kind, pre_top);
 
     /* A plain python predicate needs no evaluator at all. */
@@ -203,7 +203,7 @@ static KosIterStepResult takewhile_iter_step(
              frame, which owns every suspension. The element is held
              on the transform until the verdict settles. */
           KosIterStepResult staged = kos_transform_stage(
-              es, t, result, &takewhile_resume_verdict_kind, pre_top);
+              ctx, t, result, &takewhile_resume_verdict_kind, pre_top);
 
           if (staged != KOS_ITER_INSTALLED_VALUE) {
             Py_DECREF(element);

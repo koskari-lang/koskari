@@ -19,12 +19,12 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR_STORE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosEvalState_StackPopRef(ctx);
   if (! val)
     RESULT_RAISE();
   size_t idx = (size_t) KosExtra_IMM(row, 0);
@@ -45,12 +45,12 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
       KosFieldMode m = kos_resolve_attr_location(obj, attr_name, slot, &off);
       if (m == KOS_FIELD_SLOT) {
         field_slot_store(obj, off, val);      /* val stolen */
-        RESULT_NEXT(es);
+        RESULT_NEXT(ctx);
       }
 #if PY_MINOR_VERSION >= 11
       if (m == KOS_FIELD_INSTANCE_VALUE
           && field_instance_value_store(obj, off, val)) {
-        RESULT_NEXT(es);                      /* val stolen */
+        RESULT_NEXT(ctx);                      /* val stolen */
       }
 #endif
     }
@@ -69,7 +69,7 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
   Py_DECREF(val);
   if (res < 0)
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

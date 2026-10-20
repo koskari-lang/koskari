@@ -118,18 +118,18 @@ static int dynnode_to_dict_prompt(KosDynNode *node, PyObject *data) {
    Push prompt via kos_dyn_push. Callers: opcode PUSH_PROMPT.
 */
 KosDynPrompt *kos_dyn_push_prompt(
-    KosEvalState *es,
+    KosContext *ctx,
     uint32_t prompt_id,
     uint32_t pop_pc) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(es), prompt_id);
+  KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(ctx), prompt_id);
   if (! prompt)
     return NULL;
 
   KosDynPrompt_POP_PC(prompt) = pop_pc;
 
-  if (kos_dyn_push(es, (KosDynNode *) prompt) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) prompt) < 0) {
     kos_dynprompt_free(prompt);
     return NULL;
   }
@@ -141,14 +141,14 @@ KosDynPrompt *kos_dyn_push_prompt(
 /**
    Pop prompt via barrier-crossing policy API using shared uninstall machinery.
 */
-int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt) {
+int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   KosOpResult kr;
 
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) prompt)
+  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) prompt)
     return 0;
 
   /* a prompt's leave is synchronous: NORMAL or an error */
-  kr = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 1);
+  kr = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_NONE, 1);
   if (kr.kind == KOS_RES_NORMAL)
     return 0;
   Py_XDECREF(kr.val);

@@ -23,9 +23,9 @@
   site's one KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
+  PyObject *ns = KosEvalState_NAMESPACE(ctx);
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   PyObject *rhs = KosExtra_OBJ(row, 3);
   PyObject *obj, *obj_ref;
@@ -45,7 +45,7 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_INPLACE_CONST) {
 
   if (unlikely(rc < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

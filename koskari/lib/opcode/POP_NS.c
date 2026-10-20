@@ -18,14 +18,14 @@
    POP_NS: arg unused. Verify dyn_top is KOS_DYN_NS and pop the NS node.
 */
 KOS_OP_HANDLER(POP_NS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  KosDynNode *top = KosEvalState_CurrentNode(es);
-  if (unlikely(kos_dyn_pop_ns(es, (KosDynNs *) top) < 0))
+  KosDynNode *top = KosEvalState_CurrentNode(ctx);
+  if (unlikely(kos_dyn_pop_ns(ctx, (KosDynNs *) top) < 0))
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

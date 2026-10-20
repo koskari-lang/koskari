@@ -152,10 +152,10 @@ static KosDynYieldFrom *kos_dynyieldfrom_clone(KosDynYieldFrom *node) {
    arbitrary depth.
 */
 int kos_dyn_yield_from_deliver_inner_yield(
-    KosEvalState *es, KosDynYieldFrom *yf,
+    KosContext *ctx, KosDynYieldFrom *yf,
     PyObject *inner_val) {
 
-  KosDynFrame *const frame = KosEvalState_FRAME(es);
+  KosDynFrame *const frame = KosEvalState_FRAME(ctx);
 
   if (! frame || ! inner_val) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -164,7 +164,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
     return -1;
   }
 
-  if (KosEvalState_PENDING_VALUE(es)) {
+  if (KosEvalState_PENDING_VALUE(ctx)) {
     Py_DECREF(inner_val);
     PyErr_SetString(PyExc_SystemError,
                     "yield-from inner delivery over a staged one");
@@ -177,8 +177,8 @@ int kos_dyn_yield_from_deliver_inner_yield(
       islots->ki_finish(delegate, 0);
   }
   kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
-  KosEvalState_PENDING_VALUE(es) = inner_val;
-  kos_dyn_yield_from_set_resume(es, yf, KosDynYieldFrom_RESUME_EMIT(yf));
+  KosEvalState_PENDING_VALUE(ctx) = inner_val;
+  kos_dyn_yield_from_set_resume(ctx, yf, KosDynYieldFrom_RESUME_EMIT(yf));
   return 0;
 }
 
@@ -190,14 +190,14 @@ int kos_dyn_yield_from_deliver_inner_yield(
    YIELD_FROM, and pop the node. val consumed.
 */
 int kos_dyn_yield_from_deliver_exhausted(
-    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val) {
+    KosContext *ctx, KosDynYieldFrom *yf, PyObject *val) {
 
   KosDynFrame *df;
   KosCode *code;
 
   Py_XDECREF(val);
 
-  df = KosEvalState_FRAME(es);
+  df = KosEvalState_FRAME(ctx);
 
   {
     PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
@@ -207,10 +207,10 @@ int kos_dyn_yield_from_deliver_exhausted(
   }
 
   code = df ? KosDynFrame_CODE(df) : NULL;
-  if (df && code && KosEvalState_ACTING_PC(es) + 1u < KosCode_CODE_LEN(code))
-    KosEvalState_SET_PC(es, KosEvalState_ACTING_PC(es) + 1u);
+  if (df && code && KosEvalState_ACTING_PC(ctx) + 1u < KosCode_CODE_LEN(code))
+    KosEvalState_SET_PC(ctx, KosEvalState_ACTING_PC(ctx) + 1u);
 
-  if (kos_dyn_pop_yield_from(es, yf) < 0)
+  if (kos_dyn_pop_yield_from(ctx, yf) < 0)
     return -1;
   return 0;
 }
@@ -219,24 +219,24 @@ int kos_dyn_yield_from_deliver_exhausted(
 /**
    Remove YIELD_FROM from the chain whether or not it is dyn_top.
 */
-int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
+int kos_dyn_unlink_yield_from(KosContext *ctx, KosDynYieldFrom *yf) {
 
   KosDynNode *node;
   KosDynNode *p;
   KosDynNode *c;
 
-  if (! es || ! yf) {
+  if (! ctx || ! yf) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_unlink_yield_from: invalid arguments");
     return -1;
   }
 
   node = (KosDynNode *) yf;
-  if (KosEvalState_DYN_TOP(es) == node) {
+  if (KosEvalState_DYN_TOP(ctx) == node) {
     /* Forced teardown: the delegate may still be active, so close it
        before popping (kos_dyn_pop_yield_from no longer closes). */
     kos_yieldfrom_close_delegate(yf);
-    return kos_dyn_pop_yield_from(es, yf);
+    return kos_dyn_pop_yield_from(ctx, yf);
   }
 
   /* Clear the resume before the splice: kos_dyn_resync_chain below
@@ -244,16 +244,16 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf) {
      the clear only reaches the frame it finds live. Running it
      afterwards misses a delegating frame buried below that point and
      leaves a live resume pointer on it. */
-  kos_dyn_yield_from_clear_resume(es, yf);
+  kos_dyn_yield_from_clear_resume(ctx, yf);
 
   p = KosDynNode_PARENT(node);
-  for (c = KosEvalState_DYN_TOP(es); c; c = KosDynNode_PARENT(c)) {
+  for (c = KosEvalState_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
     if (KosDynNode_PARENT(c) == node) {
       KosDynNode_PARENT(c) = p;
       break;
     }
   }
-  kos_dyn_resync_chain(es);
+  kos_dyn_resync_chain(ctx);
   KosDynNode_PARENT(node) = NULL;
   kos_yieldfrom_close_delegate(yf);
   kos_dynyieldfrom_free(yf);
@@ -317,20 +317,20 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node) {
 /**
    Close delegate on pop (uninstall path). Callers: kos_dyn_uninstall_handler.
 */
-void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node) {
+void kos_dyn_yieldfrom_unwind(KosContext *ctx, KosDynYieldFrom *node) {
   if (node) {
-    kos_dyn_yield_from_clear_resume(es, node);
+    kos_dyn_yield_from_clear_resume(ctx, node);
     kos_yieldfrom_close_delegate(node);
   }
 }
 
 
 void kos_dyn_yield_from_set_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynYieldFrom *node,
     const KosResumeKind *resume) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
   KosDynYieldFrom_RESUME(node) = (void *) resume;
   KosDynFrame_RESUME_KIND(frame) = resume;
@@ -338,8 +338,8 @@ void kos_dyn_yield_from_set_resume(
 }
 
 
-void kos_dyn_yield_from_clear_resume(KosEvalState *es, KosDynYieldFrom *node) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+void kos_dyn_yield_from_clear_resume(KosContext *ctx, KosDynYieldFrom *node) {
+  KosDynFrame *frame = KosEvalState_FRAME(ctx);
 
   if (frame && node
       && (const void *) KosDynFrame_RESUME_KIND(frame)

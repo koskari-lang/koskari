@@ -22,8 +22,8 @@
   exhaustion. Must be inside PUSH_FOREACH block. Auto-await.
 */
 KOS_OP_HANDLER(ITER_NEXT) {
-  KOS_SYNC_PC(es, insn);
-  KosDynNode *region = kos_dyn_find_loop(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosDynNode *region = kos_dyn_find_loop(ctx);
 
   if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -38,27 +38,27 @@ KOS_OP_HANDLER(ITER_NEXT) {
   {
     PyObject *out = NULL;
 
-    switch (kos_foreach_request_next(es, region, &out)) {
+    switch (kos_foreach_request_next(ctx, region, &out)) {
       case KOS_IREQ_DELIVERED:
-        if (unlikely(KosEvalState_StackPUSH(es, out) < 0))
+        if (unlikely(KosEvalState_StackPUSH(ctx, out) < 0))
           RESULT_RAISE();
-        RESULT_NEXT(es);
+        RESULT_NEXT(ctx);
 
       case KOS_IREQ_EXHAUSTED:
         Py_XDECREF(out);
         KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-        RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+        RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
 
       case KOS_IREQ_CONTINUES: {
         /* A frame the install left current is threaded into only when
            it can be: a code-less native frame takes the entry
            sequence, and a frame suspended inside a yield-from runs that
            node's phase resume first. */
-        RESULT_RELAY(es, kos_iter_installed(es));
+        RESULT_RELAY(ctx, kos_iter_installed(ctx));
       }
 
       case KOS_IREQ_EXIT:
-        RESULT_AWAIT(es, out);
+        RESULT_AWAIT(ctx, out);
 
       case KOS_IREQ_ERROR:
       default:

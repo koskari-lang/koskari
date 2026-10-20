@@ -22,7 +22,7 @@
   convert_fast lowering of JUMP_AND_VAR.
 */
 KOS_OP_HANDLER(JUMP_AND_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -32,12 +32,12 @@ KOS_OP_HANDLER(JUMP_AND_FAST) {
      other value takes the owned path, which raises for an empty slot. */
   PyObject *val = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 0));
   if (val == Py_False || val == Py_None) {
-    if (unlikely(KosEvalState_StackPushRef(es, val) < 0))
+    if (unlikely(KosEvalState_StackPushRef(ctx, val) < 0))
       RESULT_RAISE();
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   }
   if (val == Py_True)
-    RESULT_NEXT(es);
+    RESULT_NEXT(ctx);
 
   val = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! val))
@@ -50,13 +50,13 @@ KOS_OP_HANDLER(JUMP_AND_FAST) {
   }
 
   if (res) {
-    if (unlikely(KosEvalState_StackPUSH(es, val) < 0))
+    if (unlikely(KosEvalState_StackPUSH(ctx, val) < 0))
       RESULT_RAISE();
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 1));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   }
 
   Py_DECREF(val);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

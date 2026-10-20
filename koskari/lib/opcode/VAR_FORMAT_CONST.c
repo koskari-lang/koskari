@@ -20,13 +20,13 @@
   current frame's namespace and push PyObject_Format(obj, rules).
 */
 KOS_OP_HANDLER(VAR_FORMAT_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
   PyObject *rules = KosExtra_OBJ(row, 1);
 
-  PyObject *val = frame_ns_deref(es, name);
+  PyObject *val = frame_ns_deref(ctx, name);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -35,7 +35,7 @@ KOS_OP_HANDLER(VAR_FORMAT_CONST) {
   if (unlikely(! res))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

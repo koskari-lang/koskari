@@ -23,14 +23,14 @@
 */
 
 KOS_OP_HANDLER(VAR_INPLACE_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 1);
 
   PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
 
-  PyObject *obj = frame_ns_deref(es, name);
+  PyObject *obj = frame_ns_deref(ctx, name);
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -40,11 +40,11 @@ KOS_OP_HANDLER(VAR_INPLACE_CONST) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  int res = frame_ns_store(es, name, result);
+  int res = frame_ns_store(ctx, name, result);
   Py_DECREF(result);
   if (unlikely(res < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

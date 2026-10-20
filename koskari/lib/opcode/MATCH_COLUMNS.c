@@ -20,20 +20,20 @@
   mark at field 1. Row depth, depth, const, const.
 */
 KOS_OP_HANDLER(MATCH_COLUMNS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *list = kos_match_items_at(es, KosExtra_IMM(row, 0));
+  PyObject *list = kos_match_items_at(ctx, KosExtra_IMM(row, 0));
   if (unlikely(! list))
     RESULT_RAISE();
-  PyObject *mark = kos_match_writable_at(es, row, 1);
+  PyObject *mark = kos_match_writable_at(ctx, row, 1);
   if (unlikely(! mark))
     RESULT_RAISE();
   if (unlikely(KosMatchMark_Columns(
           mark, list, KosExtra_OBJ(row, 2), KosExtra_OBJ(row, 3)) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

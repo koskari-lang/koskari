@@ -37,8 +37,8 @@ KOS_OP_HANDLER(FAST_ATTR_INPLACE) {
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
   if (likely(slot && slot[1].kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot[1].u.elector.fn, es, insn, NULL);
-  TAILCALL(el_fast_attr_inplace_elect, es, insn, NULL);
+    TAILCALL(slot[1].u.elector.fn, ctx, insn, NULL);
+  TAILCALL(el_fast_attr_inplace_elect, ctx, insn, NULL);
 }
 
 

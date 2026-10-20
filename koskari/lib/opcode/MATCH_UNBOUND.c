@@ -18,14 +18,14 @@
   with no reserve, ending at its subject's end, pushed. Row depth.
 */
 KOS_OP_HANDLER(MATCH_UNBOUND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 0));
+  PyObject *cursor = kos_match_cursor_at(ctx, KosExtra_IMM(row, 0));
   if (unlikely(! cursor))
     RESULT_RAISE();
-  RESULT_STEAL(es, KosMatchCursor_Unbound(cursor));
+  RESULT_STEAL(ctx, KosMatchCursor_Unbound(cursor));
 }
 
 
