@@ -41,20 +41,20 @@ import-from contextlib nullcontext
 
 SOURCES = {
     "with_call_as": """
-define with_call_as [v]:
+def with_call_as [v]:
     (with [(nullcontext v) as: got] got)
 """,
     "with_symbol_as": """
-define with_symbol_as [v]:
-    define cm (nullcontext v)
+def with_symbol_as [v]:
+    var cm (nullcontext v)
     (with [cm as: got] got)
 """,
     "dyn_with_call_as": """
-define dyn_with_call_as [v]:
+def dyn_with_call_as [v]:
     (dyn-with [(nullcontext v) as: got] got)
 """,
     "with_named": """
-define with_named [v]:
+def with_named [v]:
     (with [got (nullcontext v)] got)
 """,
 }

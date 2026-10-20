@@ -927,7 +927,7 @@ class TestMatchCollection(SpecialsTestCase):
     async def test_cursor_cycle_is_collected(self):
         ref = await self.held_through_continuation("""
         (let [[subj (#list sentinel 2)]]
-          (define keep [v] (call/cc (lambda [k] (subj.append k) True)))
+          (def keep [v] (call/cc (lambda [k] (subj.append k) True)))
           (match subj
             [[#[(? keep) *: rest]] "hit"]
             [else: "miss"]))
@@ -940,7 +940,7 @@ class TestMatchCollection(SpecialsTestCase):
         ref = await self.held_through_continuation("""
         (let [[box (#list)]]
           (let [[subj (#list sentinel box)]]
-            (define keep [v] (call/cc (lambda [k] (box.append k) True)))
+            (def keep [v] (call/cc (lambda [k] (box.append k) True)))
             (match subj
               [[#[(REPEAT xs (PREDICATE keep) min: 0)]] "hit"]
               [else: "miss"])))

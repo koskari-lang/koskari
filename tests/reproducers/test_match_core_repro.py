@@ -37,18 +37,18 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 GATE_SRC = """
-(define-class Holder []
-  (define k None))
+(class Holder []
+  (var k None))
 
-(define holder (Holder))
+(var holder (Holder))
 
-(define gate [v]
+(def gate [v]
   (or holder.k (shift k (begin (setattr holder "k" k) False))))
 
-(define run [m data]
+(def run [m data]
   (reset (m data)))
 
-(define resume [v]
+(def resume [v]
   (call holder.k v))
 """
 
