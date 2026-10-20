@@ -639,7 +639,7 @@ Python boundary" is replaced by "C stack at the Koskari-to-CPython call
 boundary (investigate)".
 
 Measured (release build, 3.12): Koskari constructing a Koskari class
-inside `__init__`, `(define-class R [] (define __init__ [self n] (when
+inside `__init__`, `(class R [] (def __init__ [self n] (when
 (> n 0) (R (- n 1)))))`, costs 1,424 bytes of C stack per level over 12
 C frames. `RecursionError` fires at about 3,330 levels (about 4.7 MB),
 since CPython counts two units per level on top of the guard's one.

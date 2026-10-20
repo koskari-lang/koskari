@@ -38,16 +38,16 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(var relay (lambda [src] (yield-from src)))
+(def relay [src] (yield-from src))
 
-(var inner (lambda [log]
+(def inner [log]
   (try
     (yield 1)
     ([e ValueError]
       (log.append "inner caught")
       (yield "caught"))
     (finally:
-      (log.append "inner finally")))))
+      (log.append "inner finally"))))
 """
 
 

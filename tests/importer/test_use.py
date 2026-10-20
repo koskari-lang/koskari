@@ -194,7 +194,7 @@ class TestUse(UseCase):
         from koskari.exceptions import SpecialError
         self.write_ki('ki_use_prov7', PROVIDER)
         self.write_ki('ki_use_user7', """
-        (var f (lambda f [] (begin (use ki_use_prov7 doubled) 1)))
+        (def f [] (begin (use ki_use_prov7 doubled) 1))
         """)
 
         with self.assertRaises(SpecialError):

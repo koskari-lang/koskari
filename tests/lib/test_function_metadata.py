@@ -206,10 +206,10 @@ class TestBoundMethodEquality(unittest.TestCase):
 
 
 CLOSURE_SRC = """
-(define outer (lambda [v]
-  (define mk (lambda [] (define x v) (lambda [] x)))
-  mk))
-(define g (lambda [flag] (when flag (define y 5)) y))
+(define [outer v]
+  (define [mk] (define x v) (lambda [] x))
+  mk)
+(define [g flag] (when flag (define y 5)) y)
 """
 
 

@@ -39,11 +39,11 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(var add (lambda [a b] (+ a b)))
+(def add [a b] (+ a b))
 
-(var waiter (lambda [aw] (+ 1 (await aw))))
+(def waiter [aw] (+ 1 (await aw)))
 
-(var waiter_twice (lambda [a b] (+ (await a) (await b))))
+(def waiter_twice [a b] (+ (await a) (await b)))
 """
 
 
@@ -217,8 +217,8 @@ class TestAmSend(unittest.IsolatedAsyncioTestCase):
         vars(mod)["__file__"] = "<provider_await>"
         await load_module_source_async(
             mod,
-            "(var run (lambda [mk]"
-            " (map (lambda [x] (begin (await (mk x)) x)) #[1 2])))",
+            "(def run [mk]"
+            " (map (lambda [x] (begin (await (mk x)) x)) #[1 2]))",
             layout=False)
         provider = await vars(mod)["run"](make)
         self.assertEqual([v async for v in provider], [1, 2])

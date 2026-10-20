@@ -153,8 +153,8 @@ class TestResolutionModelNestedWrite(SpecialsTestCase):
         src_str = """
         ((lambda ()
            (var x 101)
-           (var getter (lambda () x))
-           (var setter (lambda [v] (setq x v)))
+           (define [getter] x)
+           (define [setter v] (setq x v))
            (call (lambda [g s]
              (call s 42)
              (call g))
@@ -184,9 +184,9 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         src_str = """
         ((lambda ()
            (define-global counter 0)
-           (var inc (lambda ()
+           (define [inc]
              (setq counter (call + counter 1))
-             counter))
+             counter)
            (call inc)
            (call inc)
            counter))
@@ -201,9 +201,9 @@ class TestResolutionModelDefineGlobalNested(SpecialsTestCase):
         src_str = """
         ((lambda ()
            (var x 0)
-           (var inner (lambda ()
+           (define [inner]
              (define-global x 99)
-             (setq x 1)))
+             (setq x 1))
            (call inner)
            x))
         """
@@ -266,7 +266,7 @@ class TestResolutionModelNamespaceSpec(SpecialsTestCase):
         src_str = """
         ((lambda ()
            (var x 101)
-           (var setter (lambda [v] (setq x v)))
+           (define [setter v] (setq x v))
            (call setter 42)))
         """
         code = self.compile_to_code(
@@ -353,7 +353,7 @@ class TestResolutionLexicalAncestry(SpecialsTestCase):
     async def test_later_define_in_enclosing_body_still_satisfies(self):
         src_str = """
         ((lambda []
-           (var bump (lambda [] (setq x (+ x 1))))
+           (define [bump] (setq x (+ x 1)))
            (var x 10)
            (bump)
            x))
@@ -384,10 +384,9 @@ class TestResolutionLexicalAncestry(SpecialsTestCase):
 
         src_str = """
         ((lambda []
-           (var bump
-             (lambda []
+           (define [bump]
                (let [[a 1]]
-                 (setq total (+ total a)))))
+                 (setq total (+ total a))))
            (var total 10)
            (bump)
            total))

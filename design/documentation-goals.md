@@ -179,7 +179,7 @@ here, and guide chapters divert into them.
 | `reference/concepts/references-and-storage-indirection.md` | Refs as location handles, `&` sugar, `set!` target trap, `bind!`, by-ref params, vs Python. |
 | `reference/concepts/brackets-and-call-convention.md` | `( )` = call, `[ ]` = data, bracket-pair type, `compiler/call-brackets`. |
 | `reference/concepts/demand-async-and-defer.md` | Ambient async model, demand path, defer, on-demand?. |
-| `reference/concepts/choosing-an-async-construct.md` | Decision aid: `demand` / `define-demanding` vs `defer` vs `coroutine-fn` vs the asyncio bridges. |
+| `reference/concepts/choosing-an-async-construct.md` | Decision aid: `demand` / `@demand` vs `defer` vs `coroutine-fn` vs the asyncio bridges. |
 | `reference/concepts/layout-and-s-expressions.md` | Layout vs s-expr surfaces, the three authoring forms. |
 | `reference/concepts/macro-matching-and-hygiene.md` | Pattern match at expand time, datum forms and wrappers. |
 | `reference/concepts/pragma.md` | Setting a pragma; the `reader/*` / `compiler/*` / `pragma/*` settings. |

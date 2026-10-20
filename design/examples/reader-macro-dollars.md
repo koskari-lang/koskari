@@ -26,8 +26,8 @@ with **`when-main`**.
 
 | Old spelling | Koskari spelling |
 | ------------ | ---------------- |
-| **`defclass`** | **`define-class`** |
-| **`defun`** | **`define`** |
+| **`defclass`** | **`class`** |
+| **`defun`** | **`def`** |
 | **`defmacro print-example`** | **`define-syntax`** (compile-time demo in the same file) |
 | **`set-macro-character`** | Thin bootstrap helper on **`__reader__`** (see below) |
 | **`when-main`** | **`when-main`** (bootstrap) |

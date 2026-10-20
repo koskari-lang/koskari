@@ -56,12 +56,12 @@ class TestLayoutStrictHeaders(IsolatedAsyncioTestCase):
 
     async def test_missing_trailing_colon_is_error(self):
         src = """
-        define foo []
+        def foo []
           (print 1)
           (do-something-dangerous)
         """
 
-        expected = cons(symbol('define'),
+        expected = cons(symbol('def'),
                         symbol('foo'),
                         nil,
                         nil)

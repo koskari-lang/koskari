@@ -187,11 +187,10 @@ class TestInlineScopeClosures(SpecialsTestCase):
         src_str = """
         (begin
           (var a "module")
-          (var f
-            (lambda [a]
+          (define [f a]
               (let [[b 1]]
                 ((lambda [] (setq a "written")))
-                a)))
+                a))
           #[(f "argument") a])
         """
         expr, mod = self.compile_expr(src_str)
@@ -232,7 +231,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
           ((lambda [a]
              (var K
                (build-class K ()
-                 (var get (lambda [self] a))))
+                 (define [get self] a)))
              ((attr (K) get)))
            "argument"))
         """
@@ -246,7 +245,7 @@ class TestInlineScopeClosures(SpecialsTestCase):
           ((lambda []
              (var K
                (build-class K ()
-                 (var make (lambda [self] (K)))))
+                 (define [make self] (K))))
              (type ((attr (K) make))))))
         """
         expr, mod = self.compile_expr(src_str, type=type)

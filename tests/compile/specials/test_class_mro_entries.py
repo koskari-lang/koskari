@@ -43,7 +43,7 @@ class TestClassMroEntries(SpecialsTestCase):
     async def test_generic_base(self):
         src_str = """
         (build-class Box (GenericT)
-          (var __init__ (lambda [self v] (setattr self "v" v))))
+          (define [__init__ self v] (setattr self "v" v)))
         """
         expr, mod = self.compile_expr(
             src_str, GenericT=Generic[T], setattr=setattr)

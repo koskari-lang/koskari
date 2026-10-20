@@ -48,26 +48,26 @@ SRC = """
         (lambda [] (set-attr self count (+ self.count 1)) self)
         (raise (AttributeError name)))))
 
-(define drive (lambda [o n]
+(define [drive o n]
   (define i 0)
   (define last None)
   (while (< i n)
     (set! last (o.bump))
     (incr! i))
-  last))
+  last)
 
-(define drive_default (lambda [o n]
+(define [drive_default o n]
   (define i 0)
   (while (< i n)
     (o.bump_by)
     (incr! i))
-  o.count))
+  o.count)
 
-(define local_only (lambda [make]
+(define [local_only make]
   (define o (make))
   (o.bump)
   (o.bump)
-  o.count))
+  o.count)
 """
 
 

@@ -39,7 +39,7 @@ pytestmark = pytest.mark.phase_lib
 SRC = """
 (define box (list))
 
-(define add (lambda [a b] (box.append "ran") (+ a b)))
+(define [add a b] (box.append "ran") (+ a b))
 """
 
 

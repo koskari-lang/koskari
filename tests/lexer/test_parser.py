@@ -120,8 +120,8 @@ class TestParseAllPragma(IsolatedAsyncioTestCase):
 
         src = (
             '(pragma [reader/layout False])\n'
-            '(define f (lambda (x)\n'
-            '  (+ x 1)))\n'
+            '(define [f x]\n'
+            '  (+ x 1))\n'
             '  (print "ok")\n')
         forms = list(parse_all(src, '<layout-off>'))
         self.assertEqual(len(forms), 3)

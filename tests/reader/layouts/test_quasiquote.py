@@ -45,16 +45,16 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_backtick_atom_in_layout_block(self):
         """
-        A backtick atom inside a define body compiles and evaluates correctly
+        A backtick atom inside a def body compiles and evaluates correctly
         """
 
         src = """
-        define get-name []:
+        def get-name []:
           `hello
         """
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quasiquote"), symbol("hello")))
         )
 
@@ -67,12 +67,12 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_unquote_in_layout_block(self):
         src = """
-        define get-name []:
+        def get-name []:
           `(hello ,world)
         """
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quasiquote"),
             (symbol('hello'),
              (symbol("unquote"), symbol("world")))))
@@ -87,12 +87,12 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_unquote_splicing_in_layout_block(self):
         src = """
-        define get-name []:
+        def get-name []:
           `(hello ,@world)
         """
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quasiquote"),
             (symbol('hello'),
              (symbol("unquote-splicing"), symbol("world")))))
@@ -107,13 +107,13 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_quote_block_mid_heading(self):
         src = """
-        define get-name []:
+        def get-name []:
           without `(who ,@hello) we:
             sing
         """
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("without"),
             (symbol("quasiquote"),
              (symbol("who"),
@@ -131,7 +131,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_quote_block(self):
         src = """
-        define get-name []:
+        def get-name []:
           `begin:
             ,@hello
         """
@@ -139,7 +139,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         _kw_block = keyword('#block')
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
@@ -155,7 +155,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_quasiquote_syntax_block(self):
         src = """
-        define get-name []:
+        def get-name []:
           #`begin:
             ,@hello
         """
@@ -163,7 +163,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         _kw_block = keyword('#block')
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quasiquote-syntax"),
             (_kw_block,
              (symbol("begin"),),
@@ -176,7 +176,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_quote_syntax_block(self):
         src = """
-        define get-name []:
+        def get-name []:
           #'begin:
             hello
         """
@@ -184,7 +184,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         _kw_block = keyword('#block')
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quote-syntax"),
             (_kw_block,
              (symbol("begin"),),
@@ -196,12 +196,12 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
 
     async def test_quasiquote_syntax_atom_in_layout_block(self):
         src = """
-        define get-name []:
+        def get-name []:
           #`hello
         """
 
         expected = pycons(
-          (symbol("define"), symbol("get-name"), nil,
+          (symbol("def"), symbol("get-name"), nil,
            (symbol("quasiquote-syntax"), symbol("hello")))
         )
 
@@ -217,7 +217,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         """
 
         src = """
-        define get-cond []:
+        def get-cond []:
           `begin:
             if ,test-expr:
               ,result
@@ -228,7 +228,7 @@ class TestQuasiquoteLayout(IsolatedAsyncioTestCase):
         _kw_block = keyword('#block')
 
         expected = pycons(
-          (symbol("define"), symbol("get-cond"), nil,
+          (symbol("def"), symbol("get-cond"), nil,
            (symbol("quasiquote"),
             (_kw_block,
              (symbol("begin"),),
@@ -337,19 +337,19 @@ class TestQuoteBlock(IsolatedAsyncioTestCase):
 
     async def test_quote_block_inside_normal_block(self):
         """
-        A quoted block used as a body element inside a normal define block
+        A quoted block used as a body element inside a normal def block
         is returned as a quote-block form in the body
         """
 
         src = """
-        define get-block []:
+        def get-block []:
           'begin:
             foo
             bar
         """
 
         expected = pycons(
-            (symbol("define"), symbol("get-block"), nil,
+            (symbol("def"), symbol("get-block"), nil,
              (symbol("quote"),
               (_keyword_block,
                (symbol("begin"),),

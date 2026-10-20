@@ -96,7 +96,7 @@ var outcome (main)
 # extent lands in the forking context's own table, so the fork captures
 # the extents applied at creation and nothing later.
 FORK_SRC = """
-(var run-checks (lambda []
+(def run-checks []
   (var out #{})
 
   ;; parent->child through the root scope
@@ -125,7 +125,7 @@ FORK_SRC = """
         (parameterize [[k4 "at-await"]]
           (await late)))
 
-  out))
+  out)
 
 (var fork-results (run-checks))
 """

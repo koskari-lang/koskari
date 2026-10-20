@@ -208,7 +208,7 @@ Additional entries from:
 
 Priority order (highest value for HuggingFace training):
 
-1. Patterns that appear repeatedly in real code: `define-class`, `for-each` +
+1. Patterns that appear repeatedly in real code: `class`, `for-each` +
    destructuring, `demand`, `define-syntax` with `macro-rules`, `try/except`,
    f-strings, `let`, async patterns.
 2. All specials with < 3 entries.

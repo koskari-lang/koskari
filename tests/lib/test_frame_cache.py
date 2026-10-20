@@ -41,22 +41,22 @@ pytestmark = pytest.mark.phase_lib
 SRC = """
 (define log (list))
 
-(define rec (lambda [n bind]
+(define [rec n bind]
   (when bind (define x n))
   (when (> n 0) (rec (- n 1) bind))
   (log.append (try x [[NameError] "unbound"]))
-  None))
+  None)
 
-(define fib (lambda [n]
-  (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
+(define [fib n]
+  (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
 
-(define depth (lambda [n]
-  (if (<= n 0) 0 (+ 1 (depth (- n 1))))))
+(define [depth n]
+  (if (<= n 0) 0 (+ 1 (depth (- n 1)))))
 
-(define holder (lambda [obj n]
+(define [holder obj n]
   (define keep obj)
   (when (> n 0) (holder obj (- n 1)))
-  keep))
+  keep)
 """
 
 

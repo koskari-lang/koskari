@@ -35,17 +35,17 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define add (lambda [a b c: 0] (+ a b c)))
+(define [add a b c: 0] (+ a b c))
 
-(define with_keyword (lambda [] (await (defer add 1 2 c: 3))))
+(define [with_keyword] (await (defer add 1 2 c: 3)))
 
-(define positional_only (lambda [] (await (defer add 4 5))))
+(define [positional_only] (await (defer add 4 5)))
 
-(define no_function (lambda [] (defer)))
+(define [no_function] (defer))
 
-(define same_defer (lambda [d] (defer d)))
+(define [same_defer d] (defer d))
 
-(define pass_through (lambda [f] (await (defer f 1 2 3 4 5 6 7 8 9 10 11 12))))
+(define [pass_through f] (await (defer f 1 2 3 4 5 6 7 8 9 10 11 12)))
 """
 
 

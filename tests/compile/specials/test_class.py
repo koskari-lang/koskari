@@ -291,15 +291,12 @@ class TestClassWithInitAndMethods(SpecialsTestCase):
         (begin
           (var Box
             (build-class Box ()
-              (var __init__
-                (lambda [self v]
-                  (set-attr self value v)))
-              (var get_value
-                (lambda [self]
-                  (attr self value)))
-              (var set_value
-                (lambda [self new_val]
-                  (set-attr self value new_val)))))
+              (define [__init__ self v]
+                  (set-attr self value v))
+              (define [get_value self]
+                  (attr self value))
+              (define [set_value self new_val]
+                  (set-attr self value new_val))))
           (Box 10))
         """
         expr, mod = self.compile_expr(src_str)
@@ -389,7 +386,7 @@ class TestClassKosCallable(SpecialsTestCase):
         (begin
           (var Foo
             (build-class Foo ()
-              (var greet (lambda [self] "hello"))))
+              (define [greet self] "hello")))
           (var inst (Foo))
           inst)
         """
@@ -410,7 +407,7 @@ class TestClassKosCallable(SpecialsTestCase):
         (begin
           (var Foo
             (build-class Foo ()
-              (var id_self (lambda [self] self))))
+              (define [id_self self] self)))
           (var inst (Foo))
           inst)
         """

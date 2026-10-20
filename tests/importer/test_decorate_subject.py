@@ -113,7 +113,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (var inc (lambda [v] (+ v 1)))
+          (def inc [v] (+ v 1))
           (decorate-subject inc 41))
         """
         expr, _mod = self.compile_expr(src)
@@ -127,8 +127,8 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (var d1 (lambda [v] f"1<{v}>"))
-          (var d2 (lambda [v] f"2<{v}>"))
+          (def d1 [v] f"1<{v}>")
+          (def d2 [v] f"2<{v}>")
           (decorate [d1 d2] "x"))
         """
         expr, _mod = self.compile_expr(src)
@@ -142,7 +142,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (var d1 (lambda [fn] (lambda [x] (fn (fn x)))))
+          (def d1 [fn] (lambda [x] (fn (fn x))))
           (decorate [d1] (def add3 [x] (+ x 3)))
           (add3 1))
         """
@@ -159,7 +159,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (var seen #[])
-          (var tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
+          (def tag [x] (begin (seen.append (type x).__name__) "DECORATED"))
           (decorate [tag demand] (def cached [n] n))
           (#list seen cached))
         """
@@ -173,7 +173,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (var seen #[])
-          (var tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
+          (def tag [x] (begin (seen.append (type x).__name__) "DECORATED"))
           (decorate [tag coroutine-fn] (def co [n] n))
           (#list seen co))
         """
@@ -187,7 +187,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (var seen #[])
-          (var tag (lambda [x] (begin (seen.append (type x).__name__) x)))
+          (def tag [x] (begin (seen.append (type x).__name__) x))
           (decorate [tag] (class DC [] (var x :: int 0)))
           (#list seen DC))
         """
@@ -202,7 +202,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         src = """
         (begin
           (var seen #[])
-          (var tag (lambda [x] (begin (seen.append (type x).__name__) "DECORATED")))
+          (def tag [x] (begin (seen.append (type x).__name__) "DECORATED"))
           (decorate [tag] (global def gl [n] n))
           (#list seen gl))
         """
@@ -418,7 +418,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         (begin
           (var a (function aname [x] x))
           (setattr a "mark" "m1")
-          (var b (lambda [x] x))
+          (def b [x] x)
           (decorate-wraps a b)
           #[(is b.__wrapped__ a) b.mark b.__name__])
         """

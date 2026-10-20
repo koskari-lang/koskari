@@ -129,7 +129,7 @@ class TestNamespaceRepr(VarsCase):
         ns = await self.load("""
         def f []:
           var shared 5
-          var get (lambda [] shared)
+          def get [] shared
           #((vars) get)
         """)
         frame, _get = demand_call(ns['f'])

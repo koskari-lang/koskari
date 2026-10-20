@@ -35,7 +35,7 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define nested (lambda [n]
+(define [nested n]
   (define total 0)
   (define i 0)
   (while (< i n)
@@ -46,41 +46,41 @@ SRC = """
       (incr! j)
       (when (> j 2) (break))
       (incr! total (* i j))))
-  total))
+  total)
 
-(define foreach_sum (lambda [xs limit]
+(define [foreach_sum xs limit]
   (define total 0)
   (for-each [x xs]
     (when (== x 1) (continue))
     (when (> x limit) (break))
     (incr! total x))
-  total))
+  total)
 
-(define first_over (lambda [xs limit]
-  (for-each [x xs] (when (> x limit) (break x)))))
+(define [first_over xs limit]
+  (for-each [x xs] (when (> x limit) (break x))))
 
-(define guarded (lambda [x]
+(define [guarded x]
   (try
     (if (== x 0) (raise (ValueError "zero")) x)
-    ([e ValueError] -1))))
+    ([e ValueError] -1)))
 
-(define managed (lambda [mgr x]
-  (with [v mgr] (+ v x))))
+(define [managed mgr x]
+  (with [v mgr] (+ v x)))
 
-(define escape (lambda [x]
-  (call/cc (lambda [k] (when (> x 5) (call k "big")) "small"))))
+(define [escape x]
+  (call/cc (lambda [k] (when (> x 5) (call k "big")) "small")))
 
-(define shifted (lambda [x]
-  (reset (* 2 (shift k (call k x))))))
+(define [shifted x]
+  (reset (* 2 (shift k (call k x)))))
 
-(define counting (lambda [n]
+(define [counting n]
   (define i 0)
   (while (< i n)
     (incr! i)
     (define j 0)
     (while (< j 2)
       (incr! j)
-      (yield (+ (* 10 i) j))))))
+      (yield (+ (* 10 i) j)))))
 """
 
 

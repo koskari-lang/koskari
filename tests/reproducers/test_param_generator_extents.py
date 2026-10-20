@@ -45,20 +45,20 @@ pytestmark = pytest.mark.phase_reproducers
 # The generator reports its own view of `g` at each step; the driver
 # reads its own view while the generator is suspended mid-extent.
 REPORTER_SRC = """
-(var reporter (lambda []
+(def reporter []
   (parameterize [[g "gen-binding"]]
     (yield (parameterq g "unset-1"))
     (yield (parameterq g "unset-2")))
-  (yield (parameterq g "after-extent"))))
+  (yield (parameterq g "after-extent")))
 
-(var probe (lambda []
+(def probe []
   (var out #{})
   (var gen (reporter))
   (set! (item out "first") (gen.__anext__))
   (set! (item out "driver-between") (parameterq g "outer"))
   (set! (item out "second") (gen.__anext__))
   (set! (item out "third") (gen.__anext__))
-  out))
+  out)
 
 (var results (probe))
 """
@@ -69,12 +69,12 @@ REPORTER_SRC = """
 LIFECYCLE_SRC = """
 (import-from gc collect)
 
-(var counter (lambda []
+(def counter []
   (parameterize [[g "gen-binding"]]
     (yield 1)
-    (yield 2))))
+    (yield 2)))
 
-(var probe (lambda []
+(def probe []
   (var out #{})
 
   (var gen1 (counter))
@@ -89,7 +89,7 @@ LIFECYCLE_SRC = """
   (collect)
   (set! (item out "abandoned") (parameterq g "outer"))
 
-  out))
+  out)
 
 (var results (probe))
 """
@@ -102,13 +102,13 @@ LIFECYCLE_SRC = """
 # reads see it across suspensions, and the block exit restores what the
 # consumer had at the latest resume, not at the first.
 FLATTENED_SRC = """
-(var reporter (lambda []
+(def reporter []
   (parameterize [[g "gen"]]
     (yield (parameterq g "unset"))
     (yield (parameterq g "unset")))
-  (yield (parameterq g "unset"))))
+  (yield (parameterq g "unset")))
 
-(var stepped (lambda []
+(def stepped []
   (var out #[])
   (var it (reporter))
   (parameterize [[g "c"]]
@@ -119,14 +119,14 @@ FLATTENED_SRC = """
   (out.append (+ "after-2:" (parameterq g "unset")))
   (out.append (next it))
   (out.append (+ "after-3:" (parameterq g "unset")))
-  out))
+  out)
 
-(var looped (lambda []
+(def looped []
   (var out #[])
   (for-each [x (reporter)]
     (out.append (+ x ":" (parameterq g "unset"))))
   (out.append (+ "done:" (parameterq g "unset")))
-  out))
+  out)
 
 (var stepped-results (stepped))
 (var looped-results (looped))

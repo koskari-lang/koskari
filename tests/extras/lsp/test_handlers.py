@@ -93,8 +93,8 @@ class TestCollectDiagnostics(IsolatedAsyncioTestCase):
 
         src = (
             '(pragma [reader/layout False])\n'
-            '(define f (lambda (x)\n'
-            '  (+ x 1)))\n'
+            '(define [f x]\n'
+            '  (+ x 1))\n'
             '  (print "ok")\n')
         diags = collect_diagnostics(src, 'file:///test.ki')
         self.assertEqual(diags, [])

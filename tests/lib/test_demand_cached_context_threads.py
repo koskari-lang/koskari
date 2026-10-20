@@ -37,9 +37,9 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define via (lambda [release x]
+(define [via release x]
   (release)
-  (* x x)))
+  (* x x))
 """
 
 

@@ -63,32 +63,32 @@ class Marker:
 SRC = """
 (define-parameter p 0)
 
-(define read_p (lambda [] p))
+(define [read_p] p)
 
-(define make_under (lambda [v] (parameterize [[p v]] (defer read_p))))
+(define [make_under v] (parameterize [[p v]] (defer read_p)))
 
-(define await_under (lambda [d v] (parameterize [[p v]] (await d))))
+(define [await_under d v] (parameterize [[p v]] (await d)))
 
-(define add (lambda [a b] (+ a b)))
+(define [add a b] (+ a b))
 
-(define twice (lambda [a b] (await (defer add a b))))
+(define [twice a b] (await (defer add a b)))
 
 (define finally_box (list))
 
-(define guarded (lambda [aw]
+(define [guarded aw]
   (try
     (await aw)
-    (finally: (finally_box.append "ran")))))
+    (finally: (finally_box.append "ran"))))
 
-(define mix [a b] (+ (* a 31) b))
+(define [mix a b] (+ (* a 31) b))
 
-(define mix_kw [a b: 10] (+ (* a 31) b))
+(define [mix_kw a b: 10] (+ (* a 31) b))
 
-(define count_down [n] (if (<= n 0) 0 (+ 1 (count_down (- n 1)))))
+(define [count_down n] (if (<= n 0) 0 (+ 1 (count_down (- n 1)))))
 
-(define await_it [c] (await c))
+(define [await_it c] (await c))
 
-(define await_then_fail [aw] (await aw) (raise (ValueError "after")))
+(define [await_then_fail aw] (await aw) (raise (ValueError "after")))
 """
 
 

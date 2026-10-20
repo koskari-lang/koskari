@@ -155,8 +155,8 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-pair)
      (begin
-       (var helper (lambda [] 42))
-       (var main (lambda [] (helper)))
+       (def helper [] 42)
+       (def main [] (helper))
        (main))]))
 
 (var answer (mk-pair))
@@ -167,8 +167,8 @@ class TestSiblingDefinitions(unittest.IsolatedAsyncioTestCase):
   (syntax-rules []
     [(mk-pair)
      (begin
-       (var main (lambda [] (helper)))
-       (var helper (lambda [] 42))
+       (def main [] (helper))
+       (def helper [] 42)
        (main))]))
 
 (var answer (mk-pair))
@@ -1209,7 +1209,7 @@ class TestFunctionBodyDeferral(unittest.IsolatedAsyncioTestCase):
     """
 
     SRC = """
-(var plain (lambda [n] (lambda [] n)))
+(def plain [n] (lambda [] n))
 
 (define-syntax make-counter
   (syntax-rules []

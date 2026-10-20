@@ -202,7 +202,7 @@ class TestReplKi(unittest.IsolatedAsyncioTestCase):
     async def test_defer_result_stays_a_handle(self):
         out, _ = await self._run_repl(
             ['(var log (list))',
-             '(var f (lambda [] (log.append 1) 42))',
+             '(def f [] (log.append 1) 42)',
              '(var d (defer f))',
              '(len log)',
              '(await d)',

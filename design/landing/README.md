@@ -81,35 +81,35 @@ import-from dataclasses dataclass
 import-from itertools product
 
 
-define around [i reach: 1]:
+def around [i reach: 1]:
     (range (- i reach) (+ i reach 1))
 
 @dataclass
-define-class Point []:
+class Point []:
     """ A point in 2D space """
 
-    define x :: int 0
-    define y :: int 0
+    var x :: int 0
+    var y :: int 0
 
-    define neighbors [self reach: 1]:
+    def neighbors [self reach: 1]:
         each [[x y] (product (around self.x reach) (around self.y reach))]:
             (Point x y)
 
-    define move [self x: 0 y: 0]:
+    def move [self x: 0 y: 0]:
         (incr! self.x x)
         (incr! self.y y)
 
     @property
-    define coord [self]:
+    def coord [self]:
         #(self.x self.y)
 
     @coord.setter
-    define coord [self value]:
-        define-values [x y] value
+    def coord [self value]:
+        var [x y] value
         (set! self.x x)
         (set! self.y y)
 ```
-Highlighting map: `import-from`, `define`, `define-class`, `each`, `define-values` = keywords (bold gold). Function-call heads and `Point`/`int` = blue. Numbers = brown. The docstring = green. `@dataclass`/`@property`/`@coord.setter` = decorator orange. Keyword args like `reach:`/`x:`/`y:` = muted. Parens/brackets = light punctuation color.
+Highlighting map: `import-from`, `def`, `class`, `each`, `var` = keywords (bold gold). Function-call heads and `Point`/`int` = blue. Numbers = brown. The docstring = green. `@dataclass`/`@property`/`@coord.setter` = decorator orange. Keyword args like `reach:`/`x:`/`y:` = muted. Parens/brackets = light punctuation color.
 
 ## Suggested repo placement
 Since docs come from Sphinx in the project repo and publish to docs.koskari.org, this landing page can live either in the same repo (e.g. `/site/` or `/www/`) or its own small repo. It's fully static — deploy as plain files behind koskari.org. Set the apex/`www` to serve `index.html`; point `docs` subdomain at the Sphinx output separately.

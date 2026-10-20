@@ -426,7 +426,7 @@ class TestKioImporterParity(unittest.TestCase):
         """
 
         source = (
-            "(var k (lambda [a b] #[a b (+ a b)]))\n"
+            "(def k [a b] #[a b (+ a b)])\n"
             "(var r (k 1 2))\n"
             "(var r2 (k 3 4))\n")
         ki, kio = self._both('fnbody', source)

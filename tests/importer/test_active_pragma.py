@@ -112,11 +112,11 @@ class TestActivePragma(ActivePragmaCase):
         # module being compiled
         self.write_ki('ki_ap_quiet', """
         (pragma [compiler/enable-asserts False])
-        (var quiet-check (lambda quiet-check [] (begin (assert False) 1)))
+        (def quiet-check [] (begin (assert False) 1))
         """)
         self.write_ki('ki_ap_loud', """
         (import-from ki_ap_quiet quiet-check)
-        (var loud-check (lambda loud-check [] (begin (assert False) 1)))
+        (def loud-check [] (begin (assert False) 1))
         """)
 
         mod = importlib.import_module('ki_ap_loud')
@@ -136,7 +136,7 @@ class TestActivePragma(ActivePragmaCase):
     async def test_bare_control_word_error_mode(self):
         self.write_ki('ki_ap_strict', """
         (pragma [compiler/bare-control-words 'error])
-        (var f (lambda f [x] (begin (when x return) 99)))
+        (def f [x] (begin (when x return) 99))
         """)
 
         from koskari.exceptions import CompilerError
@@ -148,7 +148,7 @@ class TestActivePragma(ActivePragmaCase):
         import warnings
         self.write_ki('ki_ap_warned', """
         (pragma [compiler/bare-control-words 'warn])
-        (var f (lambda f [x] (begin (when x return) 99)))
+        (def f [x] (begin (when x return) 99))
         """)
 
         with warnings.catch_warnings(record=True) as caught:

@@ -63,7 +63,7 @@ class TestVar(SpecialsTestCase):
     async def test_var_binds_in_function_scope(self):
         src = """
         (begin
-          (var f (lambda [] (var inner 5) inner))
+          (define [f] (var inner 5) inner)
           (f))
         """
         expr, mod = self.compile_expr(src)
@@ -97,9 +97,9 @@ class TestGlobal(SpecialsTestCase):
     async def test_global_values_from_function_body(self):
         src = """
         (begin
-          (var f (lambda []
+          (define [f]
             (define-global-values [a [b c] *: d] seq)
-            None))
+            None)
           (f)
           d)
         """
@@ -125,11 +125,11 @@ class TestGlobal(SpecialsTestCase):
     async def test_global_values_pattern_only_declares(self):
         src = """
         (begin
-          (var f (lambda []
+          (define [f]
             (define-global-values [a b])
             (setq a 1)
             (setq b 2)
-            None))
+            None)
           (f)
           b)
         """
@@ -141,7 +141,7 @@ class TestGlobal(SpecialsTestCase):
     async def test_global_from_function_body(self):
         src = """
         (begin
-          (var f (lambda [] (define-global counter 10) None))
+          (define [f] (define-global counter 10) None)
           (f)
           counter)
         """

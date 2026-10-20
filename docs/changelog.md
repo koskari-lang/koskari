@@ -43,6 +43,11 @@ the value, and `(class NAME SUPERS body ...)` as an expression now binds
   annotation kept. See [decorate](reference/macros/compile-decorate.md).
 - `define-demanding` and `define-coroutine` are removed: write
   `@demand` or `@coroutine-fn` above `def`.
+- The `import-from` block layout is removed. A long member list wraps
+  in the parenthesised form, with the continuation lines indented
+  inside the parens; an `import-from M:` block now reads through the
+  default block layout and does not import. See
+  [import-from](reference/specials/import-from.md).
 - `(vars)` with no operand is the current namespace and replaces
   `(locals)`; `koskari-vars` is its runtime counterpart, and namespaces
   print their members. See [vars](reference/specials/compile-vars.md)

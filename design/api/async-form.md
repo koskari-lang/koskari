@@ -50,8 +50,7 @@ fixes launch semantics but is too easy to forget and too noisy to repeat.
 
 **`create-task`** is already registered when bootstrap loads **`koskari.asyncio`**
 (via **`make_bootstrap`**). **`async`** belongs in bootstrap **`.ki`** (e.g.
-**`_async.ki`**) at the same tier as **`compile/each`** and
-**`compile/define-coroutine`**.
+**`_async.ki`**) at the same tier as **`compile/each`**.
 
 ---
 

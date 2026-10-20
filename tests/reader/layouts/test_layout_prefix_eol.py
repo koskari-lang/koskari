@@ -62,7 +62,7 @@ class TestPrefixAtEndOfBlockLine(TestCase):
 
     def test_quote_at_end_of_body_line(self):
         self.assert_eof_at("""
-        define f []:
+        def f []:
           (print "one")
           print "two" '
         (print "three")
@@ -71,12 +71,12 @@ class TestPrefixAtEndOfBlockLine(TestCase):
 
     def test_quasiquote_and_quote_syntax(self):
         self.assert_eof_at("""
-        define f []:
+        def f []:
           print "two" `
         (print "three")
         """, 3)
         self.assert_eof_at("""
-        define f []:
+        def f []:
           print "two" #'
         (print "three")
         """, 3)

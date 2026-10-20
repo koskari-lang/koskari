@@ -354,7 +354,7 @@ class TestKioRoundTrip(unittest.TestCase):
 
         buf = io.BytesIO()
         compile_ki_source_to_kio(
-            '(var f (lambda [x] (await x)))\n'
+            '(def f [x] (await x))\n'
             '(var d (divmod 7 2))\n', buf)
         buf.seek(0)
         kio = load_kio(buf)
@@ -408,7 +408,7 @@ class TestKioRoundTrip(unittest.TestCase):
 
         buf = io.BytesIO()
         compile_ki_source_to_kio(
-            '(var k (lambda [a b] (print a b)))\n', buf)
+            '(def k [a b] (print a b))\n', buf)
         buf.seek(0)
         kio = load_kio(buf)
         specs = [arg for op, arg in kio.codes[0].soften()

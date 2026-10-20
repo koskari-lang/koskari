@@ -485,7 +485,7 @@ class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
 
         src_str = """
         (begin
-          (var helper (lambda [] (call record "helper")))
+          (define [helper] (call record "helper"))
           (var result
             (dyn-wind
               (begin (call helper) (call record "before"))
@@ -510,7 +510,7 @@ class TestDynWindBeforeThunkWithFrame(SpecialsTestCase):
 
         src_str = """
         (begin
-          (var helper (lambda [] (call record "helper")))
+          (define [helper] (call record "helper"))
           (var result
             (dyn-wind
               (begin (call helper) (call record "before"))

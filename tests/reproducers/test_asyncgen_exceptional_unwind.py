@@ -46,18 +46,18 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 PROBE_SRC = """
-(var g (lambda [] (yield 1) (yield 2)))
+(def g [] (yield 1) (yield 2))
 
-(var control (lambda []
+(def control []
   (var lst #[1 2])
   (lst.nope)
-  "unreached"))
+  "unreached")
 
-(var probe (lambda []
+(def probe []
   (var gen (g))
   (gen.__anext__)
   (gen.nope)
-  "unreached"))
+  "unreached")
 """
 
 

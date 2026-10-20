@@ -35,12 +35,12 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(var fn (lambda [flag obj]
+(def fn [flag obj]
   (if (== flag 2)
       (fn 0 None)
-      (if (== flag 1) (lambda [] flag) None))))
+      (if (== flag 1) (lambda [] flag) None)))
 
-(var call_with (lambda [make] (fn 0 (make))))
+(def call_with [make] (fn 0 (make)))
 """
 
 

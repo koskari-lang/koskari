@@ -187,9 +187,9 @@ class TestNestedExcInfo(SpecialsTestCase):
         src = """
         (begin
           (var seen (list))
-          (var f (lambda []
+          (define [f]
             (try (throw (KeyError "inner"))
-              ([e KeyError] (seen.append (handled)) (return 1)))))
+              ([e KeyError] (seen.append (handled)) (return 1))))
           (try
             (throw (ValueError "outer"))
             ([e ValueError]

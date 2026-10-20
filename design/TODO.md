@@ -516,7 +516,7 @@ to hundreds–thousands of entries covering every builtin special and macro
 via an autonomous Claude Code agent in its own git worktree, one PR per
 batch. Mandate per special/macro: basic, variant, block/layout, and
 invalid+corrective entries; priority on patterns common in real code
-(`define-class`, `for-each`, `define-syntax`, `try/except`, `let`, async).
+(`class`, `for-each`, `define-syntax`, `try/except`, `let`, async).
 The PR's `make test` (`phase_corpus`) is the authoritative backstop.
 
 Ref: [corpus-generation-agent.md](corpus-generation-agent.md);

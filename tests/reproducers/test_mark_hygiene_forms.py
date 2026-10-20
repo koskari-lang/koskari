@@ -127,7 +127,7 @@ class TestTemplateBindersAcrossForms(unittest.IsolatedAsyncioTestCase):
     async def test_decorator(self):
         await self.check(
             "decorator",
-            "(begin (var wrap (lambda [f] (lambda [] (+ (f) 1))))"
+            "(begin (def wrap [f] (lambda [] (+ (f) 1)))"
             " (decorate [wrap] (def f [] 5)) (f))",
             6, wrap=55, f=55)
 

@@ -71,7 +71,7 @@ class TestModuleIdentity(unittest.IsolatedAsyncioTestCase):
     async def test_rebound_global_is_read_from_python(self):
         self.write_ki('ki_ident_counter', """
         (var count 0)
-        (var bump (lambda [] (global var count (+ count 1)) count))
+        (def bump [] (global var count (+ count 1)) count)
         """)
         mod = importlib.import_module('ki_ident_counter')
         self.assertEqual(await mod.bump(), 1)
@@ -80,8 +80,8 @@ class TestModuleIdentity(unittest.IsolatedAsyncioTestCase):
 
     async def test_attribute_assigned_from_python_is_called(self):
         self.write_ki('ki_ident_helper', """
-        (var helper (lambda [] "real"))
-        (var call-helper (lambda [] (helper)))
+        (def helper [] "real")
+        (def call-helper [] (helper))
         """)
         mod = importlib.import_module('ki_ident_helper')
         mod.helper = lambda: "patched"

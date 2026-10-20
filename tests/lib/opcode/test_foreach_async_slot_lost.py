@@ -34,12 +34,12 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define collect (lambda [it side]
+(define [collect it side]
   (define out #[])
   (for-each [x it]
     (side x)
     (out.append x))
-  out))
+  out)
 """
 
 

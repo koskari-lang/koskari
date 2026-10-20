@@ -34,32 +34,32 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(var looped (lambda [n]
+(def looped [n]
   (var i 0)
   (var acc 0)
   (while (< i n)
     (incr! i)
     (when (== i 2) (continue))
     (incr! acc i))
-  acc))
+  acc)
 
-(var summed (lambda [xs]
+(def summed [xs]
   (var acc 0)
   (for-each [x xs]
     (when (> x 3) (break))
     (incr! acc x))
-  acc))
+  acc)
 
-(var managed (lambda [mgr]
-  (with [v mgr] (+ v 1))))
+(def managed [mgr]
+  (with [v mgr] (+ v 1)))
 
-(var escaped (lambda [x]
-  (call/cc (lambda [k] (when x (call k "out")) "in"))))
+(def escaped [x]
+  (call/cc (lambda [k] (when x (call k "out")) "in")))
 
-(var shifted (lambda [x]
-  (reset (+ 1 (shift k (call k x))))))
+(def shifted [x]
+  (reset (+ 1 (shift k (call k x)))))
 
-(var produce (lambda [n] (for-each [i (range n)] (yield i))))
+(def produce [n] (for-each [i (range n)] (yield i)))
 
 ;; run every site once during load, before the seal
 (var at_load (#list (looped 4) (summed #[1 2 3 4 5]) (escaped True)

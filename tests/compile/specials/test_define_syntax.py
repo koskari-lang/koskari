@@ -265,7 +265,7 @@ class TestCoreTypesAreNotModuleNames(DefineSyntaxCompileHelpers):
         (begin
           (define symbol 5)
           (define pick (syntax-rules pick [] [(pick x) x]))
-          (define pair (lambda [x] False)))
+          (define [pair x] False))
         """
         expr, mod = self.compile_expr(src_str)
         await expr()

@@ -33,13 +33,13 @@ pytestmark = pytest.mark.phase_lib
 
 
 SRC = """
-(define pair_sum (lambda [p]
+(define [pair_sum p]
   (define-values [a b] p)
-  (+ a b)))
+  (+ a b))
 
-(define pair_items (lambda [p]
+(define [pair_items p]
   (define-values [a b] p)
-  (#list a b)))
+  (#list a b))
 """
 
 

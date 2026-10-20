@@ -34,12 +34,12 @@ pytestmark = pytest.mark.phase_basics
 
 
 SRC = """
-(var one (lambda [x] (str x)))
-(var none (lambda [] (str)))
-(var decode (lambda [b] (str b "utf-8")))
-(var decode_kw (lambda [b] (str b encoding: "ascii")))
-(var as_value (lambda [xs] (list (map str xs))))
-(var is_str (lambda [x] (instance? x str)))
+(def one [x] (str x))
+(def none [] (str))
+(def decode [b] (str b "utf-8"))
+(def decode_kw [b] (str b encoding: "ascii"))
+(def as_value [xs] (list (map str xs)))
+(def is_str [x] (instance? x str))
 """
 
 

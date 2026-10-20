@@ -25,7 +25,7 @@ def double [n] (* n 2)
 the same value without a name:
 
 ```koskari
-(list (map (lambda [x] (+ x 1)) #[1 2 3]))   ;; [2, 3, 4]
+(list (map (lambda [x] (+ x 1)) #[1 2 3]))   ;; #[2 3 4]
 ```
 
 Functions are values. Pass them, store them, return them.
@@ -40,7 +40,7 @@ def connect [host port: 80 *: extra **: options]:
   #(host port extra options)
 
 (connect "a" 8080 1 2 verbose: True)
-;; ("a", 8080, (1, 2), {'verbose': True})
+;; #("a" 8080 #(1 2) #{"verbose": True})
 ```
 
 - `name` is positional and required.
@@ -95,7 +95,7 @@ var [lo hi] (minmax 8 3)   ;; lo = 3, hi = 8
 def stats [xs]:
   return count: (len xs) first: xs[0]
 
-(stats #[10 20 30])   ;; values(count=3, first=10)
+(stats #[10 20 30])   ;; (values count: 3 first: 10)
 ```
 
 Positional and keyword arguments cannot be mixed in one `return`.
@@ -178,7 +178,7 @@ Braces make a short anonymous function whose formals are inferred from
 `%1`, `%2`, and so on:
 
 ```koskari
-(list (map {(* %1 %1)} #[1 2 3]))   ;; [1, 4, 9]
+(list (map {(* %1 %1)} #[1 2 3]))   ;; #[1 4 9]
 ```
 
 `{(* %1 %1)}` is `(lambda [%1] (* %1 %1))`. Use it for a one-expression

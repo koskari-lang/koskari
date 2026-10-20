@@ -36,7 +36,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 
 SRC = """
-(var bracket-cons (lambda [*: a] "shadowed"))
+(def bracket-cons [*: a] "shadowed")
 (var x 99)
 (var xs #[1 2])
 (var unquoted `[a ,x])

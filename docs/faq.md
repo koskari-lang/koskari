@@ -17,9 +17,9 @@ Python.
 
 ## Is it stable?
 
-Koskari 0.1.0 is a beta and the first public release. The language
-surface may change before 1.0, and the [changelog](changelog.md) records
-what did. [Release and versioning](project/release-and-versioning.md)
+Koskari is a beta, and 0.2.0 is the current release. The language surface
+may change before 1.0, and the [changelog](changelog.md) records what
+did. [Release and versioning](project/release-and-versioning.md)
 says what kinds of change to expect.
 
 ## Which Python versions and platforms?
@@ -69,9 +69,9 @@ Installing the PyPI wheel needs no compiler.
 ### A Koskari function returns a coroutine when Python calls it
 
 Every Koskari function can suspend, so a call from plain Python yields
-a coroutine. Put `@demand` above the function's `def`, or `demand` at the call. Python's `map`, `filter`,
-`min`, `max`, and `list.sort` calling a Koskari lambda have the same
-cause. See
+a coroutine. Put `@demand` above the function's `def`, or `demand` at
+the call. Python's `map`, `filter`, `min`, `max`, and `list.sort`
+calling a Koskari lambda have the same cause. See
 [Demand, async, and defer](guide/demand-async-and-defer.md).
 
 ### `#{name: "x"}` raises `NameError`

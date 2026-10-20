@@ -110,7 +110,7 @@ class TestBareOnlyAlias(BareSyntaxHelpers):
 
     async def test_alias_in_nested_head_position(self):
         result = await self.run_forms(
-            "(var mk (lambda mk [a] (lambda inner [b c] (+ a b c))))",
+            "(def mk [a] (lambda inner [b c] (+ a b c)))",
             "(syntax mk! (bare-syntax me mk))",
             "((mk! 1) 2 3)")
         self.assertEqual(result, 6)
@@ -177,7 +177,7 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         # the head expands to a form rather than a symbol; the rebuilt
         # outer form calls its value
         result = await self.run_forms(
-            "(var mk (lambda mk [a] (lambda inner [b] (+ a b))))",
+            "(def mk [a] (lambda inner [b] (+ a b)))",
             "(define-syntax curried (macro-rules []"
             "  [(curried x) `(call mk ,x)]))",
             "((curried 1) 2)")
@@ -188,7 +188,7 @@ class TestHeadPositionLowering(BareSyntaxHelpers):
         # a pair head whose own head is no syntax lowers straight to the
         # call path: ((mk 1) 2) calls the returned closure
         result = await self.run_forms(
-            "(var mk (lambda mk [a] (lambda inner [b] (+ a b))))",
+            "(def mk [a] (lambda inner [b] (+ a b)))",
             "((mk 1) 2)")
         self.assertEqual(result, 3)
 
@@ -240,7 +240,7 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_return(self):
         result = await self.run_forms(
-            "(var f (lambda f [x] (begin (when x return) 99)))",
+            "(def f [x] (begin (when x return) 99))",
             "#[(f True) (f False)]")
         self.assertEqual(result, [None, 99])
 
@@ -267,7 +267,7 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_yield(self):
         result = await self.run_forms(
-            "(var gen (lambda gen [] (begin yield (yield 2))))",
+            "(def gen [] (begin yield (yield 2)))",
             "(list (gen))")
         self.assertEqual(result, [None, 2])
 
@@ -283,7 +283,7 @@ class TestBareControlWords(BareSyntaxHelpers):
 
     async def test_bare_pass(self):
         result = await self.run_forms(
-            "(var f (lambda f [] pass))",
+            "(def f [] pass)",
             "(f)")
         self.assertIsNone(result)
 

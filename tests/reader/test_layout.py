@@ -238,9 +238,9 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
     async def test_prefix_symbol_not_mangled_in_begin_body(self):
         src = """
         begin:
-          define double [x]:
+          define [double x]:
             (+ x x)
-          define tagged-double [x]:
+          define [tagged-double x]:
             (double-result (double x))
         """
 
@@ -250,10 +250,10 @@ class TestLayoutBlockSyntax(IsolatedAsyncioTestCase):
         expected = pycons(
           (symbol("begin"),
 
-           (symbol("define"), symbol("double"), (symbol("x"),),
+           (symbol("define"), (symbol("double"), symbol("x")),
             (symbol("+"), symbol("x"), symbol("x"))),
 
-           (symbol("define"), symbol("tagged-double"), (symbol("x"),),
+           (symbol("define"), (symbol("tagged-double"), symbol("x")),
             (symbol("double-result"), (symbol("double"), symbol("x")))))
         )
 
@@ -369,7 +369,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
 
     async def test_comment_in_multiline_formals(self):
         src = """
-        define foobar [
+        def foobar [
               a  ; the a value
               b  ; the b value
               ]:
@@ -377,7 +377,7 @@ class TestLayoutReaderComments(IsolatedAsyncioTestCase):
         """
 
         expected = pycons(
-            (symbol('define'),
+            (symbol('def'),
              symbol('foobar'),
              (symbol('a'), symbol('b')),
              (symbol('+'), symbol('a'), symbol('b')))

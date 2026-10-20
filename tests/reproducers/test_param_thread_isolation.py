@@ -61,7 +61,7 @@ CAPTURE_SRC = """
 # thread. B1, B2, and RESULTS are pre-seeded into the module
 # namespace.
 SHARED_SRC = """
-(var worker (lambda [name]
+(def worker [name]
   (parameterize [[shared name]]
     (B1.wait 10)
     (set! (item RESULTS name) (parameterq shared "unset")))
@@ -70,7 +70,7 @@ SHARED_SRC = """
       (cell.store "cross")))
   (B2.wait 10)
   (when (== name "T2")
-    (set! (item RESULTS "after") (parameterq shared "unset")))))
+    (set! (item RESULTS "after") (parameterq shared "unset"))))
 
 (var probes #[(defer worker "T1") (defer worker "T2")])
 """

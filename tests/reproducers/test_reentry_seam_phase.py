@@ -144,10 +144,10 @@ class TestReentrySeamPhase(SpecialsTestCase):
         box = Box()
         src = """
         (begin
-          (var g (lambda []
+          (define [g]
             (yield 1)
             ((call saved box) "from-gen")
-            (yield 2)))
+            (yield 2))
           (for-each [x (g)]
             (var v (call/cc (lambda [k] (call stash box k) "first")))
             (call record box (call pair x v))

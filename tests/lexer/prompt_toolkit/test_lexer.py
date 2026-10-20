@@ -108,7 +108,7 @@ class TestKoskariLexer(IsolatedAsyncioTestCase):
         """
 
         text = (
-            'define foobar []:\n'
+            'def foobar []:\n'
             '    """ this is a docstring\n'
             '    """\n')
         lexer = KoskariLexer()

@@ -91,7 +91,7 @@ def wrap(level, bound, inner):
     if level == "class":
         return (
             f"(begin (var K (build-class K () {bind}"
-            f" (var m (lambda [self] {inner}))))"
+            f" (define [m self] {inner})))"
             f" #[((attr (K) m)) None])")
     raise ValueError(level)
 

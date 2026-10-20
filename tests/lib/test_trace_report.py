@@ -216,7 +216,7 @@ class TestTraceReport(unittest.TestCase):
         # run some bytecode so the table has rows: a call, a few loads,
         # and the trampoline passes around them
         expr, _ = SpecialsTestCase("assertTrue").compile_expr(
-            "(begin (define f (lambda [a b] (+ a b))) (f 1 2))")
+            "(begin (define [f a b] (+ a b)) (f 1 2))")
         self.assertEqual(asyncio.run(expr()), 3)
         report = lib.get_trace_report()
         self.assertIn("opcode_timing", report)
