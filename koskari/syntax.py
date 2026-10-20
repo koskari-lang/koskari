@@ -30,12 +30,12 @@ from koskari.bootstrap import builtin
 from koskari.compile.compiler import Compiled
 from koskari.exceptions import SyntaxMatchError
 from koskari.hygiene import expand_template_with_hygiene, finalize_expansion
-from koskari.lib import (
-    Datum, Matcher, cons, demand_call, gensym, match_select, nil, symbol)
+from koskari.lib import Datum, cons, demand, demand_call, gensym, nil, symbol
 from koskari.matcher import (
     BIND, CALLEDBY, FORM, LITERAL, MATCH, REST, SAME, TEST_ANY,
-    MatchCompiler, Pattern, check_pattern_arg,
-    parse_explicit_rule_pattern, repeat_capture)
+    Pattern,
+    check_pattern_arg, first_match, parse_explicit_rule_pattern,
+    repeat_capture)
 from koskari.reader.layouts import apply_layout
 from koskari.types import (
     fill_position, get_position, is_nil, is_pair, is_proper, is_symbol,
@@ -44,7 +44,6 @@ from koskari.types import (
 
 __all__ = (
     "BareTransform",
-    "Datum",
     "MacroTransform",
     "SpecialTransform",
     "Syntax",
@@ -100,13 +99,8 @@ class Syntax(Compiled):
 
         self.bare = bare
 
-        # fast matching via match_select
-        self._matchers = tuple(t.matcher for t in self.transforms)
-
-
-    @property
-    def matchers(self):
-        return self._matchers
+        # each arm's matcher function, in try order, for FIRST_MATCH
+        self.matchers = tuple(t.matcher for t in self.transforms)
 
 
     @property
@@ -116,17 +110,19 @@ class Syntax(Compiled):
 
     def match_transformer(self, form):
         """
-        Match ``form`` against the first arm whose frozen matcher succeeds.
+        Match ``form`` against each arm's matcher in order through
+        FIRST_MATCH; the first that matches selects its arm
 
         :param form: special form pair spine
-        :return: ``(transform, result)`` where ``transform`` is the matching
-            transform and ``result`` is the match result
+        :return: ``(transform, captures)`` where ``transform`` is the
+            matching transform and ``captures`` its captures, or
+            (None, None)
         """
 
-        idx, result = match_select(self._matchers, form)
-        if result is None:
+        index, captures = first_match(form, self.matchers)
+        if index < 0:
             return None, None
-        return self.transforms[idx], result
+        return self.transforms[index], captures
 
 
     def compile_impl(self, compiler, source_obj):
@@ -179,8 +175,8 @@ class Syntax(Compiled):
             fill_position(reemitted, get_position(source_obj))
             return reemitted
 
-        idx, result = match_select(self._matchers, source_obj)
-        if result is None:
+        tf, captures = self.match_transformer(source_obj)
+        if tf is None:
             raise SyntaxMatchError(
                 "no matching syntax rule",
                 source_obj,
@@ -188,8 +184,7 @@ class Syntax(Compiled):
                 patterns=tuple(t.pattern for t in self.transforms),
             )
 
-        tf = self.transforms[idx]
-        expansion = tf.handle_expand(compiler, source_obj, result)
+        expansion = tf.handle_expand(compiler, source_obj, captures)
         if is_pair(expansion):
             # a template arm builds its output with no position; the
             # form it expands names the line, as for the bare path
@@ -252,26 +247,37 @@ class Syntax(Compiled):
 
 class Transform(ABC):
     """
-    One clause of a ``Syntax`` dispatcher: frozen ``matcher`` pattern
-    and matcher-backed ``try_expand``
+    One clause of a ``Syntax`` dispatcher: its ``matcher`` function,
+    and ``try_expand`` through it
     """
 
     pattern: Any
-    matcher: Matcher
+    matcher: Any
 
 
-    def __init__(self, pattern):
+    def __init__(self, pattern, matcher=None, repeat_variables=None):
         """
-        :param pattern: matcher pattern tree
+        :param pattern: matcher pattern tree, built here when no
+            matcher is given; with a matcher, the pattern's source form,
+            kept for help text and errors
+        :param matcher: the matcher function a module compiled from the
+            pattern
+        :param repeat_variables: the variables each anonymous repeat
+            slot binds, when the pattern is a form and cannot say
         """
 
-        if not isinstance(pattern, Pattern):
-            raise TypeError(
-                "Transform pattern must be a matcher pattern,"
-                f" got {type(pattern)}")
+        if matcher is None:
+            if not isinstance(pattern, Pattern):
+                raise TypeError(
+                    "Transform pattern must be a matcher pattern,"
+                    f" got {type(pattern)}")
+            matcher = pattern.build()
+            if repeat_variables is None:
+                repeat_variables = _repeat_variables(pattern)
 
         self.pattern = pattern
-        self.matcher = MatchCompiler.compile(pattern)
+        self.matcher = matcher
+        self.repeat_variables = repeat_variables or {}
 
 
     def try_expand(self, compiler, source_obj):
@@ -284,14 +290,14 @@ class Transform(ABC):
             pattern does not match
         """
 
-        result = self.matcher.match(source_obj)
-        if not result.matched:
+        captures = demand(self.matcher)(source_obj)
+        if captures is None:
             return None
-        return self.handle_expand(compiler, source_obj, result)
+        return self.handle_expand(compiler, source_obj, captures)
 
 
     @abstractmethod
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         When the pattern matches, handle the expansion.
         """
@@ -304,32 +310,42 @@ class SyntaxTransform(Transform):
     Template arm: template expansion with a fresh mark, then finalize
     """
 
-    def __init__(self, pattern, template, pattern_src=nil):
+    def __init__(
+            self,
+            pattern,
+            template,
+            pattern_src=nil,
+            matcher=None,
+            repeat_variables=None):
         """
-        :param pattern: matcher pattern tree
+        :param pattern: matcher pattern tree, or its source form with
+            a matcher
         :param template: syntax-rules template form (often contains pattern vars)
         :param pattern_src: original RULE or MATCH pattern datum for errors
+        :param matcher: the matcher function a module compiled from
+            the pattern
+        :param repeat_variables: see Transform
         """
 
-        super().__init__(pattern)
+        super().__init__(pattern, matcher, repeat_variables)
 
         self.template = template
         self.pattern_src = pattern_src
 
 
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         expand ``template`` with the captures
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
-        :param result: match result from ``self._matcher``
+        :param captures: the captures of ``self.matcher``
         :return: expanded form after finalize
         """
 
-        bindings = _captures_to_bindings(result.captures)
+        bindings = _captures_to_bindings(captures)
         bindings = _promote_repeat_frame_bindings(
-            bindings, repeat_variables=_repeat_variables(self.pattern))
+            bindings, repeat_variables=self.repeat_variables)
 
         subst = expand_template_with_hygiene(
             self.template, bindings, gensym.next_mark())
@@ -337,30 +353,11 @@ class SyntaxTransform(Transform):
         return _finalize_macro_output(compiler, subst)
 
 
-class _BareResult:
-    """
-    Stand-in for a native ``MatchResult`` on the bare path, where the matcher
-    is bypassed and the called-by symbol is the only capture
-    """
-
-    __slots__ = ("captures", "matched")
-
-
-    def __init__(self, captures):
-        """
-        :param captures: slot name to capture value mapping
-        """
-
-        self.captures = captures
-        self.matched = True
-
-
 class BareTransform(SyntaxTransform):
     """
     Bare arm: template expansion for the syntax name used as a lone atom
     rather than at the head of a call form. The called-by symbol is the only
-    capture, bound to ``slot``; the matcher is never consulted for dispatch,
-    it stands in for the ``(NAME)`` call form the template usually rewrites to
+    capture, bound to ``slot``, so the arm has no pattern and no matcher
     """
 
     def __init__(self, slot, template):
@@ -370,7 +367,11 @@ class BareTransform(SyntaxTransform):
         """
 
         self.slot = str(slot)
-        super().__init__(MATCH(CALLEDBY(self.slot)), template)
+        self.pattern = None
+        self.matcher = None
+        self.repeat_variables = {}
+        self.template = template
+        self.pattern_src = nil
 
 
     def expand_bare(self, compiler, sym, position=None):
@@ -387,8 +388,8 @@ class BareTransform(SyntaxTransform):
         :return: expanded form after finalize
         """
 
-        result = _BareResult({self.slot: Datum(sym, position)})
-        expansion = self.handle_expand(compiler, sym, result)
+        expansion = self.handle_expand(
+            compiler, sym, {self.slot: Datum(sym, position)})
         if position and is_pair(expansion):
             fill_position(expansion, position)
         return expansion
@@ -399,35 +400,39 @@ class MacroTransform(Transform):
     Procedural arm: invoke handler, then mark and finalize its output
     """
 
-    def __init__(self, pattern, handler):
+    def __init__(self, pattern, handler, matcher=None, repeat_variables=None):
         """
-        :param pattern: matcher pattern tree
+        :param pattern: matcher pattern tree, or its source form with
+            a matcher
         :param handler:
             ``(compiler, **captures)`` procedure returning expanded form;
-            ``captures`` are string-keyed match slots from ``match_result.captures``
+            ``captures`` are the string-keyed match slots
+        :param matcher: the matcher function a module compiled from
+            the pattern
+        :param repeat_variables: see Transform
         """
 
         if not callable(handler):
             raise TypeError("MacroTransform handler must be callable,"
                             f" got {handler!r}")
 
-        super().__init__(pattern)
+        super().__init__(pattern, matcher, repeat_variables)
         self.handler = handler
 
 
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         Run handler, then mark and finalize the result
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
-        :param result: match result from ``self._matcher``
+        :param captures: the captures of ``self.matcher``
         :return: expanded form after finalize
         """
 
         expanded = self.handler(
             compiler, **_captures_for_procedure(
-                result.captures, _repeat_variables(self.pattern)))
+                captures, self.repeat_variables))
         return _finalize_macro_output(
             compiler, expanded, gensym.next_mark())
 
@@ -437,33 +442,37 @@ class SpecialTransform(Transform):
     Special arm: handler return is the compile result (no marking)
     """
 
-    def __init__(self, pattern, handler):
+    def __init__(self, pattern, handler, matcher=None, repeat_variables=None):
         """
-        :param pattern: matcher pattern tree
+        :param pattern: matcher pattern tree, or its source form with
+            a matcher
         :param handler:
-            ``(compiler, source_obj, match_result)`` procedure; use
+            ``(compiler, source_obj, captures)`` procedure; use
             :func:`special` if you need other calling conventions
+        :param matcher: the matcher function a module compiled from
+            the pattern
+        :param repeat_variables: see Transform
         """
 
         if not callable(handler):
             raise TypeError("SpecialTransform handler must be callable,"
                             f" got {handler!r}")
 
-        super().__init__(pattern)
+        super().__init__(pattern, matcher, repeat_variables)
         self.handler = handler
 
 
-    def handle_expand(self, compiler, source, result):
+    def handle_expand(self, compiler, source, captures):
         """
         Return handler result unchanged
 
         :param compiler: active compiler
         :param source: full special form (proper list spine)
-        :param result: match result from ``self._matcher``
+        :param captures: the captures of ``self.matcher``
         :return: compile product from the handler
         """
 
-        return self.handler(compiler, source, result)
+        return self.handler(compiler, source, captures)
 
 
 def _join_docs(base, extra):
@@ -488,10 +497,10 @@ def _captures_to_bindings(captures):
     """
     Map string capture keys to koskari symbols for template expansion.
 
-    Values are native matcher captures (often ``Datum``-wrapped); they are
+    Values are the matcher's captures (often ``Datum``-wrapped); they are
     stored unchanged so :func:`koskari.hygiene.expand_template_with_hygiene`
     peels at use sites. Macro handlers receive the same ``Datum``-bearing
-    ``MatchResult.captures`` mapping unchanged from the matcher.
+    captures unchanged from the matcher.
     """
 
     return {symbol(k): v for k, v in captures.items()}
@@ -681,16 +690,16 @@ def special(form_symbol, *, patterns, unpack=None):
 
         plist = _normalize_special_patterns(patterns)
         if unpack is None:
-            def wrapped(compiler, source_obj, match_result):
+            def wrapped(compiler, source_obj, captures):
                 return fn(compiler, source_obj)
 
         elif unpack == "match":
-            def wrapped(compiler, source_obj, match_result):
-                return fn(compiler, match_result.captures)
+            def wrapped(compiler, source_obj, captures):
+                return fn(compiler, captures)
 
         elif unpack == "kwargs":
-            def wrapped(compiler, source_obj, match_result):
-                return fn(compiler, **match_result.captures)
+            def wrapped(compiler, source_obj, captures):
+                return fn(compiler, **captures)
 
         else:
             raise ValueError(f"internal: bad unpack {unpack!r}")
@@ -733,9 +742,8 @@ def parse_syntax_rules_pattern(
     """
     Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
-    RULE dialect only; does not implement MATCH-dialect ``matcher/foo`` forms.
-    The ``build-syntax`` Koskari builtin and :func:`parse_rule_pattern` call this
-    when lowering pattern source.
+    RULE dialect only; does not implement the MATCH dialect's registry heads.
+    :func:`parse_rule_pattern` calls this when lowering pattern source.
 
     :param pattern_expr: koskari pattern datum
     :param literals: set, frozenset, list, or tuple of literal symbols
@@ -798,7 +806,6 @@ def parse_syntax_rules_pattern(
     return RulePattern(*specs, repeat_variables=repeat_variables)
 
 
-@builtin("parse-match-pattern")
 def parse_match_pattern(form, source_ctx=None):
     """
     Parse a match style pattern to a Pattern.
@@ -807,7 +814,6 @@ def parse_match_pattern(form, source_ctx=None):
     return parse_explicit_rule_pattern(form, source_ctx)
 
 
-@builtin("parse-rule-pattern")
 def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     """
     Parse a syntax-rules style pattern and literals list to a Pattern.
@@ -847,7 +853,7 @@ def _claim_repeat_variable(sym, owners, variables, source_ctx):
 
 
 def _syntax_elem_pattern(
-        pat, literals, source_ctx, owners, variables, scope):
+        pat, literals, source_ctx, owners, variables, scope, path=()):
     """
     The matcher spec for one pattern element
 
@@ -858,6 +864,8 @@ def _syntax_elem_pattern(
     :param variables: pattern-wide map from each bound variable name
         to its source symbol, in the order the variables are bound
     :param scope: the token of the scope being parsed
+    :param path: the element's position in the pattern, the index of
+        each element on the way down from the top level spine
     :raises ValueError: when a variable is bound in two scopes, where
         the second occurrence is a sequence or another iteration's
         value and equality has no meaning
@@ -896,7 +904,8 @@ def _syntax_elem_pattern(
 
     items, tail = _spine_items(pat)
     return FORM(MATCH(*_syntax_pattern_specs(
-        items, literals, source_ctx, owners, variables, scope, tail)))
+        items, literals, source_ctx, owners, variables, scope, tail,
+        path)))
 
 
 def _spine_items(pattern):
@@ -923,7 +932,8 @@ def _syntax_pattern_specs(
         owners,
         variables,
         scope,
-        tail=None):
+        tail=None,
+        path=()):
     """
     The matcher specs for a pattern spine's elements, and for its dotted
     tail when it has one: a tail symbol that is not a literal binds the
@@ -937,6 +947,8 @@ def _syntax_pattern_specs(
     :param scope: the token of the scope this spine is in; a pair
         sub-pattern under an ellipsis opens a scope of its own
     :param tail: the datum after the dot, or None for a proper spine
+    :param path: the spine's position in the pattern, see
+        _syntax_elem_pattern
     :raises ValueError: when the dotted tail is not a pattern variable,
         or a variable is bound in two scopes
     """
@@ -954,15 +966,20 @@ def _syntax_pattern_specs(
                 else:
                     specs.append(repeat_capture(name, TEST_ANY()))
             else:
-                slot = str(gensym(_REPEAT_SLOT_PREFIX))
+                # the slot's name is its position, since it reaches a
+                # names constant
+                slot = _REPEAT_SLOT_PREFIX + "#" + ".".join(
+                    str(index) for index in path + (i,))
                 inner = _syntax_elem_pattern(
-                    pat, literals, source_ctx, owners, variables, slot)
+                    pat, literals, source_ctx, owners, variables, slot,
+                    path + (i,))
                 specs.append(repeat_capture(slot, inner))
             i += 2
             continue
 
         specs.append(_syntax_elem_pattern(
-            p_items[i], literals, source_ctx, owners, variables, scope))
+            p_items[i], literals, source_ctx, owners, variables, scope,
+            path + (i,)))
         i += 1
 
     if tail is not None:
@@ -999,10 +1016,10 @@ def _wrap_special_handler(raw, repeat_variables):
     """
 
     @wraps(raw)
-    def handler(compiler, source_obj, match_result):
+    def handler(compiler, source_obj, captures):
         return demand_call(
             raw, compiler, **_captures_for_procedure(
-                match_result.captures, repeat_variables))
+                captures, repeat_variables))
 
     return handler
 
@@ -1010,21 +1027,40 @@ def _wrap_special_handler(raw, repeat_variables):
 @builtin('build-syntax')
 def build_syntax(name, *pattern_template_pairs):
     """
-    Koskari runtime: ``(build-syntax NAME PAT TMPL ...)`` where each ``PAT``
-    is a lowered ``matcher.Pattern`` (for example from ``parse-rule-pattern`` or
-    ``parse-match-pattern`` at use site) and each ``TMPL`` is a template datum
+    Koskari runtime: ``(build-syntax NAME ROW ...)``, each row a matcher
+    function, its repeat variables, its pattern source and a template
+    datum, as ``compile/syntax-rules`` and ``compile/syntax-match`` emit
     """
 
-    if len(pattern_template_pairs) % 2 != 0:
-        raise ValueError("build-syntax requires pattern/template pairs")
-
     transforms = []
-    for i in range(0, len(pattern_template_pairs), 2):
-        pat = pattern_template_pairs[i]
-        tmpl = pattern_template_pairs[i + 1]
-        transforms.append(SyntaxTransform(pat, tmpl))
+    for pat, tail, matcher, repeat_variables in build_rows(
+            "build-syntax", pattern_template_pairs):
+        transforms.append(SyntaxTransform(
+            pat, tail, pattern_src=pat,
+            matcher=matcher, repeat_variables=repeat_variables))
 
     return Syntax(name, transforms)
+
+
+def build_rows(what, args):
+    """
+    The rows of a build call: ``(FUNCTION REPEATS PATTERN-SRC TAIL)``
+    for a matcher function the defining module compiled, REPEATS being
+    the repeat variables as pairs. Yields (pattern source, tail,
+    matcher, repeat_variables)
+    """
+
+    i = 0
+    n = len(args)
+    while i < n:
+        head = args[i]
+        if i + 3 >= n:
+            raise ValueError(
+                f"{what} requires function, repeat variables, pattern and"
+                " template")
+        repeat_variables = {slot: list(names) for slot, names in args[i + 1]}
+        yield args[i + 2], args[i + 3], head, repeat_variables
+        i += 4
 
 
 @builtin('build-bare-syntax')
@@ -1045,14 +1081,12 @@ def build_macro(name, *pattern_and_lambdas):
     Koskari runtime: ``(build-macro NAME PAT LAMBDA ...)``
     """
 
-    if len(pattern_and_lambdas) % 2 != 0:
-        raise ValueError("build-macro requires pattern/lambda pairs")
-
     transforms = []
-    for i in range(0, len(pattern_and_lambdas), 2):
-        pat = pattern_and_lambdas[i]
-        fn = pattern_and_lambdas[i + 1]
-        transforms.append(MacroTransform(pat, _wrap_macro_handler(fn)))
+    for pat, fn, matcher, repeat_variables in build_rows(
+            "build-macro", pattern_and_lambdas):
+        transforms.append(MacroTransform(
+            pat, _wrap_macro_handler(fn),
+            matcher=matcher, repeat_variables=repeat_variables))
 
     return Syntax(name, transforms)
 
@@ -1063,15 +1097,12 @@ def build_special(name, *pattern_and_lambdas):
     Koskari runtime: ``(build-special NAME PAT LAMBDA ...)``
     """
 
-    if len(pattern_and_lambdas) % 2 != 0:
-        raise ValueError("build-special requires pattern/lambda pairs")
-
     transforms = []
-    for i in range(0, len(pattern_and_lambdas), 2):
-        pat = pattern_and_lambdas[i]
-        fn = pattern_and_lambdas[i + 1]
+    for pat, fn, matcher, repeat_variables in build_rows(
+            "build-special", pattern_and_lambdas):
         transforms.append(SpecialTransform(
-            pat, _wrap_special_handler(fn, _repeat_variables(pat))))
+            pat, _wrap_special_handler(fn, repeat_variables),
+            matcher=matcher, repeat_variables=repeat_variables))
 
     return Syntax(name, transforms)
 

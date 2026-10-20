@@ -123,7 +123,7 @@ Structure and style:
 The naive version of this idea is "raw parse + reimplement pattern matching
 against known forms." That is the wrong shape:
 
-* It duplicates `koskari/matcher.py` / `koskari/hygiene.py` and will drift every
+* It duplicates `koskari/matcher/` / `koskari/hygiene.py` and will drift every
   time those change.
 * It cannot correctly handle reader-macro-affected source at all, since reader
   macros are parse-time character dispatch (`set_macro_character`). There is no
@@ -134,7 +134,7 @@ Instead: reuse the real reader, and reuse the real compile-time pattern
 builders. For the known transformer heads (`syntax-rules`, `macro-rules`,
 `syntax-match`, `macro-match`, `special-rules`, `special-match`), pattern
 construction is already a compile-time, side-effect-free step:
-`special_compile_syntax_rules` et al. build the `MatchCompiler` matcher
+`special_compile_syntax_rules` et al. build the `TableBuilder` matcher
 before anything is evaluated; eval only turns the resulting `build-syntax-rules`
 call into a live `Transform` object. So the validator does not need eval at all
 for these; it needs the same matcher-construction call the compiler already

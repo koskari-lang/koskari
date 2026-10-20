@@ -123,4 +123,44 @@ class TestFastOpcodes(CevalTest):
         self.assertEqual(result, 100)
 
 
+
+
+class TestClearRuns(CevalTest):
+    """
+    The two, three and four slot clears empty each slot in row order,
+    an already empty slot among them, and a cleared slot reads as
+    empty afterwards
+    """
+
+    async def test_fast_clear_runs(self):
+        for n in (2, 3, 4):
+            fields = tuple(range(n)) + (None,) * (4 - n)
+            setup = [["CONST", 1], ["FAST_STORE", 0], ["CONST", 2],
+                     ["FAST_STORE", n - 1], [f"FAST_CLEAR{n}", fields]]
+            code, ns = build_expr(
+                setup + [["CONST", "ok"], ["RETURN", 1]],
+                local_syms=("a", "b", "c", "d"))
+            self.assertEqual(await make_callable(code, ns)(), "ok")
+            for slot in (0, n - 1):
+                code, ns = build_expr(
+                    setup + [["FAST", slot], ["RETURN", 1]],
+                    local_syms=("a", "b", "c", "d"))
+                with self.assertRaises(NameError):
+                    await make_callable(code, ns)()
+
+
+    async def test_var_clear_runs(self):
+        setup = [
+            ["CONST", 1], ["VAR_STORE", "a"], ["CONST", 2], ["VAR_STORE", "c"],
+            ["VAR_CLEAR3", ("a", "b", "c", None)],
+        ]
+        code, ns = build_expr(
+            setup + [["CONST", "ok"], ["RETURN", 1]], local_syms=("a", "b", "c"))
+        self.assertEqual(await make_callable(code, ns)(), "ok")
+        code, ns = build_expr(
+            setup + [["VAR", "c"], ["RETURN", 1]], local_syms=("a", "b", "c"))
+        with self.assertRaises(NameError):
+            await make_callable(code, ns)()
+
+
 # The end.

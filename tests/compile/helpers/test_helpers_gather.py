@@ -30,7 +30,7 @@ from koskari.compile.helpers import (
     FORMALS, NO_DEFAULT, gather_formals, gather_parameters)
 from koskari.exceptions import ParametersError, SpecialError
 from koskari.lib import Datum, cons, keyword, nil, symbol
-from koskari.matcher import match_pattern_raw
+from koskari.matcher.patterns import match_pattern_raw
 
 
 pytestmark = pytest.mark.phase_compile

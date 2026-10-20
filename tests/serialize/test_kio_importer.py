@@ -20,16 +20,16 @@ Importer path for precompiled .kio modules.
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import tempfile
-import types
 import unittest
 
 import pytest
 
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
-from koskari.lib import FunctionSpec
+from koskari.lib import FormalsSpec, FunctionSpec, cons, nil
 from koskari.serialize.codex import KioFile
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
@@ -236,6 +236,78 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertEqual(7, ki.b)
         self.assertEqual(ki.a, kio.a)
         self.assertEqual(ki.b, kio.b)
+
+
+    def test_syntax_match_arm_with_an_extern_via_kio_matches_ki(self):
+        """
+        A syntax-match transformer whose arm names an extern reaches the
+        .kio and expands the same way from it
+        """
+
+        source = (
+            "(define match-subject int)\n"
+            "(define-syntax ext (syntax-match\n"
+            "  [(ext (TYPE match-subject)) \"int-arm\"]\n"
+            "  [(ext (VALUE y)) \"other-arm\"]))\n"
+            "(define a (ext 7))\n"
+            "(define b (ext \"s\"))\n")
+        ki, kio = self._both('ext', source)
+        self.assertEqual("int-arm", ki.a)
+        self.assertEqual("other-arm", ki.b)
+        self.assertEqual(ki.a, kio.a)
+        self.assertEqual(ki.b, kio.b)
+
+
+    def test_matchers_via_kio_hold_no_gensym_but_the_subject(self):
+        """
+        A module with define-syntax matchers and a runtime match reaches
+        the .kio and runs the same from it. The only gensym spellings in
+        its pool are the subject formals of the define-syntax matcher
+        functions: the captures live on the stack, not in locals
+        """
+
+        source = (
+            "(define-syntax swap-pairs (syntax-rules []\n"
+            "  [(swap-pairs (a b) ...) '((b a) ...)]))\n"
+            "(define-syntax pick (syntax-match\n"
+            "  [(pick (GROUP g (VALUE x) (VALUE y))) \"group\"]\n"
+            "  [(pick (VALUE v)) \"one\"]))\n"
+            "(define classify [data]\n"
+            "  (match data\n"
+            "    [[#[a #[b c] *: rest]] #(a b c rest)]\n"
+            "    [[(or #[x 1] #[5 y])] #(\"or\" x)]\n"
+            "    [[#[k (OPTIONAL z)]] #(\"opt\" k)]\n"
+            "    [else: \"none\"]))\n"
+            "(define r1 (classify #[1 #[2 3] 4 5]))\n"
+            "(define r2 (classify #[7 1]))\n"
+            "(define r3 (classify #[8]))\n"
+            "(define r4 (swap-pairs (1 2) (3 4)))\n"
+            "(define r5 (pick 1 2))\n"
+            "(define r6 (pick 1))\n")
+        ki, kio = self._both('matchers', source)
+        self.assertEqual((1, 2, 3, (4, 5)), ki.r1)
+        self.assertEqual(("or", 7), ki.r2)
+        self.assertEqual(("opt", 8), ki.r3)
+        self.assertEqual("group", ki.r5)
+        self.assertEqual("one", ki.r6)
+        for name in ("r1", "r2", "r3", "r4", "r5", "r6"):
+            self.assertEqual(getattr(ki, name), getattr(kio, name), name)
+        self.assertEqual(
+            cons(cons(2, 1, nil), cons(4, 3, nil), nil), kio.r4)
+
+        pool = KioFile.read(
+            os.path.join(self._tmpdir, 'matchers_out.kio')).pool
+        # a gensym spells its mark in unpadded hex; the positional repeat
+        # slot names are plain strings that also carry a "#"
+        spelled = {
+            value for value in pool
+            if isinstance(value, str) and re.search(r'#[0-9a-f]+$', value)
+            and not value.startswith('_repeat#')}
+        formals = {
+            str(name) for value in pool if isinstance(value, FormalsSpec)
+            for name in value.pos or ()}
+        self.assertEqual(3, len(spelled))
+        self.assertLessEqual(spelled, formals)
 
 
     GENERATING = (

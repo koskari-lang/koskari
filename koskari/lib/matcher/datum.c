@@ -24,6 +24,25 @@
 
 /* === Datum === */
 
+
+/* Freed Datums chain through datum, up to the cap; kos_datum_new sets
+   every field of one it takes from the chain. */
+#define DATUM_MAX_FREE KOS_FREELIST_CAP(64)
+
+static KosDatum *datum_free_list = NULL;
+static int datum_free_count = 0;
+
+
+static void match_datum_free_list_clear(void) {
+  while (datum_free_list) {
+    KosDatum *d = datum_free_list;
+    datum_free_list = (KosDatum *) d->datum;
+    PyObject_GC_Del(d);
+  }
+  datum_free_count = 0;
+}
+
+
 static PyObject *kos_datum_new(
     PyObject *datum,
     PyObject *position,
@@ -118,7 +137,17 @@ static void datum_dealloc(PyObject *self) {
   Py_CLEAR(d->datum);
   Py_CLEAR(d->position);
   Py_CLEAR(d->binding);
-  Py_TYPE(self)->tp_free(self);
+
+  if (datum_free_count < DATUM_MAX_FREE) {
+    KOS_TRACE_FL_RETURN("datum", 0);
+    d->datum = (PyObject *) datum_free_list;
+    datum_free_list = d;
+    datum_free_count++;
+
+  } else {
+    KOS_TRACE_FL_RETURN("datum", 1);
+    PyObject_GC_Del(self);
+  }
 }
 
 
@@ -257,9 +286,21 @@ static PyObject *kos_datum_new(
     PyObject *position,
     PyObject *binding) {
 
-  KosDatum *d = PyObject_GC_New(KosDatum, &KosDatumType);
-  if (! d)
-    return NULL;
+  KosDatum *d = datum_free_list;
+
+  if (d) {
+    datum_free_list = (KosDatum *) d->datum;
+    datum_free_count--;
+    KOS_TRACE_FL_ALLOC("datum", 1);
+    _Py_NewReference((PyObject *) d);
+
+  } else {
+    KOS_TRACE_FL_ALLOC("datum", 0);
+    d = PyObject_GC_New(KosDatum, &KosDatumType);
+    if (! d)
+      return NULL;
+  }
+
   if (! binding)
     binding = Py_None;
   Py_INCREF(datum);
@@ -270,42 +311,6 @@ static PyObject *kos_datum_new(
   d->binding = binding;
   PyObject_GC_Track((PyObject *) d);
   return (PyObject *) d;
-}
-
-
-static void kos_datum_set_binding(KosDatum *d, PyObject *name) {
-  Py_INCREF(name);
-  PyObject *old_b = d->binding;
-  d->binding = name;
-  Py_DECREF(old_b);
-}
-
-
-/**
-   Set KosDatum.binding to slot name (in-place): a Datum, or the Datum
-   elements of a tuple of them (a slice capture). The engine boxes a
-   capture from a spine subject one level deep at most, so the walk
-   goes no deeper. ``name`` is the capture key (borrowed ok; we incref
-   when storing).
-*/
-static void kos_datum_annotate_binding(PyObject *value, PyObject *name) {
-  Py_ssize_t i;
-  Py_ssize_t n;
-
-  if (! value || ! name)
-    return;
-  if (KosDatum_Check(value)) {
-    kos_datum_set_binding((KosDatum *) value, name);
-    return;
-  }
-  if (PyTuple_Check(value)) {
-    n = PyTuple_GET_SIZE(value);
-    for (i = 0; i < n; i++) {
-      PyObject *item = PyTuple_GET_ITEM(value, i);
-      if (KosDatum_Check(item))
-        kos_datum_set_binding((KosDatum *) item, name);
-    }
-  }
 }
 
 
@@ -372,7 +377,7 @@ static PyObject *datum_frame_get_position(PyObject *self, void *closure) {
 
 /* Every DatumFrame starts with source and position set to None, from
    whichever side constructs it: the getters and the frame writers in
-   matcher.c rely on both fields being real objects. */
+   mark.c rely on both fields being real objects. */
 static PyObject *datum_frame_new(PyTypeObject *type, PyObject *args,
                                  PyObject *kwds) {
   PyObject *self = PyDict_Type.tp_new(type, args, kwds);
@@ -413,104 +418,6 @@ PyTypeObject KosDatumFrameType = {
 };
 
 
-static PyObject *kos_datum_frame_new(void) {
-  /* tp_new fills source and position */
-  return PyObject_CallNoArgs((PyObject *) &KosDatumFrameType);
-}
-
-
-/* === MatchResult === */
-
-
-static void match_result_dealloc(PyObject *self) {
-  KosMatchResult *r = (KosMatchResult *) self;
-  PyObject_GC_UnTrack(self);
-  Py_CLEAR(r->captures);
-  Py_TYPE(self)->tp_free(self);
-}
-
-
-static int match_result_traverse(
-    PyObject *self,
-    visitproc visit,
-    void *arg) {
-
-  Py_VISIT(((KosMatchResult *) self)->captures);
-  return 0;
-}
-
-
-static PyObject *match_result_repr(PyObject *self) {
-  KosMatchResult *r = (KosMatchResult *) self;
-  Py_ssize_t nslots = r->captures ? PyDict_Size(r->captures) : 0;
-  return PyUnicode_FromFormat(
-      "<MatchResult matched=%s captures=%zd>",
-      r->matched ? "True" : "False", nslots);
-}
-
-
-static int match_result_bool(PyObject *self) {
-  return ((KosMatchResult *) self)->matched ? 1 : 0;
-}
-
-
-static PyNumberMethods match_result_as_number = {
-  .nb_bool = match_result_bool,
-};
-
-
-static PyObject *match_result_get_matched(PyObject *self, void *closure) {
-  (void) closure;
-  return PyBool_FromLong(((KosMatchResult *) self)->matched);
-}
-
-
-static PyObject *match_result_get_captures(PyObject *self, void *closure) {
-  (void) closure;
-  PyObject *d = ((KosMatchResult *) self)->captures;
-  Py_INCREF(d);
-  return d;
-}
-
-
-static PyGetSetDef match_result_getset[] = {
-  { "matched", match_result_get_matched, NULL,
-    "True if the matcher matched the subject", NULL },
-  { "captures", match_result_get_captures, NULL,
-    "dict[str, value] of captured slot values", NULL },
-  { NULL }
-};
-
-
-PyTypeObject KosMatchResultType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name = "koskari.lib.MatchResult",
-  .tp_basicsize = sizeof(KosMatchResult),
-  .tp_dealloc = match_result_dealloc,
-  .tp_repr = match_result_repr,
-  .tp_as_number = &match_result_as_number,
-  .tp_traverse = match_result_traverse,
-  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-  .tp_doc = "Result of running a matcher against a subject",
-  .tp_getset = match_result_getset,
-};
-
-
-static PyObject *make_match_result(
-    int matched,
-    PyObject *captures) {
-
-  KosMatchResult *r = PyObject_GC_New(KosMatchResult, &KosMatchResultType);
-  if (! r)
-    return NULL;
-  Py_INCREF(captures);
-  r->captures = captures;
-  r->matched = matched;
-  PyObject_GC_Track((PyObject *) r);
-  return (PyObject *) r;
-}
-
-
 /**
    Borrow through outer ``Datum`` layers for KosPair spine reads. The
    underlying pair tree and the boxes are unchanged; only matching
@@ -521,27 +428,6 @@ static PyObject *matcher_peel_datum(PyObject *obj) {
   while (obj && KosDatum_Check(obj))
     obj = ((KosDatum *) obj)->datum;
   return obj;
-}
-
-
-/**
-   Invoke a callable extern (predicate, APP extractor) on one argument
-   on the demand path: a Koskari callable runs a nested evaluator, a
-   plain Python awaitable result is eagerly stepped, and a genuine
-   async suspension raises KoskariSyncViolation. This is a flattening
-   gap, not the design: the match walk holds its position on the C
-   stack, so it cannot yet suspend on the call and resume with the
-   delivered value (design/FLATTENING.md, design/interpreter/
-   resumable-reads.md section 8). Returns a new reference, or NULL
-   with an exception set.
-*/
-static PyObject *matcher_call_extern(PyObject *fn, PyObject *arg) {
-  PyObject *args = PyTuple_Pack(1, arg);
-  if (! args)
-    return NULL;
-  PyObject *res = Koskari_DemandSync(fn, args, NULL);
-  Py_DECREF(args);
-  return res;
 }
 
 // The end.

@@ -25,8 +25,8 @@ import weakref
 
 import pytest
 
-from koskari.lib import Datum, cdr, cons, nil, symbol
-from koskari.matcher import MATCH, VALUE, DatumFrame, thaw
+from koskari.lib import Datum, DatumFrame, cdr, cons, demand, nil, symbol
+from koskari.matcher import CAPTURE, MATCH, REST, VALUE
 from koskari.types import build_proper, set_position
 
 
@@ -35,26 +35,15 @@ pytestmark = pytest.mark.phase_infra
 
 def _head_tail_matcher():
     """
-    Frozen matcher: CAPTURE head, REST tail, CAPTURE tail
+    A matcher: CAPTURE head, then the REST captured as tail
     """
 
-    nodes = (
-        ("TEST", "ANY", -1),
-        ("CAPTURE", 0, 0),
-        ("REST", 0),
-        ("CAPTURE", 1, 2),
-        ("MATCH", 1, 3),
-    )
-    frozen = (
-        "MATCHER",
-        ("head", "tail"), (), (),
-        nodes, 4)
-    return thaw(frozen)
+    return MATCH(CAPTURE("head"), REST("tail")).build()
 
 
 class TestDatumPosition(unittest.TestCase):
 
-    def test_thaw_capture_inherits_spine_cell_position(self):
+    def test_capture_inherits_spine_cell_position(self):
         """
         CAPTURE and REST slots inherit position from their spine cells
         """
@@ -65,15 +54,15 @@ class TestDatumPosition(unittest.TestCase):
         subj.set_position(pos_head)
         cdr(subj).set_position(pos_tail)
 
-        result = _head_tail_matcher().match(subj)
-        self.assertTrue(result.matched)
+        result = demand(_head_tail_matcher())(subj)
+        self.assertIsNotNone(result)
 
-        head = result.captures["head"]
+        head = result["head"]
         self.assertIsInstance(head, Datum)
         self.assertEqual(head.datum, 1)
         self.assertEqual(head.position, pos_head)
 
-        tail = result.captures["tail"]
+        tail = result["tail"]
         self.assertIsInstance(tail, Datum)
         self.assertEqual(tail.datum, cons(2, 3, nil))
         self.assertEqual(tail.position, pos_tail)
@@ -90,12 +79,12 @@ class TestDatumPosition(unittest.TestCase):
         set_position(source, pos)
         matcher = MATCH(VALUE("x")).build()
 
-        result = matcher.match(source)
-        self.assertTrue(result.matched)
-        self.assertIsInstance(result.captures, DatumFrame)
-        self.assertEqual(result.captures.position, pos)
+        result = demand(matcher)(source)
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, DatumFrame)
+        self.assertEqual(result.position, pos)
 
-        cap = result.captures["x"]
+        cap = result["x"]
         self.assertIsInstance(cap, Datum)
         self.assertIs(cap.datum, value)
         self.assertEqual(cap.position, pos)
@@ -107,9 +96,9 @@ class TestDatumPosition(unittest.TestCase):
         """
 
         subj = cons(1, 2, nil)
-        result = _head_tail_matcher().match(subj)
-        self.assertTrue(result.matched)
-        self.assertIsNone(result.captures["head"].position)
+        result = demand(_head_tail_matcher())(subj)
+        self.assertIsNotNone(result)
+        self.assertIsNone(result["head"].position)
 
 
 class TestDatumFrameConstruction(unittest.TestCase):
@@ -173,8 +162,10 @@ class TestDatumIteration(unittest.TestCase):
             next(it)
 
     def test_iteration_yields_every_element_in_order(self):
-        out = [d.datum for d in Datum(cons(1, 2, 3, nil))]
-        self.assertEqual([1, 2, 3], out)
+        items = list(Datum(cons(1, 2, 3, nil)))
+        for item in items:
+            self.assertIsInstance(item, Datum)
+        self.assertEqual([1, 2, 3], [d.datum for d in items])
 
 
 # The end.

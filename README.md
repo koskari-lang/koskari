@@ -222,7 +222,7 @@ tests/
 ├── types/                   # Type predicate tests
 ├── importer/                # Import hook tests
 ├── lexer/                   # Lexer and prompt_toolkit tests
-├── matcher/                 # Matcher tests
+├── matcher/                 # matcher tests
 ├── syntax/                  # Syntax form tests
 ├── hygiene/                 # Hygiene tests
 ├── help/                    # Help system tests

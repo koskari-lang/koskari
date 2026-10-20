@@ -158,6 +158,7 @@ int main(int argc, char *argv[]) {
     run_arena_tests();
     run_atom_tests();
     run_pair_tests();
+    run_matcher_tests();
     run_namespace_tests();
     run_bytecode_tests();
     run_formals_tests();
@@ -166,7 +167,6 @@ int main(int argc, char *argv[]) {
     run_dynchain_tests();
     run_eval_tests();
     run_paramref_tests();
-    run_matcher_tests();
     run_property_tests();
     run_partial_tests();
     run_iter_request_tests();

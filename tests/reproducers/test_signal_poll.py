@@ -109,6 +109,28 @@ class TestSignalPoll(SpecialsTestCase):
         self.assertEqual(await expr(), "caught")
 
 
+    async def test_match_repeat_loop(self):
+        """
+        A match whose REPEAT passes call nothing sees the signal at a
+        pass's end, long before the subject runs out
+        """
+
+        src = """
+        (let [[n 0]]
+          (import _thread)
+          (try
+            (begin
+              (_thread.interrupt_main)
+              (match subject
+                [[#[(REPEAT (TEST_ANY))]] "ran off the end"]))
+            ((e Interrupted) "caught")))
+        """
+
+        expr, _mod = self.compile_expr(
+            src, Interrupted=Interrupted, subject=(0,) * 200000)
+        self.assertEqual(await expr(), "caught")
+
+
     async def test_tail_call_inside_let(self):
         """
         A tail-recursive loop whose call sits inside a let has no

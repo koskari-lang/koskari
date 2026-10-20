@@ -37,7 +37,7 @@ def helper_function(compiler, caps, selfref):
     Helper for compile/function and compile/lambda.
 
     :param compiler: Compiler instance
-    :param caps: Matcher captures
+    :param caps: the special's captures
     :param selfref: Whether to add a self-reference to the function
     :return: ByteCodeFragment
     """

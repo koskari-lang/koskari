@@ -240,4 +240,43 @@ class TestBulkLoadLowering(unittest.IsolatedAsyncioTestCase):
         ])
 
 
+
+
+class TestPackClearRuns(unittest.TestCase):
+    """
+    A run of clears packs as a run of loads does, into the two, three
+    and four slot rows, the widest first
+    """
+
+    def test_clear_runs_pack(self):
+        C = OpCode.VAR_CLEAR
+        self.assertEqual(
+            pack_ops([(C, "a"), (C, "b")]),
+            [(OpCode.VAR_CLEAR2, ("a", "b", None, None))])
+        self.assertEqual(
+            pack_ops([(C, "a"), (C, "b"), (C, "c")]),
+            [(OpCode.VAR_CLEAR3, ("a", "b", "c", None))])
+        self.assertEqual(
+            pack_ops([(C, "a"), (C, "b"), (C, "c"), (C, "d"), (C, "e"), (C, "f")]),
+            [(OpCode.VAR_CLEAR4, ("a", "b", "c", "d")),
+             (OpCode.VAR_CLEAR2, ("e", "f", None, None))])
+        self.assertEqual(pack_ops([(C, "a")]), [(C, "a")])
+
+
+    def test_fast_clear_runs_pack(self):
+        C = OpCode.FAST_CLEAR
+        self.assertEqual(
+            pack_ops([(C, 0), (C, 1), (C, 2), (C, 3)]),
+            [(OpCode.FAST_CLEAR4, (0, 1, 2, 3))])
+
+
+    def test_clear_run_lowers_to_the_fast_twin(self):
+        C = OpCode.VAR_CLEAR
+        nspec = NamespaceSpec("f", ("a", "b", "c"), (), ())
+        out = process_ops([(C, "a"), (C, "b"), (C, "c"), (OpCode.CONST, None), (OpCode.RETURN, 1)])
+        self.assertEqual(out[0], (OpCode.VAR_CLEAR3, ("a", "b", "c", None)))
+        out = convert_fast(nspec, [(OpCode.VAR_CLEAR3, ("a", "b", "c", None))])
+        self.assertEqual(out, [(OpCode.FAST_CLEAR3, (0, 1, 2, None))])
+
+
 # The end.

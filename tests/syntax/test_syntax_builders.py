@@ -21,8 +21,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, Module, ModuleNamespace, cons, nil, symbol
-from koskari.matcher import Matcher
+from koskari.lib import (
+    Datum, Module, ModuleNamespace, cons, demand, nil, symbol)
 from koskari.reader import default_reader, source_str
 from koskari.syntax import parse_rule_pattern
 from koskari.types import build_proper, strip_marks
@@ -118,10 +118,10 @@ class TestRulePatternVariables(unittest.TestCase):
         pat = _rule_pattern("(m x)")
         self.assertTrue(repr(pat).startswith("MATCH(CALLEDBY('m')"), repr(pat))
 
-        m = Matcher.from_tuple(pat.freeze())
-        res = m.match(default_reader.read(source_str("(alias 1)", "<t>")))
-        self.assertTrue(res.matched)
-        head = res.captures["m"]
+        m = pat.build()
+        res = demand(m)(default_reader.read(source_str("(alias 1)", "<t>")))
+        self.assertIsNotNone(res)
+        head = res["m"]
         head = head.datum if isinstance(head, Datum) else head
         self.assertIs(head, symbol("alias"))
 

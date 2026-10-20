@@ -7,7 +7,7 @@ discussion; the **type and value association semantics are deliberately
 unsettled** (see Open questions) and warrant deliberation before any
 implementation. This is its own effort, on its own schedule — not a
 follow-up item of the runtime match/case work, though it builds on the
-same matcher engine and pattern dialects.
+same matcher compiler and pattern dialects.
 
 ## Purpose
 
@@ -128,7 +128,7 @@ minimally declared. The alternatives worth weighing before committing:
   factory protocol, resolved decision 3 (composites always inline).
 - [match-pattern-language.md](../archive/match-pattern-language.md) — the case
   dialect a template body would likely be written in.
-- `koskari/matcher.py` — the Python composites this generalizes
+- `koskari/matcher/forms.py` — the Python composites this generalizes
   (`BINDING`, `BINDINGS`, `FORMALS`, `USING`) and
   `MATCHER_REGISTRY` / `register_matcher`.
 - `koskari/compile/specials/syntax.py`, `koskari/syntax.py` — the

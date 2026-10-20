@@ -1044,7 +1044,7 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
   KosSegment_LEN(*KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackDrop(es, count) \
-  KosStack_Drop(KosEvalState_BLOCK(es), (count))
+  kos_stack_drop_fast(KosEvalState_BLOCK(es), (count))
 
 #define KosEvalState_StackDrop1(es) \
   kos_stack_drop1_fast(KosEvalState_BLOCK(es))
@@ -1057,6 +1057,9 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
 
 #define KosEvalState_StackDuplicate(es, count) \
   KosStack_Duplicate(KosEvalState_BLOCK(es), (count))
+
+#define KosEvalState_StackDup1(es) \
+  kos_stack_dup1_fast(KosEvalState_BLOCK(es))
 
 #define KosEvalState_StackPopTailDict(es, count) \
   KosStack_PopTailDict(KosEvalState_BLOCK(es), (count))
@@ -1072,6 +1075,12 @@ static inline KosOpResult kos_iter_installed(KosEvalState *es) {
 
 #define KosEvalState_StackPeekAt(es, index) \
   KosStack_PeekAt(*KosEvalState_BLOCK(es), (index))
+
+#define KosEvalState_StackPeekUnder(es, under) \
+  kos_stack_peek_under_fast(*KosEvalState_BLOCK(es), (under))
+
+#define KosEvalState_StackSetUnder(es, under, val) \
+  kos_stack_set_under_fast(*KosEvalState_BLOCK(es), (under), (val))
 
 #define KosEvalState_StackPopTailPtr(es, count, dest) \
   kos_stack_pop_tail_ptr_fast(KosEvalState_BLOCK(es), (count), (dest))

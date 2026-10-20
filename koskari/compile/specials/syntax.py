@@ -24,55 +24,113 @@ convenience syntax to runtime call forms of builder functions.
 
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
-from ...lib import cons, keyword, nil, symbol
+from ...hygiene import extern_atoms, function_constant
+from ...lib import FormalsSpec, OpCode, cons, keyword, nil, symbol
 from ...matcher import (
-    BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL,
-    VALUE, parse_explicit_rule_pattern, pattern_slot_names, repeat_capture)
-from ...syntax import parse_syntax_rules_pattern, special
+    BIND, BODY, CALLEDBY, LIST, MATCH, REPEAT, SYMBOL, VALUE,
+    parse_explicit_rule_pattern, repeat_capture)
+from ...matcher.analysis import analyse
+from ...matcher.build import matcher_body
+from ...matcher.tables import TableBuilder
+from ...syntax import (
+    _repeat_variables, parse_rule_pattern, parse_syntax_rules_pattern,
+    special)
 from ...types import (
     build_proper, is_pair, is_proper, is_symbol, unpack)
 
 
 _sym_quote_syntax = symbol("quote-syntax")
-_sym_parse_rule_pattern = symbol("parse-rule-pattern")
-_sym_parse_match_pattern = symbol("parse-match-pattern")
 
 
-def _emit_parse_rule_pattern(pattern_src, literals_datum):
+def lower_rule(pattern, pattern_src):
     """
-    Emit ``(parse-rule-pattern (quote-syntax PATTERN) (quote-syntax LITS))``
+    Lower a rule pattern once: the names of its top-level slots in
+    declaration order, for the formals of a procedural arm, and the
+    tables and analysis its matcher function is built from
 
-    A set of literals is frozen so the emitted constant is hashable and
-    serializable; every other literals shape passes through. The quoting
-    keeps marks: a pattern or template an outer expansion introduced
-    binds and resolves under the outer expansion's marks
-    """
-
-    if isinstance(literals_datum, set):
-        literals_datum = frozenset(literals_datum)
-    return cons(
-        _sym_parse_rule_pattern,
-        cons(_sym_quote_syntax, pattern_src, nil),
-        cons(_sym_quote_syntax, literals_datum, nil),
-        nil)
-
-
-def _emit_parse_match_pattern(pattern_src):
-    """
-    Emit ``(parse-match-pattern (quote-syntax PATTERN))``
+    :param pattern: the lowered pattern
+    :param pattern_src: the pattern's source form, for errors
+    :return: ``(slot_names, tables, analysis)``
+    :raises SpecialError: when the pattern is one the core refuses
     """
 
-    return cons(
-        _sym_parse_match_pattern,
-        cons(_sym_quote_syntax, pattern_src, nil),
-        nil)
+    builder = TableBuilder()
+    try:
+        tables = builder.lower(pattern)
+        analysis = analyse(tables)
+    except (TypeError, ValueError) as exc:
+        raise SpecialError(f"invalid rule pattern: {exc}", pattern_src)
+    return builder.formal_slot_names, tables, analysis
+
+
+def matcher_function(compiler, parent, tables, analysis, pattern_src, name):
+    """
+    The matcher of a rule as a function constant of the defining
+    module: the pattern's tables lowered through the match compiler's
+    inline target into a lambda body whose one formal is the subject,
+    every extern the pattern names requested from the module through
+    the closure apparatus under the atom the pattern wrote, and the
+    body completed as any lambda's is, marks included
+
+    :param compiler: the compiler
+    :param parent: the fragment the CONST row is emitted into
+    :param tables: the pattern's tables, from lower_rule
+    :param analysis: the tables' analysis, from lower_rule
+    :param pattern_src: the pattern's source form
+    :param name: the function's name
+    :return: the function constant
+    """
+
+    atoms = extern_atoms(pattern_src, tables[1])
+    body, subject = matcher_body(compiler, tables, analysis, atoms, name)
+    return function_constant(
+        compiler, parent, body, name, FormalsSpec((str(subject),)))
+
+
+def emit_build(compiler, called_by, builtin_name, name_str, rows):
+    """
+    The call of a build builtin: the transformer name, then per rule
+    the matcher function built in the module, the repeat variables as
+    pairs, the quoted pattern source for help text and errors, and the
+    rule's tail, then the call
+
+    :param rows: per rule ``(pattern, pattern_src, lowered, tail_form)``,
+        lowered being lower_rule's result and tail_form the quoted
+        template or the lambda form
+    """
+
+    frag = compiler.fragment(called_by)
+    frag.instruction(OpCode.CONST, name_str)
+    for pattern, pattern_src, lowered, tail_form in rows:
+        _names, tables, analysis = lowered
+        constant = matcher_function(
+            compiler, frag, tables, analysis, pattern_src, name_str)
+        frag.instruction(OpCode.CONST, constant)
+        frag.instruction(OpCode.BUILD_FUNCTION, ((), (), 0, 0))
+        repeat_items = tuple(
+            (slot, tuple(names))
+            for slot, names in _repeat_variables(pattern).items())
+        frag.instruction(OpCode.CONST, repeat_items)
+        frag.merge(compiler.full_compile(quoted(pattern_src)))
+        frag.merge(compiler.full_compile(tail_form))
+    sym = symbol(builtin_name)
+    frag.request_var(sym)
+    frag.instruction(OpCode.CALL_VAR, (sym, 1 + 4 * len(rows), 0, 0))
+    return frag
+
+
+def quoted(form):
+    """
+    The form (quote-syntax FORM)
+    """
+
+    return cons(_sym_quote_syntax, form, nil)
 
 
 # Opaque one-cell rows for compile-time parsing of ``syntax-rules`` /
 # ``macro-rules`` / ``syntax-match`` surfaces (Koskari rules are not
 # always two-element ``(pattern template)`` lists), split later by
-# _syntax_rules_row_pattern_and_template. Inner REPEAT binds rename to
-# ``rule__sr`` in the native matcher.
+# _syntax_rules_row_pattern_and_template.
 _RULE_ROWS = repeat_capture("rules", REPEAT(BIND("rule"), min_count=1))
 
 # Rows of ``(PATTERN BODY...)`` for the match-dialect surfaces
@@ -88,12 +146,6 @@ _SPECIAL_RULE_ROWS = repeat_capture(
         LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
         min_count=1))
 
-_SPECIAL_MATCH_RULE_ROWS = repeat_capture(
-    "rules",
-    REPEAT(
-        LIST(LIST(SYMBOL("compiler"), VALUE("pattern")), BODY("body")),
-        min_count=1))
-
 
 def _syntax_rules_row_pattern_and_template(raw_rule):
     """
@@ -102,8 +154,8 @@ def _syntax_rules_row_pattern_and_template(raw_rule):
     Rows from the reader layout are normally ``(pattern-column template)`` of
     length two (same shape ``compile/syntax-rules`` expects). Koskari sources
     can also supply longer proper lists; then the
-    template is the last top-level form and all preceding forms are grouped
-    like :func:`koskari.reader.layouts.define_syntax._pattern_template_from_rule`.
+    template is the last top-level form and the forms before it are grouped
+    as the pattern.
     """
 
     if not is_pair(raw_rule):
@@ -139,29 +191,33 @@ def special_compile_syntax_rules(compiler, called_by, name, literals, rules):
     """
     Compile (compile/syntax-rules NAME LITERALS RULES...).
 
-    Lowers to ``(build-syntax NAME-STR (parse-rule-pattern (quote-syntax PATTERN)
-    (quote-syntax LITERALS-LIST)) (quote-syntax TEMPLATE) ...)`` for
-    recompilation. ``NAME-STR`` is the macro name as a string. ``LITERALS-LIST``
-    is the literals list form from the source, emitted as written; the macro
-    name is not a literal. The head of each pattern lowers to a CALLEDBY
-    capture under its own name, binding the symbol the macro was invoked as,
-    so a template may use it. The built transformer is the value of that
-    expression; use ``(compile/define NAME ...)`` to bind it. Pattern parsing
-    runs when that expression is evaluated.
+    Each rule's pattern is parsed here and lowered to a matcher
+    function, a lambda of this module whose externs close over the
+    module's bindings; the form lowers to a call of ``build-syntax``
+    with, per rule, that function, its repeat variables, the quoted
+    pattern and the quoted template. ``LITERALS`` is the literals list
+    form from the source; the macro name is not a literal. The head of
+    each pattern lowers to a CALLEDBY capture under its own name,
+    binding the symbol the macro was invoked as, so a template may use
+    it. The built
+    transformer is the value of the expression; use
+    ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum
     literals_expr = literals.datum
 
-    parts = []
+    rows = []
     for res in rules:
         raw_rule = res["rule"].datum
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
-        parts.append(_emit_parse_rule_pattern(pattern_src, literals_expr))
-        parts.append(cons(_sym_quote_syntax, template_expr, nil))
+        pattern = parse_rule_pattern(pattern_src, literals_expr, raw_rule)
+        rows.append((
+            pattern, pattern_src, lower_rule(pattern, pattern_src),
+            quoted(template_expr)))
 
-    return cons(symbol("build-syntax"), str(namesym), *parts, nil)
+    return emit_build(compiler, called_by, "build-syntax", str(namesym), rows)
 
 
 _BARE_SYNTAX_PATTERNS = [
@@ -196,45 +252,33 @@ def special_compile_bare_syntax(compiler, called_by, name, slot, template):
                 nil)
 
 
-_MACRO_RULES_PATTERNS = [
-    MATCH(
-        CALLEDBY("called_by"),
-        SYMBOL("name"),
-        BIND("literals"),
-        _RULE_ROWS),
-]
-
-
 @builtin("compile/macro-rules")
-@special("compile/macro-rules", patterns=_MACRO_RULES_PATTERNS,
+@special("compile/macro-rules", patterns=_SYNTAX_RULES_PATTERNS,
          unpack="kwargs")
 def special_compile_macro_rules(compiler, called_by, name, literals, rules):
     """
     Compile (compile/macro-rules NAME LITERALS RULES...).
 
-    Lowers to ``(build-macro NAME-STR (parse-rule-pattern (quote-syntax PATTERN)
-    (quote-syntax LITERALS-SET)) (lambda FORMALS . BODY) ...)`` for
-    recompilation, where ``LITERALS-SET`` is the literals set (including the macro
-    name) used for RULE lowering. The built transformer is the value of that
+    Rules are ``(PATTERN BODY...)``; the patterns are parsed here and
+    lowered to matcher functions of this module. Lowers to a call of
+    ``build-macro`` with, per rule, the function, its repeat variables,
+    the quoted pattern and ``(lambda FORMALS . BODY)``, the formals
+    being the pattern's variables. The built transformer is the value of the
     expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum
+    literals_expr = literals.datum
+    raw_rules = [res["rule"].datum for res in rules]
 
-    literal_set, rows = parse_macro_rules_rows(
-        namesym,
-        literals.datum,
-        [res["rule"].datum for res in rules],
-    )
+    rows = []
+    for pattern, pattern_src, formals, body_forms in parse_macro_rules_rows(
+            namesym, literals_expr, raw_rules):
+        rows.append((
+            pattern, pattern_src, lower_rule(pattern, pattern_src),
+            cons(symbol("lambda"), build_proper(*formals), body_forms)))
 
-    parts = []
-
-    for pattern_matcher, pattern_src, formals, body_forms in rows:
-        parts.append(_emit_parse_rule_pattern(pattern_src, literal_set))
-        parts.append(cons(symbol("lambda"),
-                          build_proper(*formals), body_forms))
-
-    return cons(symbol("build-macro"), str(namesym), *parts, nil)
+    return emit_build(compiler, called_by, "build-macro", str(namesym), rows)
 
 
 _SYNTAX_MATCH_PATTERNS = [
@@ -249,26 +293,27 @@ def special_compile_syntax_match(compiler, called_by, name, rules):
     """
     Compile (compile/syntax-match NAME RULE ...).
 
-    Rule rows are ``(PATTERN TEMPLATE)``. Each pattern is lowered at runtime by
-    ``parse-match-pattern`` (see :func:`koskari.matcher.parse_explicit_rule_pattern`).
-
-    Lowers to ``(build-syntax NAME-STR (parse-match-pattern (quote-syntax PATTERN))
-    (quote-syntax TEMPLATE) ...)`` for recompilation. The built transformer is
-    the value of that expression; use ``(compile/define NAME ...)`` to bind it.
-    Pattern parsing runs when that expression is evaluated.
+    Rule rows are ``(PATTERN TEMPLATE)``; each pattern is lowered here
+    through :func:`koskari.matcher.parse_explicit_rule_pattern` to a
+    matcher function of this module. Lowers to a call of
+    ``build-syntax`` with, per rule, the function, its repeat variables,
+    the quoted pattern and the quoted template. The built transformer is
+    the value of the expression; use ``(compile/define NAME ...)`` to
+    bind it.
     """
 
     namesym = name.datum
-
-    parts = []
+    rows = []
     for res in rules:
         raw_rule = res["rule"].datum
         pattern_src, template_expr = _syntax_rules_row_pattern_and_template(
             raw_rule)
-        parts.append(_emit_parse_match_pattern(pattern_src))
-        parts.append(cons(_sym_quote_syntax, template_expr, nil))
+        pattern = parse_explicit_rule_pattern(pattern_src)
+        rows.append((
+            pattern, pattern_src, lower_rule(pattern, pattern_src),
+            quoted(template_expr)))
 
-    return cons(symbol("build-syntax"), str(namesym), *parts, nil)
+    return emit_build(compiler, called_by, "build-syntax", str(namesym), rows)
 
 
 _MACRO_MATCH_PATTERNS = [
@@ -283,32 +328,28 @@ def special_compile_macro_match(compiler, called_by, name, rules):
     """
     Compile (compile/macro-match NAME RULE ...).
 
-    Rule rows are ``(PATTERN BODY...)``; each pattern is passed to
-    :func:`koskari.matcher.parse_explicit_rule_pattern` at compile time only to
-    derive matcher slot order for generated formals.
-
-    Lowers to ``(build-macro NAME-STR (parse-match-pattern (quote-syntax PATTERN))
-    (lambda FORMALS . BODY) ...)`` for recompilation. The built
-    transformer is the value of that expression; use ``(compile/define NAME ...)``
-    to bind it.
+    Rule rows are ``(PATTERN BODY...)``; each pattern is lowered here
+    through :func:`koskari.matcher.parse_explicit_rule_pattern` to a
+    matcher function of this module, and its slot order gives the
+    generated formals. Lowers to a call of ``build-macro`` with, per
+    rule, the function, its repeat variables, the quoted pattern and
+    ``(lambda FORMALS . BODY)``. The built transformer is the value of
+    the expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum
-
-    parts = []
-
+    rows = []
     for sub_res in rules:
         pattern_src = sub_res["pattern"].datum
         body_src = sub_res["body"].datum
+        pattern = parse_explicit_rule_pattern(pattern_src)
+        lowered = lower_rule(pattern, pattern_src)
+        rows.append((
+            pattern, pattern_src, lowered,
+            cons(symbol("lambda"), build_proper(*slot_formals(lowered[0])),
+                 body_src)))
 
-        pattern_matcher = parse_explicit_rule_pattern(pattern_src)
-
-        parts.append(_emit_parse_match_pattern(pattern_src))
-        parts.append(cons(symbol("lambda"),
-                          build_proper(*slot_formals(pattern_matcher)),
-                          body_src))
-
-    return cons(symbol("build-macro"), str(namesym), *parts, nil)
+    return emit_build(compiler, called_by, "build-macro", str(namesym), rows)
 
 
 _SPECIAL_RULES_PATTERNS = [
@@ -328,40 +369,40 @@ def special_compile_special_rules(compiler, called_by, name, literals, rules):
     Compile (compile/special-rules NAME LITERALS RULES...).
 
     Each rule pattern column is ``(compiler-formal pattern)``: the first
-    subform names the compiler parameter (any symbol), the second is the
-    nested RULE pattern. PATTERN is
-    lowered with :func:`parse_syntax_rules_pattern`. Lowers to a
-    ``(build-special NAME-STR (parse-rule-pattern (quote-syntax INNER-PATTERN)
-    (quote-syntax LITERALS-SET)) (lambda ...) ...)`` call form for
-    recompilation. The built transformer is the value of that expression; use
+    subform names the compiler parameter (any symbol), the second is
+    the nested RULE pattern, lowered here with
+    :func:`parse_syntax_rules_pattern` to a matcher function of this
+    module. Lowers to a call of ``build-special`` with, per rule, the
+    function, its repeat variables, the quoted pattern and
+    ``(lambda ...)``. The
+    built transformer is the value of the expression; use
     ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum
-
     literal_set = set(unpack(literals.datum))
     literal_set.add(namesym)
 
-    parts = []
+    rows = []
     for res in rules:
         compiler_formal = res["compiler"].datum
         inner = res["pattern"].datum
         body_forms = res["body"].datum
-
         variables = {}
-        parse_syntax_rules_pattern(inner, literal_set, inner, variables)
-        vars_ordered = variables.values()
+        pattern = parse_syntax_rules_pattern(
+            inner, literal_set, inner, variables)
+        rows.append((
+            pattern, inner, lower_rule(pattern, inner),
+            cons(symbol("lambda"),
+                 build_proper(compiler_formal, *variables.values()),
+                 body_forms)))
 
-        parts.append(_emit_parse_rule_pattern(inner, literal_set))
-        parts.append(cons(symbol("lambda"),
-                          build_proper(compiler_formal, *vars_ordered),
-                          body_forms))
-
-    return cons(symbol("build-special"), str(namesym), *parts, nil)
+    return emit_build(
+        compiler, called_by, "build-special", str(namesym), rows)
 
 
 _SPECIAL_MATCH_PATTERNS = [
-    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _SPECIAL_MATCH_RULE_ROWS),
+    MATCH(CALLEDBY("called_by"), SYMBOL("name"), _SPECIAL_RULE_ROWS),
 ]
 
 
@@ -373,52 +414,50 @@ def special_compile_special_match(compiler, called_by, name, rules):
     Compile (compile/special-match NAME RULE ...).
 
     Each rule pattern column is ``(compiler-formal pattern)``: the first
-    subform names the compiler parameter (any symbol), the second is the
-    nested MATCH pattern for parse_explicit_rule_pattern.
-
-    Lowers to a ``(build-special NAME-STR (parse-match-pattern
-    (quote-syntax INNER-PATTERN)) (lambda ...) ...)`` call form for
-    recompilation (same shape as ``compile/macro-match``). The built transformer
-    is the value of that expression; use ``(compile/define NAME ...)`` to bind it.
+    subform names the compiler parameter (any symbol), the second is
+    the nested MATCH pattern for parse_explicit_rule_pattern, lowered
+    here to a matcher function of this module. Lowers to a call of
+    ``build-special`` with, per rule, the function, its repeat
+    variables, the quoted pattern and ``(lambda ...)``, as
+    ``compile/macro-match`` does. The built transformer is the value of
+    the expression; use ``(compile/define NAME ...)`` to bind it.
     """
 
     namesym = name.datum
-
-    parts = []
-
+    rows = []
     for res in rules:
         compiler_formal = res["compiler"].datum
         inner = res["pattern"].datum
         body_src = res["body"].datum
-
         if is_symbol(inner):
             inner = cons(cons(symbol("REST"), inner, nil), nil)
+        pattern = parse_explicit_rule_pattern(inner)
+        lowered = lower_rule(pattern, inner)
+        rows.append((
+            pattern, inner, lowered,
+            cons(symbol("lambda"),
+                 build_proper(compiler_formal, *slot_formals(lowered[0])),
+                 body_src)))
 
-        pattern_matcher = parse_explicit_rule_pattern(inner)
-
-        parts.append(_emit_parse_match_pattern(inner))
-        parts.append(cons(symbol("lambda"),
-                          build_proper(compiler_formal,
-                                       *slot_formals(pattern_matcher)),
-                          body_src))
-
-    return cons(symbol("build-special"), str(namesym), *parts, nil)
+    return emit_build(
+        compiler, called_by, "build-special", str(namesym), rows)
 
 
-def slot_formals(pattern_matcher):
+def slot_formals(slot_names):
     """
     The formals an explicit-pattern arm takes for its captures: each
     slot once, in slot-table order, as a keyword formal defaulting to
-    None. A match result is sparse, so a slot behind TAIL or an
+    None. The captures are sparse, so a slot behind TAIL or an
     unmatched ONEOF branch arrives as None, and a slot the table lists
     once per branch (BINDINGS) is one formal
 
-    :param pattern_matcher: the lowered rule pattern
+    :param slot_names: the pattern's top-level slot names, from
+        lower_rule
     :return: the formals list items, keyword and default alternating
     """
 
     out = []
-    for name in dict.fromkeys(pattern_slot_names(pattern_matcher)):
+    for name in dict.fromkeys(slot_names):
         out.append(keyword(name))
         out.append(None)
     return out
@@ -435,8 +474,8 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
     :param literals_expr: literals list expression (same position as in
         ``(macro-rules LITERALS RULE ...)``)
     :param raw_rules: the rule row datums, in source order
-    :return: ``(literals, rows)`` where each row is ``(pattern_matcher,
-        pattern_src, formals_tuple, list of body forms)``
+    :return: the rows, each ``(pattern_matcher, pattern_src,
+        formals_tuple, list of body forms)``
     :raises SpecialError: when the rules are not valid macro-rules rows
     """
 
@@ -461,7 +500,7 @@ def parse_macro_rules_rows(name, literals_expr, raw_rules):
         rows.append(
             (pattern, pattern_src, tuple(variables.values()), body_forms))
 
-    return literals, tuple(rows)
+    return tuple(rows)
 
 
 # The end.

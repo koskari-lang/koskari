@@ -55,7 +55,8 @@ _Static_assert(KOS_SEGMENT_INLINE_SLOTS < BLOCK_NEW_SIZE,
 
 static size_t block_freecount = 0;
 
-/* Linked-list cache for heap segments; same pattern used for dyn nodes and context. */
+/* Linked-list cache for heap segments; same pattern used for dyn
+   nodes and context. */
 static KosSegment *block_freelist = NULL;
 
 
@@ -363,6 +364,38 @@ PyObject *KosStack_PeekAt(
 
   /* borrowed reference */
   return self->objs[ain];
+}
+
+
+PyObject *KosStack_PeekUnder(KosSegment *self, size_t under) {
+
+  size_t len = self->len;
+  if (under >= len) {
+    PyErr_Format(PyExc_RuntimeError, "stack peek underrun: %zu under",
+                 under);
+    return NULL;
+  }
+
+  /* borrowed reference */
+  return self->objs[len - 1 - under];
+}
+
+
+int KosStack_SetUnder(KosSegment *self, size_t under, PyObject *val) {
+
+  size_t len = self->len;
+  if (under >= len) {
+    Py_DECREF(val);
+    PyErr_Format(PyExc_RuntimeError, "stack store underrun: %zu under",
+                 under);
+    return -1;
+  }
+
+  PyObject **slot = &self->objs[len - 1 - under];
+  PyObject *old = *slot;
+  *slot = val;
+  Py_DECREF(old);
+  return 0;
 }
 
 

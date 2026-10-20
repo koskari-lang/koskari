@@ -3,12 +3,11 @@
 
 **Syntax:** `(macro-match NAME (PATTERN BODY ...) ...)`
 
-**Use-case:** **MATCH**-dialect procedural rules (same emission shape as
-**`compile/macro-rules`**: **`build-macro-rules`**).
+**Use-case:** **MATCH**-dialect procedural rules, as **`compile/macro-rules`**
+takes **RULE**-dialect ones.
 
-**Behaviour:** Each rule row is **`(PATTERN BODY ...)`**; **`PATTERN`** is passed to
-**`parse_explicit_rule_pattern`**. Per-rule **`compile/lambda`** formals are
-**`matcher_slot_names(pattern_matcher)`** in consume order (see
-[`koskari.matcher`](../api/koskari-matcher.md)). Macro procedures are invoked
-with **keyword** arguments from the match result (`koskari/syntax.py`:
-**`MacroRule.expand`**).
+**Behaviour:** As [`compile/macro-rules`](compile-macro-rules.md), except
+that there is no `LITERALS` list, each pattern is in the explicit matcher
+dialect (see [`koskari.matcher`](../api/koskari-matcher.md)), and the body
+takes one parameter per pattern slot, in pattern order, bound to `None`
+when the match left the slot unbound.

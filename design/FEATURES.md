@@ -45,13 +45,12 @@ Highlights (not an exhaustive list):
 
 ### Runtime match/case
 
-Value-level pattern matching over the native matcher engine
-(`koskari.lib.Matcher`), the same engine that drives macro and special-form
-dispatch. **`compile/match`** (s-expr) and **`layout/match`** (block syntax)
-lower each arm's pattern to a frozen matcher constant and emit a
-`SWITCH_EQ`-style chain of **`MATCH_CASE`** opcodes, each binding its arm's
-captures on a match, with a per-site `KOS_CACHE_MATCHER` slot (thaw-once
-matcher plus the capture slot indices).
+Value-level pattern matching through the matcher compiler
+(`koskari.matcher.emitter`), the same lowering that drives macro and
+special-form dispatch. **`compile/match`** (s-expr) and **`layout/match`**
+(block syntax) lower each arm's pattern to its **`MATCH_*`** instructions
+inline, a chain of arms each jumping to the next on a miss, the captures
+stored into the enclosing function's locals as the pattern walks.
 
 - **Case-pattern dialect**: capture symbols, literals, `x :: T` type
   constraints, sequence `#[…]` / `#(…)` (with `*:` rest), mapping `#{K: PAT}`,
@@ -63,12 +62,14 @@ matcher plus the capture slot indices).
   and falls to the next arm.
 - **Semantics**: first arm wins; bindings land in the enclosing scope and
   persist after the form (Python-consistent); no match + no `else:` → `None`;
-  strings/bytes are atoms to sequence patterns. On 3.9 the engine synthesizes
-  `__match_args__` for dataclasses and namedtuples.
+  strings/bytes are atoms to sequence patterns. On 3.9 the class test
+  synthesizes `__match_args__` for dataclasses and namedtuples. A predicate
+  or extractor is a call from the matching frame and flattens.
 
-See [MATCHER.md](MATCHER.md) § Runtime match/case;
-`koskari/compile/specials/conditionals.py`,
-`koskari/reader/layouts/conditionals.py`, `koskari/lib/opcode/MATCH_CASE.c`.
+See [MATCHER.md](MATCHER.md) § Runtime match/case and
+[archive/matcher-bytecode.md](archive/matcher-bytecode.md);
+`koskari/compile/specials/match.py`, `koskari/matcher/emitter.py`,
+`koskari/reader/layouts/conditionals.py`.
 
 ### Slices
 

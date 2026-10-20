@@ -20,7 +20,7 @@ Layout handlers for try/except/else/finally block syntax.
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
 from ...lib import cons, keyword, nil, symbol
-from ...matcher import USING_FORMS, match1
+from ...matcher import USING_MATCHERS, first_match
 from ...types import (
     fill_position, get_position, is_pair, is_proper, strip_mark, unpack)
 from .helpers import layout
@@ -77,7 +77,8 @@ def layout_try(reader, source, peers):
                         f'e.g. [Exception] or [Exception as: e], not {ppargs[0]!r}',
                         get_position(peer))
                 if not is_proper(prest.car) \
-                   or match1(prest.car, USING_FORMS) is None:
+                   or first_match(
+                       cons(prest.car, nil), USING_MATCHERS)[1] is None:
                     raise LayoutError(
                         'invalid except USE form: a using must be in the'
                         ' form of (EXPR), (SYM EXPR), or (EXPR as: SYM),'

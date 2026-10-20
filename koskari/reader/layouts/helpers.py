@@ -22,8 +22,8 @@ Layout decorator for reader block syntax and block-form matchers.
 """
 
 
-from ...lib import keyword
-from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST, match1
+from ...lib import cons, demand, keyword, nil
+from ...matcher import BIND, LIST, LITERAL_KW, MATCH, REST, make_matcher
 from ...types import is_pair, is_symbol
 
 
@@ -47,10 +47,12 @@ def is_line(form):
     return form and is_pair(form) and form.car is _keyword_line
 
 
-_BLOCK_SOURCE_PATTERN = MATCH(LIST(BIND('header'), REST('body')))
+# each matcher built once and run over a one-cell spine of the form
+_block_source = demand(make_matcher(
+    MATCH(LIST(BIND('header'), REST('body')))))
 
-_BLOCK_CONS_PATTERN = MATCH(
-    LIST(LITERAL_KW('#block'), BIND('header'), REST('body')))
+_block_cons = demand(make_matcher(
+    MATCH(LIST(LITERAL_KW('#block'), BIND('header'), REST('body')))))
 
 
 def _valid_block_header(header):
@@ -69,7 +71,7 @@ def match_block_source(form):
     :return: match result with ``header`` and ``body`` slots, or None
     """
 
-    matched = match1(form, [_BLOCK_SOURCE_PATTERN])
+    matched = _block_source(cons(form, nil))
     if matched is None:
         return None
     header = matched['header'].datum
@@ -86,7 +88,7 @@ def match_block_cons(form):
     :return: match result with ``header`` and ``body`` slots, or None
     """
 
-    matched = match1(form, [_BLOCK_CONS_PATTERN])
+    matched = _block_cons(cons(form, nil))
     if matched is None:
         return None
     header = matched['header'].datum

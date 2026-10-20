@@ -732,7 +732,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
         if not isinstance(special, Syntax):
             return form
 
-        tf, mr = special.match_transformer(form)
+        tf, captures = special.match_transformer(form)
         if tf is None:
             return form
 
@@ -741,7 +741,7 @@ class CorpusTestCase(unittest.IsolatedAsyncioTestCase):
 
         # the corpus records an expansion as source: the datum view, with
         # the marks the expansion carries for the compiler left off
-        expanded = strip_marks(tf.handle_expand(self.compiler, form, mr))
+        expanded = strip_marks(tf.handle_expand(self.compiler, form, captures))
 
         if is_proper(expanded):
             parts = list(expanded.unpack())

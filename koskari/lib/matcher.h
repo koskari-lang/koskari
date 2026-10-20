@@ -21,264 +21,9 @@
 #include <Python.h>
 #include <stdint.h>
 
+#include "hints.h"
+#include "tracing.h"
 
-/* === node kinds === */
-
-
-typedef enum {
-  KOS_MATCH_NODE_TEST = 0,
-  KOS_MATCH_NODE_CAPTURE,
-  KOS_MATCH_NODE_FORM,
-  KOS_MATCH_NODE_MATCH,
-  KOS_MATCH_NODE_GROUP,
-  KOS_MATCH_NODE_ONEOF,
-  KOS_MATCH_NODE_REPEAT,
-  KOS_MATCH_NODE_OPTIONAL,
-  KOS_MATCH_NODE_REST,
-  KOS_MATCH_NODE_NOT,
-  KOS_MATCH_NODE_CLASS,
-  KOS_MATCH_NODE_FIELD,
-  KOS_MATCH_NODE_SAME,
-  KOS_MATCH_NODE_APP,
-  KOS_MATCH_NODE_MAP,
-  KOS_MATCH_NODE_MAP_ENTRY,
-  KOS_MATCH_NODE_KIND_COUNT
-} KosMatchNodeKind;
-
-
-typedef enum {
-  KOS_MATCH_FIELD_POSITIONAL = 0,
-  KOS_MATCH_FIELD_KEYWORD,
-  KOS_MATCH_FIELD_KIND_COUNT
-} KosMatchFieldKind;
-
-
-typedef enum {
-  KOS_MATCH_MAPKEY_CONST = 0,   /* key_ref indexes matcher->consts */
-  KOS_MATCH_MAPKEY_EXTERN,      /* key_ref indexes externs / extern_env */
-  KOS_MATCH_MAPKEY_KIND_COUNT
-} KosMatchMapKeyKind;
-
-
-typedef enum {
-  KOS_MATCH_TEST_ANY = 0,
-  KOS_MATCH_TEST_LITERAL,
-  KOS_MATCH_TEST_TYPE,
-  KOS_MATCH_TEST_PREDICATE,
-  KOS_MATCH_TEST_KIND_COUNT
-} KosMatchTestKind;
-
-
-/* === sentinel index values === */
-
-
-/* Used in slot/extern/const reference fields to mean "unset". */
-#define KOS_MATCH_NO_INDEX  ((uint32_t) 0xFFFFFFFFu)
-
-/* Used in width fields to mean "unbounded". */
-#define KOS_MATCH_UNBOUNDED ((uint32_t) 0xFFFFFFFFu)
-
-
-/* === node payload structs === */
-
-
-typedef struct {
-  uint16_t test_kind;
-  uint16_t reserved;
-  uint32_t ref_index;
-} KosMatchTest;
-
-
-typedef struct {
-  uint32_t slot;
-  uint32_t subnode;
-} KosMatchCapture;
-
-
-typedef struct {
-  uint32_t subnode;
-} KosMatchForm;
-
-
-typedef struct {
-  uint32_t first_child;
-} KosMatchMatch;
-
-
-typedef struct {
-  uint32_t first_child;
-} KosMatchGroup;
-
-
-typedef struct {
-  uint32_t first_branch;
-} KosMatchOneof;
-
-
-typedef struct {
-  uint32_t subnode;
-  /**
-   * Minimum successful iterations (0 allows zero matches; the CAPTURE
-   * wrapping REPEAT still binds an empty list when min_count is 0).
-   */
-  uint32_t min_count;
-} KosMatchRepeat;
-
-
-typedef struct {
-  uint32_t subnode;
-} KosMatchOptional;
-
-
-typedef struct {
-  /**
-   * Minimum spine elements this REST must consume from the current
-   * subject (0 allows an empty remainder; bind nil for KosPair, () for
-   * sequence subjects). Binding a name requires CAPTURE wrapping REST.
-   */
-  uint32_t min_tail;
-} KosMatchRest;
-
-
-typedef struct {
-  uint32_t subnode;
-} KosMatchNot;
-
-
-typedef struct {
-  uint32_t type_extern;   /* index into matcher->externs / extern_env */
-  uint32_t first_field;   /* head of FIELD chain; NO_INDEX if empty */
-  uint32_t num_positional; /* POSITIONAL FIELDs on the chain, counted
-                              by the builder; 0 skips the
-                              __match_args__ lookup at match time */
-} KosMatchClass;
-
-
-typedef struct {
-  uint16_t field_kind;    /* KosMatchFieldKind */
-  uint16_t reserved;
-  uint32_t subnode;       /* width-1 sub-matcher for the projected attr */
-  uint32_t name_const;    /* index into matcher->consts for KEYWORD;
-                             KOS_MATCH_NO_INDEX for POSITIONAL */
-} KosMatchField;
-
-
-typedef struct {
-  uint32_t slot;
-  uint32_t depth;
-} KosMatchSame;
-
-
-typedef struct {
-  uint32_t fn_extern;     /* index into matcher->externs / extern_env:
-                             the synchronous extractor callable */
-  uint32_t subnode;       /* width-1 sub-matcher for the call result */
-} KosMatchApp;
-
-
-typedef struct {
-  uint32_t first_entry;   /* head of a MAP_ENTRY chain via next, or
-                             KOS_MATCH_NO_INDEX for a bare mapping
-                             check */
-} KosMatchMap;
-
-
-typedef struct {
-  uint16_t key_kind;      /* KosMatchMapKeyKind */
-  uint16_t reserved;
-  uint32_t key_ref;       /* const or extern index, per key_kind */
-  uint32_t subnode;       /* width-1 sub-matcher for the looked-up
-                             value; KOS_MATCH_NO_INDEX = presence only */
-} KosMatchMapEntry;
-
-
-typedef struct {
-  uint16_t kind;
-  uint16_t flags;
-  uint32_t next;         /* next sibling in GROUP, next branch in ONEOF,
-                            next FIELD in a CLASS chain, otherwise
-                            KOS_MATCH_NO_INDEX */
-  uint32_t min_width;
-  uint32_t max_width;
-  union {
-    KosMatchTest     test;
-    KosMatchCapture  capture;
-    KosMatchForm     form;
-    KosMatchMatch     match;
-    KosMatchGroup    group;
-    KosMatchOneof    oneof;
-    KosMatchRepeat   repeat;
-    KosMatchOptional optional;
-    KosMatchRest     rest;
-    KosMatchNot      not_;
-    KosMatchClass    class_;
-    KosMatchField    field;
-    KosMatchSame     same;
-    KosMatchApp      app;
-    KosMatchMap      map;
-    KosMatchMapEntry   map_entry;
-  } as;
-} KosMatchNode;
-
-
-/* === Matcher object === */
-
-
-/* The shape a subject must have for the matcher's first element test
-   to pass, read off the entry at finalize: the test the engine would
-   run first, so a site can run it before any engine setup and skip
-   the arm when it fails. */
-typedef enum {
-  KOS_MATCH_ROOT_NONE = 0,   /* no cheap first test; run the engine */
-  KOS_MATCH_ROOT_TEST_TYPE,  /* a type test: isinstance of extern
-                                root_ref on the peeled element */
-  KOS_MATCH_ROOT_CLASS,      /* a class pattern: isinstance of extern
-                                root_ref on the element as it is */
-  KOS_MATCH_ROOT_SEQUENCE,   /* the sequence-pattern gate */
-  KOS_MATCH_ROOT_MAPPING,    /* the mapping-pattern gate */
-} KosMatchRootKind;
-
-
-typedef struct KosMatcher {
-  PyObject_VAR_HEAD      /* ob_size carries node_count */
-
-  PyObject *slots;       /* tuple[str], capture slot names */
-  PyObject *externs;     /* tuple[str], extern parameter names */
-  PyObject *consts;      /* tuple[object], literal/sub-matcher consts */
-
-  uint32_t entry;
-  uint32_t root_kind;    /* KosMatchRootKind, set at finalize */
-  uint32_t root_ref;     /* extern index for the isinstance roots */
-
-  KosMatchNode nodes[];  /* trailing flexible array; tp_itemsize */
-} KosMatcher;
-
-
-extern PyTypeObject KosMatcherType;
-
-
-#define KosMatcher_Check(obj)                                   \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosMatcherType))
-
-#define KosMatcher_CheckExact(obj)              \
-  ((obj) && ((obj)->ob_type == &KosMatcherType))
-
-
-/* === MatchResult object === */
-
-
-typedef struct KosMatchResult {
-  PyObject_HEAD
-  PyObject *captures;  /* dict[str, value] */
-  int matched;
-} KosMatchResult;
-
-
-extern PyTypeObject KosMatchResultType;
-
-
-#define KosMatchResult_Check(obj)                                       \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosMatchResultType))
 
 
 /* === Datum (matched value + optional source position) === */
@@ -295,8 +40,10 @@ typedef struct KosDatum {
 extern PyTypeObject KosDatumType;
 
 
+/* Datum is not a base type and has no subtype, so the check is one
+   pointer compare */
 #define KosDatum_Check(obj)                                       \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumType))
+  ((obj) && Py_IS_TYPE((obj), &KosDatumType))
 
 
 /* === DatumFrame (capture dict + source provenance) === */
@@ -312,421 +59,529 @@ typedef struct KosDatumFrame {
 extern PyTypeObject KosDatumFrameType;
 
 
+/* DatumFrame is not a base type and has no subtype, so the check is
+   one pointer compare */
 #define KosDatumFrame_Check(obj)                                       \
-  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosDatumFrameType))
+  ((obj) && Py_IS_TYPE((obj), &KosDatumFrameType))
 
 
-/* === subject adapter === */
+/**
+   A match cursor over one subject, by kind: a sequence cursor holds
+   the sequence in seq, its length, and the index of the next element;
+   a spine cursor holds the current cell in seq, the count of cells
+   from the cell it was made at in length, and the cells pulled in
+   index; a single-value cursor holds the value in seq with a length
+   of one. reserve is the count of elements a bounded cursor leaves
+   before its subject's end, zero for every other cursor.
+   Opaque to Python and tracked. A move writes the object in place
+   when its stack entry is the only holder and stores a new object at
+   the entry otherwise, so a cloned segment keeps the position it took.
+ */
+typedef struct KosMatchCursor {
+  PyObject_HEAD
+  PyObject *seq;
+  Py_ssize_t length;
+  Py_ssize_t index;
+  Py_ssize_t reserve;
+  unsigned char kind;
+} KosMatchCursor;
 
 
-typedef struct KosMatchSubject KosMatchSubject;
-
-
-typedef struct {
-  Py_ssize_t (*length)(KosMatchSubject *subject);
-  PyObject *(*get)(KosMatchSubject *subject, Py_ssize_t index);
-  PyObject *(*tail)(KosMatchSubject *subject, Py_ssize_t start);
-  PyObject *(*slice)(
-      KosMatchSubject *subject,
-      Py_ssize_t start,
-      Py_ssize_t end);
-  void (*release)(KosMatchSubject *subject);
-} KosMatchSubjectVTable;
-
-
-struct KosMatchSubject {
-  const KosMatchSubjectVTable *vt;
-  PyObject *backing;     /* ref-counted backing object (tuple or pair) */
-  PyObject **kp_cars;    /* KosPair adapter only: owned car refs */
-  PyObject **kp_tails;   /* KosPair adapter only: each tails[i] is the
-                            pair-or-nil at position i (owned) */
-  Py_ssize_t cached_length;
+enum {
+  KOS_MATCH_CURSOR = 0,
+  KOS_MATCH_SPINE = 1,
+  KOS_MATCH_SINGLE = 2,
 };
 
 
+extern PyTypeObject KosMatchCursorType;
+
+
+#define KosMatchCursor_Check(obj)                                  \
+  ((obj) && ((obj)->ob_type == &KosMatchCursorType))
+
+#define KosMatchCursor_KIND(obj)  (((KosMatchCursor *) (obj))->kind)
+#define KosMatchCursor_INDEX(obj)  (((KosMatchCursor *) (obj))->index)
+
+
+/* The core types a pattern names by their bare spelling: a type test
+   against one is an instruction carrying this ordinal in a RAW field,
+   with no reference to resolve, and the check is the type walk the
+   isinstance of the builtin would run. The ordinals are bytecode ABI,
+   mirrored by the Python CoreType IntEnum; keep the order stable. */
+typedef enum KosCoreType {
+  KOS_CORE_PAIR = 0,
+  KOS_CORE_SYMBOL,
+  KOS_CORE_KEYWORD,
+  KOS_CORE_INT,
+  KOS_CORE_STR,
+  KOS_CORE_TUPLE,
+  KOS_CORE_LIST,
+  KOS_CORE_COUNT   /* number of core types; also the invalid sentinel */
+} KosCoreType;
+
+
 /**
-   Initialize a subject from any Python sequence-like object. On
-   success returns 0 and the subject must be released with
-   KosMatchSubject_Release. On failure returns -1 with a Python
+   The type test: elem read through Datum is an instance of type.
+   1, 0, or -1 with an exception set.
+ */
+int KosMatch_TypeTest(PyObject *elem, PyObject *type);
+
+/**
+   The type test against a core type: elem read through Datum must be
+   an instance of the type the ordinal names. 1 or 0; -1 with an
+   exception set for an ordinal out of range.
+ */
+int KosMatch_CoreTypeTest(PyObject *elem, uint32_t core);
+
+/**
+   The count check of a CLASS with npos positional fields, run after
+   its type test: cls.__match_args__ must be a tuple of at least npos
+   names. match_args is that tuple, borrowed, when the caller holds it
+   (see KosMatch_PlainMatchArgs), else NULL and it is read from cls. 0,
+   or -1 with a TypeError set.
+ */
+int KosMatch_ClassArgs(
+    PyObject *cls,
+    Py_ssize_t npos,
+    PyObject *match_args);
+
+/**
+   cls.__match_args__ when a plain lookup decides it: cls's metaclass
+   is exactly type and its MRO holds an exact tuple under the name, so
+   no descriptor or metaclass hook can answer otherwise. Borrowed from
+   the class's dict, valid while the class's version tag is unchanged;
+   NULL with no exception set otherwise.
+ */
+PyObject *KosMatch_PlainMatchArgs(PyObject *cls);
+
+/**
+   The literal test: elem read through Datum is lit by identity, a
+   gensym whose base is lit, or equal to lit. 1, 0, or -1.
+ */
+int KosMatch_LiteralTest(PyObject *elem, PyObject *lit);
+
+/**
+   The attribute of elem that cls.__match_args__[pos] names, the tuple
+   given or read as KosMatch_ClassArgs takes it. Returns 1 with *out a
+   new reference, 0 when the attribute is missing, -1 with an
    exception set.
  */
-int KosMatchSubject_FromPySequence(
+int KosMatch_FieldPos(
+    PyObject *elem,
+    PyObject *cls,
+    Py_ssize_t pos,
+    PyObject *match_args,
+    PyObject **out);
+
+/**
+   The attribute of elem that name names, under the same returns.
+ */
+int KosMatch_FieldKw(PyObject *elem, PyObject *name, PyObject **out);
+
+/**
+   The mapping gate on elem read through Datum. 1, 0, or -1.
+ */
+int KosMatch_MapTest(PyObject *elem);
+
+/**
+   The equality test of SAME: elem and the bound value prev read
+   through Datum; a DatumFrame on either side misses; identity, then
+   Py_EQ, with prev held across the comparison so a borrowed value
+   may be passed. 1, 0, or -1.
+ */
+int KosMatch_SameTest(PyObject *elem, PyObject *prev);
+
+/**
+   The value under key in the mapping elem, probed without inserting.
+   Returns 1 with *out a new reference, 0 when the key is absent, -1
+   with an exception set.
+ */
+int KosMatch_Item(PyObject *elem, PyObject *key, PyObject **out);
+
+
+/* === cursors === */
+
+
+/* The unbounded maximum of a 16-bit width field, as MATCH_FITS reads
+   it. */
+#define KOS_MATCH_UNBOUNDED  0xFFFFu
+
+
+/* A helper that moves a cursor takes held, the references the caller
+   accounts for (1 for a cursor its stack entry alone holds), and
+   returns the moved cursor: the cursor itself, moved in place and
+   borrowed, when held counts every reference to it; else a new cursor
+   at the new position, a new reference for the caller to store at the
+   entry, so a cloned segment keeps the position it took. */
+
+
+/**
+   The copy a move of a shared cursor takes: a new cursor of cursor's
+   kind, length and reserve at seq and index. New reference; NULL with
+   an exception set.
+ */
+PyObject *KosMatchCursor_CopyAt(
+    PyObject *cursor,
     PyObject *seq,
-    KosMatchSubject *out);
-
-/**
-   Initialize a subject from a KosPair root (or KosNil for the empty
-   subject). Walks the cons spine once at construction time and caches
-   per-position car and pair pointers so length/get/tail are O(1).
-   Returns 0 on success; 1 with no exception when the spine is not a
-   proper list (improper, non-nil terminated), which is a shape the
-   caller judges; -1 with a Python exception on failure (a looping
-   spine, allocation).
- */
-int KosMatchSubject_FromKosPair(
-    PyObject *pair_or_nil,
-    KosMatchSubject *out);
+    Py_ssize_t index);
 
 
 /**
-   Initialize a length-1 subject over a single value without
-   materializing a backing tuple. The value is the sole spine element,
-   exactly as if it had been wrapped in a 1-tuple and passed through
-   ``KosMatchSubject_FromPySequence``. Always succeeds; the subject
-   must be released with KosMatchSubject_Release.
+   cursor moved to seq and index (see held above). NULL with an
+   exception set.
  */
-void KosMatchSubject_FromSingle(
+static inline PyObject *KosMatchCursor_MoveTo(
+    PyObject *cursor,
+    PyObject *seq,
+    Py_ssize_t index,
+    Py_ssize_t held) {
+
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+
+  if (unlikely(Py_REFCNT(c) != held))
+    return KosMatchCursor_CopyAt(cursor, seq, index);
+
+  if (c->seq != seq) {
+    Py_INCREF(seq);
+    Py_SETREF(c->seq, seq);
+  }
+  c->index = index;
+  return cursor;
+}
+
+
+/**
+   MATCH_DESCEND: the sequence gate on value read through Datum (a
+   pair spine, a tuple, a list, or another sequence type; not a str,
+   bytes, mapping or iterator), and a cursor over it. A pair spine is
+   counted once here: a spine that loops raises ValueError, an
+   improper one is a miss. A list is read at its live length by every
+   later step. Returns 1 with *out_cursor a new reference, 0 on a
+   miss, -1 with an exception set.
+ */
+int KosMatchCursor_Descend(PyObject *value, PyObject **out_cursor);
+
+/**
+   MATCH_SINGLE: a cursor over the one-element subject value, which
+   is not read through Datum. New reference; NULL with an exception
+   set.
+ */
+PyObject *KosMatchCursor_Single(PyObject *value);
+
+/**
+   The elements left between cursor's position and its end, less its
+   reserve: the count of a spine, the live length of a list, the
+   length the cursor recorded for any other sequence. Never negative.
+ */
+static inline Py_ssize_t KosMatchCursor_Remaining(PyObject *cursor) {
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+  Py_ssize_t length = c->length;
+
+  if (c->kind == KOS_MATCH_CURSOR && PyList_Check(c->seq))
+    length = PyList_GET_SIZE(c->seq);
+  length -= c->reserve + c->index;
+  return length > 0 ? length : 0;
+}
+
+/**
+   MATCH_NEXT: pull one element and advance. The element is a new
+   Datum over the cell's car read through Datum, with the cell's
+   position, from a spine, and the item itself from a sequence or a
+   single value. Returns 1 with *out_elem a new reference and
+   *out_next the moved cursor (see held above), 0 at the end (no
+   element left, or a spine cell that is not a pair: user code cut the
+   spine ahead of the cursor), -1 with an exception set.
+ */
+int KosMatchCursor_Next(
+    PyObject *cursor,
+    Py_ssize_t held,
+    PyObject **out_elem,
+    PyObject **out_next);
+
+/**
+   MATCH_BOUND: a new cursor at cursor's position whose end is w
+   elements before cursor's end. Returns 1 with *out_bound a new
+   reference, 0 when fewer than w elements remain, -1 with an
+   exception set.
+ */
+int KosMatchCursor_Bound(
+    PyObject *cursor,
+    Py_ssize_t w,
+    PyObject **out_bound);
+
+/**
+   MATCH_UNBOUND: a new cursor at cursor's position with no reserve,
+   ending at its subject's end. New reference; NULL with an exception
+   set.
+ */
+PyObject *KosMatchCursor_Unbound(PyObject *cursor);
+
+
+/**
+   MATCH_SYNC: cursor moved to the position of to, a cursor over the
+   same subject (see held above). NULL with an exception set.
+ */
+static inline PyObject *KosMatchCursor_Sync(
+    PyObject *cursor,
+    PyObject *to,
+    Py_ssize_t held) {
+
+  KosMatchCursor *t = (KosMatchCursor *) to;
+
+  return KosMatchCursor_MoveTo(cursor, t->seq, t->index, held);
+}
+
+
+/**
+   MATCH_TAIL: the remaining elements less w, and cursor advanced past
+   them. The span over a sequence is a tuple of the items (a list read
+   within its live length); over a single value, a tuple of the value
+   or the empty tuple; over a spine, a Datum over the terminator when
+   it is empty, a Datum over its first cell (the sub-spine) when it
+   runs to the spine's end, else a tuple of a Datum per cell. Returns
+   1 with *out_span a new reference and *out_next the moved cursor
+   (see held above), 0 when fewer than w remain or the span is
+   shorter than min, -1 with an exception set, ValueError for a spine
+   user code cut inside the span.
+ */
+int KosMatchCursor_Tail(
+    PyObject *cursor,
+    Py_ssize_t w,
+    Py_ssize_t min,
+    Py_ssize_t held,
+    PyObject **out_span,
+    PyObject **out_next);
+
+
+/* === marks === */
+
+
+/* The slot capacity of a default mark, the size the freelist keeps. */
+#define KOS_MATCH_MARK_SLOTS  16
+
+
+/**
+   A capture scope's mark: the position of the cursor it was made at
+   (its kind, seq and index, as the cursor held them) and the scope's
+   count slot entries, NULL for an unbound slot. A mark of up to
+   KOS_MATCH_MARK_SLOTS slots is allocated at that capacity, a larger
+   one at its count; a mark never resizes. Its position never changes.
+   A write to its slots goes to a mark its stack entry alone holds:
+   KosMatchMark_Writable gives the mark or a copy for the caller to
+   store back at the entry, so a resumed continuation writes into its
+   own copy. Opaque to Python and not subclassable; tracked by the
+   collector.
+ */
+typedef struct KosMatchMark {
+  PyObject_VAR_HEAD
+  PyObject *seq;
+  Py_ssize_t index;
+  Py_ssize_t count;
+  unsigned char kind;
+  PyObject *slots[1];
+} KosMatchMark;
+
+
+extern PyTypeObject KosMatchMarkType;
+
+
+#define KosMatchMark_Check(obj)                                    \
+  ((obj) && ((obj)->ob_type == &KosMatchMarkType))
+
+/* The slot count, and slot i (borrowed; NULL when unbound) for
+   MATCH_LOAD and MATCH_SAME. The caller keeps i below the count. */
+#define KosMatchMark_COUNT(obj)    (((KosMatchMark *) (obj))->count)
+#define KosMatchMark_SLOT(obj, i)  (((KosMatchMark *) (obj))->slots[(i)])
+
+/* The position's index, for MATCH_SPAN's test for an empty span
+   against a cursor's index. */
+#define KosMatchMark_INDEX(obj)    (((KosMatchMark *) (obj))->index)
+
+
+/* The freed default-capacity marks KosMatchMark_New takes from,
+   chained through seq, and their count; matcher/mark.c frees into the
+   chain. Every slot of a mark on it is NULL. */
+extern KosMatchMark *kos_match_mark_free_list;
+extern int kos_match_mark_free_count;
+
+
+/**
+   A mark at seq, index and kind with count unbound slots from the
+   allocator, at the default capacity or at count when that is larger,
+   every slot NULL, and tracked. The path
+   KosMatchMark_New takes when the freelist is empty or count is past
+   the default capacity. New reference; NULL with an exception set,
+   SystemError for a negative count.
+ */
+PyObject *KosMatchMark_Allocate(
+    PyObject *seq,
+    Py_ssize_t index,
+    unsigned char kind,
+    Py_ssize_t count);
+
+
+/**
+   MATCH_SCOPE: a mark at cursor's position with count unbound slots,
+   from the freelist when count fits a default mark. Every mark is
+   tracked, as every cursor is: both hold the subject, which a
+   continuation captured during the walk can reach. New reference;
+   NULL with an exception set.
+ */
+static inline PyObject *KosMatchMark_New(
+    PyObject *cursor,
+    Py_ssize_t count) {
+
+  KosMatchCursor *c = (KosMatchCursor *) cursor;
+  KosMatchMark *m = kos_match_mark_free_list;
+
+  /* the unsigned compare sends a negative count to the allocator's
+     SystemError as well */
+  if (unlikely(! m || (size_t) count > KOS_MATCH_MARK_SLOTS))
+    return KosMatchMark_Allocate(c->seq, c->index, c->kind, count);
+
+  kos_match_mark_free_list = (KosMatchMark *) m->seq;
+  kos_match_mark_free_count--;
+  KOS_TRACE_FL_ALLOC("mark", 1);
+  _Py_NewReference((PyObject *) m);
+
+  Py_INCREF(c->seq);
+  m->seq = c->seq;
+  m->index = c->index;
+  m->kind = c->kind;
+  m->count = count;
+  PyObject_GC_Track((PyObject *) m);
+  return (PyObject *) m;
+}
+
+
+/**
+   MATCH_RESET: cursor moved back to mark's position (see held above).
+   NULL with an exception set.
+ */
+static inline PyObject *KosMatchMark_Reset(
+    PyObject *cursor,
+    PyObject *mark,
+    Py_ssize_t held) {
+
+  KosMatchMark *m = (KosMatchMark *) mark;
+
+  return KosMatchCursor_MoveTo(cursor, m->seq, m->index, held);
+}
+
+
+/**
+   MATCH_AT: the element at mark's position, as KosMatchCursor_Next
+   gave it. New reference; NULL with an exception set, ValueError when
+   the subject no longer holds the element (a list shrunk below the
+   position, a spine cell that is no longer a pair).
+ */
+PyObject *KosMatchMark_At(PyObject *mark);
+
+/**
+   MATCH_SPAN: the elements from mark's position to cursor's: the
+   empty tuple for none, the element as KosMatchMark_At gives it for
+   one, else a tuple of them (a Datum per cell over a spine). New
+   reference; NULL with an exception set, ValueError when the subject
+   no longer holds the span (a list shrunk below its end, a spine
+   that no longer reaches the cursor's cell from the mark's).
+ */
+PyObject *KosMatchMark_Span(PyObject *mark, PyObject *cursor);
+
+/**
+   A new mark holding mark's position and slot values, for a write to
+   a mark another entry also holds. New reference; NULL with an
+   exception set.
+ */
+PyObject *KosMatchMark_Copy(PyObject *mark);
+
+
+/**
+   The mark a write goes to: mark itself, borrowed, when held counts
+   every reference to it, else KosMatchMark_Copy's copy, a new
+   reference for the caller to store at the mark's stack entry. NULL
+   with an exception set.
+ */
+static inline PyObject *KosMatchMark_Writable(
+    PyObject *mark,
+    Py_ssize_t held) {
+
+  if (unlikely(Py_REFCNT(mark) != held))
+    return KosMatchMark_Copy(mark);
+  return mark;
+}
+
+
+/**
+   MATCH_STORE: value into slot i of mark, which must be writable,
+   consuming value on every path. When name is not NULL, a Datum value
+   and each Datum item of a tuple value take name as their binding.
+   0, or -1 with SystemError for an index outside the slot count.
+ */
+int KosMatchMark_Store(
+    PyObject *mark,
+    Py_ssize_t i,
     PyObject *value,
-    KosMatchSubject *out);
-
-
-void KosMatchSubject_Release(KosMatchSubject *subject);
-
-
-/* === engine entry === */
-
-
-/**
-   Run the matcher against the subject with the supplied extern
-   environment (PyTuple aligned to matcher->externs, or NULL when no
-   externs are required). Returns a new KosMatchResult reference on
-   success. On invalid invocation (missing/misaligned extern tuple, or
-   internal error) returns NULL with a Python exception set. Match
-   failure is not an error: it returns a KosMatchResult with
-   matched=False.
- */
-PyObject *KosMatcher_Match(
-    KosMatcher *matcher,
-    KosMatchSubject *subject,
-    PyObject *extern_env);
-
-
-/**
-   Allocation-lean core of ``KosMatcher_Match``: run the matcher and
-   report the outcome without building a MatchResult. ``extern_env``
-   is a borrowed value array aligned to the matcher's extern table
-   (``n_extern_env`` must equal the table length; NULL/0 when the
-   table is empty) -- a tuple's item array works directly. Returns 1
-   on a match with ``*out_caps`` set to a new reference to the capture
-   frame; 0 on no match with ``*out_caps`` set to NULL and nothing
-   allocated; -1 with a Python exception set on error.
- */
-int KosMatcher_Run(
-    KosMatcher *matcher,
-    KosMatchSubject *subject,
-    PyObject *const *extern_env,
-    Py_ssize_t n_extern_env,
-    PyObject **out_caps);
-
-
-/**
-   Number of capture slots in the matcher's slot table; the length of
-   the array the slot-array entries below fill.
- */
-#define KosMatcher_SLOT_COUNT(m)  PyTuple_GET_SIZE(((KosMatcher *) (m))->slots)
-
-
-/**
-   Slot-array entries a caller keeps in a stack buffer before spilling
-   to the heap; the common slot table is far smaller.
- */
-#define KOS_MATCH_SLOTS_INLINE 8
-
-
-/**
-   Frame-free core of ``KosMatcher_Run``: same arguments, but the
-   captures land in ``out_slots``, the caller's array of
-   ``KosMatcher_SLOT_COUNT`` entries aligned to the slot table. On a
-   match (1) each slot that fired holds a new reference and the rest
-   are NULL; on no match (0) or error (-1, exception set) every entry
-   is NULL and nothing is owned, the one exception being a call
-   rejected for a NULL matcher or array, which touches nothing. The
-   array need not be cleared beforehand. No dict or frame is built.
- */
-int KosMatcher_RunSlots(
-    KosMatcher *matcher,
-    KosMatchSubject *subject,
-    PyObject *const *extern_env,
-    Py_ssize_t n_extern_env,
-    PyObject **out_slots);
-
-
-/**
-   Vectorcall-style entry to ``KosMatcher_RunSlots``: ``ext_values`` is
-   a borrowed value array (a stack segment works as-is) named by the
-   aligned ``ext_names`` tuple. Each extern-table entry resolves from
-   the named values first, then the matcher's inbuilt extern defaults;
-   a genuine miss raises the matcher's missing-binding TypeError. When
-   the names cover the whole extern table in order the value array is
-   used as the env directly with no allocation. Captures go into the
-   caller's slot array; same returns as ``KosMatcher_RunSlots``.
- */
-int KosMatcher_RunSlotsVectorcall(
-    KosMatcher *matcher,
-    KosMatchSubject *subject,
-    PyObject *const *ext_values,
-    PyObject *ext_names,
-    PyObject **out_slots);
-
-
-/**
-   Thaw a frozen matcher 6-tuple (`("MATCHER", slots, externs, consts,
-   nodes, entry)`) into a native Matcher. Same reconstruction as the
-   `Matcher.from_tuple` classmethod. Returns a new reference on success;
-   NULL with a Python exception set on an invalid tuple.
- */
-PyObject *KosMatcher_FromTuple(PyObject *tuple);
-
-
-/**
-   Run matchers in sequence order against one subject until the first
-   successful match. ``kwargs`` is optional (NULL) and follows the same
-   extern resolution rules as ``Matcher.match`` for each arm.
-
-   Returns ``0`` on success: ``*out_result`` is a new ``MatchResult``
-   reference and ``*out_index`` is the winning index in ``matchers``.
-   Returns ``1`` if no arm matched (outs unchanged; caller should
-   pre-clear). Returns ``-1`` with a Python exception set (outs
-   unchanged).
- */
-int KosMatcher_MatchSelect(
-    PyObject *matchers,
-    PyObject *subject,
-    PyObject *kwargs,
-    PyObject **out_result,
-    Py_ssize_t *out_index);
-
-
-/**
-   Borrowed reference to the mutable matcher extern-defaults mapping.
-   Lazily allocates and inserts baseline entries on first call.
- */
-PyObject *KosMatcher_ExternDefaults(void);
-
-
-/**
-   Discard the singleton defaults dict and rebuild from baseline; returns
-   a borrowed reference to the fresh dict (same object identity rules
-   as KosMatcher_ExternDefaults).
- */
-PyObject *KosMatcher_ResetExternDefaults(void);
-
-
-/**
-   The version of the extern defaults: a number that changes on every
-   reset and every mutation of the dict, so an env resolved under one
-   version is what resolution yields while the version holds. The
-   compat header decides its source: the dict's own version tag, or a
-   counter bumped by a dict watcher where the tag is deprecated
-   (KOS_MATCHER_DEFAULTS_WATCHER).
- */
-uint64_t KosMatcher_ExternDefaultsVersion(void);
-
-/**
-   Resolve every extern of m from the defaults into a new tuple, in
-   extern-table order. Returns the tuple, or NULL with an exception
-   set when a default is missing.
- */
-PyObject *KosMatcher_ResolveDefaultEnv(KosMatcher *m);
-
-/**
-   Whether names covers m's extern table in order, so a value array
-   stacked under names is the env as-is. Names may be NULL or empty.
-   Returns 1, 0, or -1 with an exception set.
- */
-int KosMatcher_ExternNamesAligned(KosMatcher *m, PyObject *names);
-
-/**
-   The engine's first element test run on the bare subject with the
-   env in hand: the isinstance test, the sequence gate, or the mapping
-   gate that match_node would apply first, and nothing when the entry
-   has no such test. Returns 1 when the subject cannot match, 0 when
-   the engine must run, -1 with an exception set.
- */
-int KosMatcher_RootReject(
-    KosMatcher *m, PyObject *subject, PyObject *const *extern_env);
-
-
-/* === C-internal builder ===
-   The builder is the canonical low-level construction surface for a
-   KosMatcher. Callers append slots, externs, consts, and nodes
-   (bottom-up; child references must resolve to lower indices), then
-   finalize. Container kinds (GROUP, ONEOF) are appended through
-   dedicated entry points that take their child/branch indices and
-   stitch them together via the intrusive next links on KosMatchNode.
-   Finalize runs full validation (widths, slot/extern/const range
-   checks, REPEAT min-width, ≤1 REST per branch, post-REST determinacy,
-   no captures inside NOT) and constructs the immutable KosMatcher.
-
-   On any error the builder records a Python exception and the call
-   returns -1 (or NULL for KosMatcherBuilder_Finalize). The builder
-   should be freed with KosMatcherBuilder_Free in either case.
-*/
-
-
-typedef struct KosMatcherBuilder KosMatcherBuilder;
-
-
-KosMatcherBuilder *KosMatcherBuilder_New(void);
-
-void KosMatcherBuilder_Free(KosMatcherBuilder *builder);
-
-/**
-   Append a capture slot name. Returns the new slot index, or -1 on
-   error. The builder takes a new reference to name.
- */
-int KosMatcherBuilder_AddSlot(
-    KosMatcherBuilder *builder,
     PyObject *name);
 
 /**
-   Append an extern parameter name. Returns the new extern index, or -1
-   on error. The builder takes a new reference to name.
+   MATCH_CLEAR: empty the slots of mark (writable) that slots, a tuple
+   of int indices, names. 0, or -1 with an exception set, SystemError
+   for an index outside the slot count.
  */
-int KosMatcherBuilder_AddExtern(
-    KosMatcherBuilder *builder,
-    PyObject *name);
+int KosMatchMark_Clear(PyObject *mark, PyObject *slots);
 
 /**
-   Append a constant value. Returns the new const index, or -1 on
-   error. The builder takes a new reference to value.
+   A plain dict of mark's bound slots keyed by names, a tuple of one
+   name per slot: a REPEAT pass's captures over any subject. New
+   reference; NULL with an exception set, SystemError when names does
+   not have one name per slot.
  */
-int KosMatcherBuilder_AddConst(
-    KosMatcherBuilder *builder,
-    PyObject *value);
+PyObject *KosMatchMark_Dict(PyObject *mark, PyObject *names);
 
 /**
-   Append a non-container node. Caller fills KosMatchNode kind and
-   payload; min_width, max_width, and next are filled by the builder.
-   The builder rejects appends whose subnode references the current
-   count or higher (forward refs).
-
-   Container kinds (MATCH, GROUP, ONEOF) are not accepted here; use
-   KosMatcherBuilder_AppendMatch / KosMatcherBuilder_AppendGroup /
-   KosMatcherBuilder_AppendOneof instead.
-
-   Returns the index of the appended node, or -1 on error.
+   MATCH_CAPTURES: the scope's captures, mark's bound slots keyed by
+   names. Over a sequence or a single value a plain dict; over a pair
+   spine a DatumFrame whose source is the span from mark's position to
+   cursor's (the first cell itself when the span is empty or runs to
+   the spine's end, the car read through Datum for one cell, else a
+   tuple of the cars read through Datum) and whose position is the
+   first cell's. The frame references the span, never the mark. New
+   reference; NULL with an exception set, ValueError when the spine
+   no longer reaches the cursor's cell from the mark's.
  */
-int KosMatcherBuilder_AppendNode(
-    KosMatcherBuilder *builder,
-    const KosMatchNode *node);
+PyObject *KosMatchMark_Captures(
+    PyObject *mark,
+    PyObject *cursor,
+    PyObject *names);
 
 /**
-   Append a MATCH node (sequential spine, flat capture dict). Children
-   are stitched via next links; first_child is the head index.
-
-   Returns the index of the new MATCH node, or -1 on error.
+   MATCH_PASS: one REPEAT pass's value. When any slot of mark is
+   bound, KosMatchMark_Dict, or KosMatchMark_Captures when captures is
+   set (a REPEAT whose body is a GROUP); else the pass's span from
+   mark's position to cursor's, as KosMatchMark_Span gives it. New
+   reference; NULL with an exception set.
  */
-int KosMatcherBuilder_AppendMatch(
-    KosMatcherBuilder *builder,
-    const uint32_t *children,
-    Py_ssize_t count);
+PyObject *KosMatchMark_Pass(
+    PyObject *mark,
+    PyObject *cursor,
+    PyObject *names,
+    int captures);
 
 /**
-   Append a GROUP node: children are stitched like MATCH. Inner captures
-   write into a fresh sub-dict; bind that dict with CAPTURE(slot, GROUP(...)).
-
-   Returns the index of the new GROUP node, or -1 on error.
+   MATCH_COLUMNS: for each name in names, the list of its values in
+   the pass dicts of items that bound it, in pass order, stored into
+   mark's (writable) slot at the same position in slots, a tuple of
+   int indices; the empty list when no pass bound it or there are no
+   passes. items is read, not written. 0, or -1 with an
+   exception set, SystemError for an index outside the slot count or
+   names and slots of different lengths.
  */
-int KosMatcherBuilder_AppendGroup(
-    KosMatcherBuilder *builder,
-    const uint32_t *children,
-    Py_ssize_t count);
-
-/**
-   Append a ONEOF node whose branches are the supplied node indices in
-   order. Behaves like KosMatcherBuilder_AppendMatch but the chain
-   indicates branch order rather than sibling sequence.
-
-   Returns the index of the new ONEOF node, or -1 on error.
- */
-int KosMatcherBuilder_AppendOneof(
-    KosMatcherBuilder *builder,
-    const uint32_t *branches,
-    Py_ssize_t count);
-
-/**
-   Append a positional FIELD node referencing an existing width-1
-   sub-matcher. Forward references are rejected. The FIELD has no
-   stored attribute name; its position in the parent CLASS's chain
-   determines its index into the runtime-resolved __match_args__.
-
-   Returns the index of the new FIELD node, or -1 on error.
- */
-int KosMatcherBuilder_AppendFieldPositional(
-    KosMatcherBuilder *builder,
-    uint32_t subnode);
-
-/**
-   Append a keyword FIELD node referencing an existing width-1
-   sub-matcher and an attribute name stored in the matcher's consts
-   pool. The caller is responsible for having already added the
-   attribute name (a Python str) to the const pool via
-   KosMatcherBuilder_AddConst; pass the resulting index as
-   name_const. Range-checks name_const against the current consts
-   list size; type-checks (PyUnicode_Check) of the referenced const
-   value happen at finalize alongside other index validation.
-
-   Returns the index of the new FIELD node, or -1 on error.
- */
-int KosMatcherBuilder_AppendFieldKeyword(
-    KosMatcherBuilder *builder,
-    uint32_t subnode,
-    uint32_t name_const);
-
-/**
-   Append a CLASS node whose fields are the supplied FIELD-node
-   indices in order. Behaves like KosMatcherBuilder_AppendMatch but
-   stitches a chain through FIELD `next` links: positional FIELDs
-   must precede any keyword FIELDs (validator enforces this at
-   finalize). type_extern is range-checked at finalize against the
-   matcher's extern tuple; each fields[i] must reference a node
-   already appended whose kind is KOS_MATCH_NODE_FIELD with
-   `next == NO_INDEX`, with no duplicates.
-
-   Returns the index of the new CLASS node, or -1 on error.
- */
-int KosMatcherBuilder_AppendClass(
-    KosMatcherBuilder *builder,
-    uint32_t type_extern,
-    const uint32_t *fields,
-    Py_ssize_t count);
-
-/**
-   Append a MAP_ENTRY node: one mapping-pattern entry. key_kind selects
-   whether key_ref indexes the consts pool (a literal key) or the
-   extern table (a key resolved from the namespace at match time);
-   subnode is an existing width-1 sub-matcher for the looked-up value,
-   or KOS_MATCH_NO_INDEX for a presence-only check.
-
-   Returns the index of the new MAP_ENTRY node, or -1 on error.
- */
-int KosMatcherBuilder_AppendMapEntry(
-    KosMatcherBuilder *builder,
-    uint16_t key_kind,
-    uint32_t key_ref,
-    uint32_t subnode);
-
-/**
-   Append a MAP node whose entries are the supplied MAP_ENTRY-node indices
-   in order, stitched into a chain through their `next` links (same
-   contract as KosMatcherBuilder_AppendClass over FIELDs).
-
-   Returns the index of the new MAP node, or -1 on error.
- */
-int KosMatcherBuilder_AppendMap(
-    KosMatcherBuilder *builder,
-    const uint32_t *entries,
-    Py_ssize_t count);
-
-/**
-   Run full validation, build, and return a new KosMatcher (a new
-   reference). On validation failure, sets a Python exception and
-   returns NULL. The builder should still be freed afterward.
- */
-PyObject *KosMatcherBuilder_Finalize(
-    KosMatcherBuilder *builder,
-    uint32_t entry);
+int KosMatchMark_Columns(
+    PyObject *mark,
+    PyObject *items,
+    PyObject *names,
+    PyObject *slots);
 
 
 /* === unit lifecycle === */

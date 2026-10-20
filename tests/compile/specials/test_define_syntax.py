@@ -22,11 +22,9 @@ Integration tests for define with syntax and macro transformers.
 import pytest
 
 from koskari.compile import Compiler
-from koskari.exceptions import CompilerError
-from koskari.lib import OpCode, build_list, build_tuple, cons, nil, symbol
-from koskari.syntax import (
-    Syntax, build_macro, build_special, build_syntax, parse_match_pattern,
-    parse_rule_pattern)
+from koskari.exceptions import CompilerError, SpecialError
+from koskari.lib import build_list, build_tuple, cons, nil, symbol
+from koskari.syntax import Syntax, build_macro, build_special, build_syntax
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -41,8 +39,6 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('build-syntax', build_syntax)
         defns.setdefault('build-macro', build_macro)
         defns.setdefault('build-special', build_special)
-        defns.setdefault('parse-match-pattern', parse_match_pattern)
-        defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_expr(src_str, **defns)
 
 
@@ -54,8 +50,6 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('build-syntax', build_syntax)
         defns.setdefault('build-macro', build_macro)
         defns.setdefault('build-special', build_special)
-        defns.setdefault('parse-match-pattern', parse_match_pattern)
-        defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_to_code(
             src_str, lineno=lineno,
             resolution_mode=resolution_mode,
@@ -258,6 +252,83 @@ class TestCompileSyntaxRules(DefineSyntaxCompileHelpers):
         """
         with self.assertRaises(Exception):
             self.compile_expr(src_str, **defn)
+
+
+class TestCoreTypesAreNotModuleNames(DefineSyntaxCompileHelpers):
+
+    async def test_module_binding_of_symbol_does_not_reach_the_rule(self):
+        # the head of every rule is a symbol test; it is a core type
+        # test and reads nothing from the module, so a module that binds
+        # symbol to something else, before or after the definition,
+        # still expands the macro
+        src_str = """
+        (begin
+          (define symbol 5)
+          (define pick (syntax-rules pick [] [(pick x) x]))
+          (define pair (lambda [x] False)))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/pick': vars(mod)['pick']}
+        expr, mod = self.compile_expr("(pick 42)", **defn)
+        self.assertEqual(42, await expr())
+
+
+class TestRulePatternValidation(DefineSyntaxCompileHelpers):
+
+    async def test_zero_width_repeat_is_refused_at_definition(self):
+        # a repeat whose element may match nothing would never advance;
+        # the definition refuses it, not the first use
+        src_str = """
+        (define m
+          (syntax-match m
+            [(m (REPEAT xs (OPTIONAL (VALUE e)) min: 0)) 1]))
+        """
+        with self.assertRaises(CompilerError) as caught:
+            self.compile_expr(src_str)
+        self.assertIn("REPEAT", str(caught.exception))
+
+
+    def test_core_refusals_at_definition(self):
+        # each pattern the matcher core refuses is refused where the
+        # rule is written, as a SpecialError at the pattern
+        for head in ("syntax-match", "macro-match", "special-match"):
+            for pattern in (
+                    "(m (FORM a (LITERAL (1 2))))",
+                    "(m (ONEOF a (LITERAL (1 2))))",
+                    "(m (FORM a (NOT (VALUE x))))",
+                    "(m (FORM a (REST r) (REPEAT xs (VALUE e) min: 0)))",
+                    "(m (REPEAT xs (VALUE x) min: 70000))"):
+                src_str = f"(define m ({head} m [{pattern} 1]))"
+                with self.assertRaises(SpecialError, msg=src_str):
+                    self.compile_expr(src_str)
+
+
+    def test_name_bound_twice_is_refused_at_definition(self):
+        for pattern in ("(m (VALUE x) (VALUE x))",
+                        "(m (ONEOF (VALUE x) 1) (VALUE x))"):
+            src_str = f"(define m (syntax-match m [{pattern} 1]))"
+            with self.assertRaises(SpecialError, msg=src_str):
+                self.compile_expr(src_str)
+
+
+class TestRepeatedVariableInEllipsis(DefineSyntaxCompileHelpers):
+
+    async def test_repeated_variable_binds_per_iteration(self):
+        # (a a) under an ellipsis: the second a is a SAME of the
+        # iteration's own a, not of an outer one
+        src_str = """
+        (define m
+          (syntax-rules m []
+            [(m (a a) ...) (quote (a ...))]))
+        """
+        expr, mod = self.compile_expr(src_str)
+        await expr()
+        defn = {'compile/m': vars(mod)['m']}
+        expr, mod = self.compile_expr("(m (1 1) (2 2))", **defn)
+        self.assertEqual(cons(1, 2, nil), await expr())
+        with self.assertRaises(CompilerError):
+            self.compile_expr("(m (1 2))", **defn)
 
 
 class TestCompileMacroRules(DefineSyntaxCompileHelpers):
@@ -610,6 +681,28 @@ class TestCompileSyntaxMatch(DefineSyntaxCompileHelpers):
         expr, mod = self.compile_expr(src_str, **defn)
         result = await expr()
         self.assertEqual(2, result)
+
+
+    async def test_compile_syntax_match_extern_named_match_subject(self):
+        # a TYPE extern spelled match-subject reads the module's binding,
+        # not the subject the rule's matcher function takes
+        src_str = """
+        (begin
+          (define match-subject int)
+          (define ext
+            (syntax-match ext
+              [(ext (TYPE match-subject)) "int-arm"]
+              [(ext (VALUE y)) "other-arm"])))
+        """
+        expr, mod = self.compile_expr(src_str, int=int)
+        await expr()
+        defn = {'compile/ext': vars(mod)['ext']}
+
+        expr, mod = self.compile_expr("(ext 7)", **defn)
+        self.assertEqual("int-arm", await expr())
+
+        expr, mod = self.compile_expr('(ext "s")', **defn)
+        self.assertEqual("other-arm", await expr())
 
 
 class TestCompileMacroMatch(DefineSyntaxCompileHelpers):

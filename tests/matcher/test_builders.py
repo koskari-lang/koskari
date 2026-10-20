@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for the koskari.matcher builder API: per-primitive freeze
-shapes, slot/extern/const interning, build->match round-trips, eager
+Tests for the koskari.matcher builder API: per-primitive matches and
+misses, slot/extern/const interning, build->match round-trips, eager
 validation negatives, ergonomic shorthand semantics, and cross-cutting
 integration.
 """
@@ -23,221 +23,249 @@ import unittest
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, pair, symbol
+from koskari.lib import cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     BIND, CAPTURE, CLASS, FIELD, FORM, GROUP, LIST, LITERAL, LITERAL_KW,
     LITERAL_SYM, MATCH, NOT, ONEOF, OPTIONAL, PAIR, PREDICATE, REPEAT, REST,
-    SYMBOL, TEST_ANY, TYPE, VALUE, Matcher, MatchResult, make_matcher, thaw)
+    SYMBOL, TEST_ANY, TYPE, VALUE, make_matcher, pattern_slot_names)
+from koskari.matcher.tables import TableBuilder
+from koskari.types import is_symbol
 
 
 pytestmark = pytest.mark.phase_infra
 
 
-# === Per-primitive freeze shape tests ===
+# === Per-primitive matches and misses ===
 
 
-class TestPrimitiveFreezeShapes(unittest.TestCase):
+class Point:
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x=0, y=0, color=None):
+        self.x = x
+        self.y = y
+        if color is not None:
+            self.color = color
 
 
-    def test_test_any_emits_any_node(self):
+class TestPrimitiveMatches(unittest.TestCase):
+
+
+    def test_test_any_matches_any_one_element(self):
         """
-        TEST_ANY emits a single ('TEST', 'ANY', -1) node
-        """
-
-        frozen = TEST_ANY().freeze()
-        self.assertEqual(frozen[4], (("TEST", "ANY", -1),))
-        self.assertEqual(frozen[5], 0)
-
-
-    def test_literal_interns_const(self):
-        """
-        LITERAL writes its value into consts and emits a TEST/LITERAL
-        node referencing that index
-        """
-
-        frozen = LITERAL(7).freeze()
-        self.assertEqual(frozen[3], (7,))
-        self.assertEqual(frozen[4], (("TEST", "LITERAL", 0),))
-
-
-    def test_type_interns_extern(self):
-        """
-        TYPE writes its extern name into externs and emits a TEST/TYPE
-        node referencing that index
+        TEST_ANY matches one element of any value
         """
 
-        frozen = TYPE("symbol").freeze()
-        self.assertEqual(frozen[2], ("symbol",))
-        self.assertEqual(frozen[4], (("TEST", "TYPE", 0),))
+        m = demand(make_matcher(MATCH(TEST_ANY())))
+        self.assertEqual(m((1,)), {})
+        self.assertEqual(m(("x",)), {})
+        self.assertIsNone(m(()))
+        self.assertIsNone(m((1, 2)))
 
 
-    def test_predicate_interns_extern(self):
+    def test_literal_matches_its_value(self):
         """
-        PREDICATE writes its extern name into externs and emits a
-        TEST/PREDICATE node referencing that index
-        """
-
-        frozen = PREDICATE("is_symbol").freeze()
-        self.assertEqual(frozen[2], ("is_symbol",))
-        self.assertEqual(frozen[4], (("TEST", "PREDICATE", 0),))
-
-
-    def test_capture_no_subnode_emits_minus_one(self):
-        """
-        CAPTURE without a sub-pattern emits subnode -1
+        LITERAL matches an element equal to its value, of its type
         """
 
-        frozen = CAPTURE("x").freeze()
-        self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[4], (("CAPTURE", 0, -1),))
+        m = demand(make_matcher(MATCH(LITERAL(7))))
+        self.assertEqual(m((7,)), {})
+        self.assertIsNone(m((8,)))
+        self.assertIsNone(m(("7",)))
 
 
-    def test_capture_with_sub_emits_post_order(self):
+    def test_type_tests_the_extern(self):
         """
-        CAPTURE wrapping TYPE emits the TYPE node first then a CAPTURE
-        whose subnode index references the TYPE
-        """
-
-        frozen = CAPTURE("x", TYPE("symbol")).freeze()
-        self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("symbol",))
-        self.assertEqual(
-            frozen[4],
-            (("TEST", "TYPE", 0), ("CAPTURE", 0, 0)))
-        self.assertEqual(frozen[5], 1)
-
-
-    def test_form_emits_post_order(self):
-        """
-        FORM emits its subnode first then a FORM node referencing it
+        TYPE matches an instance of the type its extern names, and the
+        extern must be given at build
         """
 
-        frozen = FORM(TEST_ANY()).freeze()
-        self.assertEqual(
-            frozen[4], (("TEST", "ANY", -1), ("FORM", 0)))
-        self.assertEqual(frozen[5], 1)
+        m = demand(make_matcher(MATCH(TYPE("Point")), {"Point": Point}))
+        self.assertEqual(m((Point(),)), {})
+        self.assertIsNone(m((1,)))
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(TYPE("Point")).build()
 
 
-    def test_match_collects_children(self):
+    def test_core_type_is_an_ordinal_not_an_extern(self):
         """
-        MATCH emits each child then a MATCH node listing them in order
-        """
-
-        frozen = MATCH(TEST_ANY(), TEST_ANY()).freeze()
-        self.assertEqual(
-            frozen[4],
-            (("TEST", "ANY", -1),
-             ("TEST", "ANY", -1),
-             ("MATCH", 0, 1)))
-        self.assertEqual(frozen[5], 2)
-
-
-    def test_named_group_emits_group_node_with_slot_index(self):
-        """
-        GROUP(slot, ...) reserves the slot name and lowers to GROUP
-        children plus a wrapping CAPTURE for the outer slot
+        A core type name needs no extern: it builds with none and
+        matches a value of that core type
         """
 
-        frozen = GROUP("g", CAPTURE("a")).freeze()
-        self.assertEqual(frozen[1], ("g", "a"))
-        self.assertEqual(
-            frozen[4],
-            (("CAPTURE", 1, -1),
-             ("GROUP", 0),
-             ("CAPTURE", 0, 1)))
-        self.assertEqual(frozen[5], 2)
+        for name, value in (
+                ("pair", cons(1, nil)),
+                ("symbol", symbol("a")),
+                ("keyword", keyword("k")),
+                ("int", 1),
+                ("str", "s"),
+                ("tuple", (1,)),
+                ("list", [1])):
+            m = demand(make_matcher(MATCH(TYPE(name))))
+            self.assertEqual(m((value,)), {}, name)
+            self.assertIsNone(m((1.5,)), name)
 
 
-    def test_rest_emits_rest_then_capture_when_named(self):
+    def test_predicate_calls_the_extern(self):
         """
-        REST with a slot lowers to REST(min_tail) then CAPTURE
-        """
-
-        frozen = REST("rest").freeze()
-        self.assertEqual(frozen[1], ("rest",))
-        self.assertEqual(
-            frozen[4], (("REST", 0), ("CAPTURE", 0, 0)))
-
-
-    def test_oneof_collects_branches(self):
-        """
-        ONEOF emits each branch then a ONEOF node listing them in order
+        PREDICATE matches an element its extern returns true for
         """
 
-        frozen = ONEOF(TEST_ANY(), TEST_ANY()).freeze()
-        self.assertEqual(
-            frozen[4],
-            (("TEST", "ANY", -1),
-             ("TEST", "ANY", -1),
-             ("ONEOF", 0, 1)))
+        m = demand(make_matcher(
+            MATCH(PREDICATE("is_symbol")), {"is_symbol": is_symbol}))
+        self.assertEqual(m((symbol("a"),)), {})
+        self.assertIsNone(m((1,)))
 
 
-    def test_repeat_emits_post_order(self):
+    def test_capture_no_subnode_binds_one_element(self):
         """
-        REPEAT emits its subnode first then a REPEAT referencing it
+        CAPTURE without a sub-pattern binds any one element
         """
 
-        frozen = REPEAT(TEST_ANY()).freeze()
-        self.assertEqual(
-            frozen[4], (("TEST", "ANY", -1), ("REPEAT", 0, 0)))
+        m = demand(make_matcher(MATCH(CAPTURE("x"))))
+        self.assertEqual(m((1,)), {"x": 1})
+        self.assertIsNone(m(()))
 
 
-    def test_optional_emits_post_order(self):
+    def test_capture_with_sub_binds_what_the_sub_matched(self):
         """
-        OPTIONAL emits its subnode first then an OPTIONAL referencing it
-        """
-
-        frozen = OPTIONAL(TEST_ANY()).freeze()
-        self.assertEqual(
-            frozen[4], (("TEST", "ANY", -1), ("OPTIONAL", 0)))
-
-
-    def test_not_emits_post_order(self):
-        """
-        NOT emits its subnode first then a NOT referencing it
+        CAPTURE wrapping TYPE binds the element the TYPE matched
         """
 
-        frozen = NOT(TEST_ANY()).freeze()
-        self.assertEqual(
-            frozen[4], (("TEST", "ANY", -1), ("NOT", 0)))
+        m = demand(make_matcher(
+            MATCH(CAPTURE("x", TYPE("Point"))), {"Point": Point}))
+        p = Point()
+        self.assertIs(m((p,))["x"], p)
+        self.assertIsNone(m((1,)))
 
 
-    def test_class_empty_emits_extern_only(self):
+    def test_form_matches_a_nested_sequence(self):
         """
-        CLASS with no field children emits ('CLASS', extern_idx)
+        FORM matches an element that is a sequence its sub-pattern
+        matches all of; a str is not a sequence
         """
 
-        frozen = CLASS("Point").freeze()
-        self.assertEqual(frozen[2], ("Point",))
-        self.assertEqual(frozen[4], (("CLASS", 0),))
+        m = demand(make_matcher(MATCH(FORM(TEST_ANY()))))
+        self.assertEqual(m(((1,),)), {})
+        self.assertEqual(m(([1],)), {})
+        self.assertIsNone(m(((1, 2),)))
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m(("a",)))
+
+
+    def test_match_runs_its_children_in_order(self):
+        """
+        MATCH matches its children one after another and the whole of
+        the subject
+        """
+
+        m = demand(make_matcher(MATCH(LITERAL(1), LITERAL(2))))
+        self.assertEqual(m((1, 2)), {})
+        self.assertIsNone(m((2, 1)))
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m((1, 2, 3)))
+
+
+    def test_named_group_captures_its_children(self):
+        """
+        GROUP(slot, ...) binds the slot to its children's captures
+        """
+
+        m = demand(make_matcher(MATCH(GROUP("g", CAPTURE("a")))))
+        self.assertEqual(m((1,)), {"g": {"a": 1}})
+        self.assertIsNone(m(()))
+
+
+    def test_rest_binds_the_remaining_elements(self):
+        """
+        REST with a slot binds the remaining elements, none included
+        """
+
+        m = demand(make_matcher(MATCH(REST("rest"))))
+        self.assertEqual(m((1, 2)), {"rest": (1, 2)})
+        self.assertEqual(m(()), {"rest": ()})
+
+
+    def test_oneof_takes_the_first_branch_that_matches(self):
+        """
+        ONEOF tries its branches in order and takes the first that
+        matches
+        """
+
+        m = demand(make_matcher(MATCH(ONEOF(LITERAL(1), CAPTURE("x")))))
+        self.assertEqual(m((1,)), {})
+        self.assertEqual(m((2,)), {"x": 2})
+        self.assertIsNone(m(()))
+
+
+    def test_repeat_matches_zero_or_more(self):
+        """
+        REPEAT matches its sub-pattern any number of times
+        """
+
+        m = demand(make_matcher(MATCH(REPEAT(LITERAL(1)))))
+        self.assertEqual(m(()), {})
+        self.assertEqual(m((1, 1, 1)), {})
+        self.assertIsNone(m((1, 2)))
+
+
+    def test_optional_matches_zero_or_one(self):
+        """
+        OPTIONAL matches its sub-pattern once or not at all
+        """
+
+        m = demand(make_matcher(MATCH(OPTIONAL(LITERAL(1)), LITERAL(2))))
+        self.assertEqual(m((2,)), {})
+        self.assertEqual(m((1, 2)), {})
+        self.assertIsNone(m((1, 1, 2)))
+
+
+    def test_not_consumes_nothing(self):
+        """
+        NOT succeeds where its sub-pattern does not match and consumes
+        no element
+        """
+
+        m = demand(make_matcher(MATCH(NOT(LITERAL(1)), TEST_ANY())))
+        self.assertEqual(m((2,)), {})
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m(()))
+
+
+    def test_class_empty_is_an_isinstance_test(self):
+        """
+        CLASS with no field children matches an instance of its type
+        """
+
+        m = demand(make_matcher(MATCH(CLASS("Point")), {"Point": Point}))
+        self.assertEqual(m((Point(),)), {})
+        self.assertIsNone(m((1,)))
 
 
     def test_class_with_positional_field(self):
         """
-        CLASS containing a positional FIELD emits FIELD_POS then CLASS
+        A positional FIELD matches the attribute at its __match_args__
+        position
         """
 
-        frozen = CLASS("Point", FIELD(TEST_ANY())).freeze()
-        self.assertEqual(
-            frozen[4],
-            (("TEST", "ANY", -1),
-             ("FIELD_POS", 0),
-             ("CLASS", 0, 1)))
+        m = demand(make_matcher(
+            MATCH(CLASS("Point", FIELD(LITERAL(3)))), {"Point": Point}))
+        self.assertEqual(m((Point(3),)), {})
+        self.assertIsNone(m((Point(4),)))
 
 
     def test_class_with_keyword_field(self):
         """
-        CLASS containing a keyword FIELD emits FIELD_KW carrying the
-        attribute name as a literal third tuple element
+        A keyword FIELD matches the attribute it names, and misses an
+        instance without it
         """
 
-        frozen = CLASS(
-            "Point", FIELD(TEST_ANY(), name="color")).freeze()
-        self.assertEqual(
-            frozen[4],
-            (("TEST", "ANY", -1),
-             ("FIELD_KW", 0, "color"),
-             ("CLASS", 0, 1)))
+        m = demand(make_matcher(
+            MATCH(CLASS("Point", FIELD(LITERAL("red"), name="color"))),
+            {"Point": Point}))
+        self.assertEqual(m((Point(color="red"),)), {})
+        self.assertIsNone(m((Point(color="blue"),)))
+        self.assertIsNone(m((Point(),)))
 
 
 # === Slot/extern/const interning tests ===
@@ -248,12 +276,14 @@ class TestInterning(unittest.TestCase):
 
     def test_distinct_slots_in_declaration_order(self):
         """
-        Two CAPTURE patterns with distinct slot names are appended in
-        declaration order
+        Two CAPTURE patterns with distinct slot names are formals in
+        declaration order, and the captures keep that order
         """
 
-        frozen = MATCH(CAPTURE("a"), CAPTURE("b")).freeze()
-        self.assertEqual(frozen[1], ("a", "b"))
+        pattern = MATCH(CAPTURE("a"), CAPTURE("b"))
+        self.assertEqual(pattern_slot_names(pattern), ["a", "b"])
+        captures = demand(make_matcher(pattern))((1, 2))
+        self.assertEqual(list(captures), ["a", "b"])
 
 
     def test_const_dedup_same_value(self):
@@ -261,12 +291,12 @@ class TestInterning(unittest.TestCase):
         Two LITERAL(7) references share const idx 0
         """
 
-        frozen = ONEOF(LITERAL(7), LITERAL(7)).freeze()
-        self.assertEqual(frozen[3], (7,))
+        tables = TableBuilder().lower(ONEOF(LITERAL(7), LITERAL(7)))
+        self.assertEqual(tables[2], (7,))
         self.assertEqual(
-            frozen[4][0], ("TEST", "LITERAL", 0))
+            tables[3][0], ("TEST", "LITERAL", 0))
         self.assertEqual(
-            frozen[4][1], ("TEST", "LITERAL", 0))
+            tables[3][1], ("TEST", "LITERAL", 0))
 
 
     def test_const_type_aware_dedup(self):
@@ -275,12 +305,12 @@ class TestInterning(unittest.TestCase):
         as 7 and '7'
         """
 
-        frozen = ONEOF(LITERAL(7), LITERAL("7")).freeze()
-        self.assertEqual(frozen[3], (7, "7"))
+        tables = TableBuilder().lower(ONEOF(LITERAL(7), LITERAL("7")))
+        self.assertEqual(tables[2], (7, "7"))
         self.assertEqual(
-            frozen[4][0], ("TEST", "LITERAL", 0))
+            tables[3][0], ("TEST", "LITERAL", 0))
         self.assertEqual(
-            frozen[4][1], ("TEST", "LITERAL", 1))
+            tables[3][1], ("TEST", "LITERAL", 1))
 
 
     def test_const_zero_vs_false(self):
@@ -288,17 +318,17 @@ class TestInterning(unittest.TestCase):
         LITERAL(0) and LITERAL(False) intern to separate consts
         """
 
-        frozen = ONEOF(LITERAL(0), LITERAL(False)).freeze()
-        self.assertEqual(frozen[3], (0, False))
+        tables = TableBuilder().lower(ONEOF(LITERAL(0), LITERAL(False)))
+        self.assertEqual(tables[2], (0, False))
 
 
     def test_extern_dedup(self):
         """
-        Two TYPE('symbol') references share extern idx 0
+        Two TYPE('Point') references share extern idx 0
         """
 
-        frozen = ONEOF(TYPE("symbol"), TYPE("symbol")).freeze()
-        self.assertEqual(frozen[2], ("symbol",))
+        tables = TableBuilder().lower(ONEOF(TYPE("Point"), TYPE("Point")))
+        self.assertEqual(tables[1], ("Point",))
 
 
     def test_class_extern_in_declaration_order(self):
@@ -307,31 +337,21 @@ class TestInterning(unittest.TestCase):
         order
         """
 
-        pat = CLASS("Point", FIELD(TYPE("int"), name="x"))
-        frozen = pat.freeze()
-        self.assertEqual(frozen[2], ("Point", "int"))
+        pat = CLASS("Point", FIELD(TYPE("Coord"), name="x"))
+        tables = TableBuilder().lower(pat)
+        self.assertEqual(tables[1], ("Point", "Coord"))
 
 
-# === Build -> thaw -> match round-trips ===
+# === Build -> match round-trips ===
 
 
 class TestBuildAndMatch(unittest.TestCase):
 
 
-    def test_build_returns_native_matcher(self):
-        """
-        build() yields a real Matcher instance whose tables match the
-        builder's freeze
-        """
-
-        m = TEST_ANY().build()
-        self.assertIsInstance(m, Matcher)
-
-
     def test_lambda_pattern_round_trip(self):
         """
-        Build a lambda-shaped pattern and verify it matches the same
-        subject as the hand-built test_thaw lambda example
+        Build a lambda-shaped pattern and verify it matches a
+        lambda-shaped subject
         """
 
         pat = MATCH(
@@ -342,17 +362,13 @@ class TestBuildAndMatch(unittest.TestCase):
             REST("body"),
         )
         m = pat.build()
-        self.assertEqual(m.slots, ("name", "body"))
-        self.assertEqual(m.externs, ("symbol",))
-        self.assertEqual(m.consts, ("::",))
 
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj, symbol=symbol)
-        self.assertIsInstance(result, MatchResult)
-        self.assertTrue(result.matched)
-        self.assertIs(result.captures["name"], subj[0])
+        result = demand(m)(subj)
+        self.assertIsNotNone(result)
+        self.assertIs(result["name"], subj[0])
         self.assertEqual(
-            result.captures["body"], ("b1", "b2"))
+            result["body"], ("b1", "b2"))
 
 
     def test_oneof_omits_other_branch_slots(self):
@@ -366,15 +382,15 @@ class TestBuildAndMatch(unittest.TestCase):
             MATCH(CAPTURE("ys", LITERAL("Y"))),
         )
         m = pat.build()
-        r1 = m.match(["X"])
-        self.assertTrue(r1.matched)
-        self.assertEqual(r1.captures["xs"], "X")
-        self.assertNotIn("ys", r1.captures)
+        r1 = demand(m)(["X"])
+        self.assertIsNotNone(r1)
+        self.assertEqual(r1["xs"], "X")
+        self.assertNotIn("ys", r1)
 
-        r2 = m.match(["Y"])
-        self.assertTrue(r2.matched)
-        self.assertNotIn("xs", r2.captures)
-        self.assertEqual(r2.captures["ys"], "Y")
+        r2 = demand(m)(["Y"])
+        self.assertIsNotNone(r2)
+        self.assertNotIn("xs", r2)
+        self.assertEqual(r2["ys"], "Y")
 
 
     def test_rest_against_tuple_and_kospair(self):
@@ -386,17 +402,17 @@ class TestBuildAndMatch(unittest.TestCase):
 
         m = pat.build()
 
-        r_tuple = m.match((1, 2, 3))
-        self.assertTrue(r_tuple.matched)
-        self.assertEqual(r_tuple.captures["head"], 1)
+        r_tuple = demand(m)((1, 2, 3))
+        self.assertIsNotNone(r_tuple)
+        self.assertEqual(r_tuple["head"], 1)
         self.assertEqual(
-            r_tuple.captures["tail"], (2, 3))
+            r_tuple["tail"], (2, 3))
 
-        r_pair = m.match(cons(1, 2, 3, nil))
-        self.assertTrue(r_pair.matched)
-        self.assertEqual(r_pair.captures["head"].datum, 1)
+        r_pair = demand(m)(cons(1, 2, 3, nil))
+        self.assertIsNotNone(r_pair)
+        self.assertEqual(r_pair["head"].datum, 1)
         self.assertEqual(
-            r_pair.captures["tail"].datum, cons(2, 3, nil))
+            r_pair["tail"].datum, cons(2, 3, nil))
 
 
     def test_empty_rest_before_suffix_binds_empty(self):
@@ -408,21 +424,21 @@ class TestBuildAndMatch(unittest.TestCase):
         pat = MATCH(CAPTURE("a"), REST("mid"), CAPTURE("b"))
         m = pat.build()
 
-        r_tuple = m.match((1, 2))
-        self.assertTrue(r_tuple.matched)
-        self.assertEqual(r_tuple.captures["a"], 1)
-        self.assertEqual(r_tuple.captures["mid"], ())
-        self.assertEqual(r_tuple.captures["b"], 2)
+        r_tuple = demand(m)((1, 2))
+        self.assertIsNotNone(r_tuple)
+        self.assertEqual(r_tuple["a"], 1)
+        self.assertEqual(r_tuple["mid"], ())
+        self.assertEqual(r_tuple["b"], 2)
 
-        r_pair = m.match(cons(1, 2, nil))
-        self.assertTrue(r_pair.matched)
-        self.assertIs(r_pair.captures["mid"].datum, nil)
-        self.assertEqual(r_pair.captures["b"].datum, 2)
+        r_pair = demand(m)(cons(1, 2, nil))
+        self.assertIsNotNone(r_pair)
+        self.assertIs(r_pair["mid"].datum, nil)
+        self.assertEqual(r_pair["b"].datum, 2)
 
-        r_three = m.match((1, 2, 3))
-        self.assertTrue(r_three.matched)
-        self.assertEqual(len(r_three.captures["mid"]), 1)
-        self.assertEqual(r_three.captures["b"], 3)
+        r_three = demand(m)((1, 2, 3))
+        self.assertIsNotNone(r_three)
+        self.assertEqual(len(r_three["mid"]), 1)
+        self.assertEqual(r_three["b"], 3)
 
 
     def test_class_round_trip(self):
@@ -440,19 +456,19 @@ class TestBuildAndMatch(unittest.TestCase):
             FIELD(CAPTURE("x")),
             FIELD(CAPTURE("y"), name="y"),
         )
-        m = pat.build()
+        m = pat.build({"Point": Point})
 
         p = Point()
         p.x = 10
         p.y = 20
 
-        result = m.match((p,), Point=Point)
-        self.assertTrue(result.matched)
-        self.assertEqual(result.captures["x"], 10)
-        self.assertEqual(result.captures["y"], 20)
+        result = demand(m)((p,))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["x"], 10)
+        self.assertEqual(result["y"], 20)
 
-        result_bad = m.match((object(),), Point=Point)
-        self.assertFalse(result_bad.matched)
+        result_bad = demand(m)((object(),))
+        self.assertIsNone(result_bad)
 
 
     def test_not_is_zero_width_lookahead(self):
@@ -465,11 +481,11 @@ class TestBuildAndMatch(unittest.TestCase):
         pat = MATCH(NOT(LITERAL("X")), CAPTURE("v"))
         m = pat.build()
 
-        self.assertFalse(m.match(["X"]).matched)
+        self.assertIsNone(demand(m)(["X"]))
 
-        result = m.match(["Y"])
-        self.assertTrue(result.matched)
-        self.assertEqual(result.captures["v"], "Y")
+        result = demand(m)(["Y"])
+        self.assertIsNotNone(result)
+        self.assertEqual(result["v"], "Y")
 
 
     def test_optional_omits_slot_when_inner_unmatched(self):
@@ -484,22 +500,22 @@ class TestBuildAndMatch(unittest.TestCase):
         )
         m = pat.build()
 
-        r_present = m.match(["X", 1, 2])
-        self.assertTrue(r_present.matched)
-        self.assertEqual(r_present.captures["opt"], "X")
+        r_present = demand(m)(["X", 1, 2])
+        self.assertIsNotNone(r_present)
+        self.assertEqual(r_present["opt"], "X")
         self.assertEqual(
-            r_present.captures["tail"], (1, 2))
+            r_present["tail"], (1, 2))
 
-        r_absent = m.match([1, 2])
-        self.assertTrue(r_absent.matched)
-        self.assertNotIn("opt", r_absent.captures)
+        r_absent = demand(m)([1, 2])
+        self.assertIsNotNone(r_absent)
+        self.assertNotIn("opt", r_absent)
         self.assertEqual(
-            r_absent.captures["tail"], (1, 2))
+            r_absent["tail"], (1, 2))
 
 
     def test_repeat_zero_or_more_with_deterministic_suffix(self):
         """
-        REPEAT is zero-or-more at the engine level. It greedily
+        REPEAT matches zero or more elements. It greedily
         consumes matching elements, then yields to a deterministic
         suffix
         """
@@ -507,18 +523,18 @@ class TestBuildAndMatch(unittest.TestCase):
         pat = MATCH(REPEAT(LITERAL("X")), CAPTURE("end", LITERAL("Z")))
         m = pat.build()
 
-        r_many = m.match(["X", "X", "X", "Z"])
-        self.assertTrue(r_many.matched)
-        self.assertEqual(r_many.captures["end"], "Z")
+        r_many = demand(m)(["X", "X", "X", "Z"])
+        self.assertIsNotNone(r_many)
+        self.assertEqual(r_many["end"], "Z")
 
-        r_one = m.match(["X", "Z"])
-        self.assertTrue(r_one.matched)
+        r_one = demand(m)(["X", "Z"])
+        self.assertIsNotNone(r_one)
 
-        r_zero = m.match(["Z"])
-        self.assertTrue(r_zero.matched)
-        self.assertEqual(r_zero.captures["end"], "Z")
+        r_zero = demand(m)(["Z"])
+        self.assertIsNotNone(r_zero)
+        self.assertEqual(r_zero["end"], "Z")
 
-        self.assertFalse(m.match(["X", "X"]).matched)
+        self.assertIsNone(demand(m)(["X", "X"]))
 
 
 # === Eager validation negatives ===
@@ -628,58 +644,60 @@ class TestEagerValidation(unittest.TestCase):
             CLASS("Point", TEST_ANY())
 
 
-    def test_field_outside_class_freeze_rejected(self):
+    def test_field_outside_class_refused_at_build(self):
         """
-        FIELD freeze raises ValueError when not nested inside a CLASS
+        build raises ValueError for a FIELD not nested inside a CLASS
         """
 
         with self.assertRaises(ValueError):
-            FIELD(TEST_ANY()).freeze()
+            FIELD(TEST_ANY()).build()
 
 
-    def test_duplicate_plain_capture_rejected_on_freeze(self):
+    def test_duplicate_plain_capture_refused_at_build(self):
         """
-        Two plain CAPTURE nodes for the same slot raise at freeze; use SAME
+        Two plain CAPTURE nodes for the same slot raise at build; use SAME
         """
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x"))
         with self.assertRaises(ValueError) as ctx:
-            pat.freeze()
+            pat.build()
         self.assertIn("SAME", str(ctx.exception))
 
 
-    def test_same_references_prior_slot_freezes(self):
+    def test_same_references_prior_slot(self):
         """
-        MATCH(BIND x, SAME x) lowers and freezes
+        MATCH(CAPTURE x, SAME x) builds and matches only an element
+        equal to the earlier capture
         """
 
         from koskari.matcher import SAME
 
-        pat = MATCH(CAPTURE("x"), SAME("x"))
-        pat.freeze()
+        m = demand(MATCH(CAPTURE("x"), SAME("x")).build())
+        self.assertEqual(m((1, 1)), {"x": 1})
+        self.assertIsNone(m((1, 2)))
 
 
-    def test_duplicate_incompatible_capture_rejected_on_freeze(self):
+    def test_duplicate_incompatible_capture_refused_at_build(self):
         """
         Two CAPTURE nodes for the same slot with different capture kinds
-        raise ValueError at freeze time
+        raise ValueError at build
         """
 
         pat = MATCH(CAPTURE("x"), CAPTURE("x", TYPE("symbol")))
         with self.assertRaises(ValueError) as ctx:
-            pat.freeze()
+            pat.build()
         self.assertIn("differing matcher type", str(ctx.exception))
 
 
     def test_duplicate_capture_rest_slot_rejected(self):
         """
         CAPTURE followed by REST sharing the same slot name raises
-        ValueError at freeze time
+        ValueError at build
         """
 
         pat = MATCH(CAPTURE("x"), REST("x"))
         with self.assertRaises(ValueError):
-            pat.freeze()
+            pat.build()
 
 
     def test_field_rejects_empty_name(self):
@@ -731,12 +749,12 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         m = MATCH(SYMBOL("x")).build()
 
-        r_ok = m.match([symbol("foo")], symbol=symbol)
-        self.assertTrue(r_ok.matched)
+        r_ok = demand(m)([symbol("foo")])
+        self.assertIsNotNone(r_ok)
         self.assertIs(
-            r_ok.captures["x"], symbol("foo"))
+            r_ok["x"], symbol("foo"))
 
-        self.assertFalse(m.match([7], symbol=symbol).matched)
+        self.assertIsNone(demand(m)([7]))
 
 
     def test_pair_matches_pair_rejects_list(self):
@@ -746,10 +764,10 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         m = MATCH(PAIR("p")).build()
 
-        r_ok = m.match([cons(1, 2)], pair=pair)
-        self.assertTrue(r_ok.matched)
+        r_ok = demand(m)([cons(1, 2)])
+        self.assertIsNotNone(r_ok)
 
-        self.assertFalse(m.match([[1, 2]], pair=pair).matched)
+        self.assertIsNone(demand(m)([[1, 2]]))
 
 
     def test_literal_kw_matches_keyword_rejects_symbol(self):
@@ -759,8 +777,8 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         m = MATCH(LITERAL_KW("foo")).build()
 
-        self.assertTrue(m.match([keyword("foo")]).matched)
-        self.assertFalse(m.match([symbol("foo")]).matched)
+        self.assertIsNotNone(demand(m)([keyword("foo")]))
+        self.assertIsNone(demand(m)([symbol("foo")]))
 
 
     def test_literal_sym_matches_symbol_rejects_keyword(self):
@@ -770,8 +788,8 @@ class TestErgonomicShorthands(unittest.TestCase):
 
         m = MATCH(LITERAL_SYM("foo")).build()
 
-        self.assertTrue(m.match([symbol("foo")]).matched)
-        self.assertFalse(m.match([keyword("foo")]).matched)
+        self.assertIsNotNone(demand(m)([symbol("foo")]))
+        self.assertIsNone(demand(m)([keyword("foo")]))
 
 
     def test_list_descends_into_inner_sequence(self):
@@ -783,10 +801,10 @@ class TestErgonomicShorthands(unittest.TestCase):
         pat = MATCH(LIST(CAPTURE("a"), CAPTURE("b")))
         m = pat.build()
 
-        r = m.match([(1, 2)])
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"], 1)
-        self.assertEqual(r.captures["b"], 2)
+        r = demand(m)([(1, 2)])
+        self.assertIsNotNone(r)
+        self.assertEqual(r["a"], 1)
+        self.assertEqual(r["b"], 2)
 
 
     def test_list_with_key_captures_outer_list(self):
@@ -798,20 +816,26 @@ class TestErgonomicShorthands(unittest.TestCase):
         pat = MATCH(LIST(CAPTURE("a"), CAPTURE("b"), key="lst"))
         m = pat.build()
 
-        r = m.match([(1, 2)])
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["a"], 1)
-        self.assertEqual(r.captures["b"], 2)
-        self.assertEqual(r.captures["lst"], (1, 2))
+        r = demand(m)([(1, 2)])
+        self.assertIsNotNone(r)
+        self.assertEqual(r["a"], 1)
+        self.assertEqual(r["b"], 2)
+        self.assertEqual(r["lst"], (1, 2))
 
 
-    def test_bind_and_value_produce_identical_freeze(self):
+    def test_bind_and_value_capture_the_same_element(self):
         """
-        BIND and VALUE produce identical frozen tuples for the same
-        slot name
+        BIND and VALUE capture the same one element for the same slot
+        name
         """
 
-        self.assertEqual(BIND("x").freeze(), VALUE("x").freeze())
+        bind = demand(make_matcher(MATCH(BIND("x"))))
+        value = demand(make_matcher(MATCH(VALUE("x"))))
+        for subject in ((1,), (), (1, 2)):
+            self.assertEqual(bind(subject), value(subject), subject)
+        self.assertEqual(bind((1,)), {"x": 1})
+        spine = cons(symbol("a"), nil)
+        self.assertIs(bind(spine)["x"].datum, value(spine)["x"].datum)
 
 
 # === Cross-cutting integration ===
@@ -820,9 +844,10 @@ class TestErgonomicShorthands(unittest.TestCase):
 class TestCrossCutting(unittest.TestCase):
 
 
-    def test_freeze_is_deterministic(self):
+    def test_build_is_deterministic(self):
         """
-        Building the same pattern twice produces equal frozen tuples
+        Building the same pattern twice gives matchers that return
+        equal captures and miss alike
         """
 
         def make_pattern():
@@ -834,7 +859,14 @@ class TestCrossCutting(unittest.TestCase):
                 REST("body"),
             )
 
-        self.assertEqual(make_pattern().freeze(), make_pattern().freeze())
+        first = demand(make_matcher(make_pattern()))
+        second = demand(make_matcher(make_pattern()))
+        hit = (symbol("f"), "::", 1, 2, 3, 4)
+        self.assertEqual(first(hit), second(hit))
+        self.assertEqual(
+            first(hit), {"name": symbol("f"), "body": (3, 4)})
+        self.assertIsNone(first((symbol("f"), ":", 1, 2)))
+        self.assertIsNone(second((symbol("f"), ":", 1, 2)))
 
 
     def test_make_matcher_equivalent_to_build(self):
@@ -846,14 +878,13 @@ class TestCrossCutting(unittest.TestCase):
         pat = MATCH(CAPTURE("x"))
         m_a = pat.build()
         m_b = make_matcher(pat)
-        self.assertEqual(m_a.slots, m_b.slots)
-        self.assertEqual(m_a.externs, m_b.externs)
-        self.assertEqual(m_a.consts, m_b.consts)
+        self.assertEqual(demand(m_a)((1,)), demand(m_b)((1,)))
+        self.assertEqual(demand(m_a)((1,)), {"x": 1})
 
 
     def test_deep_nesting_does_not_overflow(self):
         """
-        A pattern with around twenty nested OPTIONAL layers freezes
+        A pattern with around twenty nested OPTIONAL layers builds
         and matches without issue
         """
 
@@ -862,24 +893,8 @@ class TestCrossCutting(unittest.TestCase):
             pat = OPTIONAL(pat)
         pat = MATCH(pat, REST("rest"))
         m = pat.build()
-        result = m.match([1, 2, 3])
-        self.assertTrue(result.matched)
-
-
-    def test_thaw_round_trip_through_builder(self):
-        """
-        A pattern built with the builder API can be re-thawed from its
-        freeze tuple to obtain the same matcher
-        """
-
-        pat = MATCH(CAPTURE("a"), CAPTURE("b"))
-        frozen = pat.freeze()
-        m = thaw(frozen)
-        result = m.match([1, 2])
-        self.assertTrue(result.matched)
-        self.assertEqual(
-            dict(result.captures),
-            {"a": 1, "b": 2})
+        result = demand(m)([1, 2, 3])
+        self.assertIsNotNone(result)
 
 
 # The end.

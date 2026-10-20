@@ -71,14 +71,14 @@ let []:
     unless (instance? special Syntax):
       return form
 
-    define-values [tf mr] (special.match_transformer form)
+    define-values [tf captures] (special.match_transformer form)
     unless tf:
       return form
 
     unless (instance? tf #(SyntaxTransform MacroTransform)):
       return form
 
-    define expanded (tf.handle_expand compiler form mr)
+    define expanded (tf.handle_expand compiler form captures)
 
     if (and (pair? expanded)
             (equal? (.length expanded) 2)
@@ -106,14 +106,14 @@ let []:
       unless (instance? special Syntax):
         return form
 
-      define-values [tf mr] (special.match_transformer form)
+      define-values [tf captures] (special.match_transformer form)
       unless tf:
         return form
 
       unless (instance? tf #(SyntaxTransform MacroTransform)):
         return form
 
-      set! form (tf.handle_expand compiler form mr)
+      set! form (tf.handle_expand compiler form captures)
 
 
 define-syntax macroexpand-1:

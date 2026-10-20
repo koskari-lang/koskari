@@ -26,8 +26,8 @@ import unittest
 import pytest
 
 from koskari.lib import cons, nil, symbol
-from koskari.matcher import (
-    LIST, ONEOF, SYMBOL, VALUE, match, match1, match_pattern_raw)
+from koskari.matcher import LIST, ONEOF, SYMBOL, VALUE
+from koskari.matcher.patterns import match, match1, match_pattern_raw
 
 
 pytestmark = pytest.mark.phase_infra

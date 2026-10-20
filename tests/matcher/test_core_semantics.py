@@ -1,0 +1,634 @@
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this library; if not, see <http://www.gnu.org/licenses/>.
+
+"""
+tests.matcher.test_core_semantics
+
+What a built matcher returns for the shapes whose meaning once
+depended on how they were lowered: a NOT after an element, a NOT
+tested against the subject's remaining elements, zero-width and GROUP
+children of a one-element branch, a ONEOF of one-element tests
+taking its first matching branch, a trailing ONEOF under a wrapper,
+SAME at any depth or after a ONEOF or REPEAT, the per-pass
+values a slot inside an uncaptured REPEAT binds, the length check
+that runs before any extern, and the __match_args__ count a CLASS
+checks before it reads any field
+
+:author: Christopher O'Brien <obriencj@gmail.com>
+:license: GNU General Public License v3
+"""
+
+import unittest
+
+import pytest
+
+from koskari.lib import Datum, DatumFrame, cons, demand, nil
+from koskari.matcher import (
+    APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MATCH, NOT, ONEOF,
+    OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY, repeat_capture)
+
+
+pytestmark = pytest.mark.phase_infra
+
+
+def built(pattern, externs=None):
+    return demand(pattern.build(externs))
+
+
+class Pt:
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
+class Counted:
+    """
+    A class whose positional attributes are properties recording each
+    read
+    """
+
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x, y):
+        self.reads = []
+        self._x = x
+        self._y = y
+
+
+    @property
+    def x(self):
+        self.reads.append("x")
+        return self._x
+
+
+    @property
+    def y(self):
+        self.reads.append("y")
+        return self._y
+
+
+class TestNotAfterTheElement(unittest.TestCase):
+    """
+    A NOT after an element tests the element after it, or the end,
+    never the element already tested: alone, in a one-element MATCH
+    under a CAPTURE, and in a ONEOF branch
+    """
+
+    def test_standalone(self):
+        m = built(MATCH(TEST_ANY(), NOT(LITERAL(1))))
+        self.assertEqual(m((1,)), {})
+        self.assertIsNone(m((1, 1)))
+
+        m = built(MATCH(TEST_ANY(), NOT(LITERAL(1)), TEST_ANY()))
+        self.assertEqual(m((1, 2)), {})
+        self.assertIsNone(m((1, 1)))
+
+
+    def test_in_a_captured_one_element_match(self):
+        m = built(MATCH(
+            CAPTURE("x", MATCH(TEST_ANY(), NOT(LITERAL(2)))), LITERAL(2)))
+        self.assertIsNone(m((1, 2)))
+
+        m = built(MATCH(
+            CAPTURE("x", MATCH(TEST_ANY(), NOT(LITERAL(1)))), TEST_ANY()))
+        self.assertEqual(m((1, 2)), {"x": 1})
+        self.assertIsNone(m((1, 1)))
+
+        m = built(MATCH(CAPTURE("s", MATCH(TEST_ANY(), NOT(TEST_ANY())))))
+        self.assertEqual(m((nil,)), {"s": nil})
+
+
+    def test_in_a_oneof_branch(self):
+        m = built(MATCH(ONEOF(MATCH(TEST_ANY(), NOT(LITERAL(2))), LITERAL(7))))
+        self.assertEqual(m((2,)), {})
+
+        m = built(MATCH(ONEOF(
+            MATCH(TEST_ANY(), NOT(LITERAL(1))), MATCH(LITERAL(9)))))
+        self.assertEqual(m((1,)), {})
+
+
+    def test_wrapped_in_a_oneof_agrees_with_unwrapped(self):
+        plain = built(MATCH(MATCH(CAPTURE("x"), NOT(LITERAL(1)))))
+        wrapped = built(MATCH(ONEOF(
+            MATCH(CAPTURE("x"), NOT(LITERAL(1))), LITERAL(9))))
+        for subject in ((1,), (2,), (1, 1), (1, 2)):
+            self.assertEqual(plain(subject), wrapped(subject), subject)
+        self.assertEqual(wrapped((1,)), {"x": 1})
+
+
+class TestNotIsALookahead(unittest.TestCase):
+    """
+    A NOT's sub-pattern matches at the cursor against the subject's
+    remaining elements: nothing after the NOT is reserved from it, no
+    maximum is checked, and a REPEAT's bound does not shorten it
+    """
+
+    def test_oneof_of_one_element_alternatives(self):
+        m = built(MATCH(NOT(ONEOF(LITERAL(1), LITERAL(2))), TEST_ANY()))
+        self.assertIsNone(m((1,)))
+        self.assertIsNone(m((2,)))
+        self.assertEqual(m((3,)), {})
+
+
+    def test_match_of_two_elements(self):
+        m = built(MATCH(
+            NOT(MATCH(LITERAL(1), LITERAL(2))), TEST_ANY(), TEST_ANY()))
+        self.assertIsNone(m((1, 2)))
+        self.assertEqual(m((1, 3)), {})
+
+
+    def test_in_a_repeat_pass_sees_past_the_bound(self):
+        m = built(MATCH(
+            REPEAT(GROUP(None, CAPTURE("a"), NOT(LITERAL(2)))), LITERAL(2)))
+        self.assertIsNone(m((1, 2)))
+
+        m = built(MATCH(
+            CAPTURE("s", REPEAT(GROUP(None, TEST_ANY(), NOT(TEST_ANY())))),
+            TEST_ANY()))
+        self.assertIsNone(m((1, 2)))
+        self.assertEqual(m((1,)), {"s": []})
+
+
+    def test_rest_under_a_not_counts_only_the_sub_pattern(self):
+        m = built(MATCH(
+            NOT(OPTIONAL(REST())), TEST_ANY(),
+            CAPTURE("s1", REST(min_tail=2))))
+        for subject in ((), (1,), (1, 2, 3), (1, 2, 3, 4)):
+            self.assertIsNone(m(subject), subject)
+
+        m = built(MATCH(CAPTURE("r", REST()), NOT(REST(min_tail=1))))
+        self.assertEqual(m(()), {"r": ()})
+        self.assertEqual(m((1, 2)), {"r": (1, 2)})
+
+        m = built(MATCH(NOT(REST(min_tail=3)), CAPTURE("r", REST())))
+        self.assertEqual(m((1, 2)), {"r": (1, 2)})
+        self.assertIsNone(m((1, 2, 3)))
+
+
+class TestOneElementBranches(unittest.TestCase):
+    """
+    The shapes the validator accepts all build and match: a ONEOF whose
+    branches are one-element GROUPs, and zero-width children beside the
+    element of a one-element MATCH
+    """
+
+    def test_oneof_of_named_groups(self):
+        m = built(MATCH(ONEOF(GROUP("a", LITERAL(1)), GROUP("b", TEST_ANY()))))
+        self.assertEqual(m((1,)), {"a": {}})
+        self.assertEqual(m((5,)), {"b": {}})
+        self.assertIsNone(m(()))
+        result = m(cons(5, nil))
+        self.assertIsInstance(result["b"], DatumFrame)
+
+
+    def test_oneof_of_a_captured_anonymous_group(self):
+        m = built(MATCH(ONEOF(
+            LITERAL(1), CAPTURE("g", GROUP(None, CAPTURE("x"))))))
+        self.assertEqual(m((1,)), {})
+        self.assertEqual(m((5,)), {"g": {"x": 5}})
+        self.assertIsNone(m(()))
+        self.assertIsNone(m((1, 2)))
+
+
+    def test_oneof_of_an_anonymous_group(self):
+        m = built(MATCH(ONEOF(GROUP(None, CAPTURE("x")), LITERAL(1))))
+        self.assertEqual(m((5,)), {})
+        self.assertEqual(m((1,)), {})
+        self.assertIsNone(m(()))
+        self.assertIsNone(m((1, 2)))
+
+
+    def test_zero_width_children_beside_the_element(self):
+        m = built(MATCH(CAPTURE("x", MATCH(TEST_ANY(), OPTIONAL(LITERAL(9))))))
+        self.assertEqual(m((1,)), {"x": 1})
+        self.assertEqual(m((1, 9)), {"x": (1, 9)})
+        self.assertIsNone(m((1, 2)))
+
+        for empty in (MATCH(), GROUP(None)):
+            m = built(MATCH(CAPTURE("x", MATCH(TEST_ANY(), empty))))
+            self.assertEqual(m((1,)), {"x": 1})
+            self.assertIsNone(m((1, 2)))
+
+        m = built(MATCH(ONEOF(
+            MATCH(TEST_ANY(), OPTIONAL(LITERAL(9))), LITERAL(7))))
+        self.assertEqual(m((1,)), {})
+        self.assertEqual(m((1, 9)), {})
+        self.assertIsNone(m((1, 2)))
+
+
+class TestOneofOfOneElementTests(unittest.TestCase):
+    """
+    A ONEOF whose branches each test one element pulls the element
+    once and tries the branches on it in order: the first that matches
+    is taken, and the element is gone before what follows the ONEOF
+    """
+
+    def test_first_matching_branch_is_taken(self):
+        calls = []
+
+        def peeled(v):
+            return v.datum if isinstance(v, Datum) else v
+
+        def big(v):
+            calls.append(("big", peeled(v)))
+            return peeled(v) > 5
+
+        def even(v):
+            calls.append(("even", peeled(v)))
+            return peeled(v) % 2 == 0
+
+        m = built(MATCH(
+            ONEOF(
+                CAPTURE("a", PREDICATE("big")),
+                CAPTURE("b", PREDICATE("even")),
+                CAPTURE("c", TEST_ANY())),
+            CAPTURE("d"),
+            ONEOF(LITERAL(1), CAPTURE("e", LITERAL(2)))),
+            {"big": big, "even": even})
+
+        self.assertEqual(m((8, "x", 1)), {"a": 8, "d": "x"})
+        self.assertEqual(calls, [("big", 8)])
+        del calls[:]
+        self.assertEqual(m((4, "x", 2)), {"b": 4, "d": "x", "e": 2})
+        self.assertEqual(calls, [("big", 4), ("even", 4)])
+        self.assertEqual(m((3, "x", 1)), {"c": 3, "d": "x"})
+        self.assertIsNone(m((3, "x", 3)))
+        self.assertIsNone(m((3, "x")))
+
+        result = m(cons(4, "x", 2, nil))
+        self.assertIsInstance(result, DatumFrame)
+        self.assertEqual(
+            {name: (v.datum, v.binding) for name, v in result.items()},
+            {"b": (4, "b"), "d": ("x", "d"), "e": (2, "e")})
+
+
+class TestJoinedMisses(unittest.TestCase):
+    """
+    Misses from nodes holding different entries on the stack may leave
+    to one place; each such pattern builds and matches
+    """
+
+    def test_not_in_a_form_beside_a_oneof_with_a_not(self):
+        m = built(MATCH(
+            FORM(MATCH(NOT(LITERAL(2)))), ONEOF(TEST_ANY(), NOT(LITERAL(9)))))
+        self.assertEqual(m(((),)), {})
+        self.assertEqual(m(((), 1)), {})
+        self.assertEqual(m(((), 9)), {})
+        self.assertIsNone(m(((2,),)))
+        self.assertIsNone(m(((1,),)))
+
+
+    def test_group_with_a_not_beside_a_form_with_a_not(self):
+        m = built(MATCH(OPTIONAL(MATCH(
+            GROUP("g", TEST_ANY(), NOT(LITERAL(2))),
+            FORM(MATCH(NOT(LITERAL(2))))))))
+        self.assertEqual(m(()), {})
+        self.assertEqual(m((1, ())), {"g": {}})
+        self.assertIsNone(m((1, 2)))
+        self.assertIsNone(m((1, (2,))))
+
+
+class TestTrailingOneof(unittest.TestCase):
+    """
+    A ONEOF takes its first branch that matches and does not try
+    another when the elements after it miss, whether it is the last
+    child of its spine directly or under a GROUP, a CAPTURE, a FORM or
+    another ONEOF
+    """
+
+    def test_wrappers_agree(self):
+        def alt():
+            return ONEOF(CAPTURE("x"), MATCH(CAPTURE("y"), CAPTURE("z")))
+
+        shapes = (
+            (MATCH(CAPTURE("a"), alt()), {"a": 1, "x": 2}),
+            (MATCH(GROUP("g", CAPTURE("a"), alt())),
+             {"g": {"a": 1, "x": 2}}),
+            (MATCH(CAPTURE("a"), CAPTURE("o", alt())),
+             {"a": 1, "o": 2, "x": 2}),
+            (MATCH(CAPTURE("a"), GROUP(None, alt())), {"a": 1}),
+            (MATCH(ONEOF(MATCH(CAPTURE("a"), alt()),
+                         MATCH(CAPTURE("a"), alt()))),
+             {"a": 1, "x": 2}),
+        )
+        for pattern, expected in shapes:
+            m = built(pattern)
+            self.assertEqual(m((1, 2)), expected)
+            self.assertIsNone(m((1,)))
+            self.assertIsNone(m((1, 2, 3)))
+
+        m = built(MATCH(FORM(MATCH(CAPTURE("a"), alt()))))
+        self.assertEqual(m(((1, 2),)), {"a": 1, "x": 2})
+        self.assertIsNone(m(((1, 2, 3),)))
+
+
+    def test_an_empty_first_branch_is_taken(self):
+        for pattern in (MATCH(ONEOF(MATCH(), MATCH(TEST_ANY()))),
+                        MATCH(GROUP("g", ONEOF(MATCH(), MATCH(TEST_ANY()))))):
+            m = built(pattern)
+            self.assertIsNone(m((1,)))
+
+
+class TestSameDepths(unittest.TestCase):
+    """
+    SAME at depth n reads the slot of the scope n scopes out from its
+    own
+    """
+
+    def test_depth_two_through_named_groups(self):
+        m = built(MATCH(
+            CAPTURE("x"), GROUP("g", GROUP("h", SAME("x", depth=2)))))
+        self.assertEqual(m((1, 1)), {"x": 1, "g": {"h": {}}})
+        self.assertIsNone(m((1, 2)))
+        self.assertIsNotNone(m(cons(1, 1, nil)))
+        self.assertIsNone(m(cons(1, 2, nil)))
+
+
+    def test_depth_two_beside_depth_one(self):
+        m = built(MATCH(CAPTURE("x"), GROUP(
+            "g", CAPTURE("y"),
+            GROUP("h", SAME("x", depth=2), SAME("y", depth=1)))))
+        self.assertEqual(m((1, 2, 1, 2)), {"x": 1, "g": {"y": 2, "h": {}}})
+        self.assertIsNone(m((1, 2, 2, 1)))
+
+
+    def test_depth_two_from_a_repeat_pass(self):
+        m = built(MATCH(CAPTURE("x"), repeat_capture(
+            "rows", FORM(MATCH(GROUP("h", SAME("x", depth=2)))))))
+        self.assertEqual(
+            m((1, (1,), (1,))), {"x": 1, "rows": [{"h": {}}, {"h": {}}]})
+        self.assertIsNone(m((1, (1,), (2,))))
+
+
+class TestSameAfterAOneof(unittest.TestCase):
+    """
+    A ONEOF's branches bind into the scope around it, so a SAME after
+    the ONEOF reads the binding of the branch that matched, and misses
+    when that branch bound nothing
+    """
+
+    def test_reads_the_branch_binding(self):
+        m = built(MATCH(ONEOF(CAPTURE("a"), LITERAL(1)), SAME("a")))
+        self.assertEqual(m((5, 5)), {"a": 5})
+        self.assertIsNone(m((5, 6)))
+
+
+    def test_misses_when_the_branch_bound_nothing(self):
+        m = built(MATCH(ONEOF(LITERAL(1), CAPTURE("a")), SAME("a")))
+        self.assertIsNone(m((1, 1)))
+        self.assertEqual(m((5, 5)), {"a": 5})
+        self.assertIsNone(m((5, 6)))
+
+
+class TestUncapturedRepeatSlots(unittest.TestCase):
+    """
+    A slot inside a REPEAT nothing captures binds the list of the
+    values its passes bound, and a SAME after the REPEAT compares
+    against that list
+    """
+
+    def test_slot_binds_the_per_pass_values(self):
+        m = built(MATCH(CAPTURE("a"), REPEAT(CAPTURE("b"))))
+        self.assertEqual(m((1, 2, 3)), {"a": 1, "b": [2, 3]})
+        self.assertEqual(m((1,)), {"a": 1, "b": []})
+
+
+    def test_slot_in_a_named_group(self):
+        m = built(MATCH(GROUP("g", REPEAT(CAPTURE("a"))), CAPTURE("z")))
+        self.assertEqual(m((1, 2, 3)), {"g": {"a": [1, 2]}, "z": 3})
+
+
+    def test_same_after_the_repeat_reads_the_list(self):
+        m = built(MATCH(REPEAT(CAPTURE("a"), min_count=1), SAME("a")))
+        self.assertEqual(m((1, 2, [1, 2])), {"a": [1, 2]})
+        self.assertIsNone(m((1, 2, 2)))
+
+
+class TestLengthBeforeExterns(unittest.TestCase):
+    """
+    A subject too short or too long for a pattern misses before a
+    PREDICATE or an APP runs on any of its elements
+    """
+
+    def test_predicate_on_a_subject_too_short(self):
+        calls = []
+
+        def p(v):
+            calls.append(v)
+            return True
+
+        m = built(MATCH(CAPTURE("a", PREDICATE("p")), LITERAL(1)), {"p": p})
+        self.assertIsNone(m((5,)))
+        self.assertIsNone(m(cons(5, nil)))
+        self.assertEqual(calls, [])
+        self.assertEqual(m((5, 1)), {"a": 5})
+        self.assertEqual(calls, [5])
+
+
+    def test_predicate_on_a_subject_too_long(self):
+        calls = []
+
+        def p(v):
+            calls.append(v)
+            return True
+
+        m = built(MATCH(CAPTURE("a", PREDICATE("p"))), {"p": p})
+        self.assertIsNone(m((5, 6)))
+        self.assertEqual(calls, [])
+
+
+    def test_predicate_in_a_branch_too_wide(self):
+        calls = []
+
+        def p(v):
+            calls.append(v)
+            return True
+
+        m = built(MATCH(ONEOF(
+            MATCH(PREDICATE("p"), TEST_ANY(), TEST_ANY()), TEST_ANY())),
+            {"p": p})
+        self.assertEqual(m((5,)), {})
+        self.assertEqual(calls, [])
+
+
+    def test_app_on_a_subject_too_short(self):
+        calls = []
+
+        def first(v):
+            calls.append(v)
+            return v[0]
+
+        m = built(
+            MATCH(APP("first", CAPTURE("x")), LITERAL(1)), {"first": first})
+        self.assertIsNone(m(((),)))
+        self.assertEqual(calls, [])
+        self.assertEqual(m(((4,), 1)), {"x": 4})
+
+
+class TestAlternativesCheckOnlyTheMinimum(unittest.TestCase):
+    """
+    A ONEOF branch is taken when it matches at the cursor, whatever the
+    length of what follows; the first matching branch is committed to
+    """
+
+    def test_a_branch_is_not_skipped_for_a_long_subject(self):
+        m = built(MATCH(
+            ONEOF(MATCH(TEST_ANY(), TEST_ANY()),
+                  MATCH(TEST_ANY(), TEST_ANY(), TEST_ANY())),
+            TEST_ANY()))
+        self.assertIsNone(m((1, 2, 3, 4)))
+        self.assertEqual(m((1, 2, 3)), {})
+
+
+    def test_a_branch_before_a_repeat_branch_is_committed(self):
+        m = built(MATCH(ONEOF(
+            MATCH(TEST_ANY(), CAPTURE("a")),
+            CAPTURE("r", REPEAT(TEST_ANY())))))
+        self.assertIsNone(m((1, 2, 3)))
+        self.assertEqual(m((1, 2)), {"a": 2})
+
+
+    def test_a_captured_match_in_a_branch_is_committed(self):
+        m = built(MATCH(
+            ONEOF(CAPTURE("p", MATCH(TEST_ANY(), TEST_ANY())),
+                  MATCH(TEST_ANY(), TEST_ANY(), TEST_ANY())),
+            TEST_ANY()))
+        self.assertIsNone(m((1, 2, 3, 4)))
+        self.assertEqual(m((1, 2, 3)), {"p": (1, 2)})
+
+
+class TestAlternativeForms(unittest.TestCase):
+    """
+    A FORM that is a ONEOF branch or an OPTIONAL sub-pattern checks the
+    suffix's minimum before it descends, as any alternative does
+    """
+
+    def test_an_optional_form_yields_to_the_suffix(self):
+        m = built(MATCH(
+            OPTIONAL(FORM(MATCH(TEST_ANY()))), CAPTURE("b")))
+        self.assertEqual(m(((1,),)), {"b": (1,)})
+        self.assertEqual(m(((1,), 2)), {"b": 2})
+
+
+    def test_a_form_branch_yields_to_the_suffix(self):
+        m = built(MATCH(
+            ONEOF(FORM(MATCH(TEST_ANY())), MATCH()), CAPTURE("b")))
+        self.assertEqual(m(((1,),)), {"b": (1,)})
+        self.assertEqual(m(((1,), 2)), {"b": 2})
+
+
+class TestNameAcrossAnAlternativeAndARepeat(unittest.TestCase):
+    """
+    A name bound directly in one ONEOF alternative and inside a REPEAT
+    in another: the alternatives share the name's one binding, and the
+    REPEAT binds the list of its per-pass values
+    """
+
+    def test_direct_alternative_first(self):
+        m = built(MATCH(ONEOF(
+            MATCH(CAPTURE("x"), LITERAL(1)),
+            REPEAT(CAPTURE("x"), min_count=1))))
+        self.assertEqual(m((7, 1)), {"x": 7})
+        self.assertEqual(m((7, 8, 9)), {"x": [7, 8, 9]})
+
+
+    def test_repeat_alternative_first(self):
+        m = built(MATCH(ONEOF(
+            REPEAT(CAPTURE("x"), min_count=1),
+            MATCH(CAPTURE("x"), LITERAL(1)))))
+        self.assertEqual(m((7, 8, 9)), {"x": [7, 8, 9]})
+
+
+    def test_two_repeat_alternatives(self):
+        m = built(MATCH(ONEOF(
+            MATCH(REPEAT(CAPTURE("x")), LITERAL(0)),
+            REPEAT(CAPTURE("x"), min_count=1))))
+        self.assertEqual(m((5, 6, 0)), {"x": [5, 6]})
+        self.assertEqual(m((5, 6)), {"x": [5, 6]})
+
+
+    def test_captured_repeat_alternative(self):
+        m = built(MATCH(ONEOF(
+            MATCH(CAPTURE("x"), LITERAL(1)),
+            repeat_capture("xs", GROUP(None, CAPTURE("x"))))))
+        self.assertEqual(m((7, 8, 9)), {"xs": [7, 8, 9]})
+        self.assertEqual(m((7, 1)), {"x": 7})
+
+
+
+class TestClassPositionalCount(unittest.TestCase):
+    """
+    A CLASS with n positional fields tests isinstance first, a miss
+    being a plain miss, then raises TypeError when __match_args__ holds
+    fewer than n names, before any field is read
+    """
+
+    def test_first_field_failing(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(LITERAL(5)), FIELD(TEST_ANY()), FIELD(TEST_ANY()))),
+            {"Pt": Pt})
+        with self.assertRaises(TypeError) as caught:
+            m((Pt(1, 2),))
+        self.assertIn(
+            "__match_args__ has 2 entries; cannot satisfy 3 positional "
+            "field pattern(s)", str(caught.exception))
+
+
+    def test_first_field_passing(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(LITERAL(1)), FIELD(TEST_ANY()), FIELD(TEST_ANY()))),
+            {"Pt": Pt})
+        with self.assertRaises(TypeError):
+            m((Pt(2, 3),))
+
+
+    def test_non_instance_misses(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(LITERAL(1)), FIELD(TEST_ANY()), FIELD(TEST_ANY()))),
+            {"Pt": Pt})
+        self.assertIsNone(m((7,)))
+        self.assertIsNone(m(("ab",)))
+
+
+    def test_keyword_fields_only(self):
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(CAPTURE("a"), name="x"),
+            FIELD(CAPTURE("b"), name="y"))), {"Pt": Pt})
+        self.assertEqual(m((Pt(1, 2),)), {"a": 1, "b": 2})
+
+        m = built(MATCH(CLASS(
+            "Pt", FIELD(CAPTURE("a"), name="x"),
+            FIELD(CAPTURE("b"), name="y"), FIELD(TEST_ANY(), name="z"))),
+            {"Pt": Pt})
+        self.assertIsNone(m((Pt(1, 2),)))
+
+
+    def test_no_attribute_read_before_the_error(self):
+        m = built(MATCH(CLASS(
+            "C", FIELD(CAPTURE("a")), FIELD(CAPTURE("b")),
+            FIELD(TEST_ANY()))), {"C": Counted})
+        subject = Counted(1, 2)
+        with self.assertRaises(TypeError):
+            m((subject,))
+        self.assertEqual(subject.reads, [])
+
+        m = built(MATCH(CLASS(
+            "C", FIELD(CAPTURE("a")), FIELD(CAPTURE("b")))), {"C": Counted})
+        subject = Counted(1, 2)
+        self.assertEqual(m((subject,)), {"a": 1, "b": 2})
+        self.assertEqual(subject.reads, ["x", "y"])
+
+
+# The end.

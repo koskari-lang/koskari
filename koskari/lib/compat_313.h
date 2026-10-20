@@ -166,11 +166,6 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 }
 
 
-/* The version of the extern defaults dict is a counter bumped by a dict
-   watcher: ma_version_tag is deprecated on this version. */
-#define KOS_MATCHER_DEFAULTS_WATCHER 1
-
-
 /* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
    types.coroutine marked generator function's product), which await
    takes as its own iterator. gi_code is gone from the struct; the
@@ -189,6 +184,46 @@ static inline int kos_gen_is_iterable_coroutine(PyObject *gen) {
 
 /* Py_HashPointer is public from 3.13 */
 #define koskari_HashPointer Py_HashPointer
+
+
+/* === Type version tags === */
+
+
+/* The type's version for a cache guard: 0 means no valid version, so
+   an entry always carries a nonzero one and a cleared tag never
+   matches it. From 3.12 the validity flag is deprecated (3.14 stops
+   setting it) and a nonzero tp_version_tag is itself the signal;
+   PyType_Modified zeroes it on change. */
+static inline uint64_t kos_type_version(PyTypeObject *tp) {
+  return (uint64_t) tp->tp_version_tag;
+}
+
+
+/* The type's version for a cache populate, 0 when it cannot be
+   versioned. From 3.12 a lookup assigns a tag only conditionally, so
+   it is forced through PyUnstable_Type_AssignVersionTag; otherwise a
+   guard could never match. */
+static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
+  if (! PyUnstable_Type_AssignVersionTag(tp))
+    return 0;
+  return (uint64_t) tp->tp_version_tag;
+}
+
+
+/* === PEP 634 type tests === */
+
+
+/* 1 when obj's type is flagged a sequence, else 0; the flag decides it
+   on this version, so it never raises. */
+static inline int kos_type_is_sequence(PyObject *obj) {
+  return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_SEQUENCE) ? 1 : 0;
+}
+
+
+/* 1 when obj's type is flagged a mapping, else 0, as above. */
+static inline int kos_type_is_mapping(PyObject *obj) {
+  return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MAPPING) ? 1 : 0;
+}
 
 
 // The end.

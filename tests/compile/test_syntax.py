@@ -31,11 +31,10 @@ import pytest
 from koskari.bootstrap import _BUILTIN_REGISTRY
 from koskari.compile import Compiler
 from koskari.lib import (
-    Module, ModuleNamespace, car, cdr, gensym, symbol)
+    Module, ModuleNamespace, car, cdr, demand, gensym, symbol)
 from koskari.matcher import make_matcher, parse_explicit_rule_pattern
 from koskari.syntax import (
-    RulePattern, Syntax, SyntaxTransform, build_syntax,
-    parse_syntax_rules_pattern)
+    RulePattern, Syntax, SyntaxTransform, parse_syntax_rules_pattern)
 from koskari.types import build_proper, strip_marks, unpack
 
 
@@ -161,18 +160,6 @@ class TestSyntaxExpansion(unittest.TestCase):
         assert_formal_renamed(self, expanded, 'n')
 
 
-    def test_build_syntax_flat_roundtrip(self):
-        pat = build_proper(symbol('wrap'), symbol('x'))
-        tpl = build_proper(symbol('list'), symbol('x'))
-        name = symbol('wrap')
-        literals = frozenset({name})
-        pat_m = parse_syntax_rules_pattern(pat, literals, pat)
-        rebuilt = build_syntax(name, pat_m, tpl)
-        expanded = expand(rebuilt, build_proper(symbol('wrap'), 99))
-        expected = build_proper(symbol('list'), 99)
-        assert_forms_equal(self, expanded, expected)
-
-
 class TestSyntaxRulesPatternParsing(unittest.TestCase):
 
     def test_rule_pattern_explicit_value_matcher(self):
@@ -185,7 +172,7 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         )
         pat, tpl = list(unpack(rule_row))
         pat_m = parse_explicit_rule_pattern(pat, pat)
-        t = build_syntax(symbol('double'), pat_m, tpl)
+        t = Syntax(symbol('double'), (SyntaxTransform(pat_m, tpl, pat),))
         ex = expand(t, build_proper(symbol('double'), 21))
         assert_forms_equal(self, ex, build_proper(symbol('+'), 21, 21))
 
@@ -196,7 +183,7 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
         pat_form = build_proper(symbol('wrap'), symbol('x'))
         tpl = build_proper(symbol('list'), symbol('x'))
         pat_m = parse_syntax_rules_pattern(pat_form, literals, pat_form)
-        syn2 = build_syntax(name, pat_m, tpl)
+        syn2 = Syntax(name, (SyntaxTransform(pat_m, tpl, pat_form),))
         expanded = expand(syn2, build_proper(symbol('wrap'), 99))
         assert_forms_equal(self, expanded, build_proper(symbol('list'), 99))
 
@@ -269,8 +256,8 @@ class TestSyntaxRulesPatternParsing(unittest.TestCase):
             symbol('set!'),
             symbol('a'),
             build_proper(symbol('+'), symbol('b'), 1))
-        self.assertTrue(matcher.match(ok).matched)
-        self.assertFalse(matcher.match(bad).matched)
+        self.assertIsNotNone(demand(matcher)(ok))
+        self.assertIsNone(demand(matcher)(bad))
 
 
     def test_inplace_set_rule_expands(self):

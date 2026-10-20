@@ -36,6 +36,7 @@ from koskari.lib import OpCode, bracket_pair, cons, kos_repr, nil, symbol
 from koskari.types import is_pair
 
 from . import SpecialsTestCase, _register_specials
+from .test_quote import inserting
 
 
 pytestmark = pytest.mark.phase_specials
@@ -925,6 +926,26 @@ class TestQuasiquoteBlockFullStack(QuasiquoteBlockTestCase):
             src, cond=False, yes=1, no=2)
         result = await self.run_source(intermediate, module, mod_ns, compiler)
         self.assertEqual(result, 2)
+
+
+class TestQuasiquoteRefusesNonPoolData(SpecialsTestCase):
+
+    def check_refused(self, quoted):
+        syn = inserting("qql", cons(symbol("quasiquote"), quoted, nil))
+        with self.assertRaises(SpecialError):
+            self.compile_expr("(qql)", **{"compile/qql": syn})
+
+
+    def test_refuses_a_list(self):
+        self.check_refused([1, 2])
+
+
+    def test_refuses_a_list_element(self):
+        self.check_refused(cons(1, [1, 2], nil))
+
+
+    def test_refuses_a_list_dotted_tail(self):
+        self.check_refused(cons(1, [1, 2]))
 
 
 # The end.

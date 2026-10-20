@@ -44,6 +44,7 @@
 extern PyObject *KosOpStyleEnum;
 extern PyObject *KosOperandEnum;
 extern PyObject *KosCompareEnum;
+extern PyObject *KosCoreTypeEnum;
 
 
 typedef enum KosOpStyle {
@@ -111,6 +112,11 @@ typedef enum KosOpStyle {
       single-operand analogue of OPCOUNT, used where the count is
       fixed by the opcode shape */
   KOSTYLE_OPERAND,
+
+  /** field is a raw sixteen-bit immediate the opcode interprets its
+      own way (a width, a limit, an index into a tuple); never a count
+      of stack operands, which is COUNT */
+  KOSTYLE_RAW,
 
 } KosOpStyle;
 
@@ -447,16 +453,6 @@ typedef struct KosExtentDesc {
 /* === Per-site cache slots === */
 
 
-/* How a MATCH_CASE site obtains its extern env, decided once from the
-   names it stacks: the stacked values are the env as-is; every extern
-   comes from the defaults, held in the slot; or a mix, resolved on
-   each execution. */
-#define KOS_MATCH_ENV_UNKNOWN   0u
-#define KOS_MATCH_ENV_STACKED   1u
-#define KOS_MATCH_ENV_DEFAULTS  2u
-#define KOS_MATCH_ENV_GENERAL   3u
-
-
 /**
    The kind of a per-site cache slot: the top-level discriminant of the
    KosCacheSlot tagged union. KOS_CACHE_EMPTY (zero) is an unused slot -- the
@@ -470,10 +466,10 @@ typedef enum KosCacheKind {
   KOS_CACHE_EMPTY = 0,   /* zeroed slot: no layout, no owned refs, no cleanup */
   KOS_CACHE_METHOD,      /* method-resolution layout (attribute/method lookup) */
   KOS_CACHE_FIELD,       /* attribute-storage location (load/store/delete) */
-  KOS_CACHE_MATCHER,     /* thawed Matcher for a MATCH_CASE arm */
   KOS_CACHE_ELECTOR,     /* handler elected for the site */
   KOS_CACHE_ITEM,        /* item body elected for the site */
   KOS_CACHE_TARGET,      /* the pc closing a region push's extent */
+  KOS_CACHE_MATCH_ARGS,  /* a class pattern's __match_args__ */
 } KosCacheKind;
 
 
@@ -610,29 +606,6 @@ struct KosCacheSlot {
       uint32_t index;          /* value slot / byte offset / dict-key hint */
     } field;
 
-    /* KOS_CACHE_MATCHER: the native Matcher thawed once from a MATCH_CASE
-       arm's frozen 6-tuple const, plus the arm's capture slots resolved
-       against the namespace layout as a KosSlotMap. The matcher has no
-       guard -- the thaw is a pure function of the const, so it is
-       permanently valid for its site. The slot map carries its own
-       layout guard (KosSlotMap_Valid); a layout change replaces it.
-       Neither can route a reference cycle back to the KosCode (an
-       immutable Matcher's consts hold literals and sub-matchers, a
-       slot map holds str tuples), so KosCode stays GC-untracked; the
-       teardown arm decrefs both. */
-    struct {
-      PyObject *matcher;       /* thawed KosMatcher; owned, may be NULL */
-      PyObject *slotmap;       /* KosSlotMap over matcher->slots; owned,
-                                  may be NULL */
-      PyObject *env;           /* the externs resolved from the defaults,
-                                  a tuple in extern-table order; owned,
-                                  may be NULL; valid while env_version
-                                  is the defaults version */
-      uint64_t env_version;
-      uint8_t env_kind;        /* KOS_MATCH_ENV_*: how this site's env is
-                                  found, fixed by its stacked names */
-    } matcher;
-
     /* KOS_CACHE_ELECTOR: the handler elected for the site. ``fn`` is a
        static function that carries its own guard, so the handler's hot
        path is the load and the tail call. There are NO owned references;
@@ -663,6 +636,19 @@ struct KosCacheSlot {
     struct {
       uint32_t pop_pc;
     } target;
+
+    /* KOS_CACHE_MATCH_ARGS: the __match_args__ tuple of a class
+       pattern's class, read once a subject has passed the class's type
+       test. ``cls`` and ``match_args`` are BORROWED, as KOS_CACHE_FIELD's
+       type is: the version tag is monotonic, a reassigned
+       __match_args__ or a reused class address fails the guard before
+       either is read, and the instruction holds the class it compares.
+       Owns nothing. */
+    struct {
+      PyObject *cls;           /* guard class; borrowed */
+      uint64_t type_version;   /* guard: the class's version at populate */
+      PyObject *match_args;    /* the class dict's tuple; borrowed */
+    } match_args;
   } u;
 };
 

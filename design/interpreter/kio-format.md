@@ -406,7 +406,7 @@ u32 arity + u32 pool_index[arity]
 | `Code` C type | `KosCode` in `koskari/lib/bytecode.h` |
 | `NamespaceSpec` C type | `KosNamespaceSpec` in `koskari/lib/namespace.h` |
 | `FormalsSpec` C type | `KosFormalsSpec` in `koskari/lib/formals.h` |
-| Allowed constant types | `CONST_TYPES` in `koskari/compile/compiler.py` |
+| Allowed constant types | `CONST_TYPES` in `koskari/types.py` |
 | Symbol/keyword interning | `koskari.lib.symbol`, `koskari.lib.keyword` |
 
 The header carries four ABI `u32` fields (`BYTECODE_ABI_MAJOR` through

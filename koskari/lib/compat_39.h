@@ -112,17 +112,6 @@ static inline int kos_gc_is_tracked(PyObject *op) {
 }
 
 
-/* The version of the extern defaults dict is its ma_version_tag: a
-   global counter stamped on the dict at creation and at every mutation,
-   so a reset's new dict reads different too. No dict watcher here, and
-   none is needed for this. */
-#define KOS_MATCHER_DEFAULTS_WATCHER 0
-
-static inline uint64_t kos_matcher_defaults_dict_version(PyObject *dict) {
-  return ((PyDictObject *) dict)->ma_version_tag;
-}
-
-
 /* 1 when the exact generator gen carries CO_ITERABLE_COROUTINE (a
    types.coroutine marked generator function's product), which await
    takes as its own iterator. The code is reached through gi_code. */
@@ -175,6 +164,70 @@ static inline PySendResult kos_iter_send(
 
 /* Py_HashPointer is public from 3.13; before that the private name */
 #define koskari_HashPointer _Py_HashPointer
+
+
+/* === Type version tags === */
+
+
+/* The type's version for a cache guard: 0 means no valid version, so
+   an entry always carries a nonzero one and a cleared tag never
+   matches it. Through 3.11 the tag is meaningful only while
+   Py_TPFLAGS_VALID_VERSION_TAG is set. */
+static inline uint64_t kos_type_version(PyTypeObject *tp) {
+  if (! (tp->tp_flags & Py_TPFLAGS_VALID_VERSION_TAG))
+    return 0;
+  return (uint64_t) tp->tp_version_tag;
+}
+
+
+/* The type's version for a cache populate, 0 when it cannot be
+   versioned. Through 3.11 a lookup during resolution has already
+   assigned and flagged the tag. */
+static inline uint64_t kos_type_version_assign(PyTypeObject *tp) {
+  return kos_type_version(tp);
+}
+
+
+/* === PEP 634 type tests === */
+
+
+/* collections.abc's class of that name, resolved on first use into
+   *cache and then held: the type flags that decide a sequence or a
+   mapping arrive in 3.10. Borrowed, or NULL with an exception set. */
+static inline PyObject *kos_abc_class(const char *name, PyObject **cache) {
+  if (! *cache) {
+    PyObject *abc = PyImport_ImportModule("collections.abc");
+    if (! abc)
+      return NULL;
+    *cache = PyObject_GetAttrString(abc, name);
+    Py_DECREF(abc);
+  }
+  return *cache;
+}
+
+
+/* 1 when obj is a collections.abc.Sequence, else 0; -1 with an
+   exception set. The isinstance reads __class__ and can run user
+   code. */
+static inline int kos_type_is_sequence(PyObject *obj) {
+  static PyObject *sequence = NULL;
+  PyObject *cls = kos_abc_class("Sequence", &sequence);
+
+  if (! cls)
+    return -1;
+  return PyObject_IsInstance(obj, cls);
+}
+
+
+/* 1 when obj is a collections.abc.Mapping, as above. */
+static inline int kos_type_is_mapping(PyObject *obj) {
+  static PyObject *mapping = NULL;
+  PyObject *cls = kos_abc_class("Mapping", &mapping);
+
+  if (! cls)
+    return -1;
+  return PyObject_IsInstance(obj, cls);
+}
 
 
 // The end.

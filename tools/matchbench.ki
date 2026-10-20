@@ -14,19 +14,21 @@
 """
 matchbench -- matcher and match/case micro-benchmarks.
 
-Three tiers of timing cells over the one matcher engine:
+Three tiers of timing cells over the one matcher:
 
-  engine-*   direct Matcher.match on pre-thawed matchers -- the C
-             engine in isolation, hit and miss paths per node family
-  match-*    compiled koskari match functions -- the full MATCH_CASE
-             chain: per-arm subject wrap, extern env build, binding
+  engine-*   matcher functions built ahead of the run, called from
+             koskari -- hit and miss paths per node family
+  syntax-*   one matcher over a let form, and a three-arm Syntax
+             trying each arm's matcher in order
+  match-*    compiled koskari match functions -- the arm chain of
+             MATCH_* instructions inline, captures into fast slots
   anchor-*   the same 8-way literal dispatch as match, switch, and
-             cond -- the ratios that say when engine taxes matter
+             cond -- the ratios that say when matching taxes matter
 
 Methodology follows examples/churn: a uniform harness loop, an
 empty-cell baseline subtracted from every measurement, and a warmup
-pass so MATCH_CASE cache slots are thawed before timing. Numbers are
-machine-relative; compare before/after on one machine, not across.
+pass so every matcher's function is compiled before timing. Numbers
+are machine-relative; compare before/after on one machine, not across.
 
 Run from the repository root:
 
@@ -49,7 +51,8 @@ import-from time perf_counter
 
 import-from koskari.matcher:
     APP BODY BINDINGS CAPTURE CLASS FIELD FORM LITERAL MAP MAP_ENTRY
-    MATCH ONEOF PREDICATE SYMBOL MatchCompiler make_matcher thaw
+    MATCH ONEOF PREDICATE SYMBOL make_matcher
+import-from koskari.syntax SpecialTransform Syntax
 
 
 ;; === fixtures ===
@@ -69,15 +72,14 @@ define SUBJ_MAP #(#{"kind": "job" "url": "http://x"})
 define SUBJ_TUP #(#(1 2))
 define SUBJ_SEVEN #(7)
 
-define FROZEN_SEQ ((MatchCompiler).lower
+define M_SEQ (make_matcher
     (MATCH (FORM (MATCH (CAPTURE "a") (CAPTURE "b") (CAPTURE "c")))))
-
-define M_SEQ (thaw FROZEN_SEQ)
 
 define M_CLS (make_matcher
     (MATCH (CLASS "Point"
         (FIELD (CAPTURE "a"))
-        (FIELD (CAPTURE "b")))))
+        (FIELD (CAPTURE "b"))))
+    #{"Point": Point})
 
 define M_MAP (make_matcher
     (MATCH (MAP
@@ -89,20 +91,38 @@ define M_ONEOF (make_matcher
         (LITERAL 0) (LITERAL 1) (LITERAL 2) (LITERAL 3)
         (LITERAL 4) (LITERAL 5) (LITERAL 6) (LITERAL 7))))
 
-define M_PRED (make_matcher (MATCH (PREDICATE "p")))
-
-define M_APP (make_matcher (MATCH (APP "f" (CAPTURE "x"))))
-
 define M_SYNTAX (make_matcher
     (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body")))
 
 define FORM_LET '(mylet [[x 1] [y 2]] (+ x y))
+
+define syntax-arm [compiler source result]:
+    None
+
+;; a syntax of three arms, the let shape last: the syntax tries each
+;; arm's matcher in order
+define S_SYNTAX (Syntax "mylet" #(
+    (SpecialTransform (MATCH (SYMBOL "head") (LITERAL 0)) syntax-arm)
+    (SpecialTransform (MATCH (SYMBOL "head") (SYMBOL "only")) syntax-arm)
+    (SpecialTransform
+        (MATCH (SYMBOL "head") (BINDINGS "bindings") (BODY "body"))
+        syntax-arm)))
 
 define ki-pred [v]:
     True
 
 define ki-extract [v]:
     v
+
+define M_PRED_PY (make_matcher (MATCH (PREDICATE "p")) #{"p": bool})
+
+define M_PRED_KI (make_matcher (MATCH (PREDICATE "p")) #{"p": ki-pred})
+
+define M_APP_PY (make_matcher (MATCH (APP "f" (CAPTURE "x"))) #{"f": abs})
+
+define M_APP_KI (make_matcher
+    (MATCH (APP "f" (CAPTURE "x")))
+    #{"f": ki-extract})
 
 
 ;; === statement-tier consumers ===
@@ -197,43 +217,43 @@ define cell-noop []:
 
 
 define cell-engine-seq-hit []:
-    (M_SEQ.match SUBJ_SEQ3)
+    (M_SEQ SUBJ_SEQ3)
 
 define cell-engine-seq-miss []:
-    (M_SEQ.match SUBJ_SEQ2)
+    (M_SEQ SUBJ_SEQ2)
 
 define cell-engine-class-hit []:
-    (M_CLS.match SUBJ_PT Point: Point)
+    (M_CLS SUBJ_PT)
 
 define cell-engine-class-miss []:
-    (M_CLS.match SUBJ_STR Point: Point)
+    (M_CLS SUBJ_STR)
 
 define cell-engine-map-hit []:
-    (M_MAP.match SUBJ_MAP)
+    (M_MAP SUBJ_MAP)
 
 define cell-engine-map-miss []:
-    (M_MAP.match SUBJ_TUP)
+    (M_MAP SUBJ_TUP)
 
 define cell-engine-oneof-backtrack []:
-    (M_ONEOF.match SUBJ_SEVEN)
+    (M_ONEOF SUBJ_SEVEN)
 
 define cell-engine-pred-py []:
-    (M_PRED.match SUBJ_SEVEN p: bool)
+    (M_PRED_PY SUBJ_SEVEN)
 
 define cell-engine-pred-ki []:
-    (M_PRED.match SUBJ_SEVEN p: ki-pred)
+    (M_PRED_KI SUBJ_SEVEN)
 
 define cell-engine-app-py []:
-    (M_APP.match SUBJ_SEVEN f: abs)
+    (M_APP_PY SUBJ_SEVEN)
 
 define cell-engine-app-ki []:
-    (M_APP.match SUBJ_SEVEN f: ki-extract)
-
-define cell-thaw []:
-    (thaw FROZEN_SEQ)
+    (M_APP_KI SUBJ_SEVEN)
 
 define cell-syntax-dispatch []:
-    (M_SYNTAX.match FORM_LET)
+    (M_SYNTAX FORM_LET)
+
+define cell-syntax-select []:
+    (S_SYNTAX.match_transformer FORM_LET)
 
 define cell-match-first-arm []:
     (m8 0)
@@ -274,8 +294,8 @@ define CELLS #(
     #("engine-pred-ki" cell-engine-pred-ki)
     #("engine-app-py" cell-engine-app-py)
     #("engine-app-ki" cell-engine-app-ki)
-    #("thaw" cell-thaw)
     #("syntax-dispatch" cell-syntax-dispatch)
+    #("syntax-select" cell-syntax-select)
     #("match-first-arm" cell-match-first-arm)
     #("match-last-arm" cell-match-last-arm)
     #("match-else" cell-match-else)
@@ -315,7 +335,8 @@ define run-cells [names iterations]:
         when (or (None? names) (in? cname names)):
             (selected.append #(cname cfn))
 
-    ; warmup: thaw MATCH_CASE cache slots and stabilize
+    ; warmup: build each cell's match functions, fill the caches of
+    ; the instructions they run, and stabilize
     for-each [[cname cfn] selected]:
         (time-loop cfn 100)
 

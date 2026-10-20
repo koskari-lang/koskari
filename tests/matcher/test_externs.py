@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests for matcher extern defaults registry and Matcher.missing_externs
+Tests for the externs a pattern's matcher function is built over
 """
 
 
@@ -20,157 +20,119 @@ import unittest
 
 import pytest
 
-from koskari.lib import (
-    get_extern_defaults, keyword, nil, pair, reset_extern_defaults, symbol)
-from koskari.matcher import Matcher, MatchResult, thaw
+from koskari.lib import demand, symbol
+from koskari.matcher import (
+    APP, CAPTURE, LITERAL, MATCH, PREDICATE, REST, TYPE, VALUE, make_matcher)
 
 
 pytestmark = pytest.mark.phase_infra
 
 
-def _lambda_style_tuple():
-    """
-    Frozen matcher tuple with extern ('symbol',): TYPE(symbol) capture + REST
-    """
-
-    slots = ("name", "body")
-    externs = ("symbol",)
-    consts = ("::",)
-    nodes = (
-        ("TEST", "TYPE", 0),
-        ("CAPTURE", 0, 0),
-        ("TEST", "LITERAL", 0),
-        ("TEST", "ANY", -1),
-        ("TEST", "ANY", -1),
-        ("REST", 1),
-        ("CAPTURE", 1, 5),
-        ("MATCH", 1, 2, 3, 4, 6),
-    )
-    return ("MATCHER", slots, externs, consts, nodes, 7)
+LAMBDA_STYLE = MATCH(CAPTURE("name", TYPE("Kind")), REST("body"))
 
 
-def _two_extern_tuple():
-    """
-    Matcher declaring externs ('symbol', 'Point'); entry node uses symbol only
-    """
+class TestExternsAtBuild(unittest.TestCase):
 
-    return (
-        "MATCHER",
-        (),
-        ("symbol", "Point"),
-        (),
-        (("TEST", "TYPE", 0),),
-        0,
-    )
-
-
-class TestExternDefaults(unittest.TestCase):
-
-    def test_defaults_contains_baseline(self):
+    def test_every_extern_is_given_at_build(self):
         """
-        Baseline extern names map to the expected type objects
+        A declared extern must be given when the matcher is built, and
+        a matcher built without it is refused; two matchers over one
+        pattern each read their own externs, and the call takes no
+        keywords
         """
 
-        d = get_extern_defaults()
-        self.assertIs(d["pair"], pair)
-        self.assertIs(d["symbol"], symbol)
-        self.assertIs(d["keyword"], keyword)
-        self.assertIs(d["int"], int)
-        self.assertIs(d["str"], str)
-        self.assertIs(d["tuple"], tuple)
-        self.assertIs(d["list"], list)
+        with self.assertRaises(TypeError) as caught:
+            make_matcher(LAMBDA_STYLE)
+        self.assertIn("Kind", str(caught.exception))
 
-    def test_match_without_kwargs_uses_defaults(self):
-        """
-        TYPE(symbol) matcher matches when symbol extern is resolved from
-        defaults
-        """
-
-        m = thaw(_lambda_style_tuple())
-        self.assertIsInstance(m, Matcher)
+        m = make_matcher(LAMBDA_STYLE, {"Kind": symbol})
+        other = make_matcher(LAMBDA_STYLE, {"Kind": int})
         subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        result = m.match(subj)
-        self.assertIsInstance(result, MatchResult)
-        self.assertTrue(result.matched)
+        self.assertIsNotNone(demand(m)(subj))
+        self.assertIsNone(demand(other)(subj))
+        self.assertIsNotNone(demand(m)(subj))
+        with self.assertRaises(TypeError):
+            demand(m)(subj, symbol=symbol)
 
-    def test_explicit_kwarg_overrides_default(self):
+    def test_extern_named_subject(self):
         """
-        A supplied extern binding wins over the defaults dict
-        """
-
-        m = thaw(_lambda_style_tuple())
-        subj = (symbol("foo"), "::", "ret-type", "formals", "b1", "b2")
-        bad = m.match(subj, symbol=int)
-        self.assertFalse(bad.matched)
-        good = m.match(subj, symbol=symbol)
-        self.assertTrue(good.matched)
-
-    def test_runtime_mutation_persists(self):
-        """
-        Names added to the defaults dict are resolved like baseline entries
+        An extern spelled subject is an extern like any other: it does
+        not collide with the function's own formal, and its value
+        reaches the match as an extern
         """
 
-        class Point(object):
+        m = make_matcher(MATCH(TYPE("subject")), {"subject": int})
+        self.assertIsNotNone(demand(m)((7,)))
+        self.assertIsNone(demand(m)(("s",)))
+
+
+    def test_type_extern_named_match_subject(self):
+        """
+        A TYPE extern spelled match-subject reads its extern value, not
+        the subject the matcher function takes
+        """
+
+        m = make_matcher(MATCH(TYPE("match-subject")), {"match-subject": int})
+        self.assertIsNotNone(demand(m)((7,)))
+        self.assertIsNone(demand(m)(("s",)))
+
+
+    def test_app_extern_named_match_subject(self):
+        """
+        An APP extractor spelled match-subject is called on the element,
+        not replaced by the subject the matcher function takes
+        """
+
+        m = make_matcher(
+            MATCH(APP("match-subject", VALUE("a"))),
+            {"match-subject": lambda v: v * 10})
+        hit = demand(m)((3,))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["a"], 30)
+
+
+    def test_user_type_extern(self):
+        class Point:
             pass
 
-        d = get_extern_defaults()
-        d["Point"] = Point
-        try:
-            m = thaw(
-                (
-                    "MATCHER",
-                    (),
-                    ("Point",),
-                    (),
-                    (("TEST", "TYPE", 0),),
-                    0,
-                )
-            )
-            result = m.match((Point(),))
-            self.assertTrue(result.matched)
-        finally:
-            reset_extern_defaults()
+        m = make_matcher(MATCH(TYPE("Point")), {"Point": Point})
+        self.assertIsNotNone(demand(m)((Point(),)))
+        self.assertIsNone(demand(m)((7,)))
 
-    def test_reset_extern_defaults_restores_baseline(self):
+
+class TestExternsPerMatcher(unittest.TestCase):
+
+    def test_a_predicate_matching_with_another_matcher(self):
         """
-        reset_extern_defaults drops ad-hoc entries and restores baseline keys
+        Two matchers over one pattern each read their own externs: an
+        outer predicate that runs the inner matcher mid-walk leaves the
+        outer walk reading the outer predicate
         """
 
-        d = get_extern_defaults()
-        d["custom_extern_marker"] = object
-        self.assertIn("custom_extern_marker", get_extern_defaults())
-        reset_extern_defaults()
-        d2 = get_extern_defaults()
-        self.assertNotIn("custom_extern_marker", d2)
-        self.assertIn("symbol", d2)
-        self.assertIn("pair", d2)
+        pattern = MATCH(PREDICATE("p"), PREDICATE("p"))
+        inner = make_matcher(pattern, {"p": lambda y: False})
+        seen = []
+
+        def outer_p(x):
+            seen.append(x)
+            if x == 1:
+                self.assertIsNone(demand(inner)((9, 9)))
+            return True
+
+        outer = make_matcher(pattern, {"p": outer_p})
+        self.assertIsNotNone(demand(outer)((1, 2)))
+        self.assertEqual(seen, [1, 2])
 
 
-class TestMissingExterns(unittest.TestCase):
+class TestUnusedExternsAreIgnored(unittest.TestCase):
 
-    def test_missing_externs_basic(self):
+    def test_an_extern_naming_nothing_is_ignored(self):
         """
-        Names absent from provided are reported in extern order
-        """
-
-        m = thaw(_two_extern_tuple())
-        missing = m.missing_externs(provided={"symbol": symbol("x")})
-        self.assertEqual(missing, ("Point",))
-
-    def test_missing_externs_exclude_defaults(self):
-        """
-        With exclude_defaults, names satisfied by the defaults dict are omitted
+        A name in the externs naming no extern of a matcher is ignored
         """
 
-        m = thaw(_two_extern_tuple())
-        missing = m.missing_externs(exclude_defaults=True)
-        self.assertEqual(missing, ("Point",))
+        m = make_matcher(MATCH(LITERAL(42)), {"bogus": 1})
+        self.assertIsNotNone(demand(m)((42,)))
 
-    def test_missing_externs_validates_provided(self):
-        """
-        Non-mapping provided raises TypeError
-        """
 
-        m = thaw(_two_extern_tuple())
-        with self.assertRaises(TypeError):
-            m.missing_externs(provided="not-a-mapping")
+# The end.

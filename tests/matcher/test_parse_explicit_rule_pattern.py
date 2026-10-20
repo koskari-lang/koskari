@@ -20,10 +20,10 @@ import unittest
 
 import pytest
 
-from koskari.lib import Datum, cons, gensym, keyword, nil, symbol
+from koskari.lib import cons, demand, gensym, keyword, nil, symbol
 from koskari.matcher import (
-    CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, Matcher,
-    parse_explicit_rule_pattern, parse_matcher)
+    CAPTURE, CLASS, LITERAL, MATCH, REPEAT, REST, parse_explicit_rule_pattern)
+from koskari.matcher.heads import parse_matcher
 from koskari.types import build_proper
 
 
@@ -53,11 +53,11 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         b = symbol("b")
         form = build_proper(a, b)
         p = parse_explicit_rule_pattern(form)
-        m = Matcher.from_tuple(p.freeze())
-        r = m.match((a, b))
-        self.assertTrue(r.matched)
-        r2 = m.match((a, symbol("c")))
-        self.assertFalse(r2.matched)
+        m = p.build()
+        r = demand(m)((a, b))
+        self.assertIsNotNone(r)
+        r2 = demand(m)((a, symbol("c")))
+        self.assertIsNone(r2)
 
 
     def test_field_name_is_the_symbols_base(self):
@@ -75,10 +75,10 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         field = parse_matcher(build_proper(
             symbol("FIELD"), marked_x,
             build_proper(symbol("VALUE"), symbol("v"))))
-        m = Matcher.from_tuple(MATCH(CLASS("Point", field)).freeze())
-        r = m.match((Point(7),), Point=Point)
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["v"], 7)
+        m = MATCH(CLASS("Point", field)).build({"Point": Point})
+        r = demand(m)((Point(7),))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["v"], 7)
 
 
     def test_symbol_declaration(self):
@@ -88,11 +88,11 @@ class TestParseExplicitRulePattern(unittest.TestCase):
 
         form = build_proper(symbol("SYMBOL"), symbol("v"))
         p = parse_explicit_rule_pattern(form)
-        m = Matcher.from_tuple(p.freeze())
+        m = p.build()
         arg = symbol("argval")
-        r = m.match((arg,))
-        self.assertTrue(r.matched)
-        self.assertIs(r.captures["v"], arg)
+        r = demand(m)((arg,))
+        self.assertIsNotNone(r)
+        self.assertIs(r["v"], arg)
 
 
     def test_ellipsis_rejected(self):
@@ -140,15 +140,15 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         self.assertIsInstance(rest_pat, REST)
         self.assertEqual(rest_pat._min_tail, 0)
         pat = MATCH(LITERAL(1), rest_pat)
-        m = Matcher.from_tuple(pat.freeze())
-        res = m.match([1])
-        self.assertTrue(res.matched)
-        self.assertEqual(res.captures["r"], ())
+        m = pat.build()
+        res = demand(m)([1])
+        self.assertIsNotNone(res)
+        self.assertEqual(res["r"], ())
 
 
-    def test_repeat_slot_min_freeze_thaw_match(self):
+    def test_repeat_slot_min_build_match(self):
         """
-        (REPEAT xs literal min: 2) freezes and matches two repetitions
+        (REPEAT xs literal min: 2) builds and matches two repetitions
         """
 
         form = build_proper(
@@ -159,17 +159,16 @@ class TestParseExplicitRulePattern(unittest.TestCase):
         self.assertIsInstance(p, CAPTURE)
         self.assertIsInstance(p._sub, REPEAT)
         self.assertEqual(p._sub._min_count, 2)
-        m = Matcher.from_tuple(p.freeze())
+        m = p.build()
         xa = symbol("x")
-        ok = m.match([xa, xa])
-        self.assertTrue(ok.matched)
-        cap = ok.captures["xs"]
-        frames = cap.datum if isinstance(cap, Datum) else cap
+        ok = demand(m)([xa, xa])
+        self.assertIsNotNone(ok)
+        frames = ok["xs"]
         self.assertEqual(len(frames), 2)
-        bad_one = m.match([xa])
-        self.assertFalse(bad_one.matched)
-        bad_extra = m.match([xa, xa, symbol("z")])
-        self.assertFalse(bad_extra.matched)
+        bad_one = demand(m)([xa])
+        self.assertIsNone(bad_one)
+        bad_extra = demand(m)([xa, xa, symbol("z")])
+        self.assertIsNone(bad_extra)
 
 
 # The end.

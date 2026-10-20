@@ -28,11 +28,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from koskari.lib import cons, keyword, nil, symbol
+from koskari.lib import cons, demand, keyword, nil, symbol
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FORM, LITERAL, MAP, MATCH, NOT, ONEOF, PREDICATE,
-    REST, MatchCompiler, parse_case_element, parse_case_pattern, parse_matcher,
-    thaw)
+    REST, parse_case_pattern, pattern_slot_names)
+from koskari.matcher.case import parse_case_element
+from koskari.matcher.heads import parse_matcher
 
 
 pytestmark = pytest.mark.phase_infra
@@ -50,19 +51,15 @@ def _delim(*items):
     return _list(*items)
 
 
-def _frozen(pattern):
-    return MatchCompiler().lower(MATCH(pattern))
-
-
 def _match_value(pattern, subject, **externs):
     """
-    Thaw a classified pattern and run it against one runtime value
+    Build a classified pattern and run it against one runtime value
     """
 
-    m = thaw(_frozen(pattern))
-    r = m.match((subject,), **externs)
-    caps = {k: getattr(v, "datum", v) for k, v in r.captures.items()}
-    return r.matched, caps
+    r = demand(MATCH(pattern).build(externs))((subject,))
+    if r is None:
+        return False, {}
+    return True, {k: getattr(v, "datum", v) for k, v in r.items()}
 
 
 @dataclass
@@ -76,12 +73,15 @@ class TestClassifyAtoms(unittest.TestCase):
     def test_symbol_is_capture(self):
         pat = parse_case_pattern(_delim(symbol("x")))
         self.assertIsInstance(pat, CAPTURE)
-        self.assertEqual(_frozen(pat)[1], ("x",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["x"])
+        self.assertEqual(_match_value(pat, 5), (True, {"x": 5}))
 
     def test_int_is_literal(self):
         pat = parse_case_pattern(_delim(5))
         self.assertIsInstance(pat, LITERAL)
-        self.assertEqual(_frozen(pat)[1], ())
+        self.assertEqual(pattern_slot_names(MATCH(pat)), [])
+        self.assertEqual(_match_value(pat, 5), (True, {}))
+        self.assertFalse(_match_value(pat, 6)[0])
 
     def test_string_is_literal(self):
         pat = parse_case_pattern(_delim("hello"))
@@ -100,28 +100,40 @@ class TestClassifyAtoms(unittest.TestCase):
 class TestClassifyTyped(unittest.TestCase):
 
     def test_multi_token_typed(self):
-        # [[x :: int]]
+        # [[x :: int]]; a core type needs no extern
         pat = parse_case_pattern(
             _delim(symbol("x"), keyword("::"), symbol("int")))
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("int",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["x"])
+        self.assertEqual(_match_value(pat, 5), (True, {"x": 5}))
+        self.assertFalse(_match_value(pat, "5")[0])
 
     def test_single_form_typed(self):
         # [[(x :: int)]]
         pat = parse_case_pattern(
             _delim(_list(symbol("x"), keyword("::"), symbol("int"))))
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("int",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["x"])
+        self.assertEqual(_match_value(pat, 5), (True, {"x": 5}))
+        self.assertFalse(_match_value(pat, "5")[0])
 
     def test_anonymous_typed(self):
         # [[:: int]]
         pat = parse_case_pattern(
             _delim(keyword("::"), symbol("int")))
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ())
-        self.assertEqual(frozen[2], ("int",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), [])
+        self.assertEqual(_match_value(pat, 5), (True, {}))
+        self.assertFalse(_match_value(pat, "5")[0])
+
+
+    def test_user_type_is_an_extern(self):
+        # [[x :: Point]]
+        pat = parse_case_pattern(
+            _delim(symbol("x"), keyword("::"), symbol("Point")))
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        point = Point(1, 2)
+        self.assertEqual(
+            _match_value(pat, point, Point=Point), (True, {"x": point}))
+        self.assertFalse(_match_value(pat, 5, Point=Point)[0])
 
 
 class TestClassifySequence(unittest.TestCase):
@@ -131,39 +143,51 @@ class TestClassifySequence(unittest.TestCase):
         pat = parse_case_pattern(_delim(
             _list(symbol("#list"), symbol("a"), symbol("b"), symbol("c"))))
         self.assertIsInstance(pat, FORM)
-        self.assertEqual(_frozen(pat)[1], ("a", "b", "c"))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["a", "b", "c"])
+        self.assertEqual(
+            _match_value(pat, [1, 2, 3]), (True, {"a": 1, "b": 2, "c": 3}))
+        self.assertFalse(_match_value(pat, (1, 2))[0])
 
     def test_tuple_head_is_sequence(self):
         # #(a b)
         pat = parse_case_pattern(_delim(
             _list(symbol("#tuple"), symbol("a"), symbol("b"))))
         self.assertIsInstance(pat, FORM)
-        self.assertEqual(_frozen(pat)[1], ("a", "b"))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["a", "b"])
+        self.assertEqual(_match_value(pat, (1, 2)), (True, {"a": 1, "b": 2}))
 
     def test_star_rest(self):
         # #[a *: r]
         pat = parse_case_pattern(_delim(
             _list(symbol("#list"), symbol("a"), keyword("*"), symbol("r"))))
-        self.assertEqual(_frozen(pat)[1], ("a", "r"))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["a", "r"])
+        self.assertEqual(
+            _match_value(pat, (1, 2, 3)), (True, {"a": 1, "r": (2, 3)}))
 
     def test_empty_sequence(self):
         # #[]
         pat = parse_case_pattern(_delim(_list(symbol("#list"))))
         self.assertIsInstance(pat, FORM)
-        self.assertEqual(_frozen(pat)[1], ())
+        self.assertEqual(pattern_slot_names(MATCH(pat)), [])
+        self.assertEqual(_match_value(pat, ()), (True, {}))
+        self.assertFalse(_match_value(pat, (1,))[0])
 
     def test_nested_sequence(self):
         # #[a #[b c]]
         inner = _list(symbol("#list"), symbol("b"), symbol("c"))
         pat = parse_case_pattern(_delim(
             _list(symbol("#list"), symbol("a"), inner)))
-        self.assertEqual(_frozen(pat)[1], ("a", "b", "c"))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["a", "b", "c"])
+        self.assertEqual(
+            _match_value(pat, (1, (2, 3))), (True, {"a": 1, "b": 2, "c": 3}))
 
     def test_sequence_element_literal(self):
         # #[1 x]
         pat = parse_case_pattern(_delim(
             _list(symbol("#list"), 1, symbol("x"))))
-        self.assertEqual(_frozen(pat)[1], ("x",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["x"])
+        self.assertEqual(_match_value(pat, (1, 5)), (True, {"x": 5}))
+        self.assertFalse(_match_value(pat, (2, 5))[0])
 
     def test_bare_list_is_never_a_sequence(self):
         with self.assertRaises(ValueError):
@@ -179,25 +203,35 @@ class TestClassifyClass(unittest.TestCase):
             _list(symbol("item"), symbol("Point"),
                   symbol("a"), symbol("b"))))
         self.assertIsInstance(pat, CLASS)
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("a", "b"))
-        self.assertEqual(frozen[2], ("Point",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["a", "b"])
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        self.assertEqual(
+            _match_value(pat, Point(1, 2), Point=Point),
+            (True, {"a": 1, "b": 2}))
 
     def test_keyword_field_literal(self):
         # Point[x: 0 y] -> attr x must equal 0, self-bind attr y
         pat = parse_case_pattern(_delim(
             _list(symbol("item"), symbol("Point"),
                   keyword("x"), 0, symbol("y"))))
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("y",))
-        self.assertEqual(frozen[2], ("Point",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["y"])
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        self.assertEqual(
+            _match_value(pat, Point(0, 7), Point=Point), (True, {"y": 7}))
+        self.assertFalse(_match_value(pat, Point(1, 7), Point=Point)[0])
 
     def test_no_fields(self):
         # Name[] -> bare isinstance
         pat = parse_case_pattern(_delim(
             _list(symbol("item"), symbol("Point"))))
         self.assertIsInstance(pat, CLASS)
-        self.assertEqual(_frozen(pat)[2], ("Point",))
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        self.assertEqual(
+            _match_value(pat, Point(1, 2), Point=Point), (True, {}))
+        self.assertFalse(_match_value(pat, 5, Point=Point)[0])
 
     def test_keyword_field_missing_pattern_raises(self):
         with self.assertRaises(ValueError):
@@ -217,7 +251,7 @@ class TestClassifyCombinators(unittest.TestCase):
 
     def test_not_is_consuming(self):
         # the case dialect's (not p) is a whole-element pattern: the
-        # engine's zero-width NOT paired with a consuming any, so it can
+        # matcher's zero-width NOT paired with a consuming any, so it can
         # match (and reject) a value on its own
         pat = parse_case_pattern(_delim(_list(symbol("not"), 5)))
         self.assertIsInstance(pat, MATCH)
@@ -238,7 +272,11 @@ class TestClassifyCombinators(unittest.TestCase):
         pat = parse_case_pattern(_delim(
             _list(symbol("?"), symbol("even"))))
         self.assertIsInstance(pat, PREDICATE)
-        self.assertEqual(_frozen(pat)[2], ("even",))
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        even = lambda v: v % 2 == 0  # noqa: E731
+        self.assertEqual(_match_value(pat, 2, even=even), (True, {}))
+        self.assertFalse(_match_value(pat, 3, even=even)[0])
 
     def test_registry_head_passthrough(self):
         # explicit matcher heads still work: (REST r)
@@ -250,15 +288,18 @@ class TestClassifyCombinators(unittest.TestCase):
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
         self.assertIsInstance(pat, APP)
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("x",))
-        self.assertEqual(frozen[2], ("f",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["x"])
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        self.assertEqual(_match_value(pat, -3, f=abs), (True, {"x": 3}))
 
     def test_app_without_pattern(self):
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"))))
         self.assertIsInstance(pat, APP)
-        self.assertEqual(_frozen(pat)[2], ("f",))
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        self.assertEqual(_match_value(pat, -3, f=abs), (True, {}))
 
     def test_app_registry_head(self):
         # the canonical matcher-surface spelling also works
@@ -291,7 +332,7 @@ class TestClassifyCombinators(unittest.TestCase):
 
 class TestCasePatternMatching(unittest.TestCase):
     """
-    End-to-end: classified patterns thawed and run against values
+    End-to-end: classified patterns built and run against values
     """
 
     def test_capture_binds_whole_value(self):
@@ -384,7 +425,7 @@ class TestCasePatternMatching(unittest.TestCase):
         sys.version_info < (3, 10),
         "3.10+ generates __match_args__; the synthesis gate is 3.9-only")
     def test_class_positional_synthesized_on_39(self):
-        # Python 3.9 predates __match_args__; the engine synthesizes the
+        # Python 3.9 predates __match_args__; the matcher synthesizes the
         # 3.10-equivalent tuple for dataclasses (init fields) and
         # namedtuples (_fields)
         import collections
@@ -508,17 +549,20 @@ class TestClassifyMap(unittest.TestCase):
         pat = parse_case_pattern(_delim(
             _dict_pattern(_dict_entry("kind", symbol("k")))))
         self.assertIsInstance(pat, MAP)
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("k",))
-        self.assertEqual(frozen[2], ())
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["k"])
+        self.assertEqual(_match_value(pat, {"kind": 1}), (True, {"k": 1}))
+        self.assertFalse(_match_value(pat, {})[0])
 
     def test_extern_key(self):
         # #{key: v} -- symbol key resolves from the namespace
         pat = parse_case_pattern(_delim(
             _dict_pattern(_dict_entry(symbol("key"), symbol("v")))))
-        frozen = _frozen(pat)
-        self.assertEqual(frozen[1], ("v",))
-        self.assertEqual(frozen[2], ("key",))
+        self.assertEqual(pattern_slot_names(MATCH(pat)), ["v"])
+        with self.assertRaisesRegex(TypeError, "missing extern"):
+            MATCH(pat).build()
+        self.assertEqual(
+            _match_value(pat, {"a": 1}, key="a"), (True, {"v": 1}))
+        self.assertFalse(_match_value(pat, {"b": 1}, key="a")[0])
 
     def test_empty_map(self):
         # #{} -- bare mapping check
@@ -687,10 +731,10 @@ class TestAppMatching(unittest.TestCase):
             return v * 2
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
-        m = thaw(_frozen(pat))
-        r = m.match((5,), f=afn)
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"], 10)
+        m = MATCH(pat).build({"f": afn})
+        r = demand(m)((5,))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["x"], 10)
 
     def test_suspending_extractor_raises_sync_violation(self):
         import asyncio
@@ -702,27 +746,27 @@ class TestAppMatching(unittest.TestCase):
             return v
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
-        m = thaw(_frozen(pat))
+        m = MATCH(pat).build({"f": afn})
         with self.assertRaises(KoskariSyncViolation):
-            m.match((5,), f=afn)
+            demand(m)((5,))
 
     def test_raising_extractor_propagates(self):
         def bad(v):
             raise RuntimeError("boom")
         pat = parse_case_pattern(_delim(
             _list(symbol("app"), symbol("f"), symbol("x"))))
-        m = thaw(_frozen(pat))
+        m = MATCH(pat).build({"f": bad})
         with self.assertRaises(RuntimeError):
-            m.match((5,), f=bad)
+            demand(m)((5,))
 
     def test_async_predicate_driven_by_demand(self):
         async def apred(v):
             return v > 3
         pat = parse_case_pattern(_delim(
             _list(symbol("?"), symbol("p"))))
-        m = thaw(_frozen(pat))
-        self.assertTrue(m.match((5,), p=apred).matched)
-        self.assertFalse(m.match((1,), p=apred).matched)
+        m = MATCH(pat).build({"p": apred})
+        self.assertIsNotNone(demand(m)((5,)))
+        self.assertIsNone(demand(m)((1,)))
 
 
 # The end.

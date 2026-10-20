@@ -3,7 +3,7 @@
 **Status:** Architecture reference; matches the implementation. The matcher stack,
 **RULE** pattern parsing (`koskari/syntax.py`: `parse_syntax_rules_pattern`,
 `_syntax_pattern_specs`, `_syntax_elem_pattern`), **MATCH** pattern parsing
-(`koskari/matcher.py`: `parse_explicit_rule_pattern`,
+(`koskari/matcher/heads.py`: `parse_explicit_rule_pattern`,
 `_lower_spine_children`), `syntax-rules` / **`macro-rules`** /
 **`syntax-match`** / **`macro-match`** transformers, **compile-time lowering**
 (`compile/syntax-rules`, `compile/macro-rules`, `compile/syntax-match`,
@@ -27,7 +27,7 @@ the **lowering** from **MATCH** surface patterns into that same IR.
 | Name | Meaning | Where it is used | Implementation status |
 |------|---------|------------------|-------------------------|
 | **RULE** | Scheme-style **list-shaped** patterns (ellipsis, literals, nested list structure), lowered via `parse_syntax_rules_pattern`. | **`(syntax-rules …)`** and **`(macro-rules …)`** specs. | **Implemented** (`parse_syntax_rules_pattern` in **`koskari/syntax.py`**). |
-| **MATCH** | **Rich** patterns that lower to the same matcher vocabulary as **`MATCH(...)`** in **`koskari.matcher`**. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`(PATTERN TEMPLATE)`** or **`(PATTERN BODY …)`**. | **Implemented:** `parse_explicit_rule_pattern` in **`koskari/matcher.py`**. |
+| **MATCH** | **Rich** patterns that lower to the same matcher vocabulary as **`MATCH(...)`** in **`koskari.matcher`**. | **`(syntax-match …)`** and **`(macro-match …)`**; each rule row is **`(PATTERN TEMPLATE)`** or **`(PATTERN BODY …)`**. | **Implemented:** `parse_explicit_rule_pattern` in **`koskari/matcher/heads.py`**. |
 
 **How the implementation chooses RULE vs MATCH**
 
@@ -65,7 +65,7 @@ pattern only, is gone. The **four** top-level forms (`syntax-rules`,
 
 - **Syntax boxes / procedural hygiene**: [../archive/macro-hygiene-syntax-boxes.md](../archive/macro-hygiene-syntax-boxes.md)
 - **Matcher hygiene metadata (archived; superseded by [MATCHER.md § Hygiene model](../MATCHER.md#hygiene-model))**: [matcher-hygiene-extensions.md](../archive/matcher-hygiene-extensions.md)
-- **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.lib.Matcher`)**: [pattern-matching.md](../api/pattern-matching.md)
+- **Pattern matching API (tagged tuples, `koskari.matcher` / `koskari.matcher.emitter`)**: [pattern-matching.md](../api/pattern-matching.md)
 - **Implemented compile-time macros**: [MACROS.md](../MACROS.md)
 - **`compile/define-syntax` and macro specials**: [SPECIALS.md](../SPECIALS.md)
 - **Historical macro notes**: [archive/macros.md](../archive/macros.md)

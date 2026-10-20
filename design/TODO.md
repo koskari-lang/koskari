@@ -174,6 +174,17 @@ every delivery and every receiver.
 
 Ref: [language/values-pack.md](language/values-pack.md).
 
+### Scratch slots for compiler temporaries (implement tiers 1 and 2)
+
+A pool of tokens a fragment's context manager hands out for the
+extent of a special's emitted code, declared once as locals and
+reused by non-overlapping uses, then their own tuple on the spec so
+they leave the locals set; a scratch node with its own instructions
+is an optimization to measure after. First user: the match form's
+cursor, mark and items temporaries.
+
+Ref: [interpreter/scratch-slots.md](interpreter/scratch-slots.md).
+
 ### Externs slot in NamespaceSpec (investigate)
 
 A fourth name list on `NamespaceSpec`: names a frame reads from a

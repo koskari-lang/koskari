@@ -1,5 +1,5 @@
 # KOS_OP_CHECK_COMPARE
-- **Style**: EXTRA (CMP, COUNT, LABEL, COUNT). Row = KosCompare selector,
+- **Style**: EXTRA (CMP, COUNT, LABEL, RAW). Row = KosCompare selector,
   operand count, target pc, negate flag.
 - **Stack**: `[..., a1, ..., aN] → [...]`. Chain-compare the top COUNT
   operands under the selector, negated when the negate flag is set;

@@ -26,10 +26,12 @@ compiled per pattern and an optional else clause.
 from ...bootstrap import builtin
 from ...exceptions import SpecialError
 from ...hygiene import extern_atoms
-from ...lib import Matcher, OpCode, keyword, symbol
+from ...lib import OpCode, keyword, symbol
 from ...matcher import (
-    BODY, CALLEDBY, FORM, MATCH, VALUE, MatchCompiler, parse_case_pattern,
-    repeat_capture)
+    BODY, CALLEDBY, FORM, MATCH, VALUE, parse_case_pattern, repeat_capture)
+from ...matcher.analysis import analyse, arm_gate
+from ...matcher.emitter import lower_arm
+from ...matcher.tables import TableBuilder
 from ...syntax import special
 from ...types import is_pair
 from ..helpers import helper_begin
@@ -49,21 +51,6 @@ _MATCH_PATTERNS = [
         repeat_capture(
             "clauses", FORM(MATCH(VALUE("pattern"), BODY("body"))))),
 ]
-
-
-def _lower_pattern(pattern, source, position=None):
-    """
-    Lower one clause delimiter's content through the runtime
-    case-pattern dialect. parse_case_pattern classifies by head symbol
-    or marker (#list / #tuple sequences, item class sugar, ::-typed,
-    combinators, atoms) -- the special makes no shape decisions of its
-    own.
-    """
-
-    try:
-        return parse_case_pattern(pattern)
-    except ValueError as exc:
-        raise SpecialError(str(exc), source, position=position) from exc
 
 
 @builtin("compile/match")
@@ -97,32 +84,26 @@ def special_match(compiler, caps):
     gen_label = compiler.gen_label
     done = gen_label()
 
-    fragment.merge(compiler.full_compile(caps["subject"].datum))
-
-    declared = set()
-
+    # each arm's pattern, lowered ahead of emission, and the names its
+    # captures bind in order
     clauses = caps["clauses"]
+    arms = []
+    bound = []
     remaining = len(clauses)
-
     for clause in clauses:
         remaining -= 1
-
         patcap = clause["pattern"]
         pattern = patcap.datum
         body = clause["body"].datum
         clause_pos = patcap.position
-
-        fragment.position(clause_pos)
 
         if pattern is _keyword_else:
             if remaining:
                 raise SpecialError(
                     "else: must be last clause", pattern,
                     position=clause_pos)
-
-            fragment.instruction(OpCode.POP, 1)
-            helper_begin(fragment, body)
-            fragment.instruction(OpCode.JUMP, done)
+            arms.append(
+                (None, None, None, None, None, None, body, clause_pos))
             break
 
         guard_kw = None
@@ -136,64 +117,132 @@ def special_match(compiler, caps):
                     position=clause_pos)
             guard_expr, body = tail
 
-        arm = MATCH(_lower_pattern(pattern, pattern, clause_pos))
-        frozen = MatchCompiler().lower(arm)
-        # frozen[1] is the full slot table in emission order -- the one
-        # lowering yields both the constant and the binding names.
-        # Ordered dedup: ONEOF branches may declare the same slot in
-        # mutually exclusive arms.
-        names = list(dict.fromkeys(symbol(n) for n in frozen[1]))
+        # the case-pattern dialect classifies the delimiter's content
+        # by head symbol or marker; the special makes no shape
+        # decisions of its own
+        try:
+            arm = MATCH(parse_case_pattern(pattern))
+        except ValueError as exc:
+            raise SpecialError(
+                str(exc), pattern, position=clause_pos) from exc
+        try:
+            tables = TableBuilder().lower(arm)
+            analysis = analyse(tables, arm=True)
+        except (TypeError, ValueError) as exc:
+            raise SpecialError(
+                f"invalid match pattern: {exc}", pattern, position=clause_pos)
+        # only the root scope's slots become variables; a name inside
+        # a group or REPEAT is reached through its value
+        bound.extend(analysis.scopes[0].names)
+        atoms = extern_atoms(pattern, tables[1])
+        arms.append((
+            pattern, tables, analysis, atoms, guard_kw, guard_expr, body,
+            clause_pos))
 
-        # externs covered by the matcher extern defaults (int, str,
-        # pair, ...) resolve from that baked-in table at match time and
-        # never touch the namespace; only the missing ones are loaded,
-        # as ordinary variable reads pushed above the subject in
-        # extern-table order for MATCH_CASE to consume. The loads lower
-        # to FAST with every other read, and the request also captures
-        # a closure-bound type used only in a pattern. The extern table
-        # names each by its base spelling; the load is the atom the
-        # pattern wrote, so a name a template binds resolves to it.
-        matcher = Matcher.from_tuple(frozen)
-        externs = matcher.missing_externs(exclude_defaults=True)
-        atoms = extern_atoms(pattern, externs)
-        for extern in externs:
-            sym = atoms.get(extern) or symbol(extern)
-            fragment.request_var(sym)
-            fragment.instruction(OpCode.VAR, sym)
+    # ordered dedup: ONEOF branches and other arms may bind the same
+    # name
+    for name in dict.fromkeys(symbol(n) for n in bound):
+        fragment.declare_var(name)
 
-        # the opcode binds the arm's captures itself, resolving the
-        # slot names to namespace slots once per site through its
-        # cache; the names are declared here so they get slots
-        next_label = gen_label()
-        fragment.instruction(
-            OpCode.MATCH_CASE,
-            (next_label, frozen, tuple(externs),
-             1 if guard_kw is not None else 0))
+    def gate_of(arm):
+        """
+        The arm's gate (arm_gate) with a TYPE's extern as the atom the
+        pattern wrote, so two arms naming one variable compare equal;
+        None for the else arm or an arm with no gate
+        """
 
-        for name in names:
-            if name not in declared:
-                declared.add(name)
-                fragment.declare_var(name)
+        _pattern, tables, _analysis, atoms, *_rest = arm
+        gate = None if tables is None else arm_gate(tables)
+        if gate is not None and gate[0] == 'TYPE':
+            gate = ('TYPE', atoms.get(gate[1]) or symbol(gate[1]))
+        return gate
 
-        if guard_kw is not None:
-            # the subject is still on the stack (keep flag); a failed
-            # guard advances with it intact, a passed guard pops it and
-            # commits to the body
+    # the label after each arm, where the next one starts. An arm whose
+    # gate misses goes past every following arm whose gate must then
+    # miss too: a type test of the same kind on the same core type or
+    # variable, nothing running between the two. An arm that misses
+    # after its CORE gate passed goes past the next arm's same CORE,
+    # which an object's type keeps passing
+    gates = [gate_of(arm) for arm in arms]
+    after = [gen_label() for _arm in arms]
+    gate_miss = list(after)
+    later_miss = list(after)
+    after_gate = [None] * len(arms)
+    for k in range(len(arms) - 2, -1, -1):
+        gate, following = gates[k], gates[k + 1]
+        if gate is None or following is None or gate[0] != following[0]:
+            continue
+        # a CORE names its type by ordinal, a TYPE by the atom
+        if gate[1] != following[1] if gate[0] == 'CORE' \
+                else gate[1] is not following[1]:
+            continue
+        gate_miss[k] = gate_miss[k + 1]
+        if gate[0] == 'CORE':
+            after_gate[k + 1] = gen_label()
+            later_miss[k] = after_gate[k + 1]
+
+    # every extern (a user type, a predicate, a mapping key) is a name
+    # the pattern wrote: requested from the scope the tests run in, so
+    # a closure captures it, and read by the match instructions from
+    # the slot it lowers to. The extern table names each by its base
+    # spelling; the request is the atom the pattern wrote, so a name a
+    # template binds resolves to it
+    for _pattern, tables, _analysis, atoms, *_rest in arms:
+        if tables is None:
+            continue
+        for extern in tables[1]:
+            fragment.request_var(atoms.get(extern) or symbol(extern))
+
+    # the subject stays on the stack across the arm chain; a hit
+    # consumes it and runs the body in place, and a miss leaves it for
+    # the next arm
+    fragment.merge(compiler.full_compile(caps["subject"].datum))
+    for k, arm in enumerate(arms):
+        (_pattern, tables, analysis, atoms, guard_kw, guard_expr, body,
+         clause_pos) = arm
+        if tables is None:
+            fragment.position(clause_pos)
+            fragment.instruction(OpCode.POP, 1)
+            helper_begin(fragment, body)
+            fragment.instruction(OpCode.JUMP, done)
+            break
+
+        # the arm's tests against the subject on top of the stack, the
+        # guard after its captures bind; a pass falls through with the
+        # subject consumed, a miss jumps with the subject still on the
+        # stack, to the arm whose outcome is not yet known
+        fragment.position(clause_pos)
+        guarded = guard_kw is not None
+        miss = later_miss[k]
+        if gates[k] is None:
+            fail_entries = lower_arm(
+                compiler, fragment, tables, analysis, atoms, miss, guarded,
+                follow=after[k])
+        else:
+            fail_entries = lower_arm(
+                compiler, fragment, tables, analysis, atoms, miss, guarded,
+                gate_miss[k], after_gate[k], after[k])
+        if guarded:
+            # a guarded arm's walk keeps the subject for the guard's
+            # miss; the pass pops it
             fragment.merge(compiler.full_compile(guard_expr))
             fragment.instruction(
                 OpCode.JUMP_FALSE if guard_kw is _keyword_when
                 else OpCode.JUMP_TRUE,
-                next_label)
+                miss)
             fragment.instruction(OpCode.POP, 1)
 
         helper_begin(fragment, body)
         fragment.instruction(OpCode.JUMP, done)
-        fragment.instruction(OpCode.LABEL, next_label)
-
+        if fail_entries is not None:
+            # after the body, so the hit path jumps over nothing; an
+            # entry going on to the next arm falls into it
+            fragment.position(clause_pos)
+            fail_entries()
+        fragment.instruction(OpCode.LABEL, after[k])
     else:
         fragment.instruction(OpCode.POP, 1)
         fragment.instruction(OpCode.CONST, None)
-
     fragment.instruction(OpCode.LABEL, done)
     return fragment
 

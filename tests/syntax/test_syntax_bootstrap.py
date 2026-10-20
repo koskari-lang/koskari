@@ -12,7 +12,7 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Bootstrap tests for koskari.syntax: parser, Syntax.__add__, Transform freeze
+Bootstrap tests for koskari.syntax: parser, Syntax.__add__, Transform build
 """
 
 
@@ -21,9 +21,8 @@ import unittest
 import pytest
 
 from koskari.exceptions import SyntaxMatchError
-from koskari.lib import Datum, Matcher, cons, nil, symbol
-from koskari.matcher import (
-    FORM, GROUP, MATCH, VALUE, DatumFrame, MatchCompiler, repeat_capture)
+from koskari.lib import Datum, DatumFrame, cons, demand, nil, symbol
+from koskari.matcher import FORM, GROUP, MATCH, VALUE, repeat_capture
 from koskari.syntax import (
     MacroTransform, SpecialTransform, Syntax, SyntaxTransform, Transform,
     parse_syntax_rules_pattern, special)
@@ -44,14 +43,12 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         x = symbol("x")
         lit = frozenset()
         p = parse_syntax_rules_pattern(x, lit, None)
-        frozen = p.freeze()
-        self.assertEqual(frozen[0], "MATCHER")
-        m = Matcher.from_tuple(frozen)
+        m = p.build()
         a = symbol("a")
         b = symbol("b")
-        r = m.match((a, b))
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"], (a, b))
+        r = demand(m)((a, b))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["x"], (a, b))
 
 
     def test_literal_symbol_top_level(self):
@@ -62,11 +59,11 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         q = symbol("quote")
         lit = frozenset({q})
         p = parse_syntax_rules_pattern(q, lit, None)
-        m = Matcher.from_tuple(p.freeze())
-        r = m.match((q,))
-        self.assertTrue(r.matched)
-        r2 = m.match((symbol("other"),))
-        self.assertFalse(r2.matched)
+        m = p.build()
+        r = demand(m)((q,))
+        self.assertIsNotNone(r)
+        r2 = demand(m)((symbol("other"),))
+        self.assertIsNone(r2)
 
 
     def test_list_pattern_head_not_in_literals_binds_actual_head_symbol(self):
@@ -81,12 +78,12 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         lit = frozenset()
         p = parse_syntax_rules_pattern(
             build_proper(m, symbol("v")), lit, None)
-        matcher = Matcher.from_tuple(p.freeze())
+        matcher = p.build()
         arg = symbol("argval")
-        r = matcher.match((alias, arg))
-        self.assertTrue(r.matched)
-        self.assertIs(r.captures[str(m)], alias)
-        self.assertIs(r.captures["v"], arg)
+        r = demand(matcher)((alias, arg))
+        self.assertIsNotNone(r)
+        self.assertIs(r[str(m)], alias)
+        self.assertIs(r["v"], arg)
 
 
     def test_list_pattern_head_in_literals_requires_exact_symbol(self):
@@ -99,10 +96,10 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         lit = frozenset({m})
         p = parse_syntax_rules_pattern(
             build_proper(m, symbol("v")), lit, None)
-        matcher = Matcher.from_tuple(p.freeze())
+        matcher = p.build()
         arg = symbol("argval")
-        self.assertTrue(matcher.match((m, arg)).matched)
-        self.assertFalse(matcher.match((alias, arg)).matched)
+        self.assertIsNotNone(demand(matcher)((m, arg)))
+        self.assertIsNone(demand(matcher)((alias, arg)))
 
 
     def test_sequence_and_ellipsis(self):
@@ -115,18 +112,18 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         lit = frozenset()
         pat = build_proper(a, Ellipsis)
         p = parse_syntax_rules_pattern(pat, lit, None)
-        m = Matcher.from_tuple(p.freeze())
-        r = m.match(())
-        self.assertTrue(r.matched)
-        cap0 = r.captures["a"]
+        m = p.build()
+        r = demand(m)(())
+        self.assertIsNotNone(r)
+        cap0 = r["a"]
         self.assertEqual(
             cap0.datum if isinstance(cap0, Datum) else cap0,
             [])
         s1 = symbol("s1")
         s2 = symbol("s2")
-        r2 = m.match((s1, s2))
-        self.assertTrue(r2.matched)
-        cap_a = r2.captures["a"]
+        r2 = demand(m)((s1, s2))
+        self.assertIsNotNone(r2)
+        cap_a = r2["a"]
         tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
         self.assertEqual(len(tail), 2)
         self.assertEqual(tail[0], s1)
@@ -144,25 +141,25 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         lit = frozenset()
         pat = build_proper(a, Ellipsis, b)
         p = parse_syntax_rules_pattern(pat, lit, None)
-        m = Matcher.from_tuple(p.freeze())
+        m = p.build()
 
         s1 = symbol("s1")
-        r = m.match(cons(s1, nil))
-        self.assertTrue(r.matched)
-        cap_a = r.captures["a"]
+        r = demand(m)(cons(s1, nil))
+        self.assertIsNotNone(r)
+        cap_a = r["a"]
         tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
         self.assertEqual(len(tail), 0)
-        cap_b = r.captures["b"]
+        cap_b = r["b"]
         self.assertEqual(
             cap_b.datum if isinstance(cap_b, Datum) else cap_b, s1)
 
         s2 = symbol("s2")
-        r2 = m.match(cons(s1, s2, nil))
-        self.assertTrue(r2.matched)
-        cap_a = r2.captures["a"]
+        r2 = demand(m)(cons(s1, s2, nil))
+        self.assertIsNotNone(r2)
+        cap_a = r2["a"]
         tail = cap_a.datum if isinstance(cap_a, Datum) else cap_a
         self.assertEqual(len(tail), 1)
-        cap_b = r2.captures["b"]
+        cap_b = r2["b"]
         self.assertEqual(
             cap_b.datum if isinstance(cap_b, Datum) else cap_b, s2)
 
@@ -177,12 +174,12 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
         pat = build_proper(inner)
         lit = frozenset()
         p = parse_syntax_rules_pattern(pat, lit, None)
-        m = Matcher.from_tuple(p.freeze())
+        m = p.build()
         sx = symbol("inner-val")
         form = build_proper(sx)
-        r = m.match((form,))
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["x"].datum, sx)
+        r = demand(m)((form,))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["x"].datum, sx)
 
 
     def test_match_is_a_plain_pattern_symbol(self):
@@ -194,17 +191,17 @@ class TestParseSyntaxRulesPattern(unittest.TestCase):
 
         pattern = build_proper(symbol("match"), symbol("x"))
         p = parse_syntax_rules_pattern(pattern, frozenset(), None)
-        m = Matcher.from_tuple(p.freeze())
-        r = m.match((symbol("a"), symbol("b")))
-        self.assertTrue(r.matched)
-        self.assertEqual(r.captures["match"], symbol("a"))
-        self.assertEqual(r.captures["x"], symbol("b"))
+        m = p.build()
+        r = demand(m)((symbol("a"), symbol("b")))
+        self.assertIsNotNone(r)
+        self.assertEqual(r["match"], symbol("a"))
+        self.assertEqual(r["x"], symbol("b"))
 
         p = parse_syntax_rules_pattern(
             pattern, frozenset((symbol("match"),)), None)
-        m = Matcher.from_tuple(p.freeze())
-        self.assertTrue(m.match((symbol("match"), symbol("b"))).matched)
-        self.assertFalse(m.match((symbol("a"), symbol("b"))).matched)
+        m = p.build()
+        self.assertIsNotNone(demand(m)((symbol("match"), symbol("b"))))
+        self.assertIsNone(demand(m)((symbol("a"), symbol("b"))))
 
 
 class TestSyntaxAdd(unittest.TestCase):
@@ -309,7 +306,7 @@ class TestSyntaxCompileImpl(unittest.TestCase):
         self.assertEqual(out, symbol("wide"))
 
 
-class TestTransformFreeze(unittest.TestCase):
+class TestTransformConstruction(unittest.TestCase):
 
 
     def test_transform_has_matcher(self):
@@ -317,11 +314,8 @@ class TestTransformFreeze(unittest.TestCase):
         p = parse_syntax_rules_pattern(
             build_proper(zsym, symbol("z")), frozenset({zsym}), None)
         t = SyntaxTransform(p, nil)
-        lowered = MatchCompiler().lower(p)
-        self.assertEqual(lowered[0], "MATCHER")
-        self.assertEqual(len(lowered), 6)
-        r = t.matcher.match((zsym, symbol("mz")))
-        self.assertTrue(r.matched)
+        r = demand(t.matcher)((zsym, symbol("mz")))
+        self.assertIsNotNone(r)
 
 
     def test_concrete_transforms_are_transform_protocol(self):
@@ -370,8 +364,7 @@ class TestSpecialUnpack(unittest.TestCase):
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr: fn(
-                compiler, mr.captures))
+            lambda compiler, source_obj, caps: fn(compiler, caps))
         slot = symbol("slot")
         src = cons(head, slot, nil)
         out = st.try_expand(None, src)
@@ -392,8 +385,7 @@ class TestSpecialUnpack(unittest.TestCase):
 
         st = SpecialTransform(
             p,
-            lambda compiler, source_obj, mr: fn(
-                compiler, **mr.captures))
+            lambda compiler, source_obj, caps: fn(compiler, **caps))
         slot = symbol("slot")
         src = cons(head, slot, nil)
         out = st.try_expand(None, src)
@@ -428,33 +420,15 @@ class TestSpecialDecorator(unittest.TestCase):
         self.assertEqual(len(h.transforms), 2)
 
 
-class TestDatum(unittest.TestCase):
-
-
-    def test_datum_iter_delegates_to_wrapped_pair(self):
-        from koskari.lib import Datum
-
-        a = symbol("a")
-        b = symbol("b")
-        lst = build_proper(a, b)
-        d = Datum(lst)
-        out = list(d)
-        self.assertEqual(len(out), 2)
-        self.assertIsInstance(out[0], Datum)
-        self.assertIs(out[0].datum, a)
-        self.assertIsInstance(out[1], Datum)
-        self.assertIs(out[1].datum, b)
-
-
 class TestDatumFrame(unittest.TestCase):
 
 
     def test_runtime_sequence_captures_remain_plain_dict(self):
         matcher = MATCH(VALUE("x")).build()
-        result = matcher.match((symbol("a"),))
-        self.assertTrue(result.matched)
-        self.assertIs(type(result.captures), dict)
-        self.assertNotIsInstance(result.captures, DatumFrame)
+        result = demand(matcher)((symbol("a"),))
+        self.assertIsNotNone(result)
+        self.assertIs(type(result), dict)
+        self.assertNotIsInstance(result, DatumFrame)
 
 
     def test_source_root_captures_are_datum_frame(self):
@@ -464,13 +438,13 @@ class TestDatumFrame(unittest.TestCase):
         set_position(source, pos)
         matcher = MATCH(VALUE("x")).build()
 
-        result = matcher.match(source)
+        result = demand(matcher)(source)
 
-        self.assertTrue(result.matched)
-        self.assertIsInstance(result.captures, DatumFrame)
-        self.assertIs(result.captures.source, source)
-        self.assertEqual(result.captures.position, pos)
-        self.assertEqual(set(result.captures.keys()), {"x"})
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, DatumFrame)
+        self.assertIs(result.source, source)
+        self.assertEqual(result.position, pos)
+        self.assertEqual(set(result.keys()), {"x"})
 
 
     def test_source_group_captures_are_datum_frame(self):
@@ -481,10 +455,10 @@ class TestDatumFrame(unittest.TestCase):
         source = build_proper(inner)
         matcher = MATCH(FORM(GROUP("row", VALUE("x")))).build()
 
-        result = matcher.match(source)
+        result = demand(matcher)(source)
 
-        self.assertTrue(result.matched)
-        row = result.captures["row"]
+        self.assertIsNotNone(result)
+        row = result["row"]
         self.assertIsInstance(row, DatumFrame)
         self.assertIs(row.source, inner)
         self.assertEqual(row.position, pos)
@@ -499,10 +473,10 @@ class TestDatumFrame(unittest.TestCase):
         source = build_proper(one, two)
         matcher = MATCH(repeat_capture("rows", FORM(VALUE("x")))).build()
 
-        result = matcher.match(source)
+        result = demand(matcher)(source)
 
-        self.assertTrue(result.matched)
-        rows = result.captures["rows"]
+        self.assertIsNotNone(result)
+        rows = result["rows"]
         self.assertEqual(len(rows), 2)
         self.assertIsInstance(rows[0], DatumFrame)
         self.assertIsInstance(rows[1], DatumFrame)

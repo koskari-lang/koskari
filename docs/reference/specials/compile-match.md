@@ -19,18 +19,12 @@ pattern (`[[x :: int]]`); any other bare multi-token content raises
 `SpecialError` -- a sequence is always the explicit `#[...]` / `#(...)`
 form, never bare juxtaposition.
 
-Per arm, the pattern is classified and lowered to a frozen matcher
-constant. Every name the pattern references (types, classes, predicates,
-extractors, symbol mapping keys) is requested through resolution and
-loaded from the enclosing scope at match time, so closure-captured names
-work, except the seven builtin type names `int`, `str`, `list`, `tuple`,
-`pair`, `symbol` and `keyword`, which the matcher resolves from its own
-table and never loads from the scope. The subject is kept on the stack
-across the arm chain (the same
-discipline as [`compile/switch`](compile-switch.md)); a non-matching arm
-leaves it in place and falls to the next arm. On the first match the
-captured names are bound into the enclosing scope in one step and the body
-runs via `helper_begin`.
+An arm that does not match passes the subject to the next arm.
+
+An arm's pattern matches the subject as a single element. Every pattern
+kind may be an arm's root, provided it can match one element; a root
+that cannot, such as the zero-width `NOT` head or a `MATCH` of two
+elements, raises `SpecialError` at compile time.
 
 A clause may carry a **guard** between the delimiter and the body:
 `[[PATTERN] when: COND BODY...]` runs the body only when `COND` is truthy
@@ -38,12 +32,9 @@ after the pattern binds; `unless:` inverts the sense. A failed guard
 advances to the next arm with the subject intact, and the bound captures
 persist (Python-consistent).
 
-Contracts (details in
-[Match patterns](../../guide/match-patterns.md)): captures are sparse -- an
-unbound optional slot raises `NameError` when read; bindings persist after
-the form; `str` / `bytes` never destructure under sequence patterns;
-pattern callables are called synchronously, so one that suspends raises
-`KoskariSyncViolation`.
+Name resolution, binding, sparse captures, and how sequence patterns
+test their elements are documented in
+[Match patterns](../../guide/match-patterns.md).
 
 The head may be written as `match` or `compile/match`; compiler lookup
 resolves `match` to `compile/match`.
@@ -67,7 +58,7 @@ layout and s-expression forms produce identical clauses.
 (match data
   [[#[a b *: rest]] rest]
   [else: 0])
-;; data = #(1 2 3)  ->  (2 3)
+;; data = #(1 2 3)  ->  (3,)
 
 ;; whole-value typed capture, multi-token spelling
 (match data

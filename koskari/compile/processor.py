@@ -335,6 +335,16 @@ def build_var_to_fast():
         if hasattr(OpCode, varname):
             var_to_fast[OpCode[varname]] = opcode
 
+    for opcode in OpCode:
+        # the match instructions spell FAST where the name spells VAR
+        # (MATCH_TYPE_FAST, MATCH_KEY_FAST)
+        opname = opcode.name
+        if not (opname.startswith('MATCH_') and 'FAST' in opname):
+            continue
+        varname = opname.replace('FAST', 'VAR')
+        if hasattr(OpCode, varname):
+            var_to_fast[OpCode[varname]] = opcode
+
     var_to_fast.update(ITEM_VAR_TO_FAST)
 
     var_to_fast[OpCode.UNPACK_VAR] = OpCode.UNPACK_FAST
@@ -373,13 +383,17 @@ CALL_TO_TAIL_CALL = {
 }
 
 
-# The trailing pack phase's run kinds: bare load opcode -> its bulk
-# twins for two, three, and four loads. A run is homogeneous; a load
+# The trailing pack phase's run kinds: bare load or clear opcode -> its
+# bulk twins for two, three, and four. A run is homogeneous; an opcode
 # of another kind breaks it.
 PACK_SHAPES = {
     OpCode.CONST: (OpCode.CONST2, OpCode.CONST3, OpCode.CONST4),
     OpCode.VAR: (OpCode.VAR2, OpCode.VAR3, OpCode.VAR4),
     OpCode.FAST: (OpCode.FAST2, OpCode.FAST3, OpCode.FAST4),
+    OpCode.VAR_CLEAR: (
+        OpCode.VAR_CLEAR2, OpCode.VAR_CLEAR3, OpCode.VAR_CLEAR4),
+    OpCode.FAST_CLEAR: (
+        OpCode.FAST_CLEAR2, OpCode.FAST_CLEAR3, OpCode.FAST_CLEAR4),
 }
 
 
@@ -1289,6 +1303,21 @@ class ByteCodeProcessor:
                  (matched[0][1], arg, None, None))]
 
 
+    @fuse_rule(OpCode.MATCH_SCOPE, OpCode.MATCH_NEXT)
+    def fuse_scope_next(self, op, arg, matched):
+        """
+        MATCH_SCOPE cur k, MATCH_NEXT miss cur+1 -> MATCH_SCOPE_NEXT
+        miss cur k: the mark, then the next element of the cursor it was
+        made at, now one entry deeper. A NEXT on another cursor is left
+        """
+
+        depth, count = matched[0][1][:2]
+        miss, under = arg[:2]
+        if under != depth + 1:
+            return None
+        return [(OpCode.MATCH_SCOPE_NEXT, (miss, depth, count, 0))]
+
+
     def squish(self):
         """
         The peephole half of the compress pipeline: the squish rule set
@@ -1321,8 +1350,9 @@ class ByteCodeProcessor:
     def fuse_feeders(self):
         """
         The feeder-absorption half of the compress pipeline: the fuse
-        rule set over the shared driver. Every pattern requires the
-        immediately preceding value rows to be bare VAR or CONST loads;
+        rule set over the shared driver. Every pattern but the match
+        walk's MATCH_SCOPE, MATCH_NEXT pair requires the immediately
+        preceding value rows to be bare VAR or CONST loads;
         POSITION rows are transparent, with the fused row keeping the
         position in effect at the first feeder and the latest interior
         position re-emitted after the row. The fast pass later lowers

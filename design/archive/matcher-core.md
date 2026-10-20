@@ -1,0 +1,743 @@
+# Matcher core
+
+Status: implemented through phase 8; verified against master; performance work in progress (see "After the end point").
+
+## Why
+
+The current lowering runs one pattern node through two strategies, peek
+mode (the element is on the stack) and pull mode (the element is behind
+a cursor), plus width shortcuts: the one-wide capture and ONEOF paths,
+the length field of `MATCH_FORM`, `MATCH_AVAILABLE`, the trailing-ONEOF
+yield rule. Each node's meaning is split across them. The review of
+2026-10-16 (tmp/review-2026-10-16-r2/ROLLUP.md) traced most defects
+there: a NOT after the element testing that element again, shapes the
+validator accepts that the lowering cannot emit, refused `match` arm
+roots, the depth trace refusing valid patterns, a yield rule that
+depends on wrapping. Captures held in frame locals and cleared on miss
+edges lose a resumed continuation's values and clear a user variable of
+the same name; the capture locals are gensyms that reach the .kio.
+
+The core replaces the instruction set and the lowering with one model:
+every node runs against a cursor, every capture lives in a mark on the
+operand stack, and every node leaves the stack as it found it on both
+exits.
+
+## Kept
+
+- A matcher is a Koskari Function: a gensym positional formal, the
+  captures on a match, None on a miss. The shared first-match function
+  and a Syntax's arms are unchanged.
+- Pattern and `TableBuilder` produce the node tables (slots, externs,
+  consts, nodes, entry). Pattern is a compile-time helper. Two changes:
+  the slots a ONEOF's branches bind under one name share one index in
+  their scope, and a branch's names stay visible to the nodes after the
+  ONEOF (so a SAME after a ONEOF resolves).
+- The walk's state is on the operand stack, addressed by depth.
+- `KosMatchCursor`, its move to a new object when shared, its freelist.
+- Datum boxing over pair spines; DatumFrame results.
+- Externs are closure names over the matcher's namespace. The inline
+  `compile/match` path; the `define-syntax` FunctionSpec path.
+- `MATCH_CASE` (on master) is untouched.
+
+## Replaced
+
+- Every `MATCH_*` instruction this branch introduced. They are a
+  proposal until the branch merges; the core set below takes their
+  place. The ABI minor was already bumped on this branch; no further
+  bump.
+- The peek/pull split, the width shortcuts, the trailing-ONEOF yield
+  rule, the depth-trace self-check, the miss trampolines keyed by pop
+  count.
+- Captures in frame locals, their gensym names and their `VAR_CLEAR`
+  miss edges.
+
+## The base node set
+
+Element tests consume one element on a spine and read through a Datum
+box:
+
+| node | matches when |
+|---|---|
+| `TEST ANY` | always |
+| `TEST LITERAL c` | the element is `c`, a gensym of `c`'s base, or equal to `c` |
+| `TEST CORE n` | the element is the core type n (int, str, symbol, keyword, pair, tuple, list) |
+| `TEST TYPE e` | `isinstance(element, e)` |
+| `TEST PREDICATE e` | `e(element)` is true; on a pair spine `e` receives the Datum |
+| `SAME slot depth` | the element equals the value of `slot` in an open scope |
+
+Element projections test one element through a view of it:
+
+| node | matches when |
+|---|---|
+| `FORM sub` | the element is a sequence (pair spine, tuple, list; not a str, mapping or iterator) and `sub` matches all of it |
+| `APP e sub` | `sub` matches the single value `e(element)` |
+| `CLASS e fields` | `isinstance(element, e)` and every field matches |
+| `FIELD_POS sub` | `sub` matches the attribute at the next `__match_args__` position |
+| `FIELD_KW sub name` | `sub` matches the attribute `name` |
+| `MAP entries` | the element is a mapping and every entry matches |
+| `MAP_ENTRY_CONST`, `MAP_ENTRY_EXTERN` | the key, a constant or an extern, is present and `sub` matches its value |
+
+Spine composites act on the cursor:
+
+| node | behaviour |
+|---|---|
+| `MATCH children` | the children in order on the same cursor |
+| `GROUP g children` | the same, in a capture scope of its own; its captures become the value of `g` |
+| `GROUP children` (anonymous) | the same, in a scope of its own whose captures are discarded |
+| `ONEOF branches` | the first branch that matches; a failed branch restores the cursor and empties its slots |
+| `OPTIONAL sub` | `sub` if it matches, else zero elements |
+| `REPEAT sub min` | `sub` repeated, at least `min` times; each pass is one iteration |
+| `REST min_tail` | the remaining elements less the fixed suffix after it, as a span |
+| `NOT sub` | zero width: succeeds when `sub` does not match at the cursor; the cursor never moves |
+| `CAPTURE slot sub` | `sub` matches; `slot` binds what `sub` produced |
+
+A whole matcher is a root that reaches the end of its subject. A single
+value -- a `match` arm's subject, an APP result, a FIELD or MAP value --
+is a one-element subject walked through a cursor like any spine, unless
+its pattern is one element test (TEST, SAME, FORM, APP, CLASS or MAP),
+or a ONEOF whose branches are each one, under CAPTUREs and one-child
+MATCHes only, which tests the value in place with no cursor.
+
+## Semantics
+
+- **Reservation, not backtracking.** A REPEAT runs on a bounded cursor
+  that ends `w` elements before its parent's end, `w` being the minimum
+  width of everything after the REPEAT on the same cursor, out to the
+  enclosing FORM or root. The REPEAT takes passes until its body misses
+  or the bound is reached; the suffix matches what is left. No element
+  the suffix needs at its minimum is pulled by the REPEAT's body. REST
+  takes the remaining elements less the fixed width of what follows it.
+  A REPEAT followed by a REST: the REPEAT collects the elements its body
+  matches, and the REST takes the tail after the first miss.
+- **Length precheck.** A FORM, a root, and every same-cursor composite
+  (MATCH, GROUP, ONEOF branch) whose minimum width exceeds 1
+  checks the remaining length against its widths plus `w` before it
+  tests an element. This is master's per-element reservation: a subject
+  too short for a branch never reaches the branch's PREDICATE or APP.
+- **NOT is a lookahead.** Its sub-pattern matches at the cursor against
+  the subject's real remaining elements: no suffix after it, no maximum
+  check, and no reservation, a REPEAT's bound included (master's
+  `match_not` runs its sub-pattern with a trailing minimum of 0).
+- **The end rule.** NOT and OPTIONAL test their sub-pattern at the end
+  as anywhere else; a pull at the end is an ordinary miss of the
+  sub-pattern. `NOT(OPTIONAL x)` at the end misses.
+- **Captures.**
+  - CAPTURE over a REPEAT binds the REPEAT's items list; over a REST, the
+    span; over a sub-pattern of static width one, the element; over any
+    other, the span it consumed.
+  - A slot inside an uncaptured REPEAT binds the list of its per-pass
+    values (the `x ...` convention).
+  - A failed ONEOF or OPTIONAL branch empties the slots it could have
+    bound.
+  - SAME reads a slot of an open scope: `(slot, depth)` names the
+    `depth`-th enclosing scope. The branches of a ONEOF share the
+    enclosing scope, so a SAME after the ONEOF reads a slot an earlier
+    branch bound, and misses when the slot is empty.
+  - Nothing outside the stack is written during a standalone walk or
+    into a mark. A resumed continuation sees its own captures.
+- **Inline arms.** An arm's root scope has no mark: each root capture
+  is stored into the arm's variable by the compiler's ordinary store
+  for that name as soon as its value is tested, including a capture
+  under a cursor. A missed arm, or a failed alternative, leaves what it
+  stored (Python's semantics); an untouched slot leaves its variable as
+  it was. A named group or REPEAT rolls up in its own mark and its
+  finished value is stored into the variable. A root capture of a pair
+  spine's element carries no binding.
+
+## Refusals at build
+
+`check_nodes` keeps its refusals and adds these; each raises at build
+(`Pattern.build`) or as a SpecialError at the pattern's position
+(`compile/match`, `define-syntax`):
+
+- a sub-pattern in a single-value position (a `match` arm root, an APP
+  or MAP value) whose width range does not include 1 -- a bare NOT, or
+  a sub-pattern of minimum width above 1; the case dialect writes
+  `(not p)` as `MATCH(NOT p, ANY)`;
+- a FIELD sub-pattern whose width is not exactly 1 (master's rule);
+- a LITERAL whose value is not a pool constant, on every path (build,
+  `compile/match`, `define-syntax`);
+- a REPEAT whose body has minimum width 0;
+- a node of variable width after a REST on the same cursor (a REST's
+  length is the remaining elements less a fixed suffix);
+- a CAPTURE anywhere in a NOT subtree;
+- a SAME in a `match` arm (the case dialect writes none; its root
+  captures are variables, which MATCH_SAME cannot read, and
+  CHECK_COMPARE EQ does not give MATCH_SAME's answers on spine Datums,
+  identical nan or a user Datum against a raw value);
+- (no other SAME is refused: a SAME whose depth passes the root, or whose
+  resolved scope never binds the name, builds and always misses, as on
+  master)
+
+## Captures: the mark is the accumulator
+
+- A capture scope -- the root, a GROUP node, one REPEAT pass -- pushes
+  a mark. In the node tables a named group is a CAPTURE over a GROUP:
+  the CAPTURE stores the GROUP's captures. A GROUP that is neither
+  captured nor a REPEAT body opens a scope whose captures are discarded
+  when it closes, as on master; it counts as a scope for SAME depth.
+  ONEOF, OPTIONAL and CAPTURE push a mark with no slots; NOT pushes an
+  unbounded copy of the cursor.
+- A mark records the cursor's position and holds an array of slot
+  entries for its scope; an empty entry is unbound. The scope's slot
+  count is known at lowering; the instruction that pushes the mark
+  carries it and the mark is allocated at that size. Default capacity
+  16; a larger scope gets a mark of its exact size. A mark never resizes
+  during a walk. The freelist keeps default-size marks.
+- A capture stores at a fixed depth (its scope's mark) and a fixed index
+  (the slot's position in the scope). A Datum boxed by walking a pair
+  spine gets the slot's name as its binding when stored, as on master.
+- Every write to a mark (store, clear) copies the mark and its array
+  first when the mark is held beyond its stack entry, and writes the
+  copy back to that entry; items lists follow the same rule on append.
+  A resumed continuation writes into its own copy.
+- Leaving a named GROUP builds its captures from the filled entries,
+  keyed by the scope's names (a constant on the instruction): a dict,
+  or over a pair spine a DatumFrame whose source is the span from the
+  mark's position to the cursor and whose position is the span's first
+  cell. The DatumFrame references the span, never the mark. The value
+  is stored into the parent scope's slot for the group.
+- A REPEAT pass with slots builds a dict from its filled entries (over
+  any subject, as on master) and appends it to the REPEAT's items list.
+- The root's captures are the standalone matcher's result. An inline
+  arm's root scope has no mark: its captures are stored into the arm's
+  variables as the walk tests them.
+- Popping a mark discards its scope's captures.
+
+The stack holds the marks and the marks hold the captures: a store is
+one indexed write, and a miss discards by popping. An inline arm's root
+captures are the exception; they are frame variables.
+
+## Instructions
+
+Names are provisional. `cur`, `m`, `s` and `items` are depths below the
+top of the stack; `miss` and `label` are jump targets.
+
+| instruction | stack | behaviour |
+|---|---|---|
+| `MATCH_DESCEND miss` | `v` -> `cur` | sequence gate (reads through a Datum); cursor over `v`; a pair spine is counted once and the count kept, a list or tuple is read at its live length; misses with `v` consumed |
+| `MATCH_SINGLE` | `v` -> `cur` | one-element cursor over `v` |
+| `MATCH_FITS cur min max miss` | -- | misses unless `min <= remaining <= max`; `max` 0xFFFF is unbounded; `FITS cur 0 0` is the end test |
+| `MATCH_NEXT cur miss` | -> `e` | pulls one element, a Datum over a pair spine; misses at the end |
+| `MATCH_BOUND cur w miss` | -> `cur'` | a cursor at `cur`'s position ending `w` before `cur`'s end; misses when fewer than `w` remain |
+| `MATCH_SYNC cur c` | -- | moves `cur` to `c`'s position |
+| `MATCH_UNBOUND cur` | -> `c'` | a copy of `cur` at its position with its reservation removed |
+| `MATCH_TAIL cur w min miss` | -> `span` | the remaining elements less `w`, advancing `cur`; misses below `min` |
+| `MATCH_SCOPE cur k` | -> `m` | a mark at `cur`'s position with `k` empty slots |
+| `MATCH_SCOPE_NEXT cur k miss` | -> `m e` | `MATCH_SCOPE cur k` then `MATCH_NEXT` on `cur` under the mark, fused by the bytecode processor where the two are adjacent; a miss leaves the mark |
+| `MATCH_RESET cur m` | -- | moves `cur` back to `m`'s position |
+| `MATCH_AT m` | -> `e` | the element at `m`'s position, as `NEXT` gave it |
+| `MATCH_SPAN m cur` | -> `span` | the span from `m`'s position to `cur` |
+| `MATCH_STORE s i cur` | `v` -> | stores into slot `i` of the mark at `s`; a Datum from the spine cursor at `cur` gets the slot's name as its binding; `cur` 0 names no cursor (a value tested in place) and sets no binding |
+| `MATCH_CLEAR s slots` | -- | empties the slots (a CONST tuple of indices) |
+| `MATCH_CAPTURES s cur names` | -> `caps` | a dict, or a DatumFrame over a pair spine |
+| `MATCH_LOAD s i skip` | -> `v` | slot `i` of the mark at `s`; jumps to `skip`, pushing nothing, when the slot is empty; reads an uncaptured REPEAT's columns in an inline arm |
+| `MATCH_APPEND items` | `v` -> | appends |
+| `MATCH_MIN items n miss` | -- | misses below `n` items |
+| `MATCH_COLUMNS items s slots` | -- | stores, for each slot, the list of its per-pass values into the mark at `s` |
+| `MATCH_LITERAL c miss` | `e` -> `e` | `c` a pool CONST |
+| `MATCH_CORE n miss` | `e` -> `e` | `n` a RAW ordinal |
+| `MATCH_TYPE_VAR t miss` / `MATCH_TYPE_FAST` | `e` -> `e` | `t` a closure name; `convert_fast` and the standalone target rewrite `_VAR` to `_FAST` |
+| `MATCH_CLASS_VAR t n miss` / `MATCH_CLASS_FAST` | `e` -> `e` | `isinstance(e, t)`, else a miss; then TypeError when `t.__match_args__` is missing, not a tuple, or holds fewer than `n` names, before any field is read, as on master; `n` a RAW count of the CLASS's positional fields |
+| `MATCH_SAME s i miss` | `e` -> `e` | equal to slot `i` of the mark at `s`; misses when empty |
+| `MATCH_FIELD_POS_VAR t i miss` / `_FAST` | `o` -> `o a` | the attribute named by `t.__match_args__[i]`, `t` the CLASS's closure name; TypeError when `i` is past the end, as on master |
+| `MATCH_FIELD_KW name miss` | `o` -> `o a` | the attribute `name` |
+| `MATCH_MAPPING miss` | `o` -> `o` | mapping gate |
+| `MATCH_KEY k miss` | `o` -> `o v` | `k` a pool CONST |
+| `MATCH_KEY_VAR k miss` / `MATCH_KEY_FAST` | `o` -> `o v` | `k` a closure name |
+
+The tests (`LITERAL`, `CORE`, `TYPE_*`, `CLASS_*`, `SAME`, `MAPPING`)
+leave their operand on both exits; the value's last user removes it.
+`DESCEND` consumes its value on a miss. PREDICATE and APP use
+`CALL_VAR`, `JUMP_FALSE`, `DUP`, `POP`.
+`MATCH_DESCEND`, `MATCH_CORE` and `MATCH_SAME` are primitives. A fused instruction combines a cursor operation with a
+test (`NEXT` with `LITERAL`); fused instructions wait for the core to
+pass and a benchmark to justify each.
+
+## Lowering
+
+Conventions: a node on a cursor leaves the stack as it found it on a
+hit. A test leaves its operand on both exits, and the value's last user
+removes it: a variable store or `STORE`, a `POP`, or an arm's hit
+consuming the subject. A miss jumps from the stack as the failing
+instruction leaves it to the fail entry for (target, depth), which pops
+down to the target's depth and jumps to it; `miss` below names that
+entry. An entry into a target that opens with `POP`s merges with them
+(NOT's `ok`), and an entry into the standalone miss returns None
+itself. Fail entries go after the walk, one per target falling into it
+where the code before the target never falls through. `w` is the
+suffix width: its minimum for a REPEAT, its fixed width for a REST;
+`s` is the enclosing scope's mark; `c'` is a cursor the node pushed;
+`e` is the pulled element.
+
+```
+TEST ANY          NEXT cur miss; POP
+TEST LITERAL c    NEXT cur miss; LITERAL c miss; POP
+TEST CORE n       NEXT cur miss; CORE n miss; POP
+TEST TYPE t       NEXT cur miss; TYPE_VAR t miss; POP
+PREDICATE e       NEXT cur miss; CALL_VAR e 1; JUMP_FALSE miss
+SAME slot d       NEXT cur miss; SAME s_d i miss; POP
+                  unresolved: JUMP miss
+FORM sub          NEXT cur miss; DESCEND miss; FITS c' min max miss
+                  <sub on c'>; FITS c' 0 0 miss; POP
+APP e sub         NEXT cur miss; CALL_VAR e 1; <sub on the value>
+CLASS e fields    NEXT cur miss; CLASS_VAR e n miss, n the positional fields
+                  (TYPE_VAR e miss when there are none)
+                  per field: FIELD_* miss; <sub on the value>
+                  POP
+MAP entries       NEXT cur miss; MAPPING miss
+                  per entry: KEY k miss | KEY_VAR k miss; <sub on the value> | POP
+                  POP
+<sub on the value>
+                  sub tested in place: its test on the value, consuming it on a hit
+                  otherwise: SINGLE; <sub on c'>; FITS c' 0 0 miss; POP
+MATCH children    [FITS cur min+w max+w miss]; <children in order on cur>
+GROUP (anonymous) SCOPE cur k; [FITS]; <children>; POP  ; captures discarded
+GROUP g children  SCOPE cur k; [FITS]; <children>; CAPTURES s' cur names; STORE s i_g; POP
+ONEOF b1..bn      branches each tested in place (one element wide):
+                  [FITS b1]; NEXT cur miss
+                  <b1 on e> (-> n1); JUMP done
+                  n1: [CLEAR s slots(b1)]; <b2 on e> (-> n2); JUMP done ...
+                  <bn on e> (-> miss)
+                  done:
+                  a branch's hit removes e (POP or store); its miss leaves e
+                  for the next; CLEAR only where a store in the branch can
+                  precede one of its misses, never for an arm's root scope
+ONEOF b1..bn      any other: SCOPE cur 0
+                  [FITS b1]; <b1> (-> n1); POP; JUMP done
+                  n1: RESET cur m; CLEAR s slots(b1); [FITS b2]; <b2> (-> n2) ...
+                  nn: RESET cur m; CLEAR s slots(bn); POP; JUMP miss
+OPTIONAL sub      SCOPE cur 0; <sub> (-> back); POP; JUMP done
+                  back: RESET cur m; CLEAR s slots(sub); POP
+NOT sub           UNBOUND cur; <sub on c'> (-> ok); POP; JUMP miss
+                  ok: POP
+REPEAT sub min    BUILD_LIST 0; BOUND cur w miss
+                  head: FITS c' 1 max exit
+                        SCOPE c' k; <sub on c'> (-> pass_miss)
+                        CAPTURES s' c' names | AT m | SPAN m c'
+                        APPEND items; POP; JUMP head
+                  pass_miss: RESET c' m; POP
+                  exit: SYNC cur c'; POP; MIN items min miss
+                  captured: the items list stays for the CAPTURE
+                  uncaptured, k > 0: COLUMNS items s slots; POP
+                  uncaptured, k = 0: POP
+REST              TAIL cur w min miss; the span stays for the CAPTURE, else POP
+CAPTURE slot sub  sub tested in place: NEXT cur miss; <sub on e, e kept>; STORE s i cur
+                    a test keeps e; FORM, APP and PREDICATE test a DUP of it
+                  two CAPTUREs storing one element on a cursor: the outer
+                    as below, so each stored spine Datum has its own binding
+                  sub is REPEAT or REST: <sub>; STORE s i
+                  otherwise: SCOPE cur 0; <sub>; AT m | SPAN m cur; STORE s i; POP
+```
+
+Roots:
+
+```
+standalone        VAR subject; DESCEND m0; FITS c min max m0; SCOPE c k
+                  <root on c>; FITS c 0 0 m0; CAPTURES s c names; RETURN
+                  m0: CONST None; RETURN
+                  an entry into m0: POP n; CONST None; RETURN
+inline arm, root tested in place:
+                  [int]          CORE int next; POP
+                  [(x :: int)]   CORE int next; STORE_VAR x
+                  [Point[a b]]   CLASS_VAR Point 2 next; FIELD_POS next 0;
+                                 STORE_VAR a; FIELD_POS next 1; STORE_VAR b; POP
+                  [(or 1 2)]     LITERAL 1 n1; POP; JUMP hit
+                                 n1: LITERAL 2 next; POP; hit:
+inline arm, any other root, on a cursor:
+                  DUP; SINGLE; <root on c>; FITS c 0 0 next; POP 2
+                  <arm body>; JUMP done
+                  <the arm's fail entries>, the last falling into next
+                  next: <the next arm>
+uncaptured REPEAT with columns at the root:
+                  ... MIN items n miss; SCOPE cur k; COLUMNS items 0 names (0..k-1)
+                  per name i: LOAD skip_i 0 i; STORE_VAR name; skip_i:
+                  POP 2
+```
+
+The subject stays on the stack across arms. An arm consumes it on a
+hit and leaves it on a miss; a guarded arm keeps it on a hit
+(`[m :: int when ...]` is `CORE int next; DUP; STORE_VAR m`), and the
+special pops it after the guard passes. A FORM, APP or PREDICATE root
+consumes its value, so it tests a `DUP` of the subject, as does a
+FORM, APP or PREDICATE branch of a one-element ONEOF, whose miss
+leaves the value for the next branch. `STORE_VAR` is the ordinary
+store the compiler emits for that name -- the store an assignment in
+the arm would emit -- so it follows that variable's path (a fast
+local, a cell, a module variable) and `convert_fast` treats it as any
+other store; it is emitted as soon as the capture's value is tested,
+under a cursor too (`#[a b *: rest]` is `DUP; DESCEND next; FITS c' 2
+0xFFFF f; NEXT c' f; STORE_VAR a; NEXT c' f; STORE_VAR b; TAIL c' 0 0
+f; STORE_VAR rest; FITS c' 0 0 f; POP 2`, `f` the entry `POP; JUMP
+next`). There is no root mark: no SCOPE, STORE, LOAD or CLEAR for a
+root slot, and a failed alternative's CLEAR is not emitted for the
+root. Only root slots become variables; names inside a group or REPEAT
+are reached through the group's or REPEAT's value. A named group's
+variable receives its dict or DatumFrame; a REPEAT's variable receives
+its items list. A value tested in place inside a mark scope is stored
+by `STORE s i 0`. The emitter merges adjacent POPs into one POP n, and
+an arm's fail entries follow its body, so its hit path jumps over
+nothing.
+
+NOT is a try on an unbounded copy of the cursor and an inversion; at
+the end of the subject `NEXT` misses inside the sub-pattern, so the end
+rule needs nothing of its own. `(MATCH x (NOT 1))` on the single value `1` pulls `x`, the
+NOT's `NEXT` misses at the end, and the arm hits.
+
+## Acceptance
+
+Master still carries the native engine. A differential harness runs
+generated patterns and subjects through master's engine, in its own
+process from master's build environment, and through the core, compares
+serialized outcomes and captures, and requires them identical except
+for these deliberate changes:
+
+- an improper subject is a miss;
+- a pattern nested past the depth limit, and a non-pool LITERAL, are
+  refused at build;
+- the refusals listed above;
+- an element is read when it is pulled (a car edited ahead of the
+  cursor is read as edited);
+- a missed inline arm, or a failed alternative in an arm, may leave
+  variables it stored, and a hit leaves the variable of an empty slot
+  as it was;
+- an inline arm's root capture of an element of a pair spine, or of
+  a span of them, carries no binding (master gave each Datum the
+  slot's name);
+- a standalone matcher's root subject that is not a sequence misses
+  (master raised TypeError, or iterated a mapping's keys);
+- a standalone matcher treats a str subject as an atom, as `match`
+  does (master walked its characters);
+- a slot inside an uncaptured REPEAT binds the list of its per-pass
+  values (master kept the last pass, or left the slot unbound when the
+  REPEAT's body is a GROUP); a SAME after the REPEAT compares against
+  that list;
+- a captured REPEAT's pass whose only binding is an uncaptured inner
+  REPEAT gives its captures dict (`{arg: []}` when the inner REPEAT
+  took no pass), where master gave the pass's span;
+- a sequence pattern's length is checked before its elements are
+  tested: when the subject's length rules an arm out, at the root, a
+  FORM or a REPEAT's minimum, no PREDICATE, APP or CLASS under it runs
+  (master tested some elements before it missed, so an extern that
+  raised made the match raise);
+- a pair LITERAL in a `define-syntax` or `compile/match` pattern is
+  refused (it already failed to reach a .kio).
+
+Newly accepted shapes get hand-written expected results. The harness is
+a permanent test. matchbench and churn baselines are recorded on the
+current branch before the core replaces it and measured after; they
+are recorded, not a gate.
+
+## Decisions from the prep inventory
+
+- A named group is a CAPTURE over a GROUP node in the tables. A GROUP
+  that is neither captured nor a REPEAT body opens a scope whose
+  captures are discarded (decided in phase 2, as on master).
+- No SAME is refused at build; one that resolves to no binding always
+  misses, as on master. A pass over a body that is not a GROUP shares
+  its enclosing scope's depth (decided in phase 5).
+- An element is read when it is pulled. A list or tuple is read at its
+  live length; a list that shrinks under the walk raises "match subject
+  changed under the walk" as today. A FORM or root of fixed width
+  checks the length once, before its elements are tested, and has no
+  end check: a list that grows under its walk still matches, the added
+  elements unread (decided 2026-10-19). A pair spine is counted once by
+  DESCEND; a loop found by the count raises as today. A car edited
+  ahead of the cursor is read as edited (master read it when the
+  subject was built; added to the acceptance exceptions).
+- A stored Datum's binding is the slot name, as on master.
+- Width and count fields are 16-bit RAW; 0xFFFF is unbounded in FITS;
+  a fixed width or count above 0xFFFE is refused at build.
+- `koskari/syntax.py`'s `_repeat#<hex>` slot names are replaced by
+  plain names derived from the pattern position, so no gensym spelling
+  reaches a .kio through a names constant.
+- `VAR_CLEAR2-4` / `FAST_CLEAR2-4` were added on this branch for the
+  matcher's clear runs. Phase 6 probes whether any other code produces
+  their runs (consecutive `compile/delq`); if none does, they are
+  removed with their pages and tests.
+- The RAW field kind's definition moves out of VM index section 9.2 to
+  the field-kind section in phase 8; `CHECK_COMPARE` uses it.
+- `MATCH_CASE` keeps the branch's form (no cache slot, a handler that
+  raises).
+
+- Decided in verification (I1): an alternative -- a ONEOF branch or
+  OPTIONAL sub-pattern, and every node on its cursor -- checks only its
+  minimum plus the suffix's minimum, on every cursor, and the first
+  branch that matches is taken; master checks no maximum in its walk.
+  USING lists its three-element `as:` form first, so a two-element
+  cell skips it by that minimum.
+- Dropped in verification (I3): a pattern whose maximum width passes
+  0xFFFE has at least that many element nodes, so its code passes the
+  16-bit instruction limit and the build refuses it with OverflowError
+  before the length bound matters.
+- Decided in phase 5:
+  - a ONEOF branch or OPTIONAL sub-pattern followed by a suffix of
+    minimum width above 0 gets a minimum-only FITS (its minimum plus the
+    suffix's); "minimum width exceeds 1" in "Length precheck" is
+    superseded;
+  - a REPEAT pass over a GROUP body gives its captures as a GROUP does
+    (a DatumFrame over a pair spine); other bodies give a dict;
+    `MATCH_PASS` carries a RAW group flag; a pass binding nothing gives
+    its span;
+  - a REPEAT pass counts as a scope for SAME depth only when its body is
+    a GROUP, as master counts frames;
+  - `MATCH_SPAN` jumps to a label on an empty span, pushing nothing.
+- Decided in phase 4:
+  - an uncaptured REPEAT with slots appends `MATCH_CAPTURES` on every
+    pass (always a dict, a DatumFrame over a spine) for COLUMNS to read;
+    `MATCH_PASS` (the dict of filled slots, or the span when none is
+    filled) serves a captured REPEAT;
+  - COLUMNS carries the names tuple beside the slot indices; STORE
+    carries the scope's names tuple (for a spine Datum's binding);
+  - a depth operand counts entries as the instruction finds the stack,
+    0 being the top before it pops or pushes.
+- Decided in phase 3, following master:
+  - REST over a list or tuple binds a tuple;
+  - a SPAN of exactly one element is that element, as AT gives it;
+  - a stored Datum's binding is set only when it came from walking a
+    pair spine: `MATCH_STORE s i cur` carries the source cursor's depth
+    and sets the binding only for a spine cursor; a user's Datum inside
+    a tuple, list or single value is never changed;
+  - an uncaptured REPEAT's column for a slot lists the values of the
+    passes that bound it;
+  - a REPEAT pass that binds none of its slots appends its span (AT or
+    SPAN), not an empty dict.
+- Decided in phase 2:
+  - a name binds at most once in a scope, except across the
+    alternatives of one ONEOF; a second binding (a branch name reused
+    after its ONEOF, a REPEAT column equal to an outer name) is refused
+    at build, so a failed branch's CLEAR never empties another binding;
+  - phase 6's `TableBuilder` changes also make `resolve_slot` accept a
+    SAME before its binding.
+- Decided in phase 1, from the oracle against the current path:
+  - a REPEAT pass's captures are a dict, as on master, over any subject;
+  - a SAME that reads a slot of an open scope before the slot is bound
+    is accepted and misses while the slot is empty;
+  - a CAPTURE over a sub-pattern that may consume nothing is accepted;
+    an empty span leaves the slot unbound, as on master (corrected in
+    phase 3); the branch's refusal from 9f8daa34 goes;
+  - NOT testing the element after its position, every arm root kind,
+    and no yield rule match master already, so they are not acceptance
+    exceptions.
+
+## Implementation plan
+
+The core is built beside the current matcher and replaces it in one
+switch (phase 6). About 183 matchers are built when the package
+imports (every `@special`, the parser matchers), so the current matcher
+stays live until the switch and `import koskari` works throughout.
+Every behaviour that worked before works under the core at the end,
+except the acceptance exceptions.
+
+Prep artifacts in tmp/matcher-core/: INVENTORY.md (code map with a
+verdict per name, the table format per node tag, tests classified KEEP
+/ KEEP* / REWRITE / REPLACE / REMOVE, docs map, baselines),
+build-master.sh and run-master.sh (master's engine in its own
+environment), fuzz/ (the review generators and recorded outputs).
+
+### Phase 0 -- baselines (done)
+
+At 8f1aec3e: `make test` 8573 passed, 13 skipped; matchbench
+match-first-arm ~45, engine-seq-hit ~147, syntax-dispatch ~880,
+syntax-select ~1700 ns/op (four-cell runs); churn match_case 0.58x.
+Logs in tmp/matcher-core/.
+
+### Phase 1 -- the oracle corpus and test
+
+- Extend the review generator (fuzz/review-r2/fuzz_gen.py) to the base
+  node set and subject kinds, including inline `match` arms.
+- Run it once under master (run-master.sh) and store patterns, subjects
+  and serialized outcomes as tests/matcher/data/oracle corpus files.
+- A comparison module (tests/matcher/oracle.py) builds each pattern on
+  the branch and compares, applying the acceptance exceptions as named
+  rules. The test module that runs it, tests/matcher/test_oracle.py, is
+  added in phase 5 against the core path; until then the comparison is
+  run by hand.
+- Gate: `make lint test` green; the comparison runs against the current
+  path and its divergences are recorded in tmp/matcher-core/STATUS.md.
+
+### Phase 2 -- analysis (koskari/matcher/analysis.py, new)
+
+- One pass over the tables produces per node: static widths and
+  fixedness; the suffix width `w` (minimum after a REPEAT, fixed after a
+  REST) out to the cursor's owner; the scope and slot index (merging a
+  ONEOF's per-branch indices of one name; anonymous GROUPs merged into
+  the enclosing scope); each ONEOF and OPTIONAL branch's slot set; SAME
+  resolution; an uncaptured REPEAT's column slots; FITS placement.
+- The refusals at build, read from the analysis, with `check_nodes`'s
+  current refusals folded in and the overlaps resolved as stated in
+  "Refusals at build".
+- Gate: `make lint test` green (the module is not yet reached).
+
+### Phase 3 -- native runtime (koskari/lib/matcher/, matcher.h), additive
+
+- Cursor over a pair spine (current cell, remaining count), an end bound
+  for BOUND, SYNC; sequences read live.
+- `KosMatchMark`: a new variably sized type in a new fragment
+  koskari/lib/matcher/mark.c (listed by setup.py's `matcher/*.c`
+  depends glob): position, slot count, slot array; default capacity 16;
+  a freelist of default-size marks; copy before a write when shared,
+  the copy written back to the stack entry; captures built from filled
+  slots and a names tuple (dict or DatumFrame); Datum binding set on
+  store.
+- Native tests for each helper in tests/native/test_matcher.c.
+- Gate: `make test`; `make test-native test-asan test-valgrind` after
+  touching koskari/lib/matcher.c (tests.mk does not track fragments).
+
+### Phase 4 -- instructions, additive
+
+- New rows in koskari/lib/opcodes.incl under a temporary `MATCH2_`
+  prefix, so they do not collide with the current rows; renamed to
+  `MATCH_` in phase 6. Field kinds: CONST for pool constants and names
+  tuples, VAR for closure names (with `_FAST` twins), RAW for depths,
+  widths, counts and ordinals, LABEL for targets.
+- Handlers in koskari/lib/opcode/, bodies in koskari/lib/eval/
+  eval_match.c over the phase 3 helpers; `tox -qe handlers`.
+- tests/lib/opcode/test_match_core_instructions.py: each instruction's
+  stack effect, hit and miss, copy on share.
+- Gate: as phase 3.
+
+### Phase 5 -- the emitter (koskari/matcher/emitter.py)
+
+- One recursive `emit(node, cur, miss)` following the lowering table and
+  the stack-neutral convention, over the existing `FunctionTarget` and
+  `FragmentTarget`; the standalone root and the inline arm root.
+- A temporary selector chooses the core path for
+  `build_matcher`, `lower_arm` and `lower_matcher`; tests
+  and the oracle run with it on; it is removed in phase 6.
+- tests/matcher/test_oracle.py added, running the corpus on the core
+  path.
+- Gate: `make lint test` green with the selector off; the oracle test
+  and the KEEP tests green with it on (`tox -qe py` with the selector
+  set), apart from the listed flips.
+
+### Phase 6 -- the switch
+
+- Every path runs on the core: `Pattern.build`, `compile/match`, the
+  `define-syntax` specials, the Syntax first-match function. The
+  selector goes.
+- `TableBuilder` gets its two changes (one slot index per name across
+  a ONEOF's branches; branch names visible after the ONEOF).
+- Removed: the current lowering in koskari/matcher/emitter.py (peek and pull
+  paths, trampolines, depth trace, capture locals), every current
+  `MATCH_*` row and its handler, body, helpers and tests (INVENTORY.md
+  REPLACE / REMOVE), the `validate_capture_run` names in bytecode.c;
+  `MATCH2_` renamed `MATCH_`; the VAR_CLEAR2-4 probe acted on.
+- koskari/dis.ki renders the new operands; its two underscore-prefixed
+  names are renamed.
+- Gate: `make lint test`; native gates; the oracle test; a `.kio` round
+  trip of a `define-syntax` module and of a runtime `match`.
+
+### Phase 7 -- tests
+
+- REWRITE (INVENTORY.md B): internal-table, instruction-listing,
+  gensym-name and depth-trace tests become match/miss tests; the three
+  depth-trace cases that are the only coverage of a behaviour are kept
+  as behaviour tests.
+- KEEP* flips: test_match.py's two missed-arm tests now expect the
+  variable untouched.
+- New: reproducers for D1, D3-D7, D10, R2-R5; each refusal; resumption
+  twice inside a REPEAT, a ONEOF and an OPTIONAL; an inline arm leaving
+  variables untouched on a miss and on an empty slot; a predicate
+  looping the spine ahead of the cursor (terminates by the count).
+- Gate: `make lint test`, native gates, oracle.
+
+### Phase 8 -- docs
+
+- docs/reference/vm/opcodes/: pages for the core instructions, removed
+  instructions' pages deleted; VM index section 9.2, the quick
+  reference rows and the family list rewritten; the RAW kind defined in
+  the field-kind section.
+- docs/reference/specials/compile-match.md: a missed arm writes no
+  variable; every root kind; the `*: rest` example corrected.
+- docs/guide/match-patterns.md; design/OPCODES.md rows.
+- Gate: `make docs`; the index-vs-pages check.
+
+### End point
+
+Phase 8 is the end of this work. After it, the driver records
+matchbench (four-cell runs) and churn against phase 0 and stops. Any
+fused instruction, and the resumption of the halted review rollup for
+the items the core does not subsume, are proposed to the maintainer,
+not implemented.
+
+## After the end point
+
+### Verification (done)
+
+Differential runs against master over about 230,000 cases, two blind
+reviews and stress runs found I1-I4 and G1-G4 (f9a1dbbd through
+744fe720) and the deliberate differences now in "Acceptance". Both
+committed oracle corpora and the six verification corpora
+(tmp/matcher-core/verify/) show 0 unexplained (8ddd90ed).
+
+### Performance principles
+
+- Emit as few instructions as possible, each doing as much as makes
+  sense; prune any work environment that is never used.
+- Reuse existing instructions; the difficult logic belongs in the
+  emitter, not in the opcodes.
+- Each instruction gets one fixed stack effect; no mode fields.
+- Measure by exact instruction counts (callgrind, micro.py under
+  tmp/matcher-core/perf/), not wall time.
+- Every change is gated by the oracle corpora.
+
+### Performance done
+
+- H1 (e9041d77): an unshared cursor or mark moves in place inline.
+- H2 (80e3aacd): Datum, DatumFrame and symbol checks by identity.
+- H3 (20d31a64): a mark taken from its freelist inline.
+- H4: dropped (link-time optimization had already inlined it).
+- Frame mode with E1 (ef2f5aea): an inline arm's root captures are
+  ordinary variable stores; one-element single values are tested in
+  place; churn 61.2 to 26.4 executed instructions per iteration.
+
+### Performance next, in order
+
+1. Done (4978a595, 2b9eb9a7): the element tests (LITERAL, CORE, TYPE,
+   SAME, CLASS) keep their operand on both exits and the emitter pops at
+   the value's last use; with it, a ONEOF of one-element branches pulls
+   its element once (E7) and fail blocks are placed after the body (E5).
+   Analysis: tmp/matcher-core/stack-effects.md.
+2. Done: MATCH_ITEMS was the only duplicate of a generic instruction
+   and became BUILD_LIST 0. MATCH_APPEND keeps its copy of a list a
+   resumed continuation shares and appends below the top, MATCH_MIN
+   is one instruction where the generic form takes three or four,
+   and MATCH_RESET and MATCH_SYNC move a cursor to a mark and to a
+   cursor without a type branch.
+3. Re-profile, then an opgram pass over the emitted code; fused
+   instructions only where sequences recur.
+4. Handler adjustments still worth measuring after 1-3: a Datum
+   freelist (H5), a DatumFrame built directly (H8), a LITERAL fast
+   path (H6), a __match_args__ cache (H9), a cached final-miss answer
+   (H7), the small items (H10), pair type checks over the four known
+   pair types (H2b). Analysis: tmp/matcher-core/perf/HANDLERS.md.
+5. The generic DUP 1 and POP 2 calling out of line (outside the
+   matcher), re-measured after 1.
+
+## Execution
+
+- Each phase is implemented by an Opus agent, one per phase, given this
+  document, INVENTORY.md and STATUS.md. The driver reviews each diff and
+  runs the gate before committing.
+- A phase commits when its gate passes; a phase may commit in steps.
+  Commit messages follow .claude/rules/git.md. No push.
+- Progress, the last commit per phase and open issues are kept in
+  tmp/matcher-core/STATUS.md. This document changes only to record a
+  decision.
+- Stop and report to the maintainer, and wait, when:
+  - a behaviour that worked before cannot be kept and is not on the
+    acceptance exceptions;
+  - an existing test expectation breaks that is not in INVENTORY.md's
+    REWRITE / REPLACE / REMOVE sets or the listed flips;
+  - the oracle shows a divergence from master that no exception covers;
+  - the design is silent and two readings lead to materially different
+    work;
+  - an opcode that exists on master needs to change;
+  - a git operation beyond add, commit, mv and rm is needed.
+- Binding rulings: CONST holds builtin pool values only, and a value the
+  pool does not admit is refused; a type is a closure name, never a
+  CONST; Koskari-to-Koskari calls flatten; no opcode suspension; no new
+  underscore-prefixed names; no one-line helpers; user docs state the
+  contract; "instruction" for bytecode ops, "row" only for the KosExtra
+  operand record.

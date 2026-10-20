@@ -59,6 +59,13 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 - **Transform callbacks.** `map`, `filter`, `starmap`, `accumulate`,
   `takewhile`, `dropwhile` call their function through
   `KosEvalState_Call` from a code-less resume frame.
+- **Match predicates and extractors.** A pattern is `MATCH_*`
+  instructions in the frame that matches, and a `(? pred)` or
+  `(app f ...)` is a `CALL` from that frame
+  ([archive/matcher-bytecode.md](archive/matcher-bytecode.md)).
+  A matcher entered from Python (`Pattern.match`, a `Syntax`'s
+  `first_match`) is one `Function` call through the demand entry, and the
+  calls inside it flatten as in any function.
 - **Continuations.** `call/cc`, `prompt` / `shift` transfers run on the
   running chain. A continuation invoked from a code-less resume frame
   (a transform callback, a `Demand` over a continuation) returns into
@@ -68,13 +75,8 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 
 - **Opcodes that call Koskari callables.** `OBJECT_REPR` with a Koskari
   repr handler or `__kos_repr__` (`KosUtils_Repr` ->
-  `Koskari_DemandSync`, `utils.c`); runtime match predicates and APP
-  extractors (`MATCH_CASE` -> `matcher_call_extern` ->
-  `Koskari_DemandSync`, `matcher/datum.c`). Tracked as a group in
-  Future. The demand path is forced today. The match row, the walk's
-  position moved off the C stack so the test can wait for the
-  installed call, is section 8 of
-  [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
+  `Koskari_DemandSync`, `utils.c`). Tracked in Future. The demand path
+  is forced today.
 - **Opcodes that materialise a Koskari generator.** The UNPACK family
   (`KosEvalState_PopUnpackSequence` -> `PySequence_Fast`,
   `eval/eval_state.c`) and the star-call family (`kos_op_call_star` ->
@@ -128,12 +130,6 @@ design for the group.
   resume that validates the str result. `KosUtils_Repr` keeps the demand
   core for its `tp_repr` (boundary) callers (`pair.c:582/605`,
   `values.c:717/737`, `partial.c:479-508`).
-- **Runtime match predicates and APP extractors** (stretch). The
-  `MATCH_CASE` step suspends on the call and resumes the match with the
-  delivered value, which needs the walk's position held in the engine
-  rather than on the C stack: section 8 of
-  [interpreter/resumable-reads.md](interpreter/resumable-reads.md). A
-  match entered from Python keeps the demand core.
 - **Koskari operators on Koskari dunders** (candidate). `==`, `str`,
   `len`, and the rest reach Koskari dunders through CPython slots and
   nest per call. Dispatching a Koskari dunder directly from the

@@ -24,8 +24,9 @@ macro-rules, special-rules, syntax-match, macro-match, special-match).
 
 from ...bootstrap import builtin
 from ...exceptions import LayoutError
-from ...lib import cons, nil, symbol
-from ...matcher import BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL, match1
+from ...lib import cons, demand, nil, symbol
+from ...matcher import (
+    BIND, CALLEDBY, LIST, LITERAL, MATCH, SYMBOL, first_match, make_matcher)
 from ...types import get_position, is_nil, is_pair, unpack
 from .helpers import (
     block_source_from_cons, is_block, layout, match_block_source)
@@ -34,22 +35,25 @@ from .helpers import (
 _case_symbol = symbol('case')
 
 
-_MATCH_FORM_PATTERN = LIST(LITERAL(_case_symbol), BIND('inner'))
+# each matcher built once and run over a one-cell spine of the form;
+# a header tries its head matchers in order through first_match
+_match_form = demand(make_matcher(LIST(LITERAL(_case_symbol), BIND('inner'))))
 
-_RULES_HEAD_PATTERNS = [
-    MATCH(LIST(CALLEDBY(), SYMBOL("name"), BIND('literals_expr'))),
-    MATCH(LIST(CALLEDBY(), BIND('literals_expr'))),
-]
+_RULES_HEAD_MATCHERS = (
+    make_matcher(MATCH(
+        LIST(CALLEDBY(), SYMBOL("name"), BIND('literals_expr')))),
+    make_matcher(MATCH(LIST(CALLEDBY(), BIND('literals_expr')))),
+)
 
-_MATCH_HEAD_PATTERNS = [
-    MATCH(LIST(CALLEDBY(), SYMBOL("name"))),
-    MATCH(LIST(CALLEDBY())),
-]
+_MATCH_HEAD_MATCHERS = (
+    make_matcher(MATCH(LIST(CALLEDBY(), SYMBOL("name")))),
+    make_matcher(MATCH(LIST(CALLEDBY()))),
+)
 
-_BARE_HEAD_PATTERNS = [
-    MATCH(LIST(CALLEDBY(), SYMBOL("name"), SYMBOL("slot"))),
-    MATCH(LIST(CALLEDBY(), SYMBOL("slot"))),
-]
+_BARE_HEAD_MATCHERS = (
+    make_matcher(MATCH(LIST(CALLEDBY(), SYMBOL("name"), SYMBOL("slot")))),
+    make_matcher(MATCH(LIST(CALLEDBY(), SYMBOL("slot")))),
+)
 
 
 _symbol_begin = symbol('begin')
@@ -71,7 +75,7 @@ def _pattern_from_header(header):
     """
 
     pattern = header
-    match_m = match1(pattern, [_MATCH_FORM_PATTERN])
+    match_m = _match_form(cons(pattern, nil))
     if match_m is not None:
         pattern = match_m['inner'].datum
     return pattern
@@ -144,7 +148,7 @@ def _rule_rows(reader, parent_body, layout_body=False):
     return rules
 
 
-def _lower_rules(reader, source, peers, head_sym, head_patterns,
+def _lower_rules(reader, source, peers, head_sym, head_matchers,
                  with_literals, layout_body=False):
     """
     Lower a transformer block with raw rule children
@@ -153,7 +157,8 @@ def _lower_rules(reader, source, peers, head_sym, head_patterns,
     :param source: pass-one block source for the transformer block
     :param peers: peer block sources, must be empty
     :param head_sym: emitted form head symbol
-    :param head_patterns: matcher patterns for the block header
+    :param head_matchers: matcher functions for the block header, tried
+        in order
     :param with_literals: whether the header includes a literals list
     :param layout_body: expand nested :#block: forms in each rule body
     :return: lowered transformer form
@@ -166,7 +171,7 @@ def _lower_rules(reader, source, peers, head_sym, head_patterns,
 
     parent_header, parent_body = source
 
-    head_m = match1(parent_header, head_patterns)
+    _index, head_m = first_match(cons(parent_header, nil), head_matchers)
     if head_m is None:
         if with_literals:
             raise LayoutError(
@@ -207,7 +212,7 @@ def layout_syntax_rules(reader, source, peers):
 
     return _lower_rules(
         reader, source, peers, _symbol_syntax_rules,
-        _RULES_HEAD_PATTERNS, True)
+        _RULES_HEAD_MATCHERS, True)
 
 
 @builtin('layout/bare-syntax')
@@ -229,7 +234,7 @@ def layout_bare_syntax(reader, source, peers):
 
     header, body = source
 
-    head_m = match1(header, _BARE_HEAD_PATTERNS)
+    _index, head_m = first_match(cons(header, nil), _BARE_HEAD_MATCHERS)
     if head_m is None:
         raise LayoutError(
             'bare-syntax requires a called-by symbol',
@@ -267,7 +272,7 @@ def layout_macro_rules(reader, source, peers):
 
     return _lower_rules(
         reader, source, peers, _symbol_macro_rules,
-        _RULES_HEAD_PATTERNS, True, layout_body=True)
+        _RULES_HEAD_MATCHERS, True, layout_body=True)
 
 
 @builtin('layout/special-rules')
@@ -281,7 +286,7 @@ def layout_special_rules(reader, source, peers):
 
     return _lower_rules(
         reader, source, peers, _symbol_special_rules,
-        _RULES_HEAD_PATTERNS, True, layout_body=True)
+        _RULES_HEAD_MATCHERS, True, layout_body=True)
 
 
 @builtin('layout/syntax-match')
@@ -295,7 +300,7 @@ def layout_syntax_match(reader, source, peers):
 
     return _lower_rules(
         reader, source, peers, _symbol_syntax_match,
-        _MATCH_HEAD_PATTERNS, False)
+        _MATCH_HEAD_MATCHERS, False)
 
 
 @builtin('layout/macro-match')
@@ -309,7 +314,7 @@ def layout_macro_match(reader, source, peers):
 
     return _lower_rules(
         reader, source, peers, _symbol_macro_match,
-        _MATCH_HEAD_PATTERNS, False, layout_body=True)
+        _MATCH_HEAD_MATCHERS, False, layout_body=True)
 
 
 @builtin('layout/special-match')
@@ -323,7 +328,7 @@ def layout_special_match(reader, source, peers):
 
     return _lower_rules(
         reader, source, peers, _symbol_special_match,
-        _MATCH_HEAD_PATTERNS, False, layout_body=True)
+        _MATCH_HEAD_MATCHERS, False, layout_body=True)
 
 
 # The end.

@@ -236,6 +236,21 @@ PyObject *KosStack_PeekAt(KosSegment *self, Py_ssize_t index);
 
 
 /**
+   Borrow the entry under the top: 0 is the top itself, 1 the entry
+   beneath it. Sets err and returns NULL on underrun.
+ */
+PyObject *KosStack_PeekUnder(KosSegment *self, size_t under);
+
+
+/**
+   Store an owned value into the entry under the top, releasing what
+   it held; val is consumed on every path. 0, or -1 with err set on
+   underrun.
+ */
+int KosStack_SetUnder(KosSegment *self, size_t under, PyObject *val);
+
+
+/**
    Remove the last count elements. Sets err on underrun.
  */
 int KosStack_Drop(KosSegment **self, size_t count);
@@ -311,7 +326,11 @@ int KosStack_PopTailPtr(KosSegment **self, size_t count, PyObject **dest);
 #define kos_stack_replace2_fast     KosStack_Replace2
 #define kos_stack_settle2_fast      KosStack_Settle2
 #define kos_stack_drop_noerr_fast   KosStack_DropNoErr
+#define kos_stack_drop_fast         KosStack_Drop
+#define kos_stack_dup1_fast(block)  KosStack_Duplicate((block), 1)
 #define kos_stack_peek_fast         KosStack_Peek
+#define kos_stack_peek_under_fast   KosStack_PeekUnder
+#define kos_stack_set_under_fast    KosStack_SetUnder
 #define kos_stack_tail_ptr_fast     KosStack_TailPtr
 #define kos_stack_pop_tail_ptr_fast KosStack_PopTailPtr
 #define kos_stack_clear_fast        KosStack_Clear
@@ -416,12 +435,75 @@ static inline int kos_stack_drop_noerr_fast(
 }
 
 
+/* As drop_noerr, with an underrun reported by KosStack_Drop. */
+KOS_OP_INLINE int kos_stack_drop_fast(KosSegment **block, size_t count) {
+
+  KosSegment *s = *block;
+  if (likely(s && count <= s->len)) {
+    size_t len = s->len;
+    s->len = len - count;
+    KOS_LOOP_SCALAR
+    while (count--)
+      Py_DECREF(s->objs[--len]);
+    return 0;
+  }
+  return KosStack_Drop(block, count);
+}
+
+
+/* TOS pushed again when the segment has room by KosStack_Duplicate's
+   own grow test; an underrun or a grow goes out of line. */
+static inline int kos_stack_dup1_fast(KosSegment **block) {
+
+  KosSegment *s = *block;
+  if (likely(s && s->len && s->len + 1 < s->max)) {
+    size_t len = s->len;
+    PyObject *top = s->objs[len - 1];
+    Py_INCREF(top);
+    s->objs[len] = top;
+    s->len = len + 1;
+    return 0;
+  }
+  return KosStack_Duplicate(block, 1);
+}
+
+
 /* No NULL guard, mirroring KosStack_Peek exactly. */
 static inline PyObject *kos_stack_peek_fast(KosSegment *s) {
 
   if (likely(s->len))
     return s->objs[s->len - 1];
   return KosStack_Peek(s);
+}
+
+
+/* The entry under the top, borrowed; the out-of-line check runs only
+   on an underrun. */
+static inline PyObject *kos_stack_peek_under_fast(
+        KosSegment *s,
+        size_t under) {
+
+  if (likely(under < s->len))
+    return s->objs[s->len - 1 - under];
+  return KosStack_PeekUnder(s, under);
+}
+
+
+/* Store val into the entry under the top, releasing what it held;
+   the slot holds val before the release so a finalizer sees it. */
+static inline int kos_stack_set_under_fast(
+        KosSegment *s,
+        size_t under,
+        PyObject *val) {
+
+  if (likely(under < s->len)) {
+    PyObject **slot = &s->objs[s->len - 1 - under];
+    PyObject *old = *slot;
+    *slot = val;
+    Py_DECREF(old);
+    return 0;
+  }
+  return KosStack_SetUnder(s, under, val);
 }
 
 
@@ -595,23 +677,26 @@ void KosStackSteal_Free(KosStackSteal *s);
 
 
 /**
-   Pop count * 2 elements as key,val pairs; return a new dict. Stack layout: key_0, val_0, ..., key_{n-1}, val_{n-1}
-   with val_{n-1} at TOS. Caller owns the returned reference.
+   Pop count * 2 elements as key,val pairs; return a new dict. Stack
+   layout: key_0, val_0, ..., key_{n-1}, val_{n-1} with val_{n-1} at
+   TOS. Caller owns the returned reference.
  */
 PyObject *KosStack_PopTailDict(KosSegment **self, size_t pair_count);
 
 
 /**
-   TOS = names tuple, below it count values. Pops names and count values, returns a new dict mapping each name to
-   its value. Caller owns the returned reference.
+   TOS = names tuple, below it count values. Pops names and count
+   values, returns a new dict mapping each name to its value. Caller
+   owns the returned reference.
  */
 PyObject *KosStack_PopTailDictNames(KosSegment **self, size_t count);
 
 
 /**
-   Given a names tuple (not on stack), pop len(names) values and return a new dict mapping each name to its
-   value. Stack layout: val_0 deepest, val_{n-1} at TOS; names[i] maps
-   to val_i. Caller owns the returned reference.
+   Given a names tuple (not on stack), pop len(names) values and
+   return a new dict mapping each name to its value. Stack layout:
+   val_0 deepest, val_{n-1} at TOS; names[i] maps to val_i. Caller
+   owns the returned reference.
  */
 PyObject *KosStack_PopTailDictFromNames(
     KosSegment **self,

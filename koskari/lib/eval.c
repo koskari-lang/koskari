@@ -163,6 +163,7 @@ int KosEval_IsFuture(PyObject *val) {
   return kos_isfuture(val);
 }
 #include "eval/eval_cache.c"
+#include "eval/eval_match.c"
 
 
 /**

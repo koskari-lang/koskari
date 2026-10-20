@@ -54,14 +54,31 @@ in `(app splitext #[base "." "ki"])`.
 
 The matcher heads from [`koskari.matcher`](../reference/api/koskari-matcher.md),
 `FORM`, `ONEOF`, `REST`, `CLASS`, and the rest, are also accepted in
-pattern position; the sugared forms above lower to them.
+pattern position; the sugared forms above lower to them. `(? pred)` is
+also a matcher head, the alias of `PREDICATE`, so it keeps its meaning
+inside a head such as `REPEAT`. A name inside
+a `REPEAT` that is not itself captured binds the list of its values,
+one per pass: `#[(REPEAT (FORM (MATCH k v)))]` against
+`#(#(1 2) #(3 4))` binds `k` to `[1, 3]` and `v` to `[2, 4]`. In a
+pattern built with the `koskari.matcher` API, a `SAME` of that name
+after the `REPEAT` compares against the list.
 
 ### Sequences
 
 A sequence pattern is the explicit `#[...]` or `#(...)` form; a bare
 list is never a sequence. The length must agree unless a `*: rest`
-marker captures the remaining elements. Inside a sequence a typed
-element is parenthesized: `#[(x :: int) y]`.
+marker captures the remaining elements. The length is checked before
+any element is tested: when the subject's length rules a sequence
+pattern out, no predicate or extractor in it is called, so
+`#[(? p) b]` against `#(1 2 3)` misses without calling `p`. Inside a
+sequence a typed element is parenthesized: `#[(x :: int) y]`.
+
+At the end of a sequence there is no element left to test. `(not PAT)`
+is one element that does not match `PAT`, so it misses there:
+`#[a (not 2)]` does not match `#(1)`. The `NOT` head is zero width: it
+consumes nothing and succeeds where `PAT` does not match, so
+`#[a (NOT 2)]` matches `#(1)`. `(OPTIONAL PAT)` at the end matches zero
+elements, so `(NOT (OPTIONAL PAT))` misses there.
 
 Only sequences destructure. A sequence pattern matches lists, tuples,
 and other `collections.abc.Sequence` instances such as `range`, the
@@ -111,9 +128,9 @@ would in the body.
 
 Seven type names are the exception: `int`, `str`, `list`, `tuple`,
 `pair`, `symbol` and `keyword` in a pattern always mean the builtin
-types. They come from the matcher's own table, so a match arm reads
-nothing from the namespace for them, and rebinding one of those names
-in the enclosing scope does not change what the pattern tests:
+types. The pattern tests them directly, so a match arm reads nothing
+from the namespace for them, and rebinding one of those names in the
+enclosing scope does not change what the pattern tests:
 
 ```koskari
 define int float            ; does not reach the pattern below
@@ -127,7 +144,7 @@ match 2.5:
 
 To test against your own type, bind it under another name.
 
-### Callables are called synchronously
+### Callables are called as functions
 
 A predicate or extractor is an ordinary callable, and a plain Koskari
 `define` works without wrapping:
@@ -141,11 +158,10 @@ match path:
     (compile-source base)
 ```
 
-The call is synchronous in the current release: a predicate or
-extractor that suspends, an `async` function that awaits inside a
-`match`, raises `KoskariSyncViolation`. Keep awaiting work in the arm
-body, or resolve it before the `match`. A predicate or extractor that
-raises propagates the error rather than counting as a no-match.
+The call is a call from the function the `match` is in, so a
+predicate or extractor that awaits does so in place, as a call in the
+arm body would. A predicate or extractor that raises propagates the
+error rather than counting as a no-match.
 
 ## Guards
 
@@ -168,10 +184,21 @@ Captured names stay bound when a guard fails, as after Python's
 - Captured names are bound in the enclosing scope and stay visible after
   the `match` form, like every other binding and like Python's `match`.
   Arms are not scopes.
-- Captures are sparse: a slot that did not bind, an `OPTIONAL` arm that
-  did not fire, is left unbound, and reading it raises `NameError`. Bind
-  a default before the match, or guard on the shape, when a slot may be
-  absent.
+- A capture is stored into its variable as the pattern walks the value,
+  so an arm that misses after binding some captures leaves them bound, as
+  does an `(or ...)` alternative that misses after binding.
+- Captures are sparse: a capture that did not bind, under an `OPTIONAL`
+  that did not fire, leaves its variable as it was, and a variable never
+  bound raises `NameError` when read. Bind a default before the match,
+  or guard on the shape, when a slot may be absent:
+
+  ```koskari
+  define unit "px"
+
+  match #(12):
+    case #[n (OPTIONAL unit)]:
+      (#str n unit)          ; "12px"; on #(12 "em"), "12em"
+  ```
 - Arms are tried in order and the first match wins. With no matching arm
   and no `else:`, the value is `None`.
 
@@ -181,4 +208,4 @@ Captured names stay bound when a guard fails, as after Python's
 - [`layout/match`](../reference/layouts/layout-match.md): the `match:` block
 - [`compile/switch`](../reference/specials/compile-switch.md): equality dispatch
 - [`koskari.matcher`](../reference/api/koskari-matcher.md): the matcher these patterns compile to
-- [Macros and hygiene](macros-and-hygiene.md): the same engine matching source forms at compile time
+- [Macros and hygiene](macros-and-hygiene.md): the same matcher matching source forms at compile time

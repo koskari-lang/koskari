@@ -25,8 +25,9 @@ from contextlib import contextmanager
 from functools import partial
 
 from .lib import (
-    Domain, KoskariSyncViolation, ParamRef, bracket_nil, bracket_pair,
-    cons, gensym, keyword, nil, nilp, pair, symbol)
+    Domain, FunctionSpec, KoskariSyncViolation, NamespaceSpec, ParamRef,
+    bracket_nil, bracket_pair, cons, gensym, keyword, nil, nilp, pair,
+    symbol)
 
 
 __all__ = (
@@ -34,6 +35,7 @@ __all__ = (
     "BuiltinPredicate",
     "is_nil",
     "is_None",
+    "is_const",
     "is_proper",
     "is_recursive",
     "build_proper",
@@ -169,6 +171,33 @@ def strip_marks(form):
         if pos:
             out.set_position(pos)
     return out
+
+
+CONST_TYPES = (
+    str, bytes,
+    bool, int, float, complex,
+    slice,
+    type(None), type(...),
+    symbol, gensym, keyword, type(nil), type(bracket_nil),
+    FunctionSpec,
+    NamespaceSpec,
+)
+
+CONST_CONTAINER_TYPES = (tuple, frozenset)
+
+
+def is_const(value):
+    """
+    Returns True if value is constant-pool material: exactly one of the
+    CONST_TYPES, or exactly a tuple or frozenset of such values. A
+    subclass is refused, since the pool keeps only its builtin kind
+    """
+
+    kind = type(value)
+    if kind in CONST_TYPES:
+        return True
+    return (kind in CONST_CONTAINER_TYPES
+            and all(is_const(x) for x in value))
 
 
 def is_proper(value):

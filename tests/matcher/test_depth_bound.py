@@ -15,10 +15,11 @@
 """
 tests.matcher.test_depth_bound
 
-The matcher walks a pattern's nesting on the C stack, in validation
-and in matching, under the interpreter's recursion guard: a pattern
-nested past the limit raises RecursionError, as nested Python
-containers do, rather than overflowing the stack.
+A pattern is lowered and its function compiled when it is built, and
+the lowering recurses in Python once per level of nesting under the
+interpreter's recursion limit: a pattern nested past it raises
+RecursionError at build, as nested Python containers do, rather than
+overflowing the stack.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,7 +29,8 @@ import unittest
 
 import pytest
 
-from koskari.lib import Matcher
+from koskari.lib import demand
+from koskari.matcher import FORM, MATCH, NOT, TEST_ANY
 
 
 pytestmark = pytest.mark.phase_infra
@@ -37,15 +39,15 @@ pytestmark = pytest.mark.phase_infra
 def nested_forms(depth, under_not=False):
     """
     A FORM chain depth deep over TEST ANY; under_not wraps the chain
-    in a NOT, whose validation walks the chain
+    in a NOT
     """
 
-    nodes = [("TEST", "ANY", -1)] + [("FORM", i) for i in range(depth)]
-    root = depth
+    pattern = TEST_ANY()
+    for _ in range(depth):
+        pattern = FORM(MATCH(pattern))
     if under_not:
-        nodes.append(("NOT", depth))
-        root = depth + 1
-    return ("MATCHER", (), (), (), tuple(nodes), root)
+        pattern = NOT(pattern)
+    return MATCH(pattern)
 
 
 def nested_lists(depth):
@@ -57,40 +59,22 @@ def nested_lists(depth):
 
 class TestMatcherDepthBound(unittest.TestCase):
 
-    def test_matching_a_pattern_nested_past_the_limit_never_overflows(self):
+    def test_a_pattern_nested_past_the_limit_is_refused_at_build(self):
         """
-        The match walk recurses once per level of pattern nesting under
-        the interpreter's recursion guard, so a pattern nested far past
-        any counted limit is refused with RecursionError where the
-        interpreter counts C recursion (3.12, 3.13) and completes, or is
-        refused at the stack margin, where it guards the stack itself
-        (3.14); it never overflows the stack
+        A pattern nested far past the recursion limit is refused with
+        RecursionError when it is built; it never overflows the stack
         """
 
-        m = Matcher.from_tuple(nested_forms(60000))
-        try:
-            result = m.match(nested_lists(60000))
-        except RecursionError:
-            return
-        self.assertTrue(result.matched)
+        pattern = nested_forms(60000)
+        with self.assertRaises(RecursionError):
+            pattern.build()
 
-    def test_validating_a_pattern_nested_past_the_limit_never_overflows(self):
-        """
-        The validation walks are guarded the same way, so a deep
-        pattern under a NOT is refused or validated, never a crash
-        """
-
-        try:
-            m = Matcher.from_tuple(nested_forms(60000, under_not=True))
-        except RecursionError:
-            return
-        self.assertIsInstance(m, Matcher)
 
     def test_a_pattern_within_the_limit_matches(self):
-        m = Matcher.from_tuple(nested_forms(50))
-        self.assertTrue(m.match(nested_lists(50)).matched)
-        self.assertFalse(m.match(nested_lists(49)).matched)
-        Matcher.from_tuple(nested_forms(50, under_not=True))
+        call = demand(nested_forms(50).build())
+        self.assertIsNotNone(call(nested_lists(50)))
+        self.assertIsNone(call(nested_lists(49)))
+        nested_forms(50, under_not=True).build()
 
 
 # The end.

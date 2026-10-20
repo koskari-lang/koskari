@@ -29,16 +29,16 @@ from typing import List
 
 from ..exceptions import ParametersError, SpecialError
 from ..lib import (
-    DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons,
+    DatumFrame, OpCode, bracket_nil, bracket_pair, car, cdr, cons, demand,
     keyword, nil, pair, symbol)
 from ..matcher import (
-    BINDING, BINDING_FORMS, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH, REST,
-    SYMBOL, USING, USING_FORMS, USING_UNPACK, VALUE, frame_formal_name,
-    match1)
+    BINDING, BINDING_MATCHERS, BINDINGS, FORMALS, LIST, LITERAL_KW, MATCH,
+    REST, SYMBOL, USING, USING_MATCHERS, USING_UNPACK, VALUE, first_match,
+    frame_formal_name, make_matcher)
 from ..types import (
-    is_keyword, is_nil, is_pair, is_proper, is_symbol, strip_mark,
-    unpack)
-from .compiler import ByteCodeFragment, _is_const
+    is_const, is_keyword, is_nil, is_pair, is_proper, is_symbol,
+    strip_mark, unpack)
+from .compiler import ByteCodeFragment
 
 
 __all__ = (
@@ -129,7 +129,7 @@ def helper_binding(source):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    m = match1(source, BINDING_FORMS)
+    _index, m = first_match(cons(source, nil), BINDING_MATCHERS)
     if m is None:
         raise SpecialError(msg, source)
 
@@ -152,7 +152,7 @@ def helper_using(source):
     if not is_proper(source):
         raise SpecialError(msg, source)
 
-    m = match1(source, USING_FORMS)
+    _index, m = first_match(cons(source, nil), USING_MATCHERS)
     if m is None:
         raise SpecialError(msg, source)
 
@@ -252,6 +252,15 @@ def _parse_decl_tail(tail, source):
     return ann
 
 
+# the declaration forms parse_decl tells apart, each matcher built
+# once and run over a one-cell spine of the form
+_decl_with_value = demand(make_matcher(LIST(SYMBOL("name"), VALUE("expr"))))
+_decl_as_name = demand(make_matcher(
+    LIST(VALUE("type_expr"), LITERAL_KW("as"), SYMBOL("name"))))
+_decl_formal_head = demand(make_matcher(
+    LIST(MATCH(SYMBOL("name"), REST("tail")))))
+
+
 def parse_decl(form, source=None):
     """
     Parse a binding-shaped declaration with no value
@@ -272,22 +281,17 @@ def parse_decl(form, source=None):
     if len(elems) == 1 and is_symbol(elems[0]):
         return (elems[0], None)
 
-    _sym_expr = (LIST(SYMBOL("name"), VALUE("expr")),)
-    m_sv = match1(form, _sym_expr)
-    if m_sv is not None:
+    subject = cons(form, nil)
+    if _decl_with_value(subject) is not None:
         raise SpecialError(
             "declaration cannot include a value",
             source)
 
-    _expr_as_name = (
-        LIST(VALUE("type_expr"), LITERAL_KW("as"), SYMBOL("name")),
-    )
-    m_as = match1(form, _expr_as_name)
+    m_as = _decl_as_name(subject)
     if m_as is not None:
         return (m_as["name"].datum, m_as["type_expr"].datum)
 
-    _FORMAL_HEAD = (LIST(MATCH(SYMBOL("name"), REST("tail"))),)
-    m = match1(form, _FORMAL_HEAD)
+    m = _decl_formal_head(subject)
     if m is None:
         raise SpecialError(f"invalid declaration form {form!r}", source)
 
@@ -440,8 +444,8 @@ def feeder_expr(fragment):
     single VAR naming atom, (None, None) for anything else
     """
 
-    is_const, value = const_only_expr(fragment)
-    if is_const:
+    found, value = const_only_expr(fragment)
+    if found:
         return ('const', value)
     is_var, name = var_only_expr(fragment)
     if is_var:
@@ -568,7 +572,7 @@ def partition_collection_runs(compiler, args_seq):
                                         iterable on the stack
 
     An element is treated as constant only when it compiles to a single
-    CONST whose value is valid constant-pool material (:func:`_is_const`);
+    CONST whose value is valid constant-pool material (:func:`koskari.types.is_const`);
     this excludes bare symbols (which compile to variable loads) while
     folding literals and quoted constants. Adjacent constants merge into one
     tuple; adjacent plain expressions gather into one list; a splat always
@@ -598,7 +602,7 @@ def partition_collection_runs(compiler, args_seq):
 
         frag = compiler.full_compile(element)
         found, value = const_only_expr(frag)
-        if found and _is_const(value):
+        if found and is_const(value):
             flush_expr()
             const_run.append(value)
         else:

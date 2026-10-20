@@ -28,7 +28,7 @@ __self__ in a leading section).
 
 
 import-from koskari.lib:
-  BoundMethod Code Compare Expression Function
+  BoundMethod Code Compare CoreType Expression Function
   NamespaceSpec OpCode Operand OpStyle
 
 
@@ -235,6 +235,22 @@ define _compare_name [sel]:
     (str sel)
 
 
+define core_type_name [val]:
+  """
+  Short display name for a CoreType ordinal (e.g. 1 -> "SYMBOL")
+  """
+
+  try:
+    (CoreType val).name
+  except [ValueError]:
+    (str val)
+
+
+;; the EXTRA field that carries a core type's ordinal, by opcode
+define CORE_TYPE_FIELD #{
+  "MATCH_CORE": 1}
+
+
 define _format_opcount [arg]:
   """
   Render a packed OPCOUNT value: the operator name from the high byte
@@ -303,7 +319,7 @@ define _format_cmpsrc_row [arg ext schema cpool local_names closure_names]:
 
 
 define _format_arg [code op_style arg cpool local_names closure_names
-                    ns_label: None extra_schema: #()]:
+                    ns_label: None extra_schema: #() op_name: ""]:
   """
   Format an opcode argument for display. Uses constant pool, local
   names, and closure names when the argument is an index into them.
@@ -337,8 +353,9 @@ define _format_arg [code op_style arg cpool local_names closure_names
           return (_format_cmpsrc_row arg ext schema cpool
                                      local_names closure_names)
 
+        define ordinal_field (CORE_TYPE_FIELD.get op_name)
         define parts:
-          list-each [[val fk] (zip ext schema)]:
+          list-each [[field val fk] (zip (range (len schema)) ext schema)]:
             switch fk:
               case [OpStyle.CONST OpStyle.ATTR OpStyle.VAR]:
                 if (and (<= 0 val) (< val (len cpool))):
@@ -359,10 +376,13 @@ define _format_arg [code op_style arg cpool local_names closure_names
 
               case [OpStyle.FASTVAR]:
                 (_format_fast_part val local_names closure_names)
-              case [OpStyle.COUNT]:
-                (str val)
+              case [OpStyle.COUNT OpStyle.RAW]:
+                if (equal? field ordinal_field):
+                  (core_type_name val)
+                else:
+                  (str val)
               case [OpStyle.CMP]:
-                (_format_selector val (and (equal? schema[3] OpStyle.COUNT)
+                (_format_selector val (and (equal? schema[3] OpStyle.RAW)
                                            ext[3]))
               case [OpStyle.OPERAND]:
                 (_operand_name val)
@@ -554,7 +574,8 @@ define dis [x file: None]:
     define arg_str (_format_arg
       code op_style arg cpool local_syms closure_syms
       ns_label: ns_label
-      extra_schema: extra_schema)
+      extra_schema: extra_schema
+      op_name: op.name)
 
     define pos_str ""
     try:
@@ -594,7 +615,8 @@ define _get_instruction_lines [code]:
     define arg_str (_format_arg
       code op_style arg cpool local_syms closure_syms
       ns_label: ns_label
-      extra_schema: extra_schema)
+      extra_schema: extra_schema
+      op_name: op.name)
 
     yield i op.name arg_str
     incr! i

@@ -1790,13 +1790,15 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
           continue;
         }
         /* FASTVAR, COUNT, STAR, OPCOUNT, CMP, CMPCOUNT, CMPSRC,
-           OPERAND: store raw integer (slot, argc, bitflags, packed
+           OPERAND, RAW: store raw integer (slot, argc, bitflags, packed
            op-type+count, comparison selector, packed
-           selector+count/source-bits, operator selector) */
+           selector+count/source-bits, operator selector, an opcode's
+           own immediate) */
         if (fk == KOSTYLE_COUNT || fk == KOSTYLE_FASTVAR
             || fk == KOSTYLE_STAR || fk == KOSTYLE_OPCOUNT
             || fk == KOSTYLE_CMP || fk == KOSTYLE_CMPCOUNT
-            || fk == KOSTYLE_CMPSRC || fk == KOSTYLE_OPERAND) {
+            || fk == KOSTYLE_CMPSRC || fk == KOSTYLE_OPERAND
+            || fk == KOSTYLE_RAW) {
           if (! PyLong_Check(elem)) {
             PyErr_Format(PyExc_RuntimeError,
                          "Code instruction %zd EXTRA field %d expects int,"
@@ -1900,7 +1902,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
        arg. */
     if (style == KOSTYLE_COUNT || style == KOSTYLE_PAIR_COUNT
         || style == KOSTYLE_STAR || style == KOSTYLE_FASTVAR
-        || style == KOSTYLE_OPCOUNT || style == KOSTYLE_CMPCOUNT) {
+        || style == KOSTYLE_OPCOUNT || style == KOSTYLE_CMPCOUNT
+        || style == KOSTYLE_RAW) {
       if (! PyLong_Check(b)) {
         PyErr_Format(PyExc_TypeError, "Code instruction %zd argument must be"
                      " an int, not %.100s", i, Py_TYPE(b)->tp_name);
@@ -2835,6 +2838,60 @@ static int namespace_spec_fast_slot_limit(
 
 
 /**
+   The tuple constants of the match instructions, which their bodies
+   index without a check: the names of MATCH_STORE, MATCH_CAPTURES,
+   MATCH_PASS and MATCH_COLUMNS, and the slot indices of MATCH_CLEAR
+   and MATCH_COLUMNS, each an exact tuple; MATCH_STORE's index within
+   its names.
+
+   :return: 0, or -1 with ValueError set
+*/
+static int validate_match_tuples(KosOpCode op, const KosExtra *row) {
+  int fields[2] = {-1, -1};
+
+  switch (op) {
+  case KOS_OP_MATCH_STORE:
+    fields[0] = 3;
+    break;
+  case KOS_OP_MATCH_CLEAR:
+    fields[0] = 1;
+    break;
+  case KOS_OP_MATCH_CAPTURES:
+  case KOS_OP_MATCH_PASS:
+    fields[0] = 2;
+    break;
+  case KOS_OP_MATCH_COLUMNS:
+    fields[0] = 2;
+    fields[1] = 3;
+    break;
+  default:
+    return 0;
+  }
+
+  for (int j = 0; j < 2 && fields[j] >= 0; j++) {
+    PyObject *t = KosExtra_OBJ(row, fields[j]);
+    if (! t || ! PyTuple_CheckExact(t)) {
+      PyErr_Format(PyExc_ValueError,
+                   "%s field %d must be a tuple",
+                   kos_opcode_name(op), fields[j]);
+      return -1;
+    }
+  }
+
+  if (op == KOS_OP_MATCH_STORE
+      && (Py_ssize_t) KosExtra_IMM(row, 1)
+      >= PyTuple_GET_SIZE(KosExtra_OBJ(row, 3))) {
+    PyErr_Format(PyExc_ValueError,
+                 "MATCH_STORE slot %u outside its %zd names",
+                 (unsigned) KosExtra_IMM(row, 1),
+                 PyTuple_GET_SIZE(KosExtra_OBJ(row, 3)));
+    return -1;
+  }
+  return 0;
+}
+
+
+/**
    Reject FASTVAR operands outside the active NamespaceSpec slot range.
 
    Called after emit when ``code`` and ``extra`` are fully materialized so we
@@ -2933,6 +2990,9 @@ static int validate_fast_slots(
             KosCode_FAST_NEED(self) = (uint32_t) KosExtra_IMM(row, slot) + 1;
         }
       }
+
+      if (validate_match_tuples(op, row))
+        return -1;
     }
 
     /* Advance namespace stack (mirror Compiler.convert_fast) */
@@ -3198,17 +3258,15 @@ static void cache_slot_release(KosCacheSlot *slot) {
   case KOS_CACHE_FIELD:
     /* ref-free: a borrowed guard type and an integer index. */
     break;
-  case KOS_CACHE_MATCHER:
-    Py_CLEAR(slot->u.matcher.matcher);
-    Py_CLEAR(slot->u.matcher.slotmap);
-    Py_CLEAR(slot->u.matcher.env);
-    break;
   case KOS_CACHE_ELECTOR:
   case KOS_CACHE_ITEM:
     /* ref-free: a static function and two counters. */
     break;
   case KOS_CACHE_TARGET:
     /* ref-free: one pc. */
+    break;
+  case KOS_CACHE_MATCH_ARGS:
+    /* ref-free: a borrowed class and tuple under a version guard. */
     break;
   }
   memset(slot, 0, sizeof(*slot));
@@ -3227,15 +3285,11 @@ static int cache_slot_visit(KosCacheSlot *slot, visitproc visit, void *arg) {
   case KOS_CACHE_ELECTOR:
   case KOS_CACHE_ITEM:
   case KOS_CACHE_TARGET:
+  case KOS_CACHE_MATCH_ARGS:
     break;
   case KOS_CACHE_METHOD:
     Py_VISIT(slot->u.method.type);
     Py_VISIT(slot->u.method.resolved);
-    break;
-  case KOS_CACHE_MATCHER:
-    Py_VISIT(slot->u.matcher.matcher);
-    Py_VISIT(slot->u.matcher.slotmap);
-    Py_VISIT(slot->u.matcher.env);
     break;
   }
   return 0;
@@ -3819,6 +3873,7 @@ static PyObject *create_opstyle_enum(void) {
   int_enum(enum_dict, KOSTYLE_, CMPCOUNT);
   int_enum(enum_dict, KOSTYLE_, CMPSRC);
   int_enum(enum_dict, KOSTYLE_, OPERAND);
+  int_enum(enum_dict, KOSTYLE_, RAW);
 
   return create_int_enum("OpStyle", enum_dict);
 
@@ -4025,6 +4080,7 @@ fail:
 
 
 PyObject *KosCompareEnum = NULL;
+PyObject *KosCoreTypeEnum = NULL;
 
 
 /* IntEnum of the comparison selectors (KosCompare, bytecode.h), exposed as
@@ -4051,6 +4107,31 @@ static PyObject *create_compare_enum(void) {
   int_enum(enum_dict, KOS_COMPARE_, IS_SUBCLASS);
 
   return create_int_enum("Compare", enum_dict);
+
+fail:
+  Py_DECREF(enum_dict);
+  return NULL;
+}
+
+
+/* IntEnum of the core types a pattern names by their bare spelling
+   (KosCoreType, matcher.h), exposed as koskari.lib.CoreType so the match
+   compiler and the MATCH_CORE handler share one ordinal set. */
+static PyObject *create_core_type_enum(void) {
+
+  PyObject *enum_dict = PyDict_New();
+  if (! enum_dict)
+    return NULL;
+
+  int_enum(enum_dict, KOS_CORE_, PAIR);
+  int_enum(enum_dict, KOS_CORE_, SYMBOL);
+  int_enum(enum_dict, KOS_CORE_, KEYWORD);
+  int_enum(enum_dict, KOS_CORE_, INT);
+  int_enum(enum_dict, KOS_CORE_, STR);
+  int_enum(enum_dict, KOS_CORE_, TUPLE);
+  int_enum(enum_dict, KOS_CORE_, LIST);
+
+  return create_int_enum("CoreType", enum_dict);
 
 fail:
   Py_DECREF(enum_dict);
@@ -4124,6 +4205,16 @@ int koskari_bytecode_init(PyObject *mod) {
   }
   KosCompareEnum = stuff;
 
+  stuff = create_core_type_enum();
+  if (! stuff) {
+    return -1;
+  }
+  if (PyDict_SetItemString(dict, "CoreType", stuff)) {
+    Py_DECREF(stuff);
+    return -1;
+  }
+  KosCoreTypeEnum = stuff;
+
   STR_CONST(_str_anon, "<anon>");
 
   return 0;
@@ -4136,6 +4227,7 @@ int koskari_bytecode_clear(PyObject *mod) {
   Py_CLEAR(KosOpStyleEnum);
   Py_CLEAR(KosOperandEnum);
   Py_CLEAR(KosCompareEnum);
+  Py_CLEAR(KosCoreTypeEnum);
   Py_CLEAR(_str_anon);
 
   return 0;

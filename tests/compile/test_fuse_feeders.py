@@ -1067,4 +1067,64 @@ class TestItemLowering(unittest.TestCase):
         ])
 
 
+class TestMatchCoreLowering(unittest.TestCase):
+    """
+    convert_fast lowers the matcher core's VAR instructions to their
+    FAST twins, found by their spelling
+    """
+
+    def test_twins(self):
+        self.assertIs(
+            VAR_TO_FAST[OpCode.MATCH_TYPE_VAR], OpCode.MATCH_TYPE_FAST)
+        self.assertIs(
+            VAR_TO_FAST[OpCode.MATCH_FIELD_POS_VAR],
+            OpCode.MATCH_FIELD_POS_FAST)
+        self.assertIs(
+            VAR_TO_FAST[OpCode.MATCH_KEY_VAR], OpCode.MATCH_KEY_FAST)
+
+    def test_rows_lower(self):
+        nspec = NamespaceSpec(None, ("T", "k"), ())
+        result = convert_fast(nspec, [
+            (OpCode.MATCH_TYPE_VAR, ("miss", "T", 0, 0)),
+            (OpCode.MATCH_FIELD_POS_VAR, ("miss", "T", 1, 0)),
+            (OpCode.MATCH_KEY_VAR, ("miss", "k", 0, 0)),
+        ])
+        self.assertEqual(result, [
+            (OpCode.MATCH_TYPE_FAST, ("miss", 0, 0, 0)),
+            (OpCode.MATCH_FIELD_POS_FAST, ("miss", 0, 1, 0)),
+            (OpCode.MATCH_KEY_FAST, ("miss", 1, 0, 0)),
+        ])
+
+
+class TestFuseScopeNext(unittest.TestCase):
+    """
+    A MATCH_SCOPE followed by a MATCH_NEXT on the cursor the mark was
+    made at fuses to MATCH_SCOPE_NEXT; a NEXT on another cursor, or one
+    a jump lands on, is left
+    """
+
+    def test_same_cursor_fuses(self):
+        out = fuse_ops([
+            (OpCode.MATCH_SCOPE, (2, 3, 0, 0)),
+            (OpCode.MATCH_NEXT, ("miss", 3, 0, 0)),
+        ])
+        self.assertEqual(out, [
+            (OpCode.MATCH_SCOPE_NEXT, ("miss", 2, 3, 0))])
+
+    def test_another_cursor_is_left(self):
+        rows = [
+            (OpCode.MATCH_SCOPE, (2, 3, 0, 0)),
+            (OpCode.MATCH_NEXT, ("miss", 1, 0, 0)),
+        ]
+        self.assertEqual(fuse_ops(list(rows)), rows)
+
+    def test_a_jump_target_is_left(self):
+        rows = [
+            (OpCode.MATCH_SCOPE, (0, 0, 0, 0)),
+            (OpCode.LABEL, "again"),
+            (OpCode.MATCH_NEXT, ("miss", 1, 0, 0)),
+        ]
+        self.assertEqual(fuse_ops(list(rows)), rows)
+
+
 # The end.

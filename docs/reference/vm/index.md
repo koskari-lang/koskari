@@ -56,6 +56,10 @@ indexes the frame's local slots directly.
 - **TOS**: the top of the operand stack.
 - **cpool**: the constant pool, the code object's read-only array of
   constants and names, indexed as `cpool[i]`.
+- **RAW** (field kind): an EXTRA row field holding a number the
+  instruction interprets itself, such as `CHECK_COMPARE`'s negate
+  flag or a matcher instruction's stack depth, width, count, flag or
+  core type ordinal. Finalize leaves it unchanged.
 - **extent**: a statically described block in the code object's extent
   table, with a kind (`KOS_EXT_TRY`, `KOS_EXT_LOOP`, `KOS_EXT_FOREACH`,
   `KOS_EXT_PROMPT`, `KOS_EXT_NS`, `KOS_EXT_COLLECT`, and others), enter
@@ -226,7 +230,7 @@ or demote tail calls when yields are present. Those happen later; see section 1.
 | `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
 | `KOS_OP_NILP` | `KOS_OP_CHECK_NIL` |
 
-**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior -> **EXTRA** `(CMP, COUNT, LABEL, COUNT)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field, the negate flag, set to 1, so the check tests the negated chain.
+**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior -> **EXTRA** `(CMP, COUNT, LABEL, RAW)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field, the negate flag, set to 1, so the check tests the negated chain.
 
 **`_SWITCH_SQUASHES`** (prior opcode -> fused switch opcode):
 
@@ -270,10 +274,11 @@ The opcodes by family, each linking to its section.
 - [8. Jumps](#8-jumps) -- JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) -- CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION
 - [9.1 Switch dispatch](#91-switch-dispatch) -- SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
+- [9.2 Pattern matching](#92-pattern-matching) -- MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_SCOPE_NEXT, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST
 - [10. Introspection](#10-introspection) -- GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR
 - [11. Exception handling](#11-exception-handling) -- EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
-- [13. Fast variables](#13-fast-variables) -- FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
+- [12. Variables by name](#12-variables-by-name) -- VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](#13-fast-variables) -- FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_CLEAR2/3/4, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](#14-attributes) -- ATTR, ATTR_CLEAR, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) -- ITEM, ITEM_STORE, ITEM_INPLACE, ITEM_CLEAR, ITEM_TAKE, ITEM_REF, and the rows naming their object, key, and value
 - [15.1 Reference dereference](#151-reference-dereference) -- DEREF
@@ -351,7 +356,37 @@ The opcodes by family, each linking to its section.
 | SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-fast.md) |
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-var-attr.md) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [section 9.1](opcodes/kos-op-switch-eq-fast-attr.md) |
-| MATCH_CASE | EXTRA | Match the subject against one pattern arm; jump on no match, bind the missing externs on a match | [section 9.1](opcodes/kos-op-match-case.md) |
+| MATCH_DESCEND | LABEL | Sequence gate on TOS; a cursor over it replaces it; a miss pops it | [section 9.2](opcodes/kos-op-match-descend.md) |
+| MATCH_SINGLE | NOARG | A one-element cursor over TOS replaces it | [section 9.2](opcodes/kos-op-match-single.md) |
+| MATCH_FITS | EXTRA | Miss unless the cursor at the depth has between the minimum and the maximum elements left | [section 9.2](opcodes/kos-op-match-fits.md) |
+| MATCH_NEXT | EXTRA | Pull the next element from the cursor at the depth, boxed from a pair spine; a miss at the end | [section 9.2](opcodes/kos-op-match-next.md) |
+| MATCH_BOUND | EXTRA | Push a cursor at the cursor's position ending the width before its end | [section 9.2](opcodes/kos-op-match-bound.md) |
+| MATCH_UNBOUND | EXTRA | Push a cursor at the cursor's position ending at its subject's end | [section 9.2](opcodes/kos-op-match-unbound.md) |
+| MATCH_SYNC | EXTRA | Move the cursor at the first depth to the position of the cursor at the second | [section 9.2](opcodes/kos-op-match-sync.md) |
+| MATCH_TAIL | EXTRA | Push the remaining elements but the suffix width as a span, advancing the cursor | [section 9.2](opcodes/kos-op-match-tail.md) |
+| MATCH_SCOPE | EXTRA | Push a mark at the cursor's position with the count of empty slots | [section 9.2](opcodes/kos-op-match-scope.md) |
+| MATCH_SCOPE_NEXT | EXTRA | Push a mark at the cursor's position, then the cursor's next element; a miss leaves the mark | [section 9.2](opcodes/kos-op-match-scope-next.md) |
+| MATCH_RESET | EXTRA | Move the cursor at the first depth back to the position of the mark at the second | [section 9.2](opcodes/kos-op-match-reset.md) |
+| MATCH_AT | EXTRA | Push the element at the mark's position | [section 9.2](opcodes/kos-op-match-at.md) |
+| MATCH_SPAN | EXTRA | Push the span from the mark to the cursor; jump when it is empty | [section 9.2](opcodes/kos-op-match-span.md) |
+| MATCH_STORE | EXTRA | Pop TOS into a slot of the mark at the depth | [section 9.2](opcodes/kos-op-match-store.md) |
+| MATCH_CLEAR | EXTRA | Empty the listed slots of the mark at the depth | [section 9.2](opcodes/kos-op-match-clear.md) |
+| MATCH_CAPTURES | EXTRA | Push the mark's filled slots: a DatumFrame over a pair spine, a dict otherwise | [section 9.2](opcodes/kos-op-match-captures.md) |
+| MATCH_PASS | EXTRA | Push a repeat pass's value: its captures, or its span when no slot is filled | [section 9.2](opcodes/kos-op-match-pass.md) |
+| MATCH_LOAD | EXTRA | Push a slot of the mark at the depth; jump when it is empty | [section 9.2](opcodes/kos-op-match-load.md) |
+| MATCH_APPEND | EXTRA | Pop TOS and append it to the list at the depth | [section 9.2](opcodes/kos-op-match-append.md) |
+| MATCH_MIN | EXTRA | Miss unless the list at the depth holds at least the count of items | [section 9.2](opcodes/kos-op-match-min.md) |
+| MATCH_COLUMNS | EXTRA | Store each name's per-pass values, as a list, into a slot of the mark | [section 9.2](opcodes/kos-op-match-columns.md) |
+| MATCH_LITERAL | EXTRA | TOS, which stays, must be the constant | [section 9.2](opcodes/kos-op-match-literal.md) |
+| MATCH_CORE | EXTRA | TOS, which stays, must be an instance of the core type the ordinal names | [section 9.2](opcodes/kos-op-match-core.md) |
+| MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | TOS, which stays, must be an instance of the type in the variable | [section 9.2](opcodes/kos-op-match-type.md) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | TOS, which stays, must be an instance of the class in the variable, whose `__match_args__` must cover the positional fields | [section 9.2](opcodes/kos-op-match-class.md) |
+| MATCH_SAME | EXTRA | TOS, which stays, must equal a slot of the mark at the depth; an empty slot misses | [section 9.2](opcodes/kos-op-match-same.md) |
+| MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | EXTRA | Push the attribute the class's `__match_args__` names at the position | [section 9.2](opcodes/kos-op-match-field-pos.md) |
+| MATCH_FIELD_KW | EXTRA | Push the attribute the constant names | [section 9.2](opcodes/kos-op-match-field-kw.md) |
+| MATCH_MAPPING | LABEL | The mapping gate on TOS | [section 9.2](opcodes/kos-op-match-mapping.md) |
+| MATCH_KEY | EXTRA | Push the value under the constant key; an absent key misses | [section 9.2](opcodes/kos-op-match-key.md) |
+| MATCH_KEY_VAR / MATCH_KEY_FAST | EXTRA | Push the value under the key in the variable; an absent key misses | [section 9.2](opcodes/kos-op-match-key-var.md) |
 | GLOBALS | NOARG | Push globals dict | [section 10](opcodes/kos-op-globals.md) |
 | LOCALS | NOARG | Push locals dict | [section 10](opcodes/kos-op-locals.md) |
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [section 10.1](opcodes/kos-op-import.md) |
@@ -367,6 +402,9 @@ The opcodes by family, each linking to its section.
 | VAR4 | EXTRA | Load four names, push in row order | [section 12](opcodes/kos-op-var4.md) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [section 12](opcodes/kos-op-var-bind.md) |
 | VAR_CLEAR | VAR | Delete the name from the namespace; no stack effect | [section 12](opcodes/kos-op-var-clear.md) |
+| VAR_CLEAR2 | EXTRA | Clear 2 names in row order; no stack effect | [section 12](opcodes/kos-op-var-clear2.md) |
+| VAR_CLEAR3 | EXTRA | Clear 3 names in row order; no stack effect | [section 12](opcodes/kos-op-var-clear3.md) |
+| VAR_CLEAR4 | EXTRA | Clear 4 names in row order; no stack effect | [section 12](opcodes/kos-op-var-clear4.md) |
 | VAR_TAKE | VAR | Deref the name, clear the binding, push the value; NameError when the binding is empty | [section 12](opcodes/kos-op-var-take.md) |
 | VAR_REF | VAR | Push a reference to the named variable | [section 12](opcodes/kos-op-var-ref.md) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [section 12](opcodes/kos-op-var-store.md) |
@@ -391,6 +429,9 @@ The opcodes by family, each linking to its section.
 | FAST4 | EXTRA | Load four slots, push in row order | [section 13](opcodes/kos-op-fast4.md) |
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [section 13](opcodes/kos-op-fast-bind.md) |
 | FAST_CLEAR | FASTVAR | Clear the slot; no stack effect | [section 13](opcodes/kos-op-fast-clear.md) |
+| FAST_CLEAR2 | EXTRA | Clear 2 slots in row order; no stack effect | [section 13](opcodes/kos-op-fast-clear2.md) |
+| FAST_CLEAR3 | EXTRA | Clear 3 slots in row order; no stack effect | [section 13](opcodes/kos-op-fast-clear3.md) |
+| FAST_CLEAR4 | EXTRA | Clear 4 slots in row order; no stack effect | [section 13](opcodes/kos-op-fast-clear4.md) |
 | FAST_TAKE | FASTVAR | Take the slot's value and clear it; NameError when the slot is empty | [section 13](opcodes/kos-op-fast-take.md) |
 | FAST_REF | FASTVAR | Push a reference to the slot | [section 13](opcodes/kos-op-fast-ref.md) |
 | FAST_STORE | FASTVAR | STORE: write TOS value into slot | [section 13](opcodes/kos-op-fast-store.md) |
@@ -951,10 +992,10 @@ bottom to top matches push order).
 ### KOS_OP_BRACKET_CONS
 - **Style**: COUNT. Arg = number of values on stack (bottom = first element,
   top = tail).
-- **Stack**: `[..., e_0, ..., e_{count-1}] -> [..., result]` where result is
-  the bracket pair chain `[e_0 . [e_1 . ... [e_{count-1}] ...]]`: the twin of
-  **CONS** over bracket pairs, built with KosBracketPair_ConsFromPtr. count 0
-  -> push bracket-nil.
+- **Stack**: `[..., e_0, ..., e_{count-1}] -> [..., result]` where result is the
+  bracket pair chain `[e_0 . [e_1 . ... [e_{count-1}] ...]]`. The twin of
+  [CONS](#kos_op_cons) over bracket pairs, built with
+  KosBracketPair_ConsFromPtr. count 0 -> push bracket-nil.
 - **Use-case**: Emitted by `compile/bracket-cons` and by the quasiquote
   compiler for a `[ ]` form with an explicit tail.
 
@@ -970,12 +1011,12 @@ bottom to top matches push order).
 - **Style**: EXTRA (COUNT, COUNT). Row = count of stacked values (bottom =
   first), tail flag (0 or 1).
 - **Stack**: tail 0: `[..., seg_0, ..., seg_{count-1}] -> [..., result]` where
-  result is the concatenation of all segments as a single proper list.
-  tail 1: `[..., seg_0, ..., seg_{count-2}, tail] -> [..., result]` where the
-  top value is the tail and the last cell's cdr is that tail. Each segment
-  may be: nil (contributes nothing), a pair (proper or improper; its elements
-  are appended), a Python tuple (its elements are appended), or any iterable.
-  count 0 -> push nil.
+  result is the concatenation of all segments as a single proper list. tail 1:
+  `[..., seg_0, ..., seg_{count-2}, tail] -> [..., result]` where the top value
+  is the tail and the count minus one values below it are the segments; the last
+  cell's cdr is the tail. Each segment may be: nil (contributes nothing), a pair
+  (proper or improper; its elements are appended), a Python tuple (its elements
+  are appended), or any iterable. count 0 -> push nil.
 - **Invariants**: All segments must be iterable; non-iterable values raise
   TypeError. With tail 0 the result is a proper pair list, or nil if all
   segments are empty. With tail 1 the result ends in the tail, or is the tail
@@ -1000,10 +1041,13 @@ bottom to top matches push order).
 ### KOS_OP_BRACKET_SPLICE
 - **Style**: EXTRA (COUNT, COUNT). Row = count of stacked values (bottom =
   first), tail flag (0 or 1).
-- **Stack**: `[..., seg_0, ..., seg_{count-1}] -> [..., result]` where result is
-  the concatenation of all segments with a bracket pair as its leading cell:
-  the twin of **PAIR_SPLICE** for bracket lists, accepting the same segments
-  and tail flag. count 0 -> push bracket-nil.
+- **Stack**: tail 0: `[..., seg_0, ..., seg_{count-1}] -> [..., result]` where
+  result is the concatenation of all segments, with a bracket pair as its
+  leading cell. tail 1: `[..., seg_0, ..., seg_{count-2}, tail] -> [...,
+  result]` where the top value is the tail and the last cell's cdr is that tail.
+  The twin of [PAIR_SPLICE](#kos_op_pair_splice) for bracket lists; segments and
+  the tail flag are accepted as PAIR_SPLICE accepts them. count 0 -> push
+  bracket-nil.
 - **Invariants**: Only the leading cell is a bracket pair; the rest of the
   spine is plain pairs ending in nil, or in the tail with tail 1. If every
   segment is empty the result is bracket-nil with tail 0, or the tail itself
@@ -1077,7 +1121,7 @@ bottom to top matches push order).
 
 ### KOS_OP_RETURN
 
-- **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
+- **Style**: COUNT. Arg = number of values to package as the return value: `0` returns `None`, `1` returns the single popped value, and `N > 1` pops `N` values and returns them as a tuple.
 - **Stack**: Pops the return value(s) per `arg`. The returning frame's dynamic extent unwinds, finally blocks and wind thunks included, and the frame is popped. The value goes where the frame's parent expects it: pushed onto a calling Koskari frame, delivered to the iterator or native handler driving the frame, or handed back to the host when the frame is the outermost one or a generator's. A return across a delimited continuation boundary delivers to that boundary.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [compile/return](../specials/compile-return.md).
@@ -1093,7 +1137,7 @@ bottom to top matches push order).
 
 ### KOS_OP_YIELD
 
-- **Style**: COUNT. Arg = number of values to yield (typically 1).
+- **Style**: COUNT. Arg = number of values to package as the yielded value: `0` yields `None`, `1` yields the single popped value, and `N > 1` pops `N` values and yields them as a tuple.
 - **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. The handler finds the running frame's generator node (**`kos_dyn_find_gen`**). A flattened generator (its node has a parent on the chain) is handled in the handler: **`eval_event_yield`** freezes the generator's chain span into the node (**`kos_dyn_gen_freeze`**), delivers the value to the consuming **NEXT** / **FOREACH** / **YIELD_FROM** node, and threads into the consumer without stopping **`koskari_eval`**. A generator driven from outside returns **`EVAL_YIELD(val)`**; the trampoline runs the same freeze and stops with **`KOS_RES_YIELD`** and **`KOS_SUSP_YIELD`** for the outer driver.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [compile/yield](../specials/compile-yield.md); **`koskari/lib/opcode/YIELD.c`**.
@@ -1109,7 +1153,7 @@ bottom to top matches push order).
 
 ### KOS_OP_RETURN_CONST
 - **Style**: CONST. Arg = pool index of the constant to return.
-- **Stack**: `[...] -> [...]`. Returns the constant exactly as **`KOS_OP_RETURN`** **1** returns a popped value.
+- **Stack**: `[...] -> [...]` (no stack effect). Returns the constant exactly as **`KOS_OP_RETURN`** **1** returns a popped value: the same plain, region and resume deliveries, else the RETURN signal to the trampoline.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when **`KOS_OP_RETURN`** **1** is fed by a bare **`KOS_OP_CONST`**; a `None` constant takes **`KOS_OP_RETURN`** **0** in the squish pass instead.
 - **Implementation**: `koskari/lib/opcode/RETURN_CONST.c`
 
@@ -1117,7 +1161,7 @@ bottom to top matches push order).
 
 ### KOS_OP_YIELD_CONST
 - **Style**: CONST. Arg = pool index of the constant to yield.
-- **Stack**: `[...] -> [...]`. Yields the constant exactly as **`KOS_OP_YIELD`** **1** yields a popped value; marks the code as a generator.
+- **Stack**: `[...] -> [...]` (no stack effect). Yields the constant exactly as **`KOS_OP_YIELD`** **1** yields a popped value: a flattened generator delivers to its consumer and threads into it, any other returns the YIELD signal. Marks the code as a generator, as **`KOS_OP_YIELD`** does.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when **`KOS_OP_YIELD`** **1** is fed by a bare **`KOS_OP_CONST`**; a `None` constant takes **`KOS_OP_YIELD`** **0** in the squish pass instead.
 - **Implementation**: `koskari/lib/opcode/YIELD_CONST.c`
 
@@ -1126,7 +1170,7 @@ bottom to top matches push order).
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, roll back PC so the next loop iteration re-dispatches to YIELD_FROM. On each resume: drive one step of the delegate (or handle send/throw/close inject). On completion: pop the dyn node, push final value. PC does not advance until delegation completes.
+- **Stack**: Pops TOS, the value to delegate to. Pushes nothing. Each value the delegate produces is yielded out of the enclosing generator as that generator's own yield. When the delegate is exhausted, execution continues at the next instruction; the delegate's return value is discarded. `compile/yield-from` emits `CONST None` after the opcode so the form has a value.
 - **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic chain node `KOS_DYN_YIELD_FROM`, which holds the delegate, its kind, and pending action/arg for send/throw/close and for resume-from-await.
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Delegate results (yielded or final value) are never re-awaited; they are pushed or emitted as values only.
@@ -1544,10 +1588,10 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, COUNT)` row: `a0` is a KosCompare selector, `a1` the operand count (>= 2), `a2` the target pc, `a3` the negate flag. It is variadic -- the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
+Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, RAW)` row: `a0` is a KosCompare selector, `a1` the operand count (>= 2), `a2` the target pc, `a3` the negate flag. It is variadic -- the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_COMPARE
-- **Style**: EXTRA (CMP, COUNT, LABEL, COUNT). Row = KosCompare selector,
+- **Style**: EXTRA (CMP, COUNT, LABEL, RAW). Row = KosCompare selector,
   operand count, target pc, negate flag.
 - **Stack**: `[..., a1, ..., aN] -> [...]`. Chain-compare the top COUNT
   operands under the selector, negated when the negate flag is set;
@@ -1738,29 +1782,89 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 - **Compiler form:** tuple arg `("label", slot_index, "attr_name", 0)` pre-compile.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST_ATTR.c`
 
-### KOS_OP_MATCH_CASE
 
-- **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT): `a0` = no-match
-  target pc, `a1` = frozen matcher tuple (cpool), `a2` = tuple of the extern
-  names the matcher's defaults do not cover (cpool), `a3` = keep-subject flag.
-  Matcher thawed from `a1` and a KosSlotMap of its capture slots resolved
-  against the namespace layout.
-- **Stack**: `[..., subject, e0 ... eN-1] -> [..., subject]` on no match (then
-  jump to `a0`); `-> [...]` on a match with the keep flag clear, or
-  `-> [..., subject]` with it set. `N = len(a2)`: the compiler pushes one
-  value per missing extern above the subject, in `a2` order.
-- **Semantics**: The opcode is the interface between the stack, the
-  namespace, and the matcher API. The subject goes to
-  `KosMatcher_RunSlotsVectorcall` as a length-1 spine with the stacked
-  externs and their names; the matcher resolves every extern (inbuilt
-  defaults included) and raises its own errors. On the first match the slot
-  array is bound through the cached KosSlotMap (by fast index, or by name for
-  a slot without one); a slot that did not fire stays unbound. The stacked
-  externs are consumed on both outcomes. With the keep flag set (a guarded
-  arm) the guard code must either jump to `a0` with the subject intact or
-  pop it before the arm body commits.
-- **Compiler form:** Emitted by `compile/match` (`compile/specials/conditionals.py`).
-- **Implementation**: `koskari/lib/opcode/MATCH_CASE.c`
+## 9.2 Pattern matching
+
+The `MATCH_*` instructions carry a compiled pattern. A `match` arm, a
+special form's pattern and a `syntax-rules` rule compile to a run of
+these instructions in the code that uses them; no pattern object is
+interpreted at run time.
+
+- **Walk entries.** A walk keeps its state on the operand stack as
+  entries of three kinds. A **cursor** walks one subject -- a pair
+  spine, a tuple, list or other sequence, or a single value as a
+  one-element subject -- and has a position and an end. A **mark** has
+  the position of the cursor it was made at, which never moves, and a
+  fixed count of slots, each empty or holding one capture; it is the
+  record of one capture scope. An **items list** collects a repeat's
+  passes; the repeat pushes it empty with `BUILD_LIST 0`.
+- **Depths.** A RAW field names a walk entry by its depth: the count of
+  entries above it as the instruction finds the stack, 0 the top before
+  the instruction pops or pushes. A depth that names a cursor or mark
+  where the entry is of another kind raises `SystemError`.
+- **Copy on write.** An instruction that moves a cursor, writes a mark's
+  slots or appends to an items list writes the entry it names. When
+  another stack entry holds the same object -- after a `DUP`, or in a
+  continuation captured during the walk -- the instruction stores a copy
+  at its entry and writes the copy, so a resumed continuation sees the
+  cursors, marks and items it captured.
+- **Misses.** An instruction with a LABEL field jumps there on a miss.
+- **Tests.** `MATCH_LITERAL`, `MATCH_CORE`, `MATCH_TYPE_*`,
+  `MATCH_CLASS_*`, `MATCH_SAME` and `MATCH_MAPPING` read TOS and leave
+  it on a hit and on a miss; the code after the test removes the value.
+- **Boxing.** An element pulled from a pair spine is a `Datum` carrying
+  its cell's position; an element of a tuple, list or single value is
+  the item itself. Every test reads through `Datum`.
+- **Twins.** A type, class or mapping key the pattern names is a
+  variable of the enclosing code. An instruction that reads one has a
+  `_VAR` form, with a VAR field read by name, and a `_FAST` form, with
+  a FASTVAR field read by fast index; `convert_fast` lowers the one to
+  the other as for every `VAR` instruction. An instruction with no such
+  field has one form under its bare name.
+- **Calls.** A predicate or extractor is a variable called with
+  `CALL_VAR` from the same frame, and flattens as any Koskari call does;
+  a predicate's result is tested with `JUMP_FALSE`.
+- **Core types.** Seven type names are not variables: `pair`, `symbol`,
+  `keyword`, `int`, `str`, `tuple` and `list` in a pattern lower to
+  `MATCH_CORE`, which carries the type as an ordinal in a RAW field. A
+  binding of one of those names in scope is never read by a pattern.
+- **Widths.** Width and count fields are 16 bits; in `MATCH_FITS` a
+  maximum of `0xFFFF` is unbounded.
+
+| Instruction | Reference |
+|---|---|
+| MATCH_DESCEND | [kos-op-match-descend](opcodes/kos-op-match-descend.md) |
+| MATCH_SINGLE | [kos-op-match-single](opcodes/kos-op-match-single.md) |
+| MATCH_FITS | [kos-op-match-fits](opcodes/kos-op-match-fits.md) |
+| MATCH_NEXT | [kos-op-match-next](opcodes/kos-op-match-next.md) |
+| MATCH_BOUND | [kos-op-match-bound](opcodes/kos-op-match-bound.md) |
+| MATCH_UNBOUND | [kos-op-match-unbound](opcodes/kos-op-match-unbound.md) |
+| MATCH_SYNC | [kos-op-match-sync](opcodes/kos-op-match-sync.md) |
+| MATCH_TAIL | [kos-op-match-tail](opcodes/kos-op-match-tail.md) |
+| MATCH_SCOPE | [kos-op-match-scope](opcodes/kos-op-match-scope.md) |
+| MATCH_SCOPE_NEXT | [kos-op-match-scope-next](opcodes/kos-op-match-scope-next.md) |
+| MATCH_RESET | [kos-op-match-reset](opcodes/kos-op-match-reset.md) |
+| MATCH_AT | [kos-op-match-at](opcodes/kos-op-match-at.md) |
+| MATCH_SPAN | [kos-op-match-span](opcodes/kos-op-match-span.md) |
+| MATCH_STORE | [kos-op-match-store](opcodes/kos-op-match-store.md) |
+| MATCH_CLEAR | [kos-op-match-clear](opcodes/kos-op-match-clear.md) |
+| MATCH_CAPTURES | [kos-op-match-captures](opcodes/kos-op-match-captures.md) |
+| MATCH_PASS | [kos-op-match-pass](opcodes/kos-op-match-pass.md) |
+| MATCH_LOAD | [kos-op-match-load](opcodes/kos-op-match-load.md) |
+| MATCH_APPEND | [kos-op-match-append](opcodes/kos-op-match-append.md) |
+| MATCH_MIN | [kos-op-match-min](opcodes/kos-op-match-min.md) |
+| MATCH_COLUMNS | [kos-op-match-columns](opcodes/kos-op-match-columns.md) |
+| MATCH_LITERAL | [kos-op-match-literal](opcodes/kos-op-match-literal.md) |
+| MATCH_CORE | [kos-op-match-core](opcodes/kos-op-match-core.md) |
+| MATCH_TYPE_VAR / MATCH_TYPE_FAST | [kos-op-match-type](opcodes/kos-op-match-type.md) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | [kos-op-match-class](opcodes/kos-op-match-class.md) |
+| MATCH_SAME | [kos-op-match-same](opcodes/kos-op-match-same.md) |
+| MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | [kos-op-match-field-pos](opcodes/kos-op-match-field-pos.md) |
+| MATCH_FIELD_KW | [kos-op-match-field-kw](opcodes/kos-op-match-field-kw.md) |
+| MATCH_MAPPING | [kos-op-match-mapping](opcodes/kos-op-match-mapping.md) |
+| MATCH_KEY | [kos-op-match-key](opcodes/kos-op-match-key.md) |
+| MATCH_KEY_VAR / MATCH_KEY_FAST | [kos-op-match-key-var](opcodes/kos-op-match-key-var.md) |
+
 
 ## 10. Introspection
 
@@ -1818,12 +1922,12 @@ while still importing the full dotted chain (matching a plain Python
   dots; 0 = absolute), `a2` = leaf flag (0 = bind root, 1 = bind leaf), `a3` =
   cpool binding name str.
 - **Stack**: no effect.
-- **Semantics**: Import the module (root or leaf per the flag) and store it
-  into the current frame namespace under the binding name. With the leaf flag
-  clear the root package is bound while the full dotted chain is still imported
-  -- plain `(import foo.bar)` binds `foo`; with it set the deepest submodule is
+- **Semantics**: Import the module (root or leaf per the flag) and store it into
+  the current frame namespace under the binding name. With the leaf flag clear
+  the root package is bound while the full dotted chain is still imported --
+  plain `(import foo.bar)` binds `foo`; with it set the deepest submodule is
   bound -- the `(import [foo.bar as: fbar])` member form. Relative imports are
-  always leaf-style.
+  always leaf-style. Self-contained: no stack effect, no separate VAR_BIND.
 - **Invariants**: `a0` is a str or None; `a3` is a str.
 - **Implementation**: `koskari/lib/opcode/IMPORT.c`
 
@@ -1849,7 +1953,8 @@ bind the leaf; relative `(import .foo)` uses `("foo", 1, 1, "foo")`.
 - **Stack**: no effect.
 - **Semantics**: Import the leaf module, then for each attribute name `getattr`
   it and store the value into the current frame namespace under the
-  corresponding binding name.
+  corresponding binding name. Self-contained: no module on the stack, no
+  compensating POP.
 - **Submodule fallback**: when the `getattr` raises `AttributeError`, import
   `"{module.__name__}.{attr}"` and retry -- matching CPython's
   `from pkg import sub` behavior for submodules the package `__init__` does not
@@ -1895,15 +2000,16 @@ row: `("os.path", 0, 0, 0)`.
 
 ### KOS_OP_IMPORT_USE
 - **Style**: EXTRA (`CONST`, `COUNT`, `CONST`, `CONST`). Row: `a0` = cpool
-  module name str (or None), `a1` = level, `a2` = cpool tuple of feature
-  stems, `a3` = cpool tuple of bind stems (parallel; the same tuple object
-  when there are no renames).
+  module name str (or None), `a1` = level, `a2` = cpool tuple of feature stems,
+  `a3` = cpool tuple of bind stems (parallel to the feature stems; the same
+  tuple object when there are no renames).
 - **Stack**: no effect.
-- **Semantics**: Import the leaf module, then for each feature stem probe
-  its candidate set -- the stem itself, `compile/{stem}`, `layout/{stem}` --
-  and store each hit under the parallel bind stem with the same facet
-  prefix applied, so a rename substitutes the whole family. A stem already
-  carrying a facet prefix is literal: one candidate, bound as written.
+- **Semantics**: Import the leaf module, then for each feature stem probe its
+  candidate set -- the stem itself, `compile/{stem}`, and `layout/{stem}` -- and
+  store each hit into the current frame namespace under the parallel bind stem
+  with the same facet prefix applied, so a rename substitutes the whole family.
+  A stem already carrying a facet prefix is literal: one candidate, bound as
+  written. Self-contained: no module on the stack, no compensating POP.
 - **Miss handling**: a per-facet miss is tolerated. The bare candidate uses
   the same member fetch as `IMPORT_FROM` (submodule fallback included); its
   crafted missing-member `ImportError` counts as a miss, while a
@@ -2092,11 +2198,39 @@ row: `("os.path", 0, 0, 0)`.
 
 ---
 
+### KOS_OP_VAR_CLEAR2
+
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG). Row = 2 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 2 names in row order, as
+  2 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
+
+### KOS_OP_VAR_CLEAR3
+
+- **Style**: EXTRA (VAR, VAR, VAR, NOARG). Row = 3 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 3 names in row order, as
+  3 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
+
+### KOS_OP_VAR_CLEAR4
+
+- **Style**: EXTRA (VAR, VAR, VAR, VAR). Row = 4 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 4 names in row order, as
+  4 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` instructions (quads first, then one triple or one pair).
+
 ### KOS_OP_VAR_TAKE
 - **Style**: VAR. Arg = constant pool index of name (post-compile).
-- **Stack**: `[...] -> [..., value]`. Deref name, clear the binding, push the
-  value. **Errors with NameError if the binding is empty** (contrast
-  **VAR_CLEAR**, which is idempotent on an already-empty declared slot).
+- **Stack**: `[...] -> [..., value]`. Deref name via `frame_ns_take`, clear the
+  binding, push the value. **Errors with NameError if the binding is empty**
+  (contrast **VAR_CLEAR**, which is idempotent on an already-empty declared
+  slot).
 - **Invariants**: Name in constant pool; binding must hold a value.
 - **Compiler form:** Pre-compile arg = name; post-compile arg = pool index.
   Emitted by [compile/takeq](../specials/compile-takeq.md). May lower to
@@ -2163,15 +2297,21 @@ row: `("os.path", 0, 0, 0)`.
 
 ### KOS_OP_VAR_INPLACE
 
-- **Style**: EXTRA (OPERAND, VAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the variable name.
-- **Stack**: `[..., rhs] -> [...]`. Pop the one rhs and reduce it into the frame namespace binding with the operator, storing the result back; pushes nothing (the special appends CONST None). Cold: the operator switch lives in the shared `kos_var_inplace_operand`.
+- **Style**: EXTRA (OPERAND, VAR). Row a0 = the bare KosOperand
+  selector; a1 = constant pool index of the variable name.
+- **Stack**: `[..., rhs] -> [...]`. Augmented assignment through the frame
+  namespace: obj = deref(name); obj OP= rhs; store back. No value pushed.
 - **Compiler form:** Emitted by **`compile/inplace`** when the target is a symbol. May lower to **FAST_INPLACE**; a single constant operand squashes into **VAR_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_INPLACE.c`
 
 ### KOS_OP_VAR_INPLACE_CONST
 
-- **Style**: EXTRA (OPERAND, VAR, CONST, NOARG). Row a0 = bare operator selector, a1 = the variable name, a2 = the operand.
-- **Stack**: No stack effect. Augmented assignment with a constant operand through the frame namespace: deref the name, apply the operator with the pool constant, store back.
+- **Style**: EXTRA (OPERAND, VAR, CONST). Row a0 = bare KosOperand
+  selector (the count is fixed at 1 by the shape), a1 = constant pool
+  index of the name, a2 = constant pool index of the operand.
+- **Stack**: No stack effect. Augmented assignment with a constant rhs
+  through the frame namespace, completely stack-free: obj = deref(name);
+  obj OP= const; store back.
 - **Peephole**: the compressed form of **CONST** followed by **VAR_INPLACE** at a count of one, as VAR_STORE_CONST is of CONST and VAR_STORE. May lower to **FAST_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/VAR_INPLACE_CONST.c`
 
@@ -2199,7 +2339,8 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 ### KOS_OP_VAR_ATTR_TAKE
 - **Style**: EXTRA (VAR, CONST, NOARG, NOARG).
 - **Stack**: `[...] -> [..., value]`. Get attribute on object from namespace,
-  delete it, push value.
+  delete it, push value. Errors if attribute missing (same as **VAR_ATTR** +
+  **VAR_ATTR_CLEAR** sequence).
 - **Compiler form:** Emitted by [compile/take-attr](../specials/compile-take-attr.md)
   when OBJ is a symbol. May lower to **FAST_ATTR_TAKE**.
 
@@ -2596,11 +2737,39 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ---
 
+### KOS_OP_FAST_CLEAR2
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG). Row = 2 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 2 fast slots in row order, as
+  2 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
+### KOS_OP_FAST_CLEAR3
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, NOARG). Row = 3 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 3 fast slots in row order, as
+  3 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
+### KOS_OP_FAST_CLEAR4
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, FASTVAR). Row = 4 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 4 fast slots in row order, as
+  4 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
 ### KOS_OP_FAST_TAKE
 - **Style**: FASTVAR. Arg = fast local slot index.
-- **Stack**: `[...] -> [..., value]`. Take value from slot and clear it.
-  **Errors with NameError if slot is empty** (contrast **FAST_CLEAR**,
-  idempotent on empty declared slots).
+- **Stack**: `[...] -> [..., value]`. Take value from slot via
+  `KosNamespace_FastTake` (steal pointer on raw slots without extra INCREF),
+  clear slot. **Errors with NameError if slot is empty** (contrast
+  **FAST_CLEAR**, idempotent on empty declared slots).
 - **Invariants**: Slot index in range; slot must hold a value.
 - **Compiler form:** Lowered from **VAR_TAKE** when name has a fixed slot.
 
@@ -2662,15 +2831,22 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 
 ### KOS_OP_FAST_INPLACE
 
-- **Style**: EXTRA (OPERAND, FASTVAR, NOARG, NOARG). Row a0 = the bare operator selector, a1 = the fast slot.
-- **Stack**: `[..., rhs] -> [...]`. Pop the one rhs and reduce it into the slot with the operator; pushes nothing. Hot: prologue only, tail-calling the body the site's slot elected (an int, float, or str body for the accumulator and operand it first saw, with the result written into the accumulator in place when the slot is its only owner); an empty slot or an ungated site takes the electing function.
+- **Style**: EXTRA (OPERAND, FASTVAR). Row a0 = the bare KosOperand
+  selector; a1 = fast slot index.
+- **Stack**: `[..., rhs] -> [...]`. Augmented assignment on a fast slot:
+  obj = deref(slot); obj OP= rhs; store back. No value pushed.
 - **Compiler form:** The lowered form of **VAR_INPLACE**.
 - **Implementation**: `koskari/lib/opcode/FAST_INPLACE.c`
 
 ### KOS_OP_FAST_INPLACE_CONST
 
-- **Style**: EXTRA (OPERAND, FASTVAR, CONST, NOARG). Row a0 = bare operator selector, a1 = the fast slot, a2 = the operand.
-- **Stack**: No stack effect. Augmented assignment with a constant operand, completely stack-free: deref the slot, apply the operator with the pool constant, store back. The compiled form of `(incr! i)`. Prologue only, as FAST_INPLACE; the operand's type was fixed at the election, so the body guards only the accumulator.
+- **Style**: EXTRA (OPERAND, FASTVAR, CONST). Row a0 = bare KosOperand
+  selector (the count is fixed at 1 by the shape), a1 = fast slot index,
+  a2 = constant pool index of the operand.
+- **Stack**: No stack effect. Augmented assignment with a constant rhs on
+  a fast slot, completely stack-free: obj = deref(slot); obj OP= const;
+  store back. A counted loop's back-edge increment is this single
+  dispatch.
 - **Compiler form:** The lowered form of **VAR_INPLACE_CONST**.
 - **Implementation**: `koskari/lib/opcode/FAST_INPLACE_CONST.c`
 
@@ -2971,7 +3147,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 ### KOS_OP_ATTR
 
 - **Style**: CONST. Arg = constant pool index of attribute name (post-compile).
-- **Stack**: `[..., obj] -> [..., obj, value]`. Get attribute; push value.
+- **Stack**: `[..., obj] -> [..., value]`. Get attribute; the value replaces the object.
 - **Invariants**: TOS is the object. Name in constant pool.
 - **Compiler form:** Pre-compile arg = attribute name (string); post-compile arg = pool index.
 
@@ -2988,7 +3164,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 ### KOS_OP_ATTR_STORE
 
 - **Style**: CONST. Arg = constant pool index of attribute name.
-- **Stack**: `[..., obj, value] -> [..., obj]`. Pop value, set attribute on obj.
+- **Stack**: `[..., obj, value] -> [...]`. Set attribute on obj; pop both.
 - **Invariants**: Below TOS is object; name in pool.
 
 **Example:** Set obj.x = TOS. Pool: 0 = "x".
@@ -3019,6 +3195,7 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 ### KOS_OP_ATTR_TAKE
 - **Style**: CONST. Arg = constant pool index of attribute name.
 - **Stack**: `[..., obj] -> [..., value]`. Get attribute, delete it, push value.
+  Errors if attribute missing.
 - **Invariants**: TOS is the object.
 - **Compiler form:** Emitted by [compile/take-attr](../specials/compile-take-attr.md)
   when OBJ is not a symbol.
@@ -3553,98 +3730,98 @@ Un-annotated, no-defaults form: extra row `((), (), 0, 0)`; only fspec is popped
 
 ### KOS_OP_TAIL_CALL_ATTR_NAMES
 - **Style**: EXTRA. Schema: CONST (attr name), CONST (kwarg names tuple), COUNT (npos), NOARG. One cache slot.
-- **Stack**: Same layout as CALL_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_ATTR_NAMES. Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_NAMES; never emitted by a special.
 
 ---
 
 ### KOS_OP_TAIL_CALL_ATTR_STAR
 - **Style**: EXTRA. Schema: CONST (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set, so the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_STAR; never emitted by a special.
 
 ---
 
 ### KOS_OP_TAIL_CALL_VAR
 - **Style**: EXTRA. Schema: VAR (name cpool idx), COUNT (npos), NOARG, NOARG.
-- **Stack**: Same layout as CALL_VAR: `[..., pos_0, ..., pos_{N-1}]`; the callable is loaded from the frame namespace by name, not on the stack. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_VAR: `[..., pos_0, ..., pos_{N-1}]`; the callable is loaded from the frame namespace by name, not on the stack. Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR; convert_fast lowers it to TAIL_CALL_FAST when the name has a fast slot.
 
 ---
 
 ### KOS_OP_TAIL_CALL_VAR_NAMES
 - **Style**: EXTRA. Schema: VAR (name), CONST (kwarg names tuple), COUNT (npos).
-- **Stack**: Same layout as CALL_VAR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_VAR_NAMES. Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_NAMES; lowers to TAIL_CALL_FAST_NAMES.
 
 ---
 
 ### KOS_OP_TAIL_CALL_VAR_STAR
 - **Style**: EXTRA. Schema: VAR (name), STAR (bitflags), NOARG, NOARG.
-- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosEvalState_CallArgs` with the tail flag set, so the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_STAR; lowers to TAIL_CALL_FAST_STAR.
 
 ---
 
 ### KOS_OP_TAIL_CALL_VAR_ATTR
 - **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
-- **Stack**: Same layout as CALL_VAR_ATTR: args only; obj is loaded from the frame namespace by name (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_VAR_ATTR: args only; obj is loaded from the frame namespace by name (owned deref, released on every path). Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR; lowers to TAIL_CALL_FAST_ATTR.
 
 ---
 
 ### KOS_OP_TAIL_CALL_VAR_ATTR_NAMES
 - **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
-- **Stack**: Same layout as CALL_VAR_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_VAR_ATTR_NAMES. Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_NAMES; lowers to TAIL_CALL_FAST_ATTR_NAMES.
 
 ---
 
 ### KOS_OP_TAIL_CALL_VAR_ATTR_STAR
 - **Style**: EXTRA. Schema: VAR (name for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set, so the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_STAR; lowers to TAIL_CALL_FAST_ATTR_STAR.
 
 ---
 
 ### KOS_OP_TAIL_CALL_FAST
 - **Style**: EXTRA. Schema: FASTVAR (slot index), COUNT (npos), NOARG, NOARG.
-- **Stack**: Same layout as CALL_FAST; the callable is loaded from the fast local slot (owned deref). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_FAST; the callable is loaded from the fast local slot (owned deref). Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Reached through promotion of CALL_VAR plus the fast lowering, or promotion of an already-lowered CALL_FAST; never emitted by a special.
 
 ---
 
 ### KOS_OP_TAIL_CALL_FAST_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot), CONST (kwarg names tuple), COUNT (npos).
-- **Stack**: Same layout as CALL_FAST_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_FAST_NAMES. Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_NAMES; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
 
 ### KOS_OP_TAIL_CALL_FAST_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot), STAR (bitflags), NOARG, NOARG.
-- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosEvalState_CallArgs` with the tail flag set, so the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
 
 ### KOS_OP_TAIL_CALL_FAST_ATTR
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (npos), NOARG. One cache slot.
-- **Stack**: Same layout as CALL_FAST_ATTR: args only; obj is loaded from the fast local slot (owned deref, released on every path). Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_FAST_ATTR: args only; obj is loaded from the fast local slot (owned deref, released on every path). Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
 
 ### KOS_OP_TAIL_CALL_FAST_ATTR_NAMES
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), CONST (kwarg names tuple), COUNT (npos). One cache slot.
-- **Stack**: Same layout as CALL_FAST_ATTR_NAMES. Tail semantics as [`KOS_OP_TAIL_CALL_ATTR`](#kos_op_tail_call_attr).
+- **Stack**: Same layout as CALL_FAST_ATTR_NAMES. Tail semantics as KOS_OP_TAIL_CALL_ATTR: the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_NAMES; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
 
 ### KOS_OP_TAIL_CALL_FAST_ATTR_STAR
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), CONST (attr name), COUNT (opa bitflags), NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set, so the caller's frame is reused rather than a new frame pushed.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
@@ -3927,13 +4104,12 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
   fuses the pair into [CHECK_COMPARE](#kos_op_check_compare).
 
 ### KOS_OP_OBJECT_COMPARE_VAR
-- **Style**: EXTRA (CMP, CONST, VAR, CONST). Row = bare selector, low
-  bound (pool), middle operand, high bound (pool). Schema-static slots:
-  no source bits, the shape is the opcode.
-- **Stack**: `[...] -> [..., result]`. The ternary bounds idiom
-  (`const < x < const`): chain-compare the three operands under the
-  selector and push the chain result (for JUMP_FALSE / JUMP_TRUE or
-  value use).
+- **Style**: EXTRA (CMP, CONST, VAR, CONST). Row = bare selector, low bound
+  (pool), middle operand name, high bound (pool). Schema-static slots: no source
+  bits, the shape is the opcode.
+- **Stack**: `[...] -> [..., result]`. The ternary bounds idiom (`const < x <
+  const`) with the middle operand resolved by name: chain-compare the three
+  operands under the selector and push the chain result.
 - **Invariants**: Selector is a valid KosCompare ordinal (richcompare
   chain semantics; extended selectors are never emitted at arity 3).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when the exact CONST / VAR / CONST feeder shape meets an arity-3 comparison. In value position the OBJECT_COMPARE quartet collapses to this row alone; in branch position the arity-3 CHECK_COMPARE cannot also carry its label (five fields), so it splits into this row plus `JUMP_FALSE`. Lowers to OBJECT_COMPARE_FAST through the generic schema-driven `convert_fast` path.
@@ -3951,9 +4127,9 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 ---
 
 ### KOS_OP_OBJECT_COMPARE_FAST
-- **Style**: EXTRA (CMP, CONST, FASTVAR, CONST). Row = bare selector, low
-  bound (pool), middle operand, high bound (pool). Schema-static slots:
-  no source bits, the shape is the opcode.
+- **Style**: EXTRA (CMP, CONST, FASTVAR, CONST). Row = bare selector, low bound
+  (pool), middle operand fast slot, high bound (pool). Schema-static slots: no
+  source bits, the shape is the opcode.
 - **Stack**: `[...] -> [..., result]`. The ternary bounds idiom
   (`const < x < const`): chain-compare the three operands under the
   selector and push the chain result (for JUMP_FALSE / JUMP_TRUE or
@@ -3977,9 +4153,10 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 ### KOS_OP_OBJECT_OPERAND
 
 - **Style**: OPCOUNT. Arg packs a KosOperand selector (high byte) with the
-  operand count (low byte).
-- **Stack**: `[..., a1, ... aN] -> [..., result]`. Pop the N operands, apply
-  the selected operator (reducing left-to-right for N > 2), push the result.
+  reduce count (low byte).
+- **Stack**: `[..., a1, ..., aN] -> [..., result]`. Reduce the N operands
+  left-to-right under the operator (`values[0]` is the seed), via
+  `kos_operand_reduce` (`operator.c`) with its two-operand PyLong fast paths.
 - **Semantics**: The hottest opcode by dispatch count and by time. The
   handler is a prologue only: it tail-calls the body the site's slot elected
   (`eval/eval_electors.c`, int and float fast paths with their own guards);
@@ -3992,10 +4169,12 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 ### KOS_OP_OBJECT_INPLACE
 
 - **Style**: OPCOUNT. Arg packs a KosOperand selector (high byte) with the
-  operand count (low byte).
-- **Stack**: `[..., a1, ... aN] -> [..., result]`. Reduce the N operands
-  left-to-right through the operator's `PyNumber_InPlace*` protocol and push
-  the result.
+  reduce count (low byte).
+- **Stack**: `[..., a1, ..., aN] -> [..., result]`. In-place reduce the N
+  operands left-to-right (`values[0]` is the accumulator seed) via
+  `kos_inplace_reduce` (`operator.c`), the `PyNumber_InPlace*` protocol family.
+  The consolidated replacement for the old per-operator `OBJECT_INPLACE_*`
+  family.
 - **Semantics**: The stack in-place operation behind the inplace-item and
   inplace-attr special forms; elected like OBJECT_OPERAND.
 - **Implementation**: `koskari/lib/opcode/OBJECT_INPLACE.c`
@@ -4011,13 +4190,13 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Implementation**: `koskari/lib/opcode/OBJECT_DIR.c`
 
 ### KOS_OP_OBJECT_DIVMOD
-- **Style**: NOARG.
+- **Style**: COUNT. Arg = operand count; only 2 is accepted.
 - **Semantics**: See [section 19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_DIVMOD.c`
 
 ### KOS_OP_OBJECT_ITER
 - **Style**: NOARG.
-- **Semantics**: Uniform iterator acquisition over both protocols (shared with PUSH_FOREACH via `kos_iter_acquire`): a Koskari AsyncGenerator passes through as itself (native, never demand-wrapped), an object with `am_aiter` yields its async iterator, otherwise the sync protocol (`PyObject_GetIter`, including the sequence fallback). See [section 19 Object protocol](#19-object-protocol) overview.
+- **Semantics**: See [section 19 Object protocol](#19-object-protocol) overview.
 - **Implementation**: `koskari/lib/opcode/OBJECT_ITER.c`
 
 ### KOS_OP_VAR_ITER
@@ -4086,13 +4265,13 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 
 ### KOS_OP_RETURN_VAR
 - **Style**: VAR. Arg = pool index of the name.
-- **Stack**: `[...] -> [...]`. Resolve the name in the current frame's namespace (`NameError` when unbound) and return the value as **`KOS_OP_RETURN`** **1** would.
+- **Stack**: `[...] -> [...]` (no stack effect). Resolves the name in the current frame's namespace, raising `NameError` when it is unbound as **`KOS_OP_VAR`** would, and returns the value exactly as **`KOS_OP_RETURN`** **1** returns a popped one.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when **`KOS_OP_RETURN`** **1** is fed by a bare **`KOS_OP_VAR`**. Lowers to **`KOS_OP_RETURN_FAST`** through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/RETURN_VAR.c`
 
 ### KOS_OP_YIELD_VAR
 - **Style**: VAR. Arg = pool index of the name.
-- **Stack**: `[...] -> [...]`. Resolve the name in the current frame's namespace (`NameError` when unbound) and yield the value as **`KOS_OP_YIELD`** **1** would; marks the code as a generator.
+- **Stack**: `[...] -> [...]` (no stack effect). Resolves the name in the current frame's namespace, raising `NameError` when it is unbound as **`KOS_OP_VAR`** would, and yields the value exactly as **`KOS_OP_YIELD`** **1** yields a popped one. Marks the code as a generator.
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when **`KOS_OP_YIELD`** **1** is fed by a bare **`KOS_OP_VAR`**. Lowers to **`KOS_OP_YIELD_FAST`** through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/YIELD_VAR.c`
 
@@ -4109,14 +4288,14 @@ Each `OBJECT_*` opcode in `opcodes.incl` has its own subsection below.
 - **Implementation**: `koskari/lib/opcode/FAST_FORMAT_CONST.c`
 
 ### KOS_OP_RETURN_FAST
-- **Style**: FASTVAR. Arg = slot index.
-- **Stack**: As RETURN_VAR, with the value read from its fast slot.
+- **Style**: FASTVAR. Arg = fast slot index.
+- **Stack**: `[...] -> [...]` (no stack effect). As **`KOS_OP_RETURN_VAR`**, with the value read from the fast slot; an empty slot raises `NameError` as **`KOS_OP_FAST`** would.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of RETURN_VAR when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/RETURN_FAST.c`
 
 ### KOS_OP_YIELD_FAST
-- **Style**: FASTVAR. Arg = slot index.
-- **Stack**: As YIELD_VAR, with the value read from its fast slot; marks the code as a generator.
+- **Style**: FASTVAR. Arg = fast slot index.
+- **Stack**: `[...] -> [...]` (no stack effect). As **`KOS_OP_YIELD_VAR`**, with the value read from the fast slot; an empty slot raises `NameError` as **`KOS_OP_FAST`** would. Marks the code as a generator.
 - **Compiler form:** Post-compile only: the `convert_fast` lowering of YIELD_VAR when the name has a fast slot.
 - **Implementation**: `koskari/lib/opcode/YIELD_FAST.c`
 
@@ -4175,7 +4354,7 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_PUSH_PROMPT
 
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
-- **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), then pushes the prompt node onto the dynamic chain.
+- **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pc + 1), then pushes the prompt node onto the dynamic chain.
 - **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
 - **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the segment and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
@@ -4214,7 +4393,7 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_POP_SHIFT
 
 - **Style**: NOARG.
-- **Stack**: Pops TOS as result; builds a transfer plan that unwinds from the current position through the matching SHIFT and PROMPT nodes (TRUNCATE_AND_INJECT step drops both and their segment), then injects the single result value onto the outer frame's stack (below the PROMPT's block boundary). Handler returns without invoking k.
+- **Stack**: Pops TOS as result and resolves the delimiter by the prompt instance the SHIFT recorded at capture. For a live reset: builds a transfer plan that unwinds through the SHIFT and PROMPT (dropping both and the PROMPT's segment), injects the result onto the outer frame's stack, and resumes at the closing pc the prompt recorded at push, + 1. For an invocation prompt (created by invoking a captured k; no POP_PROMPT pairs with it): the result is the value of that k-invocation, delivered at the invoke site through the paired DELIM bookmark.
 - **Invariants**: Must be inside a PUSH_SHIFT extent (parent is PROMPT extent). The segment owned by the PROMPT is dropped as part of the TRUNCATE_AND_INJECT step; the injected value lands on the frame's stack below the former block boundary.
 - **Compiler form:** No argument.
 
@@ -4229,7 +4408,7 @@ between POP_SHIFT and POP_PROMPT.
 ### KOS_OP_POP_PROMPT
 
 - **Style**: NOARG.
-- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: when a nearest **`KOS_DYN_DELIM`** with mode **`KOS_DYN_DELIM_MODE_POP_PROMPT`** is present (`kos_find_nearest_delim`), pops TOS as result, unwinds continuation frames back to the invocation site per that node's return metadata, drops the PROMPT's segment, pushes result, restores the PC recorded in that node's return metadata (the continuation invocation site), and resumes.
+- **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the walk down from the current node finds a **`KOS_DYN_DELIM`** bookmark (mode **`POP_PROMPT`** for a grafted re-invoke, **`INPLACE`** for an in-place first invoke), passing invocation prompts and stopping at a live prompt; it pops TOS as result, unwinds to the delim, delivers the result at the invoke site per the delim's return metadata (an INPLACE delim restores the displaced frame state and re-links the suspended handler first), and resumes there.
 - **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's segment and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
 - **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the segment and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.

@@ -3,19 +3,13 @@
 
 **Syntax:** `(special-rules NAME LITERALS RULE ...)`
 
-**Use-case:** Lower a **`special-rules`**-style transformer spec to a
-**`build-special`** call form. Rule procedures are **compiler-aware**:
-each rule's lambda is built with formals **`(COMPILER pattern-vars ...)`** --
-the **`COMPILER`** slot corresponds to the pattern column breakout
-(see behaviour). Bind the result with **`compile/define`**.
+**Use-case:** A **`special-rules`**-style transformer whose rules are
+compiler-aware procedures. Bind the result with **`compile/define`**.
 
-**Behaviour:** Like **`compile/macro-rules`**, but each rule's pattern column must
-be **`(compiler-formal pattern)`**: the first subform names the
-compiler parameter, the second is a nested **RULE** pattern (lowered with
-**`parse_rule_pattern`**). Per-rule **`compile/lambda`** formals are
-**`compiler-formal`**, then pattern variables from the inner
-RULE pattern (same ordering as **`compile/macro-rules`** for implicit patterns).
-The literal set includes the macro **`NAME`** automatically (as for other
-rule-based transformers). The built transformer's **`compile_impl`** passes
-**`compiler`** and the captured pattern variables into the winning rule and
-returns its result for recompilation.
+**Behaviour:** Each rule's pattern column must be **`(compiler-formal pattern)`**:
+the first subform names the compiler parameter, the second is a nested
+**RULE** pattern with the literals and pattern variables of
+**`compile/syntax-rules`**; the literals include **`NAME`**. The body of the
+first rule whose pattern matches runs with the compiler bound to
+**`compiler-formal`** and each pattern variable bound to what it matched, and
+its result is the compile result.

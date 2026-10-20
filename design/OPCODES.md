@@ -60,6 +60,10 @@ linking from design notes, PRs, or other docs.
   name. Declared on the name field of every `*_ATTR` row in `opcodes.incl`;
   finalize requires the constant to be a str, since the method cache and the
   type lookup read it as one. Otherwise handled as CONST.
+- **RAW** (field kind): An EXTRA row field holding a number the
+  instruction interprets itself, such as `CHECK_COMPARE`'s negate
+  flag or a matcher instruction's stack depth, width, count, flag or
+  core type ordinal. Finalize leaves it unchanged.
 - **extent**: A statically described block (stored in the code object's extent
   table) with kind `KosExtentKind` (KOS_EXT_TRY, KOS_EXT_LOOP, KOS_EXT_FOREACH,
   KOS_EXT_PROMPT, KOS_EXT_NS, KOS_EXT_COLLECT, etc.), enter/exit pcs, and
@@ -230,7 +234,7 @@ or demote tail calls when yields are present. Those happen later; see §1.7.
 | `KOS_OP_EXCEPTION_MATCH` | `KOS_OP_CHECK_EXCEPTION` |
 | `KOS_OP_NILP` | `KOS_OP_CHECK_NIL` |
 
-**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior → **EXTRA** `(CMP, COUNT, LABEL, COUNT)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field, the negate flag, set to 1, so the check tests the negated chain.
+**`OBJECT_COMPARE` fusion** (selector-keyed comparison prior → **EXTRA** `(CMP, COUNT, LABEL, RAW)` check). The prior `KOS_OP_OBJECT_COMPARE` carries its selector and operand count in a CMPCOUNT arg; the fusion preserves both, emitting **`KOS_OP_CHECK_COMPARE`** with arg `(selector, count, label, 0)` so the chained comparison survives (`a < b < c` fuses just like `a < b`); the `JUMP_TRUE` pair fuses the same way with the fourth field, the negate flag, set to 1, so the check tests the negated chain.
 
 **`_SWITCH_SQUASHES`** (prior opcode → fused switch opcode):
 
@@ -288,11 +292,11 @@ When adding or changing an opcode:
 - [8. Jumps](#8-jumps) — JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_FALSE_VAR, JUMP_TRUE_VAR, JUMP_FALSE_FAST, JUMP_TRUE_FAST, JUMP_AND, JUMP_OR, JUMP_AND_VAR, JUMP_OR_VAR, JUMP_AND_FAST, JUMP_OR_FAST
 - [9. Check jumps](#9-check-jumps) — CHECK_COMPARE, CHECK_COMPARE_VAR, CHECK_COMPARE_FAST, CHECK_EXCEPTION, CHECK_NIL
 - [9.1 Switch dispatch](#91-switch-dispatch) — SWITCH_EQ, SWITCH_EQ_CONST, SWITCH_EQ_VAR, SWITCH_EQ_FAST, SWITCH_EQ_VAR_ATTR, SWITCH_EQ_FAST_ATTR
-- [9.2 Pattern dispatch](#92-pattern-dispatch) — MATCH_CASE
+- [9.2 Pattern matching](#92-pattern-matching) — MATCH_DESCEND, MATCH_SINGLE, MATCH_FITS, MATCH_NEXT, MATCH_BOUND, MATCH_UNBOUND, MATCH_SYNC, MATCH_TAIL, MATCH_SCOPE, MATCH_SCOPE_NEXT, MATCH_RESET, MATCH_AT, MATCH_SPAN, MATCH_STORE, MATCH_CLEAR, MATCH_CAPTURES, MATCH_PASS, MATCH_LOAD, MATCH_APPEND, MATCH_MIN, MATCH_COLUMNS, MATCH_LITERAL, MATCH_CORE, MATCH_TYPE_VAR, MATCH_TYPE_FAST, MATCH_CLASS_VAR, MATCH_CLASS_FAST, MATCH_SAME, MATCH_FIELD_POS_VAR, MATCH_FIELD_POS_FAST, MATCH_FIELD_KW, MATCH_MAPPING, MATCH_KEY, MATCH_KEY_VAR, MATCH_KEY_FAST
 - [10. Introspection](#10-introspection) — GLOBALS, LOCALS, IMPORT, IMPORT_FROM, IMPORT_STAR, IMPORT_USE
 - [11. Exception handling](#11-exception-handling) — EXCEPTION, EXCEPTION_CLEAR, EXCEPTION_MATCH
-- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
-- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
+- [12. Variables by name](#12-variables-by-name) — VAR, VAR2, VAR3, VAR4, VAR_BIND, VAR_CLEAR, VAR_CLEAR2/3/4, VAR_TAKE, VAR_REF, VAR_STORE, VAR_STORE_CONST, VAR_ATTR*, VAR_ITEM*, VAR_ITER, VAR_NEXT, VAR_FORMAT, VAR_FORMAT_CONST, RETURN_VAR, YIELD_VAR
+- [13. Fast variables](#13-fast-variables) — FAST, FAST2, FAST3, FAST4, FAST_BIND, FAST_CLEAR, FAST_CLEAR2/3/4, FAST_TAKE, FAST_REF, FAST_STORE, FAST_STORE_CONST, FAST_ATTR*, FAST_ITEM*, FAST_ITER, FAST_NEXT, FAST_FORMAT, FAST_FORMAT_CONST, RETURN_FAST, YIELD_FAST
 - [14. Attributes](#14-attributes) — ATTR, ATTR_CLEAR, ATTR_TAKE, ATTR_REF, ATTR_STORE
 - [15. Items](#15-items) — ITEM, ITEM_STORE, ITEM_INPLACE, ITEM_CLEAR, ITEM_TAKE, ITEM_REF, and the rows naming their object, key, and value
 - [15.1 Reference dereference](#151-reference-dereference) — DEREF
@@ -371,7 +375,37 @@ When adding or changing an opcode:
 | SWITCH_EQ_FAST | EXTRA | Compare TOS to fast-slot RHS; on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast) |
 | SWITCH_EQ_VAR_ATTR | EXTRA | Compare TOS to getattr(var, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_var_attr) |
 | SWITCH_EQ_FAST_ATTR | EXTRA | Compare TOS to getattr(fast, attr); on match pop TOS and jump; on mismatch fall through | [§9.1](#kos_op_switch_eq_fast_attr) |
-| MATCH_CASE | EXTRA | Run the site's cached matcher on the subject; bind captures and fall through on match, jump on no match | [§9.2](#kos_op_match_case) |
+| MATCH_DESCEND | LABEL | Sequence gate on TOS; a cursor over it replaces it; a miss pops it | [§9.2](#kos_op_match_descend) |
+| MATCH_SINGLE | NOARG | A one-element cursor over TOS replaces it | [§9.2](#kos_op_match_single) |
+| MATCH_FITS | EXTRA | Miss unless the cursor at the depth has between the minimum and the maximum elements left | [§9.2](#kos_op_match_fits) |
+| MATCH_NEXT | EXTRA | Pull the next element from the cursor at the depth, boxed from a pair spine; a miss at the end | [§9.2](#kos_op_match_next) |
+| MATCH_BOUND | EXTRA | Push a cursor at the cursor's position ending the width before its end | [§9.2](#kos_op_match_bound) |
+| MATCH_UNBOUND | EXTRA | Push a cursor at the cursor's position ending at its subject's end | [§9.2](#kos_op_match_unbound) |
+| MATCH_SYNC | EXTRA | Move the cursor at the first depth to the position of the cursor at the second | [§9.2](#kos_op_match_sync) |
+| MATCH_TAIL | EXTRA | Push the remaining elements but the suffix width as a span, advancing the cursor | [§9.2](#kos_op_match_tail) |
+| MATCH_SCOPE | EXTRA | Push a mark at the cursor's position with the count of empty slots | [§9.2](#kos_op_match_scope) |
+| MATCH_SCOPE_NEXT | EXTRA | Push a mark at the cursor's position, then the cursor's next element; a miss leaves the mark | [§9.2](#kos_op_match_scope_next) |
+| MATCH_RESET | EXTRA | Move the cursor at the first depth back to the position of the mark at the second | [§9.2](#kos_op_match_reset) |
+| MATCH_AT | EXTRA | Push the element at the mark's position | [§9.2](#kos_op_match_at) |
+| MATCH_SPAN | EXTRA | Push the span from the mark to the cursor; jump when it is empty | [§9.2](#kos_op_match_span) |
+| MATCH_STORE | EXTRA | Pop TOS into a slot of the mark at the depth | [§9.2](#kos_op_match_store) |
+| MATCH_CLEAR | EXTRA | Empty the listed slots of the mark at the depth | [§9.2](#kos_op_match_clear) |
+| MATCH_CAPTURES | EXTRA | Push the mark's filled slots: a DatumFrame over a pair spine, a dict otherwise | [§9.2](#kos_op_match_captures) |
+| MATCH_PASS | EXTRA | Push a repeat pass's value: its captures, or its span when no slot is filled | [§9.2](#kos_op_match_pass) |
+| MATCH_LOAD | EXTRA | Push a slot of the mark at the depth; jump when it is empty | [§9.2](#kos_op_match_load) |
+| MATCH_APPEND | EXTRA | Pop TOS and append it to the list at the depth | [§9.2](#kos_op_match_append) |
+| MATCH_MIN | EXTRA | Miss unless the list at the depth holds at least the count of items | [§9.2](#kos_op_match_min) |
+| MATCH_COLUMNS | EXTRA | Store each name's per-pass values, as a list, into a slot of the mark | [§9.2](#kos_op_match_columns) |
+| MATCH_LITERAL | EXTRA | TOS, which stays, must be the constant | [§9.2](#kos_op_match_literal) |
+| MATCH_CORE | EXTRA | TOS, which stays, must be an instance of the core type the ordinal names | [§9.2](#kos_op_match_core) |
+| MATCH_TYPE_VAR / MATCH_TYPE_FAST | EXTRA | TOS, which stays, must be an instance of the type in the variable | [§9.2](#kos_op_match_type_var) |
+| MATCH_CLASS_VAR / MATCH_CLASS_FAST | EXTRA | TOS, which stays, must be an instance of the class in the variable, whose `__match_args__` must cover the positional fields | [§9.2](#kos_op_match_class_var) |
+| MATCH_SAME | EXTRA | TOS, which stays, must equal a slot of the mark at the depth; an empty slot misses | [§9.2](#kos_op_match_same) |
+| MATCH_FIELD_POS_VAR / MATCH_FIELD_POS_FAST | EXTRA | Push the attribute the class's `__match_args__` names at the position | [§9.2](#kos_op_match_field_pos_var) |
+| MATCH_FIELD_KW | EXTRA | Push the attribute the constant names | [§9.2](#kos_op_match_field_kw) |
+| MATCH_MAPPING | LABEL | The mapping gate on TOS | [§9.2](#kos_op_match_mapping) |
+| MATCH_KEY | EXTRA | Push the value under the constant key; an absent key misses | [§9.2](#kos_op_match_key) |
+| MATCH_KEY_VAR / MATCH_KEY_FAST | EXTRA | Push the value under the key in the variable; an absent key misses | [§9.2](#kos_op_match_key_var) |
 | GLOBALS | NOARG | Push the module (outermost) namespace | [§10](#kos_op_globals) |
 | LOCALS | NOARG | Push the frame's current namespace | [§10](#kos_op_locals) |
 | IMPORT | EXTRA | Import module; bind root or leaf (self-contained) | [§10.1](#kos_op_import) |
@@ -387,6 +421,9 @@ When adding or changing an opcode:
 | VAR4 | EXTRA | Load four names, push in row order | [§12](#kos_op_var4) |
 | VAR_BIND | VAR | BIND: use TOS ref to resolve name | [§12](#kos_op_var_bind) |
 | VAR_CLEAR | VAR | Delete the name from the namespace; no stack effect | [§12](#kos_op_var_clear) |
+| VAR_CLEAR2 | EXTRA | Clear 2 names in row order; no stack effect | [§12](#kos_op_var_clear2) |
+| VAR_CLEAR3 | EXTRA | Clear 3 names in row order; no stack effect | [§12](#kos_op_var_clear3) |
+| VAR_CLEAR4 | EXTRA | Clear 4 names in row order; no stack effect | [§12](#kos_op_var_clear4) |
 | VAR_TAKE | VAR | Deref name, clear binding, push value (errors if empty) | [§12](#kos_op_var_take) |
 | VAR_REF | VAR | Push a reference to the named variable | [§12](#kos_op_var_ref) |
 | VAR_STORE | VAR | STORE: write TOS value into name | [§12](#kos_op_var_store) |
@@ -443,6 +480,9 @@ When adding or changing an opcode:
 | FAST4 | EXTRA | Load four slots, push in row order | [§13](#kos_op_fast4) |
 | FAST_BIND | FASTVAR | BIND: use TOS ref to resolve slot | [§13](#kos_op_fast_bind) |
 | FAST_CLEAR | FASTVAR | Clear the slot; no stack effect | [§13](#kos_op_fast_clear) |
+| FAST_CLEAR2 | EXTRA | Clear 2 slots in row order; no stack effect | [§13](#kos_op_fast_clear2) |
+| FAST_CLEAR3 | EXTRA | Clear 3 slots in row order; no stack effect | [§13](#kos_op_fast_clear3) |
+| FAST_CLEAR4 | EXTRA | Clear 4 slots in row order; no stack effect | [§13](#kos_op_fast_clear4) |
 | FAST_TAKE | FASTVAR | Deref slot, clear, push value (errors if empty) | [§13](#kos_op_fast_take) |
 | FAST_REF | FASTVAR | Push a reference to the slot | [§13](#kos_op_fast_ref) |
 | FAST_STORE | FASTVAR | STORE: write TOS value into slot | [§13](#kos_op_fast_store) |
@@ -1094,7 +1134,7 @@ bottom to top matches push order).
 
 - **Style**: COUNT. Arg = number of stack elements to pop before jumping.
 - **Stack**: Pops `arg` elements; control transfers to continue target of innermost LOOP/FOREACH extent.
-- **Invariants**: Must be inside a LOOP or FOREACH extent. The compiler's one back-edge, and so a cooperation point: the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
+- **Invariants**: Must be inside a LOOP or FOREACH extent. The back-edge of every compiled loop, and so a cooperation point (a matcher REPEAT's back-edge polls at `MATCH_APPEND`): the handler ends in **`RESULT_NEXT_POLL`**, which hands the trampoline the next step instead of threading when the eval breaker is up (EVALUATOR.md §1.6).
 
 **Example:** Inside a loop; pop 0 and jump to extent continue_pc (e.g. loop head).
 
@@ -1581,11 +1621,11 @@ done:
 
 ## 9. Check jumps
 
-Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, COUNT)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the negate flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
+Check jumps: jump to the target label when the predicate does not hold. Jump locality applies to every target. The comparison check is the selector-keyed **CHECK_COMPARE**, **EXTRA** with a `(CMP, COUNT, LABEL, RAW)` row: `a0` is a KosCompare selector, `a1` the operand count (≥ 2), `a2` the target pc, `a3` the negate flag. It is variadic — the top `COUNT` operands are chain-compared left-to-right under the selector (e.g. `a < b < c`), negated when `a3` is set, and the jump is taken when the chain fails. IS, IS_NOT, IN and NOT_IN are strictly binary at this opcode; IS_INSTANCE and IS_SUBCLASS test the first operand against every operand after it. The remaining checks (exception, nil) take a single **LABEL** arg.
 
 ### KOS_OP_CHECK_COMPARE {#kos_op_check_compare}
 
-- **Style**: EXTRA (CMP, COUNT, LABEL, COUNT). Row = KosCompare selector,
+- **Style**: EXTRA (CMP, COUNT, LABEL, RAW). Row = KosCompare selector,
   operand count, target pc, negate flag.
 - **Stack**: `[..., a1, ..., aN] → [...]`. Chain-compare the top COUNT
   operands under the selector, negated when the negate flag is set;
@@ -1799,31 +1839,422 @@ disc and returns 0. Covered by `tests/lib/opcode/test_switch.py`.
 - **Implementation**: `koskari/lib/opcode/SWITCH_EQ_FAST_ATTR.c`
 
 
-## 9.2 Pattern dispatch
+## 9.2 Pattern matching
 
-### KOS_OP_MATCH_CASE {#kos_op_match_case}
+The `MATCH_*` instructions carry a compiled pattern. A `match` arm, a
+special form's pattern and a `syntax-rules` rule compile to a run of
+these instructions in the code that uses them; no pattern object is
+interpreted at run time.
 
-- **Style**: EXTRA. Schema (LABEL, CONST, CONST, COUNT): `a0` = no-match
-  target pc, `a1` = frozen matcher tuple (cpool), `a2` = tuple of the extern
-  names the matcher's defaults do not cover (cpool), `a3` = keep-subject flag.
-  Matcher thawed from `a1` and a KosSlotMap of its capture slots resolved
-  against the namespace layout.
-- **Stack**: `[..., subject, e0 ... eN-1] → [..., subject]` on no match (then
-  jump to `a0`); `→ [...]` on a match with the keep flag clear, or
-  `→ [..., subject]` with it set. `N = len(a2)`: the compiler pushes one
-  value per missing extern above the subject, in `a2` order.
-- **Semantics**: The opcode is the interface between the stack, the
-  namespace, and the matcher API. The subject goes to
-  `KosMatcher_RunSlotsVectorcall` as a length-1 spine with the stacked
-  externs and their names; the matcher resolves every extern (inbuilt
-  defaults included) and raises its own errors. On the first match the slot
-  array is bound through the cached KosSlotMap (by fast index, or by name for
-  a slot without one); a slot that did not fire stays unbound. The stacked
-  externs are consumed on both outcomes. With the keep flag set (a guarded
-  arm) the guard code must either jump to `a0` with the subject intact or
-  pop it before the arm body commits.
-- **Compiler form:** Emitted by `compile/match` (`compile/specials/conditionals.py`).
-- **Implementation**: `koskari/lib/opcode/MATCH_CASE.c`
+- **Walk entries.** A walk keeps its state on the operand stack as
+  entries of three kinds. A **cursor** walks one subject -- a pair
+  spine, a tuple, list or other sequence, or a single value as a
+  one-element subject -- and has a position and an end. A **mark** has
+  the position of the cursor it was made at, which never moves, and a
+  fixed count of slots, each empty or holding one capture; it is the
+  record of one capture scope. An **items list** collects a repeat's
+  passes; the repeat pushes it empty with `BUILD_LIST 0`.
+- **Depths.** A RAW field names a walk entry by its depth: the count of
+  entries above it as the instruction finds the stack, 0 the top before
+  the instruction pops or pushes. A depth that names a cursor or mark
+  where the entry is of another kind raises `SystemError`.
+- **Copy on write.** An instruction that moves a cursor, writes a mark's
+  slots or appends to an items list writes the entry it names. When
+  another stack entry holds the same object -- after a `DUP`, or in a
+  continuation captured during the walk -- the instruction stores a copy
+  at its entry and writes the copy, so a resumed continuation sees the
+  cursors, marks and items it captured.
+- **Misses.** An instruction with a LABEL field jumps there on a miss.
+- **Tests.** `MATCH_LITERAL`, `MATCH_CORE`, `MATCH_TYPE_*`,
+  `MATCH_CLASS_*`, `MATCH_SAME` and `MATCH_MAPPING` read TOS and leave
+  it on a hit and on a miss; the code after the test removes the value.
+- **Boxing.** An element pulled from a pair spine is a `Datum` carrying
+  its cell's position; an element of a tuple, list or single value is
+  the item itself. Every test reads through `Datum`.
+- **Twins.** A type, class or mapping key the pattern names is a
+  variable of the enclosing code. An instruction that reads one has a
+  `_VAR` form, with a VAR field read by name, and a `_FAST` form, with
+  a FASTVAR field read by fast index; `convert_fast` lowers the one to
+  the other as for every `VAR` instruction. An instruction with no such
+  field has one form under its bare name.
+- **Calls.** A predicate or extractor is a variable called with
+  `CALL_VAR` from the same frame, and flattens as any Koskari call does;
+  a predicate's result is tested with `JUMP_FALSE`.
+- **Core types.** Seven type names are not variables: `pair`, `symbol`,
+  `keyword`, `int`, `str`, `tuple` and `list` in a pattern lower to
+  `MATCH_CORE`, which carries the type as an ordinal in a RAW field. A
+  binding of one of those names in scope is never read by a pattern.
+- **Widths.** Width and count fields are 16 bits; in `MATCH_FITS` a
+  maximum of `0xFFFF` is unbounded.
+- **Fusion.** The bytecode processor fuses a `MATCH_SCOPE` followed by a
+  `MATCH_NEXT` on the cursor the mark was made at into
+  `MATCH_SCOPE_NEXT`; both are also emitted apart.
+
+Each `koskari/lib/opcode/MATCH_*.c` handler holds its instruction's
+body, except where handlers share one: the VAR and FAST twins, and
+MATCH_CAPTURES with MATCH_PASS, tail-call a body in
+`koskari/lib/eval/eval_match.c`. A body calls the matcher subsystem's
+step (`koskari/lib/matcher/cursor.c`, `mark.c`, `step.c`;
+`matcher.h`). The
+lowering is the `Emitter` in `koskari/matcher/emitter.py`, entered by
+`lower_arm` inline for a `compile/match` arm and `lower_matcher` into a
+function body, which `koskari/matcher/build.py` completes as a syntax
+rule's lambda or, through `build_matcher`, as a standalone `Function`.
+Design:
+[archive/matcher-core.md](archive/matcher-core.md).
+
+### KOS_OP_MATCH_DESCEND {#kos_op_match_descend}
+
+- **Style**: LABEL
+- **Stack**: `[..., v]` -> `[..., cur]`; on a miss `[..., v]` -> `[...]` and a
+  jump to the label.
+- **Semantics**: The sequence gate on `v` read through `Datum`. A pair spine
+  (`nil` included), a tuple, a list or another sequence type descends, and a
+  cursor over it replaces `v`; `str`, `bytes`, `bytearray`, a mapping, a set,
+  an iterator and any other value miss. A pair spine is counted once, here: an
+  improper spine is a miss and a spine that loops raises `ValueError`. Later
+  instructions read a list at its live length and any other sequence at the
+  length it had here.
+- **Implementation**: `koskari/lib/opcode/MATCH_DESCEND.c`
+
+### KOS_OP_MATCH_SINGLE {#kos_op_match_single}
+
+- **Style**: NOARG
+- **Stack**: `[..., v]` -> `[..., cur]`; cannot miss.
+- **Semantics**: A cursor over a one-element subject whose element is `v`
+  itself, not read through `Datum`, replaces `v`.
+- **Implementation**: `koskari/lib/opcode/MATCH_SINGLE.c`
+
+### KOS_OP_MATCH_FITS {#kos_op_match_fits}
+
+- **Style**: EXTRA (LABEL, RAW, RAW, RAW): label, cursor depth, minimum,
+  maximum.
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Miss unless the cursor at depth `a1` has at least `a2` and at
+  most `a3` elements left before its end; a maximum of `0xFFFF` is unbounded.
+  With `a2` and `a3` both 0 it is the end test.
+- **Implementation**: `koskari/lib/opcode/MATCH_FITS.c`
+
+### KOS_OP_MATCH_NEXT {#kos_op_match_next}
+
+- **Style**: EXTRA (LABEL, RAW): label, cursor depth.
+- **Stack**: `[...]` -> `[..., e]`; jump to `a0` with nothing pushed on a
+  miss.
+- **Semantics**: Pull the next element from the cursor at depth `a1` and
+  advance the cursor. From a pair spine `e` is a `Datum` over the cell's car,
+  read through `Datum`, carrying the cell's position; from a tuple, list or
+  other sequence it is the item; from a single-value cursor, the value. A miss
+  at the cursor's end, or when the spine cell at the cursor is no longer a
+  pair.
+- **Implementation**: `koskari/lib/opcode/MATCH_NEXT.c`
+
+### KOS_OP_MATCH_BOUND {#kos_op_match_bound}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, cursor depth, width.
+- **Stack**: `[...]` -> `[..., bound]`; jump to `a0` with nothing pushed on a
+  miss.
+- **Semantics**: Push a cursor at the position of the cursor at depth `a1`
+  whose end is `a2` elements before that cursor's end. A miss when fewer than
+  `a2` elements remain.
+- **Implementation**: `koskari/lib/opcode/MATCH_BOUND.c`
+
+### KOS_OP_MATCH_UNBOUND {#kos_op_match_unbound}
+
+- **Style**: EXTRA (RAW): cursor depth.
+- **Stack**: `[...]` -> `[..., c]`; cannot miss.
+- **Semantics**: Push a cursor at the position of the cursor at depth `a0`
+  whose end is its subject's end: the elements a `MATCH_BOUND` left before
+  that cursor's end, at any depth of nesting, are left on the new cursor. The
+  cursor at `a0` does not move.
+- **Implementation**: `koskari/lib/opcode/MATCH_UNBOUND.c`
+
+### KOS_OP_MATCH_SYNC {#kos_op_match_sync}
+
+- **Style**: EXTRA (RAW, RAW): cursor depth, cursor depth.
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Move the cursor at depth `a0` to the position of the cursor
+  at depth `a1`, a cursor over the same subject.
+- **Implementation**: `koskari/lib/opcode/MATCH_SYNC.c`
+
+### KOS_OP_MATCH_TAIL {#kos_op_match_tail}
+
+- **Style**: EXTRA (LABEL, RAW, RAW, RAW): label, cursor depth, suffix width,
+  minimum.
+- **Stack**: `[...]` -> `[..., span]`; jump to `a0` with nothing pushed on a
+  miss.
+- **Semantics**: Take the elements left at the cursor at depth `a1` but the
+  last `a2`, push them as a span, and advance the cursor past them. A miss
+  when fewer than `a2` elements remain or the span holds fewer than `a3`. Over
+  a tuple, list or other sequence the span is a tuple of the items; over a
+  single value, a one-element tuple of the value or the empty tuple. Over a
+  pair spine it is a `Datum` over the rest of the spine when the span runs to
+  the spine's end, a `Datum` over the spine's terminator when the span is
+  empty, and otherwise a tuple of a `Datum` per cell; a spine cut inside the
+  span raises `ValueError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_TAIL.c`
+
+### KOS_OP_MATCH_SCOPE {#kos_op_match_scope}
+
+- **Style**: EXTRA (RAW, RAW): cursor depth, slot count.
+- **Stack**: `[...]` -> `[..., m]`; cannot miss.
+- **Semantics**: Push a mark at the position of the cursor at depth `a0` with
+  `a1` empty slots. A mark's position never moves.
+- **Implementation**: `koskari/lib/opcode/MATCH_SCOPE.c`
+
+### KOS_OP_MATCH_SCOPE_NEXT {#kos_op_match_scope_next}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, cursor depth, slot count.
+- **Stack**: `[...]` -> `[..., m, e]`; jump to `a0` with `m` pushed on a
+  miss.
+- **Semantics**: `MATCH_SCOPE a1 a2` then `MATCH_NEXT a0` on the same cursor,
+  one entry deeper under the mark. Fused by the bytecode processor; never
+  emitted directly.
+- **Implementation**: `koskari/lib/opcode/MATCH_SCOPE_NEXT.c`
+
+### KOS_OP_MATCH_RESET {#kos_op_match_reset}
+
+- **Style**: EXTRA (RAW, RAW): cursor depth, mark depth.
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Move the cursor at depth `a0` back to the position of the
+  mark at depth `a1`.
+- **Implementation**: `koskari/lib/opcode/MATCH_RESET.c`
+
+### KOS_OP_MATCH_AT {#kos_op_match_at}
+
+- **Style**: EXTRA (RAW): mark depth.
+- **Stack**: `[...]` -> `[..., e]`; cannot miss.
+- **Semantics**: Push the element at the position of the mark at depth `a0`,
+  as `MATCH_NEXT` gave it. Raises `ValueError` when the subject no longer
+  holds that element: a list shrunk below the position, or a spine cell that
+  is no longer a pair.
+- **Implementation**: `koskari/lib/opcode/MATCH_AT.c`
+
+### KOS_OP_MATCH_SPAN {#kos_op_match_span}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, mark depth, cursor depth.
+- **Stack**: `[...]` -> `[..., span]`; jump to `a0` with nothing pushed when
+  the span is empty.
+- **Semantics**: Push the elements from the position of the mark at depth `a1`
+  to the cursor at depth `a2`: one element as `MATCH_AT` gives it, two or more
+  as a tuple of them, a `Datum` per cell over a pair spine. Raises
+  `ValueError` when the subject no longer holds the span.
+- **Implementation**: `koskari/lib/opcode/MATCH_SPAN.c`
+
+### KOS_OP_MATCH_STORE {#kos_op_match_store}
+
+- **Style**: EXTRA (RAW, RAW, RAW, CONST): mark depth, slot index, cursor
+  depth, names tuple.
+- **Stack**: `[..., v]` -> `[...]`; cannot miss.
+- **Semantics**: Pop `v` into slot `a1` of the mark at depth `a0`, replacing
+  what the slot held. When the cursor at depth `a2` walks a pair spine, a
+  `Datum` `v`, and each `Datum` in a tuple `v`, takes the name `a3[a1]` as its
+  binding; a `Datum` from a tuple, list or single value is stored unchanged. A
+  cursor depth `a2` of 0 names no cursor: `v` was tested where it lay, and is
+  stored unchanged.
+- **Invariants**: `a3` is a tuple with an entry at `a1`; Code construction
+  raises `ValueError` otherwise. An index outside the mark's slots raises
+  `SystemError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_STORE.c`
+
+### KOS_OP_MATCH_CLEAR {#kos_op_match_clear}
+
+- **Style**: EXTRA (RAW, CONST): mark depth, slot indices.
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: Empty the slots of the mark at depth `a0` that the tuple `a1`
+  lists.
+- **Invariants**: `a1` is a tuple; Code construction raises `ValueError`
+  otherwise. An index outside the mark's slots raises `SystemError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_CLEAR.c`
+
+### KOS_OP_MATCH_CAPTURES {#kos_op_match_captures}
+
+- **Style**: EXTRA (RAW, RAW, CONST): mark depth, cursor depth, names tuple.
+- **Stack**: `[...]` -> `[..., caps]`; cannot miss.
+- **Semantics**: Push the captures of the mark at depth `a0`: each filled slot
+  under its name in `a2`, an empty slot absent. Over a tuple, list, other
+  sequence or single value `caps` is a dict. Over a pair spine it is a
+  `DatumFrame` whose position is the first cell's and whose source is the span
+  from the mark's position to the cursor at depth `a1`: the first cell itself
+  when the span is empty or runs to the spine's end, the car read through
+  `Datum` for one cell, otherwise a tuple of the cars. Raises `ValueError`
+  when the spine no longer reaches the cursor's cell from the mark's.
+- **Invariants**: `a2` is a tuple; Code construction raises `ValueError`
+  otherwise. A names tuple without one name per slot of the mark raises
+  `SystemError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_CAPTURES.c`
+
+### KOS_OP_MATCH_PASS {#kos_op_match_pass}
+
+- **Style**: EXTRA (RAW, RAW, CONST, RAW): mark depth, cursor depth, names
+  tuple, group flag.
+- **Stack**: `[...]` -> `[..., value]`; cannot miss.
+- **Semantics**: Push one repeat pass's value. When any slot of the mark at
+  depth `a0` is filled, the filled slots keyed by their names in `a2`: a dict
+  when `a3` is 0, the captures as `MATCH_CAPTURES` gives them when `a3` is
+  set. When no slot is filled, the span from the mark's position to the cursor
+  at depth `a1`, as `MATCH_SPAN` gives it.
+- **Invariants**: `a2` is a tuple; Code construction raises `ValueError`
+  otherwise.
+- **Implementation**: `koskari/lib/opcode/MATCH_PASS.c`
+
+### KOS_OP_MATCH_LOAD {#kos_op_match_load}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, mark depth, slot index.
+- **Stack**: `[...]` -> `[..., v]`; jump to `a0` with nothing pushed when the
+  slot is empty.
+- **Semantics**: Push the value in slot `a2` of the mark at depth `a1`. An
+  index outside the mark's slots raises `SystemError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_LOAD.c`
+
+### KOS_OP_MATCH_APPEND {#kos_op_match_append}
+
+- **Style**: EXTRA (RAW): list depth.
+- **Stack**: `[..., v]` -> `[...]`; cannot miss.
+- **Semantics**: Pop `v` and append it to the list at depth `a0`. Raises
+  `TypeError` when that entry is not a list. Every REPEAT pass that goes on
+  ends here, ahead of its back-edge, so the handler ends in
+  **`RESULT_NEXT_POLL`**: the REPEAT loop's cooperation point.
+- **Implementation**: `koskari/lib/opcode/MATCH_APPEND.c`
+
+### KOS_OP_MATCH_MIN {#kos_op_match_min}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, list depth, count.
+- **Stack**: No stack effect; jump to `a0` on a miss.
+- **Semantics**: Miss unless the list at depth `a1` holds at least `a2` items.
+  Raises `TypeError` when that entry is not a list.
+- **Implementation**: `koskari/lib/opcode/MATCH_MIN.c`
+
+### KOS_OP_MATCH_COLUMNS {#kos_op_match_columns}
+
+- **Style**: EXTRA (RAW, RAW, CONST, CONST): list depth, mark depth, names
+  tuple, slot indices.
+- **Stack**: No stack effect; cannot miss.
+- **Semantics**: For each position `j`, store into slot `a3[j]` of the mark at
+  depth `a1` the list of the values the name `a2[j]` takes in the passes of
+  the list at depth `a0`, in pass order. A pass that did not bind the name
+  adds nothing; when no pass binds it the list is empty. The list at `a0` is
+  read, not changed.
+- **Invariants**: `a2` and `a3` are tuples; Code construction raises
+  `ValueError` otherwise. Tuples of different lengths, or an index outside the
+  mark's slots, raise `SystemError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_COLUMNS.c`
+
+### KOS_OP_MATCH_LITERAL {#kos_op_match_literal}
+
+- **Style**: EXTRA (LABEL, CONST): label, constant.
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
+  way.
+- **Semantics**: `e` read through `Datum` must be the constant `a1`, a gensym
+  whose base is `a1`, or equal to `a1`.
+- **Implementation**: `koskari/lib/opcode/MATCH_LITERAL.c`
+
+### KOS_OP_MATCH_CORE {#kos_op_match_core}
+
+- **Style**: EXTRA (LABEL, RAW): label, core type ordinal.
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
+  way.
+- **Semantics**: `e` read through `Datum` must be an instance of the core type
+  whose ordinal is `a1`: 0 `pair`, 1 `symbol`, 2 `keyword`, 3 `int`, 4 `str`,
+  5 `tuple`, 6 `list`. An ordinal past those raises `SystemError`.
+- **Implementation**: `koskari/lib/opcode/MATCH_CORE.c`
+
+### KOS_OP_MATCH_TYPE_VAR / KOS_OP_MATCH_TYPE_FAST {#kos_op_match_type_var}
+
+- **Style**: EXTRA (LABEL, VAR) on `MATCH_TYPE_VAR`, (LABEL, FASTVAR) on
+  `MATCH_TYPE_FAST`: label, type.
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
+  way.
+- **Semantics**: `e` read through `Datum` must be an instance of the type in
+  the variable `a1`, read by name on the `_VAR` form and by fast index on the
+  `_FAST` form.
+- **Implementation**: `koskari/lib/opcode/MATCH_TYPE_VAR.c`,
+  `koskari/lib/opcode/MATCH_TYPE_FAST.c`
+
+### KOS_OP_MATCH_CLASS_VAR / KOS_OP_MATCH_CLASS_FAST {#kos_op_match_class_var}
+
+- **Style**: EXTRA (LABEL, VAR, RAW) on `MATCH_CLASS_VAR`, (LABEL, FASTVAR,
+  RAW) on `MATCH_CLASS_FAST`: label, class, positional field count.
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
+  way.
+- **Semantics**: `e` read through `Datum` must be an instance of the class in
+  the variable `a1`, read by name on the `_VAR` form and by fast index on the
+  `_FAST` form; a non-instance is a miss. The class's `__match_args__` must
+  then hold at least `a2` names: a class with no `__match_args__`, a
+  `__match_args__` that is not a tuple, or one shorter than `a2` raises
+  `TypeError` before any attribute of `e` is read. On Python 3.9 a dataclass
+  or named tuple without `__match_args__` reads the equivalent tuple Python
+  3.10 would generate.
+- **Implementation**: `koskari/lib/opcode/MATCH_CLASS_VAR.c`,
+  `koskari/lib/opcode/MATCH_CLASS_FAST.c`
+
+### KOS_OP_MATCH_SAME {#kos_op_match_same}
+
+- **Style**: EXTRA (LABEL, RAW, RAW): label, mark depth, slot index.
+- **Stack**: `[..., e]` -> `[..., e]`; jump to `a0` on a miss, `e` left either
+  way.
+- **Semantics**: `e` must equal the value in slot `a2` of the mark at depth
+  `a1`, both read through `Datum`: the same object, or equal under `==`. An
+  empty slot is a miss, and so is a `DatumFrame` on either side.
+- **Implementation**: `koskari/lib/opcode/MATCH_SAME.c`
+
+### KOS_OP_MATCH_FIELD_POS_VAR / KOS_OP_MATCH_FIELD_POS_FAST {#kos_op_match_field_pos_var}
+
+- **Style**: EXTRA (LABEL, VAR, RAW) on `MATCH_FIELD_POS_VAR`, (LABEL,
+  FASTVAR, RAW) on `MATCH_FIELD_POS_FAST`: label, class, position.
+- **Stack**: `[..., o]` -> `[..., o, a]`; jump to `a0` with nothing pushed on
+  a miss.
+- **Semantics**: Push the attribute of `o`, read through `Datum`, that
+  `__match_args__[a2]` of the class in the variable `a1` names; the variable
+  is read by name on the `_VAR` form and by fast index on the `_FAST` form. A
+  missing attribute is a miss. A class with no `__match_args__`, a
+  `__match_args__` that is not a tuple, a position past its end, or an entry
+  that is not a `str` raises `TypeError`. On Python 3.9 a dataclass or named
+  tuple without `__match_args__` reads the equivalent tuple Python 3.10 would
+  generate.
+- **Implementation**: `koskari/lib/opcode/MATCH_FIELD_POS_VAR.c`,
+  `koskari/lib/opcode/MATCH_FIELD_POS_FAST.c`
+
+### KOS_OP_MATCH_FIELD_KW {#kos_op_match_field_kw}
+
+- **Style**: EXTRA (LABEL, CONST): label, attribute name.
+- **Stack**: `[..., o]` -> `[..., o, a]`; jump to `a0` with nothing pushed on
+  a miss.
+- **Semantics**: Push the attribute `a1` of `o` read through `Datum`. An
+  `AttributeError` is a miss; any other exception propagates.
+- **Implementation**: `koskari/lib/opcode/MATCH_FIELD_KW.c`
+
+### KOS_OP_MATCH_MAPPING {#kos_op_match_mapping}
+
+- **Style**: LABEL
+- **Stack**: `[..., o]` -> `[..., o]`; jump to the label on a miss.
+- **Semantics**: The mapping gate on `o` read through `Datum`: a `dict` or a
+  type flagged as a mapping passes (on Python 3.9, an instance of
+  `collections.abc.Mapping`); anything else misses.
+- **Implementation**: `koskari/lib/opcode/MATCH_MAPPING.c`
+
+### KOS_OP_MATCH_KEY {#kos_op_match_key}
+
+- **Style**: EXTRA (LABEL, CONST): label, key.
+- **Stack**: `[..., o]` -> `[..., o, v]`; jump to `a0` with nothing pushed on
+  a miss.
+- **Semantics**: Push the value under the constant key `a1` in the mapping `o`
+  read through `Datum`. An absent key is a miss. The mapping is probed without
+  inserting: a `dict` is read directly and any other mapping through its
+  `get`, so a `defaultdict` neither inserts nor invents the key.
+- **Implementation**: `koskari/lib/opcode/MATCH_KEY.c`
+
+### KOS_OP_MATCH_KEY_VAR / KOS_OP_MATCH_KEY_FAST {#kos_op_match_key_var}
+
+- **Style**: EXTRA (LABEL, VAR) on `MATCH_KEY_VAR`, (LABEL, FASTVAR) on
+  `MATCH_KEY_FAST`: label, key.
+- **Stack**: `[..., o]` -> `[..., o, v]`; jump to `a0` with nothing pushed on
+  a miss.
+- **Semantics**: Push the value under the key in the variable `a1`, read by
+  name on the `_VAR` form and by fast index on the `_FAST` form, in the
+  mapping `o` read through `Datum`. An absent key is a miss. The mapping is
+  probed as `MATCH_KEY` probes it.
+- **Implementation**: `koskari/lib/opcode/MATCH_KEY_VAR.c`,
+  `koskari/lib/opcode/MATCH_KEY_FAST.c`
 
 
 ## 10. Introspection
@@ -2179,6 +2610,36 @@ Extra row: `("os.path", 0, 0, 0)`.
 | 2     | VAR_CLEAR | 0   | 0 ('tmp')| delete "tmp" from namespace |
 
 ---
+
+### KOS_OP_VAR_CLEAR2 {#kos_op_var_clear2}
+
+- **Style**: EXTRA (VAR, VAR, NOARG, NOARG). Row = 2 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 2 names in row order, as
+  2 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
+  lowers it to `FAST_CLEAR2` when every name has a fast slot.
+
+### KOS_OP_VAR_CLEAR3 {#kos_op_var_clear3}
+
+- **Style**: EXTRA (VAR, VAR, VAR, NOARG). Row = 3 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 3 names in row order, as
+  3 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
+  lowers it to `FAST_CLEAR3` when every name has a fast slot.
+
+### KOS_OP_VAR_CLEAR4 {#kos_op_var_clear4}
+
+- **Style**: EXTRA (VAR, VAR, VAR, VAR). Row = 4 constant pool name indices (post-compile).
+- **Stack**: No stack effect. Clear the 4 names in row order, as
+  4 `VAR_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `VAR_CLEAR` rows (quads first, then one triple or one pair); `convert_fast`
+  lowers it to `FAST_CLEAR4` when every name has a fast slot.
 
 ### KOS_OP_VAR_TAKE {#kos_op_var_take}
 
@@ -2709,6 +3170,33 @@ These opcodes perform attribute get, set, clear, take, or reference on an object
 | 2     | FAST_CLEAR | 1   | 1        | clear slot 1 |
 
 ---
+
+### KOS_OP_FAST_CLEAR2 {#kos_op_fast_clear2}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, NOARG, NOARG). Row = 2 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 2 fast slots in row order, as
+  2 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
+### KOS_OP_FAST_CLEAR3 {#kos_op_fast_clear3}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, NOARG). Row = 3 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 3 fast slots in row order, as
+  3 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
+
+### KOS_OP_FAST_CLEAR4 {#kos_op_fast_clear4}
+
+- **Style**: EXTRA (FASTVAR, FASTVAR, FASTVAR, FASTVAR). Row = 4 fast slot indices (post-compile).
+- **Stack**: No stack effect. Clear the 4 fast slots in row order, as
+  4 `FAST_CLEAR` would; an already empty one stays empty.
+- **Compiler form:** Never emitted by specials. Produced only by
+  `ByteCodeProcessor.pack_runs`, which combines a run of consecutive
+  `FAST_CLEAR` rows (quads first, then one triple or one pair).
 
 ### KOS_OP_FAST_TAKE {#kos_op_fast_take}
 

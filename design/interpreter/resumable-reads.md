@@ -251,58 +251,16 @@ Two things to settle when it is built:
   the tail, collects to exhaustion like the others; the count check
   moves to the finish.
 
-### 8. MATCH_CASE: predicates and extractors
+### 8. Match predicates and extractors: superseded
 
-A runtime `match` arm with a `(? pred)` predicate or an `(app f ...)`
-extractor calls it from inside the match walk: `MATCH_CASE` ->
-`KosMatcher_RunSlots` -> `match_node` -> `engine_test` ->
-`matcher_call_extern` -> `Koskari_DemandSync` (`matcher/datum.c`). A
-Koskari callable runs a nested evaluator per call, and one whose body
-awaits fails as a sync violation. Today the demand path is forced, and
-that is the accepted behaviour until this change.
-
-The state a resume must hold is the walk's position, and the walk
-holds it on the C stack: `match_node` recurses through `match_repeat`,
-`match_group` and the `ONEOF` alternatives, and `MatchEngine` carries
-only the captures and their change stack. So this row has one
-precondition the collecting rows do not: the walk's position moves
-off the C stack into the engine, a node index and cursor per open
-level, so that a test can return "waiting" and the walk can re-enter
-at that test with a value in hand. Nothing else about the engine
-changes; the walk is the same walk driven from a struct instead of
-from recursion.
-
-With that, the row kind carries it without a new node kind:
-
-- **the buffer is the operand stack**: the subject and the stacked
-  externs stay where `MATCH_CASE` found them, and the engine, heap
-  allocated for the suspended arm only, hangs off the row's state
-  with the slot array it was filling.
-- **the call installs as a CALL does**: when `engine_test` reaches a
-  predicate or extractor that is a Koskari callable, it does not call
-  it; it hands the callable and its argument up, and the handler
-  installs the callable through `CallInto` with the row resume. A
-  Python callable is called in place as today, so the arm that
-  matches on Python predicates pays nothing new.
-- **the delivery re-enters the test**: the kind's `fn` receives the
-  delivered value, truth-tests it for a predicate or projects it into
-  the single-element subject for an extractor, and drives the walk on
-  from that test. The walk may suspend again on the next callable; it
-  ends by tailing into the bind or the miss exactly as the handler's
-  own settle does.
-- **a raise or a capture** mid-walk behaves as for any suspended row:
-  the captures filled so far are released with the engine, the frame
-  carries a resume, the frame cache refuses it, and a clone of the row
-  kind is `kos_resume_clone_shared`.
-
-A match entered from Python (`Matcher.match`, the compiler's own use
-of the engine) keeps the demand path: there is no evaluator to
-install into.
-
-What it gives: an `async` predicate or extractor inside an `async`
-function awaits where it now raises, and every Koskari predicate call
-in a `match` runs in the frame's own evaluator instead of a nested
-context.
+This section described a resume row for `MATCH_CASE`, the walk's
+position moved off the C stack so a predicate or extractor call could
+install and the match resume at the test. The engine it would have
+driven is gone: a pattern is `MATCH_*` instructions in the frame that
+matches, and a `(? pred)` or `(app f ...)` is a `CALL` from that frame
+with the pattern's continuation in the frame's own pc
+([archive/matcher-bytecode.md](../archive/matcher-bytecode.md)). There is no walk to
+resume and no row to add.
 
 ## Scope limits
 

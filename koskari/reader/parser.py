@@ -37,7 +37,8 @@ from typing import Callable, Optional
 
 from ..exceptions import FormatStringSyntaxError, ReaderEOF, ReaderSyntaxError
 from ..lib import (
-    bracket_nil, bracket_pair, cons, keyword, nil, pair, setcdr, symbol)
+    bracket_nil, bracket_pair, cons, demand, keyword, nil, pair, setcdr,
+    symbol)
 from ..matcher import (
     BIND, KEYWORD, LITERAL_KW, LITERAL_SYM, MATCH, ONEOF, repeat_capture)
 from ..types import fill_position, is_keyword, is_nil, is_pair
@@ -98,12 +99,13 @@ _keyword_starstar = keyword("**")
 
 # Splits a #dict spine into its key/value pairs. Each repeat is one of:
 # a ``**: EXPR`` splat, an explicit ``KEY : VALUE`` triple, or a
-# ``keyword: VALUE`` pair whose keyword key is normalised away.
-_DICT_SPLIT_MATCHER = repeat_capture("pairs", ONEOF(
+# ``keyword: VALUE`` pair whose keyword key is normalised away. The
+# matcher function is wrapped with demand once for this Python caller.
+_DICT_SPLIT_MATCHER = demand(repeat_capture("pairs", ONEOF(
     MATCH(LITERAL_KW("**"), BIND("splat")),
     MATCH(BIND("key"), LITERAL_SYM(":"), BIND("val")),
     MATCH(KEYWORD("kw"), BIND("val")),
-)).build()
+)).build())
 
 _keyword_block = keyword("#block")
 _keyword_line = keyword("#line")
@@ -2031,12 +2033,12 @@ class Reader:
         :return: the rewritten spine
         """
 
-        matched = _DICT_SPLIT_MATCHER.match(body)
-        if not matched.matched:
+        captures = _DICT_SPLIT_MATCHER(body)
+        if captures is None:
             return body
 
         out = []
-        for form in matched.captures.get("pairs", ()):
+        for form in captures.get("pairs", ()):
             if "splat" in form:
                 out.append(_keyword_starstar)
                 out.append(form["splat"].datum)

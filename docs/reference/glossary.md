@@ -26,8 +26,8 @@ with examples, see [Guide](../guide/index.md).
 **datum**
 : Two senses. The macro form `(datum expr)` or `(datum expr pos)` captures an
   expression together with its source position, so hygiene treats a substituted
-  user fragment as input rather than as a freshly introduced identifier; related
-  forms are `datumq`, `parse-match-patternq`, and `parse-rule-patternq`. The
+  user fragment as input rather than as a freshly introduced identifier; the
+  related form is `datumq`. The
   wrapper is the `Datum` box a captured pattern variable arrives in at expand
   time -- a value plus optional position, never marked, peeled by the finalize
   step before compilation. See
@@ -103,9 +103,9 @@ with examples, see [Guide](../guide/index.md).
   `syntax-rules`, `macro-rules`, and `special-rules`; the named transformer specs
   `syntax-match`, `macro-match`, and `special-match` (see
   [Macros index](macros/index.md) and [Layouts index](layouts/index.md)); and the
-  compiler's `@special(..., patterns=...)` arms, which run the same matcher engine
-  over spine subjects. The matcher itself is native code driven by patterns built
-  in Python; see [koskari.matcher](api/koskari-matcher.md) and
+  compiler's `@special(..., patterns=...)` arms, which run the same matcher
+  over spine subjects. A pattern, whether built in Python or parsed from
+  source, compiles to bytecode; see [koskari.matcher](api/koskari-matcher.md) and
   [koskari.hygiene](api/koskari-hygiene.md). The other sense is the runtime
   `match` form, which dispatches on the structure of a value; that is
   [Match patterns](../guide/match-patterns.md). Neither is `compile/switch`,
