@@ -2321,11 +2321,16 @@ static KosOpResult entry_revive_await(
 
 /**
    Phase 0: the entry call a Python-boundary entry recorded on a fresh
-   context. Takes it off the context and installs it through
-   KosContext_CallInto on this context; a value back in hand is
-   staged for the resume, which the entry phase delivers. An outcome
-   other than an install is applied as the trampoline would apply it.
-   Out of line so koskari_eval's own frame carries none of it.
+   context. Takes it off the context and installs it on this context.
+   A simple call of a non-yielding KosFunction (the shape the opcode
+   frame-cache arm takes: exact arity, no keywords, self-bind
+   resolved) installs the callee as the root frame, carrying
+   frame_flags, and its return ends the drive. Any other call goes
+   through KosContext_CallInto from a code-less root frame; a value
+   back in hand is staged for the resume, which the entry phase
+   delivers. An outcome other than an install is applied as the
+   trampoline would apply it. Out of line so koskari_eval's own frame
+   carries none of it.
 
    :return: EVAL_NORMAL when eval should proceed to the entry phase;
             terminal KosOpResult when eval should stop.
@@ -2333,14 +2338,35 @@ static KosOpResult entry_revive_await(
 static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
 
   const KosEntryCall *call = KosContext_ENTRY_CALL(ctx);
+  PyObject *callable = call->callable;
   KosOpResult r;
 
   KosContext_ENTRY_CALL(ctx) = NULL;
-  r = KosContext_CallInto(
-      ctx, call->callable, call->args, call->nargs, call->kwnames,
-      call->resume, NULL, call->frame_flags, 0);
-  if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
-    return EVAL_NORMAL();
+
+  if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
+      && call->nargs + 1 == KosFunction_SIMPLE_ARITY1(callable)
+      && ! call->kwnames
+      && KosFunction_BIND_SELF_STATE(callable) != 0
+      && KosFunction_CODE(callable)
+      && ! KosCode_YIELDS((KosCode *) KosFunction_CODE(callable))) {
+
+    /* The chain is empty, so the install inherits no demand bit; the
+       recorded flags go onto the root frame it pushed. */
+    KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_INSTALL);
+    r = KosFunction_Install(ctx, callable, call->args, call->nargs,
+                            NULL, 0);
+    if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_POLL) {
+      KosDynFrame_FLAGS(KosContext_FRAME(ctx)) |= call->frame_flags;
+      return EVAL_NORMAL();
+    }
+
+  } else {
+    r = KosContext_CallInto(
+        ctx, callable, call->args, call->nargs, call->kwnames,
+        call->resume, NULL, call->frame_flags, 0);
+    if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+      return EVAL_NORMAL();
+  }
 
   r = apply_kos_op_result(ctx, r);
   if (r.kind == KOS_RES_DISPATCH || r.kind == KOS_RES_REPROLOGUE)

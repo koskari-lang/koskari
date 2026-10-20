@@ -58,6 +58,8 @@ typedef enum KosTraceEventId {
   KOS_TE_CALL_SIMPLE_STEAL,
   KOS_TE_CALL_SIMPLE_VECTOR,
   KOS_TE_CALL_TAIL_INPLACE,
+  /* a Python-boundary entry call installed as the drive's root frame */
+  KOS_TE_ENTRY_ROOT_INSTALL,
   KOS_TE__COUNT
 } KosTraceEventId;
 

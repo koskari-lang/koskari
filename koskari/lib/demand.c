@@ -23,7 +23,9 @@
    The demand core is the Python boundary's entry into Koskari: a
    KosCallable of any kind is called through KosContext_CallInto from a
    code-less root frame marked KOS_FRAME_DEMAND, on the boundary's own
-   context. Any attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) under
+   context. A simple call of a non-yielding KosFunction instead
+   installs the function's frame as the root frame, marked the same.
+   Any attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) under
    the mark is converted into an in-eval KoskariSyncViolation at the deny
    site so TRY/finally can run; uncaught, the exception surfaces as
    KOS_RES_RAISE.
@@ -245,7 +247,10 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
    one), and koskari_eval installs it at entry through
    KosContext_CallInto from a code-less root frame marked
    KOS_FRAME_DEMAND, which is the caller frame every install delivers
-   into, then runs it to its return. Any KosCallable is accepted. The
+   into, then runs it to its return. A simple call of a non-yielding
+   KosFunction is installed as the root frame itself, marked
+   KOS_FRAME_DEMAND, and its return ends the drive. Any KosCallable is
+   accepted. The
    deny guards convert AWAIT and YIELD under the demand mark into
    KoskariSyncViolation, so koskari_eval answers RETURN, RAISE, or
    FATAL.

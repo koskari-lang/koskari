@@ -25,9 +25,11 @@ import weakref
 
 import pytest
 
+import koskari.lib as lib
 from koskari.lib import (
-    AsyncGenerator, BoundMethod, FormalsSpec, KoskariSyncViolation,
-    KosPartial, demand, demand_apply, demand_call)
+    AsyncGenerator, BoundMethod, Domain, FormalsSpec, KoskariSyncViolation,
+    KosPartial, ParamRef, demand, demand_apply, demand_call)
+from koskari.module import load_module_source_async, new_module
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
@@ -1237,6 +1239,183 @@ class TestDemandBoundaryCallables(unittest.TestCase):
 
         fn = _concat_fn()
         self.assertEqual(demand_call(KosPartial(fn, b="y"), "x"), "xy")
+
+
+
+ROOT_SRC = """
+(define add2 (lambda [a b] (+ a b)))
+
+(define fail2 (lambda [a b] (raise (ValueError (+ a b)))))
+
+(define fact2 (lambda fact2 [n acc]
+  (if (== n 0) acc (fact2 (- n 1) (* acc n)))))
+
+(define descend (lambda [via n]
+  (if (== n 0) 0 (+ 1 (via n)))))
+
+(define escape2 (lambda [a b]
+  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
+
+(define tuple2 (lambda [a b] #(a b)))
+
+(define bind_gq (lambda [v probe]
+  (parameterize [[gq v]]
+    (return (probe)))))
+
+(define-class Box ()
+  (begin
+    (define __init__ [self x]
+      (set-attr self x x))))
+"""
+
+
+def root_install_count():
+    """
+    The entry_root_install trace counter, or None when the build does
+    not count events
+    """
+
+    report = lib.get_trace_report()
+    if not report["flags"]["events"]:
+        return None
+    return report["events"]["entry_root_install"]
+
+
+class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
+    """
+    A Demand over a simple two-argument function called from Python:
+    every call after the first runs the function as the drive's root
+    frame
+    """
+
+    async def load(self):
+        module = new_module("demand_root")
+        vars(module)["__file__"] = "<demand_root>"
+        await load_module_source_async(module, ROOT_SRC, layout=False)
+        return vars(module)
+
+
+    async def test_return_value(self):
+        """
+        each call returns its own sum
+        """
+
+        mod = await self.load()
+        d = demand(mod["add2"])
+        self.assertEqual(d(1, 2), 3)
+        self.assertEqual(d(10, 20), 30)
+        self.assertEqual(d("x", "y"), "xy")
+
+
+    async def test_raise_propagates(self):
+        """
+        a raise in the function reaches Python with its type, and the
+        wrapper stays usable
+        """
+
+        mod = await self.load()
+        d = demand(mod["fail2"])
+        for a, b in ((1, 2), (3, 4)):
+            with self.assertRaises(ValueError) as caught:
+                d(a, b)
+            self.assertEqual(caught.exception.args, (a + b,))
+        self.assertEqual(demand(mod["add2"])(5, 6), 11)
+
+
+    async def test_function_naming_itself(self):
+        """
+        a named lambda recursing through its own name, called twice
+        """
+
+        mod = await self.load()
+        d = demand(mod["fact2"])
+        self.assertEqual(d(5, 1), 120)
+        self.assertEqual(d(6, 1), 720)
+        self.assertEqual(d(0, 7), 7)
+
+
+    async def test_reentry_through_python(self):
+        """
+        the function calls back into Python, which calls the same Demand
+        again, three levels deep
+        """
+
+        mod = await self.load()
+        d = demand(mod["descend"])
+        seen = []
+
+        def via(n):
+            seen.append(n)
+            return d(via, n - 1)
+
+        self.assertEqual(d(via, 3), 3)
+        self.assertEqual(seen, [3, 2, 1])
+        self.assertEqual(d(via, 2), 2)
+        self.assertEqual(seen, [3, 2, 1, 2, 1])
+
+
+    async def test_call_cc_escape(self):
+        """
+        a call/cc escape out of the callee's inner lambda returns the
+        escaped value into the rest of the callee's body
+        """
+
+        mod = await self.load()
+        d = demand(mod["escape2"])
+        self.assertEqual(d(1, 2), 4)
+        self.assertEqual(d(10, 20), 31)
+
+
+    async def test_first_call_general_second_root(self):
+        """
+        a fresh function's first call resolves its self-bind on the
+        general path; the second runs as the root frame
+        """
+
+        mod = await self.load()
+        d = demand(mod["tuple2"])
+
+        before = root_install_count()
+        self.assertEqual(d(1, 2), (1, 2))
+        middle = root_install_count()
+        self.assertEqual(d(3, 4), (3, 4))
+        after = root_install_count()
+
+        if before is not None:
+            self.assertEqual(middle - before, 0)
+            self.assertEqual(after - middle, 1)
+
+
+    async def test_parameterize_binding_ends_with_the_call(self):
+        """
+        a parameterize open at the function's return is unwound: the
+        binding is seen inside the call and absent after it
+        """
+
+        mod = await self.load()
+        d = demand(mod["bind_gq"])
+
+        def probe():
+            return ParamRef("gq").deref()
+
+        with Domain():
+            for value in (5, 6):
+                self.assertEqual(d(value, probe), value)
+                with self.assertRaises(NameError):
+                    ParamRef("gq").deref()
+
+
+    async def test_simple_init_from_python(self):
+        """
+        a class with a simple __init__ instantiated twice from Python
+        """
+
+        mod = await self.load()
+        box = mod["Box"]
+        first = box(3)
+        second = box("y")
+        self.assertEqual(first.x, 3)
+        self.assertEqual(second.x, "y")
 
 
 # The end.
