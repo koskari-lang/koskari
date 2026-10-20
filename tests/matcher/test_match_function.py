@@ -510,9 +510,9 @@ def local_names(pattern):
     The locals a standalone lowering declares after the subject
     """
 
-    frozen = TableBuilder().lower(pattern)
+    tables = TableBuilder().lower(pattern)
     fn = build_matcher(
-        frozen, analyse(frozen), ModuleNamespace("probe", {}))
+        tables, analyse(tables), ModuleNamespace("probe", {}))
     return [str(name) for name in fn.code.namespace_spec.local_syms[1:]]
 
 

@@ -796,7 +796,7 @@ static int test_core_tail(void) {
   Py_DECREF(span);
   Py_DECREF(cursor);
 
-  /* a list's tail is a tuple, as the engine's REST binds it */
+  /* a list's tail is a tuple, as a REST binds it */
   PyObject *lst = Py_BuildValue("[iii]", 1, 2, 3);
   TEST_ASSERT_EQ(KosMatchCursor_Descend(lst, &cursor), 1, "descend");
   TEST_ASSERT_EQ(KosMatchCursor_Tail(cursor, 0, 0, 1, &span, &next), 1,

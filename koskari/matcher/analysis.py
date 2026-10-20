@@ -727,10 +727,9 @@ def resolve_same(nodes, slots, scopes, indices, node_scope):
     that binds the slot's name somewhere in the pattern gives the
     slot; a SAME read before the slot is bound is accepted. The pass
     scope of a REPEAT whose body is not a GROUP is not a depth of its
-    own: it shares the depth of the scope around the REPEAT, as
-    master's frames do. A SAME none of whose scopes at its depth binds
-    the name, or whose depth passes the root, maps to None and always
-    misses, as on master
+    own: it shares the depth of the scope around the REPEAT. A SAME
+    none of whose scopes at its depth binds the name, or whose depth
+    passes the root, maps to None and always misses
     """
 
     same = {}

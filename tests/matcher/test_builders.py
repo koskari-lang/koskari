@@ -418,7 +418,7 @@ class TestBuildAndMatch(unittest.TestCase):
     def test_empty_rest_before_suffix_binds_empty(self):
         """
         A REST that consumes nothing ahead of a fixed suffix binds the
-        empty remainder, not the suffix; it used to bind the whole tail
+        empty remainder, not the suffix
         """
 
         pat = MATCH(CAPTURE("a"), REST("mid"), CAPTURE("b"))

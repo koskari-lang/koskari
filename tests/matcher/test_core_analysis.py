@@ -183,7 +183,7 @@ class TestRefusals(unittest.TestCase):
 
     def test_same_past_the_root(self):
         # MATCH(CAPTURE("x"), SAME("x", depth=1)): the depth passes the
-        # root, so the SAME always misses, as on master
+        # root, so the SAME always misses
         slots = ('x',)
         nodes = (
             ('CAPTURE', 0, -1),
