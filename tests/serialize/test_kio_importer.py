@@ -272,7 +272,7 @@ class TestKioImporterParity(unittest.TestCase):
             "(define-syntax pick (syntax-match\n"
             "  [(pick (GROUP g (VALUE x) (VALUE y))) \"group\"]\n"
             "  [(pick (VALUE v)) \"one\"]))\n"
-            "(define classify [data]\n"
+            "(define [classify data]\n"
             "  (match data\n"
             "    [[#[a #[b c] *: rest]] #(a b c rest)]\n"
             "    [[(or #[x 1] #[5 y])] #(\"or\" x)]\n"
