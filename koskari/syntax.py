@@ -743,8 +743,7 @@ def parse_syntax_rules_pattern(
     Lower a syntax-rules RULE pattern (cons tree) to a ``matcher.Pattern``.
 
     RULE dialect only; does not implement the MATCH dialect's registry heads.
-    The ``build-syntax`` Koskari builtin and :func:`parse_rule_pattern` call this
-    when lowering pattern source.
+    :func:`parse_rule_pattern` calls this when lowering pattern source.
 
     :param pattern_expr: koskari pattern datum
     :param literals: set, frozenset, list, or tuple of literal symbols
@@ -807,7 +806,6 @@ def parse_syntax_rules_pattern(
     return RulePattern(*specs, repeat_variables=repeat_variables)
 
 
-@builtin("parse-match-pattern")
 def parse_match_pattern(form, source_ctx=None):
     """
     Parse a match style pattern to a Pattern.
@@ -816,7 +814,6 @@ def parse_match_pattern(form, source_ctx=None):
     return parse_explicit_rule_pattern(form, source_ctx)
 
 
-@builtin("parse-rule-pattern")
 def parse_rule_pattern(pattern_expr, literals, source_ctx=None):
     """
     Parse a syntax-rules style pattern and literals list to a Pattern.
@@ -1030,16 +1027,16 @@ def _wrap_special_handler(raw, repeat_variables):
 @builtin('build-syntax')
 def build_syntax(name, *pattern_template_pairs):
     """
-    Koskari runtime: ``(build-syntax NAME PAT TMPL ...)`` where each ``PAT``
-    is a lowered ``matcher.Pattern`` (for example from ``parse-rule-pattern`` or
-    ``parse-match-pattern`` at use site) and each ``TMPL`` is a template datum
+    Koskari runtime: ``(build-syntax NAME ROW ...)``, each row a matcher
+    function, its repeat variables, its pattern source and a template
+    datum, as ``compile/syntax-rules`` and ``compile/syntax-match`` emit
     """
 
     transforms = []
     for pat, tail, matcher, repeat_variables in build_rows(
             "build-syntax", pattern_template_pairs):
         transforms.append(SyntaxTransform(
-            pat, tail, pattern_src=pat if matcher else nil,
+            pat, tail, pattern_src=pat,
             matcher=matcher, repeat_variables=repeat_variables))
 
     return Syntax(name, transforms)
@@ -1047,23 +1044,16 @@ def build_syntax(name, *pattern_template_pairs):
 
 def build_rows(what, args):
     """
-    The rows of a build call: ``(PATTERN TAIL)`` pairs for a pattern
-    parsed at load, or ``(FUNCTION REPEATS PATTERN-SRC TAIL)`` rows for
-    a matcher function the defining module compiled, REPEATS being the
-    repeat variables as pairs. Yields (pattern, tail, matcher,
-    repeat_variables), matcher None for a pattern row
+    The rows of a build call: ``(FUNCTION REPEATS PATTERN-SRC TAIL)``
+    for a matcher function the defining module compiled, REPEATS being
+    the repeat variables as pairs. Yields (pattern source, tail,
+    matcher, repeat_variables)
     """
 
     i = 0
     n = len(args)
     while i < n:
         head = args[i]
-        if isinstance(head, Pattern):
-            if i + 1 >= n:
-                raise ValueError(f"{what} requires pattern/template pairs")
-            yield head, args[i + 1], None, None
-            i += 2
-            continue
         if i + 3 >= n:
             raise ValueError(
                 f"{what} requires function, repeat variables, pattern and"
@@ -1110,8 +1100,6 @@ def build_special(name, *pattern_and_lambdas):
     transforms = []
     for pat, fn, matcher, repeat_variables in build_rows(
             "build-special", pattern_and_lambdas):
-        if repeat_variables is None:
-            repeat_variables = _repeat_variables(pat)
         transforms.append(SpecialTransform(
             pat, _wrap_special_handler(fn, repeat_variables),
             matcher=matcher, repeat_variables=repeat_variables))

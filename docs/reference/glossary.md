@@ -26,8 +26,8 @@ with examples, see [Guide](../guide/index.md).
 **datum**
 : Two senses. The macro form `(datum expr)` or `(datum expr pos)` captures an
   expression together with its source position, so hygiene treats a substituted
-  user fragment as input rather than as a freshly introduced identifier; related
-  forms are `datumq`, `parse-match-patternq`, and `parse-rule-patternq`. The
+  user fragment as input rather than as a freshly introduced identifier; the
+  related form is `datumq`. The
   wrapper is the `Datum` box a captured pattern variable arrives in at expand
   time -- a value plus optional position, never marked, peeled by the finalize
   step before compilation. See

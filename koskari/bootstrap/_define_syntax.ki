@@ -224,26 +224,4 @@ define-syntax datumq:
       `(call datum (quote ,expr) ,(getattr expr "position" None))
 
 
-define-syntax parse-match-patternq:
-  """
-  Parse a match style pattern to a Pattern.
-  """
-
-  syntax-rules []:
-    case (parse-match-patternq form):
-      (call parse-match-pattern (quote form))
-
-
-define-syntax parse-rule-patternq:
-  """
-  Parse a syntax-rules style pattern and literals list to a Pattern.
-  """
-
-  syntax-rules []:
-    case (parse-rule-patternq form literals):
-      (call parse-rule-pattern (quote form) (quote literals))
-    case (parse-rule-patternq form):
-      (call parse-rule-pattern (quote form) ())
-
-
 ; The end.

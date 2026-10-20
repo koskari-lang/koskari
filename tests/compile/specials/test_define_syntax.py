@@ -24,9 +24,7 @@ import pytest
 from koskari.compile import Compiler
 from koskari.exceptions import CompilerError, SpecialError
 from koskari.lib import build_list, build_tuple, cons, nil, symbol
-from koskari.syntax import (
-    Syntax, build_macro, build_special, build_syntax, parse_match_pattern,
-    parse_rule_pattern)
+from koskari.syntax import Syntax, build_macro, build_special, build_syntax
 from tests.dis.dis import dis
 
 from . import SpecialsTestCase
@@ -41,8 +39,6 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('build-syntax', build_syntax)
         defns.setdefault('build-macro', build_macro)
         defns.setdefault('build-special', build_special)
-        defns.setdefault('parse-match-pattern', parse_match_pattern)
-        defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_expr(src_str, **defns)
 
 
@@ -54,8 +50,6 @@ class DefineSyntaxCompileHelpers(SpecialsTestCase):
         defns.setdefault('build-syntax', build_syntax)
         defns.setdefault('build-macro', build_macro)
         defns.setdefault('build-special', build_special)
-        defns.setdefault('parse-match-pattern', parse_match_pattern)
-        defns.setdefault('parse-rule-pattern', parse_rule_pattern)
         return super().compile_to_code(
             src_str, lineno=lineno,
             resolution_mode=resolution_mode,
