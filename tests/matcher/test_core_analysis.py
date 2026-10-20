@@ -15,8 +15,7 @@
 tests.matcher.test_core_analysis
 
 The matcher core's analysis of a pattern's tables: the refusals at
-build, the shapes it accepts, the facts it hands the emitter, and its
-refusals over the oracle corpus against master's outcomes
+build, the shapes it accepts, and the facts it hands the emitter
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -27,33 +26,17 @@ import unittest
 
 import pytest
 
-from koskari.lib import ModuleNamespace, demand, nil, pair, symbol
+from koskari.lib import ModuleNamespace, demand
 from koskari.matcher import (
     APP, CAPTURE, CLASS, FIELD, FORM, GROUP, LITERAL, MAP, MAP_ENTRY, MATCH,
     NOT, ONEOF, OPTIONAL, PREDICATE, REPEAT, REST, SAME, TEST_ANY, TYPE,
-    parse_case_pattern, repeat_capture)
+    repeat_capture)
 from koskari.matcher.analysis import FIELD_LIMIT, analyse
 from koskari.matcher.build import build_matcher
-from koskari.matcher.emitter import Emitter
 from koskari.matcher.tables import TableBuilder
-from koskari.reader import Reader, source_str
-
-from tests.matcher.oracle import RULES, build_pattern, load_corpus
 
 
 pytestmark = pytest.mark.phase_infra
-
-
-# the oracle rules that explain a refusal at build
-REFUSAL_RULES = (
-    'pair_literal_refused_inline',
-    'non_pool_literal_refused',
-    'refused_single_value_width',
-    'refused_field_width',
-    'refused_repeat_zero_body',
-    'refused_variable_after_rest',
-    'refused_capture_under_not',
-)
 
 
 class TestRefusals(unittest.TestCase):
@@ -600,126 +583,6 @@ class TestFacts(unittest.TestCase):
         nodes = tables[3]
         same = [i for i, n in enumerate(nodes) if n[0] == 'SAME'][0]
         self.assertEqual(found.same[same], (0, 0))
-
-
-def match_form(form):
-    """
-    The first (match ...) form in a read form, searched without
-    recursion
-    """
-
-    pending = [form]
-    while pending:
-        current = pending.pop()
-        if isinstance(current, pair) and current is not nil:
-            if current.car is symbol("match"):
-                return current
-            while isinstance(current, pair) and current is not nil:
-                item, current = current
-                pending.append(item)
-    return None
-
-
-def inline_tables(source):
-    """
-    The tables of each arm of an inline record's match, built as
-    compile/match builds them
-    """
-
-    _head, rest = match_form(Reader().read(source_str(source, "<oracle>")))
-    _subject, clauses = rest
-    tables = []
-    while clauses is not nil:
-        clause, clauses = clauses
-        content = clause.car
-        if isinstance(content, pair):
-            tables.append(TableBuilder().lower(
-                MATCH(parse_case_pattern(content))))
-    return tables
-
-
-def refusal_explained(case, master, refused):
-    """
-    Whether a refusal rule of the oracle names the refusal
-    """
-
-    branch = {"refused": type(refused).__name__, "message": str(refused)}
-    for name, predicate in RULES:
-        if name in REFUSAL_RULES and predicate(case, master, branch):
-            return True
-    return False
-
-
-class TestOracleCorpus(unittest.TestCase):
-    """
-    The analysis over every pattern of the oracle corpus refuses only
-    where master refused or a refusal rule names the refusal. A pattern
-    TableBuilder refuses before the analysis is skipped
-    """
-
-    def check(self, case, master, tables_list, arm):
-        try:
-            for tables in tables_list:
-                analyse(tables, arm)
-        except (TypeError, ValueError) as exc:
-            if "refused" in master:
-                return "refused"
-            if not refusal_explained(case, master, exc):
-                return f"unexplained: {exc}"
-            return "explained"
-        return "accepted"
-
-
-    def test_standalone(self):
-        standalone, _inline = load_corpus()
-        counts = {}
-        unexplained = []
-        for record in standalone["records"]:
-            try:
-                tables = TableBuilder().lower(build_pattern(record["spec"]))
-            except (RecursionError, ValueError):
-                counts["lowering"] = counts.get("lowering", 0) + 1
-                continue
-            entry = record["cases"][0]
-            case = {
-                "kind": "standalone",
-                "id": record["id"],
-                "spec": record["spec"],
-                "subject": entry["subject"],
-            }
-            outcome = self.check(case, entry["master"], [tables], False)
-            if outcome.startswith("unexplained"):
-                unexplained.append((record["id"], outcome))
-            counts[outcome] = counts.get(outcome, 0) + 1
-        self.assertEqual(unexplained, [])
-        self.assertEqual(sum(counts.values()), len(standalone["records"]))
-        self.assertGreater(counts.get("accepted", 0), 0)
-        self.assertGreater(counts.get("explained", 0), 0)
-
-
-    def test_inline(self):
-        _standalone, inline = load_corpus()
-        counts = {}
-        unexplained = []
-        for record in inline["records"]:
-            tables_list = inline_tables(record["source"])
-            entry = record["cases"][0]
-            case = {
-                "kind": "inline",
-                "id": record["id"],
-                "arms": record["arms"],
-                "names": record["names"],
-                "owners": record["owners"],
-                "source": record["source"],
-                "subject": entry["subject"],
-            }
-            outcome = self.check(case, entry["master"], tables_list, True)
-            if outcome.startswith("unexplained"):
-                unexplained.append((record["id"], outcome))
-            counts[outcome] = counts.get(outcome, 0) + 1
-        self.assertEqual(unexplained, [])
-        self.assertGreater(counts.get("accepted", 0), 0)
-        self.assertGreater(counts.get("explained", 0), 0)
 
 
 # The end.

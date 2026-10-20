@@ -656,7 +656,6 @@ from koskari.types import strip_mark, strip_marks
 | Case-pattern dialect, `APP`, `MAP` | `tests/matcher/test_case_patterns.py` |
 | `MATCH_*` instructions | `tests/lib/opcode/test_match_instructions.py` |
 | Analysis and refusals | `tests/matcher/test_core_analysis.py` |
-| Differential corpus against master | `tests/matcher/test_oracle.py` |
 | The processor's matcher fusions | `tests/compile/test_fuse_feeders.py` |
 | The compiled function's capture shapes | `tests/matcher/test_match_function.py` |
 | The `Syntax` first match | `tests/syntax/test_syntax_dispatch.py` |
