@@ -23,6 +23,8 @@ Tests for the koskari.compile match special form: delimiter clauses
 from dataclasses import dataclass
 
 import asyncio
+import gc
+import weakref
 
 import pytest
 
@@ -879,6 +881,49 @@ class TestMatchSubjectErrors(SpecialsTestCase):
         with self.assertRaises(ValueError) as caught:
             await expr()
         self.assertIn("changed under the walk", str(caught.exception))
+
+
+class Sentinel:
+    pass
+
+
+class TestMatchCollection(SpecialsTestCase):
+    """
+    A continuation captured during a walk keeps the walk's cursors and
+    marks, which hold the subject; a cycle from the subject back to that
+    continuation is still collected
+    """
+
+    async def held_through_continuation(self, src):
+        sentinel = Sentinel()
+        expr, mod = self.compile_expr(src, sentinel=sentinel)
+        self.assertEqual(await expr(), "hit")
+        return weakref.ref(sentinel)
+
+
+    async def test_cursor_cycle_is_collected(self):
+        ref = await self.held_through_continuation("""
+        (let [[subj (#list sentinel 2)]]
+          (define keep [v] (call/cc (lambda [k] (subj.append k) True)))
+          (match subj
+            [[#[(? keep) *: rest]] "hit"]
+            [else: "miss"]))
+        """)
+        gc.collect()
+        self.assertIsNone(ref())
+
+
+    async def test_repeat_pass_cycle_is_collected(self):
+        ref = await self.held_through_continuation("""
+        (let [[box (#list)]]
+          (let [[subj (#list sentinel box)]]
+            (define keep [v] (call/cc (lambda [k] (box.append k) True)))
+            (match subj
+              [[#[(REPEAT xs (PREDICATE keep) min: 0)]] "hit"]
+              [else: "miss"])))
+        """)
+        gc.collect()
+        self.assertIsNone(ref())
 
 
 class TestMatchTemporaries(SpecialsTestCase):

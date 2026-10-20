@@ -73,7 +73,7 @@ extern PyTypeObject KosDatumFrameType;
    index; a single-value cursor holds the value in seq with a length
    of one. reserve is the count of elements a bounded cursor leaves
    before its subject's end, zero for every other cursor.
-   Opaque to Python and untracked. A move writes the object in place
+   Opaque to Python and tracked. A move writes the object in place
    when its stack entry is the only holder and stores a new object at
    the entry otherwise, so a cloned segment keeps the position it took.
  */
@@ -371,7 +371,7 @@ int KosMatchCursor_Tail(
    KosMatchMark_Writable gives the mark or a copy for the caller to
    store back at the entry, so a resumed continuation writes into its
    own copy. Opaque to Python and not subclassable; tracked by the
-   collector when it has slots.
+   collector.
  */
 typedef struct KosMatchMark {
   PyObject_VAR_HEAD
@@ -409,7 +409,7 @@ extern int kos_match_mark_free_count;
 /**
    A mark at seq, index and kind with count unbound slots from the
    allocator, at the default capacity or at count when that is larger,
-   every slot NULL; tracked when count is not zero. The path
+   every slot NULL, and tracked. The path
    KosMatchMark_New takes when the freelist is empty or count is past
    the default capacity. New reference; NULL with an exception set,
    SystemError for a negative count.
@@ -423,9 +423,10 @@ PyObject *KosMatchMark_Allocate(
 
 /**
    MATCH_SCOPE: a mark at cursor's position with count unbound slots,
-   from the freelist when count fits a default mark. A mark with slots
-   is tracked; one without holds only its position, as a cursor does,
-   and is left untracked. New reference; NULL with an exception set.
+   from the freelist when count fits a default mark. Every mark is
+   tracked, as every cursor is: both hold the subject, which a
+   continuation captured during the walk can reach. New reference;
+   NULL with an exception set.
  */
 static inline PyObject *KosMatchMark_New(
     PyObject *cursor,
@@ -449,8 +450,7 @@ static inline PyObject *KosMatchMark_New(
   m->index = c->index;
   m->kind = c->kind;
   m->count = count;
-  if (count)
-    PyObject_GC_Track((PyObject *) m);
+  PyObject_GC_Track((PyObject *) m);
   return (PyObject *) m;
 }
 

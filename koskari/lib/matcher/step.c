@@ -28,19 +28,33 @@
 /* === KosMatchCursor === */
 
 
-/* The cursor is untracked: it is reached only from an operand stack
-   entry, never from Python, and the peak count is the pattern's
-   nesting. Freed cursors chain through seq, up to the cap. */
+/* The cursor is tracked: a continuation captured during a walk keeps
+   it on its stack, so a cycle from the subject back to that
+   continuation runs through the cursor's seq. Freed cursors are
+   untracked and chain through seq, up to the cap. */
 #define CURSOR_MAX_FREE KOS_FREELIST_CAP(8)
 
 static KosMatchCursor *cursor_free_list = NULL;
 static int cursor_free_count = 0;
 
 
+static int match_cursor_traverse(PyObject *self, visitproc visit, void *arg) {
+  Py_VISIT(((KosMatchCursor *) self)->seq);
+  return 0;
+}
+
+
+static int match_cursor_clear(PyObject *self) {
+  Py_CLEAR(((KosMatchCursor *) self)->seq);
+  return 0;
+}
+
+
 static void match_cursor_dealloc(PyObject *self) {
   KosMatchCursor *c = (KosMatchCursor *) self;
 
-  Py_DECREF(c->seq);
+  PyObject_GC_UnTrack(self);
+  Py_XDECREF(c->seq);
   if (cursor_free_count < CURSOR_MAX_FREE) {
     KOS_TRACE_FL_RETURN("cursor", 0);
     c->seq = (PyObject *) cursor_free_list;
@@ -49,7 +63,7 @@ static void match_cursor_dealloc(PyObject *self) {
 
   } else {
     KOS_TRACE_FL_RETURN("cursor", 1);
-    Py_TYPE(self)->tp_free(self);
+    PyObject_GC_Del(self);
   }
 }
 
@@ -58,7 +72,7 @@ static void match_cursor_free_list_clear(void) {
   while (cursor_free_list) {
     KosMatchCursor *c = cursor_free_list;
     cursor_free_list = (KosMatchCursor *) c->seq;
-    PyObject_Free(c);
+    PyObject_GC_Del(c);
   }
   cursor_free_count = 0;
 }
@@ -68,9 +82,11 @@ PyTypeObject KosMatchCursorType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.MatchCursor",
   .tp_basicsize = sizeof(KosMatchCursor),
-  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
   .tp_doc = "A match instruction's cursor over a sequence subject",
   .tp_dealloc = match_cursor_dealloc,
+  .tp_traverse = match_cursor_traverse,
+  .tp_clear = match_cursor_clear,
 };
 
 
@@ -91,7 +107,7 @@ static PyObject *match_cursor_new(
 
   } else {
     KOS_TRACE_FL_ALLOC("cursor", 0);
-    c = PyObject_New(KosMatchCursor, &KosMatchCursorType);
+    c = PyObject_GC_New(KosMatchCursor, &KosMatchCursorType);
     if (! c)
       return NULL;
   }
@@ -102,6 +118,7 @@ static PyObject *match_cursor_new(
   c->index = index;
   c->reserve = 0;
   c->kind = kind;
+  PyObject_GC_Track((PyObject *) c);
   return (PyObject *) c;
 }
 

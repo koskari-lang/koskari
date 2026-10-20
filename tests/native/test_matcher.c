@@ -866,12 +866,13 @@ static int test_mark_scope_and_reset(void) {
   PyObject *elem;
 
   TEST_ASSERT_EQ(KosMatchCursor_Descend(subj, &cursor), 1, "descend");
+  TEST_ASSERT(PyObject_GC_IsTracked(cursor), "a cursor is tracked");
   PyObject *mark = KosMatchMark_New(cursor, 0);
   TEST_ASSERT_NOT_NULL(mark, "mark");
   TEST_ASSERT(KosMatchMark_Check(mark), "a mark");
   TEST_ASSERT_EQ(KosMatchMark_COUNT(mark), 0, "no slots");
   TEST_ASSERT_EQ(Py_SIZE(mark), KOS_MATCH_MARK_SLOTS, "default capacity");
-  TEST_ASSERT(! PyObject_GC_IsTracked(mark), "a mark of no slots untracked");
+  TEST_ASSERT(PyObject_GC_IsTracked(mark), "a mark of no slots is tracked");
   TEST_ASSERT_REFCNT(subj, 3, "the cursor and the mark hold the subject");
 
   elem = core_pull(&cursor);
@@ -1352,7 +1353,7 @@ static int test_mark_freelist_reuse(void) {
 #endif
   TEST_ASSERT_EQ(KosMatchMark_COUNT(mark), 0, "the new count");
   TEST_ASSERT_EQ(Py_SIZE(mark), KOS_MATCH_MARK_SLOTS, "default capacity");
-  TEST_ASSERT(! PyObject_GC_IsTracked(mark), "untracked without slots");
+  TEST_ASSERT(PyObject_GC_IsTracked(mark), "tracked without slots");
   TEST_ASSERT_REFCNT(mark, 1, "a fresh reference");
   Py_DECREF(mark);
 

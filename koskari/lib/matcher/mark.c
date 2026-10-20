@@ -62,9 +62,7 @@ static int match_mark_clear(PyObject *self) {
 static void match_mark_dealloc(PyObject *self) {
   KosMatchMark *m = (KosMatchMark *) self;
 
-  /* a mark with no slots is never tracked */
-  if (m->count)
-    PyObject_GC_UnTrack(self);
+  PyObject_GC_UnTrack(self);
   match_mark_clear(self);
 
   if (Py_SIZE(m) == KOS_MATCH_MARK_SLOTS
@@ -134,8 +132,7 @@ KOS_NOINLINE PyObject *KosMatchMark_Allocate(
   for (Py_ssize_t i = 0; i < size; i++)
     m->slots[i] = NULL;
 
-  if (count)
-    PyObject_GC_Track((PyObject *) m);
+  PyObject_GC_Track((PyObject *) m);
   return (PyObject *) m;
 }
 
