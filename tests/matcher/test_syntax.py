@@ -584,6 +584,16 @@ class TestParseAtomFactories(unittest.TestCase):
         self.assertEqual(pat._extern, "is_even")
 
 
+    def test_question_mark_is_predicate(self):
+        """
+        (? name) is the alias of (PREDICATE name)
+        """
+
+        pat = parse_matcher(_list(symbol("?"), symbol("is_even")))
+        self.assertIsInstance(pat, PREDICATE)
+        self.assertEqual(pat._extern, "is_even")
+
+
     def test_literal_kw_factory(self):
         """
         (LITERAL_KW name) lowers to LITERAL_KW("name")

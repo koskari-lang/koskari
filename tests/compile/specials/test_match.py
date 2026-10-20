@@ -838,6 +838,29 @@ class TestMatchExternResolution(SpecialsTestCase):
         self.assertEqual(0, await expr())
 
 
+class TestMatchPredicateInMatcherHeads(SpecialsTestCase):
+
+    async def test_predicate_sugar_inside_repeat(self):
+        # REPEAT's body is matcher dialect, where (? pred) is the alias
+        # of (PREDICATE pred)
+        seen = []
+
+        def keep(v):
+            seen.append(v)
+            return v > 0
+
+        src = """
+        (match data
+          [[#[(REPEAT (? keep))]] "all positive"]
+          [else: "no"])
+        """
+        expr, mod = self.compile_expr(src, data=(1, 2), keep=keep)
+        self.assertEqual(await expr(), "all positive")
+        self.assertEqual(seen, [1, 2])
+        expr, mod = self.compile_expr(src, data=(1, -2), keep=keep)
+        self.assertEqual(await expr(), "no")
+
+
 class TestMatchSubjectErrors(SpecialsTestCase):
     """
     A subject whose spine loops, or is made to loop while a walk is on

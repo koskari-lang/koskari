@@ -54,7 +54,9 @@ in `(app splitext #[base "." "ki"])`.
 
 The matcher heads from [`koskari.matcher`](../reference/api/koskari-matcher.md),
 `FORM`, `ONEOF`, `REST`, `CLASS`, and the rest, are also accepted in
-pattern position; the sugared forms above lower to them. A name inside
+pattern position; the sugared forms above lower to them. `(? pred)` is
+also a matcher head, the alias of `PREDICATE`, so it keeps its meaning
+inside a head such as `REPEAT`. A name inside
 a `REPEAT` that is not itself captured binds the list of its values,
 one per pass: `#[(REPEAT (FORM (MATCH k v)))]` against
 `#(#(1 2) #(3 4))` binds `k` to `[1, 3]` and `v` to `[2, 4]`. In a

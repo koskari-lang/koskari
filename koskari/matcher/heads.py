@@ -721,6 +721,7 @@ def register_builtin_matchers():
         "LITERAL_SYM", str_arg_factory("LITERAL_SYM", LITERAL_SYM))
     register_matcher("TYPE", str_arg_factory("TYPE", TYPE))
     register_matcher("PREDICATE", str_arg_factory("PREDICATE", PREDICATE))
+    register_matcher("?", str_arg_factory("?", PREDICATE))
     register_matcher("TEST_ANY", test_any_factory)
     register_matcher("FIELD", field_factory)
     register_matcher("APP", app_factory)

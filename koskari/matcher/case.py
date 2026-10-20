@@ -303,8 +303,6 @@ def parse_case_element(elem):
     if "known_head" in c:
         head = c["known_head"].datum
         name = str(head)
-        if name in MATCHER_REGISTRY:
-            return parse_matcher(elem)
         # a dialect head that missed its meta-branch got the arity or
         # argument shape wrong -- diagnose that, not "unknown head"
         usage = _CASE_DIALECT_USAGE.get(name)
@@ -312,6 +310,8 @@ def parse_case_element(elem):
             raise ValueError(
                 f"malformed ({name} ...) case pattern {elem!r};"
                 f" expected {usage}")
+        if name in MATCHER_REGISTRY:
+            return parse_matcher(elem)
         raise ValueError(
             f"unknown case pattern head {name};"
             " sequence patterns use #[...] or #(...)")
