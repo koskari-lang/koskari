@@ -1,16 +1,15 @@
 # Script entry point
 
 Run code only when a `.ki` file is executed as a script, not when it is imported
-as a module -- the Koskari equivalent of Python's `if __name__ == "__main__":`.
+as a module.
 
-## Minimal pattern
+## Declaring an entry
 
 ```koskari
+(declare-entry main)
+
 define main []:
   print "running as script"
-
-when-main:
-  (main)
 ```
 
 Save as `tool.ki` and run:
@@ -23,20 +22,43 @@ koskari tool.ki
 running as script
 ```
 
-Importing `tool` from another module defines `main` and prints nothing.
+The launcher calls `main` with no arguments after the module has
+finished loading. Its return value is the exit status: `None` exits
+`0`, an int exits with that status, and any other value is printed to
+stderr and exits `1`. Importing `tool` from another module defines
+`main` and prints nothing.
 
-## When to use it
+## The when-main pattern
 
-Use `when-main:` for code that should run only from the command line:
+`when-main` is the Koskari equivalent of Python's
+`if __name__ == "__main__":`. Its body runs as part of loading the
+module:
 
-| File role | What `when-main` usually does |
+```koskari
+define main []:
+  print "running as script"
+
+when-main:
+  (main)
+```
+
+Imported, this module also prints nothing.
+
+## Which to use
+
+| File role | Use |
 |------|------------------------|
-| Small demo | Prints example output for the definitions above it |
-| CLI wrapper | Parses arguments and calls a `main` function |
-| Web or service entry point | Starts the server or dispatches to the host framework |
+| Small demo | `when-main`, printing example output for the definitions above it |
+| CLI wrapper | `declare-entry`, returning the exit status |
+| Web or service entry point | `declare-entry`, starting the server or dispatching to the host framework |
+
+A long-running program belongs in a declared entry: a `when-main` body
+that never returns leaves its module's load unfinished, so the
+module's functions are never sealed read-only.
 
 ## See also
 
 - [Packaging an installed command](../../../guide/packaging.md)
+- [compile/declare-entry](../../../reference/macros/compile-declare-entry.md)
 - [compile/when-main](../../../reference/macros/compile-when-main.md)
 - [Hello world](../../../quickstart.md)

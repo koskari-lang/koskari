@@ -21,6 +21,10 @@ when-main:
 (when (equal? __name__ "__main__") (begin (main)))
 ```
 
+A `when-main` body runs while the module is still loading. To run a
+function after loading completes, with its return value as the exit
+status, use [`declare-entry`](compile-declare-entry.md).
+
 **See also:** [Modules and packages](../../guide/modules-and-packages.md),
 the [Script entry point](../../tutorials/from-python/examples/script-main.md)
 example.

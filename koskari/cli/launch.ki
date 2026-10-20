@@ -104,6 +104,50 @@ define run_command [
     layout: layout)
 
 
+; === Program entry ===
+
+
+define entry_status [value]:
+  """
+  The exit status an entry's return value maps to, as SystemExit maps
+  its code: None is 0, an int is the status, and any other value is
+  printed to stderr and gives 1
+
+  :param value: the entry's return value
+  :return: integer exit code
+  """
+
+  if (None? value):
+    return 0
+  elif (instance? value int):
+    return (int value)
+  else:
+    print value file: sys.stderr
+    return 1
+
+
+define run_entry [mod]:
+  """
+  Call the entry mod declared with declare-entry, with no arguments,
+  once the module has finished loading.
+
+  :param mod: koskari Module that ran as the program
+  :return: the entry's exit status; 0 when mod declared no entry
+  :raises NameError: when the declared entry is not bound in mod
+  """
+
+  define ns (vars mod)
+  define name (ns.get "__entry__")
+  when (None? name):
+    return 0
+
+  define entry (ns.get name)
+  when (None? entry):
+    raise (NameError f"declared entry {(repr name)} is not defined")
+
+  (entry_status (entry))
+
+
 ; === Module execution ===
 
 
@@ -393,27 +437,34 @@ define run []:
   define interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
+  ; a program's declared entry runs once its module has loaded and
+  ; sealed; an interactive session goes on to the REPL afterward
+  define status 0
+
   if command:
     (run_command mod command
       interactive: options.interactive)
+    set! status (run_entry mod)
     unless options.interactive:
-      return 0
+      return status
 
   elif (equal? filename "-"):
     (run_command mod (sys.stdin.read)
       filename: "<stdin>"
       layout: True
       interactive: options.interactive)
+    set! status (run_entry mod)
     unless options.interactive:
-      return 0
+      return status
 
   elif filename:
     (run_file mod filename
       execute_kio: options.execute_kio
       interactive: options.interactive
       spec: spec)
+    set! status (run_entry mod)
     unless options.interactive:
-      return 0
+      return status
 
   ; the session module is read and compiled only for a session: a
   ; script, -c, -m and the kio options never reach it

@@ -23,6 +23,7 @@ the REPL shows the expansion of any of them.
 | [`define-parameter`](compile-define-parameter-and-compile-parameterq.md) | Declare a dynamic parameter |
 | [`define-environ`](compile-define-environ.md) | Bind a name to an environment variable |
 | [`declare-exports`](compile-declare-exports.md) | Name the module's public features |
+| [`declare-entry`](compile-declare-entry.md) | Name the function a program runs once its module has loaded |
 
 ## Conditionals
 

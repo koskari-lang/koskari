@@ -945,4 +945,220 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([''], argv)
 
 
+class TestMainEntry(unittest.IsolatedAsyncioTestCase):
+    """
+    A program's declare-entry function runs once its module has loaded,
+    and its return value is the exit status
+    """
+
+    async def _main(self, tmp, tops, *argv, stdin=None):
+        """
+        Run main from tmp as the working directory, capturing stdout and
+        stderr, restoring the working directory, sys.path, sys.argv and
+        sys.stdin afterward, and dropping the modules named in tops,
+        and their submodules, from sys.modules.
+
+        Returns (exit_code, stdout_text, stderr_text).
+        """
+
+        def run():
+            out, err = io.StringIO(), io.StringIO()
+            saved = (sys.stdout, sys.stderr, sys.stdin, sys.argv)
+            sys.stdout, sys.stderr = out, err
+            if stdin is not None:
+                sys.stdin = io.StringIO(stdin)
+            try:
+                code = main(['koskari'] + list(argv))
+            finally:
+                sys.stdout, sys.stderr, sys.stdin, sys.argv = saved
+            return code, out.getvalue(), err.getvalue()
+
+        prev_cwd = os.getcwd()
+        prev_path = sys.path[:]
+        os.chdir(tmp)
+        try:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, run)
+        finally:
+            os.chdir(prev_cwd)
+            sys.path[:] = prev_path
+            for name in list(sys.modules):
+                if any(name == top or name.startswith(top + '.')
+                       for top in tops):
+                    del sys.modules[name]
+
+
+    def _write(self, path, text):
+        with open(path, 'w') as fh:
+            fh.write(text)
+        return path
+
+
+    async def test_int_return_is_exit_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_int.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  3\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(3, code, err)
+
+
+    async def test_none_return_exits_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_none.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"entered\"\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(0, code, err)
+        self.assertEqual("entered\n", out)
+
+
+    async def test_other_return_printed_exits_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_text.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  \"bad thing\"\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(1, code, err)
+        self.assertEqual("bad thing\n", err)
+
+
+    async def test_no_entry_exits_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'no_entry.ki'),
+                "define main []:\n"
+                "  print \"never\"\n"
+                "  7\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(0, code, err)
+        self.assertEqual("", out)
+
+
+    async def test_unbound_entry_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_unbound.ki'),
+                "(declare-entry missing)\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(1, code, err)
+        self.assertIn("NameError", err)
+        self.assertIn('"missing"', err)
+
+
+    async def test_entry_runs_after_when_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_when_main.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"entry\"\n"
+                "\n"
+                "when-main:\n"
+                "  print \"when-main\"\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(0, code, err)
+        self.assertEqual("when-main\nentry\n", out)
+
+
+    async def test_entry_runs_after_seal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_sealed.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"sealed\" main.code.arena.sealed\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(0, code, err)
+        self.assertEqual("sealed True\n", out)
+
+
+    async def test_imported_entry_not_called(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write(
+                os.path.join(tmp, 'entry_library.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"library entry\"\n")
+            script = self._write(
+                os.path.join(tmp, 'entry_app.ki'),
+                "import entry_library\n"
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"app entry\"\n")
+            code, out, err = await self._main(
+                tmp, ('entry_library',), script)
+        self.assertEqual(0, code, err)
+        self.assertEqual("app entry\n", out)
+
+
+    async def test_command_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = await self._main(
+                tmp, (), '-c',
+                '(declare-entry main) (define main (lambda [] 6))')
+        self.assertEqual(6, code, err)
+
+
+    async def test_module_package_main_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'entrypkg')
+            os.makedirs(pkg)
+            self._write(os.path.join(pkg, '__init__.ki'), "")
+            self._write(
+                os.path.join(pkg, '__main__.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  5\n")
+            code, out, err = await self._main(
+                tmp, ('entrypkg',), '-m', 'entrypkg')
+        self.assertEqual(5, code, err)
+
+
+    async def test_kio_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = self._write(
+                os.path.join(tmp, 'entrykio.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  4\n")
+            code, out, err = await self._main(
+                tmp, ('entrykio',),
+                '--compile-kio', os.path.join(tmp, 'entrykio.kio'), src)
+            self.assertEqual(0, code, err)
+            code, out, err = await self._main(
+                tmp, ('entrykio',), '-m', 'entrykio')
+        self.assertEqual(4, code, err)
+
+
+    async def test_interactive_runs_entry_then_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_interactive.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"entered\"\n"
+                "  9\n")
+            code, out, err = await self._main(
+                tmp, (), '-i', '-q', script, stdin='')
+        self.assertEqual(0, code, err)
+        self.assertIn("entered\n", out)
+
+
 # The end.

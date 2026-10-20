@@ -1278,3 +1278,23 @@ tags:
   - deref
   - mutate
 notes: value-level write-through; (set! (deref r) v) dispatches to the ref store method. Symmetric with (deref r) read.
+---
+id: variable-declare-entry-records-name-001
+feature: macro/compile/declare-entry
+source: |-
+  (begin (declare-entry main) __entry__)
+  
+verify:
+  read: (begin (declare-entry main) __entry__)
+  eval: '"main"'
+references:
+  - reference/macros/compile-declare-entry.md
+  - tutorials/from-python/examples/script-main.md
+stability: evolving
+tags:
+  - variable
+  - macro
+  - declare-entry
+  - module-global
+  - idiom
+notes: declare-entry stores the entry's name as the string __entry__, so it may come before the definition; when the module runs as a program the launcher calls that function with no arguments after the load completes, and its return value is the exit status (None 0, int itself, anything else printed to stderr with 1)

@@ -37,6 +37,13 @@ Those forms are mutually exclusive. Remaining arguments are forwarded to the
 script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`; with `-m`, it is the
 path of the module's file.
 
+A program that names an entry with
+[`declare-entry`](macros/compile-declare-entry.md) has it called with no
+arguments once its module has finished loading, and exits with the status
+its return value maps to: `None` is `0`, an int is that status, and any
+other value is printed to stderr with status `1`. Without an entry, a
+program that finishes loading exits `0`.
+
 `-m MODULE` finds the module through the import machinery with the working
 directory first on `sys.path`, as `python -m` does, and runs it as
 `__main__` with `__package__` set to its parent package, so a relative
