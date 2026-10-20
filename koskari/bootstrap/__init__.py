@@ -364,12 +364,11 @@ async def make_builtins():
         ns['__file__'] = join(dirname(__file__), src)
         await load_module_async(module, seal=False, detach=False)
 
-    # one seal for the whole assembly: the shared compiler's registry
-    # spans every file, so everything packs into a single arena and
-    # code a later file displaced is dropped rather than stored. No
-    # gc.collect() here: a displaced definition caught in a reference
-    # cycle would be swept in, wasting only its bytes in an arena that
-    # is permanently resident anyway (measured: currently none are)
+    # one seal for the whole assembly: the shared compiler's allocator
+    # stays open across every file, so the builtins' function code
+    # fills one set of arena chunks, sealed together here. Code a later
+    # file displaced keeps its bytes in its chunk unless it was the
+    # newest block there when it died
     ns['__compiler__'].seal()
     detach_module_load_facets(module)
 

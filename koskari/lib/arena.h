@@ -17,15 +17,20 @@
 /**
    koskari/lib/arena.h
 
-   Page-aligned arena allocation for packed KosCode blocks. A KosArena
-   owns one page-aligned chunk: callers reserve slices while it is
-   writable, then it is sealed read-only once with a single mprotect.
-   Deallocation unseals and frees the chunk.
+   Arena allocation for KosCode blocks. A KosArena owns one chunk, an
+   anonymous mapping sized in whole chunk units: callers reserve slices
+   while it is writable, then it is sealed read-only once with a single
+   mprotect. Deallocation unmaps the chunk.
 
    The arena is a non-GC leaf owner of raw memory. It holds no
-   references to the objects whose storage lives inside it; each packed
+   references to the objects whose storage lives inside it; each member
    KosCode instead holds a strong reference to its arena, so the arena
-   dies (unseals, frees) when the last member does.
+   dies (unmaps) when the last member does.
+
+   A KosCodeAllocator is the set of chunks one module load fills. A
+   code block is placed into the first chunk with room for it, or into
+   a new chunk when none has room, and stays at that address for its
+   whole life. Sealing the allocator seals every chunk and closes it.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -45,31 +50,47 @@
 typedef struct KosArena {
   PyObject_HEAD
 
-  void *base;      /* page-aligned chunk */
-  size_t size;     /* total allocation, page-rounded */
-  size_t fill;     /* bytes handed out so far */
+  void *base;      /* page-aligned anonymous mapping */
+  size_t size;     /* mapped bytes, a whole number of chunk units */
+  size_t fill;     /* end of the newest reservation */
   int sealed;      /* nonzero once mprotect(PROT_READ) applied */
 
   PyObject *weakreflist;  /* weak reference support */
 } KosArena;
 
 
+typedef struct KosCodeAllocator {
+  PyObject_HEAD
+
+  PyObject *chunks;  /* list of KosArena, in creation order; NULL once
+                        sealed */
+} KosCodeAllocator;
+
+
 /* Every reservation starts on this boundary: members hold 32-byte
-   instruction records that must not straddle a cache line, and a
-   planner sizing an arena from its members' footprints aligns each
-   to it. Exposed to Python as Arena.UNIT. */
+   instruction records that must not straddle a cache line. Exposed to
+   Python as Arena.UNIT. */
 #define KOS_ARENA_UNIT 32
+
+/* The requested chunk size. Every chunk is a whole number of chunk
+   units, where the unit is this size rounded up to the system page
+   size, so a system with larger pages uses one of its own pages.
+   Exposed to Python as Arena.CHUNK, after the rounding. */
+#define KOS_ARENA_CHUNK_BYTES 4096
 
 #define KosArena_BASE(a)    (((KosArena *)(a))->base)
 #define KosArena_SIZE(a)    (((KosArena *)(a))->size)
 #define KosArena_FILL(a)    (((KosArena *)(a))->fill)
 #define KosArena_SEALED(a)  (((KosArena *)(a))->sealed)
 
+#define KosCodeAllocator_CHUNKS(a)  (((KosCodeAllocator *)(a))->chunks)
+
 
 /* === type objects === */
 
 
 extern PyTypeObject KosArenaType;
+extern PyTypeObject KosCodeAllocatorType;
 
 
 /* === type check macros === */
@@ -81,13 +102,26 @@ extern PyTypeObject KosArenaType;
 #define KosArena_CheckExact(obj)                \
   ((obj) && ((obj)->ob_type == &KosArenaType))
 
+#define KosCodeAllocator_Check(obj)                                     \
+  ((obj) && PyType_IsSubtype((obj)->ob_type, &KosCodeAllocatorType))
+
+#define KosCodeAllocator_CheckExact(obj)                \
+  ((obj) && ((obj)->ob_type == &KosCodeAllocatorType))
+
 
 /* === public API === */
 
 
 /**
+   The chunk unit in bytes: KOS_ARENA_CHUNK_BYTES rounded up to the
+   system page size.
+*/
+size_t KosArena_ChunkUnit(void);
+
+
+/**
    Create a new writable arena with capacity for at least nbytes,
-   rounded up to page size.
+   rounded up to a whole number of chunk units.
 
    :param nbytes: minimum payload capacity; must be positive
 
@@ -118,6 +152,57 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out);
      when mprotect fails
 */
 int KosArena_Seal(PyObject *arena);
+
+
+/**
+   Return a reservation to the arena when it is the newest one and the
+   arena is unsealed; otherwise do nothing. Its bytes are then handed
+   out again by the next reservation.
+
+   :param arena: KosArena object
+   :param base: the reservation's base, as KosArena_Reserve gave it
+   :param nbytes: the reservation's size, as requested
+*/
+void KosArena_Release(PyObject *arena, void *base, size_t nbytes);
+
+
+/**
+   Create a new open code allocator holding no chunks.
+
+   :return: new KosCodeAllocator reference, or NULL on error
+*/
+PyObject *KosCodeAllocator_New(void);
+
+
+/**
+   Reserve nbytes for one code block: from the first chunk with room
+   for it, or from a new chunk of a whole number of chunk units when
+   none has room.
+
+   :param alloc: KosCodeAllocator object, not yet sealed
+   :param nbytes: block size in bytes; must be positive
+   :param out: receives the block base
+   :param out_chunk: receives the chunk holding the block, borrowed
+
+   :return: 0 on success; -1 with an error set when the allocator is
+     sealed or a chunk cannot be mapped
+*/
+int KosCodeAllocator_Reserve(
+    PyObject *alloc,
+    size_t nbytes,
+    void **out,
+    PyObject **out_chunk);
+
+
+/**
+   Seal every chunk read-only and close the allocator. Later
+   reservations raise.
+
+   :param alloc: KosCodeAllocator object, not yet sealed
+
+   :return: new tuple of the sealed chunks, or NULL on error
+*/
+PyObject *KosCodeAllocator_Seal(PyObject *alloc);
 
 
 /* === unit lifecycle === */

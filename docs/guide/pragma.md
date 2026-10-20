@@ -209,20 +209,19 @@ turning one off makes its character inert in the reader.
   `[compiler/cache-expression]` turns it on. See
   [Attribute and method caching](runtime-tuning.md#attribute-and-method-caching).
 - `compiler/protect-code`, default off: whether each compiled code
-  object's bytecode storage is sealed read-only at the OS level the moment it
-  is built. On, a stray or hostile write to live bytecode faults instead of
-  corrupting the interpreter, at the cost of a full memory page per code
-  object. A bare `[compiler/protect-code]` turns it on. See
+  object not placed in an arena has its bytecode storage sealed read-only at
+  the OS level the moment it is built. On, a stray or hostile write to that
+  bytecode faults instead of corrupting the interpreter, at the cost of a
+  full memory page per code object. A bare `[compiler/protect-code]` turns
+  it on. See
   [Code sealing and arena packing](runtime-tuning.md#code-sealing-and-arena-packing).
-- `compiler/pack-module`, default on: whether the module's surviving
-  code objects are compacted into shared read-only storage when the module
-  finishes loading. On -- the baseline -- a loaded module's functions share one
-  sealed allocation instead of each holding its own page. Options tune the
-  packing: `max-count:` caps how many code objects share one allocation, and
-  `max-bytes:` is a soft size cap; `0` (the default for both) means unbounded.
+- `compiler/pack-module`, default on: whether function code compiled
+  while the module loads is placed in shared arena chunks, sealed read-only
+  when the module finishes loading. On -- the baseline -- a loaded module's
+  functions share a few sealed pages instead of each holding its own.
+  Top-level expressions are never placed.
 
   ```
-  (pragma [compiler/pack-module True max-count: 32])
   (pragma [compiler/pack-module False])
   ```
 

@@ -12,8 +12,8 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Unit tests for the Arena type, the Code protect flag, and Code.pack_into
-relocation
+Unit tests for the Arena type, the CodeAllocator type, the Code protect
+flag, and Code.pack_into relocation
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -26,7 +26,8 @@ import weakref
 
 import pytest
 
-from koskari.lib import Arena, Code, FormalsSpec, NamespaceSpec, OpCode
+from koskari.lib import (
+    Arena, Code, CodeAllocator, FormalsSpec, NamespaceSpec, OpCode)
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -37,7 +38,7 @@ pytestmark = pytest.mark.phase_lib
 PAGE = resource.getpagesize()
 
 
-def make_code(name, protect=True, payload=None):
+def make_code(name, protect=True, payload=None, allocator=None):
     """
     Build a small Code returning a distinct payload constant
     """
@@ -47,7 +48,20 @@ def make_code(name, protect=True, payload=None):
         [OpCode.CONST, payload or f"payload-{name}"],
         [OpCode.RETURN, 1],
     )
-    return Code(nspec, instr, name, "<test-arena>", protect=protect)
+    return Code(nspec, instr, name, "<test-arena>", protect=protect,
+                allocator=allocator)
+
+
+def make_sized(name, pairs, allocator=None):
+    """
+    Build a Code of pairs CONST/POP instruction pairs, for a block whose
+    size grows with pairs
+    """
+
+    nspec = NamespaceSpec(name, (), ())
+    instr = [[OpCode.CONST, None], [OpCode.POP, 1]] * pairs
+    instr.append([OpCode.RETURN, 0])
+    return Code(nspec, instr, name, "<test-arena>", allocator=allocator)
 
 
 def block_size(code):
@@ -58,17 +72,30 @@ def block_size(code):
     return code.payload_bytes + code.padding_bytes
 
 
+def aligned(size):
+    """
+    The size rounded up to the arena's reservation alignment
+    """
+
+    unit = Arena.UNIT
+    return ((size + unit - 1) // unit) * unit
+
+
 class TestArena(unittest.TestCase):
     """Tests for the Arena type itself"""
 
-    def test_create_rounds_to_page(self):
+    def test_chunk_is_whole_pages(self):
+        self.assertGreaterEqual(Arena.CHUNK, PAGE)
+        self.assertEqual(Arena.CHUNK % PAGE, 0)
+
+    def test_create_rounds_to_chunk(self):
         a = Arena(100)
-        self.assertEqual(a.size, PAGE)
+        self.assertEqual(a.size, Arena.CHUNK)
         self.assertEqual(a.used, 0)
         self.assertFalse(a.sealed)
 
-        b = Arena(PAGE * 2 + 1)
-        self.assertEqual(b.size, PAGE * 3)
+        b = Arena(Arena.CHUNK * 2 + 1)
+        self.assertEqual(b.size, Arena.CHUNK * 3)
 
     def test_create_rejects_nonpositive(self):
         with self.assertRaises(ValueError):
@@ -95,6 +122,188 @@ class TestArena(unittest.TestCase):
         self.assertIn("Arena", repr(a))
         a.seal()
         self.assertIn("sealed", repr(a))
+
+
+class TestCodeAllocator(unittest.TestCase):
+    """Tests for CodeAllocator placement at birth"""
+
+    def test_new_allocator_is_open_and_empty(self):
+        alloc = CodeAllocator()
+        self.assertFalse(alloc.sealed)
+        self.assertEqual(alloc.chunks, ())
+        self.assertIn("CodeAllocator", repr(alloc))
+
+    def test_code_placed_at_birth(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+
+        self.assertEqual(alloc.chunks, (a.arena,))
+        self.assertFalse(a.arena.sealed)
+        self.assertFalse(a.protected)
+        self.assertEqual(a.allocation_bytes, block_size(a))
+        self.assertEqual(a.arena.used, block_size(a))
+
+    def test_placed_matches_heap(self):
+        alloc = CodeAllocator()
+        placed = make_code("a", allocator=alloc)
+        plain = make_code("a", protect=False)
+        self.assertEqual(placed.soften(), plain.soften())
+        self.assertEqual(placed.constants_pool, plain.constants_pool)
+
+    def test_none_is_heap(self):
+        a = make_code("a", allocator=None)
+        self.assertIsNone(a.arena)
+
+    def test_non_allocator_rejected(self):
+        with self.assertRaises(TypeError):
+            make_code("a", allocator=object())
+        with self.assertRaises(TypeError):
+            make_code("a", allocator=Arena(64))
+
+    def test_members_share_a_chunk(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        b = make_code("b", allocator=alloc)
+
+        self.assertIs(a.arena, b.arena)
+        self.assertEqual(a.arena.used,
+                         aligned(block_size(a)) + block_size(b))
+
+    def test_first_fit_returns_to_earlier_chunk(self):
+        alloc = CodeAllocator()
+        scale = Arena.CHUNK // 4096
+
+        # about three quarters of a chunk, then half of one: the second
+        # cannot follow the first, so it opens a second chunk
+        first = make_sized("first", 44 * scale, allocator=alloc)
+        second = make_sized("second", 30 * scale, allocator=alloc)
+        tail = first.arena.size - aligned(first.arena.used)
+        self.assertGreater(block_size(second), tail)
+        self.assertIsNot(second.arena, first.arena)
+
+        # a small one fits behind the first, so it goes there
+        small = make_code("small", allocator=alloc)
+        self.assertLessEqual(block_size(small), tail)
+        self.assertIs(small.arena, first.arena)
+        self.assertEqual(alloc.chunks, (first.arena, second.arena))
+
+    def test_oversize_gets_whole_chunks(self):
+        alloc = CodeAllocator()
+        big = make_sized("big", Arena.CHUNK // 16, allocator=alloc)
+
+        self.assertGreater(block_size(big), Arena.CHUNK)
+        self.assertEqual(big.arena.size % Arena.CHUNK, 0)
+        self.assertGreaterEqual(big.arena.size, block_size(big))
+        self.assertLess(big.arena.size - block_size(big), Arena.CHUNK)
+
+    def test_dead_newest_returns_its_bytes(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        chunk = a.arena
+        used = chunk.used
+
+        b = make_code("b", allocator=alloc)
+        self.assertGreater(chunk.used, used)
+
+        # the fill returns to b's start, the aligned end of a
+        del b
+        self.assertEqual(chunk.used, aligned(used))
+
+        # and the next block takes the space back
+        c = make_code("c", allocator=alloc)
+        self.assertEqual(chunk.used, aligned(used) + block_size(c))
+
+    def test_dead_older_keeps_its_bytes(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        b = make_code("b", allocator=alloc)
+        chunk = b.arena
+        used = chunk.used
+
+        del a
+        self.assertEqual(chunk.used, used)
+
+    def test_seal(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        chunk = a.arena
+
+        chunks = alloc.seal()
+        self.assertEqual(chunks, (chunk,))
+        self.assertTrue(chunk.sealed)
+        self.assertTrue(alloc.sealed)
+        self.assertEqual(alloc.chunks, ())
+        self.assertIn("sealed", repr(alloc))
+        self.assertIs(a.arena, chunk)
+
+    def test_seal_twice_rejected(self):
+        alloc = CodeAllocator()
+        alloc.seal()
+        with self.assertRaises(ValueError):
+            alloc.seal()
+
+    def test_reserve_after_seal_rejected(self):
+        alloc = CodeAllocator()
+        alloc.seal()
+        with self.assertRaises(ValueError):
+            make_code("a", allocator=alloc)
+
+    def test_no_return_after_seal(self):
+        alloc = CodeAllocator()
+        make_code("a", allocator=alloc)
+        b = make_code("b", allocator=alloc)
+        chunk = b.arena
+        alloc.seal()
+        used = chunk.used
+
+        del b
+        self.assertEqual(chunk.used, used)
+
+    def test_chunk_lives_until_last_member_dies(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        b = make_code("b", allocator=alloc)
+        alloc.seal()
+
+        ref = weakref.ref(a.arena)
+        del alloc
+        self.assertIsNotNone(ref())
+        del a
+        self.assertIsNotNone(ref())
+        del b
+        self.assertIsNone(ref())
+
+    def test_unsealed_allocator_dropped(self):
+        """
+        Chunks of an allocator dropped unsealed stay alive, writable,
+        through their members
+        """
+
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        del alloc
+        self.assertFalse(a.arena.sealed)
+        self.assertEqual(a.soften(), make_code("a").soften())
+
+    def test_placed_code_executes_across_seal(self):
+        alloc = CodeAllocator()
+        nspec = NamespaceSpec(None, (), ())
+        instr = [
+            [OpCode.CONST, 1],
+            [OpCode.YIELD, 1],
+            [OpCode.CONST, 2],
+            [OpCode.YIELD, 1],
+            [OpCode.RETURN, 0],
+        ]
+        code = Code(nspec, instr, "gen", "<test-arena>", allocator=alloc)
+        ns = nspec.get_namespace(None)
+
+        it = iter(make_callable(code, ns)())
+        self.assertEqual(next(it), 1)
+
+        alloc.seal()
+        self.assertTrue(code.arena.sealed)
+        self.assertEqual(next(it), 2)
 
 
 class TestCodeProtect(unittest.TestCase):

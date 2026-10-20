@@ -95,31 +95,21 @@ class TestSealMatrix(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code.allocation_bytes % PAGE, 0)
 
     async def test_on_on(self):
-        """packed at seal, per-page original released"""
+        """functions are placed in the arena; protect-code does not
+        give them pages of their own"""
 
         module = await load(
             "(pragma [compiler/protect-code])" + SRC)
         durable = vars(module)["durable"]
 
         self.assertIsNotNone(durable.code.arena)
+        self.assertTrue(durable.code.arena.sealed)
+        self.assertFalse(durable.code.protected)
         self.assertEqual(demand_call(durable, 41), 42)
 
 
 class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
     """Sealing details through the load path"""
-
-    async def test_max_count_option(self):
-        """max-count: 1 gives each definition its own arena"""
-
-        module = await load(
-            "(pragma [compiler/pack-module True max-count: 1])" + SRC)
-        ns = vars(module)
-
-        a1 = ns["durable"].code.arena
-        a2 = ns["helper"].code.arena
-        self.assertIsNotNone(a1)
-        self.assertIsNotNone(a2)
-        self.assertIsNot(a1, a2)
 
     async def test_detach_false_seals_and_keeps_facets(self):
         """the interactive shape: sealed on completion, facets retained"""
@@ -132,13 +122,15 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         self.assertIn("__reader__", ns)
         self.assertIn("__pragma__", ns)
 
-    async def test_seal_false_does_not_pack(self):
-        """seal=False leaves everything plain heap"""
+    async def test_seal_false_leaves_chunks_open(self):
+        """seal=False places functions but leaves their chunks writable"""
 
         module = await load(SRC, seal=False, detach=False)
         ns = vars(module)
 
-        self.assertIsNone(ns["durable"].code.arena)
+        arena = ns["durable"].code.arena
+        self.assertIsNotNone(arena)
+        self.assertFalse(arena.sealed)
         self.assertIn("__compiler__", ns)
 
     async def test_ephemeral_not_packed(self):
@@ -247,8 +239,8 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         # detach empties the facet bindings
         self.assertTrue(ns.ref("__compiler__").empty)
 
-    async def test_no_packing_before_manual_seal(self):
-        """no arena exists until the manual seal runs"""
+    async def test_placed_before_manual_seal(self):
+        """code sits in an open chunk until the manual seal seals it"""
 
         module = new_module("deferred")
         ns = vars(module)
@@ -258,13 +250,16 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
             module, "(define one (lambda [] 1))",
             seal=False, detach=False)
 
-        self.assertIsNone(ns["one"].code.arena)
+        chunk = ns["one"].code.arena
+        self.assertIsNotNone(chunk)
+        self.assertFalse(chunk.sealed)
 
         arenas = ns["__compiler__"].seal()
         detach_module_load_facets(module)
 
-        self.assertEqual(len(arenas), 1)
-        self.assertIs(ns["one"].code.arena, arenas[0])
+        self.assertEqual(arenas, (chunk,))
+        self.assertIs(ns["one"].code.arena, chunk)
+        self.assertTrue(chunk.sealed)
 
     async def test_pragma_persists_across_loads(self):
         """a pragma set in an earlier load governs later loads"""
@@ -307,10 +302,10 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ns["one"].code.filename, "<part-one>")
         self.assertEqual(ns["two"].code.filename, "<part-two>")
 
-    async def test_redefinition_not_packed(self):
+    async def test_redefinition_keeps_its_bytes(self):
         """
-        code a later load displaced is dead by seal time and never
-        packed, unlike per-load sealing which would keep it
+        code a later load displaced was placed before the survivor, so
+        its bytes stay in the chunk after it dies
         """
 
         module = new_module("deferred")
@@ -320,15 +315,17 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(
             module, "(define fn (lambda [] 'first))",
             seal=False, detach=False)
-        first_code = weakref.ref(ns["fn"].code)
+        first = ns["fn"].code
+        first_size = first.payload_bytes + first.padding_bytes
+        first_code = weakref.ref(first)
+        del first
 
         await load_module_source_async(
             module, "(define fn (lambda [] 'second))",
             seal=False, detach=False)
 
         # the displaced function lingers as cyclic garbage until a
-        # collection runs; force one so this test exercises seal's
-        # liveness filtering with an exactly-dead displaced definition
+        # collection runs; force one so it is exactly dead here
         gc.collect()
         self.assertIsNone(first_code(),
                           "displaced definition should be dead")
@@ -339,9 +336,11 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
 
         survivor = ns["fn"].code
         self.assertIs(survivor.arena, arenas[0])
-        # only the survivor was placed
+        # the displaced block's bytes, aligned, precede the survivor
+        aligned = (first_size + 31) & ~31
         self.assertEqual(arenas[0].used,
-                         survivor.payload_bytes + survivor.padding_bytes)
+                         aligned + survivor.payload_bytes
+                         + survivor.padding_bytes)
 
 
 # The end.

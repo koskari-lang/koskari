@@ -17,26 +17,34 @@
 /**
    koskari/lib/arena.c
 
-   Page-aligned arena allocation for packed KosCode blocks. See
-   arena.h for the ownership model: the arena is a non-GC leaf owner
-   of one page-aligned chunk, kept alive by strong references from the
-   KosCode objects packed into it.
+   Arena allocation for KosCode blocks. See arena.h for the ownership
+   model: the arena is a non-GC leaf owner of one anonymous mapping,
+   kept alive by strong references from the KosCode objects placed in
+   it, and a code allocator is the set of chunks one module load fills.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
 */
 
 
-/* Feature test macros must come before any includes */
+/* Feature test macros must come before any includes. The values match
+   pyconfig.h, which defines them again; anonymous mappings need the
+   GNU or Darwin extensions beyond plain POSIX. */
 #define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE 1
+#define _DARWIN_C_SOURCE 1
 
 #include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stdint.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
 #include "lib.h"
+
+
+#if ! defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 
 /* === helpers === */
@@ -52,10 +60,41 @@ static size_t arena_page_size(void) {
 }
 
 
+static size_t round_up(size_t value, size_t unit) {
+
+  return ((value + unit - 1) / unit) * unit;
+}
+
+
+/* The aligned start a reservation of nbytes would take, or SIZE_MAX
+   when the arena lacks the room. */
+static size_t arena_fit(KosArena *self, size_t nbytes) {
+
+  size_t start = round_up(self->fill, KOS_ARENA_UNIT);
+
+  if (start > self->size || nbytes > self->size - start)
+    return SIZE_MAX;
+  return start;
+}
+
+
 /* === public API === */
 
 
+size_t KosArena_ChunkUnit(void) {
+
+  static size_t unit = 0;
+
+  if (! unit) {
+    unit = round_up(KOS_ARENA_CHUNK_BYTES, arena_page_size());
+  }
+  return unit;
+}
+
+
 PyObject *KosArena_New(size_t nbytes) {
+
+  size_t unit = KosArena_ChunkUnit();
 
   if (! nbytes) {
     PyErr_SetString(PyExc_ValueError,
@@ -63,11 +102,19 @@ PyObject *KosArena_New(size_t nbytes) {
     return NULL;
   }
 
-  size_t page_size = arena_page_size();
-  size_t total = ((nbytes + page_size - 1) / page_size) * page_size;
+  if (nbytes > SIZE_MAX - unit) {
+    PyErr_SetString(PyExc_MemoryError,
+                    "Arena size too large");
+    return NULL;
+  }
 
-  void *base = NULL;
-  if (posix_memalign(&base, page_size, total)) {
+  size_t total = round_up(nbytes, unit);
+
+  /* fresh anonymous pages read as zero; none is touched until a
+     reservation is written */
+  void *base = mmap(NULL, total, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (base == MAP_FAILED) {
     PyErr_SetString(PyExc_MemoryError,
                     "Failed to allocate arena storage");
     return NULL;
@@ -75,11 +122,9 @@ PyObject *KosArena_New(size_t nbytes) {
 
   KosArena *self = PyObject_New(KosArena, &KosArenaType);
   if (! self) {
-    free(base);
+    munmap(base, total);
     return NULL;
   }
-
-  memset(base, 0, total);
 
   self->base = base;
   self->size = total;
@@ -94,8 +139,6 @@ PyObject *KosArena_New(size_t nbytes) {
 int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
 
   KosArena *self = (KosArena *) arena;
-  size_t unit = KOS_ARENA_UNIT;
-  size_t start = ((self->fill + unit - 1) / unit) * unit;
 
   if (self->sealed) {
     PyErr_SetString(PyExc_ValueError,
@@ -103,7 +146,8 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
     return -1;
   }
 
-  if (start > self->size || nbytes > self->size - start) {
+  size_t start = arena_fit(self, nbytes);
+  if (start == SIZE_MAX) {
     PyErr_Format(PyExc_ValueError,
                  "Arena capacity exceeded: %zu bytes requested,"
                  " %zu of %zu used",
@@ -138,7 +182,108 @@ int KosArena_Seal(PyObject *arena) {
 }
 
 
-/* === Python type methods === */
+void KosArena_Release(PyObject *arena, void *base, size_t nbytes) {
+
+  KosArena *self = (KosArena *) arena;
+  char *start = (char *) self->base;
+
+  if (self->sealed)
+    return;
+
+  if ((char *) base + nbytes == start + self->fill) {
+    self->fill = (size_t) ((char *) base - start);
+  }
+}
+
+
+PyObject *KosCodeAllocator_New(void) {
+
+  KosCodeAllocator *self = PyObject_New(KosCodeAllocator,
+                                        &KosCodeAllocatorType);
+  if (! self) {
+    return NULL;
+  }
+
+  self->chunks = PyList_New(0);
+  if (! self->chunks) {
+    Py_DECREF(self);
+    return NULL;
+  }
+
+  return (PyObject *) self;
+}
+
+
+int KosCodeAllocator_Reserve(
+    PyObject *alloc,
+    size_t nbytes,
+    void **out,
+    PyObject **out_chunk) {
+
+  PyObject *chunks = KosCodeAllocator_CHUNKS(alloc);
+
+  if (! chunks) {
+    PyErr_SetString(PyExc_ValueError,
+                    "Cannot reserve from a sealed code allocator");
+    return -1;
+  }
+
+  /* first fit, in creation order */
+  Py_ssize_t count = PyList_GET_SIZE(chunks);
+  for (Py_ssize_t i = 0; i < count; i++) {
+    PyObject *chunk = PyList_GET_ITEM(chunks, i);
+    if (arena_fit((KosArena *) chunk, nbytes) != SIZE_MAX) {
+      *out_chunk = chunk;
+      return KosArena_Reserve(chunk, nbytes, out);
+    }
+  }
+
+  /* nothing has room: a new chunk, sized up to the next whole unit,
+     owned by the list */
+  PyObject *chunk = KosArena_New(nbytes);
+  if (! chunk) {
+    return -1;
+  }
+
+  int res = PyList_Append(chunks, chunk);
+  Py_DECREF(chunk);
+  if (res) {
+    return -1;
+  }
+
+  *out_chunk = chunk;
+  return KosArena_Reserve(chunk, nbytes, out);
+}
+
+
+PyObject *KosCodeAllocator_Seal(PyObject *alloc) {
+
+  PyObject *chunks = KosCodeAllocator_CHUNKS(alloc);
+
+  if (! chunks) {
+    PyErr_SetString(PyExc_ValueError,
+                    "Code allocator is already sealed");
+    return NULL;
+  }
+
+  Py_ssize_t count = PyList_GET_SIZE(chunks);
+  for (Py_ssize_t i = 0; i < count; i++) {
+    if (KosArena_Seal(PyList_GET_ITEM(chunks, i))) {
+      return NULL;
+    }
+  }
+
+  PyObject *result = PyList_AsTuple(chunks);
+  if (! result) {
+    return NULL;
+  }
+
+  Py_CLEAR(KosCodeAllocator_CHUNKS(alloc));
+  return result;
+}
+
+
+/* === Arena type methods === */
 
 
 static PyObject *arena_new(
@@ -175,19 +320,12 @@ static void arena_dealloc(PyObject *self) {
     PyObject_ClearWeakRefs(self);
   }
 
-  if (arena->base) {
-    /* a sealed arena's pages are read-only; freeing them writes the
-       allocator's own words into them, so they go back to the
-       protection they had before the seal first. When that fails the
-       storage stays allocated: a leak is the safe outcome, a fault in
-       free is not, and the one channel a deallocator has reports it. */
-    if (arena->sealed
-        && mprotect(arena->base, arena->size, PROT_READ | PROT_WRITE)) {
-      PyErr_SetFromErrno(PyExc_OSError);
-      PyErr_WriteUnraisable(self);
-    } else {
-      free(arena->base);
-    }
+  /* unmapping needs no write access, so a sealed chunk goes as it is.
+     When it fails the mapping stays: a leak is the safe outcome, and
+     the one channel a deallocator has reports it. */
+  if (arena->base && munmap(arena->base, arena->size)) {
+    PyErr_SetFromErrno(PyExc_OSError);
+    PyErr_WriteUnraisable(self);
   }
 
   arena->base = NULL;
@@ -253,10 +391,10 @@ static PyMethodDef arena_methods[] = {
 static PyGetSetDef arena_getset[] = {
 
   { "size", arena_get_size, NULL,
-    "total allocation in bytes (page-rounded)", NULL },
+    "total allocation in bytes (whole chunk units)", NULL },
 
   { "used", arena_get_used, NULL,
-    "bytes reserved so far", NULL },
+    "end of the newest reservation in bytes", NULL },
 
   { "sealed", arena_get_sealed, NULL,
     "True once the arena has been sealed read-only", NULL },
@@ -265,7 +403,98 @@ static PyGetSetDef arena_getset[] = {
 };
 
 
-/* === type definition === */
+/* === CodeAllocator type methods === */
+
+
+static PyObject *code_allocator_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  static char *keywords[] = {
+    NULL,
+  };
+
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, ":CodeAllocator",
+                                    keywords)) {
+    return NULL;
+  }
+
+  return KosCodeAllocator_New();
+}
+
+
+static void code_allocator_dealloc(PyObject *self) {
+
+  /* chunks still open stay alive, writable, through their members */
+  Py_CLEAR(KosCodeAllocator_CHUNKS(self));
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static PyObject *code_allocator_repr(PyObject *self) {
+
+  PyObject *chunks = KosCodeAllocator_CHUNKS(self);
+
+  if (! chunks) {
+    return PyUnicode_FromFormat("<CodeAllocator sealed at %p>", self);
+  }
+  return PyUnicode_FromFormat("<CodeAllocator %zd chunks at %p>",
+                              PyList_GET_SIZE(chunks), self);
+}
+
+
+static PyObject *code_allocator_m_seal(PyObject *self, PyObject *unused) {
+
+  (void) unused;
+  return KosCodeAllocator_Seal(self);
+}
+
+
+static PyObject *code_allocator_get_chunks(PyObject *self, void *_unused) {
+
+  PyObject *chunks = KosCodeAllocator_CHUNKS(self);
+
+  (void) _unused;
+
+  if (! chunks) {
+    return PyTuple_New(0);
+  }
+  return PyList_AsTuple(chunks);
+}
+
+
+static PyObject *code_allocator_get_sealed(PyObject *self, void *_unused) {
+
+  (void) _unused;
+  return PyBool_FromLong(! KosCodeAllocator_CHUNKS(self));
+}
+
+
+static PyMethodDef code_allocator_methods[] = {
+
+  { "seal", (PyCFunction) code_allocator_m_seal, METH_NOARGS,
+    "C.seal() => tuple of Arena. Seal every chunk read-only and close"
+    " the allocator; raises ValueError if already sealed" },
+
+  { NULL, },
+};
+
+
+static PyGetSetDef code_allocator_getset[] = {
+
+  { "chunks", code_allocator_get_chunks, NULL,
+    "tuple of the open chunks, in creation order; empty once sealed",
+    NULL },
+
+  { "sealed", code_allocator_get_sealed, NULL,
+    "True once the allocator has been sealed", NULL },
+
+  { NULL, },
+};
+
+
+/* === type definitions === */
 
 
 PyTypeObject KosArenaType = {
@@ -276,8 +505,8 @@ PyTypeObject KosArenaType = {
   0,
 
   .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_doc = ("Arena(size) => page-aligned storage for packed Code"
-             " blocks, sealed read-only once filled"),
+  .tp_doc = ("Arena(size) => one chunk of storage for Code blocks,"
+             " sealed read-only once filled"),
   .tp_repr = arena_repr,
   .tp_getset = arena_getset,
   .tp_methods = arena_methods,
@@ -287,7 +516,42 @@ PyTypeObject KosArenaType = {
 };
 
 
+PyTypeObject KosCodeAllocatorType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+
+  "koskari.lib.CodeAllocator",
+  sizeof(KosCodeAllocator),
+  0,
+
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_doc = ("CodeAllocator() => the arena chunks one module load"
+             " places its function Code blocks into"),
+  .tp_repr = code_allocator_repr,
+  .tp_getset = code_allocator_getset,
+  .tp_methods = code_allocator_methods,
+  .tp_new = code_allocator_new,
+  .tp_dealloc = code_allocator_dealloc,
+};
+
+
 /* === unit lifecycle === */
+
+
+static int set_type_constant(
+    PyTypeObject *type,
+    const char *name,
+    size_t value) {
+
+  PyObject *num = PyLong_FromSize_t(value);
+  int res;
+
+  if (! num) {
+    return -1;
+  }
+  res = PyDict_SetItemString(type->tp_dict, name, num);
+  Py_DECREF(num);
+  return res;
+}
 
 
 int koskari_arena_init(PyObject *mod) {
@@ -297,29 +561,23 @@ int koskari_arena_init(PyObject *mod) {
     return -1;
   }
 
-  if (PyType_Ready(&KosArenaType)) {
+  if (PyType_Ready(&KosArenaType) ||
+      PyType_Ready(&KosCodeAllocatorType)) {
     return -1;
   }
 
-  if (PyDict_SetItemString(dict, "Arena", (PyObject *) &KosArenaType)) {
+  if (PyDict_SetItemString(dict, "Arena", (PyObject *) &KosArenaType) ||
+      PyDict_SetItemString(dict, "CodeAllocator",
+                           (PyObject *) &KosCodeAllocatorType)) {
     return -1;
   }
 
-  /* the reservation unit, for a planner sizing an arena from its
-     members' footprints */
-  {
-    PyObject *unit = PyLong_FromLong(KOS_ARENA_UNIT);
-    int res;
-    if (! unit) {
-      return -1;
-    }
-    res = PyDict_SetItemString(KosArenaType.tp_dict, "UNIT", unit);
-    Py_DECREF(unit);
-    if (res) {
-      return -1;
-    }
-    PyType_Modified(&KosArenaType);
+  /* the reservation alignment, and the chunk unit after page rounding */
+  if (set_type_constant(&KosArenaType, "UNIT", KOS_ARENA_UNIT) ||
+      set_type_constant(&KosArenaType, "CHUNK", KosArena_ChunkUnit())) {
+    return -1;
   }
+  PyType_Modified(&KosArenaType);
 
   return 0;
 }

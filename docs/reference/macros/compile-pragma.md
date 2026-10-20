@@ -22,7 +22,7 @@ booleans, numbers, and strings are bare.
 (pragma [compiler/call-brackets 'error]
         [reader/brackets False])
 
-(pragma [compiler/pack-module True max-count: 32])
+(pragma [compiler/pack-module False])
 ```
 
 ```koskari

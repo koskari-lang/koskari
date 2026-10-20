@@ -15,10 +15,9 @@
 tests.reproducers.test_region_targets_after_seal
 
 Region pushes executed during module load resolve their targets before
-the module is sealed, which packs the code into an arena and frees the
-original block. The same sites, and a generator suspended inside a
-for-each across the seal, must still land on the right instruction
-afterwards.
+the module is sealed, which makes the arena chunks holding the code
+read-only. The same sites, and a generator suspended inside a for-each
+across the seal, must still land on the right instruction afterwards.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

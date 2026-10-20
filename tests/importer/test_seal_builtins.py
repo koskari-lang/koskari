@@ -12,9 +12,9 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-Tests that the koskari-written builtins load plain-heap and seal into a
-single shared arena via the synthesized seal at the end of the
-bootstrap loop
+Tests that the koskari-written builtins' function code is placed into
+arena chunks during the bootstrap loop and sealed by the synthesized
+seal at its end
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.phase_basics
 
 
 class TestBuiltinsPacked(unittest.TestCase):
-    """The bootstrap .ki sources seal durable code into one arena"""
+    """The bootstrap .ki sources place function code into sealed chunks"""
 
     def test_builtin_codes_packed(self):
         import koskari.builtins as builtins
@@ -49,14 +49,9 @@ class TestBuiltinsPacked(unittest.TestCase):
             f"unpacked builtin codes: {unpacked[:10]}")
 
         # one synthesized seal for the whole bootstrap loop: every
-        # packed builtin shares a single sealed arena
-        arenas = {}
+        # chunk holding a builtin is sealed
         for name in packed:
-            arena = vars(builtins)[name].code.arena
-            arenas[id(arena)] = arena
-        self.assertEqual(len(arenas), 1)
-        for arena in arenas.values():
-            self.assertTrue(arena.sealed)
+            self.assertTrue(vars(builtins)[name].code.arena.sealed, name)
 
 
 # The end.

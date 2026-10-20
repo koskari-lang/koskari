@@ -185,7 +185,10 @@ def compile_top_level(compiler, reader, source_stream):
 @contextmanager
 def load_facets(module, filename, *, seal, detach):
     """
-    The facets of one load. Builds (or reuses) the compiler and reader
+    The facets of one load. Builds (or reuses) the compiler and reader,
+    opens the compiler's code allocator so the load's function code is
+    placed into arena chunks -- unless the load can never seal, with
+    ``seal`` False and ``detach`` set, where code stays plain heap --
     and yields them; seals the module on normal exit when ``seal`` is
     set; when ``detach`` is set, materializes ``__all__`` and detaches
     the facets afterward, always, even when the load raises, with
@@ -196,13 +199,15 @@ def load_facets(module, filename, *, seal, detach):
 
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :param filename: source filename for the compiler
-    :param seal: on success, pack the compiler's surviving code objects
-        per the compiler/pack-module pragma
+    :param seal: on success, seal the arena chunks the load placed its
+        function code into
     :param detach: materialize exports and drop the load facets
     :return: the (compiler, reader) pair
     """
 
     compiler, reader = build_module_load_facets(module, filename)
+    if seal or not detach:
+        compiler.open_allocator()
     try:
         yield compiler, reader
         if seal:
@@ -229,9 +234,10 @@ async def run_codes_async(module, codes):
     """
     Run each Code as an expression of ``module``, awaiting each in turn.
 
-    A helper so no caller local outlives the loop: the last expression
-    must be released before the compiler seals, or it would be swept
-    into an arena
+    A helper so no caller local outlives the loop: the last expression,
+    and the function code only it holds, is released before the
+    compiler seals, while that code's chunk is still open to take back
+    its block
     """
 
     ns = vars(module)
@@ -446,7 +452,7 @@ def build_module_load_facets(module, filename=None):
     When all three facets are already bound on the module (a prior load
     ran with ``detach=False``), they are reused as-is rather than
     rebuilt, so consecutive loads share one pragma lineage, one compiler
-    (and its minted-code registry), and one reader.  The compiler's
+    (and its open code allocator), and one reader.  The compiler's
     filename is refreshed so code minted by this load attributes
     backtrace positions to the current source file.
 
