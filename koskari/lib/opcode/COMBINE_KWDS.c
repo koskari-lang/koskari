@@ -31,7 +31,7 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
     RESULT_STEAL(ctx, built);
   }
 
-  PyObject *const *vals = KosEvalState_StackTailPtr(ctx, (size_t) opa);
+  PyObject *const *vals = KosContext_StackTailPtr(ctx, (size_t) opa);
   if (unlikely(! vals)) {
     Py_DECREF(built);
     RESULT_RAISE();
@@ -46,12 +46,12 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
                      Py_TYPE(vals[i])->tp_name);
       }
       Py_DECREF(built);
-      KosEvalState_StackDropNoErr(ctx, (size_t) opa);
+      KosContext_StackDropNoErr(ctx, (size_t) opa);
       RESULT_RAISE();
     }
   }
 
-  KosEvalState_StackDropNoErr(ctx, (size_t) opa);
+  KosContext_StackDropNoErr(ctx, (size_t) opa);
 
   RESULT_STEAL(ctx, built);
 }

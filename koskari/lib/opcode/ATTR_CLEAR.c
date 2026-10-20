@@ -20,7 +20,7 @@
 KOS_OP_HANDLER(ATTR_CLEAR) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
-  PyObject *obj = KosEvalState_StackPopRef(ctx);
+  PyObject *obj = KosContext_StackPopRef(ctx);
   if (! obj)
     RESULT_RAISE();
   int res = PyObject_DelAttr(obj, name);

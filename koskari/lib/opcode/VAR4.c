@@ -57,7 +57,7 @@ KOS_OP_HANDLER(VAR4) {
 
   PyObject *vals[4] = { a, b, c, d };
   if (unlikely(kos_stack_push_steal_n_fast(
-                   KosEvalState_BLOCK(ctx), vals, 4) < 0))
+                   KosContext_BLOCK(ctx), vals, 4) < 0))
     RESULT_RAISE();
   RESULT_NEXT(ctx);
 }

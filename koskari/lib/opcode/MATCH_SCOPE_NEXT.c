@@ -33,7 +33,7 @@ KOS_OP_HANDLER(MATCH_SCOPE_NEXT) {
       cursor, (Py_ssize_t) KosExtra_IMM(row, 2));
   if (unlikely(! mark))
     RESULT_RAISE();
-  if (unlikely(KosEvalState_StackPUSH(ctx, mark) < 0))
+  if (unlikely(KosContext_StackPUSH(ctx, mark) < 0))
     RESULT_RAISE();
 
   PyObject *elem = NULL;

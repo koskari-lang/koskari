@@ -67,7 +67,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
     }
     if (unlikely(taken < 0)) {
       if (n)
-        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(ctx), n);
+        kos_stack_drop_noerr_fast(KosContext_BLOCK(ctx), n);
       Py_DECREF(resolved);
       Py_DECREF(obj);
       RESULT_RAISE();
@@ -80,7 +80,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR) {
      core's prepend. */
   PyObject *const *argv = NULL;
   if (n > 0) {
-    argv = KosEvalState_StackTailPtr(ctx, (size_t) n);
+    argv = KosContext_StackTailPtr(ctx, (size_t) n);
     if (unlikely(! argv)) {
       Py_DECREF(resolved);
       Py_DECREF(obj);

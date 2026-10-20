@@ -135,7 +135,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
   t->pending = element;
   {
     PyObject *argv[2] = { a->total, element };
-    KosOpResult r = KosEvalState_Call(
+    KosOpResult r = KosContext_Call(
         ctx, t->fn.cs_callable, argv, 2, NULL, 0,
         &accumulate_resume_result_kind, a);
     RESULT_ENTRY(ctx, r, &accumulate_resume_result_kind, a);
@@ -158,7 +158,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosEvalState_NextResume(
+  r = KosContext_NextResume(
       ctx, ((KosTransform *) state)->source, NULL,
       &accumulate_resume_fold_kind, state);
   RESULT_ENTRY(ctx, r, &accumulate_resume_fold_kind, state);
@@ -176,7 +176,7 @@ static KosIterStepResult accumulate_iter_step(
 
   KosAccumulate *a = (KosAccumulate *) self;
   KosTransform *t = &a->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))

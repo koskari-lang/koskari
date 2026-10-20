@@ -30,14 +30,14 @@ KOS_OP_HANDLER(YIELD) {
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosEvalState_StackPopRef(ctx);
+    val = KosContext_StackPopRef(ctx);
     if (unlikely(! val)) {
       SAY("[eval] YIELD pop underrun\n");
       RESULT_RAISE();
     }
 
   } else {
-    val = KosEvalState_StackPopTail(ctx, (size_t) opa);
+    val = KosContext_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! val)) {
       SAY("[eval] YIELD PopTail underrun\n");
       RESULT_RAISE();

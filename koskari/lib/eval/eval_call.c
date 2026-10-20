@@ -18,7 +18,7 @@
 /**
   koskari/lib/eval/eval_call.c
 
-  The call core: the CPS entries (KosEvalState_Call, CallArgs,
+  The call core: the CPS entries (KosContext_Call, CallArgs,
   CallMethod, CallInto), the one dispatch they share, and
   kos_call_invoke with its per-flag bodies for the CALL* opcode
   prologues. Included into eval.c as a segment (see the eval/ includes
@@ -36,14 +36,14 @@
    and ns fill it. Otherwise a new frame is pushed above the live one.
    ns is stolen on every path.
 */
-KosOpResult KosEvalState_InstallCallFrame(
+KosOpResult KosContext_InstallCallFrame(
     KosContext *ctx,
     KosCode *code,
     PyObject *ns,
     int tail_call) {
 
   if (tail_call) {
-    KosDynFrame *frame = KosEvalState_FRAME(ctx);
+    KosDynFrame *frame = KosContext_FRAME(ctx);
 
     if (kos_dyn_teardown_to_frame(ctx, frame) < 0
         || kos_code_fits_namespace(code, ns) < 0) {
@@ -51,7 +51,7 @@ KosOpResult KosEvalState_InstallCallFrame(
       return EVAL_RAISE();
     }
     kos_dynframe_reset_for_tail(frame);
-    (void) KosEvalState_SetFrameCodeAndNamespace(ctx, frame, code, ns);
+    (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, code, ns);
     ctx->pc = 0;
     ctx->acting_pc = 0;
     return kos_call_installed(ctx);
@@ -80,12 +80,12 @@ static int tail_prep_py_call(
     return 0;
 
   {
-    KosDynFrame *frame = KosEvalState_FRAME(ctx);
+    KosDynFrame *frame = KosContext_FRAME(ctx);
     KosDynNode *const parent = KosDynNode_PARENT((KosDynNode *) frame);
     if (! parent)
       return 0;
 
-    if (KosEvalState_DYN_TOP(ctx) == (KosDynNode *) frame)
+    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) frame)
       return kos_dyn_pop_frame(ctx);
   }
 
@@ -112,7 +112,7 @@ static KosOpResult deliver_call_value(
   KosOpResult por = push_or_await(ctx, result, 0, 0);
   if (por.kind == KOS_RES_NORMAL && py_tail) {
     if (tail_defer_return) {
-      PyObject *rv = KosEvalState_StackPopRef(ctx);
+      PyObject *rv = KosContext_StackPopRef(ctx);
       if (! rv)
         return EVAL_RAISE();
       return EVAL_RETURN(rv);
@@ -148,7 +148,7 @@ static KosOpResult kos_call_result_deliver(
    resume as the vector entry hands it. Out of line so the buffer is
    not on the stack of every call.
 */
-KOS_NOINLINE KosOpResult KosEvalState_CallMethod(
+KOS_NOINLINE KosOpResult KosContext_CallMethod(
     KosContext *ctx,
     PyObject *callable,
     PyObject *self,
@@ -159,7 +159,7 @@ KOS_NOINLINE KosOpResult KosEvalState_CallMethod(
     const KosResumeKind *resume,
     void *state) {
 
-  KosDynFrame *caller = KosEvalState_FRAME(ctx);
+  KosDynFrame *caller = KosContext_FRAME(ctx);
 
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   Py_ssize_t ntotal = nargs + nkw;
@@ -216,8 +216,8 @@ static KosOpResult kos_call_dispatch(
     KosOpResult r = slots->kc_vinstall(ctx, callable, args, nargs, kwnames,
                                        tail_call);
     if (r.kind == KOS_RES_NORMAL
-        && (KosEvalState_GOAL(ctx)
-            || ! kos_frame_threads(KosEvalState_FRAME(ctx))))
+        && (KosContext_GOAL(ctx)
+            || ! kos_frame_threads(KosContext_FRAME(ctx))))
       return EVAL_REPROLOGUE();
     if (r.kind == KOS_RES_POLL)
       return EVAL_REPROLOGUE();
@@ -229,7 +229,7 @@ static KosOpResult kos_call_dispatch(
     PyObject *target = kos_instance_call_target(callable, &binds);
 
     if (target && binds)
-      return KosEvalState_CallMethod(
+      return KosContext_CallMethod(
           ctx, target, callable, args, nargs, kwnames, tail_call, NULL,
           NULL);
     if (target) {
@@ -288,7 +288,7 @@ static KosOpResult kos_call_push(
 /**
    A CPS entry's value-in-hand outcome: settled, report RETURN with
    val and set no resume -- the calling resume tail-calls resume with
-   it; not yet settled, settle one step through KosEvalState_SettleStage
+   it; not yet settled, settle one step through KosContext_SettleStage
    and set resume on caller for the trip that delivers it. val is
    consumed.
 */
@@ -304,7 +304,7 @@ static KosOpResult kos_entry_value(
       return EVAL_RETURN(val);
 
     case 0: {
-      KosOpResult pr = KosEvalState_SettleStage(ctx, val);
+      KosOpResult pr = KosContext_SettleStage(ctx, val);
       if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_AWAIT) {
         KosDynFrame_RESUME_KIND(caller) = resume;
         KosDynFrame_RESUME_STATE(caller) = state;
@@ -356,7 +356,7 @@ static KosOpResult kos_call_result_deliver(
 }
 
 
-KosOpResult KosEvalState_Call(
+KosOpResult KosContext_Call(
     KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
@@ -366,7 +366,7 @@ KosOpResult KosEvalState_Call(
     const KosResumeKind *resume,
     void *state) {
 
-  KosDynFrame *caller = KosEvalState_FRAME(ctx);
+  KosDynFrame *caller = KosContext_FRAME(ctx);
   KosOpResult r;
 
 #if KOS_EVAL_SAFETYNET
@@ -397,7 +397,7 @@ KosOpResult KosEvalState_Call(
    the resume set, and frame_flags. Returns the frame, or NULL with
    PyErr set.
 */
-KosDynFrame *KosEvalState_InstallNativeFrame(
+KosDynFrame *KosContext_InstallNativeFrame(
     KosContext *ctx,
     const KosResumeKind *resume,
     void *state,
@@ -411,12 +411,12 @@ KosDynFrame *KosEvalState_InstallNativeFrame(
 
     if (! empty)
       return NULL;
-    frame = KosEvalState_FRAME(ctx);
+    frame = KosContext_FRAME(ctx);
     if (kos_dyn_teardown_to_frame(ctx, frame) < 0)
       return NULL;
     kos_dynframe_reset_for_tail(frame);
     Py_INCREF(empty);
-    (void) KosEvalState_SetFrameCodeAndNamespace(ctx, frame, NULL, empty);
+    (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, NULL, empty);
     ctx->pc = 0;
     ctx->acting_pc = 0;
   } else {
@@ -432,7 +432,7 @@ KosDynFrame *KosEvalState_InstallNativeFrame(
 }
 
 
-KosOpResult KosEvalState_CallInto(
+KosOpResult KosContext_CallInto(
     KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
@@ -443,7 +443,7 @@ KosOpResult KosEvalState_CallInto(
     uint32_t frame_flags,
     int tail_call) {
 
-  KosDynFrame *frame = KosEvalState_InstallNativeFrame(
+  KosDynFrame *frame = KosContext_InstallNativeFrame(
       ctx, resume, state, frame_flags, tail_call);
   KosOpResult r;
 
@@ -452,24 +452,24 @@ KosOpResult KosEvalState_CallInto(
 
   /* The inner call is never a tail call: its return must reach this
      frame's resume. */
-  r = KosEvalState_Call(
+  r = KosContext_Call(
       ctx, callable, args, nargs, kwnames, 0, resume, state);
   if (r.kind != KOS_RES_RETURN)
     return r;
 
-  KosEvalState_StageDelivery(ctx, r.val);
+  KosContext_StageDelivery(ctx, r.val);
   return EVAL_REPROLOGUE();
 }
 
 
-KosOpResult KosEvalState_SettleInto(
+KosOpResult KosContext_SettleInto(
     KosContext *ctx,
     PyObject *val,
     const KosResumeKind *resume,
     void *state,
     uint32_t frame_flags) {
 
-  KosDynFrame *frame = KosEvalState_InstallNativeFrame(
+  KosDynFrame *frame = KosContext_InstallNativeFrame(
       ctx, resume, state, frame_flags, 0);
   KosOpResult r;
 
@@ -482,7 +482,7 @@ KosOpResult KosEvalState_SettleInto(
   if (r.kind != KOS_RES_RETURN)
     return r;
 
-  KosEvalState_StageDelivery(ctx, r.val);
+  KosContext_StageDelivery(ctx, r.val);
   return EVAL_REPROLOGUE();
 }
 
@@ -586,7 +586,7 @@ static KOS_NOINLINE KosOpResult kos_call_legacy_spill(
       return EVAL_RAISE();
     }
   }
-  if (unlikely(KosEvalState_StackPopTailPtr(ctx, window, vals) < 0)) {
+  if (unlikely(KosContext_StackPopTailPtr(ctx, window, vals) < 0)) {
     if (vals != small)
       PyMem_Free(vals);
     if (flags & KOS_CALL_CALLABLE_OWNED)
@@ -696,7 +696,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
      anything else falls to the legacy spill below (which preserves
      kos_call_push's tail semantics exactly). */
   if (unlikely(flags & KOS_CALL_TAIL)) {
-    KosDynFrame *frame = KosEvalState_FRAME(ctx);
+    KosDynFrame *frame = KosContext_FRAME(ctx);
 
     if (Py_TYPE(callable) == KOS_EVALUATED_PYTYPE(KosFunctionType)
         && frame
@@ -780,7 +780,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         if (! (flags & KOS_CALL_CALLABLE_OWNED))
           Py_INCREF(callable);
         kos_dynframe_reset_for_tail(frame);
-        (void) KosEvalState_SetFrameCodeAndNamespace(ctx, frame, code,
+        (void) KosContext_SetFrameCodeAndNamespace(ctx, frame, code,
                                                      frame_ns);
         KosDynFrame_FN(frame) = callable;
         ctx->pc = 0;
@@ -820,7 +820,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
 
         if (unlikely(kos_eval_check_frame_room(
-                ctx, KosEvalState_FRAME(ctx), 1) < 0)) {
+                ctx, KosContext_FRAME(ctx), 1) < 0)) {
           goto fail;
         }
 
@@ -1099,7 +1099,7 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
   if (! cached)
     return 0;
 
-  if (unlikely(kos_eval_check_frame_room(ctx, KosEvalState_FRAME(ctx), 1) < 0))
+  if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0))
     return -1;
 
   /* Steal-bind first: on failure nothing is stolen and the frame stays
@@ -1107,9 +1107,9 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
   if (self_arg
       ? unlikely(KosFormals_SimpleStealApplySelfBlock(
             KosDynFrame_NS(cached), self_arg, self_owned,
-            *KosEvalState_BLOCK(ctx), nargs) < 0)
+            *KosContext_BLOCK(ctx), nargs) < 0)
       : unlikely(KosFormals_SimpleStealApplyBlock(
-            KosDynFrame_NS(cached), *KosEvalState_BLOCK(ctx), nargs) < 0))
+            KosDynFrame_NS(cached), *KosContext_BLOCK(ctx), nargs) < 0))
     return -1;
 
   KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
@@ -1145,7 +1145,7 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
   KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
   PyObject *frame_ns;
 
-  if (unlikely(kos_eval_check_frame_room(ctx, KosEvalState_FRAME(ctx), 1) < 0))
+  if (unlikely(kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0))
     goto fail;
 
   if (likely(cached)) {
@@ -1219,7 +1219,7 @@ KOS_OP_INLINE KosOpResult kos_call_invoke(
         PyObject *kwnames,
         unsigned flags) {
 
-  KosSegment **caller_slot = KosEvalState_BLOCK(ctx);
+  KosSegment **caller_slot = KosContext_BLOCK(ctx);
   Py_ssize_t nkw = kwnames ? PyTuple_GET_SIZE(kwnames) : 0;
   size_t window = 0;
 
@@ -1376,7 +1376,7 @@ static KosOpResult kos_call_push_args(
 }
 
 
-KosOpResult KosEvalState_CallArgs(
+KosOpResult KosContext_CallArgs(
     KosContext *ctx,
     PyObject *callable,
     PyObject *args_tuple,
@@ -1385,7 +1385,7 @@ KosOpResult KosEvalState_CallArgs(
     const KosResumeKind *resume,
     void *state) {
 
-  KosDynFrame *caller = KosEvalState_FRAME(ctx);
+  KosDynFrame *caller = KosContext_FRAME(ctx);
   KosCallSlots *slots = NULL;
   KosOpResult r;
 

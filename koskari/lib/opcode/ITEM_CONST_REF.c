@@ -21,7 +21,7 @@
 */
 KOS_OP_HANDLER(ITEM_CONST_REF) {
   KOS_SYNC_PC(ctx, insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key = KosOp_OBJ(insn);

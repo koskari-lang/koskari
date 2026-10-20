@@ -240,7 +240,7 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
    INSTALL wind: enter bindings. Callers: kos_dyn_wind, install wind span.
 */
 int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
-  return kos_dynparam_enter(KosEvalState_CONTEXT(ctx), node);
+  return kos_dynparam_enter(ctx, node);
 }
 
 
@@ -251,7 +251,7 @@ int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
 void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
   if (KOS_XFER_TRACE)
     SAYF("[xfer] param unwind node=%p", (void *) node);
-  kos_dynparam_restore(KosEvalState_CONTEXT(ctx), node);
+  kos_dynparam_restore(ctx, node);
 }
 
 
@@ -277,7 +277,7 @@ KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
   }
 
   KosDynParam *node = kos_dynparam_new_from_bindings(
-      KosEvalState_DYN_TOP(ctx), bindings);
+      KosContext_DYN_TOP(ctx), bindings);
   if (! node)
     return NULL;
 
@@ -300,7 +300,7 @@ KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
 */
 int kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
 
-  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "PARAM node is not at top of chain");
     return -1;
   }

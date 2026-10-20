@@ -26,11 +26,11 @@
 KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
   KOS_SYNC_PC(ctx, insn);
 
-  PyObject *iterable = KosEvalState_StackPopRef(ctx);
+  PyObject *iterable = KosContext_StackPopRef(ctx);
   if (unlikely(! iterable))
     RESULT_RAISE();
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, 1);
   if (unlikely(! ptr)) {
     Py_DECREF(iterable);
     RESULT_RAISE();

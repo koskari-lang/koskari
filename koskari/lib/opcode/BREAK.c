@@ -30,14 +30,14 @@ KOS_OP_HANDLER(BREAK) {
     Py_INCREF(result);
 
   } else if (opa == 1) {
-    result = KosEvalState_StackPopRef(ctx);
+    result = KosContext_StackPopRef(ctx);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK pop underrun");
       RESULT_RAISE();
     }
 
   } else {
-    result = KosEvalState_StackPopTail(ctx, (size_t) opa);
+    result = KosContext_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "BREAK PopTail underrun");
       RESULT_RAISE();

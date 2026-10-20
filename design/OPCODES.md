@@ -793,7 +793,7 @@ When adding or changing an opcode:
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
   first). Implementation: pop TOS and materialize it through
-  `KosEvalState_PopUnpackSequence` (an exact tuple or list is used as is,
+  `KosContext_PopUnpackSequence` (an exact tuple or list is used as is,
   anything else goes through `PySequence_Fast`), require `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
   then `Py_DECREF(seq)`.
 - **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
@@ -3931,7 +3931,7 @@ feeder key names what it can.
   empty tuple, meaning "no values of that kind on the stack".
 - **Semantics**: Pop `fspec` (TOS). If the defaults names tuple is non-empty
   (length N), pop N values into a defaults dict keyed by it
-  (`KosEvalState_StackPopTailDictFromNames`, same discipline as
+  (`KosContext_StackPopTailDictFromNames`, same discipline as
   BUILD_KWDS_NAMES). Then, if the annotation names tuple is non-empty
   (length M), pop M more values into an annotations dict the same way.
   Build the function against the current frame namespace via
@@ -4108,7 +4108,7 @@ popped.
 
 **Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval/eval_call.c):
 
-- **Stack arrangement**: `ptr = KosEvalState_StackTailPtr(ctx, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
+- **Stack arrangement**: `ptr = KosContext_StackTailPtr(ctx, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
 
 - **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound function found on the type -- the call becomes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. -- the call is `callable(*args)`). The resolution goes through the row's cache slot.
 
@@ -4253,7 +4253,7 @@ popped.
 ### KOS_OP_TAIL_CALL_ATTR_STAR {#kos_op_tail_call_attr_star}
 
 - **Style**: EXTRA. Schema: ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_STAR; never emitted by a special.
 
 ---
@@ -4277,7 +4277,7 @@ popped.
 ### KOS_OP_TAIL_CALL_VAR_STAR {#kos_op_tail_call_var_star}
 
 - **Style**: EXTRA. Schema: VAR (name), STAR (bitflags), NOARG, NOARG.
-- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_STAR; lowers to TAIL_CALL_FAST_STAR.
 
 ---
@@ -4301,7 +4301,7 @@ popped.
 ### KOS_OP_TAIL_CALL_VAR_ATTR_STAR {#kos_op_tail_call_var_attr_star}
 
 - **Style**: EXTRA. Schema: VAR (name for obj), ATTR (attr name), COUNT (opa bitflags), NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_STAR; lowers to TAIL_CALL_FAST_ATTR_STAR.
 
 ---
@@ -4325,7 +4325,7 @@ popped.
 ### KOS_OP_TAIL_CALL_FAST_STAR {#kos_op_tail_call_fast_star}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot), STAR (bitflags), NOARG, NOARG.
-- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
@@ -4349,7 +4349,7 @@ popped.
 ### KOS_OP_TAIL_CALL_FAST_ATTR_STAR {#kos_op_tail_call_fast_attr_star}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), ATTR (attr name), COUNT (opa bitflags), NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---

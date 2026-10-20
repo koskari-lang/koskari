@@ -28,12 +28,12 @@ KOS_OP_HANDLER(PARAM) {
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(ctx), name);
+  PyObject *cell = kos_param_lookup(ctx, name);
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
 
   if (value) {
     Py_INCREF(value);
-    if (KosExtra_IMM(row, 1) && unlikely(KosEvalState_StackDrop1(ctx) < 0)) {
+    if (KosExtra_IMM(row, 1) && unlikely(KosContext_StackDrop1(ctx) < 0)) {
       Py_DECREF(value);
       RESULT_RAISE();
     }

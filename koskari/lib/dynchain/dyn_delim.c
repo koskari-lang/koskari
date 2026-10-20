@@ -208,7 +208,7 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynNode *node) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynDelim *delim = kos_dyndelim_new(KosEvalState_DYN_TOP(ctx),
+  KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
                                         mode,
                                         chain,
                                         pc,
@@ -230,7 +230,7 @@ KosDynDelim *kos_dyn_push_delim(
    Pop DELIM marker from top of chain.
 */
 int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
-  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) delim) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) delim) {
     PyErr_SetString(PyExc_RuntimeError, "DELIM node is not at top of chain");
     return -1;
   }

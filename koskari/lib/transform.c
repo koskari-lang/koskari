@@ -211,7 +211,7 @@ KosIterStepResult kos_transform_step_abort(
 
   Py_CLEAR(t->pending);
 
-  if (KosEvalState_DYN_TOP(ctx) != pre_top) {
+  if (KosContext_DYN_TOP(ctx) != pre_top) {
     PyObject *ftyp, *fval, *ftb;
 
     PyErr_Fetch(&ftyp, &fval, &ftb);
@@ -246,7 +246,7 @@ KosIterStepResult kos_transform_stage(
      below tears it down through the kind's clear */
   t->busy = 1;
   if (value) {
-    if (KosEvalState_StackPushRef(ctx, value) < 0) {
+    if (KosContext_StackPushRef(ctx, value) < 0) {
       Py_DECREF(value);
       return kos_transform_step_abort(ctx, t, pre_top);
     }

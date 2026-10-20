@@ -82,7 +82,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosEvalState_NextResume(ctx, t->source, NULL,
+  r = KosContext_NextResume(ctx, t->source, NULL,
                               &takewhile_resume_invoke_kind, t);
   RESULT_ENTRY(ctx, r, &takewhile_resume_invoke_kind, t);
 }
@@ -103,7 +103,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
      call; the argument vector borrows it for the call's duration. */
   t->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(
+    KosOpResult r = KosContext_Call(
         ctx, t->fn.cs_callable, &element, 1, NULL, 0,
         &takewhile_resume_verdict_kind, t);
     RESULT_ENTRY(ctx, r, &takewhile_resume_verdict_kind, t);
@@ -151,7 +151,7 @@ static KosIterStepResult takewhile_iter_step(
     PyObject **out) {
 
   KosTransform *t = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))

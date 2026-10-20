@@ -38,14 +38,14 @@ static KosOpResult object_next_step(
       Py_XDECREF(default_val);
       return EVAL_RAISE();
     }
-    bnode = KosEvalState_DYN_TOP(ctx);
+    bnode = KosContext_DYN_TOP(ctx);
     Py_DECREF(iter);
     Py_XDECREF(default_val);
 
     switch (KosIterRequest_Next(ctx, bnode, NULL, &out)) {
       case KOS_IREQ_DELIVERED:
         kos_dyn_next_abort_after_failed_attach(ctx);
-        if (KosEvalState_StackPUSH(ctx, out) < 0)
+        if (KosContext_StackPUSH(ctx, out) < 0)
           return EVAL_RAISE();
         return EVAL_NORMAL();
 
@@ -53,7 +53,7 @@ static KosOpResult object_next_step(
         Py_XDECREF(out);
         if (n == 2) {
           PyObject *dv = KosDynNext_DEFAULT_VAL(bnode);
-          if (dv && KosEvalState_StackPushRef(ctx, dv) < 0) {
+          if (dv && KosContext_StackPushRef(ctx, dv) < 0) {
             kos_dyn_next_abort_after_failed_attach(ctx);
             return EVAL_RAISE();
           }
@@ -87,7 +87,7 @@ static KosOpResult object_next_step(
   KosGetNextResult get_res = op_get_next_from_iter(ctx, &_await, iter, &value);
   switch (get_res) {
     case GET_NEXT_VALUE:
-      if (KosEvalState_StackPushRef(ctx, value) < 0) {
+      if (KosContext_StackPushRef(ctx, value) < 0) {
         Py_DECREF(value);
         Py_DECREF(iter);
         Py_XDECREF(default_val);
@@ -101,7 +101,7 @@ static KosOpResult object_next_step(
     case GET_NEXT_EXHAUSTED:
       Py_DECREF(iter);
       if (default_val) {
-        if (KosEvalState_StackPushRef(ctx, default_val) < 0) {
+        if (KosContext_StackPushRef(ctx, default_val) < 0) {
           Py_XDECREF(default_val);
           return EVAL_RAISE();
         }
@@ -125,7 +125,7 @@ static KosOpResult object_next_step(
         return EVAL_RAISE();
       }
       kos_dyn_iter_request_set_mode(
-          KosEvalState_DYN_TOP(ctx), KOS_IREQ_AWAITING_PY);
+          KosContext_DYN_TOP(ctx), KOS_IREQ_AWAITING_PY);
       Py_DECREF(iter);
       Py_XDECREF(default_val);
       return EVAL_AWAIT(_await);
@@ -158,11 +158,11 @@ KOS_OP_HANDLER(OBJECT_NEXT) {
 
   PyObject *default_val = NULL;
   if (n == 2) {
-    default_val = KosEvalState_StackPopRef(ctx);
+    default_val = KosContext_StackPopRef(ctx);
     if (! default_val)
       RESULT_RAISE();
   }
-  PyObject *iter = KosEvalState_StackPopRef(ctx);
+  PyObject *iter = KosContext_StackPopRef(ctx);
   if (! iter) {
     Py_XDECREF(default_val);
     RESULT_RAISE();

@@ -123,7 +123,7 @@ KosDynPrompt *kos_dyn_push_prompt(
     uint32_t pop_pc) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynPrompt *prompt = kos_dynprompt_new(KosEvalState_DYN_TOP(ctx), prompt_id);
+  KosDynPrompt *prompt = kos_dynprompt_new(KosContext_DYN_TOP(ctx), prompt_id);
   if (! prompt)
     return NULL;
 
@@ -144,7 +144,7 @@ KosDynPrompt *kos_dyn_push_prompt(
 int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt) {
   KosOpResult kr;
 
-  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) prompt)
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) prompt)
     return 0;
 
   /* a prompt's leave is synchronous: NORMAL or an error */

@@ -132,7 +132,7 @@ static int dynnode_to_dict_wind(KosDynNode *node, PyObject *data) {
      to completion in hand, its result already dropped
 */
 static KosOpResult kos_dyn_wind_fire(KosContext *ctx, PyObject *thunk) {
-  KosOpResult wr = KosEvalState_Call(
+  KosOpResult wr = KosContext_Call(
       ctx, thunk, NULL, 0, NULL, 0, NULL, NULL);
 
   /* A value in hand is settled, or awaited onto the block; settled, it
@@ -140,7 +140,7 @@ static KosOpResult kos_dyn_wind_fire(KosContext *ctx, PyObject *thunk) {
   if (wr.kind == KOS_RES_RETURN) {
     PyObject *val;
 
-    wr = KosEvalState_Settle(ctx, wr.val, &val);
+    wr = KosContext_Settle(ctx, wr.val, &val);
     if (wr.kind == KOS_RES_NORMAL) {
       Py_DECREF(val);
       return EVAL_NORMAL();
@@ -235,9 +235,9 @@ static int kos_dyn_wind_settle(KosContext *ctx, KosDynWind *node) {
       && KosDynWind_PHASE(node) != KOS_WIND_PHASE_PRE_AFTER)
     return 0;
 
-  if (KosEvalState_BLOCK(ctx) && *KosEvalState_BLOCK(ctx)
-      && KosSegment_LEN(*KosEvalState_BLOCK(ctx))) {
-    PyObject *val = KosEvalState_StackPopRef(ctx);
+  if (KosContext_BLOCK(ctx) && *KosContext_BLOCK(ctx)
+      && KosSegment_LEN(*KosContext_BLOCK(ctx))) {
+    PyObject *val = KosContext_StackPopRef(ctx);
     if (! val)
       return -1;
     Py_DECREF(val);
@@ -273,7 +273,7 @@ KosDynWind *kos_dyn_push_wind(
     PyObject *before_thunk,
     PyObject *after_thunk) {
 
-  KosDynWind *wind = kos_dynwind_new(KosEvalState_DYN_TOP(ctx),
+  KosDynWind *wind = kos_dynwind_new(KosContext_DYN_TOP(ctx),
                                      before_thunk, after_thunk);
   if (! wind)
     return NULL;

@@ -52,7 +52,7 @@ KOS_OP_HANDLER(CALL_FAST_ATTR_NAMES) {
 
   PyObject *const *argv = NULL;
   if (ntotal) {
-    argv = KosEvalState_StackTailPtr(ctx, ntotal);
+    argv = KosContext_StackTailPtr(ctx, ntotal);
     if (! argv) {
       Py_DECREF(obj);
       RESULT_RAISE();

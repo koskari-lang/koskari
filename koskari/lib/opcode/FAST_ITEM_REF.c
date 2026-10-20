@@ -21,8 +21,8 @@
 */
 KOS_OP_HANDLER(FAST_ITEM_REF) {
   KOS_SYNC_PC(ctx, insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj, *obj_ref;
   PyObject *key;

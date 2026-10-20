@@ -29,7 +29,7 @@ KOS_OP_HANDLER(BUILD_LIST) {
     RESULT_RAISE();
 
   if (count) {
-    if (unlikely(KosEvalState_StackPopTailPtr(
+    if (unlikely(KosContext_StackPopTailPtr(
           ctx, count, &PyList_GET_ITEM(built, 0)) < 0)) {
       Py_DECREF(built);
       RESULT_RAISE();

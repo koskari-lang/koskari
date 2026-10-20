@@ -43,7 +43,7 @@ int kos_dyn_push_next_node(
   }
 
   kos_dynnode_init(
-      node, KOS_DYN_NEXT, KosEvalState_DYN_TOP(ctx),
+      node, KOS_DYN_NEXT, KosContext_DYN_TOP(ctx),
       KOS_DYN_CAP_ITER_RECEIVER);
   Py_INCREF(iter_obj);
   kos_dyn_iter_request_bind_iter(KosDynNext_REQ(node), iter_obj);
@@ -66,7 +66,7 @@ int kos_dyn_push_next_node(
 
 void kos_dyn_next_abort_after_failed_attach(KosContext *ctx) {
 
-  KosDynNode *top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *top = KosContext_DYN_TOP(ctx);
   if (top && KosDynNode_IS_NEXT(top)) {
     KosDynNode *parent = KosDynNode_PARENT(top);
 
@@ -85,11 +85,11 @@ void kos_dyn_unlink_next_node(KosContext *ctx, KosDynNext *next) {
   KosDynNode *node = (KosDynNode *) next;
   KosDynNode *p = KosDynNode_PARENT(node);
 
-  if (KosEvalState_DYN_TOP(ctx) == node) {
+  if (KosContext_DYN_TOP(ctx) == node) {
     kos_dyn_commit_dyn_top(ctx, p);
   } else {
     KosDynNode *c;
-    for (c = KosEvalState_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
+    for (c = KosContext_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
       if (KosDynNode_PARENT(c) == node) {
         KosDynNode_PARENT(c) = p;
         break;
@@ -106,7 +106,7 @@ void kos_dyn_unlink_next_node(KosContext *ctx, KosDynNext *next) {
 int kos_dyn_next_deliver_yield(
     KosContext *ctx, KosDynNext *next, PyObject *val) {
 
-  if (KosEvalState_StackPUSH(ctx, val) < 0)
+  if (KosContext_StackPUSH(ctx, val) < 0)
     return -1;  /* the push consumed val, failure included */
 
   kos_dyn_iter_request_finish_req(KosDynNext_REQ(next), 0);
@@ -133,7 +133,7 @@ int kos_dyn_next_deliver_exhausted(
   kos_dyn_iter_request_finish_req(KosDynNext_REQ(next), 1);
 
   if (nn == 2 && KosDynNext_DEFAULT_VAL((KosDynNode *) next)) {
-    if (KosEvalState_StackPushRef(
+    if (KosContext_StackPushRef(
             ctx,
             KosDynNext_DEFAULT_VAL((KosDynNode *) next)) < 0) {
       Py_XDECREF(val);

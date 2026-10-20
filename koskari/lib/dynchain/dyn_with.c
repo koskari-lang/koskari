@@ -232,7 +232,7 @@ KosDynWith *kos_dyn_push_with_provisional(
     uint8_t shot) {
 
   KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(ctx), mgr, enter, exit, self_bind, name,
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, self_bind, name,
       resume_pc, shot);
   if (! node)
     return NULL;
@@ -252,7 +252,7 @@ KosDynWith *kos_dyn_push_with_provisional(
    dyn_top and not ENTERED, so the unlink runs no __exit__.
 */
 int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
-  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "WITH node is not at top of chain");
     return -1;
   }
@@ -280,7 +280,7 @@ int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
    belongs to the with's scope, not to whatever frame sits at dyn_top.
 */
 static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
-  PyObject *result = KosEvalState_StackPopRef(ctx);
+  PyObject *result = KosContext_StackPopRef(ctx);
   PyObject *name;
 
   if (! result)
@@ -339,11 +339,11 @@ static int kos_dyn_with_classify_exit(
   if (swallow) {
     kos_dyn_ob_clear(ob);
     ob->kind = KOS_OB_SWALLOWED;
-    if (KosEvalState_FRAME(ctx))
-      KosEvalState_SET_PC(ctx, KosDynWith_RESUME_PC(node));
+    if (KosContext_FRAME(ctx))
+      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   } else if (! handling) {
-    if (KosEvalState_FRAME(ctx))
-      KosEvalState_SET_PC(ctx, KosDynWith_RESUME_PC(node));
+    if (KosContext_FRAME(ctx))
+      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   }
   Py_DECREF(result);
   kos_dyn_with_shot_after_exit_done(node);
@@ -368,14 +368,14 @@ static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
   /* A plain function resolved on the type is called with the manager as
      its receiver; anything else was bound at resolution. */
   KosOpResult kr = (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_ENTER)
-      ? KosEvalState_Call(
+      ? KosContext_Call(
             ctx, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0, NULL, NULL)
-      : KosEvalState_Call(ctx, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
+      : KosContext_Call(ctx, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
 
   /* A value in hand lands on the block, or is awaited there; settled,
      the entry completes now. */
   if (kr.kind == KOS_RES_RETURN) {
-    kr = KosEvalState_PushOrAwait(ctx, kr.val);
+    kr = KosContext_PushOrAwait(ctx, kr.val);
     if (kr.kind == KOS_RES_NORMAL)
       return kos_dyn_with_bind_entered(ctx, node) < 0
           ? EVAL_RAISE() : EVAL_NORMAL();
@@ -426,8 +426,8 @@ static KosOpResult kos_dyn_with_leave(
   if (kos_dyn_with_single_exit_done(node)) {
     /* __exit__ already ran, possibly on a twin sharing the exit-done
        cell; complete the extent without re-firing it. */
-    if (! PyErr_Occurred() && KosEvalState_FRAME(ctx))
-      KosEvalState_SET_PC(ctx, KosDynWith_RESUME_PC(node));
+    if (! PyErr_Occurred() && KosContext_FRAME(ctx))
+      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
     return EVAL_NORMAL();
   }
@@ -462,7 +462,7 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
-  KosOpResult kr = KosEvalState_Call(
+  KosOpResult kr = KosContext_Call(
       ctx, exit_fn, argv, argc, NULL, 0, NULL, NULL);
 
   /* A value in hand is settled, or awaited onto the block; settled,
@@ -470,7 +470,7 @@ static KosOpResult kos_dyn_with_leave(
   if (kr.kind == KOS_RES_RETURN) {
     PyObject *result;
 
-    kr = KosEvalState_Settle(ctx, kr.val, &result);
+    kr = KosContext_Settle(ctx, kr.val, &result);
     if (kr.kind == KOS_RES_NORMAL) {
       if (kos_dyn_with_classify_exit(ctx, node, result) < 0)
         return EVAL_RAISE();
@@ -500,7 +500,7 @@ static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
   /* A pending with node sits above its owning frame, so that frame is
      live while the node is; without it there is no operand block to
      settle from. */
-  if (! KosEvalState_FRAME(ctx)) {
+  if (! KosContext_FRAME(ctx)) {
     PyErr_SetString(PyExc_SystemError,
                     "with settle: pending node with no live frame");
     return -1;
@@ -510,7 +510,7 @@ static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
     return kos_dyn_with_bind_entered(ctx, node);
 
   if (KosDynWith_EXIT_PENDING(node)) {
-    PyObject *result = KosEvalState_StackPopRef(ctx);
+    PyObject *result = KosContext_StackPopRef(ctx);
     if (! result)
       return -1;
     return kos_dyn_with_classify_exit(ctx, node, result);

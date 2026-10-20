@@ -33,12 +33,12 @@ KOS_OP_HANDLER(OBJECT_FORMAT) {
   }
 
   if (opa == 2) {
-    rules = KosEvalState_StackPopRef(ctx);
+    rules = KosContext_StackPopRef(ctx);
     if (! rules)
       RESULT_RAISE();
   }
 
-  obj = KosEvalState_StackPopRef(ctx);
+  obj = KosContext_StackPopRef(ctx);
   if (! obj) {
     Py_XDECREF(rules);
     RESULT_RAISE();

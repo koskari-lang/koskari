@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CALL) {
   unsigned n = KosOp_ARG(insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, n + 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, n + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 

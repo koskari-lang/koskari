@@ -26,7 +26,7 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *seq = KosOp_OBJ(insn);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 

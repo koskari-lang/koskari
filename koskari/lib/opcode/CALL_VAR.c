@@ -38,7 +38,7 @@ KOS_OP_HANDLER(CALL_VAR) {
 
   PyObject *const *argv = NULL;
   if (n) {
-    argv = KosEvalState_StackTailPtr(ctx, n);
+    argv = KosContext_StackTailPtr(ctx, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
       RESULT_RAISE();

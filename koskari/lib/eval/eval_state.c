@@ -34,7 +34,7 @@ void KosContext_BeginDrive(
     breaker = koskari_eval_breaker_locate();
   if (! breaker)
     breaker = &koskari_breaker_always;
-  KosEvalState_BREAKER(ctx) = breaker;
+  KosContext_BREAKER(ctx) = breaker;
 
   {
     int limit = Py_GetRecursionLimit();
@@ -42,7 +42,7 @@ void KosContext_BeginDrive(
       limit = 1;
     else if (limit > KOS_FRAME_DEPTH_MAX)
       limit = KOS_FRAME_DEPTH_MAX;
-    KosEvalState_RECURSION_LIMIT(ctx) = (uint16_t) limit;
+    KosContext_RECURSION_LIMIT(ctx) = (uint16_t) limit;
   }
   ctx->terminal = 0;
 
@@ -52,7 +52,7 @@ void KosContext_BeginDrive(
 
 void KosContext_EndDrive(KosContext *ctx) {
 
-  KosEvalState_FlushLiveRegsToFrame(ctx);
+  KosContext_FlushLiveRegsToFrame(ctx);
 
   /* A staged delivery outlives the drive only as storage on the frame
      it was staged for; the delivery step takes it back from the stack
@@ -60,18 +60,18 @@ void KosContext_EndDrive(KosContext *ctx) {
      a bytecode frame's stack holds its operands and the delivery step
      never pops it, so every site that stages for a bytecode frame
      delivers in the same trip and no drive exit can see one. */
-  if (KosEvalState_PENDING_VALUE(ctx)) {
-    PyObject *staged = KosEvalState_PENDING_VALUE(ctx);
-    KosEvalState_PENDING_VALUE(ctx) = NULL;
+  if (KosContext_PENDING_VALUE(ctx)) {
+    PyObject *staged = KosContext_PENDING_VALUE(ctx);
+    KosContext_PENDING_VALUE(ctx) = NULL;
     if (KOS_EVAL_SAFETYNET
-        && KosEvalState_FRAME(ctx)
-        && KosDynFrame_CODE(KosEvalState_FRAME(ctx))) {
+        && KosContext_FRAME(ctx)
+        && KosDynFrame_CODE(KosContext_FRAME(ctx))) {
       Py_DECREF(staged);
       PyErr_SetString(PyExc_SystemError,
                       "delivery staged for a bytecode frame across a"
                       " drive exit");
-    } else if (KosEvalState_BLOCK(ctx))
-      (void) KosEvalState_StackPUSH(ctx, staged);  /* consumes on failure */
+    } else if (KosContext_BLOCK(ctx))
+      (void) KosContext_StackPUSH(ctx, staged);  /* consumes on failure */
     else
       Py_DECREF(staged);
   }
@@ -85,8 +85,8 @@ int kos_eval_recursion_error(void) {
 }
 
 
-KosDynNode *KosEvalState_InnermostStackOwner(KosContext *ctx) {
-  KosDynNode *n = KosEvalState_DYN_TOP(ctx);
+KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx) {
+  KosDynNode *n = KosContext_DYN_TOP(ctx);
   while (n) {
     if (KosDynNode_STACK(n))
       return n;
@@ -109,11 +109,11 @@ static KosSegment **kos_evalstate_parent_stack_slot(
      survives. Cache miss (NULL) falls through to the chain walk,
      which stays the semantic definition. */
   {
-    KosSegment **cur = KosEvalState_BLOCK(ctx);
+    KosSegment **cur = KosContext_BLOCK(ctx);
     if (likely(cur && *cur && KosSegment_BACK(*cur))) {
       KosSegment **cached = KosSegment_BACK(*cur);
 #if KOS_DEBUG_PATCH_DYN_CACHES
-      KosDynNode *owner_dbg = KosEvalState_InnermostStackOwner(ctx);
+      KosDynNode *owner_dbg = KosContext_InnermostStackOwner(ctx);
       if (owner_dbg) {
         KosDynNode *n_dbg = KosDynNode_PARENT(owner_dbg);
         for (; n_dbg; n_dbg = KosDynNode_PARENT(n_dbg)) {
@@ -137,10 +137,10 @@ static KosSegment **kos_evalstate_parent_stack_slot(
      the cache model (the counter measured zero across the benchmark
      battery); kept as a diagnostic for model violations. */
   KOS_TRACE_EVENTS_INC(KOS_TE_PARENT_SLOT_WALK);
-  owner = KosEvalState_InnermostStackOwner(ctx);
+  owner = KosContext_InnermostStackOwner(ctx);
   if (unlikely(! owner)) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "KosEvalState_ParentStack*: no current stack owner");
+                    "KosContext_ParentStack*: no current stack owner");
     return NULL;
   }
 
@@ -150,7 +150,7 @@ static KosSegment **kos_evalstate_parent_stack_slot(
   }
 
   PyErr_SetString(PyExc_RuntimeError,
-                  "KosEvalState_ParentStack*: no parent stack owner");
+                  "KosContext_ParentStack*: no parent stack owner");
   return NULL;
 #else
   /* The cache model is authoritative; a miss here is a model
@@ -159,14 +159,14 @@ static KosSegment **kos_evalstate_parent_stack_slot(
   (void) owner;
   (void) node;
   PyErr_SetString(PyExc_RuntimeError,
-                  "KosEvalState_ParentStack*: unwind cache missing"
+                  "KosContext_ParentStack*: unwind cache missing"
                   " (KOS_EVAL_SAFETYNET=1 to diagnose)");
   return NULL;
 #endif
 }
 
 
-int KosEvalState_ParentStackPushRef(KosContext *ctx, PyObject *val) {
+int KosContext_ParentStackPushRef(KosContext *ctx, PyObject *val) {
   KosSegment **slot = kos_evalstate_parent_stack_slot(ctx);
   if (unlikely(! slot))
     return -1;
@@ -175,7 +175,7 @@ int KosEvalState_ParentStackPushRef(KosContext *ctx, PyObject *val) {
 }
 
 
-int KosEvalState_ParentStackPUSH(KosContext *ctx, PyObject *val) {
+int KosContext_ParentStackPUSH(KosContext *ctx, PyObject *val) {
   KosSegment **slot = kos_evalstate_parent_stack_slot(ctx);
   if (unlikely(! slot)) {
     Py_XDECREF(val);
@@ -243,13 +243,13 @@ static PyObject *unpack_exact_pull(
 }
 
 
-PyObject *KosEvalState_PopUnpackSequence(
+PyObject *KosContext_PopUnpackSequence(
     KosContext *ctx,
     Py_ssize_t need,
     int exact,
     const char *who) {
 
-  PyObject *raw = KosEvalState_StackPopRef(ctx);
+  PyObject *raw = KosContext_StackPopRef(ctx);
   PyObject *seq;
   if (unlikely(! raw))
     return NULL;

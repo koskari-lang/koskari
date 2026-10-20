@@ -22,7 +22,7 @@ KOS_OP_HANDLER(DEREF) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *ref = KosEvalState_StackPopRef(ctx);
+  PyObject *ref = KosContext_StackPopRef(ctx);
   if (unlikely(! ref))
     RESULT_RAISE();
 

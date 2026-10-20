@@ -198,15 +198,15 @@ static int test_native_install_fresh_and_cached(void) {
   TEST_ASSERT(KosDynFrame_RESUME_NAME(frame)
               && ! strcmp(KosDynFrame_RESUME_NAME(frame), "iterreq-test"),
               "resume name set");
-  TEST_ASSERT(KosEvalState_StackPushRef(ctx, staged) >= 0,
+  TEST_ASSERT(KosContext_StackPushRef(ctx, staged) >= 0,
               "stage a value on the new frame");
   TEST_ASSERT_SAME(KosDynFrame_NS(frame), KosNamespace_Empty(),
                    "frame carries the empty namespace");
-  TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(ctx), frame,
+  TEST_ASSERT_SAME((KosDynFrame *) KosContext_DYN_TOP(ctx), frame,
                    "native frame is dyn_top");
 
   {
-    PyObject *popped = KosEvalState_StackPopRef(ctx);
+    PyObject *popped = KosContext_StackPopRef(ctx);
     TEST_ASSERT_SAME(popped, staged, "staged value lands on the stack");
     Py_XDECREF(popped);
   }
@@ -299,7 +299,7 @@ static int test_request_next_sync_lifecycle(void) {
     TEST_ASSERT_NOT_NULL(out, "element out");
     TEST_ASSERT_EQ(PyLong_AsLong(out), expect, "element value");
     Py_DECREF(out);
-    TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(ctx), frame,
+    TEST_ASSERT_SAME((KosDynFrame *) KosContext_DYN_TOP(ctx), frame,
                      "tracking node cleaned up after delivery");
   }
 
@@ -309,7 +309,7 @@ static int test_request_next_sync_lifecycle(void) {
     TEST_ASSERT_EQ(st, KOS_IREQ_EXHAUSTED, "request reports exhaustion");
     TEST_ASSERT_NULL(out, "no element on exhaustion");
     TEST_ASSERT(! PyErr_Occurred(), "exhaustion sets no exception");
-    TEST_ASSERT_SAME((KosDynFrame *) KosEvalState_DYN_TOP(ctx), frame,
+    TEST_ASSERT_SAME((KosDynFrame *) KosContext_DYN_TOP(ctx), frame,
                      "tracking node cleaned up after exhaustion");
   }
 
@@ -337,7 +337,7 @@ static int test_context_recycle(void) {
   TEST_ASSERT_NOT_NULL(KosContext_DYN_TOP(ctx), "chain holds the frame");
   TEST_ASSERT_EQ(KosContext_Recycle(ctx), 0, "recycle succeeds");
   TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
-  TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame_top cleared");
+  TEST_ASSERT_NULL(KosContext_FRAME(ctx), "frame_top cleared");
 
   /* an active transfer goal refuses the recycle */
   KosContext_GOAL(ctx) = (KosXferGoal *) ctx;  /* sentinel */

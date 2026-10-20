@@ -21,7 +21,7 @@
 KOS_OP_HANDLER(EXCEPTION_MATCH) {
   KOS_SYNC_PC(ctx, insn);
 
-  PyObject *match = KosEvalState_StackPopRef(ctx);
+  PyObject *match = KosContext_StackPopRef(ctx);
   if (! match)
     RESULT_RAISE();
 

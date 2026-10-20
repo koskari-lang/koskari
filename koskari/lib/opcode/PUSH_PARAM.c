@@ -23,7 +23,7 @@ KOS_OP_HANDLER(PUSH_PARAM) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *names = KosOp_OBJ(insn);
 
-  PyObject *bindings = KosEvalState_StackPopTailDictFromNames(ctx, names);
+  PyObject *bindings = KosContext_StackPopTailDictFromNames(ctx, names);
   if (! bindings)
     RESULT_RAISE();
 

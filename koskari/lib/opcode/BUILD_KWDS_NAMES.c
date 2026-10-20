@@ -29,7 +29,7 @@ KOS_OP_HANDLER(BUILD_KWDS_NAMES) {
     RESULT_RAISE();
   }
 
-  PyObject *kwds = KosEvalState_StackPopTailDictFromNames(ctx,
+  PyObject *kwds = KosContext_StackPopTailDictFromNames(ctx,
                                                        names);
 
   if (! kwds)

@@ -30,7 +30,7 @@ KOS_OP_HANDLER(CAPTURE_CC) {
   PyObject *fn = NULL;
 
   if (KosOp_ARG(insn)) {
-    fn = KosEvalState_StackPopRef(ctx);
+    fn = KosContext_StackPopRef(ctx);
     if (unlikely(! fn)) {
       PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC pop underrun");
       RESULT_RAISE();
@@ -46,7 +46,7 @@ KOS_OP_HANDLER(CAPTURE_CC) {
     kos_continuation_free(k);
     RESULT_RAISE();
   }
-  if (fn && unlikely(KosEvalState_StackPUSH(ctx, fn) < 0)) {
+  if (fn && unlikely(KosContext_StackPUSH(ctx, fn) < 0)) {
     Py_DECREF(wrapper);
     RESULT_RAISE();
   }

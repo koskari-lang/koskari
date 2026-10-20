@@ -21,7 +21,7 @@
    callable from Python without suspension.
 
    The demand core is the Python boundary's entry into Koskari: a
-   KosCallable of any kind is called through KosEvalState_CallInto from a
+   KosCallable of any kind is called through KosContext_CallInto from a
    code-less root frame marked KOS_FRAME_DEMAND, on the boundary's own
    context. Any attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) under
    the mark is converted into an in-eval KoskariSyncViolation at the deny
@@ -243,7 +243,7 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
    Run a KosCallable to completion from the Python boundary: record the
    call on the drive context (the wrapper's cached host, or a fresh
    one), and koskari_eval installs it at entry through
-   KosEvalState_CallInto from a code-less root frame marked
+   KosContext_CallInto from a code-less root frame marked
    KOS_FRAME_DEMAND, which is the caller frame every install delivers
    into, then runs it to its return. Any KosCallable is accepted. The
    deny guards convert AWAIT and YIELD under the demand mark into
@@ -629,7 +629,7 @@ static KosOpResult demand_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_Call(
+  r = KosContext_Call(
       ctx, inner, args, nargs, kwnames, tail_call, NULL, NULL);
   switch (r.kind) {
     case KOS_RES_RETURN:
@@ -639,7 +639,7 @@ static KosOpResult demand_kos_vinstall(
         case 0:
           /* an awaitable in hand settles under a demand-marked frame,
              so a suspension is denied in-eval at the guard */
-          return KosEvalState_SettleInto(
+          return KosContext_SettleInto(
               ctx, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
         default:
           Py_DECREF(r.val);
@@ -649,7 +649,7 @@ static KosOpResult demand_kos_vinstall(
     case KOS_RES_NORMAL:
     case KOS_RES_POLL:
     case KOS_RES_REPROLOGUE: {
-      KosDynFrame *frame = KosEvalState_FRAME(ctx);
+      KosDynFrame *frame = KosContext_FRAME(ctx);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
       return r;

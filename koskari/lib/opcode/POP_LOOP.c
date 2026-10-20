@@ -22,7 +22,7 @@
 
 KOS_OP_HANDLER(POP_LOOP) {
   KOS_SYNC_PC(ctx, insn);
-  KosDynNode *region = KosEvalState_CurrentNode(ctx);
+  KosDynNode *region = KosContext_CurrentNode(ctx);
   if (! region || ! KosDynNode_IS_LOOP(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_LOOP: top is not a LOOP region");
@@ -35,7 +35,7 @@ KOS_OP_HANDLER(POP_LOOP) {
     result = KosDynLoop_RESULT(loop);
     Py_INCREF(result);
   } else {
-    result = KosEvalState_StackPopRef(ctx);
+    result = KosContext_StackPopRef(ctx);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "POP_LOOP pop underrun");
       RESULT_RAISE();

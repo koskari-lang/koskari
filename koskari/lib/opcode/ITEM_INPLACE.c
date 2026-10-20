@@ -24,7 +24,7 @@
 */
 KOS_OP_HANDLER(ITEM_INPLACE) {
   KOS_SYNC_PC(ctx, insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   uint32_t opc = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(opc);

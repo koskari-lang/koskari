@@ -214,8 +214,8 @@ extent:
 
 **Async exit — evaluator flow:** The leave (`kos_dyn_with_leave`) sets the
 node to `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` and calls `exit` through
-`KosEvalState_Call` with no resume. A value in hand is settled by
-`KosEvalState_Settle` and classified for swallow at once; a raise from
+`KosContext_Call` with no resume. A value in hand is settled by
+`KosContext_Settle` and classified for swallow at once; a raise from
 `exit` propagates in place of the exception it was handling; anything else
 (an awaitable such as `__aexit__`'s, or an installed Koskari frame) leaves
 the node on the chain. The exit result must **not** become the

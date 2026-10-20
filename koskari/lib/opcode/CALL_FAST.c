@@ -49,7 +49,7 @@ KOS_OP_HANDLER(CALL_FAST) {
       RESULT_RELAY(ctx, r);
     if (unlikely(taken < 0)) {
       if (n)
-        kos_stack_drop_noerr_fast(KosEvalState_BLOCK(ctx), n);
+        kos_stack_drop_noerr_fast(KosContext_BLOCK(ctx), n);
       Py_DECREF(callable);
       RESULT_RAISE();
     }
@@ -57,7 +57,7 @@ KOS_OP_HANDLER(CALL_FAST) {
 
   PyObject *const *argv = NULL;
   if (n) {
-    argv = KosEvalState_StackTailPtr(ctx, n);
+    argv = KosContext_StackTailPtr(ctx, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
       RESULT_RAISE();

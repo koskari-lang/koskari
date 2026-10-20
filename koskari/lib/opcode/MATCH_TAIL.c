@@ -39,7 +39,7 @@ KOS_OP_HANDLER(MATCH_TAIL) {
     KOS_MATCH_MISS(row);
 
   if (unlikely(next != cursor)
-      && unlikely(KosEvalState_StackSetUnder(ctx, KosExtra_IMM(row, 1), next) < 0)) {
+      && unlikely(KosContext_StackSetUnder(ctx, KosExtra_IMM(row, 1), next) < 0)) {
     Py_DECREF(span);
     RESULT_RAISE();
   }

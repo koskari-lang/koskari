@@ -160,7 +160,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosEvalState_NextResume(
+  r = KosContext_NextResume(
       ctx, ((KosTransform *) state)->source, NULL,
       &cycle_resume_deliver_kind, state);
   RESULT_ENTRY(ctx, r, &cycle_resume_deliver_kind, state);
@@ -178,7 +178,7 @@ static KosIterStepResult cycle_iter_step(
 
   KosCycle *c = (KosCycle *) self;
   KosTransform *t = &c->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -194,7 +194,7 @@ static KosIterStepResult cycle_iter_step(
   {
     PyObject *element;
 
-    switch (KosEvalState_NextOrDefer(ctx, t->source, &cycle_resume_fetch_kind,
+    switch (KosContext_NextOrDefer(ctx, t->source, &cycle_resume_fetch_kind,
                                      t, &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
         *out = cycle_keep(c, element);

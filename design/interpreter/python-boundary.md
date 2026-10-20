@@ -171,11 +171,12 @@ not renamed into; nothing is renamed to it.
   `namespace` are the live ones.
 - Handler signatures, the `KosThreadFn` type, the resume-kind and
   elector function types, and every helper that took `KosEvalState *`
-  take `KosContext *`. The `KosEvalState_*` accessor macros are
-  retargeted to the context's fields and kept under their names in this
-  pass, so the bodies under `opcode/`, `dynchain/`, `eval/` and
-  `matcher/` change only at their signatures; folding those names into
-  the `KosContext_*` family is a mechanical sweep once C is proven.
+  take `KosContext *`. The `KosEvalState_*` accessor macros and
+  helpers are first retargeted to the context's fields under their
+  names, so the bodies under `opcode/`, `dynchain/`, `eval/` and
+  `matcher/` change only at their signatures, then folded into the
+  `KosContext_*` family in a mechanical prefix sweep once the first
+  pass has gone through the full gate.
 - `koskari_eval` no longer carries the struct in its own frame: the
   C-stack copy is gone, and with it the thaw and freeze that kept the
   two records agreeing.
@@ -188,7 +189,7 @@ not renamed into; nothing is renamed to it.
   `coro.c:480/578/654`, the thread-local eval-state stack and
   `kos_tls_active_eval_for_ctx` (`context_traverse`, the context
   getters, and `eval.c:678` read the context), the steal-on-thaw
-  comments. `KosEvalState_FlushLiveRegsToFrame` stays: it is the frame
+  comments. `KosContext_FlushLiveRegsToFrame` stays: it is the frame
   boundary flush of pc and acting_pc.
 - `KOS_CTX_RUNNING` keeps its one job, refusing re-entry; the "chain is
   on the eval state while running" distinction has nothing left to

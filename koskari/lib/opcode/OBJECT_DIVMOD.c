@@ -24,11 +24,11 @@ KOS_OP_HANDLER(OBJECT_DIVMOD) {
     RESULT_RAISE();
   }
 
-  PyObject *right = KosEvalState_StackPopRef(ctx);
+  PyObject *right = KosContext_StackPopRef(ctx);
   if (unlikely(! right))
     RESULT_RAISE();
 
-  PyObject *left = KosEvalState_StackPopRef(ctx);
+  PyObject *left = KosContext_StackPopRef(ctx);
   if (unlikely(! left)) {
     Py_DECREF(right);
     RESULT_RAISE();

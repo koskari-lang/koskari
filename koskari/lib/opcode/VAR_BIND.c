@@ -23,7 +23,7 @@ KOS_OP_HANDLER(VAR_BIND) {
 
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val)
     RESULT_RAISE();
 

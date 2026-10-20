@@ -105,7 +105,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
   if (! args)
     return EVAL_RAISE();
 
-  r = KosEvalState_Call(
+  r = KosContext_Call(
       ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
       PyTuple_GET_SIZE(args), NULL, 0,
       &starmap_resume_after_result_kind, t);
@@ -129,7 +129,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosEvalState_NextResume(
+  r = KosContext_NextResume(
       ctx, ((KosTransform *) state)->source, NULL,
       &starmap_resume_invoke_kind, state);
   RESULT_ENTRY(ctx, r, &starmap_resume_invoke_kind, state);
@@ -146,7 +146,7 @@ static KosIterStepResult starmap_iter_step(
     PyObject **out) {
 
   KosTransform *t = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -175,7 +175,7 @@ static KosIterStepResult starmap_iter_step(
        fills a frame whose return IS the element) installs through the
        generic call entry with no helper frame. */
     if (t->fn.cs_kind == KOS_CALL_SHAPE_FRAME) {
-      KosOpResult r = KosEvalState_Call(
+      KosOpResult r = KosContext_Call(
           ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
           PyTuple_GET_SIZE(args), NULL, 0, NULL, NULL);
       Py_DECREF(args);

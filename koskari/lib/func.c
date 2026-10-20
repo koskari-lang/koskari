@@ -173,7 +173,7 @@ static KosOpResult kos_expression_install_core(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
-  return KosEvalState_InstallCallFrame(ctx, code, ns, tail_call);
+  return KosContext_InstallCallFrame(ctx, code, ns, tail_call);
 }
 
 
@@ -237,7 +237,7 @@ KosOpResult KosFunction_Install(
   if (simple && ! tail_call && ! yields) {
     KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
 
-    if (kos_eval_check_frame_room(ctx, KosEvalState_FRAME(ctx), 1) < 0)
+    if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0)
       return EVAL_RAISE();
 
     if (cached) {
@@ -262,7 +262,7 @@ KosOpResult KosFunction_Install(
     if (! kos_dyn_push_frame_unchecked(ctx, code, frame_ns))
       return EVAL_RAISE();
     Py_INCREF(callable);
-    KosDynFrame_FN(KosEvalState_FRAME(ctx)) = callable;
+    KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
     return kos_call_installed(ctx);
   }
 
@@ -281,10 +281,10 @@ KosOpResult KosFunction_Install(
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
 
-  r = KosEvalState_InstallCallFrame(ctx, code, frame_ns, tail_call);
+  r = KosContext_InstallCallFrame(ctx, code, frame_ns, tail_call);
   if (r.kind != KOS_RES_RAISE) {
     Py_INCREF(callable);
-    KosDynFrame_FN(KosEvalState_FRAME(ctx)) = callable;
+    KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
   }
   return r;
 }
@@ -859,7 +859,7 @@ static KosOpResult kos_vinstall_boundmethod(
                     "KosBoundMethod eval requires a KosCallable func");
     return EVAL_RAISE();
   }
-  return KosEvalState_CallMethod(
+  return KosContext_CallMethod(
       ctx, func, KosBoundMethod_SELF(callable), args, nargs, kwnames,
       tail_call, NULL, NULL);
 }

@@ -171,12 +171,12 @@ static KosGetNextResult next_from_python_async_iter(
   (void) iter;
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(
+  PyObject *result = KosContext_EagerStepAwaitable(
       ctx, awaitable, &suspended, &yielded);
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
-    KosEvalState_MarkSuspendedNotRunning(ctx);
+    KosContext_MarkSuspendedNotRunning(ctx);
     *await_out = yielded;
     return GET_NEXT_SUSPEND;
   }
@@ -414,7 +414,7 @@ KOS_OP_INLINE int kos_foreach_store_element(
 
   if (KosOp_OP(step) == KOS_OP_ITER_NEXT_STORE_FAST)
     return kos_ns_fast_store_steal(
-        KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0), val);
+        KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0), val);
 
   {
     int res = frame_ns_store(ctx, KosExtra_OBJ(row, 0), val);
@@ -435,7 +435,7 @@ KOS_OP_INLINE int kos_foreach_deliver_in_hand(
     PyObject *val) {
 
   if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    return KosEvalState_StackPUSH(ctx, val);
+    return KosContext_StackPUSH(ctx, val);
   return kos_foreach_store_element(ctx, step, val);
 }
 
@@ -488,9 +488,9 @@ KOS_OP_INLINE void kos_foreach_defer_step(
 /**
   Globals
 */
-static inline PyObject *KosEvalState_GlobalsNamespace(KosContext *ctx) {
+static inline PyObject *KosContext_GlobalsNamespace(KosContext *ctx) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(ctx);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *ns;
 
   if (! frame) {

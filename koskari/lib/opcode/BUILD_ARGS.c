@@ -22,7 +22,7 @@
 KOS_OP_HANDLER(BUILD_ARGS) {
   KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
-  PyObject *built = KosEvalState_StackPopTail(ctx, (size_t) opa);
+  PyObject *built = KosContext_StackPopTail(ctx, (size_t) opa);
 
   if (unlikely(! built))
     RESULT_RAISE();

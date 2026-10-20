@@ -33,7 +33,7 @@ KOS_OP_HANDLER(MATCH_RESET) {
   if (unlikely(! moved))
     RESULT_RAISE();
   if (unlikely(moved != cursor)
-      && unlikely(KosEvalState_StackSetUnder(ctx, KosExtra_IMM(row, 0), moved) < 0))
+      && unlikely(KosContext_StackSetUnder(ctx, KosExtra_IMM(row, 0), moved) < 0))
     RESULT_RAISE();
   RESULT_NEXT(ctx);
 }

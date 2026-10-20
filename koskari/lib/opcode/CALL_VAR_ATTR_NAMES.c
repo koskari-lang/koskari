@@ -53,7 +53,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR_NAMES) {
   Py_ssize_t nkwds = PyTuple_GET_SIZE(names);
   PyObject *const *ptr = NULL;
   if (npos + nkwds > 0) {
-    ptr = KosEvalState_StackTailPtr(ctx, (size_t)(npos + nkwds));
+    ptr = KosContext_StackTailPtr(ctx, (size_t)(npos + nkwds));
     if (! ptr) {
       Py_DECREF(obj);
       RESULT_RAISE();

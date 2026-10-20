@@ -23,7 +23,7 @@ KOS_OP_HANDLER(POP_COLLECT) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  KosDynCollect *top = (KosDynCollect *) KosEvalState_CurrentNode(ctx);
+  KosDynCollect *top = (KosDynCollect *) KosContext_CurrentNode(ctx);
   PyObject *collector;
 
   if (unlikely(kos_dyn_pop_collect(ctx, top, &collector) < 0))

@@ -28,7 +28,7 @@ KOS_OP_HANDLER(MATCH_APPEND) {
      nothing else holds it, else a copy stored at the entry, so a cloned
      segment keeps the items it had when the clone was taken */
   size_t under = KosExtra_IMM(row, 0);
-  PyObject *list = KosEvalState_StackPeekUnder(ctx, under);
+  PyObject *list = KosContext_StackPeekUnder(ctx, under);
   if (unlikely(! list))
     RESULT_RAISE();
   if (unlikely(! PyList_Check(list))) {
@@ -41,11 +41,11 @@ KOS_OP_HANDLER(MATCH_APPEND) {
     list = PyList_GetSlice(list, 0, PyList_GET_SIZE(list));
     if (unlikely(! list))
       RESULT_RAISE();
-    if (unlikely(KosEvalState_StackSetUnder(ctx, under, list) < 0))
+    if (unlikely(KosContext_StackSetUnder(ctx, under, list) < 0))
       RESULT_RAISE();
   }
 
-  PyObject *value = KosEvalState_StackPopRef(ctx);
+  PyObject *value = KosContext_StackPopRef(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
   int rc = PyList_Append(list, value);

@@ -37,14 +37,14 @@ KOS_OP_HANDLER(CONTINUE) {
   PyObject *result = NULL;   /* NULL stands for None until it is needed */
 
   if (opa == 1) {
-    result = KosEvalState_StackPopRef(ctx);
+    result = KosContext_StackPopRef(ctx);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE pop underrun");
       RESULT_RAISE();
     }
 
   } else if (opa > 1) {
-    result = KosEvalState_StackPopTail(ctx, (size_t) opa);
+    result = KosContext_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "CONTINUE PopTail underrun");
       RESULT_RAISE();
@@ -61,8 +61,8 @@ KOS_OP_HANDLER(CONTINUE) {
      Anything above the region takes the walk, where the offer and the
      suspension handling live. */
   {
-    KosDynNode *region = KosEvalState_DYN_TOP(ctx);
-    KosDynFrame *frame = KosEvalState_FRAME(ctx);
+    KosDynNode *region = KosContext_DYN_TOP(ctx);
+    KosDynFrame *frame = KosContext_FRAME(ctx);
 
 #if KOS_EVAL_SAFETYNET
     if (region && frame && ! KosDynNode_IS_FRAME(region)) {
@@ -82,24 +82,24 @@ KOS_OP_HANDLER(CONTINUE) {
     if (likely(frame && region) && KosDynNode_IS_LOOP(region)
         && KosDynLoop_ENABLED(region)) {
       continue_store_result(&KosDynLoop_RESULT(region), result);
-      kos_stack_clear_fast(KosEvalState_BLOCK(ctx));
-      KosEvalState_SET_PC(ctx, KosDynLoop_CONTINUE_PC(region));
+      kos_stack_clear_fast(KosContext_BLOCK(ctx));
+      KosContext_SET_PC(ctx, KosDynLoop_CONTINUE_PC(region));
       RESULT_NEXT_POLL(ctx);
     }
 
     if (likely(frame && region) && KosDynNode_IS_FOREACH(region)
         && KosDynForeach_ENABLED(region)) {
       uint32_t cpc = KosDynForeach_CONTINUE_PC(region);
-      KosOp *step = &KosEvalState_OPS(ctx)[cpc];
+      KosOp *step = &KosContext_OPS(ctx)[cpc];
       PyObject *out = NULL;
 
       continue_store_result(&KosDynForeach_RESULT(region), result);
-      kos_stack_clear_fast(KosEvalState_BLOCK(ctx));
+      kos_stack_clear_fast(KosContext_BLOCK(ctx));
 
       if (unlikely(KosOp_OP(step) != KOS_OP_ITER_NEXT
                    && KosOp_OP(step) != KOS_OP_ITER_NEXT_STORE_FAST
                    && KosOp_OP(step) != KOS_OP_ITER_NEXT_STORE_VAR)) {
-        KosEvalState_SET_PC(ctx, cpc);
+        KosContext_SET_PC(ctx, cpc);
         RESULT_NEXT_POLL(ctx);
       }
 
@@ -107,8 +107,8 @@ KOS_OP_HANDLER(CONTINUE) {
          step, and the live pcs placed as a dispatch of it would place
          them, so a suspended step resumes past it. */
       kos_foreach_record_else(region, step);
-      KosEvalState_ACTING_PC(ctx) = cpc;
-      KosEvalState_SET_PC(ctx, cpc + 1u);
+      KosContext_ACTING_PC(ctx) = cpc;
+      KosContext_SET_PC(ctx, cpc + 1u);
 
       switch (kos_foreach_request_next(ctx, region, &out)) {
         case KOS_IREQ_DELIVERED:

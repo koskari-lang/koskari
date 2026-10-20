@@ -34,7 +34,7 @@ KOS_OP_HANDLER(UNPACK_FAST) {
     RESULT_RAISE();
   }
 
-  PyObject *seq = KosEvalState_PopUnpackSequence(ctx, 2, 1, "UNPACK_FAST");
+  PyObject *seq = KosContext_PopUnpackSequence(ctx, 2, 1, "UNPACK_FAST");
   if (unlikely(! seq))
     RESULT_RAISE();
 

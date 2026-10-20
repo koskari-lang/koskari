@@ -35,7 +35,7 @@ KOS_OP_HANDLER(FAST_NEXT) {
 
   PyObject *default_val = NULL;
   if (n == 2) {
-    default_val = KosEvalState_StackPopRef(ctx);
+    default_val = KosContext_StackPopRef(ctx);
     if (unlikely(! default_val))
       RESULT_RAISE();
   }

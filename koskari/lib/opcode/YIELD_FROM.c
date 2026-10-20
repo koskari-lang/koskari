@@ -222,8 +222,8 @@ static KOS_NOINLINE KosOpResult yield_from_yield_value(
 
   kos_dyn_yield_from_set_resume(ctx, yf, &yield_from_resume_send_kind);
   SAYF("[yf] emit_yield dyn_top=%p frame=%p payload=%p -> KOS_RES_YIELD\n",
-       (void *) KosEvalState_CurrentNode(ctx),
-       (void *) KosEvalState_FRAME(ctx), (void *) payload);
+       (void *) KosContext_CurrentNode(ctx),
+       (void *) KosContext_FRAME(ctx), (void *) payload);
 
   return EVAL_YIELD(payload);
 }
@@ -483,7 +483,7 @@ static KosOpResult yield_from_drive_py_async(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(
+  PyObject *result = KosContext_EagerStepAwaitable(
       ctx, awaitable, &suspended, &yielded);
 
   if (suspended && yielded) {
@@ -495,8 +495,8 @@ static KosOpResult yield_from_drive_py_async(
     }
     KosDynYieldFrom_INFLIGHT(yf) = awaitable;
     kos_dyn_yield_from_set_resume(ctx, yf, &yield_from_resume_await_kind);
-    KosEvalState_FlushLiveRegsToFrame(ctx);
-    KosEvalState_MarkDeadAfterYield(ctx);
+    KosContext_FlushLiveRegsToFrame(ctx);
+    KosContext_MarkDeadAfterYield(ctx);
     return EVAL_AWAIT(yielded);
   }
 
@@ -633,7 +633,7 @@ static KosOpResult yield_from_drive_kos_iter(
 #define KOS_YF_DRIVE(name, ...)                                         \
   static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_##name(   \
       KosContext *ctx, void *insn, PyObject *value) {                   \
-    KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(ctx); \
+    KosDynYieldFrom *yf = (KosDynYieldFrom *) KosContext_CurrentNode(ctx); \
     (void) insn;                                                        \
     (void) value;                                                       \
     RESULT_RELAY(ctx, yield_from_drive_##name(                          \
@@ -689,7 +689,7 @@ static KosThreadFn yield_from_drive_for_kind(uint8_t kind) {
   what a phase resume requires.
 */
 static KosDynYieldFrom *yield_from_resume_node(KosContext *ctx) {
-  KosDynNode *dyn_top = KosEvalState_CurrentNode(ctx);
+  KosDynNode *dyn_top = KosContext_CurrentNode(ctx);
 
   if (unlikely(! dyn_top || ! KosDynNode_IS_YIELD_FROM(dyn_top))) {
     PyErr_SetString(PyExc_SystemError,
@@ -709,7 +709,7 @@ static int yield_from_take_throw(KosContext *ctx, KosDynYieldFrom *yf) {
   PyObject *exc = NULL;
   PyObject *exc_type = NULL;
 
-  if (! KosEvalState_TakeInjectThrow(ctx, &exc_type, &exc))
+  if (! KosContext_TakeInjectThrow(ctx, &exc_type, &exc))
     return 0;
   /* ownership of both refs transfers */
   Py_XDECREF(KosDynYieldFrom_PENDING_ARG(yf));
@@ -850,7 +850,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
 */
 KOS_OP_HANDLER(YIELD_FROM) {
   KOS_SYNC_PC(ctx, insn);
-  KosDynNode *dyn_top = KosEvalState_CurrentNode(ctx);
+  KosDynNode *dyn_top = KosContext_CurrentNode(ctx);
   PyObject *subexpr;
   PyObject *delegate = NULL;
   uint8_t kind = KOS_YF_SYNC_ITER; /* overwritten by yield_from_normalize */
@@ -861,7 +861,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
     RESULT_RAISE();
   }
 
-  subexpr = KosEvalState_StackPopRef(ctx);
+  subexpr = KosContext_StackPopRef(ctx);
   if (! subexpr)
     RESULT_RAISE();
 
@@ -878,7 +878,7 @@ KOS_OP_HANDLER(YIELD_FROM) {
   Py_DECREF(delegate);
 
   {
-    KosDynYieldFrom *yf = (KosDynYieldFrom *) KosEvalState_CurrentNode(ctx);
+    KosDynYieldFrom *yf = (KosDynYieldFrom *) KosContext_CurrentNode(ctx);
     KosThreadFn drive = yield_from_drive_for_kind(kind);
 
     KosDynYieldFrom_DRIVE(yf) = (void *) drive;

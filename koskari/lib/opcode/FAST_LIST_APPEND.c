@@ -40,7 +40,7 @@ KOS_OP_HANDLER(FAST_LIST_APPEND) {
     RESULT_RAISE();
   }
 
-  PyObject *value = KosEvalState_StackPopRef(ctx);
+  PyObject *value = KosContext_StackPopRef(ctx);
   if (unlikely(! value)) {
     Py_XDECREF(list_ref);
     RESULT_RAISE();

@@ -24,7 +24,7 @@
 KOS_OP_HANDLER(VAR_ITEM_CONST_STORE) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *obj;
   PyObject *key = KosExtra_OBJ(row, 1);
   PyObject *val;

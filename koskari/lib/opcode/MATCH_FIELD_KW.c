@@ -22,7 +22,7 @@ KOS_OP_HANDLER(MATCH_FIELD_KW) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *obj = KosEvalState_StackPeek(ctx);
+  PyObject *obj = KosContext_StackPeek(ctx);
   if (unlikely(! obj))
     RESULT_RAISE();
 

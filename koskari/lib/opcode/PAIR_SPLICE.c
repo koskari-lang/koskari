@@ -89,7 +89,7 @@ static PyObject *pair_splice_collect(
   PyObject *end;
   if (has_tail) {
     /* the tail is the top stacked value; the segments sit below it */
-    end = KosEvalState_StackPopRef(ctx);
+    end = KosContext_StackPopRef(ctx);
     if (unlikely(! end))
       return NULL;
     count--;
@@ -104,7 +104,7 @@ static PyObject *pair_splice_collect(
     goto failure;
 
   if (count) {
-    PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count);
+    PyObject *const *ptr = KosContext_StackTailPtr(ctx, count);
     if (unlikely(! ptr))
       goto failure;
 
@@ -114,7 +114,7 @@ static PyObject *pair_splice_collect(
     }
 
     /* coll holds its own references to every flattened element */
-    if (unlikely(KosEvalState_StackDrop(ctx, count) < 0))
+    if (unlikely(KosContext_StackDrop(ctx, count) < 0))
       goto failure;
   }
 

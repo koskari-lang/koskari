@@ -177,7 +177,7 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 
 
 KosDynGen *kos_dyn_find_gen(KosContext *ctx) {
-  KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(ctx);
+  KosDynNode *n = (KosDynNode *) KosContext_FRAME(ctx);
 
   for (; n; n = KosDynNode_PARENT(n)) {
     if (KosDynNode_IS_GEN(n))
@@ -191,10 +191,10 @@ KosDynGen *kos_dyn_find_gen(KosContext *ctx) {
    Capture the live registers at the current dyn_top into regs.
 */
 static void kos_live_regs_capture(KosContext *ctx, KosLiveRegs *regs) {
-  regs->top = KosEvalState_DYN_TOP(ctx);
-  regs->frame = (KosDynNode *) KosEvalState_FRAME(ctx);
-  regs->block = KosEvalState_BLOCK(ctx);
-  regs->ns = KosEvalState_NAMESPACE(ctx);
+  regs->top = KosContext_DYN_TOP(ctx);
+  regs->frame = (KosDynNode *) KosContext_FRAME(ctx);
+  regs->block = KosContext_BLOCK(ctx);
+  regs->ns = KosContext_NAMESPACE(ctx);
 }
 
 
@@ -203,7 +203,7 @@ static void kos_live_regs_capture(KosContext *ctx, KosLiveRegs *regs) {
    that top would produce, with the outgoing frame's pc flushed.
 */
 static void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
-  KosEvalState_DYN_TOP(ctx) = regs->top;
+  KosContext_DYN_TOP(ctx) = regs->top;
   kos_dyn_resync_apply(ctx, (KosDynFrame *) regs->frame, regs->block,
                        regs->ns, 1);
 }
@@ -244,17 +244,17 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
      Adapter-driven installs have no frame below (invoker 0), so an async
      drive self-cleans any bit a prior demand drive left behind; the
      demand boundary ORs its forced bit in after this install. */
-  invoker_frame = KosEvalState_FRAME(ctx);
+  invoker_frame = KosContext_FRAME(ctx);
   invoker_demand = invoker_frame
       ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
       : 0;
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",
-       (void *) KosEvalState_CONTEXT(ctx), (void *) gen,
-       (void *) KosEvalState_DYN_TOP(ctx),
-       KosEvalState_DYN_TOP(ctx)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(ctx)))
+       (void *) ctx, (void *) gen,
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosDynGen_ACTIVE(gen));
 
@@ -332,7 +332,7 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
     KosDynNode_NS(gen) = Py_XNewRef(KosDynGen_HOST(gen)->ns);
 
   /* 1. GEN's parent = current ctx's active node */
-  KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(ctx);
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
   /* 2. Incref GEN */
   kos_dyngen_acquire(gen);
   /* 3. Put GEN's active onto ctx's active; 4. NULL GEN's active.
@@ -357,7 +357,7 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   kos_dyngen_keepalive_acquire(gen);
 
   {
-    KosDynFrame *surfaced = KosEvalState_FRAME(ctx);
+    KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (surfaced) {
       if (invoker_demand)
         KosDynFrame_FLAGS(surfaced) |= KOS_FRAME_DEMAND;
@@ -370,22 +370,22 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
      value at the drive. A frame waiting on a resume (a delegation in
      flight) takes its delivery through the pending slot instead. */
   {
-    KosDynFrame *surfaced = KosEvalState_FRAME(ctx);
+    KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (! (surfaced && KosDynFrame_RESUME_KIND(surfaced))
-        && KosEvalState_StackPushRef(ctx, Py_None) < 0)
+        && KosContext_StackPushRef(ctx, Py_None) < 0)
       return -1;
   }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
-       (void *) KosEvalState_DYN_TOP(ctx),
-       KosEvalState_DYN_TOP(ctx)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(ctx)))
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
-       (void *) KosEvalState_FRAME(ctx));
+       (void *) KosContext_FRAME(ctx));
 #if VERBOSE_DEBUG
   {
     KosDynNode *n;
-    for (n = KosEvalState_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
+    for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
       SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
   }
@@ -416,7 +416,7 @@ int kos_dyn_gen_install_bootstrap(
   }
 
   /* Drive-state demand bit: see kos_dyn_gen_install. */
-  invoker_frame = KosEvalState_FRAME(ctx);
+  invoker_frame = KosContext_FRAME(ctx);
   invoker_demand = invoker_frame
       ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
       : 0;
@@ -454,7 +454,7 @@ int kos_dyn_gen_install_bootstrap(
   /* The consumer's registers, restored at the first freeze. */
   kos_live_regs_capture(ctx, KosDynGen_HOST(gen));
 
-  KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(ctx);
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
   /* The GEN's chain-membership reference travels with the chain onto
      ctx; do NOT acquire a fresh one, or the reference the resting place
      held is orphaned and the GEN node leaks. */
@@ -463,7 +463,7 @@ int kos_dyn_gen_install_bootstrap(
   kos_dyngen_keepalive_acquire(gen);
 
   {
-    KosDynFrame *surfaced = KosEvalState_FRAME(ctx);
+    KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (surfaced) {
       if (invoker_demand)
         KosDynFrame_FLAGS(surfaced) |= KOS_FRAME_DEMAND;
@@ -489,7 +489,7 @@ int kos_dyn_gen_frozen_needs_install_es(KosContext *ctx, KosDynGen *g) {
   if (! KosDynGen_ACTIVE(g))
     return 0;
 
-  for (n = KosEvalState_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n)) {
+  for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n)) {
     if (n == (KosDynNode *) g)
       return 0;
   }
@@ -504,7 +504,7 @@ int kos_dyn_gen_frozen_needs_install_es(KosContext *ctx, KosDynGen *g) {
    Frees the chain from frame down to gen, restores consumer, releases gen.
 */
 int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
-  KosDynNode *frame = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *frame = KosContext_DYN_TOP(ctx);
   if (! frame || ! KosDynNode_IS_FRAME(frame)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_teardown_gen_exhausted: dyn_top is not a frame");
@@ -518,7 +518,7 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
   }
   KosDynNode *consumer = KosDynNode_PARENT(gen);
 
-  KosEvalState_FlushLiveRegsToFrame(ctx);
+  KosContext_FlushLiveRegsToFrame(ctx);
   /* The commit resyncs the live registers from the node being removed
      (its parent, stack, and namespace), so it runs while the frame and
      GEN are still allocated; the chain is freed only afterwards. */

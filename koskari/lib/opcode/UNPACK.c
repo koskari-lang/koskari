@@ -22,7 +22,7 @@ KOS_OP_HANDLER(UNPACK) {
   KOS_SYNC_PC(ctx, insn);
   Py_ssize_t n = (Py_ssize_t) KosOp_ARG(insn);
 
-  PyObject *seq = KosEvalState_PopUnpackSequence(ctx, n, 1, "UNPACK");
+  PyObject *seq = KosContext_PopUnpackSequence(ctx, n, 1, "UNPACK");
   if (unlikely(! seq))
     RESULT_RAISE();
 
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(UNPACK) {
   while (j--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, j);
 
-    if (unlikely(KosEvalState_StackPushRef(ctx, item) < 0)) {
+    if (unlikely(KosContext_StackPushRef(ctx, item) < 0)) {
       Py_DECREF(seq);
       RESULT_RAISE();
     }

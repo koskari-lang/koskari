@@ -32,7 +32,7 @@
 
   :return: 1 when a throw was taken, 0 when none pending
 */
-static inline int KosEvalState_TakeInjectThrow(
+static inline int KosContext_TakeInjectThrow(
     KosContext *ctx,
     PyObject **type_out,
     PyObject **value_out) {
@@ -48,9 +48,9 @@ static inline int KosEvalState_TakeInjectThrow(
 }
 
 
-int KosEvalState_ThrowIntoResume(KosContext *ctx) {
+int KosContext_ThrowIntoResume(KosContext *ctx) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(ctx);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *exc;
 
   if (! frame || ! KosDynFrame_RESUME_KIND(frame))
@@ -67,12 +67,12 @@ int KosEvalState_ThrowIntoResume(KosContext *ctx) {
   /* The resume runs on a delivery; the throw it takes first makes the
      value moot. */
   Py_INCREF(Py_None);
-  KosEvalState_StageDelivery(ctx, Py_None);
+  KosContext_StageDelivery(ctx, Py_None);
   return 1;
 }
 
 
-int KosEvalState_SetFrameCodeAndNamespace(
+int KosContext_SetFrameCodeAndNamespace(
     KosContext *ctx,
     KosDynFrame *frame,
     KosCode *code,
@@ -89,26 +89,26 @@ int KosEvalState_SetFrameCodeAndNamespace(
     KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
   else
     KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
-  if (KosEvalState_FRAME(ctx) == frame) {
-    KosEvalState_NAMESPACE(ctx) = ns;
-    KosEvalState_CODE(ctx) = KosDynFrame_CODE(frame);
-    KosEvalState_BLOCK(ctx) = &KosDynFrame_STACK(frame);
+  if (KosContext_FRAME(ctx) == frame) {
+    KosContext_NAMESPACE(ctx) = ns;
+    KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
+    KosContext_BLOCK(ctx) = &KosDynFrame_STACK(frame);
   }
   return 0;
 }
 
 
-void KosEvalState_PythonAwaitClearIter(KosContext *ctx) {
+void KosContext_PythonAwaitClearIter(KosContext *ctx) {
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
 }
 
 
-PyObject *KosEvalState_PythonAwaitIter(KosContext *ctx) {
-  return KosContext_PY_AWAIT_ITER(KosEvalState_CONTEXT(ctx));
+PyObject *KosContext_PythonAwaitIter(KosContext *ctx) {
+  return KosContext_PY_AWAIT_ITER(ctx);
 }
 
 
-void KosEvalState_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind) {
+void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind) {
 
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   KosContext_PY_RESUME_INJECT(ctx) = val;
@@ -116,7 +116,7 @@ void KosEvalState_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind) 
 }
 
 
-static inline void KosEvalState_PythonAwaitSetIter(
+static inline void KosContext_PythonAwaitSetIter(
     KosContext *ctx,
     PyObject *iter) {
 
@@ -125,7 +125,7 @@ static inline void KosEvalState_PythonAwaitSetIter(
 }
 
 
-static inline int KosEvalState_PythonResumeTake(
+static inline int KosContext_PythonResumeTake(
     KosContext *ctx,
     PyObject **out_val,
     uint8_t *out_kind) {
@@ -140,10 +140,10 @@ static inline int KosEvalState_PythonResumeTake(
 }
 
 
-KosEvaluatorToken *KosEvalState_Token(const KosContext *ctx) {
+KosEvaluatorToken *KosContext_Token(const KosContext *ctx) {
   if (! ctx)
     return NULL;
-  return KosContext_TOKEN(KosEvalState_CONTEXT(ctx));
+  return KosContext_TOKEN(ctx);
 }
 
 

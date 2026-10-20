@@ -23,7 +23,7 @@
 
 KOS_OP_HANDLER(POP_FOREACH) {
   KOS_SYNC_PC(ctx, insn);
-  KosDynNode *region = KosEvalState_CurrentNode(ctx);
+  KosDynNode *region = KosContext_CurrentNode(ctx);
   if (! region || ! KosDynNode_IS_FOREACH(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FOREACH: top is not a FOREACH region");
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(POP_FOREACH) {
       result = Py_None;
     Py_INCREF(result);
   } else {
-    result = KosEvalState_StackPopRef(ctx);
+    result = KosContext_StackPopRef(ctx);
     if (unlikely(! result)) {
       PyErr_SetString(PyExc_RuntimeError, "POP_FOREACH pop underrun");
       RESULT_RAISE();

@@ -102,7 +102,7 @@ static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
    Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
 */
 KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
-  KosDynFinally *node = kos_dynfinally_new(KosEvalState_DYN_TOP(ctx), handler_pc);
+  KosDynFinally *node = kos_dynfinally_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
@@ -117,7 +117,7 @@ KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
    Pop FINALLY when top. Callers: opcode POP_FINALLY.
 */
 int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
-  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "FINALLY node is not at top of chain");
     return -1;
   }

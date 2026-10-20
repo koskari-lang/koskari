@@ -22,7 +22,7 @@ KOS_OP_HANDLER(FAST_STORE) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
 
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE_AT(ctx, insn);
 

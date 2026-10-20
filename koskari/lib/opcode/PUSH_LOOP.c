@@ -22,7 +22,7 @@
 
 KOS_OP_HANDLER(PUSH_LOOP) {
   KOS_SYNC_PC(ctx, insn);
-  uint32_t continue_pc = KosEvalState_PC(ctx);  /* next insn; fetch advanced */
+  uint32_t continue_pc = KosContext_PC(ctx);  /* next insn; fetch advanced */
   uint32_t pop_pc;
 
   /* break lands after the POP_LOOP that closes the extent */

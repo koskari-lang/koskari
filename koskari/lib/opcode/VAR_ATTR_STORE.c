@@ -23,7 +23,7 @@ KOS_OP_HANDLER(VAR_ATTR_STORE) {
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val)
     RESULT_RAISE();
   PyObject *obj = frame_ns_deref(ctx, var_name);

@@ -393,7 +393,7 @@ static KosOpResult coroutine_drive_await_error(KosCoroutine *coro) {
   if (val && tb)
     PyException_SetTraceback(val, tb);
 
-  KosEvalState_PythonAwaitClearIter(coro->ctx);
+  KosContext_PythonAwaitClearIter(coro->ctx);
 
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
@@ -471,7 +471,7 @@ static int coroutine_step(
      from inside the step are refused: either can otherwise clear the
      context's reference to the iterator while it runs. */
   if (coro->state == KOS_CORO_WAITING_PY) {
-    PyObject *await_iter = KosEvalState_PythonAwaitIter(coro->ctx);
+    PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       PyObject *await_result = NULL;
       Py_INCREF(await_iter);
@@ -491,7 +491,7 @@ static int coroutine_step(
       /* Python awaitable completed: its value is the send value for
          the drive. await_result is uniformly owned; the XDECREF after
          the drive releases it. */
-      KosEvalState_PythonAwaitClearIter(coro->ctx);
+      KosContext_PythonAwaitClearIter(coro->ctx);
       coro->state = KOS_CORO_RUNNING;
       send_val = await_result;
     }
@@ -567,7 +567,7 @@ static PyObject *coroutine_throw_pair(
   /* If waiting on Python awaitable, forward throw; the iterator is held
      and in_send set across it, as in coroutine_step */
   if (coro->state == KOS_CORO_WAITING_PY) {
-    PyObject *await_iter = KosEvalState_PythonAwaitIter(coro->ctx);
+    PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
@@ -582,9 +582,9 @@ static PyObject *coroutine_throw_pair(
 
       if (step == PYGEN_RETURN) {
         /* await_result is uniformly owned; PythonResumeSet steals it. */
-        KosEvalState_PythonAwaitClearIter(coro->ctx);
+        KosContext_PythonAwaitClearIter(coro->ctx);
         coro->state = KOS_CORO_RUNNING;
-        KosEvalState_PythonResumeSet(
+        KosContext_PythonResumeSet(
             coro->ctx, await_result, KOS_RESUME_AWAIT);
         return coroutine_send((PyObject *) coro, Py_None);
       } else {
@@ -642,14 +642,14 @@ static PyObject *coroutine_close(PyObject *self) {
      in_send set across the call, as in coroutine_step: its close can
      run user code that calls back into this coroutine. */
   {
-    PyObject *await_iter = KosEvalState_PythonAwaitIter(coro->ctx);
+    PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
       kos_iter_close(await_iter);
       coro->in_send = 0;
       Py_DECREF(await_iter);
-      KosEvalState_PythonAwaitClearIter(coro->ctx);
+      KosContext_PythonAwaitClearIter(coro->ctx);
     }
   }
 

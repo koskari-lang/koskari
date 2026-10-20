@@ -20,7 +20,7 @@
 */
 KOS_OP_HANDLER(GLOBALS) {
   KOS_SYNC_PC(ctx, insn);
-  PyObject *ns = KosEvalState_GlobalsNamespace(ctx);
+  PyObject *ns = KosContext_GlobalsNamespace(ctx);
 
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "GLOBALS: namespace is NULL");

@@ -28,7 +28,7 @@ KOS_OP_HANDLER(CAR) {
     RESULT_RAISE();
   }
 
-  PyObject *cur = KosEvalState_StackPopRef(ctx);
+  PyObject *cur = KosContext_StackPopRef(ctx);
   if (unlikely(! cur))
     RESULT_RAISE();
 

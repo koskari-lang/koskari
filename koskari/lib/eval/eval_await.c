@@ -67,13 +67,13 @@ static PyObject *eager_step_awaitable(
 }
 
 
-static inline PyObject *KosEvalState_EagerStepAwaitable(
+static inline PyObject *KosContext_EagerStepAwaitable(
     KosContext *ctx,
     PyObject *awaitable,
     int *suspended,
     PyObject **yielded) {
 
-  return eager_step_awaitable(awaitable, KosEvalState_CONTEXT(ctx), suspended, yielded);
+  return eager_step_awaitable(awaitable, ctx, suspended, yielded);
 }
 
 
@@ -111,7 +111,7 @@ static PyObject *get_await_next(PyObject *val) {
    answers for the entire demand extent.
 */
 static int kos_eval_in_demand(KosContext *ctx) {
-  KosDynFrame *frame = KosEvalState_FRAME(ctx);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   return frame && (KosDynFrame_FLAGS(frame) & KOS_FRAME_DEMAND);
 }
 
@@ -130,7 +130,7 @@ static int kos_eval_demand_deny_suspend(KosContext *ctx, const char *msg) {
 
   /* The eager step stored the __await__ iterator for a resumption
      that is now refused; nothing will drive it again. */
-  KosEvalState_PythonAwaitClearIter(ctx);
+  KosContext_PythonAwaitClearIter(ctx);
   kos_demand_set_sync_violation(msg);
   return 1;
 }
@@ -177,12 +177,12 @@ static int kos_isfuture(PyObject *val) {
    must not fuse.
 */
 static inline int push_fuse_pop1(KosContext *ctx, PyObject *val) {
-  uint32_t pc = KosEvalState_PC(ctx);
-  KosOp *next = &KosEvalState_OPS(ctx)[pc];
+  uint32_t pc = KosContext_PC(ctx);
+  KosOp *next = &KosContext_OPS(ctx)[pc];
 
   if (next->op == KOS_OP_POP && next->arg == 1) {
     Py_DECREF(val);
-    KosEvalState_SET_PC(ctx, pc + 1u);
+    KosContext_SET_PC(ctx, pc + 1u);
     return 1;
   }
   return 0;
@@ -198,7 +198,7 @@ static inline KosOpResult push_or_fuse(
 
   if (fuse && push_fuse_pop1(ctx, val))
     return EVAL_NORMAL();
-  return (KosEvalState_StackPUSH(ctx, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
+  return (KosContext_StackPUSH(ctx, val) < 0) ? EVAL_RAISE() : EVAL_NORMAL();
 }
 
 
@@ -255,7 +255,7 @@ static inline KosOpResult kos_settle_value(
     PyObject *ns;
 
     if (KosCoroutine_TakeFresh(val, &code, &ns)) {
-      KosOpResult r = KosEvalState_InstallCallFrame(ctx, code, ns, 0);
+      KosOpResult r = KosContext_InstallCallFrame(ctx, code, ns, 0);
       Py_DECREF((PyObject *) code);
       Py_DECREF(val);
       return r.kind == KOS_RES_RAISE ? r : EVAL_REPROLOGUE();
@@ -283,7 +283,7 @@ static inline KosOpResult kos_settle_value(
 
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(ctx, val, &suspended, &yielded);
+  PyObject *result = KosContext_EagerStepAwaitable(ctx, val, &suspended, &yielded);
   Py_DECREF(val);
 
   if (result) {
@@ -292,7 +292,7 @@ static inline KosOpResult kos_settle_value(
   }
 
   if (suspended && yielded) {
-    KosEvalState_MarkSuspendedNotRunning(ctx);
+    KosContext_MarkSuspendedNotRunning(ctx);
     SAYF("[eval] settle set KOS_RES_AWAIT (suspended=%d yielded=%d)\n",
          suspended, yielded ? 1 : 0);
     return EVAL_AWAIT(yielded);
@@ -310,7 +310,7 @@ static inline KosOpResult kos_settle_value(
    value where the push would have. Use only for the result of a call
    (a CALL opcode whose callable returned a coroutine) and for the
    AWAIT opcode (explicitly awaiting TOS). Every other path must use
-   KosEvalState_StackPUSH, so values merely loaded or computed are
+   KosContext_StackPUSH, so values merely loaded or computed are
    never auto-awaited.
 
    await_defer: the explicit AWAIT opcode drives a Defer or an asyncio
@@ -339,7 +339,7 @@ static inline KosOpResult push_or_await(
 }
 
 
-KosOpResult KosEvalState_Settle(KosContext *ctx, PyObject *val, PyObject **out) {
+KosOpResult KosContext_Settle(KosContext *ctx, PyObject *val, PyObject **out) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
@@ -347,7 +347,7 @@ KosOpResult KosEvalState_Settle(KosContext *ctx, PyObject *val, PyObject **out) 
 }
 
 
-KosOpResult KosEvalState_PushOrAwait(KosContext *ctx, PyObject *val) {
+KosOpResult KosContext_PushOrAwait(KosContext *ctx, PyObject *val) {
   if (unlikely(! val))
     return EVAL_RAISE();
 
@@ -355,17 +355,17 @@ KosOpResult KosEvalState_PushOrAwait(KosContext *ctx, PyObject *val) {
 }
 
 
-KosOpResult KosEvalState_SettleStage(KosContext *ctx, PyObject *val) {
+KosOpResult KosContext_SettleStage(KosContext *ctx, PyObject *val) {
 
   PyObject *settled = NULL;
-  KosOpResult r = KosEvalState_Settle(ctx, val, &settled);
+  KosOpResult r = KosContext_Settle(ctx, val, &settled);
 
   /* REPROLOGUE: an installed callee delivers. AWAIT: the revive
      delivers. RAISE: the walk propagates. */
   if (r.kind != KOS_RES_NORMAL)
     return r;
 
-  KosEvalState_PENDING_VALUE(ctx) = settled;
+  KosContext_PENDING_VALUE(ctx) = settled;
   return EVAL_REPROLOGUE();
 }
 

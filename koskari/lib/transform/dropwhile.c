@@ -91,7 +91,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
                                             &dropwhile_resume_invoke_kind, t);
     RESULT_ENTRY(ctx, r, &dropwhile_resume_invoke_kind, t);
   }
@@ -119,7 +119,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
      call; the argument vector borrows it for the call's duration. */
   t->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(
+    KosOpResult r = KosContext_Call(
         ctx, t->fn.cs_callable, &element, 1, NULL, 0,
         &dropwhile_resume_verdict_kind, d);
     RESULT_ENTRY(ctx, r, &dropwhile_resume_verdict_kind, d);
@@ -173,7 +173,7 @@ static KosIterStepResult dropwhile_iter_step(
 
   KosDropWhile *d = (KosDropWhile *) self;
   KosTransform *t = &d->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))

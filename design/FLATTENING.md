@@ -14,9 +14,9 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 - **Function and expression calls.** `KosFunction` / `KosExpression`
   installs from the `CALL_*` family through `kos_call_invoke_impl`
   (`eval/eval_call.c`), including tail calls (frame reuse in
-  `KosEvalState_InstallCallFrame`).
+  `KosContext_InstallCallFrame`).
 - **Bound methods.** `kos_vinstall_boundmethod` (`func.c`) calls the
-  function through `KosEvalState_CallMethod` with self as the receiver.
+  function through `KosContext_CallMethod` with self as the receiver.
 - **Instance calls.** `kos_instance_call_target` (`object.c`) reports
   the KosCallable `__call__` found on the type and whether it binds.
   The class dispatch re-enters on the target with the instance as the
@@ -24,14 +24,14 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
 - **`partial` and `values`.** Each install merges its bound tuple and
   dict with the call vector into one borrowed vector
   (`KosArgSpread_InitMerged`) and calls the inner through
-  `KosEvalState_Call`. A KosCallable inner installs or runs in this
+  `KosContext_Call`. A KosCallable inner installs or runs in this
   evaluator; a Python inner is called and an awaitable result awaited.
 - **`Demand`.** `demand_kos_vinstall` calls the inner through
-  `KosEvalState_Call`, marks an installed callee `KOS_FRAME_DEMAND`, and
+  `KosContext_Call`, marks an installed callee `KOS_FRAME_DEMAND`, and
   settles an awaitable in hand under a demand-marked native frame
-  (`KosEvalState_SettleInto`).
+  (`KosContext_SettleInto`).
 - **`Procedure` (class `__init__`) called from Koskari.**
-  `KosEvalState_CallInto` with a resume that completes with None. A
+  `KosContext_CallInto` with a resume that completes with None. A
   tail call reuses the live frame.
 - **A fresh Koskari coroutine reaching an await.** `kos_settle_value`
   installs it as a call frame on the running chain, whether it came
@@ -58,7 +58,7 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   which then splices as above.
 - **Transform callbacks.** `map`, `filter`, `starmap`, `accumulate`,
   `takewhile`, `dropwhile` call their function through
-  `KosEvalState_Call` from a code-less resume frame.
+  `KosContext_Call` from a code-less resume frame.
 - **Match predicates and extractors.** A pattern is `MATCH_*`
   instructions in the frame that matches, and a `(? pred)` or
   `(app f ...)` is a `CALL` from that frame
@@ -78,7 +78,7 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   `Koskari_DemandSync`, `utils.c`). Tracked in Future. The demand path
   is forced today.
 - **Opcodes that materialise a Koskari generator.** The UNPACK family
-  (`KosEvalState_PopUnpackSequence` -> `PySequence_Fast`,
+  (`KosContext_PopUnpackSequence` -> `PySequence_Fast`,
   `eval/eval_state.c`) and the star-call family (`kos_op_call_star` ->
   `PySequence_Tuple`, `eval.c`) go through the generator's `tp_iter`
   into a `KosPyIter`, a nested evaluator per element on the demand

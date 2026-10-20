@@ -20,7 +20,7 @@
 */
 KOS_OP_HANDLER(NILP) {
   KOS_SYNC_PC(ctx, insn);
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val) RESULT_RAISE();
   PyObject *res = (KosNilP(val) ? Py_True : Py_False);
   Py_DECREF(val);

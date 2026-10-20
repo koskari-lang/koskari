@@ -98,7 +98,7 @@ KosDynCollect *kos_dyn_push_collect(
     PyObject *ns) {
   // CONTEXT: dirty, touches context directly
   KosDynCollect *col_node = kos_dyncollect_new(
-      KosEvalState_DYN_TOP(ctx), ns);
+      KosContext_DYN_TOP(ctx), ns);
   if (! col_node)
     return NULL;
 
@@ -121,8 +121,8 @@ int kos_dyn_pop_collect(
     KosDynCollect *node,
     PyObject **out_ns) {
 
-  if (! KosEvalState_DYN_TOP(ctx) ||
-      KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) ||
+      KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "COLLECT node is not at top of chain");
     return -1;
   }

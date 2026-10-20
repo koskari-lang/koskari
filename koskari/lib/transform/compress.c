@@ -90,7 +90,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
      and hops back here; either source running out ends the
      compress through its StopIteration */
   {
-    KosOpResult r = KosEvalState_NextResume(
+    KosOpResult r = KosContext_NextResume(
         ctx, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
     RESULT_ENTRY(ctx, r, &compress_resume_deliver_kind, c);
   }
@@ -147,7 +147,7 @@ static KosIterStepResult compress_iter_step(
 
   KosTransformMulti *c = (KosTransformMulti *) self;
   KosTransform *t = &c->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -168,7 +168,7 @@ static KosIterStepResult compress_iter_step(
       KOS_TRANSFORM_FETCH(ctx, t, t->sources[COMPRESS_DATA],
                           &compress_resume_fetch_kind, pre_top, out, data);
 
-      switch (KosEvalState_NextOrDefer(ctx, t->sources[COMPRESS_SELECTOR],
+      switch (KosContext_NextOrDefer(ctx, t->sources[COMPRESS_SELECTOR],
                                        &compress_resume_fetch_kind, c,
                                        &t->cached_frame, &selector)) {
         case KOS_IREQ_DELIVERED:

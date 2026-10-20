@@ -33,7 +33,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
   KosDynDelim *ret_delim = NULL;
   {
     KosDynNode *node;
-    for (node = KosEvalState_CurrentNode(ctx); node;
+    for (node = KosContext_CurrentNode(ctx); node;
          node = KosDynNode_PARENT(node)) {
       if (KosDynNode_IS_PROMPT(node)
           && ! (KosDynNode_FLAGS(node) & KOS_DYNF_INVOCATION))
@@ -50,13 +50,13 @@ KOS_OP_HANDLER(POP_PROMPT) {
   }
 
   SAYF("[eval] POP_PROMPT delim=%p dyn_top=%p IS_PROMPT=%d frame=%p stack_len=%zu\n",
-       (void *) ret_delim, (void *) KosEvalState_CurrentNode(ctx),
-       (KosEvalState_CurrentNode(ctx) && KosDynNode_IS_PROMPT(KosEvalState_CurrentNode(ctx))) ? 1 : 0,
-       (void *) KosEvalState_FRAME(ctx),
-       KosEvalState_StackLen(ctx));
+       (void *) ret_delim, (void *) KosContext_CurrentNode(ctx),
+       (KosContext_CurrentNode(ctx) && KosDynNode_IS_PROMPT(KosContext_CurrentNode(ctx))) ? 1 : 0,
+       (void *) KosContext_FRAME(ctx),
+       KosContext_StackLen(ctx));
 
   if (ret_delim) {
-    PyObject *val = KosEvalState_StackPopRef(ctx);
+    PyObject *val = KosContext_StackPopRef(ctx);
     if (! val) {
       SAY("[eval] POP_PROMPT (invoke) pop underrun\n");
       RESULT_RAISE();
@@ -73,7 +73,7 @@ KOS_OP_HANDLER(POP_PROMPT) {
          code-less invoke site must be delivered through the prologue
          (REPROLOGUE) instead. */
       if (unlikely(routed.kind == KOS_RES_NORMAL
-                   && ! KosEvalState_CODE(ctx))) {
+                   && ! KosContext_CODE(ctx))) {
         PyErr_SetString(PyExc_RuntimeError,
                         "POP_PROMPT: delimited return resumed dispatch "
                         "in a code-less frame");
@@ -83,26 +83,26 @@ KOS_OP_HANDLER(POP_PROMPT) {
       RESULT_RELAY(ctx, routed);
     }
 
-    if (KosEvalState_CurrentNode(ctx) == (KosDynNode *) ret_delim) {
+    if (KosContext_CurrentNode(ctx) == (KosDynNode *) ret_delim) {
       if (unlikely(kos_dyn_pop_delim(ctx, ret_delim) < 0)) {
         Py_DECREF(val);
         RESULT_RAISE();
       }
     }
-    KosEvalState_MarkSuspendedNotRunning(ctx);
+    KosContext_MarkSuspendedNotRunning(ctx);
     RESULT_RETURN(ctx, val);
   }
 
-  KosDynNode *top = KosEvalState_CurrentNode(ctx);
+  KosDynNode *top = KosContext_CurrentNode(ctx);
   if (! top || ! KosDynNode_IS_PROMPT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_PROMPT: top is not a prompt");
     RESULT_RAISE();
   }
   SAYF("[eval] POP_PROMPT (normal): popping prompt, frame=%p stack_len=%zu",
-       (void *) KosEvalState_FRAME(ctx),
-       KosEvalState_StackLen(ctx));
+       (void *) KosContext_FRAME(ctx),
+       KosContext_StackLen(ctx));
 
-  PyObject *result = KosEvalState_StackPopRef(ctx);
+  PyObject *result = KosContext_StackPopRef(ctx);
   if (! result) {
     SAY("[eval] POP_PROMPT (normal): stack underrun");
     RESULT_RAISE();
@@ -114,8 +114,8 @@ KOS_OP_HANDLER(POP_PROMPT) {
   }
 
   SAYF("[eval] POP_PROMPT (normal): after pop, frame=%p stack_len=%zu",
-       (void *) KosEvalState_FRAME(ctx),
-       KosEvalState_StackLen(ctx));
+       (void *) KosContext_FRAME(ctx),
+       KosContext_StackLen(ctx));
 
   RESULT_STEAL(ctx, result);
 }

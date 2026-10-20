@@ -29,7 +29,7 @@ KOS_OP_HANDLER(POP_SHIFT) {
   KosDynPrompt *prompt = NULL;
   KosXferGoal *goal;
 
-  KosDynNode *top = KosEvalState_CurrentNode(ctx);
+  KosDynNode *top = KosContext_CurrentNode(ctx);
   if (! top || ! KosDynNode_IS_SHIFT(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_SHIFT: top is not a shift node");
     RESULT_RAISE();
@@ -38,11 +38,11 @@ KOS_OP_HANDLER(POP_SHIFT) {
   /* PC already advanced: we are post-INSN, so resume will run instruction at
    * prompt_pop_pc+1 (first instr after POP_PROMPT). */
   SAYF("[POP_SHIFT] pre-pop: frame=%p stack=%p len=%zu (pc already advanced to %u)",
-       (void *) KosEvalState_FRAME(ctx),
-       (void *) KosEvalState_StackHead(ctx),
-       KosEvalState_StackLen(ctx),
-       (unsigned) KosEvalState_PC(ctx));
-  result = KosEvalState_StackPopRef(ctx);
+       (void *) KosContext_FRAME(ctx),
+       (void *) KosContext_StackHead(ctx),
+       KosContext_StackLen(ctx),
+       (unsigned) KosContext_PC(ctx));
+  result = KosContext_StackPopRef(ctx);
   if (! result) {
     SAY("[eval] POP_SHIFT pop result failed (stack underrun)");
     RESULT_RAISE();

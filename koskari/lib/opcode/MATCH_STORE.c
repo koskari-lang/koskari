@@ -41,7 +41,7 @@ KOS_OP_HANDLER(MATCH_STORE) {
   if (unlikely(! mark))
     RESULT_RAISE();
 
-  PyObject *value = KosEvalState_StackPopRef(ctx);
+  PyObject *value = KosContext_StackPopRef(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
   if (unlikely(KosMatchMark_Store(mark, i, value, name) < 0))

@@ -88,7 +88,7 @@ static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
    Push TRY as DYN_TOP. Callers: opcode PUSH_TRY.
 */
 KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
-  KosDynTry *node = kos_dyntry_new(KosEvalState_DYN_TOP(ctx), handler_pc);
+  KosDynTry *node = kos_dyntry_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node)
     return NULL;
   if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
@@ -103,7 +103,7 @@ KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
    Pop TRY when it is top (fast path). Callers: opcode POP_TRY.
 */
 int kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
-  if (! KosEvalState_DYN_TOP(ctx) || KosEvalState_DYN_TOP(ctx) != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "TRY node is not at top of chain");
     return -1;
   }

@@ -42,7 +42,7 @@ KOS_OP_HANDLER(CALL_ATTR_NAMES) {
   Py_ssize_t total = npos + nkwds;
   size_t ntotal = (size_t)(total + 1);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, ntotal);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, ntotal);
   if (! ptr)
     RESULT_RAISE();
 

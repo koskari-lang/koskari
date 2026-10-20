@@ -28,7 +28,7 @@ KOS_OP_HANDLER(MATCH_SAME) {
           ctx, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &prev) < 0))
     RESULT_RAISE();
 
-  PyObject *elem = KosEvalState_StackPeek(ctx);
+  PyObject *elem = KosContext_StackPeek(ctx);
   if (unlikely(! elem))
     RESULT_RAISE();
   if (! prev)

@@ -48,7 +48,7 @@ KOS_OP_INLINE PyObject *kos_match_operand(
 
   if (fast)
     return kos_ns_fast_deref(
-        KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, field));
+        KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, field));
   return frame_ns_deref(ctx, KosExtra_OBJ(row, field));
 }
 
@@ -105,7 +105,7 @@ KOS_OP_INLINE PyObject *kos_match_cursor_at(
     KosContext *ctx,
     uint32_t under) {
 
-  PyObject *entry = KosEvalState_StackPeekUnder(ctx, (size_t) under);
+  PyObject *entry = KosContext_StackPeekUnder(ctx, (size_t) under);
 
   if (unlikely(entry && ! KosMatchCursor_Check(entry))) {
     PyErr_Format(PyExc_SystemError,
@@ -126,7 +126,7 @@ KOS_OP_INLINE PyObject *kos_match_mark_at(
     KosContext *ctx,
     uint32_t under) {
 
-  PyObject *entry = KosEvalState_StackPeekUnder(ctx, (size_t) under);
+  PyObject *entry = KosContext_StackPeekUnder(ctx, (size_t) under);
 
   if (unlikely(entry && ! KosMatchMark_Check(entry))) {
     PyErr_Format(PyExc_SystemError,
@@ -183,7 +183,7 @@ KOS_OP_INLINE PyObject *kos_match_writable_at(
   if (unlikely(! target))
     return NULL;
   if (unlikely(target != mark)
-      && unlikely(KosEvalState_StackSetUnder(ctx, KosExtra_IMM(row, field), target) < 0))
+      && unlikely(KosContext_StackSetUnder(ctx, KosExtra_IMM(row, field), target) < 0))
     return NULL;
   return target;
 }
@@ -210,7 +210,7 @@ KOS_OP_INLINE int kos_match_pull(
     return r;
 
   if (unlikely(next != cursor)
-      && unlikely(KosEvalState_StackSetUnder(ctx, under, next) < 0)) {
+      && unlikely(KosContext_StackSetUnder(ctx, under, next) < 0)) {
     Py_CLEAR(*out);
     return -1;
   }
@@ -260,7 +260,7 @@ KOS_OP_INLINE PyObject *kos_match_items_at(
     KosContext *ctx,
     uint32_t under) {
 
-  PyObject *list = KosEvalState_StackPeekUnder(ctx, (size_t) under);
+  PyObject *list = KosContext_StackPeekUnder(ctx, (size_t) under);
 
   if (unlikely(list && ! PyList_Check(list))) {
     PyErr_Format(PyExc_TypeError,
@@ -285,7 +285,7 @@ KOS_MATCH_BODY(kos_match_type) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_TYPE_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *elem = KosEvalState_StackPeek(ctx);
+  PyObject *elem = KosContext_StackPeek(ctx);
   if (unlikely(! elem))
     RESULT_RAISE();
   PyObject *type = kos_match_operand(ctx, row, 1, fast);
@@ -315,7 +315,7 @@ KOS_MATCH_BODY(kos_match_class) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_CLASS_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *elem = KosEvalState_StackPeek(ctx);
+  PyObject *elem = KosContext_StackPeek(ctx);
   if (unlikely(! elem))
     RESULT_RAISE();
   PyObject *cls = kos_match_operand(ctx, row, 1, fast);
@@ -353,7 +353,7 @@ KOS_MATCH_BODY(kos_match_field_pos) {
   int fast = KosOp_OP(insn) == KOS_OP_MATCH_FIELD_POS_FAST;
   (void) kos_match_delivery_;
 
-  PyObject *obj = KosEvalState_StackPeek(ctx);
+  PyObject *obj = KosContext_StackPeek(ctx);
   if (unlikely(! obj))
     RESULT_RAISE();
   PyObject *cls = kos_match_operand(ctx, row, 1, fast);
@@ -385,7 +385,7 @@ KOS_MATCH_BODY(kos_match_key) {
   KosOpCode op = (KosOpCode) KosOp_OP(insn);
   (void) kos_match_delivery_;
 
-  PyObject *obj = KosEvalState_StackPeek(ctx);
+  PyObject *obj = KosContext_StackPeek(ctx);
   if (unlikely(! obj))
     RESULT_RAISE();
 

@@ -23,7 +23,7 @@
 KOS_OP_HANDLER(OBJECT_OPERAND_VAR) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *pair[2];
   PyObject *result;

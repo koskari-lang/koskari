@@ -36,7 +36,7 @@ KOS_OP_HANDLER(JUMP_AND_VAR) {
   }
 
   if (res) {
-    if (unlikely(KosEvalState_StackPUSH(ctx, val) < 0))
+    if (unlikely(KosContext_StackPUSH(ctx, val) < 0))
       RESULT_RAISE();
     RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   }

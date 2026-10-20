@@ -18,7 +18,7 @@ Defect reproducer, RED until fixed: a transform stepping a koskari
 generator that delegates with yield-from must deliver every value the
 delegate produces. A generator suspended inside yield-from carries the
 node's phase resume, and the install has to bounce through the
-prologue so that resume runs. KosEvalState_NextResume decided on code
+prologue so that resume runs. KosContext_NextResume decided on code
 alone where every other consumer of the same outcome also requires no
 resume set, so it threaded straight into the frame, the delivery
 never happened, and the step reported exhaustion. The loop simply

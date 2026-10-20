@@ -57,15 +57,15 @@
      settled (it may be an awaitable); nothing was pushed and no frame
      was touched. The caller settles or delivers it.
    - NORMAL / POLL: a callee frame is installed and current, pushed by
-     the install (KosEvalState_InstallCallFrame), and the call's result
+     the install (KosContext_InstallCallFrame), and the call's result
      arrives by that frame's return.
    - REPROLOGUE / AWAIT: the install pushed a code-less frame and set
-     a resume on it (KosEvalState_CallInto); the resume delivers.
+     a resume on it (KosContext_CallInto); the resume delivers.
    - RAISE: error, PyErr set.
 
    tail_call: 1 if this is a tail call; 0 otherwise. An install that
    takes a frame reuses the caller's frame for a tail call
-   (KosEvalState_InstallCallFrame does this); one that forwards the
+   (KosContext_InstallCallFrame does this); one that forwards the
    call to another callable passes tail_call through unchanged; one
    that completes in hand ignores it, and the RETURN that follows every
    TAIL_CALL retires the caller's frame. An install never pops or
@@ -322,12 +322,12 @@ KOS_OP_INLINE int kos_iter_next_plain(
    deferred: a code-less frame carrying resume and state is installed
    (through cache, as KosResumeFrame_Install takes it) and CONTINUES is
    returned, so the step reports its work installed and resume makes
-   the request through KosEvalState_NextResume once the drive reaches
+   the request through KosContext_NextResume once the drive reaches
    the frame. ERROR with nothing installed when the frame cannot be.
    The one place a provider asks for an element from its step; the
    kind of the source is decided here, never by the provider.
 */
-KOS_OP_INLINE KosIterRequestStatus KosEvalState_NextOrDefer(
+KOS_OP_INLINE KosIterRequestStatus KosContext_NextOrDefer(
     KosContext *ctx,
     PyObject *iter,
     const KosResumeKind *resume,

@@ -46,7 +46,7 @@ static int test_breaker_reads_the_interpreter(void) {
   KosContext *ctx = KosContext_New(NULL);
   TEST_ASSERT_NOT_NULL(ctx, "create context");
   KosContext_BeginDrive(ctx, NULL);
-  TEST_ASSERT_SAME((void *) KosEvalState_BREAKER(ctx), (void *) w,
+  TEST_ASSERT_SAME((void *) KosContext_BREAKER(ctx), (void *) w,
                    "BeginDrive caches the located word");
   TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(ctx) != 0, 0,
                  "cooperation test is clear at rest");

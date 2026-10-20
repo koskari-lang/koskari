@@ -38,7 +38,7 @@ KOS_OP_HANDLER(CALL_VAR_ATTR) {
 
   PyObject *const *ptr = NULL;
   if (n > 0) {
-    ptr = KosEvalState_StackTailPtr(ctx, (size_t) n);
+    ptr = KosContext_StackTailPtr(ctx, (size_t) n);
     if (! ptr) {
       Py_DECREF(obj);
       RESULT_RAISE();

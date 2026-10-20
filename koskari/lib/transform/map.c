@@ -16,8 +16,8 @@
    design/archive/cps-consumer-api.md). Anything else -- a driven source, or a
    FRAME-shaped or awaitable-returning function without that guarantee
    -- runs under one CPS resume-carrying frame: FETCH requests the next
-   source element via KosEvalState_NextResume, INVOKE applies the
-   function via KosEvalState_Call, and completion delivers the
+   source element via KosContext_NextResume, INVOKE applies the
+   function via KosContext_Call, and completion delivers the
    element to the consumer's iteration node. Exhaustion and errors leave
    the frame as exceptions; the consumer's iteration node converts
    StopIteration per its own rules, which also gives a mapped
@@ -76,7 +76,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
 
 /**
    INVOKE: apply func to element. Every calling shape goes through the
-   one entry -- KosEvalState_Call resolves the callable and prepares
+   one entry -- KosContext_Call resolves the callable and prepares
    (or declines to prepare) a frame per its own suite, so a callable
    that wants no frame still runs in this evaluator rather than
    through the Python boundary. element is consumed.
@@ -90,7 +90,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
   if (! element)
     return EVAL_RAISE();
 
-  r = KosEvalState_Call(
+  r = KosContext_Call(
       ctx, m->fn.cs_callable, &element, 1, NULL, 0,
       &map_resume_after_result_kind, m);
   Py_DECREF(element);
@@ -119,7 +119,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosEvalState_NextResume(
+  r = KosContext_NextResume(
       ctx, ((KosTransform *) state)->source, NULL,
       &map_resume_after_fetch_kind, state);
   RESULT_ENTRY(ctx, r, &map_resume_after_fetch_kind, state);
@@ -136,7 +136,7 @@ static KosIterStepResult map_iter_step(
     PyObject **out) {
 
   KosTransform *m = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(m, send_val, out, &early))
@@ -153,7 +153,7 @@ static KosIterStepResult map_iter_step(
        generic call entry -- cached frame, the element's own address
        as the argument vector -- with no helper frame. */
     if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME && m->fn.cs_direct) {
-      KosOpResult r = KosEvalState_Call(
+      KosOpResult r = KosContext_Call(
           ctx, m->fn.cs_callable, &element, 1, NULL, 0, NULL, NULL);
       Py_DECREF(element);
       if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {

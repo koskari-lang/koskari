@@ -21,7 +21,7 @@
 KOS_OP_HANDLER(DUP) {
   int opa = (int) KosOp_ARG(insn);
   if (likely(opa == 1)) {
-    if (unlikely(KosEvalState_StackDup1(ctx) < 0))
+    if (unlikely(KosContext_StackDup1(ctx) < 0))
       RESULT_RAISE_AT(ctx, insn);
     RESULT_NEXT(ctx);
   }
@@ -31,7 +31,7 @@ KOS_OP_HANDLER(DUP) {
     RESULT_RAISE_AT(ctx, insn);
   }
 
-  if (unlikely(KosEvalState_StackDuplicate(ctx, (size_t) opa) < 0))
+  if (unlikely(KosContext_StackDuplicate(ctx, (size_t) opa) < 0))
     RESULT_RAISE_AT(ctx, insn);
 
   RESULT_NEXT(ctx);

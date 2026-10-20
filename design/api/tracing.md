@@ -302,7 +302,7 @@ with only **`count`** and **`total_ns`** (no share fields). Wall time is
 |-----|-------------------------|
 | **init** | `KosContext_BeginDrive` (`eval/eval_state.c`) |
 | **unused_sync_from_context** | Reserved slot (removed API; never incremented) |
-| **flush_live_regs** | `KosEvalState_FlushLiveRegsToFrame` (inline in `eval.h`) |
+| **flush_live_regs** | `KosContext_FlushLiveRegsToFrame` (inline in `eval.h`) |
 | **unused_apply_dyn_caches** | Reserved slot (removed API; never incremented) |
 | **rebuild_live_from_chain** | `kos_dyn_rebuild_live_from_chain` (`dynchain.c`) |
 | **retarget_after_push** | `kos_dyn_retarget_after_push` (`dynchain.c`) |
@@ -418,7 +418,7 @@ Each freelist entry has four counters:
 **Events** — `KOS_TRACE_EVENTS_INC` in **dynchain.c** (see `events` table).
 
 **Eval state sync** — `KOS_TRACE_EVAL_SYNC_BEGIN` / `END` in **eval/eval_state.c**
-and `KosEvalState_FlushLiveRegsToFrame` in **eval.h**.
+and `KosContext_FlushLiveRegsToFrame` in **eval.h**.
 
 **Opcode counting** — `KOS_TRACE_THREAD_STEP` in `KOS_THREAD_NEXT`
 (**eval.h**) and at `koskari_eval`'s thread entry (**eval.c**); counts

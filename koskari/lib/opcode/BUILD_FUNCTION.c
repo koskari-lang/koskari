@@ -41,13 +41,13 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
     RESULT_RAISE();
   }
 
-  PyObject *fspec = KosEvalState_StackPopRef(ctx);
+  PyObject *fspec = KosContext_StackPopRef(ctx);
   if (unlikely(! fspec))
     RESULT_RAISE();
 
   PyObject *defaults = NULL;
   if (PyTuple_GET_SIZE(defnames) > 0) {
-    defaults = KosEvalState_StackPopTailDictFromNames(ctx, defnames);
+    defaults = KosContext_StackPopTailDictFromNames(ctx, defnames);
     if (unlikely(! defaults)) {
       Py_DECREF(fspec);
       RESULT_RAISE();
@@ -56,7 +56,7 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
 
   PyObject *annotations = NULL;
   if (PyTuple_GET_SIZE(annnames) > 0) {
-    annotations = KosEvalState_StackPopTailDictFromNames(ctx, annnames);
+    annotations = KosContext_StackPopTailDictFromNames(ctx, annnames);
     if (unlikely(! annotations)) {
       Py_DECREF(fspec);
       Py_XDECREF(defaults);

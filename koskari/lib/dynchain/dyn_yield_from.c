@@ -155,7 +155,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
     KosContext *ctx, KosDynYieldFrom *yf,
     PyObject *inner_val) {
 
-  KosDynFrame *const frame = KosEvalState_FRAME(ctx);
+  KosDynFrame *const frame = KosContext_FRAME(ctx);
 
   if (! frame || ! inner_val) {
     PyErr_SetString(PyExc_RuntimeError,
@@ -164,7 +164,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
     return -1;
   }
 
-  if (KosEvalState_PENDING_VALUE(ctx)) {
+  if (KosContext_PENDING_VALUE(ctx)) {
     Py_DECREF(inner_val);
     PyErr_SetString(PyExc_SystemError,
                     "yield-from inner delivery over a staged one");
@@ -177,7 +177,7 @@ int kos_dyn_yield_from_deliver_inner_yield(
       islots->ki_finish(delegate, 0);
   }
   kos_dyn_iter_request_set_mode((KosDynNode *) yf, KOS_IREQ_IDLE);
-  KosEvalState_PENDING_VALUE(ctx) = inner_val;
+  KosContext_PENDING_VALUE(ctx) = inner_val;
   kos_dyn_yield_from_set_resume(ctx, yf, KosDynYieldFrom_RESUME_EMIT(yf));
   return 0;
 }
@@ -197,7 +197,7 @@ int kos_dyn_yield_from_deliver_exhausted(
 
   Py_XDECREF(val);
 
-  df = KosEvalState_FRAME(ctx);
+  df = KosContext_FRAME(ctx);
 
   {
     PyObject *delegate = KosDynYieldFrom_DELEGATE(yf);
@@ -207,8 +207,8 @@ int kos_dyn_yield_from_deliver_exhausted(
   }
 
   code = df ? KosDynFrame_CODE(df) : NULL;
-  if (df && code && KosEvalState_ACTING_PC(ctx) + 1u < KosCode_CODE_LEN(code))
-    KosEvalState_SET_PC(ctx, KosEvalState_ACTING_PC(ctx) + 1u);
+  if (df && code && KosContext_ACTING_PC(ctx) + 1u < KosCode_CODE_LEN(code))
+    KosContext_SET_PC(ctx, KosContext_ACTING_PC(ctx) + 1u);
 
   if (kos_dyn_pop_yield_from(ctx, yf) < 0)
     return -1;
@@ -232,7 +232,7 @@ int kos_dyn_unlink_yield_from(KosContext *ctx, KosDynYieldFrom *yf) {
   }
 
   node = (KosDynNode *) yf;
-  if (KosEvalState_DYN_TOP(ctx) == node) {
+  if (KosContext_DYN_TOP(ctx) == node) {
     /* Forced teardown: the delegate may still be active, so close it
        before popping (kos_dyn_pop_yield_from no longer closes). */
     kos_yieldfrom_close_delegate(yf);
@@ -247,7 +247,7 @@ int kos_dyn_unlink_yield_from(KosContext *ctx, KosDynYieldFrom *yf) {
   kos_dyn_yield_from_clear_resume(ctx, yf);
 
   p = KosDynNode_PARENT(node);
-  for (c = KosEvalState_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
+  for (c = KosContext_DYN_TOP(ctx); c; c = KosDynNode_PARENT(c)) {
     if (KosDynNode_PARENT(c) == node) {
       KosDynNode_PARENT(c) = p;
       break;
@@ -330,7 +330,7 @@ void kos_dyn_yield_from_set_resume(
     KosDynYieldFrom *node,
     const KosResumeKind *resume) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(ctx);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
 
   KosDynYieldFrom_RESUME(node) = (void *) resume;
   KosDynFrame_RESUME_KIND(frame) = resume;
@@ -339,7 +339,7 @@ void kos_dyn_yield_from_set_resume(
 
 
 void kos_dyn_yield_from_clear_resume(KosContext *ctx, KosDynYieldFrom *node) {
-  KosDynFrame *frame = KosEvalState_FRAME(ctx);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
 
   if (frame && node
       && (const void *) KosDynFrame_RESUME_KIND(frame)

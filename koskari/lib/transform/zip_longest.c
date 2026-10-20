@@ -122,7 +122,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     /* the element, or the source's exhaustion, lands in
        zip_longest_resume_deliver, which files it and hops back here */
     {
-      KosOpResult r = KosEvalState_NextResume(
+      KosOpResult r = KosContext_NextResume(
           ctx, t->sources[t->idx], NULL, &zip_longest_resume_deliver_kind, z);
       RESULT_ENTRY(ctx, r, &zip_longest_resume_deliver_kind, z);
     }
@@ -182,7 +182,7 @@ static KosIterStepResult zip_longest_iter_step(
 
   KosZipLongest *z = (KosZipLongest *) self;
   KosTransform *t = &z->multi.base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
   PyObject *row;
 
@@ -217,7 +217,7 @@ static KosIterStepResult zip_longest_iter_step(
         continue;
       }
 
-      switch (KosEvalState_NextOrDefer(ctx, t->sources[i],
+      switch (KosContext_NextOrDefer(ctx, t->sources[i],
                                        &zip_longest_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:

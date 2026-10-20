@@ -20,14 +20,14 @@ KOS_OP_HANDLER(MATCH_SINGLE) {
   KOS_SYNC_PC(ctx, insn);
   (void) kos_op_delivery_;
 
-  PyObject *value = KosEvalState_StackPeek(ctx);
+  PyObject *value = KosContext_StackPeek(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
 
   PyObject *cursor = KosMatchCursor_Single(value);
   if (unlikely(! cursor))
     RESULT_RAISE();
-  if (unlikely(KosEvalState_StackSetUnder(ctx, 0, cursor) < 0))
+  if (unlikely(KosContext_StackSetUnder(ctx, 0, cursor) < 0))
     RESULT_RAISE();
   RESULT_NEXT(ctx);
 }

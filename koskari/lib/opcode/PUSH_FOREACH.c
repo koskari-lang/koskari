@@ -24,10 +24,10 @@
 
 KOS_OP_HANDLER(PUSH_FOREACH) {
   KOS_SYNC_PC(ctx, insn);
-  uint32_t continue_pc = KosEvalState_PC(ctx);  /* next insn; fetch advanced */
+  uint32_t continue_pc = KosContext_PC(ctx);  /* next insn; fetch advanced */
   uint32_t pop_pc;
 
-  PyObject *iterable = KosEvalState_StackPopRef(ctx);
+  PyObject *iterable = KosContext_StackPopRef(ctx);
   if (! iterable) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_FOREACH: missing iterable");
     RESULT_RAISE();

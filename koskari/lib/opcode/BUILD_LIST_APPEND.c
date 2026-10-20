@@ -25,7 +25,7 @@ KOS_OP_HANDLER(BUILD_LIST_APPEND) {
   unsigned opa = KosOp_ARG(insn);
   size_t count = (size_t) opa;
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count + 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, count + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(BUILD_LIST_APPEND) {
       RESULT_RAISE();
   }
 
-  KosEvalState_StackDropNoErr(ctx, count);
+  KosContext_StackDropNoErr(ctx, count);
   RESULT_NEXT(ctx);
 }
 

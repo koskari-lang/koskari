@@ -212,7 +212,7 @@ static KosOpResult call_call_continuation(
 
   if (KosPyDelimitedContinuation_Check(callable)
       || KosContinuation_TOKEN_REF(k)
-          == (PyObject *) KosEvalState_Token(ctx)) {
+          == (PyObject *) KosContext_Token(ctx)) {
     if (kos_invoke_continuation(ctx, k, resume_val, callable) < 0) {
       Py_DECREF(resume_val);
       return EVAL_RAISE();

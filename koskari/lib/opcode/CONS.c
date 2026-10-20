@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CONS) {
   if (count == 0)
     RESULT_PUSH(ctx, KosNil);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, count);
   if (! ptr)
     RESULT_RAISE();
 
@@ -35,7 +35,7 @@ KOS_OP_HANDLER(CONS) {
   if (! result)
     RESULT_RAISE();
 
-  if (KosEvalState_StackDrop(ctx, count) < 0) {
+  if (KosContext_StackDrop(ctx, count) < 0) {
     Py_DECREF(result);
     RESULT_RAISE();
   }

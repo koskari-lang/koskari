@@ -187,8 +187,8 @@ typedef enum KosGetNextResult {
 
 /**
    A per-frame CPS resume: the fn of the KosResumeKind (dynchain.h) a
-   consumer sets on a frame via KosEvalState_Call /
-   KosEvalState_NextResume to receive exactly one settled delivery -- a call's result, a callee frame's return, a
+   consumer sets on a frame via KosContext_Call /
+   KosContext_NextResume to receive exactly one settled delivery -- a call's result, a callee frame's return, a
    Next request's element, or an awaited value, however it was
    produced.
 
@@ -354,10 +354,10 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 #define DISPATCH(kind, ctx, arg, value)                                 \
   do {                                                                  \
     KosContext *kos_dsp_es_ = (ctx);                                    \
-    KosDynFrame *kos_dsp_frame_ = KosEvalState_FRAME(kos_dsp_es_);      \
+    KosDynFrame *kos_dsp_frame_ = KosContext_FRAME(kos_dsp_es_);        \
     PyObject *kos_dsp_val_ = (value);                                   \
     KOS_DISPATCH_SAFETYNET(kos_dsp_es_, kos_dsp_val_);                  \
-    KosEvalState_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;             \
+    KosContext_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;               \
     KosDynFrame_RESUME_KIND(kos_dsp_frame_) = (kind);                   \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
     KOS_TRACE_TRAMPOLINE_STEP();                                        \
@@ -426,7 +426,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
   do {                                                                  \
     KosContext *kos_thn_es_ = (ctx);                                    \
     KOS_THREAD_AT(kos_thn_es_,                                          \
-                  &KosEvalState_OPS(kos_thn_es_)[KosEvalState_PC(kos_thn_es_)]); \
+                  &KosContext_OPS(kos_thn_es_)[KosContext_PC(kos_thn_es_)]); \
   } while (0)
 
 #define RESULT_NEXT(ctx)      KOS_THREAD_AT((ctx), ((KosOp *) insn) + 1)
@@ -436,7 +436,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
 #define RESULT_PUSH(ctx, val)                                           \
   do {                                                                  \
-    if (unlikely(KosEvalState_StackPushRef((ctx), (val)) < 0))          \
+    if (unlikely(KosContext_StackPushRef((ctx), (val)) < 0))            \
       RESULT_RAISE_AT((ctx), insn);                                     \
     RESULT_NEXT(ctx);                                                   \
   } while (0)
@@ -446,7 +446,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     PyObject *kos_rs_val_ = (val);                                      \
     if (unlikely(! kos_rs_val_))                                        \
       RESULT_RAISE_AT((ctx), insn);                                     \
-    if (unlikely(KosEvalState_StackPUSH((ctx), kos_rs_val_) < 0))       \
+    if (unlikely(KosContext_StackPUSH((ctx), kos_rs_val_) < 0))         \
       RESULT_RAISE_AT((ctx), insn);                                     \
     RESULT_NEXT(ctx);                                                   \
   } while (0)
@@ -508,7 +508,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 
 /**
    RESULT_ENTRY(ctx, r, resume, state): end a resume with the outcome r
-   of a CPS entry (KosEvalState_Call, KosEvalState_NextResume)
+   of a CPS entry (KosContext_Call, KosContext_NextResume)
    it called with that same resume. NORMAL means a callee frame is
    installed and current with resume set on the caller: thread into
    its first instruction. RETURN means the settled value is in hand
@@ -569,7 +569,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 #if KOS_EVAL_SAFETYNET
 # define KOS_DISPATCH_SAFETYNET(ctx, val)                               \
   do {                                                                  \
-    if (unlikely(KosEvalState_PENDING_VALUE(ctx))) {                    \
+    if (unlikely(KosContext_PENDING_VALUE(ctx))) {                      \
       Py_XDECREF(val);                                                  \
       PyErr_SetString(PyExc_SystemError,                                \
                       "CPS delivery staged over a live one");           \
@@ -613,7 +613,7 @@ KosOpResult KosNativeFrame_ReturnToCache(
    holds a cached frame it is reinstalled in place of a fresh
    allocation and *cache is emptied. The frame carries kind and state
    from the install on, so a teardown at any point after it hands the
-   kind's clear that state; the caller's later KosEvalState_Call
+   kind's clear that state; the caller's later KosContext_Call
    / NextResume call sets the resume that receives the delivery.
    Returns the frame, or NULL with PyErr set.
 */
@@ -645,7 +645,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 /**
    Request the next element of iter, delivering it (or the failure) to
    resume instead of making the caller interpret KosIterRequestStatus
-   by hand. Like KosEvalState_Call, the entry reports what
+   by hand. Like KosContext_Call, the entry reports what
    happened and the calling resume ends in RESULT_ENTRY: a delivered
    element that is settled reports RETURN with it, no resume set (the
    resume is tail-called with it); one that needs settling settles one
@@ -671,7 +671,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    plain frame receiving a delivery today, not a new contract NULL
    introduces.
 */
-KosOpResult KosEvalState_NextResume(
+KosOpResult KosContext_NextResume(
     KosContext *ctx,
     PyObject *iter,
     PyObject *send_val,
@@ -692,7 +692,7 @@ KosOpResult KosEvalState_NextResume(
   chain. kos_dyn_* chain edits retarget them, during a drive and
   outside one alike, so they are current whether the context is
   running or suspended. pc and acting_pc are flushed into the frame at
-  frame boundaries (KosEvalState_FlushLiveRegsToFrame).
+  frame boundaries (KosContext_FlushLiveRegsToFrame).
 
   The goal field is the active transfer goal, or NULL; waiting outer
   goals hang off it.
@@ -725,7 +725,7 @@ KosOpResult KosEvalState_NextResume(
 
 /**
    A call for koskari_eval to install at entry on a fresh context
-   (KosContext::entry_call): KosEvalState_CallInto from a code-less root
+   (KosContext::entry_call): KosContext_CallInto from a code-less root
    frame carrying resume and frame_flags. args and kwnames are
    borrowed for the drive.
 */
@@ -822,7 +822,7 @@ extern PyTypeObject KosContextType;
 /* === KosContext accessor macros === */
 
 #define KosContext_DYN_TOP(c)                (((KosContext *)(c))->dyn_top)
-#define KosContext_FRAME_TOP(c)              (((KosContext *)(c))->frame)
+#define KosContext_FRAME(c)                  (((KosContext *)(c))->frame)
 #define KosContext_BLOCK(c)                  (((KosContext *)(c))->block)
 #define KosContext_NAMESPACE(c)              (((KosContext *)(c))->namespace)
 #define KosContext_TOKEN(c)                  (((KosContext *)(c))->token)
@@ -852,14 +852,14 @@ extern PyTypeObject KosContextType;
 /* === Live register accessors === */
 
 /**
-  The KosEvalState_* names below read the live registers at the head of
+  The KosContext_* names below read the live registers at the head of
   KosContext. With KOS_TRACE_EVAL_SYNC, call counts and total wall time
   of the register sync steps are recorded for kos_trace_report /
   get_trace_report under eval_state_sync.
 */
 
 
-#define KosEvalState_BREAKER(ctx) ((ctx)->breaker)
+#define KosContext_BREAKER(ctx) ((ctx)->breaker)
 
 /* The breaker bits the evaluator services. From 3.13 the word is per
    thread and the bits are named: another thread wants the GIL, a
@@ -881,7 +881,7 @@ extern PyTypeObject KosContextType;
    Up means a bit of KOS_BREAKER_MASK is set, and the trampoline's poll
    section (kos_eval_poll) answers it before threading resumes. */
 #define KOS_EVAL_BREAKER_UP(ctx)                                        \
-  unlikely((*KosEvalState_BREAKER(ctx) & KOS_BREAKER_MASK) != 0)
+  unlikely((*KosContext_BREAKER(ctx) & KOS_BREAKER_MASK) != 0)
 
 
 /**
@@ -907,11 +907,7 @@ static inline KosOpResult kos_call_installed(KosContext *ctx) {
 }
 
 
-#define KosEvalState_CONTEXT(ctx) (ctx)
-#define KosEvalState_DYN_TOP(ctx)     ((ctx)->dyn_top)
-#define KosEvalState_GOAL(ctx)        ((ctx)->goal)
-#define KosEvalState_FRAME(ctx) ((ctx)->frame)
-#define KosEvalState_RECURSION_LIMIT(ctx) ((ctx)->recursion_limit)
+#define KosContext_RECURSION_LIMIT(ctx) ((ctx)->recursion_limit)
 
 /**
    Raise RecursionError; the cold half of kos_eval_check_frame_room.
@@ -934,30 +930,28 @@ static inline int kos_eval_check_frame_room(
 
   unsigned depth = base ? KosDynFrame_DEPTH(base) : 0u;
 
-  if (likely(depth + count <= KosEvalState_RECURSION_LIMIT(ctx)))
+  if (likely(depth + count <= KosContext_RECURSION_LIMIT(ctx)))
     return 0;
   return kos_eval_recursion_error();
 }
-#define KosEvalState_CODE(ctx) ((ctx)->code)
+#define KosContext_CODE(ctx) ((ctx)->code)
 /** The live code's instruction array, read through the code object. */
-#define KosEvalState_OPS(ctx) KosCode_CODE(KosEvalState_CODE(ctx))
-#define KosEvalState_BLOCK(ctx) ((ctx)->block)
-#define KosEvalState_NAMESPACE(ctx) ((ctx)->namespace)
+#define KosContext_OPS(ctx) KosCode_CODE(KosContext_CODE(ctx))
 
-/** Live next-instruction PC; use KosEvalState_SET_PC to assign. */
-#define KosEvalState_PC(ctx) ((ctx)->pc)
+/** Live next-instruction PC; use KosContext_SET_PC to assign. */
+#define KosContext_PC(ctx) ((ctx)->pc)
 /** Instruction currently executing (last fetch). */
-#define KosEvalState_ACTING_PC(ctx) ((ctx)->acting_pc)
-#define KosEvalState_SET_PC(ctx, v) ((void)((ctx)->pc = (uint32_t)(v)))
+#define KosContext_ACTING_PC(ctx) ((ctx)->acting_pc)
+#define KosContext_SET_PC(ctx, v) ((void)((ctx)->pc = (uint32_t)(v)))
 /** The staged CPS delivery, owned; NULL when nothing is staged. */
-#define KosEvalState_PENDING_VALUE(ctx) ((ctx)->pending_value)
+#define KosContext_PENDING_VALUE(ctx) ((ctx)->pending_value)
 
 
 /** Stage an owned delivery for the current frame's resume, releasing
     any earlier one still in the slot. */
-static inline void KosEvalState_StageDelivery(KosContext *ctx, PyObject *val) {
-  Py_XDECREF(KosEvalState_PENDING_VALUE(ctx));
-  KosEvalState_PENDING_VALUE(ctx) = val;
+static inline void KosContext_StageDelivery(KosContext *ctx, PyObject *val) {
+  Py_XDECREF(KosContext_PENDING_VALUE(ctx));
+  KosContext_PENDING_VALUE(ctx) = val;
 }
 
 
@@ -967,7 +961,7 @@ static inline void KosEvalState_StageDelivery(KosContext *ctx, PyObject *val) {
    runs its resume or its entry sequence.
 */
 static inline KosOpResult kos_iter_installed(KosContext *ctx) {
-  return kos_frame_threads(KosEvalState_FRAME(ctx))
+  return kos_frame_threads(KosContext_FRAME(ctx))
       ? EVAL_NORMAL() : EVAL_REPROLOGUE();
 }
 
@@ -975,125 +969,125 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 /**
   Operand stack head block for logging; NULL when no stack.
 */
-#define KosEvalState_StackHead(ctx) \
-  ((KosEvalState_BLOCK(ctx) && *(KosEvalState_BLOCK(ctx))) \
-   ? (*(KosEvalState_BLOCK(ctx))) \
+#define KosContext_StackHead(ctx) \
+  ((KosContext_BLOCK(ctx) && *(KosContext_BLOCK(ctx))) \
+   ? (*(KosContext_BLOCK(ctx))) \
    : (KosSegment *) NULL)
 
 
-#define KosEvalState_CurrentNode(ctx) \
-  KosEvalState_DYN_TOP(ctx)
+#define KosContext_CurrentNode(ctx) \
+  KosContext_DYN_TOP(ctx)
 
-#define KosEvalState_CurrentCode(ctx) KosEvalState_CODE(ctx)
+#define KosContext_CurrentCode(ctx) KosContext_CODE(ctx)
 
-#define KosEvalState_CurrentNamespace(ctx) KosEvalState_NAMESPACE(ctx)
+#define KosContext_CurrentNamespace(ctx) KosContext_NAMESPACE(ctx)
 
 /* The current namespace, GC-revealed (tracked along its parent chain)
    and INCREF'd, ready for storage. See KosNamespace_Reveal. */
-#define KosEvalState_RevealNamespace(ctx) \
-  KosNamespace_Reveal(KosEvalState_NAMESPACE(ctx))
+#define KosContext_RevealNamespace(ctx) \
+  KosNamespace_Reveal(KosContext_NAMESPACE(ctx))
 
-#define KosEvalState_StackPushRef(ctx, val) \
-  kos_stack_push_ref_fast(KosEvalState_BLOCK(ctx), (val))
+#define KosContext_StackPushRef(ctx, val) \
+  kos_stack_push_ref_fast(KosContext_BLOCK(ctx), (val))
 
-#define KosEvalState_StackPUSH(ctx, val) \
-  kos_stack_push_steal_fast(KosEvalState_BLOCK(ctx), (val))
+#define KosContext_StackPUSH(ctx, val) \
+  kos_stack_push_steal_fast(KosContext_BLOCK(ctx), (val))
 
-#define KosEvalState_StackPopRef(ctx) \
-  kos_stack_pop_ref_fast(KosEvalState_BLOCK(ctx))
+#define KosContext_StackPopRef(ctx) \
+  kos_stack_pop_ref_fast(KosContext_BLOCK(ctx))
 
-#define KosEvalState_GetFast(ctx, index) \
-  KosNamespace_FastDeref(KosEvalState_CurrentNamespace(ctx), (index))
+#define KosContext_GetFast(ctx, index) \
+  KosNamespace_FastDeref(KosContext_CurrentNamespace(ctx), (index))
 
-#define KosEvalState_SetFast(ctx, index, value) \
-  KosNamespace_FastStore(KosEvalState_CurrentNamespace(ctx), (index), (value))
+#define KosContext_SetFast(ctx, index, value) \
+  KosNamespace_FastStore(KosContext_CurrentNamespace(ctx), (index), (value))
 
-#define KosEvalState_GetVar(ctx, key) \
-  KosNamespace_Resolve(KosEvalState_CurrentNamespace(ctx), (key))
+#define KosContext_GetVar(ctx, key) \
+  KosNamespace_Resolve(KosContext_CurrentNamespace(ctx), (key))
 
-#define KosEvalState_StackSteal_Tail(ctx, s, count) \
-  KosStackSteal_Tail((s), (count), KosEvalState_BLOCK(ctx))
+#define KosContext_StackSteal_Tail(ctx, s, count) \
+  KosStackSteal_Tail((s), (count), KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackSteal_TailPrepend(ctx, s, prefix, count) \
-  KosStackSteal_TailPrepend((s), (prefix), (count), KosEvalState_BLOCK(ctx))
+#define KosContext_StackSteal_TailPrepend(ctx, s, prefix, count) \
+  KosStackSteal_TailPrepend((s), (prefix), (count), KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackPopTail(ctx, count) \
-  KosStack_PopTail(KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackPopTail(ctx, count) \
+  KosStack_PopTail(KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackTailPtr(ctx, count) \
-  kos_stack_tail_ptr_fast(*KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackTailPtr(ctx, count) \
+  kos_stack_tail_ptr_fast(*KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackLen(ctx) \
-  KosSegment_LEN(*KosEvalState_BLOCK(ctx))
+#define KosContext_StackLen(ctx) \
+  KosSegment_LEN(*KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackDrop(ctx, count) \
-  kos_stack_drop_fast(KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackDrop(ctx, count) \
+  kos_stack_drop_fast(KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackDrop1(ctx) \
-  kos_stack_drop1_fast(KosEvalState_BLOCK(ctx))
+#define KosContext_StackDrop1(ctx) \
+  kos_stack_drop1_fast(KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackDropNoErr(ctx, count) \
-  kos_stack_drop_noerr_fast(KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackDropNoErr(ctx, count) \
+  kos_stack_drop_noerr_fast(KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackClear(ctx) \
-  KosStack_Clear(KosEvalState_BLOCK(ctx))
+#define KosContext_StackClear(ctx) \
+  KosStack_Clear(KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackDuplicate(ctx, count) \
-  KosStack_Duplicate(KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackDuplicate(ctx, count) \
+  KosStack_Duplicate(KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackDup1(ctx) \
-  kos_stack_dup1_fast(KosEvalState_BLOCK(ctx))
+#define KosContext_StackDup1(ctx) \
+  kos_stack_dup1_fast(KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackPopTailDict(ctx, count) \
-  KosStack_PopTailDict(KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackPopTailDict(ctx, count) \
+  KosStack_PopTailDict(KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackPopTailDictNames(ctx, count) \
-  KosStack_PopTailDictNames(KosEvalState_BLOCK(ctx), (count))
+#define KosContext_StackPopTailDictNames(ctx, count) \
+  KosStack_PopTailDictNames(KosContext_BLOCK(ctx), (count))
 
-#define KosEvalState_StackPopTailDictFromNames(ctx, names) \
-  KosStack_PopTailDictFromNames(KosEvalState_BLOCK(ctx), (names))
+#define KosContext_StackPopTailDictFromNames(ctx, names) \
+  KosStack_PopTailDictFromNames(KosContext_BLOCK(ctx), (names))
 
-#define KosEvalState_StackPeek(ctx) \
-  kos_stack_peek_fast(*KosEvalState_BLOCK(ctx))
+#define KosContext_StackPeek(ctx) \
+  kos_stack_peek_fast(*KosContext_BLOCK(ctx))
 
-#define KosEvalState_StackPeekAt(ctx, index) \
-  KosStack_PeekAt(*KosEvalState_BLOCK(ctx), (index))
+#define KosContext_StackPeekAt(ctx, index) \
+  KosStack_PeekAt(*KosContext_BLOCK(ctx), (index))
 
-#define KosEvalState_StackPeekUnder(ctx, under) \
-  kos_stack_peek_under_fast(*KosEvalState_BLOCK(ctx), (under))
+#define KosContext_StackPeekUnder(ctx, under) \
+  kos_stack_peek_under_fast(*KosContext_BLOCK(ctx), (under))
 
-#define KosEvalState_StackSetUnder(ctx, under, val) \
-  kos_stack_set_under_fast(*KosEvalState_BLOCK(ctx), (under), (val))
+#define KosContext_StackSetUnder(ctx, under, val) \
+  kos_stack_set_under_fast(*KosContext_BLOCK(ctx), (under), (val))
 
-#define KosEvalState_StackPopTailPtr(ctx, count, dest) \
-  kos_stack_pop_tail_ptr_fast(KosEvalState_BLOCK(ctx), (count), (dest))
+#define KosContext_StackPopTailPtr(ctx, count, dest) \
+  kos_stack_pop_tail_ptr_fast(KosContext_BLOCK(ctx), (count), (dest))
 
-#define KosEvalState_SetSuspensionEvent(ctx, ev) \
-  ((void)(KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(ctx)) = (ev)))
+#define KosContext_SetSuspensionEvent(ctx, ev) \
+  ((void)(KosContext_SUSPENSION_EVENT(ctx) = (ev)))
 
-#define KosEvalState_ClearSuspensionEvent(ctx) \
-  ((void)(KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(ctx)) \
+#define KosContext_ClearSuspensionEvent(ctx) \
+  ((void)(KosContext_SUSPENSION_EVENT(ctx) \
           = KOS_SUSP_NONE))
 
-#define KosEvalState_SuspensionEvent(ctx) \
-  KosContext_SUSPENSION_EVENT(KosEvalState_CONTEXT(ctx))
+#define KosContext_SuspensionEvent(ctx) \
+  KosContext_SUSPENSION_EVENT(ctx)
 
-#define KosEvalState_MarkSuspendedNotRunning(ctx) \
+#define KosContext_MarkSuspendedNotRunning(ctx) \
   do { \
-    KosContext *kos_ctx_mark_sr_ = KosEvalState_CONTEXT(ctx); \
+    KosContext *kos_ctx_mark_sr_ = (ctx); \
     KosContext_FLAGS(kos_ctx_mark_sr_) &= ~KOS_CTX_RUNNING; \
   } while (0)
 
-#define KosEvalState_MarkDeadAfterYield(ctx) \
+#define KosContext_MarkDeadAfterYield(ctx) \
   do { \
-    KosContext *kos_ctx_mark_dy_ = KosEvalState_CONTEXT(ctx); \
+    KosContext *kos_ctx_mark_dy_ = (ctx); \
     KosContext_FLAGS(kos_ctx_mark_dy_) &= ~KOS_CTX_RUNNING; \
     KosContext_FLAGS(kos_ctx_mark_dy_) |= KOS_CTX_DEAD; \
   } while (0)
 
-#define KosEvalState_MarkDeadAfterReturn(ctx) \
+#define KosContext_MarkDeadAfterReturn(ctx) \
   do { \
-    KosContext *kos_ctx_mark_dr_ = KosEvalState_CONTEXT(ctx); \
+    KosContext *kos_ctx_mark_dr_ = (ctx); \
     KosContext_FLAGS(kos_ctx_mark_dr_) &= ~KOS_CTX_RUNNING; \
     KosContext_FLAGS(kos_ctx_mark_dr_) |= KOS_CTX_DEAD; \
   } while (0)
@@ -1134,13 +1128,13 @@ void KosContext_EndDrive(KosContext *ctx);
   the chain or current-frame pointer changes, or before another subsystem
   reads frame PC slots. No-op when ctx has no frame.
 */
-static inline void KosEvalState_FlushLiveRegsToFrame(KosContext *ctx) {
+static inline void KosContext_FlushLiveRegsToFrame(KosContext *ctx) {
 
   KosDynFrame *f;
 
   KOS_TRACE_EVAL_SYNC_BEGIN();
 
-  f = KosEvalState_FRAME(ctx);
+  f = KosContext_FRAME(ctx);
   if (! f)
     goto done;
   KosDynFrame_PC(f) = (ctx)->pc;
@@ -1164,15 +1158,15 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
     KosContext *ctx,
     KosDynFrame *frame) {
 
-  KosDynNode_PARENT(frame) = KosEvalState_DYN_TOP(ctx);
+  KosDynNode_PARENT(frame) = KosContext_DYN_TOP(ctx);
   KosDynNode_NODE_ID(frame) = 0;  /* a fresh instance; minted on first read */
 
   {
-    KosDynFrame *cur = KosEvalState_FRAME(ctx);
+    KosDynFrame *cur = KosContext_FRAME(ctx);
     if (cur) {
       KosDynFrame_FLAGS(frame) |= (KosDynFrame_FLAGS(cur) & KOS_FRAME_DEMAND);
       KosDynFrame_DEPTH(frame) = KosDynFrame_DEPTH(cur) + 1;
-      KosEvalState_FlushLiveRegsToFrame(ctx);
+      KosContext_FlushLiveRegsToFrame(ctx);
     } else {
       KosDynFrame_DEPTH(frame) = 1;
     }
@@ -1180,40 +1174,40 @@ KOS_OP_INLINE void kos_dyn_push_ready_frame(
 
   /* the installed segment's unwind cache: the live slot it displaces */
   KosSegment_BACK(KosDynNode_STACK((KosDynNode *) frame)) =
-      KosEvalState_BLOCK(ctx);
+      KosContext_BLOCK(ctx);
   if (KosSegment_IS_INLINE(KosDynNode_STACK((KosDynNode *) frame)))
     KOS_TRACE_EVENTS_INC(KOS_TE_SEG_INLINE_INSTALL);
-  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosEvalState_FRAME(ctx);
-  KosEvalState_DYN_TOP(ctx) = (KosDynNode *) frame;
-  KosEvalState_FRAME(ctx) = frame;
-  KosEvalState_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) frame);
-  KosEvalState_NAMESPACE(ctx) = KosDynNode_NS((KosDynNode *) frame);
-  KosEvalState_CODE(ctx) = KosDynFrame_CODE(frame);
+  KosDynFrame_BACK_FRAME(frame) = (KosDynNode *) KosContext_FRAME(ctx);
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_FRAME(ctx) = frame;
+  KosContext_BLOCK(ctx) = &KosDynNode_STACK((KosDynNode *) frame);
+  KosContext_NAMESPACE(ctx) = KosDynNode_NS((KosDynNode *) frame);
+  KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
   ctx->pc = 0;
   ctx->acting_pc = 0;
 }
 
 
-int KosEvalState_SetFrameCodeAndNamespace(
+int KosContext_SetFrameCodeAndNamespace(
     KosContext *ctx,
     KosDynFrame *frame,
     KosCode *code,
     PyObject *ns);
 
-KosEvaluatorToken *KosEvalState_Token(const KosContext *ctx);
+KosEvaluatorToken *KosContext_Token(const KosContext *ctx);
 
 /**
   Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
   root). NULL if no explicit stack on the chain.
 */
-KosDynNode *KosEvalState_InnermostStackOwner(KosContext *ctx);
+KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx);
 
-void KosEvalState_PythonAwaitClearIter(KosContext *ctx);
-PyObject *KosEvalState_PythonAwaitIter(KosContext *ctx);
-void KosEvalState_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind);
+void KosContext_PythonAwaitClearIter(KosContext *ctx);
+PyObject *KosContext_PythonAwaitIter(KosContext *ctx);
+void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind);
 
-int KosEvalState_ParentStackPushRef(KosContext *ctx, PyObject *val);
-int KosEvalState_ParentStackPUSH(KosContext *ctx, PyObject *val);
+int KosContext_ParentStackPushRef(KosContext *ctx, PyObject *val);
+int KosContext_ParentStackPUSH(KosContext *ctx, PyObject *val);
 
 /**
    Pop TOS and materialize it as a fast sequence for the UNPACK family.
@@ -1222,7 +1216,7 @@ int KosEvalState_ParentStackPUSH(KosContext *ctx, PyObject *val);
    not iterable) or ValueError (wrong length) set. who names the opcode
    in the message.
 */
-PyObject *KosEvalState_PopUnpackSequence(
+PyObject *KosContext_PopUnpackSequence(
     KosContext *ctx,
     Py_ssize_t need,
     int exact,
@@ -1235,7 +1229,7 @@ PyObject *KosEvalState_PopUnpackSequence(
 */
 #define KOS_EVALSTATE_POP_ARGS(ctx, agg) \
   kos_stack_pop_tail_ptr_fast( \
-      KosEvalState_BLOCK(ctx), \
+      KosContext_BLOCK(ctx), \
       sizeof(agg) / sizeof(PyObject *), \
       (PyObject **)(void *)&(agg))
 
@@ -1412,7 +1406,7 @@ KosOpResult koskari_eval(
        0 when no resume is set or the exception is GeneratorExit and
        it stays raised for the frame
 */
-int KosEvalState_ThrowIntoResume(KosContext *ctx);
+int KosContext_ThrowIntoResume(KosContext *ctx);
 
 
 /**
@@ -1465,7 +1459,7 @@ extern PyObject *KoskariContinuationApply;
 extern PyObject *KoskariContinuationError;
 
 
-/* === KosEvalState_Call* : eval-state-oriented generic call entry points === */
+/* === KosContext_Call* : eval-state-oriented generic call entry points === */
 
 /**
    Install a code frame for a call: on a tail call the live frame is
@@ -1473,7 +1467,7 @@ extern PyObject *KoskariContinuationError;
    frame is pushed above it. ns is stolen on every path. Returns the
    installed result (NORMAL, or POLL when the breaker is up), or RAISE.
 */
-KosOpResult KosEvalState_InstallCallFrame(
+KosOpResult KosContext_InstallCallFrame(
     KosContext *ctx,
     KosCode *code,
     PyObject *ns,
@@ -1506,7 +1500,7 @@ KosOpResult KosEvalState_InstallCallFrame(
    entry an install slot uses to call through to another callable; the
    CALL* opcodes have their own push entry inside the call core.
 */
-KosOpResult KosEvalState_Call(
+KosOpResult KosContext_Call(
     KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
@@ -1526,7 +1520,7 @@ KosOpResult KosEvalState_Call(
    call, so a failure raised while this frame is current is delivered
    to the resume as NULL. Returns the frame, or NULL with PyErr set.
 */
-KosDynFrame *KosEvalState_InstallNativeFrame(
+KosDynFrame *KosContext_InstallNativeFrame(
     KosContext *ctx,
     const KosResumeKind *resume,
     void *state,
@@ -1548,7 +1542,7 @@ KosDynFrame *KosEvalState_InstallNativeFrame(
    failures reach it the same way. Returns REPROLOGUE for the staged
    value, else the call's outcome. args are borrowed.
 */
-KosOpResult KosEvalState_CallInto(
+KosOpResult KosContext_CallInto(
     KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
@@ -1568,7 +1562,7 @@ KosOpResult KosEvalState_CallInto(
    delivery, which it must handle. Returns REPROLOGUE or AWAIT, or
    RAISE. val is consumed.
 */
-KosOpResult KosEvalState_SettleInto(
+KosOpResult KosContext_SettleInto(
     KosContext *ctx,
     PyObject *val,
     const KosResumeKind *resume,
@@ -1577,11 +1571,11 @@ KosOpResult KosEvalState_SettleInto(
 
 
 /**
-   KosEvalState_Call with self as the receiver, injected as the first
+   KosContext_Call with self as the receiver, injected as the first
    positional, under the same resume contract. No bound method is
    built. args and kwnames are borrowed.
 */
-KosOpResult KosEvalState_CallMethod(
+KosOpResult KosContext_CallMethod(
     KosContext *ctx,
     PyObject *callable,
     PyObject *self,
@@ -1594,14 +1588,14 @@ KosOpResult KosEvalState_CallMethod(
 
 
 /**
-   KosEvalState_Call over a tuple and a dict, under the same resume
+   KosContext_Call over a tuple and a dict, under the same resume
    contract: a plain Python callable takes them as they are, a
    KosCallable's are spread once to the vector shape.
 
    callable, args_tuple (may be NULL), kwds_dict (may be NULL) are
    borrowed.
 */
-KosOpResult KosEvalState_CallArgs(
+KosOpResult KosContext_CallArgs(
     KosContext *ctx,
     PyObject *callable,
     PyObject *args_tuple,
@@ -1628,7 +1622,7 @@ KosOpResult KosEvalState_CallArgs(
 
    val is consumed (ownership transferred).
 */
-KosOpResult KosEvalState_PushOrAwait(KosContext *ctx, PyObject *val);
+KosOpResult KosContext_PushOrAwait(KosContext *ctx, PyObject *val);
 
 
 /**
@@ -1641,13 +1635,13 @@ KosOpResult KosEvalState_PushOrAwait(KosContext *ctx, PyObject *val);
    with the yielded value (the revive lands the settled value there
    too), or RAISE. val is consumed.
 */
-KosOpResult KosEvalState_Settle(KosContext *ctx, PyObject *val, PyObject **out);
+KosOpResult KosContext_Settle(KosContext *ctx, PyObject *val, PyObject **out);
 
 
 /**
    Settle a delivery that still needs awaiting and stage the outcome
    for the current frame's resume. Takes one eager step through
-   KosEvalState_Settle. A settled value is placed in the pending slot
+   KosContext_Settle. A settled value is placed in the pending slot
    and EVAL_REPROLOGUE returns to the prologue, which classifies it
    again, so a value that settles to a further awaitable bounces
    again. A fresh Koskari coroutine is instead installed as a callee
@@ -1656,7 +1650,7 @@ KosOpResult KosEvalState_Settle(KosContext *ctx, PyObject *val, PyObject **out);
    set one, or sets one on the REPROLOGUE or AWAIT outcome, per its
    own contract. val is consumed.
 */
-KosOpResult KosEvalState_SettleStage(KosContext *ctx, PyObject *val);
+KosOpResult KosContext_SettleStage(KosContext *ctx, PyObject *val);
 
 
 /**
@@ -1716,7 +1710,7 @@ static inline int kos_site_extent_close(
     return 0;
   }
 
-  code = (PyObject *) KosEvalState_CODE(ctx);
+  code = (PyObject *) KosContext_CODE(ctx);
   eid = kos_extent_find(code, KosOp_PC(insn), kind);
   if (eid == KOS_EXTENT_NONE) {
     PyErr_Format(PyExc_RuntimeError, "%s: no extent at this PC", who);

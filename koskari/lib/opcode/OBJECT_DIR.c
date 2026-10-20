@@ -21,7 +21,7 @@ KOS_OP_HANDLER(OBJECT_DIR) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val) RESULT_RAISE();
 
   PyObject *res = PyObject_Dir(val);

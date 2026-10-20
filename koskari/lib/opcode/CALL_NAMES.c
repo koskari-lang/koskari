@@ -26,7 +26,7 @@ KOS_OP_HANDLER(CALL_NAMES) {
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   unsigned opa = KosOp_ARG(insn);
 
-  PyObject *names = KosEvalState_StackPeek(ctx);
+  PyObject *names = KosContext_StackPeek(ctx);
   if (! names)
     RESULT_RAISE();
   if (! PyTuple_CheckExact(names)) {
@@ -41,11 +41,11 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   /* Pop the names tuple off the top; the remaining window is the
      standard [callable, pos..., kw_vals...] shape for the core. */
-  names = KosEvalState_StackPopRef(ctx);
+  names = KosContext_StackPopRef(ctx);
   if (! names)
     RESULT_RAISE();
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, (size_t) total + 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, (size_t) total + 1);
   if (! ptr) {
     Py_DECREF(names);
     RESULT_RAISE();

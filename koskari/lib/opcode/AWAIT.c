@@ -35,7 +35,7 @@ KOS_OP_HANDLER(AWAIT) {
     RESULT_RAISE();
   }
 
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 

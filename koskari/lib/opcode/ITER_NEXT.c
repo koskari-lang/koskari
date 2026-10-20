@@ -40,7 +40,7 @@ KOS_OP_HANDLER(ITER_NEXT) {
 
     switch (kos_foreach_request_next(ctx, region, &out)) {
       case KOS_IREQ_DELIVERED:
-        if (unlikely(KosEvalState_StackPUSH(ctx, out) < 0))
+        if (unlikely(KosContext_StackPUSH(ctx, out) < 0))
           RESULT_RAISE();
         RESULT_NEXT(ctx);
 

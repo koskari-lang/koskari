@@ -24,13 +24,13 @@ KOS_OP_HANDLER(BRACKET_PROPER) {
   KOS_SYNC_PC(ctx, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
-  if (unlikely(KosEvalState_StackPushRef(ctx, KosBracketNil)))
+  if (unlikely(KosContext_StackPushRef(ctx, KosBracketNil)))
     RESULT_RAISE();
 
   if (unlikely(count == 0))
     RESULT_NEXT(ctx);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count + 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, count + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -38,7 +38,7 @@ KOS_OP_HANDLER(BRACKET_PROPER) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  KosEvalState_StackDropNoErr(ctx, count + 1);
+  KosContext_StackDropNoErr(ctx, count + 1);
 
   RESULT_STEAL(ctx, result);
 }

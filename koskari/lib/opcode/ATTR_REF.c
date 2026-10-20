@@ -20,7 +20,7 @@
 KOS_OP_HANDLER(ATTR_REF) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
-  PyObject *obj = KosEvalState_StackPopRef(ctx);
+  PyObject *obj = KosContext_StackPopRef(ctx);
   if (! obj)
     RESULT_RAISE();
   PyObject *ref = KosAttributeRef_New(name, obj, name);

@@ -313,7 +313,7 @@ KOS_ELECTOR(fast_inplace_generic) {
 KOS_ELECTOR(operand_const_generic) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *pair[2];
   PyObject *result;
@@ -339,7 +339,7 @@ KOS_ELECTOR(operand_const_generic) {
 KOS_ELECTOR(fast_operand_const_generic) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *pair[2];
   PyObject *result;
 
@@ -366,8 +366,8 @@ KOS_ELECTOR(fast_operand_const_generic) {
 KOS_ELECTOR(operand_fast_generic) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *pair[2];
   PyObject *result;
@@ -396,7 +396,7 @@ KOS_ELECTOR(operand_fast_generic) {
 KOS_ELECTOR(fast_operand_fast_generic) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *pair[2];
   PyObject *result;
 
@@ -429,7 +429,7 @@ KOS_ELECTOR(fast_inplace_const_generic) {
   KosOperand op = (KosOperand) KosExtra_IMM(row, 0);
   size_t idx = (size_t) KosExtra_IMM(row, 1);
 
-  KOS_OP_REQUIRE_NS(KosEvalState_NAMESPACE(ctx));
+  KOS_OP_REQUIRE_NS(KosContext_NAMESPACE(ctx));
   kos_elector_generic_tick(KosOp_SLOT(insn));
   if (unlikely(kos_fast_inplace_apply(ctx, op, idx, KosExtra_OBJ(row, 2)) < 0))
     RESULT_RAISE();
@@ -565,7 +565,7 @@ KOS_ELECTOR(miss) {
    alone is dropped; else the result replaces the pair. */
 #define KOS_PAIR_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)             \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);            \
     KOS_##KIND##_VARS;                                                  \
     PyObject *out;                                                      \
@@ -612,7 +612,7 @@ KOS_ELECTOR(miss) {
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
     PyObject *acc;                                                      \
     PyObject *rhs;                                                      \
     int home;                                                           \
@@ -634,7 +634,7 @@ KOS_ELECTOR(miss) {
     if (RHS_GUARDED && out == rhs) {                                    \
       /* the result lives in the stack top: its reference moves to the \
          slot below instead of being dropped */                         \
-      (*KosEvalState_BLOCK(ctx))->len -= 1;                             \
+      (*KosContext_BLOCK(ctx))->len -= 1;                               \
     } else {                                                            \
       DROP;                                                             \
     }                                                                   \
@@ -732,7 +732,7 @@ KOS_NUMERIC_ELECTORS(KOS_PAIR_ELECTOR, pair)
    the rest of the run alone is dropped. */
 #define KOS_PAIR_FOLD_ELECTOR(FAMILY, KIND, kind, NAME, OPERAND)        \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     size_t count = KosOpCount_COUNT(KosOp_ARG(insn));                   \
     PyObject *const *args = kos_stack_tail_ptr_fast(*bl, count);        \
     KOS_##KIND##_VARS;                                                  \
@@ -784,7 +784,7 @@ static inline void kos_elector_replace_top(KosSegment **bl, PyObject *val) {
 
 /* The top of the stack, borrowed, or NULL with an error set. */
 KOS_OP_INLINE PyObject *kos_stack_peek_top(KosContext *ctx) {
-  PyObject *const *top = kos_stack_tail_ptr_fast(*KosEvalState_BLOCK(ctx), 1);
+  PyObject *const *top = kos_stack_tail_ptr_fast(*KosContext_BLOCK(ctx), 1);
   return top ? top[0] : NULL;
 }
 
@@ -795,7 +795,7 @@ KOS_OP_INLINE PyObject *kos_stack_peek_top(KosContext *ctx) {
       FAMILY, KIND, kind, NAME,                                         \
       kos_stack_peek_top(ctx), 1,                                       \
       KOS_##KIND##_EXTRACT,                                             \
-      kos_stack_drop1_fast(KosEvalState_BLOCK(ctx)))
+      kos_stack_drop1_fast(KosContext_BLOCK(ctx)))
 
 KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_BODY, fast_inplace)
 
@@ -823,7 +823,7 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_INPLACE_CONST_BODY, fast_inplace_const)
 #define KOS_OPERAND_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)       \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);             \
     PyObject *rhs = KosExtra_OBJ(row, 1);                               \
     KOS_##KIND##_VARS;                                                  \
@@ -852,7 +852,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
 #define KOS_FAST_OPERAND_CONST_BODY(FAMILY, KIND, kind, NAME, OPERAND)  \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
     PyObject *lhs;                                                      \
     PyObject *rhs = KosExtra_OBJ(row, 2);                               \
     KOS_##KIND##_VARS;                                                  \
@@ -865,7 +865,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_CONST_BODY, operand_const)
     KOS_##KIND##_EXTRACT_CONST(lhs, rhs, kos_elector_generic_of(insn)); \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, NULL, out); \
-    if (unlikely(kos_stack_push_steal_fast(KosEvalState_BLOCK(ctx), out) < 0)) \
+    if (unlikely(kos_stack_push_steal_fast(KosContext_BLOCK(ctx), out) < 0)) \
       RESULT_RAISE_AT(ctx, insn);                                       \
     RESULT_NEXT(ctx);                                                   \
   }
@@ -881,8 +881,8 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_OPERAND_CONST_BODY, fast_operand_const)
 #define KOS_OPERAND_FAST_BODY(FAMILY, KIND, kind, NAME, OPERAND)        \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
     PyObject *const *top = kos_stack_tail_ptr_fast(*bl, 1);             \
     PyObject *rhs;                                                      \
     KOS_##KIND##_VARS;                                                  \
@@ -911,7 +911,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_FAST_BODY, operand_fast)
 #define KOS_FAST_OPERAND_FAST_BODY(FAMILY, KIND, kind, NAME, OPERAND)   \
   KOS_ELECTOR(FAMILY##_##kind##_##NAME) {                               \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
     PyObject *lhs, *rhs;                                                \
     KOS_##KIND##_VARS;                                                  \
     PyObject *out;                                                      \
@@ -924,7 +924,7 @@ KOS_NUMERIC_ELECTORS(KOS_OPERAND_FAST_BODY, operand_fast)
     KOS_##KIND##_EXTRACT(lhs, rhs, kos_elector_generic_of(insn));       \
                                                                         \
     KOS_ELECTOR_RESULT(KOS_##KIND##_FAST(NAME), a, b, NULL, NULL, out); \
-    if (unlikely(kos_stack_push_steal_fast(KosEvalState_BLOCK(ctx), out) < 0)) \
+    if (unlikely(kos_stack_push_steal_fast(KosContext_BLOCK(ctx), out) < 0)) \
       RESULT_RAISE_AT(ctx, insn);                                       \
     RESULT_NEXT(ctx);                                                   \
   }
@@ -952,7 +952,7 @@ KOS_NUMERIC_ELECTORS(KOS_FAST_OPERAND_FAST_BODY, fast_operand_fast)
 KOS_ELECTOR(fast_item_const_generic) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *obj;
   PyObject *out;
 
@@ -973,7 +973,7 @@ KOS_ELECTOR(fast_item_const_generic) {
   KOS_ELECTOR(fast_item_const_##NAME) {                                 \
     KOS_SYNC_PC(ctx, insn);                                             \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
     PyObject *obj;                                                      \
     Py_ssize_t i, size;                                                 \
     PyObject *out;                                                      \
@@ -1018,7 +1018,7 @@ static void kos_elector_set_key_error(PyObject *key) {
 KOS_ELECTOR(fast_item_const_dict) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *obj;
   PyObject *v;
 
@@ -1058,7 +1058,7 @@ KOS_ELECTOR(fast_item_const_dict) {
 
 KOS_ELECTOR(pair_str_add) {
   KOS_SYNC_PC(ctx, insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);
   PyObject *out;
 
@@ -1083,7 +1083,7 @@ KOS_ELECTOR(pair_str_add) {
    one allocation replaces the run. */
 KOS_ELECTOR(pair_str_join) {
   KOS_SYNC_PC(ctx, insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   size_t count = KosOpCount_COUNT(KosOp_ARG(insn));
   PyObject *const *args = kos_stack_tail_ptr_fast(*bl, count);
   PyObject *out;
@@ -1114,7 +1114,7 @@ KOS_ELECTOR(pair_str_join) {
     KOS_SYNC_PC(ctx, insn);                                             \
     const KosExtra *row = KosOp_ROW(insn);                              \
     size_t idx = (size_t) KosExtra_IMM(row, 1);                         \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
     PyObject *acc;                                                      \
     PyObject *rhs;                                                      \
     PyObject *left;                                                     \
@@ -1147,7 +1147,7 @@ KOS_ELECTOR(pair_str_join) {
 KOS_SLOT_STR_ELECTOR(
     fast_inplace,
     kos_stack_peek_top(ctx), 1,
-    kos_stack_drop1_fast(KosEvalState_BLOCK(ctx)))
+    kos_stack_drop1_fast(KosContext_BLOCK(ctx)))
 KOS_SLOT_STR_ELECTOR(
     fast_inplace_const,
     KosExtra_OBJ(row, 2), 0,
@@ -1176,12 +1176,12 @@ KOS_ELECTOR(check_compare_generic) {
     RESULT_RAISE();
   }
 
-  args = KosEvalState_StackTailPtr(ctx, count);
+  args = KosContext_StackTailPtr(ctx, count);
   if (unlikely(! args))
     RESULT_RAISE();
 
   res = kos_compare_chain((KosCompare) KosExtra_IMM(row, 0), args, count);
-  KosEvalState_StackDropNoErr(ctx, count);
+  KosContext_StackDropNoErr(ctx, count);
   if (unlikely(res < 0))
     RESULT_RAISE();
   if ((res != 0) == (int) KosExtra_IMM(row, 3))
@@ -1208,12 +1208,12 @@ KOS_ELECTOR(object_compare_generic) {
     RESULT_RAISE();
   }
 
-  args = KosEvalState_StackTailPtr(ctx, count);
+  args = KosContext_StackTailPtr(ctx, count);
   if (unlikely(! args))
     RESULT_RAISE();
 
   result = kos_compare_reduce((KosCompare) KosCmpCount_SEL(arg), args, count);
-  KosEvalState_StackDropNoErr(ctx, count);
+  KosContext_StackDropNoErr(ctx, count);
   if (unlikely(! result))
     RESULT_RAISE();
   RESULT_STEAL(ctx, result);
@@ -1231,7 +1231,7 @@ KOS_ELECTOR(object_compare_generic) {
 #define KOS_COMPARE_ELECTOR(FAMILY, KIND, kind, ROW, SEL, SETTLE)       \
   KOS_ELECTOR(FAMILY##_##kind) {                                        \
     ROW;                                                                \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *args = kos_stack_tail_ptr_fast(*bl, 2);            \
     KOS_##KIND##_VARS;                                                  \
     int held;                                                           \
@@ -1287,7 +1287,7 @@ static inline KosThreadFn kos_elector_compare_classify(
     KosThreadFn int_body,
     KosThreadFn float_body) {
 
-  KosSegment *s = *KosEvalState_BLOCK(ctx);
+  KosSegment *s = *KosContext_BLOCK(ctx);
   PyObject *const *args;
 
   if (sel > KOS_COMPARE_GE || count != 2 || ! s || s->len < 2)
@@ -1382,7 +1382,7 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
   size_t idx = (size_t) KosExtra_IMM(row, 1);
   PyObject *attr = KosExtra_OBJ(row, 2);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   KosCacheSlot *slot = KosOp_SLOT(insn);
   PyObject *obj;
   PyObject *const *args;
@@ -1395,14 +1395,14 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
   if (! obj)
     RESULT_RAISE();
 
-  args = count ? KosEvalState_StackTailPtr(ctx, (size_t) count) : NULL;
+  args = count ? KosContext_StackTailPtr(ctx, (size_t) count) : NULL;
   if (count && ! args) {
     Py_DECREF(obj);
     RESULT_RAISE();
   }
 
   res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
-  KosEvalState_StackDropNoErr(ctx, (size_t) count);
+  KosContext_StackDropNoErr(ctx, (size_t) count);
   Py_DECREF(obj);
   if (unlikely(res < 0))
     RESULT_RAISE();
@@ -1416,7 +1416,7 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
    load and this store, so the location is the one the head read. */
 #define KOS_ATTR_ELECTOR_STORE(addr, acc, out)                          \
   do {                                                                  \
-    kos_stack_drop1_fast(KosEvalState_BLOCK(ctx));                      \
+    kos_stack_drop1_fast(KosContext_BLOCK(ctx));                        \
     if ((out) != (acc)) {                                               \
       *(addr) = (out);                                                  \
       Py_DECREF(acc);                                                   \
@@ -1432,7 +1432,7 @@ KOS_ELECTOR(fast_attr_inplace_generic) {
 #define KOS_ATTR_ELECTOR_HEAD(rhs, addr, acc)                           \
   do {                                                                  \
     KosCacheSlot *kos_ah_field_ = KosOp_SLOT(insn);                     \
-    PyObject *kos_ah_ns_ = KosEvalState_NAMESPACE(ctx);                 \
+    PyObject *kos_ah_ns_ = KosContext_NAMESPACE(ctx);                   \
     PyObject *kos_ah_obj_;                                              \
     KOS_OP_REQUIRE_NS(kos_ah_ns_);                                      \
     kos_ah_obj_ = kos_ns_fast_peek(kos_ah_ns_,                          \
@@ -1508,7 +1508,7 @@ KOS_ELECTOR(fast_attr_inplace_str_add) {
     Py_DECREF(acc);
   }
   KOS_TRACE_OPCACHE_INC(KOS_OC_ELECTOR_HIT);
-  kos_stack_drop1_fast(KosEvalState_BLOCK(ctx));
+  kos_stack_drop1_fast(KosContext_BLOCK(ctx));
   RESULT_NEXT(ctx);
 }
 
@@ -1522,9 +1522,9 @@ static inline KosThreadFn kos_elector_fast_attr_inplace_classify(
 
   const KosExtra *row = KosOp_ROW(insn);
   KosCacheSlot *field = KosOp_SLOT(insn);
-  KosSegment *s = *KosEvalState_BLOCK(ctx);
+  KosSegment *s = *KosContext_BLOCK(ctx);
   PyObject *obj = kos_ns_fast_peek(
-      KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
+      KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
   PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
   PyObject **addr;
 
@@ -1623,7 +1623,7 @@ static inline KosThreadFn kos_elector_pair_classify(
   uint16_t arg = KosOp_ARG(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(arg);
   size_t count = KosOpCount_COUNT(arg);
-  KosSegment *s = *KosEvalState_BLOCK(ctx);
+  KosSegment *s = *KosContext_BLOCK(ctx);
   PyObject *const *args;
 
   if (count < 2 || ! s || s->len < count)
@@ -1644,9 +1644,9 @@ static inline KosThreadFn kos_elector_fast_inplace_classify(
     void *insn) {
 
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment *s = *KosEvalState_BLOCK(ctx);
+  KosSegment *s = *KosContext_BLOCK(ctx);
   PyObject *acc = kos_ns_fast_peek(
-      KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
+      KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
   PyObject *rhs = (s && s->len >= 1) ? kos_stack_tail_ptr_fast(s, 1)[0] : NULL;
 
   return kos_elector_num_body(
@@ -1664,7 +1664,7 @@ static inline KosThreadFn kos_elector_fast_inplace_const_classify(
 
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *acc = kos_ns_fast_peek(
-      KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
+      KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
   PyObject *rhs = KosExtra_OBJ(row, 2);
   long long b;
 
@@ -1734,7 +1734,7 @@ static inline KosThreadFn kos_elector_fast_operand_const_classify(
 
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *lhs = kos_ns_fast_peek(
-      KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
+      KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
   PyObject *rhs = KosExtra_OBJ(row, 2);
   long long b;
 
@@ -1766,7 +1766,7 @@ static inline KosThreadFn kos_elector_fast_item_const_classify(
   const KosExtra *row = KosOp_ROW(insn);
   KosCacheSlot *slot = KosOp_SLOT(insn);
   PyObject *obj = kos_ns_fast_peek(
-      KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0));
+      KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0));
   PyObject *key = KosExtra_OBJ(row, 1);
   long long i;
 
@@ -1801,7 +1801,7 @@ static inline KosThreadFn kos_elector_operand_fast_classify(
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *lhs = kos_stack_peek_top(ctx);
   PyObject *rhs = kos_ns_fast_peek(
-      KosEvalState_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
+      KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 1));
 
   if (! lhs) {
     PyErr_Clear();
@@ -1820,7 +1820,7 @@ static inline KosThreadFn kos_elector_fast_operand_fast_classify(
     void *insn) {
 
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *lhs = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 1));
   PyObject *rhs = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 2));
 
@@ -1873,7 +1873,7 @@ static inline int kos_item_const_index(
 
 KOS_ELECTOR(item_const_generic) {
   KOS_SYNC_PC(ctx, insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *out;
 
@@ -1890,7 +1890,7 @@ KOS_ELECTOR(item_const_generic) {
 #define KOS_ITEM_CONST_SEQ_BODY(NAME, CHECK, SIZE, GET)                 \
   KOS_ELECTOR(item_const_##NAME) {                                      \
     KOS_SYNC_PC(ctx, insn);                                             \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);            \
     Py_ssize_t i;                                                       \
     PyObject *out;                                                      \
@@ -1916,7 +1916,7 @@ KOS_ITEM_CONST_SEQ_BODY(tuple, PyTuple_CheckExact, PyTuple_GET_SIZE,
 
 KOS_ELECTOR(item_const_dict) {
   KOS_SYNC_PC(ctx, insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
   PyObject *v;
 
@@ -1959,8 +1959,8 @@ KOS_ELECTOR(item_const_dict) {
   KOS_ELECTOR(FAMILY##_list) {                                          \
     KOS_SYNC_PC(ctx, insn);                                             \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, NEED);         \
     PyObject *obj, *val, *old;                                          \
     Py_ssize_t i;                                                       \
@@ -1985,8 +1985,8 @@ KOS_ELECTOR(item_const_dict) {
   KOS_ELECTOR(FAMILY##_dict) {                                          \
     KOS_SYNC_PC(ctx, insn);                                             \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, NEED);         \
     PyObject *obj, *val;                                                \
     int rc;                                                             \
@@ -2022,8 +2022,8 @@ KOS_ELECTOR(item_const_dict) {
   KOS_ELECTOR(FAMILY##_generic) {                                       \
     KOS_SYNC_PC(ctx, insn);                                             \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
-    KosSegment **bl = KosEvalState_BLOCK(ctx);                          \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
+    KosSegment **bl = KosContext_BLOCK(ctx);                            \
     PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, NEED);         \
     PyObject *obj, *val;                                                \
     PyObject *obj_owned = NULL;  /* a deref's own reference, if any */    \
@@ -2164,8 +2164,8 @@ static inline KosThreadFn kos_item_const_body(
   static inline KosThreadFn kos_elector_##FAMILY##_classify(            \
       KosContext *ctx, void *insn) {                                    \
     const KosExtra *row = KosOp_ROW(insn);                              \
-    PyObject *ns = KosEvalState_NAMESPACE(ctx);                         \
-    KosSegment *s = *KosEvalState_BLOCK(ctx);                           \
+    PyObject *ns = KosContext_NAMESPACE(ctx);                           \
+    KosSegment *s = *KosContext_BLOCK(ctx);                             \
     PyObject *obj = (OBJ_EXPR);                                         \
     (void) row; (void) ns; (void) s;                                    \
     return kos_item_const_body(KosOp_SLOT(insn), obj, (KEY_EXPR),       \

@@ -21,7 +21,7 @@
    resume_kind/resume_state fields on KosDynFrame, the prologue's
    delivery path, the raise walk reaching a resume, and clone/cache/
    tail-reset clearing. These tests set the frame fields directly,
-   below the KosEvalState_Call / NextResume entries.
+   below the KosContext_Call / NextResume entries.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -87,7 +87,7 @@ static int test_cg_prologue_delivers_staged_resume(void) {
 
   PyObject *staged = PyLong_FromLong(7);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
-  TEST_ASSERT(KosEvalState_StackPushRef(ctx, staged) >= 0,
+  TEST_ASSERT(KosContext_StackPushRef(ctx, staged) >= 0,
               "push staged value onto the frame's own stack");
 
   ResumeProbe probe = { 0, 0, 0, NULL };
@@ -148,9 +148,9 @@ static int test_dispatch_delivers_through_prologue(void) {
   TEST_ASSERT_EQ(probe.seen_null, 0, "delivered a real value, not NULL");
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN, "resume's terminal result relayed");
   TEST_ASSERT_SAME(r.val, staged, "delivered value is the staged value");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx), "slot consumed");
-  TEST_ASSERT(! KosEvalState_StackHead(ctx)
-              || KosEvalState_StackLen(ctx) == 0,
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "slot consumed");
+  TEST_ASSERT(! KosContext_StackHead(ctx)
+              || KosContext_StackLen(ctx) == 0,
               "the frame stack was not touched");
 
   Py_XDECREF(r.val);
@@ -179,15 +179,15 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   TEST_ASSERT_NOT_NULL(it, "acquire iterator");
 
   ResumeProbe probe = { 0, 0, 0, NULL };
-  KosOpResult r = KosEvalState_NextResume(ctx, it, NULL, &resume_probe_kind, &probe);
+  KosOpResult r = KosContext_NextResume(ctx, it, NULL, &resume_probe_kind, &probe);
 
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
                  "a delivered, settled element is reported in hand");
   TEST_ASSERT_NOT_NULL(r.val, "the element rides the result");
   TEST_ASSERT_EQ(PyLong_AsLong(r.val), 42, "element value");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx), "nothing staged");
-  TEST_ASSERT(! KosEvalState_StackHead(ctx)
-              || KosEvalState_StackLen(ctx) == 0,
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "nothing staged");
+  TEST_ASSERT(! KosContext_StackHead(ctx)
+              || KosContext_StackLen(ctx) == 0,
               "the frame stack was not touched");
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame),
                    "no resume set: the caller tail-calls the resume itself");
@@ -351,7 +351,7 @@ static int test_prologue_delivers_staged(void) {
   ResumeProbe probe = { 0, 0, 0, NULL };
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
-  KosEvalState_PENDING_VALUE(ctx) = staged;
+  KosContext_PENDING_VALUE(ctx) = staged;
 
   /* the probe returns EVAL_RETURN(value); with a root frame that is
      the terminal result the re-entry hands back */
@@ -360,7 +360,7 @@ static int test_prologue_delivers_staged(void) {
   TEST_ASSERT_EQ(probe.seen_null, 0, "with its value");
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN, "resume's terminal result relayed");
   TEST_ASSERT_SAME(r.val, staged, "delivered value");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx), "slot consumed");
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "slot consumed");
 
   Py_XDECREF(r.val);
   Py_DECREF(staged);
@@ -385,14 +385,14 @@ static int test_prologue_runs_pending_exception(void) {
      raise walk runs; with no handler on the chain it propagates */
   PyObject *staged = PyLong_FromLong(5);
   TEST_ASSERT_NOT_NULL(staged, "create staged value");
-  KosEvalState_PENDING_VALUE(ctx) = staged;
+  KosContext_PENDING_VALUE(ctx) = staged;
   PyErr_SetString(PyExc_ValueError, "pending");
 
   KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
   TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "unhandled exception propagates");
   TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
               "the pending exception is the one propagating");
-  TEST_ASSERT_NULL(KosEvalState_PENDING_VALUE(ctx),
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx),
                    "the staged delivery was dropped");
 
   PyErr_Clear();
@@ -434,8 +434,8 @@ static int test_raise_walk_resume_propagates(void) {
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosEvalState_FRAME(ctx) = bottom;
-  KosEvalState_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_FRAME(ctx) = bottom;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
 
   PyErr_SetString(PyExc_ValueError, "boom");
 
@@ -475,8 +475,8 @@ static int test_raise_walk_resume_handles(void) {
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosEvalState_FRAME(ctx) = bottom;
-  KosEvalState_DYN_TOP(ctx) = (KosDynNode *) frame;
+  KosContext_FRAME(ctx) = bottom;
+  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
 
   PyErr_SetString(PyExc_ValueError, "boom");
 
@@ -649,7 +649,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
     KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
     TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
   }
-  TEST_ASSERT_NULL(KosEvalState_GOAL(ctx), "the goal retired");
+  TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal retired");
   TEST_ASSERT_EQ(recorded_clear_calls, 1,
                  "the live frame's prior resume was cleared once");
   TEST_ASSERT_SAME(recorded_clear_in, &prior,
@@ -658,9 +658,9 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
                    "the live frame carries the record's kind");
   TEST_ASSERT_SAME(KosDynFrame_RESUME_STATE(live), &recorded_clone_out,
                    "the live frame carries the record's clone");
-  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(ctx), exc,
+  TEST_ASSERT_SAME(KosContext_PENDING_VALUE(ctx), exc,
                    "the payload is staged for the record's resume");
-  Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
+  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
 
   KosDynFrame_RESUME_KIND(live) = NULL;
   KosDynFrame_RESUME_STATE(live) = NULL;
@@ -706,16 +706,16 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
     KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
     TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
   }
-  TEST_ASSERT_NULL(KosEvalState_GOAL(ctx), "the goal retired");
-  TEST_ASSERT_SAME(KosEvalState_PENDING_VALUE(ctx), payload,
+  TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal retired");
+  TEST_ASSERT_SAME(KosContext_PENDING_VALUE(ctx), payload,
                    "the payload is staged for the resume");
-  TEST_ASSERT(! KosEvalState_StackHead(ctx)
-              || KosEvalState_StackLen(ctx) == 0,
+  TEST_ASSERT(! KosContext_StackHead(ctx)
+              || KosContext_StackLen(ctx) == 0,
               "the frame stack was not touched");
   TEST_ASSERT_SAME(KosDynFrame_RESUME_KIND(live), &resume_recording_kind,
                    "the resume is still set for the delivery");
 
-  Py_CLEAR(KosEvalState_PENDING_VALUE(ctx));
+  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
   KosDynFrame_RESUME_KIND(live) = NULL;
   KosDynFrame_RESUME_STATE(live) = NULL;
   Py_DECREF(payload);
@@ -867,7 +867,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
 
   /* a plain Python callable's result comes back in hand; resume == NULL
      relays that RETURN untouched, and nothing lands on the stack */
-  KosOpResult r = KosEvalState_Call(
+  KosOpResult r = KosContext_Call(
       ctx, abs_fn, &neg5, 1, NULL, 0, NULL, NULL);
 
   Py_DECREF(neg5);
@@ -906,7 +906,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   PyObject *it = kos_iter_acquire(lst);
   TEST_ASSERT_NOT_NULL(it, "acquire iterator");
 
-  KosOpResult r = KosEvalState_NextResume(ctx, it, NULL, NULL, NULL);
+  KosOpResult r = KosContext_NextResume(ctx, it, NULL, NULL, NULL);
 
   TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
                  "delivered element with no resume: NORMAL, matching"
@@ -914,7 +914,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "no resume set");
 
   {
-    PyObject *popped = KosEvalState_StackPopRef(ctx);
+    PyObject *popped = KosContext_StackPopRef(ctx);
     TEST_ASSERT_NOT_NULL(popped, "element landed on the caller's stack");
     TEST_ASSERT_EQ(PyLong_AsLong(popped), 42, "element value");
     Py_DECREF(popped);

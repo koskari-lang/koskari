@@ -21,7 +21,7 @@ KOS_OP_HANDLER(MATCH_MAPPING) {
   KOS_SYNC_PC(ctx, insn);
   (void) kos_op_delivery_;
 
-  PyObject *obj = KosEvalState_StackPeek(ctx);
+  PyObject *obj = KosContext_StackPeek(ctx);
   if (unlikely(! obj))
     RESULT_RAISE();
 

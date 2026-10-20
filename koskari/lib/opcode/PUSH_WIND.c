@@ -32,13 +32,13 @@ KOS_OP_HANDLER(PUSH_WIND) {
   }
 
   if (count == 2) {
-    after = KosEvalState_StackPopRef(ctx);
+    after = KosContext_StackPopRef(ctx);
     if (! after) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (after)");
       RESULT_RAISE();
     }
   }
-  before = KosEvalState_StackPopRef(ctx);
+  before = KosContext_StackPopRef(ctx);
   if (! before) {
     Py_XDECREF(after);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (before)");
@@ -76,7 +76,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
-  KosDynFrame *const caller = KosEvalState_FRAME(ctx);
+  KosDynFrame *const caller = KosContext_FRAME(ctx);
   KosOpResult wr = kos_dyn_extent_enter(ctx, (KosDynNode *) wind);
   if (wr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
@@ -92,7 +92,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
      trampoline drains it first. Continuing in that second case would
      run the wind body before the transfer it was meant to make. */
   if (wr.kind == KOS_RES_REPROLOGUE) {
-    if (KosEvalState_FRAME(ctx) != caller && ! KosEvalState_GOAL(ctx))
+    if (KosContext_FRAME(ctx) != caller && ! KosContext_GOAL(ctx))
       RESULT_CONTINUE(ctx);
     return wr;
   }

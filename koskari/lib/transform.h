@@ -258,7 +258,7 @@ KosIterStepResult kos_transform_stage(
 */
 #define KOS_TRANSFORM_FETCH(ctx, t, source, resume, pre_top, out, element) \
   do {                                                                  \
-    switch (KosEvalState_NextOrDefer((ctx), (source), (resume), (t),   \
+    switch (KosContext_NextOrDefer((ctx), (source), (resume), (t),     \
                                      &(t)->cached_frame, &(element))) { \
       case KOS_IREQ_DELIVERED:                                          \
         break;                                                          \

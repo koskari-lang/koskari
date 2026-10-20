@@ -1214,7 +1214,7 @@ static PyObject *pyiter_step_run(
      and exits as KOS_RES_RAISE. YIELD is untouched: it surfaces as
      iteration. */
   {
-    KosDynFrame *frame = KosContext_FRAME_TOP(gen->host);
+    KosDynFrame *frame = KosContext_FRAME(gen->host);
     if (frame)
       KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
   }

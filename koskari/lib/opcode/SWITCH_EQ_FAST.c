@@ -32,7 +32,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
   if (unlikely(! rhs))
     RESULT_RAISE();
 
-  PyObject *value = KosEvalState_StackPeek(ctx);
+  PyObject *value = KosContext_StackPeek(ctx);
   if (unlikely(! value)) {
     Py_DECREF(rhs);
     RESULT_RAISE();
@@ -44,7 +44,7 @@ KOS_OP_HANDLER(SWITCH_EQ_FAST) {
     RESULT_RAISE();
 
   if (res) {
-    KosEvalState_StackDropNoErr(ctx, 1);
+    KosContext_StackDropNoErr(ctx, 1);
     RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 0));
   }
 

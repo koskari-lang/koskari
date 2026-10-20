@@ -30,7 +30,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(ctx, count);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, count);
   if (! ptr)
     RESULT_RAISE();
 

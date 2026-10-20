@@ -277,7 +277,7 @@ static int test_context_clear_drops_chain_caches(void) {
 
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    TEST_ASSERT_NOT_NULL(KosContext_FRAME_TOP(ctx), "frame cached");
+    TEST_ASSERT_NOT_NULL(KosContext_FRAME(ctx), "frame cached");
     TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(ctx), "namespace cached");
 
     /* what the collector does to a context in a garbage cycle: the
@@ -287,7 +287,7 @@ static int test_context_clear_drops_chain_caches(void) {
     int res = Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
     TEST_ASSERT_EQ(res, 0, "tp_clear succeeds");
     TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
-    TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame cache dropped");
+    TEST_ASSERT_NULL(KosContext_FRAME(ctx), "frame cache dropped");
     TEST_ASSERT_NULL(KosContext_BLOCK(ctx), "block cache dropped");
     TEST_ASSERT_NULL(KosContext_NAMESPACE(ctx), "namespace cache dropped");
 

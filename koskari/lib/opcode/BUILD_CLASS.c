@@ -24,7 +24,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
   KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *ns = KosEvalState_StackPopRef(ctx);
+  PyObject *ns = KosContext_StackPopRef(ctx);
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (ns)");
     RESULT_RAISE();
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
 
   SAYF("BUILD_CLASS: ns=%R", ns);
 
-  PyObject *pos = KosEvalState_StackPopRef(ctx);
+  PyObject *pos = KosContext_StackPopRef(ctx);
   if (unlikely(! pos)) {
     Py_DECREF(ns);
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (pos)");

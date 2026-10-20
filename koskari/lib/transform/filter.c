@@ -15,8 +15,8 @@
    untouched, skipped elements never leaving the loop. Anything
    asynchronous runs under one CPS resume-carrying frame, whose
    resumes carry the three-phase progression -- FETCH requests the
-   next source element (KosEvalState_NextResume), INVOKE applies the
-   predicate (KosEvalState_Call) with the element held on the
+   next source element (KosContext_NextResume), INVOKE applies the
+   predicate (KosContext_Call) with the element held on the
    filter, VERDICT tests the predicate's result and either completes
    the frame with the held element or fetches again. A rejected
    element loops by a tail call into FETCH, never by C
@@ -110,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosEvalState_NextResume(ctx, f->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, f->source, NULL,
                                             &filter_resume_do_invoke_kind, f);
     RESULT_ENTRY(ctx, r, &filter_resume_do_invoke_kind, f);
   }
@@ -147,7 +147,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
   }
 
   /* Every calling shape goes through the one entry --
-     KosEvalState_Call resolves the predicate and prepares (or declines
+     KosContext_Call resolves the predicate and prepares (or declines
      to prepare) a frame per its own suite, so a predicate that wants
      no frame still runs in this evaluator rather than through the
      Python boundary. pending steals the element's reference and holds
@@ -155,7 +155,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
      duration. */
   f->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(
+    KosOpResult r = KosContext_Call(
         ctx, f->fn.cs_callable, &element, 1, NULL, 0,
         &filter_resume_after_verdict_kind, f);
     RESULT_ENTRY(ctx, r, &filter_resume_after_verdict_kind, f);
@@ -203,7 +203,7 @@ static KosIterStepResult filter_iter_step(
     PyObject **out) {
 
   KosTransform *f = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(f, send_val, out, &early))

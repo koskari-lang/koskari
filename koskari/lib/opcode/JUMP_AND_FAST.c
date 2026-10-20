@@ -32,7 +32,7 @@ KOS_OP_HANDLER(JUMP_AND_FAST) {
      other value takes the owned path, which raises for an empty slot. */
   PyObject *val = kos_ns_fast_peek(ns, (size_t) KosExtra_IMM(row, 0));
   if (val == Py_False || val == Py_None) {
-    if (unlikely(KosEvalState_StackPushRef(ctx, val) < 0))
+    if (unlikely(KosContext_StackPushRef(ctx, val) < 0))
       RESULT_RAISE();
     RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   }
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(JUMP_AND_FAST) {
   }
 
   if (res) {
-    if (unlikely(KosEvalState_StackPUSH(ctx, val) < 0))
+    if (unlikely(KosContext_StackPUSH(ctx, val) < 0))
       RESULT_RAISE();
     RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 1));
   }

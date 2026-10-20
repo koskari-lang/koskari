@@ -227,8 +227,8 @@ static int goal_apply_restore(KosContext *ctx, KosXferGoal *goal) {
       /* The live registers are the authority for the current frame
          and are flushed back into it whenever the frame changes; a
          restore of that frame must land in them too. */
-      if ((KosDynFrame *) node == KosEvalState_FRAME(ctx)) {
-        KosEvalState_SET_PC(ctx, r->pc);
+      if ((KosDynFrame *) node == KosContext_FRAME(ctx)) {
+        KosContext_SET_PC(ctx, r->pc);
         ctx->acting_pc = r->acting_pc;
       }
     }
@@ -239,8 +239,8 @@ static int goal_apply_restore(KosContext *ctx, KosXferGoal *goal) {
 
 void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal) {
 
-  goal->outer = KosEvalState_GOAL(ctx);
-  KosEvalState_GOAL(ctx) = goal;
+  goal->outer = KosContext_GOAL(ctx);
+  KosContext_GOAL(ctx) = goal;
 }
 
 
@@ -249,9 +249,9 @@ void kos_xfer_goal_push(KosContext *ctx, KosXferGoal *goal) {
 */
 static void kos_xfer_goal_pop(KosContext *ctx) {
 
-  KosXferGoal *goal = KosEvalState_GOAL(ctx);
+  KosXferGoal *goal = KosContext_GOAL(ctx);
 
-  KosEvalState_GOAL(ctx) = goal->outer;
+  KosContext_GOAL(ctx) = goal->outer;
   goal->outer = NULL;
   kos_xfer_goal_free(goal);
 }
@@ -259,24 +259,24 @@ static void kos_xfer_goal_pop(KosContext *ctx) {
 
 void kos_xfer_goal_abandon_all(KosContext *ctx) {
 
-  while (KosEvalState_GOAL(ctx))
+  while (KosContext_GOAL(ctx))
     kos_xfer_goal_pop(ctx);
 }
 
 
 int kos_xfer_goal_will_drive(KosContext *ctx) {
 
-  KosXferGoal *goal = KosEvalState_GOAL(ctx);
+  KosXferGoal *goal = KosContext_GOAL(ctx);
 
   if (! goal)
     return 0;
-  return ! goal->frontier || KosEvalState_DYN_TOP(ctx) == goal->wait_top;
+  return ! goal->frontier || KosContext_DYN_TOP(ctx) == goal->wait_top;
 }
 
 
 int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node) {
 
-  KosXferGoal *goal = KosEvalState_GOAL(ctx);
+  KosXferGoal *goal = KosContext_GOAL(ctx);
 
   return goal && goal->frontier == node;
 }
@@ -284,7 +284,7 @@ int kos_xfer_goal_waits_on(KosContext *ctx, const KosDynNode *node) {
 
 void kos_xfer_goal_resume_after_finally(KosContext *ctx) {
 
-  KosXferGoal *goal = KosEvalState_GOAL(ctx);
+  KosXferGoal *goal = KosContext_GOAL(ctx);
 
   if (! goal || ! goal->frontier
       || ! KosDynNode_IS_FINALLY(goal->frontier))
@@ -347,8 +347,8 @@ static KosOpResult goal_leave(KosContext *ctx, KosXferGoal *goal) {
   }
 #endif
 
-  while (KosEvalState_DYN_TOP(ctx) != goal->seam) {
-    KosDynNode *top = KosEvalState_DYN_TOP(ctx);
+  while (KosContext_DYN_TOP(ctx) != goal->seam) {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
     KosOpResult r;
 
     if (! top) {
@@ -408,7 +408,7 @@ static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
        that they fit above the seam before the push. */
     kos_dyn_renumber_frames(goal->target, goal->seam,
         kos_dyn_frame_depth_at(goal->seam));
-    KosEvalState_DYN_TOP(ctx) = goal->target;
+    KosContext_DYN_TOP(ctx) = goal->target;
     goal->target = NULL;
     kos_dyn_resync_chain(ctx);
   }
@@ -423,8 +423,8 @@ static KosOpResult goal_land(KosContext *ctx, KosXferGoal *goal) {
     if (! had_target)
       kos_dyn_resync_chain(ctx);
   }
-  if (goal->resume_pc != (uint32_t) -1 && KosEvalState_FRAME(ctx))
-    KosEvalState_SET_PC(ctx, goal->resume_pc);
+  if (goal->resume_pc != (uint32_t) -1 && KosContext_FRAME(ctx))
+    KosContext_SET_PC(ctx, goal->resume_pc);
 
   /* Retire every waiting outer whose frontier LEAVING unlinked. An
      outer waits on a node whose thunk this transfer started from;
@@ -477,7 +477,7 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
   KosDynNode *node;
   KosOpResult out = EVAL_NORMAL();
 
-  for (node = KosEvalState_DYN_TOP(ctx); node && node != goal->seam;
+  for (node = KosContext_DYN_TOP(ctx); node && node != goal->seam;
       node = KosDynNode_PARENT(node)) {
     if (count == cap) {
       KosDynNode **next = PyMem_Malloc(cap * 2 * sizeof(KosDynNode *));
@@ -516,7 +516,7 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
         && ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
       continue;
 
-    before = KosEvalState_DYN_TOP(ctx);
+    before = KosContext_DYN_TOP(ctx);
     r = kos_dyn_extent_enter(ctx, node);
     if (r.kind == KOS_RES_NORMAL)
       continue;
@@ -555,21 +555,21 @@ static KosOpResult goal_deliver(
     return EVAL_RAISE();
   }
 
-  if (! KosEvalState_FRAME(ctx)) {
+  if (! KosContext_FRAME(ctx)) {
     PyErr_SetString(PyExc_SystemError,
         "transfer: no frame to deliver to");
     return EVAL_RAISE();
   }
-  if (KosDynFrame_RESUME_KIND(KosEvalState_FRAME(ctx))) {
+  if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
 #if KOS_EVAL_SAFETYNET
-    if (KosEvalState_PENDING_VALUE(ctx)) {
+    if (KosContext_PENDING_VALUE(ctx)) {
       PyErr_SetString(PyExc_SystemError,
           "transfer: landed on a frame with a delivery already staged");
       return EVAL_RAISE();
     }
 #endif
-    Py_XSETREF(KosEvalState_PENDING_VALUE(ctx), Py_NewRef(goal->payload));
-  } else if (KosEvalState_StackPushRef(ctx, goal->payload) < 0) {
+    Py_XSETREF(KosContext_PENDING_VALUE(ctx), Py_NewRef(goal->payload));
+  } else if (KosContext_StackPushRef(ctx, goal->payload) < 0) {
     return EVAL_RAISE();
   }
 
@@ -582,8 +582,8 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
 
   *out_boundary = 0;
 
-  while (KosEvalState_GOAL(ctx)) {
-    KosXferGoal *goal = KosEvalState_GOAL(ctx);
+  while (KosContext_GOAL(ctx)) {
+    KosXferGoal *goal = KosContext_GOAL(ctx);
     KosOpResult r;
 
     if (goal->frontier) {
@@ -591,7 +591,7 @@ KosOpResult kos_xfer_goal_drive(KosContext *ctx, int *out_boundary) {
          boundary event while it runs finds dyn_top above wait_top; the
          first one that finds dyn_top at wait_top is its return, or the
          revive of its awaitable with the value on the block. */
-      if (KosEvalState_DYN_TOP(ctx) != goal->wait_top)
+      if (KosContext_DYN_TOP(ctx) != goal->wait_top)
         return EVAL_NORMAL();
 #if KOS_EVAL_SAFETYNET
       if (! kos_dyn_reaches(ctx, goal->frontier)

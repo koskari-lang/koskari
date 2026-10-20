@@ -61,16 +61,16 @@ static int obj_op_reduce_n(
   if (count == 0) {
     res = fn(NULL, 0);
   } else {
-    PyObject *const *args = KosEvalState_StackTailPtr(ctx, (size_t) count);
+    PyObject *const *args = KosContext_StackTailPtr(ctx, (size_t) count);
     if (! args)
       return -1;
     res = fn(args, (size_t) count);
-    KosEvalState_StackDropNoErr(ctx, (size_t) count);
+    KosContext_StackDropNoErr(ctx, (size_t) count);
   }
 
   if (! res)
     return -1;
-  return KosEvalState_StackPUSH(ctx, res);
+  return KosContext_StackPUSH(ctx, res);
 }
 
 
@@ -101,7 +101,7 @@ static KOS_NOINLINE int kos_object_operand(
 
   PyObject *const *args = NULL;
   if (count > 0) {
-    args = KosEvalState_StackTailPtr(ctx, (size_t) count);
+    args = KosContext_StackTailPtr(ctx, (size_t) count);
     if (! args)
       return -1;
   }
@@ -109,10 +109,10 @@ static KOS_NOINLINE int kos_object_operand(
   PyObject *res = kos_operand_reduce(op, args, (size_t) count);
 
   if (count > 0)
-    KosEvalState_StackDropNoErr(ctx, (size_t) count);
+    KosContext_StackDropNoErr(ctx, (size_t) count);
   if (! res)
     return -1;
-  return KosEvalState_StackPUSH(ctx, res);
+  return KosContext_StackPUSH(ctx, res);
 }
 
 
@@ -125,7 +125,7 @@ static KOS_NOINLINE int kos_object_inplace(
 
   PyObject *const *args = NULL;
   if (count > 0) {
-    args = KosEvalState_StackTailPtr(ctx, (size_t) count);
+    args = KosContext_StackTailPtr(ctx, (size_t) count);
     if (! args)
       return -1;
   }
@@ -133,10 +133,10 @@ static KOS_NOINLINE int kos_object_inplace(
   PyObject *res = kos_inplace_reduce(op, args, (size_t) count);
 
   if (count > 0)
-    KosEvalState_StackDropNoErr(ctx, (size_t) count);
+    KosContext_StackDropNoErr(ctx, (size_t) count);
   if (! res)
     return -1;
-  return KosEvalState_StackPUSH(ctx, res);
+  return KosContext_StackPUSH(ctx, res);
 }
 
 
@@ -151,7 +151,7 @@ static KOS_NOINLINE int kos_object_inplace(
 static KOS_NOINLINE int kos_fast_inplace_apply(
     KosContext *ctx, KosOperand op, size_t idx, PyObject *rhs) {
 
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (unlikely(! obj))
     return -1;
@@ -172,7 +172,7 @@ static KOS_NOINLINE int kos_fast_inplace_apply(
 static KOS_NOINLINE int kos_fast_inplace_operand(
     KosContext *ctx, KosOperand op, size_t idx) {
 
-  PyObject *rhs = KosEvalState_StackPopRef(ctx);
+  PyObject *rhs = KosContext_StackPopRef(ctx);
   if (unlikely(! rhs))
     return -1;
 
@@ -192,7 +192,7 @@ static KOS_NOINLINE int kos_var_inplace_operand(
   if (unlikely(! obj))
     return -1;
 
-  PyObject *rhs = KosEvalState_StackPopRef(ctx);
+  PyObject *rhs = KosContext_StackPopRef(ctx);
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
     return -1;

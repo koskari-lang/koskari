@@ -102,7 +102,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
      pending, and re-entered from batched_resume_deliver: every fetch
      here is a request. */
   while (b->filled < b->n) {
-    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
                                             &batched_resume_deliver_kind, b);
     RESULT_ENTRY(ctx, r, &batched_resume_deliver_kind, b);
   }
@@ -161,7 +161,7 @@ static KosIterStepResult batched_iter_step(
 
   KosBatched *b = (KosBatched *) self;
   KosTransform *t = &b->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
   PyObject *batch;
 
@@ -180,7 +180,7 @@ static KosIterStepResult batched_iter_step(
     for (i = 0; i < b->n; i++) {
       PyObject *element;
 
-      switch (KosEvalState_NextOrDefer(ctx, t->source,
+      switch (KosContext_NextOrDefer(ctx, t->source,
                                        &batched_resume_fill_kind, b,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:

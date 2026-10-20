@@ -25,8 +25,8 @@
 KOS_OP_HANDLER(ITEM_FAST_INPLACE) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(ctx);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   uint32_t opc = KosExtra_IMM(row, 0);
   KosOperand op = (KosOperand) KosOpCount_TYPE(opc);

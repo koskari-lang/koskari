@@ -24,7 +24,7 @@ KOS_OP_HANDLER(FAST_ATTR_STORE) {
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
-  PyObject *val = KosEvalState_StackPopRef(ctx);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val)
     RESULT_RAISE();
   size_t idx = (size_t) KosExtra_IMM(row, 0);

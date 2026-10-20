@@ -22,27 +22,27 @@
 
 KOS_OP_HANDLER(POP_WIND) {
   KOS_SYNC_PC(ctx, insn);
-  KosDynNode *top = KosEvalState_CurrentNode(ctx);
+  KosDynNode *top = KosContext_CurrentNode(ctx);
   if (! top || ! KosDynNode_IS_WIND(top)) {
     PyErr_SetString(PyExc_RuntimeError, "POP_WIND: top is not a wind node");
     RESULT_RAISE();
   }
 
-  PyObject *body_result = KosEvalState_StackPopRef(ctx);
+  PyObject *body_result = KosContext_StackPopRef(ctx);
   if (! body_result)
     RESULT_RAISE();
   /* the body value waits on the node for the unlink to deliver */
   if (kos_dyn_ob_store_value(top, body_result) < 0)
     RESULT_RAISE();
 
-  KosDynFrame *const caller = KosEvalState_FRAME(ctx);
+  KosDynFrame *const caller = KosContext_FRAME(ctx);
   KosOpResult kr = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_NONE, 0);
   if (kr.kind == KOS_RES_REPROLOGUE) {
     /* the after-thunk's frame is current: its return settles and
        unlinks the wind. A transfer goal pushed by the call with the frame
        unchanged is the trampoline's to drain before anything past this
        opcode runs. */
-    if (KosEvalState_FRAME(ctx) != caller && ! KosEvalState_GOAL(ctx))
+    if (KosContext_FRAME(ctx) != caller && ! KosContext_GOAL(ctx))
       RESULT_CONTINUE(ctx);
     return kr;
   }

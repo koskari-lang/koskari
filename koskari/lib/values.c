@@ -210,7 +210,7 @@ static KosOpResult values_kos_vinstall(
       &spread, KosValues_ARGS(s), KosValues_KWDS(s), args + 1, nargs - 1,
       kwnames, small, 16) < 0)
   return EVAL_RAISE();
-  r = KosEvalState_Call(
+  r = KosContext_Call(
     ctx, args[0], spread.argv, spread.nargs, spread.kwnames, tail_call,
     NULL, NULL);
   KosArgSpread_Clear(&spread);

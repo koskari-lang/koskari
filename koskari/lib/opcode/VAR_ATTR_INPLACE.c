@@ -41,7 +41,7 @@ KOS_OP_HANDLER(VAR_ATTR_INPLACE) {
     RESULT_RAISE();
 
   PyObject *const *args =
-      count ? KosEvalState_StackTailPtr(ctx, (size_t) count) : NULL;
+      count ? KosContext_StackTailPtr(ctx, (size_t) count) : NULL;
   if (count && ! args) {
     Py_DECREF(obj);
     RESULT_RAISE();
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(VAR_ATTR_INPLACE) {
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
   int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
-  KosEvalState_StackDropNoErr(ctx, (size_t) count);
+  KosContext_StackDropNoErr(ctx, (size_t) count);
   Py_DECREF(obj);
   if (unlikely(res < 0))
     RESULT_RAISE();

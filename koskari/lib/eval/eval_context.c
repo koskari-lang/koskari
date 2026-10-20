@@ -109,11 +109,11 @@ KosContext *KosContext_NewFromSnapshot(
   if (top) {
     KosDynNode *node = (KosDynNode *) top;
 
-    KosContext_FRAME_TOP(ctx) = top;
+    KosContext_FRAME(ctx) = top;
     KosContext_BLOCK(ctx) = KosDynNode_STACK(node)
         ? &KosDynNode_STACK(node) : NULL;
     KosContext_NAMESPACE(ctx) = KosDynNode_NS(node);
-    KosEvalState_CODE(ctx) = KosDynFrame_CODE(top);
+    KosContext_CODE(ctx) = KosDynFrame_CODE(top);
     ctx->pc = KosDynFrame_PC(top);
     ctx->acting_pc = KosDynFrame_ACTING_PC(top);
   }
@@ -212,10 +212,10 @@ static int context_clear(PyObject *self) {
   if (KosContext_DYN_TOP(ctx))
     kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
   KosContext_DYN_TOP(ctx) = NULL;
-  KosContext_FRAME_TOP(ctx) = NULL;
+  KosContext_FRAME(ctx) = NULL;
   KosContext_BLOCK(ctx) = NULL;
   KosContext_NAMESPACE(ctx) = NULL;
-  KosEvalState_CODE(ctx) = NULL;
+  KosContext_CODE(ctx) = NULL;
   ctx->pc = 0;
   ctx->acting_pc = 0;
 
@@ -268,10 +268,10 @@ int KosContext_Recycle(KosContext *ctx) {
   if (KosContext_DYN_TOP(ctx))
     kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
   KosContext_DYN_TOP(ctx) = NULL;
-  KosContext_FRAME_TOP(ctx) = NULL;
+  KosContext_FRAME(ctx) = NULL;
   KosContext_BLOCK(ctx) = NULL;
   KosContext_NAMESPACE(ctx) = NULL;
-  KosEvalState_CODE(ctx) = NULL;
+  KosContext_CODE(ctx) = NULL;
   ctx->pc = 0;
   ctx->acting_pc = 0;
 
@@ -311,7 +311,7 @@ static int context_traverse(PyObject *self, visitproc visit, void *arg) {
   if (KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg))
     return -1;
 
-  Py_VISIT(KosEvalState_PENDING_VALUE(ctx));
+  Py_VISIT(KosContext_PENDING_VALUE(ctx));
   dyn_top = KosContext_DYN_TOP(ctx);
   goal = KosContext_GOAL(ctx);
 

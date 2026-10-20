@@ -80,7 +80,7 @@ static void kos_dynshift_free(KosDynShift *shift) {
 */
 int kos_dyn_push_shift(KosContext *ctx, uint32_t prompt_node_id) {
   // CONTEXT: dirty, touches context directly
-  KosDynShift *shift = kos_dynshift_new(KosEvalState_DYN_TOP(ctx),
+  KosDynShift *shift = kos_dynshift_new(KosContext_DYN_TOP(ctx),
                                         prompt_node_id);
   if (! shift)
     return -1;

@@ -140,7 +140,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     return EVAL_RAISE();
 
   if (s->cnt < s->next) {
-    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
                                             &islice_resume_discard_kind, s);
     RESULT_ENTRY(ctx, r, &islice_resume_discard_kind, s);
   }
@@ -152,7 +152,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   }
 
   {
-    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
                                             &islice_resume_emit_kind, s);
     RESULT_ENTRY(ctx, r, &islice_resume_emit_kind, s);
   }
@@ -209,7 +209,7 @@ static KosIterStepResult islice_iter_step(
 
   KosISlice *s = (KosISlice *) self;
   KosTransform *t = &s->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))

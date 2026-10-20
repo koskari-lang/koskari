@@ -38,7 +38,7 @@ KOS_OP_HANDLER(VAR_LIST_APPEND) {
     RESULT_RAISE();
   }
 
-  PyObject *value = KosEvalState_StackPopRef(ctx);
+  PyObject *value = KosContext_StackPopRef(ctx);
   if (unlikely(! value)) {
     Py_DECREF(list);
     RESULT_RAISE();

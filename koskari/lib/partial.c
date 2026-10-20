@@ -111,7 +111,7 @@ static KosOpResult kospartial_kos_vinstall(
   if (KosArgSpread_InitMerged(
           &spread, p->args, p->keywords, args, nargs, kwnames, small, 16) < 0)
     return EVAL_RAISE();
-  r = KosEvalState_Call(
+  r = KosContext_Call(
       ctx, p->func, spread.argv, spread.nargs, spread.kwnames, tail_call,
       NULL, NULL);
   KosArgSpread_Clear(&spread);

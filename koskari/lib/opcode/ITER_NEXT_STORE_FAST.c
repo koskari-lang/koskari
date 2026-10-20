@@ -37,7 +37,7 @@ KOS_OP_HANDLER(ITER_NEXT_STORE_FAST) {
   kos_foreach_record_else(region, insn);
 
   {
-    KosDynFrame *frame = KosEvalState_FRAME(ctx);
+    KosDynFrame *frame = KosContext_FRAME(ctx);
     PyObject *out = NULL;
 
     switch (kos_foreach_request_next(ctx, region, &out)) {

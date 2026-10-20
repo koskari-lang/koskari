@@ -182,7 +182,7 @@ does; the template reset returns it to raw at the cache store.
 The UNPACK family (`UNPACK`, `UNPACK_FAST`, `UNPACK_VAR`,
 `UNPACK_STAR`) and the star-call family (`CALL_STAR` and its VAR, FAST,
 ATTR and TAIL forms) materialise an iterable operand in one step,
-`PySequence_Fast` in `KosEvalState_PopUnpackSequence` and
+`PySequence_Fast` in `KosContext_PopUnpackSequence` and
 `PySequence_Tuple` in `kos_op_call_star`. Over a Koskari generator
 that goes through the Python iterator protocol into a `KosPyIter`,
 which runs a nested evaluator per element on the demand path: the

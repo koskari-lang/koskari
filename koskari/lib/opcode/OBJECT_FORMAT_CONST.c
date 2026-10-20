@@ -34,7 +34,7 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   }
 #endif
 
-  obj = KosEvalState_StackPopRef(ctx);
+  obj = KosContext_StackPopRef(ctx);
   if (! obj)
     RESULT_RAISE();
 

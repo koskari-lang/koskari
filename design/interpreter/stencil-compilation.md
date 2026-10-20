@@ -164,7 +164,7 @@ pc -- at which point CALL and the await opcodes go through the same CPS
 entries native code uses.
 
 Stenciling does not add a second resume mechanism. A stencil chain's call
-and await sites are ordinary `KosEvalState_Call` / `KosEvalState_NextResume`
+and await sites are ordinary `KosContext_Call` / `KosContext_NextResume`
 invocations, setting the resume on the frame exactly as an interpreted
 handler would; the trampoline never invokes a resume on the native code's
 own C stack any more than it invokes one on the interpreter's, for the

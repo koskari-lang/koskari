@@ -27,27 +27,27 @@ KOS_OP_HANDLER(RETURN) {
   /* === Phase 1: Pop return value from stack ===
      opa=0 => Py_None, opa=1 => single value, opa=N => tuple of N values */
   SAYF("[RETURN] opa=%u frame=%p stack=%p len=%zu (pc advanced to %u)",
-       opa, (void *) KosEvalState_FRAME(ctx),
-       (void *) KosEvalState_StackHead(ctx),
-       KosEvalState_StackLen(ctx),
-       (unsigned) KosEvalState_PC(ctx));
+       opa, (void *) KosContext_FRAME(ctx),
+       (void *) KosContext_StackHead(ctx),
+       KosContext_StackLen(ctx),
+       (unsigned) KosContext_PC(ctx));
 
   if (opa == 0) {
     val = Py_None;
     Py_INCREF(val);
 
   } else if (opa == 1) {
-    val = KosEvalState_StackPopRef(ctx);
+    val = KosContext_StackPopRef(ctx);
     if (unlikely(! val)) {
       SAYF("[RETURN] pop underrun: stack=%p len=%zu",
-           (void *) KosEvalState_StackHead(ctx),
-           (unsigned long) KosEvalState_StackLen(ctx));
+           (void *) KosContext_StackHead(ctx),
+           (unsigned long) KosContext_StackLen(ctx));
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");
       RESULT_RAISE();
     }
 
   } else {
-    val = KosEvalState_StackPopTail(ctx, (size_t) opa);
+    val = KosContext_StackPopTail(ctx, (size_t) opa);
     if (unlikely(! val)) {
       SAY("[eval] RETURN PopTail underrun\n");
       PyErr_SetString(PyExc_RuntimeError, "RETURN: stack underrun");

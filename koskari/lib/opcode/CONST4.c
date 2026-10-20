@@ -26,7 +26,7 @@ KOS_OP_HANDLER(CONST4) {
   /* the row's four fields are the pool objects, one pointer each,
      so the row is the vector */
   if (unlikely(kos_stack_push_ref_n_fast(
-                   KosEvalState_BLOCK(ctx), KosExtra_OBJS(row), 4) < 0))
+                   KosContext_BLOCK(ctx), KosExtra_OBJS(row), 4) < 0))
     RESULT_RAISE();
   RESULT_NEXT(ctx);
 }

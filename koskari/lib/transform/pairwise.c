@@ -72,7 +72,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
                                             &pairwise_resume_deliver_kind, t);
     RESULT_ENTRY(ctx, r, &pairwise_resume_deliver_kind, t);
   }
@@ -133,7 +133,7 @@ static KosIterStepResult pairwise_iter_step(
 
   KosPairwise *p = (KosPairwise *) self;
   KosTransform *t = &p->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -156,7 +156,7 @@ static KosIterStepResult pairwise_iter_step(
     PyObject *held = p->held;
     Py_INCREF(held);
 
-    switch (KosEvalState_NextOrDefer(ctx, t->source,
+    switch (KosContext_NextOrDefer(ctx, t->source,
                                      &pairwise_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:

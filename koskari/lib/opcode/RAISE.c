@@ -38,7 +38,7 @@ KOS_OP_HANDLER(RAISE) {
     PyErr_Restore(typ, val, tb);
 
   } else if (n == 1) {
-    PyObject *exc = KosEvalState_StackPopRef(ctx);
+    PyObject *exc = KosContext_StackPopRef(ctx);
     if (unlikely(! exc))
       RESULT_RAISE();
 

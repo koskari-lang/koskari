@@ -47,14 +47,14 @@ KosDynNode *kos_dyn_find_iter_node(KosContext *ctx) {
      receiver.  It must win: a YIELD_FROM delegating to this generator
      beats an outer FOREACH awaiting an *enclosing* generator, otherwise
      the delegate's yields are misrouted and the delegate is torn down. */
-  KosDynNode *const top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *const top = KosContext_DYN_TOP(ctx);
   if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER))
     return top;
 
   /* Otherwise (the gen frame is still installed) walk outward from the
      running frame and take the nearest receiver of any kind. */
   {
-    KosDynFrame *cf = KosEvalState_FRAME(ctx);
+    KosDynFrame *cf = KosContext_FRAME(ctx);
     KosDynNode *n;
     if (! cf)
       return NULL;

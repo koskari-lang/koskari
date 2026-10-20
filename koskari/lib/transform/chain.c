@@ -114,7 +114,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
       }
       /* the next iterable is requested from the series; its
          delivery lands in chain_resume_series */
-      KosOpResult r = KosEvalState_NextResume(ctx, c->series, NULL,
+      KosOpResult r = KosContext_NextResume(ctx, c->series, NULL,
                                               &chain_resume_series_kind, c);
       RESULT_ENTRY(ctx, r, &chain_resume_series_kind, c);
     }
@@ -122,7 +122,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     /* the element lands in chain_resume_deliver; a spent source is
        released there and the walk re-enters here */
     {
-      KosOpResult r = KosEvalState_NextResume(ctx, t->source, NULL,
+      KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
                                               &chain_resume_deliver_kind, c);
       RESULT_ENTRY(ctx, r, &chain_resume_deliver_kind, c);
     }
@@ -197,7 +197,7 @@ static KosIterStepResult chain_iter_step(
 
   KosChain *c = (KosChain *) self;
   KosTransform *t = &c->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(ctx);
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   KosIterStepResult early;
 
   if (! kos_transform_step_ready(t, send_val, out, &early))
@@ -218,7 +218,7 @@ static KosIterStepResult chain_iter_step(
         *out = NULL;
         return KOS_ITER_EXHAUSTED;
       }
-      switch (KosEvalState_NextOrDefer(ctx, c->series,
+      switch (KosContext_NextOrDefer(ctx, c->series,
                                        &chain_resume_fetch_kind, t,
                                        &t->cached_frame, &iterable)) {
         case KOS_IREQ_DELIVERED:
@@ -241,7 +241,7 @@ static KosIterStepResult chain_iter_step(
       continue;
     }
 
-    switch (KosEvalState_NextOrDefer(ctx, t->source,
+    switch (KosContext_NextOrDefer(ctx, t->source,
                                      &chain_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:

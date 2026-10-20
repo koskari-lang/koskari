@@ -27,7 +27,7 @@ KOS_OP_HANDLER(PARAM_CONST) {
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(ctx), name);
+  PyObject *cell = kos_param_lookup(ctx, name);
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
 
   if (! value) {

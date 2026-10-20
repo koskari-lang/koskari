@@ -22,7 +22,7 @@
 
 KOS_OP_HANDLER(PUSH_DYN_WITH) {
   KOS_SYNC_PC(ctx, insn);
-  PyObject *mgr = KosEvalState_StackPopRef(ctx);
+  PyObject *mgr = KosContext_StackPopRef(ctx);
   if (! mgr)
     RESULT_RAISE();
 
@@ -57,7 +57,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
     RESULT_RAISE();
   }
 
-  KosDynFrame *const caller = KosEvalState_FRAME(ctx);
+  KosDynFrame *const caller = KosContext_FRAME(ctx);
   KosOpResult wr = kos_dyn_extent_enter(ctx, (KosDynNode *) with_node);
   /* AWAIT: __enter__ returned an awaitable and the node stays pending;
      the revive settles it with the awaited value and continues into
@@ -78,7 +78,7 @@ KOS_OP_HANDLER(PUSH_DYN_WITH) {
      in that second case would run the with body before the transfer
      it was meant to make. */
   if (wr.kind == KOS_RES_REPROLOGUE
-      && (KosEvalState_FRAME(ctx) == caller || KosEvalState_GOAL(ctx)))
+      && (KosContext_FRAME(ctx) == caller || KosContext_GOAL(ctx)))
     return wr;
 
   RESULT_CONTINUE(ctx);

@@ -32,7 +32,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     RESULT_RAISE();
   }
 
-  PyObject *seq = KosEvalState_PopUnpackSequence(
+  PyObject *seq = KosContext_PopUnpackSequence(
       ctx, (Py_ssize_t) (left + right), 0, "UNPACK_STAR");
   if (unlikely(! seq))
     RESULT_RAISE();
@@ -42,7 +42,7 @@ KOS_OP_HANDLER(UNPACK_STAR) {
   /* suffix: deepest first (len-1 .. len-right) */
   for (k = slen - 1; k >= slen - (Py_ssize_t) right; k--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
-    if (unlikely(KosEvalState_StackPushRef(ctx, item) < 0)) {
+    if (unlikely(KosContext_StackPushRef(ctx, item) < 0)) {
       Py_DECREF(seq);
       RESULT_RAISE();
     }
@@ -62,14 +62,14 @@ KOS_OP_HANDLER(UNPACK_STAR) {
     RESULT_RAISE();
   }
 
-  if (unlikely(KosEvalState_StackPUSH(ctx, middle) < 0)) {
+  if (unlikely(KosContext_StackPUSH(ctx, middle) < 0)) {
     Py_DECREF(seq);
     RESULT_RAISE();
   }
 
   for (k = (Py_ssize_t) left - 1; k >= 0; k--) {
     PyObject *item = PySequence_Fast_GET_ITEM(seq, k);
-    if (unlikely(KosEvalState_StackPushRef(ctx, item) < 0)) {
+    if (unlikely(KosContext_StackPushRef(ctx, item) < 0)) {
       Py_DECREF(seq);
       RESULT_RAISE();
     }

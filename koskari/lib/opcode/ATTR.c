@@ -27,7 +27,7 @@
 KOS_OP_HANDLER(ATTR) {
   KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
-  KosSegment **bl = KosEvalState_BLOCK(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
   KosCacheSlot *slot = KosOp_SLOT(insn);
 

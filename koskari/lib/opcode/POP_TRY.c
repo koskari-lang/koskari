@@ -23,11 +23,11 @@
 KOS_OP_HANDLER(POP_TRY) {
   KOS_SYNC_PC(ctx, insn);
 
-  KosDynNode *top = KosEvalState_CurrentNode(ctx);
+  KosDynNode *top = KosContext_CurrentNode(ctx);
 
   PyErr_Clear();
 
-  PyObject *value = KosEvalState_StackPopRef(ctx);
+  PyObject *value = KosContext_StackPopRef(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
 
