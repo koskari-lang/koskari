@@ -206,7 +206,7 @@ void KosPyAsyncGen_Teardown(KosPyAsyncGen *agen) {
     if (! ctx) {
       PyObject *fence_typ, *fence_val, *fence_tb;
       PyErr_Fetch(&fence_typ, &fence_val, &fence_tb);
-      ctx = KosContext_New(NULL);
+      ctx = KosContext_New(NULL, kos_tls_current());
       if (! ctx)
         PyErr_Clear();
       PyErr_Restore(fence_typ, fence_val, fence_tb);
@@ -684,7 +684,7 @@ static KosContext *agen_iter_pyctx(PyObject *self) {
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
   if (! agen->ctx) {
-    agen->ctx = KosContext_New(NULL);
+    agen->ctx = KosContext_New(NULL, kos_tls_current());
     if (! agen->ctx)
       PyErr_Clear();
   }

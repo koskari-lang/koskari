@@ -3642,9 +3642,11 @@ kos_eval_prologue_bad_code:
    again.  Everything else is applied through apply_kos_op_result, and
    whatever that yields either threads (DISPATCH), re-enters through
    the prologue (REPROLOGUE), or leaves through the cleanup below.
-   Handlers and helpers take ctx itself.
+   Handlers and helpers take ctx itself. s is the calling thread's
+   record, resolved by the caller (koskari_eval resolves it).
 */
-KosOpResult koskari_eval(
+KosOpResult koskari_eval_drive(
+    KosTlsState *s,
     KosContext *ctx,
     PyObject *send_val,
     PyObject *throw_typ,
@@ -3652,7 +3654,6 @@ KosOpResult koskari_eval(
 
   KosOpResult eval_ret = EVAL_RAISE();
   KosExcState host_exc;
-  KosTlsState *tls;
   KosOpResult r;
 
   if (! ctx) {
@@ -3699,10 +3700,10 @@ KosOpResult koskari_eval(
      alive until the drive's cleanup below. */
   Py_INCREF(ctx);
 
-  /* The thread record is resolved first so the drive takes the
+  /* The thread record is entered first so the drive takes the
      thread's breaker from it. */
-  tls = kos_tls_enter_drive(ctx);
-  KosContext_BeginDrive(ctx, kos_tls_breaker(tls));
+  kos_tls_enter_drive(s, ctx);
+  KosContext_BeginDrive(ctx, kos_tls_breaker(s));
   if (KosContext_DYN_TOP(ctx))
     kos_dyn_resync_chain(ctx);
 
@@ -3777,7 +3778,7 @@ koskari_eval_cleanup:
   KOS_TRACE_EVAL_POP();
   KosContext_EndDrive(ctx);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
-  kos_tls_leave_drive(tls, ctx);
+  kos_tls_leave_drive(s, ctx);
 
   /* Save this context's handler-visible exception state and restore the
      host's (the reverse of the entry swap). */
@@ -3800,6 +3801,17 @@ koskari_eval_cleanup:
   Py_LeaveRecursiveCall();
   Py_DECREF(ctx);
   return eval_ret;
+}
+
+
+KosOpResult koskari_eval(
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc) {
+
+  return koskari_eval_drive(kos_tls_current(), ctx, send_val, throw_typ,
+                            throw_exc);
 }
 
 

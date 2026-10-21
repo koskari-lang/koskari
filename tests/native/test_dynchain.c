@@ -327,7 +327,7 @@ static int test_dyngen_bootstrap_no_active(void) {
     TEST_ASSERT_NOT_NULL(frame, "create frame under gen");
     TEST_ASSERT_NULL(KosDynGen_ACTIVE(gen), "ACTIVE unset at bootstrap");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     Py_DECREF(ctx);
@@ -355,7 +355,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosContext_BeginDrive(ctx, NULL);
@@ -403,7 +403,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     frame = kos_dynframe_new(NULL, NULL, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosContext_BeginDrive(ctx, NULL);

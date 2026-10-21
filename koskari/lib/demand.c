@@ -203,20 +203,23 @@ KOS_RESUME_KIND(demand_resume_kind, "demand",
    context when there is one, taken out of the cache before anything
    else runs so no other call can see it, and refreshed to the dynamic
    state in force at this call; otherwise a fresh context. cached is
-   NULL when there is no wrapper to cache on. New reference.
+   NULL when there is no wrapper to cache on. s is the calling thread's
+   record (kos_tls_current). New reference.
 */
-static KosContext *demand_acquire_context(KosContext **cached) {
+static KosContext *demand_acquire_context(
+    KosContext **cached,
+    KosTlsState *s) {
 
   if (cached && *cached) {
     KosContext *ctx = *cached;
     *cached = NULL;
-    if (KosContext_TakeSnapshot(ctx) < 0) {
+    if (KosContext_TakeSnapshot(ctx, s) < 0) {
       Py_DECREF(ctx);
       return NULL;
     }
     return ctx;
   }
-  return KosContext_New(NULL);
+  return KosContext_New(NULL, s);
 }
 
 
@@ -258,7 +261,8 @@ static void demand_release_context(KosContext **cached, KosContext *ctx) {
    KOS_FRAME_DEMAND, and its return ends the drive. Any KosCallable is
    accepted. The deny guards convert AWAIT and YIELD under the demand
    mark into KoskariSyncViolation, so koskari_eval answers RETURN,
-   RAISE, or FATAL.
+   RAISE, or FATAL. The thread record is resolved once here and serves
+   both the context's snapshot and the drive (koskari_eval_drive).
 
    cached and cached_frame are the wrapper's slots, both NULL when
    there is no wrapper. args and kwnames are borrowed. Returns a new
@@ -276,14 +280,15 @@ static PyObject *demand_run_koskari(
     callable, args, nargs, kwnames, &demand_resume_kind, KOS_FRAME_DEMAND,
     cached_frame,
   };
-  KosContext *ctx = demand_acquire_context(cached);
+  KosTlsState *s = kos_tls_current();
+  KosContext *ctx = demand_acquire_context(cached, s);
   KosOpResult r;
 
   if (! ctx)
     return NULL;
 
   KosContext_ENTRY_CALL(ctx) = &call;
-  r = koskari_eval(ctx, NULL, NULL, NULL);
+  r = koskari_eval_drive(s, ctx, NULL, NULL, NULL);
   KosContext_ENTRY_CALL(ctx) = NULL;
   demand_release_context(cached, ctx);
 

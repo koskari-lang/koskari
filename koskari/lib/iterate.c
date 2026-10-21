@@ -83,7 +83,7 @@ static int iterate_acquire_context(
     }
   }
 
-  *ctx_slot = KosContext_New(NULL);
+  *ctx_slot = KosContext_New(NULL, kos_tls_current());
   if (! *ctx_slot)
     return -1;
   *owned = 1;

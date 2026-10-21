@@ -106,7 +106,8 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   coro->domain = NULL;
   coro->param_refs = NULL;
 
-  if (KosContext_Snapshot(&coro->domain, &coro->param_refs) < 0) {
+  if (KosContext_Snapshot(
+      kos_tls_current(), &coro->domain, &coro->param_refs) < 0) {
     Py_DECREF(coro);
     return NULL;
   }

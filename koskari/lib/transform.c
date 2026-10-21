@@ -363,7 +363,7 @@ KosContext *kos_transform_pyctx(PyObject *self) {
   KosTransform *t = (KosTransform *) self;
 
   if (! t->ctx) {
-    t->ctx = KosContext_New(NULL);
+    t->ctx = KosContext_New(NULL, kos_tls_current());
     if (! t->ctx)
       PyErr_Clear();
   }

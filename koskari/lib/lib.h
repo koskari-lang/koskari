@@ -65,6 +65,7 @@ struct KosXferGoal;         typedef struct KosXferGoal         KosXferGoal;
 struct KosEvaluatorToken;   typedef struct KosEvaluatorToken   KosEvaluatorToken;
 struct KosStackSteal;       typedef struct KosStackSteal       KosStackSteal;
 struct KosOpResult;         typedef struct KosOpResult         KosOpResult;
+struct KosTlsState;         typedef struct KosTlsState         KosTlsState;
 
 
 #include "arena.h"

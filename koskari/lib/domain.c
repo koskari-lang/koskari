@@ -143,13 +143,15 @@ static void tls_state_capsule_free(PyObject *capsule) {
    state or to a capsule already destroyed, and is released; the current
    thread state's dict then supplies the record, adopted into the slot
    with its own count. The key lookup cannot raise: the key is an
-   interned str.
+   interned str. Every call counts as one resolution (tls_resolve).
 */
 static KosTlsState *tls_state_current(void) {
   KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
   PyThreadState *ts = PyThreadState_Get();
   PyObject *dict;
   PyObject *capsule;
+
+  KOS_TRACE_EVENTS_INC(KOS_TE_TLS_RESOLVE);
 
   if (s) {
     if (likely(s->owner == ts))
@@ -221,10 +223,16 @@ static KosTlsState *get_or_alloc_tls_state(void) {
 }
 
 
-static void push_active_ctx(KosContext *ctx) {
+KosTlsState *kos_tls_current(void) {
   KosTlsState *s = get_or_alloc_tls_state();
-  if (! s)
+  if (unlikely(! s))
     Py_FatalError("koskari: TLS state allocation failed");
+  return s;
+}
+
+
+static void push_active_ctx(KosContext *ctx) {
+  KosTlsState *s = kos_tls_current();
   s->ctx_stack = (KosContext **) tls_stack_reserve(
       s->ctx_stack, &s->ctx_cap, s->ctx_depth);
   s->ctx_stack[s->ctx_depth++] = ctx;
@@ -238,16 +246,12 @@ static void pop_active_ctx(void) {
 }
 
 
-KosTlsState *kos_tls_enter_drive(KosContext *ctx) {
-  KosTlsState *s = get_or_alloc_tls_state();
-  if (! s)
-    Py_FatalError("koskari: TLS state allocation failed");
+void kos_tls_enter_drive(KosTlsState *s, KosContext *ctx) {
   s->refs++;   /* the drive's */
   s->ctx_stack = (KosContext **) tls_stack_reserve(
       s->ctx_stack, &s->ctx_cap, s->ctx_depth);
   s->ctx_stack[s->ctx_depth++] = ctx;
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
-  return s;
 }
 
 
@@ -267,9 +271,14 @@ void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx) {
 /* === domain-scoped ambient context API === */
 
 
+KosContext *kos_tls_active_context(const KosTlsState *s) {
+  return s->ctx_depth > 0 ? s->ctx_stack[s->ctx_depth - 1] : NULL;
+}
+
+
 KosContext *kos_ctx_current(void) {
   KosTlsState *s = tls_state_current();
-  return (s && s->ctx_depth > 0) ? s->ctx_stack[s->ctx_depth - 1] : NULL;
+  return s ? kos_tls_active_context(s) : NULL;
 }
 
 
@@ -303,23 +312,24 @@ static PyObject *tls_default_domain(KosTlsState *s) {
 }
 
 
+PyObject *kos_tls_domain(KosTlsState *s) {
+  PyObject *domain = domain_ambient_peek(s);
+  return domain ? domain : tls_default_domain(s);
+}
+
+
+/* A failure to allocate the record is a MemoryError here, not the
+   fatal error kos_tls_current raises. */
 PyObject *kos_domain_current(void) {
 
-  KosTlsState *s = tls_state_current();
-  PyObject *domain = s ? domain_ambient_peek(s) : NULL;
-
-  if (domain)
-    return domain;
+  KosTlsState *s = get_or_alloc_tls_state();
 
   if (! s) {
-    s = get_or_alloc_tls_state();
-    if (! s) {
-      if (! PyErr_Occurred())
-        PyErr_NoMemory();
-      return NULL;
-    }
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return NULL;
   }
-  return tls_default_domain(s);
+  return kos_tls_domain(s);
 }
 
 

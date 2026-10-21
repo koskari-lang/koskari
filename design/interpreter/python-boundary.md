@@ -266,6 +266,25 @@ redo `PyThread_tss_get` + `PyThreadState_Get` + owner check.
 and an internal `koskari_eval` variant take it as a parameter, the
 public `koskari_eval` resolving and delegating. Same for `coroutine_step`.
 
+Implemented: `kos_tls_current()` resolves the record (allocating it,
+fatal on failure), with the accessors `kos_tls_active_context(s)` and
+`kos_tls_domain(s)`; `KosContext_Snapshot`, `KosContext_TakeSnapshot`
+and `KosContext_New` take the record, and `kos_tls_enter_drive` takes
+it instead of resolving. `koskari_eval` resolves and delegates to
+`koskari_eval_drive(s, ...)`, which `demand_run_koskari` calls with the
+record it resolved for the snapshot. `coroutine_step` stays on
+`koskari_eval`: a coroutine's snapshot is taken at creation, not in the
+step that drives it. Counter `KOS_TE_TLS_RESOLVE` (`tls_resolve`), one
+per `tls_state_current` call. churn-trace `demand_call` (1,200,000
+boundary calls under an active context): `tls_resolve` 1,207,813
+against `init` 1,207,232, one per boundary call where the code path
+before made two (snapshot, drive entry). Measurement (`demand_call`, 4
+batches): instructions 6,738,058,735 -> 6,698,294,914 (repeat
+6,676,609,183), per call 3,240 -> 3,185; cycles per call 717 -> 808,
+within build-placement noise. Plain Python loop, 200,000 calls of a
+`Demand` with no context active (three resolutions before, one after):
+3,846 -> 3,783 instructions per call.
+
 #### D2. Exception-state swap only when something is held
 
 Both `KosExc_Fetch` calls in `koskari_eval` are unconditional. A

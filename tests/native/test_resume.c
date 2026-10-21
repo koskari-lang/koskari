@@ -75,7 +75,7 @@ KOS_RESUME_KIND(resume_probe_node_kind, "test-node-resume", resume_probe,
 
 
 static int test_cg_prologue_delivers_staged_resume(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -127,7 +127,7 @@ static KOS_PRESERVE_NONE KosOpResult stage_via_dispatch(
    same thread; the resume's terminal result on a root frame comes
    back as the prologue's result. */
 static int test_dispatch_delivers_through_prologue(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -162,7 +162,7 @@ static int test_dispatch_delivers_through_prologue(void) {
 
 
 static int test_next_resume_delivered_reports_in_hand(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -229,7 +229,7 @@ static PyObject *resume_test_instr(int op, PyObject *arg) {
 
 
 static int test_return_into_resume_parent(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -293,7 +293,7 @@ static int test_return_into_resume_parent(void) {
    frame's instruction stream, here a body returning the constant 42,
    and the root return is the prologue's result. */
 static int test_prologue_idle_threads_into_code(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -334,7 +334,7 @@ static int test_prologue_idle_threads_into_code(void) {
 /* A resume set on the frame with a value staged in the slot: the
    prologue takes the slot and delivers it. */
 static int test_prologue_delivers_staged(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -371,7 +371,7 @@ static int test_prologue_delivers_staged(void) {
 
 
 static int test_prologue_runs_pending_exception(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -415,7 +415,7 @@ static int test_prologue_runs_pending_exception(void) {
 
 
 static int test_raise_walk_resume_propagates(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -456,7 +456,7 @@ static int test_raise_walk_resume_propagates(void) {
 
 
 static int test_raise_walk_resume_handles(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -611,7 +611,7 @@ static int test_capture_restore_clones_and_clears_unapplied(void) {
    frame then carries the record's resume, so the delivery stages the
    payload for that resume and touches no frame stack. */
 static int test_capture_restore_apply_hands_over_the_clone(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -680,7 +680,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
    resume was waiting on a delivery when the frame was captured, and
    the continuation's argument is it. */
 static int test_transfer_delivers_to_a_landing_frame_resume(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -846,7 +846,7 @@ static int test_reset_for_tail_clears_resume_triple(void) {
 
 
 static int test_call_resume_null_returns_value_in_hand(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -890,7 +890,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
 
 
 static int test_next_resume_null_pushes_and_continues(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);

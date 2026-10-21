@@ -177,7 +177,7 @@ static int test_cache_inert_refuses_code(void) {
 
 
 static int test_native_install_fresh_and_cached(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -241,7 +241,7 @@ static int test_native_install_fresh_and_cached(void) {
    teardown at any point after the install hands the kind's clear the
    state the install was given, never NULL. */
 static int test_native_install_clear_sees_state(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -278,7 +278,7 @@ static int test_native_install_clear_sees_state(void) {
 
 
 static int test_request_next_sync_lifecycle(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_BeginDrive(ctx, NULL);
@@ -325,7 +325,7 @@ static int test_request_next_sync_lifecycle(void) {
 
 
 static int test_context_recycle(void) {
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   {

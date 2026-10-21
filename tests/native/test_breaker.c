@@ -43,7 +43,7 @@ static int test_breaker_reads_the_interpreter(void) {
   TEST_ASSERT_EQ(koskari_gil_drop_requested(), 0,
                  "no GIL drop requested at rest");
 
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
   KosContext_BeginDrive(ctx, NULL);
   TEST_ASSERT_SAME((void *) KosContext_BREAKER(ctx), (void *) w,

@@ -132,7 +132,7 @@ static int test_eval_object_add_return(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -174,7 +174,7 @@ static int test_domain_non_null(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
     /* every context has a domain, the thread default when none is
        ambient; parameter cells start empty (lazy) */
@@ -213,7 +213,7 @@ static int test_context_clear_then_dealloc_releases_once(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     /* fresh, non-cached objects; the context takes one reference to
@@ -275,7 +275,7 @@ static int test_context_clear_drops_chain_caches(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
     TEST_ASSERT_NOT_NULL(KosContext_FRAME(ctx), "frame cached");
     TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(ctx), "namespace cached");
@@ -326,8 +326,8 @@ static int test_domain_thread_default_when_no_tls(void) {
     TEST_ASSERT_NOT_NULL(frame1, "create frame1");
     TEST_ASSERT_NOT_NULL(frame2, "create frame2");
 
-    KosContext *ctx1 = KosContext_New(frame1);
-    KosContext *ctx2 = KosContext_New(frame2);
+    KosContext *ctx1 = KosContext_New(frame1, kos_tls_current());
+    KosContext *ctx2 = KosContext_New(frame2, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx1, "create ctx1");
     TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
@@ -377,7 +377,7 @@ static int test_eval_ctx_current_outside_eval(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -440,7 +440,7 @@ static int test_eval_try_except_catch(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -506,7 +506,7 @@ static int test_eval_try_finally_rerase(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -590,7 +590,7 @@ static int test_eval_reset_shift_invoke(void) {
         goto cleanup;
     }
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
@@ -673,7 +673,7 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -766,7 +766,7 @@ static int test_eval_call_continuation_underrun(void) {
         goto cleanup;
     }
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
@@ -830,7 +830,7 @@ static int test_eval_call_wrong_type(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -877,7 +877,7 @@ static int test_eval_object_add_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -922,7 +922,7 @@ static int test_eval_return_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -964,7 +964,7 @@ static int test_eval_dup_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -1006,7 +1006,7 @@ static int test_eval_call_empty_stack(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -1150,7 +1150,7 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -1203,7 +1203,7 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -1304,7 +1304,7 @@ static int test_eval_call_zero_args(void) {
         goto cleanup;
     }
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
@@ -1447,7 +1447,7 @@ static int test_eval_build_function_no_defaults(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -1516,7 +1516,7 @@ static int make_simple_ctx(
     }
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
-    *ctx_out = KosContext_New(frame);
+    *ctx_out = KosContext_New(frame, kos_tls_current());
     if (! *ctx_out) { Py_DECREF(*code_obj_out); return -1; }
     return 0;
 }
@@ -1685,7 +1685,7 @@ static int test_eval_await_throw_completes_iterator(void) {
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "frame");
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -1762,7 +1762,7 @@ static int test_eval_await_throw_reyield(void) {
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "frame");
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
     KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
@@ -2077,7 +2077,7 @@ static int run_item_site(
         return -1;
     }
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx)
         return -1;
 

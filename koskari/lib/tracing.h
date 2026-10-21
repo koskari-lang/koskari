@@ -63,6 +63,8 @@ typedef enum KosTraceEventId {
   /* a Python-boundary entry call's code-less root frame taken from its
      Demand wrapper's slot */
   KOS_TE_ENTRY_ROOT_CACHED,
+  /* a resolution of the per-thread record (domain.c tls_state_current) */
+  KOS_TE_TLS_RESOLVE,
   KOS_TE__COUNT
 } KosTraceEventId;
 

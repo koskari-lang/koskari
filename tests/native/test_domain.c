@@ -38,9 +38,9 @@ static int test_domain_two_thread_states_on_one_os_thread(void) {
   second = PyThreadState_New(PyThreadState_GetInterpreter(first));
   TEST_ASSERT_NOT_NULL(second, "second thread state");
 
-  a = KosContext_New(NULL);
+  a = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(a, "context a");
-  b = KosContext_New(NULL);
+  b = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(b, "context b");
 
   kos_domain_push_scope(a);
@@ -88,7 +88,7 @@ static int test_domain_record_survives_module_clear(void) {
   PyThreadState *second;
   KosContext *a;
 
-  a = KosContext_New(NULL);
+  a = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(a, "context a");
 
   koskari_domain_clear(NULL);

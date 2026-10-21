@@ -1247,12 +1247,14 @@ PyObject *KosContext_PopUnpackSequence(
   Create a new execution context with the given initial frame.
 
   :param top: initial frame (ownership transferred to context)
+  :param s: the calling thread's record (kos_tls_current), which
+      supplies the snapshot the context starts from
 
   :return: new reference to the context, or NULL on error
 */
-KosContext *KosContext_New(KosDynFrame *top);
-int KosContext_Snapshot(PyObject **domain, PyObject **cells);
-int KosContext_TakeSnapshot(KosContext *ctx);
+KosContext *KosContext_New(KosDynFrame *top, KosTlsState *s);
+int KosContext_Snapshot(KosTlsState *s, PyObject **domain, PyObject **cells);
+int KosContext_TakeSnapshot(KosContext *ctx, KosTlsState *s);
 KosContext *KosContext_NewFromSnapshot(
     KosDynFrame *top,
     PyObject *domain,
@@ -1400,6 +1402,21 @@ KosOpResult koskari_eval(
 
 
 /**
+  koskari_eval over the thread record s, already resolved by the caller
+  (kos_tls_current). koskari_eval resolves the record and delegates
+  here; a caller that resolved it for another use in the same step,
+  such as the snapshot of a boundary call's context, passes it instead
+  of resolving it again. Arguments and result as koskari_eval.
+*/
+KosOpResult koskari_eval_drive(
+    KosTlsState *s,
+    KosContext *ctx,
+    PyObject *send_val,
+    PyObject *throw_typ,
+    PyObject *throw_exc);
+
+
+/**
    Route the raised exception to the current frame's resume when one is
    set: a delegation in flight takes it as its pending throw and throws
    it into the delegate, so a delegate that catches it answers with its
@@ -1424,17 +1441,38 @@ int KosContext_ThrowIntoResume(KosContext *ctx);
 KosContext *kos_ctx_current(void);
 
 
-/* The per-thread record behind the ambient context stack; private to
-   domain.c. */
-typedef struct KosTlsState KosTlsState;
+/* The per-thread record behind the ambient context stack (KosTlsState)
+   is private to domain.c. A boundary call resolves it once with
+   kos_tls_current and hands it to the snapshot and the drive. */
 
 
 /**
-  Enter a drive: the thread record is resolved once and held for the
-  drive's length, ctx becomes the ambient context, and the context's
-  token gains a live depth. Returns the held record.
+  Return the current thread's record, allocated when it has none.
+  Allocation failure is fatal.
 */
-KosTlsState *kos_tls_enter_drive(KosContext *ctx);
+KosTlsState *kos_tls_current(void);
+
+
+/* The context on top of s's ambient stack, or NULL when none is
+   active. */
+KosContext *kos_tls_active_context(const KosTlsState *s);
+
+
+/**
+  Return the KosDomain answering on the thread s records: the active
+  context's, else the innermost `with Domain():` scope's, else the
+  thread default domain, minted on first need. Borrowed reference, or
+  NULL with an error set when minting the thread default fails.
+*/
+PyObject *kos_tls_domain(KosTlsState *s);
+
+
+/**
+  Enter a drive on the thread record s: the record is held for the
+  drive's length, ctx becomes the ambient context, and the context's
+  token gains a live depth.
+*/
+void kos_tls_enter_drive(KosTlsState *s, KosContext *ctx);
 
 
 /* The eval breaker word of the thread s records, located once when
@@ -1450,10 +1488,10 @@ void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx);
 
 
 /**
-  Return the KosDomain answering on this thread: the active context's,
-  else the innermost `with Domain():` scope's, else the thread default
-  domain, minted on first need. Borrowed reference, or NULL with an
-  error set when minting the thread default fails.
+  Return the KosDomain answering on this thread, as kos_tls_domain over
+  the current thread's record, allocated when it has none. Borrowed
+  reference, or NULL with an error set when allocating the record or
+  minting the thread default fails.
 */
 PyObject *kos_domain_current(void);
 

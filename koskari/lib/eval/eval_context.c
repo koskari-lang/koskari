@@ -41,12 +41,12 @@
    are shared by pointer, and the root scope is reached through the
    domain); otherwise the domain of an enclosing `with Domain():` scope,
    else the thread default domain, with no cells. Both come back as new
-   references, *cells NULL when there are none. Returns -1 with an error
-   set.
+   references, *cells NULL when there are none. s is the calling
+   thread's record (kos_tls_current). Returns -1 with an error set.
 */
-int KosContext_Snapshot(PyObject **domain, PyObject **cells) {
+int KosContext_Snapshot(KosTlsState *s, PyObject **domain, PyObject **cells) {
 
-  KosContext *active = kos_ctx_current();
+  KosContext *active = kos_tls_active_context(s);
 
   *domain = NULL;
   *cells = NULL;
@@ -63,7 +63,7 @@ int KosContext_Snapshot(PyObject **domain, PyObject **cells) {
     return 0;
   }
 
-  *domain = kos_domain_current();
+  *domain = kos_tls_domain(s);
   if (! *domain)
     return -1;
   Py_INCREF(*domain);
@@ -136,14 +136,15 @@ KosContext *KosContext_NewFromSnapshot(
 /**
    Replace a cached context's domain and parameterize cells with the
    snapshot in force now, so a context reused across boundary calls
-   sees the dynamic state of each call. Returns -1 with an error set.
+   sees the dynamic state of each call. s is the calling thread's
+   record (kos_tls_current). Returns -1 with an error set.
 */
-int KosContext_TakeSnapshot(KosContext *ctx) {
+int KosContext_TakeSnapshot(KosContext *ctx, KosTlsState *s) {
 
   PyObject *domain;
   PyObject *cells;
 
-  if (KosContext_Snapshot(&domain, &cells) < 0)
+  if (KosContext_Snapshot(s, &domain, &cells) < 0)
     return -1;
   Py_XSETREF(ctx->domain, domain);
   Py_XSETREF(ctx->param_refs, cells);
@@ -151,12 +152,12 @@ int KosContext_TakeSnapshot(KosContext *ctx) {
 }
 
 
-KosContext *KosContext_New(KosDynFrame *top) {
+KosContext *KosContext_New(KosDynFrame *top, KosTlsState *s) {
 
   PyObject *domain;
   PyObject *cells;
 
-  if (KosContext_Snapshot(&domain, &cells) < 0)
+  if (KosContext_Snapshot(s, &domain, &cells) < 0)
     return NULL;
   return KosContext_NewFromSnapshot(top, domain, cells);
 }
