@@ -151,4 +151,29 @@ static inline int kos_type_is_mapping(PyObject *obj) {
 }
 
 
+/* === Handled exception === */
+
+
+/* 1 when the thread state's handled-exception chain holds an exception
+   (sys.exc_info() would report one), 0 otherwise; no references are
+   taken. Reads PyThreadState.exc_info and, on each _PyErr_StackItem,
+   exc_type, exc_value and previous_item. The walk is CPython's
+   _PyErr_GetTopmostException on this version: an item whose exc_type
+   is NULL or None is skipped while a previous item exists. The item
+   it stops at is tested as KosExc_Fetch tests what PyErr_GetExcInfo
+   returns from it, so the answer is KosExc_Held after a fetch. */
+static inline int kos_tstate_exc_held(PyThreadState *tstate) {
+  _PyErr_StackItem *item = tstate->exc_info;
+
+  for (; item->previous_item; item = item->previous_item) {
+    if (item->exc_type && item->exc_type != Py_None)
+      break;
+  }
+
+  if (item->exc_value)
+    return item->exc_value != Py_None;
+  return item->exc_type && item->exc_type != Py_None;
+}
+
+
 // The end.

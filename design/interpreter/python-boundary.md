@@ -294,6 +294,26 @@ exception (`exc_info->exc_type`/`exc_value` on 3.9 and 3.10,
 `exc_info->exc_value` on 3.11 and later); the fetch and the install
 run only when the host or the context holds one.
 
+Implemented: each `compat_3XX.h` carries `kos_tstate_exc_held`, a
+reference-free walk mirroring that version's
+`_PyErr_GetTopmostException`, then `KosExc_Fetch`'s emptiness test on
+the item it stops at. Fields read: `PyThreadState.exc_info`, and on
+`_PyErr_StackItem` `exc_type`, `exc_value`, `previous_item` (3.9,
+3.10; skip on `exc_type` NULL or None) or `exc_value`,
+`previous_item` (3.11, 3.12 skip on NULL or None; 3.13, 3.14 skip on
+NULL). `kos_tls_thread_state(s)` returns the record's owner, the
+current thread state for any resolved record. `koskari_eval_drive`
+peeks at entry and fetches the host's state only when held, peeks
+again at cleanup and fetches only when the thread holds one; the four
+exit cases keep their behaviour. Counter `KOS_TE_EXC_FETCH`
+(`exc_fetch`), one per fetch. churn-trace `demand_call`: `exc_fetch`
+0 over 1,207,232 drives, where the code path before made two per
+drive. Measurement (`demand_call`, 4 batches): instructions
+6,698,800,619 -> 6,542,233,283 (repeat 6,537,928,665), per call
+3,179 -> 2,982; the one-batch control drops 193 per call; cycles per
+call 677 -> 575 (repeat 539). Only the 3.12 header was compiled
+locally.
+
 ### E. Async boundary
 
 - `KosFunction_VectorCall` on the simple non-yielding shape pops a

@@ -928,6 +928,159 @@ static int test_next_resume_null_pushes_and_continues(void) {
 }
 
 
+/* === the drive's handled-exception swap === */
+
+
+typedef struct {
+  int calls;
+  PyObject *seen;        /* owned: handled exception seen inside, or NULL */
+  PyObject *set_inside;  /* borrowed: made the handled exception inside */
+} ExcInfoProbe;
+
+
+/* The thread's handled exception as a new reference, or NULL when it
+   handles none (NULLs on some versions, None on others) */
+static PyObject *thread_handled(void) {
+  PyObject *typ;
+  PyObject *val;
+  PyObject *tb;
+
+  PyErr_GetExcInfo(&typ, &val, &tb);
+  Py_XDECREF(typ);
+  Py_XDECREF(tb);
+  if (val == Py_None)
+    Py_CLEAR(val);
+  return val;
+}
+
+
+/* Records the handled exception visible inside the drive, then makes
+   set_inside the handled one, as a context left inside a handler
+   would, and returns the delivered value. */
+static KOS_PRESERVE_NONE KosOpResult exc_info_probe(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  ExcInfoProbe *p = (ExcInfoProbe *) state;
+
+  (void) ctx;
+  p->calls++;
+  Py_XSETREF(p->seen, thread_handled());
+  if (p->set_inside)
+    PyErr_SetHandledException(p->set_inside);
+
+  if (! value)
+    return EVAL_RAISE();
+  return EVAL_RETURN(value);
+}
+
+
+KOS_RESUME_KIND(exc_info_probe_kind, "test-exc-info", exc_info_probe,
+                NULL, NULL);
+
+
+/* One drive of a fresh context whose root frame delivers a staged
+   value to the probe. 0 when the drive returned that value and, with
+   set_inside, the context kept set_inside as its handled exception;
+   -1 otherwise. */
+static int drive_exc_info_probe(ExcInfoProbe *probe) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_BeginDrive(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *staged = PyLong_FromLong(5);
+  TEST_ASSERT_NOT_NULL(staged, "create staged value");
+  TEST_ASSERT(KosContext_StackPushRef(ctx, staged) >= 0,
+              "push staged value onto the frame's own stack");
+
+  KosDynFrame_RESUME_KIND(frame) = &exc_info_probe_kind;
+  KosDynFrame_RESUME_STATE(frame) = (void *) probe;
+
+  KosContext_EndDrive(ctx);
+
+  probe->calls = 0;
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+
+  TEST_ASSERT_EQ(probe->calls, 1, "probe ran once");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RETURN, "drive returned");
+  TEST_ASSERT_SAME(ev.val, staged, "drive returned the staged value");
+  if (probe->set_inside)
+    TEST_ASSERT_SAME(KosContext_EXC_INFO(ctx)->value, probe->set_inside,
+                     "context kept the exception it was handling");
+
+  Py_XDECREF(ev.val);
+  Py_DECREF(staged);
+  Py_DECREF(ctx);
+  return 0;
+}
+
+
+/* A drive neither shows the thread's handled exception to the context
+   nor leaves the context's behind: after each drive the thread handles
+   what it handled before, whether the thread held one at entry and
+   whether the context was handling one when the drive ended. */
+static int test_drive_restores_thread_exc_info(void) {
+  PyObject *saved_typ;
+  PyObject *saved_val;
+  PyObject *saved_tb;
+  PyObject *host_exc;
+  PyObject *inner_exc;
+  PyObject *handled;
+  ExcInfoProbe probe = { 0, NULL, NULL };
+  int i;
+
+  PyErr_GetExcInfo(&saved_typ, &saved_val, &saved_tb);
+  PyErr_SetExcInfo(NULL, NULL, NULL);
+
+  host_exc = PyObject_CallFunction(PyExc_KeyError, "s", "host");
+  TEST_ASSERT_NOT_NULL(host_exc, "create host exception");
+  inner_exc = PyObject_CallFunction(PyExc_ValueError, "s", "inner");
+  TEST_ASSERT_NOT_NULL(inner_exc, "create inner exception");
+
+  /* the thread handles nothing, twice */
+  for (i = 0; i < 2; i++) {
+    TEST_ASSERT_EQ(drive_exc_info_probe(&probe), 0, "drive");
+    TEST_ASSERT_NULL(probe.seen, "nothing handled inside");
+    handled = thread_handled();
+    TEST_ASSERT_NULL(handled, "thread handles nothing after the drive");
+  }
+
+  /* the thread handles nothing; the context ends inside a handler */
+  probe.set_inside = inner_exc;
+  TEST_ASSERT_EQ(drive_exc_info_probe(&probe), 0, "drive");
+  TEST_ASSERT_NULL(probe.seen, "nothing handled inside");
+  handled = thread_handled();
+  TEST_ASSERT_NULL(handled, "context's exception not left on the thread");
+
+  /* the thread handles the host's exception */
+  PyErr_SetHandledException(host_exc);
+  probe.set_inside = NULL;
+  TEST_ASSERT_EQ(drive_exc_info_probe(&probe), 0, "drive");
+  TEST_ASSERT_NULL(probe.seen, "host's exception not visible inside");
+  handled = thread_handled();
+  TEST_ASSERT_SAME(handled, host_exc, "host's exception back after drive");
+  Py_DECREF(handled);
+
+  /* the thread handles the host's; the context ends inside a handler */
+  probe.set_inside = inner_exc;
+  TEST_ASSERT_EQ(drive_exc_info_probe(&probe), 0, "drive");
+  TEST_ASSERT_NULL(probe.seen, "host's exception not visible inside");
+  handled = thread_handled();
+  TEST_ASSERT_SAME(handled, host_exc, "host's exception back after drive");
+  Py_DECREF(handled);
+
+  PyErr_SetExcInfo(saved_typ, saved_val, saved_tb);
+  Py_DECREF(inner_exc);
+  Py_DECREF(host_exc);
+  return 0;
+}
+
+
 /* === Suite === */
 
 
@@ -953,6 +1106,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_returns_value_in_hand);
   RUN_TEST(test_next_resume_null_pushes_and_continues);
+  RUN_TEST(test_drive_restores_thread_exc_info);
 
   return 0;
 }

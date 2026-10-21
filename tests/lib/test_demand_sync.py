@@ -21,6 +21,7 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 import functools
 import gc
 import operator
+import sys
 import unittest
 import weakref
 
@@ -1592,6 +1593,87 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
         second = box("y")
         self.assertEqual(first.x, 3)
         self.assertEqual(second.x, "y")
+
+
+
+HANDLED_SRC = """
+(define report (lambda [probe] (probe)))
+
+(define handle_inner (lambda [probe]
+  (try
+    (raise (ValueError "inner"))
+    ([ValueError] (probe)))))
+"""
+
+
+def handled_now():
+    """
+    The exception sys.exc_info() reports, or None
+    """
+
+    return sys.exc_info()[1]
+
+
+class TestDemandHandledException(unittest.IsolatedAsyncioTestCase):
+    """
+    A Demand called from Python runs with its own handled exception
+    (sys.exc_info): it neither sees the caller's nor leaves its own
+    behind
+    """
+
+    async def load(self):
+        module = new_module("demand_handled")
+        vars(module)["__file__"] = "<demand_handled>"
+        await load_module_source_async(module, HANDLED_SRC, layout=False)
+        return vars(module)
+
+
+    async def test_caller_exception_hidden_inside_and_back_after(self):
+        """
+        called inside an except block, the function sees no handled
+        exception, and the caller sees its own again after each call
+        """
+
+        mod = await self.load()
+        d = demand(mod["report"])
+        try:
+            raise KeyError("caller")
+        except KeyError as caught:
+            for _ in range(2):
+                self.assertIsNone(d(handled_now))
+                self.assertIs(sys.exc_info()[1], caught)
+
+
+    async def test_handled_inside_leaves_caller_empty(self):
+        """
+        a function that raises and handles its own exception leaves the
+        caller with no handled exception
+        """
+
+        mod = await self.load()
+        d = demand(mod["handle_inner"])
+        for _ in range(2):
+            seen = d(handled_now)
+            self.assertIsInstance(seen, ValueError)
+            self.assertEqual(seen.args, ("inner",))
+            self.assertEqual(sys.exc_info(), (None, None, None))
+
+
+    async def test_handled_inside_restores_caller_exception(self):
+        """
+        called inside an except block, a function that handles its own
+        exception sees its own inside, and the caller sees its own after
+        """
+
+        mod = await self.load()
+        d = demand(mod["handle_inner"])
+        try:
+            raise KeyError("caller")
+        except KeyError as caught:
+            for _ in range(2):
+                seen = d(handled_now)
+                self.assertIsInstance(seen, ValueError)
+                self.assertIs(sys.exc_info()[1], caught)
 
 
 # The end.

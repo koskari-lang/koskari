@@ -1480,6 +1480,13 @@ void kos_tls_enter_drive(KosTlsState *s, KosContext *ctx);
 const volatile KosBreakerWord *kos_tls_breaker(const KosTlsState *s);
 
 
+/* The thread state s records. Every record a resolution returns
+   (kos_tls_current and the resolutions inside domain.c) is owned by the
+   current thread state, so for such a record this is the calling
+   thread's state, read without PyThreadState_Get. */
+PyThreadState *kos_tls_thread_state(const KosTlsState *s);
+
+
 /**
   Leave the drive holding s: the token's live depth and the ambient
   context are dropped and the record is released.

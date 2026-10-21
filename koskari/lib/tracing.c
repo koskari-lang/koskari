@@ -58,6 +58,7 @@ static const char *const kos_te_names[KOS_TE__COUNT] = {
   "entry_root_install",
   "entry_root_cached",
   "tls_resolve",
+  "exc_fetch",
 };
 
 

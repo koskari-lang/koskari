@@ -260,6 +260,11 @@ const volatile KosBreakerWord *kos_tls_breaker(const KosTlsState *s) {
 }
 
 
+PyThreadState *kos_tls_thread_state(const KosTlsState *s) {
+  return s->owner;
+}
+
+
 void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx) {
   KosEvaluatorToken_DecrementLiveDepth(KosContext_TOKEN(ctx));
   if (s->ctx_depth > 0)

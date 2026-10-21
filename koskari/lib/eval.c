@@ -3654,6 +3654,8 @@ KosOpResult koskari_eval_drive(
 
   KosOpResult eval_ret = EVAL_RAISE();
   KosExcState host_exc;
+  PyThreadState *tstate;
+  int host_held;
   KosOpResult r;
 
   if (! ctx) {
@@ -3688,10 +3690,18 @@ KosOpResult koskari_eval_drive(
 
   /* Swap in this context's handler-visible exception state (sys.exc_info),
      saving the host's. Contexts interleaved on one thread must not see
-     each other's handled exception; the reverse swap runs at cleanup. */
+     each other's handled exception; the reverse swap runs at cleanup.
+     The thread state is peeked first and the host's state fetched only
+     when it holds one. tstate is kept for the cleanup, which runs after
+     kos_tls_leave_drive has released s. */
+  tstate = kos_tls_thread_state(s);
+  host_held = kos_tstate_exc_held(tstate);
   KosExc_Init(&host_exc);
-  KosExc_Fetch(&host_exc);
-  if (KosExc_Held(&host_exc) || KosExc_Held(KosContext_EXC_INFO(ctx)))
+  if (host_held) {
+    KosExc_Fetch(&host_exc);
+    KOS_TRACE_EVENTS_INC(KOS_TE_EXC_FETCH);
+  }
+  if (host_held || KosExc_Held(KosContext_EXC_INFO(ctx)))
     KosExc_Install(KosContext_EXC_INFO(ctx));
 
   /* The drive holds the context: a holder that drops its reference
@@ -3781,19 +3791,30 @@ koskari_eval_cleanup:
   kos_tls_leave_drive(s, ctx);
 
   /* Save this context's handler-visible exception state and restore the
-     host's (the reverse of the entry swap). */
-  {
+     host's (the reverse of the entry swap). By what the thread holds now
+     and what the host held at entry:
+
+     - thread holds one, host held one: the context takes the thread's,
+       the host's is installed again.
+     - thread holds one, host held none: the context takes the thread's,
+       the thread's is cleared.
+     - thread holds none, host held one: the context's is cleared, the
+       host's is installed again.
+     - neither: nothing moves; the context keeps what it held.
+
+     Only the first two fetch. */
+  if (kos_tstate_exc_held(tstate)) {
     KosExcState current;
+
     KosExc_Init(&current);
     KosExc_Fetch(&current);
-    if (KosExc_Held(&current) || KosExc_Held(&host_exc)) {
-      KosExc_Clear(KosContext_EXC_INFO(ctx));
-      KosExc_Move(KosContext_EXC_INFO(ctx), &current);
-      KosExc_Install(&host_exc);
-    } else {
-      KosExc_Clear(&current);
-      KosExc_Clear(&host_exc);
-    }
+    KOS_TRACE_EVENTS_INC(KOS_TE_EXC_FETCH);
+    KosExc_Clear(KosContext_EXC_INFO(ctx));
+    KosExc_Move(KosContext_EXC_INFO(ctx), &current);
+    KosExc_Install(&host_exc);
+  } else if (KosExc_Held(&host_exc)) {
+    KosExc_Clear(KosContext_EXC_INFO(ctx));
+    KosExc_Install(&host_exc);
   }
 
   /* the drive's hold on the context, taken at entry; a holder that let
