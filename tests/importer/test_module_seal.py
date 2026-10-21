@@ -27,7 +27,7 @@ import weakref
 
 import pytest
 
-from koskari.lib import demand_call
+from koskari.lib import Arena, demand_call
 from koskari.module import (
     detach_module_load_facets, load_module_source_async, new_module)
 
@@ -132,6 +132,25 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(arena)
         self.assertFalse(arena.sealed)
         self.assertIn("__compiler__", ns)
+
+    async def test_raising_load_seals_placed_code(self):
+        """a load that raises still seals the chunks it placed into"""
+
+        src = """
+(define durable (lambda [x] (+ x 1)))
+(raise (ValueError "boom"))
+"""
+        module = new_module("sealtest")
+        ns = vars(module)
+        ns["__file__"] = "<sealtest>"
+        with self.assertRaises(ValueError):
+            await load_module_source_async(module, src)
+
+        arena = ns["durable"].code.arena
+        self.assertIsNotNone(arena)
+        self.assertTrue(arena.sealed)
+        self.assertLessEqual(arena.size, Arena.CHUNK)
+        self.assertNotIn("__compiler__", ns)
 
     async def test_ephemeral_not_packed(self):
         """a discarded top-level expression stays out of the arena"""

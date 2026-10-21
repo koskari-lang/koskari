@@ -190,9 +190,9 @@ def load_facets(module, filename, *, seal, detach):
     opens the compiler's code allocator so the load's function code is
     placed into arena chunks -- unless the load can never seal, with
     ``seal`` False and ``detach`` set, where code stays plain heap --
-    and yields them; seals the module on normal exit when ``seal`` is
-    set; when ``detach`` is set, materializes ``__all__`` and detaches
-    the facets afterward, always, even when the load raises, with
+    and yields them; when the block ends, whether or not the load
+    raised, seals the chunks when ``seal`` is set, and when ``detach``
+    is set materializes ``__all__`` and detaches the facets, with
     ``__pragma__`` staying bound. Callers passing ``detach`` False own
     the completion steps: an interactive session seals but retains
     facets; the bootstrap builtins loop defers both across its source
@@ -211,9 +211,9 @@ def load_facets(module, filename, *, seal, detach):
         compiler.open_allocator()
     try:
         yield compiler, reader
+    finally:
         if seal:
             compiler.seal()
-    finally:
         if detach:
             materialize_exports(module)
             detach_module_load_facets(module)
