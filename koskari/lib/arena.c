@@ -286,32 +286,6 @@ PyObject *KosCodeAllocator_Seal(PyObject *alloc) {
 /* === Arena type methods === */
 
 
-static PyObject *arena_new(
-    PyTypeObject *type,
-    PyObject *args,
-    PyObject *kwds) {
-
-  Py_ssize_t nbytes = 0;
-
-  static char *keywords[] = {
-    "size", NULL,
-  };
-
-  if (! PyArg_ParseTupleAndKeywords(args, kwds, "n:Arena", keywords,
-                                    &nbytes)) {
-    return NULL;
-  }
-
-  if (nbytes <= 0) {
-    PyErr_SetString(PyExc_ValueError,
-                    "Arena size must be positive");
-    return NULL;
-  }
-
-  return KosArena_New((size_t) nbytes);
-}
-
-
 static void arena_dealloc(PyObject *self) {
 
   KosArena *arena = (KosArena *) self;
@@ -346,17 +320,6 @@ static PyObject *arena_repr(PyObject *self) {
 }
 
 
-static PyObject *arena_m_seal(PyObject *self, PyObject *unused) {
-
-  (void) unused;
-
-  if (KosArena_Seal(self)) {
-    return NULL;
-  }
-  Py_RETURN_NONE;
-}
-
-
 static PyObject *arena_get_size(PyObject *self, void *_unused) {
 
   (void) _unused;
@@ -376,16 +339,6 @@ static PyObject *arena_get_sealed(PyObject *self, void *_unused) {
   (void) _unused;
   return PyBool_FromLong(KosArena_SEALED(self));
 }
-
-
-static PyMethodDef arena_methods[] = {
-
-  { "seal", (PyCFunction) arena_m_seal, METH_NOARGS,
-    "A.seal() => None. Seal the arena read-only; raises ValueError if"
-    " already sealed" },
-
-  { NULL, },
-};
 
 
 static PyGetSetDef arena_getset[] = {
@@ -505,12 +458,10 @@ PyTypeObject KosArenaType = {
   0,
 
   .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_doc = ("Arena(size) => one chunk of storage for Code blocks,"
+  .tp_doc = ("one chunk of a CodeAllocator's storage for Code blocks,"
              " sealed read-only once filled"),
   .tp_repr = arena_repr,
   .tp_getset = arena_getset,
-  .tp_methods = arena_methods,
-  .tp_new = arena_new,
   .tp_weaklistoffset = offsetof(KosArena, weakreflist),
   .tp_dealloc = arena_dealloc,
 };

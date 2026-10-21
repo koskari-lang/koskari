@@ -952,11 +952,7 @@ static inline int kos_eval_check_frame_room(
   return kos_eval_recursion_error();
 }
 #define KosEvalState_CODE(es) ((es)->code)
-/** The live code's instruction array. Read through the code object on
-    every fetch, never cached on the state or a frame: packing a code
-    object into an arena relocates its block, and a frame off the chain (a
-    defer, a generator, a function's cached frame) may hold the code
-    across that move. */
+/** The live code's instruction array, read through the code object. */
 #define KosEvalState_OPS(es) KosCode_CODE(KosEvalState_CODE(es))
 #define KosEvalState_BLOCK(es) ((es)->block)
 #define KosEvalState_NAMESPACE(es) ((es)->namespace)

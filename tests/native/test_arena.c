@@ -15,13 +15,12 @@
 
 
 /**
-   Memory tests for the Arena and CodeAllocator types and Code
-   pack_into relocation
+   Memory tests for the Arena and CodeAllocator types and the Code
+   protect flag
 
    Tests arena creation, reservation arithmetic, release of the newest
-   reservation, seal, code allocator placement and sealing, and the
-   relocate-then-free ordering of Code.pack_into, including the arena
-   ownership handoff on Code deallocation.
+   reservation, seal, and code allocator placement and sealing,
+   including the arena ownership handoff on Code deallocation.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -311,7 +310,7 @@ static int test_code_allocator_places_code(void) {
 }
 
 
-/* === pack_into tests === */
+/* === Code protect tests === */
 
 
 static int test_code_protect_flag(void) {
@@ -328,85 +327,6 @@ static int test_code_protect_flag(void) {
 
     Py_DECREF(prot);
     Py_DECREF(plain);
-    return 0;
-}
-
-
-static int test_pack_into_relocates(void) {
-    PyObject *a = make_small_code("a", 1);
-    PyObject *b = make_small_code("b", 0);
-    TEST_ASSERT_NOT_NULL(a, "create code a");
-    TEST_ASSERT_NOT_NULL(b, "create code b");
-
-    uint16_t op0 = KosCode_GET_OP(a, 0);
-    PyObject *const0 = KosCode_GET_CONST(a, KosCode_GET_ARG(a, 0));
-    Py_INCREF(const0);
-
-    size_t need = code_block_bytes(a) + code_block_bytes(b) + 16;
-    PyObject *arena = KosArena_New(need);
-    TEST_ASSERT_NOT_NULL(arena, "create arena");
-
-    PyObject *r = PyObject_CallMethod(a, "pack_into", "O", arena);
-    TEST_ASSERT_NOT_NULL(r, "pack a");
-    Py_DECREF(r);
-    r = PyObject_CallMethod(b, "pack_into", "O", arena);
-    TEST_ASSERT_NOT_NULL(r, "pack b");
-    Py_DECREF(r);
-
-    /* interior pointers land inside the arena chunk */
-    char *base = (char *) KosArena_BASE(arena);
-    char *end = base + KosArena_SIZE(arena);
-    TEST_ASSERT((char *) KosCode_CODE(a) >= base
-                && (char *) KosCode_CODE(a) < end,
-                "code a relocated into arena");
-    TEST_ASSERT((char *) KosCode_CODE(b) >= base
-                && (char *) KosCode_CODE(b) < end,
-                "code b relocated into arena");
-
-    /* contents and cpool identity preserved; protect flag cleared */
-    TEST_ASSERT_EQ(KosCode_GET_OP(a, 0), op0, "instruction preserved");
-    TEST_ASSERT_SAME(KosCode_GET_CONST(a, KosCode_GET_ARG(a, 0)), const0,
-                     "cpool identity preserved");
-    TEST_ASSERT(! KosCode_PROTECTED(a), "per-object protection released");
-    TEST_ASSERT_SAME(KosCode_ARENA(a), arena, "arena reference held");
-
-    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal after pack");
-
-    /* double pack rejected */
-    r = PyObject_CallMethod(a, "pack_into", "O", arena);
-    TEST_ASSERT_NULL(r, "double pack rejected");
-    PyErr_Clear();
-
-    /* arena lives until the last member dies */
-    Py_ssize_t held = Py_REFCNT(arena);
-    Py_DECREF(arena);
-    TEST_ASSERT_EQ((long) Py_REFCNT(a) >= 1, 1L, "a alive");
-    (void) held;
-
-    Py_DECREF(a);
-    /* b still holds the arena; freeing b unseals and frees the chunk */
-    Py_DECREF(b);
-
-    Py_DECREF(const0);
-    return 0;
-}
-
-
-static int test_pack_into_sealed_rejected(void) {
-    PyObject *c = make_small_code("c", 1);
-    TEST_ASSERT_NOT_NULL(c, "create code");
-
-    PyObject *arena = KosArena_New(code_block_bytes(c));
-    TEST_ASSERT_NOT_NULL(arena, "create arena");
-    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal");
-
-    PyObject *r = PyObject_CallMethod(c, "pack_into", "O", arena);
-    TEST_ASSERT_NULL(r, "pack into sealed rejected");
-    PyErr_Clear();
-    TEST_ASSERT_NULL(KosCode_ARENA(c), "code left unpacked");
-
-    Py_DECREF(arena);
-    Py_DECREF(c);
     return 0;
 }
 
@@ -428,8 +348,6 @@ int run_arena_tests(void) {
     RUN_TEST(test_code_allocator_places_code);
 
     RUN_TEST(test_code_protect_flag);
-    RUN_TEST(test_pack_into_relocates);
-    RUN_TEST(test_pack_into_sealed_rejected);
 
     return 0;
 }

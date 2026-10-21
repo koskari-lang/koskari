@@ -337,8 +337,8 @@ typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
    the record's own index, so any pointer to an instruction names its
    pc without the code base; jump targets are 16-bit, so a code object
    holds at most UINT16_MAX instructions and finalize enforces it. The
-   derived half is resolved at finalize and on every load, never
-   serialized, and re-derived when pack relocates the block: ``fn`` is
+   derived half is resolved at finalize and on every load, and never
+   serialized: ``fn`` is
    kos_op_handlers[op]; ``u`` is the operand ``arg`` names, read through
    the member the style selects (``obj`` for CONST and VAR, ``target``
    for LABEL, ``row`` for EXTRA); ``slot`` is the cache slot ``cache``

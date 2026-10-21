@@ -408,7 +408,7 @@ static size_t align_size(size_t value, size_t unit) {
 /**
    Region offsets and sizes for a unified bytecode block, computed from
    the five region lengths. The single source of truth for the block
-   layout: allocation, relocation, and the stats getsets all derive
+   layout: allocation and the stats getsets all derive
    offsets from here. Region order (with alignment padding between):
 
      [code][pad][positions][pad][cpool][pad][extra][pad][extents][top]
@@ -1199,92 +1199,6 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
 }
 
 
-static void code_fill_derived(
-    KosOp *code,
-    uint32_t code_len,
-    KosExtra *extra,
-    const KosOp *old_code);
-
-
-/**
-   Relocate this code object's unified block into an arena slice.
-
-   Copies the unrounded block extent into the arena, recomputes the
-   interior region pointers from the new base, takes a strong reference
-   to the arena, and frees the original allocation (unsealing it first
-   when it was per-object protected). Cpool slots are owned pointers
-   copied verbatim; no refcounts change.
-
-   Caller must hold the GIL, and no frame of this code may be
-   mid-dispatch. Suspended frames are safe: they hold the KosCode
-   object plus an integer pc and re-derive the instruction buffer on
-   resume.
-*/
-static PyObject *code_m_pack_into(PyObject *self, PyObject *arena) {
-
-  if (! KosArena_Check(arena)) {
-    PyErr_Format(PyExc_TypeError,
-                 "pack_into argument must be an Arena, not %R",
-                 Py_TYPE(arena));
-    return NULL;
-  }
-
-  if (KosCode_ARENA(self)) {
-    PyErr_SetString(PyExc_ValueError,
-                    "Code is already packed into an arena");
-    return NULL;
-  }
-
-  void *old_base = KosCode_CODE(self);
-  if (! old_base) {
-    PyErr_SetString(PyExc_ValueError,
-                    "Code has no bytecode block");
-    return NULL;
-  }
-
-  KosBlockLayout lay;
-  code_self_layout(self, &lay);
-
-  void *dst = NULL;
-  if (KosArena_Reserve(arena, lay.total_unrounded, &dst)) {
-    return NULL;
-  }
-
-  memcpy(dst, old_base, lay.total_unrounded);
-
-  /* Recompute interior pointers from the new base, preserving NULL
-     for absent optional regions */
-  KosCode_CODE(self) = (KosOp *) dst;
-  KosCode_POS(self) = (KosPosition *) ((char *) dst + lay.pos_offset);
-  KosCode_CPOOL(self) = (PyObject **) ((char *) dst + lay.cpool_offset);
-  KosCode_EXTRA(self) = KosCode_EXTRA(self)
-      ? (KosExtra *) ((char *) dst + lay.extra_offset) : NULL;
-  KosCode_EXTENTS(self) = KosCode_EXTENTS(self)
-      ? (KosExtentDesc *) ((char *) dst + lay.extent_offset) : NULL;
-  KosCode_TOP_EXTENT_ID(self) = KosCode_TOP_EXTENT_ID(self)
-      ? (uint16_t *) ((char *) dst + lay.top_offset) : NULL;
-
-  /* The in-block operand pointers moved with the block; re-derive them
-     (and fn) from the serialized indices in the arena's writable window. */
-  code_fill_derived(KosCode_CODE(self), KosCode_CODE_LEN(self),
-                    KosCode_EXTRA(self), (const KosOp *) old_base);
-
-  Py_INCREF(arena);
-  KosCode_ARENA(self) = arena;
-
-  if (KosCode_PROTECTED(self)) {
-    mprotect(old_base, KosCode_ALLOCATION(self), PROT_WRITE);
-    KosCode_FLAGS(self) &= ~KOS_CODE_PROTECTED;
-  }
-  free(old_base);
-
-  /* allocation now reports the member footprint within the arena */
-  KosCode_ALLOCATION(self) = lay.total_unrounded;
-
-  Py_RETURN_NONE;
-}
-
-
 static PyMethodDef code_methods[] = {
 
   { "constant", (PyCFunction) code_m_constant, METH_O,
@@ -1314,10 +1228,6 @@ static PyMethodDef code_methods[] = {
   { "soften", (PyCFunction) code_m_soften, METH_NOARGS,
     "C.soften() => list of (opcode, arg) pairs with LABEL/POSITION "
     "pseudo-ops and pool/label values restored" },
-
-  { "pack_into", (PyCFunction) code_m_pack_into, METH_O,
-    "C.pack_into(arena) => None. Relocate the bytecode block into an "
-    "unsealed Arena; the arena then owns the storage" },
 
   { NULL, },
 };
@@ -2073,40 +1983,24 @@ static void code_free_unified(void *base, size_t size, PyObject *chunk) {
    Resolve the derived half of every instruction: the handler from its
    opcode, and the in-block operand pointers (a LABEL's target, an
    EXTRA's row) from the serialized index. Runs after emit and
-   validation in the block's writable window, and again after pack
-   relocates the block, when old_code is the base the block moved from:
-   a row's LABEL fields keep no index, so they shift by the delta
-   (emit's pending-label pass set them, and old_code is NULL then). The
-   out-of-block pointers (a pool object, a cache slot) are stable and
-   set once by emit.
+   validation in the block's writable window. A row's LABEL fields are
+   set by emit's pending-label pass, and the out-of-block pointers (a
+   pool object, a cache slot) are set once by emit.
 */
 static void code_fill_derived(
     KosOp *code,
     uint32_t code_len,
-    KosExtra *extra,
-    const KosOp *old_code) {
+    KosExtra *extra) {
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
     KosOpStyle st = opcode_styles[op].style;
 
     code[pc].fn = kos_op_handlers[op];
-    if (st == KOSTYLE_LABEL) {
+    if (st == KOSTYLE_LABEL)
       code[pc].u.target = &code[code[pc].arg];
-
-    } else if (st == KOSTYLE_EXTRA) {
-      KosExtra *row = &extra[code[pc].arg];
-      KosExtraSchema schema = kos_opcode_extra_schema(op);
-
-      code[pc].u.row = row;
-      if (old_code) {
-        for (int slot = 0; slot < 4; slot++) {
-          KosOpStyle fk = schema_field(schema, slot);
-          if (fk == KOSTYLE_LABEL)
-            row->f[slot].target = code + (row->f[slot].target - old_code);
-        }
-      }
-    }
+    else if (st == KOSTYLE_EXTRA)
+      code[pc].u.row = &extra[code[pc].arg];
   }
 }
 
@@ -3196,7 +3090,7 @@ static int code_instr_init(
                                     extent_count, top_extent_id))
     goto reject;
 
-  code_fill_derived(code, code_len, extra, NULL);
+  code_fill_derived(code, code_len, extra);
 
   /* Seal block read-only; single mprotect for entire allocation. A
      chunk member is sealed with its chunk, and owns a reference to it
