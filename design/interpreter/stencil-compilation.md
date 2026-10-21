@@ -130,13 +130,14 @@ the native segment, like `KosOp.fn` and the per-site `cache` index
 before it, is regenerated from that stream on every load. A koskari
 upgrade or a stencil-set change never needs a migration story for stored
 modules -- it just changes what finalize produces from bytecode that
-hasn't moved. `pack_into`'s block relocation extends to this segment: a
-copy-and-patch buffer built at one address and moved to another needs its
-internal patches to be self-relative (displacements) rather than absolute
-where the compiler allows it, so relocation is a `memcpy`, not a second
-patch pass; where a patch kind cannot be made relative (an absolute
-constant-pool pointer, which is process-local like `[cpool]` already is),
-`pack_into` re-patches that site the same way it already fixes up `[cpool]`.
+hasn't moved. A block is placed at birth and never relocated, so the
+segment is built in place at its final address: patches may be absolute
+where the compiler wants them, and no second patch pass exists. The
+segment's lifecycle follows the chunk's: reserved from the load's
+`CodeAllocator` beside the bytecode block, writable until the load
+completes, then protected with its chunk -- which means a chunk holding
+native segments seals `PROT_READ | PROT_EXEC` rather than `PROT_READ`, or
+native segments take chunks of their own.
 
 ## Externally-enterable pcs
 
@@ -224,9 +225,10 @@ must still be done here.
    call-out patch resolution in a second pass once all offsets are known;
    the executable arena segment added to `code_block_layout` with its own
    protection lifecycle.
-3. **`pack_into` extension.** Relative patches relocate for free; absolute
-   patches (constant-pool pointers) get a second pass mirroring the
-   existing `[cpool]` fixup.
+3. **Executable chunk protection.** Decide whether a native segment
+   shares its bytecode block's chunk (the chunk then seals
+   `PROT_READ | PROT_EXEC`) or the allocator keeps a separate executable
+   chunk set; either way the segment never moves after finalize.
 4. **Differential testing.** A slice of the corpus and phases 6/8 agree
    between interpreted and stencil-compiled execution; a coroutine awaits
    inside a stencil-compiled frame; a call/cc captured inside one resumes
