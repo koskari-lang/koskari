@@ -298,6 +298,69 @@ static int test_context_clear_drops_chain_caches(void) {
 }
 
 
+/* === Test: tp_clear releases a staged delivery === */
+
+
+static int test_context_clear_releases_staged_delivery(void) {
+
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  /* a fresh, non-cached object; the context takes the staged
+     reference, so the count returns to its value before staging only
+     when tp_clear releases it */
+  PyObject *val = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(val, "create staged value");
+  Py_ssize_t before = Py_REFCNT(val);
+
+  Py_INCREF(val);
+  KosContext_StageDelivery(ctx, val);
+  TEST_ASSERT_REFCNT(val, before + 1, "staged value held by ctx");
+
+  /* what the collector does to a context in a garbage cycle collected
+     mid-drive while a delivery is staged */
+  int res = Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
+  TEST_ASSERT_EQ(res, 0, "tp_clear succeeds");
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "staged slot emptied");
+  TEST_ASSERT_REFCNT(val, before, "staged value released");
+
+  Py_DECREF(ctx);
+  Py_DECREF(val);
+
+  return 0;
+}
+
+
+/* === Test: recycle releases a staged delivery === */
+
+
+static int test_context_recycle_releases_staged_delivery(void) {
+
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  PyObject *val = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(val, "create staged value");
+  Py_ssize_t before = Py_REFCNT(val);
+
+  Py_INCREF(val);
+  KosContext_StageDelivery(ctx, val);
+  TEST_ASSERT_REFCNT(val, before + 1, "staged value held by ctx");
+
+  /* the next run on a recycled context must not receive the staged
+     value of the finished one */
+  int res = KosContext_Recycle(ctx);
+  TEST_ASSERT_EQ(res, 0, "recycle succeeds");
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "staged slot emptied");
+  TEST_ASSERT_REFCNT(val, before, "staged value released");
+
+  Py_DECREF(ctx);
+  Py_DECREF(val);
+
+  return 0;
+}
+
+
 /* === Test: contexts made and dropped past the freelist cap === */
 
 
@@ -2702,6 +2765,8 @@ int run_eval_tests(void) {
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
     RUN_TEST(test_context_clear_drops_chain_caches);
+    RUN_TEST(test_context_clear_releases_staged_delivery);
+    RUN_TEST(test_context_recycle_releases_staged_delivery);
     RUN_TEST(test_context_churn_past_freelist_cap);
     RUN_TEST(test_domain_thread_default_when_no_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
