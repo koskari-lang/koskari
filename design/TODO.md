@@ -55,6 +55,16 @@ it on the demand path (section 7).
 
 Ref: [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 
+### Immortal, immutable code objects (proposal, 3.12 floor)
+
+Durable function code becomes one sealed unit: a `KosCode` holding its
+own block, reserved from its chunk, immortal (PEP 683), a non-GC leaf,
+with the per-site cache slots moved to a writable home. Closes the
+writable header through which the sealed block is reached. Blocked on
+raising the Python floor to 3.12.
+
+Ref: [interpreter/immortal-code.md](interpreter/immortal-code.md).
+
 ### Dispatch tweaks to investigate
 
 Every record now carries its own pc, so the `acting_pc` store in

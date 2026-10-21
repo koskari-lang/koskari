@@ -99,11 +99,45 @@ nothing rewrites it. Sealing makes that immutability real at the
 operating-system level -- the memory holding the instructions, constant
 pool, and control tables is marked read-only with `mprotect`, so any
 write to it faults on the spot instead of silently corrupting the
-interpreter. Koskari's bytecode is interpreted, never executed as
-machine code, so sealing is not required for correctness; it is
-integrity hardening, and it doubles as a debugging tool -- a buggy
-native extension that scribbles over live code is caught at the exact
-offending write.
+interpreter.
+
+### Why read-only
+
+Koskari's bytecode is interpreted, never executed as machine code, so
+sealing is not required for correctness. It is worth being exact about
+what it defends and what it does not.
+
+It does not stop an attacker who can already write anywhere in the
+process. Such an attacker has softer targets than a code stream: a
+type's call slot, an object's type pointer, a module's dictionary, or
+the code object's own header, which stays an ordinary writable Python
+object and holds the pointer to the sealed block. Nor does it confine
+code running inside the interpreter: native access from Python, through
+`ctypes` or an extension, is total, and a write that faults only says
+where not to aim. Sealing is not a sandbox.
+
+What it does is take code out of the heap. A sealed chunk is an
+anonymous mapping that no heap object neighbours, and the memory bugs
+that occur in practice are relative, not arbitrary: a bounded overflow
+from an adjacent allocation, a stale pointer into storage the allocator
+has since reused. Neither can reach a code block that has no
+neighbours, and a write that does arrive faults instead of landing.
+That isolation is a property of where the code lives; the read-only
+protection is the inexpensive final step on top of it.
+
+It weighs more in Koskari than it would in CPython. A CPython bytecode
+is an opcode byte looked up in a bounded dispatch table, so a corrupted
+byte is a wrong instruction. A Koskari instruction record carries the
+resolved address of its handler and of its operand, so a corrupted
+record is a control-flow hijack with nothing in between. That is the
+threat profile of machine code, and the reason every JIT seals its code
+pages. CPython keeps its bytecode writable because specialization
+rewrites it in place; Koskari's per-site caches live beside the code
+rather than in it, so adaptivity never needed a writable stream.
+
+It also doubles as a debugging tool. A buggy native extension that
+scribbles over live code is caught at the exact offending write, with
+that write's stack, instead of producing a wrong result later.
 
 Two module pragmas govern the model.
 
