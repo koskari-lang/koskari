@@ -3979,6 +3979,7 @@ int koskari_eval_clear(PyObject *mod) {
   KoskariContinuationApply = NULL;
   KoskariContinuationError = NULL;
 
+  context_freelist_drain();
   koskari_dynchain_clear(mod);
 
   return 0;

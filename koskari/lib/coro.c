@@ -71,6 +71,49 @@ PyObject *KosAsyncGen_NewFromCodeAndNs(KosCode *code, PyObject *ns) {
 }
 
 
+/**
+   The bound call: nothing runs and no context exists until Python
+   drives it, and a Koskari await takes the program without either.
+   code is borrowed, ns stolen, fn borrowed and held when given.
+*/
+static PyObject *coroutine_new_bound(
+    PyObject *fn,
+    KosCode *code,
+    PyObject *ns) {
+
+  KosCoroutine *coro;
+
+  if (KosCode_YIELDS(code))
+    return KosAsyncGen_NewFromCodeAndNs(code, ns);
+
+  coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
+  if (! coro) {
+    Py_DECREF(ns);
+    return NULL;
+  }
+
+  coro->ctx = NULL;
+  coro->state = KOS_CORO_NEW;
+  coro->in_send = 0;
+  Py_INCREF(code);
+  coro->code = code;
+  coro->ns = ns;
+  coro->domain = NULL;
+  coro->param_refs = NULL;
+  Py_XINCREF(fn);
+  coro->fn = fn;
+
+  if (KosContext_Snapshot(
+      kos_tls_current(), &coro->domain, &coro->param_refs) < 0) {
+    Py_DECREF(coro);
+    return NULL;
+  }
+
+  PyObject_GC_Track((PyObject *) coro);
+  return (PyObject *) coro;
+}
+
+
 PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 
   if (! KosCode_Check(code)) {
@@ -85,35 +128,21 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
   }
 
   Py_INCREF(ns);
+  return coroutine_new_bound(NULL, (KosCode *) code, ns);
+}
 
-  if (KosCode_YIELDS((KosCode *) code))
-    return KosAsyncGen_NewFromCodeAndNs((KosCode *) code, ns);
 
-  /* the bound call: nothing runs and no context exists until Python
-     drives it, and a Koskari await takes the program without either */
-  KosCoroutine *coro = PyObject_GC_New(KosCoroutine, &KosCoroutineType);
-  if (! coro) {
+PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns) {
+
+  PyObject *code = KosFunction_CODE(fn);
+
+  if (! KosCode_Check(code)) {
     Py_DECREF(ns);
+    PyErr_Format(PyExc_TypeError, "expected Code, got %s",
+                 Py_TYPE(code)->tp_name);
     return NULL;
   }
-
-  coro->ctx = NULL;
-  coro->state = KOS_CORO_NEW;
-  coro->in_send = 0;
-  Py_INCREF(code);
-  coro->code = (KosCode *) code;
-  coro->ns = ns;
-  coro->domain = NULL;
-  coro->param_refs = NULL;
-
-  if (KosContext_Snapshot(
-      kos_tls_current(), &coro->domain, &coro->param_refs) < 0) {
-    Py_DECREF(coro);
-    return NULL;
-  }
-
-  PyObject_GC_Track((PyObject *) coro);
-  return (PyObject *) coro;
+  return coroutine_new_bound(fn, (KosCode *) code, ns);
 }
 
 
@@ -122,9 +151,11 @@ static void coroutine_drop_record(KosCoroutine *coro);
 
 /**
    Build the drive context from the bound call, for the first drive from
-   Python: the root frame over the program and its namespace, and a
-   context over that frame starting from the creation-time snapshot. A
-   no-op once built. Returns -1 with an error set.
+   Python: the root frame over the program and its namespace, tagged
+   with the function that made the call so it is offered to that
+   function's frame cache at completion, and a context over that frame
+   starting from the creation-time snapshot. A no-op once built.
+   Returns -1 with an error set.
 */
 static int coroutine_materialize(KosCoroutine *coro) {
 
@@ -142,6 +173,15 @@ static int coroutine_materialize(KosCoroutine *coro) {
   coro->ns = NULL;
   if (! frame)
     goto fail;
+
+  /* the record's reference to the function moves to the frame; the
+     root bit tells the frame's release that a coroutine root is the one
+     offered to the cache */
+  if (coro->fn) {
+    KosDynFrame_FN(frame) = coro->fn;
+    coro->fn = NULL;
+    KosDynFrame_FLAGS(frame) |= KOS_FRAME_CORO_ROOT;
+  }
 
   ctx = KosContext_NewFromSnapshot(frame, coro->domain, coro->param_refs);
   coro->domain = NULL;
@@ -173,6 +213,21 @@ static void coroutine_drop_record(KosCoroutine *coro) {
   Py_CLEAR(coro->ns);
   Py_CLEAR(coro->domain);
   Py_CLEAR(coro->param_refs);
+  Py_CLEAR(coro->fn);
+}
+
+
+/**
+   Mark the coroutine done and release its context: nothing reads the
+   context of a finished coroutine, and clearing it here frees the
+   chain (the root frame offered to its function's cache) and returns
+   the context to the freelist while the caller may still hold the
+   coroutine.
+*/
+static void coroutine_finish(KosCoroutine *coro) {
+
+  coro->state = KOS_CORO_DONE;
+  Py_CLEAR(coro->ctx);
 }
 
 
@@ -261,6 +316,7 @@ static int coroutine_traverse(
   Py_VISIT(coro->ns);
   Py_VISIT(coro->domain);
   Py_VISIT(coro->param_refs);
+  Py_VISIT(coro->fn);
 
   return 0;
 }
@@ -311,7 +367,7 @@ static int coroutine_settle(
   *out = NULL;
   switch (res.kind) {
     case KOS_RES_RETURN:
-      coro->state = KOS_CORO_DONE;
+      coroutine_finish(coro);
       *out = res.val ? res.val : Py_NewRef(Py_None);
       return 0;
 
@@ -322,7 +378,7 @@ static int coroutine_settle(
       if (PyErr_ExceptionMatches(PyExc_StopIteration))
         _PyErr_FormatFromCause(PyExc_RuntimeError,
                                "coroutine raised StopIteration");
-      coro->state = KOS_CORO_DONE;
+      coroutine_finish(coro);
       return -1;
 
     case KOS_RES_YIELD:
@@ -334,7 +390,7 @@ static int coroutine_settle(
       if (! res.val) {
         PyErr_SetString(PyExc_RuntimeError,
                         "KOS_RES_AWAIT with NULL payload");
-        coro->state = KOS_CORO_DONE;
+        coroutine_finish(coro);
         return -1;
       }
       /* Driver already stepped the awaitable in push_or_await and set
@@ -346,7 +402,7 @@ static int coroutine_settle(
 
     default:
       PyErr_SetString(PyExc_RuntimeError, "unexpected KosOpResult kind");
-      coro->state = KOS_CORO_DONE;
+      coroutine_finish(coro);
       return -1;
   }
 }
@@ -672,7 +728,7 @@ static PyObject *coroutine_close(PyObject *self) {
   if (PyErr_ExceptionMatches(PyExc_StopIteration) ||
       PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
     PyErr_Clear();
-    coro->state = KOS_CORO_DONE;
+    coroutine_finish(coro);
     Py_RETURN_NONE;
   }
 
@@ -812,6 +868,7 @@ int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
   coro->ns = NULL;
   Py_CLEAR(coro->domain);
   Py_CLEAR(coro->param_refs);
+  Py_CLEAR(coro->fn);
   coro->state = KOS_CORO_DONE;
   return 1;
 }

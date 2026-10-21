@@ -19,7 +19,10 @@ parameterize state at its creation are fixed, and nothing has run.
 Awaited from Koskari it flattens onto the awaiter's chain and reads the
 awaiter's parameters; driven from Python it runs under the state it was
 created in. Close, throw, repr, and collection work before the first
-drive, and binding errors surface when the defer is made.
+drive, and binding errors surface when the defer is made. Repeated
+calls through one function, awaited from Python, gathered by asyncio,
+closed or dropped unstarted, or awaited from Koskari, each return their
+own call's value.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -69,6 +72,14 @@ SRC = """
   (try
     (await aw)
     (finally: (finally_box.append "ran")))))
+
+(define mix [a b] (+ (* a 31) b))
+
+(define mix_kw [a b: 10] (+ (* a 31) b))
+
+(define count_down [n] (if (<= n 0) 0 (+ 1 (count_down (- n 1)))))
+
+(define await_it [c] (await c))
 """
 
 
@@ -139,6 +150,77 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         coro.send(None)
         self.assertIsNone(coro.close())
         self.assertEqual(mod["finally_box"], ["ran"])
+
+    async def test_repeated_python_awaits_return_each_value(self):
+        mod = await self.load()
+        mix = mod["mix"]
+        for i in range(20):
+            self.assertEqual(await mix(i, 7), i * 31 + 7)
+
+    async def test_self_naming_function_awaited_repeatedly(self):
+        mod = await self.load()
+        count_down = mod["count_down"]
+        for i in range(12):
+            self.assertEqual(await count_down(i), i)
+
+    async def test_call_after_a_coroutine_closed_unstarted(self):
+        mod = await self.load()
+        mix = mod["mix"]
+        for i in range(10):
+            coro = mix(i, 1)
+            self.assertIsNone(coro.close())
+            with self.assertRaises(RuntimeError):
+                coro.send(None)
+            self.assertEqual(await mix(i, 2), i * 31 + 2)
+
+    async def test_unstarted_coroutines_dropped_then_called_again(self):
+        mod = await self.load()
+        mix = mod["mix"]
+        held = [mix(i, 3) for i in range(12)]
+        del held
+        gc.collect()
+        self.assertEqual(await mix(4, 5), 129)
+
+    async def test_koskari_await_of_python_made_coroutines(self):
+        mod = await self.load()
+        mix = mod["mix"]
+        await_it = mod["await_it"]
+        for i in range(20):
+            self.assertEqual(await await_it(mix(i, 2)), i * 31 + 2)
+
+    async def test_keyword_and_default_shapes_awaited_from_python(self):
+        mod = await self.load()
+        mix_kw = mod["mix_kw"]
+        for i in range(10):
+            self.assertEqual(await mix_kw(i), i * 31 + 10)
+            self.assertEqual(await mix_kw(i, b=2), i * 31 + 2)
+            self.assertEqual(await mix_kw(i, 3), i * 31 + 3)
+            self.assertEqual(await mix_kw(a=i, b=4), i * 31 + 4)
+
+    async def test_defers_gathered_by_asyncio(self):
+        mod = await self.load()
+        mix = mod["mix"]
+        for _ in range(3):
+            got = await asyncio.gather(
+                *[lib.defer(mix, i, 1) for i in range(16)])
+            self.assertEqual(got, [i * 31 + 1 for i in range(16)])
+
+    async def test_coroutines_gathered_by_asyncio(self):
+        mod = await self.load()
+        mix = mod["mix"]
+        for _ in range(3):
+            got = await asyncio.gather(*[mix(i, 9) for i in range(16)])
+            self.assertEqual(got, [i * 31 + 9 for i in range(16)])
+
+    async def test_coroutine_python_surface(self):
+        mod = await self.load()
+        coro = mod["mix"](1, 2)
+        self.assertIs(type(coro), lib.Coroutine)
+        public = sorted(n for n in dir(coro) if not n.startswith("_"))
+        self.assertEqual(public, ["close", "demand", "send", "throw"])
+        self.assertIn("new", repr(coro))
+        self.assertEqual(coro.demand(), 33)
+        self.assertIn("done", repr(coro))
 
 
 # The end.

@@ -68,6 +68,9 @@ typedef enum KosTraceEventId {
   /* a fetch of the thread's handled exception (sys.exc_info) by a
      drive's exception-state swap (eval.c koskari_eval_drive) */
   KOS_TE_EXC_FETCH,
+  /* the root frame of a Coroutine driven from Python accepted by its
+     function's frame cache when freed (dyn_frame.c kos_dynframe_free) */
+  KOS_TE_CORO_FRAME_TO_CACHE,
   KOS_TE__COUNT
 } KosTraceEventId;
 

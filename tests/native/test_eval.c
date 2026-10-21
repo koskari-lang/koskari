@@ -298,6 +298,79 @@ static int test_context_clear_drops_chain_caches(void) {
 }
 
 
+/* === Test: contexts made and dropped past the freelist cap === */
+
+
+/* more than the context freelist keeps, so the drop both caches and
+   frees; under KOS_NOFREELIST every drop frees */
+#define CONTEXT_CHURN_COUNT 300
+
+
+static int test_context_churn_past_freelist_cap(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    KosContext *held[CONTEXT_CHURN_COUNT];
+    for (int i = 0; i < CONTEXT_CHURN_COUNT; i++) {
+        PyObject *ns = PyDict_New();
+        TEST_ASSERT_NOT_NULL(ns, "create ns");
+        KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+        TEST_ASSERT_NOT_NULL(frame, "create frame");
+        held[i] = KosContext_New(frame, kos_tls_current());
+        TEST_ASSERT_NOT_NULL(held[i], "create context");
+    }
+
+    /* half the drops run tp_clear first, as the collector does to a
+       context in a garbage cycle */
+    for (int i = 0; i < CONTEXT_CHURN_COUNT; i++) {
+        if (i % 2)
+            TEST_ASSERT_EQ(Py_TYPE(held[i])->tp_clear((PyObject *) held[i]),
+                           0, "tp_clear succeeds");
+        Py_DECREF(held[i]);
+    }
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context after the churn");
+    TEST_ASSERT_REFCNT(ctx, 1, "one reference to the new context");
+    TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) frame,
+                "chain is the new frame");
+    TEST_ASSERT(KosContext_FRAME(ctx) == frame, "live frame is the new one");
+    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+    TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
+                "param cells start unallocated");
+    TEST_ASSERT(KosContext_TOKEN(ctx) == NULL, "no evaluator token");
+    TEST_ASSERT_EQ(KosContext_FLAGS(ctx), 0, "flags start cleared");
+    TEST_ASSERT(KosContext_PY_AWAIT_ITER(ctx) == NULL, "no await iterator");
+
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 1, "result is 1");
+
+    Py_XDECREF(ev.val);
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: contexts with no ambient domain share one === */
 
 
@@ -2427,6 +2500,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
     RUN_TEST(test_context_clear_drops_chain_caches);
+    RUN_TEST(test_context_churn_past_freelist_cap);
     RUN_TEST(test_domain_thread_default_when_no_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);

@@ -30,6 +30,29 @@
 */
 
 
+/* === KosContext freelist === */
+
+
+#define CONTEXT_MAX_FREE KOS_FREELIST_CAP(256)  /* cached KosContext cap */
+
+/* Released contexts: cleared, GC-untracked, linked through the domain
+   field, which the constructor's memset clears again on revival. */
+static KosContext *context_freelist = NULL;
+static size_t context_freecount = 0;
+
+
+/** Free every context on the freelist; the eval unit's clear calls it. */
+static void context_freelist_drain(void) {
+
+  while (context_freelist) {
+    KosContext *ctx = context_freelist;
+    context_freelist = (KosContext *) ctx->domain;
+    PyObject_GC_Del(ctx);
+  }
+  context_freecount = 0;
+}
+
+
 /* === KosContext implementation === */
 
 
@@ -82,15 +105,30 @@ KosContext *KosContext_NewFromSnapshot(
     PyObject *domain,
     PyObject *cells) {
 
-  KosContext *ctx = PyObject_GC_New(KosContext, &KosContextType);
-  if (! ctx) {
-    Py_XDECREF(domain);
-    Py_XDECREF(cells);
-    return NULL;
+  KosContext *ctx = context_freelist;
+
+  if (ctx) {
+    context_freelist = (KosContext *) ctx->domain;
+    context_freecount--;
+    KOS_TRACE_FL_ALLOC("context", 1);
+    /* the revival CPython's own type freelists use: a refcount of one,
+       and in a debug build the reference total and trace chain the
+       dealloc gave up */
+    _Py_NewReference((PyObject *) ctx);
+
+  } else {
+    KOS_TRACE_FL_ALLOC("context", 0);
+    ctx = PyObject_GC_New(KosContext, &KosContextType);
+    if (! ctx) {
+      Py_XDECREF(domain);
+      Py_XDECREF(cells);
+      return NULL;
+    }
   }
 
   /* every field after the object header starts cleared, so a failure
-     below can release the half-built context through the type */
+     below can release the half-built context through the type, and a
+     revived context carries nothing of its last use */
   memset((char *) ctx + sizeof(PyObject), 0,
          sizeof(KosContext) - sizeof(PyObject));
 
@@ -234,10 +272,25 @@ static int context_clear(PyObject *self) {
 }
 
 
+/**
+   Clear the context and keep it on the freelist while it has room;
+   free it otherwise. The type takes no subclasses, so every context is
+   the same size.
+*/
 static void context_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
   context_clear(self);
+
+  if (context_freecount < CONTEXT_MAX_FREE) {
+    ((KosContext *) self)->domain = (PyObject *) context_freelist;
+    context_freelist = (KosContext *) self;
+    context_freecount++;
+    KOS_TRACE_FL_RETURN("context", 0);
+    return;
+  }
+
+  KOS_TRACE_FL_RETURN("context", 1);
   Py_TYPE(self)->tp_free(self);
 }
 

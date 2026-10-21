@@ -316,27 +316,72 @@ locally.
 
 ### E. Async boundary
 
-- `KosFunction_VectorCall` on the simple non-yielding shape pops a
-  cached frame, binds the vector into it (`KosFormals_SimpleStealApply`
-  after incref, as `KosFunction_Install`'s cache arm does), stores the
-  function self-bind, tags the frame `FN`, and the coroutine holds the
-  frame instead of `code` + `ns`. `coroutine_materialize` pushes that
-  frame as the root instead of allocating one. The frame goes back to
-  the function's cache when the context is cleared.
-- `KosContext` gains a freelist in `eval_context.c`, the shape
-  `ns_alloc` has, serving coroutines, `demand_call`, and every
-  `KosContext_New(NULL)` site; the constructor fills the three live
-  fields from the root frame directly (C).
+The unstarted coroutine is a bound call: a namespace filled from the
+formals at the call, and nothing else built until it is driven. The
+frame and the context exist only from first send to completion.
+
+- The call binds as before: template copy, steal bind for the simple
+  shape, the formals machine otherwise. Every binding error stays at
+  the call.
+- The record holds `code`, the bound namespace, the snapshot, and the
+  function (owned) when a function made the call; the `Expression`
+  form holds none. No frame.
+- The first send builds the root frame over `code` and the namespace,
+  tags it `FN` with the function, and builds the context over it from
+  the snapshot. The context comes from a `KosContext` freelist in
+  `eval_context.c`, the shape `ns_alloc` has. The record lets go of
+  code, namespace, snapshot and function once the frame and context
+  have them.
+- The Koskari splice (`KosCoroutine_TakeFresh`) is unchanged: the
+  awaiter installs the code and namespace as a callee; the function
+  reference is dropped with the rest.
+- Completion marks the record done and releases its context then, so
+  a gather holding finished coroutines holds no contexts. Clearing the
+  context frees the chain: the `FN`-tagged root frame is offered to the
+  function's cache, else to the dyn-node freelist.
 - The domain snapshot at call time stays: a coroutine runs under the
   parameters in force when it was made.
-- `KosCoroutine_TakeFresh` (the Koskari-side splice of an unstarted
-  coroutine) takes the frame's code and namespace off the held frame
-  and returns the frame to the cache.
+
+Rejected: building the frame at the call (from the function's cache
+when it held one) and holding it on the record. Under a gather every
+pending coroutine then holds a frame at once, which overran the
+dyn-node freelist and the function's cache: instructions per coroutine
+rose 2.6% (`coro_call`) and 2.2% (`async_tree`).
 
 Test (`tests/lib/test_coroutine_record.py`, `test_coroutine_first_send.py`):
-an awaited call served from the cache, a coroutine closed before its
-first send returns the frame, a coroutine spliced by a Koskari `await`,
-`test_context_token.py` unchanged.
+repeated awaits from Python of simple, keyword and default shapes, a
+coroutine closed before its first send then the function called again,
+unstarted coroutines dropped and collected, the Koskari splice
+repeatedly, defers and coroutines gathered, the Python surface
+unchanged; `test_context_token.py` unchanged.
+
+Implemented: `KosCoroutine` gains `fn`; `KosCoroutine_NewFromFunctionCall(fn,
+ns)` (ns stolen) serves the three function callers in func.c and
+`KosCoroutine_NewFromCode` the `Expression` form. `coroutine_materialize`
+tags the root frame `FN` and sets `KOS_FRAME_CORO_ROOT`, a frame flag
+read only by the trace count. `coroutine_settle` and `coroutine_close`
+mark the coroutine done through `coroutine_finish`, which clears the
+context. `KosContext` freelist cap 256, drained by `koskari_eval_clear`.
+Counter `KOS_TE_CORO_FRAME_TO_CACHE`: a coroutine root accepted by its
+function's cache. Measurement (kernels `coro_call`, an asyncio-hosted
+Python driver gathering `mix(i, n - i)` over 2,000 calls, 20,000
+coroutines per batch; `async_tree`, 54,610 per batch; `coro_await`,
+the same calls awaited one at a time, 20,000 per batch): instructions
+per coroutine `coro_call` 42,297 -> 41,757, `async_tree` 53,932 ->
+53,904; cycles 12,563 -> 13,873 (repeat 12,571) and 20,076 -> 19,307.
+`coro_await` has no before figure: 5,607 instructions and 1,471 cycles
+per coroutine. churn-trace (`coro_call async_tree`, 6 batches each):
+context freelist 381,154 hits and 66,864 misses, all GC allocations
+before; dyn_node misses 187,079 -> 74,774; namespace allocation
+unchanged. The remaining misses are `async_tree`'s: its 1,365
+interior coroutines are suspended at once, each with a context and a
+root frame, against caps of 256 (context) and 128 (dyn node); context
+overruns 66,600 = 60 runs x (1,366 - 256), consistent with those
+contexts plus one running leaf. `coro_await` alone: context 120,349 hits, 9 misses.
+`coro_frame_to_cache` is 8 per function (16, and 24 with
+`coro_await`): the first send builds its frame with `kos_dynframe_new`
+and never takes from the function's cache, so the cache fills once and
+refuses every later root, which goes to the dyn-node freelist.
 
 ### F. The frame cache serves every call shape
 

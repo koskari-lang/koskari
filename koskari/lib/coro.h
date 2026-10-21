@@ -36,6 +36,18 @@
 PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns);
 
 
+/**
+   Create a coroutine for a call of the KosFunction fn whose arguments
+   are already bound into ns (stolen; released on failure). The
+   coroutine holds fn, and its root frame, built at the first send, is
+   tagged with fn so the frame is offered to fn's frame cache at
+   completion. Yielding code returns a new AsyncGenerator instead.
+
+   :return: new KosCoroutine, or NULL on error
+*/
+PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns);
+
+
 /* === KosCoroutine === */
 
 
@@ -66,18 +78,22 @@ typedef enum {
 typedef struct {
   PyObject_HEAD
   KosContext *ctx;          /* the drive context; NULL until the first
-                               drive from Python builds it */
+                               drive from Python builds it, and NULL
+                               again once the coroutine is done */
   KosCoroState state;
   int in_send;              /* re-entrancy guard */
 
   /* The bound call an unstarted coroutine is: the program, its bound
-     namespace, and the dynamic snapshot (domain and parameterize cells)
-     taken when the call was made. All owned; all cleared once the
-     context is built or the program is taken onto another chain. */
+     namespace, the dynamic snapshot (domain and parameterize cells)
+     taken when the call was made, and the function that made the call
+     (NULL for an Expression). All owned; all cleared once the frame
+     and context are built or the program is taken onto another
+     chain. */
   KosCode *code;
   PyObject *ns;
   PyObject *domain;
   PyObject *param_refs;
+  PyObject *fn;
 } KosCoroutine;
 
 
@@ -91,9 +107,9 @@ typedef struct {
 /**
    Take a fresh coroutine's program for installation on another chain:
    when coro has not been started, its bound code and namespace move to
-   the caller in *code and *ns, its dynamic snapshot is dropped, and it
-   is marked done, so a later send, throw, or close from Python raises
-   as it does after any completion. Returns 1 when
+   the caller in *code and *ns, its dynamic snapshot and function are
+   dropped, and it is marked done, so a later send, throw, or close
+   from Python raises as it does after any completion. Returns 1 when
    taken, 0 when the coroutine has already been started and keeps its
    own drive.
 */

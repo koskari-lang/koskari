@@ -207,11 +207,20 @@ void kos_dynframe_free(KosDynFrame *frame) {
   {
     PyObject *fn = KosDynFrame_FN(frame);
     if (fn) {
+#if KOS_TRACE_EVENTS
+      /* read before the offer: caching resets the frame flags */
+      int coro_root = (KosDynFrame_FLAGS(frame) & KOS_FRAME_CORO_ROOT) != 0;
+#endif
       KosDynFrame_FN(frame) = NULL;
       int cached = KosFunction_CacheFrame(fn, frame);
       Py_DECREF(fn);
-      if (cached)
+      if (cached) {
+#if KOS_TRACE_EVENTS
+        if (coro_root)
+          KOS_TRACE_EVENTS_INC(KOS_TE_CORO_FRAME_TO_CACHE);
+#endif
         return;
+      }
     }
   }
 

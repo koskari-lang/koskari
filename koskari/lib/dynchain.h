@@ -2244,6 +2244,11 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
    per-context recursion limit whatever sys.setrecursionlimit says. */
 #define KOS_FRAME_DEPTH_MAX       UINT16_MAX
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
+#define KOS_FRAME_CORO_ROOT       (1u << 1)  /* the root frame of a Coroutine
+                                                driven from Python; read
+                                                only by the frame-cache
+                                                trace count in
+                                                kos_dynframe_free */
 #define KOS_FRAME_RETURN_TO_CACHE   (1u << 2)  /* a completing code-less
                                                 frame: cache_slot is the
                                                 holder's cache slot

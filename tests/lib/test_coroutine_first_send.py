@@ -59,5 +59,15 @@ class TestCoroutineFirstSend(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.value, 3)
         self.assertEqual(mod["box"], ["ran"])
 
+    async def test_first_send_of_repeated_calls_runs_each(self):
+        mod = await self.load()
+        add = mod["add"]
+        for i in range(10):
+            coro = add(i, 2)
+            with self.assertRaises(StopIteration) as caught:
+                coro.send(None)
+            self.assertEqual(caught.exception.value, i + 2)
+        self.assertEqual(mod["box"], ["ran"] * 10)
+
 
 # The end.

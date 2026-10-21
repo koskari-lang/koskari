@@ -1,0 +1,15 @@
+;; churn_coro_await -- the koskari half of the serial async boundary
+;; kernel: a two-argument function on the simple shape (plain positional
+;; formals, no defaults, no bound method, no class).  Each call from Python
+;; returns a Koskari Coroutine; the driver in py/coro_await.py awaits them
+;; one at a time.
+
+
+(define MASK32 0xffffffff)
+
+
+define mix [a b]:
+    (& (+ (* a 31) (^ b 0x5bd1e995)) MASK32)
+
+
+;; The end.

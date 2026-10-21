@@ -1408,7 +1408,6 @@ PyObject *KosFunction_Call(PyObject *self,
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
-  PyObject *coro = NULL;
 
   /* No keywords: ride the vector entry and its simple-bind arm. */
   if (! kwds) {
@@ -1428,9 +1427,7 @@ PyObject *KosFunction_Call(PyObject *self,
   if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
     goto fail;
 
-  coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
-  Py_DECREF(frame_ns);
-  return coro;
+  return KosCoroutine_NewFromFunctionCall(self, frame_ns);
 
  fail:
   Py_XDECREF(frame_ns);
@@ -1565,7 +1562,6 @@ PyObject *KosFunction_VectorCall(
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
-  PyObject *coro = NULL;
 
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
 
@@ -1577,9 +1573,7 @@ PyObject *KosFunction_VectorCall(
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
     if (! frame_ns)
       return NULL;
-    coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
-    Py_DECREF(frame_ns);
-    return coro;
+    return KosCoroutine_NewFromFunctionCall(self, frame_ns);
   }
 
   frame_ns = func_obtain_call_namespace(fn);
@@ -1593,9 +1587,7 @@ PyObject *KosFunction_VectorCall(
   if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
     goto fail;
 
-  coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
-  Py_DECREF(frame_ns);
-  return coro;
+  return KosCoroutine_NewFromFunctionCall(self, frame_ns);
 
  fail:
   Py_XDECREF(frame_ns);
