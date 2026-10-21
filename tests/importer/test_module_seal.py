@@ -44,6 +44,20 @@ SRC = """
 """
 
 
+def arena_fill(codes):
+    """
+    The arena fill the codes take placed in order: each block starts
+    on the arena's alignment, and a code's footprint need not end on
+    one (the appended THEEND barrier can leave it off a boundary)
+    """
+
+    fill = 0
+    for c in codes:
+        fill = (fill + Arena.UNIT - 1) & ~(Arena.UNIT - 1)
+        fill += c.payload_bytes + c.padding_bytes
+    return fill
+
+
 async def load(source, seal=True, detach=True):
     """
     Load koskari source into a fresh module, returning the module
@@ -159,21 +173,33 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         durable = vars(module)["durable"]
         arena = durable.code.arena
 
-        # only the two durable functions were placed. The arena aligns each
-        # placed block's start to 32 bytes, so its instruction records stay
-        # line-aligned; mirror its cumulative fill rather than a plain sum,
-        # since a code's footprint need not be aligned (e.g. the appended
-        # THEEND barrier can leave it off a boundary).
-        def _arena_fill(codes):
-            fill = 0
-            for c in codes:
-                fill = (fill + 31) & ~31
-                fill += c.payload_bytes + c.padding_bytes
-            return fill
-
-        expected = _arena_fill((vars(module)["durable"].code,
-                                vars(module)["helper"].code))
+        # only the two durable functions were placed
+        expected = arena_fill((vars(module)["durable"].code,
+                               vars(module)["helper"].code))
         self.assertEqual(arena.used, expected)
+
+    async def test_dropped_lambda_bytes_reused_during_load(self):
+        """
+        A lambda a top-level expression builds and drops dies before
+        the next form compiles, without a cyclic GC pass, so the next
+        function takes its bytes
+        """
+
+        src = """
+(define keep (lambda [] 1))
+((lambda [] 2))
+(define keep2 (lambda [] 3))
+"""
+        gc.disable()
+        try:
+            module = await load(src)
+        finally:
+            gc.enable()
+        ns = vars(module)
+        arena = ns["keep"].code.arena
+
+        self.assertEqual(
+            arena.used, arena_fill((ns["keep"].code, ns["keep2"].code)))
 
     async def test_nested_code_packed(self):
         """nested lambdas are collected through the same registry"""

@@ -1363,6 +1363,8 @@ class Compiler:
         if _validate and is_root:
             reso.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
+        if is_root:
+            reso.close()
 
         return code
 

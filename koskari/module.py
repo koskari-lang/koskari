@@ -178,9 +178,12 @@ def compile_top_level(compiler, reader, source_stream):
                 source_expr = cons(
                     symbol('define'), symbol('__doc__'), source_expr, nil)
 
-        fragment = compiler.compile_expression(source_expr, position)
+        # no local holds the fragment across the yield: its instructions
+        # carry the form's function code, which must be free to die
+        # while the caller runs the form
         yield compiler.complete(
-            fragment, mode=CompilerMode.EXPRESSION, is_root=True)
+            compiler.compile_expression(source_expr, position),
+            mode=CompilerMode.EXPRESSION, is_root=True)
 
 
 @contextmanager
@@ -235,15 +238,16 @@ async def run_codes_async(module, codes):
     """
     Run each Code as an expression of ``module``, awaiting each in turn.
 
-    A helper so no caller local outlives the loop: the last expression,
-    and the function code only it holds, is released before the
-    compiler seals, while that code's chunk is still open to take back
-    its block
+    Each expression is dropped before the next form is read, so the
+    function code only it holds dies while its chunk is open and the
+    next function takes its bytes; a helper so no caller local holds
+    the last one past the loop either, before the compiler seals
     """
 
     ns = vars(module)
     for code in codes:
         await code.expression(ns)()
+        del code
 
 
 def run_codes_demand(module, codes):
@@ -256,6 +260,7 @@ def run_codes_demand(module, codes):
     ns = vars(module)
     for code in codes:
         demand_call(code.expression(ns))
+        del code
 
 
 def kio_codes(module):
