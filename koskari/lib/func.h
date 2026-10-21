@@ -346,11 +346,14 @@ typedef struct {
   PyObject_HEAD
   PyObject *func;
   PyObject *self;
+  vectorcallfunc vectorcall; /* for Py_TPFLAGS_HAVE_VECTORCALL; always set */
 } KosBoundMethod;
 
 
 #define KosBoundMethod_FUNC(bm) (((KosBoundMethod *) (bm))->func)
 #define KosBoundMethod_SELF(bm) (((KosBoundMethod *) (bm))->self)
+
+#define KosBoundMethod_VECTORCALL_OFFSET offsetof(KosBoundMethod, vectorcall)
 
 #define KosBoundMethod_CheckExact(obj)                           \
   ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosBoundMethodType)))

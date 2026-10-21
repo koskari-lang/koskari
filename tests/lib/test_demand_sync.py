@@ -18,6 +18,7 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 :license: GNU General Public License v3
 """
 
+import functools
 import gc
 import operator
 import unittest
@@ -27,8 +28,9 @@ import pytest
 
 import koskari.lib as lib
 from koskari.lib import (
-    AsyncGenerator, BoundMethod, Domain, FormalsSpec, KoskariSyncViolation,
-    KosPartial, ParamRef, demand, demand_apply, demand_call)
+    AsyncGenerator, BoundMethod, Coroutine, Domain, FormalsSpec,
+    KoskariSyncViolation, KosPartial, ParamRef, demand, demand_apply,
+    demand_call)
 from koskari.module import load_module_source_async, new_module
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
@@ -908,6 +910,180 @@ class TestDemandDescriptor(unittest.TestCase):
         with self.assertRaises(KoskariSyncViolation) as ctx:
             demand_call(outer_fn)
         self.assertIn('suspension', str(ctx.exception))
+
+
+BOUND_SRC = """
+(define gather (lambda [self a b: 0 *: rest] #(self a b rest)))
+"""
+
+
+def same(fn):
+    """
+    The function itself, for a class attribute that binds as a plain
+    Function
+    """
+
+    return fn
+
+
+class BoundMethodPythonCalls:
+    """
+    A BoundMethod held by Python and called from Python; subclasses
+    choose the class attribute (wrap) and how a call's result is
+    delivered (settle)
+    """
+
+    async def held(self):
+        """
+        A fresh instance and its BoundMethod over gather
+        """
+
+        module = new_module("bound_method_call")
+        vars(module)["__file__"] = "<bound_method_call>"
+        await load_module_source_async(module, BOUND_SRC, layout=False)
+        attr = self.wrap(vars(module)["gather"])
+
+        class C:
+            method = attr
+
+        obj = C()
+        return obj, attr, obj.method
+
+
+    async def test_positionals(self):
+        """
+        positionals follow self
+        """
+
+        obj, _, m = await self.held()
+        self.assertIsInstance(m, BoundMethod)
+        self.assertEqual(await self.settle(m(1, 2)), (obj, 1, 2, ()))
+
+
+    async def test_keywords(self):
+        """
+        a keyword argument reaches its formal
+        """
+
+        obj, _, m = await self.held()
+        self.assertEqual(await self.settle(m(1, b=2)), (obj, 1, 2, ()))
+
+
+    async def test_nine_positionals(self):
+        """
+        nine positionals follow self in order
+        """
+
+        obj, _, m = await self.held()
+        self.assertEqual(
+            await self.settle(m(1, 2, 3, 4, 5, 6, 7, 8, 9)),
+            (obj, 1, 2, (3, 4, 5, 6, 7, 8, 9)))
+
+
+    async def test_nine_positionals_unpacked(self):
+        """
+        nine positionals unpacked from a tuple follow self in order
+        """
+
+        obj, _, m = await self.held()
+        args = (1, 2, 3, 4, 5, 6, 7, 8, 9)
+        self.assertEqual(
+            await self.settle(m(*args)),
+            (obj, 1, 2, (3, 4, 5, 6, 7, 8, 9)))
+
+
+    async def test_star_args(self):
+        """
+        m(*args) passes the tuple's items after self
+        """
+
+        obj, _, m = await self.held()
+        args = (1, 2, 3)
+        self.assertEqual(await self.settle(m(*args)), (obj, 1, 2, (3,)))
+
+
+    async def test_star_args_and_keywords(self):
+        """
+        m(*args, **kwds) passes the items after self and the keywords
+        to their formals
+        """
+
+        obj, _, m = await self.held()
+        args = (1,)
+        kwds = {"b": 3}
+        self.assertEqual(
+            await self.settle(m(*args, **kwds)), (obj, 1, 3, ()))
+
+
+    async def test_partial_positional(self):
+        """
+        functools.partial binding a positional of a bound method
+        """
+
+        obj, _, m = await self.held()
+        part = functools.partial(m, 1)
+        self.assertEqual(await self.settle(part(2)), (obj, 1, 2, ()))
+
+
+    async def test_partial_keyword(self):
+        """
+        functools.partial binding a keyword of a bound method
+        """
+
+        obj, _, m = await self.held()
+        part = functools.partial(m, b=5)
+        self.assertEqual(await self.settle(part(1)), (obj, 1, 5, ()))
+
+
+    async def test_func_and_self(self):
+        """
+        __func__ is the class attribute and __self__ the instance,
+        before and after a call
+        """
+
+        obj, attr, m = await self.held()
+        self.assertIs(m.__func__, attr)
+        self.assertIs(m.__self__, obj)
+        await self.settle(m(1, 2))
+        self.assertIs(m.__func__, attr)
+        self.assertIs(m.__self__, obj)
+
+
+class TestBoundMethodOverDemandPythonCall(
+        BoundMethodPythonCalls,
+        unittest.IsolatedAsyncioTestCase):
+    """
+    A BoundMethod over a Demand returns the value from the call
+    """
+
+    wrap = staticmethod(demand)
+
+
+    async def settle(self, result):
+        """
+        The call's value as returned
+        """
+
+        return result
+
+
+class TestBoundMethodOverFunctionPythonCall(
+        BoundMethodPythonCalls,
+        unittest.IsolatedAsyncioTestCase):
+    """
+    A BoundMethod over a Function returns a coroutine from the call
+    """
+
+    wrap = staticmethod(same)
+
+
+    async def settle(self, result):
+        """
+        The value of the call's coroutine
+        """
+
+        self.assertIsInstance(result, Coroutine)
+        return await result
 
 
 class TestKoskariIterPyIter(unittest.TestCase):

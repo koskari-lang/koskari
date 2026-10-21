@@ -189,6 +189,22 @@ and its two tuple builds go.
 Test: a held bound method and a `Demand` over one, called with
 positionals and with keywords, from Python.
 
+Implemented: `KosBoundMethod.vectorcall` set by `KosBoundMethod_New`
+to `boundmethod_vectorcall`, also the type's `kc_pyvectorcall`;
+`kc_pycall` is NULL, so `Koskari_AsyncCall` reaches it through
+`PyObject_Call` and `PyVectorcall_Call`. With
+`PY_VECTORCALL_ARGUMENTS_OFFSET` the entry writes self into the lent
+`args[-1]` and puts the slot back after the call; otherwise it copies
+into the stack buffer, or a heap buffer above 8. The entries are
+borrowed. Measurement (new kernel `demand_call_method`, `builtins.map`
+over the bound method of a class whose `mix [self a b]` is
+`@demand`, 4 batches of 200,000 calls): instructions 7,228,751,595 ->
+6,823,092,299, per call 3,850 -> 3,331; cycles per call 775 -> 597
+(754 on a repeat, within noise). churn-trace counters identical
+(`entry_root_install` 1,206,876, `call_frame_cached` 1,219,611,
+`entry_root_cached` 0): the Demand below is entered with the same
+vector as before.
+
 #### Naming
 
 The `host` identifiers in `demand.c`, `demand.h` and `iterate.c`

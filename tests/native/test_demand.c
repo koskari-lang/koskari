@@ -22,6 +22,10 @@
    the wrapper between calls, then drops the wrapper so Valgrind / ASan
    see the kept frame released.
 
+   Calls a BoundMethod over a Demand through PyObject_Vectorcall with
+   and without the lent offset slot, with keywords, and with more
+   arguments than its stack buffer holds.
+
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
 */
@@ -89,6 +93,37 @@ static PyObject *call_with_base(
 }
 
 
+/* A BoundMethod over Demand(KosPartial(builtins.name)) with the given
+   self. Returns a new reference, or NULL on error. */
+static PyObject *make_bound_over_builtin(const char *name, long self) {
+
+  PyObject *builtins = PyImport_ImportModule("builtins");
+  PyObject *fn;
+  PyObject *demand;
+  PyObject *bound_self;
+  PyObject *bm = NULL;
+
+  if (! builtins)
+    return NULL;
+  fn = PyObject_GetAttrString(builtins, name);
+  Py_DECREF(builtins);
+  if (! fn)
+    return NULL;
+
+  demand = make_demand_over_partial(fn);
+  Py_DECREF(fn);
+  if (! demand)
+    return NULL;
+
+  bound_self = PyLong_FromLong(self);
+  if (bound_self)
+    bm = KosBoundMethod_New(demand, bound_self);
+  Py_XDECREF(bound_self);
+  Py_DECREF(demand);
+  return bm;
+}
+
+
 /* === tests === */
 
 
@@ -126,6 +161,166 @@ static int test_demand_keyword_calls_keep_root_frame(void) {
 }
 
 
+static int test_boundmethod_vectorcall_positional(void) {
+  /*
+    BoundMethod(Demand(pow), 2) called with one positional and no
+    offset slot: pow(2, 10).
+  */
+  PyObject *bm = make_bound_over_builtin("pow", 2);
+  TEST_ASSERT_NOT_NULL(bm, "BoundMethod over pow");
+
+  PyObject *argv[1];
+  argv[0] = PyLong_FromLong(10);
+  TEST_ASSERT_NOT_NULL(argv[0], "argument");
+
+  PyObject *result = PyObject_Vectorcall(bm, argv, 1, NULL);
+  Py_DECREF(argv[0]);
+  TEST_ASSERT_NOT_NULL(result, "positional call");
+  TEST_ASSERT_EQ(PyLong_AsLong(result), 1024, "pow(2, 10)");
+  Py_DECREF(result);
+
+  TEST_ASSERT_REFCNT(bm, 1, "BoundMethod refcount before drop");
+  Py_DECREF(bm);
+
+  return 0;
+}
+
+
+static int test_boundmethod_vectorcall_offset_slot(void) {
+  /*
+    With PY_VECTORCALL_ARGUMENTS_OFFSET the slot below the vector is
+    lent for the call: the result is right and the slot's previous
+    value is back afterward, its refcount untouched; once positional
+    only, once with a keyword.
+  */
+  PyObject *bm = make_bound_over_builtin("pow", 2);
+  TEST_ASSERT_NOT_NULL(bm, "BoundMethod over pow");
+
+  PyObject *sentinel = PyObject_CallNoArgs((PyObject *) &PyBaseObject_Type);
+  TEST_ASSERT_NOT_NULL(sentinel, "sentinel object");
+  Py_ssize_t sentinel_refs = Py_REFCNT(sentinel);
+
+  PyObject *exp = PyLong_FromLong(10);
+  PyObject *mod = PyLong_FromLong(1000);
+  PyObject *kwnames = Py_BuildValue("(s)", "mod");
+  TEST_ASSERT_NOT_NULL(exp, "exp");
+  TEST_ASSERT_NOT_NULL(mod, "mod");
+  TEST_ASSERT_NOT_NULL(kwnames, "kwnames");
+
+  PyObject *buf[3];
+  buf[0] = sentinel;
+  buf[1] = exp;
+  buf[2] = mod;
+
+  PyObject *result = PyObject_Vectorcall(
+      bm, buf + 1, 1 | PY_VECTORCALL_ARGUMENTS_OFFSET, NULL);
+  TEST_ASSERT_NOT_NULL(result, "offset positional call");
+  TEST_ASSERT_EQ(PyLong_AsLong(result), 1024, "pow(2, 10)");
+  Py_DECREF(result);
+  TEST_ASSERT_SAME(buf[0], sentinel, "slot restored after the call");
+  TEST_ASSERT_SAME(buf[1], exp, "argument slot unchanged");
+
+  result = PyObject_Vectorcall(
+      bm, buf + 1, 1 | PY_VECTORCALL_ARGUMENTS_OFFSET, kwnames);
+  TEST_ASSERT_NOT_NULL(result, "offset keyword call");
+  TEST_ASSERT_EQ(PyLong_AsLong(result), 24, "pow(2, 10, mod=1000)");
+  Py_DECREF(result);
+  TEST_ASSERT_SAME(buf[0], sentinel, "slot restored after the keyword call");
+  TEST_ASSERT_SAME(buf[2], mod, "keyword value slot unchanged");
+
+  TEST_ASSERT_EQ(Py_REFCNT(sentinel), sentinel_refs,
+                 "sentinel refcount unchanged");
+
+  Py_DECREF(kwnames);
+  Py_DECREF(mod);
+  Py_DECREF(exp);
+  Py_DECREF(sentinel);
+  TEST_ASSERT_REFCNT(bm, 1, "BoundMethod refcount before drop");
+  Py_DECREF(bm);
+
+  return 0;
+}
+
+
+static int test_boundmethod_vectorcall_kwnames(void) {
+  /*
+    BoundMethod(Demand(pow), 2) called with a positional and a keyword
+    and no offset slot: pow(2, 10, mod=1000).
+  */
+  PyObject *bm = make_bound_over_builtin("pow", 2);
+  TEST_ASSERT_NOT_NULL(bm, "BoundMethod over pow");
+
+  PyObject *argv[2];
+  argv[0] = PyLong_FromLong(10);
+  argv[1] = PyLong_FromLong(1000);
+  PyObject *kwnames = Py_BuildValue("(s)", "mod");
+  TEST_ASSERT_NOT_NULL(argv[0], "exp");
+  TEST_ASSERT_NOT_NULL(argv[1], "mod");
+  TEST_ASSERT_NOT_NULL(kwnames, "kwnames");
+
+  PyObject *result = PyObject_Vectorcall(bm, argv, 1, kwnames);
+  Py_DECREF(kwnames);
+  Py_DECREF(argv[0]);
+  Py_DECREF(argv[1]);
+  TEST_ASSERT_NOT_NULL(result, "keyword call");
+  TEST_ASSERT_EQ(PyLong_AsLong(result), 24, "pow(2, 10, mod=1000)");
+  Py_DECREF(result);
+
+  TEST_ASSERT_REFCNT(bm, 1, "BoundMethod refcount before drop");
+  Py_DECREF(bm);
+
+  return 0;
+}
+
+
+static int test_boundmethod_vectorcall_many_positionals(void) {
+  /*
+    BoundMethod(Demand(max), 0) called with nine positionals and no
+    offset slot, more than the stack buffer holds: max(0, 1, ..., 9).
+  */
+  PyObject *bm = make_bound_over_builtin("max", 0);
+  TEST_ASSERT_NOT_NULL(bm, "BoundMethod over max");
+
+  PyObject *argv[9];
+  for (int i = 0; i < 9; i++) {
+    argv[i] = PyLong_FromLong(i + 1);
+    TEST_ASSERT_NOT_NULL(argv[i], "argument");
+  }
+
+  PyObject *result = PyObject_Vectorcall(bm, argv, 9, NULL);
+  for (int i = 0; i < 9; i++)
+    Py_DECREF(argv[i]);
+  TEST_ASSERT_NOT_NULL(result, "nine-positional call");
+  TEST_ASSERT_EQ(PyLong_AsLong(result), 9, "max(0, 1, ..., 9)");
+  Py_DECREF(result);
+
+  TEST_ASSERT_REFCNT(bm, 1, "BoundMethod refcount before drop");
+  Py_DECREF(bm);
+
+  return 0;
+}
+
+
+static int test_boundmethod_vectorcall_no_arguments(void) {
+  /*
+    BoundMethod(Demand(abs), -5) called with an empty, NULL vector:
+    abs(-5).
+  */
+  PyObject *bm = make_bound_over_builtin("abs", -5);
+  TEST_ASSERT_NOT_NULL(bm, "BoundMethod over abs");
+
+  PyObject *result = PyObject_Vectorcall(bm, NULL, 0, NULL);
+  TEST_ASSERT_NOT_NULL(result, "no-argument call");
+  TEST_ASSERT_EQ(PyLong_AsLong(result), 5, "abs(-5)");
+  Py_DECREF(result);
+
+  TEST_ASSERT_REFCNT(bm, 1, "BoundMethod refcount before drop");
+  Py_DECREF(bm);
+
+  return 0;
+}
+
+
 /* === suite entry point === */
 
 
@@ -134,6 +329,11 @@ int run_demand_tests(void) {
   BEGIN_TEST_SUITE("Demand Memory Tests");
 
   RUN_TEST(test_demand_keyword_calls_keep_root_frame);
+  RUN_TEST(test_boundmethod_vectorcall_positional);
+  RUN_TEST(test_boundmethod_vectorcall_offset_slot);
+  RUN_TEST(test_boundmethod_vectorcall_kwnames);
+  RUN_TEST(test_boundmethod_vectorcall_many_positionals);
+  RUN_TEST(test_boundmethod_vectorcall_no_arguments);
 
   return 0;
 }

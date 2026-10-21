@@ -954,33 +954,68 @@ static Py_hash_t boundmethod_hash(PyObject *self) {
 }
 
 
+/* Self plus up to seven arguments go on the C stack; a longer vector
+   takes a heap buffer. */
+#define BOUNDMETHOD_STACK_ARGS 8
+
+
 /**
-   kc_pycall worker: prepend self and follow the wrapped callable
-   through the generic iteration-node entry.
+   The type's vectorcall entry and its kc_pyvectorcall worker: call the
+   wrapped function with self ahead of the caller's arguments, as one
+   vector. The result is whatever the function's surface returns: a
+   completed value for a Demand family function, a Coroutine for a
+   Function.
+
+   With PY_VECTORCALL_ARGUMENTS_OFFSET the caller lends args[-1]; self
+   goes in that slot for the call and the slot's previous value is put
+   back after it. The flag is not passed on, since that slot is the
+   callee's args[0]. Without the flag, self and the caller's entries
+   (positionals, then keyword values) are copied into a stack buffer,
+   or a heap buffer above BOUNDMETHOD_STACK_ARGS entries.
+
+   Every entry is borrowed, as in CPython's own bound method: the
+   caller holds the arguments and this bound method, which holds func
+   and self, for the duration of the call.
 */
-static PyObject *boundmethod_pycall(
+static PyObject *boundmethod_vectorcall(
     PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
 
+  PyObject *func = KosBoundMethod_FUNC(self);
   PyObject *bound_self = KosBoundMethod_SELF(self);
-  PyObject *bound_args;
-  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
+  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+  Py_ssize_t total = nargs + (kwnames ? PyTuple_GET_SIZE(kwnames) : 0);
+  PyObject *result;
 
-  bound_args = PyTuple_New(1 + n);
-  if (! bound_args)
-    return NULL;
-  Py_INCREF(bound_self);
-  PyTuple_SET_ITEM(bound_args, 0, bound_self);
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *item = PyTuple_GET_ITEM(args, i);
-    Py_INCREF(item);
-    PyTuple_SET_ITEM(bound_args, 1 + i, item);
+  if (nargsf & PY_VECTORCALL_ARGUMENTS_OFFSET) {
+    PyObject **slot = ((PyObject **) args) - 1;
+    PyObject *prev = *slot;
+
+    *slot = bound_self;
+    result = PyObject_Vectorcall(func, slot, (size_t) (nargs + 1), kwnames);
+    *slot = prev;
+    return result;
   }
 
-  PyObject *result = Koskari_AsyncCall(
-      KosBoundMethod_FUNC(self), bound_args, kwargs);
-  Py_DECREF(bound_args);
+  PyObject *stack[BOUNDMETHOD_STACK_ARGS];
+  PyObject **buf = stack;
+
+  if (total + 1 > BOUNDMETHOD_STACK_ARGS) {
+    buf = PyMem_Malloc((size_t) (total + 1) * sizeof(PyObject *));
+    if (! buf)
+      return PyErr_NoMemory();
+  }
+
+  buf[0] = bound_self;
+  for (Py_ssize_t i = 0; i < total; i++)
+    buf[1 + i] = args[i];
+
+  result = PyObject_Vectorcall(func, buf, (size_t) (nargs + 1), kwnames);
+
+  if (buf != stack)
+    PyMem_Free(buf);
   return result;
 }
 
@@ -995,10 +1030,12 @@ KosEvaluatedTypeObject KosBoundMethodType = {
     .tp_clear = boundmethod_clear,
     .tp_repr = boundmethod_repr,
     .tp_hash = boundmethod_hash,
-    .tp_call = KosCallAdapt_CallAsync,
-    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-    .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
-              " self to call arguments.",
+    .tp_call = PyVectorcall_Call,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC
+        | Py_TPFLAGS_HAVE_VECTORCALL,
+    .tp_vectorcall_offset = KosBoundMethod_VECTORCALL_OFFSET,
+    .tp_doc = "Bound method wrapper. Calls its function with self ahead"
+              " of the call arguments.",
     .tp_richcompare = boundmethod_richcompare,
     .tp_members = boundmethod_members,
     .tp_getset = boundmethod_getsets,
@@ -1006,8 +1043,8 @@ KosEvaluatedTypeObject KosBoundMethodType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_boundmethod,
-    .kc_pycall = boundmethod_pycall,
-    .kc_pyvectorcall = NULL,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = boundmethod_vectorcall,
   },
 };
 
@@ -1032,6 +1069,7 @@ PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
   KosBoundMethod_FUNC(bm) = func;
   Py_INCREF(self);
   KosBoundMethod_SELF(bm) = self;
+  ((KosBoundMethod *) bm)->vectorcall = boundmethod_vectorcall;
   return bm;
 }
 
