@@ -173,6 +173,19 @@ int kos_transform_source_spent(void) {
 }
 
 
+int kos_transform_busy(PyObject *self) {
+
+  KosTransform *t = (KosTransform *) self;
+
+  if (! t->busy)
+    return 0;
+
+  PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
+               transform_kind(Py_TYPE(self)));
+  return 1;
+}
+
+
 int kos_transform_step_ready(
     KosTransform *t,
     PyObject *send_val,
@@ -185,9 +198,7 @@ int kos_transform_step_ready(
     return 0;
   }
 
-  if (t->busy) {
-    PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
-                 transform_kind(Py_TYPE(t)));
+  if (kos_transform_busy((PyObject *) t)) {
     *result = KOS_ITER_ERROR;
     return 0;
   }
@@ -289,14 +300,11 @@ KosIterStepResult kos_transform_throw(
   (void) ctx;
   (void) out;
 
-  if (t->busy) {
-    /* A step is in flight and its driver owns the transform's state:
-       every second caller is refused, GeneratorExit included -- the
-       same rule CPython applies to a running async generator. */
-    PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
-                 transform_kind(Py_TYPE(self)));
+  /* A step is in flight and its driver owns the transform's state:
+     every second caller is refused, GeneratorExit included -- the
+     same rule CPython applies to a running async generator. */
+  if (kos_transform_busy(self))
     return KOS_ITER_ERROR;
-  }
 
   if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
     /* Generator close semantics: run the source's cleanup, mark

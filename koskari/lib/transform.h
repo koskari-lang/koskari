@@ -287,6 +287,14 @@ void kos_transform_finish(PyObject *self, int exhausted);
 
 
 /**
+   The suite's ki_busy: 1 with "KIND is already being iterated" set as
+   a RuntimeError when a step is in flight, else 0. The step preamble
+   and the throw refuse a busy transform through it.
+*/
+int kos_transform_busy(PyObject *self);
+
+
+/**
    The clear of every provider step kind: a step frame torn down with
    its resume still set releases the record's busy mark and the value
    in flight, so the transform can be stepped again. Takes the

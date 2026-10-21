@@ -157,6 +157,12 @@ typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
 */
 typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 
+/**
+   Is a step in flight? 1 with the provider's RuntimeError set when
+   one is, 0 otherwise
+*/
+typedef int (*KosIterBusyFunc)(PyObject *self);
+
 
 /**
    The iter suite: the in-eval iteration interface. A type whose suite
@@ -164,6 +170,13 @@ typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
    YIELD_FROM dispatch it for flattened stepping, and the dynchain
    delivery walks report completion through ki_finish. The Python
    adapters (iterate.c) drive ki_step against the ki_pyctx context.
+
+   ki_busy returns 1 with the provider's RuntimeError set when a step
+   is in flight, 0 otherwise; a NULL slot means the provider is never
+   busy. The Python adapters ask it before they begin a drive on the
+   ki_pyctx context, which a drive in flight may share; ki_step and
+   ki_throw still refuse a busy provider themselves, for the opcode
+   sites that step on the running context.
 */
 typedef struct KosIterSlots {
   KosIterStepFunc ki_step;
@@ -171,6 +184,7 @@ typedef struct KosIterSlots {
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;
   KosIterPyCtxFunc ki_pyctx;
+  KosIterBusyFunc ki_busy;
   uint8_t ki_pyctx_recyclable;  /* the durable context holds no state
                                    between completed steps; the adapters
                                    recycle it at their reset points

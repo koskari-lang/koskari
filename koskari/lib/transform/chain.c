@@ -404,6 +404,7 @@ KosEvaluatedTypeObject KosChainType = {
     .ki_close = koschain_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

@@ -91,6 +91,15 @@ static int iterate_acquire_context(
 }
 
 
+/**
+   Step the provider under a drive on the adapter's context. The
+   provider's busy check (ki_busy) runs before the drive begins: the
+   context may be the provider's durable one, shared with a drive in
+   flight through another adapter, and beginning a drive on it would
+   replace that drive's breaker, recursion limit and terminal flag,
+   and ending one would flush registers into its frame and move its
+   staged delivery.
+*/
 static KosIterStepResult iterate_suite_step(
     KosContext **ctx_slot,
     uint8_t *ctx_owned,
@@ -100,6 +109,9 @@ static KosIterStepResult iterate_suite_step(
     PyObject **out) {
 
   if (iterate_acquire_context(islots, provider, ctx_slot, ctx_owned) < 0)
+    return KOS_ITER_ERROR;
+
+  if (islots->ki_busy && islots->ki_busy(provider))
     return KOS_ITER_ERROR;
 
   {
@@ -113,6 +125,11 @@ static KosIterStepResult iterate_suite_step(
 }
 
 
+/**
+   Throw into the provider under a drive on the adapter's context, with
+   the busy check ahead of the drive for the reason iterate_suite_step
+   gives
+*/
 static KosIterStepResult iterate_suite_throw(
     KosContext **ctx_slot,
     uint8_t *ctx_owned,
@@ -123,6 +140,9 @@ static KosIterStepResult iterate_suite_throw(
     PyObject **out) {
 
   if (iterate_acquire_context(islots, provider, ctx_slot, ctx_owned) < 0)
+    return KOS_ITER_ERROR;
+
+  if (islots->ki_busy && islots->ki_busy(provider))
     return KOS_ITER_ERROR;
 
   {
@@ -1485,6 +1505,16 @@ static int pyiter_ki_close(PyObject *self) {
 }
 
 
+static int pyiter_ki_busy(PyObject *self) {
+
+  KosPyIter *gen = (KosPyIter *) self;
+
+  if (gen->provider && gen->islots->ki_busy)
+    return gen->islots->ki_busy(gen->provider);
+  return 0;
+}
+
+
 /**
    The request's finish applies the recyclable rule against this
    adapter's suite, which is not recyclable; apply the provider's own
@@ -1524,6 +1554,7 @@ static KosEvaluatedTypeObject KosPyIterType = {
     .ki_close = pyiter_ki_close,
     .ki_finish = pyiter_ki_finish,
     .ki_pyctx = NULL,
+    .ki_busy = pyiter_ki_busy,
   },
 };
 

@@ -511,6 +511,23 @@ static int agen_attach_gen_flatten(
 
 
 /**
+   The suite's ki_busy: 1 with the RuntimeError set while another site
+   is driving the generator, else 0
+*/
+static int agen_iter_busy(PyObject *self) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+
+  if (! agen->in_progress)
+    return 0;
+
+  PyErr_SetString(PyExc_RuntimeError,
+                  "async generator already being iterated");
+  return 1;
+}
+
+
+/**
    Shared core of ki_step and ki_throw: guard, mark busy, splice the
    generator's frames onto the consumer context. On success the drive is
    in flight (KOS_ITER_INSTALLED); when throwing, the exception the
@@ -525,11 +542,8 @@ static KosIterStepResult agen_iter_drive(
     int throwing,
     PyObject **out) {
 
-  if (agen->in_progress) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async generator already being iterated");
+  if (agen_iter_busy((PyObject *) agen))
     return KOS_ITER_ERROR;
-  }
 
   if (agen->closed || ! agen->gen) {
     *out = NULL;
@@ -621,11 +635,8 @@ static KosIterStepResult agen_iter_throw(
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
 
-  if (agen->in_progress) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "async generator already being iterated");
+  if (agen_iter_busy(self))
     return KOS_ITER_ERROR;
-  }
 
   if (agen->closed || ! agen->gen) {
     *out = NULL;
@@ -718,6 +729,7 @@ KosEvaluatedTypeObject KosPyAsyncGenType = {
     .ki_close = agen_iter_close,
     .ki_finish = agen_iter_finish,
     .ki_pyctx = agen_iter_pyctx,
+    .ki_busy = agen_iter_busy,
   },
 };
 
