@@ -2187,6 +2187,96 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
 }
 
 
+/* === Test: flatten onto a consumer clears the wrapper's registers === */
+
+
+static int test_agen_flatten_clears_wrapper_registers(void) {
+
+  /*
+    A generator with a context of its own, stepped on a separate
+    consumer context: the flatten moves the chain onto the consumer,
+    and the wrapper context must keep no register pointing into it.
+    The block and namespace registers are given stand-in values before
+    the step, so the test observes whether the flatten clears them.
+  */
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(42);
+  PyObject *instr = PyList_New(2);
+  KosSegment *sentinel_seg = NULL;
+  KosIterSlots *islots = &KosPyAsyncGenType.kos_iter;
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *agen_obj;
+  KosPyAsyncGen *agen;
+  KosContext *consumer;
+  KosIterStepResult r;
+  PyObject *out = NULL;
+  KosOpResult res;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  Py_DECREF(code_obj);
+  TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
+
+  agen = (KosPyAsyncGen *) agen_obj;
+  TEST_ASSERT_NOT_NULL(agen->gen, "agen owns gen");
+  TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
+
+  /* the wrapper's context, made as the Python-drive path makes it */
+  agen->ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(agen->ctx, "create wrapper context");
+
+  consumer = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(consumer, "create consumer context");
+
+  KosContext_BLOCK(agen->ctx) = &sentinel_seg;
+  KosContext_NAMESPACE(agen->ctx) = Py_None;
+
+  KosContext_BeginDrive(consumer, NULL);
+  r = islots->ki_step(consumer, agen_obj, NULL, &out);
+  KosContext_EndDrive(consumer);
+  TEST_ASSERT(! PyErr_Occurred(), "step raised no exception");
+  TEST_ASSERT(r == KOS_ITER_INSTALLED, "step installed onto consumer");
+
+  TEST_ASSERT_NULL(KosContext_BLOCK(agen->ctx),
+                   "flatten cleared the wrapper's block register");
+  TEST_ASSERT_NULL(KosContext_NAMESPACE(agen->ctx),
+                   "flatten cleared the wrapper's namespace register");
+
+  /* run the flattened body to its yield, which freezes the chain back
+     into the generator; the teardown then closes it on the wrapper's
+     context as the neighbouring test does */
+  res = koskari_eval(consumer, NULL, NULL, NULL);
+  TEST_ASSERT(res.kind == KOS_RES_YIELD, "body yielded on consumer");
+  TEST_ASSERT_EQ(PyLong_AsLong(res.val), 42, "yielded 42");
+  Py_XDECREF(res.val);
+  islots->ki_finish(agen_obj, 0);
+
+  TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE((KosDynGen *) agen->gen),
+                       "gen frozen with active chain");
+
+  KosPyAsyncGen_Teardown(agen);
+  TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+  TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
+
+  Py_DECREF(agen_obj);
+  Py_DECREF(consumer);
+
+  return 0;
+}
+
+
 /* === Test runner === */
 
 /* === Elector demotion counts guard misses alone === */
@@ -2800,6 +2890,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_yield_throw_caught);
     RUN_TEST(test_eval_opcode_error_caught_by_try);
     RUN_TEST(test_eval_frozen_gen_teardown_without_install);
+    RUN_TEST(test_agen_flatten_clears_wrapper_registers);
     RUN_TEST(test_elector_declines_do_not_count_toward_demotion);
     RUN_TEST(test_item_store_site_demotes_and_re_elects);
 

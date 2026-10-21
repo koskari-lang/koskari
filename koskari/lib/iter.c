@@ -111,10 +111,13 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
      the chain lived in GEN->active and agen->ctx was never the running ctx. */
   KosContext_BeginDrive(ctx, NULL);
   if (kos_dyn_gen_install(ctx, gen) < 0) {
+    KosContext_EndDrive(ctx);
     PyErr_Clear();
     Py_DECREF(throw_exc);
     goto fallback;
   }
+  /* the eval below begins and ends a drive of its own */
+  KosContext_EndDrive(ctx);
 
   {
     KosOpResult res = koskari_eval(ctx, NULL, PyExc_GeneratorExit, throw_exc);
@@ -148,8 +151,11 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
 
 primary_success:
   KosContext_BeginDrive(ctx, NULL);
-  if (kos_dyn_teardown_gen_exhausted(ctx) < 0)
+  if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
+    KosContext_EndDrive(ctx);
     goto fallback;
+  }
+  KosContext_EndDrive(ctx);
 
   /* unwind_exhausted released only the install reference acquired above by
      kos_dyn_gen_install; the owner reference held by agen still remains.
@@ -472,6 +478,8 @@ static int agen_attach_gen_flatten(
       KosContext_DYN_TOP(agen->ctx) = NULL;
       KosContext_FRAME(agen->ctx) = NULL;
       KosContext_CODE(agen->ctx) = NULL;
+      KosContext_BLOCK(agen->ctx) = NULL;
+      KosContext_NAMESPACE(agen->ctx) = NULL;
       agen->ctx->pc = 0;
       agen->ctx->acting_pc = 0;
     }
@@ -500,6 +508,8 @@ static int agen_attach_gen_flatten(
     KosContext_DYN_TOP(agen->ctx) = NULL;
     KosContext_FRAME(agen->ctx) = NULL;
     KosContext_CODE(agen->ctx) = NULL;
+    KosContext_BLOCK(agen->ctx) = NULL;
+    KosContext_NAMESPACE(agen->ctx) = NULL;
     agen->ctx->pc = 0;
     agen->ctx->acting_pc = 0;
     return 0;
