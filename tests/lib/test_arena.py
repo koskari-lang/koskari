@@ -196,6 +196,24 @@ class TestCodeAllocator(unittest.TestCase):
         c = make_code("c", allocator=alloc)
         self.assertEqual(chunk.used, aligned(used) + block_size(c))
 
+    def test_dead_blocks_return_newest_first(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        chunk = a.arena
+        end_a = chunk.used
+        b = make_code("b", allocator=alloc)
+        end_b = chunk.used
+        c = make_code("c", allocator=alloc)
+
+        # each drop of the newest block rewinds to the one before it,
+        # whose own exact end sits below the boundary the rewind left
+        del c
+        self.assertEqual(chunk.used, aligned(end_b))
+        del b
+        self.assertEqual(chunk.used, aligned(end_a))
+        del a
+        self.assertEqual(chunk.used, 0)
+
     def test_dead_older_keeps_its_bytes(self):
         alloc = CodeAllocator()
         a = make_code("a", allocator=alloc)

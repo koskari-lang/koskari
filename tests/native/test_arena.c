@@ -215,6 +215,15 @@ static int test_arena_release(void) {
     KosArena_Complete(arena);
     TEST_ASSERT_SAME(c, b, "space reused");
 
+    /* releases cascade newest first: c, then a, whose exact end lies
+       below the boundary c's release rewound to */
+    KosArena_Release(arena, c, 40);
+    KosArena_Release(arena, a, 40);
+    TEST_ASSERT_EQ((long) KosArena_FILL(arena), 0L, "every block returned");
+
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &c), 0, "reserve again");
+    KosArena_Complete(arena);
+
     /* nothing is returned to a sealed arena */
     size_t fill = KosArena_FILL(arena);
     TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal");

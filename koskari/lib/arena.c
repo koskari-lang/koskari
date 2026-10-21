@@ -235,7 +235,11 @@ void KosArena_Release(PyObject *arena, void *base, size_t nbytes) {
   if (self->sealed)
     return;
 
-  if ((char *) base + nbytes == start + self->fill) {
+  /* the newest reservation ends where the fill does, on the unit
+     boundary: an earlier release leaves the fill at its block's aligned
+     start, above the exact end of the block before it */
+  size_t end = (size_t) ((char *) base - start) + nbytes;
+  if (round_up(end, KOS_ARENA_UNIT) == round_up(self->fill, KOS_ARENA_UNIT)) {
     self->fill = (size_t) ((char *) base - start);
   }
 }
