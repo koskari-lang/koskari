@@ -27,19 +27,15 @@
 */
 
 
-/* Feature test macros must come before any includes. The values match
-   pyconfig.h, which defines them again; anonymous mappings need the
-   GNU or Darwin extensions beyond plain POSIX. */
-#define _POSIX_C_SOURCE 200809L
-#define _GNU_SOURCE 1
-#define _DARWIN_C_SOURCE 1
+/* Python.h sets the feature test macros, so it comes before any
+   system header: anonymous mappings need the GNU or Darwin extensions
+   beyond plain POSIX, and pyconfig.h chooses them per platform */
+#include "lib.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/mman.h>
 #include <unistd.h>
-
-#include "lib.h"
 
 
 #if ! defined(MAP_ANONYMOUS) && defined(MAP_ANON)

@@ -26,16 +26,15 @@
 */
 
 
-/* Feature test macros must come before any includes */
-#define _POSIX_C_SOURCE 200809L
+/* Python.h sets the feature test macros, so it comes before any
+   system header */
+#include "lib.h"
+#include "debug.h"
 
 #include <string.h>
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#include "lib.h"
-#include "debug.h"
 
 
 /* === Static string constants === */
