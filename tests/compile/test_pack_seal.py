@@ -140,6 +140,30 @@ class TestCompilerAllocator(unittest.TestCase):
         self.assertEqual(comp.seal(), ())
         self.assertIs(a.arena, first[0])
 
+    def test_seal_failure_keeps_allocator(self):
+        comp = Compiler("sealtest", {})
+        comp.open_allocator()
+        chunks = (comp.allocator,)
+
+        class Failing:
+            calls = 0
+
+            def seal(self):
+                Failing.calls += 1
+                if Failing.calls == 1:
+                    raise OSError("seal")
+                return chunks
+
+        stand_in = Failing()
+        comp.allocator = stand_in
+        with self.assertRaises(OSError):
+            comp.seal()
+        self.assertIs(comp.allocator, stand_in)
+
+        self.assertIs(comp.seal(), chunks)
+        self.assertIsNone(comp.allocator)
+        self.assertEqual(Failing.calls, 2)
+
     def test_after_seal_is_heap(self):
         comp = Compiler("sealtest", {})
         comp.open_allocator()

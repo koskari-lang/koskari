@@ -1423,10 +1423,11 @@ class Compiler:
             allocator was open or nothing was placed
         """
 
-        allocator, self.allocator = self.allocator, None
-        if allocator is None:
+        if self.allocator is None:
             return ()
-        return allocator.seal()
+        chunks = self.allocator.seal()
+        self.allocator = None
+        return chunks
 
 
 # The end.
