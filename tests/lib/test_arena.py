@@ -149,12 +149,17 @@ class TestCodeAllocator(unittest.TestCase):
 
     def test_first_fit_returns_to_earlier_chunk(self):
         alloc = CodeAllocator()
-        scale = Arena.CHUNK // 4096
 
         # about three quarters of a chunk, then half of one: the second
-        # cannot follow the first, so it opens a second chunk
-        first = make_sized("first", 44 * scale, allocator=alloc)
-        second = make_sized("second", 30 * scale, allocator=alloc)
+        # cannot follow the first, so it opens a second chunk. The pair
+        # counts come from the measured cost of one pair, so they hold
+        # on any page size
+        per_pair = (block_size(make_sized("probe2", 2))
+                    - block_size(make_sized("probe1", 1)))
+        first = make_sized(
+            "first", (Arena.CHUNK * 3 // 4) // per_pair, allocator=alloc)
+        second = make_sized(
+            "second", (Arena.CHUNK // 2) // per_pair, allocator=alloc)
         tail = first.arena.size - aligned(first.arena.used)
         self.assertGreater(block_size(second), tail)
         self.assertIsNot(second.arena, first.arena)

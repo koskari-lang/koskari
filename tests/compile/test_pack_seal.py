@@ -205,7 +205,12 @@ class TestCompilerAllocator(unittest.TestCase):
     def test_many_members_fill_whole_chunks(self):
         comp = Compiler("sealtest", {})
         comp.open_allocator()
-        codes = [mint(comp, f"m{i}") for i in range(400)]
+
+        # enough members to fill two chunks on any page size: the count
+        # comes from one member's measured footprint
+        probe = mint(comp, "m0")
+        count = 2 * Arena.CHUNK // aligned(block_size(probe)) + 1
+        codes = [probe] + [mint(comp, f"m{i}") for i in range(1, count)]
 
         chunks = comp.seal()
         self.assertGreater(len(chunks), 1)

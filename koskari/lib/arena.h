@@ -72,11 +72,12 @@ typedef struct KosCodeAllocator {
    Python as Arena.UNIT. */
 #define KOS_ARENA_UNIT 32
 
-/* The requested chunk size. Every chunk is a whole number of chunk
-   units, where the unit is this size rounded up to the system page
-   size, so a system with larger pages uses one of its own pages.
-   Exposed to Python as Arena.CHUNK, after the rounding. */
-#define KOS_ARENA_CHUNK_BYTES 4096
+/* The chunk unit, in system pages. Every chunk is a whole number of
+   chunk units, so one mapping holds this many pages of code, and a
+   single surviving member keeps at most this many pages resident. The
+   page size is the system's; the unit in bytes is exposed to Python as
+   Arena.CHUNK. */
+#define KOS_ARENA_CHUNK_PAGES 16
 
 #define KosArena_BASE(a)    (((KosArena *)(a))->base)
 #define KosArena_SIZE(a)    (((KosArena *)(a))->size)
@@ -113,8 +114,10 @@ extern PyTypeObject KosCodeAllocatorType;
 
 
 /**
-   The chunk unit in bytes: KOS_ARENA_CHUNK_BYTES rounded up to the
-   system page size.
+   The chunk unit in bytes: KOS_ARENA_CHUNK_PAGES system pages.
+
+   :return: the unit, or 0 with OSError set when the system does not
+     report its page size
 */
 size_t KosArena_ChunkUnit(void);
 

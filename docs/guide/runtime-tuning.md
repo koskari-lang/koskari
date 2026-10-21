@@ -138,16 +138,17 @@ read-only pages instead of each occupying its own.
 
 ### Arena chunks
 
-A chunk is one page (on systems whose pages are larger than 4 KB, one
-of their pages). Each function's code goes into the first chunk with
-room for it; when no chunk has room, a new one is mapped, and a
-function larger than a page gets a chunk of its own, rounded up to
-whole pages.
+A chunk is sixteen system pages of address space. Only the pages code
+is written to become resident, so a module with little code costs the
+pages it fills, not the chunk. Each function's code goes into the
+first chunk with room for it; when no chunk has room, a new one is
+mapped, and a function larger than a chunk gets one of its own,
+rounded up to whole chunks.
 
 A chunk lives until the last code object inside it dies, so a single
 survivor (a returned closure, a function cached in a registry, a
-suspended coroutine over a module function) keeps its chunk resident,
-and no more.
+suspended coroutine over a module function) keeps its chunk's written
+pages resident, sixteen at most.
 
 Function code that dies before its module finishes loading -- a lambda
 built by a top-level expression and then dropped, or a definition a

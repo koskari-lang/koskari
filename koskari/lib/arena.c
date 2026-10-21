@@ -34,6 +34,7 @@
 #define _GNU_SOURCE 1
 #define _DARWIN_C_SOURCE 1
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/mman.h>
@@ -50,11 +51,18 @@
 /* === helpers === */
 
 
+/* The system page size, or 0 with OSError set when sysconf does not
+   report one. A guessed page size would be handed to mprotect, so none
+   is guessed. */
 static size_t arena_page_size(void) {
 
-  ssize_t page_size = (ssize_t) sysconf(_SC_PAGE_SIZE);
+  long page_size = sysconf(_SC_PAGE_SIZE);
+
   if (page_size <= 0) {
-    page_size = 4096;
+    if (! errno)
+      errno = EINVAL;
+    PyErr_SetFromErrno(PyExc_OSError);
+    return 0;
   }
   return (size_t) page_size;
 }
@@ -86,7 +94,7 @@ size_t KosArena_ChunkUnit(void) {
   static size_t unit = 0;
 
   if (! unit) {
-    unit = round_up(KOS_ARENA_CHUNK_BYTES, arena_page_size());
+    unit = KOS_ARENA_CHUNK_PAGES * arena_page_size();
   }
   return unit;
 }
@@ -95,6 +103,10 @@ size_t KosArena_ChunkUnit(void) {
 PyObject *KosArena_New(size_t nbytes) {
 
   size_t unit = KosArena_ChunkUnit();
+
+  if (! unit) {
+    return NULL;
+  }
 
   if (! nbytes) {
     PyErr_SetString(PyExc_ValueError,
@@ -523,9 +535,13 @@ int koskari_arena_init(PyObject *mod) {
     return -1;
   }
 
-  /* the reservation alignment, and the chunk unit after page rounding */
+  /* the reservation alignment, and the chunk unit in bytes */
+  size_t chunk = KosArena_ChunkUnit();
+  if (! chunk) {
+    return -1;
+  }
   if (set_type_constant(&KosArenaType, "UNIT", KOS_ARENA_UNIT) ||
-      set_type_constant(&KosArenaType, "CHUNK", KosArena_ChunkUnit())) {
+      set_type_constant(&KosArenaType, "CHUNK", chunk)) {
     return -1;
   }
   PyType_Modified(&KosArenaType);
