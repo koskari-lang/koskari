@@ -75,12 +75,12 @@ static size_t round_up(size_t value, size_t unit) {
 
 
 /* The aligned start a reservation of nbytes would take, or SIZE_MAX
-   when the arena lacks the room. */
+   when the arena lacks the room or is sealed. */
 static size_t arena_fit(KosArena *self, size_t nbytes) {
 
   size_t start = round_up(self->fill, KOS_ARENA_UNIT);
 
-  if (start > self->size || nbytes > self->size - start)
+  if (self->sealed || start > self->size || nbytes > self->size - start)
     return SIZE_MAX;
   return start;
 }
@@ -278,9 +278,12 @@ PyObject *KosCodeAllocator_Seal(PyObject *alloc) {
     return NULL;
   }
 
+  /* a chunk a failed seal left sealed is passed over, so a retry seals
+     the remainder and closes */
   Py_ssize_t count = PyList_GET_SIZE(chunks);
   for (Py_ssize_t i = 0; i < count; i++) {
-    if (KosArena_Seal(PyList_GET_ITEM(chunks, i))) {
+    PyObject *chunk = PyList_GET_ITEM(chunks, i);
+    if (! KosArena_SEALED(chunk) && KosArena_Seal(chunk)) {
       return NULL;
     }
   }

@@ -270,6 +270,38 @@ static int test_code_allocator_reserve(void) {
 }
 
 
+static int test_code_allocator_seal_resumes(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    void *a = NULL;
+    void *b = NULL;
+    PyObject *chunk_a = NULL;
+    PyObject *chunk_b = NULL;
+
+    /* a chunk sealed ahead of the allocator stands in for one a failed
+       seal left behind: reservations pass it by, and the allocator's
+       seal takes the rest and closes */
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &a, &chunk_a),
+                   0, "reserve a");
+    TEST_ASSERT_EQ(KosArena_Seal(chunk_a), 0, "seal a's chunk directly");
+
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &b, &chunk_b),
+                   0, "reserve past a sealed chunk");
+    TEST_ASSERT(chunk_b != chunk_a, "b opens a second chunk");
+
+    PyObject *sealed = KosCodeAllocator_Seal(alloc);
+    TEST_ASSERT_NOT_NULL(sealed, "seal skips the sealed chunk");
+    TEST_ASSERT_EQ((long) PyTuple_GET_SIZE(sealed), 2L, "two chunks");
+    TEST_ASSERT(KosArena_SEALED(chunk_a), "first chunk sealed");
+    TEST_ASSERT(KosArena_SEALED(chunk_b), "second chunk sealed");
+    Py_DECREF(sealed);
+
+    Py_DECREF(alloc);
+    return 0;
+}
+
+
 static int test_code_allocator_places_code(void) {
     PyObject *alloc = KosCodeAllocator_New();
     TEST_ASSERT_NOT_NULL(alloc, "create allocator");
@@ -345,6 +377,7 @@ int run_arena_tests(void) {
     RUN_TEST(test_arena_release);
 
     RUN_TEST(test_code_allocator_reserve);
+    RUN_TEST(test_code_allocator_seal_resumes);
     RUN_TEST(test_code_allocator_places_code);
 
     RUN_TEST(test_code_protect_flag);
