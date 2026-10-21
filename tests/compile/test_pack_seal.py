@@ -19,6 +19,7 @@ settings, the compiler's code allocator, and Compiler.seal()
 :license: GNU General Public License v3
 """
 
+import resource
 import unittest
 
 import pytest
@@ -214,10 +215,14 @@ class TestCompilerAllocator(unittest.TestCase):
 
         chunks = comp.seal()
         self.assertGreater(len(chunks), 1)
+        page = resource.getpagesize()
         for chunk in chunks:
-            self.assertEqual(chunk.size, Arena.CHUNK)
+            # sealed, each chunk is the whole pages its code fills
             self.assertTrue(chunk.sealed)
+            self.assertLessEqual(chunk.size, Arena.CHUNK)
+            self.assertEqual(chunk.size % page, 0)
             self.assertLessEqual(chunk.used, chunk.size)
+            self.assertLess(chunk.size - chunk.used, page)
         for code in codes:
             self.assertIn(code.arena, chunks)
 
@@ -227,7 +232,6 @@ class TestCompilerAllocator(unittest.TestCase):
         self.assertLessEqual(sum(c.used for c in chunks), total)
 
     def test_protect_code_setting_flows_to_code(self):
-        import resource
         page = resource.getpagesize()
 
         comp = Compiler("sealtest", {})

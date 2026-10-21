@@ -113,9 +113,11 @@ Two module pragmas govern the model.
 While a module loads, the code of every function and lambda it
 compiles is written directly into the load's arena chunks, and stays
 at that address for its whole life. When the module finishes loading,
-every chunk is sealed read-only with one `mprotect` each. Top-level
-expressions -- the forms of the module body, each compiled, evaluated
-once, and discarded -- are never placed in an arena.
+every chunk is trimmed to the pages its code fills and sealed
+read-only with one `mprotect` each. Top-level expressions -- the forms
+of the module body, each compiled, evaluated once, and discarded -- are
+never placed in an arena. A module that defines no functions, such as
+one that only imports and re-exports, maps no chunk at all.
 
 `compiler/protect-code` *(default off)* seals each code object that is
 not placed in an arena as it is built: top-level expressions, and
@@ -138,8 +140,9 @@ read-only pages instead of each occupying its own.
 
 ### Arena chunks
 
-A chunk is sixteen system pages of address space. Only the pages code
-is written to become resident, so a module with little code costs the
+A chunk is sixteen system pages of address space while the module
+loads. Only the pages code is written to become resident, and the
+seal unmaps the unwritten tail, so a module with little code keeps the
 pages it fills, not the chunk. Each function's code goes into the
 first chunk with room for it; when no chunk has room, a new one is
 mapped, and a function larger than a chunk gets one of its own,

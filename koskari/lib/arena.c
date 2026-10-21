@@ -56,15 +56,20 @@
    is guessed. */
 static size_t arena_page_size(void) {
 
-  long page_size = sysconf(_SC_PAGE_SIZE);
+  static size_t page = 0;
 
-  if (page_size <= 0) {
-    if (! errno)
-      errno = EINVAL;
-    PyErr_SetFromErrno(PyExc_OSError);
-    return 0;
+  if (! page) {
+    long page_size = sysconf(_SC_PAGE_SIZE);
+
+    if (page_size <= 0) {
+      if (! errno)
+        errno = EINVAL;
+      PyErr_SetFromErrno(PyExc_OSError);
+      return 0;
+    }
+    page = (size_t) page_size;
   }
-  return (size_t) page_size;
+  return page;
 }
 
 
@@ -184,7 +189,28 @@ int KosArena_Seal(PyObject *arena) {
     return -1;
   }
 
-  if (mprotect(self->base, self->size, PROT_READ)) {
+  /* trim the chunk to the whole pages its reservations fill: the tail
+     was never written, so it was never resident, and unmapping it
+     gives back the address space. A chunk whose reservations all died
+     while it was open goes whole. */
+  size_t page = arena_page_size();
+  if (! page) {
+    return -1;
+  }
+
+  size_t keep = round_up(self->fill, page);
+  if (keep < self->size) {
+    if (munmap((char *) self->base + keep, self->size - keep)) {
+      PyErr_SetFromErrno(PyExc_OSError);
+      return -1;
+    }
+    self->size = keep;
+    if (! keep) {
+      self->base = NULL;
+    }
+  }
+
+  if (self->size && mprotect(self->base, self->size, PROT_READ)) {
     PyErr_SetFromErrno(PyExc_OSError);
     return -1;
   }
@@ -359,7 +385,8 @@ static PyObject *arena_get_sealed(PyObject *self, void *_unused) {
 static PyGetSetDef arena_getset[] = {
 
   { "size", arena_get_size, NULL,
-    "total allocation in bytes (whole chunk units)", NULL },
+    "mapped bytes: whole chunk units while open, the whole pages the"
+    " code fills once sealed", NULL },
 
   { "used", arena_get_used, NULL,
     "end of the newest reservation in bytes", NULL },

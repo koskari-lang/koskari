@@ -30,6 +30,8 @@
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
 
+#include <unistd.h>
+
 
 /* === helpers === */
 
@@ -166,6 +168,10 @@ static int test_arena_seal(void) {
     TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal");
     TEST_ASSERT(KosArena_SEALED(arena), "sealed flag set");
 
+    /* nothing was reserved, so the seal unmapped the chunk whole */
+    TEST_ASSERT_NULL(KosArena_BASE(arena), "empty chunk unmapped");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(arena), 0L, "empty chunk has no size");
+
     TEST_ASSERT_EQ(KosArena_Seal(arena), -1, "double seal rejected");
     PyErr_Clear();
 
@@ -257,6 +263,18 @@ static int test_code_allocator_reserve(void) {
     TEST_ASSERT_NOT_NULL(sealed, "seal");
     TEST_ASSERT_EQ((long) PyTuple_GET_SIZE(sealed), 3L, "three chunks");
     TEST_ASSERT(KosArena_SEALED(chunk_a), "chunk sealed");
+
+    /* each sealed chunk is trimmed to the whole pages its code fills:
+       the second holds 256 bytes, so it is one page */
+    long page = sysconf(_SC_PAGE_SIZE);
+    TEST_ASSERT_EQ((long) KosArena_SIZE(chunk_b), page,
+                   "second chunk trimmed to one page");
+    TEST_ASSERT((long) KosArena_SIZE(chunk_a) <= (long) unit,
+                "first chunk no larger than the unit");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(chunk_a) % page, 0L,
+                   "first chunk whole pages");
+    TEST_ASSERT(KosArena_SIZE(chunk_a) >= KosArena_FILL(chunk_a),
+                "first chunk holds its fill");
     Py_DECREF(sealed);
 
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 8, &a, &chunk_a), -1,

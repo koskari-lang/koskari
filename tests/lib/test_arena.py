@@ -219,6 +219,42 @@ class TestCodeAllocator(unittest.TestCase):
         self.assertIn("sealed", repr(alloc))
         self.assertIs(a.arena, chunk)
 
+    def test_seal_trims_to_pages(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        chunk = a.arena
+        self.assertEqual(chunk.size, Arena.CHUNK)
+
+        alloc.seal()
+        pages = ((chunk.used + PAGE - 1) // PAGE) * PAGE
+        self.assertEqual(chunk.size, pages)
+        self.assertLess(chunk.size, Arena.CHUNK)
+        self.assertEqual(a.constant(0), "payload-a")
+
+    def test_seal_unmaps_an_emptied_chunk(self):
+        alloc = CodeAllocator()
+        a = make_code("a", allocator=alloc)
+        chunk = a.arena
+        del a
+        self.assertEqual(chunk.used, 0)
+
+        chunks = alloc.seal()
+        self.assertEqual(chunks, (chunk,))
+        self.assertTrue(chunk.sealed)
+        self.assertEqual(chunk.size, 0)
+
+        # the chunk object itself goes with the last reference
+        ref = weakref.ref(chunk)
+        del chunk, chunks
+        self.assertIsNone(ref())
+
+    def test_nothing_placed_maps_nothing(self):
+        alloc = CodeAllocator()
+        heap = make_code("heap")
+        self.assertIsNone(heap.arena)
+        self.assertEqual(alloc.chunks, ())
+        self.assertEqual(alloc.seal(), ())
+
     def test_seal_twice_rejected(self):
         alloc = CodeAllocator()
         alloc.seal()

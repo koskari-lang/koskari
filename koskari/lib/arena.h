@@ -19,8 +19,9 @@
 
    Arena allocation for KosCode blocks. A KosArena owns one chunk, an
    anonymous mapping sized in whole chunk units: callers reserve slices
-   while it is writable, then it is sealed read-only once with a single
-   mprotect. Deallocation unmaps the chunk.
+   while it is writable, then it is trimmed to the pages those slices
+   fill and sealed read-only once with a single mprotect. Deallocation
+   unmaps the chunk.
 
    The arena is a non-GC leaf owner of raw memory. It holds no
    references to the objects whose storage lives inside it; each member
@@ -50,8 +51,11 @@
 typedef struct KosArena {
   PyObject_HEAD
 
-  void *base;      /* page-aligned anonymous mapping */
-  size_t size;     /* mapped bytes, a whole number of chunk units */
+  void *base;      /* page-aligned anonymous mapping; NULL once a chunk
+                      nothing filled is sealed */
+  size_t size;     /* mapped bytes: a whole number of chunk units while
+                      open, the whole pages the fill covers once
+                      sealed */
   size_t fill;     /* end of the newest reservation */
   int sealed;      /* nonzero once mprotect(PROT_READ) applied */
 
@@ -147,12 +151,15 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out);
 
 
 /**
-   Seal the arena read-only with a single mprotect(PROT_READ).
+   Trim the arena to the whole pages its reservations fill, unmapping
+   the rest, and seal it read-only with a single mprotect(PROT_READ).
+   An arena with nothing reserved is unmapped whole and sealed with no
+   mapping.
 
    :param arena: KosArena object, unsealed
 
    :return: 0 on success; -1 with an error set when already sealed or
-     when mprotect fails
+     when munmap or mprotect fails
 */
 int KosArena_Seal(PyObject *arena);
 
