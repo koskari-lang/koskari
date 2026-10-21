@@ -21,6 +21,7 @@ Koskari native types, predicates, and helper functions
 """
 
 import operator
+import threading
 from contextlib import contextmanager
 from functools import partial
 
@@ -48,6 +49,23 @@ __all__ = (
 )
 
 
+PARAMETERIZE_ACTIVE = threading.local()
+
+
+def parameterize_stacks():
+    """
+    The current thread's map from parameter name to its active
+    parameterize blocks. Element 0 of each list is the (had, prior)
+    state from before the first active block; each later element is a
+    (token, value) pair for one active block
+    """
+
+    stacks = getattr(PARAMETERIZE_ACTIVE, "stacks", None)
+    if stacks is None:
+        stacks = PARAMETERIZE_ACTIVE.stacks = {}
+    return stacks
+
+
 @contextmanager
 def parameterize(**bindings):
     """
@@ -61,23 +79,44 @@ def parameterize(**bindings):
     invoked inside the block -- including macro bodies run by the
     compiler -- reads them through normal parameter resolution.
 
+    Blocks on one thread may exit in any order, as when asyncio tasks
+    interleave across an await. Reads see the innermost active block's
+    binding until the last block for a name exits, which restores the
+    state from before the first.
+
     :param bindings: parameter name to value mappings
     """
 
-    saved = []
+    stacks = parameterize_stacks()
+    token = object()
+    entered = []
     try:
         for name, value in bindings.items():
             ref = ParamRef(name)
-            had = not ref.empty
-            saved.append((ref, had, ref.deref() if had else None))
+            stack = stacks.get(name)
+            if stack is None:
+                had = not ref.empty
+                stack = stacks[name] = [(had, ref.deref() if had else None)]
+            stack.append((token, value))
+            entered.append((name, ref))
             ref.store(value)
         yield
     finally:
-        for ref, had, prior in reversed(saved):
-            if had:
-                ref.store(prior)
+        for name, ref in reversed(entered):
+            stack = stacks[name]
+            for index in range(len(stack) - 1, 0, -1):
+                if stack[index][0] is token:
+                    del stack[index]
+                    break
+            if len(stack) > 1:
+                ref.store(stack[-1][1])
             else:
-                ref.clear()
+                del stacks[name]
+                had, prior = stack[0]
+                if had:
+                    ref.store(prior)
+                else:
+                    ref.clear()
 
 
 class TypePredicate(partial):

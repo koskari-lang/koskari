@@ -86,4 +86,44 @@ class TestParameterizeCM(unittest.TestCase):
             self.assertEqual(parameter("pcm_b", None), 2)
 
 
+    def test_out_of_order_exit_clears_when_last_leaves(self):
+        with Domain():
+            ref = ParamRef("pcm_key")
+            a = parameterize(pcm_key=1)
+            b = parameterize(pcm_key=2)
+            a.__enter__()
+            b.__enter__()
+            a.__exit__(None, None, None)
+            self.assertEqual(ref.deref(), 2)
+            b.__exit__(None, None, None)
+            self.assertTrue(ref.empty)
+
+
+    def test_out_of_order_exit_restores_prior(self):
+        with Domain():
+            ref = ParamRef("pcm_key")
+            ref.store("outer")
+            a = parameterize(pcm_key=1)
+            b = parameterize(pcm_key=2)
+            a.__enter__()
+            b.__enter__()
+            a.__exit__(None, None, None)
+            self.assertEqual(ref.deref(), 2)
+            b.__exit__(None, None, None)
+            self.assertEqual(ref.deref(), "outer")
+
+
+    def test_nested_exit_restores_in_order(self):
+        with Domain():
+            ref = ParamRef("pcm_key")
+            a = parameterize(pcm_key=1)
+            b = parameterize(pcm_key=2)
+            a.__enter__()
+            b.__enter__()
+            b.__exit__(None, None, None)
+            self.assertEqual(ref.deref(), 1)
+            a.__exit__(None, None, None)
+            self.assertTrue(ref.empty)
+
+
 # The end.
