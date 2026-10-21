@@ -1,8 +1,9 @@
 # Runtime tuning
 
-Two pragma-controlled mechanisms that change how compiled code is stored
-and how attribute access runs. Neither changes what a program computes.
-Both default to the configuration that pays off for ordinary modules.
+Two pragma-controlled mechanisms that change whether compiled code is
+sealed read-only and how attribute access runs. Neither changes what a
+program computes. Both default to the configuration that pays off for
+ordinary modules.
 
 ## Attribute and method caching
 
@@ -92,129 +93,76 @@ caches what it can on whichever interpreter it runs under.
 - `code.caches` -- whether this code object was compiled with caching on
 - `code.cache_slots` -- how many per-site cache slots it reserved
 
-## Code sealing and arena packing
+## Code sealing
 
 Compiled Koskari code is immutable: once a function's bytecode is built,
-nothing rewrites it. Sealing makes that immutability real at the
-operating-system level -- the memory holding the instructions, constant
-pool, and control tables is marked read-only with `mprotect`, so any
-write to it faults on the spot instead of silently corrupting the
-interpreter.
+nothing rewrites it. Sealing makes that immutability a property of the
+memory. Sealed code is read-only, and a write to it faults on the spot
+instead of silently corrupting the interpreter. That is the promise;
+how code is stored, placed, shared or reclaimed is not part of it.
 
 ### Why read-only
 
 Koskari's bytecode is interpreted, never executed as machine code, so
-sealing is not required for correctness. It is worth being exact about
-what it defends and what it does not.
+sealing is not required for correctness.
 
 It does not stop an attacker who can already write anywhere in the
-process. Such an attacker has softer targets than a code stream: a
-type's call slot, an object's type pointer, a module's dictionary, or
-the code object's own header, which stays an ordinary writable Python
-object and holds the pointer to the sealed block. Nor does it confine
-code running inside the interpreter: native access from Python, through
-`ctypes` or an extension, is total, and a write that faults only says
-where not to aim. Sealing is not a sandbox.
+process; such an attacker has softer targets than a code stream. Nor
+does it confine code running inside the interpreter: native access from
+Python, through `ctypes` or an extension, is total. Sealing is not a
+sandbox.
 
-What it does is take code out of the heap. A sealed chunk is an
-anonymous mapping that no heap object neighbours, and the memory bugs
-that occur in practice are relative, not arbitrary: a bounded overflow
-from an adjacent allocation, a stale pointer into storage the allocator
-has since reused. Neither can reach a code block that has no
-neighbours, and a write that does arrive faults instead of landing.
-That isolation is a property of where the code lives; the read-only
-protection is the inexpensive final step on top of it.
-
-It weighs more in Koskari than it would in CPython. A CPython bytecode
-is an opcode byte looked up in a bounded dispatch table, so a corrupted
-byte is a wrong instruction. A Koskari instruction record carries the
-resolved address of its handler and of its operand, so a corrupted
-record is a control-flow hijack with nothing in between. That is the
-threat profile of machine code, and the reason every JIT seals its code
-pages. CPython keeps its bytecode writable because specialization
-rewrites it in place; Koskari's per-site caches live beside the code
-rather than in it, so adaptivity never needed a writable stream.
+What it does is put code out of reach of the memory bugs that occur in
+practice, which are relative, not arbitrary: a bounded overflow from a
+neighbouring allocation, a stale pointer into storage since reused. A
+write that reaches sealed code faults instead of landing.
 
 It also doubles as a debugging tool. A buggy native extension that
-scribbles over live code is caught at the exact offending write, with
-that write's stack, instead of producing a wrong result later.
-
-Two module pragmas govern the model.
+scribbles over live code is caught at the offending write, with that
+write's stack, instead of producing a wrong result later.
 
 ### The two pragmas
 
-`compiler/pack-module` *(default on)* places function code in arenas.
-While a module loads, the code of every function and lambda it
-compiles is written directly into the load's arena chunks, and stays
-at that address for its whole life. When the module finishes loading,
-every chunk is trimmed to the pages its code fills and sealed
-read-only with one `mprotect` each. Top-level expressions -- the forms
-of the module body, each compiled, evaluated once, and discarded -- are
-never placed in an arena. A module that defines no functions, such as
-one that only imports and re-exports, maps no chunk at all.
+`compiler/pack-module` *(default on)* seals the code of every function
+and lambda a module compiles while it loads, once the module has
+finished loading. Until then that code is writable. Top-level
+expressions -- the forms of the module body, each compiled, evaluated
+once, and discarded -- are not covered by this setting.
 
-`compiler/protect-code` *(default off)* seals each code object that is
-not placed in an arena as it is built: top-level expressions, and
-function code when `pack-module` is off. On, each such code object gets
-its own page-aligned, sealed allocation the moment it exists. Off, it
-is built on the plain heap.
+`compiler/protect-code` *(default off)* seals each code object the
+first setting leaves alone as it is built: top-level expressions, and
+function code when `pack-module` is off.
 
 Both pragmas depend on the system reporting its page size. Where it
-does not, every code object is a heap block and neither pragma seals
-anything.
+does not, nothing is sealed.
 
 The four combinations:
 
 | protect-code | pack-module | Functions | Top-level expressions |
 |---|---|---|---|
-| off | on *(default)* | arena chunks, sealed when the load completes | plain heap |
-| off | off | plain heap, never sealed | plain heap |
-| on | on | arena chunks, sealed when the load completes | own sealed page each |
-| on | off | own sealed page each, from birth | own sealed page each |
+| off | on *(default)* | sealed when the load completes | writable |
+| off | off | writable | writable |
+| on | on | sealed when the load completes | sealed from birth |
+| on | off | sealed from birth | sealed from birth |
 
-The default (off/on) is the right setting for ordinary modules: after
-loading, a module's functions sit nearly back-to-back in a few
-read-only pages instead of each occupying its own.
+The default (off/on) is the right setting for ordinary modules: a
+module's functions are read-only for their whole working life, and the
+cost is paid once per module rather than once per code object.
 
-### Arena chunks
-
-A chunk is sixteen system pages of address space while the module
-loads. Only the pages code is written to become resident, and the
-seal unmaps the unwritten tail, so a module with little code keeps the
-pages it fills, not the chunk. Each function's code goes into the
-first chunk with room for it; when no chunk has room, a new one is
-mapped, and a function larger than a chunk gets one of its own,
-rounded up to whole chunks.
-
-A chunk lives until the last code object inside it dies, so a single
-survivor (a returned closure, a function cached in a registry, a
-suspended coroutine over a module function) keeps its chunk's written
-pages resident, sixteen at most.
-
-Function code that dies before its module finishes loading -- a lambda
-built by a top-level expression and then dropped, or a definition a
-later one replaced -- leaves its bytes in its chunk, unless it was the
-newest code in that chunk, in which case the next function reuses the
-space.
-
-Code compiled after the load completes is plain heap: definitions
-entered at the REPL, and code compiled at runtime.
+Code compiled after a module has finished loading -- definitions
+entered at the REPL, code compiled at runtime -- is sealed only under
+`protect-code`.
 
 ### Precompiled modules
 
-A `.kio` file records, for each function, whether its build placed it
-in an arena, so the `pack-module` setting in force when the module was
-compiled is the one it loads with. Importing the `.kio` builds every
-function before the first top-level form runs and seals the chunks at
-that moment. A precompiled module's code is read-only while its own
-body runs, including a `when-main` body that never returns. A function
-that only a discarded top-level expression held keeps its bytes in its
-chunk.
+A `.kio` file records the `pack-module` setting in force when the
+module was compiled, and the module loads with that setting. Its
+functions are sealed before the first top-level form runs, so a
+precompiled module's function code is read-only while its own body
+runs, including a `when-main` body that never returns.
 
-The file records placement and per-object protection as the build gave
-them: a function placed in an arena was never protected on its own, so
-decoding the file without an allocator, as `koskari.serialize.load_kio`
-does, builds that function on the heap, writable.
+Code decoded outside an import, through `koskari.serialize.load_kio`,
+is not sealed.
 
 ### The cost of per-object sealing
 
@@ -225,33 +173,31 @@ completes either way.
 
 What it costs, per code object:
 
-- A full memory page each. Protection is page-granular, so a
-  fifty-byte expression occupies (typically) 4 KB, briefly, before it is
-  discarded.
-- A kernel mapping each. `mprotect` on heap memory splits the
-  process's virtual memory areas, so every sealed object becomes a
-  distinct kernel VMA. Large programs accrue thousands, approaching
-  the `vm.max_map_count` limit, and every page fault pays for a bigger
-  VMA tree.
-- Two syscalls each. One `mprotect` to seal at construction, one to
-  unseal before free.
+- A full memory page each, however small the code, briefly, before the
+  expression is discarded.
+- A kernel mapping each. Large programs accrue thousands, approaching
+  the system's limit on mappings per process, and every page fault
+  pays for the larger set.
+- Two system calls each: one to seal at construction, one to unseal
+  before release.
 
 None of this changes execution speed -- sealed and unsealed code read
 identically -- but module loading gets slower and the process gets
-fatter.
+bigger.
 
 ### Interactive sessions
 
-Definitions entered at the REPL are cheap plain-heap allocations --
-interactive code churns, and sealing churn buys little. The module a
-session starts from (a file run with `-i`) is sealed normally when it
-finishes loading, and the session keeps working in it afterward.
+Definitions entered at the REPL are not sealed -- interactive code
+churns, and sealing churn buys little. The module a session starts
+from (a file run with `-i`) is sealed normally when it finishes
+loading, and the session keeps working in it afterward.
 
 ### Introspection
 
-- `code.arena` -- the chunk holding the code, else `None`
-- `arena.size`, `arena.used`, `arena.sealed` -- the chunk's size, the
-  end of its newest code, and whether the seal has been applied
+- `code.arena` -- the region the code shares with its module's other
+  functions under `pack-module`, else `None`
+- `arena.size`, `arena.used`, `arena.sealed` -- the region's size, its
+  bytes in use, and whether it has been sealed
 - `code.allocation_bytes` and friends -- the code object's storage
   footprint
 

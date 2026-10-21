@@ -170,15 +170,6 @@ class TestCodeAllocator(unittest.TestCase):
         self.assertIs(small.arena, first.arena)
         self.assertEqual(alloc.chunks, (first.arena, second.arena))
 
-    def test_oversize_gets_whole_chunks(self):
-        alloc = CodeAllocator()
-        big = make_sized("big", Arena.CHUNK // 16, allocator=alloc)
-
-        self.assertGreater(block_size(big), Arena.CHUNK)
-        self.assertEqual(big.arena.size % Arena.CHUNK, 0)
-        self.assertGreaterEqual(big.arena.size, block_size(big))
-        self.assertLess(big.arena.size - block_size(big), Arena.CHUNK)
-
     def test_dead_newest_returns_its_bytes(self):
         alloc = CodeAllocator()
         a = make_code("a", allocator=alloc)

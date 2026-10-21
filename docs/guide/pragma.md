@@ -209,24 +209,22 @@ turning one off makes its character inert in the reader.
   `[compiler/cache-expression]` turns it on. See
   [Attribute and method caching](runtime-tuning.md#attribute-and-method-caching).
 - `compiler/protect-code`, default off: whether each compiled code
-  object not placed in an arena has its bytecode storage sealed read-only at
-  the OS level the moment it is built. On, a stray or hostile write to that
+  object that `compiler/pack-module` leaves alone has its bytecode sealed
+  read-only the moment it is built. On, a stray or hostile write to that
   bytecode faults instead of corrupting the interpreter, at the cost of a
   full memory page per code object. A bare `[compiler/protect-code]` turns
-  it on. See
-  [Code sealing and arena packing](runtime-tuning.md#code-sealing-and-arena-packing).
-- `compiler/pack-module`, default on: whether function code compiled
-  while the module loads is placed in shared arena chunks, sealed read-only
-  when the module finishes loading. On -- the baseline -- a loaded module's
-  functions share a few sealed pages instead of each holding its own.
-  Top-level expressions are never placed.
+  it on. See [Code sealing](runtime-tuning.md#code-sealing).
+- `compiler/pack-module`, default on: whether the function code a module
+  compiles while it loads is sealed read-only when the module finishes
+  loading. On -- the baseline -- a loaded module's functions are read-only
+  at no per-object cost. Top-level expressions are not covered.
 
   ```
   (pragma [compiler/pack-module False])
   ```
 
-  See [Code sealing and arena packing](runtime-tuning.md#code-sealing-and-arena-packing) for the model
-  and its tradeoffs.
+  See [Code sealing](runtime-tuning.md#code-sealing) for the model and
+  its tradeoffs.
 
 ### Pragma machinery
 
