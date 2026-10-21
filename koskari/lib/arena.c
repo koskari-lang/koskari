@@ -34,7 +34,6 @@
 #define _GNU_SOURCE 1
 #define _DARWIN_C_SOURCE 1
 
-#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/mman.h>
@@ -49,28 +48,6 @@
 
 
 /* === helpers === */
-
-
-/* The system page size, or 0 with OSError set when sysconf does not
-   report one. A guessed page size would be handed to mprotect, so none
-   is guessed. */
-static size_t arena_page_size(void) {
-
-  static size_t page = 0;
-
-  if (! page) {
-    long page_size = sysconf(_SC_PAGE_SIZE);
-
-    if (page_size <= 0) {
-      if (! errno)
-        errno = EINVAL;
-      PyErr_SetFromErrno(PyExc_OSError);
-      return 0;
-    }
-    page = (size_t) page_size;
-  }
-  return page;
-}
 
 
 static size_t round_up(size_t value, size_t unit) {
@@ -94,14 +71,25 @@ static size_t arena_fit(KosArena *self, size_t nbytes) {
 /* === public API === */
 
 
+size_t KosArena_PageSize(void) {
+
+  static size_t page = 0;
+
+  /* a guessed page size would be handed to mmap and mprotect, so none
+     is guessed: without one, no block is placed or protected */
+  if (! page) {
+    long page_size = sysconf(_SC_PAGE_SIZE);
+    if (page_size > 0) {
+      page = (size_t) page_size;
+    }
+  }
+  return page;
+}
+
+
 size_t KosArena_ChunkUnit(void) {
 
-  static size_t unit = 0;
-
-  if (! unit) {
-    unit = KOS_ARENA_CHUNK_PAGES * arena_page_size();
-  }
-  return unit;
+  return KOS_ARENA_CHUNK_PAGES * KosArena_PageSize();
 }
 
 
@@ -110,6 +98,9 @@ PyObject *KosArena_New(size_t nbytes) {
   size_t unit = KosArena_ChunkUnit();
 
   if (! unit) {
+    PyErr_SetString(PyExc_OSError,
+                    "Cannot map an arena: the system reports no page"
+                    " size");
     return NULL;
   }
 
@@ -192,12 +183,9 @@ int KosArena_Seal(PyObject *arena) {
   /* trim the chunk to the whole pages its reservations fill: the tail
      was never written, so it was never resident, and unmapping it
      gives back the address space. A chunk whose reservations all died
-     while it was open goes whole. */
-  size_t page = arena_page_size();
-  if (! page) {
-    return -1;
-  }
-
+     while it was open goes whole. The page size is known: a chunk is
+     mapped only when it is. */
+  size_t page = KosArena_PageSize();
   size_t keep = round_up(self->fill, page);
   if (keep < self->size) {
     if (munmap((char *) self->base + keep, self->size - keep)) {
@@ -565,13 +553,10 @@ int koskari_arena_init(PyObject *mod) {
     return -1;
   }
 
-  /* the reservation alignment, and the chunk unit in bytes */
-  size_t chunk = KosArena_ChunkUnit();
-  if (! chunk) {
-    return -1;
-  }
+  /* the reservation alignment, and the chunk unit in bytes: 0 on a
+     system that reports no page size, where no block is placed */
   if (set_type_constant(&KosArenaType, "UNIT", KOS_ARENA_UNIT) ||
-      set_type_constant(&KosArenaType, "CHUNK", chunk)) {
+      set_type_constant(&KosArenaType, "CHUNK", KosArena_ChunkUnit())) {
     return -1;
   }
   PyType_Modified(&KosArenaType);

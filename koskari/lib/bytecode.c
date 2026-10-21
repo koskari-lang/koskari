@@ -478,16 +478,9 @@ static void code_self_layout(PyObject *self, KosBlockLayout *out) {
 static void code_calc_alloc_stats(PyObject *self, CodeAllocStats *out) {
 
   KosBlockLayout lay;
-  size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
   size_t allocation = KosCode_ALLOCATION(self);
-  size_t rounded_total;
 
   code_self_layout(self, &lay);
-
-  if (! page_size || (ssize_t) page_size < 0) {
-    page_size = 4096;
-  }
-  rounded_total = align_size(lay.total_unrounded, page_size);
 
   out->allocation_bytes = allocation;
   out->code_bytes = lay.code_bytes;
@@ -501,13 +494,9 @@ static void code_calc_alloc_stats(PyObject *self, CodeAllocStats *out) {
 
   out->padding_bytes = lay.total_unrounded - out->payload_bytes;
 
-  if (allocation >= lay.total_unrounded) {
-    out->page_rounding_bytes = allocation - lay.total_unrounded;
-  } else if (rounded_total >= lay.total_unrounded) {
-    out->page_rounding_bytes = rounded_total - lay.total_unrounded;
-  } else {
-    out->page_rounding_bytes = 0;
-  }
+  /* the allocation is the exact block (heap, arena) or the block
+     rounded up to a page (protected), never less than the block */
+  out->page_rounding_bytes = allocation - lay.total_unrounded;
 }
 
 
@@ -1929,7 +1918,7 @@ static int code_alloc_unified(
 
   } else if (protect) {
     /* Page-aligned; later mprotect(PROT_READ) once for entire block */
-    size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
+    size_t page_size = KosArena_PageSize();
     total = align_size(total, page_size);
     if (posix_memalign(&base, page_size, total)) {
       base = NULL;
@@ -2999,6 +2988,13 @@ static int code_instr_init(
     PyObject *allocator) {
 
   SAYF("in code_instr_init(%R, %R)", self, instr);
+
+  /* placement and protection both need the system page size; where
+     the system reports none, the block is heap and neither applies */
+  if (! KosArena_PageSize()) {
+    allocator = NULL;
+    protect = 0;
+  }
 
   Py_ssize_t _instr_l = PySequence_Fast_GET_SIZE(instr);
   if (_instr_l < 0) {

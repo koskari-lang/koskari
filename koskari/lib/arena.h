@@ -118,10 +118,21 @@ extern PyTypeObject KosCodeAllocatorType;
 
 
 /**
+   The system page size, read once from sysconf. When the system reports
+   none, no block is placed in an arena or protected: every code block
+   is heap.
+
+   :return: the page size in bytes, or 0 when the system reports none;
+     no error is set
+*/
+size_t KosArena_PageSize(void);
+
+
+/**
    The chunk unit in bytes: KOS_ARENA_CHUNK_PAGES system pages.
 
-   :return: the unit, or 0 with OSError set when the system does not
-     report its page size
+   :return: the unit, or 0 when the system reports no page size; no
+     error is set
 */
 size_t KosArena_ChunkUnit(void);
 
@@ -132,7 +143,8 @@ size_t KosArena_ChunkUnit(void);
 
    :param nbytes: minimum payload capacity; must be positive
 
-   :return: new KosArena reference, or NULL on error
+   :return: new KosArena reference, or NULL on error, OSError when the
+     system reports no page size
 */
 PyObject *KosArena_New(size_t nbytes);
 

@@ -125,6 +125,10 @@ function code when `pack-module` is off. On, each such code object gets
 its own page-aligned, sealed allocation the moment it exists. Off, it
 is built on the plain heap.
 
+Both pragmas depend on the system reporting its page size. Where it
+does not, every code object is a heap block and neither pragma seals
+anything.
+
 The four combinations:
 
 | protect-code | pack-module | Functions | Top-level expressions |
