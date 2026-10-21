@@ -71,6 +71,10 @@ typedef enum KosTraceEventId {
   /* the root frame of a Coroutine driven from Python accepted by its
      function's frame cache when freed (dyn_frame.c kos_dynframe_free) */
   KOS_TE_CORO_FRAME_TO_CACHE,
+  /* a general-shape call (keywords, a consulted default, star,
+     keyword-only, by-ref) bound into a cached frame by
+     KosFunction_Install */
+  KOS_TE_CALL_FRAME_CACHED_GENERAL,
   KOS_TE__COUNT
 } KosTraceEventId;
 

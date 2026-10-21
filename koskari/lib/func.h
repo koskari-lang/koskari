@@ -199,7 +199,7 @@ typedef struct {
                                construction is fail-safe */
   KosDynFrame *cached_frame; /* head of the cached prepared frames
                                 (code + reset ns + cleared stack, fn
-                                NULL) for the next simple calls; owned;
+                                NULL) for the next calls; owned;
                                 NULL when empty. Linked through each
                                 frame's back_frame, newest first, with
                                 the list length in the head's depth
@@ -232,10 +232,12 @@ static inline void KosFunction_StoreSelf(PyObject *self, PyObject *frame_ns) {
 
 /**
    Unlink and return the head of the function's cached frames, or NULL.
-   A hit arm reads the head, steal-binds into its namespace, and calls
+   A steal-bind arm reads the head, binds into its namespace, and calls
    this only once the bind succeeded, so a failed bind leaves the frame
-   cached. The install that follows overwrites the returned frame's
-   back_frame and depth.
+   cached. The general arm of KosFunction_Install calls it before its
+   bind, which can run user code, and offers the frame back through
+   KosFunction_CacheFrame when the bind fails. The install that follows
+   overwrites the returned frame's back_frame and depth.
 */
 static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;

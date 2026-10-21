@@ -40,6 +40,11 @@ static Py_ssize_t function_compute_simple_arity(
 static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
                                         PyObject *parent_ns);
 
+static int kos_function_bind_self_if_local(
+    KosFunction *fn,
+    PyObject *frame_ns,
+    PyObject *self);
+
 static PyObject *function_construct(PyTypeObject *type, PyObject *code,
                                     PyObject *formals, PyObject *parent_ns);
 
@@ -204,6 +209,23 @@ static KosOpResult kos_vinstall_expression(
 
 
 /**
+   Push a frame the caller has unlinked from the function's cache and
+   bound, and tag it with the function so its release can cache it
+   again.
+*/
+static inline KosOpResult func_install_cached_frame(
+    KosContext *ctx,
+    PyObject *callable,
+    KosDynFrame *cached) {
+
+  kos_dyn_push_ready_frame(ctx, cached);
+  Py_INCREF(callable);
+  KosDynFrame_FN(cached) = callable;
+  return kos_call_installed(ctx);
+}
+
+
+/**
    Install a KosFunction call. A simple call (exact arity against plain
    positional formals, no keywords, self-bind resolved) binds by slot
    index, storing the function into its own slot when its body names
@@ -211,9 +233,10 @@ static KosOpResult kos_vinstall_expression(
    not in tail position it takes the function's cached frame when one
    is there, else pushes a fresh one; in tail position it refills the
    caller's frame. Any other call binds through the general formals
-   machine. A generator function completes in hand with its new
-   AsyncGenerator. Every installed frame is tagged with the function so
-   its release can cache it.
+   machine: not in tail position into the function's cached frame when
+   one is there, else into a template copy. A generator function
+   completes in hand with its new AsyncGenerator. Every installed frame
+   is tagged with the function so its release can cache it.
 */
 KosOpResult KosFunction_Install(
     KosContext *ctx,
@@ -247,11 +270,8 @@ KosOpResult KosFunction_Install(
                                          nargs);
       KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
       (void) KosFunction_PopCachedFrame(callable);
-      kos_dyn_push_ready_frame(ctx, cached);
-      Py_INCREF(callable);
-      KosDynFrame_FN(cached) = callable;
       KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-      return kos_call_installed(ctx);
+      return func_install_cached_frame(ctx, callable, cached);
     }
 
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
@@ -264,6 +284,45 @@ KosOpResult KosFunction_Install(
     Py_INCREF(callable);
     KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
     return kos_call_installed(ctx);
+  }
+
+  /* A general call binds into a cached frame's namespace, which holds
+     the template state a copy would give. The frame's code passed
+     kos_code_fits_namespace at the frame's first install, and neither
+     has changed since.
+
+     The frame leaves the cache before the bind, where the steal bind
+     above unlinks it only after: the binder can run user code (a
+     by-ref keyword formal's floor test on a dynamic ref), and a call
+     of this function from there must not take the frame being bound.
+     The binder can also fail midway (a bad keyword, a missing
+     argument) with stores already made, where the steal bind fails
+     before any store; the frame then goes back through
+     KosFunction_CacheFrame, which resets the namespace to the template
+     and links it under the cap as the cache is now, or is freed when
+     refused. */
+  if (! simple && ! tail_call && ! yields) {
+    KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+    if (cached) {
+      KosFunction *fn = (KosFunction *) callable;
+      PyObject *ns = KosDynFrame_NS(cached);
+
+      if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0)
+        return EVAL_RAISE();
+
+      (void) KosFunction_PopCachedFrame(callable);
+      if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
+                                     (size_t) nargs, kwnames) < 0
+          || kos_function_bind_self_if_local(fn, ns, callable) < 0) {
+        if (! KosFunction_CacheFrame(callable, cached))
+          kos_dynframe_free(cached);
+        return EVAL_RAISE();
+      }
+
+      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
+      return func_install_cached_frame(ctx, callable, cached);
+    }
   }
 
   if (simple) {
@@ -1812,13 +1871,13 @@ PyObject *KosFunction_NewWithAnnotations(
 
 /**
    Offer a released frame to the function's frame cache.
-   The frame is cached only when a call arm could take it, the cache
-   is under its cap and the frame is provably private: exact Namespace
-   with refcount 1, GC-untracked, no binds dict, and no native
-   handler.  On caching the namespace's raw slots are cleared, the
-   segment is cleared, and the node base is normalized for
-   kos_dyn_push_ready_frame.  The frame's fn field must already be
-   NULL (kos_dynframe_free clears it before offering).
+   The frame is cached only when the cache is under its cap and the
+   frame is provably private: exact Namespace with refcount 1,
+   GC-untracked, no binds dict, and no native handler.  On caching the
+   namespace's raw slots are cleared, the segment is cleared, and the
+   node base is normalized for kos_dyn_push_ready_frame.  The frame's
+   fn field must already be NULL (kos_dynframe_free clears it before
+   offering).
 
    :return: 1 when cached (ownership taken), 0 when refused
 */
@@ -1830,19 +1889,11 @@ int KosFunction_CacheFrame(
   KosDynFrame *head = fn->cached_frame;
   PyObject *ns;
 
-  /* Every consumer of the cache serves a call only when
-     nargs + 1 == simple_arity1. simple_arity1 is the exact positional
-     arity plus one for a function of plain positional formals, and 0
-     for any other shape (defaults, star, keyword-only, positional-only,
-     by-ref), which no call count can match. The self-bind is not a
-     shape: a consumer stores the function into its own slot after the
-     bind when the body names it (KosFunction_StoreSelf). A function no
-     consumer can serve would hold up to KOS_FRAME_CACHE_MAX dead
-     frames for its life, so its offers are refused before any work is
-     done. */
-  if (fn->simple_arity1 == 0)
-    return 0;
-
+  /* Every call shape has a consumer: a simple call steal-binds into
+     a cached frame by slot index, and any other call that is not a
+     tail call binds through the general formals machine into one
+     (KosFunction_Install). The template state the reset below leaves
+     serves both. */
   if (head && KosDynFrame_DEPTH(head) >= KOS_FRAME_CACHE_MAX)
     return 0;
 

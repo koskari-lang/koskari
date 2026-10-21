@@ -426,6 +426,33 @@ raises and the next good call succeeds; a bound method with keywords;
 `Procedure` over an `__init__` with keyword arguments; the frame cache
 tests in `tests/lib/` unchanged.
 
+Implemented: the general arm of `KosFunction_Install` (not simple, not
+yielding, not a tail call) takes the function's cached frame when one
+is there; the opcode call path reaches it through that install. The
+frame is unlinked before the bind, not after as in the steal-bind
+arms: the binder runs user code for a by-ref keyword formal with a
+floor (`KosRef_IsEmpty` on a dynamic ref runs its emptiness fence),
+and a call of the same function from there took a frame still at the
+cache head, bound into it, and reset it at its release, so the outer
+call read an emptied slot. A failed bind offers the frame back
+through `KosFunction_CacheFrame` (reset to the template, relinked
+under the cap as the cache is then) or frees it when refused. The
+tail-call path keeps the template copy. `KosFunction_CacheFrame`
+drops the `simple_arity1 == 0` refusal. Sibling counter
+`KOS_TE_CALL_FRAME_CACHED_GENERAL`. The native test
+`test_cache_frame_refuses_function_no_arm_serves` asserts the dropped
+refusal and fails. Measurement (kernels `call_kw`, a Koskari loop
+calling `mixkw [a b: 0]` with `b:` by keyword, 200,000 calls per
+batch; `demand_call_kw`): instructions per call `call_kw` 3,498 ->
+3,094 (repeat 3,087), `demand_call_kw` 5,370 -> 4,943 (repeat 4,948);
+cycles per call 757 -> 596 (repeat 629) and 1,606 -> 1,264 (repeat
+1,309). churn-trace (both kernels, 1,200,000 keyword calls each):
+`call_frame_cached_general` 2,400,141, every keyword call to `mixkw`
+but the first plus 143 from discovery and the harness;
+`call_frame_cached` 19,829 unchanged; dyn_node allocations
+2,407,054 + 313 -> 6,971 + 255 and namespace allocations
+2,400,083 + 846 -> 0 + 788, each down by `call_frame_cached_general`.
+
 ## Out of scope
 
 - C stack depth per re-entry level (demand-flattening.md step 6, part 2)

@@ -2298,7 +2298,7 @@ static int test_item_store_site_demotes_and_re_elects(void) {
 }
 
 
-/* === frame cache: only a function a call arm can serve fills it === */
+/* === frame cache: a frame of any shape fills it === */
 
 
 /* A function over code that returns 0, with the given formals; the
@@ -2349,13 +2349,12 @@ static KosDynFrame *make_offered_frame(PyObject *fn) {
 }
 
 
-static int test_cache_frame_refuses_function_no_arm_serves(void) {
+static int test_cache_frame_takes_every_shape(void) {
     /*
-      KosFunction_CacheFrame takes a frame only from a function whose
-      simple arity is set: a function with star formals has simple
-      arity 0, so no call arm could ever take its cached frame, and
-      the offer refuses it. A plain positional function of the same
-      shape is cached, so the refusal is the arity's doing.
+      KosFunction_CacheFrame takes a frame of any shape, because the
+      general arm of KosFunction_Install serves every shape: a plain
+      positional function's frame is cached, and so is the frame of a
+      function with star formals, whose simple arity is 0.
     */
     PyObject *pos = Py_BuildValue("(s)", "a");
     TEST_ASSERT_NOT_NULL(pos, "pos tuple");
@@ -2393,15 +2392,11 @@ static int test_cache_frame_refuses_function_no_arm_serves(void) {
     frame = make_offered_frame(starred);
     TEST_ASSERT_NOT_NULL(frame, "star frame");
     int cached = KosFunction_CacheFrame(starred, frame);
-    if (cached)
-      TEST_ASSERT(KosFunction_CACHED_FRAME(starred) == frame,
-                  "a taken frame is on the cache");
-    else
+    if (! cached)
       kos_dynframe_free(frame);
-    TEST_ASSERT_EQ(cached, 0,
-                   "a function no call arm can serve is refused");
-    TEST_ASSERT_NULL(KosFunction_CACHED_FRAME(starred),
-                     "its cache stays empty");
+    TEST_ASSERT_EQ(cached, 1, "a star-formals function's frame is cached");
+    TEST_ASSERT(KosFunction_CACHED_FRAME(starred) == frame,
+                "the cached frame is the one offered");
 
     Py_DECREF(plain);
     Py_DECREF(starred);
@@ -2489,13 +2484,220 @@ static int test_cache_frame_takes_self_binding_function(void) {
 
 
 
+/* === frame cache: a general-shape call binds into a cached frame === */
+
+
+/* Code over a spec of the given locals. Returns a new reference. */
+static PyObject *make_code_with_locals(PyObject *locals, PyObject *instr) {
+
+  PyObject *name = PyUnicode_FromString("test");
+  PyObject *closures = PyTuple_New(0);
+  PyObject *nspec = (name && closures)
+      ? KosNamespaceSpec_New(name, locals, closures, NULL) : NULL;
+  PyObject *code = nspec ? KosCode_New(nspec, instr, NULL, NULL, 1, 1)
+      : NULL;
+
+  Py_XDECREF(name);
+  Py_XDECREF(closures);
+  Py_XDECREF(nspec);
+  return code;
+}
+
+
+/* Drive code over a fresh namespace of its spec holding fn in slot 0.
+   The caller owns the outcome's value. */
+static KosOpResult run_with_function(PyObject *code, PyObject *fn) {
+
+  KosOpResult ev = { 0 };
+  KosDynFrame *frame;
+  KosContext *ctx;
+  PyObject *ns = KosNamespace_New(NULL, KosCode_NSPEC(code));
+
+  ev.kind = KOS_RES_FATAL;
+  if (! ns)
+    return ev;
+
+  if (kos_ns_fast_store(ns, 0, fn) < 0) {
+    Py_DECREF(ns);
+    return ev;
+  }
+
+  /* the frame takes the namespace reference */
+  frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
+  if (! frame) {
+    Py_DECREF(ns);
+    return ev;
+  }
+
+  ctx = KosContext_New(frame, kos_tls_current());
+  if (! ctx)
+    return ev;
+
+  ev = koskari_eval(ctx, NULL, NULL, NULL);
+  Py_DECREF(ctx);
+  return ev;
+}
+
+
+static int test_general_call_binds_into_cached_frame(void) {
+  /*
+    f [a *: rest] answers [a, rest]. Its calls take the general arm of
+    KosFunction_Install, and once a return has cached its frame the
+    next call binds into that frame: (f 1 2 3) then (f 4) in one drive
+    answer [1, (2, 3)] and [4, ()]. A call failing in the binder after
+    its positional stores ((f big 6 nope: 7), an unexpected keyword)
+    raises TypeError, leaves the frame cached and keeps no reference to
+    its arguments; the next call (f 8) answers [8, ()] from the same
+    frame.
+  */
+  PyObject *f_locals = Py_BuildValue("(ss)", "a", "rest");
+  TEST_ASSERT_NOT_NULL(f_locals, "f locals");
+  PyObject *f_instr = PyList_New(4);
+  TEST_ASSERT_NOT_NULL(f_instr, "f instr list");
+  PyList_SET_ITEM(f_instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(f_instr, 1, make_instr_int(KOS_OP_FAST, 1));
+  PyList_SET_ITEM(f_instr, 2, make_instr_int(KOS_OP_BUILD_LIST, 2));
+  PyList_SET_ITEM(f_instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *f_code = make_code_with_locals(f_locals, f_instr);
+  Py_DECREF(f_locals);
+  Py_DECREF(f_instr);
+  TEST_ASSERT_NOT_NULL(f_code, "f code");
+
+  PyObject *parent = KosNamespace_FromSpec(KosCode_NSPEC(f_code), NULL);
+  TEST_ASSERT_NOT_NULL(parent, "parent namespace");
+  PyObject *pos = Py_BuildValue("(s)", "a");
+  TEST_ASSERT_NOT_NULL(pos, "pos tuple");
+  PyObject *star = PyUnicode_FromString("rest");
+  TEST_ASSERT_NOT_NULL(star, "star name");
+  PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
+                                         star, NULL, NULL, NULL);
+  Py_DECREF(pos);
+  Py_DECREF(star);
+  TEST_ASSERT_NOT_NULL(formals, "star formals");
+  PyObject *fn = KosFunction_NewFromFormals(f_code, formals, parent);
+  Py_DECREF(f_code);
+  Py_DECREF(parent);
+  Py_DECREF(formals);
+  TEST_ASSERT_NOT_NULL(fn, "star function");
+  TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(fn), 0,
+                 "star formals are not simple: stored as 0");
+
+  PyObject *locals = Py_BuildValue("(s)", "f");
+  TEST_ASSERT_NOT_NULL(locals, "caller locals");
+  PyObject *one = PyLong_FromLong(1);
+  PyObject *two = PyLong_FromLong(2);
+  PyObject *three = PyLong_FromLong(3);
+  PyObject *four = PyLong_FromLong(4);
+  PyObject *six = PyLong_FromLong(6);
+  PyObject *seven = PyLong_FromLong(7);
+  PyObject *eight = PyLong_FromLong(8);
+  PyObject *big = PyLong_FromLong(1234567891L);
+  PyObject *names = Py_BuildValue("(s)", "nope");
+  TEST_ASSERT(one && two && three && four && six && seven && eight
+              && big && names, "constants");
+
+  /* (list (f 1 2 3) (f 4)) */
+  PyObject *instr = PyList_New(10);
+  TEST_ASSERT_NOT_NULL(instr, "twice instr list");
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
+  PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, two));
+  PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, three));
+  PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_CALL, 3));
+  PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_CONST, four));
+  PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_CALL, 1));
+  PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_BUILD_LIST, 2));
+  PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *twice = make_code_with_locals(locals, instr);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(twice, "twice code");
+
+  /* (f big 6 nope: 7) */
+  instr = PyList_New(7);
+  TEST_ASSERT_NOT_NULL(instr, "bad instr list");
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, big));
+  PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, six));
+  PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, seven));
+  PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_CONST, names));
+  PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_CALL_NAMES, 2));
+  PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *bad = make_code_with_locals(locals, instr);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(bad, "bad code");
+
+  /* (f 8) */
+  instr = PyList_New(4);
+  TEST_ASSERT_NOT_NULL(instr, "good instr list");
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, eight));
+  PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CALL, 1));
+  PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *good = make_code_with_locals(locals, instr);
+  Py_DECREF(instr);
+  Py_DECREF(locals);
+  TEST_ASSERT_NOT_NULL(good, "good code");
+
+  PyObject *expect = Py_BuildValue("[[i(ii)][i()]]", 1, 2, 3, 4);
+  TEST_ASSERT_NOT_NULL(expect, "expected twice result");
+  KosOpResult ev = run_with_function(twice, fn);
+  TEST_ASSERT(ev.kind == KOS_RES_RETURN, "the two calls return");
+  TEST_ASSERT_EQ(PyObject_RichCompareBool(ev.val, expect, Py_EQ), 1,
+                 "[[1, (2, 3)], [4, ()]]: no star value left over");
+  Py_DECREF(ev.val);
+  Py_DECREF(expect);
+
+  KosDynFrame *cached = KosFunction_CACHED_FRAME(fn);
+  TEST_ASSERT_NOT_NULL(cached, "the return cached the frame");
+
+  Py_ssize_t big_refs = Py_REFCNT(big);
+  ev = run_with_function(bad, fn);
+  TEST_ASSERT(ev.kind == KOS_RES_RAISE, "the bad keyword raises");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError), "as TypeError");
+  PyErr_Clear();
+  TEST_ASSERT_EQ(Py_REFCNT(big), big_refs,
+                 "the failed call keeps no reference to its argument");
+  TEST_ASSERT(KosFunction_CACHED_FRAME(fn) == cached,
+              "the frame stays cached after the failed bind");
+
+  expect = Py_BuildValue("[i()]", 8);
+  TEST_ASSERT_NOT_NULL(expect, "expected good result");
+  ev = run_with_function(good, fn);
+  TEST_ASSERT(ev.kind == KOS_RES_RETURN, "the next call returns");
+  TEST_ASSERT_EQ(PyObject_RichCompareBool(ev.val, expect, Py_EQ), 1,
+                 "[8, ()]");
+  Py_DECREF(ev.val);
+  Py_DECREF(expect);
+  TEST_ASSERT(KosFunction_CACHED_FRAME(fn) == cached,
+              "the same frame served it and was cached again");
+
+  Py_DECREF(twice);
+  Py_DECREF(bad);
+  Py_DECREF(good);
+  Py_DECREF(one);
+  Py_DECREF(two);
+  Py_DECREF(three);
+  Py_DECREF(four);
+  Py_DECREF(six);
+  Py_DECREF(seven);
+  Py_DECREF(eight);
+  Py_DECREF(big);
+  Py_DECREF(names);
+  Py_DECREF(fn);
+  return 0;
+}
+
+
+
 int run_eval_tests(void) {
 
     BEGIN_TEST_SUITE("Eval Tests");
 
     RUN_TEST(test_class_is_not_koscallable);
-    RUN_TEST(test_cache_frame_refuses_function_no_arm_serves);
+    RUN_TEST(test_cache_frame_takes_every_shape);
     RUN_TEST(test_cache_frame_takes_self_binding_function);
+    RUN_TEST(test_general_call_binds_into_cached_frame);
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);

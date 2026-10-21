@@ -60,6 +60,7 @@ static const char *const kos_te_names[KOS_TE__COUNT] = {
   "tls_resolve",
   "exc_fetch",
   "coro_frame_to_cache",
+  "call_frame_cached_general",
 };
 
 
