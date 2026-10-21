@@ -2325,10 +2325,12 @@ static KosOpResult entry_revive_await(
    A simple call of a non-yielding KosFunction (the shape the opcode
    frame-cache arm takes: exact arity, no keywords, self-bind
    resolved) installs the callee as the root frame, carrying
-   frame_flags, and its return ends the drive. Any other call goes
-   through KosContext_CallInto from a code-less root frame; a value
-   back in hand is staged for the resume, which the entry phase
-   delivers. An outcome other than an install is applied as the
+   frame_flags, and its return ends the drive. Any other call is made
+   through KosContext_Call from a code-less root frame carrying resume
+   and frame_flags, taken from frame_cache when the slot holds one; the
+   slot is also the resume's state, so the resume returns the frame to
+   it. A value back in hand is staged for the resume, which the entry
+   phase delivers. An outcome other than an install is applied as the
    trampoline would apply it. Out of line so koskari_eval's own frame
    carries none of it.
 
@@ -2361,11 +2363,30 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
     }
 
   } else {
-    r = KosContext_CallInto(
-        ctx, callable, call->args, call->nargs, call->kwnames,
-        call->resume, NULL, call->frame_flags, 0);
-    if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
-      return EVAL_NORMAL();
+    KosDynFrame *frame;
+
+    /* The root frame comes from the wrapper's slot when it holds one;
+       the slot is the resume's state, so the resume returns the frame
+       to it. The inner call is never a tail call: its return must
+       reach this frame's resume. */
+    if (call->frame_cache && *call->frame_cache)
+      KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_CACHED);
+    frame = KosResumeFrame_Install(ctx, call->resume, call->frame_cache,
+                                   call->frame_cache);
+    if (! frame) {
+      r = EVAL_RAISE();
+
+    } else {
+      KosDynFrame_FLAGS(frame) |= call->frame_flags;
+      r = KosContext_Call(ctx, callable, call->args, call->nargs,
+                          call->kwnames, 0, call->resume, call->frame_cache);
+      if (r.kind == KOS_RES_RETURN) {
+        KosContext_StageDelivery(ctx, r.val);
+        r = EVAL_REPROLOGUE();
+      }
+      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+        return EVAL_NORMAL();
+    }
   }
 
   r = apply_kos_op_result(ctx, r);

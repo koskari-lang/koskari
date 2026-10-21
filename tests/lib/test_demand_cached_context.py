@@ -20,13 +20,15 @@ the same wrapper through Python while it is running still completes,
 each call sees the parameterize state in force at that call, a call
 that raised leaves the wrapper usable, and a root parameter store made
 by one call is read by a later call, through the same wrapper or
-another.
+another. Calls carrying a keyword argument behave the same: repeated,
+raising, reentrant, and escaping through call/cc.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
 import unittest
+from functools import partial
 
 import pytest
 
@@ -68,6 +70,17 @@ SRC = """
   v))
 
 (define read_root (lambda [] cc_root))
+
+(define addkw (lambda [a b: 1] (+ (* a 10) b)))
+
+(define failkw (lambda [a b: 0]
+  (if (== b 0) (raise (ValueError a)) (+ a b))))
+
+(define nestkw (lambda [d via n step: 1]
+  (if (== n 0) 0 (+ step (via d n)))))
+
+(define escapekw (lambda [a b: 0]
+  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
 """
 
 
@@ -134,6 +147,48 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         read = lib.demand(mod["read_root"])
         self.assertEqual(store(7), 7)
         self.assertEqual(read(), 7)
+
+    async def test_repeated_keyword_calls(self):
+        mod = await self.load()
+        d = lib.demand(mod["addkw"])
+        self.assertEqual([d(a, b=a + 1) for a in range(5)],
+                         [1, 12, 23, 34, 45])
+        self.assertEqual(list(map(partial(d, b=7), range(4))),
+                         [7, 17, 27, 37])
+        self.assertEqual(d(3), 31)
+        self.assertEqual(d(a=2, b=5), 25)
+
+    async def test_keyword_call_raise_leaves_wrapper_usable(self):
+        mod = await self.load()
+        d = lib.demand(mod["failkw"])
+        for a in (1, 2):
+            with self.assertRaises(ValueError) as caught:
+                d(a, b=0)
+            self.assertEqual(caught.exception.args, (a,))
+            self.assertEqual(d(a, b=4), a + 4)
+        self.assertEqual(list(map(partial(d, b=1), [1, 2])), [2, 3])
+
+    async def test_keyword_call_reentry_through_python(self):
+        mod = await self.load()
+        seen = []
+
+        def via(d, n):
+            seen.append(n)
+            return d(d, via, n - 1, step=n)
+
+        d = lib.demand(mod["nestkw"])
+        self.assertEqual(d(d, via, 3, step=1), 6)
+        self.assertEqual(seen, [3, 2, 1])
+        self.assertEqual(d(d, via, 2, step=10), 12)
+        self.assertEqual(seen, [3, 2, 1, 2, 1])
+
+    async def test_keyword_call_call_cc_escape(self):
+        mod = await self.load()
+        d = lib.demand(mod["escapekw"])
+        self.assertEqual(d(1, b=2), 4)
+        self.assertEqual(d(10, b=20), 31)
+        self.assertEqual(lib.demand(mod["addkw"])(4, b=2), 42)
+        self.assertEqual(d(5, b=5), 11)
 
 
 # The end.

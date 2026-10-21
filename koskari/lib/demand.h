@@ -39,6 +39,10 @@ typedef struct {
   KosContext *cached_ctx;   /* the drive context boundary calls reuse;
                                NULL until the first one caches it, and
                                detached while a call runs */
+  KosDynFrame *cached_frame; /* the inert code-less root frame boundary
+                               calls reuse; NULL until the first one
+                               returns it, and emptied while a call
+                               runs */
 } KosDemandObject;
 
 #define KosDemand_VECTORCALL_OFFSET offsetof(KosDemandObject, vectorcall)

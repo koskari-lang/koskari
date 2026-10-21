@@ -169,6 +169,7 @@ int main(int argc, char *argv[]) {
     run_paramref_tests();
     run_property_tests();
     run_partial_tests();
+    run_demand_tests();
     run_iter_request_tests();
     run_resume_tests();
     run_breaker_tests();

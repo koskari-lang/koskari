@@ -49,9 +49,11 @@ survives with the live fields on the context.
 
 ## Plan
 
-Order: A, B, C, D, E. B is local and measurable at once; C is the
+Order: A, B, C, D, E, F. B is local and measurable at once; C is the
 widest change and D is written against the record C leaves; E is
-independent of C but shares B's frame-cache work.
+independent of C but shares B's frame-cache work; F widens the frame
+cache to every call shape and is last because it is a Koskari call-path
+change the boundary items only expose.
 
 ### A. Baseline
 
@@ -154,6 +156,23 @@ beside the cached context, handed through `KosEntryCall` to the
 install, and the resume passes it to `KosNativeFrame_ReturnToCache`.
 Serves the shapes B1 does not take: keywords, defaults, bound methods
 through a `Demand`, `Procedure` over an `__init__` with defaults.
+
+Implemented: `KosDemandObject.cached_frame`, handed through
+`KosEntryCall.frame_cache`; the general arm of `eval_phase_entry_call`
+installs the root frame itself (`KosResumeFrame_Install` with the slot
+as state and cache, then `KosContext_Call`) instead of through
+`KosContext_CallInto`, and `demand_resume` returns the frame to the
+slot. A continuation clone shares the slot; a reentrant call finds it
+emptied and allocates. Counter `KOS_TE_ENTRY_ROOT_CACHED`. Measurement
+(new kernel `demand_call_kw`, `(partial (demand mixkw) b: 7)` over
+`builtins.map`, 4 batches of 200,000 calls): instructions
+8,656,596,634 -> 8,604,921,989, per call 5,630 -> 5,596; cycles per
+call 1,620 -> 1,644, within noise. churn-trace (`demand_call
+demand_call_kw`): `entry_root_cached` 1,199,940 (every call but the
+first of each of the 60 wrappers), dyn_node freelist allocations
+2,407,214 -> 1,207,274, the difference being `entry_root_cached`.
+`demand_call` (B1 arm) unchanged: 3,232 -> 3,229 instructions per
+call.
 
 #### B4. `KosBoundMethod` vectorcall
 
@@ -263,6 +282,49 @@ Test (`tests/lib/test_coroutine_record.py`, `test_coroutine_first_send.py`):
 an awaited call served from the cache, a coroutine closed before its
 first send returns the frame, a coroutine spliced by a Koskari `await`,
 `test_context_token.py` unchanged.
+
+### F. The frame cache serves every call shape
+
+A cached frame's namespace is reset to the template at cache time
+(`KosNamespace_ResetToTemplate`: raw slots NULL, template refs kept),
+the state `KosNamespace_Copy(BASE_NS)` produces for every call shape.
+Only the consumers are simple-only: the three arms
+(`kos_call_cached_frame_install`, the tail-in-place arm, the cache arm
+in `KosFunction_Install`) steal-bind positionals by index, which needs
+`nargs + 1 == simple_arity1`; the refusal in `KosFunction_CacheFrame`
+for `simple_arity1 == 0` only keeps a function no consumer can serve
+from holding dead frames. A keyword call, a short supply that consults
+a default, star, keyword-only and by-ref shapes, and `Procedure` over
+an `__init__` with keyword arguments all copy the template and
+allocate a frame per call (B3's measurement: one dyn node per keyword
+call on the callee side, plus the namespace copy).
+
+- The general arm in `KosFunction_Install` and the opcode call path
+  (`KosFunction_PrepareCallNamespaceFromVector` sites) pop a cached
+  frame when one is present and run `KosFormals_VectorApplyFast` and
+  the self bind on its namespace instead of copying the template, then
+  push it ready and tag it `FN`.
+- The general binder can fail midway (bad keyword, missing argument)
+  with partial stores in the namespace; the steal bind cannot. On a
+  bind failure the namespace is reset to the template before the frame
+  goes back to the cache, or the frame is freed.
+- `KosFunction_CacheFrame` drops the `simple_arity1 == 0` refusal:
+  every shape has a consumer. The cap and the privacy checks stay.
+- The yields gate stays ahead of every arm; a generator never takes a
+  frame.
+- Counter: `KOS_TE_CALL_FRAME_CACHED` counts the general arm's hits
+  too, or a sibling counter splits them (decide at implementation by
+  what the kernels need to show).
+
+Kernels: `demand_call_kw` (callee side of the keyword boundary call)
+and a Koskari-to-Koskari keyword call kernel. Expected: the dyn node
+allocation per keyword call goes, and the namespace copy with it.
+
+Test: keyword, default-consulting, star and keyword-only calls repeated
+through one function give the right results; a call with a bad keyword
+raises and the next good call succeeds; a bound method with keywords;
+`Procedure` over an `__init__` with keyword arguments; the frame cache
+tests in `tests/lib/` unchanged.
 
 ## Out of scope
 

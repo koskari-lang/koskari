@@ -60,6 +60,9 @@ typedef enum KosTraceEventId {
   KOS_TE_CALL_TAIL_INPLACE,
   /* a Python-boundary entry call installed as the drive's root frame */
   KOS_TE_ENTRY_ROOT_INSTALL,
+  /* a Python-boundary entry call's code-less root frame taken from its
+     Demand wrapper's slot */
+  KOS_TE_ENTRY_ROOT_CACHED,
   KOS_TE__COUNT
 } KosTraceEventId;
 

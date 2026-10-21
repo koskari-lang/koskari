@@ -725,7 +725,7 @@ KosOpResult KosContext_NextResume(
 
 /**
    A call for koskari_eval to install at entry on a fresh context
-   (KosContext::entry_call): KosContext_CallInto from a code-less root
+   (KosContext::entry_call): KosContext_Call from a code-less root
    frame carrying resume and frame_flags, or, for a simple call of a
    non-yielding KosFunction, the function's frame as the root frame
    carrying frame_flags. args and kwnames are borrowed for the drive.
@@ -737,6 +737,11 @@ typedef struct KosEntryCall {
   PyObject *kwnames;
   const KosResumeKind *resume;
   uint32_t frame_flags;
+  KosDynFrame **frame_cache;  /* the wrapper's inert root-frame slot:
+                                 the code-less root frame is taken from
+                                 it and returned to it, and it is the
+                                 resume's state; NULL when there is no
+                                 wrapper */
 } KosEntryCall;
 
 

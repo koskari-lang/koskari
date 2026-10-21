@@ -56,6 +56,7 @@ static const char *const kos_te_names[KOS_TE__COUNT] = {
   "call_simple_vector",
   "call_tail_inplace",
   "entry_root_install",
+  "entry_root_cached",
 };
 
 
