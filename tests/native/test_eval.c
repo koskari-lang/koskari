@@ -176,8 +176,8 @@ static int test_domain_non_null(void) {
 
     KosContext *ctx = KosContext_New(frame);
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    /* every context has a domain, minted as needed when none is ambient;
-       parameter cells start empty (lazy) */
+    /* every context has a domain, the thread default when none is
+       ambient; parameter cells start empty (lazy) */
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
     TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
                 "param cells start unallocated");
@@ -298,10 +298,10 @@ static int test_context_clear_drops_chain_caches(void) {
 }
 
 
-/* === Test: two contexts without TLS get distinct domains === */
+/* === Test: contexts with no ambient domain share one === */
 
 
-static int test_domain_fresh_when_no_tls(void) {
+static int test_domain_thread_default_when_no_tls(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -332,8 +332,8 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
     TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx2), "ctx2 domain non-null");
-    TEST_ASSERT_NOT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
-                         "contexts without TLS get distinct domains");
+    TEST_ASSERT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
+                     "contexts share the thread default domain");
 
     /* each context also owns its own cell table */
     PyObject *cells1 = kos_context_param_refs(ctx1);
@@ -2427,7 +2427,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_domain_non_null);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
     RUN_TEST(test_context_clear_drops_chain_caches);
-    RUN_TEST(test_domain_fresh_when_no_tls);
+    RUN_TEST(test_domain_thread_default_when_no_tls);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);

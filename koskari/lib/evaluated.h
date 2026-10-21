@@ -153,7 +153,7 @@ typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
    The provider's durable Python-boundary drive context, when it owns
    one: context-level state (parameterize extents, the in-flight await
    iterator) lives across steps there. NULL slot or NULL return means
-   the adapter owns its own host context.
+   the adapter owns its own drive context.
 */
 typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 
@@ -174,7 +174,7 @@ typedef struct KosIterSlots {
   uint8_t ki_pyctx_recyclable;  /* the durable context holds no state
                                    between completed steps; the adapters
                                    recycle it at their reset points
-                                   exactly like an owned host */
+                                   exactly like an owned context */
 } KosIterSlots;
 
 

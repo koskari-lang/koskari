@@ -174,14 +174,15 @@ static int test_paramref_deref_no_domain_no_default_raises(void) {
 }
 
 
-/* === Test: ParamRef store no domain raises === */
+/* === Test: ParamRef store with no domain lands in the thread default === */
 
 
-static int test_paramref_store_no_domain_raises(void) {
+static int test_paramref_store_no_domain_thread_default(void) {
     PyObject *key = PyUnicode_FromString("foo");
     PyObject *default_val = PyLong_FromLong(0);
     PyObject *param_ref;
     PyObject *val = PyLong_FromLong(99);
+    PyObject *value;
     int res;
 
     TEST_ASSERT_NOT_NULL(key, "create key");
@@ -189,10 +190,16 @@ static int test_paramref_store_no_domain_raises(void) {
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
     res = KosRef_Store(param_ref, val);
-    TEST_ASSERT(res == -1, "store returns -1");
-    TEST_ASSERT(PyErr_Occurred(), "error set");
+    TEST_ASSERT(res == 0, "store returns 0");
 
-    PyErr_Clear();
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_SAME(value, val, "deref reads the stored value");
+    Py_DECREF(value);
+
+    res = KosRef_Clear(param_ref);
+    TEST_ASSERT(res == 0, "clear returns 0");
+    TEST_ASSERT(KosRef_IsEmpty(param_ref) == 1, "empty after clear");
+
     Py_DECREF(val);
     Py_DECREF(param_ref);
     Py_DECREF(default_val);
@@ -507,7 +514,7 @@ int run_paramref_tests(void) {
     BEGIN_TEST_SUITE("ParamRef");
     RUN_TEST(test_paramref_deref_no_domain_returns_default);
     RUN_TEST(test_paramref_deref_no_domain_no_default_raises);
-    RUN_TEST(test_paramref_store_no_domain_raises);
+    RUN_TEST(test_paramref_store_no_domain_thread_default);
     RUN_TEST(test_paramref_store_deref_inside_scope);
     RUN_TEST(test_paramref_clear_inside_scope);
     RUN_TEST(test_paramref_is_empty_inside_scope);

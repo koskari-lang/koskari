@@ -12,10 +12,10 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.lib.test_demand_host_threads
+tests.lib.test_demand_cached_context_threads
 
 One demand wrapper called from several threads at once: each call runs
-on a context of its own, so every call returns its own value even when
+on a drive context of its own, so every call returns its own value even when
 the callee releases the GIL mid-call.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
@@ -47,11 +47,11 @@ def release():
     time.sleep(0)
 
 
-class TestDemandHostThreads(unittest.IsolatedAsyncioTestCase):
+class TestDemandCachedContextThreads(unittest.IsolatedAsyncioTestCase):
 
     async def load(self):
-        module = new_module("demand_host_threads")
-        vars(module)["__file__"] = "<demand_host_threads>"
+        module = new_module("demand_cached_context_threads")
+        vars(module)["__file__"] = "<demand_cached_context_threads>"
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 

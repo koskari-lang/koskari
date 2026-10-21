@@ -99,7 +99,7 @@ staged delivery, the second trampoline pass, `demand_resume`.
 
 Counter: `KOS_TE_ENTRY_ROOT_INSTALL` beside the call-class counters.
 
-Tests (`tests/lib/test_demand_sync.py`, `test_demand_host.py`): the
+Tests (`tests/lib/test_demand_sync.py`, `test_demand_cached_context.py`): the
 return value, a raise, a function that names itself (bind-self store),
 recursion through Python re-entry while the wrapper is in use, a
 `call/cc` escape from the root callee, a function whose first call
@@ -124,6 +124,26 @@ design (E).
 Test: a `Demand` called twice outside any domain; a root
 `parameterize` store inside the first call is not visible in the
 second.
+
+Implemented, as option (b2) rather than keep-and-clear: each thread
+owns one default domain, `KosTlsState.default_domain`, minted on first
+need by `kos_domain_current()` and returned when no context is active
+and no `with Domain():` is open. It is never shared between threads.
+`KosContext_Snapshot` takes `kos_domain_current()` and no longer calls
+`KosDomain_New`, so the cached contexts in `demand.c`, `iterate.c` and
+`transform.c` and the coroutine snapshot all resolve to it; the demand
+release keeps the domain and clears only `param_refs`. Root stores
+outlive the call on the Python surface as they do under the launcher.
+The default is released with the thread record (`tls_state_release`,
+GIL held); for the main thread that is interpreter shutdown, when the
+thread state's dict is cleared. The no-domain arms (`ParamRef`
+methods, `parameter`, the ambient root resolve) are gone;
+`Domain.current_domain()` never answers None. Measurement
+(`demand_call`, 4 batches): instructions 6,704,898,910 -> 6,687,190,326,
+cycles 2,714,314,544 -> 2,572,296,068, per call 3,253 -> 3,208
+instructions, churn-trace counters identical. The kernel's Demand calls
+run under an active context and never took the minting arm, so these
+deltas are noise; no kernel makes context-free boundary calls.
 
 #### B3. Root-frame cache for the general shape
 
@@ -154,10 +174,10 @@ positionals and with keywords, from Python.
 
 The `host` identifiers in `demand.c`, `demand.h` and `iterate.c`
 (`host`, `host_owned`, `demand_acquire_host`, `demand_release_host`,
-`iterate_acquire_host`, `test_demand_host*.py`) name a cached context.
-B1 to B3 touch every one of those sites; the rename to `cached_ctx` /
-`demand_acquire_context` / `demand_release_context` /
-`iterate_acquire_context` is part of those items.
+`iterate_acquire_host`, `test_demand_host*.py`) named a cached context.
+Renamed under B2 to `cached_ctx`, `demand_acquire_context`,
+`demand_release_context`, `iterate_acquire_context` and
+`test_demand_cached_context*.py`.
 
 ### C. One record: remove `KosEvalState`
 

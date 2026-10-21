@@ -22,10 +22,11 @@
    holds the shadow cells written by parameterize (forked at context
    creation), and the KosDomain object homes root_refs, the root scope
    where a store with no enclosing extent lands. root_refs is never
-   copied; contexts reach it by resolution. Every context has a domain:
-   the ambient one when present, minted fresh as needed otherwise; it is
-   the identity/lifecycle anchor of the computation. See
-   design/archive/parameter-resolution.md.
+   copied; contexts reach it by resolution. Every context has a domain,
+   the identity/lifecycle anchor of the computation: the active
+   context's, else the innermost `with Domain():` scope's, else the
+   thread's default domain, minted on first need and released with the
+   thread's record. See design/archive/parameter-resolution.md.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -62,6 +63,10 @@ struct KosTlsState {
   PyObject **python_domain_stack;
   size_t python_domain_depth;
   size_t python_domain_cap;
+  /* the thread's default domain (a reference of our own), minted on
+     first need: the domain answering when no context is active and no
+     `with Domain():` scope is open. Never shared between threads. */
+  PyObject *default_domain;
 };
 
 static Py_tss_t tls_state_key = Py_tss_NEEDS_INIT;
@@ -96,12 +101,22 @@ static const char tls_state_capsule_name[] = "koskari.tls_state";
 static PyObject *tls_state_dict_key = NULL;  /* interned "koskari.tls_state" */
 
 
+/* Every release runs with the GIL held: the capsule destructor runs
+   from the clear of a thread state's dict, and the other callers run
+   on a thread inside the evaluator or a Python API entry. The default
+   domain is dropped last, after the record is freed and out of the TSS
+   slot, so a finalizer it runs that re-enters finds no stale record. */
 static void tls_state_release(KosTlsState *s) {
+
+  PyObject *default_domain;
+
   if (--s->refs > 0)
     return;
+  default_domain = s->default_domain;
   PyMem_Free(s->ctx_stack);
   PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
+  Py_XDECREF(default_domain);
 }
 
 
@@ -258,18 +273,53 @@ KosContext *kos_ctx_current(void) {
 }
 
 
-PyObject *kos_domain_current(void) {
-  KosTlsState *s = tls_state_current();
+/**
+   The domain answering on the thread without minting one: the active
+   context's, else the innermost `with Domain():` scope's, else the
+   thread default once it exists. Borrowed, or NULL when the thread
+   default has not been minted yet.
+*/
+static PyObject *domain_ambient_peek(const KosTlsState *s) {
+
   KosContext *c;
 
-  if (s && s->ctx_depth > 0) {
+  if (s->ctx_depth > 0) {
     c = s->ctx_stack[s->ctx_depth - 1];
     if (c && KosContext_DOMAIN(c))
       return KosContext_DOMAIN(c);
   }
-  if (s && s->python_domain_depth > 0)
+  if (s->python_domain_depth > 0)
     return s->python_domain_stack[s->python_domain_depth - 1];
-  return NULL;
+  return s->default_domain;
+}
+
+
+/* The thread default domain, minted on the first call. Borrowed, or
+   NULL with an error set. */
+static PyObject *tls_default_domain(KosTlsState *s) {
+  if (! s->default_domain)
+    s->default_domain = (PyObject *) KosDomain_New();
+  return s->default_domain;
+}
+
+
+PyObject *kos_domain_current(void) {
+
+  KosTlsState *s = tls_state_current();
+  PyObject *domain = s ? domain_ambient_peek(s) : NULL;
+
+  if (domain)
+    return domain;
+
+  if (! s) {
+    s = get_or_alloc_tls_state();
+    if (! s) {
+      if (! PyErr_Occurred())
+        PyErr_NoMemory();
+      return NULL;
+    }
+  }
+  return tls_default_domain(s);
 }
 
 
@@ -378,12 +428,18 @@ PyObject *kos_param_lookup(KosContext *ctx, PyObject *key) {
 
 
 PyObject *kos_param_lookup_ambient(PyObject *key) {
-  KosContext *ctx = kos_ctx_current();
+  KosTlsState *s = tls_state_current();
+  KosContext *ctx;
 
+  if (! s)
+    return NULL;
+
+  ctx = s->ctx_depth > 0 ? s->ctx_stack[s->ctx_depth - 1] : NULL;
   if (ctx)
     return kos_param_lookup(ctx, key);
 
-  return root_probe(kos_domain_current(), key);
+  /* a thread default not minted yet has nothing bound */
+  return root_probe(domain_ambient_peek(s), key);
 }
 
 
@@ -436,11 +492,8 @@ PyObject *kos_param_root_resolve_ambient(PyObject *key) {
     return kos_param_root_resolve(ctx, key);
 
   domain_obj = kos_domain_current();
-  if (! domain_obj || ! KosDomain_CheckExact(domain_obj)) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "parameter store outside an active domain");
+  if (! domain_obj)
     return NULL;
-  }
 
   root = ensure_root_refs((KosDomain *) domain_obj);
   if (! root)
@@ -497,18 +550,6 @@ static PyObject *m_parameter(PyObject *mod, PyObject *args) {
 
   /* A read creates nothing. The caller's default answers when nothing
      is bound, and never lands in a store. */
-  if (! kos_ctx_current() && ! kos_domain_current()) {
-    Py_DECREF(key_str);
-    if (default_val) {
-      Py_INCREF(default_val);
-      return default_val;
-    }
-
-    PyErr_SetString(PyExc_RuntimeError,
-                    "parameter outside active domain and no default");
-    return NULL;
-  }
-
   cell = kos_param_lookup_ambient(key_str);
   Py_DECREF(key_str);
   value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
@@ -547,7 +588,7 @@ static PyObject *domain_current_domain(PyObject *cls, PyObject *unused) {
   (void) unused;
   PyObject *domain = kos_domain_current();
   if (! domain)
-    Py_RETURN_NONE;
+    return NULL;
   Py_INCREF(domain);
   return domain;
 }
@@ -630,7 +671,8 @@ static PyObject *domain_param_scopes(PyObject *self, PyObject *unused) {
 static PyMethodDef domain_methods[] = {
   {"current_domain", (PyCFunction) domain_current_domain,
    METH_CLASS | METH_NOARGS,
-   "Return the active Domain from current TLS scope, or None"},
+   "Return the Domain answering on this thread: the running context's,"
+   " else the innermost with-Domain scope's, else the thread default"},
   {"get_contexts", (PyCFunction) domain_get_contexts, METH_NOARGS,
    "Return the Context objects running on this thread under this Domain,"
    " innermost first; Context.snapshot() pictures each one"},
@@ -649,8 +691,7 @@ static PyMethodDef domain_mod_methods[] = {
     "parameter(name, default=...) => value\n"
     "Resolve the value bound to name: the enclosing parameterize extent\n"
     "first, then the root scope. Creates nothing and writes nothing.\n"
-    "If unbound, return default when provided, otherwise raise NameError.\n"
-    "If no active domain, return default when provided, otherwise raise RuntimeError." },
+    "If unbound, return default when provided, otherwise raise NameError." },
   { NULL, },
 };
 

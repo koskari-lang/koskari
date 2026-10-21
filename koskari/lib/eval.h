@@ -1445,8 +1445,10 @@ void kos_tls_leave_drive(KosTlsState *s, KosContext *ctx);
 
 
 /**
-  Return the active KosDomain during bytecode execution, or NULL when
-  not inside koskari_eval. Borrowed reference.
+  Return the KosDomain answering on this thread: the active context's,
+  else the innermost `with Domain():` scope's, else the thread default
+  domain, minted on first need. Borrowed reference, or NULL with an
+  error set when minting the thread default fails.
 */
 PyObject *kos_domain_current(void);
 

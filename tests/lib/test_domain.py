@@ -18,11 +18,12 @@ Unit tests for Domain context manager
 :license: GNU General Public License v3
 """
 
+import threading
 import unittest
 
 import pytest
 
-from koskari.lib import Context, Domain, ParamRef, demand_call
+from koskari.lib import Context, Domain, ParamRef, demand_call, parameter
 from tests import make_callable
 from tests.lib.opcode import build_expr
 
@@ -59,13 +60,17 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
 
     def test_domain_current_domain_classmethod(self):
         """
-        Domain.current_domain reports active scoped Domain or None
+        Domain.current_domain reports the active scoped Domain, and the
+        thread's default Domain outside any with
         """
 
-        self.assertIsNone(Domain.current_domain())
+        default = Domain.current_domain()
+        self.assertIsInstance(default, Domain)
+        self.assertIs(Domain.current_domain(), default)
         with Domain() as dom:
             self.assertIs(Domain.current_domain(), dom)
-        self.assertIsNone(Domain.current_domain())
+            self.assertIsNot(dom, default)
+        self.assertIs(Domain.current_domain(), default)
 
     def test_domain_get_contexts_returns_list(self):
         """
@@ -283,16 +288,121 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(marker_ref())
 
 
-    def test_domain_no_domain_outside_with(self):
+    def test_domain_thread_default_outside_with(self):
         """
-        After with Domain(): pass, ParamRef with no default raises
+        After with Domain(): pass, a ParamRef with no default and no
+        store in the thread default raises NameError; a store followed
+        by a deref reads the value back
         """
 
-        p = ParamRef("x")
+        p = ParamRef("domain_outside_with_key")
         with Domain():
             pass
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             p.deref()
+        self.addCleanup(p.clear)
+        p.store(3)
+        self.assertEqual(p.deref(), 3)
+
+
+class TestThreadDefaultDomain(unittest.TestCase):
+    """
+    Outside any with Domain(): each thread has one default Domain whose
+    root scope persists across calls on that thread and is never seen
+    from another thread
+    """
+
+    def stored(self, name, value):
+        ref = ParamRef(name)
+        self.addCleanup(ref.clear)
+        ref.store(value)
+        return ref
+
+
+    def test_root_store_outside_with_is_read_later(self):
+        """
+        A root store made outside any with Domain() is visible to a
+        later read on the same thread, through a fresh ParamRef and the
+        parameter builtin
+        """
+
+        self.stored("tdd_later_key", "kept")
+        self.assertEqual(ParamRef("tdd_later_key").deref(), "kept")
+        self.assertEqual(parameter("tdd_later_key"), "kept")
+        self.assertIn("tdd_later_key",
+                      Domain.current_domain().param_scopes()["root"])
+
+
+    def test_koskari_store_lands_in_thread_default(self):
+        """
+        A store made from inside a boundary call with no with Domain()
+        open lands in the thread default's root scope, so Python reads
+        it after the call returns
+        """
+
+        p = ParamRef("tdd_koskari_key")
+        self.addCleanup(p.clear)
+
+        def store():
+            p.store("from-koskari")
+            return Domain.current_domain()
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": store})
+        seen = demand_call(make_callable(code, ns))
+        self.assertIs(seen, Domain.current_domain())
+        self.assertEqual(p.deref(), "from-koskari")
+
+
+    def test_second_thread_has_its_own_default(self):
+        """
+        Another thread sees none of this thread's root stores, and has
+        a default Domain of its own, the same object on each call there
+        """
+
+        self.stored("tdd_thread_key", "main")
+        main_default = Domain.current_domain()
+        seen = {}
+
+        def worker():
+            ref = ParamRef("tdd_thread_key")
+            seen["empty"] = ref.empty
+            seen["default"] = Domain.current_domain()
+            seen["again"] = Domain.current_domain()
+            ref.store("worker")
+            seen["value"] = ref.deref()
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+
+        self.assertTrue(seen["empty"])
+        self.assertIsInstance(seen["default"], Domain)
+        self.assertIsNot(seen["default"], main_default)
+        self.assertIs(seen["again"], seen["default"])
+        self.assertEqual(seen["value"], "worker")
+        self.assertEqual(ParamRef("tdd_thread_key").deref(), "main")
+
+
+    def test_explicit_domain_wins_then_default_returns(self):
+        """
+        Inside with Domain() the explicit Domain answers and the thread
+        default's stores are not seen; after the block the thread
+        default answers again with its earlier stores
+        """
+
+        p = self.stored("tdd_scope_key", "outer")
+        default = Domain.current_domain()
+        with Domain() as dom:
+            self.assertIs(Domain.current_domain(), dom)
+            self.assertTrue(p.empty)
+            p.store("inner")
+            self.assertEqual(p.deref(), "inner")
+        self.assertIs(Domain.current_domain(), default)
+        self.assertEqual(p.deref(), "outer")
 
 
 # The end.

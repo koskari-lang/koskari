@@ -193,17 +193,17 @@ KOS_RESUME_KIND(demand_resume_kind, "demand",
 
 
 /**
-   The drive context for one boundary call: the wrapper's cached host
-   when there is one, taken out of the cache before anything else runs
-   so no other call can see it, and refreshed to the dynamic state in
-   force at this call; otherwise a fresh context. host is NULL when
-   there is no wrapper to cache on. New reference.
+   The drive context for one boundary call: the wrapper's cached
+   context when there is one, taken out of the cache before anything
+   else runs so no other call can see it, and refreshed to the dynamic
+   state in force at this call; otherwise a fresh context. cached is
+   NULL when there is no wrapper to cache on. New reference.
 */
-static KosContext *demand_acquire_host(KosContext **host) {
+static KosContext *demand_acquire_context(KosContext **cached) {
 
-  if (host && *host) {
-    KosContext *ctx = *host;
-    *host = NULL;
+  if (cached && *cached) {
+    KosContext *ctx = *cached;
+    *cached = NULL;
     if (KosContext_TakeSnapshot(ctx) < 0) {
       Py_DECREF(ctx);
       return NULL;
@@ -219,9 +219,9 @@ static KosContext *demand_acquire_host(KosContext **host) {
    or takes the empty cache; one the recycle cannot account for, or
    with nowhere to be cached, is released. Consumes ctx.
 */
-static void demand_release_host(KosContext **host, KosContext *ctx) {
+static void demand_release_context(KosContext **cached, KosContext *ctx) {
 
-  if (! host) {
+  if (! cached) {
     Py_DECREF(ctx);
     return;
   }
@@ -229,12 +229,11 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
     Py_DECREF(ctx);
     return;
   }
-  if (! *host) {
-    /* the cache holds nothing of the finished call: the next acquire's
-       snapshot sets both again */
-    Py_CLEAR(KosContext_DOMAIN(ctx));
+  if (! *cached) {
+    /* the finished call's parameterize cells are dropped; the domain
+       stays until the next acquire's snapshot replaces it */
     Py_CLEAR(KosContext_PARAM_REFS(ctx));
-    *host = ctx;
+    *cached = ctx;
     return;
   }
   Py_DECREF(ctx);
@@ -243,7 +242,7 @@ static void demand_release_host(KosContext **host, KosContext *ctx) {
 
 /**
    Run a KosCallable to completion from the Python boundary: record the
-   call on the drive context (the wrapper's cached host, or a fresh
+   call on the drive context (the wrapper's cached context, or a fresh
    one), and koskari_eval installs it at entry through
    KosContext_CallInto from a code-less root frame marked
    KOS_FRAME_DEMAND, which is the caller frame every install delivers
@@ -263,12 +262,12 @@ static PyObject *demand_run_koskari(
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    KosContext **host) {
+    KosContext **cached) {
 
   KosEntryCall call = {
     callable, args, nargs, kwnames, &demand_resume_kind, KOS_FRAME_DEMAND,
   };
-  KosContext *ctx = demand_acquire_host(host);
+  KosContext *ctx = demand_acquire_context(cached);
   KosOpResult r;
 
   if (! ctx)
@@ -277,7 +276,7 @@ static PyObject *demand_run_koskari(
   KosContext_ENTRY_CALL(ctx) = &call;
   r = koskari_eval(ctx, NULL, NULL, NULL);
   KosContext_ENTRY_CALL(ctx) = NULL;
-  demand_release_host(host, ctx);
+  demand_release_context(cached, ctx);
 
   switch (r.kind) {
     case KOS_RES_RETURN:
@@ -318,7 +317,7 @@ static PyObject *demand_sync_vector(
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    KosContext **host) {
+    KosContext **cached) {
 
   SAYF("[demand_sync] callable = %p", callable);
 
@@ -328,7 +327,7 @@ static PyObject *demand_sync_vector(
     return result ? demand_finish_value(result) : NULL;
   }
 
-  return demand_run_koskari(callable, args, nargs, kwnames, host);
+  return demand_run_koskari(callable, args, nargs, kwnames, cached);
 }
 
 
@@ -403,7 +402,7 @@ PyObject *KosDemand_CallVector(
   if (kwnames && ! PyTuple_GET_SIZE(kwnames))
     kwnames = NULL;
   return demand_sync_vector(wrapped, args, PyVectorcall_NARGS(nargsf),
-                            kwnames, &((KosDemandObject *) self)->host);
+                            kwnames, &((KosDemandObject *) self)->cached_ctx);
 }
 
 
@@ -452,7 +451,7 @@ static PyObject *demand_new(
     return NULL;
 
   self->wrapped = NULL;
-  self->host = NULL;
+  self->cached_ctx = NULL;
   self->vectorcall = KosCallable_CheckSlots((PyObject *) self, &slots)
       ? slots->kc_pyvectorcall : NULL;
   return (PyObject *) self;
@@ -586,7 +585,7 @@ static void demand_dealloc(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
 
   Py_CLEAR(d->wrapped);
-  Py_CLEAR(d->host);
+  Py_CLEAR(d->cached_ctx);
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -596,7 +595,7 @@ static int demand_traverse(PyObject *self, visitproc visit, void *arg) {
 
   if (d->wrapped)
     Py_VISIT(d->wrapped);
-  Py_VISIT(d->host);
+  Py_VISIT(d->cached_ctx);
   return 0;
 }
 
@@ -605,7 +604,7 @@ static int demand_clear(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
 
   Py_CLEAR(d->wrapped);
-  Py_CLEAR(d->host);
+  Py_CLEAR(d->cached_ctx);
   return 0;
 }
 

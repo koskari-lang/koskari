@@ -73,12 +73,13 @@ class TestParamRefCreate(unittest.TestCase):
 
 class TestParamRefNoDomain(unittest.TestCase):
     """
-    ParamRef behavior outside active domain (no koskari_eval)
+    ParamRef behavior outside any with Domain() and any koskari_eval:
+    the thread's default Domain answers
     """
 
     def test_deref_no_domain_returns_default(self):
         """
-        deref outside domain returns default value
+        deref of an unbound name outside a with returns the default value
         """
 
         p = ParamRef("x", 99)
@@ -86,34 +87,40 @@ class TestParamRefNoDomain(unittest.TestCase):
 
     def test_deref_no_domain_no_default_raises(self):
         """
-        deref outside domain with no default raises RuntimeError
+        deref of an unbound name outside a with, with no default, raises
+        NameError
         """
 
         p = ParamRef("x")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             p.deref()
 
-    def test_store_no_domain_raises(self):
+    def test_store_no_domain_lands_in_thread_default(self):
         """
-        store outside domain raises RuntimeError
-        """
-
-        p = ParamRef("x", 0)
-        with self.assertRaises(RuntimeError):
-            p.store(42)
-
-    def test_clear_no_domain_raises(self):
-        """
-        clear outside domain raises RuntimeError
+        store outside a with lands in the thread default's root scope
         """
 
-        p = ParamRef("x", 0)
-        with self.assertRaises(RuntimeError):
-            p.clear()
+        p = ParamRef("paramref_no_domain_store", 0)
+        self.addCleanup(p.clear)
+        p.store(42)
+        self.assertEqual(p.deref(), 42)
+        self.assertFalse(p.empty)
+
+    def test_clear_no_domain_empties_the_binding(self):
+        """
+        clear outside a with empties the thread default's binding, and
+        the default answers again
+        """
+
+        p = ParamRef("paramref_no_domain_clear", 0)
+        p.store(42)
+        p.clear()
+        self.assertTrue(p.empty)
+        self.assertEqual(p.deref(), 0)
 
     def test_empty_no_domain_is_true(self):
         """
-        ParamRef.empty is always True outside an active domain.
+        ParamRef.empty is True for a name the thread default never bound
         """
 
         self.assertTrue(ParamRef("x").empty)

@@ -12,13 +12,15 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-tests.lib.test_demand_host
+tests.lib.test_demand_cached_context
 
-One demand wrapper called many times from Python: every call returns
-its own value, a call that re-enters the same wrapper through Python
-while it is running still completes, each call sees the parameterize
-state in force at that call, and a call that raised leaves the wrapper
-usable.
+One demand wrapper called many times from Python reuses its cached
+drive context: every call returns its own value, a call that re-enters
+the same wrapper through Python while it is running still completes,
+each call sees the parameterize state in force at that call, a call
+that raised leaves the wrapper usable, and a root parameter store made
+by one call is read by a later call, through the same wrapper or
+another.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -51,6 +53,21 @@ SRC = """
     (parameterize [[p 20]] (pymap d #[1 2])))))
 
 (define fragile (lambda [x] (if (== x 0) (raise (ValueError "zero")) x)))
+
+(define-parameter cc_root)
+
+(define swap_root (lambda [v]
+  (define-global cc_root)
+  (define old (parameterq cc_root None))
+  (set! cc_root v)
+  old))
+
+(define store_root (lambda [v]
+  (define-global cc_root)
+  (set! cc_root v)
+  v))
+
+(define read_root (lambda [] cc_root))
 """
 
 
@@ -58,11 +75,11 @@ def pymap(d, items):
     return list(map(d, items))
 
 
-class TestDemandHost(unittest.IsolatedAsyncioTestCase):
+class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
 
     async def load(self):
-        module = new_module("demand_host")
-        vars(module)["__file__"] = "<demand_host>"
+        module = new_module("demand_cached_context")
+        vars(module)["__file__"] = "<demand_cached_context>"
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 
@@ -101,6 +118,22 @@ class TestDemandHost(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             d(0)
         self.assertEqual(pymap(d, [1, 2]), [1, 2])
+
+    async def test_root_store_persists_across_calls(self):
+        mod = await self.load()
+        self.addCleanup(lib.ParamRef("cc_root").clear)
+        d = lib.demand(mod["swap_root"])
+        self.assertIsNone(d(1))
+        self.assertEqual(d(2), 1)
+        self.assertEqual(lib.ParamRef("cc_root").deref(), 2)
+
+    async def test_root_store_shared_between_wrappers(self):
+        mod = await self.load()
+        self.addCleanup(lib.ParamRef("cc_root").clear)
+        store = lib.demand(mod["store_root"])
+        read = lib.demand(mod["read_root"])
+        self.assertEqual(store(7), 7)
+        self.assertEqual(read(), 7)
 
 
 # The end.

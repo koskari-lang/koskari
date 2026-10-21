@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from functools import partial
 
 from .lib import (
-    Domain, FunctionSpec, KoskariSyncViolation, NamespaceSpec, ParamRef,
+    FunctionSpec, KoskariSyncViolation, NamespaceSpec, ParamRef,
     bracket_nil, bracket_pair, cons, gensym, keyword, nil, nilp, pair,
     symbol)
 
@@ -54,20 +54,15 @@ def parameterize(**bindings):
     Bind parameters for the extent of a Python block.
 
     The host-side counterpart of the koskari ``parameterize`` special:
-    ensures a Domain is active (entering a fresh one when none is), stores
-    each binding through its ``ParamRef``, and restores the prior state on
-    exit. Values land in the root scope of the active domain, the channel
-    reserved for host pre-defines, so koskari code invoked inside the
-    block -- including macro bodies run by the compiler -- reads them
-    through normal parameter resolution.
+    stores each binding through its ``ParamRef`` and restores the prior
+    state on exit. Values land in the root scope of the current domain
+    (the innermost ``with Domain():`` block, else the thread's default
+    domain), the channel reserved for host pre-defines, so koskari code
+    invoked inside the block -- including macro bodies run by the
+    compiler -- reads them through normal parameter resolution.
 
     :param bindings: parameter name to value mappings
     """
-
-    entered = None
-    if Domain.current_domain() is None:
-        entered = Domain()
-        entered.__enter__()
 
     saved = []
     try:
@@ -83,8 +78,6 @@ def parameterize(**bindings):
                 ref.store(prior)
             else:
                 ref.clear()
-        if entered is not None:
-            entered.__exit__(None, None, None)
 
 
 class TypePredicate(partial):

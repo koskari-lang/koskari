@@ -31,7 +31,7 @@
    CPython iterator (KosPyIter) is written once. Each adapter is a site
    like any opcode site: it dispatches ki_step through the suite and
    renders the results into the Python protocols instead of stack
-   pushes and PC branches. The stepper owns a lazily created host
+   pushes and PC branches. The stepper owns a lazily created drive
    context; send and throw values are delivered through koskari_eval's
    entry ingress.
 */

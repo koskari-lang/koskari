@@ -40,8 +40,9 @@
    parameterize extents applied at this moment are captured; the cells
    are shared by pointer, and the root scope is reached through the
    domain); otherwise the domain of an enclosing `with Domain():` scope,
-   or a fresh one, with no cells. Both come back as new references,
-   *cells NULL when there are none. Returns -1 with an error set.
+   else the thread default domain, with no cells. Both come back as new
+   references, *cells NULL when there are none. Returns -1 with an error
+   set.
 */
 int KosContext_Snapshot(PyObject **domain, PyObject **cells) {
 
@@ -62,17 +63,10 @@ int KosContext_Snapshot(PyObject **domain, PyObject **cells) {
     return 0;
   }
 
-  {
-    PyObject *ambient = kos_domain_current();
-    if (ambient) {
-      Py_INCREF(ambient);
-      *domain = ambient;
-    } else {
-      *domain = (PyObject *) KosDomain_New();
-      if (! *domain)
-        return -1;
-    }
-  }
+  *domain = kos_domain_current();
+  if (! *domain)
+    return -1;
+  Py_INCREF(*domain);
   return 0;
 }
 

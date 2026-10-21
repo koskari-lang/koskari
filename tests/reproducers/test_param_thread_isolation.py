@@ -173,8 +173,9 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
 
     def test_thread_has_no_foreign_ambient(self):
         """
-        A second thread sees none of this thread's ambient state; entering
-        the same Domain object there is the explicit sharing gesture
+        A second thread sees none of this thread's ambient state: its own
+        default Domain has nothing bound; entering the same Domain object
+        there is the explicit sharing gesture
         """
 
         seen = []
@@ -183,7 +184,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
             try:
                 ParamRef("cross_thread").deref()
                 seen.append("no-raise")
-            except RuntimeError:
+            except NameError:
                 seen.append("isolated")
             with dom:
                 seen.append(ParamRef("cross_thread").deref())

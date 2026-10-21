@@ -27,6 +27,15 @@ mid-extent cannot leak its bindings anywhere. A `set!` on a parameter inside the
 extent writes the extent's binding and is discarded with it when the block
 exits.
 
+**Root scope from Python:** Koskari code called from Python shares one root
+parameter scope per thread. The scope is created on first use and lives as
+long as the thread, so a store made with no `parameterize` in the way during
+one call is read by every later call on that thread, through any function,
+and by Python through a `ParamRef`. Another thread starts with a root scope of
+its own and never sees these stores. Inside a `with Domain():` block the
+block's `Domain` supplies the root scope instead; after the block, the
+thread's scope answers again with its earlier stores.
+
 **Examples:**
 
 ```koskari

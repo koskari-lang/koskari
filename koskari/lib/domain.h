@@ -69,8 +69,9 @@ KosDomain *KosDomain_New(void);
    The lookup variant takes the context from the caller, which is how
    the evaluator resolves (no TLS on that path). The ambient variant is
    for Python-side entry with no context in hand: it discovers the
-   active context, falling back to the innermost python-scope domain's
-   root scope.
+   active context, falling back to the root scope of the innermost
+   python-scope domain, else of the thread default domain. A thread
+   default not yet minted has nothing bound and is not minted here.
 
    Returns borrowed reference, or NULL when nothing is bound.
 */
@@ -84,8 +85,8 @@ PyObject *kos_param_lookup_ambient(PyObject *key);
    parameterize extent lands.
 
    The ambient variant discovers the domain the same way as
-   kos_param_lookup_ambient, and fails with RuntimeError when neither a
-   context nor a python domain scope is active.
+   kos_param_lookup_ambient, minting the thread default domain when it
+   is the one answering and does not exist yet.
 
    Returns new reference, or NULL on error.
 */

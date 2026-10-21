@@ -35,12 +35,13 @@ pytestmark = pytest.mark.phase_lib
 class TestParameterizeCM(unittest.TestCase):
 
 
-    def test_enters_domain_when_none_active(self):
-        self.assertIsNone(Domain.current_domain())
+    def test_binds_in_thread_default_when_none_active(self):
+        default = Domain.current_domain()
         with parameterize(pcm_key="hello"):
-            self.assertIsNotNone(Domain.current_domain())
+            self.assertIs(Domain.current_domain(), default)
             self.assertEqual(parameter("pcm_key", None), "hello")
-        self.assertIsNone(Domain.current_domain())
+        self.assertIs(Domain.current_domain(), default)
+        self.assertIsNone(parameter("pcm_key", None))
 
 
     def test_reuses_active_domain(self):

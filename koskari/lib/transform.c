@@ -353,10 +353,10 @@ void kos_transform_step_clear(void *state) {
 
 /**
    The transform's durable drive context, created lazily: python-adapter
-   drives host their work here across steps instead of allocating a
+   drives run their work here across steps instead of allocating a
    context per element. The suite marks it recyclable, so the adapters
    reset it at their completion points; a creation failure falls back
-   to an adapter-owned host.
+   to an adapter-owned context.
 */
 KosContext *kos_transform_pyctx(PyObject *self) {
 
