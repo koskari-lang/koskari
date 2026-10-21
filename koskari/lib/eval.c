@@ -3691,9 +3691,11 @@ KosOpResult koskari_eval_drive(
   /* Swap in this context's handler-visible exception state (sys.exc_info),
      saving the host's. Contexts interleaved on one thread must not see
      each other's handled exception; the reverse swap runs at cleanup.
-     The thread state is peeked first and the host's state fetched only
-     when it holds one. tstate is kept for the cleanup, which runs after
-     kos_tls_leave_drive has released s. */
+     The swap moves the thread state's top handled-exception item only,
+     the one KosExc_Install writes: it is peeked first and fetched only
+     when it holds one. A deeper item (a caller's handler, seen from
+     inside a Python generator) is left where it is. tstate is kept for
+     the cleanup, which runs after kos_tls_leave_drive has released s. */
   tstate = kos_tls_thread_state(s);
   host_held = kos_tstate_exc_held(tstate);
   KosExc_Init(&host_exc);
@@ -3791,8 +3793,8 @@ koskari_eval_cleanup:
   kos_tls_leave_drive(s, ctx);
 
   /* Save this context's handler-visible exception state and restore the
-     host's (the reverse of the entry swap). By what the thread holds now
-     and what the host held at entry:
+     host's (the reverse of the entry swap). By what the thread's top
+     handled-exception item holds now and what it held at entry:
 
      - thread holds one, host held one: the context takes the thread's,
        the host's is installed again.

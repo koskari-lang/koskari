@@ -268,23 +268,43 @@ static inline int kos_type_is_mapping(PyObject *obj) {
 /* === Handled exception === */
 
 
-/* 1 when the thread state's handled-exception chain holds an exception
-   (sys.exc_info() would report one), 0 otherwise; no references are
-   taken. Reads PyThreadState.exc_info and, on each _PyErr_StackItem,
-   exc_value and previous_item. The walk is CPython's
-   _PyErr_GetTopmostException on this version: an item whose exc_value
-   is NULL or None is skipped while a previous item exists. The item
-   it stops at is tested as KosExc_Fetch tests what PyErr_GetExcInfo
-   returns from it, so the answer is KosExc_Held after a fetch. */
+/* 1 when the thread state's top handled-exception item holds an
+   exception, 0 otherwise; no references are taken. The top item,
+   PyThreadState.exc_info, is the one PyErr_SetExcInfo writes; the
+   items below it (a caller's handler, seen from inside a generator)
+   are not consulted. The item holds none when its exc_value is NULL or
+   None. kos_tstate_exc_top takes what this answers for. */
 static inline int kos_tstate_exc_held(PyThreadState *tstate) {
-  _PyErr_StackItem *item = tstate->exc_info;
+  PyObject *exc = tstate->exc_info->exc_value;
 
-  for (; item->previous_item; item = item->previous_item) {
-    if (item->exc_value && item->exc_value != Py_None)
-      return 1;
+  return exc && exc != Py_None;
+}
+
+
+/* New references to the exception the thread state's top
+   handled-exception item holds, the item PyErr_SetExcInfo writes, or
+   NULL in all three when kos_tstate_exc_held answers 0. The item
+   stores only the instance; the type is the instance's and the
+   traceback its __traceback__ (NULL when it has none), as
+   PyErr_GetExcInfo answers. The items below it are not consulted. */
+static inline void kos_tstate_exc_top(
+    PyThreadState *tstate,
+    PyObject **type,
+    PyObject **value,
+    PyObject **tb) {
+
+  PyObject *exc = tstate->exc_info->exc_value;
+
+  if (! exc || exc == Py_None) {
+    *type = NULL;
+    *value = NULL;
+    *tb = NULL;
+    return;
   }
 
-  return item->exc_value && item->exc_value != Py_None;
+  *type = Py_NewRef((PyObject *) Py_TYPE(exc));
+  *value = Py_NewRef(exc);
+  *tb = PyException_GetTraceback(exc);
 }
 
 

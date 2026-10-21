@@ -1676,4 +1676,33 @@ class TestDemandHandledException(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(sys.exc_info()[1], caught)
 
 
+    async def test_generator_caller_handler_not_left_in_generator(self):
+        """
+        a Python generator driven from inside an except block calls the
+        function: the generator still sees the caller's exception after
+        the call, and none once resumed outside any handler
+        """
+
+        mod = await self.load()
+        d = demand(mod["report"])
+        seen = []
+
+        def gen():
+            d(handled_now)
+            seen.append(sys.exc_info()[1])
+            yield
+            seen.append(sys.exc_info()[1])
+            yield
+
+        g = gen()
+        try:
+            raise KeyError("caller")
+        except KeyError as caught:
+            next(g)
+            self.assertIs(seen[0], caught)
+
+        next(g)
+        self.assertIsNone(seen[1])
+
+
 # The end.
