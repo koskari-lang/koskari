@@ -450,9 +450,9 @@ static KosOpResult coroutine_drive_await_error(KosCoroutine *coro) {
   if (val && tb)
     PyException_SetTraceback(val, tb);
 
+  coro->in_send = 1;
   KosContext_PythonAwaitClearIter(coro->ctx);
 
-  coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
   KosOpResult res = koskari_eval(coro->ctx, NULL, typ, val ? val : typ);
   coro->in_send = 0;
@@ -526,7 +526,9 @@ static int coroutine_step(
   /* If waiting on Python awaitable, forward to it. The iterator is held
      across the forward, and in_send is set so close, send and throw
      from inside the step are refused: either can otherwise clear the
-     context's reference to the iterator while it runs. */
+     context's reference to the iterator while it runs. The guard holds
+     through the release of the iterator as well, which can run user
+     code; it drops here only when the iterator yields and stays. */
   if (coro->state == KOS_CORO_WAITING_PY) {
     PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
@@ -535,9 +537,9 @@ static int coroutine_step(
       coro->in_send = 1;
       PySendResult step = kos_iter_send(await_iter, value ? value : Py_None,
                                         &await_result);
-      coro->in_send = 0;
       Py_DECREF(await_iter);
       if (step == PYGEN_NEXT) {
+        coro->in_send = 0;
         *out = await_result;   /* still yielding */
         return 1;
       }
@@ -622,7 +624,8 @@ static PyObject *coroutine_throw_pair(
 
   /* If yielded, throw will inject exception and run (no special case) */
   /* If waiting on Python awaitable, forward throw; the iterator is held
-     and in_send set across it, as in coroutine_step */
+     and in_send set across it, and through its release, as in
+     coroutine_step */
   if (coro->state == KOS_CORO_WAITING_PY) {
     PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
@@ -630,19 +633,21 @@ static PyObject *coroutine_throw_pair(
       coro->in_send = 1;
       PyObject *await_result = NULL;
       PySendResult step = kos_iter_throw(await_iter, exc, &await_result);
-      coro->in_send = 0;
       Py_DECREF(await_iter);
 
       if (step == PYGEN_NEXT) {
+        coro->in_send = 0;
         return await_result;
       }
 
       if (step == PYGEN_RETURN) {
-        /* await_result is uniformly owned; PythonResumeSet steals it. */
+        /* await_result is uniformly owned; PythonResumeSet steals it.
+           The send below checks the guard itself, so it drops first. */
         KosContext_PythonAwaitClearIter(coro->ctx);
         coro->state = KOS_CORO_RUNNING;
         KosContext_PythonResumeSet(
             coro->ctx, await_result, KOS_RESUME_AWAIT);
+        coro->in_send = 0;
         return coroutine_send((PyObject *) coro, Py_None);
       } else {
         return coroutine_raise_at_await(coro);
@@ -696,17 +701,18 @@ static PyObject *coroutine_close(PyObject *self) {
   }
 
   /* Close any pending Python awaitable. The iterator is held and
-     in_send set across the call, as in coroutine_step: its close can
-     run user code that calls back into this coroutine. */
+     in_send set across the call and through its release, as in
+     coroutine_step: its close and its release can run user code that
+     calls back into this coroutine. */
   {
     PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
       kos_iter_close(await_iter);
-      coro->in_send = 0;
       Py_DECREF(await_iter);
       KosContext_PythonAwaitClearIter(coro->ctx);
+      coro->in_send = 0;
     }
   }
 
