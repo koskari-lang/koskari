@@ -158,6 +158,17 @@ space.
 Code compiled after the load completes is plain heap: definitions
 entered at the REPL, and code compiled at runtime.
 
+### Precompiled modules
+
+A `.kio` file records, for each function, whether its build placed it
+in an arena, so the `pack-module` setting in force when the module was
+compiled is the one it loads with. Importing the `.kio` builds every
+function before the first top-level form runs and seals the chunks at
+that moment. A precompiled module's code is read-only while its own
+body runs, including a `when-main` body that never returns. A function
+that only a discarded top-level expression held keeps its bytes in its
+chunk.
+
 ### The cost of per-object sealing
 
 Turning `compiler/protect-code` on makes every top-level expression's

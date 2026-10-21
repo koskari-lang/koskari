@@ -145,6 +145,7 @@ class CodeFlags(IntEnum):
     YIELDS = 0x01
     PROTECT = 0x02
     CACHE = 0x04
+    ARENA = 0x08
 
 
 def code_flags(code):
@@ -159,18 +160,26 @@ def code_flags(code):
         flags |= CodeFlags.PROTECT
     if code.caches:
         flags |= CodeFlags.CACHE
+    if code.arena is not None:
+        flags |= CodeFlags.ARENA
     return flags
 
 
-def code_from_record(nspec, instr, name, filename, flags):
+def code_from_record(nspec, instr, name, filename, flags, allocator=None):
     """
-    Rebuild a Code with the protect and cache settings its record stored
+    Rebuild a Code with the protect and cache settings its record stored.
+    A record whose code was placed in an arena is placed into
+    ``allocator`` when one is given, and built on the heap otherwise
     """
+
+    if not flags & CodeFlags.ARENA:
+        allocator = None
 
     return Code(
         nspec, instr, name, filename,
         protect=bool(flags & CodeFlags.PROTECT),
-        cache=bool(flags & CodeFlags.CACHE))
+        cache=bool(flags & CodeFlags.CACHE),
+        allocator=allocator)
 
 
 @dataclass
@@ -480,10 +489,22 @@ class KioFile(object):
 
 
     @classmethod
-    def from_bytes(cls, data):
+    def from_bytes(cls, data, allocator=None):
+        """
+        Decode a .kio image. Function code recorded as placed in an arena
+        is placed into ``allocator`` when one is given; bodies and all
+        other code are built on the heap
+
+        :param data: the .kio bytes
+        :param allocator: CodeAllocator, or None
+        :return: KioFile
+        :raises ValueError: see validate
+        """
+
         header, sec = cls.validate(data)
 
-        pool, _ = decode_pool_records(data, sec[SectionTag.POOL][0])
+        pool, _ = decode_pool_records(
+            data, sec[SectionTag.POOL][0], allocator)
 
         code_records, _ = decode_codep_bodies(data, sec[SectionTag.CODE][0])
 
@@ -509,8 +530,8 @@ class KioFile(object):
 
 
     @classmethod
-    def read(cls, source):
-        return cls.from_bytes(binary_read_all(source))
+    def read(cls, source, allocator=None):
+        return cls.from_bytes(binary_read_all(source), allocator)
 
 
     @classmethod
@@ -1071,7 +1092,7 @@ def encode_pool(pool_values, index_of, pb=None):
     return b''.join(chunks)
 
 
-def decode_pool_record_at_kind(kind, buf, off, prior):
+def decode_pool_record_at_kind(kind, buf, off, prior, allocator=None):
     """
     Decode one pool record body after the kind byte into a final value
 
@@ -1083,6 +1104,8 @@ def decode_pool_record_at_kind(kind, buf, off, prior):
     :param buf: buffer
     :param off: offset after kind byte
     :param prior: decoded values for lower pool indices
+    :param allocator: CodeAllocator a FUNCTION_SPEC record placed in
+        an arena is placed into, or None for the heap
     :return: pair of decoded value and new offset
     """
 
@@ -1176,18 +1199,21 @@ def decode_pool_record_at_kind(kind, buf, off, prior):
         for _ in range(ic):
             (op, arg), ioff = decode_instruction(ib, ioff, prior)
             instr.append((op, arg))
-        code = code_from_record(nspec, instr, code_name, code_fn, flg)
+        code = code_from_record(
+            nspec, instr, code_name, code_fn, flg, allocator)
         return FunctionSpec(name, formals, code), off
 
     raise ValueError(f'unknown pool kind {kind}')
 
 
-def decode_pool_records(buf, off):
+def decode_pool_records(buf, off, allocator=None):
     """
     Decode full pool section
 
     Slots are decoded in order; each record may use ``prior`` slots only
-    (see ``intern_for_pool`` / ``decode_pool_record_at_kind``).
+    (see ``intern_for_pool`` / ``decode_pool_record_at_kind``). Function
+    code recorded as placed in an arena is placed into ``allocator``
+    when one is given.
     """
 
     count = struct.unpack_from('<I', buf, off)[0]
@@ -1196,7 +1222,8 @@ def decode_pool_records(buf, off):
     for _ in range(count):
         kind = buf[off]
         off += 1
-        val, off = decode_pool_record_at_kind(kind, buf, off, out)
+        val, off = decode_pool_record_at_kind(
+            kind, buf, off, out, allocator)
         out.append(val)
 
     return out, off

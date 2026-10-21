@@ -39,7 +39,8 @@ from os.path import split
 
 from .compile import Compiler, CompilerMode
 from .lib import (
-    Module, ModuleNamespace, cons, demand_call, nil, symbol, values)
+    CodeAllocator, Module, ModuleNamespace, cons, demand_call, nil, symbol,
+    values)
 from .pragma import ModulePragma
 from .reader import (
     READ_EOF, IndentAwareStream, LayoutReader, source_open, source_str)
@@ -263,7 +264,9 @@ def kio_codes(module):
     module's ``__pragma__`` record bound first so ``(pragma ...)``
     bodies and package-pragma stamping run as they do under a source
     load. No compiler or reader is built: the bodies were compiled
-    already
+    already. Every function the file holds is decoded before any body
+    runs, so the function code its build placed in arena chunks is
+    placed and sealed here, before the first body
 
     :param module: koskari Module with ``__file__`` set to a .kio path
     :return: the Code objects in stored order
@@ -272,7 +275,10 @@ def kio_codes(module):
     from .serialize.codex import KioFile
 
     build_module_pragma(module)
-    return KioFile.read(getattr(module, '__file__', '<unknown>')).codes
+    allocator = CodeAllocator()
+    kio = KioFile.read(getattr(module, '__file__', '<unknown>'), allocator)
+    allocator.seal()
+    return kio.codes
 
 
 async def load_module_async(module, *, seal=True, detach=True):

@@ -25,13 +25,13 @@ import unittest
 import pytest
 
 from koskari.lib import (
-    Code, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode, OpStyle,
-    bracket_nil, demand_call, gensym, keyword, nil, symbol)
+    Code, CodeAllocator, FormalsSpec, FunctionSpec, NamespaceSpec, OpCode,
+    OpStyle, bracket_nil, demand_call, gensym, keyword, nil, symbol)
 from koskari.serialize import (
     KioFile, KioMeta, compile_ki_source_to_kio, dump_kio, load_kio)
 from koskari.serialize.codex import (
-    KIO_MAGIC, KioHeader, PoolBuilder, PoolKind, SectionTag,
-    encode_pool_record_value)
+    KIO_MAGIC, CodeFlags, KioHeader, PoolBuilder, PoolKind, SectionTag,
+    code_flags, encode_pool_record_value)
 
 from .. import make_callable
 from ..lib.opcode import build_code, build_expr
@@ -182,6 +182,62 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertIsInstance(loaded, FunctionSpec)
         self.assertFalse(loaded.code.protected)
         self.assertFalse(loaded.code.caches)
+
+    def _placed_outer(self):
+        nspec = NamespaceSpec(None, (), ())
+        instr = build_code([['CONST', 7], ['RETURN', 1]]).soften()
+        inner = Code(nspec, instr, 'inner', allocator=CodeAllocator())
+        self.assertIsNotNone(inner.arena)
+        self.assertTrue(code_flags(inner) & CodeFlags.ARENA)
+        fspec = FunctionSpec('inner', FormalsSpec(), inner)
+        code, _ = build_expr([
+            ['CONST', fspec],
+            ['RETURN', 1],
+        ], name='outer')
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        return buf.getvalue()
+
+    def test_placed_function_spec_decodes_into_allocator(self):
+        """
+        a function placed in an arena is placed into the allocator the
+        decode is given; the body holding it stays on the heap
+        """
+
+        alloc = CodeAllocator()
+        kio = KioFile.read(io.BytesIO(self._placed_outer()), alloc)
+        body, = kio.codes
+        fspec, = [arg for op, arg in body.soften()
+                  if isinstance(arg, FunctionSpec)]
+        self.assertIsNone(body.arena)
+        self.assertEqual(alloc.chunks, (fspec.code.arena,))
+        self.assertFalse(fspec.code.arena.sealed)
+
+    def test_placed_function_spec_without_allocator_is_heap(self):
+        """with no allocator a placed function decodes onto the heap"""
+        kio = load_kio(io.BytesIO(self._placed_outer()))
+        fspec, = [arg for op, arg in kio.codes[0].soften()
+                  if isinstance(arg, FunctionSpec)]
+        self.assertIsNone(fspec.code.arena)
+
+    def test_heap_function_spec_ignores_allocator(self):
+        """a function built on the heap decodes onto the heap"""
+        nspec = NamespaceSpec(None, (), ())
+        instr = build_code([['CONST', 7], ['RETURN', 1]]).soften()
+        inner = Code(nspec, instr, 'inner')
+        self.assertFalse(code_flags(inner) & CodeFlags.ARENA)
+        code, _ = build_expr([
+            ['CONST', FunctionSpec('inner', FormalsSpec(), inner)],
+            ['RETURN', 1],
+        ], name='outer')
+        buf = io.BytesIO()
+        dump_kio(buf, [code])
+        alloc = CodeAllocator()
+        kio = KioFile.read(io.BytesIO(buf.getvalue()), alloc)
+        fspec, = [arg for op, arg in kio.codes[0].soften()
+                  if isinstance(arg, FunctionSpec)]
+        self.assertIsNone(fspec.code.arena)
+        self.assertEqual(alloc.chunks, ())
 
     def _const_roundtrip_code(self, code):
         buf = io.BytesIO()
@@ -361,6 +417,34 @@ class TestKioRoundTrip(unittest.TestCase):
         ops = [OpCode(op) for op, _ in specs[0].code.soften()]
         self.assertIn(OpCode.FAST2, ops)
         self.assertTrue(any('CALL' in op.name for op in ops), ops)
+
+    def _compiled_spec(self, source, allocator):
+        buf = io.BytesIO()
+        compile_ki_source_to_kio(source, buf)
+        kio = KioFile.read(io.BytesIO(buf.getvalue()), allocator)
+        specs = [arg for body in kio.codes for op, arg in body.soften()
+                 if isinstance(arg, FunctionSpec)]
+        self.assertEqual(1, len(specs))
+        return specs[0]
+
+    def test_compile_ki_records_function_placement(self):
+        """
+        a build places its function code as a source load does, and the
+        record decodes into the allocator
+        """
+
+        alloc = CodeAllocator()
+        spec = self._compiled_spec('(define k (lambda [a] a))\n', alloc)
+        self.assertEqual(alloc.chunks, (spec.code.arena,))
+
+    def test_compile_ki_pack_module_off_is_heap(self):
+        """a build with pack-module off records its functions as heap"""
+        alloc = CodeAllocator()
+        spec = self._compiled_spec(
+            '(pragma [compiler/pack-module False])\n'
+            '(define k (lambda [a] a))\n', alloc)
+        self.assertIsNone(spec.code.arena)
+        self.assertEqual(alloc.chunks, ())
     """
     Embedded body filename can differ from the compile-time path
     """

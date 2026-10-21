@@ -38,7 +38,9 @@ def compile_top_level_to_codes(mod, filename, source_stream):
     """
     Read top-level forms from a SourceStream and return compiled Code
     objects, running each as it is compiled so compile-time artifacts
-    are available to the forms after it
+    are available to the forms after it. Function code is placed and
+    sealed as under a source load, so each record of it carries the
+    placement the module's pragma chose
 
     :param mod: module namespace for evaluation side effects
     :param filename: logical source filename for the load facets
@@ -49,7 +51,7 @@ def compile_top_level_to_codes(mod, filename, source_stream):
     ns = vars(mod)
     bodies = []
 
-    with load_facets(mod, filename, seal=False, detach=True) as facets:
+    with load_facets(mod, filename, seal=True, detach=True) as facets:
         for code in compile_top_level(*facets, source_stream):
             bodies.append(code)
             demand_call(code.expression(ns))
