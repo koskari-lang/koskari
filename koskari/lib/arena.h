@@ -57,6 +57,8 @@ typedef struct KosArena {
                       open, the whole pages the fill covers once
                       sealed */
   size_t fill;     /* end of the newest reservation */
+  int writing;     /* reservations still being written: a seal waits
+                      for every one to complete or be released */
   int sealed;      /* nonzero once mprotect(PROT_READ) applied */
 
   PyObject *weakreflist;  /* weak reference support */
@@ -151,6 +153,8 @@ PyObject *KosArena_New(size_t nbytes);
 
 /**
    Reserve a slice of nbytes from the arena, aligned to KOS_ARENA_UNIT.
+   The slice is being written until KosArena_Complete is called for
+   it, and the arena refuses to seal while any slice is.
 
    :param arena: KosArena object, unsealed
    :param nbytes: slice size in bytes
@@ -163,15 +167,26 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out);
 
 
 /**
+   Mark a reservation written: nothing writes it again, whether its
+   holder keeps it or releases it. Called once per reservation.
+
+   :param arena: KosArena object
+*/
+void KosArena_Complete(PyObject *arena);
+
+
+/**
    Trim the arena to the whole pages its reservations fill, unmapping
    the rest, and seal it read-only with a single mprotect(PROT_READ).
    An arena with nothing reserved is unmapped whole and sealed with no
    mapping.
 
-   :param arena: KosArena object, unsealed
+   :param arena: KosArena object, unsealed, with no reservation still
+     being written
 
-   :return: 0 on success; -1 with an error set when already sealed or
-     when munmap or mprotect fails
+   :return: 0 on success; -1 with an error set when already sealed,
+     when a reservation is still being written, or when munmap or
+     mprotect fails
 */
 int KosArena_Seal(PyObject *arena);
 

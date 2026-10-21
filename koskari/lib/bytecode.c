@@ -1879,8 +1879,9 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
    All offsets use natural alignment: pointer size for cpool,
    4-byte for KosExtra. With an allocator, the exact unrounded total is
-   reserved from one of its arena chunks, which out_chunk receives
-   (borrowed; the allocator holds it), and protect is ignored. Otherwise,
+   reserved from one of its arena chunks, which out_chunk receives as
+   an owned reference, so the chunk outlives whatever Python runs while
+   the block is written, and protect is ignored. Otherwise,
    with protect, the block is page-aligned and the total is rounded up
    to page size for the later mprotect seal; without, it is a plain
    writable malloc of the exact unrounded total.
@@ -1915,6 +1916,7 @@ static int code_alloc_unified(
        the memset below still applies */
     if (KosCodeAllocator_Reserve(allocator, total, &base, out_chunk))
       return -1;
+    Py_INCREF(*out_chunk);
 
   } else if (protect) {
     /* Page-aligned; later mprotect(PROT_READ) once for entire block */
@@ -1956,15 +1958,18 @@ static int code_alloc_unified(
 
 /**
    Release a unified block that code_alloc_unified produced and no
-   KosCode has taken: back to its arena chunk, or to the heap. The
-   block is still writable.
+   KosCode has taken: back to its arena chunk, dropping the reference
+   the reservation took, or to the heap. The block is still writable.
 */
 static void code_free_unified(void *base, size_t size, PyObject *chunk) {
 
-  if (chunk)
+  if (chunk) {
+    KosArena_Complete(chunk);
     KosArena_Release(chunk, base, size);
-  else
+    Py_DECREF(chunk);
+  } else {
     free(base);
+  }
 }
 
 
@@ -3089,10 +3094,10 @@ static int code_instr_init(
   code_fill_derived(code, code_len, extra);
 
   /* Seal block read-only; single mprotect for entire allocation. A
-     chunk member is sealed with its chunk, and owns a reference to it
-     from here on. */
+     chunk member is written, is sealed with its chunk, and keeps the
+     reference the reservation took. */
   if (chunk) {
-    Py_INCREF(chunk);
+    KosArena_Complete(chunk);
     KosCode_ARENA(self) = chunk;
 
   } else if (protect) {

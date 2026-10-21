@@ -137,6 +137,7 @@ PyObject *KosArena_New(size_t nbytes) {
   self->base = base;
   self->size = total;
   self->fill = 0;
+  self->writing = 0;
   self->sealed = 0;
   self->weakreflist = NULL;
 
@@ -164,9 +165,18 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
   }
 
   self->fill = start + nbytes;
+  self->writing++;
   *out = (char *) self->base + start;
 
   return 0;
+}
+
+
+void KosArena_Complete(PyObject *arena) {
+
+  KosArena *self = (KosArena *) arena;
+
+  self->writing--;
 }
 
 
@@ -177,6 +187,15 @@ int KosArena_Seal(PyObject *arena) {
   if (self->sealed) {
     PyErr_SetString(PyExc_ValueError,
                     "Arena is already sealed");
+    return -1;
+  }
+
+  /* a reservation is written by code that can run Python meanwhile:
+     sealing under it would make its next write fault */
+  if (self->writing) {
+    PyErr_SetString(PyExc_ValueError,
+                    "Cannot seal an arena with a reservation"
+                    " still being written");
     return -1;
   }
 

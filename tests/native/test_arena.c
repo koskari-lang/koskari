@@ -193,8 +193,10 @@ static int test_arena_release(void) {
     void *a = NULL;
     void *b = NULL;
     TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &a), 0, "reserve a");
+    KosArena_Complete(arena);
     size_t after_a = KosArena_FILL(arena);
     TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &b), 0, "reserve b");
+    KosArena_Complete(arena);
 
     /* an older reservation is not returned */
     KosArena_Release(arena, a, 40);
@@ -210,6 +212,7 @@ static int test_arena_release(void) {
 
     void *c = NULL;
     TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &c), 0, "reserve c");
+    KosArena_Complete(arena);
     TEST_ASSERT_SAME(c, b, "space reused");
 
     /* nothing is returned to a sealed arena */
@@ -223,6 +226,37 @@ static int test_arena_release(void) {
     return 0;
 }
 
+
+
+static int test_arena_seal_waits_for_writing(void) {
+    PyObject *arena = KosArena_New(256);
+    TEST_ASSERT_NOT_NULL(arena, "create arena");
+
+    /* a reservation being written refuses the seal; completing it
+       lets the seal through */
+    void *a = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &a), 0, "reserve a");
+    TEST_ASSERT_EQ(KosArena_Seal(arena), -1, "seal refused under a");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError), "ValueError");
+    PyErr_Clear();
+    TEST_ASSERT(! KosArena_SEALED(arena), "still open");
+
+    /* a reservation given back is completed first, as its releaser
+       does */
+    void *b = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &b), 0, "reserve b");
+    KosArena_Complete(arena);
+    KosArena_Release(arena, b, 40);
+    TEST_ASSERT_EQ(KosArena_Seal(arena), -1, "seal still refused under a");
+    PyErr_Clear();
+
+    KosArena_Complete(arena);
+    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal once written");
+    TEST_ASSERT(KosArena_SEALED(arena), "sealed");
+
+    Py_DECREF(arena);
+    return 0;
+}
 
 /* === code allocator tests === */
 
@@ -243,11 +277,14 @@ static int test_code_allocator_reserve(void) {
        that fits behind the first */
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, unit - 128, &a, &chunk_a),
                    0, "reserve a");
+    KosArena_Complete(chunk_a);
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 256, &b, &chunk_b),
                    0, "reserve b");
+    KosArena_Complete(chunk_b);
     TEST_ASSERT(chunk_b != chunk_a, "b opens a second chunk");
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &c, &chunk_c),
                    0, "reserve c");
+    KosArena_Complete(chunk_c);
     TEST_ASSERT_SAME(chunk_c, chunk_a, "c fits the first chunk");
 
     /* an oversize block gets whole chunk units */
@@ -256,6 +293,7 @@ static int test_code_allocator_reserve(void) {
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, unit * 2 + 1, &d,
                                             &chunk_d),
                    0, "reserve oversize");
+    KosArena_Complete(chunk_d);
     TEST_ASSERT_EQ((long) KosArena_SIZE(chunk_d), (long) (unit * 3),
                    "oversize chunk is three units");
 
@@ -302,10 +340,12 @@ static int test_code_allocator_seal_resumes(void) {
        seal takes the rest and closes */
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &a, &chunk_a),
                    0, "reserve a");
+    KosArena_Complete(chunk_a);
     TEST_ASSERT_EQ(KosArena_Seal(chunk_a), 0, "seal a's chunk directly");
 
     TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &b, &chunk_b),
                    0, "reserve past a sealed chunk");
+    KosArena_Complete(chunk_b);
     TEST_ASSERT(chunk_b != chunk_a, "b opens a second chunk");
 
     PyObject *sealed = KosCodeAllocator_Seal(alloc);
@@ -393,6 +433,7 @@ int run_arena_tests(void) {
     RUN_TEST(test_arena_reserve_capacity);
     RUN_TEST(test_arena_seal);
     RUN_TEST(test_arena_release);
+    RUN_TEST(test_arena_seal_waits_for_writing);
 
     RUN_TEST(test_code_allocator_reserve);
     RUN_TEST(test_code_allocator_seal_resumes);
