@@ -170,6 +170,11 @@ body runs, including a `when-main` body that never returns. A function
 that only a discarded top-level expression held keeps its bytes in its
 chunk.
 
+The file records placement and per-object protection as the build gave
+them: a function placed in an arena was never protected on its own, so
+decoding the file without an allocator, as `koskari.serialize.load_kio`
+does, builds that function on the heap, writable.
+
 ### The cost of per-object sealing
 
 Turning `compiler/protect-code` on makes every top-level expression's
