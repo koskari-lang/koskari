@@ -29,43 +29,6 @@
 #include "lib.h"
 
 
-/* === Helpers === */
-
-
-/**
-   Vector-to-tuple packing for KosCallAdapt_VectorAsync, whose worker
-   (kc_pycall through Koskari_AsyncCall) takes the tuple + dict shapes.
-*/
-static PyObject *vcall_build_args_tuple(PyObject *const *args, Py_ssize_t nargs) {
-  PyObject *tup = PyTuple_New(nargs);
-  if (! tup)
-    return NULL;
-  for (Py_ssize_t i = 0; i < nargs; i++) {
-    Py_INCREF(args[i]);
-    PyTuple_SET_ITEM(tup, i, args[i]);
-  }
-  return tup;
-}
-
-
-static PyObject *vcall_build_kwds_dict(
-    PyObject *const *kw_vals,
-    PyObject *kwnames) {
-
-  Py_ssize_t nkw = PyTuple_GET_SIZE(kwnames);
-  PyObject *kwds = PyDict_New();
-  if (! kwds)
-    return NULL;
-  for (Py_ssize_t i = 0; i < nkw; i++) {
-    if (PyDict_SetItem(kwds, PyTuple_GET_ITEM(kwnames, i), kw_vals[i]) < 0) {
-      Py_DECREF(kwds);
-      return NULL;
-    }
-  }
-  return kwds;
-}
-
-
 /* === KosCallShape === */
 
 
@@ -401,39 +364,6 @@ PyObject *KosCallAdapt_CallAsync(
     PyObject *kwds) {
 
   return Koskari_AsyncCall(self, args, kwds);
-}
-
-
-PyObject *KosCallAdapt_VectorAsync(
-    PyObject *self,
-    PyObject *const *args,
-    size_t nargsf,
-    PyObject *kwnames) {
-
-  if (KosEvaluated_Check(self)) {
-    KosCallSlots *slots = KosEvaluated_CallSlots(Py_TYPE(self));
-    if (slots && slots->kc_pyvectorcall)
-      return slots->kc_pyvectorcall(self, args, nargsf, kwnames);
-  }
-
-  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
-  PyObject *tup = vcall_build_args_tuple(args, nargs);
-  if (! tup)
-    return NULL;
-
-  PyObject *kwds = NULL;
-  if (kwnames && PyTuple_GET_SIZE(kwnames)) {
-    kwds = vcall_build_kwds_dict(args + nargs, kwnames);
-    if (! kwds) {
-      Py_DECREF(tup);
-      return NULL;
-    }
-  }
-
-  PyObject *result = Koskari_AsyncCall(self, tup, kwds);
-  Py_DECREF(tup);
-  Py_XDECREF(kwds);
-  return result;
 }
 
 

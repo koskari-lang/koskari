@@ -1789,7 +1789,14 @@ static PyObject *function_construct(
   KosNamespace_TrackChain(template);
 
   KosFunction_NAME(self) = NULL;
-  ((KosFunction *) self)->vectorcall = KosCallAdapt_VectorAsync;
+
+  /* the type's own vector worker, resolved once here; a type without
+     one leaves the slot NULL and Python calls tp_call instead */
+  {
+    KosCallSlots *slots = KosEvaluated_CallSlots(type);
+    ((KosFunction *) self)->vectorcall =
+        slots ? slots->kc_pyvectorcall : NULL;
+  }
   ((KosFunction *) self)->inspect_signature = NULL;
   ((KosFunction *) self)->creation_annotations = NULL;
   ((KosFunction *) self)->annotations_cache = NULL;
