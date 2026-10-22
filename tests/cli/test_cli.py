@@ -1141,9 +1141,133 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
                 tmp, ('entrykio',),
                 '--compile-kio', os.path.join(tmp, 'entrykio.kio'), src)
             self.assertEqual(0, code, err)
+            os.remove(src)
             code, out, err = await self._main(
                 tmp, ('entrykio',), '-m', 'entrykio')
         self.assertEqual(4, code, err)
+
+
+    async def test_stdin_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = await self._main(
+                tmp, (), '-',
+                stdin="(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  8\n")
+        self.assertEqual(8, code, err)
+
+
+    async def test_raising_entry_exits_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_raises.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  raise (ValueError \"boom\")\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(1, code, err)
+        self.assertIn("ValueError: boom", err)
+
+
+    async def test_system_exit_from_entry_propagates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_sys_exit.ki'),
+                "import sys\n"
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  sys.exit 7\n")
+            with self.assertRaises(SystemExit) as caught:
+                await self._main(tmp, (), script)
+        self.assertEqual(7, caught.exception.code)
+
+
+    async def test_keyboard_interrupt_from_entry_exits_130(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_interrupt.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  raise (KeyboardInterrupt)\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(130, code, err)
+
+
+    async def test_int_like_returns(self):
+        cases = [("True", 1), ("False", 0), ("-1", -1), ("300", 300)]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                with tempfile.TemporaryDirectory() as tmp:
+                    script = self._write(
+                        os.path.join(tmp, 'entry_value.ki'),
+                        "(declare-entry main)\n"
+                        "\n"
+                        "define main []:\n"
+                        f"  {value}\n")
+                    code, out, err = await self._main(tmp, (), script)
+                self.assertEqual(expected, code, err)
+                self.assertEqual("", err)
+
+
+    async def test_non_callable_entry_exits_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_value_not_fn.ki'),
+                "define main 5\n"
+                "(declare-entry main)\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(1, code, err)
+        self.assertIn("TypeError", err)
+
+
+    async def test_interactive_raising_entry_skips_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_interactive_raises.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  raise (ValueError \"boom\")\n")
+            code, out, err = await self._main(
+                tmp, (), '-i', script, stdin='')
+        self.assertEqual(1, code, err)
+        self.assertIn("ValueError: boom", err)
+        self.assertNotIn("Koskari ", out)
+
+
+    async def test_interactive_other_return_continues_to_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_interactive_text.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  \"bad thing\"\n")
+            code, out, err = await self._main(
+                tmp, (), '-i', script, stdin='')
+        self.assertEqual(0, code, err)
+        self.assertIn("bad thing\n", err)
+        self.assertIn("Koskari ", out)
+
+
+    async def test_entry_skipped_when_load_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_load_raises.ki'),
+                "(declare-entry main)\n"
+                "\n"
+                "define main []:\n"
+                "  print \"never\"\n"
+                "\n"
+                "raise (RuntimeError \"load failed\")\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(1, code, err)
+        self.assertIn("RuntimeError: load failed", err)
+        self.assertEqual("", out)
 
 
     async def test_interactive_runs_entry_then_session(self):
