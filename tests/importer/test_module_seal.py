@@ -13,8 +13,8 @@
 
 """
 End-to-end tests for module sealing: the compiler/protect-code and
-compiler/pack-module pragmas driving arena packing through the module
-load path
+compiler/pack-module pragmas driving code placement and sealing through
+the module load path
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
@@ -201,8 +201,8 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             arena.used, arena_fill((ns["keep"].code, ns["keep2"].code)))
 
-    async def test_nested_code_packed(self):
-        """nested lambdas are collected through the same registry"""
+    async def test_nested_code_placed(self):
+        """nested lambdas are placed in the same chunks"""
 
         src = """
 (define outer (lambda [x] (lambda [y] (+ x y))))
@@ -220,8 +220,8 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
     """
     Deferred completion: several loads into one module with seal and
     detach deferred share one set of facets (one pragma, compiler, and
-    reader), and one manual seal packs the union -- the shape the
-    bootstrap builtins loop uses
+    reader), and one manual seal seals the chunks of every load -- the
+    shape the bootstrap builtins loop uses
     """
 
     async def multi_load(self, *sources):

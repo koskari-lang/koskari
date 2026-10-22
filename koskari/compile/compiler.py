@@ -1340,8 +1340,8 @@ class Compiler:
             cache = self.cache_expression
 
         # Function code minted during a module load is placed into the
-        # load's arena chunks, where it stays and is sealed when the load
-        # completes; expression code is always a heap block
+        # load's arena chunks, where it stays; a sealing load seals the
+        # chunks when it completes. Expression code is always a heap block
         allocator = None
         if mode == CompilerMode.FUNCTION and self.pack_module:
             allocator = self.allocator

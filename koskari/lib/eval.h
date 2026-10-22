@@ -1729,10 +1729,8 @@ void kos_eval_inject_recorded_frames(
    pushes whose target is not an instruction argument. Read from the
    site's cache slot once it is filled; the first execution resolves it
    through the extent table and fills the slot, and a site with no slot
-   resolves every time. A pc and not a record pointer: the instruction
-   block moves when the code is packed into an arena, and a pc stays
-   valid across that. Returns -1 with an error set when no extent of the
-   kind encloses the site.
+   resolves every time. A pc and not a record pointer. Returns -1 with
+   an error set when no extent of the kind encloses the site.
 */
 static inline int kos_site_extent_close(
     KosEvalState *es,

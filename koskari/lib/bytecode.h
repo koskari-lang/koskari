@@ -632,8 +632,7 @@ struct KosCacheSlot {
 
     /* KOS_CACHE_TARGET: the pop pc of the extent a region push opens,
        resolved once through the extent table. A pc, never a record
-       pointer: the instruction block moves when the code is packed into
-       an arena and the slots are not rebased. Owns nothing. */
+       pointer. Owns nothing. */
     struct {
       uint32_t pop_pc;
     } target;
