@@ -150,10 +150,10 @@ static int test_eval_object_add_return(void) {
 }
 
 
-/* === Test: domain non-null on fresh context === */
+/* === Test: no domain on a fresh context, nor after its eval === */
 
 
-static int test_domain_non_null(void) {
+static int test_domain_null_outside_eval(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -176,11 +176,16 @@ static int test_domain_non_null(void) {
 
     KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    /* every context has a domain, the thread default when none is
-       ambient; parameter cells start empty (lazy) */
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+    /* a context takes its domain at each eval entry and drops it at the
+       exit; parameter cells start empty (lazy) */
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx), "no domain before the eval");
     TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
                 "param cells start unallocated");
+
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    Py_XDECREF(ev.val);
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx), "no domain after the eval");
 
     Py_DECREF(ctx);
     Py_DECREF(code_obj);
@@ -414,7 +419,7 @@ static int test_context_churn_past_freelist_cap(void) {
     TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) frame,
                 "chain is the new frame");
     TEST_ASSERT(KosContext_FRAME(ctx) == frame, "live frame is the new one");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx), "no domain before the eval");
     TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
                 "param cells start unallocated");
     TEST_ASSERT(KosContext_TOKEN(ctx) == NULL, "no evaluator token");
@@ -434,10 +439,10 @@ static int test_context_churn_past_freelist_cap(void) {
 }
 
 
-/* === Test: contexts with no ambient domain share one === */
+/* === Test: contexts created together start without a domain === */
 
 
-static int test_domain_thread_default_when_no_tls(void) {
+static int test_domain_absent_at_creation(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -466,10 +471,8 @@ static int test_domain_thread_default_when_no_tls(void) {
     KosContext *ctx2 = KosContext_New(frame2, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx1, "create ctx1");
     TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx2), "ctx2 domain non-null");
-    TEST_ASSERT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
-                     "contexts share the thread default domain");
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx1), "ctx1 has no domain yet");
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx2), "ctx2 has no domain yet");
 
     /* each context also owns its own cell table */
     PyObject *cells1 = kos_context_param_refs(ctx1);
@@ -2924,13 +2927,13 @@ int run_eval_tests(void) {
     RUN_TEST(test_cache_frame_takes_self_binding_function);
     RUN_TEST(test_general_call_binds_into_cached_frame);
     RUN_TEST(test_eval_object_add_return);
-    RUN_TEST(test_domain_non_null);
+    RUN_TEST(test_domain_null_outside_eval);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
     RUN_TEST(test_context_clear_drops_chain_caches);
     RUN_TEST(test_context_clear_releases_staged_delivery);
     RUN_TEST(test_context_recycle_releases_staged_delivery);
     RUN_TEST(test_context_churn_past_freelist_cap);
-    RUN_TEST(test_domain_thread_default_when_no_tls);
+    RUN_TEST(test_domain_absent_at_creation);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);

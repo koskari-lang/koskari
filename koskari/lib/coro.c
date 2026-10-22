@@ -98,13 +98,11 @@ static PyObject *coroutine_new_bound(
   Py_INCREF(code);
   coro->code = code;
   coro->ns = ns;
-  coro->domain = NULL;
   coro->param_refs = NULL;
   Py_XINCREF(fn);
   coro->fn = fn;
 
-  if (KosContext_Snapshot(
-      kos_tls_current(), &coro->domain, &coro->param_refs) < 0) {
+  if (KosContext_Snapshot(kos_tls_current(), &coro->param_refs) < 0) {
     Py_DECREF(coro);
     return NULL;
   }
@@ -176,8 +174,7 @@ static int coroutine_materialize(KosCoroutine *coro) {
     KosDynFrame_FLAGS(frame) |= KOS_FRAME_CORO_ROOT;
   }
 
-  ctx = KosContext_NewFromSnapshot(frame, coro->domain, coro->param_refs);
-  coro->domain = NULL;
+  ctx = KosContext_NewFromSnapshot(frame, coro->param_refs);
   coro->param_refs = NULL;
   if (! ctx) {
     kos_dynframe_free(frame);
@@ -204,7 +201,6 @@ static void coroutine_drop_record(KosCoroutine *coro) {
 
   Py_CLEAR(coro->code);
   Py_CLEAR(coro->ns);
-  Py_CLEAR(coro->domain);
   Py_CLEAR(coro->param_refs);
   Py_CLEAR(coro->fn);
 }
@@ -309,7 +305,6 @@ static int coroutine_traverse(
   Py_VISIT(coro->ctx);
   Py_VISIT(coro->code);
   Py_VISIT(coro->ns);
-  Py_VISIT(coro->domain);
   Py_VISIT(coro->param_refs);
   Py_VISIT(coro->fn);
 
@@ -860,7 +855,6 @@ int KosCoroutine_TakeFresh(PyObject *self, KosCode **code, PyObject **ns) {
   coro->code = NULL;
   *ns = coro->ns;
   coro->ns = NULL;
-  Py_CLEAR(coro->domain);
   Py_CLEAR(coro->param_refs);
   Py_CLEAR(coro->fn);
   coro->state = KOS_CORO_DONE;

@@ -3705,6 +3705,19 @@ KosOpResult koskari_eval(
   if (! s)
     s = kos_tls_current();
   tstate = kos_tls_thread_state(s);
+
+  /* the context runs this eval under the domain current on the thread:
+     the active context's, else the innermost `with Domain():`, else
+     the thread default. Nothing is carried between evals: the exit
+     clears it, and a context resumed elsewhere takes that stack's. */
+  {
+    PyObject *domain = kos_tls_domain(s);
+    if (unlikely(! domain))
+      return EVAL_RAISE();
+    Py_INCREF(domain);
+    Py_XSETREF(KosContext_DOMAIN(ctx), domain);
+  }
+
   if (kos_recursion_enter(tstate, " in koskari_eval"))
     return EVAL_RAISE();
 
@@ -3818,6 +3831,7 @@ koskari_eval_cleanup:
   KosContext_EvalExit(ctx);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   kos_tls_leave_drive(s, ctx);
+  Py_CLEAR(KosContext_DOMAIN(ctx));
 
   /* Save this context's handler-visible exception state and restore the
      host's (the reverse of the entry swap). By what the thread's top

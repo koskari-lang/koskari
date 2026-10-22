@@ -785,11 +785,13 @@ struct KosContext {
 
   KosEvaluatorToken *token; /* ownership marker for continuations; NULL
                                until the first capture mints it */
-  PyObject *domain;         /* KosDomain; mandatory. The thread's current
-                               domain at creation: the active context's,
-                               else the innermost open Domain block's,
-                               else the thread default. Identity/lifecycle
-                               anchor; live parameter state is in
+  PyObject *domain;         /* KosDomain while an eval runs the context:
+                               the domain current on the thread at the
+                               eval entry (the active context's, else
+                               the innermost open Domain block's, else
+                               the thread default), cleared at exit.
+                               NULL between evals: nothing is carried
+                               across. Live parameter state is in
                                param_refs. */
   PyObject *param_refs;    /* PyDict: name -> cell (KosRef); this context's
                                parameter cell table, forked at creation by
@@ -1259,12 +1261,9 @@ PyObject *KosContext_PopUnpackSequence(
   :return: new reference to the context, or NULL on error
 */
 KosContext *KosContext_New(KosDynFrame *top, KosTlsState *s);
-int KosContext_Snapshot(KosTlsState *s, PyObject **domain, PyObject **cells);
+int KosContext_Snapshot(KosTlsState *s, PyObject **cells);
 int KosContext_TakeSnapshot(KosContext *ctx, KosTlsState *s);
-KosContext *KosContext_NewFromSnapshot(
-    KosDynFrame *top,
-    PyObject *domain,
-    PyObject *cells);
+KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells);
 KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 
 

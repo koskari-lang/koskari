@@ -27,11 +27,13 @@
    (koskari.lib.Parameterize): the same cells, held in a table on a
    ContextVar chain that a context takes at creation and an ambient
    read consults before the active context's own table when the span
-   was opened inside that context. Every context has a domain, the
-   identity/lifecycle anchor of the computation: the active context's,
-   else the innermost `with Domain():` scope's, else the thread's
-   default domain, minted on first need and released with the thread's
-   record. See design/archive/parameter-resolution.md.
+   was opened inside that context. A context has a domain while an
+   eval runs it, taken at the entry from the thread running it: the
+   active context's, else the innermost `with Domain():` scope's, else
+   the thread's default domain, minted on first need and released with
+   the thread's record. A context resumed on another thread runs under
+   that thread's domain; only its cells travel with it. See
+   design/archive/parameter-resolution.md.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -72,7 +74,8 @@ struct KosTlsState {
   size_t python_domain_cap;
   /* the thread's default domain (a reference of our own), minted on
      first need: the domain answering when no context is active and no
-     `with Domain():` scope is open. Never shared between threads. */
+     `with Domain():` scope is open. Only evals entered on this thread
+     run under it. */
   PyObject *default_domain;
 };
 

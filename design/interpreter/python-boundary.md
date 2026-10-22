@@ -131,13 +131,15 @@ Test: a `Demand` called twice outside any domain; a root
 Implemented as a per-thread default domain rather than keep-and-clear:
 each thread owns one, `KosTlsState.default_domain`, minted on first
 need by `tls_default_domain` under `kos_tls_domain(s)` and returned
-when no context is active and no `with Domain():` is open. It is never
-shared between threads. `KosContext_Snapshot` takes
-`kos_tls_domain(s)` and no longer calls `KosDomain_New`, so the cached
-contexts in `demand.c`, `iterate.c` and `transform.c` and the coroutine
-snapshot all resolve to it; the demand release keeps the domain and
-clears only `param_refs`. Root stores
-outlive the call on the Python surface as they do under the launcher.
+when no context is active and no `with Domain():` is open. A context
+takes its domain at each eval entry (`koskari_eval` reads
+`kos_tls_domain(s)` into `KosContext_DOMAIN`) and drops it at the
+exit; `KosContext_Snapshot` carries only the parameterize cells, so a
+coroutine, a cached context or a continuation holds no domain between
+evals and a context resumed on another thread runs under that
+thread's root. The demand release clears only `param_refs`. Root
+stores outlive the call on the Python surface as they do under the
+launcher.
 The default is released with the thread record (`tls_state_release`,
 GIL held); for the main thread that is interpreter shutdown, when the
 thread state's dict is cleared. The no-domain arms (`ParamRef`

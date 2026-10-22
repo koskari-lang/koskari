@@ -209,6 +209,24 @@ static int test_paramref_store_no_domain_thread_default(void) {
 }
 
 
+/* === Scope helpers === */
+
+
+/* What an eval entry does to a context: push it active and give it
+   the thread's domain. A context pushed bare has no domain, and a
+   root store through it has nowhere to go. */
+static void enter_scope(KosContext *ctx) {
+    kos_domain_push_scope(ctx);
+    KosContext_DOMAIN(ctx) = Py_NewRef(kos_tls_domain(kos_tls_current()));
+}
+
+
+static void leave_scope(KosContext *ctx) {
+    Py_CLEAR(KosContext_DOMAIN(ctx));
+    kos_domain_pop_scope(ctx);
+}
+
+
 /* === Test: ParamRef store and deref inside active scope === */
 
 
@@ -239,7 +257,7 @@ static int test_paramref_store_deref_inside_scope(void) {
     param_ref = KosParamRef_New(key, Py_None);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
-    kos_domain_push_scope(ctx);
+    enter_scope(ctx);
 
     stored = PyLong_FromLong(123);
     res = KosRef_Store(param_ref, stored);
@@ -253,7 +271,7 @@ static int test_paramref_store_deref_inside_scope(void) {
 
     Py_DECREF(value);
 
-    kos_domain_pop_scope(ctx);
+    leave_scope(ctx);
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
@@ -293,7 +311,7 @@ static int test_paramref_clear_inside_scope(void) {
     param_ref = KosParamRef_New(key, PyLong_FromLong(99));
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
-    kos_domain_push_scope(ctx);
+    enter_scope(ctx);
 
     KosRef_Store(param_ref, PyLong_FromLong(77));
 
@@ -312,7 +330,7 @@ static int test_paramref_clear_inside_scope(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(value), 99, "returns default");
     Py_DECREF(value);
 
-    kos_domain_pop_scope(ctx);
+    leave_scope(ctx);
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
@@ -351,7 +369,7 @@ static int test_paramref_is_empty_inside_scope(void) {
     param_ref = KosParamRef_New(key, Py_None);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
-    kos_domain_push_scope(ctx);
+    enter_scope(ctx);
 
     empty = KosRef_IsEmpty(param_ref);
     TEST_ASSERT(empty == 1, "empty before store");
@@ -361,7 +379,7 @@ static int test_paramref_is_empty_inside_scope(void) {
     empty = KosRef_IsEmpty(param_ref);
     TEST_ASSERT(empty == 0, "not empty after store");
 
-    kos_domain_pop_scope(ctx);
+    leave_scope(ctx);
 
     Py_DECREF(param_ref);
     Py_DECREF(key);

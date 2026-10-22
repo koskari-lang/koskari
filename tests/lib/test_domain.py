@@ -102,6 +102,7 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
             dom = Domain.current_domain()
             seen["domain"] = dom
             seen["contexts"] = dom.get_contexts()
+            seen["ctx_domain"] = seen["contexts"][0].domain
             seen["namespace"] = seen["contexts"][0].namespace
             seen["snapshot"] = seen["contexts"][0].snapshot()
             return 7
@@ -117,7 +118,7 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(contexts), 1)
         ctx = contexts[0]
         self.assertIsInstance(ctx, Context)
-        self.assertIs(ctx.domain, seen["domain"])
+        self.assertIs(seen["ctx_domain"], seen["domain"])
         self.assertIs(seen["namespace"], ns)
 
         entry = seen["snapshot"]

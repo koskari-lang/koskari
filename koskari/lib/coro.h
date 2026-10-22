@@ -84,14 +84,13 @@ typedef struct {
   int in_send;              /* re-entrancy guard */
 
   /* The bound call an unstarted coroutine is: the program, its bound
-     namespace, the dynamic snapshot (domain and parameterize cells)
-     taken when the call was made, and the function that made the call
+     namespace, the parameterize cells in force when the call was
+     made, and the function that made the call
      (NULL for an Expression). All owned; all cleared once the frame
      and context are built or the program is taken onto another
      chain. */
   KosCode *code;
   PyObject *ns;
-  PyObject *domain;
   PyObject *param_refs;
   PyObject *fn;
 } KosCoroutine;

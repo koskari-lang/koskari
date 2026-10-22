@@ -239,11 +239,10 @@ static void demand_release_context(KosContext **cached, KosContext *ctx) {
     return;
   }
   if (! *cached) {
-    /* the finished call's dynamic state is dropped: the next acquire's
-       snapshot sets the domain and the cells afresh, and a cached
-       context holds nothing of the call it ran */
+    /* the finished call's parameterize cells are dropped: the next
+       acquire's snapshot sets them afresh, and a cached context holds
+       nothing of the call it ran (its domain went at the eval exit) */
     Py_CLEAR(KosContext_PARAM_REFS(ctx));
-    Py_CLEAR(KosContext_DOMAIN(ctx));
     *cached = ctx;
     return;
   }

@@ -57,55 +57,39 @@ static void context_freelist_drain(void) {
 
 
 /**
-   The dynamic snapshot a new context starts from: the domain and the
-   parameterize cells in force at this moment. The cells are the
-   ambient table (kos_param_ambient_cells): a Python parameterize span
-   open inside the active context, else the active context's shadow
-   table. The table is shared with its holder so the extents applied at
-   this moment are captured; the first writer on either side copies it
-   first, see kos_context_param_refs. The domain is the active
-   context's; otherwise that of an enclosing `with Domain():` scope,
-   else the thread default domain. Both come back as new references,
-   *cells NULL when there are none. s is the calling thread's record
-   (kos_tls_current). Returns -1 with an error set.
+   The dynamic snapshot a new context starts from: the parameterize
+   cells in force at this moment, the ambient table
+   (kos_param_ambient_cells): a Python parameterize span open inside
+   the active context, else the active context's shadow table. The
+   table is shared with its holder so the extents applied at this
+   moment are captured; the first writer on either side copies it
+   first, see kos_context_param_refs. No domain is part of it: a
+   context takes its domain at each eval entry from the thread running
+   it. *cells comes back as a new reference, NULL when there are none.
+   s is the calling thread's record (kos_tls_current). Returns -1 with
+   an error set.
 */
-int KosContext_Snapshot(KosTlsState *s, PyObject **domain, PyObject **cells) {
+int KosContext_Snapshot(KosTlsState *s, PyObject **cells) {
 
   KosContext *active = kos_tls_active_context(s);
   PyObject *table = kos_param_ambient_cells(s, active);
 
-  *domain = NULL;
   *cells = NULL;
-
   if (table && PyDict_GET_SIZE(table) > 0) {
     Py_INCREF(table);
     *cells = table;
   }
-
-  if (active) {
-    *domain = KosContext_DOMAIN(active);
-    Py_XINCREF(*domain);
-    return 0;
-  }
-
-  *domain = kos_tls_domain(s);
-  if (! *domain)
-    return -1;
-  Py_INCREF(*domain);
   return 0;
 }
 
 
 /**
    A context over top, starting from a snapshot taken earlier with
-   KosContext_Snapshot. domain and cells are stolen (cells may be
-   NULL); top's ownership transfers to the context on success and stays
-   with the caller on failure.
+   KosContext_Snapshot. cells is stolen (may be NULL); top's ownership
+   transfers to the context on success and stays with the caller on
+   failure. The context has no domain until an eval enters it.
 */
-KosContext *KosContext_NewFromSnapshot(
-    KosDynFrame *top,
-    PyObject *domain,
-    PyObject *cells) {
+KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
 
   KosContext *ctx = context_freelist;
 
@@ -122,7 +106,6 @@ KosContext *KosContext_NewFromSnapshot(
     KOS_TRACE_FL_ALLOC("context", 0);
     ctx = PyObject_GC_New(KosContext, &KosContextType);
     if (! ctx) {
-      Py_XDECREF(domain);
       Py_XDECREF(cells);
       return NULL;
     }
@@ -134,7 +117,6 @@ KosContext *KosContext_NewFromSnapshot(
   memset((char *) ctx + sizeof(PyObject), 0,
          sizeof(KosContext) - sizeof(PyObject));
 
-  ctx->domain = domain;
   ctx->param_refs = cells;
 
   /* the live registers over the one-frame chain: what a walk of the
@@ -174,19 +156,17 @@ KosContext *KosContext_NewFromSnapshot(
 
 
 /**
-   Replace a cached context's domain and parameterize cells with the
-   snapshot in force now, so a context reused across boundary calls
-   sees the dynamic state of each call. s is the calling thread's
-   record (kos_tls_current). Returns -1 with an error set.
+   Replace a cached context's parameterize cells with the snapshot in
+   force now, so a context reused across boundary calls sees the
+   dynamic state of each call. s is the calling thread's record
+   (kos_tls_current). Returns -1 with an error set.
 */
 int KosContext_TakeSnapshot(KosContext *ctx, KosTlsState *s) {
 
-  PyObject *domain;
   PyObject *cells;
 
-  if (KosContext_Snapshot(s, &domain, &cells) < 0)
+  if (KosContext_Snapshot(s, &cells) < 0)
     return -1;
-  Py_XSETREF(ctx->domain, domain);
   Py_XSETREF(ctx->param_refs, cells);
   return 0;
 }
@@ -194,12 +174,11 @@ int KosContext_TakeSnapshot(KosContext *ctx, KosTlsState *s) {
 
 KosContext *KosContext_New(KosDynFrame *top, KosTlsState *s) {
 
-  PyObject *domain;
   PyObject *cells;
 
-  if (KosContext_Snapshot(s, &domain, &cells) < 0)
+  if (KosContext_Snapshot(s, &cells) < 0)
     return NULL;
-  return KosContext_NewFromSnapshot(top, domain, cells);
+  return KosContext_NewFromSnapshot(top, cells);
 }
 
 

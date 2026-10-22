@@ -53,12 +53,12 @@ CAPTURE_SRC = """
 """
 
 
-# Two defers forked from one context, so both resolve against the same
-# domain root scope. Each worker parameterizes `shared` with its own
-# name; barrier B1 forces both extents to be live at the same moment on
-# different threads. After the extents exit, T1 stores with no extent in
-# the way -- which lands in the root scope -- and B2 orders that store
-# before T2's read. B1, B2, and RESULTS are pre-seeded into the module
+# Two defers forked from one context. Each worker parameterizes `shared`
+# with its own name; barrier B1 forces both extents to be live at the
+# same moment on different threads. After the extents exit, T1 stores
+# with no extent in the way -- which lands in the root of the thread
+# running it -- and B2 orders that store before T2's read on its own
+# thread. B1, B2, and RESULTS are pre-seeded into the module
 # namespace.
 SHARED_SRC = """
 (define worker (lambda [name]
@@ -73,6 +73,18 @@ SHARED_SRC = """
     (set! (item RESULTS "after") (parameterq shared "unset")))))
 
 (define probes #[(defer worker "T1") (defer worker "T2")])
+"""
+
+
+# A defer created on the loading thread that stores a parameter with no
+# extent in the way and reads it back: run on another thread, the store
+# lands in that thread's root.
+STORE_SRC = """
+(define probe
+  (defer (lambda []
+    (let [[cell (ref (parameter own_root))]]
+      (cell.store "worker"))
+    (parameterq own_root "unset"))))
 """
 
 
@@ -142,8 +154,8 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         """
         Two threads inside parameterize extents of the same name at the
         same moment each read their own binding, and a store made with no
-        extent in the way reaches the shared root scope and is visible
-        across threads afterward
+        extent in the way lands in the root of the thread running it,
+        which the other thread does not see
         """
 
         seed = {
@@ -168,8 +180,42 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         # simultaneous extents, private tables: each read its own value
         self.assertEqual(results["T1"], "T1")
         self.assertEqual(results["T2"], "T2")
-        # the fork-shared root cell is a live channel across threads
-        self.assertEqual(results["after"], "cross")
+        # each defer runs under the root of the thread running it: T1's
+        # bare store is T1's thread's and T2 reads nothing
+        self.assertEqual(results["after"], "unset")
+
+    async def test_bare_store_lands_in_the_running_threads_root(self):
+        """
+        A defer created on this thread and run on another stores, with
+        no extent in the way, into the root of the thread running it:
+        a read on that thread after the run sees the value, a read on
+        this thread does not
+        """
+
+        mod = await self.load("param_thread_store", STORE_SRC)
+        probe = vars(mod)["probe"]
+
+        errors = []
+        results = {}
+
+        def run():
+            loop = asyncio.new_event_loop()
+            try:
+                results["run"] = koskari.asyncio.run_until_complete(
+                    loop, probe)
+                results["worker"] = ParamRef("own_root", "none").deref()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                loop.close()
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(30)
+        self.assertFalse(t.is_alive(), "driver thread hung")
+        self.assertEqual(errors, [])
+        self.assertEqual(results, {"run": "worker", "worker": "worker"})
+        self.assertEqual(ParamRef("own_root", "none").deref(), "none")
 
     def test_thread_has_no_foreign_ambient(self):
         """
