@@ -101,11 +101,17 @@ static inline void kos_immortalize(PyObject *obj) {
 
 typedef uintptr_t KosBreakerWord;
 
+/* The address of tstate's eval breaker */
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate_tstate(
+    PyThreadState *tstate) {
+
+  return (const volatile KosBreakerWord *) &KOS_BREAKER_WORD(tstate);
+}
+
 /* The address of this thread's eval breaker; NULL without a thread state */
 static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
   PyThreadState *const tstate = PyThreadState_Get();
-  return tstate
-      ? (const volatile KosBreakerWord *) &KOS_BREAKER_WORD(tstate) : NULL;
+  return tstate ? koskari_eval_breaker_locate_tstate(tstate) : NULL;
 }
 
 /* Whether another thread asked this one to drop the GIL */
@@ -122,13 +128,21 @@ static inline int koskari_gil_drop_requested(void) {
 
 typedef int KosBreakerWord;
 
-/* The address of the interpreter's eval breaker; NULL without a thread */
-static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
-  PyThreadState *const tstate = PyThreadState_Get();
-  if (! tstate || ! tstate->interp)
+/* The address of the eval breaker of tstate's interpreter; NULL when
+   tstate has no interpreter */
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate_tstate(
+    PyThreadState *tstate) {
+
+  if (! tstate->interp)
     return NULL;
   return (const volatile KosBreakerWord *)
       &KOS_CEVAL_STATE(tstate->interp)->eval_breaker;
+}
+
+/* The address of the interpreter's eval breaker; NULL without a thread */
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
+  PyThreadState *const tstate = PyThreadState_Get();
+  return tstate ? koskari_eval_breaker_locate_tstate(tstate) : NULL;
 }
 
 /* Whether another thread asked this one to drop the GIL */
@@ -151,6 +165,13 @@ typedef int KosBreakerWord;
 static const volatile KosBreakerWord koskari_breaker_always = 1;
 
 #ifdef KOS_BREAKER_UNMAPPED
+static inline const volatile KosBreakerWord *koskari_eval_breaker_locate_tstate(
+    PyThreadState *tstate) {
+
+  (void) tstate;
+  return &koskari_breaker_always;
+}
+
 static inline const volatile KosBreakerWord *koskari_eval_breaker_locate(void) {
   return &koskari_breaker_always;
 }

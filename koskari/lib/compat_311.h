@@ -164,6 +164,49 @@ typedef struct {
   (&((KosInterpreterState311 *) (interp))->ceval)
 
 
+/* === Recursion guard === */
+
+/*
+   CPython's C recursion count on 3.11: recursion_remaining on the
+   thread state, counted down toward zero, and the limit beside it in
+   the public struct _ts.
+*/
+
+
+/* Count one level on tstate: 0 on success, -1 with an error set. The
+   count and its test are _Py_MakeRecCheck's; a count past the limit is
+   taken back and Py_EnterRecursiveCall repeats it, raising:
+   https://github.com/python/cpython/blob/v3.11.0/Include/internal/pycore_ceval.h */
+static inline int kos_recursion_enter(
+    PyThreadState *tstate,
+    const char *where) {
+
+  if (tstate->recursion_remaining-- <= 0) {
+    tstate->recursion_remaining++;
+    return Py_EnterRecursiveCall(where);
+  }
+  return 0;
+}
+
+
+/* Take back one level counted by kos_recursion_enter, as
+   _Py_LeaveRecursiveCallTstate does:
+   https://github.com/python/cpython/blob/v3.11.0/Include/internal/pycore_ceval.h */
+static inline void kos_recursion_leave(PyThreadState *tstate) {
+  tstate->recursion_remaining++;
+}
+
+
+/* The recursion limit, the value Py_GetRecursionLimit returns:
+   Py_SetRecursionLimit writes it to every thread state's
+   recursion_limit:
+   https://github.com/python/cpython/blob/v3.11.0/Python/ceval.c
+   https://github.com/python/cpython/blob/v3.11.0/Include/cpython/pystate.h */
+static inline int kos_recursion_limit(PyThreadState *tstate) {
+  return tstate->recursion_limit;
+}
+
+
 /* === GC tracked test === */
 
 /* Whether the collector holds op: the _gc_next link word of the PyGC_Head

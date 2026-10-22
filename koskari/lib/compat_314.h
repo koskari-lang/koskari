@@ -146,6 +146,61 @@ typedef struct {
 #define KOS_BREAKER_GC_SCHEDULED (1U << 4)  /* _PY_GC_SCHEDULED_BIT */
 
 
+/* === Recursion guard === */
+
+/*
+   CPython's C recursion guard on 3.14: no count, a test of the machine
+   stack address against a soft limit kept on the internal thread state
+   record. Replicated under our own name (no internal header, no
+   unexported symbol); the Python recursion limit stays in the public
+   struct _ts.
+*/
+
+
+/* struct _PyThreadStateImpl through c_stack_hard_limit:
+   https://github.com/python/cpython/blob/v3.14.0/Include/internal/pycore_tstate.h */
+typedef struct {
+  PyThreadState base;
+  Py_ssize_t refcount;
+  uintptr_t c_stack_top;
+  uintptr_t c_stack_soft_limit;
+  uintptr_t c_stack_hard_limit;
+} KosThreadStateImpl314;
+
+
+/* Test the C stack on tstate: 0 on success, -1 with an error set. The
+   test is _Py_MakeRecCheck's; past the soft limit Py_EnterRecursiveCall
+   repeats it, raising:
+   https://github.com/python/cpython/blob/v3.14.0/Include/internal/pycore_ceval.h */
+static inline int kos_recursion_enter(
+    PyThreadState *tstate,
+    const char *where) {
+
+  if ((uintptr_t) __builtin_frame_address(0)
+      < ((KosThreadStateImpl314 *) tstate)->c_stack_soft_limit)
+    return Py_EnterRecursiveCall(where);
+  return 0;
+}
+
+
+/* Nothing to take back: kos_recursion_enter counts nothing, as
+   _Py_LeaveRecursiveCallTstate does nothing:
+   https://github.com/python/cpython/blob/v3.14.0/Include/internal/pycore_ceval.h */
+static inline void kos_recursion_leave(PyThreadState *tstate) {
+  (void) tstate;
+}
+
+
+/* The recursion limit, the value Py_GetRecursionLimit returns:
+   Py_SetRecursionLimit writes it to every thread state's
+   py_recursion_limit:
+   https://github.com/python/cpython/blob/v3.14.0/Python/ceval.c
+   https://github.com/python/cpython/blob/v3.14.0/Include/cpython/pystate.h */
+static inline int kos_recursion_limit(PyThreadState *tstate) {
+  return tstate->py_recursion_limit;
+}
+
+
 /* === GC tracked test === */
 
 /* Whether the collector holds op. The free-threaded build keeps the

@@ -3685,7 +3685,10 @@ KosOpResult koskari_eval_drive(
     }
   }
 
-  if (Py_EnterRecursiveCall(" in koskari_eval"))
+  /* tstate is kept for the cleanup, which runs after
+     kos_tls_leave_drive has released s. */
+  tstate = kos_tls_thread_state(s);
+  if (kos_recursion_enter(tstate, " in koskari_eval"))
     return EVAL_RAISE();
 
   /* Swap in this context's handler-visible exception state (sys.exc_info),
@@ -3694,9 +3697,7 @@ KosOpResult koskari_eval_drive(
      The swap moves the thread state's top handled-exception item only,
      the one KosExc_Install writes: it is peeked first and fetched only
      when it holds one. A deeper item (a caller's handler, seen from
-     inside a Python generator) is left where it is. tstate is kept for
-     the cleanup, which runs after kos_tls_leave_drive has released s. */
-  tstate = kos_tls_thread_state(s);
+     inside a Python generator) is left where it is. */
   host_held = kos_tstate_exc_held(tstate);
   KosExc_Init(&host_exc);
   if (host_held) {
@@ -3712,10 +3713,8 @@ KosOpResult koskari_eval_drive(
      alive until the drive's cleanup below. */
   Py_INCREF(ctx);
 
-  /* The thread record is entered first so the drive takes the
-     thread's breaker from it. */
   kos_tls_enter_drive(s, ctx);
-  KosContext_EvalEnter(ctx, kos_tls_breaker(s));
+  KosContext_EvalEnter(ctx, tstate);
   if (KosContext_DYN_TOP(ctx))
     kos_dyn_resync_chain(ctx);
 
@@ -3821,7 +3820,7 @@ koskari_eval_cleanup:
 
   /* the drive's hold on the context, taken at entry; a holder that let
      go during the drive deallocates it here */
-  Py_LeaveRecursiveCall();
+  kos_recursion_leave(tstate);
   Py_DECREF(ctx);
   return eval_ret;
 }

@@ -720,7 +720,7 @@ KosOpResult KosContext_NextResume(
 
   Handlers and helpers take the context itself; a drive begins with
   KosContext_EvalEnter, which sets breaker, recursion_limit and
-  terminal for that drive.
+  terminal for that drive from the thread state it runs on.
 */
 
 
@@ -768,13 +768,14 @@ struct KosContext {
                               onto the frame stack, and the delivery
                               step takes it before the resume runs */
   const volatile KosBreakerWord *breaker; /* this thread's eval breaker
-                         (compat.h), set by KosContext_EvalEnter; the
-                         cooperation points test it and the trampoline
-                         polls when it is up */
+                         (compat.h), located from the thread state by
+                         KosContext_EvalEnter; the cooperation points
+                         test it and the trampoline polls when it is
+                         up */
   uint16_t recursion_limit; /* the deepest frame this context may
-                         install: sys.getrecursionlimit() read by
-                         KosContext_EvalEnter and clamped to
-                         KOS_FRAME_DEPTH_MAX */
+                         install: sys.getrecursionlimit(), read from
+                         the thread state by KosContext_EvalEnter and
+                         clamped to KOS_FRAME_DEPTH_MAX */
   uint8_t terminal;         /* the result in flight is a boundary that
                          has been through its event: a raise walked to
                          no handler, a suspension recorded for AWAIT or
@@ -1114,15 +1115,14 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 
 /**
    Begin a drive on ctx: set breaker, recursion_limit and terminal for
-   it. breaker is this thread's eval breaker word, taken from the
-   thread record by a drive that holds one; NULL locates it through the
-   thread state. Also run by a site that edits a suspended context's
-   chain outside koskari_eval, since the chain edits read the breaker
-   and the recursion limit.
+   it. tstate is the calling thread's state, passed by an eval that
+   holds it; NULL resolves it with PyThreadState_Get. The breaker is
+   the eval breaker word located from tstate, and the recursion limit
+   is the one tstate reads. Also run by a site that edits a suspended
+   context's chain outside koskari_eval, since the chain edits read the
+   breaker and the recursion limit.
 */
-void KosContext_EvalEnter(
-    KosContext *ctx,
-    const volatile KosBreakerWord *breaker);
+void KosContext_EvalEnter(KosContext *ctx, PyThreadState *tstate);
 
 
 /**
@@ -1479,11 +1479,6 @@ PyObject *kos_tls_domain(KosTlsState *s);
   token gains a live depth.
 */
 void kos_tls_enter_drive(KosTlsState *s, KosContext *ctx);
-
-
-/* The eval breaker word of the thread s records, located once when
-   the record was made. */
-const volatile KosBreakerWord *kos_tls_breaker(const KosTlsState *s);
 
 
 /* The thread state s records. Every record a resolution returns

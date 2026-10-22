@@ -24,20 +24,21 @@
 */
 
 
-void KosContext_EvalEnter(
-    KosContext *ctx,
-    const volatile KosBreakerWord *breaker) {
+void KosContext_EvalEnter(KosContext *ctx, PyThreadState *tstate) {
+  const volatile KosBreakerWord *breaker;
 
   KOS_TRACE_EVAL_SYNC_BEGIN();
 
-  if (! breaker)
-    breaker = koskari_eval_breaker_locate();
+  if (! tstate)
+    tstate = PyThreadState_Get();
+
+  breaker = koskari_eval_breaker_locate_tstate(tstate);
   if (! breaker)
     breaker = &koskari_breaker_always;
   KosContext_BREAKER(ctx) = breaker;
 
   {
-    int limit = Py_GetRecursionLimit();
+    int limit = kos_recursion_limit(tstate);
     if (limit < 1)
       limit = 1;
     else if (limit > KOS_FRAME_DEPTH_MAX)
