@@ -437,32 +437,26 @@ define run []:
   define interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
-  ; a program's declared entry runs once its module has loaded and
-  ; sealed; an interactive session goes on to the REPL afterward
-  define status 0
-
   if command:
     (run_command mod command
       interactive: options.interactive)
-    set! status (run_entry mod)
-    unless options.interactive:
-      return status
 
   elif (equal? filename "-"):
     (run_command mod (sys.stdin.read)
       filename: "<stdin>"
       layout: True
       interactive: options.interactive)
-    set! status (run_entry mod)
-    unless options.interactive:
-      return status
 
   elif filename:
     (run_file mod filename
       execute_kio: options.execute_kio
       interactive: options.interactive
       spec: spec)
-    set! status (run_entry mod)
+
+  ; a program's declared entry runs once its module has loaded and
+  ; sealed; an interactive session goes on to the REPL afterward
+  when (or command filename):
+    define status (run_entry mod)
     unless options.interactive:
       return status
 
