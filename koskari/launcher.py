@@ -218,11 +218,14 @@ def run_main_module(spec, name):
     does, so python -m and runpy.run_module run a Koskari module the
     way koskari -m does.
 
-    The module is a koskari Module, published in sys.modules under name
-    before it loads in place of the plain module runpy prepared, since
-    a Koskari namespace is not a plain dict. runpy has already captured
-    the dict it executes the code object in, so the swap is safe, and
-    import __main__ then finds the program.
+    The module is a koskari Module, since a Koskari namespace is not a
+    plain dict. Under __main__ it is published in sys.modules before it
+    loads, in place of the plain module runpy prepared: runpy has
+    already captured the dict it executes the code object in, so the
+    swap is safe, and import __main__ then finds the program. Under any
+    other name sys.modules is left alone, as runpy.run_module leaves
+    it, and the dict run_module returns is the shim's, not the module's
+    namespace.
 
     :param spec: the ModuleSpec runpy found, bound as the module's
         __spec__
@@ -247,7 +250,8 @@ def run_main_module(spec, name):
 
     mod = new_module(name, package=spec.parent)
     init_module(mod, filename, spec=spec)
-    sys.modules[name] = mod
+    if name == '__main__':
+        sys.modules[name] = mod
 
     async def load_and_enter():
         with Domain():

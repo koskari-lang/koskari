@@ -151,6 +151,12 @@ class TestRunpy(unittest.TestCase):
         self.assertEqual("loaded kientry\n", out.getvalue())
 
 
+    def test_run_module_under_its_own_name_leaves_sys_modules_alone(self):
+        with redirect_stdout(io.StringIO()):
+            runpy.run_module('kientry')
+        self.assertNotIn('kientry', sys.modules)
+
+
     def test_stale_kio_runs_the_source(self):
         from koskari.serialize.incremental import compile_ki_file_to_kio
 
