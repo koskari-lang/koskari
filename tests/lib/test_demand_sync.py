@@ -579,6 +579,33 @@ class TestDemandWrapperAndApply(unittest.TestCase):
         self.assertIs(dfb.__wrapped__, fn)
 
 
+    def test_cached_context_drops_the_domain_after_the_call(self):
+        """
+        A wrapper called inside a with-Domain block keeps nothing of
+        that domain once the call returns: the domain and its root
+        values are collectable when the block exits
+        """
+
+        class Marker:
+            pass
+
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        wrapped = demand(make_callable(code, ns))
+        marker = Marker()
+        marker_ref = weakref.ref(marker)
+
+        with Domain():
+            ParamRef("demand_cached_domain_key").store(marker)
+            self.assertEqual(wrapped(), 42)
+        del marker
+        gc.collect()
+        self.assertIsNone(marker_ref())
+        self.assertEqual(wrapped(), 42)
+
+
 class TestDemandInEvalDenial(unittest.TestCase):
     """
     Phase-1 in-eval denial: KOS_FRAME_DEMAND on the root frame causes
