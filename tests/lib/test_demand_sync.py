@@ -27,7 +27,6 @@ import weakref
 
 import pytest
 
-import koskari.lib as lib
 from koskari.lib import (
     AsyncGenerator, BoundMethod, Coroutine, Domain, FormalsSpec,
     KoskariSyncViolation, KosPartial, ParamRef, demand, demand_apply,
@@ -1433,7 +1432,9 @@ ROOT_SRC = """
 (define escape2 (lambda [a b]
   (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
 
-(define tuple2 (lambda [a b] #(a b)))
+(define tuple2_probe (lambda [probe a b] (probe) #(a b)))
+
+(define await2 (lambda [a b] (await (a)) b))
 
 (define bind_gq (lambda [v probe]
   (parameterize [[gq v]]
@@ -1446,16 +1447,19 @@ ROOT_SRC = """
 """
 
 
-def root_install_count():
+def frame_node_count():
     """
-    The entry_root_install trace counter, or None when the build does
-    not count events
+    The number of FRAME nodes on the innermost running context's chain
     """
 
-    report = lib.get_trace_report()
-    if not report["flags"]["events"]:
+    snap = Domain.current_domain().get_contexts()[0].snapshot()
+    return sum(1 for node in snap["dynnodes"] if node["kind"] == "FRAME")
+
+
+class RootSuspender:
+    def __await__(self):
+        yield
         return None
-    return report["events"]["entry_root_install"]
 
 
 class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
@@ -1545,22 +1549,33 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
 
     async def test_first_call_general_second_root(self):
         """
-        a fresh function's first call resolves its self-bind on the
-        general path; the second runs as the root frame
+        a fresh function's first call runs its own frame above the demand
+        root frame; the second runs as the drive's root frame
         """
 
         mod = await self.load()
-        d = demand(mod["tuple2"])
+        d = demand(mod["tuple2_probe"])
+        counts = []
 
-        before = root_install_count()
-        self.assertEqual(d(1, 2), (1, 2))
-        middle = root_install_count()
-        self.assertEqual(d(3, 4), (3, 4))
-        after = root_install_count()
+        def probe():
+            counts.append(frame_node_count())
 
-        if before is not None:
-            self.assertEqual(middle - before, 0)
-            self.assertEqual(after - middle, 1)
+        self.assertEqual(d(probe, 1, 2), (1, 2))
+        self.assertEqual(d(probe, 3, 4), (3, 4))
+        self.assertEqual(counts, [2, 1])
+
+
+    async def test_root_arm_keeps_demand_denial(self):
+        """
+        a suspending await raises KoskariSyncViolation on the first call
+        and on the second, which runs as the drive's root frame
+        """
+
+        mod = await self.load()
+        d = demand(mod["await2"])
+        for value in (1, 2):
+            with self.assertRaises(KoskariSyncViolation):
+                d(RootSuspender, value)
 
 
     async def test_parameterize_binding_ends_with_the_call(self):

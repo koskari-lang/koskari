@@ -222,5 +222,17 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(coro.demand(), 33)
         self.assertIn("done", repr(coro))
 
+    async def test_finished_coroutine_holds_no_context(self):
+        mod = await self.load()
+        coro = mod["await_it"](Suspender())
+        self.assertEqual(coro.send(None), "suspended")
+        self.assertTrue(any(isinstance(r, lib.Context)
+                            for r in gc.get_referents(coro)))
+        with self.assertRaises(StopIteration) as caught:
+            coro.send(None)
+        self.assertEqual(caught.exception.value, "woken")
+        self.assertFalse(any(isinstance(r, lib.Context)
+                             for r in gc.get_referents(coro)))
+
 
 # The end.
