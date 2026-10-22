@@ -3715,8 +3715,19 @@ KosOpResult koskari_eval_drive(
 
   kos_tls_enter_drive(s, ctx);
   KosContext_EvalEnter(ctx, tstate);
-  if (KosContext_DYN_TOP(ctx))
-    kos_dyn_resync_chain(ctx);
+
+  /* A chain of one frame node that the registers already name needs
+     no resync: the walk's result is that node's frame, stack slot and
+     namespace, and every writer of the registers, the context's
+     construction included, set all three from it. A root frame is
+     never fully stamped, so the restamp has nothing to do either. */
+  {
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+    if (top
+        && (top != (KosDynNode *) KosContext_FRAME(ctx)
+            || KosDynNode_PARENT(top)))
+      kos_dyn_resync_chain(ctx);
+  }
 
   KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
   KOS_TRACE_EVAL_PUSH();
