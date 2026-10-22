@@ -125,17 +125,29 @@ async def hosted_run(module_name, callable_name, script_name, argv):
     Async bootstrap for a packaged koskari_scripts target
 
     :param module_name: dotted module name from entry metadata
-    :param callable_name: attribute to invoke on the loaded module
+    :param callable_name: attribute to invoke on the loaded module, or
+        None for the module's own entry point, the function it holds
+        as __entry__
     :param script_name: argv[0] for the hosted script
     :param argv: remaining command-line arguments
     :return: integer exit code
+    :raises EntryTargetError: when callable_name is None and the module
+        holds no entry point
     """
 
     sys.argv = [script_name] + list(argv)
 
     with Domain():
         mod = await import_module_async(module_name)
-        fn = getattr(mod, callable_name)
+        if callable_name is None:
+            fn = getattr(mod, '__entry__', None)
+            if fn is None:
+                raise EntryTargetError(
+                    f"{module_name} holds no entry point; name a"
+                    " callable as module:callable or declare one with"
+                    " entry-point")
+        else:
+            fn = getattr(mod, callable_name)
         result = fn()
         if hasattr(result, '__await__'):
             result = await result
@@ -144,15 +156,16 @@ async def hosted_run(module_name, callable_name, script_name, argv):
 
 def run_target(target, argv=None, script_name=None):
     """
-    Run a module:callable target under the koskari async host
+    Run a module or module:callable target under the koskari async host
 
-    :param target: entry value string (module:callable)
+    :param target: entry value string (module, or module:callable)
     :param argv: optional argument list excluding argv[0]; defaults to
         sys.argv[1:]
     :param script_name: argv[0] for the hosted script; defaults to the
         last segment of module_name
     :return: integer exit code
-    :raises EntryTargetError: when target is not module:callable form
+    :raises EntryTargetError: when target is malformed, or names a
+        module with no entry point
     """
 
     module_name, callable_name = parse_entry_target(target)
@@ -178,7 +191,8 @@ def run_resolved_script(spec, name, argv=None):
         sys.argv[1:]
     :return: integer exit code
     :raises EntryNotFoundError: when metadata has no matching entry
-    :raises EntryTargetError: when the entry value is unsupported
+    :raises EntryTargetError: when the entry value is malformed, or
+        names a module with no entry point
     """
 
     try:

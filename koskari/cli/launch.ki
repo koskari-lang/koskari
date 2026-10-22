@@ -33,7 +33,7 @@ import-from os getcwd
 import-from os.path abspath basename dirname
 
 import-from .host version_line
-import-from ..importer source_for_stale_kio
+import-from ..importer import_module_async source_for_stale_kio
 import-from ..lib ParamRef
 import-from ..module:
   new_module init_module
@@ -154,9 +154,11 @@ define main_module_spec [name]:
   machinery as python -m finds it.
 
   :param name: dotted module name
-  :return: ModuleSpec with a Koskari loader
-  :raises ImportError: when the name resolves to nothing, to a package
-      without a __main__, or to a module that is not Koskari source
+  :return: ModuleSpec with a Koskari loader: the module, a package's
+      __main__ submodule, or the package itself when it has none, which
+      run imports for its entry point
+  :raises ImportError: when the name resolves to nothing or to a module
+      that is not Koskari source
   """
 
   define spec (find_spec name)
@@ -164,10 +166,9 @@ define main_module_spec [name]:
     raise (ImportError f"No module named {name}")
 
   unless (None? spec.submodule_search_locations):
-    set! spec (find_spec f"{name}.__main__")
-    when (None? spec):
-      raise (ImportError
-        f"No module named {name}.__main__; '{name}' is a package and cannot be directly executed")
+    define main_spec (find_spec f"{name}.__main__")
+    unless (None? main_spec):
+      set! spec main_spec
 
   when (None? (getattr spec.loader "exec_module_async" None)):
     raise (ImportError
@@ -428,26 +429,37 @@ define run []:
       ; an interactive session reports an empty argv[0], as Python does
       set! sys.argv #["" *: options.args]
 
-  define mod (new_module "__main__"
-    package: (if spec spec.parent None))
   define interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
-  if command:
-    (run_command mod command
-      interactive: options.interactive)
+  define mod None
+  if (and spec (not (None? spec.submodule_search_locations))):
+    ; a package with no __main__ runs its own entry point: imported
+    ; under its real name, as any import would, so its relative imports
+    ; resolve and it loads once
+    set! mod (import_module_async spec.name)
+    unless (in? "__entry__" (vars mod)):
+      print f"{(basename name)}: No module named {spec.name}.__main__; '{spec.name}' is a package without an entry point and cannot be directly executed" file: sys.stderr
+      return 1
 
-  elif (equal? filename "-"):
-    (run_command mod (sys.stdin.read)
-      filename: "<stdin>"
-      layout: True
-      interactive: options.interactive)
+  else:
+    set! mod (new_module "__main__" package: (if spec spec.parent None))
 
-  elif filename:
-    (run_file mod filename
-      execute_kio: options.execute_kio
-      interactive: options.interactive
-      spec: spec)
+    if command:
+      (run_command mod command
+        interactive: options.interactive)
+
+    elif (equal? filename "-"):
+      (run_command mod (sys.stdin.read)
+        filename: "<stdin>"
+        layout: True
+        interactive: options.interactive)
+
+    elif filename:
+      (run_file mod filename
+        execute_kio: options.execute_kio
+        interactive: options.interactive
+        spec: spec)
 
   ; a program's declared entry runs once its module has loaded and
   ; sealed; an interactive session goes on to the REPL afterward

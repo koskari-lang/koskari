@@ -727,6 +727,66 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             self.assertIn("main __main__ 42", out)
 
 
+    async def test_main_module_package_runs_its_entry_point(self):
+        """
+        A package with no __main__ runs the entry point its __init__
+        declares, imported under its own name so a relative import in
+        the package resolves
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'mpkg')
+            os.makedirs(pkg)
+            with open(os.path.join(pkg, 'helper.ki'), 'w') as fh:
+                fh.write("define VALUE 42\n")
+            with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+                fh.write("import-from .helper VALUE\n"
+                         "\n"
+                         "@entry-point\n"
+                         "define main []:\n"
+                         "  print \"entry\" __name__ VALUE\n"
+                         "  3\n")
+            code, out, argv = await self._run_module_in(
+                tmp, 'mpkg', '-m', 'mpkg', '--', 'x')
+            self.assertEqual(3, code, out)
+            self.assertIn("entry mpkg 42", out)
+            self.assertEqual(
+                os.path.join(os.path.realpath(tmp), 'mpkg', '__init__.ki'),
+                argv[0])
+            self.assertEqual(['x'], argv[1:])
+
+
+    async def test_main_module_package_main_wins_over_entry_point(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'mpkg')
+            os.makedirs(pkg)
+            with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+                fh.write("@entry-point\n"
+                         "define main []:\n"
+                         "  print \"package entry\"\n"
+                         "  5\n")
+            with open(os.path.join(pkg, '__main__.ki'), 'w') as fh:
+                fh.write("print \"main\" __name__\n")
+            code, out, _argv = await self._run_module_in(
+                tmp, 'mpkg', '-m', 'mpkg')
+            self.assertEqual(0, code, out)
+            self.assertIn("main __main__", out)
+            self.assertNotIn("package entry", out)
+
+
+    async def test_main_module_package_without_main_or_entry_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'mpkg')
+            os.makedirs(pkg)
+            with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+                fh.write("define main []:\n"
+                         "  print \"never\"\n")
+            code, out, _argv = await self._run_module_in(
+                tmp, 'mpkg', '-m', 'mpkg')
+            self.assertEqual(1, code, out)
+            self.assertNotIn("never", out)
+
+
     async def test_main_module_runs_current_kio(self):
         """
         A module whose .kio is current beside its source runs from the
