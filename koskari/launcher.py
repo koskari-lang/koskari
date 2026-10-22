@@ -38,6 +38,7 @@ __all__ = (
     'hosted_run',
     'parse_entry_target',
     'resolve_koskari_script_value',
+    'run_main_module',
     'run_resolved_script',
     'run_target',
 )
@@ -207,6 +208,77 @@ def run_resolved_script(spec, name, argv=None):
     except KeyboardInterrupt:
         print('', file=sys.stderr)
         return 130
+
+
+def run_main_module(spec, name):
+    """
+    Load the Koskari module spec names as the module called name, and
+    when that name is __main__ run its entry point and exit with the
+    status. This is what the code object the import hook hands runpy
+    does, so python -m and runpy.run_module run a Koskari module the
+    way koskari -m does.
+
+    The module is a koskari Module, published in sys.modules under name
+    before it loads in place of the plain module runpy prepared, since
+    a Koskari namespace is not a plain dict. runpy has already captured
+    the dict it executes the code object in, so the swap is safe, and
+    import __main__ then finds the program.
+
+    :param spec: the ModuleSpec runpy found, bound as the module's
+        __spec__
+    :param name: the name the module runs under; __name__ in the
+        executing namespace
+    :raises SystemExit: under __main__, with the entry point's status,
+        or 1 after rendering an exception the load or the entry raised
+    """
+
+    from koskari.importer import source_for_stale_kio
+    from koskari.module import (
+        init_module, load_module_async, load_module_kio_async, new_module)
+
+    # the file to run: the spec's origin, unless that is a .kio fallen
+    # behind its sibling source; the loader is not asked, since its
+    # file access checks the module name against its own
+    filename = spec.origin
+    if filename.endswith('.kio'):
+        source = source_for_stale_kio(filename)
+        if source is not None:
+            filename = source
+
+    mod = new_module(name, package=spec.parent)
+    init_module(mod, filename, spec=spec)
+    sys.modules[name] = mod
+
+    async def load_and_enter():
+        with Domain():
+            if filename.endswith('.kio'):
+                await load_module_kio_async(mod)
+            else:
+                await load_module_async(mod)
+            if name != '__main__':
+                return None
+            entry = vars(mod).get('__entry__')
+            if entry is None:
+                return 0
+            result = entry()
+            if hasattr(result, '__await__'):
+                result = await result
+            return result
+
+    if name != '__main__':
+        drive_async_loop(load_and_enter())
+        return
+
+    try:
+        status = drive_async_loop(load_and_enter())
+    except Exception as e:
+        from koskari.exceptions import (
+            apply_sys_last_exc, format_run_exception)
+        lines, tb = format_run_exception(e)
+        apply_sys_last_exc(type(e), e, tb)
+        sys.stderr.write(''.join(lines))
+        sys.exit(1)
+    sys.exit(status)
 
 
 # The end.
