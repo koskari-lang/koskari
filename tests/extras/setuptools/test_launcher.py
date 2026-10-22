@@ -100,6 +100,7 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
         path = os.path.join(self._tmpdir, modname + '.ki')
         with open(path, 'w', encoding='utf-8') as fh:
             fh.write(dedent(content))
+        self._loaded.append(modname)
         return path
 
     async def test_hosted_run_invokes_main(self):
@@ -140,19 +141,16 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
         self._write_ki(
             'ki_launcher_bare',
             '(decorate [entry-point] (define main [] 13))')
-        self._loaded.append('ki_launcher_bare')
         code = run_target('ki_launcher_bare', argv=[])
         self.assertEqual(code, 13)
 
     def test_run_target_against_ki_module(self):
         self._write_ki('ki_launcher_run', '(define main [] 7)')
-        self._loaded.append('ki_launcher_run')
         code = run_target('ki_launcher_run:main', argv=[])
         self.assertEqual(code, 7)
 
     def test_run_resolved_script(self):
         self._write_ki('ki_launcher_entry', '(define main [] 11)')
-        self._loaded.append('ki_launcher_entry')
 
         class FakeEntry(object):
             name = 'ki-tool'
