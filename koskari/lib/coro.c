@@ -442,7 +442,7 @@ static KosOpResult coroutine_drive_await_error(KosCoroutine *coro) {
   KosContext_PythonAwaitClearIter(coro->ctx);
 
   coro->state = KOS_CORO_RUNNING;
-  KosOpResult res = koskari_eval(coro->ctx, NULL, typ, val ? val : typ);
+  KosOpResult res = koskari_eval(coro->ctx, NULL, NULL, typ, val ? val : typ);
   coro->in_send = 0;
 
   Py_XDECREF(typ);
@@ -547,7 +547,7 @@ static int coroutine_step(
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
 
-  KosOpResult res = koskari_eval(coro->ctx, send_val, NULL, NULL);
+  KosOpResult res = koskari_eval(coro->ctx, NULL, send_val, NULL, NULL);
   Py_XDECREF(send_val);
 
   coro->in_send = 0;
@@ -645,7 +645,7 @@ static PyObject *coroutine_throw_pair(
 
   coro->in_send = 1;
   coro->state = KOS_CORO_RUNNING;
-  KosOpResult res = koskari_eval(coro->ctx, NULL, typ, exc);
+  KosOpResult res = koskari_eval(coro->ctx, NULL, NULL, typ, exc);
   coro->in_send = 0;
 
   return coroutine_result(coro, res);

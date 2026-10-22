@@ -120,7 +120,8 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   KosContext_EvalExit(ctx);
 
   {
-    KosOpResult res = koskari_eval(ctx, NULL, PyExc_GeneratorExit, throw_exc);
+    KosOpResult res = koskari_eval(
+        ctx, NULL, NULL, PyExc_GeneratorExit, throw_exc);
     Py_DECREF(throw_exc);
 
     switch (res.kind) {
@@ -419,7 +420,8 @@ static int asyncgen_close_drive(KosPyAsyncGen *agen) {
   if (! exc)
     return -1;
 
-  KosOpResult res = koskari_eval(agen->ctx, NULL, PyExc_GeneratorExit, exc);
+  KosOpResult res = koskari_eval(
+      agen->ctx, NULL, NULL, PyExc_GeneratorExit, exc);
   Py_DECREF(exc);
 
   switch (res.kind) {

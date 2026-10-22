@@ -264,7 +264,7 @@ static void stepper_abandon_drive(KosIterStepper *st) {
   {
     PyObject *exc = PyObject_CallNoArgs(PyExc_GeneratorExit);
     if (exc) {
-      KosOpResult res = koskari_eval(st->ctx, NULL, PyExc_GeneratorExit,
+      KosOpResult res = koskari_eval(st->ctx, NULL, NULL, PyExc_GeneratorExit,
                                      exc);
       Py_DECREF(exc);
       Py_XDECREF(res.val);
@@ -649,7 +649,7 @@ static PyObject *stepper_drive(
   }
 
   {
-    KosOpResult res = koskari_eval(st->ctx, hsend, httyp, htexc);
+    KosOpResult res = koskari_eval(st->ctx, NULL, hsend, httyp, htexc);
     Py_CLEAR(hsend);
     Py_CLEAR(httyp);
     Py_CLEAR(htexc);
@@ -1233,7 +1233,7 @@ static PyObject *pyiter_step_run(
   }
 
   {
-    KosOpResult res = koskari_eval(gen->ctx,
+    KosOpResult res = koskari_eval(gen->ctx, NULL,
                                    durable ? send_val : NULL,
                                    durable ? throw_typ : NULL,
                                    durable ? throw_exc : NULL);

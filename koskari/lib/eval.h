@@ -1391,6 +1391,8 @@ KosOpResult KosIterRequest_Deliver(
   The caller owns the reference in the returned KosOpResult.val.
 
   :param ctx: the execution context
+  :param s: the calling thread's record, when the caller already resolved
+      it with kos_tls_current; NULL to resolve it here
   :param send_val: resume value when resuming from AWAIT/YIELD/YIELD_FROM;
       NULL on first call or when N/A
   :param throw_exc: exception to inject when resuming with throw; NULL when
@@ -1402,21 +1404,7 @@ KosOpResult KosIterRequest_Deliver(
 */
 KosOpResult koskari_eval(
     KosContext *ctx,
-    PyObject *send_val,
-    PyObject *throw_typ,
-    PyObject *throw_exc);
-
-
-/**
-  koskari_eval over the thread record s, already resolved by the caller
-  (kos_tls_current). koskari_eval resolves the record and delegates
-  here; a caller that resolved it for another use in the same step,
-  such as the snapshot of a boundary call's context, passes it instead
-  of resolving it again. Arguments and result as koskari_eval.
-*/
-KosOpResult koskari_eval_drive(
     KosTlsState *s,
-    KosContext *ctx,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc);
@@ -1449,7 +1437,7 @@ KosContext *kos_ctx_current(void);
 
 /* The per-thread record behind the ambient context stack (KosTlsState)
    is private to domain.c. A boundary call resolves it once with
-   kos_tls_current and hands it to the snapshot and the drive. */
+   kos_tls_current and hands it to the snapshot and the eval. */
 
 
 /**

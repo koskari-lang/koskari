@@ -66,7 +66,7 @@ typedef enum KosTraceEventId {
   /* a resolution of the per-thread record (domain.c tls_state_current) */
   KOS_TE_TLS_RESOLVE,
   /* a fetch of the thread's handled exception (sys.exc_info) by a
-     drive's exception-state swap (eval.c koskari_eval_drive) */
+     drive's exception-state swap (eval.c koskari_eval) */
   KOS_TE_EXC_FETCH,
   /* the root frame of a Coroutine driven from Python accepted by its
      function's frame cache when freed (dyn_frame.c kos_dynframe_free) */

@@ -3643,11 +3643,12 @@ kos_eval_prologue_bad_code:
    whatever that yields either threads (DISPATCH), re-enters through
    the prologue (REPROLOGUE), or leaves through the cleanup below.
    Handlers and helpers take ctx itself. s is the calling thread's
-   record, resolved by the caller (koskari_eval resolves it).
+   record when the caller resolved it for its own use, else NULL and
+   resolved here.
 */
-KosOpResult koskari_eval_drive(
-    KosTlsState *s,
+KosOpResult koskari_eval(
     KosContext *ctx,
+    KosTlsState *s,
     PyObject *send_val,
     PyObject *throw_typ,
     PyObject *throw_exc) {
@@ -3698,8 +3699,11 @@ KosOpResult koskari_eval_drive(
     }
   }
 
-  /* tstate is kept for the cleanup, which runs after
-     kos_tls_leave_drive has released s. */
+  /* the calling thread's record, resolved after the refusals above so
+     a refused entry does not pay for it; tstate is kept for the
+     cleanup, which runs after kos_tls_leave_drive has released s. */
+  if (! s)
+    s = kos_tls_current();
   tstate = kos_tls_thread_state(s);
   if (kos_recursion_enter(tstate, " in koskari_eval"))
     return EVAL_RAISE();
@@ -3847,17 +3851,6 @@ koskari_eval_cleanup:
   kos_recursion_leave(tstate);
   Py_DECREF(ctx);
   return eval_ret;
-}
-
-
-KosOpResult koskari_eval(
-    KosContext *ctx,
-    PyObject *send_val,
-    PyObject *throw_typ,
-    PyObject *throw_exc) {
-
-  return koskari_eval_drive(kos_tls_current(), ctx, send_val, throw_typ,
-                            throw_exc);
 }
 
 

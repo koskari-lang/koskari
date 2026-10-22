@@ -262,7 +262,7 @@ static void demand_release_context(KosContext **cached, KosContext *ctx) {
    accepted. The deny guards convert AWAIT and YIELD under the demand
    mark into KoskariSyncViolation, so koskari_eval answers RETURN,
    RAISE, or FATAL. The thread record is resolved once here and serves
-   both the context's snapshot and the drive (koskari_eval_drive).
+   both the context's snapshot and the eval.
 
    cached and cached_frame are the wrapper's slots, both NULL when
    there is no wrapper. args and kwnames are borrowed. Returns a new
@@ -288,7 +288,7 @@ static PyObject *demand_run_koskari(
     return NULL;
 
   KosContext_ENTRY_CALL(ctx) = &call;
-  r = koskari_eval_drive(s, ctx, NULL, NULL, NULL);
+  r = koskari_eval(ctx, s, NULL, NULL, NULL);
   KosContext_ENTRY_CALL(ctx) = NULL;
   demand_release_context(cached, ctx);
 

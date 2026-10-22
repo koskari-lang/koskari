@@ -96,7 +96,7 @@ static int test_cg_prologue_delivers_staged_resume(void) {
 
   KosContext_EvalExit(ctx);
 
-  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
   TEST_ASSERT_EQ(probe.calls, 1, "resume fired exactly once");
   TEST_ASSERT_EQ(probe.seen_null, 0, "delivered a real value, not NULL");
@@ -268,7 +268,7 @@ static int test_return_into_resume_parent(void) {
 
   /* run: the child returns 42; the parent's resume receives it and
      hands it back as the eval's result */
-  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
   TEST_ASSERT_EQ(probe.calls, 1, "resume fired exactly once");
   TEST_ASSERT_EQ(probe.seen_null, 0, "with the returned value, not NULL");
@@ -1004,7 +1004,7 @@ static int drive_exc_info_probe(ExcInfoProbe *probe) {
   KosContext_EvalExit(ctx);
 
   probe->calls = 0;
-  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+  KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
   TEST_ASSERT_EQ(probe->calls, 1, "probe ran once");
   TEST_ASSERT_EQ(ev.kind, KOS_RES_RETURN, "drive returned");
