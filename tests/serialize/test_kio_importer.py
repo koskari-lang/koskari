@@ -514,6 +514,25 @@ class TestKioImporterParity(unittest.TestCase):
         self.assertIsNone(kio.f.code.arena)
 
 
+    def test_kio_pack_module_toggle_mid_module(self):
+        """
+        a .kio records each function's placement as its build made it:
+        placed before a mid-module toggle off, heap after it
+        """
+
+        ki, kio = self._both(
+            'toggled',
+            "(define before (lambda [] 1))\n"
+            "(pragma [compiler/pack-module False])\n"
+            "(define after (lambda [] 2))\n")
+        for mod in (ki, kio):
+            self.assertIsNotNone(mod.before.code.arena)
+            self.assertTrue(mod.before.code.arena.sealed)
+            self.assertIsNone(mod.after.code.arena)
+            self.assertEqual(demand_call(mod.before), 1)
+            self.assertEqual(demand_call(mod.after), 2)
+
+
     def _import(self, modname):
         importlib.invalidate_caches()
         from koskari.importer import KoskariPathFinder

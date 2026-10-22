@@ -165,6 +165,61 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(arena.sealed)
         self.assertLessEqual(arena.size, Arena.CHUNK)
         self.assertNotIn("__compiler__", ns)
+        self.assertEqual(demand_call(ns["durable"], 1), 2)
+
+    async def test_seal_false_detach_true_is_heap(self):
+        """a load that can never seal opens no allocator: heap code"""
+
+        module = await load(SRC, seal=False, detach=True)
+        ns = vars(module)
+        durable = ns["durable"]
+
+        self.assertIsNone(durable.code.arena)
+        self.assertNotIn("__compiler__", ns)
+        self.assertEqual(demand_call(durable, 2), 3)
+
+    async def test_seal_false_detach_true_reuses_open_allocator(self):
+        """
+        a compiler kept from an earlier detach False load still places
+        into its open chunk when a later load neither seals nor keeps it
+        """
+
+        module = new_module("sealtest")
+        ns = vars(module)
+        ns["__file__"] = "<sealtest>"
+
+        await load_module_source_async(
+            module, "(define one (lambda [] 1))",
+            seal=False, detach=False)
+        chunk = ns["one"].code.arena
+        self.assertIsNotNone(chunk)
+
+        await load_module_source_async(
+            module, "(define two (lambda [] 2))",
+            seal=False, detach=True)
+
+        self.assertIs(ns["two"].code.arena, chunk)
+        self.assertFalse(chunk.sealed)
+        self.assertNotIn("__compiler__", ns)
+        self.assertEqual(demand_call(ns["two"]), 2)
+
+    async def test_pack_module_toggle_mid_load(self):
+        """functions before the toggle are placed, those after are heap"""
+
+        src = """
+(define before (lambda [] 1))
+(pragma [compiler/pack-module False])
+(define after (lambda [] 2))
+"""
+        module = await load(src)
+        ns = vars(module)
+
+        arena = ns["before"].code.arena
+        self.assertIsNotNone(arena)
+        self.assertTrue(arena.sealed)
+        self.assertIsNone(ns["after"].code.arena)
+        self.assertEqual(demand_call(ns["before"]), 1)
+        self.assertEqual(demand_call(ns["after"]), 2)
 
     async def test_ephemeral_not_packed(self):
         """a discarded top-level expression stays out of the arena"""
