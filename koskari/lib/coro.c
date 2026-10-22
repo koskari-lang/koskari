@@ -132,17 +132,10 @@ PyObject *KosCoroutine_NewFromCode(PyObject *code, PyObject *ns) {
 }
 
 
+/* A function's code is a KosCode by construction, so it is not tested
+   again here. */
 PyObject *KosCoroutine_NewFromFunctionCall(PyObject *fn, PyObject *ns) {
-
-  PyObject *code = KosFunction_CODE(fn);
-
-  if (! KosCode_Check(code)) {
-    Py_DECREF(ns);
-    PyErr_Format(PyExc_TypeError, "expected Code, got %s",
-                 Py_TYPE(code)->tp_name);
-    return NULL;
-  }
-  return coroutine_new_bound(fn, (KosCode *) code, ns);
+  return coroutine_new_bound(fn, (KosCode *) KosFunction_CODE(fn), ns);
 }
 
 
@@ -288,14 +281,16 @@ static void coroutine_finalize(PyObject *self) {
 
 static void coroutine_dealloc(PyObject *self) {
 
+  KosCoroutine *const coro = (KosCoroutine *) self;
+
   /* run the finalizer first; it may resurrect the coroutine, in which
-     case the dealloc is abandoned here and happens on the next drop */
-  if (PyObject_CallFinalizerFromDealloc(self) < 0)
+     case the dealloc is abandoned here and happens on the next drop.
+     Without a context (never started, or done) the finalizer has
+     nothing to close, so the call is skipped. */
+  if (coro->ctx && PyObject_CallFinalizerFromDealloc(self) < 0)
     return;
 
   PyObject_GC_UnTrack(self);
-
-  KosCoroutine *const coro = (KosCoroutine *) self;
 
   Py_CLEAR(coro->ctx);
   coroutine_drop_record(coro);

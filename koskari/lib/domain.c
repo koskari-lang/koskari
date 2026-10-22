@@ -50,9 +50,9 @@
 struct KosTlsState {
   /* the thread state whose dict holds the capsule; NULL once that
      capsule is gone. Compared against the current thread state to
-     accept the TSS slot's record without a dict lookup. */
+     accept the thread slot's record without a dict lookup. */
   PyThreadState *owner;
-  /* one count for the capsule, one for the TSS slot that names it,
+  /* one count for the capsule, one for the thread slot that names it,
      and one per drive holding the record across its run */
   Py_ssize_t refs;
   KosContext **ctx_stack;
@@ -67,7 +67,10 @@ struct KosTlsState {
   PyObject *default_domain;
 };
 
-static Py_tss_t tls_state_key = Py_tss_NEEDS_INIT;
+/* the calling OS thread's record, a C thread-local slot: one TLS load
+   on the fast path, checked against the current thread state by its
+   owner field since a thread state can change on one OS thread */
+static _Thread_local KosTlsState *tls_state_slot;
 
 
 /* Grow `stack` (an array of pointer-sized slots) to admit index `depth`.
@@ -89,7 +92,7 @@ static void *tls_stack_reserve(void *stack, size_t *cap, size_t depth) {
 
 
 /* The record is owned by a capsule in the thread state's dict, which
-   CPython clears when the thread state is destroyed, and by the TSS
+   CPython clears when the thread state is destroyed, and by the thread
    slot of the OS thread that reached it; each holds one count. The
    capsule can be destroyed from another OS thread (a thread state
    cleared at interpreter shutdown, or by an embedder), which cannot
@@ -102,7 +105,7 @@ static PyObject *tls_state_dict_key = NULL;  /* interned "koskari.tls_state" */
 /* Every release runs with the GIL held: the capsule destructor runs
    from the clear of a thread state's dict, and the other callers run
    on a thread inside the evaluator or a Python API entry. The default
-   domain is dropped last, after the record is freed and out of the TSS
+   domain is dropped last, after the record is freed and out of the thread
    slot, so a finalizer it runs that re-enters finds no stale record. */
 static void tls_state_release(KosTlsState *s) {
 
@@ -126,8 +129,8 @@ static void tls_state_capsule_free(PyObject *capsule) {
     return;
   }
   s->owner = NULL;
-  if (PyThread_tss_get(&tls_state_key) == s) {
-    PyThread_tss_set(&tls_state_key, NULL);
+  if (tls_state_slot == s) {
+    tls_state_slot = NULL;
     tls_state_release(s);
   }
   tls_state_release(s);
@@ -136,7 +139,7 @@ static void tls_state_capsule_free(PyObject *capsule) {
 
 /**
    The record for the current thread state, or NULL when it has none.
-   The TSS slot answers when its record's owner is the current thread
+   The thread slot answers when its record's owner is the current thread
    state. Otherwise the slot's record, if any, belongs to another thread
    state or to a capsule already destroyed, and is released; the current
    thread state's dict then supplies the record, adopted into the slot
@@ -144,7 +147,7 @@ static void tls_state_capsule_free(PyObject *capsule) {
    interned str. Every call counts as one resolution (tls_resolve).
 */
 static KosTlsState *tls_state_current(void) {
-  KosTlsState *s = (KosTlsState *) PyThread_tss_get(&tls_state_key);
+  KosTlsState *s = tls_state_slot;
   PyThreadState *ts = PyThreadState_Get();
   PyObject *dict;
   PyObject *capsule;
@@ -154,7 +157,7 @@ static KosTlsState *tls_state_current(void) {
   if (s) {
     if (likely(s->owner == ts))
       return s;
-    PyThread_tss_set(&tls_state_key, NULL);
+    tls_state_slot = NULL;
     tls_state_release(s);
   }
 
@@ -170,14 +173,14 @@ static KosTlsState *tls_state_current(void) {
     return NULL;
   }
   s->refs++;
-  PyThread_tss_set(&tls_state_key, s);
+  tls_state_slot = s;
   return s;
 }
 
 
 /**
    The current thread state's record, allocated when it has none: owned
-   by a capsule in the thread state's dict and by the TSS slot. With the
+   by a capsule in the thread state's dict and by the thread slot. With the
    module cleared (the dict key gone) the slot's count is the only one,
    so a finalizer entering the evaluator during interpreter teardown
    still has a record; the owner is set either way, since the slot
@@ -213,7 +216,7 @@ static KosTlsState *get_or_alloc_tls_state(void) {
     s->refs++;   /* the capsule's */
   }
 
-  PyThread_tss_set(&tls_state_key, s);
+  tls_state_slot = s;
   return s;
 }
 
@@ -782,8 +785,6 @@ int koskari_domain_init(PyObject *mod) {
     Py_DECREF(&KosDomainType);
     return -1;
   }
-  if (PyThread_tss_create(&tls_state_key) != 0)
-    return -1;
   tls_state_dict_key = PyUnicode_InternFromString("koskari.tls_state");
   if (! tls_state_dict_key)
     return -1;
@@ -803,9 +804,8 @@ int koskari_domain_init(PyObject *mod) {
 }
 
 
-/* The TSS key outlives the module: a finalizer entering the evaluator
-   after the clear still stores its record in the slot. Creating the
-   key again at a later init is a no-op. */
+/* The thread slot outlives the module: a finalizer entering the
+   evaluator after the clear still stores its record in it. */
 int koskari_domain_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(tls_state_dict_key);
