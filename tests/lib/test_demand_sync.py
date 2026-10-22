@@ -1432,6 +1432,16 @@ ROOT_SRC = """
 
 (define tuple2_probe (lambda [probe a b] (probe) #(a b)))
 
+(define kw_probe (lambda [probe a b: 0] (probe) #(a b)))
+
+(define hook (list))
+(define byref2 (lambda [a &n: 0 b: 0] #(a n b)))
+(define box2 #{"v": 1})
+(define empty_check2 (lambda [] (when hook ((item hook 0))) False))
+(bind! reentering2 (dynamic { (item box2 "v") } { (set! (item box2 "v") %1) }
+                            { None } empty_check2))
+(define call_byref2 (lambda [a b] (byref2 a n: &reentering2 b: b)))
+
 (define await2 (lambda [a b] (await (a)) b))
 
 (define bind_gq (lambda [v probe]
@@ -1561,6 +1571,64 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(d(probe, 1, 2), (1, 2))
         self.assertEqual(d(probe, 3, 4), (3, 4))
         self.assertEqual(counts, [2, 1])
+
+
+    async def test_keyword_call_runs_as_root(self):
+        """
+        a call passing a keyword runs its own frame above the demand root
+        frame the first time, and as the drive's root frame the second
+        """
+
+        mod = await self.load()
+        d = demand(mod["kw_probe"])
+        counts = []
+
+        def probe():
+            counts.append(frame_node_count())
+
+        self.assertEqual(d(probe, 1, b=2), (1, 2))
+        self.assertEqual(d(probe, 3, b=4), (3, 4))
+        self.assertEqual(counts, [2, 1])
+
+
+    async def test_bad_keyword_then_good_call(self):
+        """
+        a call the binder refuses raises TypeError, and the wrapper serves
+        the next good call
+        """
+
+        mod = await self.load()
+        d = demand(mod["kw_probe"])
+
+        def probe():
+            pass
+
+        with self.assertRaises(TypeError):
+            d(probe, 1, nope=2)
+        self.assertEqual(d(probe, 1), (1, 0))
+        with self.assertRaises(TypeError):
+            d(probe)
+        with self.assertRaises(TypeError):
+            d()
+        self.assertEqual(d(probe, 5, b=6), (5, 6))
+
+
+    async def test_reentry_from_inside_the_bind(self):
+        """
+        the emptiness check on a by-ref keyword's dynamic ref calls the
+        same function again through Python while the outer call binds
+        """
+
+        mod = await self.load()
+        d = demand(mod["byref2"])
+        outer = demand(mod["call_byref2"])
+        seen = []
+        mod["hook"].append(lambda: seen.append(d(100, b=200)))
+
+        self.assertEqual(outer(1, 2), (1, 1, 2))
+        self.assertEqual(seen, [(100, 0, 200)])
+        self.assertEqual(outer(3, 4), (3, 1, 4))
+        self.assertEqual(seen, [(100, 0, 200), (100, 0, 200)])
 
 
     async def test_root_arm_keeps_demand_denial(self):
