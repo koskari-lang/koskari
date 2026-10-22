@@ -79,8 +79,7 @@ typedef struct KosCodeAllocator {
 #define KOS_ARENA_UNIT 32
 
 /* The chunk unit, in system pages. Every chunk is a whole number of
-   chunk units, so one mapping holds this many pages of code, and a
-   single surviving member keeps at most this many pages resident. The
+   chunk units, and a surviving member keeps its whole chunk alive. The
    page size is the system's; the unit in bytes is exposed to Python as
    Arena.CHUNK. */
 #define KOS_ARENA_CHUNK_PAGES 16
