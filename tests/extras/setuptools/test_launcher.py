@@ -115,6 +115,14 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
             'ki_launcher_argv', 'main', 'ki-tool', ['--flag'])
         self.assertEqual(code, 2)
 
+    async def test_hosted_run_awaits_coroutine_main(self):
+        self._write_ki(
+            'ki_launcher_coro',
+            '(import asyncio)\n'
+            '(define-coroutine main [] (await (asyncio.sleep 0)) 9)')
+        code = await hosted_run('ki_launcher_coro', 'main', 'ki-tool', [])
+        self.assertEqual(code, 9)
+
     def test_run_target_against_ki_module(self):
         self._write_ki('ki_launcher_run', '(define main [] 7)')
         self._loaded.append('ki_launcher_run')

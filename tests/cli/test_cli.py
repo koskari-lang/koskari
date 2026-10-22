@@ -1041,6 +1041,22 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("", out)
 
 
+    async def test_coroutine_entry_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = self._write(
+                os.path.join(tmp, 'entry_coroutine.ki'),
+                "import asyncio\n"
+                "\n"
+                "@entry-point\n"
+                "define-coroutine main []:\n"
+                "  await (asyncio.sleep 0)\n"
+                "  print \"resumed\"\n"
+                "  6\n")
+            code, out, err = await self._main(tmp, (), script)
+        self.assertEqual(6, code, err)
+        self.assertEqual("resumed\n", out)
+
+
     async def test_explicit_slot_definition(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
