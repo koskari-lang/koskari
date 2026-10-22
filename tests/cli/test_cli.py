@@ -787,6 +787,29 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("never", out)
 
 
+    async def test_main_module_package_body_sees_run_argv(self):
+        """
+        The package that is the program loads after sys.argv names it,
+        so its body reads the run's argv, not the launcher's
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'mpkg')
+            os.makedirs(pkg)
+            with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
+                fh.write("import sys\n"
+                         "print \"load\" *: sys.argv\n"
+                         "\n"
+                         "@entry-point\n"
+                         "define main []:\n"
+                         "  None\n")
+            code, out, _argv = await self._run_module_in(
+                tmp, 'mpkg', '-m', 'mpkg', '--', 'x', 'y')
+            self.assertEqual(0, code, out)
+            init = os.path.join(os.path.realpath(tmp), 'mpkg', '__init__.ki')
+            self.assertIn(f"load {init} x y", out)
+
+
     async def test_main_module_runs_current_kio(self):
         """
         A module whose .kio is current beside its source runs from the
@@ -1282,6 +1305,27 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
             code, out, err = await self._main(tmp, (), script)
         self.assertEqual(1, code, err)
         self.assertIn("TypeError", err)
+
+
+    async def test_package_entry_body_error_is_a_traceback(self):
+        """
+        An import failing inside the body of a package run by -m is the
+        program's error, rendered as a traceback, not the module
+        lookup's
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'epkg')
+            os.makedirs(pkg)
+            self._write(
+                os.path.join(pkg, '__init__.ki'),
+                "import no_such_module_q1\n")
+            code, _out, err = await self._main(
+                tmp, ('epkg',), '-m', 'epkg')
+        self.assertEqual(1, code, err)
+        self.assertIn("Traceback", err)
+        self.assertIn("no_such_module_q1", err)
+        self.assertNotIn("cannot be directly executed", err)
 
 
     async def test_interactive_raising_entry_skips_session(self):

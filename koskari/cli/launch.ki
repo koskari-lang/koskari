@@ -147,11 +147,33 @@ define run_entry [mod]:
 ; === Module execution ===
 
 
+define find_spec_on_path [fullname path]:
+  """
+  The spec of a submodule, asked of each meta path finder in turn as
+  the import system asks once the parent package is imported, without
+  importing it
+
+  :param fullname: dotted name of the submodule
+  :param path: the parent package's submodule search locations
+  :return: ModuleSpec, or None when no finder has it
+  """
+
+  for-each [finder sys.meta_path]:
+    define find (getattr finder "find_spec" None)
+    unless (None? find):
+      define found (find fullname path)
+      unless (None? found):
+        return found
+  return None
+
+
 define main_module_spec [name]:
   """
   The spec of the module -m runs: the named module, or the __main__
   submodule when the name is a package, found through the import
-  machinery as python -m finds it.
+  machinery as python -m finds it, except that the package is not
+  imported to find its __main__: a package without one is the program,
+  and it loads once run imports it.
 
   :param name: dotted module name
   :return: ModuleSpec with a Koskari loader: the module, a package's
@@ -166,7 +188,8 @@ define main_module_spec [name]:
     raise (ImportError f"No module named {name}")
 
   unless (None? spec.submodule_search_locations):
-    define main_spec (find_spec f"{name}.__main__")
+    define main_spec (find_spec_on_path
+      f"{name}.__main__" spec.submodule_search_locations)
     unless (None? main_spec):
       set! spec main_spec
 
