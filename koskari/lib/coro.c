@@ -410,22 +410,15 @@ static int coroutine_settle(
 
 /**
    Report a settled step on the iterator protocol: the payload for a
-   yield or await, StopIteration(value) for a return (built as a real
-   instance so the value is not tuple-splat during normalization), NULL
-   with the error set otherwise.
+   yield or await, a StopIteration raised by kos_raise_stop_iteration
+   for a return, NULL with the error set otherwise.
 */
 static PyObject *coroutine_report(int settled, PyObject *out) {
 
   if (settled == 1)
     return out;
-  if (settled == 0) {
-    PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, out);
-    Py_DECREF(out);
-    if (err) {
-      PyErr_SetObject(PyExc_StopIteration, err);
-      Py_DECREF(err);
-    }
-  }
+  if (settled == 0)
+    return kos_raise_stop_iteration(out);
   return NULL;
 }
 

@@ -143,17 +143,7 @@ int kos_dyn_next_deliver_exhausted(
   } else if (nn == 1) {
     /* the StopIteration carries the generator's return value, as
        Python's next does; a bare return raises it empty */
-    if (val && val != Py_None) {
-      PyObject *err = PyObject_CallOneArg(PyExc_StopIteration, val);
-      Py_DECREF(val);
-      if (err) {
-        PyErr_SetObject(PyExc_StopIteration, err);
-        Py_DECREF(err);
-      }
-    } else {
-      Py_XDECREF(val);
-      PyErr_SetNone(PyExc_StopIteration);
-    }
+    kos_raise_stop_iteration(val);
     kos_dyn_unlink_next_node(ctx, next);
     return -1;
   } else {

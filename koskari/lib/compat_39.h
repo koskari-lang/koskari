@@ -324,4 +324,19 @@ static inline void kos_tstate_exc_top(
 }
 
 
+/* === StopIteration raise === */
+
+
+/* Raise exc, a StopIteration instance, as CPython's generator send
+   raises a return value on 3.9: _PyGen_SetStopIterationValue raises
+   it through PyErr_SetObject, so the handled exception is chained onto
+   its __context__.
+   https://github.com/python/cpython/blob/v3.9.0/Objects/genobject.c
+   Steals exc. */
+static inline void kos_raise_stop_instance(PyObject *exc) {
+  PyErr_SetObject(PyExc_StopIteration, exc);
+  Py_DECREF(exc);
+}
+
+
 // The end.

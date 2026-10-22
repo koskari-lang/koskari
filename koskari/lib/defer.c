@@ -433,23 +433,6 @@ static void defer_spend(KosDefer *self) {
 
 
 /**
-   Report a completion to a caller on the iterator protocol: raise
-   StopIteration(value) as a real instance, since a bare
-   PyErr_SetObject(PyExc_StopIteration, value) would tuple-splat the
-   value during normalization. Steals value. Always returns NULL.
-*/
-static PyObject *defer_raise_stop(PyObject *value) {
-  PyObject *stop = PyObject_CallOneArg(PyExc_StopIteration, value);
-  Py_DECREF(value);
-  if (! stop)
-    return NULL;
-  PyErr_SetObject(PyExc_StopIteration, stop);
-  Py_DECREF(stop);
-  return NULL;
-}
-
-
-/**
    DONE: consume the value and report the completion. Returns the value
    (owned) for the send-slot caller, which reports it as a return.
 */
@@ -462,7 +445,7 @@ static PyObject *defer_take_done(KosDefer *self) {
 
 
 static PyObject *defer_finish_done(KosDefer *self) {
-  return defer_raise_stop(defer_take_done(self));
+  return kos_raise_stop_iteration(defer_take_done(self));
 }
 
 
@@ -525,7 +508,7 @@ static PyObject *defer_forward_send(KosDefer *self, PyObject *value) {
   if (r == PYGEN_NEXT)
     return result;
   if (r == PYGEN_RETURN)
-    return defer_raise_stop(result);
+    return kos_raise_stop_iteration(result);
   return NULL;
 }
 
@@ -559,7 +542,7 @@ static PyObject *defer_forward_throw(
     return result;
   defer_spend(self);
   if (r == PYGEN_RETURN)
-    return defer_raise_stop(result);
+    return kos_raise_stop_iteration(result);
   return NULL;
 }
 

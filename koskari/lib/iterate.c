@@ -369,8 +369,11 @@ static PyObject *stepper_finish_exhausted(
 /**
    Complete an __anext__ step. An am_send caller takes the yielded
    element through its result slot, reported as PYGEN_RETURN with no
-   exception. For a __next__ caller the element wraps in a 1-tuple
-   StopIteration so PyErr_SetObject does not unpack args. val consumed.
+   exception. For a __next__ caller the element, None included, is
+   carried by a StopIteration instance built here and raised by
+   kos_raise_stop_instance, as CPython's async_gen_unwrap_value raises
+   every yielded element through _PyGen_SetStopIterationValue. val
+   consumed.
 
    Passing a bare value instead, to let CPython defer building the
    exception instance, was measured and does not help: the await
@@ -384,13 +387,14 @@ static PyObject *stepper_finish_yield(KosIterStepper *st, PyObject *val) {
     return NULL;
   }
 
-  PyObject *args = PyTuple_Pack(1, val);
-  Py_XDECREF(val);
-  if (! args)
+  {
+    PyObject *exc = PyObject_CallOneArg(PyExc_StopIteration,
+                                        val ? val : Py_None);
+    Py_XDECREF(val);
+    if (exc)
+      kos_raise_stop_instance(exc);
     return NULL;
-  PyErr_SetObject(PyExc_StopIteration, args);
-  Py_DECREF(args);
-  return NULL;
+  }
 }
 
 
@@ -1137,18 +1141,7 @@ static PyObject *pyiter_finish_exhausted(
     PyObject *payload) {
 
   pyiter_release_state(gen);
-  {
-    PyObject *err = PyObject_CallOneArg(
-        PyExc_StopIteration, payload ? payload : Py_None);
-    Py_XDECREF(payload);
-    if (err) {
-      PyErr_SetObject(PyExc_StopIteration, err);
-      Py_DECREF(err);
-    } else {
-      PyErr_SetNone(PyExc_StopIteration);
-    }
-  }
-  return NULL;
+  return kos_raise_stop_iteration(payload);
 }
 
 

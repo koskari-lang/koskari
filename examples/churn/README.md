@@ -120,6 +120,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `starmap` | Koskari-only: the `demand` sync path | deterministic baseline |
 | `demand_call_param` | Koskari-only: a `demand` boundary call per element with one `parameterize` binding in force | deterministic baseline |
 | `yieldfrom` | Koskari-only: `yield-from` delegation/teardown | deterministic baseline |
+| `coro_send` | Koskari-only: `send(None)` into a Koskari coroutine per element, result taken from its StopIteration | deterministic baseline |
 | `async_tree` | hosted: fan-out task tree via `gather` (pyperformance async_tree, no I/O) | leaf count 4096 |
 | `coroutines` | hosted: await-chain recursion (pyperformance coroutines) | fib(25) = 75025 |
 | `async_generators` | hosted: async generator consumed by `async for` (pyperformance async_generators) | sum of range(20000) |

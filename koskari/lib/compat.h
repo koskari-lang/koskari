@@ -189,6 +189,31 @@ static inline int koskari_gil_drop_requested(void) {
 #endif
 
 
+/* === StopIteration raise === */
+
+/* Report a return value through the iterator protocol as CPython's
+   generator send does on this version: None (or NULL) raises an empty
+   StopIteration through PyErr_SetNone; any other value is carried by a
+   StopIteration instance built here (a bare PyErr_SetObject would
+   tuple-splat a tuple value) and raised by kos_raise_stop_instance.
+   Steals value. Always returns NULL. */
+static inline PyObject *kos_raise_stop_iteration(PyObject *value) {
+  PyObject *exc;
+
+  if (! value || value == Py_None) {
+    Py_XDECREF(value);
+    PyErr_SetNone(PyExc_StopIteration);
+    return NULL;
+  }
+
+  exc = PyObject_CallOneArg(PyExc_StopIteration, value);
+  Py_DECREF(value);
+  if (exc)
+    kos_raise_stop_instance(exc);
+  return NULL;
+}
+
+
 /* === Inline-values instance attributes: shared name -> index scan === */
 
 #if PY_MINOR_VERSION >= 11

@@ -16,7 +16,10 @@ tests.lib.test_coroutine_first_send
 
 The first send into an unstarted Koskari coroutine must carry None, as
 for a CPython coroutine: a non-None value raises TypeError and leaves
-the coroutine unstarted, so a following send of None runs it.
+the coroutine unstarted, so a following send of None runs it. A send
+that completes with a return value chains the handled exception onto
+the StopIteration's __context__ only where a CPython coroutine does on
+the running version.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -68,6 +71,31 @@ class TestCoroutineFirstSend(unittest.IsolatedAsyncioTestCase):
                 coro.send(None)
             self.assertEqual(caught.exception.value, i + 2)
         self.assertEqual(mod["box"], ["ran"] * 10)
+
+    async def test_send_return_chains_context_as_cpython_does(self):
+        mod = await self.load()
+
+        async def native_add(a, b):
+            return a + b
+
+        native = native_add(1, 2)
+        koskari = mod["add"](1, 2)
+
+        try:
+            raise ValueError("handled")
+        except ValueError:
+            with self.assertRaises(StopIteration) as native_caught:
+                native.send(None)
+            with self.assertRaises(StopIteration) as koskari_caught:
+                koskari.send(None)
+
+        native_stop = native_caught.exception
+        koskari_stop = koskari_caught.exception
+        self.assertEqual(native_stop.value, 3)
+        self.assertEqual(koskari_stop.value, 3)
+        self.assertEqual(
+            native_stop.__context__ is None,
+            koskari_stop.__context__ is None)
 
 
 # The end.
