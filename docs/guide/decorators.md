@@ -119,10 +119,16 @@ The head of the decorator says when its effect happens:
 | `@parameterize [[p v]]` | now: the extent spans the subject's evaluation |
 | `@call-with [(cm)]` | per call |
 | `@call-parameterize [[p v]]` | per call |
+| `@entry-point` | at definition: the function becomes the module's entry point |
 
 The default arm covers every ordinary runtime decorator, `@demand`,
 `@(memoize maxsize: None)`, `@abstractmethod`: the expression evaluates
 and its value is called with the subject's value.
+
+`@entry-point` is a marking arm: it binds the function as the module's
+`__entry__`, the function the launcher calls when the module runs as a
+program, and delivers it unchanged, so the `define` binds the same
+function. See [`entry-point`](../reference/macros/compile-entry-point.md).
 
 The graft arms match a body-less `let`, `with`, or `parameterize` and
 complete it by splicing the subject in as its body:

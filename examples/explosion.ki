@@ -56,7 +56,8 @@ define explosion! []:
 """)
 
 
-when-main:
+@entry-point
+define main []:
     (explosion!)
     (print "Nice Bakuretsu.")
 

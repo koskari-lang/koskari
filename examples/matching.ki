@@ -125,7 +125,8 @@ define from-message [msg]:
             None
 
 
-when-main:
+@entry-point
+define main []:
     define shapes #((Point 0 0) (Point 3 5) (Square 12) (Square 500)
                     (Plane 4 8) (Plane 6 6) (Cube 3))
 

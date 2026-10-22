@@ -223,6 +223,7 @@ define render [spec_path template_path output_path]:
     output_file.write_text rendered
 
 
+@entry-point
 define main [argv: None]:
     """
     Three positional arguments only: YAML spec, Jinja template, output
@@ -252,10 +253,6 @@ define main [argv: None]:
 
     render options.spec_yaml options.template options.output
     return 0
-
-
-when-main:
-    (sys.exit (main))
 
 
 ; The end.

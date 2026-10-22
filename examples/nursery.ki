@@ -360,7 +360,8 @@ define demo-timeout []:
     (sleep 0.1)
 
 
-when-main:
+@entry-point
+define main []:
     (demo-fanout)
     (demo-sibling-cancel)
     (demo-gather-orphan)

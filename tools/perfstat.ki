@@ -223,6 +223,7 @@ define run-opcodes [opts]:
 ;; === entry point ===
 
 
+@entry-point
 define main [argv: None]:
     """
     Parse arguments and dispatch to the selected mode
@@ -261,10 +262,6 @@ define main [argv: None]:
     else:
         (run-opcodes opts)
     return 0
-
-
-when-main:
-    (sys.exit (main))
 
 
 ; The end.

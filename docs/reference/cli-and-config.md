@@ -37,24 +37,37 @@ Those forms are mutually exclusive. Remaining arguments are forwarded to the
 script or REPL session; with `-c`, `sys.argv[0]` is `'-c'`; with `-m`, it is the
 path of the module's file.
 
-A program that names an entry with
-[`declare-entry`](macros/compile-declare-entry.md) has it called with no
-arguments once its module has finished loading, and exits with the status
-its return value maps to: `None` is `0`, an int is that status, and any
-other value is printed to stderr with status `1`. Without an entry, a
-program that finishes loading exits `0`.
+A program's work lives in its entry point, the function marked with
+[`entry-point`](macros/compile-entry-point.md) or defined as `__entry__`.
+It is called with no arguments once the module has finished loading, and
+the process exits with the status its return value maps to: `None` is
+`0`, an int is that status, and any other value is printed to stderr with
+status `1`. Without an entry point, a program that finishes loading exits
+`0`.
 
 `-m MODULE` finds the module through the import machinery with the working
 directory first on `sys.path`, as `python -m` does, and runs it as
 `__main__` with `__package__` set to its parent package, so a relative
 import in the module resolves. A package name runs its `__main__`
-submodule. A module whose `.kio` is current beside its source runs from the
-`.kio`. Arguments after the module name, or after `--`, are forwarded
-unchanged:
+submodule; a package with no `__main__` is imported under its own name and
+its entry point is called, so a small package needs no second file. A
+module whose `.kio` is current beside its source runs from the `.kio`.
+Arguments after the module name, or after `--`, are forwarded unchanged:
 
 ```
 koskari -m tools.tools -- selftest
 ```
+
+`python -m MODULE` runs a Koskari module the same way in an environment
+where Koskari is installed: the import hook is active from interpreter
+start, the module loads under `__main__` on the Koskari event loop, and
+its entry point's status is the exit code. An editable development
+install does not activate the hook at start, so there `koskari -m` is the
+form to use.
+
+An installed command declared as a `koskari_scripts` entry point names
+either `module:callable` or a module alone; the bare module form runs
+that module's entry point.
 
 `--compile-kio` compiles `SRC` under the module name an import would give
 it: each directory above the file holding an `__init__.ki` or `__init__.py`
@@ -62,9 +75,9 @@ is a package segment, the directory above the package root is on the
 import path for the build, and the parent package is imported first, so the
 package pragma in force and any relative import in the body are the ones a
 source load sees. A file under no package is named by its stem. The forms
-run as they compile, so a `when-main` body does not run; a file named
-`__main__.ki` outside a package builds under a synthetic name for the same
-reason.
+run as they compile, so a body guarded by `__name__` does not run and no
+entry point is called; a file named `__main__.ki` outside a package builds
+under a synthetic name for the same reason.
 
 A `filename` of `-` reads the whole program from stdin, so a heredoc or a
 pipe runs the same source a file would:

@@ -9,8 +9,9 @@ relative imports behave as they do in Python.
 
 ## The shape of a file
 
-Definitions first, then the run-now part under `when-main:`, so that
-importing the file does not run the script body:
+Definitions first, then the program's work in one function marked
+`@entry-point`, which runs once the file has loaded as a program and
+not when it is imported:
 
 ```koskari
 """
@@ -24,15 +25,19 @@ define greet [name]:
   print "hello" name
 
 
-when-main:
+@entry-point
+define main []:
   for-each [name (item-slice sys.argv 1)]:
     (greet name)
 ```
 
 A docstring at the top becomes the module's `__doc__`. The order that
 reads best is imports, then constants and configuration, then functions
-and classes, then `when-main:`; a reader can then answer what the file
-needs, what it defines, and what happens when it runs.
+and classes, then the entry point last; a reader can then answer what
+the file needs, what it defines, and what happens when it runs. The
+entry's return value is the exit status, and `main` stays a function
+another module or a test can call; see
+[`entry-point`](../reference/macros/compile-entry-point.md).
 
 ## Imports
 

@@ -12,19 +12,23 @@ bottom, so a function has to be defined before the line that calls it.
 :::
 
 :::{dialogue}
-What is `when-main:`?
+Where do the "do it now" lines go?
 +++
-A block that runs only when the file is run directly with `koskari`, not
-when another file borrows its definitions. Put the "do it now" lines
-there:
+In one function marked `@entry-point`. It runs after the whole file has
+loaded, when the file is run directly with `koskari`, and not when
+another file borrows its definitions:
 
 ```koskari
 define greet [name]:
   print f"hello, {name}"
 
-when-main:
+@entry-point
+define main []:
   (greet "Ada")
 ```
+
+The `@` line sits over the `define` and marks it. Any name works;
+`main` is the custom.
 :::
 
 ## Borrowing from Python
@@ -86,7 +90,8 @@ define report [numbers]:
     print f"{score}: {(grade score)}"
   print f"average {(average numbers)}, best {(max numbers)}"
 
-when-main:
+@entry-point
+define main []:
   (report scores)
 ```
 :::

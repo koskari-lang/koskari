@@ -62,22 +62,24 @@ define process [name]:
   print "hello" name
 
 
+@entry-point
 define main []:
   for-each [name (item-slice sys.argv 1)]:
     (process name)
-
-
-when-main:
-  (main)
 ```
 :::
 
 :::{dialogue}
-What is `when-main`?
+What is `@entry-point`?
 +++
-The block that runs only when the file is executed as a script and not
-when it is imported: Python's `if __name__ == "__main__":`. Comments
-are `;` to the end of the line, doubled by custom.
+The mark on the function that runs when the file is executed as a
+program and not when it is imported. Where Python guards a block with
+`if __name__ == "__main__":` and runs it while the module is still
+loading, Koskari calls the marked function once the module has
+finished loading, and its return value is the exit status: `None` is
+`0`, an int is that status. `main` is still an ordinary function that
+a test or another module can call. Comments are `;` to the end of the
+line, doubled by custom.
 :::
 
 ## Comprehensions
@@ -201,7 +203,8 @@ define squares [n]:
   list-each [i (range n)]:
     (* i i)
 
-when-main:
+@entry-point
+define main []:
   print (squares 6)
 ```
 

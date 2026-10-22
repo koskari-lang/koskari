@@ -3,28 +3,19 @@
 **Syntax:** `(when-main BODY ...)`
 
 **Behaviour:** Expands to `(when (equal? __name__ "__main__") (begin BODY ...))`,
-so the body runs when the file is executed as a script and not when it
-is imported: Python's `if __name__ == "__main__":`.
+Python's `if __name__ == "__main__":`. The body runs as part of loading,
+while the module is still open, and only when the file is the program.
 
-**Examples:**
-
-```koskari
-define main []:
-  print "running as a script"
-
-when-main:
-  (main)
-```
+A program's work belongs in an entry function, not in a body that runs
+during the load: see [`entry-point`](compile-entry-point.md). The entry
+runs after the module has finished loading, with its return value as the
+exit status, and it stays an ordinary function that can be imported and
+called.
 
 ```koskari
 >>> (macroexpand-1 '(when-main (main)))
 (when (equal? __name__ "__main__") (begin (main)))
 ```
 
-A `when-main` body runs while the module is still loading. To run a
-function after loading completes, with its return value as the exit
-status, use [`declare-entry`](compile-declare-entry.md).
-
-**See also:** [Modules and packages](../../guide/modules-and-packages.md),
-the [Script entry point](../../tutorials/from-python/examples/script-main.md)
-example.
+**See also:** [`entry-point`](compile-entry-point.md),
+[Modules and packages](../../guide/modules-and-packages.md).

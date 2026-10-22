@@ -1010,6 +1010,7 @@ define run_streamable_http_with_info [host port **: app_kwargs]:
 ;; === Entry point ===
 
 
+@entry-point
 define main [argv: None]:
     """
     Run the MCP server.
@@ -1091,10 +1092,6 @@ define main [argv: None]:
         host: options.host
         port: options.port
         transport_security: security)
-
-
-when-main:
-    (main)
 
 
 ; The end.

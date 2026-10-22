@@ -60,7 +60,8 @@ define fib-loop [n]:
   v
 
 
-when-main:
+@entry-point
+define main []:
   print "fib-recur:" (fib-recur 20)
   print "fib-recur-decorated:" (fib-recur-decorated 20)
   print "fib-recur-cached:" (fib-recur-cached 20)

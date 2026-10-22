@@ -105,7 +105,8 @@ define-class Rectangle [Shape2D]:
         * self.width self.height
 
 
-when-main:
+@entry-point
+define main []:
     define origin (Point2D 1 2)
     define rect (Rectangle origin 5 4)
 

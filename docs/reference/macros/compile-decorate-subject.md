@@ -10,6 +10,7 @@ shape selects the arm:
 | `(parameterize PARAMS)` | `(parameterize PARAMS SUBJECT)` |
 | `(call-with BINDING)` | a function that enters `(with BINDING ...)` around each call of `SUBJECT` |
 | `(call-parameterize PARAMS)` | a function that enters `(parameterize PARAMS ...)` around each call |
+| `entry-point` | `SUBJECT`, after binding it as the module's `__entry__` |
 | anything else | `(DECORATOR SUBJECT)` |
 
 **Behaviour:** Applies one decorator to a subject form. A body-less
@@ -20,8 +21,10 @@ function that establishes the extent per invocation and copies the
 callable's metadata through `decorate-wraps`, which is
 `functools.update_wrapper`. When the subject is a coroutine function,
 the `call-` wrapper is one too, so `inspect.iscoroutinefunction`
-reports True for it. Any other decorator expression is evaluated and
-called on the subject.
+reports True for it. [`entry-point`](compile-entry-point.md) binds the
+subject as the module's `__entry__`, the function the launcher calls
+when the module runs as a program, and delivers it unchanged. Any other
+decorator expression is evaluated and called on the subject.
 
 New shape arms are added with [`extend-syntax`](compile-extend-syntax.md)
 and are tried before the invocation arm.

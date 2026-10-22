@@ -153,7 +153,8 @@ jobset workload:
             #{"ok": True "asked": msg}
 
 
-when-main:
+@entry-point
+define main []:
     (workload heartbeat: 20 snore: True)
 
 

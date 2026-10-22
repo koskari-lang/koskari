@@ -695,6 +695,7 @@ define run [options]:
     return (options.quick_func options)
 
 
+@entry-point
 define main [argv: None]:
     """
     CLI entry point
@@ -714,10 +715,6 @@ define main [argv: None]:
 
     (build_arguments parser)
     run (parser.parse_args args)
-
-
-when-main:
-    (sys.exit (main))
 
 
 ; The end.

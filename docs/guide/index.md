@@ -36,7 +36,7 @@ one whose topic has come up in your code.
 
 | Page | Covers |
 |------|--------|
-| [Modules and packages](modules-and-packages.md) | The shape of a file, imports, `when-main`, packages on disk, the `.py`/`.ki` same-name trap, `sys.path` |
+| [Modules and packages](modules-and-packages.md) | The shape of a file, imports, the entry point, packages on disk, the `.py`/`.ki` same-name trap, `sys.path` |
 | [I/O and effects](io-and-effects.md) | `print`, `with`, exceptions and `try` as an expression, stores, async effects |
 | [Demand, async, and defer](demand-async-and-defer.md) | Ambient await, the demand path, `defer`, and which construct to reach for |
 | [Hosting Koskari from Python](hosting-from-python.md) | The import hook, running a file into a namespace, awaiting Koskari functions from Python |

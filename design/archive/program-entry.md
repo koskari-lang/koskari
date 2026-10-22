@@ -6,8 +6,8 @@ exit status. Code at module level is for definitions; the program runs in
 the entry. This replaces the current pair of `when-main` (load-time code)
 and `declare-entry` (a name recorded as a string, looked up later).
 
-Status: proposal. `declare-entry` and the string `__entry__` exist only on
-the `new-arena` branch and can be reshaped freely.
+Status: implemented 2026-10-22 on the `new-arena` branch, in the order
+of work below; archived. `declare-entry` and the string slot are gone.
 
 ## The slot
 

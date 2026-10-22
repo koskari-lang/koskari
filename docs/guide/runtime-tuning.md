@@ -159,7 +159,7 @@ A `.kio` file records the `pack-module` setting in force when the
 module was compiled, and the module loads with that setting. Its
 functions are sealed before the first top-level form runs, so a
 precompiled module's function code is read-only while its own body
-runs, including a `when-main` body that never returns.
+runs, as it is for every module by the time its entry point runs.
 
 Code decoded outside an import, through `koskari.serialize.load_kio`,
 is not sealed.

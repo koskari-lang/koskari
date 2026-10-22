@@ -124,14 +124,14 @@ The installed `bin/mytool` calls `run_resolved_script('myapp==...',
 
 | Topic | Rule |
 | ----- | ---- |
-| entry value | `module:callable`, for example `mypkg.cli:main` |
-| entry callable | `main()` with no parameters; read `sys.argv` |
+| entry value | `module:callable`, for example `mypkg.cli:main`, or a module alone, for example `mypkg.cli`, meaning that module's entry point |
+| entry callable | called with no arguments; read `sys.argv`; the return value is the exit status, as for an `@entry-point` function |
 | return value | an integer exit code, `None` for 0, or an awaitable producing one |
 | `packages=` | declare it; the plugin does not guess package names |
 | `package_data` | omit `*.ki` and `*.kio`; the plugin adds them |
 | `zip_safe` | omit it; the plugin sets `False` when `koskari_scripts` is present |
 | name collisions | do not register the same command under `console_scripts` |
-| CI validation | `koskari.extras.setuptools.validate_koskari_scripts` checks entry names and `module:callable` values on a `Distribution` |
+| CI validation | `koskari.extras.setuptools.validate_koskari_scripts` checks entry names and values on a `Distribution` |
 
 The repository's `examples/life` is a complete application of this
 shape: package `koslife`, command `koslife`, entry `koslife.cli:main`, a
