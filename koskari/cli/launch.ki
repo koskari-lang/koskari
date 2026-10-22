@@ -455,8 +455,10 @@ define run []:
   define interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
+  define package_entry (and spec (not (None? spec.submodule_search_locations)))
+
   define mod None
-  if (and spec (not (None? spec.submodule_search_locations))):
+  if package_entry:
     ; a package with no __main__ runs its own entry point: imported
     ; under its real name, as any import would, so its relative imports
     ; resolve and it loads once
@@ -490,6 +492,11 @@ define run []:
     define status (run_entry mod)
     unless options.interactive:
       return status
+
+  ; the package run for its entry point stays the importable package;
+  ; the session opens in a __main__ of its own, as a bare session does
+  when package_entry:
+    set! mod (new_module "__main__")
 
   ; the session module is read and compiled only for a session: a
   ; script, -c, -m and the kio options never reach it

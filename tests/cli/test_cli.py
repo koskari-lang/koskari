@@ -1328,6 +1328,32 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("cannot be directly executed", err)
 
 
+    async def test_interactive_package_entry_leaves_package_intact(self):
+        """
+        After a package's entry point runs under -i, the session opens
+        in a module of its own, so the importable package keeps its
+        file
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, 'ipkg')
+            os.makedirs(pkg)
+            init = self._write(
+                os.path.join(pkg, '__init__.ki'),
+                "@entry-point\n"
+                "define main []:\n"
+                "  print \"entered\"\n")
+            try:
+                code, out, err = await self._main(
+                    tmp, (), '-i', '-q', '-m', 'ipkg', stdin='')
+                pkg_file = sys.modules['ipkg'].__file__
+            finally:
+                sys.modules.pop('ipkg', None)
+        self.assertEqual(0, code, err)
+        self.assertIn("entered\n", out)
+        self.assertEqual(os.path.realpath(init), pkg_file)
+
+
     async def test_interactive_raising_entry_skips_session(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
