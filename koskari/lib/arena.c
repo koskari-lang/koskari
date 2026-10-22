@@ -43,6 +43,20 @@
 #endif
 
 
+/* A mapping is addressable to ASan as a whole, so the arena marks its
+   own shadow: a chunk is poisoned when mapped, a reservation unpoisons
+   exactly its slice, and a released block is poisoned again. A read or
+   write past a block, into the unit padding or the unreserved tail,
+   then reports where it happens. Not every runtime clears the shadow
+   on munmap, so a region is unpoisoned before it is unmapped. */
+#ifdef KOS_ASAN
+#include <sanitizer/asan_interface.h>
+#else
+#define ASAN_POISON_MEMORY_REGION(addr, size)    ((void) (addr), (void) (size))
+#define ASAN_UNPOISON_MEMORY_REGION(addr, size)  ((void) (addr), (void) (size))
+#endif
+
+
 /* === helpers === */
 
 
@@ -123,9 +137,11 @@ PyObject *KosArena_New(size_t nbytes) {
                     "Failed to allocate arena storage");
     return NULL;
   }
+  ASAN_POISON_MEMORY_REGION(base, total);
 
   KosArena *self = PyObject_New(KosArena, &KosArenaType);
   if (! self) {
+    ASAN_UNPOISON_MEMORY_REGION(base, total);
     munmap(base, total);
     return NULL;
   }
@@ -163,6 +179,7 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
   self->fill = start + nbytes;
   self->writing++;
   *out = (char *) self->base + start;
+  ASAN_UNPOISON_MEMORY_REGION(*out, nbytes);
 
   return 0;
 }
@@ -203,6 +220,8 @@ int KosArena_Seal(PyObject *arena) {
   size_t page = KosArena_PageSize();
   size_t keep = round_up(self->fill, page);
   if (keep < self->size) {
+    ASAN_UNPOISON_MEMORY_REGION((char *) self->base + keep,
+                                self->size - keep);
     if (munmap((char *) self->base + keep, self->size - keep)) {
       PyErr_SetFromErrno(PyExc_OSError);
       return -1;
@@ -238,6 +257,9 @@ void KosArena_Release(PyObject *arena, void *base, size_t nbytes) {
   if (round_up(end, KOS_ARENA_UNIT) == round_up(self->fill, KOS_ARENA_UNIT)) {
     self->fill = (size_t) ((char *) base - start);
   }
+
+  /* dead whether or not its space was returned */
+  ASAN_POISON_MEMORY_REGION(base, nbytes);
 }
 
 
@@ -345,9 +367,12 @@ static void arena_dealloc(PyObject *self) {
   /* unmapping needs no write access, so a sealed chunk goes as it is.
      When it fails the mapping stays: a leak is the safe outcome, and
      the one channel a deallocator has reports it. */
-  if (arena->base && munmap(arena->base, arena->size)) {
-    PyErr_SetFromErrno(PyExc_OSError);
-    PyErr_WriteUnraisable(self);
+  if (arena->base) {
+    ASAN_UNPOISON_MEMORY_REGION(arena->base, arena->size);
+    if (munmap(arena->base, arena->size)) {
+      PyErr_SetFromErrno(PyExc_OSError);
+      PyErr_WriteUnraisable(self);
+    }
   }
 
   arena->base = NULL;
