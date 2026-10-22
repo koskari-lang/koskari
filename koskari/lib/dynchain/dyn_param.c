@@ -220,7 +220,11 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 
 
 /**
-   Restore the prior cells from SAVED (unwind / transfer).
+   Restore the prior cells from SAVED (unwind / transfer). The swap-back
+   writes into the context's own table: one shared with a coroutine
+   created inside the extent, or with a nested boundary call, is copied
+   first. If that copy fails the error is cleared and the table is left
+   as is, as the swap-back does for its own dict failures.
 */
 static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 
@@ -228,9 +232,14 @@ static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
   if (! saved)
     return;
 
-  PyObject *cells = KosContext_PARAM_REFS(ctx);
-  if (! cells)
+  if (! KosContext_PARAM_REFS(ctx))
     return;
+
+  PyObject *cells = kos_context_param_refs(ctx);
+  if (! cells) {
+    PyErr_Clear();
+    return;
+  }
 
   kos_dynparam_swap_back(cells, saved);
 }

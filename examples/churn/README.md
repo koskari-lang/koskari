@@ -118,6 +118,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `pidigits` | arbitrary-precision (bignum) arithmetic | first 50 digits of π |
 | `binary_trees` | allocation churn + recursion | check-sum 129712 |
 | `starmap` | Koskari-only: the `demand` sync path | deterministic baseline |
+| `demand_call_param` | Koskari-only: a `demand` boundary call per element with one `parameterize` binding in force | deterministic baseline |
 | `yieldfrom` | Koskari-only: `yield-from` delegation/teardown | deterministic baseline |
 | `async_tree` | hosted: fan-out task tree via `gather` (pyperformance async_tree, no I/O) | leaf count 4096 |
 | `coroutines` | hosted: await-chain recursion (pyperformance coroutines) | fib(25) = 75025 |

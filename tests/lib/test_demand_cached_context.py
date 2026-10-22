@@ -21,7 +21,10 @@ each call sees the parameterize state in force at that call, a call
 that raised leaves the wrapper usable, and a root parameter store made
 by one call is read by a later call, through the same wrapper or
 another. Calls carrying a keyword argument behave the same: repeated,
-raising, reentrant, and escaping through call/cc.
+raising, reentrant, and escaping through call/cc. A parameterize
+extent entered inside a boundary call stays in that call, and a
+coroutine created inside it runs under the state at its creation after
+the extent and the call have exited.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -81,11 +84,29 @@ SRC = """
 
 (define escapekw (lambda [a b: 0]
   (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
+
+(define read_p0 (lambda [] p))
+
+(define shadow_in (lambda [x] (parameterize [[p 20]] (+ p x))))
+
+(define outer_check (lambda [d_shadow d_read pycall]
+  (parameterize [[p 10]]
+    #((pycall d_shadow 1) (pycall d_read 1) p))))
+
+(define defer_in (lambda [] (parameterize [[p 20]] (defer read_p0))))
+
+(define outer_defer (lambda [d_make d_read pycall]
+  (parameterize [[p 10]]
+    #((pycall d_make) (pycall d_read 1) p))))
 """
 
 
 def pymap(d, items):
     return list(map(d, items))
+
+
+def pycall(d, *args):
+    return d(*args)
 
 
 class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
@@ -199,6 +220,23 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(d(10, b=20), 31)
         self.assertEqual(lib.demand(mod["addkw"])(4, b=2), 42)
         self.assertEqual(d(5, b=5), 11)
+
+
+    async def test_callee_extent_stays_in_the_callee(self):
+        mod = await self.load()
+        d_shadow = lib.demand(mod["shadow_in"])
+        d_read = lib.demand(mod["read_p"])
+        self.assertEqual(await mod["outer_check"](d_shadow, d_read, pycall),
+                         (21, 11, 10))
+
+
+    async def test_coroutine_made_in_a_callee_extent(self):
+        mod = await self.load()
+        d_make = lib.demand(mod["defer_in"])
+        d_read = lib.demand(mod["read_p"])
+        result = await mod["outer_defer"](d_make, d_read, pycall)
+        self.assertEqual(result[1:], (11, 10))
+        self.assertEqual(await result[0], 20)
 
 
 # The end.

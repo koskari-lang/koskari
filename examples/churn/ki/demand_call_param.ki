@@ -1,0 +1,26 @@
+;; churn_demand_call_param -- the demand_call shape run with one parameterize
+;; binding in force: Python's builtin map driving a two-argument koskari
+;; function wrapped in demand, one Python-to-koskari boundary call per
+;; element, each call reading the parameter.  No Python counterpart: the
+;; point is the koskari demand boundary under a parameterize extent.
+
+(import-from builtins map)
+
+(define MASK32 0xffffffff)
+
+(define-parameter salt 0)
+
+
+define mix [a b]:
+    (& (+ (* a 31) (^ b salt)) MASK32)
+
+
+define churn_demand_call_param [n: 20000]:
+    define acc 0
+    parameterize [[salt 0x5bd1e995]]:
+        for-each [v (map (demand mix) (range 0 n) (range n 0 -1))]:
+            set! acc (& (+ (* acc 33) v) MASK32)
+    acc
+
+
+;; The end.

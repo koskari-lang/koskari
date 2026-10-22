@@ -59,9 +59,10 @@ static void context_freelist_drain(void) {
 /**
    The dynamic snapshot a new context starts from: the domain and the
    parameterize cells in force at this moment. Forked from the active
-   context when there is one (a private copy of its shadow table, so the
-   parameterize extents applied at this moment are captured; the cells
-   are shared by pointer, and the root scope is reached through the
+   context when there is one (its shadow table, shared with the active
+   context so the parameterize extents applied at this moment are
+   captured; the first writer on either side copies it first, see
+   kos_context_param_refs, and the root scope is reached through the
    domain); otherwise the domain of an enclosing `with Domain():` scope,
    else the thread default domain, with no cells. Both come back as new
    references, *cells NULL when there are none. s is the calling
@@ -77,9 +78,8 @@ int KosContext_Snapshot(KosTlsState *s, PyObject **domain, PyObject **cells) {
   if (active) {
     PyObject *table = KosContext_PARAM_REFS(active);
     if (table && PyDict_GET_SIZE(table) > 0) {
-      *cells = PyDict_Copy(table);
-      if (! *cells)
-        return -1;
+      Py_INCREF(table);
+      *cells = table;
     }
     *domain = KosContext_DOMAIN(active);
     Py_XINCREF(*domain);

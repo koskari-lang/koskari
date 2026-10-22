@@ -20,13 +20,14 @@
    KosDomain type and the per-thread TLS plumbing for ambient context
    discovery. Parameter resolution is two-tier: a context's param_refs
    holds the shadow cells written by parameterize (forked at context
-   creation), and the KosDomain object homes root_refs, the root scope
-   where a store with no enclosing extent lands. root_refs is never
-   copied; contexts reach it by resolution. Every context has a domain,
-   the identity/lifecycle anchor of the computation: the active
-   context's, else the innermost `with Domain():` scope's, else the
-   thread's default domain, minted on first need and released with the
-   thread's record. See design/archive/parameter-resolution.md.
+   creation by sharing the table; the first writer copies it), and the
+   KosDomain object homes root_refs, the root scope where a store with
+   no enclosing extent lands. root_refs is never copied; contexts reach
+   it by resolution. Every context has a domain, the identity/lifecycle
+   anchor of the computation: the active context's, else the innermost
+   `with Domain():` scope's, else the thread's default domain, minted on
+   first need and released with the thread's record. See
+   design/archive/parameter-resolution.md.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -401,13 +402,33 @@ static PyObject *ensure_root_refs(KosDomain *domain) {
 }
 
 
+/**
+   The context's parameterize cell table, for writing. The returned
+   table is this context's own to write: it is created on first need,
+   and a table shared with another context or with an unstarted
+   coroutine (the refcount records the other holders) is copied first.
+   Borrowed. Returns NULL with an error set.
+*/
 PyObject *kos_context_param_refs(KosContext *ctx) {
-  if (! KosContext_PARAM_REFS(ctx)) {
-    KosContext_PARAM_REFS(ctx) = PyDict_New();
-    if (! KosContext_PARAM_REFS(ctx))
+
+  PyObject *table = KosContext_PARAM_REFS(ctx);
+
+  if (! table) {
+    table = PyDict_New();
+    if (! table)
       return NULL;
+    KosContext_PARAM_REFS(ctx) = table;
+    return table;
   }
-  return KosContext_PARAM_REFS(ctx);
+
+  if (Py_REFCNT(table) > 1) {
+    PyObject *own = PyDict_Copy(table);
+    if (! own)
+      return NULL;
+    Py_SETREF(KosContext_PARAM_REFS(ctx), own);
+    table = own;
+  }
+  return table;
 }
 
 

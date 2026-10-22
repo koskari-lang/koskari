@@ -791,8 +791,11 @@ struct KosContext {
                                anchor; live parameter state is in
                                param_refs. */
   PyObject *param_refs;    /* PyDict: name -> cell (KosRef); this context's
-                               parameter cell table, forked (pointer-copied)
-                               at creation. Lazy; NULL when empty. */
+                               parameter cell table, forked at creation by
+                               sharing the creator's table; a writer holding
+                               a shared table copies it first
+                               (kos_context_param_refs). Lazy; NULL when
+                               empty. */
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
