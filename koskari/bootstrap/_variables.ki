@@ -441,29 +441,4 @@ define-syntax declare-exports:
         #(,@(sorted (set (list-each [n names] (str n.datum))))))
 
 
-define-syntax declare-entry:
-  """
-  Declare the module's entry function
-
-  When the module runs as a program, the launcher calls the named
-  function with no arguments once the module has finished loading, and
-  its return value becomes the exit status: None is 0, an int is the
-  status, and any other value is printed to stderr with status 1. An
-  imported module's entry is never called. The name is recorded as a
-  string, so the declaration may come before the definition.
-
-  eg.::
-
-    (declare-entry main)
-
-  expands to::
-
-    (define-global __entry__ "main")
-  """
-
-  macro-rules []:
-    case (declare-entry name):
-      `(define-global ,(datum '__entry__) ,(str name.datum))
-
-
 ;; The end.

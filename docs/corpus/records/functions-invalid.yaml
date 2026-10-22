@@ -215,3 +215,23 @@ tags:
   - keyword-argument
   - pitfall
 notes: 'corrective: (constantly 5)'
+---
+id: function-decorate-subject-entry-point-not-callable-invalid-001
+feature: macro/compile/decorate-subject
+source: |-
+  (define __entry__ 5)
+  
+verify:
+  read: (define __entry__ 5)
+  invalid: "the module loads, but __entry__ is the slot the launcher calls with no arguments once a program's load completes, and it must hold the function itself; run as a program this fails with TypeError: 'int' object is not callable"
+references:
+  - reference/macros/compile-decorate-subject.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate-subject
+  - entry-point
+  - invalid
+  - pitfall
+notes: "corrective: (decorate [entry-point] (define main [] 5)), or in layout source @entry-point above define main"

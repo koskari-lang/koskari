@@ -47,13 +47,17 @@ define-syntax decorate-subject:
   variants (`call-with`, `call-parameterize`) instead wrap the subject
   in a forwarding function that enters the extent per invocation,
   calls the subject with the passed arguments, and delivers its value
-  after the extent closes. Any other decorator expression is evaluated
-  and invoked on the subject, mimicking function composition. Further
+  after the extent closes. `entry-point` binds the subject as the
+  module's `__entry__`, the function the launcher calls with no
+  arguments once the module has loaded as a program, and delivers the
+  subject unchanged. Any other decorator expression is evaluated and
+  invoked on the subject, mimicking function composition. Further
   shape arms can be registered with `extend-syntax`; registered arms
   are tried before the invocation arm.
   """
 
-  syntax-rules [let with parameterize call-with call-parameterize]:
+  syntax-rules [let with parameterize call-with call-parameterize
+                entry-point]:
     case (decorate-subject (let bindings) subject):
       (let bindings subject)
 
@@ -76,6 +80,11 @@ define-syntax decorate-subject:
           (lambda [*: args **: kwds]
             (parameterize params
               (inner *: args **: kwds)))))
+
+    case (decorate-subject entry-point subject):
+      (let [[fn subject]]
+        (define-global -'__entry__ fn)
+        fn)
 
     case (decorate-subject deco subject):
       (deco subject)

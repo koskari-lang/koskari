@@ -947,7 +947,7 @@ class TestMain(unittest.IsolatedAsyncioTestCase):
 
 class TestMainEntry(unittest.IsolatedAsyncioTestCase):
     """
-    A program's declare-entry function runs once its module has loaded,
+    A program's entry-point function runs once its module has loaded,
     and its return value is the exit status
     """
 
@@ -998,8 +998,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_int.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  3\n")
             code, out, err = await self._main(tmp, (), script)
@@ -1010,8 +1009,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_none.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"entered\"\n")
             code, out, err = await self._main(tmp, (), script)
@@ -1023,8 +1021,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_text.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  \"bad thing\"\n")
             code, out, err = await self._main(tmp, (), script)
@@ -1044,23 +1041,21 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("", out)
 
 
-    async def test_unbound_entry_raises(self):
+    async def test_explicit_slot_definition(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
-                os.path.join(tmp, 'entry_unbound.ki'),
-                "(declare-entry missing)\n")
+                os.path.join(tmp, 'entry_explicit.ki'),
+                "define __entry__ []:\n"
+                "  4\n")
             code, out, err = await self._main(tmp, (), script)
-        self.assertEqual(1, code, err)
-        self.assertIn("NameError", err)
-        self.assertIn('"missing"', err)
+        self.assertEqual(4, code, err)
 
 
     async def test_entry_runs_after_when_main(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_when_main.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"entry\"\n"
                 "\n"
@@ -1075,8 +1070,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_sealed.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"sealed\" main.code.arena.sealed\n")
             code, out, err = await self._main(tmp, (), script)
@@ -1088,15 +1082,13 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self._write(
                 os.path.join(tmp, 'entry_library.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"library entry\"\n")
             script = self._write(
                 os.path.join(tmp, 'entry_app.ki'),
                 "import entry_library\n"
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"app entry\"\n")
             code, out, err = await self._main(
@@ -1109,7 +1101,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             code, out, err = await self._main(
                 tmp, (), '-c',
-                '(declare-entry main) (define main (lambda [] 6))')
+                '(decorate [entry-point] (define main [] 6))')
         self.assertEqual(6, code, err)
 
 
@@ -1120,8 +1112,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
             self._write(os.path.join(pkg, '__init__.ki'), "")
             self._write(
                 os.path.join(pkg, '__main__.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  5\n")
             code, out, err = await self._main(
@@ -1133,8 +1124,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = self._write(
                 os.path.join(tmp, 'entrykio.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  4\n")
             code, out, err = await self._main(
@@ -1151,8 +1141,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             code, out, err = await self._main(
                 tmp, (), '-',
-                stdin="(declare-entry main)\n"
-                "\n"
+                stdin="@entry-point\n"
                 "define main []:\n"
                 "  8\n")
         self.assertEqual(8, code, err)
@@ -1162,8 +1151,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_raises.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  raise (ValueError \"boom\")\n")
             code, out, err = await self._main(tmp, (), script)
@@ -1176,8 +1164,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
             script = self._write(
                 os.path.join(tmp, 'entry_sys_exit.ki'),
                 "import sys\n"
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  sys.exit 7\n")
             with self.assertRaises(SystemExit) as caught:
@@ -1189,8 +1176,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_interrupt.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  raise (KeyboardInterrupt)\n")
             code, out, err = await self._main(tmp, (), script)
@@ -1204,8 +1190,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
                 with tempfile.TemporaryDirectory() as tmp:
                     script = self._write(
                         os.path.join(tmp, 'entry_value.ki'),
-                        "(declare-entry main)\n"
-                        "\n"
+                        "@entry-point\n"
                         "define main []:\n"
                         f"  {value}\n")
                     code, out, err = await self._main(tmp, (), script)
@@ -1217,8 +1202,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_value_not_fn.ki'),
-                "define main 5\n"
-                "(declare-entry main)\n")
+                "define __entry__ 5\n")
             code, out, err = await self._main(tmp, (), script)
         self.assertEqual(1, code, err)
         self.assertIn("TypeError", err)
@@ -1228,8 +1212,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_interactive_raises.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  raise (ValueError \"boom\")\n")
             code, out, err = await self._main(
@@ -1243,8 +1226,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_interactive_text.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  \"bad thing\"\n")
             code, out, err = await self._main(
@@ -1258,8 +1240,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_load_raises.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"never\"\n"
                 "\n"
@@ -1274,8 +1255,7 @@ class TestMainEntry(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             script = self._write(
                 os.path.join(tmp, 'entry_interactive.ki'),
-                "(declare-entry main)\n"
-                "\n"
+                "@entry-point\n"
                 "define main []:\n"
                 "  print \"entered\"\n"
                 "  9\n")

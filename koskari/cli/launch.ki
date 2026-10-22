@@ -128,22 +128,18 @@ define entry_status [value]:
 
 define run_entry [mod]:
   """
-  Call the entry mod declared with declare-entry, with no arguments,
+  Call the entry function mod holds as __entry__, bound by the
+  entry-point decorator or defined under that name, with no arguments
   once the module has finished loading.
 
   :param mod: koskari Module that ran as the program
-  :return: the entry's exit status; 0 when mod declared no entry
-  :raises NameError: when the declared entry is not bound in mod
+  :return: the entry's exit status; 0 when mod has no entry
   """
 
   define ns (vars mod)
-  define name (ns.get "__entry__")
-  when (None? name):
-    return 0
-
-  define entry (ns.get name)
+  define entry (ns.get "__entry__")
   when (None? entry):
-    raise (NameError f"declared entry {(repr name)} is not defined")
+    return 0
 
   (entry_status (entry))
 
