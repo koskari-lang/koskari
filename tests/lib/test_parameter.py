@@ -91,6 +91,7 @@ class TestParameterInsideScope(unittest.IsolatedAsyncioTestCase):
         """
 
         p = ParamRef(symbol("test_key"), None)
+        self.addCleanup(p.clear)
 
         def store_then_fetch():
             p.store(123)

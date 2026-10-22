@@ -140,6 +140,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         """
 
         p = ParamRef("test_key", None)
+        self.addCleanup(p.clear)
 
         def store_and_deref():
             p.store(123)
@@ -162,6 +163,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
 
         p1 = ParamRef("shared", 0)
         p2 = ParamRef("shared", 0)
+        self.addCleanup(p1.clear)
 
         def store_via_p1_deref_via_p2():
             p1.store(777)
@@ -205,6 +207,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
 
         p = ParamRef("y", 99)
         p_bare = ParamRef("y")
+        self.addCleanup(p.clear)
 
         def before_after_store():
             with self.assertRaises(NameError):
@@ -229,6 +232,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         store overwrites previous value; deref returns latest.
         """
         p = ParamRef("z", 0)
+        self.addCleanup(p.clear)
 
         def overwrite():
             p.store(10)
@@ -316,6 +320,7 @@ class TestParamRefInsideScope(unittest.IsolatedAsyncioTestCase):
         """
 
         p = ParamRef("rooted")
+        self.addCleanup(p.clear)
         seen = []
 
         def store_then_inspect():
