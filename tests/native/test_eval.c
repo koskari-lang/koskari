@@ -1530,6 +1530,77 @@ static int test_eval_fast_on_dict_ns(void) {
 }
 
 
+/* === Test: eval entry refuses a context already being evaluated === */
+
+
+static int test_eval_refuses_running_context(void) {
+    /*
+      A context with KOS_CTX_RUNNING set is one some eval holds on a C
+      stack, this thread's or another's. Entering it again is refused
+      with RuntimeError before any state is set up: the flag, the frame
+      and the stack are left as they were, and with the flag cleared the
+      same context evaluates to its result.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *five = PyLong_FromLong(5);
+
+    PyObject *instr = PyList_New(4);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
+    PyList_SET_ITEM(instr, 2, make_instr_int(
+        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(one);
+    Py_DECREF(five);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
+
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "exception is RuntimeError");
+    PyErr_Clear();
+    TEST_ASSERT(KosContext_FLAGS(ctx) & KOS_CTX_RUNNING,
+                "running flag left set");
+    TEST_ASSERT(KosContext_FRAME(ctx) == frame, "frame untouched");
+    TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) frame,
+                "chain untouched");
+    TEST_ASSERT_NULL(KosContext_TOKEN(ctx), "no evaluator token");
+
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+
+    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN once clear");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 6, "result is 6");
+
+    Py_XDECREF(ev.val);
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: BUILD_FUNCTION (no defaults) => Function on stack === */
 
 
@@ -2878,6 +2949,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_pop_cc_without_push_cc);
     RUN_TEST(test_eval_call_zero_args);
     RUN_TEST(test_eval_fast_on_dict_ns);
+    RUN_TEST(test_eval_refuses_running_context);
 
     RUN_TEST(test_eval_await_throw_completes_iterator);
     RUN_TEST(test_eval_await_throw_reyield);

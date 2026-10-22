@@ -3663,6 +3663,19 @@ KosOpResult koskari_eval_drive(
     return EVAL_RAISE();
   }
 
+  /* A context with the running flag set is held by an eval on a C
+     stack, this thread's or another's; every suspension and the
+     cleanup below clear the flag before that eval returns, so a second
+     entry can only be a caller without a busy check of its own. Refused
+     here, before anything below is set up, so the return has nothing to
+     unwind; nothing between this read and the set below releases the
+     GIL, so another thread cannot pass the check in the meantime. */
+  if (unlikely(KosContext_FLAGS(ctx) & KOS_CTX_RUNNING)) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "eval entered on a context already being evaluated");
+    return EVAL_RAISE();
+  }
+
   /* FAST-slot code needs a namespace with fast slots. Checked here,
      before anything below is set up, so a refusal returns with nothing
      to unwind: the cleanup label pops the thread-local context entry
