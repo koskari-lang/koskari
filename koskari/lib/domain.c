@@ -1218,6 +1218,11 @@ static void domain_dealloc(PyObject *self) {
 PyTypeObject KosDomainType = {
   PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "koskari.lib.Domain",
+  .tp_doc = "Domain(): the owner of one root parameter scope. Each thread"
+            " has a default Domain of its own; a with-Domain block supplies"
+            " another for its extent, and a bare parameter store made"
+            " inside it is read by every later call in the block and by"
+            " no other.",
   .tp_basicsize = sizeof(KosDomain),
   .tp_itemsize = 0,
   .tp_new = PyType_GenericNew,
