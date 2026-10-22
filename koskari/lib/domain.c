@@ -111,23 +111,42 @@ static const char tls_state_capsule_name[] = "koskari.tls_state";
 static PyObject *tls_state_dict_key = NULL;  /* interned "koskari.tls_state" */
 
 
+/* Drop the record's default domain with the record whole and one
+   count held across the drop: a finalizer the drop runs that re-enters
+   finds the record where its caller left it and allocates nothing, and
+   an eval it runs takes and returns a count of its own. A default
+   domain such a re-entry mints is dropped in turn. Returns 0 once the
+   held count comes back alone and the memory may go, 1 while a
+   re-entry still holds the record. */
+static int tls_state_drop_domain(KosTlsState *s) {
+
+  PyObject *domain;
+
+  while ((domain = s->default_domain)) {
+    s->default_domain = NULL;
+    s->refs = 1;
+    Py_DECREF(domain);
+    if (--s->refs > 0)
+      return 1;
+  }
+  return 0;
+}
+
+
 /* Every release runs with the GIL held: the capsule destructor runs
    from the clear of a thread state's dict, and the other callers run
-   on a thread inside the evaluator or a Python API entry. The default
-   domain is dropped last, after the record is freed and out of the thread
-   slot, so a finalizer it runs that re-enters finds no stale record. */
+   on a thread inside the evaluator or a Python API entry. The last
+   count drops the default domain before the memory goes. */
 static void tls_state_release(KosTlsState *s) {
-
-  PyObject *default_domain;
 
   if (--s->refs > 0)
     return;
-  default_domain = s->default_domain;
+  if (tls_state_drop_domain(s))
+    return;
   PyMem_Free(s->ctx_stack);
   PyMem_Free(s->ctx_serial);
   PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
-  Py_XDECREF(default_domain);
 }
 
 
@@ -138,11 +157,22 @@ static void tls_state_capsule_free(PyObject *capsule) {
     PyErr_Clear();
     return;
   }
-  s->owner = NULL;
+
   if (tls_state_slot == s) {
-    tls_state_slot = NULL;
+    /* the owning thread: the capsule's count goes first; when the
+       slot's is then the last, it goes with the record still the
+       slot's and its owner set, so a finalizer the default domain's
+       drop runs finds this record; the slot is cleared once the record
+       is gone */
     tls_state_release(s);
+    if (s->refs == 1) {
+      tls_state_release(s);
+      tls_state_slot = NULL;
+      return;
+    }
+    tls_state_slot = NULL;
   }
+  s->owner = NULL;
   tls_state_release(s);
 }
 
@@ -151,13 +181,16 @@ static void tls_state_capsule_free(PyObject *capsule) {
    The record for the current thread state, or NULL when it has none.
    The thread slot answers when its record's owner is the current thread
    state. Otherwise the slot's record, if any, belongs to another thread
-   state or to a capsule already destroyed, and is released; the current
-   thread state's dict then supplies the record, adopted into the slot
-   with its own count. The key lookup cannot raise: the key is an
-   interned str. Every call counts as one resolution (tls_resolve).
+   state or to a capsule already destroyed: it leaves the slot, the
+   current thread state's dict supplies the record, adopted into the
+   slot with its own count, and the stale record is released last, so a
+   finalizer its release runs sees the slot settled and takes no count
+   of its own. The key lookup cannot raise: the key is an interned str.
+   Every call counts as one resolution (tls_resolve).
 */
 static KosTlsState *tls_state_current(void) {
   KosTlsState *s = tls_state_slot;
+  KosTlsState *stale = NULL;
   PyThreadState *ts = PyThreadState_Get();
   PyObject *dict;
   PyObject *capsule;
@@ -167,23 +200,25 @@ static KosTlsState *tls_state_current(void) {
   if (s) {
     if (likely(s->owner == ts))
       return s;
+    stale = s;
     tls_state_slot = NULL;
-    tls_state_release(s);
+    s = NULL;
   }
 
   dict = tls_state_dict_key ? PyThreadState_GetDict() : NULL;
-  if (! dict)
-    return NULL;
-  capsule = PyDict_GetItemWithError(dict, tls_state_dict_key);
-  if (! capsule)
-    return NULL;
-  s = (KosTlsState *) PyCapsule_GetPointer(capsule, tls_state_capsule_name);
-  if (! s) {
-    PyErr_Clear();
-    return NULL;
+  capsule = dict ? PyDict_GetItemWithError(dict, tls_state_dict_key) : NULL;
+  if (capsule) {
+    s = (KosTlsState *) PyCapsule_GetPointer(capsule, tls_state_capsule_name);
+    if (! s) {
+      PyErr_Clear();
+    } else {
+      s->refs++;
+      tls_state_slot = s;
+    }
   }
-  s->refs++;
-  tls_state_slot = s;
+
+  if (stale)
+    tls_state_release(stale);
   return s;
 }
 

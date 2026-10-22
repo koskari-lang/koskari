@@ -387,6 +387,36 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertEqual(ParamRef("tdd_thread_key").deref(), "main")
 
 
+    def test_thread_teardown_finalizer_reentry_leaks_nothing(self):
+        """
+        A root value of a worker thread whose finalizer re-enters
+        Koskari while the thread record is released leaves no extra
+        Domain behind once the thread is gone
+        """
+
+        import gc
+
+        seen = {}
+
+        class Reentrant:
+            def __del__(self):
+                seen["reentered"] = Domain.current_domain()
+
+        def worker():
+            ParamRef("tdd_teardown_key").store(Reentrant())
+
+        def domains():
+            gc.collect()
+            return sum(1 for o in gc.get_objects() if type(o) is Domain)
+
+        before = domains()
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+        self.assertIsInstance(seen.pop("reentered"), Domain)
+        self.assertEqual(domains(), before)
+
+
     def test_explicit_domain_wins_then_default_returns(self):
         """
         Inside with Domain() the explicit Domain answers and the thread
