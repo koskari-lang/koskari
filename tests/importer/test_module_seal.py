@@ -131,7 +131,9 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         module = await load(SRC, detach=False)
         ns = vars(module)
 
-        self.assertIsNotNone(ns["durable"].code.arena)
+        arena = ns["durable"].code.arena
+        self.assertIsNotNone(arena)
+        self.assertTrue(arena.sealed)
         self.assertIn("__compiler__", ns)
         self.assertIn("__reader__", ns)
         self.assertIn("__pragma__", ns)
@@ -437,7 +439,7 @@ class TestDeferredSeal(unittest.IsolatedAsyncioTestCase):
         survivor = ns["fn"].code
         self.assertIs(survivor.arena, arenas[0])
         # the displaced block's bytes, aligned, precede the survivor
-        aligned = (first_size + 31) & ~31
+        aligned = (first_size + Arena.UNIT - 1) & ~(Arena.UNIT - 1)
         self.assertEqual(arenas[0].used,
                          aligned + survivor.payload_bytes
                          + survivor.padding_bytes)
