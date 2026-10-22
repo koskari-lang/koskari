@@ -1,11 +1,12 @@
 # Python-to-Koskari call boundary
 
-Status: proposed, 2026-10-20. Origin: a read of the sync (`Demand`) and
+Status: implemented, 2026-10-20 to 2026-10-22; each item carries its
+Implemented note. Origin: a read of the sync (`Demand`) and
 async (`Coroutine`) entry paths against what a CPython-to-CPython call
 costs. Related: [demand-flattening.md](demand-flattening.md) (the
 `CallInto` boundary, step 6 on C stack depth),
 [../archive/eval-state-live-authority.md](../archive/eval-state-live-authority.md)
-(why `KosEvalState` exists).
+(why `KosEvalState` existed; removed in C).
 
 ## Problem
 
@@ -65,8 +66,9 @@ Before any edit, on the current build:
 - Two new kernels under `examples/churn/ki/`, Koskari-only, "deterministic
   baseline" like `starmap`: `demand_call` (Python `map` over a `Demand`
   of a two-argument function, no class, no bound method) and
-  `await_call` (an asyncio host awaiting a bare Koskari function in a
-  loop). `starmap` mixes the bound-method shape with the wrapper and
+  `coro_await` (a Python coroutine calling a two-argument Koskari
+  function and awaiting each returned Coroutine in turn). `starmap`
+  mixes the bound-method shape with the wrapper and
   cannot separate B from E.
 - `method` and `loop` as the Koskari-to-Koskari control for C: C must
   not move their instruction counts.
@@ -114,8 +116,7 @@ every call mints one. Instead the release clears only the domain's
 `root_refs` (the root stores of the finished call, which die today
 with the domain) and keeps the object; `KosContext_TakeSnapshot`
 replaces it only when an active context or an ambient Python domain
-supplies one. Observable behaviour is unchanged: root stores do not
-outlive the call, parameters in force at each call are still seen
+supplies one. Parameters in force at each call are still seen
 (`test_each_call_sees_the_parameters_in_force`).
 
 The same minting happens at `iterate.c:86` and `transform.c:366` for
@@ -124,17 +125,18 @@ take the same keep-and-clear; the coroutine's snapshot is per call by
 design (E).
 
 Test: a `Demand` called twice outside any domain; a root
-`parameterize` store inside the first call is not visible in the
-second.
+`parameterize` store inside the first call is visible in the second
+(`test_root_store_persists_across_calls`).
 
-Implemented, as option (b2) rather than keep-and-clear: each thread
-owns one default domain, `KosTlsState.default_domain`, minted on first
-need by `kos_domain_current()` and returned when no context is active
-and no `with Domain():` is open. It is never shared between threads.
-`KosContext_Snapshot` takes `kos_domain_current()` and no longer calls
-`KosDomain_New`, so the cached contexts in `demand.c`, `iterate.c` and
-`transform.c` and the coroutine snapshot all resolve to it; the demand
-release keeps the domain and clears only `param_refs`. Root stores
+Implemented as a per-thread default domain rather than keep-and-clear:
+each thread owns one, `KosTlsState.default_domain`, minted on first
+need by `tls_default_domain` under `kos_tls_domain(s)` and returned
+when no context is active and no `with Domain():` is open. It is never
+shared between threads. `KosContext_Snapshot` takes
+`kos_tls_domain(s)` and no longer calls `KosDomain_New`, so the cached
+contexts in `demand.c`, `iterate.c` and `transform.c` and the coroutine
+snapshot all resolve to it; the demand release keeps the domain and
+clears only `param_refs`. Root stores
 outlive the call on the Python surface as they do under the launcher.
 The default is released with the thread record (`tls_state_release`,
 GIL held); for the main thread that is interpreter shutdown, when the
@@ -270,15 +272,15 @@ Implemented: `kos_tls_current()` resolves the record (allocating it,
 fatal on failure), with the accessors `kos_tls_active_context(s)` and
 `kos_tls_domain(s)`; `KosContext_Snapshot`, `KosContext_TakeSnapshot`
 and `KosContext_New` take the record, and `kos_tls_enter_drive` takes
-it instead of resolving. `koskari_eval` resolves and delegates to
-`koskari_eval_drive(s, ...)`, which `demand_run_koskari` calls with the
-record it resolved for the snapshot. `coroutine_step` stays on
-`koskari_eval`: a coroutine's snapshot is taken at creation, not in the
-step that drives it. Counter `KOS_TE_TLS_RESOLVE` (`tls_resolve`), one
-per `tls_state_current` call. churn-trace `demand_call` (1,200,000
-boundary calls under an active context): `tls_resolve` 1,207,813
-against `init` 1,207,232, one per boundary call where the code path
-before made two (snapshot, drive entry). Measurement (`demand_call`, 4
+it instead of resolving. `koskari_eval(ctx, s, ...)` takes the record,
+NULL to resolve it at entry; `demand_run_koskari` passes the record it
+resolved for the snapshot, `coroutine_step` passes NULL: a coroutine's
+snapshot is taken at creation, not in the step that evaluates it.
+Counter `KOS_TE_TLS_RESOLVE` (`tls_resolve`), one per `tls_state_current`
+call. churn-trace `demand_call` (1,200,000 boundary calls under an
+active context): `tls_resolve` 1,207,813 against `init` 1,207,232, one
+per boundary call where the code path before made two (snapshot, eval
+entry). Measurement (`demand_call`, 4
 batches): instructions 6,738,058,735 -> 6,698,294,914 (repeat
 6,676,609,183), per call 3,240 -> 3,185; cycles per call 717 -> 808,
 within build-placement noise. Plain Python loop, 200,000 calls of a
@@ -302,7 +304,7 @@ the item it stops at. Fields read: `PyThreadState.exc_info`, and on
 3.10; skip on `exc_type` NULL or None) or `exc_value`,
 `previous_item` (3.11, 3.12 skip on NULL or None; 3.13, 3.14 skip on
 NULL). `kos_tls_thread_state(s)` returns the record's owner, the
-current thread state for any resolved record. `koskari_eval_drive`
+current thread state for any resolved record. `koskari_eval`
 peeks at entry and fetches the host's state only when held, peeks
 again at cleanup and fetches only when the thread holds one; the four
 exit cases keep their behaviour. Counter `KOS_TE_EXC_FETCH`
@@ -440,8 +442,8 @@ under the cap as the cache is then) or frees it when refused. The
 tail-call path keeps the template copy. `KosFunction_CacheFrame`
 drops the `simple_arity1 == 0` refusal. Sibling counter
 `KOS_TE_CALL_FRAME_CACHED_GENERAL`. The native test
-`test_cache_frame_refuses_function_no_arm_serves` asserts the dropped
-refusal and fails. Measurement (kernels `call_kw`, a Koskari loop
+`test_cache_frame_takes_every_shape` replaces the refusal test.
+Measurement (kernels `call_kw`, a Koskari loop
 calling `mixkw [a b: 0]` with `b:` by keyword, 200,000 calls per
 batch; `demand_call_kw`): instructions per call `call_kw` 3,498 ->
 3,094 (repeat 3,087), `demand_call_kw` 5,370 -> 4,943 (repeat 4,948);

@@ -20,8 +20,8 @@ Steps 5-7 remain.
 
 A call into Koskari made from Koskari flattens: it installs into the
 running evaluator and delivers its result through a resume. A new
-context or eval state running a nested `koskari_eval` for such a call is
-a bug. Recorded in `koskari/lib/CLAUDE.md` (Core invariant: flattening).
+context running a nested `koskari_eval` for such a call is a bug.
+Recorded in `koskari/lib/CLAUDE.md` (Core invariant: flattening).
 
 The Python boundary is outside the invariant. Calling a type is a
 Python-boundary allocator with native rules (`type_call` -> `tp_new` ->
@@ -558,8 +558,8 @@ tail position.
   PyObject **out)`.
 - Not a KosCallable: `PyObject_Vectorcall`, then
   `demand_step_python_result`. Unchanged semantics.
-- A KosCallable: the boundary's one context and eval state;
-  `CallInto(&es, callable, args, nargs, kwnames, &demand_resume_kind,
+- A KosCallable: the boundary's one context;
+  `CallInto(ctx, callable, args, nargs, kwnames, &demand_resume_kind,
   NULL, KOS_FRAME_DEMAND)`; freeze on every path. `RAISE` / `FATAL`
   fail. `AWAIT` clears the stored await iterator
   (`KosContext_PythonAwaitClearIter`, as `eval_event_await` does at
@@ -712,7 +712,7 @@ state, `CallInto`, freeze) -> `koskari_eval`.
    off the operand stack. The CALL family's finish is the call; a Python
    call there runs from a threaded step with the handler and dispatch
    frames gone. Prerequisite: the resumable-reads row split for the CALL
-   family. No call record on the eval state (it would grow
+   family. No call record on the context (it would grow
    `koskari_eval`'s frame, the frame being shrunk) and no parallel
    per-opcode steps.
 3. **Re-entry.** Done in the working tree.
@@ -732,7 +732,7 @@ state, `CallInto`, freeze) -> `koskari_eval`.
    - The boundary's call is recorded on the fresh `KosContext`
      (`entry_call`, a borrowed `KosEntryCall`, beside the existing throw
      injection), and `koskari_eval`'s out-of-line phase 0
-     (`eval_phase_entry_call`) installs it on its own eval state.
+     (`eval_phase_entry_call`) installs it on the context.
      Removed: `demand_run_koskari`'s eval state, thaw/freeze, and
      pre-eval result sorting; an `AWAIT` before the eval now goes
      through `apply_kos_op_result`, where the demand mark denies it.

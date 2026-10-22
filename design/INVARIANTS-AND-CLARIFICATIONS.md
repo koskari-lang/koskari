@@ -2,10 +2,11 @@
 
 This document is intended for teaching another system (human or agent) about the current state of Koskari: what is designed, what is implemented, and what invariants and clarifications hold across the codebase and design docs. Use it as a single reference for "how things work" and "what must stay true."
 
-**Scope**: Agent/human teaching master reference — covers execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place. For a focused numbered invariant list, see [interpreter/execution-invariants.md](interpreter/execution-invariants.md). For the full VM API reference, see [EVALUATOR.md](EVALUATOR.md) §11. For the **`KosEvalState_*`** opcode-visible API on **`KosContext`**, see
+**Scope**: Agent/human teaching master reference — covers execution invariants, type and data invariants, C structures, implementation status, and clarifications in one place. For a focused numbered invariant list, see [interpreter/execution-invariants.md](interpreter/execution-invariants.md). For the full VM API reference, see [EVALUATOR.md](EVALUATOR.md) §11. For the removed `KosEvalState` record and the
+migration of its opcode-visible API onto **`KosContext`**, see
 [archive/kos_eval_state_api_migration.md](archive/kos_eval_state_api_migration.md)
-(archived migration ledger), [archive/eval-state-live-authority.md](archive/eval-state-live-authority.md) (archived),
-and [EVALUATOR.md](EVALUATOR.md) §1.
+and [archive/eval-state-live-authority.md](archive/eval-state-live-authority.md)
+(both archived), and [EVALUATOR.md](EVALUATOR.md) §1.
 
 **Meta**: This document records settled design facts and invariants only. No speculative alternatives are permitted here. Conflicts are recorded explicitly and left unresolved.
 
