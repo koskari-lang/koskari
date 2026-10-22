@@ -70,7 +70,9 @@ typedef struct KosTransform {
                             more than once; untouched by providers
                             that fetch a single element per step */
   uint8_t closed;        /* exhausted or closed */
-  uint8_t busy;          /* a step is in flight; ki_finish clears */
+  uint8_t busy;          /* a step is in flight, from kos_transform_step
+                            entry to its synchronous return, or to
+                            ki_finish or the step clear when installed */
 } KosTransform;
 
 
@@ -197,16 +199,32 @@ PyObject *kos_transform_new(
 
 
 /**
-   The step preamble every ki_step runs first: a closed transform is
-   exhausted, a busy one refuses, and a non-None send value is a
-   TypeError. Returns 1 when the step should proceed, else 0 with
-   *result and *out set for the caller to return.
+   A provider's step body: the work of one ki_step after the shared
+   entry has admitted it.
 */
-int kos_transform_step_ready(
-    KosTransform *t,
+typedef KosIterStepResult (*KosTransformStepBody)(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out);
+
+
+/**
+   The ki_step entry every provider steps through: a closed transform
+   is exhausted, a busy one refuses, and a non-None send value is a
+   TypeError. Otherwise the transform is marked busy and body runs.
+   The mark covers the whole step, from entry to a synchronous return
+   or, for an installed step (KOS_ITER_INSTALLED or
+   KOS_ITER_INSTALLED_VALUE), to ki_finish or the step clear, so a
+   source fetch or a plain callable running synchronously in body is
+   covered as well.
+*/
+KosIterStepResult kos_transform_step(
+    KosContext *ctx,
+    PyObject *self,
     PyObject *send_val,
     PyObject **out,
-    KosIterStepResult *result);
+    KosTransformStepBody body);
 
 
 /**
@@ -234,11 +252,12 @@ KosIterStepResult kos_transform_step_abort(
 
 /**
    Install the step's resume-carrying frame (from the cache when
-   one is there), push value onto it when one is given, set resume as
-   the frame's resume with the transform as its state, and mark the
-   step in flight. value is consumed. label names the frame for the
-   capture-refusal message. Returns KOS_ITER_INSTALLED_VALUE, or aborts
-   the step to pre_top and returns KOS_ITER_ERROR.
+   one is there), push value onto it when one is given, and set resume
+   as the frame's resume with the transform as its state. The busy
+   mark kos_transform_step set stays on through the install. value is
+   consumed. label names the frame for the capture-refusal message.
+   Returns KOS_ITER_INSTALLED_VALUE, or aborts the step to pre_top and
+   returns KOS_ITER_ERROR.
 */
 KosIterStepResult kos_transform_stage(
     KosContext *ctx,
@@ -267,7 +286,6 @@ KosIterStepResult kos_transform_stage(
         *(out) = NULL;                                                  \
         return KOS_ITER_EXHAUSTED;                                      \
       case KOS_IREQ_CONTINUES:                                          \
-        (t)->busy = 1;                                                  \
         return KOS_ITER_INSTALLED_VALUE;                                \
       default:                                                          \
         return kos_transform_step_abort((ctx), (t), (pre_top));         \
@@ -288,7 +306,7 @@ void kos_transform_finish(PyObject *self, int exhausted);
 
 /**
    The suite's ki_busy: 1 with "KIND is already being iterated" set as
-   a RuntimeError when a step is in flight, else 0. The step preamble
+   a ValueError when a step is in flight, else 0. kos_transform_step
    and the throw refuse a busy transform through it.
 */
 int kos_transform_busy(PyObject *self);

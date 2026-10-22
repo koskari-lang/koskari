@@ -15,9 +15,10 @@
 """
 tests.reproducers.test_transform_reentry
 
-A source stepped from Koskari can step the pairwise or zip-longest
-consuming it; the inner step runs through the transform's own suite,
-and the outer step completes with the elements it holds itself.
+A source stepped from Koskari that steps the pairwise or zip-longest
+consuming it is refused: the transform has a step in flight, the inner
+step raises ValueError, and the outer step completes once the source
+handles it.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -46,13 +47,18 @@ class TestTransformReentry(unittest.IsolatedAsyncioTestCase):
         await run_file_async(mod, _SCRIPT)
         return vars(mod)
 
-    async def test_pairwise_source_exhausting_it_from_inside(self):
+    async def test_pairwise_source_stepping_it_from_inside_is_refused(self):
         ns = await self.load()
-        self.assertEqual(((1, "b"), "stop"), await ns['pair_case']())
+        self.assertEqual(
+            ((1, "b"), "pairwise is already being iterated"),
+            await ns['pair_case']())
 
-    async def test_zip_longest_source_stepping_it_from_inside(self):
+    async def test_zip_longest_source_stepping_it_from_inside_is_refused(
+            self):
         ns = await self.load()
-        self.assertEqual(((2, 20), (2, 10)), await ns["zip_case"]())
+        self.assertEqual(
+            ((1, 10), "zip-longest is already being iterated"),
+            await ns["zip_case"]())
 
 
 # The end.

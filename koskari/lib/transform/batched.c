@@ -153,7 +153,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
 /* === the step === */
 
 
-static KosIterStepResult batched_iter_step(
+static KosIterStepResult batched_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -162,11 +162,7 @@ static KosIterStepResult batched_iter_step(
   KosBatched *b = (KosBatched *) self;
   KosTransform *t = &b->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
   PyObject *batch;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   batch = PyTuple_New(b->n);
   if (! batch)
@@ -201,7 +197,6 @@ static KosIterStepResult batched_iter_step(
           /* the fill goes on in batched_resume_fill from here */
           t->pending = batch;  /* steals */
           b->filled = i;
-          t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(batch);
@@ -212,6 +207,16 @@ static KosIterStepResult batched_iter_step(
     *out = batch;
     return KOS_ITER_VALUE;
   }
+}
+
+
+static KosIterStepResult batched_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, batched_step_body);
 }
 
 

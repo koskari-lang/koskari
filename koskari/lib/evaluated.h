@@ -158,7 +158,7 @@ typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
 typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
 
 /**
-   Is a step in flight? 1 with the provider's RuntimeError set when
+   Is a step in flight? 1 with the provider's error set when
    one is, 0 otherwise
 */
 typedef int (*KosIterBusyFunc)(PyObject *self);
@@ -171,7 +171,7 @@ typedef int (*KosIterBusyFunc)(PyObject *self);
    delivery walks report completion through ki_finish. The Python
    adapters (iterate.c) drive ki_step against the ki_pyctx context.
 
-   ki_busy returns 1 with the provider's RuntimeError set when a step
+   ki_busy returns 1 with the provider's error set when a step
    is in flight, 0 otherwise; a NULL slot means the provider is never
    busy. The Python adapters ask it before they begin a drive on the
    ki_pyctx context, which a drive in flight may share; ki_step and

@@ -1,6 +1,7 @@
 ;; Sources for tests.reproducers.test_transform_reentry: iterators
-;; whose __next__ steps the transform consuming them, from Koskari,
-;; where the step flattens through the transform's own suite.
+;; whose __next__ steps the transform consuming them, from Koskari.
+;; The transform has a step in flight, so the inner step is refused
+;; and the outer step completes.
 
 import-from koskari.itertools pairwise zip-longest
 
@@ -18,8 +19,8 @@ define-class PairSrc []:
         when (== self.n 2):
             try:
                 set! self.inner (next self.pw)
-            except [e StopIteration]:
-                set! self.inner "stop"
+            except [e ValueError]:
+                set! self.inner (str e)
             return "b"
         when (>= self.n 3):
             raise (StopIteration)
@@ -43,7 +44,10 @@ define-class ZipSrc []:
     define __next__ [self]:
         set! self.n (+ self.n 1)
         when (== self.n 1):
-            set! self.inner (next self.z)
+            try:
+                set! self.inner (next self.z)
+            except [e ValueError]:
+                set! self.inner (str e)
         self.n
 
 define zip_case []:

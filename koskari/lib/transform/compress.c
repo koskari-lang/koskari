@@ -139,7 +139,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
 /* === the step === */
 
 
-static KosIterStepResult compress_iter_step(
+static KosIterStepResult compress_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -148,10 +148,6 @@ static KosIterStepResult compress_iter_step(
   KosTransformMulti *c = (KosTransformMulti *) self;
   KosTransform *t = &c->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   t->idx = COMPRESS_DATA;
 
@@ -181,7 +177,6 @@ static KosIterStepResult compress_iter_step(
         case KOS_IREQ_CONTINUES:
           t->pending = data;  /* steals; held for the selector */
           t->idx = COMPRESS_SELECTOR;
-          t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(data);
@@ -200,6 +195,16 @@ static KosIterStepResult compress_iter_step(
       Py_DECREF(data);
     }
   }
+}
+
+
+static KosIterStepResult compress_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, compress_step_body);
 }
 
 

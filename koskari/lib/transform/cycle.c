@@ -170,7 +170,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
 /* === the step === */
 
 
-static KosIterStepResult cycle_iter_step(
+static KosIterStepResult cycle_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -179,10 +179,6 @@ static KosIterStepResult cycle_iter_step(
   KosCycle *c = (KosCycle *) self;
   KosTransform *t = &c->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   /* Replaying: pure C from here on, whatever the original source
      was. */
@@ -209,12 +205,21 @@ static KosIterStepResult cycle_iter_step(
         *out = cycle_replay(c);
         return KOS_ITER_VALUE;
       case KOS_IREQ_CONTINUES:
-        t->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       default:
         return kos_transform_step_abort(ctx, t, pre_top);
     }
   }
+}
+
+
+static KosIterStepResult cycle_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, cycle_step_body);
 }
 
 

@@ -201,7 +201,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
 /* === the step === */
 
 
-static KosIterStepResult islice_iter_step(
+static KosIterStepResult islice_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -210,10 +210,6 @@ static KosIterStepResult islice_iter_step(
   KosISlice *s = (KosISlice *) self;
   KosTransform *t = &s->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   {
     /* The discard run and the emitted fetch complete here when the
@@ -247,6 +243,16 @@ static KosIterStepResult islice_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult islice_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, islice_step_body);
 }
 
 

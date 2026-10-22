@@ -129,7 +129,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
 /* === the step === */
 
 
-static KosIterStepResult map_iter_step(
+static KosIterStepResult map_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -137,10 +137,6 @@ static KosIterStepResult map_iter_step(
 
   KosTransform *m = (KosTransform *) self;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(m, send_val, out, &early))
-    return early;
 
   {
     PyObject *element;
@@ -156,10 +152,8 @@ static KosIterStepResult map_iter_step(
       KosOpResult r = KosContext_Call(
           ctx, m->fn.cs_callable, &element, 1, NULL, 0, NULL, NULL);
       Py_DECREF(element);
-      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
-        m->busy = 1;
+      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
         return KOS_ITER_INSTALLED_VALUE;
-      }
       return kos_transform_step_abort(ctx, m, pre_top);
     }
 
@@ -200,6 +194,16 @@ static KosIterStepResult map_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult map_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, map_step_body);
 }
 
 

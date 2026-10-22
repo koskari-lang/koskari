@@ -217,7 +217,7 @@ class TestKosZipTeardown(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(z.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await z.__anext__()
 
         release.set()

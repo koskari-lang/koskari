@@ -106,7 +106,7 @@ class TestKosFilterSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(f.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await f.__anext__()
 
         release.set()
@@ -117,7 +117,7 @@ class TestKosFilterSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(f.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await f.athrow(ValueError("intruder"))
 
         release.set()
@@ -128,7 +128,7 @@ class TestKosFilterSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(f.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await f.aclose()
 
         release.set()

@@ -54,7 +54,7 @@ class TestKosMapSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await m.__anext__()
 
         release.set()
@@ -66,7 +66,7 @@ class TestKosMapSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
 
         # the injected value must NOT be consumed as the awaited result
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await m.asend(999)
 
         release.set()
@@ -87,7 +87,7 @@ class TestKosMapSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await m.athrow(ValueError("intruder"))
 
         release.set()
@@ -98,7 +98,7 @@ class TestKosMapSuspendedStepOwnership(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(m.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await m.aclose()
 
         release.set()

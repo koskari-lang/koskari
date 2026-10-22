@@ -189,7 +189,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
 /* === the step === */
 
 
-static KosIterStepResult chain_iter_step(
+static KosIterStepResult chain_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -198,10 +198,6 @@ static KosIterStepResult chain_iter_step(
   KosChain *c = (KosChain *) self;
   KosTransform *t = &c->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   /* Walk the series here for as long as the series and the sources
      answer without the evaluator; the first driven one defers the
@@ -229,7 +225,6 @@ static KosIterStepResult chain_iter_step(
           *out = NULL;
           return KOS_ITER_EXHAUSTED;
         case KOS_IREQ_CONTINUES:
-          t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
           return kos_transform_step_abort(ctx, t, pre_top);
@@ -252,12 +247,21 @@ static KosIterStepResult chain_iter_step(
         Py_CLEAR(t->source);
         continue;
       case KOS_IREQ_CONTINUES:
-        t->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       default:
         return kos_transform_step_abort(ctx, t, pre_top);
     }
   }
+}
+
+
+static KosIterStepResult chain_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, chain_step_body);
 }
 
 

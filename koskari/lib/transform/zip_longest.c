@@ -174,7 +174,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
 /* === the step === */
 
 
-static KosIterStepResult zip_longest_iter_step(
+static KosIterStepResult zip_longest_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -183,11 +183,7 @@ static KosIterStepResult zip_longest_iter_step(
   KosZipLongest *z = (KosZipLongest *) self;
   KosTransform *t = &z->multi.base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
   PyObject *row;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   /* zip-longest over no sources is empty, as itertools' is. */
   if (! t->nsrc || ! z->live) {
@@ -235,7 +231,6 @@ static KosIterStepResult zip_longest_iter_step(
         case KOS_IREQ_CONTINUES:
           t->idx = i;
           t->pending = row;  /* steals */
-          t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(row);
@@ -246,6 +241,16 @@ static KosIterStepResult zip_longest_iter_step(
     *out = row;
     return KOS_ITER_VALUE;
   }
+}
+
+
+static KosIterStepResult zip_longest_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, zip_longest_step_body);
 }
 
 

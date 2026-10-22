@@ -165,7 +165,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
 /* === the step === */
 
 
-static KosIterStepResult dropwhile_iter_step(
+static KosIterStepResult dropwhile_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -174,10 +174,6 @@ static KosIterStepResult dropwhile_iter_step(
   KosDropWhile *d = (KosDropWhile *) self;
   KosTransform *t = &d->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   {
     for (;;) {
@@ -248,6 +244,16 @@ static KosIterStepResult dropwhile_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult dropwhile_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, dropwhile_step_body);
 }
 
 

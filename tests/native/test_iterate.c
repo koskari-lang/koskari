@@ -107,14 +107,14 @@ static int test_busy_adapter_leaves_context_untouched(void) {
 
   res = PyIter_Next(adapter);
   refused = (! res && PyErr_Occurred()
-             && PyErr_ExceptionMatches(PyExc_RuntimeError));
+             && PyErr_ExceptionMatches(PyExc_ValueError));
   seen = KosContext_BREAKER(ctx);
 
   Py_XDECREF(res);
   PyErr_Clear();
   release_busy_map(t, adapter);
 
-  TEST_ASSERT(refused, "the busy step raises RuntimeError");
+  TEST_ASSERT(refused, "the busy step raises ValueError");
   TEST_ASSERT_SAME((void *) seen, (void *) &sentinel_breaker,
                    "the refused step leaves the context's breaker");
   return 0;
@@ -134,14 +134,14 @@ static int test_busy_adapter_throw_leaves_context_untouched(void) {
   res = PyObject_CallMethod(adapter, "throw", "O",
                             (PyObject *) PyExc_ValueError);
   refused = (! res && PyErr_Occurred()
-             && PyErr_ExceptionMatches(PyExc_RuntimeError));
+             && PyErr_ExceptionMatches(PyExc_ValueError));
   seen = KosContext_BREAKER(ctx);
 
   Py_XDECREF(res);
   PyErr_Clear();
   release_busy_map(t, adapter);
 
-  TEST_ASSERT(refused, "the busy throw raises RuntimeError");
+  TEST_ASSERT(refused, "the busy throw raises ValueError");
   TEST_ASSERT_SAME((void *) seen, (void *) &sentinel_breaker,
                    "the refused throw leaves the context's breaker");
   return 0;

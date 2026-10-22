@@ -196,7 +196,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
 /* === the step === */
 
 
-static KosIterStepResult filter_iter_step(
+static KosIterStepResult filter_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -204,10 +204,6 @@ static KosIterStepResult filter_iter_step(
 
   KosTransform *f = (KosTransform *) self;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(f, send_val, out, &early))
-    return early;
 
   {
     for (;;) {
@@ -292,6 +288,16 @@ static KosIterStepResult filter_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult filter_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, filter_step_body);
 }
 
 

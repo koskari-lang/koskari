@@ -212,7 +212,7 @@ class TestKosTakeWhileTeardown(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(t.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await t.__anext__()
 
         release.set()

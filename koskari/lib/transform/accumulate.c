@@ -168,7 +168,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
 /* === the step === */
 
 
-static KosIterStepResult accumulate_iter_step(
+static KosIterStepResult accumulate_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -177,10 +177,6 @@ static KosIterStepResult accumulate_iter_step(
   KosAccumulate *a = (KosAccumulate *) self;
   KosTransform *t = &a->base;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   /* A seed is the first value and costs no fetch, so a seeded
      accumulate over an empty source still yields once. */
@@ -255,6 +251,16 @@ static KosIterStepResult accumulate_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult accumulate_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, accumulate_step_body);
 }
 
 

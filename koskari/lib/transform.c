@@ -180,38 +180,46 @@ int kos_transform_busy(PyObject *self) {
   if (! t->busy)
     return 0;
 
-  PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
+  PyErr_Format(PyExc_ValueError, "%s is already being iterated",
                transform_kind(Py_TYPE(self)));
   return 1;
 }
 
 
-int kos_transform_step_ready(
-    KosTransform *t,
+KosIterStepResult kos_transform_step(
+    KosContext *ctx,
+    PyObject *self,
     PyObject *send_val,
     PyObject **out,
-    KosIterStepResult *result) {
+    KosTransformStepBody body) {
+
+  KosTransform *t = (KosTransform *) self;
+  KosIterStepResult result;
 
   if (t->closed) {
     *out = NULL;
-    *result = KOS_ITER_EXHAUSTED;
-    return 0;
+    return KOS_ITER_EXHAUSTED;
   }
 
-  if (kos_transform_busy((PyObject *) t)) {
-    *result = KOS_ITER_ERROR;
-    return 0;
-  }
+  if (kos_transform_busy(self))
+    return KOS_ITER_ERROR;
 
   if (send_val && send_val != Py_None) {
     PyErr_Format(PyExc_TypeError,
                  "can't send a value into a %s; it takes none",
-                 transform_kind(Py_TYPE(t)));
-    *result = KOS_ITER_ERROR;
-    return 0;
+                 transform_kind(Py_TYPE(self)));
+    return KOS_ITER_ERROR;
   }
 
-  return 1;
+  t->busy = 1;
+  result = body(ctx, self, send_val, out);
+
+  /* an installed step keeps the mark until ki_finish or the step
+     clear; every synchronous outcome releases it here */
+  if (result != KOS_ITER_INSTALLED && result != KOS_ITER_INSTALLED_VALUE)
+    t->busy = 0;
+
+  return result;
 }
 
 
@@ -255,7 +263,6 @@ KosIterStepResult kos_transform_stage(
   }
   /* the frame carries the kind and the record from here; an abort
      below tears it down through the kind's clear */
-  t->busy = 1;
   if (value) {
     if (KosContext_StackPushRef(ctx, value) < 0) {
       Py_DECREF(value);

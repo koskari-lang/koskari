@@ -139,7 +139,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
 /* === the step === */
 
 
-static KosIterStepResult starmap_iter_step(
+static KosIterStepResult starmap_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -147,10 +147,6 @@ static KosIterStepResult starmap_iter_step(
 
   KosTransform *t = (KosTransform *) self;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   {
     PyObject *element;
@@ -179,10 +175,8 @@ static KosIterStepResult starmap_iter_step(
           ctx, t->fn.cs_callable, PySequence_Fast_ITEMS(args),
           PyTuple_GET_SIZE(args), NULL, 0, NULL, NULL);
       Py_DECREF(args);
-      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
-        t->busy = 1;
+      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
         return KOS_ITER_INSTALLED_VALUE;
-      }
       return kos_transform_step_abort(ctx, t, pre_top);
     }
 
@@ -214,6 +208,16 @@ static KosIterStepResult starmap_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult starmap_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, starmap_step_body);
 }
 
 

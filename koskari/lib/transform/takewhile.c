@@ -144,7 +144,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
 /* === the step === */
 
 
-static KosIterStepResult takewhile_iter_step(
+static KosIterStepResult takewhile_step_body(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
@@ -152,10 +152,6 @@ static KosIterStepResult takewhile_iter_step(
 
   KosTransform *t = (KosTransform *) self;
   KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   {
     PyObject *element;
@@ -220,6 +216,16 @@ static KosIterStepResult takewhile_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult takewhile_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, takewhile_step_body);
 }
 
 
