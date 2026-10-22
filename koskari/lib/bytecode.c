@@ -449,7 +449,9 @@ static void code_block_layout(
   out->cpool_bytes = sizeof(PyObject *) * (size_t) cpool_len;
   out->extra_bytes = sizeof(KosExtra) * (size_t) extra_len;
   out->extent_bytes = sizeof(KosExtentDesc) * (size_t) extent_count;
-  out->top_bytes = sizeof(uint16_t) * (size_t) code_len;
+  /* a block with no extents has no top_extent_id table either */
+  out->top_bytes = extent_count
+      ? sizeof(uint16_t) * (size_t) code_len : 0;
 
   out->pos_offset = align_size(out->code_bytes, ptr_size);
   out->cpool_offset = out->pos_offset
