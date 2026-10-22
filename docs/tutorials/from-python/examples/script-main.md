@@ -52,9 +52,10 @@ Imported, this module also prints nothing.
 | CLI wrapper | `declare-entry`, returning the exit status |
 | Web or service entry point | `declare-entry`, starting the server or dispatching to the host framework |
 
-A long-running program belongs in a declared entry: a `when-main` body
-that never returns leaves its module's load unfinished, so the
-module's functions are never sealed read-only.
+A long-running program belongs in a declared entry. A `when-main` body
+that never returns leaves its module's load unfinished, so a module run
+from source never reaches the point where its functions are sealed
+read-only. The entry runs after that point.
 
 ## See also
 
