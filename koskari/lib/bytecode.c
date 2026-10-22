@@ -1507,7 +1507,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
            takes effect, so overwrite the pending entry rather than append
            an orphan.  code_emit places at most one entry per instruction
            index, so an appended same-index entry would be dropped, and the
-           zero-filled slot it leaves in the table corrupts the binary
+           unwritten slot it leaves in the table corrupts the binary
            search in KosCode_GetPosition. */
         if (coll->pos_count > 0
             && coll->pos_entries[coll->pos_count - 1].index == (uint16_t) di) {
@@ -1557,7 +1557,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
   /* A POSITION after the last instruction names nothing: its entry
      would sit at the THEEND slot, which code_emit never visits, and
-     the zero-filled slot it left in the table would break the binary
+     the unwritten slot it left in the table would break the binary
      search for the final run. */
   if (coll->pos_count > 0
       && coll->pos_entries[coll->pos_count - 1].index == (uint16_t) di) {
@@ -1913,8 +1913,6 @@ static int code_alloc_unified(
   *out_chunk = NULL;
 
   if (allocator) {
-    /* a returned reservation's bytes come back as they were left, so
-       the memset below still applies */
     if (KosCodeAllocator_Reserve(allocator, total, &base, out_chunk))
       return -1;
     Py_INCREF(*out_chunk);
@@ -1938,8 +1936,6 @@ static int code_alloc_unified(
                     "Failed to allocate bytecode storage");
     return -1;
   }
-
-  memset(base, 0, total);
 
   *out_base = base;
   *out_len = total;
