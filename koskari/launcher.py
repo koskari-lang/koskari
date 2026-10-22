@@ -232,7 +232,8 @@ def run_main_module(spec, name):
     :param name: the name the module runs under; __name__ in the
         executing namespace
     :raises SystemExit: under __main__, with the entry point's status,
-        or 1 after rendering an exception the load or the entry raised
+        1 after rendering an exception the load or the entry raised, or
+        130 after a KeyboardInterrupt
     """
 
     from koskari.importer import source_for_stale_kio
@@ -275,6 +276,9 @@ def run_main_module(spec, name):
 
     try:
         status = drive_async_loop(load_and_enter())
+    except KeyboardInterrupt:
+        print('', file=sys.stderr)
+        sys.exit(130)
     except Exception as e:
         from koskari.exceptions import (
             apply_sys_last_exc, format_run_exception)

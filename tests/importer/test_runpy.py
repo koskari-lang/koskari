@@ -65,6 +65,11 @@ class TestRunpy(unittest.TestCase):
             '@entry-point\n'
             'define main []:\n'
             '  raise (ValueError "boom")\n')
+        self._write(
+            'kiint.ki',
+            '@entry-point\n'
+            'define main []:\n'
+            '  raise (KeyboardInterrupt)\n')
         pkg = os.path.join(self._tmpdir, 'kpkg')
         os.mkdir(pkg)
         self._write(os.path.join('kpkg', '__init__.ki'), '(define answer 1)\n')
@@ -82,7 +87,7 @@ class TestRunpy(unittest.TestCase):
         sys.path[:] = self._prev_path
         for name in list(sys.modules):
             if name.split('.', 1)[0] in ('kimod', 'kientry', 'kiboom',
-                                         'kpkg', 'kstale'):
+                                         'kiint', 'kpkg', 'kstale'):
                 del sys.modules[name]
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
@@ -111,7 +116,7 @@ class TestRunpy(unittest.TestCase):
         spec = importlib.util.find_spec('kimod')
         code = spec.loader.get_code('kimod')
         self.assertIsInstance(code, types.CodeType)
-        self.assertEqual(spec.origin, code.co_filename)
+        self.assertEqual("<koskari entry shim for kimod>", code.co_filename)
 
 
     def test_run_as_main_runs_the_entry_point(self):
@@ -136,6 +141,12 @@ class TestRunpy(unittest.TestCase):
         status, out, err = self._run_as_main('kiboom')
         self.assertEqual(1, status)
         self.assertIn("ValueError: boom", err)
+
+
+    def test_run_as_main_maps_an_interrupt_to_130(self):
+        status, out, err = self._run_as_main('kiint')
+        self.assertEqual(130, status)
+        self.assertEqual("\n", err)
 
 
     def test_package_runs_its_main_submodule(self):

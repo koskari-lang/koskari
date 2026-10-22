@@ -169,7 +169,7 @@ class KoskariSourceFileLoader(SourceFileLoader):
         return compile(
             "from koskari.launcher import run_main_module\n"
             "run_main_module(__spec__, __name__)\n",
-            self.get_filename(fullname), 'exec')
+            f"<koskari entry shim for {fullname}>", 'exec')
 
 
     def is_package(self, fullname):
