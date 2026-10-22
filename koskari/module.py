@@ -192,8 +192,11 @@ def load_facets(module, filename, *, seal, detach):
     The facets of one load. Builds (or reuses) the compiler and reader,
     opens the compiler's code allocator so the load's function code is
     placed into arena chunks -- unless the load can never seal, with
-    ``seal`` False and ``detach`` set, where code stays plain heap --
-    and yields them; when the block ends, whether or not the load
+    ``seal`` False and ``detach`` set, where no allocator is opened: a
+    fresh compiler then builds function code on the heap, while a
+    compiler reused from an earlier ``detach`` False load keeps its
+    open allocator and still places into it -- and yields them; when
+    the block ends, whether or not the load
     raised, seals the chunks when ``seal`` is set, and when ``detach``
     is set materializes ``__all__`` and detaches the facets, with
     ``__pragma__`` staying bound. Callers passing ``detach`` False own
