@@ -358,7 +358,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosContext_BeginDrive(ctx, NULL);
+    KosContext_EvalEnter(ctx, NULL);
 
     {
         PyObject *item = PyLong_FromLong(100001);
@@ -379,7 +379,7 @@ static int test_dynyieldfrom_pop_closes_delegate(void) {
     TEST_ASSERT(kos_dyn_pop_yield_from(ctx, yf) == 0, "pop YIELD_FROM");
     TEST_ASSERT_EQ(Py_REFCNT(delegate), rc_before, "delegate refcount restored");
 
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     Py_DECREF(delegate);
     Py_DECREF(ctx);
 
@@ -406,7 +406,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosContext_BeginDrive(ctx, NULL);
+    KosContext_EvalEnter(ctx, NULL);
 
     mgr = PyLong_FromLong(200001);
     enter = PyLong_FromLong(200002);
@@ -435,7 +435,7 @@ static int test_dynwith_free_exc_unconditional(void) {
     TEST_ASSERT(PyErr_Occurred() != NULL, "stored exception pending");
     PyErr_Clear();
 
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     Py_DECREF(ctx);
 
     return 0;

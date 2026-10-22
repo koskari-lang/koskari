@@ -78,7 +78,7 @@ static int test_cg_prologue_delivers_staged_resume(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -94,7 +94,7 @@ static int test_cg_prologue_delivers_staged_resume(void) {
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
 
   KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
 
@@ -130,7 +130,7 @@ static int test_dispatch_delivers_through_prologue(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -155,7 +155,7 @@ static int test_dispatch_delivers_through_prologue(void) {
 
   Py_XDECREF(r.val);
   Py_DECREF(staged);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -165,7 +165,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -196,7 +196,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   Py_DECREF(r.val);
   Py_DECREF(it);
   Py_DECREF(lst);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -232,7 +232,7 @@ static int test_return_into_resume_parent(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   /* the parent: a codeless frame waiting on a resume */
   PyObject *ns = PyDict_New();
@@ -264,7 +264,7 @@ static int test_return_into_resume_parent(void) {
   KosDynFrame *child = kos_dyn_push_frame(ctx, (KosCode *) code, child_ns);
   TEST_ASSERT_NOT_NULL(child, "push bytecode child frame");
 
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
 
   /* run: the child returns 42; the parent's resume receives it and
      hands it back as the eval's result */
@@ -296,7 +296,7 @@ static int test_prologue_idle_threads_into_code(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *forty_two = PyLong_FromLong(42);
   PyObject *one = PyLong_FromLong(1);
@@ -325,7 +325,7 @@ static int test_prologue_idle_threads_into_code(void) {
   Py_XDECREF(r.val);
   Py_DECREF(forty_two);
   Py_DECREF(code);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -337,7 +337,7 @@ static int test_prologue_delivers_staged(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -364,7 +364,7 @@ static int test_prologue_delivers_staged(void) {
 
   Py_XDECREF(r.val);
   Py_DECREF(staged);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -374,7 +374,7 @@ static int test_prologue_runs_pending_exception(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -396,7 +396,7 @@ static int test_prologue_runs_pending_exception(void) {
                    "the staged delivery was dropped");
 
   PyErr_Clear();
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -418,7 +418,7 @@ static int test_raise_walk_resume_propagates(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *bottom_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
@@ -449,7 +449,7 @@ static int test_raise_walk_resume_propagates(void) {
 
   /* frame was popped and freed by the walk's own pop path */
   PyErr_Clear();
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -459,7 +459,7 @@ static int test_raise_walk_resume_handles(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *bottom_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
@@ -491,7 +491,7 @@ static int test_raise_walk_resume_handles(void) {
 
   /* frame is still on the chain (not popped); context teardown frees
      the whole chain, frame and bottom together */
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -614,7 +614,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -668,7 +668,7 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
   KosDynFrame_RESUME_STATE(tmpl) = NULL;
   kos_dynframe_free(tmpl);
   Py_DECREF(exc);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
@@ -683,7 +683,7 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -719,7 +719,7 @@ static int test_transfer_delivers_to_a_landing_frame_resume(void) {
   KosDynFrame_RESUME_KIND(live) = NULL;
   KosDynFrame_RESUME_STATE(live) = NULL;
   Py_DECREF(payload);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
@@ -849,7 +849,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -883,7 +883,7 @@ static int test_call_resume_null_returns_value_in_hand(void) {
               || KosSegment_LEN(KosDynFrame_STACK(frame)) == 0,
               "nothing landed on the caller's stack");
 
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -893,7 +893,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -922,7 +922,7 @@ static int test_next_resume_null_pushes_and_continues(void) {
 
   Py_DECREF(it);
   Py_DECREF(lst);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -986,7 +986,7 @@ static int drive_exc_info_probe(ExcInfoProbe *probe) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create ns");
@@ -1001,7 +1001,7 @@ static int drive_exc_info_probe(ExcInfoProbe *probe) {
   KosDynFrame_RESUME_KIND(frame) = &exc_info_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) probe;
 
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
 
   probe->calls = 0;
   KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);

@@ -153,9 +153,9 @@ The chain and its live registers live on the context itself, and the
 and recursion limit, which a drive sets, so native tests that call them
 directly bracket the calls the way `koskari_eval` brackets a drive:
 
-1. `KosContext_BeginDrive(ctx, NULL)`
+1. `KosContext_EvalEnter(ctx, NULL)`
 2. mutate the chain (push, pop, gen install, …) passing `ctx`
-3. `KosContext_EndDrive(ctx)` before the next `koskari_eval` on `ctx`
+3. `KosContext_EvalExit(ctx)` before the next `koskari_eval` on `ctx`
 
 Canonical patterns in this tree:
 
@@ -163,7 +163,7 @@ Canonical patterns in this tree:
   install in `asyncgen_teardown_chain_on_ctx` in `koskari/lib/iter.c`)
 - `push_dyn_param` / `pop_dyn_param` in `tests/native/test_paramref.c`
 
-Skipping `KosContext_BeginDrive` on a context that has never been driven
+Skipping `KosContext_EvalEnter` on a context that has never been driven
 leaves its breaker unset and its recursion limit at zero.
 
 ## Adding Tests for a New Type

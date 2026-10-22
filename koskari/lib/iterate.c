@@ -117,9 +117,9 @@ static KosIterStepResult iterate_suite_step(
   {
     KosIterStepResult r;
 
-    KosContext_BeginDrive(*ctx_slot, NULL);
+    KosContext_EvalEnter(*ctx_slot, NULL);
     r = islots->ki_step(*ctx_slot, provider, send_val, out);
-    KosContext_EndDrive(*ctx_slot);
+    KosContext_EvalExit(*ctx_slot);
     return r;
   }
 }
@@ -148,9 +148,9 @@ static KosIterStepResult iterate_suite_throw(
   {
     KosIterStepResult r;
 
-    KosContext_BeginDrive(*ctx_slot, NULL);
+    KosContext_EvalEnter(*ctx_slot, NULL);
     r = islots->ki_throw(*ctx_slot, provider, throw_typ, throw_exc, out);
-    KosContext_EndDrive(*ctx_slot);
+    KosContext_EvalExit(*ctx_slot);
     return r;
   }
 }

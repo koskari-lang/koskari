@@ -180,7 +180,7 @@ static int test_native_install_fresh_and_cached(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   /* a base frame with a namespace, so the fill has a live value */
   PyObject *ns = PyDict_New();
@@ -227,7 +227,7 @@ static int test_native_install_fresh_and_cached(void) {
                      "reinstall attaches the empty namespace");
   }
 
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   Py_DECREF(ns);
   return 0;
@@ -244,7 +244,7 @@ static int test_native_install_clear_sees_state(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   PyObject *ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(ns, "create base ns");
@@ -265,7 +265,7 @@ static int test_native_install_clear_sees_state(void) {
                    "the install set the state with the kind");
 
   /* tear the frame down as the step abort would, before any delivery */
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
 
   TEST_ASSERT_EQ(cleared_calls, 1, "the kind's clear ran once");
@@ -281,7 +281,7 @@ static int test_request_next_sync_lifecycle(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
 
   KosDynFrame *frame = KosResumeFrame_Install(
       ctx, &iterreq_kind, NULL, NULL);
@@ -315,7 +315,7 @@ static int test_request_next_sync_lifecycle(void) {
 
   Py_DECREF(it);
   Py_DECREF(lst);
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
 }
@@ -329,9 +329,9 @@ static int test_context_recycle(void) {
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   {
-    KosContext_BeginDrive(ctx, NULL);
+    KosContext_EvalEnter(ctx, NULL);
     TEST_ASSERT_NOT_NULL(kos_dyn_push_frame_empty(ctx), "push a frame");
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
   }
 
   TEST_ASSERT_NOT_NULL(KosContext_DYN_TOP(ctx), "chain holds the frame");

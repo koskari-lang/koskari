@@ -71,13 +71,13 @@ static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
 
     int r;
 
-    KosContext_BeginDrive(ctx, NULL);
+    KosContext_EvalEnter(ctx, NULL);
     if (! gen || ! kos_dyn_gen_frozen_needs_install(ctx, gen)) {
-        KosContext_EndDrive(ctx);
+        KosContext_EvalExit(ctx);
         return 0;
     }
     r = kos_dyn_gen_install(ctx, gen);
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     return r;
 }
 
@@ -2243,9 +2243,9 @@ static int test_agen_flatten_clears_wrapper_registers(void) {
   KosContext_BLOCK(agen->ctx) = &sentinel_seg;
   KosContext_NAMESPACE(agen->ctx) = Py_None;
 
-  KosContext_BeginDrive(consumer, NULL);
+  KosContext_EvalEnter(consumer, NULL);
   r = islots->ki_step(consumer, agen_obj, NULL, &out);
-  KosContext_EndDrive(consumer);
+  KosContext_EvalExit(consumer);
   TEST_ASSERT(! PyErr_Occurred(), "step raised no exception");
   TEST_ASSERT(r == KOS_ITER_INSTALLED, "step installed onto consumer");
 

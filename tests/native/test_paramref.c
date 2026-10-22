@@ -89,9 +89,9 @@ static KosDynParam *push_dyn_param(
         return NULL;
     }
 
-    KosContext_BeginDrive(ctx, NULL);
+    KosContext_EvalEnter(ctx, NULL);
     node = kos_dyn_push_param_dict(ctx, bindings);
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     Py_DECREF(bindings);
     return node;
 }
@@ -115,9 +115,9 @@ static int pop_dyn_param(KosContext *ctx, KosDynParam *node) {
 
     int r;
 
-    KosContext_BeginDrive(ctx, NULL);
+    KosContext_EvalEnter(ctx, NULL);
     r = kos_dyn_pop_param(ctx, node);
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     return r;
 }
 

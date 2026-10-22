@@ -3715,7 +3715,7 @@ KosOpResult koskari_eval_drive(
   /* The thread record is entered first so the drive takes the
      thread's breaker from it. */
   kos_tls_enter_drive(s, ctx);
-  KosContext_BeginDrive(ctx, kos_tls_breaker(s));
+  KosContext_EvalEnter(ctx, kos_tls_breaker(s));
   if (KosContext_DYN_TOP(ctx))
     kos_dyn_resync_chain(ctx);
 
@@ -3788,7 +3788,7 @@ KosOpResult koskari_eval_drive(
 koskari_eval_cleanup:
   KOS_TRACE_OP_EXIT();
   KOS_TRACE_EVAL_POP();
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
   KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
   kos_tls_leave_drive(s, ctx);
 

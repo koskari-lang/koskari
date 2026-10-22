@@ -24,7 +24,7 @@
 */
 
 
-void KosContext_BeginDrive(
+void KosContext_EvalEnter(
     KosContext *ctx,
     const volatile KosBreakerWord *breaker) {
 
@@ -50,7 +50,7 @@ void KosContext_BeginDrive(
 }
 
 
-void KosContext_EndDrive(KosContext *ctx) {
+void KosContext_EvalExit(KosContext *ctx) {
 
   KosContext_FlushLiveRegsToFrame(ctx);
 

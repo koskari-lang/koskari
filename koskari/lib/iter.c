@@ -109,15 +109,15 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
 
   /* Install gen onto ctx so chain is restored before eval; in flatten path
      the chain lived in GEN->active and agen->ctx was never the running ctx. */
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
   if (kos_dyn_gen_install(ctx, gen) < 0) {
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     PyErr_Clear();
     Py_DECREF(throw_exc);
     goto fallback;
   }
   /* the eval below begins and ends a drive of its own */
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
 
   {
     KosOpResult res = koskari_eval(ctx, NULL, PyExc_GeneratorExit, throw_exc);
@@ -150,12 +150,12 @@ static void asyncgen_teardown_chain_on_ctx(KosPyAsyncGen *agen, KosContext *ctx)
   }
 
 primary_success:
-  KosContext_BeginDrive(ctx, NULL);
+  KosContext_EvalEnter(ctx, NULL);
   if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
-    KosContext_EndDrive(ctx);
+    KosContext_EvalExit(ctx);
     goto fallback;
   }
-  KosContext_EndDrive(ctx);
+  KosContext_EvalExit(ctx);
 
   /* unwind_exhausted released only the install reference acquired above by
      kos_dyn_gen_install; the owner reference held by agen still remains.

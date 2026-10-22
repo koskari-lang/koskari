@@ -719,7 +719,7 @@ KosOpResult KosContext_NextResume(
   - Resumption injects the result back into the VM via the stack.
 
   Handlers and helpers take the context itself; a drive begins with
-  KosContext_BeginDrive, which sets breaker, recursion_limit and
+  KosContext_EvalEnter, which sets breaker, recursion_limit and
   terminal for that drive.
 */
 
@@ -768,12 +768,12 @@ struct KosContext {
                               onto the frame stack, and the delivery
                               step takes it before the resume runs */
   const volatile KosBreakerWord *breaker; /* this thread's eval breaker
-                         (compat.h), set by KosContext_BeginDrive; the
+                         (compat.h), set by KosContext_EvalEnter; the
                          cooperation points test it and the trampoline
                          polls when it is up */
   uint16_t recursion_limit; /* the deepest frame this context may
                          install: sys.getrecursionlimit() read by
-                         KosContext_BeginDrive and clamped to
+                         KosContext_EvalEnter and clamped to
                          KOS_FRAME_DEPTH_MAX */
   uint8_t terminal;         /* the result in flight is a boundary that
                          has been through its event: a raise walked to
@@ -1120,7 +1120,7 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
    chain outside koskari_eval, since the chain edits read the breaker
    and the recursion limit.
 */
-void KosContext_BeginDrive(
+void KosContext_EvalEnter(
     KosContext *ctx,
     const volatile KosBreakerWord *breaker);
 
@@ -1130,9 +1130,9 @@ void KosContext_BeginDrive(
    and move a staged delivery onto the stack of the code-less frame it
    was staged for, where the delivery step finds it on the next drive.
    Also run by a site that edited a suspended context's chain outside
-   koskari_eval after KosContext_BeginDrive.
+   koskari_eval after KosContext_EvalEnter.
 */
-void KosContext_EndDrive(KosContext *ctx);
+void KosContext_EvalExit(KosContext *ctx);
 
 
 /**
