@@ -78,6 +78,21 @@ static size_t arena_fit(KosArena *self, size_t nbytes) {
 }
 
 
+/* Commit a reservation of nbytes at a start arena_fit returned, or 0
+   on an empty arena that holds nbytes. */
+static void arena_take(
+    KosArena *self,
+    size_t start,
+    size_t nbytes,
+    void **out) {
+
+  self->fill = start + nbytes;
+  self->writing++;
+  *out = (char *) self->base + start;
+  ASAN_UNPOISON_MEMORY_REGION(*out, nbytes);
+}
+
+
 /* === public API === */
 
 
@@ -161,26 +176,21 @@ int KosArena_Reserve(PyObject *arena, size_t nbytes, void **out) {
 
   KosArena *self = (KosArena *) arena;
 
-  if (self->sealed) {
-    PyErr_SetString(PyExc_ValueError,
-                    "Cannot reserve from a sealed arena");
-    return -1;
-  }
-
   size_t start = arena_fit(self, nbytes);
   if (start == SIZE_MAX) {
-    PyErr_Format(PyExc_ValueError,
-                 "Arena capacity exceeded: %zu bytes requested,"
-                 " %zu of %zu used",
-                 nbytes, self->fill, self->size);
+    if (self->sealed) {
+      PyErr_SetString(PyExc_ValueError,
+                      "Cannot reserve from a sealed arena");
+    } else {
+      PyErr_Format(PyExc_ValueError,
+                   "Arena capacity exceeded: %zu bytes requested,"
+                   " %zu of %zu used",
+                   nbytes, self->fill, self->size);
+    }
     return -1;
   }
 
-  self->fill = start + nbytes;
-  self->writing++;
-  *out = (char *) self->base + start;
-  ASAN_UNPOISON_MEMORY_REGION(*out, nbytes);
-
+  arena_take(self, start, nbytes, out);
   return 0;
 }
 
@@ -299,9 +309,11 @@ int KosCodeAllocator_Reserve(
   Py_ssize_t count = PyList_GET_SIZE(chunks);
   for (Py_ssize_t i = 0; i < count; i++) {
     PyObject *chunk = PyList_GET_ITEM(chunks, i);
-    if (arena_fit((KosArena *) chunk, nbytes) != SIZE_MAX) {
+    size_t start = arena_fit((KosArena *) chunk, nbytes);
+    if (start != SIZE_MAX) {
+      arena_take((KosArena *) chunk, start, nbytes, out);
       *out_chunk = chunk;
-      return KosArena_Reserve(chunk, nbytes, out);
+      return 0;
     }
   }
 
@@ -318,8 +330,9 @@ int KosCodeAllocator_Reserve(
     return -1;
   }
 
+  arena_take((KosArena *) chunk, 0, nbytes, out);
   *out_chunk = chunk;
-  return KosArena_Reserve(chunk, nbytes, out);
+  return 0;
 }
 
 
