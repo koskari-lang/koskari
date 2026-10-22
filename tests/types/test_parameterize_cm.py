@@ -14,18 +14,19 @@
 """
 tests.types.test_parameterize_cm
 
-Contract tests for the host-side parameterize context manager
+Contract tests for the Python-side parameterize context manager
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
 
+import asyncio
 import unittest
 
 import pytest
 
-from koskari.lib import Domain, ParamRef, parameter
+from koskari.lib import Domain, ParamRef, Parameterize, parameter, symbol
 from koskari.types import parameterize
 
 
@@ -86,7 +87,47 @@ class TestParameterizeCM(unittest.TestCase):
             self.assertEqual(parameter("pcm_b", None), 2)
 
 
-    def test_out_of_order_exit_clears_when_last_leaves(self):
+    def test_mapping_form_takes_symbols_and_dashed_names(self):
+        with parameterize({symbol("pcm-dashed"): 1, "pcm-other": 2}):
+            self.assertEqual(parameter("pcm-dashed", None), 1)
+            self.assertEqual(parameter(symbol("pcm-other"), None), 2)
+        self.assertIsNone(parameter("pcm-dashed", None))
+
+
+    def test_mapping_and_keywords_combine(self):
+        with parameterize({"pcm-a": 1}, pcm_b=2):
+            self.assertEqual(parameter("pcm-a", None), 1)
+            self.assertEqual(parameter("pcm_b", None), 2)
+
+
+    def test_native_type_is_the_manager(self):
+        self.assertIsInstance(parameterize(pcm_key=1), Parameterize)
+
+
+    def test_nested_inner_shadows_and_restores(self):
+        with Domain():
+            with parameterize(pcm_key=1):
+                with parameterize(pcm_key=2):
+                    self.assertEqual(parameter("pcm_key"), 2)
+                self.assertEqual(parameter("pcm_key"), 1)
+            self.assertIsNone(parameter("pcm_key", None))
+
+
+    def test_store_inside_block_writes_the_block_cell(self):
+        """
+        A store inside the block writes the block's cell; the root scope
+        is untouched once the block exits
+        """
+
+        with Domain():
+            ref = ParamRef("pcm_key")
+            with parameterize(pcm_key=1):
+                ref.store(2)
+                self.assertEqual(ref.deref(), 2)
+            self.assertTrue(ref.empty)
+
+
+    def test_out_of_order_exit_removes_only_its_own_binding(self):
         with Domain():
             ref = ParamRef("pcm_key")
             a = parameterize(pcm_key=1)
@@ -99,17 +140,22 @@ class TestParameterizeCM(unittest.TestCase):
             self.assertTrue(ref.empty)
 
 
-    def test_out_of_order_exit_restores_prior(self):
+    def test_out_of_order_exit_uncovers_the_next_binding_down(self):
         with Domain():
             ref = ParamRef("pcm_key")
             ref.store("outer")
             a = parameterize(pcm_key=1)
-            b = parameterize(pcm_key=2)
+            b = parameterize(pcm_key=2, pcm_b="b")
+            c = parameterize(pcm_key=3)
             a.__enter__()
             b.__enter__()
-            a.__exit__(None, None, None)
-            self.assertEqual(ref.deref(), 2)
+            c.__enter__()
             b.__exit__(None, None, None)
+            self.assertEqual(ref.deref(), 3)
+            self.assertIsNone(parameter("pcm_b", None))
+            c.__exit__(None, None, None)
+            self.assertEqual(ref.deref(), 1)
+            a.__exit__(None, None, None)
             self.assertEqual(ref.deref(), "outer")
 
 
@@ -124,6 +170,113 @@ class TestParameterizeCM(unittest.TestCase):
             self.assertEqual(ref.deref(), 1)
             a.__exit__(None, None, None)
             self.assertTrue(ref.empty)
+
+
+    def test_reentry_while_entered_is_refused(self):
+        span = parameterize(pcm_key=1)
+        with span:
+            with self.assertRaises(RuntimeError):
+                span.__enter__()
+        self.assertIsNone(parameter("pcm_key", None))
+
+
+    def test_exit_without_enter_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            parameterize(pcm_key=1).__exit__(None, None, None)
+
+
+    def test_block_can_be_entered_again_after_exit(self):
+        span = parameterize(pcm_key=1)
+        with span:
+            ParamRef("pcm_key").store(5)
+        with span:
+            self.assertEqual(parameter("pcm_key"), 1)
+        self.assertIsNone(parameter("pcm_key", None))
+
+
+    def test_bad_key_type_is_refused_at_construction(self):
+        with self.assertRaises(TypeError):
+            parameterize({1: 2})
+
+
+class TestParameterizeTasks(unittest.IsolatedAsyncioTestCase):
+    """
+    Blocks belong to the running task
+    """
+
+    async def test_interleaved_tasks_do_not_see_each_other(self):
+        a_in = asyncio.Event()
+        b_in = asyncio.Event()
+        a_out = asyncio.Event()
+        seen = {}
+
+        async def task_a():
+            with parameterize(pcm_key="a"):
+                a_in.set()
+                await b_in.wait()
+                seen["a while b open"] = parameter("pcm_key")
+            seen["a after exit"] = parameter("pcm_key", None)
+            a_out.set()
+
+        async def task_b():
+            await a_in.wait()
+            with parameterize(pcm_key="b"):
+                b_in.set()
+                await a_out.wait()
+                seen["b after a exited"] = parameter("pcm_key")
+            seen["b after exit"] = parameter("pcm_key", None)
+
+        await asyncio.gather(task_a(), task_b())
+        self.assertEqual(seen, {
+            "a while b open": "a",
+            "a after exit": None,
+            "b after a exited": "b",
+            "b after exit": None,
+        })
+        self.assertIsNone(parameter("pcm_key", None))
+
+
+    async def test_task_created_inside_block_keeps_its_bindings(self):
+        release = asyncio.Event()
+
+        async def child():
+            await release.wait()
+            return parameter("pcm_key", None)
+
+        with parameterize(pcm_key="inherited"):
+            task = asyncio.create_task(child())
+            await asyncio.sleep(0)
+        self.assertIsNone(parameter("pcm_key", None))
+        release.set()
+        self.assertEqual(await task, "inherited")
+
+
+    async def test_child_block_does_not_reach_the_parent(self):
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def child():
+            with parameterize(pcm_key="child"):
+                entered.set()
+                await release.wait()
+
+        task = asyncio.create_task(child())
+        await entered.wait()
+        self.assertIsNone(parameter("pcm_key", None))
+        release.set()
+        await task
+
+
+    async def test_exit_on_another_task_is_refused(self):
+        span = parameterize(pcm_key=1)
+
+        async def enter_only():
+            span.__enter__()
+
+        await asyncio.create_task(enter_only())
+        with self.assertRaises(RuntimeError):
+            span.__exit__(None, None, None)
+        self.assertIsNone(parameter("pcm_key", None))
 
 
 # The end.

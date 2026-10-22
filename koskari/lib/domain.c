@@ -23,11 +23,15 @@
    creation by sharing the table; the first writer copies it), and the
    KosDomain object homes root_refs, the root scope where a store with
    no enclosing extent lands. root_refs is never copied; contexts reach
-   it by resolution. Every context has a domain, the identity/lifecycle
-   anchor of the computation: the active context's, else the innermost
-   `with Domain():` scope's, else the thread's default domain, minted on
-   first need and released with the thread's record. See
-   design/archive/parameter-resolution.md.
+   it by resolution. A parameterize block opened from Python is a span
+   (koskari.lib.Parameterize): the same cells, held in a table on a
+   ContextVar chain that a context takes at creation and an ambient
+   read consults before the active context's own table when the span
+   was opened inside that context. Every context has a domain, the
+   identity/lifecycle anchor of the computation: the active context's,
+   else the innermost `with Domain():` scope's, else the thread's
+   default domain, minted on first need and released with the thread's
+   record. See design/archive/parameter-resolution.md.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -56,8 +60,13 @@ struct KosTlsState {
      and one per drive holding the record across its run */
   Py_ssize_t refs;
   KosContext **ctx_stack;
+  size_t *ctx_serial;   /* per slot: the entry's serial, from serial */
   size_t ctx_depth;
   size_t ctx_cap;
+  size_t serial;        /* counts the eval entries on this thread; a
+                           parameterize span records the active entry's
+                           serial, which orders it against the contexts
+                           entered before and after it */
   PyObject **python_domain_stack;
   size_t python_domain_depth;
   size_t python_domain_cap;
@@ -115,6 +124,7 @@ static void tls_state_release(KosTlsState *s) {
     return;
   default_domain = s->default_domain;
   PyMem_Free(s->ctx_stack);
+  PyMem_Free(s->ctx_serial);
   PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
   Py_XDECREF(default_domain);
@@ -229,11 +239,31 @@ KosTlsState *kos_tls_current(void) {
 }
 
 
+/* Push ctx as the active context, numbering the entry. */
+static void tls_ctx_push(KosTlsState *s, KosContext *ctx) {
+  size_t depth = s->ctx_depth;
+
+  if (depth >= s->ctx_cap) {
+    size_t cap = s->ctx_cap;
+    s->ctx_stack = (KosContext **) tls_stack_reserve(
+        s->ctx_stack, &cap, depth);
+    s->ctx_serial = (size_t *) tls_stack_reserve(
+        s->ctx_serial, &s->ctx_cap, depth);
+  }
+  s->ctx_stack[depth] = ctx;
+  s->ctx_serial[depth] = ++s->serial;
+  s->ctx_depth = depth + 1;
+}
+
+
+/* The active entry's serial, 0 when no context is active. */
+static size_t tls_active_serial(const KosTlsState *s) {
+  return s->ctx_depth > 0 ? s->ctx_serial[s->ctx_depth - 1] : 0;
+}
+
+
 static void push_active_ctx(KosContext *ctx) {
-  KosTlsState *s = kos_tls_current();
-  s->ctx_stack = (KosContext **) tls_stack_reserve(
-      s->ctx_stack, &s->ctx_cap, s->ctx_depth);
-  s->ctx_stack[s->ctx_depth++] = ctx;
+  tls_ctx_push(kos_tls_current(), ctx);
 }
 
 
@@ -246,9 +276,7 @@ static void pop_active_ctx(void) {
 
 void kos_tls_enter_drive(KosTlsState *s, KosContext *ctx) {
   s->refs++;   /* the drive's */
-  s->ctx_stack = (KosContext **) tls_stack_reserve(
-      s->ctx_stack, &s->ctx_cap, s->ctx_depth);
-  s->ctx_stack[s->ctx_depth++] = ctx;
+  tls_ctx_push(s, ctx);
   KosEvaluatorToken_IncrementLiveDepth(KosContext_TOKEN(ctx));
 }
 
@@ -424,6 +452,398 @@ PyObject *kos_context_param_refs(KosContext *ctx) {
 }
 
 
+/* === Parameterize span: a parameterize extent opened from Python === */
+
+
+/**
+   A span is the Python-side parameterize extent: a block of Python
+   execution with cells bound for its duration. It holds its own cells
+   and the merged table an ambient read sees inside it: the view at
+   entry plus its own cells. Spans on one stack chain through prev; the
+   top of the chain lives in a ContextVar, so an asyncio task runs under
+   its own copy of the chain, inherits the spans open at its creation,
+   and never meets a span opened by another task.
+
+   base_serial orders the span against the Koskari contexts on the
+   thread: it is the serial of the entry active when the span was
+   opened, so the span is inner to that context (opened by Python code
+   the context called out to) and outer to every context entered after
+   it. A context entered inside the span takes the span's table at
+   creation and reads its own table from then on.
+
+   The table is kept after exit: a context or task that took it at
+   creation keeps that view, as the rule for creation-time inheritance
+   requires.
+*/
+typedef struct {
+  PyObject_HEAD
+  PyObject *bindings;   /* dict str -> value, from construction */
+  PyObject *own;        /* dict str -> cell: this entry's cells */
+  PyObject *table;      /* dict str -> cell: the view at entry plus own */
+  PyObject *base;       /* the active context's table the span was
+                           built over, when the span beneath was not
+                           inner to the same context; NULL otherwise */
+  PyObject *prev;       /* the span beneath on this stack, or NULL */
+  size_t base_serial;   /* the active entry's serial at enter, 0 when
+                           no context was active */
+  int entered;
+} KosParamSpan;
+
+
+/* The top span of the running stack, None when no span is open. */
+static PyObject *param_span_var = NULL;
+
+/* Spans entered and not exited, process-wide: at zero
+   kos_param_ambient_cells skips the chain, which keeps the boundary
+   entry free of the ContextVar read. */
+Py_ssize_t kos_param_spans_open = 0;
+
+
+/* The top span as a new reference, or NULL with no error when none. */
+static KosParamSpan *param_span_top(void) {
+  PyObject *top = NULL;
+
+  if (! param_span_var)
+    return NULL;
+  if (PyContextVar_Get(param_span_var, NULL, &top) < 0) {
+    PyErr_Clear();
+    return NULL;
+  }
+  if (top == Py_None) {
+    Py_DECREF(top);
+    return NULL;
+  }
+  return (KosParamSpan *) top;
+}
+
+
+static int param_span_set_top(PyObject *span) {
+  PyObject *token = PyContextVar_Set(param_span_var, span ? span : Py_None);
+  if (! token)
+    return -1;
+  Py_DECREF(token);
+  return 0;
+}
+
+
+PyObject *kos_param_span_cells(KosTlsState *s) {
+  KosParamSpan *top = param_span_top();
+  PyObject *table = NULL;
+
+  if (top) {
+    if (top->base_serial == tls_active_serial(s))
+      table = top->table;
+    Py_DECREF(top);   /* the var keeps it */
+  }
+  return table;
+}
+
+
+/* Rebuild a span's merged table after the span beneath it changed. */
+static int param_span_rebuild(KosParamSpan *span) {
+  KosParamSpan *prev = (KosParamSpan *) span->prev;
+  PyObject *base;
+  PyObject *table;
+
+  base = (prev && prev->base_serial == span->base_serial)
+      ? prev->table : span->base;
+  table = base ? PyDict_Copy(base) : PyDict_New();
+  if (! table)
+    return -1;
+  if (PyDict_Update(table, span->own) < 0) {
+    Py_DECREF(table);
+    return -1;
+  }
+  Py_XSETREF(span->table, table);
+  return 0;
+}
+
+
+static PyObject *param_span_enter(KosParamSpan *self, PyObject *unused) {
+  KosTlsState *s;
+  KosContext *active;
+  KosParamSpan *top;
+  PyObject *base = NULL;
+  PyObject *table = NULL;
+  PyObject *own = NULL;
+  PyObject *key;
+  PyObject *value;
+  Py_ssize_t pos = 0;
+
+  (void) unused;
+  if (self->entered) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameterize block already entered");
+    return NULL;
+  }
+  if (! param_span_var) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameterize block entered after module teardown");
+    return NULL;
+  }
+
+  s = get_or_alloc_tls_state();
+  if (! s) {
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
+    return NULL;
+  }
+  active = kos_tls_active_context(s);
+  top = param_span_top();
+
+  Py_CLEAR(self->base);
+  if (top && top->base_serial == tls_active_serial(s)) {
+    base = top->table;
+  } else if (active) {
+    base = KosContext_PARAM_REFS(active);
+    Py_XINCREF(base);
+    self->base = base;
+  }
+
+  table = base ? PyDict_Copy(base) : PyDict_New();
+  if (! table)
+    goto fail;
+  own = PyDict_New();
+  if (! own)
+    goto fail;
+
+  while (PyDict_Next(self->bindings, &pos, &key, &value)) {
+    PyObject *cell = KosSymbolicRef_New(key, value);
+    if (! cell)
+      goto fail;
+    if (PyDict_SetItem(own, key, cell) < 0
+        || PyDict_SetItem(table, key, cell) < 0) {
+      Py_DECREF(cell);
+      goto fail;
+    }
+    Py_DECREF(cell);
+  }
+
+  if (param_span_set_top((PyObject *) self) < 0)
+    goto fail;
+  kos_param_spans_open++;
+
+  Py_XSETREF(self->own, own);
+  Py_XSETREF(self->table, table);
+  Py_XSETREF(self->prev, (PyObject *) top);
+  self->base_serial = tls_active_serial(s);
+  self->entered = 1;
+  Py_INCREF(self);
+  return (PyObject *) self;
+
+ fail:
+  Py_XDECREF(top);
+  Py_XDECREF(table);
+  Py_XDECREF(own);
+  Py_CLEAR(self->base);
+  return NULL;
+}
+
+
+/**
+   Leave the span. In order, the top of the chain moves to the span
+   beneath. Out of order on its own stack, the span is unlinked from
+   beneath the spans above it and their tables are rebuilt without its
+   cells. A span that is not in the running stack's chain was entered
+   on another task and is refused.
+*/
+static PyObject *param_span_exit(KosParamSpan *self, PyObject *args) {
+  PyObject *exc_type = NULL;
+  PyObject *exc_val = NULL;
+  PyObject *exc_tb = NULL;
+  KosParamSpan *top;
+  KosParamSpan *above;
+  PyObject *chain;
+  Py_ssize_t i;
+
+  if (! PyArg_UnpackTuple(args, "__exit__", 3, 3,
+                          &exc_type, &exc_val, &exc_tb))
+    return NULL;
+  if (! self->entered) {
+    PyErr_SetString(PyExc_RuntimeError, "parameterize block not entered");
+    return NULL;
+  }
+  if (! param_span_var) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameterize block exited after module teardown");
+    return NULL;
+  }
+
+  top = param_span_top();
+  if (top == self) {
+    Py_DECREF(top);
+    if (param_span_set_top(self->prev) < 0)
+      return NULL;
+    Py_CLEAR(self->prev);
+    self->entered = 0;
+    kos_param_spans_open--;
+    Py_RETURN_NONE;
+  }
+
+  chain = PyList_New(0);
+  if (! chain) {
+    Py_XDECREF(top);
+    return NULL;
+  }
+  above = top;
+  while (above && (KosParamSpan *) above->prev != self) {
+    if (PyList_Append(chain, (PyObject *) above) < 0) {
+      Py_XDECREF(top);
+      Py_DECREF(chain);
+      return NULL;
+    }
+    above = (KosParamSpan *) above->prev;
+  }
+  Py_XDECREF(top);
+  if (! above) {
+    Py_DECREF(chain);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "parameterize block exited on a stack it was not"
+                    " entered on");
+    return NULL;
+  }
+  if (PyList_Append(chain, (PyObject *) above) < 0) {
+    Py_DECREF(chain);
+    return NULL;
+  }
+
+  /* above was built over this span; it now sits on what this span sat
+     on, taking the context table beneath when it had none of its own */
+  Py_XINCREF(self->prev);
+  Py_XSETREF(above->prev, self->prev);
+  if (self->base && ! above->base) {
+    Py_INCREF(self->base);
+    above->base = self->base;
+  }
+  Py_CLEAR(self->prev);
+  self->entered = 0;
+  kos_param_spans_open--;
+
+  for (i = PyList_GET_SIZE(chain); i--; ) {
+    if (param_span_rebuild((KosParamSpan *) PyList_GET_ITEM(chain, i)) < 0) {
+      Py_DECREF(chain);
+      return NULL;
+    }
+  }
+  Py_DECREF(chain);
+  Py_RETURN_NONE;
+}
+
+
+static PyObject *param_span_tp_new(
+    PyTypeObject *type,
+    PyObject *args,
+    PyObject *kwds) {
+
+  PyObject *mapping = NULL;
+  PyObject *given = NULL;
+  PyObject *bindings = NULL;
+  KosParamSpan *self;
+  PyObject *key;
+  PyObject *value;
+  Py_ssize_t pos = 0;
+
+  if (kwds && PyDict_GET_SIZE(kwds)) {
+    PyErr_SetString(PyExc_TypeError,
+                    "Parameterize takes no named arguments");
+    return NULL;
+  }
+  if (! PyArg_ParseTuple(args, "O:Parameterize", &mapping))
+    return NULL;
+
+  given = PyDict_New();
+  if (! given)
+    return NULL;
+  if (PyDict_Update(given, mapping) < 0)
+    goto fail;
+  bindings = PyDict_New();
+  if (! bindings)
+    goto fail;
+
+  while (PyDict_Next(given, &pos, &key, &value)) {
+    PyObject *name = kos_key_to_str(key);
+    if (! name)
+      goto fail;
+    if (PyDict_SetItem(bindings, name, value) < 0) {
+      Py_DECREF(name);
+      goto fail;
+    }
+    Py_DECREF(name);
+  }
+  Py_DECREF(given);
+
+  self = (KosParamSpan *) type->tp_alloc(type, 0);
+  if (! self) {
+    Py_DECREF(bindings);
+    return NULL;
+  }
+  self->bindings = bindings;
+  return (PyObject *) self;
+
+ fail:
+  Py_DECREF(given);
+  Py_XDECREF(bindings);
+  return NULL;
+}
+
+
+static int param_span_traverse(PyObject *self, visitproc visit, void *arg) {
+  KosParamSpan *span = (KosParamSpan *) self;
+  Py_VISIT(span->bindings);
+  Py_VISIT(span->own);
+  Py_VISIT(span->table);
+  Py_VISIT(span->base);
+  Py_VISIT(span->prev);
+  return 0;
+}
+
+
+static int param_span_clear(PyObject *self) {
+  KosParamSpan *span = (KosParamSpan *) self;
+  Py_CLEAR(span->bindings);
+  Py_CLEAR(span->own);
+  Py_CLEAR(span->table);
+  Py_CLEAR(span->base);
+  Py_CLEAR(span->prev);
+  return 0;
+}
+
+
+static void param_span_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
+  param_span_clear(self);
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static PyMethodDef param_span_methods[] = {
+  {"__enter__", (PyCFunction) param_span_enter, METH_NOARGS,
+   "Bind the cells for the block; returns the span"},
+  {"__exit__", (PyCFunction) param_span_exit, METH_VARARGS,
+   "Unbind the block's cells"},
+  {NULL, NULL, 0, NULL},
+};
+
+
+PyTypeObject KosParamSpanType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.Parameterize",
+  .tp_basicsize = sizeof(KosParamSpan),
+  .tp_itemsize = 0,
+  .tp_new = param_span_tp_new,
+  .tp_dealloc = param_span_dealloc,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_traverse = param_span_traverse,
+  .tp_clear = param_span_clear,
+  .tp_methods = param_span_methods,
+  .tp_doc = "Parameterize(bindings): a context manager binding the"
+            " named parameters for the extent of a Python block",
+};
+
+
+/* === parameter resolution === */
+
+
 /* Probe a domain's root scope without creating it. Borrowed or NULL. */
 static PyObject *root_probe(PyObject *domain_obj, PyObject *key) {
   PyObject *root;
@@ -458,13 +878,22 @@ PyObject *kos_param_lookup(KosContext *ctx, PyObject *key) {
 PyObject *kos_param_lookup_ambient(PyObject *key) {
   KosTlsState *s = tls_state_current();
   KosContext *ctx;
+  PyObject *table;
+  PyObject *cell;
 
   if (! s)
     return NULL;
 
-  ctx = s->ctx_depth > 0 ? s->ctx_stack[s->ctx_depth - 1] : NULL;
+  ctx = kos_tls_active_context(s);
+  table = kos_param_ambient_cells(s, ctx);
+  if (table) {
+    cell = PyDict_GetItem(table, key);
+    if (cell)
+      return cell;
+  }
+
   if (ctx)
-    return kos_param_lookup(ctx, key);
+    return root_probe(KosContext_DOMAIN(ctx), key);
 
   /* a thread default not minted yet has nothing bound */
   return root_probe(domain_ambient_peek(s), key);
@@ -789,6 +1218,18 @@ int koskari_domain_init(PyObject *mod) {
   if (! tls_state_dict_key)
     return -1;
 
+  if (PyType_Ready(&KosParamSpanType) < 0)
+    return -1;
+  Py_INCREF(&KosParamSpanType);
+  if (PyModule_AddObject(mod, "Parameterize",
+                         (PyObject *) &KosParamSpanType) < 0) {
+    Py_DECREF(&KosParamSpanType);
+    return -1;
+  }
+  param_span_var = PyContextVar_New("koskari.parameterize", Py_None);
+  if (! param_span_var)
+    return -1;
+
   for (PyMethodDef *mdef = domain_mod_methods; mdef->ml_name; mdef++) {
     PyObject *func = PyCFunction_New(mdef, mod);
     if (! func)
@@ -809,6 +1250,7 @@ int koskari_domain_init(PyObject *mod) {
 int koskari_domain_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(tls_state_dict_key);
+  Py_CLEAR(param_span_var);
   return 0;
 }
 

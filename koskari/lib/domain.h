@@ -101,6 +101,46 @@ PyObject *kos_param_root_resolve_ambient(PyObject *key);
 PyObject *kos_context_param_refs(KosContext *ctx);
 
 
+/* The Python parameterize spans entered and not yet exited, over the
+   whole process. At zero no stack has one and the span chain is not
+   consulted, so a boundary entry pays one load. A span abandoned
+   without its exit keeps the count up, which only costs the read. */
+extern Py_ssize_t kos_param_spans_open;
+
+
+/**
+   The table of the innermost Python parameterize span opened inside
+   the active context (NULL active: with no context active), or NULL
+   when the top span is outer to it or there is none. Borrowed.
+*/
+PyObject *kos_param_span_cells(KosTlsState *s);
+
+
+/**
+   The cell table an ambient read on this thread sees before the root
+   scope: the innermost Python parameterize span opened inside the
+   active context, else the active context's own table. A new context
+   takes it at creation. active is the thread's active context or
+   NULL (kos_tls_active_context). Borrowed, or NULL when there are no
+   cells.
+*/
+static inline PyObject *kos_param_ambient_cells(
+    KosTlsState *s,
+    KosContext *active) {
+
+  if (unlikely(kos_param_spans_open > 0)) {
+    PyObject *table = kos_param_span_cells(s);
+    if (table)
+      return table;
+  }
+  return active ? KosContext_PARAM_REFS(active) : NULL;
+}
+
+
+/* koskari.lib.Parameterize: the Python-side parameterize extent */
+extern PyTypeObject KosParamSpanType;
+
+
 /* === domain-scoped ambient context API === */
 
 

@@ -58,29 +58,31 @@ static void context_freelist_drain(void) {
 
 /**
    The dynamic snapshot a new context starts from: the domain and the
-   parameterize cells in force at this moment. Forked from the active
-   context when there is one (its shadow table, shared with the active
-   context so the parameterize extents applied at this moment are
-   captured; the first writer on either side copies it first, see
-   kos_context_param_refs, and the root scope is reached through the
-   domain); otherwise the domain of an enclosing `with Domain():` scope,
-   else the thread default domain, with no cells. Both come back as new
-   references, *cells NULL when there are none. s is the calling
-   thread's record (kos_tls_current). Returns -1 with an error set.
+   parameterize cells in force at this moment. The cells are the
+   ambient table (kos_param_ambient_cells): a Python parameterize span
+   open inside the active context, else the active context's shadow
+   table. The table is shared with its holder so the extents applied at
+   this moment are captured; the first writer on either side copies it
+   first, see kos_context_param_refs. The domain is the active
+   context's; otherwise that of an enclosing `with Domain():` scope,
+   else the thread default domain. Both come back as new references,
+   *cells NULL when there are none. s is the calling thread's record
+   (kos_tls_current). Returns -1 with an error set.
 */
 int KosContext_Snapshot(KosTlsState *s, PyObject **domain, PyObject **cells) {
 
   KosContext *active = kos_tls_active_context(s);
+  PyObject *table = kos_param_ambient_cells(s, active);
 
   *domain = NULL;
   *cells = NULL;
 
+  if (table && PyDict_GET_SIZE(table) > 0) {
+    Py_INCREF(table);
+    *cells = table;
+  }
+
   if (active) {
-    PyObject *table = KosContext_PARAM_REFS(active);
-    if (table && PyDict_GET_SIZE(table) > 0) {
-      Py_INCREF(table);
-      *cells = table;
-    }
     *domain = KosContext_DOMAIN(active);
     Py_XINCREF(*domain);
     return 0;
