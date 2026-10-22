@@ -479,7 +479,6 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
         self.assertTrue(demand_call(fn))
 
 
-
 class TestDemandSyncPlainPython(unittest.TestCase):
     """
     demand_call on plain Python callables, including coroutine functions.
@@ -1417,7 +1416,6 @@ class TestDemandBoundaryCallables(unittest.TestCase):
         self.assertEqual(demand_call(KosPartial(fn, b="y"), "x"), "xy")
 
 
-
 ROOT_SRC = """
 (define add2 (lambda [a b] (+ a b)))
 
@@ -1608,7 +1606,6 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
         second = box("y")
         self.assertEqual(first.x, 3)
         self.assertEqual(second.x, "y")
-
 
 
 HANDLED_SRC = """

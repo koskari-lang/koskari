@@ -2557,7 +2557,6 @@ static int test_cache_frame_takes_every_shape(void) {
 }
 
 
-
 /* A namespace spec with the given two locals, the second the name a
    named lambda declares for itself after its formals. */
 static PyObject *create_nspec_with_self(const char *formal, const char *self) {
@@ -2634,7 +2633,6 @@ static int test_cache_frame_takes_self_binding_function(void) {
     Py_DECREF(fn);
     return 0;
 }
-
 
 
 /* === frame cache: a general-shape call binds into a cached frame === */
@@ -2840,7 +2838,6 @@ static int test_general_call_binds_into_cached_frame(void) {
   Py_DECREF(fn);
   return 0;
 }
-
 
 
 int run_eval_tests(void) {

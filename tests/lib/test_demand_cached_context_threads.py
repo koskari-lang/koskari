@@ -55,6 +55,7 @@ class TestDemandCachedContextThreads(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 
+
     async def test_threads_sharing_one_wrapper_get_their_own_results(self):
         mod = await self.load()
         d = lib.demand(mod["via"])

@@ -96,11 +96,13 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 
+
     async def test_repeated_calls_return_their_own_values(self):
         mod = await self.load()
         d = lib.demand(mod["square"])
         self.assertEqual(pymap(d, range(6)), [0, 1, 4, 9, 16, 25])
         self.assertEqual(pymap(d, range(3)), [0, 1, 4])
+
 
     async def test_reentry_through_python_while_running(self):
         mod = await self.load()
@@ -115,12 +117,14 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen, [3, 2, 1, 0])
         self.assertEqual(d(d, via, 2), 2)
 
+
     async def test_each_call_sees_the_parameters_in_force(self):
         mod = await self.load()
         d = lib.demand(mod["read_p"])
         self.assertEqual(await mod["both_batches"](d, pymap),
                          [[11, 12], [21, 22]])
         self.assertEqual(pymap(d, [1]), [1])
+
 
     async def test_wrapper_survives_a_raising_call(self):
         mod = await self.load()
@@ -132,6 +136,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
             d(0)
         self.assertEqual(pymap(d, [1, 2]), [1, 2])
 
+
     async def test_root_store_persists_across_calls(self):
         mod = await self.load()
         self.addCleanup(lib.ParamRef("cc_root").clear)
@@ -140,6 +145,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(d(2), 1)
         self.assertEqual(lib.ParamRef("cc_root").deref(), 2)
 
+
     async def test_root_store_shared_between_wrappers(self):
         mod = await self.load()
         self.addCleanup(lib.ParamRef("cc_root").clear)
@@ -147,6 +153,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         read = lib.demand(mod["read_root"])
         self.assertEqual(store(7), 7)
         self.assertEqual(read(), 7)
+
 
     async def test_repeated_keyword_calls(self):
         mod = await self.load()
@@ -158,6 +165,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(d(3), 31)
         self.assertEqual(d(a=2, b=5), 25)
 
+
     async def test_keyword_call_raise_leaves_wrapper_usable(self):
         mod = await self.load()
         d = lib.demand(mod["failkw"])
@@ -167,6 +175,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(caught.exception.args, (a,))
             self.assertEqual(d(a, b=4), a + 4)
         self.assertEqual(list(map(partial(d, b=1), [1, 2])), [2, 3])
+
 
     async def test_keyword_call_reentry_through_python(self):
         mod = await self.load()
@@ -181,6 +190,7 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen, [3, 2, 1])
         self.assertEqual(d(d, via, 2, step=10), 12)
         self.assertEqual(seen, [3, 2, 1, 2, 1])
+
 
     async def test_keyword_call_call_cc_escape(self):
         mod = await self.load()

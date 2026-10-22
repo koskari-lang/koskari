@@ -140,6 +140,7 @@ class TestFrameCache(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, SRC, layout=False)
         return vars(module)
 
+
     async def test_reused_frames_carry_no_stale_binding(self):
         mod = await self.load()
         # fill the cache with frames whose x was bound
@@ -150,6 +151,7 @@ class TestFrameCache(unittest.IsolatedAsyncioTestCase):
         await mod["rec"](5, False)
         self.assertEqual(list(mod["log"]), ["unbound"] * 6)
 
+
     async def test_recursion_around_the_cache_size(self):
         mod = await self.load()
         for n in (3, 7, 8, 9, 16, 40):
@@ -157,6 +159,7 @@ class TestFrameCache(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await mod["depth"](n), n)
         self.assertEqual(await mod["fib"](15), 610)
         self.assertEqual(await mod["fib"](15), 610)
+
 
     async def test_collector_walks_every_cached_frame(self):
         mod = await self.load()
@@ -166,6 +169,7 @@ class TestFrameCache(unittest.IsolatedAsyncioTestCase):
         self.assertIs(await mod["holder"](payload, 3), payload)
         gc.collect()
         self.assertEqual(await mod["depth"](20), 20)
+
 
     async def test_function_freed_with_a_full_cache(self):
         mod = await self.load()
@@ -183,21 +187,25 @@ class TestFrameCacheGeneralCalls(unittest.IsolatedAsyncioTestCase):
         await load_module_source_async(module, GENERAL_SRC, layout=False)
         return vars(module)
 
+
     async def assert_repeats(self, mod, name, expected):
         # the second run is served by frames the first run cached
         for run in (1, 2):
             with self.subTest(name=name, run=run):
                 self.assertEqual(await mod[name](), expected)
 
+
     async def test_keyword_and_default_calls(self):
         mod = await self.load()
         await self.assert_repeats(
             mod, "run_kw", ((1, 2), (3, 0), (4, 5), (6, 0), (8, 7)))
 
+
     async def test_star_calls(self):
         mod = await self.load()
         await self.assert_repeats(
             mod, "run_star", ((1, (2, 3)), (4, ()), (5, (6,)), (7, ())))
+
 
     async def test_keyword_only_calls(self):
         mod = await self.load()
@@ -205,11 +213,13 @@ class TestFrameCacheGeneralCalls(unittest.IsolatedAsyncioTestCase):
             mod, "run_kwonly",
             ((1, (2,), 5), (3, (), 1), (4, (5, 6), 1), (7, (), 8)))
 
+
     async def test_starstar_calls(self):
         mod = await self.load()
         await self.assert_repeats(
             mod, "run_opts",
             ((1, {"x": 2}), (3, {}), (4, {"y": 5, "z": 6}), (7, {})))
+
 
     async def test_failed_bind_then_good_call(self):
         mod = await self.load()
@@ -218,9 +228,11 @@ class TestFrameCacheGeneralCalls(unittest.IsolatedAsyncioTestCase):
             ((1, 2), "bad", (1, 0), "missing", (2, 0),
              (1, (2,)), "bad", (5, ())))
 
+
     async def test_bound_method_with_keywords(self):
         mod = await self.load()
         await self.assert_repeats(mod, "run_method", (24, 10, 84, 16))
+
 
     async def test_init_with_keywords(self):
         mod = await self.load()
@@ -229,6 +241,7 @@ class TestFrameCacheGeneralCalls(unittest.IsolatedAsyncioTestCase):
             ((1, 2, ()), (3, 0, ()), (4, 5, ()), (6, 7, (8, 9)),
              (10, 0, ())))
 
+
     async def test_call_from_inside_the_bind(self):
         # the floor test on the dynamic ref calls byref again while the
         # outer call is binding its arguments
@@ -236,6 +249,7 @@ class TestFrameCacheGeneralCalls(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await mod["run_reenter"](),
                          ((1, 1, 2), (3, 1, 4), (5, 1, 6)))
         self.assertEqual(list(mod["inner"]), [(100, 1, 200)])
+
 
     async def test_keyword_recursion_around_the_cache_size(self):
         mod = await self.load()
