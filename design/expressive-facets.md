@@ -676,8 +676,9 @@ libraries.
 
 The infrastructure is mostly there and mostly unexercised. Namespaces are
 first-class and mutable, so rebinding a name is straightforward. The real
-questions are the awkward ones: code is sealed and arena-packed at module seal
-(see [PRAGMA.md](PRAGMA.md)), so redefinition needs an explicitly unsealed
+questions are the awkward ones: function code is placed in arena chunks at
+birth and sealed at module seal (see [PRAGMA.md](PRAGMA.md)), so
+redefinition needs an explicitly unsealed
 development mode; and a running coroutine holds a reference to the old `Code`,
 so redefinition applies to the next invocation rather than the current one --
 which is Erlang's answer too, and is fine as long as it is documented rather

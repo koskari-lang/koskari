@@ -59,8 +59,8 @@ after finalize:
 
 The chunk then holds objects, not blocks. `KosArena_Release` returns a
 dead reservation's bytes while the chunk is open; an immortal object
-never dies, so the release path applies to mortal code alone and the
-newest-block reuse in an open chunk goes away for the durable class. A
+never dies and mortal code is heap, so nothing in a chunk is ever
+released and the newest-block reuse in an open chunk goes away. A
 dropped definition during load keeps its bytes, which is the measured
 state today (zero dead bytes across the bootstrap and `dis` on
 2026-10-21), and the seal still trims the chunk to the pages it fills.

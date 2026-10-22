@@ -119,7 +119,8 @@ preserving the barrier semantics phase 1 relies on.
 ## Storage: the executable arena segment
 
 The unified bytecode block already carries `[code][positions][cpool][extra][extents][top]`
-as one arena allocation, sealed read-only after finalize populates it. The native form
+as one reservation in the load's chunk, written by finalize and sealed with
+the chunk when the load completes. The native form
 is a second, per-module arena segment with the same lifecycle -- populated
 in a writable window, then sealed -- but `mprotect`'d executable
 (`PROT_READ | PROT_EXEC`, not `PROT_WRITE`) instead of read-only.

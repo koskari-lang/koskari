@@ -242,13 +242,17 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
 - `Code`: Compiled bytecode storage object
   - 32-byte instruction records: handler pointer, opcode, arg, cache index, pc, resolved operand, cache slot pointer (`KosOp` in `bytecode.h`)
   - Delta-encoded position table (only records changes)
-  - Read-only memory protection via `mprotect()` after init
+  - Placed at birth into the load's arena chunk under `compiler/pack-module`, sealed with it when the load completes; heap otherwise, sealed per object under `compiler/protect-code`
   - Constant pool with deduplication
   - `KOS_CODE_YIELDS` flag for generators
   - `length()`: Instruction count
   - `oparg(i)`: Get (opcode, arg) tuple at index
   - `position(i)`: Get (line, col) for instruction
   - `constant(i)`: Get constant from pool
+- `Arena`: One mapped chunk, read-only once sealed
+  - `size`, `used`, `sealed`
+- `CodeAllocator`: The chunks of one module load, first-fit placement
+  - `seal()`: Seal every chunk and close the allocator
 - `OpCode`: Enum of all bytecode opcodes
   - Attached `style` attribute for argument interpretation
 - `OpStyle`: Enum of opcode argument styles
