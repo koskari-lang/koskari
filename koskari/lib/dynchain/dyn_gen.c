@@ -480,7 +480,7 @@ int kos_dyn_gen_install_bootstrap(
 }
 
 
-int kos_dyn_gen_frozen_needs_install_es(KosContext *ctx, KosDynGen *g) {
+int kos_dyn_gen_frozen_needs_install(KosContext *ctx, KosDynGen *g) {
 
   KosDynNode *n;
 

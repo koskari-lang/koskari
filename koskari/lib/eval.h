@@ -353,15 +353,15 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 */
 #define DISPATCH(kind, ctx, arg, value)                                 \
   do {                                                                  \
-    KosContext *kos_dsp_es_ = (ctx);                                    \
-    KosDynFrame *kos_dsp_frame_ = KosContext_FRAME(kos_dsp_es_);        \
+    KosContext *kos_dsp_ctx_ = (ctx);                                   \
+    KosDynFrame *kos_dsp_frame_ = KosContext_FRAME(kos_dsp_ctx_);       \
     PyObject *kos_dsp_val_ = (value);                                   \
-    KOS_DISPATCH_SAFETYNET(kos_dsp_es_, kos_dsp_val_);                  \
-    KosContext_PENDING_VALUE(kos_dsp_es_) = kos_dsp_val_;               \
+    KOS_DISPATCH_SAFETYNET(kos_dsp_ctx_, kos_dsp_val_);                 \
+    KosContext_PENDING_VALUE(kos_dsp_ctx_) = kos_dsp_val_;              \
     KosDynFrame_RESUME_KIND(kos_dsp_frame_) = (kind);                   \
     KosDynFrame_RESUME_STATE(kos_dsp_frame_) = (void *) (arg);          \
     KOS_TRACE_TRAMPOLINE_STEP();                                        \
-    TAILCALL(kos_eval_prologue, kos_dsp_es_, NULL, NULL);               \
+    TAILCALL(kos_eval_prologue, kos_dsp_ctx_, NULL, NULL);              \
   } while (0)
 
 /* === Opcode result macros === */
@@ -424,9 +424,10 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
    The form for a tail after a frame change or a stored pc. */
 #define KOS_THREAD_NEXT(ctx)                                            \
   do {                                                                  \
-    KosContext *kos_thn_es_ = (ctx);                                    \
-    KOS_THREAD_AT(kos_thn_es_,                                          \
-                  &KosContext_OPS(kos_thn_es_)[KosContext_PC(kos_thn_es_)]); \
+    KosContext *kos_thn_ctx_ = (ctx);                                   \
+    KOS_THREAD_AT(                                                      \
+        kos_thn_ctx_,                                                   \
+        &KosContext_OPS(kos_thn_ctx_)[KosContext_PC(kos_thn_ctx_)]);    \
   } while (0)
 
 #define RESULT_NEXT(ctx)      KOS_THREAD_AT((ctx), ((KosOp *) insn) + 1)
@@ -783,10 +784,12 @@ struct KosContext {
 
   KosEvaluatorToken *token; /* ownership marker for continuations; NULL
                                until the first capture mints it */
-  PyObject *domain;         /* KosDomain; mandatory. Inherited from the
-                               ambient domain at creation, minted fresh when
-                               none is ambient. Identity/lifecycle anchor;
-                               live parameter state is in param_refs. */
+  PyObject *domain;         /* KosDomain; mandatory. The thread's current
+                               domain at creation: the active context's,
+                               else the innermost open Domain block's,
+                               else the thread default. Identity/lifecycle
+                               anchor; live parameter state is in
+                               param_refs. */
   PyObject *param_refs;    /* PyDict: name -> cell (KosRef); this context's
                                parameter cell table, forked (pointer-copied)
                                at creation. Lazy; NULL when empty. */
@@ -1233,7 +1236,7 @@ PyObject *KosContext_PopUnpackSequence(
   Pop tail PyObject * fields into aggregate agg (deepest first, TOS last).
   Same layout contract as KOS_STACK_BLOCK_POP_ARGS in stack.h.
 */
-#define KOS_EVALSTATE_POP_ARGS(ctx, agg) \
+#define KOS_CONTEXT_POP_ARGS(ctx, agg) \
   kos_stack_pop_tail_ptr_fast( \
       KosContext_BLOCK(ctx), \
       sizeof(agg) / sizeof(PyObject *), \
@@ -1512,7 +1515,7 @@ extern PyObject *KoskariContinuationApply;
 extern PyObject *KoskariContinuationError;
 
 
-/* === KosContext_Call* : eval-state-oriented generic call entry points === */
+/* === KosContext_Call* : context-oriented generic call entry points === */
 
 /**
    Install a code frame for a call: on a tail call the live frame is

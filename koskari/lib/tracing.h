@@ -160,7 +160,7 @@ typedef enum KosTracePostOpId {
 #endif
 
 
-/* === eval state sync timing ids (KOS_TRACE_EVAL_SYNC; add only at end) === */
+/* === drive begin/end sync timing ids (KOS_TRACE_EVAL_SYNC; add only at end) === */
 
 typedef enum KosTraceEvalSyncId {
   KOS_TEVS_init = 0,
@@ -303,7 +303,7 @@ void kos_trace_fl_return(const char *name, int overrun);
 #endif
 
 
-/* === eval state sync (counts + wall time in get_trace_report) === */
+/* === drive begin/end sync (counts + wall time in get_trace_report) === */
 
 #if KOS_TRACE_EVAL_SYNC
 #define KOS_TRACE_EVAL_SYNC_BEGIN() \

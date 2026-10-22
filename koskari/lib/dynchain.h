@@ -1146,7 +1146,7 @@ int kos_dyn_gen_install_bootstrap(
 
    If GEN.active is NULL, returns 0 (already installed or exhausted).
 */
-int kos_dyn_gen_frozen_needs_install_es(KosContext *ctx, KosDynGen *gen);
+int kos_dyn_gen_frozen_needs_install(KosContext *ctx, KosDynGen *gen);
 
 
 /**

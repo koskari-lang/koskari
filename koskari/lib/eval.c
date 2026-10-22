@@ -151,7 +151,7 @@ static KosOpResult kos_eval_post_opcode_control_returned_after_hook(
 
 
 #include "eval/eval_chain.c"
-#include "eval/eval_state.c"
+#include "eval/eval_drive.c"
 #include "eval/eval_await.c"
 #include "eval/eval_call.c"
 #include "eval/eval_iter.c"
@@ -2354,29 +2354,30 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
 
     /* The chain is empty, so the install inherits no demand bit; the
        recorded flags go onto the root frame it pushed. */
-    KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_INSTALL);
     r = KosFunction_Install(ctx, callable, call->args, call->nargs,
                             NULL, 0);
     if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_POLL) {
+      KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_INSTALL);
       KosDynFrame_FLAGS(KosContext_FRAME(ctx)) |= call->frame_flags;
       return EVAL_NORMAL();
     }
 
   } else {
     KosDynFrame *frame;
+    int cached = call->frame_cache && *call->frame_cache;
 
     /* The root frame comes from the wrapper's slot when it holds one;
        the slot is the resume's state, so the resume returns the frame
        to it. The inner call is never a tail call: its return must
        reach this frame's resume. */
-    if (call->frame_cache && *call->frame_cache)
-      KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_CACHED);
     frame = KosResumeFrame_Install(ctx, call->resume, call->frame_cache,
                                    call->frame_cache);
     if (! frame) {
       r = EVAL_RAISE();
 
     } else {
+      if (cached)
+        KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_CACHED);
       KosDynFrame_FLAGS(frame) |= call->frame_flags;
       r = KosContext_Call(ctx, callable, call->args, call->nargs,
                           call->kwnames, 0, call->resume, call->frame_cache);

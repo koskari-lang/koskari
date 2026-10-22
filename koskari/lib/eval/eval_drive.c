@@ -14,7 +14,7 @@
 */
 
 /**
-   koskari/lib/eval/eval_state.c
+   koskari/lib/eval/eval_drive.c
 
    The drive begin step, the parent stack slot, the UNPACK sequence
    helper, and the evaluator token; included into eval.c.
@@ -96,7 +96,7 @@ KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx) {
 }
 
 
-static KosSegment **kos_evalstate_parent_stack_slot(
+static KosSegment **kos_context_parent_stack_slot(
     KosContext *ctx) {
 
   KosDynNode *owner;
@@ -122,7 +122,7 @@ static KosSegment **kos_evalstate_parent_stack_slot(
         }
         if (! n_dbg || cached != &KosDynNode_STACK(n_dbg)) {
           PyErr_SetString(PyExc_SystemError,
-                          "kos_evalstate_parent_stack_slot: back cache"
+                          "kos_context_parent_stack_slot: back cache"
                           " drift vs walk");
           return NULL;
         }
@@ -167,7 +167,7 @@ static KosSegment **kos_evalstate_parent_stack_slot(
 
 
 int KosContext_ParentStackPushRef(KosContext *ctx, PyObject *val) {
-  KosSegment **slot = kos_evalstate_parent_stack_slot(ctx);
+  KosSegment **slot = kos_context_parent_stack_slot(ctx);
   if (unlikely(! slot))
     return -1;
 
@@ -176,7 +176,7 @@ int KosContext_ParentStackPushRef(KosContext *ctx, PyObject *val) {
 
 
 int KosContext_ParentStackPUSH(KosContext *ctx, PyObject *val) {
-  KosSegment **slot = kos_evalstate_parent_stack_slot(ctx);
+  KosSegment **slot = kos_context_parent_stack_slot(ctx);
   if (unlikely(! slot)) {
     Py_XDECREF(val);
     return -1;

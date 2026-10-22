@@ -8,7 +8,7 @@ This directory holds **one C source fragment per opcode** (e.g. `NOOP.c`, `RETUR
 
 - **Fragment files** – Each `<NAME>.c` is a C fragment: optional GPL block, optional `/** ... */` docstring, optional **dedicated** helpers (used only by this opcode), and exactly one `KOS_OP_HANDLER(NAME) { ... }`. No `#include` or other boilerplate; the file is included in the middle of `eval.c` where `KOS_OP_HANDLER`, `CURRENT_*`, and shared helpers are already defined.
 
-- **Shared vs dedicated helpers** – Helpers used by more than one opcode (e.g. `push_result`, `op_get_next_from_iter`) live in `eval/eval_state.c` (included into `eval.c`); the selector-dispatched operator and comparison cores (`kos_operand_reduce`, `kos_compare_chain`) live in `operator.c`. Helpers used by a single opcode (e.g. the `yield_from_*` helpers) live in that opcode's fragment (e.g. `YIELD_FROM.c`).
+- **Shared vs dedicated helpers** – Helpers used by more than one opcode live in the `eval/` fragments included into `eval.c` (e.g. `op_get_next_from_iter` in `eval/eval_iter.c`); the selector-dispatched operator and comparison cores (`kos_operand_reduce`, `kos_compare_chain`) live in `operator.c`. Helpers used by a single opcode (e.g. the `yield_from_*` helpers) live in that opcode's fragment (e.g. `YIELD_FROM.c`).
 
 ## File naming
 

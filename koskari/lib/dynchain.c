@@ -3196,7 +3196,7 @@ int kos_dyn_finish_delimited_pop_return(
 
   if (! ctx) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "kos_dyn_finish_delimited_pop_return: eval state is NULL");
+                    "kos_dyn_finish_delimited_pop_return: context is NULL");
     Py_XDECREF(value);
     return -1;
   }

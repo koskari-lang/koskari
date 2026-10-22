@@ -72,7 +72,7 @@ static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
     int r;
 
     KosContext_BeginDrive(ctx, NULL);
-    if (! gen || ! kos_dyn_gen_frozen_needs_install_es(ctx, gen)) {
+    if (! gen || ! kos_dyn_gen_frozen_needs_install(ctx, gen)) {
         KosContext_EndDrive(ctx);
         return 0;
     }

@@ -20,22 +20,18 @@ The container provides a consistent environment with all required tools:
 
 ```bash
 # From project root
-make container-test           # Run all test modes
-make container-test-asan      # Run only ASan tests
-make container-test-valgrind  # Run only Valgrind tests
+make test-native     # Run normal tests
+make test-asan       # Run ASan tests
+make test-valgrind   # Run Valgrind tests
 ```
 
 ### Running Locally
 
-If you have the required tools installed (gcc, valgrind, libasan):
+If you have the required tools installed (clang or GCC 15+ for
+`musttail`, valgrind, an ASan runtime):
 
 ```bash
-# From project root
-make test-native              # Run normal tests
-make test-native-asan         # Run ASan tests
-make test-native-valgrind     # Run Valgrind tests
-
-# Or from this directory (use -f tests.mk; no default Makefile)
+# From this directory (use -f tests.mk; no default Makefile)
 make -f tests.mk test           # Normal tests
 make -f tests.mk test-asan      # ASan tests
 make -f tests.mk test-valgrind  # Valgrind tests
@@ -49,19 +45,29 @@ tests/native/
 ├── Containerfile          # Container definition (Fedora + tools)
 ├── tests.mk               # Build and test rules (container entrypoint uses this)
 ├── valgrind-python.supp   # Valgrind suppressions for Python internals
-├── test_harness.h         # Common macros and unit declarations
-├── test_harness.c         # Main entry point
-├── test_atom.c            # Tests for symbol/keyword types
-├── test_bytecode.c        # Tests for bytecode/Code type
-├── test_dynchain.c        # Tests for DynNode chain types (frame, prompt, wind, region)
-├── test_eval.c            # Tests for koskari_eval (opcodes, suspend/resume, exception flow)
-├── test_formals.c         # Tests for formals types
-├── test_namespace.c       # Tests for namespace types
-├── test_pair.c            # Tests for pair/nil types
-├── test_matcher.c         # Tests for the matcher's step helpers and Datum boxing
-├── test_paramref.c        # Tests for dynamic parameter binding (paramref/dynparam)
-├── test_stack.c           # Tests for stack types
-└── test_values.c          # Tests for values type
+├── test_harness.h         # Common macros and unit runner declarations
+├── test_harness.c         # Main entry point: initializes Python and the library, runs every suite
+├── test_arena.c           # Arena type and Code pack_into relocation
+├── test_atom.c            # Symbol and keyword interning
+├── test_breaker.c         # The eval breaker as read through the compat layer
+├── test_bytecode.c        # KosCode: instructions, constant pool, position table, read-only protection
+├── test_demand.c          # Demand wrapper: kept root frame, BoundMethod vectorcall
+├── test_domain.c          # Per-thread record behind the ambient context stack
+├── test_dynchain.c        # DynNode chain memory management
+├── test_eval.c            # Evaluator: opcode dispatch, OBJECT_ADD, delimited continuations
+├── test_formals.c         # Formals and FormalsSpec
+├── test_iter_request.c    # Iteration request API and the code-less frame helpers
+├── test_iterate.c         # Python adapters over a KosIter provider
+├── test_lifecycle.c       # Module clear and re-init over a fresh module object
+├── test_matcher.c         # Matcher step helpers through a Datum box
+├── test_namespace.c       # Namespace, NamespaceSpec, CollectorNamespace, ModuleNamespace, Module
+├── test_pair.c            # Pair free list, head/tail refcounts, cycles, nil singleton
+├── test_paramref.c        # ParamRef deref, store, clear, isEmpty with an active domain scope
+├── test_partial.c         # KosPartial
+├── test_property.c        # KosProperty construction and dealloc
+├── test_resume.c          # Per-frame CPS resume plumbing on KosDynFrame
+├── test_stack.c           # Operand stack segments
+└── test_values.c          # Values type: args/kwds refcounts, cycles
 ```
 
 ## Writing Tests
@@ -121,19 +127,22 @@ constructed bytecode.  Tests are organized into two groups:
 missing TRY/FINALLY/CC push, domain invariants, delimited continuation capture
 and invocation.
 
-**Phase-boundary tests** — cover the six internal phase helpers introduced in
-the evaluator refactor:
+**Phase-boundary tests** — cover the entry phase of `koskari_eval` and the
+raise ingress:
 
 | Test | Phase exercised |
 |------|----------------|
-| `test_eval_yield_empty_resume` | phase 1 (`eval_phase_entry` — raise_yield → MODE_NORMAL) |
+| `test_eval_yield_empty_resume` | phase 1 (`eval_phase_entry` — revive_yield with no send value, resumed with `None`) |
 | `test_eval_yield_send_resume` | phase 1 (`eval_phase_entry` — revive_yield with send value) |
 | `test_eval_yield_throw_resume` | phase 1 (`eval_phase_entry` — revive_yield with throw, no handler) |
-| `test_eval_yield_throw_caught` | phase 1 (`eval_phase_entry` — KOS_MODE_EXCEPTION, local handler found) |
-| `test_eval_opcode_error_caught_by_try` | phase 6 (`eval_phase_post_opcode` — op_res < 0, PyErr, local handler) |
+| `test_eval_yield_throw_caught` | phase 1 (`eval_phase_entry` — KOS_MODE_EXCEPTION through `process_raise`, local handler found) |
+| `test_eval_opcode_error_caught_by_try` | raise ingress (`process_raise` — an opcode raises, local handler found) |
 
-The helper `make_simple_ctx(instr, &code_obj, &ctx)` constructs a minimal
-nspec + code + frame + context from a Python list of instruction tuples.
+The helper `make_simple_ctx(instr, &code_obj, &ctx, &gen)` constructs a
+minimal nspec + code + frame + context from a Python list of instruction
+tuples. For yielding code the frame sits under a standalone `KosDynGen`,
+returned through `gen` (NULL otherwise); after a YIELD the test installs
+it with `install_frozen_gen` before the next `koskari_eval`.
 Note that `kos_dynframe_new` **steals** the `ns` reference; the helper
 accounts for this — do not `Py_DECREF(ns)` after passing it.
 
@@ -150,8 +159,8 @@ directly bracket the calls the way `koskari_eval` brackets a drive:
 
 Canonical patterns in this tree:
 
-- `install_frozen_gen` in `tests/native/test_eval.c` (mirrors
-  `install_frozen_gen_for_resume` in `koskari/lib/iter.c`)
+- `install_frozen_gen` in `tests/native/test_eval.c` (mirrors the
+  install in `asyncgen_teardown_chain_on_ctx` in `koskari/lib/iter.c`)
 - `push_dyn_param` / `pop_dyn_param` in `tests/native/test_paramref.c`
 
 Skipping `KosContext_BeginDrive` on a context that has never been driven
@@ -211,13 +220,17 @@ int run_values_tests(void);  // ADD THIS
 
 ### 3. Call the Runner in test_harness.c
 
-Add the call in `main()`:
+Add the call in `main()`, before `run_lifecycle_tests()`, which stays
+last because it clears and rebuilds the statics every other suite uses:
 
 ```c
 /* Run all test suites */
 run_atom_tests();
 run_pair_tests();
+...
 run_values_tests();  // ADD THIS
+/* last: it clears and rebuilds the statics every suite above used */
+run_lifecycle_tests();
 ```
 
 ### 4. No Makefile update needed
@@ -227,7 +240,9 @@ Sources are discovered via globs: test files matching `test_*.c` and library sou
 ### 5. Run Tests
 
 ```bash
-make container-test
+make test-native
+make test-asan
+make test-valgrind
 ```
 
 ## Tips for Writing Good Memory Tests
@@ -331,7 +346,7 @@ We also use the Python allocator: the harness and koskari allocate PyObjects (di
 
 ### "Module not found" errors
 
-The test harness initializes types directly without importing the Python module. Make sure `initialize_types()` in `test_harness.c` calls your type's init function.
+The test harness does not import the Python module. `initialize_types()` in `test_harness.c` runs `koskari_lib_init`, the init `PyInit_lib` runs, over a module of its own; a type must be readied by that init to be available to the suites.
 
 ### Segfaults during type initialization
 
@@ -343,4 +358,4 @@ Remember that some Python objects (small integers, interned strings, `None`, `Tr
 
 ### Container build failures
 
-If `make container-build` fails with permission errors, ensure you're running with appropriate permissions or use `podman` in rootless mode.
+If `make test-container-build` fails with permission errors, ensure you're running with appropriate permissions or use `podman` in rootless mode.

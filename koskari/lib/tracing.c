@@ -302,7 +302,7 @@ void kos_trace_post_op_exit(void) {
 #endif
 
 
-/* === eval state sync (counts + monotonic wall time per API) === */
+/* === drive begin/end sync (counts + monotonic wall time per API) === */
 
 #if KOS_TRACE_EVAL_SYNC
 
