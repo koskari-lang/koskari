@@ -418,6 +418,7 @@ class TestKioRoundTrip(unittest.TestCase):
         self.assertIn(OpCode.FAST2, ops)
         self.assertTrue(any('CALL' in op.name for op in ops), ops)
 
+
     def _compiled_spec(self, source, allocator):
         buf = io.BytesIO()
         compile_ki_source_to_kio(source, buf)
@@ -426,6 +427,7 @@ class TestKioRoundTrip(unittest.TestCase):
                  if isinstance(arg, FunctionSpec)]
         self.assertEqual(1, len(specs))
         return specs[0]
+
 
     def test_compile_ki_records_function_placement(self):
         """
@@ -437,19 +439,23 @@ class TestKioRoundTrip(unittest.TestCase):
         spec = self._compiled_spec('(define k (lambda [a] a))\n', alloc)
         self.assertEqual(alloc.chunks, (spec.code.arena,))
 
+
     def test_compile_ki_pack_module_off_is_heap(self):
         """a build with pack-module off records its functions as heap"""
+
         alloc = CodeAllocator()
         spec = self._compiled_spec(
             '(pragma [compiler/pack-module False])\n'
             '(define k (lambda [a] a))\n', alloc)
         self.assertIsNone(spec.code.arena)
         self.assertEqual(alloc.chunks, ())
-    """
-    Embedded body filename can differ from the compile-time path
-    """
+
 
     def test_compile_ki_embeds_source_filename(self):
+        """
+        Embedded body filename can differ from the compile-time path
+        """
+
         logical = 'pkg/module.ki'
         buf = io.BytesIO()
         compile_ki_source_to_kio(
