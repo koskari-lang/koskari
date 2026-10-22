@@ -26,7 +26,9 @@ import importlib.util
 import re
 import shlex
 import subprocess
+import sys
 import sysconfig
+from dataclasses import dataclass
 from os import environ
 from pathlib import Path
 from shutil import which
@@ -61,7 +63,14 @@ baseline_args = (
     # visibility turns every intra-library call into a direct call and
     # lets LTO inline single-caller helpers.
     "-fvisibility=hidden",
+    # gcc treats every default-visibility function as interposable and
+    # will neither inline nor direct-call it; clang already assumes no
+    # interposition.
+    "-fno-semantic-interposition",
 )
+
+
+LINUX = sys.platform == "linux"
 
 
 def compiler_command():
@@ -106,79 +115,156 @@ def compiler_identity(cc):
     return True, int(match.group(1)) if match else 0
 
 
-def extra_compile_args(platform=None, debug=False, clang=False, major=0):
+def linker_takes_lto(cc, clang):
+    """
+    Whether the link step can consume LTO objects. gcc links through
+    its own plugin; ld64 runs LTO itself; clang on Linux needs lld or
+    the LLVMgold plugin for bfd and gold
+    """
+
+    if not clang or not LINUX:
+        return True
+
+    if which("ld.lld"):
+        return True
+
+    try:
+        proc = subprocess.run(
+            [*shlex.split(cc), "-print-file-name=LLVMgold.so"],
+            capture_output=True, text=True, check=False)
+    except OSError:
+        return False
+
+    plugin = proc.stdout.strip()
+    return bool(plugin) and Path(plugin).is_file()
+
+
+def optimisation_args(debug):
+    """
+    The optimisation level, given to the compile and the link alike
+    since gcc takes the LTO level from the link line. The evaluator
+    dispatches by tail call; omitting the frame pointer keeps every
+    handler entry free of a push and pop and frees the register, and
+    overrides the -fno-omit-frame-pointer some distributions build
+    the interpreter with
+    """
+
+    if debug:
+        return ["-g", "-O0"]
+    return ["-O2", "-fomit-frame-pointer"]
+
+
+@dataclass
+class BuildFlags:
+    """
+    The build's toolchain facts, resolved once by resolve_build_flags
+    """
+
+    cc: str
+    clang: bool
+    major: int
+    debug: bool
+    asan: bool
+    lto_link: bool
+    fat_objects: bool
+
+
+def resolve_build_flags():
+    """
+    Resolve the compiler, its identity, the build mode and what the
+    link can do
+
+    :return: a BuildFlags
+    """
+
+    cc = compiler_command()
+    clang, major = compiler_identity(cc)
+    debug = environ.get("DEBUG") == "1"
+    asan = environ.get("KOS_ASAN") == "1"
+    lto_link = linker_takes_lto(cc, clang)
+
+    # Fat LTO objects carry native code beside the bitcode, so a linker
+    # that cannot run LTO still links the extension, without it. They
+    # are the fallback for that linker only; an LTO-aware link takes
+    # slim objects. Under ASan the fat object's native sections carry
+    # the sanitizer's module constructors, which lld discards after the
+    # LTO link while the init array still refers to them, so the ASan
+    # build never emits them.
+    fat_objects = LINUX and not asan and not lto_link
+
+    if fat_objects and clang and major and major < 17:
+        # such a clang cannot emit fat LTO objects, so every object is
+        # bitcode and only an LTO-aware linker can take it
+        raise SystemExit(
+            f"koskari: clang {major} needs lld to link its LTO objects;"
+            " install lld, or build with clang 17 or newer")
+
+    return BuildFlags(cc, clang, major, debug, asan, lto_link, fat_objects)
+
+
+def extra_compile_args(flags):
     """
     Get compiler flags for C extensions
     """
 
-    if platform is None:
-        from sys import platform as sys_platform
-        platform = sys_platform
-
-    if debug is None:
-        debug = environ.get("DEBUG") == "1"
-
     args = list(baseline_args)
-
-    if debug:
-        args.append("-g")
-        args.append("-O0")
-    else:
-        args.append("-O2")
+    args.extend(optimisation_args(flags.debug))
 
     for env in passenvs:
         if environ.get(env) == "1":
             args.append(f"-D{env}=1")
 
-    asan = environ.get("KOS_ASAN") == "1"
-
-    if asan:
+    if flags.asan:
+        # after the optimisation level: the sanitizer's traces need the
+        # frame pointer back
         args.append("-DKOS_ASAN=1")
         args.append("-fsanitize=address")
         args.append("-fno-omit-frame-pointer")
         args.append("-g")
 
-    if platform == "linux":
+    if LINUX:
         # calls into libpython bind through the GOT directly instead of
         # a PLT stub
         args.append("-fno-plt")
 
-    if platform == "linux" and (not clang or major >= 17) and not asan:
-        # clang gained the flag in 17; older clangs reject it, and the
-        # LTO link goes through lld there anyway. Under ASan the fat
-        # object's native sections carry the sanitizer's module
-        # constructors, which lld discards after the LTO link while the
-        # init array still refers to them, so the ASan build links from
-        # the bitcode alone.
+    if flags.fat_objects:
         args.append("-ffat-lto-objects")
 
     return args
 
 
-def extra_link_args(platform=None, clang=False):
+def extra_link_args(flags):
     """
     Get linker flags for C extensions
     """
 
-    if platform is None:
-        from sys import platform as sys_platform
-        platform = sys_platform
-
     args = []
 
-    if environ.get("KOS_ASAN") == "1":
+    if flags.asan:
         args.append("-fsanitize=address")
 
-    if platform == "linux" and clang and which("ld.lld"):
+    if LINUX and flags.clang and which("ld.lld"):
         # clang's LTO objects need an LTO-aware linker; lld is that
         # everywhere the containers and wheel images build, and the gold
         # plugin is not
         args.append("-fuse-ld=lld")
 
+    if LINUX:
+        # bind every GOT entry at load: with -fno-plt the calls into
+        # libpython go through the GOT, and binding now spares the
+        # first-call resolver and lets the loader seal the table
+        args.append("-Wl,-z,now")
+
+    if flags.lto_link:
+        # The link is where LTO happens; without -flto here the linker
+        # takes the objects' native code (fat) or refuses them (slim).
+        args.append("-flto=auto")
+        args.extend(optimisation_args(flags.debug))
+
     return args
 
 
-def extension(platform=None, debug=None):
+def extension():
     """
     Create Extension object for native module
     """
@@ -196,26 +282,14 @@ def extension(platform=None, debug=None):
     depends.extend(libdir.glob("opcode/*.c"))
     depends = sorted(map(str, depends))
 
-    clang, major = compiler_identity(compiler_command())
-
-    if platform is None:
-        from sys import platform as sys_platform
-        platform = sys_platform
-
-    if (platform == "linux" and clang and major and major < 17
-            and not which("ld.lld")):
-        # such a clang cannot emit fat LTO objects, so every object is
-        # bitcode and only an LTO-aware linker can take it
-        raise SystemExit(
-            f"koskari: clang {major} needs lld to link its LTO objects;"
-            " install lld, or build with clang 17 or newer")
+    flags = resolve_build_flags()
 
     return Extension(
         "koskari.lib",
         sources=sources,
         depends=depends,
-        extra_compile_args=extra_compile_args(platform, debug, clang, major),
-        extra_link_args=extra_link_args(platform, clang),
+        extra_compile_args=extra_compile_args(flags),
+        extra_link_args=extra_link_args(flags),
     )
 
 
