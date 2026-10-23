@@ -224,6 +224,35 @@ static void clear_kos_agen_iter_node_on_error(KosContext *ctx) {
    is borrowed (protocol send); *fast_out receives a new reference on
    DELIVERED/EXHAUSTED, and the awaitable payload on EXIT.
 */
+KosIterStepResult kos_iter_step_provider(
+    KosContext *ctx,
+    PyObject *iter,
+    KosIterSlots *islots,
+    PyObject *send_val,
+    PyObject **out) {
+
+  KosIterStepResult r = islots->ki_step(ctx, iter, send_val, out);
+
+  if (r != KOS_ITER_ERROR)
+    return r;
+
+  /* A StopIteration ending a provider step is that provider's
+     exhaustion -- builtins.map truncation parity for a mapped
+     function's StopIteration included -- and its value is the end's
+     payload. */
+  if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
+    PyObject *payload = NULL;
+
+    if (PyGen_FetchStopIterationValue(&payload) < 0)
+      return KOS_ITER_ERROR;
+    islots->ki_finish(iter, ! islots->ki_pyctx_recyclable);
+    *out = payload;
+    return KOS_ITER_EXHAUSTED;
+  }
+  return KOS_ITER_ERROR;
+}
+
+
 KosIterRequestStatus KosIterRequest_Next(
     KosContext *ctx,
     KosDynNode *node,
@@ -253,7 +282,7 @@ KosIterRequestStatus KosIterRequest_Next(
        through the iteration node, and deliveries can elect it mid-step. */
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_INSTALLED);
 
-    switch (islots->ki_step(ctx, iter, send_val, &out)) {
+    switch (kos_iter_step_provider(ctx, iter, islots, send_val, &out)) {
       case KOS_ITER_VALUE:
         kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
         *fast_out = out;
@@ -274,19 +303,6 @@ KosIterRequestStatus KosIterRequest_Next(
       case KOS_ITER_ERROR:
       default:
         kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
-        /* A StopIteration ending a provider step is that provider's
-           exhaustion -- builtins.map truncation parity for a mapped
-           function's StopIteration included. Converting here keeps
-           the semantics the raise walk applies at nodes with a request
-           set, which the mode reset above would otherwise bypass. */
-        if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-          PyObject *payload = NULL;
-          if (PyGen_FetchStopIterationValue(&payload) < 0)
-            return KOS_IREQ_ERROR;
-          kos_dyn_iter_request_finish(node, 1);
-          *fast_out = payload;
-          return KOS_IREQ_EXHAUSTED;
-        }
         return KOS_IREQ_ERROR;
     }
   }
@@ -327,27 +343,28 @@ KosIterRequestStatus KosIterRequest_Next(
    :return: EVAL_NORMAL when the site completed and eval continues,
             EVAL_RAISE with PyErr set, EVAL_FATAL on delivery failure
 */
-/* Whether the live frame carries a resume that takes an iteration
-   node's delivery directly (a for-each step resume). */
-static inline int iter_frame_takes_direct(KosContext *ctx) {
+/* Whether the live frame carries a resume: the receiver of a
+   producer's element or end. */
+static inline int iter_frame_has_resume(KosContext *ctx) {
   KosDynFrame *frame = KosContext_FRAME(ctx);
 
-  return frame
-      && KosDynFrame_RESUME_KIND(frame)
-      && KosDynFrame_RESUME_KIND(frame)->direct;
+  return frame && KosDynFrame_RESUME_KIND(frame) != NULL;
 }
 
 
 /**
-   Hand an element, or the end of the iteration, to the direct resume
-   the live frame carries: the node's step is finished and idle first,
-   the resume is cleared from the frame, and it runs now with the
-   element, or with KosIterEnd when exhausted. The resume threads the
-   consumer on, so what comes back is the chain's own signal. value is
-   consumed; on exhaustion it is the producer's return value, which no
-   for-each wants.
+   Hand an element, or the end of the iteration, to the resume the
+   live frame carries. The step is over first: the node's request, when
+   the producer was stepped through one, is finished and idle, and the
+   frame's own stepped iterator is finished and released. An end
+   arrives as the protocol spells it, NULL with StopIteration carrying
+   the producer's return value. A direct kind runs now, cleared from
+   the frame, and threads the consumer on, so what comes back is the
+   chain's own signal; any other kind takes the delivery through the
+   prologue's delivery step, the value staged or the end pending.
+   value is consumed.
 */
-static KosOpResult iter_deliver_direct(
+static KosOpResult iter_deliver_to_resume(
     KosContext *ctx,
     KosDynNode *node,
     PyObject *value,
@@ -357,16 +374,25 @@ static KosOpResult iter_deliver_direct(
   const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
 
-  KosDynFrame_RESUME_KIND(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-
-  kos_dyn_iter_request_finish(node, exhausted);
-  kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+  if (node) {
+    kos_dyn_iter_request_finish(node, exhausted);
+    kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+  }
+  kos_dynframe_finish_step_iter(frame, exhausted);
 
   if (exhausted) {
-    Py_XDECREF(value);
-    value = Py_NewRef(KosIterEnd);
+    kos_raise_stop_iteration(value);
+    value = NULL;
   }
+
+  if (! resume->direct) {
+    if (value)
+      KosContext_StageDelivery(ctx, value);
+    return EVAL_REPROLOGUE();
+  }
+
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
 
   KOS_TRACE_RESUME_STEP();
   return resume->fn(ctx, state, value);
@@ -390,8 +416,8 @@ KosOpResult KosIterRequest_Deliver(
 
   switch (ev) {
     case KOS_IWAKE_VALUE:
-      if (iter_frame_takes_direct(ctx))
-        return iter_deliver_direct(ctx, node, value, 0);
+      if (iter_frame_has_resume(ctx))
+        return iter_deliver_to_resume(ctx, node, value, 0);
       if (kos_dyn_iter_node_deliver_yield(ctx, node, value) < 0)
         return EVAL_FATAL();
       return EVAL_NORMAL();
@@ -410,8 +436,8 @@ KosOpResult KosIterRequest_Deliver(
         }
       }
 
-      if (iter_frame_takes_direct(ctx))
-        return iter_deliver_direct(ctx, node, value, 1);
+      if (iter_frame_has_resume(ctx))
+        return iter_deliver_to_resume(ctx, node, value, 1);
 
       /* the delivery unlinks and frees the node on every outcome, so
          what the failure branch needs from it is read first */
@@ -513,7 +539,7 @@ static KosOpResult revive_await(
   if (to_push != NULL && KosContext_FRAME(ctx)) {
     KosDynNode *node = kos_dyn_find_iter_node(ctx);
     if (node && kos_dyn_iter_node_awaiting_py(node)
-        && iter_frame_takes_direct(ctx)) {
+        && iter_frame_has_resume(ctx)) {
       /* A for-each step's awaited element: the node's step is over, and
          the element is staged below for the step resume the frame
          carries, which the entry's delivery step runs. A revive runs
@@ -1715,16 +1741,6 @@ static inline KosOpResult kos_eval_delivery_done(KosContext *ctx) {
 #include "eval/eval_electors.c"
 #include "eval/eval_item.c"
 
-/* Cross-handler helpers defined inside handlers.incl after some of
-   their users (the include follows opcodes.incl order): the shared
-   OBJECT_NEXT step core lives in OBJECT_NEXT.c but VAR_NEXT / FAST_NEXT
-   precede it. */
-static KosOpResult object_next_step(
-    KosContext *ctx,
-    PyObject *iter,
-    PyObject *default_val,
-    uint16_t n);
-
 /* The return arms op_RETURN threads through directly (defined with the
    return machinery below; the trampoline's own fast arm uses the same
    functions for every other producer of a RETURN signal). */
@@ -2267,46 +2283,62 @@ KosDynFrame *KosResumeFrame_Install(
 
 /**
    One next-element request against iter from inside a native frame
-   handler: a plain iterator answers through tp_iternext alone; any
-   other kind pushes the iteration node, runs the request, and cleans
-   the node up on every immediately-final outcome. See eval.h for the
-   per-status contract.
+   handler: a plain iterator answers through tp_iternext alone; a
+   provider steps through its suite, a python async iterator through
+   its __anext__, with no node. A step that defers (the provider's
+   frames installed, the async step awaiting) records iter as the
+   frame's stepped iterator, which the delivery that reaches the
+   frame's resume finishes. See eval.h for the per-status contract.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
     KosContext *ctx,
     PyObject *iter,
     PyObject **out) {
 
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   KosIterRequestStatus status;
+  KosIterSlots *islots;
 
   *out = NULL;
 
   if (kos_iter_next_plain(iter, out, &status))
     return status;
 
-  if (kos_dyn_push_next_node(ctx, iter, NULL, 1) < 0)
-    return KOS_IREQ_ERROR;
+  if (KosIter_CheckSlots(iter, &islots)) {
+    switch (kos_iter_step_provider(ctx, iter, islots, NULL, out)) {
+      case KOS_ITER_VALUE:
+        return KOS_IREQ_DELIVERED;
+      case KOS_ITER_EXHAUSTED:
+        Py_CLEAR(*out);
+        return KOS_IREQ_EXHAUSTED;
+      case KOS_ITER_INSTALLED:
+      case KOS_ITER_INSTALLED_VALUE:
+        kos_dynframe_set_step_iter(frame, Py_NewRef(iter));
+        return KOS_IREQ_CONTINUES;
+      case KOS_ITER_ERROR:
+      default:
+        return KOS_IREQ_ERROR;
+    }
+  }
 
-  switch (KosIterRequest_Next(ctx, KosContext_DYN_TOP(ctx), NULL, out)) {
-    case KOS_IREQ_DELIVERED:
-      kos_dyn_next_abort_after_failed_attach(ctx);
-      return KOS_IREQ_DELIVERED;
+  {
+    PyObject *value = NULL;
+    PyObject *_await = NULL;
 
-    case KOS_IREQ_EXHAUSTED:
-      Py_CLEAR(*out);
-      kos_dyn_next_abort_after_failed_attach(ctx);
-      return KOS_IREQ_EXHAUSTED;
-
-    case KOS_IREQ_CONTINUES:
-      return KOS_IREQ_CONTINUES;
-
-    case KOS_IREQ_EXIT:
-      return KOS_IREQ_EXIT;
-
-    case KOS_IREQ_ERROR:
-    default:
-      kos_dyn_next_abort_after_failed_attach(ctx);
-      return KOS_IREQ_ERROR;
+    switch (op_get_next_from_iter(ctx, &_await, iter, &value)) {
+      case GET_NEXT_VALUE:
+        *out = value;
+        return KOS_IREQ_DELIVERED;
+      case GET_NEXT_EXHAUSTED:
+        return KOS_IREQ_EXHAUSTED;
+      case GET_NEXT_SUSPEND:
+        kos_dynframe_set_step_iter(frame, Py_NewRef(iter));
+        *out = _await;
+        return KOS_IREQ_EXIT;
+      case GET_NEXT_ERROR:
+      default:
+        return KOS_IREQ_ERROR;
+    }
   }
 }
 
@@ -2675,10 +2707,20 @@ static KosOpResult eval_event_yield(
     return EVAL_FATAL();
   }
   {
-    KosDynNode *node = kos_dyn_find_iter_node(ctx);
-    if (node) {
-      KosOpResult dr = KosIterRequest_Deliver(ctx, node,
-                                              KOS_IWAKE_VALUE, val);
+    /* The consumer is what the GEN was installed under, now dyn_top
+       after the freeze: a receiving iteration node (a for-each region
+       with its step in flight, a yield-from over a provider), else the
+       live frame, whose resume takes the element (a next request
+       stepped the producer with no node), else nobody, and the yield
+       leaves the evaluator. Never a search outward: a frame waiting on
+       its own step sits between the producer and any enclosing node. */
+    KosDynNode *top = KosContext_DYN_TOP(ctx);
+    KosDynNode *node = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER))
+        ? top : NULL;
+    if (node || iter_frame_has_resume(ctx)) {
+      KosOpResult dr = node
+          ? KosIterRequest_Deliver(ctx, node, KOS_IWAKE_VALUE, val)
+          : iter_deliver_to_resume(ctx, NULL, val, 0);
       if (dr.kind == KOS_RES_NORMAL)
         return kos_eval_delivery_done(ctx);
       if (dr.kind == KOS_RES_RAISE) {
@@ -3034,6 +3076,11 @@ static int kos_return_take_resume(
     return -1;
   }
 
+  /* A parent whose resume awaits a stepped iterator's deferred step
+     takes this return as that step's element (a provider's value
+     graft), and the step is over. */
+  kos_dynframe_finish_step_iter((KosDynFrame *) parent, 0);
+
   *out_resume = KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
   *out_state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
   KosDynFrame_RESUME_KIND((KosDynFrame *) parent) = NULL;
@@ -3092,9 +3139,29 @@ static KosOpResult eval_event_return_at_frame(
       return dr;
     }
 
-    PyErr_Format(PyExc_RuntimeError,
-                 "eval_event_return_unwind: unexpected gen consumer kind %u",
-                 (unsigned) KosDynNode_KIND(consumer));
+    /* The producer was stepped by a next request with no node: the GEN
+       sits on whatever the consumer frame had at dyn_top (the frame
+       itself, or an extent of its such as a try), and the frame's
+       resume takes the end once the generator's frame and GEN are
+       gone. */
+    if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
+      Py_DECREF(val);
+      return EVAL_FATAL();
+    }
+    if (iter_frame_has_resume(ctx)) {
+      KosOpResult dr = iter_deliver_to_resume(ctx, NULL, val, 1);
+      if (dr.kind == KOS_RES_NORMAL)
+        return kos_eval_delivery_done(ctx);
+      if (dr.kind == KOS_RES_RAISE) {
+        KosOpResult rs;
+        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
+        return rs;
+      }
+      return dr;
+    }
+    PyErr_SetString(PyExc_RuntimeError,
+                    "generator returned into a frame with no resume"
+                    " awaiting it");
     Py_DECREF(val);
     return EVAL_FATAL();
   }
@@ -3273,8 +3340,12 @@ static inline KosOpResult eval_parent_return_deliver_impl(
 
   /* Destination by one field: a parent waiting on a resume takes the
      value through the pending slot; a bytecode parent takes it on its
-     stack, where its next instruction finds it. */
+     stack, where its next instruction finds it. A parent whose resume
+     awaits a stepped iterator's deferred step takes this return as
+     that step's element (a provider's value graft), and the step is
+     over. */
   if (parent && KosDynFrame_RESUME_KIND(parent)) {
+    kos_dynframe_finish_step_iter(parent, 0);
     KosContext_StageDelivery(ctx, val);
   } else if (KosContext_StackPUSH(ctx, val) < 0) {
     return EVAL_FATAL();

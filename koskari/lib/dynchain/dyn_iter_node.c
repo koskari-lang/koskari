@@ -104,9 +104,6 @@ void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
 int kos_dyn_iter_node_deliver_yield(
     KosContext *ctx, KosDynNode *node, PyObject *val) {
 
-  if (KosDynNode_IS_NEXT(node))
-    return kos_dyn_next_deliver_yield(ctx, (KosDynNext *) node, val);
-
   if (KosDynNode_IS_YIELD_FROM(node))
     /* Hand the value to the delegating generator; it re-emits as its own
        yield on the next handler dispatch. */
@@ -123,9 +120,6 @@ int kos_dyn_iter_node_deliver_yield(
 
 int kos_dyn_iter_node_deliver_exhausted(
     KosContext *ctx, KosDynNode *node, PyObject *val) {
-
-  if (KosDynNode_IS_NEXT(node))
-    return kos_dyn_next_deliver_exhausted(ctx, (KosDynNext *) node, val);
 
   if (KosDynNode_IS_YIELD_FROM(node))
     return kos_dyn_yield_from_deliver_exhausted(
@@ -182,9 +176,7 @@ PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node) {
 
 void kos_dyn_iter_node_abort(KosContext *ctx, KosDynNode *node) {
 
-  if (KosDynNode_IS_NEXT(node)) {
-    kos_dyn_unlink_next_node(ctx, (KosDynNext *) node);
-  } else if (KosDynNode_IS_FOREACH(node)) {
+  if (KosDynNode_IS_FOREACH(node)) {
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
   } else if (KosDynNode_IS_YIELD_FROM(node)) {
     (void) kos_dyn_unlink_yield_from(ctx, (KosDynYieldFrom *) node);

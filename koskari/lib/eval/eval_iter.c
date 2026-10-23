@@ -553,6 +553,178 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
 }
 
 
+/* === The next request: one entry, one resume, the instruction as state ===
+
+   OBJECT_NEXT and its fused twins VAR_NEXT and FAST_NEXT hand their
+   iterator to kos_next_step and name kos_next_resume_kind. The element
+   reaches that resume and nothing else: in hand the handler hops into
+   it (RESULT_ENTRY), deferred the producer's yield or return reaches
+   it through the frame (iter_deliver_to_resume), and an awaited async
+   step's result through the revive's staging. The two-argument form
+   leaves its default on the operand stack under the halted
+   instruction, where the resume finds it. */
+
+
+/* The arity of a next instruction: OBJECT_NEXT carries it as its arg,
+   the fused twins in their operand record. */
+KOS_OP_INLINE unsigned kos_next_arity(const KosOp *insn) {
+  if (KosOp_OP(insn) == KOS_OP_OBJECT_NEXT)
+    return KosOp_ARG(insn);
+  return (unsigned) KosExtra_IMM(KosOp_ROW(insn), 1);
+}
+
+
+/**
+   The element, the end, or a failure, for a next instruction. An
+   element replaces the default on the stack, when there is one, and
+   threads on. The end, KosIterEnd in hand or StopIteration (or an
+   async source's StopAsyncIteration) pending, leaves the default as
+   the result for the two-argument form and raises StopIteration for
+   the one-argument form, the pending exception standing when it is
+   one. Anything else declines.
+*/
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosOp *insn = (KosOp *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  unsigned n = kos_next_arity(insn);
+  int ended;
+
+  if (! value) {
+    if (unlikely(! PyErr_Occurred())) {
+      PyErr_SetString(PyExc_SystemError, "next resume with no delivery");
+      return EVAL_RAISE();
+    }
+    ended = PyErr_ExceptionMatches(PyExc_StopIteration)
+        || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
+    kos_dynframe_finish_step_iter(frame, ended);
+    if (! ended)
+      return EVAL_RAISE();
+  } else if (value == KosIterEnd) {
+    Py_DECREF(value);
+    value = NULL;
+    kos_dynframe_finish_step_iter(frame, 1);
+    ended = 1;
+  } else {
+    kos_dynframe_finish_step_iter(frame, 0);
+    ended = 0;
+  }
+
+  if (! ended) {
+    if (n == 2) {
+      PyObject *dflt = KosContext_StackPopRef(ctx);
+      if (unlikely(! dflt)) {
+        Py_DECREF(value);
+        return EVAL_RAISE();
+      }
+      Py_DECREF(dflt);
+    }
+    if (unlikely(KosContext_StackPUSH(ctx, value) < 0))
+      return EVAL_RAISE();
+    KOS_THREAD_NEXT(ctx);
+  }
+
+  if (n == 2) {
+    /* the default already sits where the result goes */
+    PyErr_Clear();
+    KOS_THREAD_NEXT(ctx);
+  }
+  if (PyErr_Occurred()) {
+    if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+      PyErr_Clear();
+      PyErr_SetNone(PyExc_StopIteration);
+    }
+    return EVAL_RAISE();
+  }
+  PyErr_SetNone(PyExc_StopIteration);
+  return EVAL_RAISE();
+}
+
+
+KOS_RESUME_KIND_DIRECT(kos_next_resume_kind, "next",
+                       next_step_resume, NULL, kos_resume_clone_shared);
+
+
+/**
+   One request for the next element of iter (consumed) for the next
+   instruction insn. A provider steps through its suite, anything else
+   through op_get_next_from_iter. Reports RETURN with the element, or
+   with KosIterEnd at the end, for the handler's RESULT_ENTRY to hop
+   into the resume; a step that defers sets the resume on the frame and
+   records iter as the frame's stepped iterator, and reports the install
+   or the await; a failure sets the resume and raises, so it reaches
+   the resume like any other delivery.
+*/
+KOS_OP_INLINE KosOpResult kos_next_step(
+    KosContext *ctx,
+    KosOp *insn,
+    PyObject *iter) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  KosIterSlots *islots;
+
+  if (KosIter_CheckSlots(iter, &islots)) {
+    PyObject *out = NULL;
+
+    switch (kos_iter_step_provider(ctx, iter, islots, NULL, &out)) {
+      case KOS_ITER_VALUE:
+        Py_DECREF(iter);
+        return EVAL_RETURN(out);
+
+      case KOS_ITER_EXHAUSTED:
+        Py_XDECREF(out);
+        Py_DECREF(iter);
+        return EVAL_RETURN(Py_NewRef(KosIterEnd));
+
+      case KOS_ITER_INSTALLED:
+      case KOS_ITER_INSTALLED_VALUE:
+        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+        kos_dynframe_set_step_iter(frame, iter);
+        return kos_iter_installed(ctx);
+
+      case KOS_ITER_ERROR:
+      default:
+        Py_DECREF(iter);
+        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+        return EVAL_RAISE();
+    }
+  }
+
+  {
+    PyObject *value = NULL;
+    PyObject *_await = NULL;
+
+    switch (op_get_next_from_iter(ctx, &_await, iter, &value)) {
+      case GET_NEXT_VALUE:
+        Py_DECREF(iter);
+        return EVAL_RETURN(value);
+
+      case GET_NEXT_EXHAUSTED:
+        Py_DECREF(iter);
+        return EVAL_RETURN(Py_NewRef(KosIterEnd));
+
+      case GET_NEXT_SUSPEND:
+        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+        kos_dynframe_set_step_iter(frame, iter);
+        return EVAL_AWAIT(_await);
+
+      case GET_NEXT_ERROR:
+      default:
+        Py_DECREF(iter);
+        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+        return EVAL_RAISE();
+    }
+  }
+}
+
+
 /**
   Globals
 */

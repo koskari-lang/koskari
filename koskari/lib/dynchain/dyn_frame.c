@@ -91,7 +91,26 @@ KosDynFrame *kos_dynframe_new(
   KosDynFrame_RESUME_STATE(frame) = NULL;
   KosDynFrame_FN(frame) = NULL;
   KosDynFrame_BACK_FRAME(frame) = NULL;
+  KosDynFrame_STEP_ITER(frame) = NULL;
   return frame;
+}
+
+
+void kos_dynframe_set_step_iter(KosDynFrame *frame, PyObject *iter) {
+  Py_XSETREF(KosDynFrame_STEP_ITER(frame), iter);
+}
+
+
+void kos_dynframe_finish_step_iter(KosDynFrame *frame, int exhausted) {
+  PyObject *iter = KosDynFrame_STEP_ITER(frame);
+  KosIterSlots *islots;
+
+  if (! iter)
+    return;
+  KosDynFrame_STEP_ITER(frame) = NULL;
+  if (KosIter_CheckSlots(iter, &islots))
+    islots->ki_finish(iter, exhausted && ! islots->ki_pyctx_recyclable);
+  Py_DECREF(iter);
 }
 
 
@@ -135,6 +154,9 @@ KosDynFrame *kos_dynframe_clone(KosDynFrame *frame) {
   KosDynFrame_FN(clone) = NULL;
   /* borrowed unwind cache is meaningless off the source's chain */
   KosDynFrame_BACK_FRAME(clone) = NULL;
+  /* the deferred step's iterator is shared by the capture, as the
+     resume that awaits it is */
+  KosDynFrame_STEP_ITER(clone) = Py_XNewRef(KosDynFrame_STEP_ITER(frame));
 
   /* A resume whose kind can clone its state copies; one whose kind
      cannot (a provider step, whose state is the step's own) refuses
@@ -191,6 +213,7 @@ void kos_dynframe_free(KosDynFrame *frame) {
     return;
 
   kos_dynframe_clear_resume(frame);
+  Py_CLEAR(KosDynFrame_STEP_ITER(frame));
 
   /* A completing frame set by KosNativeFrame_ReturnToCache: cache_slot is
      the holder's cache slot; offer the frame there before the ordinary
@@ -371,6 +394,7 @@ int kos_dynframe_cache_inert(KosDynFrame *frame, KosDynFrame **cache) {
   Py_CLEAR(KosDynFrame_NS(frame));
   KosDynFrame_CACHE_SLOT(frame) = NULL;
   kos_dynframe_clear_resume(frame);
+  Py_CLEAR(KosDynFrame_STEP_ITER(frame));
 
   KosStack_Clear(&KosDynFrame_STACK(frame));
   KosSegment_BACK(KosDynFrame_STACK(frame)) = NULL;
@@ -458,6 +482,7 @@ void kos_dynframe_reset_for_tail(KosDynFrame *frame) {
   KosDynFrame_FLAGS(frame) &= KOS_FRAME_DEMAND;  /* preserve demand bit */
   KosDynFrame_CACHE_SLOT(frame) = NULL;
   kos_dynframe_clear_resume(frame);
+  Py_CLEAR(KosDynFrame_STEP_ITER(frame));
   /* the frame is being repurposed for a different function */
   Py_CLEAR(KosDynFrame_FN(frame));
 }
@@ -535,6 +560,7 @@ static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) 
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_CODE(frame));
   Py_VISIT(KosDynFrame_FN(frame));
+  Py_VISIT(KosDynFrame_STEP_ITER(frame));
   return 0;
 }
 

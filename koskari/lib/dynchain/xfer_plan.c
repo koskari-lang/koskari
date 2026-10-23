@@ -58,7 +58,6 @@ static int kos_delimited_inplace_ready(
     switch (KosDynNode_KIND(node)) {
       case KOS_DYN_DELIM:
       case KOS_DYN_GEN:
-      case KOS_DYN_NEXT:
       case KOS_DYN_PROMPT:
         return 0;
       default:

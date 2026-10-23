@@ -13,39 +13,30 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
   VAR_NEXT: fused VAR + OBJECT_NEXT. Arg = extra index. Schema VAR
   (iterator name), COUNT (n = 1 or 2). Stack: [] or [default] per n.
-  Resolve the iterator name and run the shared step core
-  (object_next_step): value or default on exhaustion, 1-arg raises
-  StopIteration, auto-await.
+  Resolve the iterator name and make the next request (kos_next_step)
+  with the request's resume; the default stays on the stack under the
+  halted instruction and is the result at the end. Auto-await.
 */
 KOS_OP_HANDLER(VAR_NEXT) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
+  PyObject *iter;
+
   if (unlikely(n != 1 && n != 2)) {
     PyErr_Format(PyExc_ValueError, "VAR_NEXT arg must be 1 or 2, got %u", n);
     RESULT_RAISE();
   }
 
-  PyObject *var_name = KosExtra_OBJ(row, 0);
-
-  PyObject *default_val = NULL;
-  if (n == 2) {
-    default_val = KosContext_StackPopRef(ctx);
-    if (unlikely(! default_val))
-      RESULT_RAISE();
-  }
-
-  PyObject *iter = frame_ns_deref(ctx, var_name);
-  if (unlikely(! iter)) {
-    Py_XDECREF(default_val);
+  iter = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
+  if (unlikely(! iter))
     RESULT_RAISE();
-  }
 
-  RESULT_RELAY(ctx, object_next_step(ctx, iter, default_val, n));
+  RESULT_ENTRY(ctx, kos_next_step(ctx, (KosOp *) insn, iter),
+               &kos_next_resume_kind, insn);
 }
 
 

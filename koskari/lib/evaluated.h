@@ -283,6 +283,22 @@ static inline int kos_iter_check(PyObject *obj) {
 
 
 /**
+   One step of a provider through its suite, with no request record:
+   ki_step, with a StopIteration ending the step read as the
+   provider's exhaustion, the provider finished and the exception's
+   value in *out as the end's payload. The step entries with a record
+   and the ones without share it. send_val borrowed; *out a new ref on
+   VALUE and EXHAUSTED.
+*/
+KosIterStepResult kos_iter_step_provider(
+    struct KosContext *ctx,
+    PyObject *iter,
+    KosIterSlots *islots,
+    PyObject *send_val,
+    PyObject **out);
+
+
+/**
    An acquired iterator that steps through tp_iternext alone, with no
    evaluator involvement: a plain sync iterator that is not a KosIter
    provider. Anything else -- a provider, a python async iterator --

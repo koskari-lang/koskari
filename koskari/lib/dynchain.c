@@ -97,7 +97,6 @@ static const char *kos_dynnode_kind_names[] = {
   "WITH",
   "SHIFT",
   "GEN",
-  "NEXT",
   "UNKNOWN",
 };
 
@@ -739,7 +738,6 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 #include "dynchain/dyn_finally.c"
 #include "dynchain/dyn_loop.c"
 #include "dynchain/dyn_foreach.c"
-#include "dynchain/dyn_next.c"
 #include "dynchain/dyn_ns.c"
 #include "dynchain/dyn_collect.c"
 #include "dynchain/dyn_yield_from.c"
@@ -1190,9 +1188,6 @@ void kos_dynnode_free(KosDynNode *node) {
 
     case KOS_DYN_GEN:
       kos_dyngen_release((KosDynGen *) node);
-      break;
-    case KOS_DYN_NEXT:
-      kos_dyn_next_free_payload(node);
       break;
     case KOS_DYN_COLLECT:
       kos_dyncollect_free((KosDynCollect *) node);
@@ -2261,8 +2256,6 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
       PyErr_SetString(PyExc_RuntimeError,
                       "cannot clone generator node");
       return NULL;
-    case KOS_DYN_NEXT:
-      return (KosDynNode *) kos_dyn_next_clone((KosDynNext *) node);
     case KOS_DYN_COLLECT:
       return (KosDynNode *) kos_dyncollect_clone((KosDynCollect *) node);
     default:
@@ -2981,8 +2974,6 @@ static int dynnode_to_dict_payload(KosDynNode *node, PyObject *data) {
 
     case KOS_DYN_GEN:
       return dynnode_to_dict_gen(node, data);
-    case KOS_DYN_NEXT:
-      return dynnode_to_dict_next(node, data);
     default:
       PyErr_Format(PyExc_RuntimeError,
                    "unknown dynnode kind for snapshot: %u",
@@ -3119,8 +3110,6 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
 
     case KOS_DYN_GEN:
       return dynnode_traverse_gen(node, visit, arg);
-    case KOS_DYN_NEXT:
-      return dynnode_traverse_next(node, visit, arg);
     case KOS_DYN_TRY:
       return dynnode_traverse_try(node, visit, arg);
     case KOS_DYN_FINALLY:
