@@ -2206,11 +2206,11 @@ KosOpResult KosContext_NextResume(
 
     case KOS_IREQ_ERROR:
     default:
-      /* A request that failed outright reaches the resume the same
-         way an exhausted one does. */
-      KosDynFrame_RESUME_KIND(frame) = resume;
-      KosDynFrame_RESUME_STATE(frame) = state;
-      return EVAL_REPROLOGUE();
+      /* A request that failed before it deferred raises at the caller
+         with no resume set: nothing is in flight for the resume to
+         finish, and a provider refused as busy belongs to the step
+         that holds it. */
+      return EVAL_RAISE();
   }
 }
 

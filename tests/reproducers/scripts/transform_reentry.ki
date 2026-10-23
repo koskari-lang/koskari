@@ -5,6 +5,14 @@
 
 import-from koskari.itertools pairwise zip-longest
 
+
+define gen_src [box]:
+    try:
+        (next (item box 0))
+    except [e ValueError]:
+        (set! (item box 1) (str e))
+    yield 1
+
 define-class PairSrc []:
     define __init__ [self]:
         set! self.n 0
@@ -55,3 +63,10 @@ define zip_case []:
     define z (zip-longest s #[10 20])
     set! s.z z
     #((next z) s.inner)
+
+
+define gen_case []:
+    define box #[None None]
+    define z (zip (gen_src box) #[10])
+    (set! (item box 0) z)
+    #((next z) (item box 1))

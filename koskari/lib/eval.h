@@ -670,10 +670,12 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    the AWAITED revive delivers into it. Exhaustion sets resume and
    raises StopIteration, which reaches resume through the raise walk
    like an in-flight source's failure does; a request that fails
-   outright sets resume and raises the same way. send_val is accepted
+   before it defers raises at the caller with no resume set, since
+   nothing is in flight for the resume to finish. send_val is accepted
    for a future Send entry point; unused today. Caller must have a
    current frame, and resume is required: every outcome but a settled
-   element in hand reaches the caller through it.
+   element in hand and a synchronous failure reaches the caller
+   through it.
 */
 KosOpResult KosContext_NextResume(
     KosContext *ctx,

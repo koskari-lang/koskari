@@ -60,5 +60,12 @@ class TestTransformReentry(unittest.IsolatedAsyncioTestCase):
             ((1, 10), "zip-longest is already being iterated"),
             await ns["zip_case"]())
 
+    async def test_generator_source_stepping_zip_from_inside_is_refused(
+            self):
+        ns = await self.load()
+        self.assertEqual(
+            ((1, 10), "zip is already being iterated"),
+            await ns["gen_case"]())
+
 
 # The end.

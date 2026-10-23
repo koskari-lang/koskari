@@ -487,7 +487,10 @@ KOS_RESUME_KIND_DIRECT(kos_iter_next_store_var_resume_kind, "for-each-step",
    KosIterRequest_Next. Reports RETURN with the element, or with
    KosIterEnd at the end, for the handler's RESULT_ENTRY to hop into
    the resume; a deferred step sets the resume on the loop's frame
-   and reports the install or the await. The region is at dyn_top
+   and reports the install or the await. A step that fails before it
+   defers raises at the frame with no resume set: nothing is in
+   flight, the provider has undone its own step, and the raise walks
+   as any instruction's does. The region is at dyn_top
    when a step runs: the step sits at the loop's continue target and
    every node the body pushes is gone before CONTINUE.
 */
@@ -527,12 +530,8 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
     n = likely(next) ? next(iter) : NULL;
     if (likely(n))
       return EVAL_RETURN(n);
-    if (op_get_next_sync_ended(next != NULL) == GET_NEXT_ERROR) {
-      /* the failure reaches the resume like any other delivery */
-      KosDynFrame_RESUME_KIND(frame) = resume;
-      KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+    if (op_get_next_sync_ended(next != NULL) == GET_NEXT_ERROR)
       return EVAL_RAISE();
-    }
     return EVAL_RETURN(Py_NewRef(KosIterEnd));
   }
 
@@ -561,10 +560,6 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
 
       case KOS_IREQ_ERROR:
       default:
-        /* the failure reaches the resume like any other delivery: set
-           on the frame, raised, offered by the prologue as a NULL */
-        KosDynFrame_RESUME_KIND(frame) = resume;
-        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
         return EVAL_RAISE();
     }
   }
@@ -685,9 +680,10 @@ KOS_RESUME_KIND_DIRECT(kos_next_resume_kind, "next",
    its suite, anything else through op_get_next_from_iter. Reports
    RETURN with the element, or with KosIterEnd at the end, for the
    handler's RESULT_ENTRY to hop into the resume; a step that defers
-   sets the resume on the frame and reports the install or the await;
-   a failure sets the resume and raises, so it reaches the resume like
-   any other delivery.
+   sets the resume on the frame and reports the install or the await.
+   A step that fails before it defers raises with no resume set: a
+   resume on the frame always means a step in flight, whose finish
+   is the resume's; a synchronous failure left nothing to finish.
 */
 KOS_OP_INLINE KosOpResult kos_next_step(
     KosContext *ctx,
@@ -716,8 +712,6 @@ KOS_OP_INLINE KosOpResult kos_next_step(
 
       case KOS_ITER_ERROR:
       default:
-        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
-        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
         return EVAL_RAISE();
     }
   }
@@ -740,8 +734,6 @@ KOS_OP_INLINE KosOpResult kos_next_step(
 
       case GET_NEXT_ERROR:
       default:
-        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
-        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
         return EVAL_RAISE();
     }
   }
