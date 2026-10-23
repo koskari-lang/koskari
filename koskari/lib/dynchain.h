@@ -329,8 +329,11 @@ typedef enum KosHandleResult {
    frame freed or cached with the resume still set); NULL means the
    state is borrowed and its owner cleans up. clone runs at a
    continuation capture and at a multi-shot landing; NULL means the
-   capture refuses by name. Clean completion is the owner's business as
-   ever.
+   capture refuses by name. throw_kind is the kind that takes a throw
+   into this halt, with the exception object as its value and the same
+   state: a throw ingress sets it on the frame in place of this kind
+   and stages the exception; NULL means a throw raises at the frame.
+   Clean completion is the owner's business as ever.
 */
 typedef struct KosResumeKind {
   const char *name;
@@ -338,6 +341,7 @@ typedef struct KosResumeKind {
                                               void *state, PyObject *value);
   void (*clear)(void *state);
   void *(*clone)(void *state);
+  const struct KosResumeKind *throw_kind;
   int settle;   /* the delivery is settled before fn sees it: 0 for a
                    kind whose delivery is data, as a delegate's yielded
                    value or a for-each element is */
@@ -351,17 +355,24 @@ typedef struct KosResumeKind {
 
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 1, 0 }
+    (label), (fnp), (clearp), (clonep), NULL, 1, 0 }
 
 /* A kind that takes its delivery as it is. */
 #define KOS_RESUME_KIND_AS_IS(ident, label, fnp, clearp, clonep)        \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 0, 0 }
+    (label), (fnp), (clearp), (clonep), NULL, 0, 0 }
 
 /* A kind a delivery calls directly. */
 #define KOS_RESUME_KIND_DIRECT(ident, label, fnp, clearp, clonep)       \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 0, 1 }
+    (label), (fnp), (clearp), (clonep), NULL, 0, 1 }
+
+/* A direct kind with a throw kind: a throw into the halt runs throwp
+   with the exception object as its value. */
+#define KOS_RESUME_KIND_DIRECT_THROWABLE(ident, label, fnp, clearp,     \
+                                         clonep, throwp)                \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), (throwp), 0, 1 }
 
 /* The clone of a kind whose state is owned elsewhere and copied with
    the chain (a node's resume, whose state is NULL or the node

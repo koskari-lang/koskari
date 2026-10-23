@@ -820,11 +820,6 @@ struct KosContext {
      setter owns the record for the drive. --- */
   const struct KosEntryCall *entry_call;
 
-  /* --- Exception injection (set by coroutine_throw or dynchain inject) --- */
-  int inject_mode;         /* 0=none, 1=pending_throw */
-  PyObject *inject_type;   /* exception type when inject_mode==KOS_INJECT_THROW */
-  PyObject *inject_value;  /* exception object when inject_mode==1 */
-
   /* --- Handler-visible exception state (sys.exc_info) saved across
      suspensions: swapped with the thread state at koskari_eval
      entry/exit so interleaved contexts on one thread cannot corrupt
@@ -862,13 +857,8 @@ extern PyTypeObject KosContextType;
 #define KOS_RESUME_AWAIT 1
 #define KOS_RESUME_YIELD 2
 #define KosContext_ENTRY_CALL(c)             (((KosContext *)(c))->entry_call)
-#define KosContext_INJECT_MODE(c)            (((KosContext *)(c))->inject_mode)
-#define KosContext_INJECT_TYPE(c)            (((KosContext *)(c))->inject_type)
-#define KosContext_INJECT_VALUE(c)           (((KosContext *)(c))->inject_value)
 #define KosContext_EXC_INFO(c)               (&((KosContext *)(c))->exc_info)
 
-#define KOS_INJECT_NONE   0
-#define KOS_INJECT_THROW  1
 #define KosContext_SUSPENSION_EVENT(c)      (((KosContext *)(c))->suspension_event)
 
 #define KosContext_FLAGS(c)                  (((KosContext *)(c))->flags)
@@ -1425,16 +1415,17 @@ KosOpResult koskari_eval(
 
 
 /**
-   Route the raised exception to the current frame's resume when one is
-   set: a delegation in flight takes it as its pending throw and throws
-   it into the delegate, so a delegate that catches it answers with its
-   next value, as CPython's yield from does. GeneratorExit is not routed;
-   a close closes the delegate through the raise walk instead.
+   Route the raised exception to the current frame's resume when its
+   kind takes a throw: the frame's kind becomes the throw kind and the
+   exception object is staged as its delivery, so a delegation in
+   flight throws it into the delegate and a delegate that catches it
+   answers with its next value, as CPython's yield from does.
+   GeneratorExit is not routed; a close closes the delegate through the
+   raise walk instead.
 
    Callers: revive_yield, the flattened generator throw ingress.
 
-   :return: 1 when the exception was taken and staged for the resume,
-       0 when no resume is set or the exception is GeneratorExit and
+   :return: 1 when the exception was staged for the throw kind, 0 when
        it stays raised for the frame
 */
 int KosContext_ThrowIntoResume(KosContext *ctx);

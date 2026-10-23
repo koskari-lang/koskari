@@ -26,48 +26,20 @@
 
 /* --- Transfer plan and delimited return --- */
 
-/**
-  Consume a pending KOS_INJECT_THROW: ownership of both refs transfers
-  to the caller (slots are nulled without decref).
-
-  :return: 1 when a throw was taken, 0 when none pending
-*/
-static inline int KosContext_TakeInjectThrow(
-    KosContext *ctx,
-    PyObject **type_out,
-    PyObject **value_out) {
-
-  if (KosContext_INJECT_MODE(ctx) != KOS_INJECT_THROW)
-    return 0;
-  *value_out = KosContext_INJECT_VALUE(ctx);
-  *type_out = KosContext_INJECT_TYPE(ctx);
-  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
-  KosContext_INJECT_VALUE(ctx) = NULL;
-  KosContext_INJECT_TYPE(ctx) = NULL;
-  return 1;
-}
-
-
 int KosContext_ThrowIntoResume(KosContext *ctx) {
 
   KosDynFrame *frame = KosContext_FRAME(ctx);
-  PyObject *exc;
+  const KosResumeKind *kind = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
 
-  if (! frame || ! KosDynFrame_RESUME_KIND(frame))
+  if (! kind || ! kind->throw_kind)
     return 0;
   if (PyErr_ExceptionMatches(PyExc_GeneratorExit))
     return 0;
 
-  exc = PyErr_GetRaisedException();
-  KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-  Py_XSETREF(KosContext_INJECT_VALUE(ctx), exc);
-  Py_XSETREF(KosContext_INJECT_TYPE(ctx),
-             Py_NewRef((PyObject *) Py_TYPE(exc)));
-
-  /* The resume runs on a delivery; the throw it takes first makes the
-     value moot. */
-  Py_INCREF(Py_None);
-  KosContext_StageDelivery(ctx, Py_None);
+  /* The throw is the delivery: the throw kind takes the exception
+     object as its value, over the same state. */
+  KosDynFrame_RESUME_KIND(frame) = kind->throw_kind;
+  KosContext_StageDelivery(ctx, PyErr_GetRaisedException());
   return 1;
 }
 

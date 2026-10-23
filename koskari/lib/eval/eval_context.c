@@ -143,11 +143,6 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
 
   KosContext_ENTRY_CALL(ctx) = NULL;
 
-  /* Initialize exception injection */
-  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
-  KosContext_INJECT_TYPE(ctx) = NULL;
-  KosContext_INJECT_VALUE(ctx) = NULL;
-
   KosContext_FLAGS(ctx) = 0;
 
   PyObject_GC_Track((PyObject *) ctx);
@@ -241,8 +236,6 @@ static int context_clear(PyObject *self) {
 
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
-  Py_CLEAR(KosContext_INJECT_TYPE(ctx));
-  Py_CLEAR(KosContext_INJECT_VALUE(ctx));
   Py_CLEAR(KosContext_PENDING_VALUE(ctx));
   KosExc_Clear(KosContext_EXC_INFO(ctx));
   Py_XDECREF(KosContext_DOMAIN(ctx));
@@ -312,12 +305,9 @@ int KosContext_Recycle(KosContext *ctx) {
   KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
   /* residue of the finished run that the next one must not inherit:
-     an unconsumed entry call, a pending throw injection, a staged
-     delivery, and the handler-visible exception state */
+     an unconsumed entry call, a staged delivery, and the
+     handler-visible exception state */
   KosContext_ENTRY_CALL(ctx) = NULL;
-  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
-  Py_CLEAR(KosContext_INJECT_TYPE(ctx));
-  Py_CLEAR(KosContext_INJECT_VALUE(ctx));
   Py_CLEAR(KosContext_PENDING_VALUE(ctx));
   KosExc_Clear(KosContext_EXC_INFO(ctx));
 
@@ -337,8 +327,6 @@ static int context_traverse(PyObject *self, visitproc visit, void *arg) {
   Py_VISIT(KosContext_PARAM_REFS(ctx));
   Py_VISIT(ctx->py_await_iter);
   Py_VISIT(KosContext_PY_RESUME_INJECT(ctx));
-  Py_VISIT(KosContext_INJECT_TYPE(ctx));
-  Py_VISIT(KosContext_INJECT_VALUE(ctx));
   if (KosExc_Traverse(KosContext_EXC_INFO(ctx), visit, arg))
     return -1;
 

@@ -194,7 +194,7 @@ static int test_domain_null_outside_eval(void) {
 }
 
 
-/* === Test: tp_clear then dealloc releases each inject field once === */
+/* === Test: tp_clear then dealloc releases the inject field once === */
 
 
 static int test_context_clear_then_dealloc_releases_once(void) {
@@ -221,21 +221,15 @@ static int test_context_clear_then_dealloc_releases_once(void) {
     KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    /* fresh, non-cached objects; the context takes one reference to
-       each and the test keeps two more so a double release is
-       observable as a refcount rather than a freed object */
+    /* a fresh, non-cached object; the context takes one reference
+       and the test keeps two more so a double release is observable
+       as a refcount rather than a freed object */
     PyObject *resume = PyList_New(0);
-    PyObject *inject = PyList_New(0);
     TEST_ASSERT_NOT_NULL(resume, "create resume value");
-    TEST_ASSERT_NOT_NULL(inject, "create inject value");
     Py_INCREF(resume);
     Py_INCREF(resume);
-    Py_INCREF(inject);
-    Py_INCREF(inject);
     KosContext_PY_RESUME_INJECT(ctx) = resume;
-    KosContext_INJECT_VALUE(ctx) = inject;
     TEST_ASSERT_REFCNT(resume, 3, "resume held by test twice and ctx");
-    TEST_ASSERT_REFCNT(inject, 3, "inject held by test twice and ctx");
 
     /* what the collector does to a context in a garbage cycle, then
        what happens when the last reference goes */
@@ -244,12 +238,9 @@ static int test_context_clear_then_dealloc_releases_once(void) {
     Py_DECREF(ctx);
 
     TEST_ASSERT_REFCNT(resume, 2, "resume released exactly once");
-    TEST_ASSERT_REFCNT(inject, 2, "inject released exactly once");
 
     Py_DECREF(resume);
     Py_DECREF(resume);
-    Py_DECREF(inject);
-    Py_DECREF(inject);
     Py_DECREF(code_obj);
 
     return 0;
