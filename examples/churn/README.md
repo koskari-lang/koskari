@@ -119,7 +119,7 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `pidigits` | arbitrary-precision (bignum) arithmetic | first 50 digits of π |
 | `binary_trees` | allocation churn + recursion | check-sum 129712 |
 | `call_kw` | one call per element carrying a keyword argument | deterministic baseline |
-| `starmap` | `itertools.starmap` over bound methods nested two deep; the Koskari side goes through `demand` | deterministic baseline |
+| `starmap` | lazy `starmap` over bound methods nested two deep; Koskari's `starmap` on the Koskari side | deterministic baseline |
 | `demand_call` | `map` over a two-argument function; the Koskari side goes through `demand`, one boundary call per element | deterministic baseline |
 | `demand_call_kw` | `map` over `functools.partial` binding a keyword; the Koskari side goes through `demand` | deterministic baseline |
 | `demand_call_method` | `map` over a bound method; the Koskari side goes through `demand` | deterministic baseline |
