@@ -190,12 +190,13 @@ def run(opts):
 
     results = []
     failures = []
-    print(reporter.format_header())
+    width = reporter.name_width(selected)
+    print(reporter.format_header(width))
     for name in selected:
         result = run_benchmark(
             registry_map[name], opts.mode, opts.samples, opts.warmup)
         results.append(result)
-        print(reporter.format_result(result))
+        print(reporter.format_result(result, width))
         if not result.ok:
             failures.append(name)
 

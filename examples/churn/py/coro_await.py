@@ -12,10 +12,12 @@
 # along with this library; if not, see <http://www.gnu.org/licenses/>.
 
 """
-churn_coro_await benchmark: Koskari-only serial async boundary churn.  A
-Python coroutine calls a two-argument Koskari function once per element
-and awaits each returned Koskari Coroutine before making the next.  No
-Python variant; runnable under --mode koskari.
+churn_coro_await benchmark: serial async churn.  One driver coroutine
+calls a two-argument function once per element and awaits each returned
+coroutine before making the next.  The Python variant awaits a Python
+async def; the Koskari kernel awaits the Koskari Coroutine each call
+returns, so the ratio is the await boundary against a Python coroutine
+in the same position.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -28,22 +30,31 @@ from registry import Benchmark
 MASK32 = 0xffffffff
 
 
-async def churn_coro_await(n):
-    mix = _ki.mix
-    acc = 0
-    for i in range(n):
-        acc = (acc * 33 + await mix(i, n - i)) & MASK32
-    return acc
+async def mix(a, b):
+    return ((a * 31) + (b ^ 0x5bd1e995)) & MASK32
+
+
+def driver(mix):
+    """
+    The serial await loop over one mix callable, shared by both variants
+    """
+
+    async def churn_coro_await(n):
+        acc = 0
+        for i in range(n):
+            acc = (acc * 33 + await mix(i, n - i)) & MASK32
+        return acc
+    return churn_coro_await
 
 
 BENCHMARK = Benchmark(
     name="coro_await",
     runs=10,
     args=(2000,),
-    py=None,
-    ki=churn_coro_await,
+    py=driver(mix),
+    ki=driver(_ki.mix),
     expected=2507005360,
-    tags=("coroutine", "await", "koskari-only"),
+    tags=("coroutine", "await"),
     hosted=True,
 )
 
