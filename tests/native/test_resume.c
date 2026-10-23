@@ -893,45 +893,6 @@ static int test_call_resume_null_returns_value_in_hand(void) {
 }
 
 
-static int test_next_resume_null_pushes_and_continues(void) {
-  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
-  TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-  KosContext_EvalEnter(ctx, NULL);
-
-  PyObject *ns = PyDict_New();
-  TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
-  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
-
-  PyObject *lst = PyList_New(1);
-  TEST_ASSERT_NOT_NULL(lst, "create list");
-  PyList_SET_ITEM(lst, 0, PyLong_FromLong(42));
-  PyObject *it = kos_iter_acquire(lst);
-  TEST_ASSERT_NOT_NULL(it, "acquire iterator");
-
-  KosOpResult r = KosContext_NextResume(ctx, it, NULL, NULL, NULL);
-
-  TEST_ASSERT_EQ(r.kind, KOS_RES_NORMAL,
-                 "delivered element with no resume: NORMAL, matching"
-                 " OBJECT_NEXT's own default");
-  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame), "no resume set");
-
-  {
-    PyObject *popped = KosContext_StackPopRef(ctx);
-    TEST_ASSERT_NOT_NULL(popped, "element landed on the caller's stack");
-    TEST_ASSERT_EQ(PyLong_AsLong(popped), 42, "element value");
-    Py_DECREF(popped);
-  }
-
-  Py_DECREF(it);
-  Py_DECREF(lst);
-  KosContext_EvalExit(ctx);
-  Py_DECREF(ctx);
-  return 0;
-}
-
-
 /* === the drive's handled-exception swap === */
 
 
@@ -1109,7 +1070,6 @@ int run_resume_tests(void) {
   RUN_TEST(test_cache_inert_clears_resume_triple);
   RUN_TEST(test_reset_for_tail_clears_resume_triple);
   RUN_TEST(test_call_resume_null_returns_value_in_hand);
-  RUN_TEST(test_next_resume_null_pushes_and_continues);
   RUN_TEST(test_drive_restores_thread_exc_info);
 
   return 0;

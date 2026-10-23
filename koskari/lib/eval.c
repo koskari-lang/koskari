@@ -2185,43 +2185,28 @@ KosOpResult KosContext_NextResume(
 
   switch (KosNativeFrame_RequestNext(ctx, iter, &out)) {
     case KOS_IREQ_DELIVERED:
-      if (! resume) {
-        /* OBJECT_NEXT's own default: the element lands on the stack */
-        return KosContext_StackPUSH(ctx, out) < 0
-            ? EVAL_RAISE() : EVAL_NORMAL();
-      }
       return kos_entry_value(ctx, frame, out, resume, state);
 
-    case KOS_IREQ_CONTINUES: {
-      /* A frame the install left current is threaded into only when
-         it can be: a frame suspended inside a yield-from carries that
-         node's phase resume, and the prologue has to run it before
-         anything else. With a resume of our own, it is set on the
-         calling frame for the delivery either way. */
-      if (resume) {
-        KosDynFrame_RESUME_KIND(frame) = resume;
-        KosDynFrame_RESUME_STATE(frame) = state;
-      }
+    case KOS_IREQ_CONTINUES:
+      /* The resume is set on the calling frame for the delivery; a
+         frame the install left current is threaded into only when it
+         can be: one suspended inside a yield-from carries that phase's
+         resume, and the prologue has to run it before anything else. */
+      KosDynFrame_RESUME_KIND(frame) = resume;
+      KosDynFrame_RESUME_STATE(frame) = state;
       return kos_iter_installed(ctx);
-    }
 
     case KOS_IREQ_EXIT:
-      if (! resume)
-        return EVAL_AWAIT(out);
       KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_AWAIT(out);
 
     case KOS_IREQ_EXHAUSTED:
-      /* With a resume, exhaustion reaches it the way an in-flight
-         source's does and the way any failed delivery does: set on
-         the frame with StopIteration pending, for the prologue to
-         deliver as a NULL. No resume is set without one, and the
-         raise crosses the frame. */
+      /* Exhaustion reaches the resume the way an in-flight source's
+         does and the way any failed delivery does: set on the frame
+         with StopIteration pending, for the prologue to deliver as a
+         NULL. */
       PyErr_SetNone(PyExc_StopIteration);
-      if (! resume)
-        return EVAL_RAISE();
-
       KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_REPROLOGUE();
@@ -2230,9 +2215,6 @@ KosOpResult KosContext_NextResume(
     default:
       /* A request that failed outright reaches the resume the same
          way an exhausted one does. */
-      if (! resume)
-        return EVAL_RAISE();
-
       KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
       return EVAL_REPROLOGUE();

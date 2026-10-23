@@ -667,20 +667,10 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    the AWAITED revive delivers into it. Exhaustion sets resume and
    raises StopIteration, which reaches resume through the raise walk
    like an in-flight source's failure does; a request that fails
-   outright reports RAISE with no resume set. send_val is accepted for
-   a future Send entry point; unused today. Caller must have a current
-   frame.
-
-   resume may be NULL: no continuation, behave exactly like the
-   OBJECT_NEXT opcode's own default -- push the delivered element and
-   return EVAL_NORMAL; on an in-flight CONTINUES, return EVAL_NORMAL
-   only if the install already left a real bytecode frame current (no
-   trampoline hop needed), EVAL_REPROLOGUE otherwise; an in-flight EXIT
-   still returns EVAL_AWAIT, since revival for a plain frame with no
-   resume set already works the way ordinary AWAIT revival always has.
-   Never valid from a codeless caller -- exactly as unsafe as any other
-   plain frame receiving a delivery today, not a new contract NULL
-   introduces.
+   outright sets resume and raises the same way. send_val is accepted
+   for a future Send entry point; unused today. Caller must have a
+   current frame, and resume is required: every outcome but a settled
+   element in hand reaches the caller through it.
 */
 KosOpResult KosContext_NextResume(
     KosContext *ctx,
