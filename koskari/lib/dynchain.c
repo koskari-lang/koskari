@@ -92,7 +92,6 @@ static const char *kos_dynnode_kind_names[] = {
   "NS",
   "COLLECT",
   "CC",
-  "YIELD_FROM",
   "PARAM",
   "WITH",
   "SHIFT",
@@ -530,7 +529,7 @@ static void kos_dyn_clear_unwind_caches(KosDynNode *from, KosDynNode *stop) {
 
 /**
    Region kinds own an operand segment; transfer bookmarks (cc,
-   cc_raise, delim, shift, gen, next, yield_from) stay transparent.
+   cc_raise, delim, shift, gen) stay transparent.
    The compiler emits bookmark pushes mid-expression -- PUSH_CC inside
    an open call window, OBJECT_NEXT between operand loads -- so their
    extents legitimately straddle operand windows on the enclosing
@@ -740,7 +739,6 @@ static void kos_dyn_region_leave_exc(KosDynNode *node) {
 #include "dynchain/dyn_foreach.c"
 #include "dynchain/dyn_ns.c"
 #include "dynchain/dyn_collect.c"
-#include "dynchain/dyn_yield_from.c"
 #include "dynchain/dyn_param.c"
 #include "dynchain/dyn_with.c"
 #include "dynchain/dyn_iter_node.c"
@@ -1172,9 +1170,6 @@ void kos_dynnode_free(KosDynNode *node) {
       break;
     case KOS_DYN_CC:
       kos_dyncc_free((KosDynCC *) node);
-      break;
-    case KOS_DYN_YIELD_FROM:
-      kos_dynyieldfrom_free((KosDynYieldFrom *) node);
       break;
     case KOS_DYN_PARAM:
       kos_dynparam_free((KosDynParam *) node);
@@ -2021,9 +2016,6 @@ static KosOpResult kos_dyn_uninstall_handler(KosContext *ctx, KosDynNode *node,
     case KOS_DYN_PARAM:
       kos_dyn_param_unwind(ctx, (KosDynParam *) node);
       return EVAL_NORMAL();
-    case KOS_DYN_YIELD_FROM:
-      kos_dyn_yieldfrom_unwind(ctx, (KosDynYieldFrom *) node);
-      return EVAL_NORMAL();
     case KOS_DYN_FOREACH:
       kos_dyn_foreach_unwind(ctx, (KosDynForeach *) node);
       return EVAL_NORMAL();
@@ -2243,8 +2235,6 @@ static KosDynNode *kos_dyn_clone_dispatch(KosDynNode *node) {
       return (KosDynNode *) kos_dynns_clone((KosDynNs *) node);
     case KOS_DYN_CC:
       return (KosDynNode *) kos_dyncc_clone((KosDynCC *) node);
-    case KOS_DYN_YIELD_FROM:
-      return (KosDynNode *) kos_dynyieldfrom_clone((KosDynYieldFrom *) node);
     case KOS_DYN_PARAM:
       return (KosDynNode *) kos_dynparam_clone((KosDynParam *) node);
     case KOS_DYN_WITH:
@@ -2293,79 +2283,13 @@ KosDynNode *kos_dyn_clone(KosDynNode *node) {
 }
 
 
-/**
-   Allocate YIELD_FROM node, set as DYN_TOP, refresh frame_top. Callers: opcode
-   YIELD_FROM setup (generator delegation).
-*/
-KosDynYieldFrom *kos_dyn_push_yield_from(
-    KosContext *ctx,
-    PyObject *delegate,
-    uint8_t kind) {
-
-  KosDynYieldFrom *node = kos_dynyieldfrom_new(
-      KosContext_DYN_TOP(ctx), delegate, kind);
-  if (! node)
-    return NULL;
-
-  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
-    kos_dynyieldfrom_free(node);
-    return NULL;
-  }
-  SAYF("[gen] push_yield_from done dyn_top=%p parent=%p (%s) frame_top=%p\n",
-       (void *) node, (void *) KosDynNode_PARENT(node),
-       KosDynNode_PARENT(node)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosDynNode_PARENT(node)))
-           : "NULL",
-       (void *) KosContext_FRAME(ctx));
-  return node;
-}
-
-
-/**
-   Unlink YIELD_FROM from top and free it. node must be dyn_top.
-
-   This does NOT close the delegate. It is the completion path: callers
-   reach here once the delegate has finished on its own (raised
-   StopIteration / StopAsyncIteration) or has already been closed/thrown
-   explicitly. Per PEP 380, an exhausted subiterator must not be closed
-   again -- and for a Python async generator, calling aclose() here would
-   produce an un-awaited coroutine. Forced-teardown callers (the outer
-   generator being closed while the delegate is still active) must call
-   kos_yieldfrom_close_delegate themselves before popping.
-*/
-int kos_dyn_pop_yield_from(KosContext *ctx, KosDynYieldFrom *node) {
-  SAYF("[gen] pop_yield_from node=%p dyn_top=%p\n",
-       (void *) node, (void *) KosContext_DYN_TOP(ctx));
-  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "YIELD_FROM node is not at top of chain");
-    return -1;
-  }
-  kos_dyn_yield_from_clear_resume(ctx, node);
-  {
-    KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
-
-    kos_dyn_commit_dyn_top(ctx, parent);
-    KosDynNode_PARENT((KosDynNode *) node) = NULL;
-    kos_dynyieldfrom_free(node);
-  }
-  SAYF("[gen] pop_yield_from done dyn_top=%p (%s)\n",
-       (void *) KosContext_DYN_TOP(ctx),
-       KosContext_DYN_TOP(ctx)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
-           : "NULL");
-  return 0;
-}
-
-
 /* === Prompt lookup and validation === */
 
 
 /**
    Predicate: does the chain from dyn_top reach target?  Read-only; never
    sets PyErr.  Callers: the transfer goal's seam and frontier checks
-   (xfer_goal.c), the delimited return route (eval.c), and the NEXT and
-   YIELD_FROM still-on-chain checks.
+   (xfer_goal.c) and the delimited return route (eval.c).
 
    :return: 1 if target is on the chain from dyn_top, 0 otherwise
 */
@@ -2963,8 +2887,6 @@ static int dynnode_to_dict_payload(KosDynNode *node, PyObject *data) {
       return dynnode_to_dict_collect(node, data);
     case KOS_DYN_CC:
       return dynnode_to_dict_cc(node, data);
-    case KOS_DYN_YIELD_FROM:
-      return dynnode_to_dict_yield_from(node, data);
     case KOS_DYN_PARAM:
       return dynnode_to_dict_param(node, data);
     case KOS_DYN_WITH:
@@ -3118,8 +3040,6 @@ int kos_dynnode_traverse(KosDynNode *node, visitproc visit, void *arg) {
       return dynnode_traverse_loop(node, visit, arg);
     case KOS_DYN_FOREACH:
       return dynnode_traverse_foreach(node, visit, arg);
-    case KOS_DYN_YIELD_FROM:
-      return dynnode_traverse_yield_from(node, visit, arg);
     case KOS_DYN_PARAM:
       return dynnode_traverse_param(node, visit, arg);
     case KOS_DYN_WITH:

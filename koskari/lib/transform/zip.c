@@ -133,6 +133,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   KosTransformMulti *z = (KosTransformMulti *) state;
   KosTransform *t = &z->base;
 
+  kos_transform_fetched(t->sources[t->idx], element);
+
   if (! element)
     return EVAL_RAISE();
 

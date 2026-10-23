@@ -354,9 +354,9 @@ static inline int iter_frame_has_resume(KosContext *ctx) {
 
 /**
    Hand an element, or the end of the iteration, to the resume the
-   live frame carries. The step is over first: the node's request, when
-   the producer was stepped through one, is finished and idle, and the
-   frame's own stepped iterator is finished and released. An end
+   live frame carries. The node's request, when the producer was
+   stepped through one, is finished and idle first; the resume's own
+   record of what it stepped is the resume's to finish. An end
    arrives as the protocol spells it, NULL with StopIteration carrying
    the producer's return value. A direct kind runs now, cleared from
    the frame, and threads the consumer on, so what comes back is the
@@ -378,7 +378,6 @@ static KosOpResult iter_deliver_to_resume(
     kos_dyn_iter_request_finish(node, exhausted);
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
   }
-  kos_dynframe_finish_step_iter(frame, exhausted);
 
   if (exhausted) {
     kos_raise_stop_iteration(value);
@@ -418,9 +417,10 @@ KosOpResult KosIterRequest_Deliver(
     case KOS_IWAKE_VALUE:
       if (iter_frame_has_resume(ctx))
         return iter_deliver_to_resume(ctx, node, value, 0);
-      if (kos_dyn_iter_node_deliver_yield(ctx, node, value) < 0)
-        return EVAL_FATAL();
-      return EVAL_NORMAL();
+      Py_DECREF(value);
+      PyErr_SetString(PyExc_SystemError,
+                      "iteration value delivered with no resume waiting");
+      return EVAL_FATAL();
 
     case KOS_IWAKE_END: {
       /* A generator completing at the site's iteration node arrives with its
@@ -438,19 +438,10 @@ KosOpResult KosIterRequest_Deliver(
 
       if (iter_frame_has_resume(ctx))
         return iter_deliver_to_resume(ctx, node, value, 1);
-
-      /* the delivery unlinks and frees the node on every outcome, so
-         what the failure branch needs from it is read first */
-      int is_yield_from = KosDynNode_IS_YIELD_FROM(node);
-
-      if (kos_dyn_iter_node_deliver_exhausted(ctx, node, value) < 0) {
-        /* A re-emitting site (1-arg NEXT) completes by raising; a
-           delivery failure without an exception is fatal. */
-        if (is_yield_from || PyErr_Occurred())
-          return EVAL_RAISE();
-        return EVAL_FATAL();
-      }
-      return EVAL_NORMAL();
+      Py_XDECREF(value);
+      PyErr_SetString(PyExc_SystemError,
+                      "iteration end delivered with no resume waiting");
+      return EVAL_FATAL();
     }
 
     case KOS_IWAKE_EXCEPTION:
@@ -2286,16 +2277,15 @@ KosDynFrame *KosResumeFrame_Install(
    handler: a plain iterator answers through tp_iternext alone; a
    provider steps through its suite, a python async iterator through
    its __anext__, with no node. A step that defers (the provider's
-   frames installed, the async step awaiting) records iter as the
-   frame's stepped iterator, which the delivery that reaches the
-   frame's resume finishes. See eval.h for the per-status contract.
+   frames installed, the async step awaiting) records nothing: the
+   caller's own record holds iter, and the resume that takes the
+   delivery finishes it. See eval.h for the per-status contract.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
     KosContext *ctx,
     PyObject *iter,
     PyObject **out) {
 
-  KosDynFrame *frame = KosContext_FRAME(ctx);
   KosIterRequestStatus status;
   KosIterSlots *islots;
 
@@ -2313,7 +2303,6 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
         return KOS_IREQ_EXHAUSTED;
       case KOS_ITER_INSTALLED:
       case KOS_ITER_INSTALLED_VALUE:
-        kos_dynframe_set_step_iter(frame, Py_NewRef(iter));
         return KOS_IREQ_CONTINUES;
       case KOS_ITER_ERROR:
       default:
@@ -2332,7 +2321,6 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
       case GET_NEXT_EXHAUSTED:
         return KOS_IREQ_EXHAUSTED;
       case GET_NEXT_SUSPEND:
-        kos_dynframe_set_step_iter(frame, Py_NewRef(iter));
         *out = _await;
         return KOS_IREQ_EXIT;
       case GET_NEXT_ERROR:
@@ -2681,11 +2669,10 @@ static KosOpResult eval_phase_transfer(KosContext *ctx) {
 /**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
    generator dead-after-yield, freezes gen (the running frame's GEN, from
-   kos_dyn_find_gen), delivers to the consuming iteration node (NEXT /
-   FOREACH / YIELD_FROM) when there is one, and otherwise tags the
+   kos_dyn_find_gen), delivers to the consuming FOREACH node or the
+   live frame's resume when there is one, and otherwise tags the
    suspension event.  val is a new reference; ownership transfers to the
-   caller or consuming iteration node.  A YIELD_FROM receiver re-emits
-   the value as its own yield on its next dispatch.
+   caller or consumer.
 
    A yield delivered to a flattened consumer ends in kos_eval_delivery_done:
    DISPATCH when the consumer is a plain bytecode frame, which op_YIELD
@@ -3076,11 +3063,6 @@ static int kos_return_take_resume(
     return -1;
   }
 
-  /* A parent whose resume awaits a stepped iterator's deferred step
-     takes this return as that step's element (a provider's value
-     graft), and the step is over. */
-  kos_dynframe_finish_step_iter((KosDynFrame *) parent, 0);
-
   *out_resume = KosDynFrame_RESUME_KIND((KosDynFrame *) parent);
   *out_state = KosDynFrame_RESUME_STATE((KosDynFrame *) parent);
   KosDynFrame_RESUME_KIND((KosDynFrame *) parent) = NULL;
@@ -3340,12 +3322,8 @@ static inline KosOpResult eval_parent_return_deliver_impl(
 
   /* Destination by one field: a parent waiting on a resume takes the
      value through the pending slot; a bytecode parent takes it on its
-     stack, where its next instruction finds it. A parent whose resume
-     awaits a stepped iterator's deferred step takes this return as
-     that step's element (a provider's value graft), and the step is
-     over. */
+     stack, where its next instruction finds it. */
   if (parent && KosDynFrame_RESUME_KIND(parent)) {
-    kos_dynframe_finish_step_iter(parent, 0);
     KosContext_StageDelivery(ctx, val);
   } else if (KosContext_StackPUSH(ctx, val) < 0) {
     return EVAL_FATAL();

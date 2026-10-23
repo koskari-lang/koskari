@@ -17,14 +17,15 @@
    OBJECT_NEXT: arg = 1 or 2. Stack: [iter] or [iter, default]. One
    request for the next element of iter (kos_next_step), the element
    pushed by the request's resume, which runs at once when the element
-   is in hand and when it arrives otherwise. The default stays on the
-   stack under the halted instruction and is the result at the end;
-   the one-argument form raises StopIteration there. Auto-await.
+   is in hand and when it arrives otherwise. The operands stay on the
+   stack under the halted instruction, the iterator on top and the
+   default under it: the resume takes the iterator and the default is
+   the result at the end; the one-argument form raises StopIteration
+   there. Auto-await.
 */
 KOS_OP_HANDLER(OBJECT_NEXT) {
   KOS_SYNC_PC(ctx, insn);
   uint16_t n = KosOp_ARG(insn);
-  PyObject *default_val = NULL;
   PyObject *iter;
 
   if (unlikely(n != 1 && n != 2)) {
@@ -33,18 +34,25 @@ KOS_OP_HANDLER(OBJECT_NEXT) {
   }
 
   if (n == 2) {
-    default_val = KosContext_StackPopRef(ctx);
+    /* [iter, default] -> [default, iter] */
+    PyObject *default_val = KosContext_StackPopRef(ctx);
     if (unlikely(! default_val))
       RESULT_RAISE();
-  }
-  iter = KosContext_StackPopRef(ctx);
-  if (unlikely(! iter)) {
-    Py_XDECREF(default_val);
-    RESULT_RAISE();
-  }
-  if (default_val && unlikely(KosContext_StackPUSH(ctx, default_val) < 0)) {
-    Py_DECREF(iter);
-    RESULT_RAISE();
+    iter = KosContext_StackPopRef(ctx);
+    if (unlikely(! iter)) {
+      Py_DECREF(default_val);
+      RESULT_RAISE();
+    }
+    if (unlikely(KosContext_StackPUSH(ctx, default_val) < 0)) {
+      Py_DECREF(iter);
+      RESULT_RAISE();
+    }
+    if (unlikely(KosContext_StackPUSH(ctx, iter) < 0))
+      RESULT_RAISE();
+  } else {
+    iter = KosContext_StackPeek(ctx);
+    if (unlikely(! iter))
+      RESULT_RAISE();
   }
 
   RESULT_ENTRY(ctx, kos_next_step(ctx, (KosOp *) insn, iter),

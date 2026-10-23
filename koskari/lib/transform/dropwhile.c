@@ -108,6 +108,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
   KosDropWhile *d = (KosDropWhile *) state;
   KosTransform *t = &d->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
     return EVAL_RAISE();
 

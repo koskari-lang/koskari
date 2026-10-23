@@ -1,0 +1,87 @@
+;; yield_from_resume -- the delegate of a yield-from is the frame's resume
+;; state. What reaches the suspended generator reaches the delegate: a
+;; sent value, a thrown exception, a close. The delegation ends with the
+;; instruction after it.
+
+
+define log #[]
+
+
+define echo [n]:
+    ;; a koskari generator that records what is sent into it
+    define got #[]
+    define i 0
+    while (< i n):
+        got.append (yield i)
+        incr! i
+    log.append got
+
+
+define closing [name]:
+    try:
+        yield 1
+        yield 2
+    finally:
+        log.append name
+
+
+define outer [delegate]:
+    yield-from delegate
+    yield "after"
+
+
+define guarded [delegate]:
+    try:
+        yield-from delegate
+    except [e ValueError]:
+        yield (str e)
+    yield "after"
+
+
+define nested [delegate]:
+    yield-from (outer delegate)
+    yield "outer-after"
+
+
+define collect [g]:
+    define out #[]
+    for-each [v g]:
+        out.append v
+    out
+
+
+define collect_pairs [n m]:
+    ;; a yield-from inside a for-each body: two step resumes interleave
+    define out #[]
+    for-each [a (outer (range n))]:
+        for-each [b (outer (range m))]:
+            out.append #(a b)
+    out
+
+
+define send_through [n]:
+    define g (outer (echo n))
+    define out #[]
+    out.append (next g)
+    for-each [k (range 1 n)]:
+        out.append (g.asend (* k 10))
+    out.append (g.asend (* n 10))
+    out.append (next g None)
+    out
+
+
+define throw_through [n]:
+    define g (guarded (echo n))
+    define first (next g)
+    define caught (g.athrow (ValueError "zap"))
+    #(first caught (next g))
+
+
+define close_through []:
+    define g (outer (closing "closed"))
+    define first (next g)
+    (g.aclose)
+    #(first (list log))
+
+
+;; The end.

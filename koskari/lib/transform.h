@@ -237,6 +237,24 @@ int kos_transform_source_spent(void);
 
 
 /**
+   A fetch resume's first act: the source's step, deferred or not, is
+   over. A provider is finished (ki_finish), exhausted when the
+   delivery is its end; a plain iterator needs nothing. The transform
+   owns its source, so the finish is its own.
+*/
+static inline void kos_transform_fetched(PyObject *source, PyObject *element) {
+
+  KosIterSlots *islots;
+
+  if (KosIter_CheckSlots(source, &islots))
+    islots->ki_finish(
+        source,
+        ! element && kos_transform_source_spent()
+            && ! islots->ki_pyctx_recyclable);
+}
+
+
+/**
    Undo a partially installed step before reporting KOS_ITER_ERROR:
    release the held element and pop everything pushed since the step
    began (the program frame, a failed call's prepped frame), so the

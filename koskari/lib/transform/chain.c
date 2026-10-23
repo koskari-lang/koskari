@@ -142,6 +142,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
   KosChain *c = (KosChain *) state;
   KosTransform *t = &c->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element) {
     if (! kos_transform_source_spent())
       return EVAL_RAISE();
@@ -166,6 +168,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
 
   KosChain *c = (KosChain *) state;
   int r;
+
+  kos_transform_fetched(c->series, iterable);
 
   if (! iterable) {
     if (! kos_transform_source_spent())

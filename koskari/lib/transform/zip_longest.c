@@ -150,6 +150,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
   KosZipLongest *z = (KosZipLongest *) state;
   KosTransform *t = &z->multi.base;
 
+  kos_transform_fetched(t->sources[t->idx], element);
+
   if (! element) {
     if (! kos_transform_source_spent())
       return EVAL_RAISE();

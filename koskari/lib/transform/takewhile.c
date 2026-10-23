@@ -96,6 +96,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
 
   KosTransform *t = (KosTransform *) state;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
     return EVAL_RAISE();
 

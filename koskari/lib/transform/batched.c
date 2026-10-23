@@ -129,6 +129,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
   KosBatched *b = (KosBatched *) state;
   KosTransform *t = &b->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element) {
     PyObject *shorter;
 

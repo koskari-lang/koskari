@@ -111,6 +111,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
   KosAccumulate *a = (KosAccumulate *) state;
   KosTransform *t = &a->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
     return EVAL_RAISE();
 

@@ -120,9 +120,9 @@ static int kos_eval_in_demand(KosContext *ctx) {
    If execution is under a demand extent, set KoskariSyncViolation on PyErr
    and return 1. Otherwise return 0 (caller continues normally).
 
-   Used only by YIELD_FROM sites whose pre-event state mutations (phase,
-   inflight, PC flush) must not occur when denying. All other suspension
-   paths are intercepted centrally in eval_event_await / eval_event_yield.
+   Used by the yield-from resume for a python async delegate, whose
+   resume kind must not be set when denying. All other suspension paths
+   are intercepted centrally in eval_event_await / eval_event_yield.
 */
 static int kos_eval_demand_deny_suspend(KosContext *ctx, const char *msg) {
   if (! kos_eval_in_demand(ctx))

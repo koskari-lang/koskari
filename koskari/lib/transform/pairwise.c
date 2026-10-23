@@ -96,6 +96,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
   KosTransform *t = &p->base;
   PyObject *row;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element) {
     if (kos_transform_source_spent()) {
       Py_CLEAR(p->held);

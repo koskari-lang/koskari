@@ -37,6 +37,10 @@ KOS_OP_HANDLER(FAST_NEXT) {
   iter = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! iter))
     RESULT_RAISE();
+  /* the iterator stays on the stack under the halt, where the
+     request's resume takes it */
+  if (unlikely(KosContext_StackPUSH(ctx, iter) < 0))
+    RESULT_RAISE();
 
   RESULT_ENTRY(ctx, kos_next_step(ctx, (KosOp *) insn, iter),
                &kos_next_resume_kind, insn);

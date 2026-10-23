@@ -166,9 +166,9 @@ typedef int (*KosIterBusyFunc)(PyObject *self);
 
 /**
    The iter suite: the in-eval iteration interface. A type whose suite
-   carries ki_step is a KosIter provider; NEXT, ITER_NEXT, and
-   YIELD_FROM dispatch it for flattened stepping, and the dynchain
-   delivery walks report completion through ki_finish. The Python
+   carries ki_step is a KosIter provider; the next, for-each step and
+   yield-from resumes dispatch it for flattened stepping, and the
+   delivery paths report completion through ki_finish. The Python
    adapters (iterate.c) drive ki_step against the ki_pyctx context.
 
    ki_busy returns 1 with the provider's error set when a step

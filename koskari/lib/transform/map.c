@@ -87,6 +87,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
   KosTransform *m = (KosTransform *) state;
   KosOpResult r;
 
+  kos_transform_fetched(m->source, element);
+
   if (! element)
     return EVAL_RAISE();
 

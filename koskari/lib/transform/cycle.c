@@ -119,6 +119,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
   KosCycle *c = (KosCycle *) state;
   KosTransform *t = &c->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element) {
     if (! kos_transform_source_spent())
       return EVAL_RAISE();

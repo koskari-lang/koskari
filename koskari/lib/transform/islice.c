@@ -169,6 +169,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
 
   KosISlice *s = (KosISlice *) state;
 
+  kos_transform_fetched(s->base.source, element);
+
   if (! element)
     return EVAL_RAISE();
 
@@ -187,6 +189,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
     KosContext *ctx, void *state, PyObject *element) {
 
   KosISlice *s = (KosISlice *) state;
+
+  kos_transform_fetched(s->base.source, element);
 
   if (! element)
     return EVAL_RAISE();

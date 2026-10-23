@@ -128,6 +128,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
 
   KosTransform *f = (KosTransform *) state;
 
+  kos_transform_fetched(f->source, element);
+
   if (! element)
     return EVAL_RAISE();
 

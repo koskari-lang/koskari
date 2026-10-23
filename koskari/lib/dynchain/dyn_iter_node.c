@@ -15,9 +15,8 @@
 
 
 /**
-  Included by dynchain.c. Dispatch shared by the iteration nodes
-  (FOREACH, NEXT and the yield-from delegation): their step requests
-  and deliveries.
+  Included by dynchain.c. The FOREACH node's step request: binding,
+  finishing and the receiver lookup.
 
   :author: Christopher O'Brien <obriencj@gmail.com>
   :license: GNU General Public License v3
@@ -26,16 +25,8 @@
 /* === Generic iteration-node dispatch === */
 
 /*
-  One capability-driven dispatch surface for the consumers of a flattened
-  Koskari generator's iteration events: NEXT, an awaiting FOREACH, and a
-  flattened-delegate YIELD_FROM.  Routing keys on
-  KOS_DYN_CAP_ITER_RECEIVER only; the per-kind delivery
-  semantics stay in dyn_next.c / dyn_foreach.c / dyn_yield_from.c.
-
-  Future receiver kinds join by carrying the capability and adding a
-  delivery case here. In particular a GEN node carrying a yield-from
-  passthru field would slot in without touching the finder or the eval
-  loop (see design/archive/boundary-control-reemit.md §5.2).
+  Routing keys on KOS_DYN_CAP_ITER_RECEIVER only; the per-kind
+  delivery semantics stay in dyn_foreach.c.
 */
 
 
@@ -44,9 +35,8 @@ KosDynNode *kos_dyn_find_iter_node(KosContext *ctx) {
   /* Prefer dyn_top.  After the yield freeze the yielding generator's GEN
      node has detached, so its parent, the receiver that was directly
      driving it, sits at dyn_top and is the structurally nearest
-     receiver.  It must win: a YIELD_FROM delegating to this generator
-     beats an outer FOREACH awaiting an *enclosing* generator, otherwise
-     the delegate's yields are misrouted and the delegate is torn down. */
+     receiver.  It must win over an outer FOREACH awaiting an enclosing
+     generator, otherwise the yields are misrouted. */
   KosDynNode *const top = KosContext_DYN_TOP(ctx);
   if (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER))
     return top;
@@ -101,38 +91,6 @@ void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
 }
 
 
-int kos_dyn_iter_node_deliver_yield(
-    KosContext *ctx, KosDynNode *node, PyObject *val) {
-
-  if (KosDynNode_IS_YIELD_FROM(node))
-    /* Hand the value to the delegating generator; it re-emits as its own
-       yield on the next handler dispatch. */
-    return kos_dyn_yield_from_deliver_inner_yield(
-        ctx, (KosDynYieldFrom *) node, val);
-
-  PyErr_Format(PyExc_RuntimeError,
-               "iteration-node yield to unexpected receiver kind %u",
-               (unsigned) KosDynNode_KIND(node));
-  Py_DECREF(val);
-  return -1;
-}
-
-
-int kos_dyn_iter_node_deliver_exhausted(
-    KosContext *ctx, KosDynNode *node, PyObject *val) {
-
-  if (KosDynNode_IS_YIELD_FROM(node))
-    return kos_dyn_yield_from_deliver_exhausted(
-        ctx, (KosDynYieldFrom *) node, val);
-
-  PyErr_Format(PyExc_RuntimeError,
-               "iteration-node exhaustion to unexpected receiver kind %u",
-               (unsigned) KosDynNode_KIND(node));
-  Py_XDECREF(val);
-  return -1;
-}
-
-
 PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node) {
 
   KosIterRequest *req = kos_dyn_iter_request(node);
@@ -176,11 +134,9 @@ PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node) {
 
 void kos_dyn_iter_node_abort(KosContext *ctx, KosDynNode *node) {
 
-  if (KosDynNode_IS_FOREACH(node)) {
+  (void) ctx;
+  if (KosDynNode_IS_FOREACH(node))
     kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
-  } else if (KosDynNode_IS_YIELD_FROM(node)) {
-    (void) kos_dyn_unlink_yield_from(ctx, (KosDynYieldFrom *) node);
-  }
 }
 
 

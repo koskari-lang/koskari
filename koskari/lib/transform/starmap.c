@@ -98,6 +98,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
   PyObject *args;
   KosOpResult r;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
     return EVAL_RAISE();
 

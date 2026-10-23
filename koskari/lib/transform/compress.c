@@ -107,6 +107,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
   KosTransformMulti *c = (KosTransformMulti *) state;
   KosTransform *t = &c->base;
 
+  kos_transform_fetched(t->sources[t->idx], element);
+
   if (! element)
     return EVAL_RAISE();
 

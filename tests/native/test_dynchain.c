@@ -335,55 +335,7 @@ static int test_dyngen_bootstrap_no_active(void) {
 }
 
 
-/* === YIELD_FROM / WITH / DELIM / region payload tests === */
-
-
-static int test_dynyieldfrom_pop_closes_delegate(void) {
-
-    KosContext *ctx;
-    PyObject *ns;
-    KosDynFrame *frame;
-    PyObject *tuple;
-    PyObject *delegate;
-    Py_ssize_t rc_before;
-    KosDynYieldFrom *yf;
-
-    ns = PyDict_New();
-    TEST_ASSERT_NOT_NULL(ns, "create ns");
-
-    frame = kos_dynframe_new(NULL, NULL, ns);
-    TEST_ASSERT_NOT_NULL(frame, "create frame");
-
-    ctx = KosContext_New(frame, kos_tls_current());
-    TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-    KosContext_EvalEnter(ctx, NULL);
-
-    {
-        PyObject *item = PyLong_FromLong(100001);
-        TEST_ASSERT_NOT_NULL(item, "create item");
-        tuple = PyTuple_Pack(1, item);
-        Py_DECREF(item);
-    }
-    TEST_ASSERT_NOT_NULL(tuple, "create tuple");
-    delegate = PyObject_GetIter(tuple);
-    Py_DECREF(tuple);
-    TEST_ASSERT_NOT_NULL(delegate, "create iterator delegate");
-
-    rc_before = Py_REFCNT(delegate);
-
-    yf = kos_dyn_push_yield_from(ctx, delegate, (uint8_t) 0);
-    TEST_ASSERT_NOT_NULL(yf, "push YIELD_FROM");
-
-    TEST_ASSERT(kos_dyn_pop_yield_from(ctx, yf) == 0, "pop YIELD_FROM");
-    TEST_ASSERT_EQ(Py_REFCNT(delegate), rc_before, "delegate refcount restored");
-
-    KosContext_EvalExit(ctx);
-    Py_DECREF(delegate);
-    Py_DECREF(ctx);
-
-    return 0;
-}
+/* === WITH / DELIM / region payload tests === */
 
 
 static int test_dynwith_free_exc_unconditional(void) {
@@ -537,7 +489,6 @@ int run_dynchain_tests(void) {
     /* GEN and payload cleanup tests */
     RUN_TEST(test_dyngen_free_disposes_active);
     RUN_TEST(test_dyngen_bootstrap_no_active);
-    RUN_TEST(test_dynyieldfrom_pop_closes_delegate);
     RUN_TEST(test_dynwith_free_exc_unconditional);
     RUN_TEST(test_dyndelim_clone_owns_chain_copy);
     RUN_TEST(test_dynforeach_free_with_iter);

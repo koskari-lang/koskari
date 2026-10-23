@@ -337,7 +337,7 @@ int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   kos_dyngen_acquire(gen);
   /* 3. Put GEN's active onto ctx's active; 4. NULL GEN's active.
    * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
-   * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
+   * is already intact (e.g. FOREACH -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
   KosDynGen_ACTIVE(gen) = NULL;
   /* frozen.top always equals the active head here: kos_dyn_gen_freeze
@@ -550,8 +550,8 @@ static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
   /* OWNER is a borrowed back-pointer except while the keepalive holds a real
      counted reference on it.  Reporting a borrowed pointer to the cyclic
      collector makes it subtract a phantom reference and collect a live,
-     externally-referenced generator (held by a GC-invisible FOREACH/NEXT/
-     YIELD_FROM dynnode) as cyclic garbage.  Only visit when it is real. */
+     externally-referenced generator (held by a GC-invisible FOREACH
+     dynnode) as cyclic garbage.  Only visit when it is real. */
   if (KosDynNode_FLAGS(node) & KOS_DYNF_GEN_KEEPALIVE)
     Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
   if (KosDynGen_ACTIVE((KosDynGen *) node))

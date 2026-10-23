@@ -112,28 +112,6 @@ KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t
 }
 
 
-/* A step resume on the live frame when its region leaves is a step
-   whose delivery or failure never reached it: a resume is never
-   skipped, so under the safety net this is an internal fault. */
-static int foreach_step_resume_left_behind(KosContext *ctx) {
-#if KOS_EVAL_SAFETYNET
-  KosDynFrame *frame = KosContext_FRAME(ctx);
-
-  if (frame
-      && KosDynFrame_RESUME_KIND(frame)
-      && KosDynFrame_RESUME_KIND(frame)->direct) {
-    PyErr_SetString(PyExc_SystemError,
-                    "for-each region left with its step resume on the"
-                    " frame");
-    return 1;
-  }
-#else
-  (void) ctx;
-#endif
-  return 0;
-}
-
-
 /**
    Pop FOREACH when top. Callers: opcode POP_FOREACH, kos_dyn_unwind_to_loop.
 */
@@ -142,8 +120,6 @@ int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
     PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
     return -1;
   }
-  if (foreach_step_resume_left_behind(ctx))
-    return -1;
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
@@ -156,8 +132,8 @@ int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
 
 
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
+  (void) ctx;
   (void) node;
-  (void) foreach_step_resume_left_behind(ctx);
 }
 
 

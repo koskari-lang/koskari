@@ -17,8 +17,9 @@
   VAR_NEXT: fused VAR + OBJECT_NEXT. Arg = extra index. Schema VAR
   (iterator name), COUNT (n = 1 or 2). Stack: [] or [default] per n.
   Resolve the iterator name and make the next request (kos_next_step)
-  with the request's resume; the default stays on the stack under the
-  halted instruction and is the result at the end. Auto-await.
+  with the request's resume; the iterator and the default stay on the
+  stack under the halted instruction, the resume takes the iterator and
+  the default is the result at the end. Auto-await.
 */
 KOS_OP_HANDLER(VAR_NEXT) {
   KOS_SYNC_PC(ctx, insn);
@@ -33,6 +34,10 @@ KOS_OP_HANDLER(VAR_NEXT) {
 
   iter = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! iter))
+    RESULT_RAISE();
+  /* the iterator stays on the stack under the halt, where the
+     request's resume takes it */
+  if (unlikely(KosContext_StackPUSH(ctx, iter) < 0))
     RESULT_RAISE();
 
   RESULT_ENTRY(ctx, kos_next_step(ctx, (KosOp *) insn, iter),
