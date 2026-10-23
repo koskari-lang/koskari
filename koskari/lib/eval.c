@@ -373,27 +373,6 @@ static KosOpResult iter_deliver_direct(
 }
 
 
-int KosIterRequest_StageDirect(
-    KosContext *ctx,
-    KosDynNode *node,
-    int exhausted,
-    PyObject *value) {
-
-  if (! iter_frame_takes_direct(ctx))
-    return 0;
-
-  kos_dyn_iter_request_finish(node, exhausted);
-  kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
-
-  if (exhausted) {
-    Py_XDECREF(value);
-    value = Py_NewRef(KosIterEnd);
-  }
-  KosContext_StageDelivery(ctx, value);
-  return 1;
-}
-
-
 KosOpResult KosIterRequest_Deliver(
     KosContext *ctx,
     KosDynNode *node,
@@ -1186,17 +1165,20 @@ static KosOpResult process_raise(KosContext *ctx) {
 
   clear_kos_agen_iter_node_on_error(ctx);
 
-  /* A code-less step frame's resume gets the failure before the walk
-     does, delivered through the prologue rather than called from
-     inside the unwind. Every pre-walk step above has already run --
-     the goal stack is abandoned, so a transfer in flight cannot
-     outlive the failure the resume is about to handle. Bouncing
-     rather than delivering here is what puts every raise ingress on
-     that one path: this entry is reached straight from
-     apply_kos_op_result, never through the prologue. It terminates
-     because the delivery clears the resume. */
+  /* The live frame's resume gets the failure before the walk does,
+     whatever the frame: a resume is a halted instruction awaiting its
+     delivery, and the failure is that delivery. It is delivered
+     through the prologue rather than called from inside the unwind,
+     against a settled chain where the resume may thread on. Every
+     pre-walk step above has already run -- the goal stack is
+     abandoned, so a transfer in flight cannot outlive the failure the
+     resume is about to handle. Bouncing rather than delivering here is
+     what puts every raise ingress on that one path: this entry is
+     reached straight from apply_kos_op_result, never through the
+     prologue. It terminates because the delivery clears the resume;
+     the walk bounces back here the same way each time a frame pop
+     reveals a frame with a resume. */
   if (KosContext_FRAME(ctx)
-      && ! KosDynFrame_CODE(KosContext_FRAME(ctx))
       && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)))
     return EVAL_REPROLOGUE();
 
@@ -3613,23 +3595,20 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     }
 
     /* A failed delivery reaches its consumer the way a successful one
-       does. A code-less step frame with a resume set takes the
-       pending exception as a NULL delivery, on a settled chain, where
-       threading on is legal. Declining re-raises with the resume
-       already cleared by the delivery, so the walk below unwinds as
-       it always did, and this cannot loop.
+       does. A frame with a resume set, bytecode or code-less, takes
+       the pending exception as a NULL delivery, on a settled chain,
+       where threading on is legal; every resume tells a NULL with an
+       error pending from its own meaning of a bare NULL. Declining
+       re-raises with the resume already cleared by the delivery, so
+       the walk below unwinds as it always did, and this cannot loop.
 
-       A frame carrying bytecode is left alone: its resume is a
-       yield-from phase resume, which reads a NULL delivery as a send
-       of None. A goal in play is routed past this offer and through
-       the phase below, whose process_raise abandons the goal stack
-       and then bounces straight back here with no goal active -- so a
-       transfer still reaches abandon first, and the offer still
-       fires. */
+       A goal in play is routed past this offer and through the phase
+       below, whose process_raise abandons the goal stack and then
+       bounces straight back here with no goal active -- so a transfer
+       still reaches abandon first, and the offer still fires. */
     if (err
         && ! KosContext_GOAL(ctx)
         && KosContext_FRAME(ctx)
-        && ! KosDynFrame_CODE(KosContext_FRAME(ctx))
         && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
       KosOpResult rs = eval_step_resume_delivery(ctx);
       if (rs.kind == KOS_RES_REPROLOGUE)

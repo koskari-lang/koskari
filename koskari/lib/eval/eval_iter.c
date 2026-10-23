@@ -345,8 +345,36 @@ static inline KosGetNextResult op_get_next_from_bound(
    the resume. */
 
 
-/* The element, or the end: push it and thread on, or jump to the
-   instruction's else target. */
+/**
+   A failure delivered to a step resume: NULL with the error pending.
+   The region's own exhaustion exception (StopIteration from an
+   installed step, StopAsyncIteration from an async source) is the
+   end of the iteration, the same judgment the eager step makes: the
+   region's request is finished and idle, the error cleared, and the
+   resume goes to its else target. Anything else propagates: the
+   resume declines and the raise walk goes on to the region. The
+   region is at dyn_top, the frames above it already unwound.
+
+   :return: 1 when the exception was the end, the request finished and
+     the error cleared; 0 to decline, the error still pending
+*/
+KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
+
+  if (! region || ! KosDynNode_IS_FOREACH(region) || ! PyErr_Occurred())
+    return 0;
+  if (! PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(region)))
+    return 0;
+
+  PyErr_Clear();
+  kos_dyn_iter_request_finish(region, 1);
+  kos_dyn_iter_request_set_mode(region, KOS_IREQ_IDLE);
+  return 1;
+}
+
+
+/* The element, the end, or a failure: push it and thread on, or jump
+   to the instruction's else target. */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
     KosContext *ctx,
     void *state,
@@ -354,8 +382,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
 
   KosOp *insn = (KosOp *) state;
 
-  if (unlikely(! value))
-    return EVAL_RAISE();
+  if (unlikely(! value)) {
+    if (! kos_iter_step_ended_by_exception(ctx))
+      return EVAL_RAISE();
+    KOS_THREAD_AT(ctx, KosOp_TARGET(insn));
+  }
   if (value == KosIterEnd) {
     Py_DECREF(value);
     KOS_THREAD_AT(ctx, KosOp_TARGET(insn));
@@ -366,7 +397,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
 }
 
 
-/* The element into the fast slot the instruction names, or the end. */
+/* The element into the fast slot the instruction names, the end, or
+   a failure. */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_fast_resume(
     KosContext *ctx,
     void *state,
@@ -375,8 +407,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_fast_resume(
   KosOp *insn = (KosOp *) state;
   const KosExtra *row = KosOp_ROW(insn);
 
-  if (unlikely(! value))
-    return EVAL_RAISE();
+  if (unlikely(! value)) {
+    if (! kos_iter_step_ended_by_exception(ctx))
+      return EVAL_RAISE();
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+  }
   if (value == KosIterEnd) {
     Py_DECREF(value);
     KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
@@ -389,7 +424,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_fast_resume(
 }
 
 
-/* The element under the name the instruction names, or the end. */
+/* The element under the name the instruction names, the end, or a
+   failure. */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_var_resume(
     KosContext *ctx,
     void *state,
@@ -399,8 +435,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_var_resume(
   const KosExtra *row = KosOp_ROW(insn);
   int res;
 
-  if (unlikely(! value))
-    return EVAL_RAISE();
+  if (unlikely(! value)) {
+    if (! kos_iter_step_ended_by_exception(ctx))
+      return EVAL_RAISE();
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+  }
   if (value == KosIterEnd) {
     Py_DECREF(value);
     KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
@@ -470,8 +509,12 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
     n = likely(next) ? next(iter) : NULL;
     if (likely(n))
       return EVAL_RETURN(n);
-    if (op_get_next_sync_ended(next != NULL) == GET_NEXT_ERROR)
+    if (op_get_next_sync_ended(next != NULL) == GET_NEXT_ERROR) {
+      /* the failure reaches the resume like any other delivery */
+      KosDynFrame_RESUME_KIND(frame) = resume;
+      KosDynFrame_RESUME_STATE(frame) = (void *) insn;
       return EVAL_RAISE();
+    }
     return EVAL_RETURN(Py_NewRef(KosIterEnd));
   }
 
@@ -500,6 +543,10 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
 
       case KOS_IREQ_ERROR:
       default:
+        /* the failure reaches the resume like any other delivery: set
+           on the frame, raised, offered by the prologue as a NULL */
+        KosDynFrame_RESUME_KIND(frame) = resume;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
         return EVAL_RAISE();
     }
   }

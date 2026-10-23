@@ -1386,11 +1386,6 @@ int kos_dyn_next_deliver_exhausted(
     KosDynNext *next,
     PyObject *val);
 
-/* Clear a step resume (a direct kind, see KosResumeKind) from the live
-   frame when one is set there: the region whose step set it is leaving
-   and no element is coming. */
-void kos_dyn_foreach_clear_step_resume(KosContext *ctx);
-
 /* Uninstall hook: the store resume goes with the node. Callers:
    kos_dyn_uninstall_handler. */
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);

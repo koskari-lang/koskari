@@ -402,19 +402,17 @@ static int test_prologue_runs_pending_exception(void) {
 }
 
 
-/* === the raise walk propagates a pending exception through a resume ===
+/* === the raise walk defers to the live frame's resume ===
 
-   The walk calls the resume at dyn_walk.c only for a FRAME that is
-   dyn_top but is NOT also the currently active frame_top (the common
-   single-frame case takes the frame-crossing branch instead and never
-   calls the resume at all -- true of the pre-existing native_prog path
-   too, not a resume-specific quirk). Building that shape directly: a resume-
-   carrying frame installed as dyn_top, parented under a distinct
-   frame_top, mirrors how a frame that isn't the dispatch-active one
-   sits on the chain (e.g. flattened generator delegation). */
+   The walk never calls a resume: a pending exception with a resume on
+   the live frame is handed back as REPROLOGUE, resume and exception
+   left in place, for the prologue's delivery step to deliver as a
+   NULL (test_prologue_runs_pending_exception). That holds at the
+   walk's entry and again when a frame pop reveals a frame with a
+   resume, before any node above that frame is unwound. */
 
 
-static int test_raise_walk_resume_propagates(void) {
+static int test_raise_walk_defers_to_the_live_frame_resume(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
@@ -430,24 +428,27 @@ static int test_raise_walk_resume_propagates(void) {
   KosDynFrame *frame = kos_dynframe_new(bottom, NULL, top_ns);
   TEST_ASSERT_NOT_NULL(frame, "create resume-carrying frame");
 
-  ResumeProbe probe = { 0, 0, 1, NULL };  /* propagate */
+  ResumeProbe probe = { 0, 0, 1, NULL };
   KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
 
-  KosContext_FRAME(ctx) = bottom;
+  KosContext_FRAME(ctx) = frame;
   KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
 
   PyErr_SetString(PyExc_ValueError, "boom");
 
   KosOpResult ev = kos_dyn_unwind_raise(ctx);
 
-  TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
-  TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_RAISE, "propagated: the walk pops and the exception continues");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE,
+                 "the walk hands the delivery to the prologue");
+  TEST_ASSERT_EQ(probe.calls, 0, "the walk itself called no resume");
+  TEST_ASSERT(KosDynFrame_RESUME_KIND(frame) == &resume_probe_kind,
+              "the resume stays on the frame for the prologue");
   TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
-              "the original exception is the one propagating");
+              "the exception stays pending for the delivery");
+  TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) frame,
+              "nothing was unwound ahead of the resume");
 
-  /* frame was popped and freed by the walk's own pop path */
   PyErr_Clear();
   KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
@@ -455,42 +456,45 @@ static int test_raise_walk_resume_propagates(void) {
 }
 
 
-static int test_raise_walk_resume_handles(void) {
+static int test_raise_walk_defers_after_a_pop_reveals_a_resume(void) {
   KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
 
   KosContext_EvalEnter(ctx, NULL);
 
+  /* two pushed frames, so the pop's resync reveals the lower one */
   PyObject *bottom_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
-  KosDynFrame *bottom = kos_dynframe_new(NULL, NULL, bottom_ns);
-  TEST_ASSERT_NOT_NULL(bottom, "create bottom frame");
+  KosDynFrame *bottom = kos_dyn_push_frame(ctx, NULL, bottom_ns);
+  TEST_ASSERT_NOT_NULL(bottom, "push bottom frame");
 
   PyObject *top_ns = PyDict_New();
   TEST_ASSERT_NOT_NULL(top_ns, "create top ns");
-  KosDynFrame *frame = kos_dynframe_new(bottom, NULL, top_ns);
-  TEST_ASSERT_NOT_NULL(frame, "create resume-carrying frame");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, top_ns);
+  TEST_ASSERT_NOT_NULL(frame, "push plain top frame");
 
-  ResumeProbe probe = { 0, 0, 0, NULL };  /* recover */
-  KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
-  KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
-
-  KosContext_FRAME(ctx) = bottom;
-  KosContext_DYN_TOP(ctx) = (KosDynNode *) frame;
+  /* the resume waits on the frame below the live one */
+  ResumeProbe probe = { 0, 0, 1, NULL };
+  KosDynFrame_RESUME_KIND(bottom) = &resume_probe_kind;
+  KosDynFrame_RESUME_STATE(bottom) = (void *) &probe;
 
   PyErr_SetString(PyExc_ValueError, "boom");
 
   KosOpResult ev = kos_dyn_unwind_raise(ctx);
 
-  TEST_ASSERT_EQ(probe.calls, 1, "the walk called the resume");
-  TEST_ASSERT_EQ(probe.seen_null, 1, "the resume received NULL (an exception, not a value)");
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE, "handled: execution resumes normally");
-  TEST_ASSERT(! PyErr_Occurred(), "the resume cleared the exception");
-  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame),
-                   "resume is cleared before invocation, stays cleared");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE,
+                 "the pop revealed a resume: the walk hands over");
+  TEST_ASSERT(KosContext_FRAME(ctx) == bottom,
+              "the top frame was popped first");
+  TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) bottom,
+              "the revealed frame is the live one");
+  TEST_ASSERT_EQ(probe.calls, 0, "the walk itself called no resume");
+  TEST_ASSERT(KosDynFrame_RESUME_KIND(bottom) == &resume_probe_kind,
+              "the revealed resume stays set for the prologue");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
+              "the exception stays pending for the delivery");
 
-  /* frame is still on the chain (not popped); context teardown frees
-     the whole chain, frame and bottom together */
+  PyErr_Clear();
   KosContext_EvalExit(ctx);
   Py_DECREF(ctx);
   return 0;
@@ -1094,8 +1098,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_prologue_idle_threads_into_code);
   RUN_TEST(test_prologue_delivers_staged);
   RUN_TEST(test_prologue_runs_pending_exception);
-  RUN_TEST(test_raise_walk_resume_propagates);
-  RUN_TEST(test_raise_walk_resume_handles);
+  RUN_TEST(test_raise_walk_defers_to_the_live_frame_resume);
+  RUN_TEST(test_raise_walk_defers_after_a_pop_reveals_a_resume);
   RUN_TEST(test_clone_copies_node_resume);
   RUN_TEST(test_capture_restore_clones_and_clears_unapplied);
   RUN_TEST(test_capture_restore_apply_hands_over_the_clone);

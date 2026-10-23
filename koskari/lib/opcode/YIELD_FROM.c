@@ -750,6 +750,11 @@ static KosThreadFn yield_from_resume_take(
     Py_XDECREF(value);
     return NULL;
   }
+  /* A NULL with an error pending is a failure delivered to this frame
+     while it waited: the phase declines, and the raise walk goes on
+     to the yield-from node. */
+  if (! value && PyErr_Occurred())
+    return NULL;
   if (yield_from_take_throw(ctx, yf)) {
     Py_XDECREF(value);
     return yield_from_resume_drive(yf);
@@ -823,6 +828,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yield_from_resume_emit(
     Py_XDECREF(value);
     return EVAL_RAISE();
   }
+  /* a failure delivered while the frame waited: decline */
+  if (! value && PyErr_Occurred())
+    return EVAL_RAISE();
   if (yield_from_take_throw(ctx, yf)) {
     KosThreadFn drive = yield_from_resume_drive(yf);
     Py_XDECREF(value);
