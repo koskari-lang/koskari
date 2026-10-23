@@ -129,6 +129,11 @@ typedef enum KosDynFlags {
 */
 #define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
 #define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
+/* a LOOP or FOREACH region still running its body: the region a break
+   or continue lands on. CLEAR_LOOP and CLEAR_FOREACH take it away when
+   the else clause starts, so a break or continue written there belongs
+   to the enclosing loop. The one record of the region's enabled state. */
+#define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
 #define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
 /* the node reacts when control returns into it from a frame it owns:
    the extent contract has work for it (WITH, WIND); a node
@@ -387,6 +392,15 @@ typedef struct KosResumeKind {
 void *kos_resume_clone_shared(void *state);
 
 
+/* The record a LOOP and a FOREACH region share: where break and
+   continue land, and the body's last continue value. */
+typedef struct KosDynRegionFields {
+  uint32_t break_pc;
+  uint32_t continue_pc;
+  PyObject *result;
+} KosDynRegionFields;
+
+
 struct KosDynNode {
   KosDynNode *parent;   /* enclosing node (toward root); reused as freelist link */
   KosDynKind kind;      /* discriminator for node type */
@@ -504,12 +518,12 @@ struct KosDynNode {
       KosExcState saved;      /* handler-visible state before this region */
       KosExcState handling;   /* the raise being propagated through the body */
     } finally_;
-    struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
+    /* LOOP and FOREACH open with the same region record, so a break or
+       continue reads either through KosDynRegion_*; the enabled state
+       is the KOS_DYN_CAP_LOOP_REGION capability. */
+    struct { KosDynRegionFields region; } loop;
     struct {
-      uint32_t break_pc;
-      uint32_t continue_pc;
-      uint8_t enabled;
-      PyObject *result;
+      KosDynRegionFields region;
       uint8_t exhausted;
       uint32_t iter_next_else_pc;
       KosIterRequest req;    /* in-flight ITER_NEXT step state */
@@ -2317,25 +2331,29 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynFinally_EXC_FROZEN(r)  (((KosDynNode *)(r))->u.finally_.exc_frozen)
 #define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)
 #define KosDynFinally_HANDLING(r)    (&((KosDynNode *)(r))->u.finally_.handling)
-#define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
-#define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
-#define KosDynLoop_ENABLED(r)        (((KosDynNode *)(r))->u.loop.enabled)
-#define KosDynLoop_RESULT(r)         (((KosDynNode *)(r))->u.loop.result)
-#define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.break_pc)
-#define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.continue_pc)
-#define KosDynForeach_ENABLED(r)     (((KosDynNode *)(r))->u.foreach.enabled)
-
+/* The region record of a LOOP or a FOREACH, read the same way for
+   either: both arms open with it. */
+#define KosDynRegion_BREAK_PC(r)     (((KosDynNode *)(r))->u.loop.region.break_pc)
+#define KosDynRegion_CONTINUE_PC(r)  (((KosDynNode *)(r))->u.loop.region.continue_pc)
+#define KosDynRegion_RESULT(r)       (((KosDynNode *)(r))->u.loop.region.result)
 /* Whether node is a LOOP or FOREACH region that is still running its
-   body: a region whose else clause has started is disabled and no
-   longer answers a break or continue. */
+   body: a region whose else clause has started no longer answers a
+   break or continue. Read-only; CLEAR_LOOP and CLEAR_FOREACH take the
+   capability away. */
+#define KosDynRegion_ENABLED(r) \
+  (! ! (KosDynNode_CAPS(r) & KOS_DYN_CAP_LOOP_REGION))
+#define KosDynLoop_BREAK_PC(r)       KosDynRegion_BREAK_PC(r)
+#define KosDynLoop_CONTINUE_PC(r)    KosDynRegion_CONTINUE_PC(r)
+#define KosDynLoop_ENABLED(r)        KosDynRegion_ENABLED(r)
+#define KosDynLoop_RESULT(r)         KosDynRegion_RESULT(r)
+#define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.region.break_pc)
+#define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.region.continue_pc)
+#define KosDynForeach_ENABLED(r)     KosDynRegion_ENABLED(r)
+
 static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
-  if (KosDynNode_IS_LOOP(node))
-    return KosDynLoop_ENABLED(node);
-  if (KosDynNode_IS_FOREACH(node))
-    return KosDynForeach_ENABLED(node);
-  return 0;
+  return KosDynRegion_ENABLED(node);
 }
-#define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.result)
+#define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.region.result)
 #define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
 #define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
 #define KosDynForeach_REQ(r)         (&((KosDynNode *)(r))->u.foreach.req)

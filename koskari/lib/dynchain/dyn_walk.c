@@ -469,30 +469,18 @@ KosOpResult kos_dyn_unwind_to_loop(
 
   if (event == KOS_XFER_EVENT_CONTINUE) {
     /* Update region result with continue value */
-    if (KosDynNode_IS_LOOP(region)) {
-      Py_XDECREF(KosDynLoop_RESULT((KosDynLoop *) region));
-      KosDynLoop_RESULT((KosDynLoop *) region) = result;
-    } else {
-      Py_XDECREF(KosDynForeach_RESULT((KosDynForeach *) region));
-      KosDynForeach_RESULT((KosDynForeach *) region) = result;
-    }
-
-    uint32_t continue_pc = (KosDynNode_IS_LOOP(region))
-        ? KosDynLoop_CONTINUE_PC((KosDynLoop *) region)
-        : KosDynForeach_CONTINUE_PC((KosDynForeach *) region);
+    Py_XSETREF(KosDynRegion_RESULT(region), result);
 
     if (KosContext_StackClear(ctx) < 0)
       return EVAL_RAISE();
 
-    KosContext_SET_PC(ctx, continue_pc);
+    KosContext_SET_PC(ctx, KosDynRegion_CONTINUE_PC(region));
     return EVAL_NORMAL();
   }
 
   /* KOS_XFER_EVENT_BREAK: read break_pc before popping, then pop, drop block,
      push result */
-  uint32_t break_pc = (KosDynNode_IS_LOOP(region))
-      ? KosDynLoop_BREAK_PC((KosDynLoop *) region)
-      : KosDynForeach_BREAK_PC((KosDynForeach *) region);
+  uint32_t break_pc = KosDynRegion_BREAK_PC(region);
 
   if (KosDynNode_IS_LOOP(region)) {
     if (kos_dyn_pop_loop(ctx, (KosDynLoop *) region) < 0) {

@@ -27,7 +27,7 @@ KOS_OP_HANDLER(CLEAR_LOOP) {
     RESULT_RAISE();
   }
 
-  KosDynLoop_ENABLED((KosDynLoop *) region) = 0;
+  KosDynNode_CAPS(region) &= ~KOS_DYN_CAP_LOOP_REGION;
   if (KosContext_StackClear(ctx) < 0)
     RESULT_RAISE();
 

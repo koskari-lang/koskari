@@ -392,13 +392,6 @@ KOS_OP_INLINE void kos_foreach_record_else(
 }
 
 
-/* The else target of a step instruction, for the exhaustion jump. */
-KOS_OP_INLINE KosOp *kos_foreach_step_else(const KosOp *step) {
-  if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    return KosOp_TARGET(step);
-  return KosExtra_TARGET(KosOp_ROW(step), 1);
-}
-
 
 /**
    Store an element where an ITER_NEXT_STORE_* step names: the fast
@@ -421,22 +414,6 @@ KOS_OP_INLINE int kos_foreach_store_element(
     Py_DECREF(val);
     return res;
   }
-}
-
-
-/**
-   Deliver an element in hand as the step instruction would: ITER_NEXT
-   pushes it, a STORE twin stores it. For a step run away from its
-   instruction (the CONTINUE back-edge). Consumes val. 0/-1.
-*/
-KOS_OP_INLINE int kos_foreach_deliver_in_hand(
-    KosContext *ctx,
-    const KosOp *step,
-    PyObject *val) {
-
-  if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    return KosContext_StackPUSH(ctx, val);
-  return kos_foreach_store_element(ctx, step, val);
 }
 
 

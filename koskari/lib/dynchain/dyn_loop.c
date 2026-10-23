@@ -33,10 +33,9 @@ KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t cont
   if (! node)
     return NULL;
 
-  kos_dynnode_init(node, KOS_DYN_LOOP, parent, 0);
+  kos_dynnode_init(node, KOS_DYN_LOOP, parent, KOS_DYN_CAP_LOOP_REGION);
   KosDynLoop_BREAK_PC(node) = break_pc;
   KosDynLoop_CONTINUE_PC(node) = continue_pc;
-  KosDynLoop_ENABLED(node) = 1;
   KosDynLoop_RESULT(node) = NULL;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
@@ -44,7 +43,8 @@ KosDynLoop *kos_dynloop_new(KosDynNode *parent, uint32_t break_pc, uint32_t cont
 
 
 /**
-   Clone PCs, enabled, and RESULT ref for capture.
+   Clone PCs and RESULT ref for capture; the enabled state travels
+   with the capabilities the base clone copies.
 */
 KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
   KosDynLoop *clone = kos_dynnode_clone_base(node);
@@ -52,7 +52,6 @@ KosDynLoop *kos_dynloop_clone(KosDynLoop *node) {
     return NULL;
   KosDynLoop_BREAK_PC(clone) = KosDynLoop_BREAK_PC(node);
   KosDynLoop_CONTINUE_PC(clone) = KosDynLoop_CONTINUE_PC(node);
-  KosDynLoop_ENABLED(clone) = KosDynLoop_ENABLED(node);
   KosDynLoop_RESULT(clone) = KosDynLoop_RESULT(node);
   Py_XINCREF(KosDynLoop_RESULT(clone));
   return clone;

@@ -2072,11 +2072,11 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
           && KosDynFinally_EXC_SAVED(live) == KosDynFinally_EXC_SAVED(tmpl);
 
     case KOS_DYN_LOOP:
-      return KosDynLoop_ENABLED(live) == KosDynLoop_ENABLED(tmpl);
+      /* the enabled state is a capability, compared above */
+      return 1;
 
     case KOS_DYN_FOREACH:
-      return KosDynForeach_ENABLED(live) == KosDynForeach_ENABLED(tmpl)
-          && KosDynForeach_EXHAUSTED(live) == KosDynForeach_EXHAUSTED(tmpl);
+      return KosDynForeach_EXHAUSTED(live) == KosDynForeach_EXHAUSTED(tmpl);
 
     case KOS_DYN_WIND:
       /* a template WIND is always idle (its clone resets the phase, to

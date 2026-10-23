@@ -90,8 +90,8 @@ class TestForeachOpcodes(CevalTest):
 
     async def test_foreach_continue_steps_iterator(self):
         """
-        CONTINUE with the FOREACH region on top steps the iterator and
-        lands on the else target at exhaustion
+        CONTINUE with the FOREACH region on top returns to the step,
+        which lands on the else target at exhaustion
         """
 
         code, ns = build_expr([
