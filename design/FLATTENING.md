@@ -84,7 +84,7 @@ corrective work: [interpreter/demand-flattening.md](interpreter/demand-flattenin
   into a `KosPyIter`, a nested evaluator per element on the demand
   path, so a generator whose body awaits fails as a sync violation
   where `for-each` over it flattens. The demand path is forced today.
-  The collecting row, one NEXT node per element under the row resume,
+  The collecting row, one next request per element under the row resume,
   is section 7 of
   [interpreter/resumable-reads.md](interpreter/resumable-reads.md).
 

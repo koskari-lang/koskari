@@ -167,7 +167,7 @@ They share one prototype, so they compose freely under the musttail rules:
 - an elector can end in `RESULT_ENTRY`, setting a resume for the value it
   requested (a call elector on a KosCallable suite);
 - a resume can end in a `TAILCALL` to an elector (a send delivery into a
-  YIELD_FROM node hops to that node's drive);
+  yield-from halt hops into its drive kind);
 - an elector ends in `KOS_THREAD_NEXT` like a handler, so the cooperation
   points are unchanged: `RESUME_HOP`, `RESULT_NEXT_POLL`, frame installs,
   and the prologue still own the breaker test.
@@ -380,19 +380,17 @@ A dyn node arm that carries an elected fact gets `KosThreadFn` fields set
 at push time by the code that classifies the extent:
 
 ```c
-/* KOS_DYN_YIELD_FROM arm */
-KosThreadFn drive;       /* one of four, by delegate kind; set at push */
-
-/* iteration request record (FOREACH region, NEXT node) */
+/* iteration request record (FOREACH region) */
 KosThreadFn step;        /* provider ki_step, sync tp_iternext, async anext */
 
 /* KOS_DYN_FRAME arm */
 KosThreadFn on_return;   /* plain / region / resume parent; set at install */
 ```
 
-No guard. The delegate of a YIELD_FROM node, the iterator bound to a FOREACH
-request, and the parent shape of an installed frame do not change for the
-life of the node. A multi-shot continuation clone copies the node and the
+No guard. The iterator bound to a FOREACH request and the parent shape of
+an installed frame do not change for the life of the node. (Yield-from's
+drive is the resume kind itself, elected at normalization and set on the
+delegating frame; it has no node.) A multi-shot continuation clone copies the node and the
 pointer with it; the pointer is to a static function, so the clone is
 correct by copying.
 
@@ -420,8 +418,10 @@ which is what lets a frame with live operands carry a resume at all.
 
 ### Where it pays: survey
 
-**YIELD_FROM**. Built; the description below is what it replaced. Two
-axes were folded into one 766-line handler. The kind axis (`KOS_YF_SYNC_ITER`, `SYNC_GEN`, `PY_ASYNC_ITER` /
+**YIELD_FROM**. Built, and since taken further: the node itself is
+gone, the delegate is the resume's state and the kind is the phase
+(`opcode/YIELD_FROM.c`). The description below is what the first step
+replaced. Two axes were folded into one 766-line handler. The kind axis (`KOS_YF_SYNC_ITER`, `SYNC_GEN`, `PY_ASYNC_ITER` /
 `PY_ASYNC_GEN`, `KOS_ITER`) is fixed at push and re-decoded on every
 re-entry at the ladder near the handler's end; it becomes `drive`, elected
 in `yield_from_normalize`. The phase axis (`EMIT`, inject-throw,
@@ -431,13 +431,15 @@ node as state. The handler shrinks to: pop the subexpression, normalize,
 push the node, elect `drive`, tail-call it. The four drive bodies and the
 phase resumes are shared out-of-line functions.
 
-**FOREACH region and NEXT node**. `KosIterRequest_Next` branches on
-`islots` versus `op_get_next_from_iter` on every `ITER_NEXT`, and the
-request record's mode (`INSTALLED`, `GRAFT_VALUE`, `AWAITING_PY`) is a
-phase machine consulted at revive. `step` is elected when
-`kos_dyn_iter_request_bind_iter` binds the iterator; the mode transitions
-become the resume set for the delivery. `ITER_NEXT` becomes: find the
-region, record the else pc, tail-call `step`.
+**FOREACH region and the next request**. Done as far as the resume
+goes: the request record's modes are gone, every delivery (element,
+end, failure) reaches the step resume the loop's frame carries, which
+finishes the region's request; the next instruction has no node, its
+iterator stays on the operand stack under the halt and its resume
+takes it. What remains of the elector idea is `step`: `KosIterRequest_Next`
+still branches on `islots` versus `op_get_next_from_iter` on every
+`ITER_NEXT`, where a `step` elected at `kos_dyn_iter_request_bind_iter`
+would not.
 
 **FRAME return**. `RETURN` classifies its parent on every execution:
 `kos_return_is_plain`, `kos_return_is_region`, `kos_return_is_resume`, each
@@ -502,9 +504,8 @@ Ranked by expected benefit against risk:
 2. **CALL_FAST and CALL, cache-style.** Done and removed: flat.
    **OBJECT_OPERAND and the in-place families, cache-style.** Done, see
    the status above.
-3. **FOREACH `step` and the NEXT node, node-style.** Follows the
-   YIELD_FROM shape on a simpler node, with the delivery contract
-   already in place.
+3. **FOREACH `step`.** The delivery side is done (one route, the step
+   resume); the elected `step` on the request record remains.
 4. **FRAME `on_return`, node-style.** Every return classifies its parent
    with three chain reads; the install knows the shape. A ladder is
    replaced rather than a call, which is where the CALL_FAST elector

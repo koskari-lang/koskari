@@ -1,13 +1,14 @@
 # Closing a delegate through `yield-from`
 
 A throw into a generator suspended in `yield-from` is thrown into the
-delegate: the raised exception becomes the context's inject, the
-frame's resume takes it, and the drive calls the delegate's `throw`,
-`athrow` or `ki_throw`. GeneratorExit is the exception that is not
-routed. It raises at the delegating frame, the raise walk unwinds the
-node, and `kos_yieldfrom_close_delegate` (`dynchain/dyn_yield_from.c`)
-closes what it can without awaiting. That last step is where the
-delegate kinds part ways.
+delegate: the frame's resume kind names a throw kind, the ingress sets
+it on the frame with the exception as its delivery, and the throw kind
+calls the delegate's `throw`, `athrow` or `ki_throw`. GeneratorExit is
+the exception that is not routed. It raises at the delegating frame,
+the raise walk clears the frame's resume, and the kind's clear
+(`yield_from_state_clear`, `opcode/YIELD_FROM.c`) closes what it can
+without awaiting. That last step is where the delegate kinds part
+ways.
 
 **See also:** [generator-extent-freeze.md](generator-extent-freeze.md)
 (the other yield-time question), [extent-wind-unwind.md](extent-wind-unwind.md),
@@ -21,22 +22,14 @@ delegate kinds part ways.
 | sync generator | `close()` is called; an error from it is discarded |
 | Python async iterator | in-flight awaitable dropped; nothing else |
 | Python async generator | in-flight awaitable dropped; `aclose` is not called |
-| KosIter, including a Koskari generator | `ki_finish(delegate, 1)`: marked closed, chain left in place |
+| KosIter, including a Koskari generator | `ki_close`: a transform closes and closes its sources; a Koskari generator runs its teardown, so its `finally` runs now; declined while a step is in flight |
 
-The two async rows finalize later: a Python async generator through
-the interpreter's asyncgen finalizer hook, a Koskari generator at its
-wrapper's deallocation, which runs the GeneratorExit teardown drive.
-A delegate's `finally` therefore runs at collection, not at the
-`aclose` that closed the relay:
+The Python async generator row finalizes later, through the
+interpreter's asyncgen finalizer hook. A Koskari generator delegate's
+`finally` runs at the `aclose` that closed the relay
+(`tests/reproducers/test_yield_from_resume.py`,
+`test_close_closes_the_delegate`).
 
-```
-relay over a Koskari generator with a finally:
-  anext, aclose         -> log []
-  gc.collect            -> log ["inner finally"]
-```
-
-The close routine's own comment says an explicit close reaches the
-inner through the GeneratorExit throw to `athrow` path. It does not:
 GeneratorExit never enters the throw path, by the same split the
 forwarding fix made on purpose, so that a sync delegate is closed
 rather than thrown into.
@@ -51,14 +44,15 @@ structural unwind that cannot await, which is why the routine drops
 the awaitable and moves on.
 
 The throw path can. A GeneratorExit taken by the resume would reach
-the drive as a KOS_YF_THROW, and the async drive already builds an
-awaitable for a thrown exception and suspends on it. The shape would
-be: route GeneratorExit through the resume like any other throw; the
-sync arm calls `close()` and re-raises GeneratorExit; the async arm
-awaits `aclose()` (not `athrow(GeneratorExit)`, which would let the
-delegate yield past it), then re-raises; the KosIter arm drives the
-provider's own close, then re-raises. The raise walk's routine stays
-as the fallback for a node unwound by anything other than a close.
+the drive's throw kind, and the python async generator's throw kind
+already builds an awaitable for a thrown exception and suspends on it.
+The shape would be: route GeneratorExit through the throw kind like
+any other throw; the sync kind calls `close()` and re-raises
+GeneratorExit; the async kind awaits `aclose()` (not
+`athrow(GeneratorExit)`, which would let the delegate yield past it),
+then re-raises; the KosIter kind drives the provider's own close, then
+re-raises. The kind's clear stays as the fallback for a frame torn
+down by anything other than a close.
 
 CPython's only async relay shape, `async for x in sub: yield x`,
 leaves `sub` to the finalizer hooks when the outer is closed, so
@@ -75,8 +69,8 @@ worse than `yield from`, which is what `yield-from` names.
   same answer.
 - Ordering against the delegating generator's own `finally`: the
   delegate must be closed first, before the outer unwinds past the
-  node, which the throw path gives for free and the raise walk gives
-  only by the node's position.
+  halt, which the throw path gives for free and the raise walk gives
+  only by running the kind's clear ahead of the frame's extents.
 - The teardown drive at deallocation
   (`asyncgen_teardown_chain_on_ctx`) and a close driven through the
   relay must not both run; the closed mark on the wrapper is the

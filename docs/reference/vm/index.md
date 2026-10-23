@@ -80,7 +80,6 @@ indexes the frame's local slots directly.
   - `KOS_DYN_COLLECT` -- collector scope (`PUSH_COLLECT` / `POP_COLLECT`),
     which pushes its namespace on pop.
   - `KOS_DYN_CC` -- undelimited continuation block (`call/cc`).
-  - `KOS_DYN_YIELD_FROM` -- yield-from delegation state.
   - `KOS_DYN_PARAM` -- parameter bindings for a parameterize extent.
   - `KOS_DYN_WITH` -- context manager (`with` and `dyn-with`). Single-shot
     versus multi-shot is a field on the node, not a second kind.
@@ -1176,12 +1175,12 @@ bottom to top matches push order).
 - **See also**: [compile/yield-from](../specials/compile-yield-from.md)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
-**Example:** Delegate to a sync iterator; each yielded value is emitted (or pushed in-loop); final value is pushed when the iterator exhausts. Pool: 0 = [1, 2, 3].
+**Example:** Delegate to a sync iterator; each yielded value is emitted as the generator's own, and nothing is pushed when the iterator exhausts. Pool: 0 = [1, 2, 3].
 
 | index | opcode   | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
 | 0     | CONST   | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
-| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, rollback PC; resume: drive delegate; on exhaust stack: [..., final_value] |
+| 1     | YIELD_FROM | 0 | 0        | consume TOS as the delegate; the instruction halts on its resume, which re-yields each element and answers each send, until the delegate ends; stack: [...] |
 | 2     | RETURN  | 1   | 1        | |
 
 ## 7. Iteration

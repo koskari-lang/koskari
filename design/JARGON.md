@@ -36,9 +36,8 @@ cross into each other -- in either direction -- where the behavior of
 the system being designed can no longer reach. Python calling into
 koskari crosses a boundary (tp_call, `__anext__`, the adapters);
 koskari calling out to a plain python callable crosses one the other
-way. Reserve the word for that seam. (The dynchain's iteration nodes
-were once called "boundary nodes"; the code now says "iteration
-node" or the node kind's name.)
+way. Reserve the word for that seam. (The dynchain's for-each region was
+once called a "boundary node"; the code names the node kind.)
 
 ## bootstrap
 

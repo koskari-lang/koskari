@@ -212,14 +212,14 @@ materialise it but collects it:
   holds stay where they are, the provider among them, and each element
   delivered is pushed above them; the row's state `k` counts the
   elements pushed so far.
-- **each step is a NEXT node**: the handler, and then the kind's `fn`
-  after every delivery, pushes a `KOS_DYN_NEXT` node over the provider
-  and runs one `KosIterRequest_Next` against it, exactly as
-  `object_next_step` does for `(next it)`. A delivered element lands
-  through the pending slot into `fn`, which pushes it and requests the
-  next; the node self-pops after each delivery as it does today. A
-  request that continues threads into the installed frame or bounces
-  through the prologue, and the delivery arrives as a call's does.
+- **each step is a next request**: the handler, and then the kind's
+  `fn` after every delivery, steps the provider once with the row
+  resume set on the frame, exactly as `kos_next_step` does for
+  `(next it)`. A delivered element lands through the pending slot into
+  `fn`, which finishes the provider's step, pushes the element and
+  requests the next. A request that continues threads into the
+  installed frame or bounces through the prologue, and the delivery
+  arrives as a call's does.
 - **exhaustion finishes the row**: `fn` gathers the `k` elements off
   the stack into the tuple the materialisation would have produced,
   places it in the provider's position, and tails into

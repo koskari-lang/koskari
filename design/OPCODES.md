@@ -71,8 +71,8 @@ linking from design notes, PRs, or other docs.
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
   nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_PROMPT, KOS_DYN_DELIM,
   KOS_DYN_WIND, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP, KOS_DYN_FOREACH,
-  KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_CC, KOS_DYN_YIELD_FROM, KOS_DYN_PARAM,
-  KOS_DYN_WITH, KOS_DYN_SHIFT, KOS_DYN_GEN, KOS_DYN_NEXT). PUSH_* opcodes push a node onto this chain;
+  KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_CC, KOS_DYN_PARAM,
+  KOS_DYN_WITH, KOS_DYN_SHIFT, KOS_DYN_GEN). PUSH_* opcodes push a node onto this chain;
   POP_* opcodes pop it.
   Each opcode section that pushes onto the chain states **Pushes:** the chain node
   type and, when relevant, the static extent kind.
@@ -1217,12 +1217,12 @@ bottom to top matches push order).
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, and set a phase resume on the node. Each resume drives one step of the delegate (or handles a send/throw/close inject) and sets the next; the opcode itself is not re-entered. On completion: pop the dyn node and continue at the next instruction with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
-- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic chain node `KOS_DYN_YIELD_FROM`, which holds the delegate, its kind, and pending action/arg for send/throw/close and for resume-from-await.
+- **Stack**: Consume TOS (subexpr_result) and hop into the delegate kind's drive with a plain next; the handler runs once per delegation. The delegating frame's resume is the delegation: its state is the delegate, its kind is the delegate's kind and the phase (a drive waiting on the consumer's next or send, a throw kind waiting on a throw, the emit kind waiting on an installed provider's element, an await kind waiting on a python async step). Each delivery runs the phase, which sets the next; the opcode itself is not re-entered. At the end the delegate is released and the frame threads on with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
+- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. No chain node: the delegation lives in the frame's resume slot pair, and the kind's clear closes the delegate on a teardown with no delivery coming.
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Yielded values are never re-awaited; they are emitted as yields only.
-- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The node keeps a resume set, one succeeding the next, until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
-- **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize and classify, the four per-kind drives -- sync iter, sync gen, Python async, Koskari iter -- selected once and stored on the node, yield emission, void finish, and the send/await/emit resume phases that take a transfer plan's throw injection before delivery) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
+- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The frame keeps a resume set, one phase succeeding the next, until the delegate ends; every yield of an element (boundary **`KOS_RES_YIELD`**) and every suspension on an await (boundary **`KOS_RES_AWAIT`**) leaves the next phase set. The frame is never suspended toward the consumer while the delegate's frames are installed, which is what lets one resume slot carry both directions.
+- **Implementation**: Handler and every YIELD_FROM helper (normalize and classify; five drive kinds, one per delegate kind, each naming its throw kind; the emit kind and the two await kinds; the kind's clear and clone) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
 - **Design**: [design/archive/yield-from-execution-model.md](archive/yield-from-execution-model.md) (archived narrative; see [EVALUATOR.md](EVALUATOR.md) §5)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
@@ -1231,7 +1231,7 @@ bottom to top matches push order).
 | index | opcode   | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
 | 0     | CONST   | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
-| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, set resume; each resume drives the delegate; on exhaust: pop node, nothing pushed |
+| 1     | YIELD_FROM | 0 | 0        | consume TOS as the delegate and hop into its drive; each delivery runs the phase set on the frame; at the end nothing is pushed |
 | 2     | RETURN  | 1   | 1        | |
 
 
