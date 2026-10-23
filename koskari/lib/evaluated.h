@@ -105,7 +105,7 @@ typedef struct KosCallSlots {
    branch to else pc, default, StopIteration per site rules). The
    INSTALLED pair means the provider spliced work onto the consumer
    context; the site re-enters the prologue and the result is delivered
-   later at the site's iteration node. ERROR leaves PyErr set; on any
+   later to the site's resume. ERROR leaves PyErr set; on any
    non-INSTALLED outcome the provider has fully undone its own partial
    state. A provider whose step needs its own suspensions or
    sub-iteration runs them under a CPS resume frame (the resume
@@ -116,8 +116,8 @@ typedef enum {
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
   KOS_ITER_INSTALLED,   /* spliced own frames; deferred delivery */
   KOS_ITER_INSTALLED_VALUE, /* spliced a frame whose return IS the
-                               element: the site sets its iteration node's
-                               request to value mode */
+                               element, delivered to the site's resume
+                               as a frame return */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 
@@ -313,9 +313,9 @@ static inline int KosIter_CheckSync(PyObject *iter) {
 /**
    The plain-iterator arm the request entries share: a python iterator
    that is no provider and has tp_iternext answers through it alone,
-   with no iteration node, a StopIteration read as exhaustion. Returns
-   1 when iter is such an iterator, with *status set and *out the
-   element on DELIVERED; 0 when iter needs the node. Inline, so a
+   a StopIteration read as exhaustion. Returns 1 when iter is such an
+   iterator, with *status set and *out the element on DELIVERED; 0
+   when iter needs a request. Inline, so a
    provider's per-element fetch is the type test and the call.
 */
 KOS_OP_INLINE int kos_iter_next_plain(
@@ -346,7 +346,7 @@ KOS_OP_INLINE int kos_iter_next_plain(
 
 /**
    Request the next element of iter from a provider's step, which
-   runs outside the drive and so cannot push an iteration node. A
+   runs outside the drive and so cannot defer in place. A
    plain python iterator answers now: DELIVERED with *out the element
    (new ref), EXHAUSTED, or ERROR with PyErr set. Any other kind is
    deferred: a code-less frame carrying resume and state is installed

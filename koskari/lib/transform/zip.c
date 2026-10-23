@@ -105,7 +105,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
   if (t->idx < t->nsrc) {
     /* the element lands in zip_resume_deliver, which files it and
        hops back here; a spent source's StopIteration reaches the
-       consumer's iteration node, and the partial row is cleared by
+       consumer's step resume, and the partial row is cleared by
        ki_finish */
     KosOpResult r = KosContext_NextResume(
         ctx, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);

@@ -39,7 +39,6 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_RESULT(node) = NULL;
   KosDynForeach_REQ(node)->iter = NULL;
   KosDynForeach_REQ(node)->islots = NULL;
-  KosDynForeach_REQ(node)->mode = KOS_IREQ_IDLE;
   KosDynForeach_REQ(node)->kind = KOS_IREQ_KIND_NONE;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
@@ -89,9 +88,6 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
     return -1;
   if (snapshot_set_obj(data, "iter",
       KosDynForeach_ITER((KosDynForeach *) node)) < 0)
-    return -1;
-  if (snapshot_set_uint(data, "req_mode",
-      KosDynForeach_REQ(node)->mode) < 0)
     return -1;
   return 0;
 }

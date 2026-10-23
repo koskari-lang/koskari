@@ -131,8 +131,6 @@ typedef enum KosDynFlags {
 #define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 #define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
-/** Iteration node: a FOREACH with a step in flight */
-#define KOS_DYN_CAP_ITER_RECEIVER     (1u << 9)
 /** Node participates in raise-walk dispatch (handle/restitch); the fast
    first check before kos_dyn_handle. Distinct from HANDLES_EXCEPTIONS,
    which marks failed-pop recovery (kos_dyn_exception_unwind). */
@@ -168,27 +166,6 @@ typedef enum KosDynWindPhase {
 /* === KosIterRequest: the iteration request sidecar === */
 
 
-/**
-   Wake events a requestor can receive: request completions only. The
-   sidecar consumes machinery-internal traffic (awaited values,
-   provider suspensions, mediated source yields) itself.
-*/
-typedef enum {
-  KOS_IWAKE_VALUE = 0,  /* the requested element arrived */
-  KOS_IWAKE_END,        /* the source is exhausted (payload or NULL) */
-  KOS_IWAKE_EXCEPTION,  /* the request failed; PyErr set */
-} KosIterWakeEvent;
-
-
-/** In-flight step modes; private to the sidecar and the iteration-node
-    delivery machinery -- sites and providers never read them */
-#define KOS_IREQ_IDLE         0u
-#define KOS_IREQ_INSTALLED    1u  /* provider's own frames are in-eval */
-#define KOS_IREQ_AWAITING_PY  2u  /* suspended python async step; the
-                                     awaited completion is the element */
-#define KOS_IREQ_GRAFT_VALUE  3u  /* value graft: the next frame return
-                                     below is the element */
-
 /** What a bound iterator is, so the step calls the one entry it needs.
     Async wins over sync when a type offers both, as the probing order
     always had it. */
@@ -214,10 +191,10 @@ typedef struct KosLiveRegs {
 
 
 /**
-   The iteration request record: the single home of an in-flight
-   step's state. Embedded in the FOREACH node
-   arms; the delivery machinery reads the stepped iterator and the
-   mode from here and nowhere else.
+   The iteration request record: the FOREACH region's iterator and
+   how it steps. Embedded in the FOREACH node; the step reads the
+   iterator and its kind from here and nowhere else, and the step
+   resume finishes it on delivery.
 */
 typedef struct KosIterRequest {
   PyObject *iter;       /* stepped iterator; strong ref while the
@@ -227,7 +204,6 @@ typedef struct KosIterRequest {
                                   iter through kos_dyn_iter_request_bind_iter,
                                   so the step and delivery paths never
                                   re-derive it */
-  uint8_t mode;         /* KOS_IREQ_* */
   uint8_t kind;         /* KOS_IREQ_KIND_*: how the step drives iter,
                            classified once at bind so no step probes
                            the type again */
@@ -365,11 +341,12 @@ typedef struct KosResumeKind {
   int settle;   /* the delivery is settled before fn sees it: 0 for a
                    kind whose delivery is data, as a delegate's yielded
                    value or a for-each element is */
-  int direct;   /* an iteration node hands this kind its element by
-                   calling fn at once, never staging it: the step
-                   resumes of the for-each instructions. Such a kind
-                   takes its delivery as it is, and a region leaving
-                   the chain clears it from the frame. */
+  int direct;   /* a delivery hands this kind its element by calling
+                   fn at once, never staging it: the step resumes of
+                   the for-each and next instructions, the yield-from
+                   phases. Such a kind takes its delivery as it is,
+                   and a region leaving the chain clears it from the
+                   frame. */
 } KosResumeKind;
 
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
@@ -381,7 +358,7 @@ typedef struct KosResumeKind {
   static const KosResumeKind ident = {                                  \
     (label), (fnp), (clearp), (clonep), 0, 0 }
 
-/* A kind an iteration node delivers to directly. */
+/* A kind a delivery calls directly. */
 #define KOS_RESUME_KIND_DIRECT(ident, label, fnp, clearp, clonep)       \
   static const KosResumeKind ident = {                                  \
     (label), (fnp), (clearp), (clonep), 0, 1 }
@@ -1341,22 +1318,6 @@ void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 
 
 /**
-   Locate the nearest receiving iteration node from active chain state.
-
-   A node is a receiving iteration node iff it carries
-   KOS_DYN_CAP_ITER_RECEIVER -- the capability is the single
-   routing key; no node-kind checks.  FOREACH toggles it with the
-   request mode (kos_dyn_iter_request_set_mode).
-
-   dyn_top is preferred: after a yield freeze the node that was
-   directly driving the generator sits at dyn_top.  Otherwise walk
-   outward from the running frame and return the nearest receiver.
-
-   :return: borrowed node, or NULL when no receiver is active
-*/
-KosDynNode *kos_dyn_find_iter_node(KosContext *ctx);
-
-/**
    The GEN node of the generator the running frame belongs to: the
    nearest GEN walking outward from the frame, or NULL when the frame
    is not in a generator. Callers: op_YIELD and the trampoline's YIELD
@@ -1365,37 +1326,10 @@ KosDynNode *kos_dyn_find_iter_node(KosContext *ctx);
 KosDynGen *kos_dyn_find_gen(KosContext *ctx);
 
 /**
-   The exception type that ends this node's in-flight step:
-   StopIteration for a flattened Koskari agen step, StopAsyncIteration
-   for a suspended python async iterator step.
+   The exception type that ends the region's step: StopAsyncIteration
+   for a python async iterator, StopIteration for anything else.
 */
 PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node);
-
-
-/**
-   True when the node's in-flight step is a value graft: the next
-   frame return below delivers as the step element.
-*/
-int kos_dyn_iter_node_value_mode(KosDynNode *node);
-
-
-/**
-   The iterator object an iteration node's request is stepping
-   (borrowed): the FOREACH iter or the NEXT node's object.
-*/
-PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node);
-
-/**
-   True when the node's in-flight step is a suspended python async
-   iterator being driven through the pending context await.
-*/
-int kos_dyn_iter_node_awaiting_py(KosDynNode *node);
-
-/**
-   Clear a receiving iteration node after its driven generator was torn down on
-   an error path: idle a FOREACH step.
-*/
-void kos_dyn_iter_node_abort(KosContext *ctx, KosDynNode *node);
 
 
 /**
@@ -2196,9 +2130,9 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 
 
 /**
-   The iteration request record embedded in a receiver-capable node, or
-   NULL for any other kind. The delivery machinery reads the stepped
-   iterator and the in-flight mode from here and nowhere else.
+   The iteration request record embedded in a FOREACH node, or NULL
+   for any other kind. The step reads the iterator and its kind from
+   here and nowhere else.
 */
 static inline KosIterRequest *kos_dyn_iter_request(KosDynNode *node) {
 
@@ -2208,44 +2142,6 @@ static inline KosIterRequest *kos_dyn_iter_request(KosDynNode *node) {
     default:
       return NULL;
   }
-}
-
-
-/**
-   Set a iteration node's request mode. For FOREACH the
-   KOS_DYN_CAP_ITER_RECEIVER capability stays in lockstep: the
-   node is a receiving iteration node exactly while a step is in flight.
-   All mode writes go through this.
-*/
-static inline void kos_dyn_iter_request_set_mode(
-    KosDynNode *node, uint8_t mode) {
-
-  KosIterRequest *req = kos_dyn_iter_request(node);
-
-  req->mode = mode;
-  if (KosDynNode_KIND(node) == KOS_DYN_FOREACH) {
-    if (mode != KOS_IREQ_IDLE)
-      KosDynNode_CAPS(node) |= KOS_DYN_CAP_ITER_RECEIVER;
-    else
-      KosDynNode_CAPS(node) &= ~KOS_DYN_CAP_ITER_RECEIVER;
-  }
-}
-
-
-/**
-   Set a iteration node's request: record the stepped iterator (strong
-   ref) and the in-flight mode
-*/
-static inline void kos_dyn_iter_request_set(
-    KosDynNode *node, PyObject *iter, uint8_t mode) {
-
-  KosIterRequest *req = kos_dyn_iter_request(node);
-  PyObject *prior = req->iter;
-
-  Py_XINCREF(iter);
-  kos_dyn_iter_request_bind_iter(req, iter);
-  Py_XDECREF(prior);
-  kos_dyn_iter_request_set_mode(node, mode);
 }
 
 

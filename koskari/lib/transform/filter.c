@@ -24,7 +24,7 @@
    frame is cached on the filter between steps
    (KosNativeFrame_ReturnToCache), stripped inert so the cache holds no
    references. Exhaustion and errors leave the frame as exceptions;
-   the consumer's iteration node converts StopIteration per its own
+   the consumer's step resume converts StopIteration per its own
    rules.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
@@ -96,7 +96,7 @@ KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
    value -- either cold, from the driven-source install, or from
    filter_refetch after a rejected element. A NULL with an exception
    already set is the raise walk propagating that exception; this step
-   always lets it propagate (the consumer's iteration node owns the
+   always lets it propagate (the consumer's step resume owns the
    conversion, StopIteration truncation parity included).
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(

@@ -88,9 +88,6 @@ indexes the frame's local slots directly.
     operand segment; no frame or namespace of its own.
   - `KOS_DYN_GEN` -- generator node. Intercepts yield, return, and raise,
     and denies shift.
-  - `KOS_DYN_NEXT` -- iteration node for a standalone `OBJECT_NEXT` over a
-    Koskari async generator. Pushed at runtime and self-popping once a
-    yield or a return has been delivered.
   - `KOS_DYN_UNKNOWN` -- sentinel past the last kind; never a live node.
 - **pre-compile, post-compile**: the instruction stream as the compiler
   emits it, with labels as strings and constants as values, and the

@@ -508,8 +508,8 @@ KosOpResult kos_dyn_unwind_to_loop(
    PEP 479 and PEP 525 at a generator's boundary: a StopIteration or
    StopAsyncIteration escaping the body is not the protocol's own end
    signal, so it becomes a RuntimeError with the original as its
-   cause before any consumer -- the flattened iteration node, the
-   Python iterator adapter, the async-generator stepper -- can read it
+   cause before any consumer -- the flattened consumer's step resume,
+   the Python iterator adapter, the async-generator stepper -- can read it
    as exhaustion. Any other pending exception passes untouched.
 */
 static void kos_dyn_gen_convert_escaping_stop(void) {
@@ -636,12 +636,9 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
          (void *) top,
          kos_dynnode_kind_name(KosDynNode_KIND(top)));
 
-    /* Cap fast check: nodes that intercept RAISE, and receiving iterator
-       boundaries (which may consume a StopIteration from their in-flight
-       flattened step), are dispatched to the handle phase; everything
-       else goes straight to unwind/pop. */
-    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)
-        || KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER)) {
+    /* Cap fast check: nodes that intercept RAISE are dispatched to the
+       handle phase; everything else goes straight to unwind/pop. */
+    if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_INTERCEPTS_RAISE)) {
 
     /* In-place delimited return bookmark: the slice raised. Restitch the
        invoke span and continue the raise from the invoke site. */
@@ -684,38 +681,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
              consumer's regions, per Python generator semantics. */
           kos_dyn_finish_flattened_gen(ctx, (KosDynGen *) top);
           continue;
-        }
-
-        if (KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER)) {
-          /* The iteration node consumed the step-ending exception from its
-             in-flight step as end-of-iteration: convert to exhaustion
-             delivery. StopIteration carries the flattened generator's
-             return value (coroutine protocol equation);
-             StopAsyncIteration has no return-value channel. */
-          PyObject *stop_val = NULL;
-
-          if (PyErr_ExceptionMatches(PyExc_StopIteration)) {
-            if (PyGen_FetchStopIterationValue(&stop_val) < 0)
-              return EVAL_FATAL();
-          } else {
-            PyErr_Clear();
-          }
-          if (! stop_val) {
-            stop_val = Py_None;
-            Py_INCREF(stop_val);
-          }
-          {
-            KosOpResult dr = KosIterRequest_Deliver(ctx, top, KOS_IWAKE_END,
-                                                    stop_val);
-
-            if (dr.kind == KOS_RES_RAISE)
-              /* the iteration node re-emitted (e.g. 1-arg NEXT re-raising
-                 StopIteration): keep propagating */
-              continue;
-            if (dr.kind == KOS_RES_FATAL)
-              return dr;
-            return EVAL_REPROLOGUE();
-          }
         }
 
         KosDynNode *region = top;

@@ -605,7 +605,7 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob);
 /**
    Complete a code-less frame by handing value to the eval loop's
    return machinery, which owns every delivery terminus (parent frame,
-   iteration node, drive root). When cache is given, sets the frame to
+   step resume, drive root). When cache is given, sets the frame to
    be stored into that caller-owned one-frame cache when the return
    path frees it (kos_dynframe_cache_inert); a NULL or occupied cache
    frees as usual. The exception path never caches -- a frame popped by
@@ -636,16 +636,16 @@ KosDynFrame *KosResumeFrame_Install(
 
 
 /**
-   Request the next element of iter from inside a code-less frame:
-   push a one-request iteration node for iter and run one request
-   through KosIterRequest_Next. On DELIVERED *out is the element (new
-   ref) and the node is already cleaned up; on EXHAUSTED and ERROR the
-   node is cleaned up and *out is NULL (no exception is set for
-   EXHAUSTED; ERROR leaves PyErr set). On CONTINUES the node remains
-   with installed work above it and the element later lands on the
-   native frame's stack (an ITERATE wake pops it); on EXIT the node
-   remains and *out is the awaitable to suspend on (EVAL_AWAIT), the
-   element arriving the same way.
+   Request the next element of iter from inside a code-less frame,
+   with no node: a plain iterator answers through tp_iternext, a
+   provider steps through its suite, a python async iterator through
+   its __anext__. On DELIVERED *out is the element (new ref); on
+   EXHAUSTED and ERROR *out is NULL (no exception is set for
+   EXHAUSTED; ERROR leaves PyErr set). On CONTINUES the provider's
+   frames are installed and the element reaches the caller's resume
+   when they deliver; on EXIT *out is the awaitable to suspend on
+   (EVAL_AWAIT), the element arriving the same way. The caller's own
+   record holds iter and finishes it on delivery.
 */
 KosIterRequestStatus KosNativeFrame_RequestNext(
     KosContext *ctx,
@@ -1372,9 +1372,9 @@ void kos_iter_close(PyObject *iter);
 
 
 /**
-   One iteration request against a iteration node's request on record: the
-   single site API for stepping the node's iterator over all three
-   protocols. send_val borrowed; *fast_out new ref on
+   One iteration request against a FOREACH region's request on record:
+   the single site API for stepping the region's iterator over all
+   three protocols. send_val borrowed; *fast_out new ref on
    DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
 */
 KosIterRequestStatus KosIterRequest_Next(
@@ -1383,19 +1383,6 @@ KosIterRequestStatus KosIterRequest_Next(
     PyObject *send_val,
     PyObject **fast_out);
 
-
-/**
-   Deliver a typed event into a iteration node's iteration request: the
-   one entry the eval delivery points call. value is consumed. A live
-   frame carrying a direct resume (KosResumeKind.direct) takes the
-   element, or KosIterEnd at the end of the iteration, by a call of
-   that resume at once; the result is then the consumer chain's own.
-*/
-KosOpResult KosIterRequest_Deliver(
-    KosContext *ctx,
-    KosDynNode *node,
-    KosIterWakeEvent ev,
-    PyObject *value);
 
 /**
    The end of an iteration, handed to a direct resume in place of an

@@ -18,8 +18,8 @@
    -- runs under one CPS resume-carrying frame: FETCH requests the next
    source element via KosContext_NextResume, INVOKE applies the
    function via KosContext_Call, and completion delivers the
-   element to the consumer's iteration node. Exhaustion and errors leave
-   the frame as exceptions; the consumer's iteration node converts
+   element to the consumer's step resume. Exhaustion and errors leave
+   the frame as exceptions; the consumer's step resume converts
    StopIteration per its own rules, which also gives a mapped
    function's StopIteration builtins.map truncation parity.
 
@@ -65,7 +65,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
   KosTransform *m = (KosTransform *) state;
 
   /* The raise walk is propagating an exception: let it, so the frame
-     pops and the consumer's iteration node owns the conversion
+     pops and the consumer's step resume owns the conversion
      (StopIteration truncation parity included). */
   if (! value)
     return EVAL_RAISE();

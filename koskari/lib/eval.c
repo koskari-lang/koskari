@@ -167,59 +167,13 @@ int KosEval_IsFuture(PyObject *val) {
 #include "eval/eval_match.c"
 
 
-/**
-   On exception: if we are inside a Koskari async gen step (NEXT or ITER_NEXT),
-   detach the gen frame, close the gen, and clear NEXT / FOREACH node state.
-*/
-static void clear_kos_agen_iter_node_on_error(KosContext *ctx) {
-
-  KosDynFrame *cf;
-  KosDynNode *top;
-  KosDynNode *node;
-  KosPyAsyncGen *agen;
-
-  cf = KosContext_FRAME(ctx);
-  top = KosContext_DYN_TOP(ctx);
-
-  if (! cf || ! top || ! KosDynNode_IS_FRAME(top))
-    return;
-  {
-    KosDynNode *par = KosDynNode_PARENT(top);
-    if (! par || ! KosDynNode_IS_GEN(par))
-      return;
-  }
-
-  node = kos_dyn_find_iter_node(ctx);
-  if (! node)
-    return;
-
-  agen = (KosPyAsyncGen *) kos_dyn_iter_node_iter_obj(node);
-  if (! agen)
-    return;
-
-  {
-    KosDynFrame *detached_frame = NULL;
-    if (kos_dyn_detach_top_frame(ctx, &detached_frame) == 0
-        && detached_frame) {
-      KosIterSlots *islots;
-      if (KosIter_CheckSlots((PyObject *) agen, &islots))
-        islots->ki_finish((PyObject *) agen, 1);
-      kos_dynframe_free(detached_frame);
-    }
-  }
-
-  kos_dyn_iter_node_abort(ctx, node);
-}
-
-
 /* === KosIter provider step drive === */
 
 
 /**
-   One iteration request against a iteration node's request on record: the
-   single site API for "give me the next element of this thing". A
-   KosIter provider drives through its suite (graft-capable, mode
-   updates recorded); a sync iterator steps through tp_iternext; a
+   One step of a provider through its suite, for every site that
+   steps one: the next request, the for-each step, yield-from and the
+   Python adapters. A sync iterator steps through tp_iternext; a
    python async iterator through its eager-stepped __anext__. send_val
    is borrowed (protocol send); *fast_out receives a new reference on
    DELIVERED/EXHAUSTED, and the awaitable payload on EXIT.
@@ -278,31 +232,21 @@ KosIterRequestStatus KosIterRequest_Next(
   if (islots) {
     PyObject *out = NULL;
 
-    /* The mode is set before the step: an INSTALLED outcome delivers
-       through the iteration node, and deliveries can elect it mid-step. */
-    kos_dyn_iter_request_set_mode(node, KOS_IREQ_INSTALLED);
-
     switch (kos_iter_step_provider(ctx, iter, islots, send_val, &out)) {
       case KOS_ITER_VALUE:
-        kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
         *fast_out = out;
         return KOS_IREQ_DELIVERED;
 
       case KOS_ITER_EXHAUSTED:
-        kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
         *fast_out = out;
         return KOS_IREQ_EXHAUSTED;
 
       case KOS_ITER_INSTALLED:
-        return KOS_IREQ_CONTINUES;
-
       case KOS_ITER_INSTALLED_VALUE:
-        kos_dyn_iter_request_set_mode(node, KOS_IREQ_GRAFT_VALUE);
         return KOS_IREQ_CONTINUES;
 
       case KOS_ITER_ERROR:
       default:
-        kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
         return KOS_IREQ_ERROR;
     }
   }
@@ -322,8 +266,7 @@ KosIterRequestStatus KosIterRequest_Next(
 
       case GET_NEXT_SUSPEND:
         /* Suspended python async step: the awaited completion IS the
-           element, delivered through the iteration node at revive. */
-        kos_dyn_iter_request_set_mode(node, KOS_IREQ_AWAITING_PY);
+           element, staged for the step resume at revive. */
         *fast_out = _await;
         return KOS_IREQ_EXIT;
 
@@ -335,14 +278,6 @@ KosIterRequestStatus KosIterRequest_Next(
 }
 
 
-/**
-   Deliver a typed event into a iteration node's request: the one entry
-   the eval's delivery points call; the site completes through its
-   delivery tail. value is consumed.
-
-   :return: EVAL_NORMAL when the site completed and eval continues,
-            EVAL_RAISE with PyErr set, EVAL_FATAL on delivery failure
-*/
 /* Whether the live frame carries a resume: the receiver of a
    producer's element or end. */
 static inline int iter_frame_has_resume(KosContext *ctx) {
@@ -354,30 +289,22 @@ static inline int iter_frame_has_resume(KosContext *ctx) {
 
 /**
    Hand an element, or the end of the iteration, to the resume the
-   live frame carries. The node's request, when the producer was
-   stepped through one, is finished and idle first; the resume's own
-   record of what it stepped is the resume's to finish. An end
-   arrives as the protocol spells it, NULL with StopIteration carrying
-   the producer's return value. A direct kind runs now, cleared from
-   the frame, and threads the consumer on, so what comes back is the
-   chain's own signal; any other kind takes the delivery through the
-   prologue's delivery step, the value staged or the end pending.
-   value is consumed.
+   live frame carries. The resume's own record of what it stepped is
+   the resume's to finish. An end arrives as the protocol spells it,
+   NULL with StopIteration carrying the producer's return value. A
+   direct kind runs now, cleared from the frame, and threads the
+   consumer on, so what comes back is the chain's own signal; any
+   other kind takes the delivery through the prologue's delivery
+   step, the value staged or the end pending. value is consumed.
 */
 static KosOpResult iter_deliver_to_resume(
     KosContext *ctx,
-    KosDynNode *node,
     PyObject *value,
     int exhausted) {
 
   KosDynFrame *frame = KosContext_FRAME(ctx);
   const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
-
-  if (node) {
-    kos_dyn_iter_request_finish(node, exhausted);
-    kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
-  }
 
   if (exhausted) {
     kos_raise_stop_iteration(value);
@@ -395,64 +322,6 @@ static KosOpResult iter_deliver_to_resume(
 
   KOS_TRACE_RESUME_STEP();
   return resume->fn(ctx, state, value);
-}
-
-
-KosOpResult KosIterRequest_Deliver(
-    KosContext *ctx,
-    KosDynNode *node,
-    KosIterWakeEvent ev,
-    PyObject *value) {
-
-  KosIterRequest *req = kos_dyn_iter_request(node);
-
-  if (! req) {
-    Py_XDECREF(value);
-    PyErr_SetString(PyExc_RuntimeError,
-                    "iter request delivery to a non-iteration node");
-    return EVAL_RAISE();
-  }
-
-  switch (ev) {
-    case KOS_IWAKE_VALUE:
-      if (iter_frame_has_resume(ctx))
-        return iter_deliver_to_resume(ctx, node, value, 0);
-      Py_DECREF(value);
-      PyErr_SetString(PyExc_SystemError,
-                      "iteration value delivered with no resume waiting");
-      return EVAL_FATAL();
-
-    case KOS_IWAKE_END: {
-      /* A generator completing at the site's iteration node arrives with its
-         frame chain still installed; unwind it before delivering. */
-      KosDynNode *child = (KosDynNode *) KosContext_FRAME(ctx);
-      if (child && KosContext_DYN_TOP(ctx) == child) {
-        KosDynNode *parent = KosDynNode_PARENT(child);
-        if (parent && KosDynNode_IS_GEN(parent)) {
-          if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
-            Py_XDECREF(value);
-            return EVAL_FATAL();
-          }
-        }
-      }
-
-      if (iter_frame_has_resume(ctx))
-        return iter_deliver_to_resume(ctx, node, value, 1);
-      Py_XDECREF(value);
-      PyErr_SetString(PyExc_SystemError,
-                      "iteration end delivered with no resume waiting");
-      return EVAL_FATAL();
-    }
-
-    case KOS_IWAKE_EXCEPTION:
-    default:
-      /* The raise walk owns exception routing until the wake layer
-         lands; nothing calls this yet. */
-      Py_XDECREF(value);
-      PyErr_SetString(PyExc_SystemError,
-                      "iter request exception delivery not yet routed");
-      return EVAL_RAISE();
-  }
 }
 
 
@@ -528,38 +397,12 @@ static KosOpResult revive_await(
     to_push = send_val;
   }
   if (to_push != NULL && KosContext_FRAME(ctx)) {
-    KosDynNode *node = kos_dyn_find_iter_node(ctx);
-    if (node && kos_dyn_iter_node_awaiting_py(node)
-        && iter_frame_has_resume(ctx)) {
-      /* A for-each step's awaited element: the node's step is over, and
-         the element is staged below for the step resume the frame
-         carries, which the entry's delivery step runs. A revive runs
-         ahead of the trampoline, so the resume cannot run the
-         consumer's chain from here. */
-      kos_dyn_iter_request_finish(node, 0);
-      kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
-    } else if (node && kos_dyn_iter_node_awaiting_py(node)) {
-      /* The pending await belongs to the iteration node whose request is
-         set: a python async step's awaited result IS the element. */
-      KosOpResult dr;
-
-      if (! owned)
-        Py_INCREF(to_push);
-      dr = KosIterRequest_Deliver(ctx, node, KOS_IWAKE_VALUE, to_push);
-      if (dr.kind == KOS_RES_FATAL) {
-        if (! PyErr_Occurred())
-          PyErr_SetString(PyExc_RuntimeError,
-                          "node delivery failed at revive");
-        return EVAL_RAISE();
-      }
-      if (dr.kind != KOS_RES_NORMAL)
-        return dr;
-      return EVAL_NORMAL();
-    }
-
     if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
       /* the frame is waiting on a resume: the awaited value is its
-         delivery, staged for the entry's delivery step */
+         delivery, staged for the entry's delivery step. A for-each
+         step's awaited element arrives this way, and the step resume
+         finishes the region's request. A revive runs ahead of the
+         trampoline, so the resume cannot run from here. */
       if (! owned)
         Py_INCREF(to_push);
       KosContext_StageDelivery(ctx, to_push);
@@ -1138,11 +981,9 @@ own_fail:
      4. cc dispatch  - continuation signal: handle_continuation_apply
                        (own token: invoke; foreign: cc-unwind goal);
                        REPROLOGUE re-enters the loop with a goal active
-     5. agen clear   - clear_kos_agen_iter_node_on_error before the
-                       exception can escape an async-gen node step
-     6. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
+     5. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
                        WITH / unwind extents
-     7. outcome map  - REPROLOGUE: handler applied, restart prologue.
+     6. outcome map  - REPROLOGUE: handler applied, restart prologue.
                        AWAIT: async unwind started; tag KOS_SUSP_AWAIT,
                        mark suspended, propagate awaitable (caller owns
                        tl.val).
@@ -1179,8 +1020,6 @@ static KosOpResult process_raise(KosContext *ctx) {
 
   if (is_cc_apply)
     return handle_continuation_apply(ctx);
-
-  clear_kos_agen_iter_node_on_error(ctx);
 
   /* The live frame's resume gets the failure before the walk does,
      whatever the frame: a resume is a halted instruction awaiting its
@@ -2201,7 +2040,7 @@ const KosThreadFn kos_op_handlers[] = {
 /**
    Complete a native frame by handing value to the eval loop's return
    machinery, which owns every delivery terminus (parent frame,
-   iteration node, drive root). Clears the program slot and, when cache
+   step resume, drive root). Clears the program slot and, when cache
    is given, flags the frame to be cached there when the return path
    frees it (KOS_FRAME_RETURN_TO_CACHE; native_state becomes the cache
    slot). The caller returns this result from its handler. value is
@@ -2694,20 +2533,14 @@ static KosOpResult eval_event_yield(
     return EVAL_FATAL();
   }
   {
-    /* The consumer is what the GEN was installed under, now dyn_top
-       after the freeze: a receiving iteration node (a for-each region
-       with its step in flight, a yield-from over a provider), else the
-       live frame, whose resume takes the element (a next request
-       stepped the producer with no node), else nobody, and the yield
-       leaves the evaluator. Never a search outward: a frame waiting on
-       its own step sits between the producer and any enclosing node. */
-    KosDynNode *top = KosContext_DYN_TOP(ctx);
-    KosDynNode *node = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_ITER_RECEIVER))
-        ? top : NULL;
-    if (node || iter_frame_has_resume(ctx)) {
-      KosOpResult dr = node
-          ? KosIterRequest_Deliver(ctx, node, KOS_IWAKE_VALUE, val)
-          : iter_deliver_to_resume(ctx, NULL, val, 0);
+    /* The consumer is the live frame once the freeze has detached the
+       GEN: its resume takes the element (a for-each step, a next
+       request, a yield-from over a provider), else nobody, and the
+       yield leaves the evaluator. Never a search outward: a frame
+       waiting on its own step sits between the producer and any
+       enclosing region. */
+    if (iter_frame_has_resume(ctx)) {
+      KosOpResult dr = iter_deliver_to_resume(ctx, val, 0);
       if (dr.kind == KOS_RES_NORMAL)
         return kos_eval_delivery_done(ctx);
       if (dr.kind == KOS_RES_RAISE) {
@@ -2913,9 +2746,9 @@ KOS_OP_INLINE KosOpResult eval_plain_return(
 /**
    Region-parent return predicate: the frame returns into a chain node
    that passes a callee's value through to the frame beneath it -- any
-   node that is not itself a frame, a generator, or an iteration node
-   with a step in flight (the receiving side of a value-grafted invoke,
-   which is a return terminus). Every retarget fact is cache-available:
+   node that is not itself a frame or a generator, beneath a frame
+   with no resume waiting (a stepping loop's frame takes the value as
+   its step's element instead). Every retarget fact is cache-available:
    the back frame recorded at install, the freed segment's displaced
    owning slot, and the node's namespace fill. A node that reacts to
    control returning into it says so with KOS_DYN_CAP_CONTROL_HOOK and
@@ -2939,8 +2772,7 @@ KOS_OP_INLINE int kos_return_is_region(
   parent = KosDynNode_PARENT(child);
   if (! parent
       || KosDynNode_IS_FRAME(parent)
-      || KosDynNode_IS_GEN(parent)
-      || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER))
+      || KosDynNode_IS_GEN(parent))
     return 0;
 
   /* Same two conjuncts as kos_return_parent_is_plain, for the frame
@@ -3097,41 +2929,24 @@ static KosOpResult eval_event_return_at_frame(
     return r;
   }
 
-  /* Case 2: gen parent — deliver to the receiving iteration node above the GEN.
-     The receiver is the true terminus; GEN is unwound on the way out. */
+  /* Case 2: gen parent -- the flattened generator returned. The GEN
+     sits on whatever the consumer frame had at dyn_top (the frame
+     itself, a for-each region, an extent such as a try), and the
+     frame's resume takes the end once the generator's frame and GEN
+     are gone. */
   if (parent && KosDynNode_IS_GEN(parent)) {
-    KosDynNode *consumer = KosDynNode_PARENT(parent);
-
-    if (! consumer) {
+    if (! KosDynNode_PARENT(parent)) {
       KosContext_MarkDeadAfterReturn(ctx);
       ctx->terminal = 1;
       return EVAL_RETURN(val);
     }
 
-    if (KosDynNode_HAS_CAP(consumer, KOS_DYN_CAP_ITER_RECEIVER)) {
-      KosOpResult dr = KosIterRequest_Deliver(ctx, consumer,
-                                              KOS_IWAKE_END, val);
-      if (dr.kind == KOS_RES_NORMAL)
-        return EVAL_REPROLOGUE();
-      if (dr.kind == KOS_RES_RAISE) {
-        KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
-        return rs;
-      }
-      return dr;
-    }
-
-    /* The producer was stepped by a next request with no node: the GEN
-       sits on whatever the consumer frame had at dyn_top (the frame
-       itself, or an extent of its such as a try), and the frame's
-       resume takes the end once the generator's frame and GEN are
-       gone. */
     if (kos_dyn_teardown_gen_exhausted(ctx) < 0) {
       Py_DECREF(val);
       return EVAL_FATAL();
     }
     if (iter_frame_has_resume(ctx)) {
-      KosOpResult dr = iter_deliver_to_resume(ctx, NULL, val, 1);
+      KosOpResult dr = iter_deliver_to_resume(ctx, val, 1);
       if (dr.kind == KOS_RES_NORMAL)
         return kos_eval_delivery_done(ctx);
       if (dr.kind == KOS_RES_RAISE) {
@@ -3148,36 +2963,12 @@ static KosOpResult eval_event_return_at_frame(
     return EVAL_FATAL();
   }
 
-  /* Case 2b: value-graft parent — an iteration node whose request is in
-     value mode: the returning frame is a provider's grafted invoke, and
-     its return value is the step element, delivered through the
-     iteration node (push, mode reset, ki_finish). */
-  if (parent
-      && KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_ITER_RECEIVER)
-      && kos_dyn_iter_node_value_mode(parent)) {
-
-    if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
-      Py_DECREF(val);
-      return EVAL_FATAL();
-    }
-
-    {
-      KosOpResult dr = KosIterRequest_Deliver(ctx, parent,
-                                              KOS_IWAKE_VALUE, val);
-      if (dr.kind == KOS_RES_NORMAL)
-        return EVAL_REPROLOGUE();
-      if (dr.kind == KOS_RES_RAISE) {
-        KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
-        return rs;
-      }
-      return dr;
-    }
-  }
-
-  /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, native
-     frame, etc.) — pop the callee frame and let eval_parent_return_deliver
-     handle the context transition and any control-return hooks. */
+  /* Case 3: any other non-NULL, non-GEN parent (WIND, TRY, WITH, a
+     for-each region, native frame, etc.) -- pop the callee frame and
+     let eval_parent_return_deliver handle the context transition and
+     any control-return hooks. A provider's grafted invoke returning
+     under a stepping region lands here: the loop frame's step resume
+     takes the value as the element. */
   if (parent) {
     if (unlikely(kos_dyn_pop_frame(ctx) < 0)) {
       Py_DECREF(val);
@@ -3357,7 +3148,7 @@ static KosOpResult eval_step_drain_goal(KosContext *ctx) {
    invoke when the eval frame has a resume kind set.
 
    This is the single point every staged delivery converges on -- a
-   callee's frame return, an iteration node's element, and an awaited
+   callee's frame return, a step's element, and an awaited
    resume all reach a resume through here -- so it is also where the
    ambient await interposes. A staged value that still needs awaiting
    never reaches the resume: the same resume is set again and the value
@@ -3398,8 +3189,8 @@ static KosOpResult eval_step_resume_delivery(KosContext *ctx) {
 
   /* The pending slot is the live transit. The frame stack carries a
      delivery only as storage: across a suspension (a drive's exit
-     moved the slot there), or from a landing site that still pushes -- an
-     iteration node's element, a native frame's return. */
+     moved the slot there), or from a landing site that still pushes --
+     a native frame's return. */
   val = KosContext_PENDING_VALUE(ctx);
   KosContext_PENDING_VALUE(ctx) = NULL;
 

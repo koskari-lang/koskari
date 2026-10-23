@@ -2104,29 +2104,6 @@ KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
 
   KOS_TRACE_EVENTS_INC(KOS_TE_DYN_HANDLE_ENTER);
 
-  /* A receiving iteration node interprets the step-ending exception
-     from its in-flight step as end-of-iteration -- StopIteration from a
-     flattened generator, StopAsyncIteration from a suspended python
-     async iterator -- the same protocol judgment the eager step path
-     makes when classifying GET_NEXT_EXHAUSTED. The capability is the
-     routing key and is held exactly while a step is in flight, so the
-     same exception raised by the consumer's own body (iteration node idle)
-     passes through. */
-  if (event == KOS_XFER_EVENT_RAISE
-      && KosDynNode_HAS_CAP(node, KOS_DYN_CAP_ITER_RECEIVER)
-      && PyErr_Occurred()) {
-    if (PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(node)))
-      return KOS_HANDLE_CONSUMED;
-
-    if (kos_dyn_iter_node_value_mode(node)) {
-      /* A non-protocol error escaping a value-grafted invoke: release
-         the provider's busy mark and finish the request before the
-         raise passes to the consumer's own handlers. */
-      kos_dyn_iter_request_finish(node, 0);
-      kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
-    }
-  }
-
   switch (KosDynNode_KIND(node)) {
     case KOS_DYN_TRY:
       if (event == KOS_XFER_EVENT_RAISE) {

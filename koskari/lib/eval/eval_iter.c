@@ -262,7 +262,7 @@ static inline KosGetNextResult op_get_next_from_iter(
 
 
 /**
-   The step for an iteration node's bound Python iterator, keyed by the
+   The step for a FOREACH region's bound Python iterator, keyed by the
    kind its bind recorded, so no step probes the type again. The sync
    arm calls tp_iternext through the type, as CPython's FOR_ITER does,
    and consults the error state only on a NULL result; a StopIteration
@@ -334,15 +334,28 @@ static inline KosGetNextResult op_get_next_from_bound(
    ITER_NEXT_STORE_VAR each name a resume and hand the request to
    kos_iter_step. The element reaches that resume and nothing else:
    in hand, the handler hops into it at once (RESULT_ENTRY); deferred
-   (a Koskari generator installed, a python async step awaited), the
-   resume is set on the loop's frame and the iteration node calls it
-   when the element arrives, or with KosIterEnd when the iteration
-   ends (KosIterRequest_Deliver). The resume's state is the step
-   instruction, which carries the else target and the slot or name.
-   The kinds are direct and take their delivery as it is: an element
-   is data, never awaited. Nothing comes here on failure: a failure
-   propagates through the raise walk, and the region's unwind clears
-   the resume. */
+   (a Koskari generator installed, a provider's invoke grafted, a
+   python async step awaited), the resume is set on the loop's frame
+   and the delivery that reaches the frame runs it, the element or
+   its end. The resume finishes the region's request, since the
+   region owns the iterator, then threads on or jumps to the else
+   target. The resume's state is the step instruction, which carries
+   the else target and the slot or name. The kinds are direct and
+   take their delivery as it is: an element is data, never awaited.
+   A failure reaches the resume as a NULL with the error pending: the
+   region's own end is the end of the iteration, anything else
+   declines and the raise walk goes on. */
+
+
+/* The step is over: finish the region's request, exhausted at the
+   end. The region is at dyn_top when a delivery reaches the loop's
+   frame. */
+KOS_OP_INLINE void kos_iter_step_finish(KosContext *ctx, int ended) {
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
+
+  if (region && KosDynNode_IS_FOREACH(region))
+    kos_dyn_iter_request_finish(region, ended);
+}
 
 
 /**
@@ -368,7 +381,6 @@ KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
 
   PyErr_Clear();
   kos_dyn_iter_request_finish(region, 1);
-  kos_dyn_iter_request_set_mode(region, KOS_IREQ_IDLE);
   return 1;
 }
 
@@ -389,8 +401,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
   }
   if (value == KosIterEnd) {
     Py_DECREF(value);
+    kos_iter_step_finish(ctx, 1);
     KOS_THREAD_AT(ctx, KosOp_TARGET(insn));
   }
+  kos_iter_step_finish(ctx, 0);
   if (unlikely(KosContext_StackPUSH(ctx, value) < 0))
     return EVAL_RAISE();
   KOS_THREAD_NEXT(ctx);
@@ -414,8 +428,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_fast_resume(
   }
   if (value == KosIterEnd) {
     Py_DECREF(value);
+    kos_iter_step_finish(ctx, 1);
     KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
   }
+  kos_iter_step_finish(ctx, 0);
   if (unlikely(kos_ns_fast_store_steal(
           KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0),
           value) < 0))
@@ -442,8 +458,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_var_resume(
   }
   if (value == KosIterEnd) {
     Py_DECREF(value);
+    kos_iter_step_finish(ctx, 1);
     KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
   }
+  kos_iter_step_finish(ctx, 0);
   res = frame_ns_store(ctx, KosExtra_OBJ(row, 0), value);
   Py_DECREF(value);
   if (unlikely(res < 0))

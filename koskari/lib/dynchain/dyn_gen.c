@@ -26,7 +26,7 @@
 
 
 /**
-   Allocate GEN iteration node; owner borrowed, refcount for sharing. Callers:
+   Allocate a GEN node; owner borrowed, refcount for sharing. Callers:
    generator object setup.
 */
 KosDynGen *kos_dyngen_new(PyObject *owner) {
