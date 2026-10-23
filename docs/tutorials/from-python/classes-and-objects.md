@@ -172,7 +172,8 @@ define-class Point []:
   define label [self]:
     f"Point at ({self.x}, {self.y})"
 
-when-main:
+@entry-point
+define main []:
   define p (Point 1 2)
   print (p.label)
   print p

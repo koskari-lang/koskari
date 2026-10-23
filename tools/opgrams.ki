@@ -559,6 +559,7 @@ define run [options]:
     return 0
 
 
+@entry-point
 define main [argv: None]:
     """
     Parse arguments and run the analysis
@@ -578,10 +579,6 @@ define main [argv: None]:
 
     build_arguments parser
     run (parser.parse_args args)
-
-
-when-main:
-    (sys.exit (main))
 
 
 ; The end.

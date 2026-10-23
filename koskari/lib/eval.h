@@ -952,11 +952,7 @@ static inline int kos_eval_check_frame_room(
   return kos_eval_recursion_error();
 }
 #define KosEvalState_CODE(es) ((es)->code)
-/** The live code's instruction array. Read through the code object on
-    every fetch, never cached on the state or a frame: packing a code
-    object into an arena relocates its block, and a frame off the chain (a
-    defer, a generator, a function's cached frame) may hold the code
-    across that move. */
+/** The live code's instruction array, read through the code object. */
 #define KosEvalState_OPS(es) KosCode_CODE(KosEvalState_CODE(es))
 #define KosEvalState_BLOCK(es) ((es)->block)
 #define KosEvalState_NAMESPACE(es) ((es)->namespace)
@@ -1733,10 +1729,8 @@ void kos_eval_inject_recorded_frames(
    pushes whose target is not an instruction argument. Read from the
    site's cache slot once it is filled; the first execution resolves it
    through the extent table and fills the slot, and a site with no slot
-   resolves every time. A pc and not a record pointer: the instruction
-   block moves when the code is packed into an arena, and a pc stays
-   valid across that. Returns -1 with an error set when no extent of the
-   kind encloses the site.
+   resolves every time. A pc and not a record pointer. Returns -1 with
+   an error set when no extent of the kind encloses the site.
 */
 static inline int kos_site_extent_close(
     KosEvalState *es,

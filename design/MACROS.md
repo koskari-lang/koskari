@@ -244,6 +244,10 @@ call, and `-'-'form` reaches a nested template as `(datumq form)`. See
 **Syntax:** `(when-main BODY ...)`
 
 **Behaviour:** Expands to **`when (equal? __name__ "__main__"): (begin BODY ...)`**.
+Load-time code, Python's guard. A program's work goes in its entry
+point instead: see **`compile/entry-point`** below, which runs after the
+load completes with its return value as the exit status. No tool, example
+or tutorial uses `when-main` any more.
 
 
 ### compile/None? and compile/nil?
@@ -367,6 +371,23 @@ specific to **`labels`**.
 
 **Behaviour:** Wraps **`class`** / **`lambda`** inside **`define`** / **`define-class`**, or
 composes decorators for a bare callable.
+
+
+### compile/entry-point
+
+**Symbol:** an arm of `compile/decorate-subject` (surface: `@entry-point` over a `define`)
+
+**Syntax:** `(decorate-subject entry-point SUBJECT)`
+
+**Behaviour:** Expands to **`(let [[fn SUBJECT]] (define-global -'__entry__ fn) fn)`**:
+binds the subject as the module's **`__entry__`**, written through `datumq` so the
+slot keeps its plain name, and delivers the subject unchanged for the hoisted
+`define` to bind. **`__entry__`** holds the function itself, never a name. The
+launcher calls it with no arguments once the module has loaded as a program and
+maps the return as `SystemExit` does (None 0, int itself, anything else printed
+with 1); a `koskari -m` package without `__main__`, a module-only
+`koskari_scripts` value, and `python -m` through the loader's `get_code` shim all
+reach the same slot. Design: [archive/program-entry.md](archive/program-entry.md).
 
 
 ## koskari/bootstrap/_variables.ki

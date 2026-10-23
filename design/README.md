@@ -28,6 +28,7 @@ This directory contains the design documentation for koskari, organized into thr
 - **Archived**: [archive/gensym-atom-subtype.md](archive/gensym-atom-subtype.md) -- the gensym symbol subtype that replaced the Mark box for macro hygiene, with its as-built deltas (implemented)
 - **Archived**: [archive/datumq-template-escape.md](archive/datumq-template-escape.md) -- `(datumq ...)` as a template directive for raw, unmarked forms, and the `-'` reader shorthand (implemented)
 - **Archived**: [archive/koskari-scripts-packaging.md](archive/koskari-scripts-packaging.md) — v1 **`koskari_scripts`** entry points, **`koskari.extras.setuptools`**, and **`koskari.launcher`** for installed CLI applications
+- **Archived**: [archive/program-entry.md](archive/program-entry.md) -- `__entry__` as a zero-arity callable written by a `@entry-point` decorator arm, replacing `when-main` bodies and the string `declare-entry`; how `koskari -m`, `koskari_scripts` and `python -m` (a `get_code` shim) load it (implemented 2026-10-22)
 - **Layout defaults**: [language/flat-layout-default.md](language/flat-layout-default.md) — default **`layout/block`** flat splice and **`layout/block-begin`** opt-in wrap
 - **[documentation-goals.md](documentation-goals.md)**: Meta-spec for future user-facing `docs/` tree (audiences, IA, maintenance)
 - **[corpus-schema-philosophy.md](corpus-schema-philosophy.md)**: Language conformance corpus schema, verification model, and Hugging Face dataset views derived from corpus records

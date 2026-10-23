@@ -31,7 +31,6 @@ loop.run_until_complete, which cannot run on an already-running loop.)
 import asyncio
 import unittest
 import warnings
-from unittest import mock
 
 import pytest
 
@@ -78,74 +77,20 @@ class TestRunUntilComplete(unittest.TestCase):
         self.assertEqual(result, 'done')
 
 
-    def test_default_loop(self):
+    def test_none_loop_runs_on_a_fresh_loop(self):
         """
-        A None loop falls back to the current event loop
-        """
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = koskari.asyncio.run_until_complete(None, defer(lambda: 7))
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
-        self.assertEqual(result, 7)
-
-
-    def test_default_loop_when_none_is_set(self):
-        """
-        With no current loop a None loop makes one and installs it,
-        without the implicit-creation deprecation warning
+        With no current loop a None loop runs the coroutine on a fresh
+        loop without any warning, and leaves no loop installed
         """
 
         asyncio.set_event_loop(None)
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error")
-                result = koskari.asyncio.run_until_complete(
-                    None, defer(lambda: 7))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = koskari.asyncio.run_until_complete(
+                None, defer(lambda: 7))
             self.assertEqual(result, 7)
-
-            # the loop made for the call is now the current one, so a
-            # second call reuses it
-            loop = asyncio.get_event_loop()
-            self.assertFalse(loop.is_closed())
             self.assertEqual(
                 koskari.asyncio.run_until_complete(None, defer(lambda: 8)), 8)
-            self.assertIs(asyncio.get_event_loop(), loop)
-        finally:
-            try:
-                asyncio.get_event_loop().close()
-            except RuntimeError:
-                pass
-            asyncio.set_event_loop(None)
-
-
-    def test_default_loop_keeps_a_set_loop_where_get_event_loop_warns(self):
-        """
-        On 3.10.0-3.10.8 and 3.11.0 asyncio.get_event_loop warns whenever
-        no loop is running, a loop set as current included; that loop is
-        still the default rather than a replacement
-        """
-
-        def warning_get_event_loop():
-            warnings.warn('There is no current event loop',
-                          DeprecationWarning, stacklevel=2)
-            return asyncio.get_event_loop_policy().get_event_loop()
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            with mock.patch.object(
-                    asyncio, 'get_event_loop', warning_get_event_loop), \
-                 mock.patch.object(
-                    koskari.asyncio, '_WARNS_WITH_A_LOOP_SET', True,
-                    create=True):
-                self.assertIs(koskari.asyncio._default_loop(), loop)
-        finally:
-            asyncio.set_event_loop(None)
-            loop.close()
 
 
 # The end.

@@ -115,7 +115,8 @@ surfaced a module-packer defect older than the branch: the segment
 plan summed members at pointer alignment while the arena reserves
 each on a 32-byte boundary, so a module of many small functions could
 overflow its own arena; the unit is now `Arena.UNIT` and the plan
-aligns to it.
+aligns to it. The segment plan has since been removed; a block is
+reserved at birth on that boundary.
 
 **See also:** [../archive/attr-lookup-cache.md](../archive/attr-lookup-cache.md)
 (the per-site cache framework this extends),

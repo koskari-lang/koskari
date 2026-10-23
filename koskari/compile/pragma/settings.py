@@ -30,7 +30,6 @@ arg is omitted).
 
 
 from enum import Enum
-from typing import NamedTuple
 
 from ...pragma import pragma_setting
 from .resolution import KoskariPragma, PythonPragma, SchemePragma
@@ -248,51 +247,16 @@ def compiler_protect_code(enabled: bool = True) -> bool:
     return enabled
 
 
-class PackModule(NamedTuple):
+@pragma_setting("compiler/pack-module", True)
+def compiler_pack_module(enabled: bool = True) -> bool:
     """
-    Resolved compiler/pack-module setting: the on/off master switch and
-    the arena sizing caps. A cap of 0 means unbounded.
-    """
-
-    enabled: bool
-    max_count: int
-    max_bytes: int
-
-
-def _pack_module_cap(name, value):
-    cap = int(value)
-    if cap < 0:
-        raise ValueError(
-            f"pack-module option {name} must be >= 0, not {cap}")
-    return cap
-
-
-@pragma_setting("compiler/pack-module", PackModule(True, 0, 0))
-def compiler_pack_module(enabled=True, **options) -> PackModule:
-    """
-    Whether the module's durable code objects are relocated into shared,
-    singly-sealed arenas when the module seals. Baseline enabled with
-    unbounded arenas (one arena per module).
-
-    Options (0 means unbounded): ``max-count`` caps the number of code
-    objects per arena; ``max-bytes`` is a soft cap on an arena's payload
-    size -- a single larger code object still lands in its own singleton
-    arena.
+    Whether function code compiled during a module load is placed into
+    the load's arena chunks, which are sealed read-only together when
+    the load completes. Expression code is never placed. Baseline
+    enabled.
     """
 
-    max_count = 0
-    max_bytes = 0
-
-    for key, value in options.items():
-        norm = str(key).replace("_", "-")
-        if norm == "max-count":
-            max_count = _pack_module_cap(norm, value)
-        elif norm == "max-bytes":
-            max_bytes = _pack_module_cap(norm, value)
-        else:
-            raise ValueError(f"Unknown pack-module option {key}")
-
-    return PackModule(bool(enabled), max_count, max_bytes)
+    return enabled
 
 
 # The end.

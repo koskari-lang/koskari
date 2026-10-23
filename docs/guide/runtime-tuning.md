@@ -1,8 +1,9 @@
 # Runtime tuning
 
-Two pragma-controlled mechanisms that change how compiled code is stored
-and how attribute access runs. Neither changes what a program computes.
-Both default to the configuration that pays off for ordinary modules.
+Two pragma-controlled mechanisms that change whether compiled code is
+sealed read-only and how attribute access runs. Neither changes what a
+program computes. Both default to the configuration that pays off for
+ordinary modules.
 
 ## Attribute and method caching
 
@@ -92,120 +93,111 @@ caches what it can on whichever interpreter it runs under.
 - `code.caches` -- whether this code object was compiled with caching on
 - `code.cache_slots` -- how many per-site cache slots it reserved
 
-## Code sealing and arena packing
+## Code sealing
 
 Compiled Koskari code is immutable: once a function's bytecode is built,
-nothing rewrites it. Sealing makes that immutability real at the
-operating-system level -- the memory holding the instructions, constant
-pool, and control tables is marked read-only with `mprotect`, so any
-write to it faults on the spot instead of silently corrupting the
-interpreter. Koskari's bytecode is interpreted, never executed as
-machine code, so sealing is not required for correctness; it is
-integrity hardening, and it doubles as a debugging tool -- a buggy
-native extension that scribbles over live code is caught at the exact
-offending write.
+nothing rewrites it. Sealing makes that immutability a property of the
+memory. Sealed code is read-only, and a write to it faults on the spot
+instead of silently corrupting the interpreter. That is the promise;
+how code is stored, placed, shared or reclaimed is not part of it.
 
-Two module pragmas govern the model. They answer different questions
-and compose freely.
+### Why read-only
+
+Koskari's bytecode is interpreted, never executed as machine code, so
+sealing is not required for correctness.
+
+It does not stop an attacker who can already write anywhere in the
+process; such an attacker has softer targets than a code stream. Nor
+does it confine code running inside the interpreter: native access from
+Python, through `ctypes` or an extension, is total. Sealing is not a
+sandbox.
+
+What it does is put code out of reach of the memory bugs that occur in
+practice, which are relative, not arbitrary: a bounded overflow from a
+neighbouring allocation, a stale pointer into storage since reused. A
+write that reaches sealed code faults instead of landing.
+
+It also doubles as a debugging tool. A buggy native extension that
+scribbles over live code is caught at the offending write, with that
+write's stack, instead of producing a wrong result later.
 
 ### The two pragmas
 
-`compiler/protect-code` *(default off)* answers "seal each code
-object as it is born." On, every compiled code object -- including each
-top-level expression that is evaluated once and discarded -- gets its
-own page-aligned, sealed allocation the moment it exists. Off, code is
-built on the plain heap.
+`compiler/pack-module` *(default on)* seals the code of every function
+and lambda a module compiles while it loads, once the module has
+finished loading. Until then that code is writable. Top-level
+expressions -- the forms of the module body, each compiled, evaluated
+once, and discarded -- are not covered by this setting.
 
-`compiler/pack-module` *(default on)* answers "compact what the
-module keeps." When a module finishes loading, its surviving code
-objects -- the functions and classes that made it into the module's
-namespace -- are relocated together into one shared allocation (an
-arena) and sealed read-only with a single `mprotect`. What survives
-is decided by reachability: imported functions belong to their own
-module's arena, and a top-level expression that was evaluated and
-dropped is already gone by the time the module seals.
+`compiler/protect-code` *(default off)* seals each code object the
+first setting leaves alone as it is built: top-level expressions, and
+function code when `pack-module` is off.
+
+Both pragmas depend on the system reporting its page size. Where it
+does not, nothing is sealed.
 
 The four combinations:
 
-| protect-code | pack-module | Result |
-|---|---|---|
-| off | on *(default)* | code is writable heap during load, then the module's durable code shares one sealed arena -- compact, read-only at rest |
-| off | off | plain heap for everything; lightest, never protected |
-| on | on | each object protected from birth, then repacked into a sealed arena -- protected during load *and* at rest, at the cost of a higher transient peak |
-| on | off | every object holds its own sealed page for life |
+| protect-code | pack-module | Functions | Top-level expressions |
+|---|---|---|---|
+| off | on *(default)* | sealed when the load completes | writable |
+| off | off | writable | writable |
+| on | on | sealed when the load completes | sealed from birth |
+| on | off | sealed from birth | sealed from birth |
 
-The default (off/on) is the right setting for ordinary modules: after
-loading, a module's functions sit nearly back-to-back in one or two
-read-only pages instead of each occupying its own.
+The default (off/on) is the right setting for ordinary modules: a
+module's functions are read-only for their whole working life, and the
+cost is paid once per module rather than once per code object.
 
-### Tuning the arenas
+Code compiled after a module has finished loading -- definitions
+entered at the REPL, code compiled at runtime -- is sealed only under
+`protect-code`.
 
-`pragma [compiler/pack-module]` accepts two options; `0` (the default
-for both) means unbounded, producing one arena per module:
+### Precompiled modules
 
-```
-(pragma [compiler/pack-module True max-count: 32])
-(pragma [compiler/pack-module True max-bytes: 65536])
-```
+A `.kio` file records the `pack-module` setting in force when the
+module was compiled, and the module loads with that setting. Its
+functions are sealed before the first top-level form runs, so a
+precompiled module's function code is read-only while its own body
+runs, as it is for every module by the time its entry point runs.
 
-`max-count:` caps how many code objects share one arena; `max-bytes:`
-is a soft cap on an arena's payload -- a single code object larger than
-the cap still lands in its own arena rather than failing.
+Code decoded outside an import, through `koskari.serialize.load_kio`,
+is not sealed.
 
-The reason to bound an arena is its lifetime: an arena lives
-until the last code object inside it dies. For a module whose
-functions load and unload together, the common case,
-that is right. But a single survivor (a returned closure, a
-function cached in a registry, a suspended coroutine over a module
-function) keeps its entire arena resident. Capping arena size caps the
-blast radius of any one survivor. Keep the unbounded default unless you
-harvest a few functions from large, otherwise-transient modules.
+### The cost of per-object sealing
 
-### The cost of per-expression sealing
-
-Turning `compiler/protect-code` on buys during-load protection: a
-function's bytecode is read-only from the instant it is defined, so
-nothing that runs later in the module body -- buggy or hostile -- can
-alter an already-defined function before the module seals. Whether that
-window matters is a threat-model question, and it is the only thing
-on offer, because at rest the on/on and off/on configurations end up
-identical.
+Turning `compiler/protect-code` on makes every top-level expression's
+bytecode read-only from the instant it is built. Function code under
+the default `pack-module` is unaffected: it is writable until the load
+completes either way.
 
 What it costs, per code object:
 
-- A full memory page each. Protection is page-granular, so a
-  fifty-byte expression occupies (typically) 4 KB. Every top-level
-  expression in the module body -- each one compiled, evaluated once,
-  and discarded -- briefly burns a page of its own.
-- A kernel mapping each. `mprotect` on heap memory splits the
-  process's virtual memory areas, so every sealed object becomes a
-  distinct kernel VMA. Large programs accrue thousands, approaching
-  the `vm.max_map_count` limit, and every page fault pays for a bigger
-  VMA tree.
-- Two syscalls each. One `mprotect` to seal at construction, one to
-  unseal before free.
-- A higher transient peak with packing. Under on/on, the per-page
-  originals and the arena coexist during the repack before the
-  originals are released.
+- A full memory page each, however small the code, briefly, before the
+  expression is discarded.
+- A kernel mapping each. Large programs accrue thousands, approaching
+  the system's limit on mappings per process, and every page fault
+  pays for the larger set.
+- Two system calls each: one to seal at construction, one to unseal
+  before release.
 
 None of this changes execution speed -- sealed and unsealed code read
 identically -- but module loading gets slower and the process gets
-fatter. Reach for `[compiler/protect-code]` when the during-load window
-is part of your threat model; leave it off otherwise and let the
-default packing give you sealed code at rest for almost nothing.
+bigger.
 
 ### Interactive sessions
 
-Definitions entered at the REPL are cheap plain-heap allocations --
-interactive code churns, and sealing churn buys little. The module a
-session starts from (a file run with `-i`) is sealed normally when it
-finishes loading, and the session keeps working in it afterward.
+Definitions entered at the REPL are not sealed -- interactive code
+churns, and sealing churn buys little. The module a session starts
+from (a file run with `-i`) is sealed normally when it finishes
+loading, and the session keeps working in it afterward.
 
 ### Introspection
 
-- `code.arena` -- the owning arena when packed, else `None`
-- `arena.size`, `arena.used`, `arena.sealed` -- total allocation,
-  bytes occupied, and whether the seal has been applied
+- `code.arena` -- the region the code shares with its module's other
+  functions under `pack-module`, else `None`
+- `arena.size`, `arena.used`, `arena.sealed` -- the region's size, its
+  bytes in use, and whether it has been sealed
 - `code.allocation_bytes` and friends -- the code object's storage
   footprint
 

@@ -77,7 +77,8 @@ define example []:
   (print-example (str $200))
 
 
-when-main:
+@entry-point
+define main []:
   (example)
 
 

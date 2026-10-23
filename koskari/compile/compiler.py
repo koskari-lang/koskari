@@ -22,7 +22,6 @@ The koskari compiler. Converts source forms into bytecode fragments.
 
 
 import warnings
-import weakref
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from enum import IntEnum, auto
@@ -30,15 +29,14 @@ from enum import IntEnum, auto
 from ..exceptions import CompilerError, UncaughtCompilerError
 from ..hygiene import Deferred, Resolver, candidates, equal_by_base
 from ..lib import (
-    Arena, Code, Datum, FormalsSpec, FunctionSpec, Module,
+    Code, CodeAllocator, Datum, FormalsSpec, FunctionSpec, Module,
     ModuleNamespace, Namespace, NamespaceSpec, OpCode, OpStyle, bracket_pair,
     cons, kos_repr, nil, symbol)
 from ..types import (
     fill_position, get_position, is_const, is_keyword, is_nil, is_pair,
     is_proper, is_symbol, parameterize)
 from .pragma import (
-    BracketCalls, KeywordLiterals, KoskariPragma, PackModule, ResolutionMode,
-    StrayColon)
+    BracketCalls, KeywordLiterals, KoskariPragma, ResolutionMode, StrayColon)
 from .processor import ByteCodeProcessor, merge_function_constant_needs
 
 
@@ -82,20 +80,6 @@ _symbol_colon = symbol(":")
 # the parameter name (active-pragma) reads; the compiler binds it for
 # each compilation turn
 ACTIVE_PRAGMA_PARAM = "active-compiler-pragma"
-
-
-def _arena_member_size(code):
-    """
-    The bytes a code object's unified block occupies inside an arena:
-    the unrounded block total, aligned up to the arena's reservation
-    unit, since each member starts on a unit boundary
-
-    :param code: a Code object
-    """
-
-    size = code.payload_bytes + code.padding_bytes
-    unit = Arena.UNIT
-    return ((size + unit - 1) // unit) * unit
 
 
 class ByteCodeFragment:
@@ -558,7 +542,7 @@ class Compiler:
         self.stray_colon = stray_colon
         self.keyword_literals = keyword_literals
         self.protect_code = False
-        self.pack_module = PackModule(True, 0, 0)
+        self.pack_module = True
         self.cache_expression = False
         self.cache_function = True
         self.rewrite_limit = 32
@@ -571,10 +555,10 @@ class Compiler:
         # that head
         self._compiled_head = None
 
-        # weakrefs to every Code minted through complete(), in
-        # definition order; the live remainder at seal() time is the
-        # module's durable code set
-        self._minted = []
+        # the CodeAllocator function code is placed into while a module
+        # load is open; None outside a load, where every Code is a heap
+        # block
+        self.allocator = None
 
         # nested scope depth (function, let, class bodies); 0 = module
         # top level. Maintained by resolution_scope; consulted by
@@ -659,8 +643,7 @@ class Compiler:
         self._keyword_literals = pragma.get("compiler/keyword-literals")
 
         self.protect_code = pragma.get("compiler/protect-code", False)
-        self.pack_module = pragma.get(
-            "compiler/pack-module", PackModule(True, 0, 0))
+        self.pack_module = pragma.get("compiler/pack-module", True)
 
         self.cache_expression = pragma.get("compiler/cache-expression", False)
         self.cache_function = pragma.get("compiler/cache-function", True)
@@ -1356,10 +1339,18 @@ class Compiler:
         else:
             cache = self.cache_expression
 
+        # Function code minted during a module load is placed into the
+        # load's arena chunks, where it stays; a sealing load seals the
+        # chunks when it completes. Expression code is always a heap block
+        allocator = None
+        if mode == CompilerMode.FUNCTION and self.pack_module:
+            allocator = self.allocator
+
         # Build Code and register with pragma for position lookup on errors
         try:
             code = Code(base_nspec, instr, fragment.name, filename,
-                        protect=self.protect_code, cache=cache)
+                        protect=self.protect_code, cache=cache,
+                        allocator=allocator)
         except (ValueError, OverflowError) as ex:
             raise self.limit_error(fragment, ex) from ex
         if fragment.doc is not None:
@@ -1372,14 +1363,8 @@ class Compiler:
         if _validate and is_root:
             reso.validate_tree(
                 code, (), CompilerMode.FUNCTION, is_root=True)
-
-        # finally, register the code with the minted registry so that it
-        # can potentially be sealed later. A compiler kept past its seal
-        # (one rebuilt by get-compiler) is never drained, so shed the
-        # dead entries now and then to keep the registry bounded.
-        if len(self._minted) % 1024 == 1023:
-            self._minted = [r for r in self._minted if r() is not None]
-        self._minted.append(weakref.ref(code))
+        if is_root:
+            reso.close()
 
         return code
 
@@ -1412,68 +1397,39 @@ class Compiler:
             fragment, CompilerMode.FUNCTION, ancestors=ancestors)
 
 
+    def open_allocator(self):
+        """
+        Open a CodeAllocator for a module load, unless one is already
+        open. Function code completed from here until the next seal is
+        placed into its arena chunks while compiler/pack-module is on
+
+        :return: the open CodeAllocator
+        """
+
+        if self.allocator is None:
+            self.allocator = CodeAllocator()
+        return self.allocator
+
+
     def seal(self):
         """
-        Pack this module's surviving code objects into sealed arenas.
+        Seal the arena chunks this module load placed function code
+        into, read-only, and close the load's allocator. Code completed
+        afterwards is a heap block until a later load opens another.
 
-        Drains the minted registry, keeping the code objects that are
-        still alive and not already packed -- reachability from the
-        module namespace is what makes a code object durable. Survivors
-        are partitioned in definition order per the compiler/pack-module
-        caps, each segment is relocated into a shared Arena, and each
-        arena is sealed read-only with a single mprotect.
+        Idempotent: with no allocator open, there is nothing to seal.
+        Nothing moves, so sealing is safe at any point between two
+        completions.
 
-        Idempotent: a second call finds an empty registry, so a
-        long-lived compiler (an interactive session's, or the bootstrap
-        loop's) may seal repeatedly, packing only what accumulated since
-        the previous seal. Must run at a quiescent point (module body
-        evaluation complete, no frame of the target code mid-dispatch);
-        the end of a module load satisfies this.
-
-        :return: tuple of the Arena objects produced; empty when packing
-            is disabled or nothing survived
+        :return: tuple of the sealed Arena chunks; empty when no
+            allocator was open or nothing was placed
         """
 
-        refs, self._minted = self._minted, []
-
-        pack = self.pack_module
-        if not (pack and pack.enabled):
+        if self.allocator is None:
             return ()
-
-        survivors = [c for c in (r() for r in refs)
-                     if c is not None and c.arena is None]
-        if not survivors:
-            return ()
-
-        # Partition in definition order. Either cap starting a new
-        # segment; a single oversize member still lands alone rather
-        # than failing to place.
-        segments = []
-        current = []
-        current_bytes = 0
-        for code in survivors:
-            size = _arena_member_size(code)
-            if current and (
-                    (pack.max_count
-                     and len(current) >= pack.max_count)
-                    or (pack.max_bytes
-                        and current_bytes + size > pack.max_bytes)):
-                segments.append((current, current_bytes))
-                current = []
-                current_bytes = 0
-            current.append(code)
-            current_bytes += size
-        segments.append((current, current_bytes))
-
-        arenas = []
-        for codes, total in segments:
-            arena = Arena(total)
-            for code in codes:
-                code.pack_into(arena)
-            arena.seal()
-            arenas.append(arena)
-
-        return tuple(arenas)
+        chunks = self.allocator.seal()
+        self.allocator = None
+        return chunks
 
 
 # The end.

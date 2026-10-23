@@ -241,7 +241,8 @@ Save as `greet.ki`:
 define greet [name greeting: "hello" punct: "!"]:
   (+ greeting " " name punct)
 
-when-main:
+@entry-point
+define main []:
   print (greet "Ada")
   print (greet "Grace" greeting: "Hi" punct: ".")
 ```

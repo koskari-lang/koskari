@@ -39,7 +39,8 @@ from os.path import split
 
 from .compile import Compiler, CompilerMode
 from .lib import (
-    Module, ModuleNamespace, cons, demand_call, nil, symbol, values)
+    CodeAllocator, Module, ModuleNamespace, cons, demand_call, nil, symbol,
+    values)
 from .pragma import ModulePragma
 from .reader import (
     READ_EOF, IndentAwareStream, LayoutReader, source_open, source_str)
@@ -177,18 +178,27 @@ def compile_top_level(compiler, reader, source_stream):
                 source_expr = cons(
                     symbol('define'), symbol('__doc__'), source_expr, nil)
 
-        fragment = compiler.compile_expression(source_expr, position)
+        # no local holds the fragment across the yield: its instructions
+        # carry the form's function code, which must be free to die
+        # while the caller runs the form
         yield compiler.complete(
-            fragment, mode=CompilerMode.EXPRESSION, is_root=True)
+            compiler.compile_expression(source_expr, position),
+            mode=CompilerMode.EXPRESSION, is_root=True)
 
 
 @contextmanager
 def load_facets(module, filename, *, seal, detach):
     """
-    The facets of one load. Builds (or reuses) the compiler and reader
-    and yields them; seals the module on normal exit when ``seal`` is
-    set; when ``detach`` is set, materializes ``__all__`` and detaches
-    the facets afterward, always, even when the load raises, with
+    The facets of one load. Builds (or reuses) the compiler and reader,
+    opens the compiler's code allocator so the load's function code is
+    placed into arena chunks -- unless the load can never seal, with
+    ``seal`` False and ``detach`` set, where no allocator is opened: a
+    fresh compiler then builds function code on the heap, while a
+    compiler reused from an earlier ``detach`` False load keeps its
+    open allocator and still places into it -- and yields them; when
+    the block ends, whether or not the load
+    raised, seals the chunks when ``seal`` is set, and when ``detach``
+    is set materializes ``__all__`` and detaches the facets, with
     ``__pragma__`` staying bound. Callers passing ``detach`` False own
     the completion steps: an interactive session seals but retains
     facets; the bootstrap builtins loop defers both across its source
@@ -196,18 +206,20 @@ def load_facets(module, filename, *, seal, detach):
 
     :param module: koskari Module (or object whose ``vars()`` is the ns)
     :param filename: source filename for the compiler
-    :param seal: on success, pack the compiler's surviving code objects
-        per the compiler/pack-module pragma
+    :param seal: on success, seal the arena chunks the load placed its
+        function code into
     :param detach: materialize exports and drop the load facets
     :return: the (compiler, reader) pair
     """
 
     compiler, reader = build_module_load_facets(module, filename)
+    if seal or not detach:
+        compiler.open_allocator()
     try:
         yield compiler, reader
+    finally:
         if seal:
             compiler.seal()
-    finally:
         if detach:
             materialize_exports(module)
             detach_module_load_facets(module)
@@ -229,14 +241,16 @@ async def run_codes_async(module, codes):
     """
     Run each Code as an expression of ``module``, awaiting each in turn.
 
-    A helper so no caller local outlives the loop: the last expression
-    must be released before the compiler seals, or it would be swept
-    into an arena
+    Each expression is dropped before the next form is read, so the
+    function code only it holds dies while its chunk is open and the
+    next function takes its bytes; a helper so no caller local holds
+    the last one past the loop either, before the compiler seals
     """
 
     ns = vars(module)
     for code in codes:
         await code.expression(ns)()
+        del code
 
 
 def run_codes_demand(module, codes):
@@ -249,6 +263,7 @@ def run_codes_demand(module, codes):
     ns = vars(module)
     for code in codes:
         demand_call(code.expression(ns))
+        del code
 
 
 def kio_codes(module):
@@ -257,7 +272,9 @@ def kio_codes(module):
     module's ``__pragma__`` record bound first so ``(pragma ...)``
     bodies and package-pragma stamping run as they do under a source
     load. No compiler or reader is built: the bodies were compiled
-    already
+    already. Every function the file holds is decoded before any body
+    runs, so the function code its build placed in arena chunks is
+    placed and sealed here, before the first body
 
     :param module: koskari Module with ``__file__`` set to a .kio path
     :return: the Code objects in stored order
@@ -266,7 +283,10 @@ def kio_codes(module):
     from .serialize.codex import KioFile
 
     build_module_pragma(module)
-    return KioFile.read(getattr(module, '__file__', '<unknown>')).codes
+    allocator = CodeAllocator()
+    kio = KioFile.read(getattr(module, '__file__', '<unknown>'), allocator)
+    allocator.seal()
+    return kio.codes
 
 
 async def load_module_async(module, *, seal=True, detach=True):
@@ -446,7 +466,7 @@ def build_module_load_facets(module, filename=None):
     When all three facets are already bound on the module (a prior load
     ran with ``detach=False``), they are reused as-is rather than
     rebuilt, so consecutive loads share one pragma lineage, one compiler
-    (and its minted-code registry), and one reader.  The compiler's
+    (and its open code allocator), and one reader.  The compiler's
     filename is refreshed so code minted by this load attributes
     backtrace positions to the current source file.
 

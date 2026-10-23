@@ -295,7 +295,7 @@ Each code body in `CODEP` begins with:
 | `name_pool_idx` | u32 | pool index of the `STR` name, or of the `NONE` entry when unnamed |
 | `filename_pool_idx` | u32 | pool index of the `STR` filename, or of the `NONE` entry |
 | `nspec_pool_idx` | u32 | pool index of a `NamespaceSpec` (pool `NAMESPACE_SPEC` record) |
-| `flags` | u32 | `YIELDS = 0x01`, `PROTECT = 0x02`, `CACHE = 0x04` (`CodeFlags`): how the Code was constructed, fed back to the constructor on load; a `FUNCTION_SPEC` record carries the same word |
+| `flags` | u32 | `YIELDS = 0x01`, `PROTECT = 0x02`, `CACHE = 0x04`, `ARENA = 0x08` (`CodeFlags`): how the Code was constructed, fed back to the constructor on load; `ARENA` marks function code the build placed in an arena, which a decode given a `CodeAllocator` places again and a decode without one builds on the heap; a `FUNCTION_SPEC` record carries the same word |
 | `instr_count` | u32 | number of instruction records following |
 
 Then `instr_count` instruction records (§5.1).

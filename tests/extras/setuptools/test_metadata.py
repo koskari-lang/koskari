@@ -93,9 +93,18 @@ class TestEntryTarget(unittest.TestCase):
             parse_entry_target('koslife.cli:main'),
             ('koslife.cli', 'main'))
 
-    def test_parse_entry_target_rejects_bare_module(self):
+    def test_parse_entry_target_bare_module_is_its_entry_point(self):
+        self.assertEqual(
+            parse_entry_target('koslife.cli'),
+            ('koslife.cli', None))
+
+    def test_parse_entry_target_rejects_empty_callable(self):
         with self.assertRaises(EntryTargetError):
-            parse_entry_target('koslife.cli')
+            parse_entry_target('koslife.cli:')
+
+    def test_parse_entry_target_rejects_empty_module(self):
+        with self.assertRaises(EntryTargetError):
+            parse_entry_target(':main')
 
 
 class TestValidateHelpers(unittest.TestCase):
@@ -112,9 +121,12 @@ class TestValidateHelpers(unittest.TestCase):
     def test_validate_entry_point_value_accepts_callable_form(self):
         validate_entry_point_value('koslife.cli:main')
 
-    def test_validate_entry_point_value_rejects_bare_module(self):
+    def test_validate_entry_point_value_accepts_bare_module(self):
+        validate_entry_point_value('koslife.cli')
+
+    def test_validate_entry_point_value_rejects_empty_callable(self):
         with self.assertRaises(KoskariScriptsSetupError):
-            validate_entry_point_value('koslife.cli')
+            validate_entry_point_value('koslife.cli:')
 
     def test_validate_koskari_scripts_noop_when_absent(self):
         validate_koskari_scripts(FakeDist({'console_scripts': []}))

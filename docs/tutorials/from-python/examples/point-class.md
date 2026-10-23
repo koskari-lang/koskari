@@ -42,7 +42,8 @@ define-class Point []:
     (set! self.y y)
 
 
-when-main:
+@entry-point
+define main []:
   print "Point.__annotations__:" Point.__annotations__
 
   define p (Point 3 5)

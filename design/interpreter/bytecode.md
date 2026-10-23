@@ -19,8 +19,8 @@ Koskari uses a custom bytecode format optimized for:
 
 Each instruction is a 32-byte record, two to a cache line. Its
 serialized half is what `soften` emits and `.kio` stores; its derived
-half is resolved at finalize and on every load, never serialized, and
-re-derived when `pack_into` relocates the block.
+half is resolved at finalize and on every load, and never serialized.
+The block never moves.
 
 ```c
 struct KosOp {
@@ -42,10 +42,10 @@ struct KosOp {
 through `target` and reads the landing pc off it, and a handler's
 straight-line step is `insn + 1`. Jump targets and `pc` are 16-bit, so a
 code object holds at most 65,535 instructions and finalize enforces it.
-`obj` and `slot` point out of the block and are stable; `target` and
-`row` point into it and the fill pass re-derives them after a move.
-The instruction array, the extras table, and arena placements are
-32-aligned so no record straddles a line.
+`obj` and `slot` point out of the block; `target` and `row` point into
+it; all four are set once, at finalize. The instruction array, the
+extras table, and arena reservations are 32-aligned so no record
+straddles a line.
 
 ### Extended Operand Rows
 
@@ -117,7 +117,7 @@ struct KosCode {
     PyCodeObject *faux;   /* faux code object for tracebacks */
     PyObject *extras;     /* extra metadata dict */
 
-    PyObject *arena;      /* owning KosArena once packed; NULL while unpacked */
+    PyObject *arena;      /* the KosArena chunk holding the block; NULL for a heap block */
     PyObject *weakreflist;
 };
 ```

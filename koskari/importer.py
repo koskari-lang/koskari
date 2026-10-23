@@ -159,14 +159,17 @@ class KoskariSourceFileLoader(SourceFileLoader):
 
     def get_code(self, fullname):
         """
-        A Koskari module has no Python code object, so runpy and
-        python -m stop here instead of compiling the source as Python
+        The code object runpy executes for python -m and run_module: a
+        Python shim that loads this Koskari module under the executing
+        name through the launcher and, under __main__, runs its entry
+        point and exits with the status. The import path never calls
+        this; exec_module loads the module directly
         """
 
-        path = self.get_filename(fullname)
-        raise ImportError(
-            f"{fullname} is a Koskari module; run it with koskari -m {fullname}",
-            name=fullname, path=path)
+        return compile(
+            "from koskari.launcher import run_main_module\n"
+            "run_main_module(__spec__, __name__)\n",
+            f"<koskari entry shim for {fullname}>", 'exec')
 
 
     def is_package(self, fullname):

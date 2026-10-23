@@ -448,4 +448,50 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["1:v1", "2:v1"], await expr())
 
 
+    async def test_entry_point_arm_binds_slot_and_name(self):
+        """
+        entry-point binds the subject as the module's __entry__ and
+        delivers it unchanged, so the define binds the same function
+        """
+
+        src = """
+        (begin
+          (decorate [entry-point] (define main [] 7))
+          #[(is __entry__ main) (main)])
+        """
+        expr, mod = self.compile_expr(src)
+        self.assertEqual([True, 7], await expr())
+        self.assertIs(vars(mod)["__entry__"], vars(mod)["main"])
+
+
+    async def test_entry_point_under_runtime_decorator(self):
+        """
+        A runtime decorator outside entry-point sees the function the
+        slot holds; the name binds what the outer decorator returns
+        """
+
+        src = """
+        (begin
+          (define tag (lambda [f] (setattr f "tagged" True) f))
+          (decorate [tag entry-point] (define main [] 1))
+          #[(is __entry__ main) main.tagged])
+        """
+        expr, _mod = self.compile_expr(src)
+        self.assertEqual([True, True], await expr())
+
+
+    async def test_entry_point_over_lambda_value(self):
+        """
+        entry-point over a value subject stores that value
+        """
+
+        src = """
+        (begin
+          (define f (decorate [entry-point] (lambda [] 2)))
+          #[(is __entry__ f) (__entry__)])
+        """
+        expr, _mod = self.compile_expr(src)
+        self.assertEqual([True, 2], await expr())
+
+
 # The end.

@@ -168,7 +168,7 @@ class TestConfigureKoskariScripts(unittest.TestCase):
 
     def test_invalid_entry_value_raises(self):
         dist = FakeDist({
-            'koskari_scripts': ['koslife = koslife.cli'],
+            'koskari_scripts': ['koslife = koslife.cli:'],
         })
         with self.assertRaises(KoskariScriptsSetupError):
             configure_koskari_scripts(dist)

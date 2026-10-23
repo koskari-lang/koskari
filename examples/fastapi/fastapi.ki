@@ -74,6 +74,7 @@ define create-client []:
 ;; Script entry point
 
 
+@entry-point
 define main []:
     define-parameter *interactive* False
 
@@ -88,10 +89,6 @@ define main []:
 
     else:
         (start)
-
-
-when-main:
-    (main)
 
 
 ;; The end.

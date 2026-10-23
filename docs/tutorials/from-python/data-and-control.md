@@ -255,7 +255,8 @@ define countdown [n]:
   else:
     print "lift-off"
 
-when-main:
+@entry-point
+define main []:
   (countdown 3)
 ```
 

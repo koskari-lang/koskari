@@ -38,6 +38,7 @@ __all__ = (
     'hosted_run',
     'parse_entry_target',
     'resolve_koskari_script_value',
+    'run_main_module',
     'run_resolved_script',
     'run_target',
 )
@@ -125,17 +126,29 @@ async def hosted_run(module_name, callable_name, script_name, argv):
     Async bootstrap for a packaged koskari_scripts target
 
     :param module_name: dotted module name from entry metadata
-    :param callable_name: attribute to invoke on the loaded module
+    :param callable_name: attribute to invoke on the loaded module, or
+        None for the module's own entry point, the function it holds
+        as __entry__
     :param script_name: argv[0] for the hosted script
     :param argv: remaining command-line arguments
     :return: integer exit code
+    :raises EntryTargetError: when callable_name is None and the module
+        holds no entry point
     """
 
     sys.argv = [script_name] + list(argv)
 
     with Domain():
         mod = await import_module_async(module_name)
-        fn = getattr(mod, callable_name)
+        if callable_name is None:
+            fn = getattr(mod, '__entry__', None)
+            if fn is None:
+                raise EntryTargetError(
+                    f"{module_name} holds no entry point; name a"
+                    " callable as module:callable or declare one with"
+                    " entry-point")
+        else:
+            fn = getattr(mod, callable_name)
         result = fn()
         if hasattr(result, '__await__'):
             result = await result
@@ -144,15 +157,16 @@ async def hosted_run(module_name, callable_name, script_name, argv):
 
 def run_target(target, argv=None, script_name=None):
     """
-    Run a module:callable target under the koskari async host
+    Run a module or module:callable target under the koskari async host
 
-    :param target: entry value string (module:callable)
+    :param target: entry value string (module, or module:callable)
     :param argv: optional argument list excluding argv[0]; defaults to
         sys.argv[1:]
     :param script_name: argv[0] for the hosted script; defaults to the
         last segment of module_name
     :return: integer exit code
-    :raises EntryTargetError: when target is not module:callable form
+    :raises EntryTargetError: when target is malformed, or names a
+        module with no entry point
     """
 
     module_name, callable_name = parse_entry_target(target)
@@ -178,7 +192,8 @@ def run_resolved_script(spec, name, argv=None):
         sys.argv[1:]
     :return: integer exit code
     :raises EntryNotFoundError: when metadata has no matching entry
-    :raises EntryTargetError: when the entry value is unsupported
+    :raises EntryTargetError: when the entry value is malformed, or
+        names a module with no entry point
     """
 
     try:
@@ -193,6 +208,85 @@ def run_resolved_script(spec, name, argv=None):
     except KeyboardInterrupt:
         print('', file=sys.stderr)
         return 130
+
+
+def run_main_module(spec, name):
+    """
+    Load the Koskari module spec names as the module called name, and
+    when that name is __main__ run its entry point and exit with the
+    status. This is what the code object the import hook hands runpy
+    does, so python -m and runpy.run_module run a Koskari module the
+    way koskari -m does.
+
+    The module is a koskari Module, since a Koskari namespace is not a
+    plain dict. Under __main__ it is published in sys.modules before it
+    loads, in place of the plain module runpy prepared: runpy has
+    already captured the dict it executes the code object in, so the
+    swap is safe, and import __main__ then finds the program. Under any
+    other name sys.modules is left alone, as runpy.run_module leaves
+    it, and the dict run_module returns is the shim's, not the module's
+    namespace.
+
+    :param spec: the ModuleSpec runpy found, bound as the module's
+        __spec__
+    :param name: the name the module runs under; __name__ in the
+        executing namespace
+    :raises SystemExit: under __main__, with the entry point's status,
+        1 after rendering an exception the load or the entry raised, or
+        130 after a KeyboardInterrupt
+    """
+
+    from koskari.importer import source_for_stale_kio
+    from koskari.module import (
+        init_module, load_module_async, load_module_kio_async, new_module)
+
+    # the file to run: the spec's origin, unless that is a .kio fallen
+    # behind its sibling source; the loader is not asked, since its
+    # file access checks the module name against its own
+    filename = spec.origin
+    if filename.endswith('.kio'):
+        source = source_for_stale_kio(filename)
+        if source is not None:
+            filename = source
+
+    mod = new_module(name, package=spec.parent)
+    init_module(mod, filename, spec=spec)
+    if name == '__main__':
+        sys.modules[name] = mod
+
+    async def load_and_enter():
+        with Domain():
+            if filename.endswith('.kio'):
+                await load_module_kio_async(mod)
+            else:
+                await load_module_async(mod)
+            if name != '__main__':
+                return None
+            entry = vars(mod).get('__entry__')
+            if entry is None:
+                return 0
+            result = entry()
+            if hasattr(result, '__await__'):
+                result = await result
+            return result
+
+    if name != '__main__':
+        drive_async_loop(load_and_enter())
+        return
+
+    try:
+        status = drive_async_loop(load_and_enter())
+    except KeyboardInterrupt:
+        print('', file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:
+        from koskari.exceptions import (
+            apply_sys_last_exc, format_run_exception)
+        lines, tb = format_run_exception(e)
+        apply_sys_last_exc(type(e), e, tb)
+        sys.stderr.write(''.join(lines))
+        sys.exit(1)
+    sys.exit(status)
 
 
 # The end.

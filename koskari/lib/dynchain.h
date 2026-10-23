@@ -451,7 +451,7 @@ struct KosDynNode {
          the PROMPT extent when PUSH_PROMPT ran. POP_SHIFT resumes at
          pop_pc + 1; stored resolved because by the time a shift body
          runs, no live acting pc still points into the extent. A pc, not
-         a record pointer: the block moves when the code is packed. */
+         a record pointer. */
       uint32_t pop_pc;
     } prompt;
     struct {

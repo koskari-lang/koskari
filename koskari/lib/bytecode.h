@@ -20,9 +20,10 @@
    Bytecode storage object for Koskari. The KosCode type holds
    immutable bytecode instructions, a constants pool, and a
    delta-encoded positions table in a single unified block. When
-   constructed with protect, the block is page-aligned and marked
-   read-only via mprotect; the block may later be relocated into a
-   shared, singly-sealed KosArena (see arena.h) via pack_into.
+   constructed with a code allocator, the block is placed into one of
+   its arena chunks (see arena.h) and sealed read-only with that chunk;
+   otherwise, when constructed with protect, the block is page-aligned
+   and marked read-only via mprotect.
 
    :author: Christopher O'Brien <obriencj@preoccupied.net>
    :license: GNU General Public License v3
@@ -336,8 +337,8 @@ typedef KosOpResult (KOS_PRESERVE_NONE *KosThreadFn)(
    the record's own index, so any pointer to an instruction names its
    pc without the code base; jump targets are 16-bit, so a code object
    holds at most UINT16_MAX instructions and finalize enforces it. The
-   derived half is resolved at finalize and on every load, never
-   serialized, and re-derived when pack relocates the block: ``fn`` is
+   derived half is resolved at finalize and on every load, and never
+   serialized: ``fn`` is
    kos_op_handlers[op]; ``u`` is the operand ``arg`` names, read through
    the member the style selects (``obj`` for CONST and VAR, ``target``
    for LABEL, ``row`` for EXTRA); ``slot`` is the cache slot ``cache``
@@ -631,8 +632,7 @@ struct KosCacheSlot {
 
     /* KOS_CACHE_TARGET: the pop pc of the extent a region push opens,
        resolved once through the extent table. A pc, never a record
-       pointer: the instruction block moves when the code is packed into
-       an arena and the slots are not rebased. Owns nothing. */
+       pointer. Owns nothing. */
     struct {
       uint32_t pop_pc;
     } target;
@@ -670,7 +670,8 @@ struct KosCode {
   uint32_t fast_need;   /* fast slots the root namespace must hold: the
                            highest root-scope FAST index plus one, 0
                            when the root scope uses none */
-  size_t allocation;    /* total mmap allocation size */
+  size_t allocation;    /* block allocation size; the exact block size
+                           when the block lives in an arena */
 
   uint32_t code_len;    /* instruction count */
   KosOp *code;          /* instruction array */
@@ -691,10 +692,10 @@ struct KosCode {
   PyCodeObject *faux;   /* faux code object for tracebacks */
   PyObject *extras;     /* extra metadata (PyDict) */
 
-  /* strong reference to the owning KosArena when the unified block has
-     been relocated into a shared arena; NULL for an unpacked object.
-     When set, the arena owns the block memory and teardown must not
-     free it. Non-GC leaf, never part of a cycle. */
+  /* strong reference to the owning KosArena when the unified block
+     lives in an arena chunk; NULL for a heap block. When set, the
+     arena owns the block memory and teardown returns the block to it
+     instead of freeing it. Non-GC leaf, never part of a cycle. */
   PyObject *arena;
 
   PyObject *weakreflist;  /* weak reference support */
@@ -726,6 +727,28 @@ PyObject *KosCode_New(
     PyObject *filename,
     int protect,
     int cache);
+
+
+/**
+   Create a new KosCode object whose unified block is placed by a code
+   allocator. Same as KosCode_New, except that with an allocator the
+   block is reserved from one of its arena chunks at its exact size and
+   protect is ignored: the block becomes read-only when the allocator
+   seals.
+
+   :param allocator: KosCodeAllocator, not yet sealed, or NULL for the
+     heap block KosCode_New makes
+
+   :return: new KosCode reference, or NULL on error
+*/
+PyObject *KosCode_NewWithAllocator(
+    PyObject *nspec,
+    PyObject *instr,
+    PyObject *name,
+    PyObject *filename,
+    int protect,
+    int cache,
+    PyObject *allocator);
 
 
 /* === Accessors === */

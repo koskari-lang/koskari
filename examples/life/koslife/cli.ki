@@ -45,6 +45,7 @@ define create-option-parser [name]:
   parser
 
 
+@entry-point
 define main [argv: None]:
   """
   koslife CLI entry
@@ -68,10 +69,6 @@ define main [argv: None]:
     130
   else:
     0
-
-
-when-main:
-  (sys.exit (main))
 
 
 ;; The end.

@@ -26,16 +26,15 @@
 */
 
 
-/* Feature test macros must come before any includes */
-#define _POSIX_C_SOURCE 200809L
+/* Python.h sets the feature test macros, so it comes before any
+   system header */
+#include "lib.h"
+#include "debug.h"
 
 #include <string.h>
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <unistd.h>
-
-#include "lib.h"
-#include "debug.h"
 
 
 /* === Static string constants === */
@@ -392,7 +391,7 @@ typedef struct {
 /* Alignment of the instruction array and the extras table: a 32-byte
    record never straddles a 64-byte line. The arena reserves every
    member on the same unit, which is what keeps that alignment inside
-   a packed segment. */
+   a chunk. */
 #define KOS_BLOCK_ROW_ALIGN KOS_ARENA_UNIT
 
 
@@ -408,7 +407,7 @@ static size_t align_size(size_t value, size_t unit) {
 /**
    Region offsets and sizes for a unified bytecode block, computed from
    the five region lengths. The single source of truth for the block
-   layout: allocation, relocation, and the stats getsets all derive
+   layout: allocation and the stats getsets all derive
    offsets from here. Region order (with alignment padding between):
 
      [code][pad][positions][pad][cpool][pad][extra][pad][extents][top]
@@ -450,7 +449,9 @@ static void code_block_layout(
   out->cpool_bytes = sizeof(PyObject *) * (size_t) cpool_len;
   out->extra_bytes = sizeof(KosExtra) * (size_t) extra_len;
   out->extent_bytes = sizeof(KosExtentDesc) * (size_t) extent_count;
-  out->top_bytes = sizeof(uint16_t) * (size_t) code_len;
+  /* a block with no extents has no top_extent_id table either */
+  out->top_bytes = extent_count
+      ? sizeof(uint16_t) * (size_t) code_len : 0;
 
   out->pos_offset = align_size(out->code_bytes, ptr_size);
   out->cpool_offset = out->pos_offset
@@ -478,16 +479,9 @@ static void code_self_layout(PyObject *self, KosBlockLayout *out) {
 static void code_calc_alloc_stats(PyObject *self, CodeAllocStats *out) {
 
   KosBlockLayout lay;
-  size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
   size_t allocation = KosCode_ALLOCATION(self);
-  size_t rounded_total;
 
   code_self_layout(self, &lay);
-
-  if (! page_size || (ssize_t) page_size < 0) {
-    page_size = 4096;
-  }
-  rounded_total = align_size(lay.total_unrounded, page_size);
 
   out->allocation_bytes = allocation;
   out->code_bytes = lay.code_bytes;
@@ -501,13 +495,9 @@ static void code_calc_alloc_stats(PyObject *self, CodeAllocStats *out) {
 
   out->padding_bytes = lay.total_unrounded - out->payload_bytes;
 
-  if (allocation >= lay.total_unrounded) {
-    out->page_rounding_bytes = allocation - lay.total_unrounded;
-  } else if (rounded_total >= lay.total_unrounded) {
-    out->page_rounding_bytes = rounded_total - lay.total_unrounded;
-  } else {
-    out->page_rounding_bytes = 0;
-  }
+  /* the allocation is the exact block (heap, arena) or the block
+     rounded up to a page (protected), never less than the block */
+  out->page_rounding_bytes = allocation - lay.total_unrounded;
 }
 
 
@@ -666,7 +656,7 @@ static PyObject *code_get_cache_slots(PyObject *self, void *_unused) {
 static PyGetSetDef code_getset[] = {
 
   { "arena", code_get_arena, NULL,
-    "owning Arena when packed, else None", NULL },
+    "owning Arena when the block lives in one, else None", NULL },
 
   { "allocation_bytes", code_get_allocation_bytes, NULL,
     "int; total allocated bytes for sealed bytecode storage",
@@ -1199,92 +1189,6 @@ static PyObject *code_m_soften(PyObject *self, PyObject *unused) {
 }
 
 
-static void code_fill_derived(
-    KosOp *code,
-    uint32_t code_len,
-    KosExtra *extra,
-    const KosOp *old_code);
-
-
-/**
-   Relocate this code object's unified block into an arena slice.
-
-   Copies the unrounded block extent into the arena, recomputes the
-   interior region pointers from the new base, takes a strong reference
-   to the arena, and frees the original allocation (unsealing it first
-   when it was per-object protected). Cpool slots are owned pointers
-   copied verbatim; no refcounts change.
-
-   Caller must hold the GIL, and no frame of this code may be
-   mid-dispatch. Suspended frames are safe: they hold the KosCode
-   object plus an integer pc and re-derive the instruction buffer on
-   resume.
-*/
-static PyObject *code_m_pack_into(PyObject *self, PyObject *arena) {
-
-  if (! KosArena_Check(arena)) {
-    PyErr_Format(PyExc_TypeError,
-                 "pack_into argument must be an Arena, not %R",
-                 Py_TYPE(arena));
-    return NULL;
-  }
-
-  if (KosCode_ARENA(self)) {
-    PyErr_SetString(PyExc_ValueError,
-                    "Code is already packed into an arena");
-    return NULL;
-  }
-
-  void *old_base = KosCode_CODE(self);
-  if (! old_base) {
-    PyErr_SetString(PyExc_ValueError,
-                    "Code has no bytecode block");
-    return NULL;
-  }
-
-  KosBlockLayout lay;
-  code_self_layout(self, &lay);
-
-  void *dst = NULL;
-  if (KosArena_Reserve(arena, lay.total_unrounded, &dst)) {
-    return NULL;
-  }
-
-  memcpy(dst, old_base, lay.total_unrounded);
-
-  /* Recompute interior pointers from the new base, preserving NULL
-     for absent optional regions */
-  KosCode_CODE(self) = (KosOp *) dst;
-  KosCode_POS(self) = (KosPosition *) ((char *) dst + lay.pos_offset);
-  KosCode_CPOOL(self) = (PyObject **) ((char *) dst + lay.cpool_offset);
-  KosCode_EXTRA(self) = KosCode_EXTRA(self)
-      ? (KosExtra *) ((char *) dst + lay.extra_offset) : NULL;
-  KosCode_EXTENTS(self) = KosCode_EXTENTS(self)
-      ? (KosExtentDesc *) ((char *) dst + lay.extent_offset) : NULL;
-  KosCode_TOP_EXTENT_ID(self) = KosCode_TOP_EXTENT_ID(self)
-      ? (uint16_t *) ((char *) dst + lay.top_offset) : NULL;
-
-  /* The in-block operand pointers moved with the block; re-derive them
-     (and fn) from the serialized indices in the arena's writable window. */
-  code_fill_derived(KosCode_CODE(self), KosCode_CODE_LEN(self),
-                    KosCode_EXTRA(self), (const KosOp *) old_base);
-
-  Py_INCREF(arena);
-  KosCode_ARENA(self) = arena;
-
-  if (KosCode_PROTECTED(self)) {
-    mprotect(old_base, KosCode_ALLOCATION(self), PROT_WRITE);
-    KosCode_FLAGS(self) &= ~KOS_CODE_PROTECTED;
-  }
-  free(old_base);
-
-  /* allocation now reports the member footprint within the arena */
-  KosCode_ALLOCATION(self) = lay.total_unrounded;
-
-  Py_RETURN_NONE;
-}
-
-
 static PyMethodDef code_methods[] = {
 
   { "constant", (PyCFunction) code_m_constant, METH_O,
@@ -1314,10 +1218,6 @@ static PyMethodDef code_methods[] = {
   { "soften", (PyCFunction) code_m_soften, METH_NOARGS,
     "C.soften() => list of (opcode, arg) pairs with LABEL/POSITION "
     "pseudo-ops and pool/label values restored" },
-
-  { "pack_into", (PyCFunction) code_m_pack_into, METH_O,
-    "C.pack_into(arena) => None. Relocate the bytecode block into an "
-    "unsealed Arena; the arena then owns the storage" },
 
   { NULL, },
 };
@@ -1607,7 +1507,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
            takes effect, so overwrite the pending entry rather than append
            an orphan.  code_emit places at most one entry per instruction
            index, so an appended same-index entry would be dropped, and the
-           zero-filled slot it leaves in the table corrupts the binary
+           unwritten slot it leaves in the table corrupts the binary
            search in KosCode_GetPosition. */
         if (coll->pos_count > 0
             && coll->pos_entries[coll->pos_count - 1].index == (uint16_t) di) {
@@ -1657,7 +1557,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
   /* A POSITION after the last instruction names nothing: its entry
      would sit at the THEEND slot, which code_emit never visits, and
-     the zero-filled slot it left in the table would break the binary
+     the unwritten slot it left in the table would break the binary
      search for the final run. */
   if (coll->pos_count > 0
       && coll->pos_entries[coll->pos_count - 1].index == (uint16_t) di) {
@@ -1979,13 +1879,19 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
      [top_extent_id]
 
    All offsets use natural alignment: pointer size for cpool,
-   4-byte for KosExtra. With protect, the block is page-aligned and the total is
-   rounded up to page size for the later mprotect seal; without, it is a
-   plain writable malloc of the exact unrounded total.
+   4-byte for KosExtra. With an allocator, the exact unrounded total is
+   reserved from one of its arena chunks, which out_chunk receives as
+   an owned reference, so the chunk outlives whatever Python runs while
+   the block is written, and protect is ignored. Otherwise,
+   with protect, the block is page-aligned and the total is rounded up
+   to page size for the later mprotect seal; without, it is a plain
+   writable malloc of the exact unrounded total.
 */
 static int code_alloc_unified(
     CodeCollect *coll,
     int protect,
+    PyObject *allocator,
+    PyObject **out_chunk,
     void **out_base,
     size_t *out_len,
     KosOp **out_code,
@@ -2004,9 +1910,16 @@ static int code_alloc_unified(
   size_t total = lay.total_unrounded;
   void *base = NULL;
 
-  if (protect) {
+  *out_chunk = NULL;
+
+  if (allocator) {
+    if (KosCodeAllocator_Reserve(allocator, total, &base, out_chunk))
+      return -1;
+    Py_INCREF(*out_chunk);
+
+  } else if (protect) {
     /* Page-aligned; later mprotect(PROT_READ) once for entire block */
-    size_t page_size = (size_t) sysconf(_SC_PAGE_SIZE);
+    size_t page_size = KosArena_PageSize();
     total = align_size(total, page_size);
     if (posix_memalign(&base, page_size, total)) {
       base = NULL;
@@ -2023,8 +1936,6 @@ static int code_alloc_unified(
                     "Failed to allocate bytecode storage");
     return -1;
   }
-
-  memset(base, 0, total);
 
   *out_base = base;
   *out_len = total;
@@ -2043,43 +1954,44 @@ static int code_alloc_unified(
 
 
 /**
+   Release a unified block that code_alloc_unified produced and no
+   KosCode has taken: back to its arena chunk, dropping the reference
+   the reservation took, or to the heap. The block is still writable.
+*/
+static void code_free_unified(void *base, size_t size, PyObject *chunk) {
+
+  if (chunk) {
+    KosArena_Complete(chunk);
+    KosArena_Release(chunk, base, size);
+    Py_DECREF(chunk);
+  } else {
+    free(base);
+  }
+}
+
+
+/**
    Resolve the derived half of every instruction: the handler from its
    opcode, and the in-block operand pointers (a LABEL's target, an
    EXTRA's row) from the serialized index. Runs after emit and
-   validation in the block's writable window, and again after pack
-   relocates the block, when old_code is the base the block moved from:
-   a row's LABEL fields keep no index, so they shift by the delta
-   (emit's pending-label pass set them, and old_code is NULL then). The
-   out-of-block pointers (a pool object, a cache slot) are stable and
-   set once by emit.
+   validation in the block's writable window. A row's LABEL fields are
+   set by emit's pending-label pass, and the out-of-block pointers (a
+   pool object, a cache slot) are set once by emit.
 */
 static void code_fill_derived(
     KosOp *code,
     uint32_t code_len,
-    KosExtra *extra,
-    const KosOp *old_code) {
+    KosExtra *extra) {
 
   for (uint32_t pc = 0; pc < code_len; pc++) {
     KosOpCode op = (KosOpCode) code[pc].op;
     KosOpStyle st = opcode_styles[op].style;
 
     code[pc].fn = kos_op_handlers[op];
-    if (st == KOSTYLE_LABEL) {
+    if (st == KOSTYLE_LABEL)
       code[pc].u.target = &code[code[pc].arg];
-
-    } else if (st == KOSTYLE_EXTRA) {
-      KosExtra *row = &extra[code[pc].arg];
-      KosExtraSchema schema = kos_opcode_extra_schema(op);
-
-      code[pc].u.row = row;
-      if (old_code) {
-        for (int slot = 0; slot < 4; slot++) {
-          KosOpStyle fk = schema_field(schema, slot);
-          if (fk == KOSTYLE_LABEL)
-            row->f[slot].target = code + (row->f[slot].target - old_code);
-        }
-      }
-    }
+    else if (st == KOSTYLE_EXTRA)
+      code[pc].u.row = &extra[code[pc].arg];
   }
 }
 
@@ -3057,21 +2969,34 @@ static int validate_fast_slots(
    1. Collect: simulate squashing, build label map, intern constants,
       build extra rows. Yields exact sizes (code_len, pos_count, cpool_len,
       extra_len, extent_count).
-   2. Allocate: single block for all regions (page-aligned when protect).
+   2. Allocate: single block for all regions (an arena chunk reservation
+      with an allocator; page-aligned when protect).
    3. Emit: write instructions, positions, cpool, extra into block.
    4. Finalize: derive_extents_fill; validate jumps;
-      with protect, mprotect(PROT_READ) and set KOS_CODE_PROTECTED; set
-      KosCode fields.
+      with protect and no allocator, mprotect(PROT_READ) and set
+      KOS_CODE_PROTECTED; with an allocator, take the chunk as the
+      owning arena; set KosCode fields.
 
-   The block stays writable until the final seal, so error paths free it
-   without an unseal.
+   The block stays writable until the final seal, so error paths release
+   it without an unseal.
 
    Invariant: instruction streams that contain yield or yield-from must not
    contain TAIL_CALL, TAIL_CALL_NAMES, or TAIL_CALL_STAR (ValueError).
 */
-static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
+static int code_instr_init(
+    PyObject *self,
+    PyObject *instr,
+    int protect,
+    PyObject *allocator) {
 
   SAYF("in code_instr_init(%R, %R)", self, instr);
+
+  /* placement and protection both need the system page size; where
+     the system reports none, the block is heap and neither applies */
+  if (! KosArena_PageSize()) {
+    allocator = NULL;
+    protect = 0;
+  }
 
   Py_ssize_t _instr_l = PySequence_Fast_GET_SIZE(instr);
   if (_instr_l < 0) {
@@ -3110,6 +3035,7 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   /* Phase 2: Allocate — single block for all regions */
   void *base = NULL;
   size_t alloc_size = 0;
+  PyObject *chunk = NULL;
   KosOp *code = NULL;
   KosPosition *pos = NULL;
   PyObject **cpool = NULL;
@@ -3117,7 +3043,8 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   KosExtentDesc *extents = NULL;
   uint16_t *top_extent_id = NULL;
 
-  if (code_alloc_unified(&coll, protect, &base, &alloc_size,
+  if (code_alloc_unified(&coll, protect, allocator, &chunk,
+                         &base, &alloc_size,
                          &code, &pos, &cpool, &extra,
                          &extents, &top_extent_id)) {
     code_collect_clear(&coll);
@@ -3128,7 +3055,7 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   /* Phase 3: Emit — write instructions and tables into block */
   if (code_emit(self, instr_fast, &coll, code, pos, cpool, extra)) {
     code_collect_clear(&coll);
-    free(base);
+    code_free_unified(base, alloc_size, chunk);
     Py_DECREF(instr_fast);
     return -1;
   }
@@ -3161,10 +3088,16 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
                                     extent_count, top_extent_id))
     goto reject;
 
-  code_fill_derived(code, code_len, extra, NULL);
+  code_fill_derived(code, code_len, extra);
 
-  /* Seal block read-only; single mprotect for entire allocation */
-  if (protect) {
+  /* Seal block read-only; single mprotect for entire allocation. A
+     chunk member is written, is sealed with its chunk, and keeps the
+     reference the reservation took. */
+  if (chunk) {
+    KosArena_Complete(chunk);
+    KosCode_ARENA(self) = chunk;
+
+  } else if (protect) {
     if (mprotect(base, alloc_size, PROT_READ)) {
       PyErr_SetFromErrno(PyExc_OSError);
       goto reject;
@@ -3192,7 +3125,7 @@ static int code_instr_init(PyObject *self, PyObject *instr, int protect) {
   /* a rejection after emit: the pool entries are owned and the block
      is still writable */
   code_release_cpool(cpool, cpool_len);
-  free(base);
+  code_free_unified(base, alloc_size, chunk);
   return -1;
 }
 
@@ -3211,18 +3144,25 @@ static PyObject *code_new(
   PyObject *filename = NULL;
   int protect = 1;
   int cache = 1;
+  PyObject *allocator = NULL;
 
   static char *keywords[] = {
-    "nspec", "instr", "name", "filename", "protect", "cache", NULL,
+    "nspec", "instr", "name", "filename", "protect", "cache", "allocator",
+    NULL,
   };
 
-  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$pp:Code", keywords,
+  if (! PyArg_ParseTupleAndKeywords(args, kwds, "OO|OO$ppO:Code", keywords,
                                     &nspec, &instr, &name, &filename,
-                                    &protect, &cache)) {
+                                    &protect, &cache, &allocator)) {
     return NULL;
   }
 
-  return KosCode_New(nspec, instr, name, filename, protect, cache);
+  if (allocator == Py_None) {
+    allocator = NULL;
+  }
+
+  return KosCode_NewWithAllocator(nspec, instr, name, filename,
+                                  protect, cache, allocator);
 }
 
 
@@ -3334,7 +3274,10 @@ static void code_dealloc(PyObject *self) {
 
   void *base = KosCode_CODE(self);
   if (KosCode_ARENA(self)) {
-    /* the arena owns the block memory; drop our reference to it */
+    /* the arena owns the block memory: hand the block back, which an
+       open chunk reuses when it is the newest, and drop our reference */
+    if (base)
+      KosArena_Release(KosCode_ARENA(self), base, KosCode_ALLOCATION(self));
     Py_CLEAR(KosCode_ARENA(self));
   } else if (base) {
     if (KosCode_PROTECTED(self)) {
@@ -3492,6 +3435,26 @@ PyObject *KosCode_New(
     int protect,
     int cache) {
 
+  return KosCode_NewWithAllocator(nspec, instr, name, filename,
+                                  protect, cache, NULL);
+}
+
+
+PyObject *KosCode_NewWithAllocator(
+    PyObject *nspec,
+    PyObject *instr,
+    PyObject *name,
+    PyObject *filename,
+    int protect,
+    int cache,
+    PyObject *allocator) {
+
+  if (allocator && ! KosCodeAllocator_Check(allocator)) {
+    PyErr_Format(PyExc_TypeError, "Code allocator must be a"
+                 " CodeAllocator, not %R", Py_TYPE(allocator));
+    return NULL;
+  }
+
   if (! filename || filename == Py_None) {
     filename = _str_anon;
   }
@@ -3590,7 +3553,7 @@ PyObject *KosCode_New(
     return NULL;
   }
 
-  if (code_instr_init(self, instr, protect)) {
+  if (code_instr_init(self, instr, protect, allocator)) {
     Py_CLEAR(self);
     Py_DECREF(instr);
     return NULL;

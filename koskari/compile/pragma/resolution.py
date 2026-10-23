@@ -411,6 +411,21 @@ class KoskariPragma:
         return self._code_request_for_write.get(id(code), ())
 
 
+    def close(self):
+        """
+        Drop the fragment records once the root Code is complete. The
+        records are compile-time only, and every fragment holds this
+        resolution back, so keeping them would keep each fragment's
+        instructions, and the function code they carry as constants,
+        alive until a cyclic GC pass
+        """
+
+        self._code_to_fragment.clear()
+        self._code_request_for_write.clear()
+        self._code_ancestors.clear()
+        self._inline_scopes.clear()
+
+
     def register_code_fragment(self, code, fragment, ancestors=()):
         """
         Register source fragment for a Code (position lookup during

@@ -29,7 +29,7 @@ import unittest
 import pytest
 
 from koskari.importer import KoskariSourceFileLoader, install, uninstall
-from koskari.lib import FormalsSpec, FunctionSpec, cons, nil
+from koskari.lib import FormalsSpec, FunctionSpec, cons, demand_call, nil
 from koskari.serialize.codex import KioFile
 from koskari.serialize.incremental import compile_ki_file_to_kio
 
@@ -476,6 +476,61 @@ class TestKioImporterParity(unittest.TestCase):
         for code in codes:
             self.assertFalse(code.caches)
             self.assertFalse(code.protected)
+
+
+    def test_kio_function_code_placed_and_sealed(self):
+        """
+        a .kio module's function code sits in a sealed arena chunk, as
+        it does under a source load
+        """
+
+        ki, kio = self._both('placed', "(define f (lambda [] 1))\n")
+        self.assertTrue(ki.f.code.arena.sealed)
+        self.assertIsNotNone(kio.f.code.arena)
+        self.assertTrue(kio.f.code.arena.sealed)
+        self.assertEqual(demand_call(kio.f), 1)
+
+
+    def test_kio_function_code_sealed_before_first_body(self):
+        """
+        a .kio decodes every function before any body runs, so its code
+        is already sealed while the module's own forms run
+        """
+
+        ki, kio = self._both(
+            'early',
+            "(define f (lambda [] 1))\n"
+            "(define during f.code.arena.sealed)\n")
+        self.assertIs(ki.during, False)
+        self.assertIs(kio.during, True)
+
+
+    def test_kio_pack_module_off_is_heap(self):
+        """a .kio built with pack-module off loads its functions as heap"""
+        _ki, kio = self._both(
+            'unplaced',
+            "(pragma [compiler/pack-module False])\n"
+            "(define f (lambda [] 1))\n")
+        self.assertIsNone(kio.f.code.arena)
+
+
+    def test_kio_pack_module_toggle_mid_module(self):
+        """
+        a .kio records each function's placement as its build made it:
+        placed before a mid-module toggle off, heap after it
+        """
+
+        ki, kio = self._both(
+            'toggled',
+            "(define before (lambda [] 1))\n"
+            "(pragma [compiler/pack-module False])\n"
+            "(define after (lambda [] 2))\n")
+        for mod in (ki, kio):
+            self.assertIsNotNone(mod.before.code.arena)
+            self.assertTrue(mod.before.code.arena.sealed)
+            self.assertIsNone(mod.after.code.arena)
+            self.assertEqual(demand_call(mod.before), 1)
+            self.assertEqual(demand_call(mod.after), 2)
 
 
     def _import(self, modname):

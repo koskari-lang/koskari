@@ -163,6 +163,7 @@ define build_parser [name]:
     return parser
 
 
+@entry-point
 define main [argv: None]:
     """
     Parse arguments and dispatch to the selected subcommand.
@@ -180,10 +181,6 @@ define main [argv: None]:
     define options (parser.parse_args args)
 
     options.func options
-
-
-when-main:
-    (sys.exit (main))
 
 
 ; The end.

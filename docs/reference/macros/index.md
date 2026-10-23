@@ -23,6 +23,7 @@ the REPL shows the expansion of any of them.
 | [`define-parameter`](compile-define-parameter-and-compile-parameterq.md) | Declare a dynamic parameter |
 | [`define-environ`](compile-define-environ.md) | Bind a name to an environment variable |
 | [`declare-exports`](compile-declare-exports.md) | Name the module's public features |
+| [`entry-point`](compile-entry-point.md) | Mark the function a program runs once its module has loaded |
 
 ## Conditionals
 
@@ -47,7 +48,7 @@ the REPL shows the expansion of any of them.
 | [`define-coroutine`](compile-define-coroutine.md) | A function that Python sees as a coroutine function |
 | [`super`](compile-super.md) | The superclass proxy inside a method |
 | [`decorate`](compile-decorate.md), [`decorate-subject`](compile-decorate-subject.md) | What `@` lines lower to, and the per-decorator dispatch |
-| [`when-main`](compile-when-main.md) | Run a body only when the file is the script |
+| [`when-main`](compile-when-main.md) | Python's `__name__` guard; prefer `entry-point` for a program's work |
 
 ## Iteration and collections
 

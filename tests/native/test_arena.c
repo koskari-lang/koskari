@@ -15,11 +15,12 @@
 
 
 /**
-   Memory tests for the Arena type and Code pack_into relocation
+   Memory tests for the Arena and CodeAllocator types and the Code
+   protect flag
 
-   Tests arena creation, reservation arithmetic, seal/unseal, and the
-   relocate-then-free ordering of Code.pack_into, including the arena
-   ownership handoff on Code deallocation.
+   Tests arena creation, reservation arithmetic, release of the newest
+   reservation, seal, and code allocator placement and sealing,
+   including the arena ownership handoff on Code deallocation.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
    :license: GNU General Public License v3
@@ -28,6 +29,8 @@
 
 #include "test_harness.h"
 #include "../../koskari/lib/lib.h"
+
+#include <unistd.h>
 
 
 /* === helpers === */
@@ -43,9 +46,13 @@ static PyObject *make_nspec(const char *name) {
 }
 
 
-static PyObject *make_small_code(const char *name, int protect) {
+static PyObject *make_placed_code(
+        const char *name,
+        int protect,
+        PyObject *allocator) {
     /*
-      Build a small Code: CONST <name>, RETURN 1.
+      Build a small Code: CONST <name>, RETURN 1, placed by allocator
+      when one is given.
     */
     PyObject *nspec = make_nspec(name);
     if (! nspec)
@@ -62,10 +69,16 @@ static PyObject *make_small_code(const char *name, int protect) {
         return NULL;
     }
 
-    PyObject *code = KosCode_New(nspec, instr, NULL, NULL, protect, 1);
+    PyObject *code = KosCode_NewWithAllocator(nspec, instr, NULL, NULL,
+                                              protect, 1, allocator);
     Py_DECREF(nspec);
     Py_DECREF(instr);
     return code;
+}
+
+
+static PyObject *make_small_code(const char *name, int protect) {
+    return make_placed_code(name, protect, NULL);
 }
 
 
@@ -92,7 +105,8 @@ static int test_arena_create(void) {
     PyObject *arena = KosArena_New(100);
     TEST_ASSERT_NOT_NULL(arena, "create arena");
     TEST_ASSERT(KosArena_CheckExact(arena), "arena type check");
-    TEST_ASSERT(KosArena_SIZE(arena) >= 100, "arena page-rounded size");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(arena), (long) KosArena_ChunkUnit(),
+                   "arena rounded to one chunk unit");
     TEST_ASSERT_EQ((long) KosArena_FILL(arena), 0, "arena starts empty");
     TEST_ASSERT(! KosArena_SEALED(arena), "arena starts unsealed");
 
@@ -105,6 +119,16 @@ static int test_arena_create_zero_rejected(void) {
     PyObject *arena = KosArena_New(0);
     TEST_ASSERT_NULL(arena, "zero-size arena rejected");
     TEST_ASSERT(PyErr_Occurred() != NULL, "error set");
+    PyErr_Clear();
+    return 0;
+}
+
+
+static int test_arena_create_overflow_rejected(void) {
+    /* a size the unit rounding would wrap is refused before mmap */
+    PyObject *arena = KosArena_New(SIZE_MAX);
+    TEST_ASSERT_NULL(arena, "overflowing arena rejected");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_MemoryError), "MemoryError");
     PyErr_Clear();
     return 0;
 }
@@ -123,8 +147,8 @@ static int test_arena_reserve(void) {
 
     /* second slice starts pointer-aligned past the first */
     TEST_ASSERT(((char *) b - (char *) a) >= 10, "slices do not overlap");
-    TEST_ASSERT((((uintptr_t) b) % sizeof(void *)) == 0,
-                "slice pointer-aligned");
+    TEST_ASSERT((((uintptr_t) b) % KOS_ARENA_UNIT) == 0,
+                "slice unit-aligned");
 
     Py_DECREF(arena);
     return 0;
@@ -154,6 +178,10 @@ static int test_arena_seal(void) {
     TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal");
     TEST_ASSERT(KosArena_SEALED(arena), "sealed flag set");
 
+    /* nothing was reserved, so the seal unmapped the chunk whole */
+    TEST_ASSERT_NULL(KosArena_BASE(arena), "empty chunk unmapped");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(arena), 0L, "empty chunk has no size");
+
     TEST_ASSERT_EQ(KosArena_Seal(arena), -1, "double seal rejected");
     PyErr_Clear();
 
@@ -162,13 +190,389 @@ static int test_arena_seal(void) {
                    "reserve after seal rejected");
     PyErr_Clear();
 
-    /* dealloc of a sealed arena unseals and frees cleanly */
+    /* dealloc of a sealed arena unmaps cleanly */
     Py_DECREF(arena);
     return 0;
 }
 
 
-/* === pack_into tests === */
+static int test_arena_release(void) {
+    PyObject *arena = KosArena_New(256);
+    TEST_ASSERT_NOT_NULL(arena, "create arena");
+
+    void *a = NULL;
+    void *b = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &a), 0, "reserve a");
+    KosArena_Complete(arena);
+    size_t after_a = KosArena_FILL(arena);
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &b), 0, "reserve b");
+    KosArena_Complete(arena);
+
+    /* an older reservation is not returned */
+    KosArena_Release(arena, a, 40);
+    TEST_ASSERT(KosArena_FILL(arena) > after_a, "older kept");
+
+    /* the newest is, back to its aligned start, and its space is handed
+       out again */
+    KosArena_Release(arena, b, 40);
+    TEST_ASSERT_EQ((long) KosArena_FILL(arena),
+                   (long) (((after_a + KOS_ARENA_UNIT - 1) / KOS_ARENA_UNIT)
+                           * KOS_ARENA_UNIT),
+                   "newest returned");
+
+    void *c = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &c), 0, "reserve c");
+    KosArena_Complete(arena);
+    TEST_ASSERT_SAME(c, b, "space reused");
+
+    /* releases cascade newest first: c, then a, whose exact end lies
+       below the boundary c's release rewound to */
+    KosArena_Release(arena, c, 40);
+    KosArena_Release(arena, a, 40);
+    TEST_ASSERT_EQ((long) KosArena_FILL(arena), 0L, "every block returned");
+
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &c), 0, "reserve again");
+    KosArena_Complete(arena);
+
+    /* nothing is returned to a sealed arena */
+    size_t fill = KosArena_FILL(arena);
+    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal");
+    KosArena_Release(arena, c, 40);
+    TEST_ASSERT_EQ((long) KosArena_FILL(arena), (long) fill,
+                   "sealed arena keeps its fill");
+
+    Py_DECREF(arena);
+    return 0;
+}
+
+
+
+static int test_arena_seal_waits_for_writing(void) {
+    PyObject *arena = KosArena_New(256);
+    TEST_ASSERT_NOT_NULL(arena, "create arena");
+
+    /* a reservation being written refuses the seal; completing it
+       lets the seal through */
+    void *a = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &a), 0, "reserve a");
+    TEST_ASSERT_EQ(KosArena_Seal(arena), -1, "seal refused under a");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError), "ValueError");
+    PyErr_Clear();
+    TEST_ASSERT(! KosArena_SEALED(arena), "still open");
+
+    /* a reservation given back is completed first, as its releaser
+       does */
+    void *b = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(arena, 40, &b), 0, "reserve b");
+    KosArena_Complete(arena);
+    KosArena_Release(arena, b, 40);
+    TEST_ASSERT_EQ(KosArena_Seal(arena), -1, "seal still refused under a");
+    PyErr_Clear();
+
+    KosArena_Complete(arena);
+    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal once written");
+    TEST_ASSERT(KosArena_SEALED(arena), "sealed");
+
+    Py_DECREF(arena);
+    return 0;
+}
+
+
+static int test_arena_seal_trim_edges(void) {
+    size_t page = KosArena_PageSize();
+    void *p = NULL;
+
+    /* a fill of exactly one page keeps that page and no more */
+    PyObject *exact = KosArena_New(1);
+    TEST_ASSERT_NOT_NULL(exact, "create exact");
+    TEST_ASSERT_EQ(KosArena_Reserve(exact, page, &p), 0, "reserve a page");
+    KosArena_Complete(exact);
+    TEST_ASSERT_EQ(KosArena_Seal(exact), 0, "seal exact");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(exact), (long) page,
+                   "exact page multiple keeps one page");
+    Py_DECREF(exact);
+
+    /* one byte over a page keeps the next page too */
+    PyObject *over = KosArena_New(1);
+    TEST_ASSERT_NOT_NULL(over, "create over");
+    TEST_ASSERT_EQ(KosArena_Reserve(over, page + 1, &p), 0,
+                   "reserve a page and one");
+    KosArena_Complete(over);
+    TEST_ASSERT_EQ(KosArena_Seal(over), 0, "seal over");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(over), (long) (2 * page),
+                   "page plus one keeps two pages");
+    Py_DECREF(over);
+
+    /* a release that lowers the fill lowers what the seal keeps */
+    PyObject *lowered = KosArena_New(1);
+    TEST_ASSERT_NOT_NULL(lowered, "create lowered");
+    void *x = NULL;
+    void *y = NULL;
+    TEST_ASSERT_EQ(KosArena_Reserve(lowered, page, &x), 0, "reserve x");
+    KosArena_Complete(lowered);
+    TEST_ASSERT_EQ(KosArena_Reserve(lowered, page, &y), 0, "reserve y");
+    KosArena_Complete(lowered);
+    KosArena_Release(lowered, y, page);
+    TEST_ASSERT_EQ((long) KosArena_FILL(lowered), (long) page,
+                   "fill lowered to x's end");
+    TEST_ASSERT_EQ(KosArena_Seal(lowered), 0, "seal lowered");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(lowered), (long) page,
+                   "seal keeps the lowered fill's page");
+    Py_DECREF(lowered);
+
+    return 0;
+}
+
+
+/* === code allocator tests === */
+
+
+static int test_code_allocator_reserve(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    size_t unit = KosArena_ChunkUnit();
+    void *a = NULL;
+    void *b = NULL;
+    void *c = NULL;
+    PyObject *chunk_a = NULL;
+    PyObject *chunk_b = NULL;
+    PyObject *chunk_c = NULL;
+
+    /* most of a chunk, then more than its tail, then a small block
+       that fits behind the first */
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, unit - 128, &a, &chunk_a),
+                   0, "reserve a");
+    KosArena_Complete(chunk_a);
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 256, &b, &chunk_b),
+                   0, "reserve b");
+    KosArena_Complete(chunk_b);
+    TEST_ASSERT(chunk_b != chunk_a, "b opens a second chunk");
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &c, &chunk_c),
+                   0, "reserve c");
+    KosArena_Complete(chunk_c);
+    TEST_ASSERT_SAME(chunk_c, chunk_a, "c fits the first chunk");
+
+    /* an oversize block gets whole chunk units */
+    void *d = NULL;
+    PyObject *chunk_d = NULL;
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, unit * 2 + 1, &d,
+                                            &chunk_d),
+                   0, "reserve oversize");
+    KosArena_Complete(chunk_d);
+    TEST_ASSERT_EQ((long) KosArena_SIZE(chunk_d), (long) (unit * 3),
+                   "oversize chunk is three units");
+
+    PyObject *sealed = KosCodeAllocator_Seal(alloc);
+    TEST_ASSERT_NOT_NULL(sealed, "seal");
+    TEST_ASSERT_EQ((long) PyTuple_GET_SIZE(sealed), 3L, "three chunks");
+    TEST_ASSERT(KosArena_SEALED(chunk_a), "chunk sealed");
+
+    /* each sealed chunk is trimmed to the whole pages its code fills:
+       the second holds 256 bytes, so it is one page */
+    long page = sysconf(_SC_PAGE_SIZE);
+    TEST_ASSERT_EQ((long) KosArena_SIZE(chunk_b), page,
+                   "second chunk trimmed to one page");
+    TEST_ASSERT((long) KosArena_SIZE(chunk_a) <= (long) unit,
+                "first chunk no larger than the unit");
+    TEST_ASSERT_EQ((long) KosArena_SIZE(chunk_a) % page, 0L,
+                   "first chunk whole pages");
+    TEST_ASSERT(KosArena_SIZE(chunk_a) >= KosArena_FILL(chunk_a),
+                "first chunk holds its fill");
+    Py_DECREF(sealed);
+
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 8, &a, &chunk_a), -1,
+                   "reserve after seal rejected");
+    PyErr_Clear();
+    TEST_ASSERT_NULL(KosCodeAllocator_Seal(alloc), "double seal rejected");
+    PyErr_Clear();
+
+    Py_DECREF(alloc);
+    return 0;
+}
+
+
+static int test_code_allocator_seal_resumes(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    void *a = NULL;
+    void *b = NULL;
+    PyObject *chunk_a = NULL;
+    PyObject *chunk_b = NULL;
+
+    /* a chunk sealed ahead of the allocator stands in for one a failed
+       seal left behind: reservations pass it by, and the allocator's
+       seal takes the rest and closes */
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &a, &chunk_a),
+                   0, "reserve a");
+    KosArena_Complete(chunk_a);
+    TEST_ASSERT_EQ(KosArena_Seal(chunk_a), 0, "seal a's chunk directly");
+
+    TEST_ASSERT_EQ(KosCodeAllocator_Reserve(alloc, 64, &b, &chunk_b),
+                   0, "reserve past a sealed chunk");
+    KosArena_Complete(chunk_b);
+    TEST_ASSERT(chunk_b != chunk_a, "b opens a second chunk");
+
+    PyObject *sealed = KosCodeAllocator_Seal(alloc);
+    TEST_ASSERT_NOT_NULL(sealed, "seal skips the sealed chunk");
+    TEST_ASSERT_EQ((long) PyTuple_GET_SIZE(sealed), 2L, "two chunks");
+    TEST_ASSERT(KosArena_SEALED(chunk_a), "first chunk sealed");
+    TEST_ASSERT(KosArena_SEALED(chunk_b), "second chunk sealed");
+    Py_DECREF(sealed);
+
+    Py_DECREF(alloc);
+    return 0;
+}
+
+
+static int test_code_allocator_places_code(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    PyObject *a = make_placed_code("a", 1, alloc);
+    TEST_ASSERT_NOT_NULL(a, "create placed code a");
+    PyObject *chunk = KosCode_ARENA(a);
+    TEST_ASSERT_NOT_NULL(chunk, "a holds its chunk");
+    TEST_ASSERT(! KosCode_PROTECTED(a), "placement ignores protect");
+    TEST_ASSERT_EQ((long) KosCode_ALLOCATION(a),
+                   (long) code_block_bytes(a), "allocation is exact");
+
+    char *base = (char *) KosArena_BASE(chunk);
+    TEST_ASSERT((char *) KosCode_CODE(a) >= base
+                && (char *) KosCode_CODE(a) < base + KosArena_SIZE(chunk),
+                "a lives in its chunk");
+    TEST_ASSERT((((uintptr_t) KosCode_CODE(a)) % KOS_ARENA_UNIT) == 0,
+                "instruction array unit-aligned");
+
+    /* the newest member returns its block when it dies */
+    size_t fill = KosArena_FILL(chunk);
+    PyObject *b = make_placed_code("b", 0, alloc);
+    TEST_ASSERT_NOT_NULL(b, "create placed code b");
+    TEST_ASSERT_SAME(KosCode_ARENA(b), chunk, "b shares the chunk");
+    Py_DECREF(b);
+    TEST_ASSERT_EQ((long) KosArena_FILL(chunk),
+                   (long) (((fill + KOS_ARENA_UNIT - 1) / KOS_ARENA_UNIT)
+                           * KOS_ARENA_UNIT),
+                   "b's block returned to its aligned start");
+
+    /* a member outlives the allocator, and frees its sealed chunk */
+    PyObject *sealed = KosCodeAllocator_Seal(alloc);
+    TEST_ASSERT_NOT_NULL(sealed, "seal");
+    Py_DECREF(sealed);
+    Py_DECREF(alloc);
+    TEST_ASSERT(KosArena_SEALED(KosCode_ARENA(a)), "chunk sealed");
+    Py_DECREF(a);
+
+    return 0;
+}
+
+
+static int test_code_allocator_rejects_and_rewinds(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    PyObject *a = make_placed_code("a", 0, alloc);
+    TEST_ASSERT_NOT_NULL(a, "create placed code a");
+    PyObject *chunk = KosCode_ARENA(a);
+    size_t fill = KosArena_FILL(chunk);
+
+    /* a block emitted into the chunk and then refused at finalize: a
+       POP with no PUSH fails the extent walk */
+    PyObject *nspec = make_nspec("bad");
+    TEST_ASSERT_NOT_NULL(nspec, "nspec");
+    PyObject *payload = PyUnicode_FromString("payload-bad");
+    PyObject *instr = Py_BuildValue(
+        "[(iO)(ii)(ii)]",
+        KOS_OP_CONST, payload,
+        KOS_OP_POP_WITH, 0,
+        KOS_OP_RETURN, 1);
+    Py_DECREF(payload);
+    TEST_ASSERT_NOT_NULL(instr, "instr");
+
+    PyObject *bad = KosCode_NewWithAllocator(nspec, instr, NULL, NULL,
+                                             0, 1, alloc);
+    Py_DECREF(nspec);
+    Py_DECREF(instr);
+    TEST_ASSERT_NULL(bad, "stray POP refused");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError), "RuntimeError");
+    PyErr_Clear();
+
+    /* the refused block was the newest, so its bytes went back and the
+       fill sits at its aligned start, a's aligned end */
+    TEST_ASSERT_EQ((long) KosArena_FILL(chunk),
+                   (long) (((fill + KOS_ARENA_UNIT - 1) / KOS_ARENA_UNIT)
+                           * KOS_ARENA_UNIT),
+                   "fill rewound to a's aligned end");
+
+    /* the reservation was completed on the way out, so nothing holds
+       the seal off */
+    PyObject *sealed = KosCodeAllocator_Seal(alloc);
+    TEST_ASSERT_NOT_NULL(sealed, "seal after a rejection");
+    TEST_ASSERT(KosArena_SEALED(chunk), "chunk sealed");
+    Py_DECREF(sealed);
+
+    Py_DECREF(alloc);
+    Py_DECREF(a);
+    return 0;
+}
+
+
+static int test_code_member_outlives_dropped_allocator(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    PyObject *a = make_placed_code("a", 0, alloc);
+    TEST_ASSERT_NOT_NULL(a, "create placed code a");
+    PyObject *chunk = KosCode_ARENA(a);
+
+    /* the allocator goes without sealing: the member keeps its chunk
+       open and readable */
+    Py_DECREF(alloc);
+    TEST_ASSERT(! KosArena_SEALED(chunk), "chunk still open");
+    TEST_ASSERT_NOT_NULL(KosArena_BASE(chunk), "chunk still mapped");
+    TEST_ASSERT_EQ((long) KosCode_CODE(a)[0].op, (long) KOS_OP_CONST,
+                   "instruction intact");
+
+    /* the member's death takes the open chunk with it */
+    Py_DECREF(a);
+    return 0;
+}
+
+
+static int test_placed_code_regions_unit_aligned(void) {
+    PyObject *alloc = KosCodeAllocator_New();
+    TEST_ASSERT_NOT_NULL(alloc, "create allocator");
+
+    /* CONST2 carries an EXTRA row, so the block has an extra table */
+    PyObject *nspec = make_nspec("rows");
+    TEST_ASSERT_NOT_NULL(nspec, "nspec");
+    PyObject *instr = Py_BuildValue(
+        "[(i(ssOO))(ii)]",
+        KOS_OP_CONST2, "left", "right", Py_None, Py_None,
+        KOS_OP_RETURN, 1);
+    TEST_ASSERT_NOT_NULL(instr, "instr");
+
+    PyObject *code = KosCode_NewWithAllocator(nspec, instr, NULL, NULL,
+                                              0, 1, alloc);
+    Py_DECREF(nspec);
+    Py_DECREF(instr);
+    TEST_ASSERT_NOT_NULL(code, "create code with an extra row");
+    TEST_ASSERT_NOT_NULL(KosCode_ARENA(code), "placed");
+    TEST_ASSERT_NOT_NULL(KosCode_EXTRA(code), "extra table present");
+
+    TEST_ASSERT((((uintptr_t) KosCode_CODE(code)) % KOS_ARENA_UNIT) == 0,
+                "instruction array unit-aligned");
+    TEST_ASSERT((((uintptr_t) KosCode_EXTRA(code)) % KOS_ARENA_UNIT) == 0,
+                "extra table unit-aligned");
+
+    Py_DECREF(code);
+    Py_DECREF(alloc);
+    return 0;
+}
+
+
+/* === Code protect tests === */
 
 
 static int test_code_protect_flag(void) {
@@ -189,85 +593,6 @@ static int test_code_protect_flag(void) {
 }
 
 
-static int test_pack_into_relocates(void) {
-    PyObject *a = make_small_code("a", 1);
-    PyObject *b = make_small_code("b", 0);
-    TEST_ASSERT_NOT_NULL(a, "create code a");
-    TEST_ASSERT_NOT_NULL(b, "create code b");
-
-    uint16_t op0 = KosCode_GET_OP(a, 0);
-    PyObject *const0 = KosCode_GET_CONST(a, KosCode_GET_ARG(a, 0));
-    Py_INCREF(const0);
-
-    size_t need = code_block_bytes(a) + code_block_bytes(b) + 16;
-    PyObject *arena = KosArena_New(need);
-    TEST_ASSERT_NOT_NULL(arena, "create arena");
-
-    PyObject *r = PyObject_CallMethod(a, "pack_into", "O", arena);
-    TEST_ASSERT_NOT_NULL(r, "pack a");
-    Py_DECREF(r);
-    r = PyObject_CallMethod(b, "pack_into", "O", arena);
-    TEST_ASSERT_NOT_NULL(r, "pack b");
-    Py_DECREF(r);
-
-    /* interior pointers land inside the arena chunk */
-    char *base = (char *) KosArena_BASE(arena);
-    char *end = base + KosArena_SIZE(arena);
-    TEST_ASSERT((char *) KosCode_CODE(a) >= base
-                && (char *) KosCode_CODE(a) < end,
-                "code a relocated into arena");
-    TEST_ASSERT((char *) KosCode_CODE(b) >= base
-                && (char *) KosCode_CODE(b) < end,
-                "code b relocated into arena");
-
-    /* contents and cpool identity preserved; protect flag cleared */
-    TEST_ASSERT_EQ(KosCode_GET_OP(a, 0), op0, "instruction preserved");
-    TEST_ASSERT_SAME(KosCode_GET_CONST(a, KosCode_GET_ARG(a, 0)), const0,
-                     "cpool identity preserved");
-    TEST_ASSERT(! KosCode_PROTECTED(a), "per-object protection released");
-    TEST_ASSERT_SAME(KosCode_ARENA(a), arena, "arena reference held");
-
-    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal after pack");
-
-    /* double pack rejected */
-    r = PyObject_CallMethod(a, "pack_into", "O", arena);
-    TEST_ASSERT_NULL(r, "double pack rejected");
-    PyErr_Clear();
-
-    /* arena lives until the last member dies */
-    Py_ssize_t held = Py_REFCNT(arena);
-    Py_DECREF(arena);
-    TEST_ASSERT_EQ((long) Py_REFCNT(a) >= 1, 1L, "a alive");
-    (void) held;
-
-    Py_DECREF(a);
-    /* b still holds the arena; freeing b unseals and frees the chunk */
-    Py_DECREF(b);
-
-    Py_DECREF(const0);
-    return 0;
-}
-
-
-static int test_pack_into_sealed_rejected(void) {
-    PyObject *c = make_small_code("c", 1);
-    TEST_ASSERT_NOT_NULL(c, "create code");
-
-    PyObject *arena = KosArena_New(code_block_bytes(c));
-    TEST_ASSERT_NOT_NULL(arena, "create arena");
-    TEST_ASSERT_EQ(KosArena_Seal(arena), 0, "seal");
-
-    PyObject *r = PyObject_CallMethod(c, "pack_into", "O", arena);
-    TEST_ASSERT_NULL(r, "pack into sealed rejected");
-    PyErr_Clear();
-    TEST_ASSERT_NULL(KosCode_ARENA(c), "code left unpacked");
-
-    Py_DECREF(arena);
-    Py_DECREF(c);
-    return 0;
-}
-
-
 /* === test runner === */
 
 
@@ -276,13 +601,22 @@ int run_arena_tests(void) {
 
     RUN_TEST(test_arena_create);
     RUN_TEST(test_arena_create_zero_rejected);
+    RUN_TEST(test_arena_create_overflow_rejected);
     RUN_TEST(test_arena_reserve);
     RUN_TEST(test_arena_reserve_capacity);
     RUN_TEST(test_arena_seal);
+    RUN_TEST(test_arena_release);
+    RUN_TEST(test_arena_seal_waits_for_writing);
+    RUN_TEST(test_arena_seal_trim_edges);
+
+    RUN_TEST(test_code_allocator_reserve);
+    RUN_TEST(test_code_allocator_seal_resumes);
+    RUN_TEST(test_code_allocator_places_code);
+    RUN_TEST(test_code_allocator_rejects_and_rewinds);
+    RUN_TEST(test_code_member_outlives_dropped_allocator);
+    RUN_TEST(test_placed_code_regions_unit_aligned);
 
     RUN_TEST(test_code_protect_flag);
-    RUN_TEST(test_pack_into_relocates);
-    RUN_TEST(test_pack_into_sealed_rejected);
 
     return 0;
 }

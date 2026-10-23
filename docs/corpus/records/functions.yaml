@@ -1268,3 +1268,24 @@ tags:
   - constantly
   - idiom
 notes: 'repr reports the captured value, constantly(5)'
+---
+id: function-decorate-subject-entry-point-001
+feature: macro/compile/decorate-subject
+source: |-
+  (begin (decorate [entry-point] (define main [] 0)) (is __entry__ main))
+  
+verify:
+  read: (begin (decorate [entry-point] (define main [] 0)) (is __entry__ main))
+  eval: "true"
+references:
+  - reference/macros/compile-decorate-subject.md
+  - reference/macros/compile-decorate.md
+stability: evolving
+tags:
+  - function
+  - macro
+  - decorate-subject
+  - entry-point
+  - module-global
+  - idiom
+notes: the entry-point arm binds the subject as the module's __entry__ and delivers it unchanged, so main and __entry__ are the same function; when the module runs as a program the launcher calls __entry__ with no arguments after the load completes, and its return value is the exit status (None 0, int itself, anything else printed to stderr with 1). In layout source the decorator is the line @entry-point above define main

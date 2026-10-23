@@ -15,21 +15,25 @@
 """
 tests.importer.test_runpy
 
-runpy and python -m stop at a Koskari module with an ImportError that
-names the launcher, instead of compiling the source as Python, and the
-loader answers is_package from the file name.
+runpy and python -m run a Koskari module through the code object the
+loader hands them: the module loads under the executing name, and under
+__main__ its entry point runs and its status is the exit code. The
+loader also answers is_package from the file name.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
 """
 
 import importlib.util
+import io
 import os
 import runpy
 import shutil
 import sys
 import tempfile
+import types
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 
 import pytest
 
@@ -47,30 +51,142 @@ class TestRunpy(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp(prefix='koskari_test_')
         self._prev_path = sys.path[:]
         sys.path.insert(0, self._tmpdir)
-        with open(os.path.join(self._tmpdir, 'kimod.ki'), 'w') as fh:
-            fh.write('print "ran as" __name__\n')
+        self._write('kimod.ki', 'print "ran as" __name__\n')
+        self._write(
+            'kientry.ki',
+            'print "loaded" __name__\n'
+            '\n'
+            '@entry-point\n'
+            'define main []:\n'
+            '  print "entry" __name__\n'
+            '  3\n')
+        self._write(
+            'kiboom.ki',
+            '@entry-point\n'
+            'define main []:\n'
+            '  raise (ValueError "boom")\n')
+        self._write(
+            'kiint.ki',
+            '@entry-point\n'
+            'define main []:\n'
+            '  raise (KeyboardInterrupt)\n')
         pkg = os.path.join(self._tmpdir, 'kpkg')
         os.mkdir(pkg)
-        with open(os.path.join(pkg, '__init__.ki'), 'w') as fh:
-            fh.write('(define answer 1)\n')
+        self._write(os.path.join('kpkg', '__init__.ki'), '(define answer 1)\n')
+        self._write(
+            os.path.join('kpkg', '__main__.ki'),
+            '@entry-point\n'
+            'define main []:\n'
+            '  print "package" __package__\n'
+            '  7\n')
 
 
     def tearDown(self):
         uninstall()
         install()
         sys.path[:] = self._prev_path
-        for name in ('kimod', 'kpkg'):
-            sys.modules.pop(name, None)
+        for name in list(sys.modules):
+            if name.split('.', 1)[0] in ('kimod', 'kientry', 'kiboom',
+                                         'kiint', 'kpkg', 'kstale'):
+                del sys.modules[name]
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
 
-    def test_run_module_raises_import_error_naming_the_launcher(self):
-        # runpy re-raises the loader's ImportError with only its message
-        with self.assertRaises(ImportError) as caught:
-            runpy.run_module('kimod')
-        message = str(caught.exception)
-        self.assertIn("kimod is a Koskari module", message)
-        self.assertIn("run it with koskari -m kimod", message)
+    def _write(self, relpath, text):
+        path = os.path.join(self._tmpdir, relpath)
+        with open(path, 'w') as fh:
+            fh.write(text)
+        return path
+
+
+    def _run_as_main(self, name):
+        """
+        runpy.run_module under __main__, the path python -m takes, with
+        the status it exits with and the captured stdout and stderr
+        """
+
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            with self.assertRaises(SystemExit) as caught:
+                runpy.run_module(name, run_name='__main__', alter_sys=True)
+        return caught.exception.code, out.getvalue(), err.getvalue()
+
+
+    def test_get_code_is_a_python_shim(self):
+        spec = importlib.util.find_spec('kimod')
+        code = spec.loader.get_code('kimod')
+        self.assertIsInstance(code, types.CodeType)
+        self.assertEqual("<koskari entry shim for kimod>", code.co_filename)
+
+
+    def test_run_as_main_runs_the_entry_point(self):
+        status, out, err = self._run_as_main('kientry')
+        self.assertEqual(3, status, err)
+        self.assertEqual("loaded __main__\nentry __main__\n", out)
+
+
+    def test_run_as_main_without_entry_point_exits_zero(self):
+        status, out, err = self._run_as_main('kimod')
+        self.assertEqual(0, status, err)
+        self.assertEqual("ran as __main__\n", out)
+
+
+    def test_run_as_main_restores_the_main_module(self):
+        before = sys.modules['__main__']
+        self._run_as_main('kientry')
+        self.assertIs(before, sys.modules['__main__'])
+
+
+    def test_run_as_main_renders_an_entry_exception(self):
+        status, out, err = self._run_as_main('kiboom')
+        self.assertEqual(1, status)
+        self.assertIn("ValueError: boom", err)
+
+
+    def test_run_as_main_maps_an_interrupt_to_130(self):
+        status, out, err = self._run_as_main('kiint')
+        self.assertEqual(130, status)
+        self.assertEqual("\n", err)
+
+
+    def test_package_runs_its_main_submodule(self):
+        status, out, err = self._run_as_main('kpkg')
+        self.assertEqual(7, status, err)
+        self.assertEqual("package kpkg\n", out)
+
+
+    def test_run_module_under_its_own_name_loads_without_the_entry(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            runpy.run_module('kientry')
+        self.assertEqual("loaded kientry\n", out.getvalue())
+
+
+    def test_run_module_under_its_own_name_leaves_sys_modules_alone(self):
+        with redirect_stdout(io.StringIO()):
+            runpy.run_module('kientry')
+        self.assertNotIn('kientry', sys.modules)
+
+
+    def test_stale_kio_runs_the_source(self):
+        from koskari.serialize.incremental import compile_ki_file_to_kio
+
+        src = self._write(
+            'kstale.ki',
+            '@entry-point\n'
+            'define main []:\n'
+            '  4\n')
+        kio = os.path.join(self._tmpdir, 'kstale.kio')
+        compile_ki_file_to_kio(src, kio)
+        self._write(
+            'kstale.ki',
+            '@entry-point\n'
+            'define main []:\n'
+            '  5\n')
+        later = os.stat(kio).st_mtime + 10
+        os.utime(src, (later, later))
+        status, out, err = self._run_as_main('kstale')
+        self.assertEqual(5, status, err)
 
 
     def test_is_package_answers_from_the_file_name(self):

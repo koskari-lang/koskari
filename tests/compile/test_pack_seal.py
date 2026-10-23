@@ -13,19 +13,19 @@
 
 """
 Unit tests for the compiler/protect-code and compiler/pack-module pragma
-settings, the compiler's minted-code registry, and Compiler.seal()
+settings, the compiler's code allocator, and Compiler.seal()
 
 :author: Christopher O'Brien <obriencj@preoccupied.net>
 :license: GNU General Public License v3
 """
 
+import resource
 import unittest
 
 import pytest
 
 from koskari.compile import Compiler
-from koskari.compile.compiler import CompilerMode, _arena_member_size
-from koskari.compile.pragma import PackModule
+from koskari.compile.compiler import CompilerMode
 from koskari.compile.pragma.settings import compiler_pack_module
 from koskari.lib import Arena, OpCode
 from koskari.pragma import ModulePragma
@@ -38,38 +38,21 @@ class TestPackModuleSetting(unittest.TestCase):
     """Tests for the compiler/pack-module setting function"""
 
     def test_defaults(self):
-        self.assertEqual(compiler_pack_module(), PackModule(True, 0, 0))
-        self.assertEqual(compiler_pack_module(False),
-                         PackModule(False, 0, 0))
+        self.assertIs(compiler_pack_module(), True)
+        self.assertIs(compiler_pack_module(False), False)
 
-    def test_options_hyphen_and_underscore(self):
-        opts = {"max-count": 4, "max-bytes": 4096}
-        self.assertEqual(compiler_pack_module(True, **opts),
-                         PackModule(True, 4, 4096))
-        self.assertEqual(compiler_pack_module(True, max_count=2),
-                         PackModule(True, 2, 0))
-        self.assertEqual(compiler_pack_module(True, max_bytes=64),
-                         PackModule(True, 0, 64))
-
-    def test_unknown_option_rejected(self):
-        with self.assertRaises(ValueError):
-            compiler_pack_module(True, max_size=9)
-
-    def test_negative_cap_rejected(self):
-        with self.assertRaises(ValueError):
-            compiler_pack_module(True, max_count=-1)
-        with self.assertRaises(ValueError):
-            compiler_pack_module(True, max_bytes=-1)
+    def test_options_rejected(self):
+        with self.assertRaises(TypeError):
+            compiler_pack_module(True, max_count=2)
 
 
 class TestPragmaBaselines(unittest.TestCase):
-    """The registered baselines for the two new settings"""
+    """The registered baselines for the two settings"""
 
     def test_baselines(self):
         pragma = ModulePragma()
         self.assertIs(pragma.get("compiler/protect-code"), False)
-        self.assertEqual(pragma.get("compiler/pack-module"),
-                         PackModule(True, 0, 0))
+        self.assertIs(pragma.get("compiler/pack-module"), True)
 
     def test_rebuild_bare_protect(self):
         from koskari.lib import values
@@ -78,7 +61,7 @@ class TestPragmaBaselines(unittest.TestCase):
         self.assertIs(pragma.get("compiler/protect-code"), True)
 
 
-def mint(compiler, name, payload=None):
+def mint(compiler, name, payload=None, mode=CompilerMode.FUNCTION):
     """
     Mint one Code through the compiler's complete() choke point
     """
@@ -86,37 +69,70 @@ def mint(compiler, name, payload=None):
     frag = compiler.fragment(name)
     frag.instruction(OpCode.CONST, payload or f"payload-{name}")
     frag.instruction(OpCode.RETURN, 1)
-    return compiler.complete(frag, mode=CompilerMode.EXPRESSION)
+    return compiler.complete(frag, mode=mode)
 
 
-class TestCompilerSeal(unittest.TestCase):
-    """Tests for the minted registry and Compiler.seal()"""
+def block_size(code):
+    """
+    The exact size of a code object's unified block
+    """
 
-    def test_seal_packs_survivors(self):
+    return code.payload_bytes + code.padding_bytes
+
+
+def aligned(size):
+    """
+    The size rounded up to the arena's reservation alignment
+    """
+
+    unit = Arena.UNIT
+    return ((size + unit - 1) // unit) * unit
+
+
+class TestCompilerAllocator(unittest.TestCase):
+    """Placement at birth through the compiler's open allocator"""
+
+    def test_no_allocator_is_heap(self):
         comp = Compiler("sealtest", {})
+        a = mint(comp, "a")
+
+        self.assertIsNone(a.arena)
+        self.assertEqual(comp.seal(), ())
+
+    def test_function_placed_at_birth(self):
+        comp = Compiler("sealtest", {})
+        comp.open_allocator()
         a = mint(comp, "a")
         b = mint(comp, "b")
 
-        arenas = comp.seal()
-        self.assertEqual(len(arenas), 1)
-        self.assertIs(a.arena, arenas[0])
-        self.assertIs(b.arena, arenas[0])
-        self.assertTrue(arenas[0].sealed)
+        self.assertIsNotNone(a.arena)
+        self.assertIs(a.arena, b.arena)
+        self.assertFalse(a.arena.sealed)
+        self.assertEqual(a.arena.size % Arena.CHUNK, 0)
 
-    def test_ephemeral_drops_off(self):
+    def test_expression_never_placed(self):
         comp = Compiler("sealtest", {})
-        a = mint(comp, "a")
-        mint(comp, "ephemeral")
+        comp.open_allocator()
+        e = mint(comp, "e", mode=CompilerMode.EXPRESSION)
 
-        arenas = comp.seal()
-        self.assertEqual(len(arenas), 1)
-        self.assertIs(a.arena, arenas[0])
-        # only the survivor was placed
-        self.assertEqual(arenas[0].used,
-                         a.payload_bytes + a.padding_bytes)
+        self.assertIsNone(e.arena)
+        self.assertEqual(comp.seal(), ())
+
+    def test_seal_seals_in_place(self):
+        comp = Compiler("sealtest", {})
+        comp.open_allocator()
+        a = mint(comp, "a")
+        chunk = a.arena
+
+        chunks = comp.seal()
+        self.assertEqual(chunks, (chunk,))
+        self.assertIs(a.arena, chunk)
+        self.assertTrue(chunk.sealed)
+        self.assertIsNone(comp.allocator)
 
     def test_seal_idempotent(self):
         comp = Compiler("sealtest", {})
+        comp.open_allocator()
         a = mint(comp, "a")
 
         first = comp.seal()
@@ -124,75 +140,125 @@ class TestCompilerSeal(unittest.TestCase):
         self.assertEqual(comp.seal(), ())
         self.assertIs(a.arena, first[0])
 
-    def test_seal_disabled(self):
+    def test_seal_failure_keeps_allocator(self):
         comp = Compiler("sealtest", {})
-        comp.pack_module = PackModule(False, 0, 0)
+        comp.open_allocator()
+        chunks = (comp.allocator,)
+
+        class Failing:
+            calls = 0
+
+            def seal(self):
+                Failing.calls += 1
+                if Failing.calls == 1:
+                    raise OSError("seal")
+                return chunks
+
+        stand_in = Failing()
+        comp.allocator = stand_in
+        with self.assertRaises(OSError):
+            comp.seal()
+        self.assertIs(comp.allocator, stand_in)
+
+        self.assertIs(comp.seal(), chunks)
+        self.assertIsNone(comp.allocator)
+        self.assertEqual(Failing.calls, 2)
+
+    def test_after_seal_is_heap(self):
+        comp = Compiler("sealtest", {})
+        comp.open_allocator()
+        a = mint(comp, "a")
+        comp.seal()
+
+        b = mint(comp, "b")
+        self.assertIsNone(b.arena)
+        self.assertTrue(a.arena.sealed)
+
+    def test_reopen_after_seal(self):
+        comp = Compiler("sealtest", {})
+        comp.open_allocator()
+        a = mint(comp, "a")
+        first = comp.seal()
+
+        comp.open_allocator()
+        b = mint(comp, "b")
+        second = comp.seal()
+
+        self.assertEqual(len(second), 1)
+        self.assertIsNot(second[0], first[0])
+        self.assertIs(b.arena, second[0])
+        self.assertIs(a.arena, first[0])
+
+    def test_open_allocator_keeps_open_one(self):
+        comp = Compiler("sealtest", {})
+        alloc = comp.open_allocator()
+        self.assertIs(comp.open_allocator(), alloc)
+
+    def test_pack_disabled(self):
+        comp = Compiler("sealtest", {})
+        comp.pack_module = False
+        comp.open_allocator()
         a = mint(comp, "a")
 
-        self.assertEqual(comp.seal(), ())
         self.assertIsNone(a.arena)
-        # registry drained even when disabled
-        comp.pack_module = PackModule(True, 0, 0)
         self.assertEqual(comp.seal(), ())
 
-    def test_seal_nothing_survived(self):
+    def test_dead_newest_block_reused(self):
         comp = Compiler("sealtest", {})
-        mint(comp, "ephemeral")
-        self.assertEqual(comp.seal(), ())
+        comp.open_allocator()
+        a = mint(comp, "a")
+        chunk = a.arena
 
-    def test_max_count_partitions_in_order(self):
+        # the dropped function was the newest block in its chunk, so its
+        # bytes go back to the chunk, to its aligned start
+        mint(comp, "dropped")
+        self.assertEqual(chunk.used, aligned(block_size(a)))
+
+    def test_dead_older_block_wasted(self):
         comp = Compiler("sealtest", {})
-        comp.pack_module = PackModule(True, 2, 0)
-        codes = [mint(comp, f"c{i}") for i in range(5)]
-
-        arenas = comp.seal()
-        self.assertEqual(len(arenas), 3)
-        self.assertIs(codes[0].arena, arenas[0])
-        self.assertIs(codes[1].arena, arenas[0])
-        self.assertIs(codes[2].arena, arenas[1])
-        self.assertIs(codes[3].arena, arenas[1])
-        self.assertIs(codes[4].arena, arenas[2])
-
-    def test_many_members_fit_their_arena(self):
-        # every member starts on the arena's reservation unit, so a
-        # segment of many members whose sizes are not multiples of it
-        # needs more than the sum of their sizes: enough members here
-        # that the difference passes the page-rounding slack, and the
-        # arena's fill compared with the plan member by member
-        comp = Compiler("sealtest", {})
-        codes = [mint(comp, f"m{i}") for i in range(120)]
-        size = codes[0].payload_bytes + codes[0].padding_bytes
-        self.assertNotEqual(size % Arena.UNIT, 0)
-        planned = sum(_arena_member_size(c) for c in codes)
-
-        arenas = comp.seal()
-        self.assertEqual(len(arenas), 1)
-        for code in codes:
-            self.assertIs(code.arena, arenas[0])
-        # the last member's alignment tail is planned but never filled
-        self.assertEqual(
-            arenas[0].used, planned - (_arena_member_size(codes[-1]) - size))
-        self.assertLessEqual(arenas[0].used, arenas[0].size)
-
-    def test_max_bytes_soft_cap(self):
-        comp = Compiler("sealtest", {})
+        comp.open_allocator()
         a = mint(comp, "a")
         b = mint(comp, "b")
-        size_a = a.payload_bytes + a.padding_bytes
+        chunk = a.arena
+        used = chunk.used
 
-        # cap below a single member: each lands in a singleton arena
-        # rather than failing to place
-        comp.pack_module = PackModule(True, 0, size_a - 1)
-        arenas = comp.seal()
-        self.assertEqual(len(arenas), 2)
-        self.assertIsNot(a.arena, b.arena)
+        # a is not the newest block, so its bytes stay in the chunk
+        del a
+        self.assertEqual(chunk.used, used)
+        self.assertIs(b.arena, chunk)
+
+    def test_many_members_fill_whole_chunks(self):
+        comp = Compiler("sealtest", {})
+        comp.open_allocator()
+
+        # enough members to fill two chunks on any page size: the count
+        # comes from one member's measured footprint
+        probe = mint(comp, "m0")
+        count = 2 * Arena.CHUNK // aligned(block_size(probe)) + 1
+        codes = [probe] + [mint(comp, f"m{i}") for i in range(1, count)]
+
+        chunks = comp.seal()
+        self.assertGreater(len(chunks), 1)
+        page = resource.getpagesize()
+        for chunk in chunks:
+            # sealed, each chunk is the whole pages its code fills
+            self.assertTrue(chunk.sealed)
+            self.assertLessEqual(chunk.size, Arena.CHUNK)
+            self.assertEqual(chunk.size % page, 0)
+            self.assertLessEqual(chunk.used, chunk.size)
+            self.assertLess(chunk.size - chunk.used, page)
+        for code in codes:
+            self.assertIn(code.arena, chunks)
+
+        # each member starts on the reservation alignment, so a chunk's
+        # fill is at most its members' aligned sizes
+        total = sum(aligned(block_size(c)) for c in codes)
+        self.assertLessEqual(sum(c.used for c in chunks), total)
 
     def test_protect_code_setting_flows_to_code(self):
-        import resource
         page = resource.getpagesize()
 
         comp = Compiler("sealtest", {})
-        comp.pack_module = PackModule(False, 0, 0)
 
         comp.protect_code = False
         plain = mint(comp, "plain")
@@ -202,42 +268,19 @@ class TestCompilerSeal(unittest.TestCase):
         prot = mint(comp, "prot")
         self.assertEqual(prot.allocation_bytes % page, 0)
 
-    def test_already_packed_skipped(self):
-        from koskari.lib import Arena
-
+    def test_placement_outranks_protect_code(self):
         comp = Compiler("sealtest", {})
+        comp.protect_code = True
+        comp.open_allocator()
+
         a = mint(comp, "a")
-        b = mint(comp, "b")
+        self.assertIsNotNone(a.arena)
+        self.assertFalse(a.protected)
+        self.assertEqual(a.allocation_bytes, block_size(a))
 
-        solo = Arena(a.payload_bytes + a.padding_bytes)
-        a.pack_into(solo)
-        solo.seal()
-
-        arenas = comp.seal()
-        self.assertEqual(len(arenas), 1)
-        self.assertIs(a.arena, solo)
-        self.assertIs(b.arena, arenas[0])
-
-
-class TestSealAccumulation(unittest.TestCase):
-    """A long-lived compiler seals repeatedly, packing increments"""
-
-    def test_repeated_seal_packs_increments(self):
-        comp = Compiler("repl", {})
-        a = mint(comp, "a")
-
-        first = comp.seal()
-        self.assertEqual(len(first), 1)
-        self.assertIs(a.arena, first[0])
-
-        # definitions accumulated since the last seal pack into a
-        # fresh arena; already-packed code is untouched
-        b = mint(comp, "b")
-        second = comp.seal()
-        self.assertEqual(len(second), 1)
-        self.assertIsNot(second[0], first[0])
-        self.assertIs(b.arena, second[0])
-        self.assertIs(a.arena, first[0])
+        e = mint(comp, "e", mode=CompilerMode.EXPRESSION)
+        self.assertIsNone(e.arena)
+        self.assertTrue(e.protected)
 
 
 # The end.

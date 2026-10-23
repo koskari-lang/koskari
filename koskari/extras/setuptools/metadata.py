@@ -67,11 +67,14 @@ def parse_entry_target(value):
     """
     Parse a koskari_scripts entry value into module and callable names
 
-    v1 supports module:callable only. Bare script-module targets are rejected.
+    A value is a module name, or module:callable. With no callable the
+    module's own entry point, the function it holds as __entry__, is
+    the target, and the callable name is None.
 
     :param value: entry point value string from packaging metadata
-    :return: (module_name, callable_name) pair
-    :raises EntryTargetError: when value is not module:callable form
+    :return: (module_name, callable_name) pair; callable_name is None
+        for a bare module
+    :raises EntryTargetError: when value is empty or malformed
     """
 
     value = value.strip()
@@ -79,9 +82,7 @@ def parse_entry_target(value):
         raise EntryTargetError("empty koskari_scripts entry value")
 
     if ':' not in value:
-        raise EntryTargetError(
-            f"koskari_scripts entry {value!r} must use"
-            " module:callable form")
+        return value, None
 
     module_name, callable_name = value.split(':', 1)
     module_name = module_name.strip()
@@ -90,7 +91,7 @@ def parse_entry_target(value):
     if not module_name or not callable_name:
         raise EntryTargetError(
             f"koskari_scripts entry {value!r} must use"
-            " module:callable form")
+            " module or module:callable form")
 
     if '.' in callable_name:
         raise EntryTargetError(
@@ -177,7 +178,8 @@ def parse_entry_point_line(line):
 
 def validate_entry_point_value(value):
     """
-    Validate a koskari_scripts entry value uses module:callable form
+    Validate a koskari_scripts entry value names a module, with or
+    without a callable
 
     :param value: entry point value string
     :raises KoskariScriptsSetupError: when the value is unsupported

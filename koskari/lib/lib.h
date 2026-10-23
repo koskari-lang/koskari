@@ -22,6 +22,20 @@
 #include <structmember.h>
 
 
+/* The sanitizer build defines KOS_ASAN from setup.py; the compiler's own
+   report of instrumentation covers a build that reached the flag some
+   other way. */
+#if ! defined(KOS_ASAN)
+# if defined(__SANITIZE_ADDRESS__)
+#  define KOS_ASAN 1
+# elif defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#   define KOS_ASAN 1
+#  endif
+# endif
+#endif
+
+
 /* Every per-type freelist caps how many freed objects it keeps for
    reuse. A recycled object's memory stays mapped and is zeroed on
    return, so a read of a freed node yields quiet nonsense instead of

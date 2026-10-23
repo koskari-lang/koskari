@@ -56,7 +56,8 @@ define-class Circle []:
     (* 3.14159 self._radius self._radius)
 
 
-when-main:
+@entry-point
+define main []:
   define c (Circle)
   (set! c.radius 5.0)
   print "radius:" c.radius

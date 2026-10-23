@@ -38,7 +38,9 @@ def compile_top_level_to_codes(mod, filename, source_stream):
     """
     Read top-level forms from a SourceStream and return compiled Code
     objects, running each as it is compiled so compile-time artifacts
-    are available to the forms after it
+    are available to the forms after it. Function code is placed and
+    sealed as under a source load, so each record of it carries the
+    placement the module's pragma chose
 
     :param mod: module namespace for evaluation side effects
     :param filename: logical source filename for the load facets
@@ -49,7 +51,7 @@ def compile_top_level_to_codes(mod, filename, source_stream):
     ns = vars(mod)
     bodies = []
 
-    with load_facets(mod, filename, seal=False, detach=True) as facets:
+    with load_facets(mod, filename, seal=True, detach=True) as facets:
         for code in compile_top_level(*facets, source_stream):
             bodies.append(code)
             demand_call(code.expression(ns))
@@ -58,7 +60,7 @@ def compile_top_level_to_codes(mod, filename, source_stream):
 
 
 # the name a .kio build runs under when the file's own name would run
-# a when-main body or names no module at all
+# a body guarded by __name__ or names no module at all
 SYNTHETIC_MODULE_NAME = '__kio_compile__'
 
 
@@ -74,8 +76,8 @@ def module_identity(ki_path):
     directory above the file that holds an __init__.ki or __init__.py
     is a package segment, and an __init__ file names the package
     itself. A file under no package is named by its stem alone, unless
-    that stem is __main__, which would run a when-main body at build;
-    it gets the synthetic name instead
+    that stem is __main__, which would run a body guarded by __name__
+    at build; it gets the synthetic name instead
 
     :param ki_path: path to the source file
     :return: (name, package, directory) with package None outside any
