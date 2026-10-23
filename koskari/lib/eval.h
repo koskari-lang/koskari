@@ -64,10 +64,13 @@ typedef enum KosOpResultKind {
                               Loop-internal like DISPATCH */
   KOS_RES_RESUME,          /* the live frame's resume takes it from here
                               with val (owned, or NULL for a plain
-                              continuation): the relay clears the resume
-                              and tail-calls it. An install that left a
-                              resume-carrying frame current answers this.
-                              Loop-internal like DISPATCH */
+                              continuation, or NULL with the end's
+                              StopIteration pending): the relay clears
+                              the resume and tail-calls it. An install
+                              that left a resume-carrying frame current
+                              answers this, and so does a flattened
+                              producer's yield or end delivered to its
+                              consumer. Loop-internal like DISPATCH */
   KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
 } KosOpResultKind;
 

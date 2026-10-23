@@ -290,38 +290,26 @@ static inline int iter_frame_has_resume(KosContext *ctx) {
 /**
    Hand an element, or the end of the iteration, to the resume the
    live frame carries. The resume's own record of what it stepped is
-   the resume's to finish. An end arrives as the protocol spells it,
-   NULL with StopIteration carrying the producer's return value. A
-   direct kind runs now, cleared from the frame, and threads the
-   consumer on, so what comes back is the chain's own signal; any
-   other kind takes the delivery through the prologue's delivery
-   step, the value staged or the end pending. value is consumed.
+   the resume's to finish. An end arrives as the protocol states it,
+   NULL with StopIteration carrying the producer's return value. The
+   answer is RESUME with the kind left on the frame: the event's
+   thread function tails into the relay, whose RESUME arm clears the
+   resume and enters it by tail call, staging first for a kind that
+   settles its delivery. Never a call into the resume from here: a
+   resume threads the consumer on and does not return while the loop
+   runs, so a call would nest a C frame per element. value is
+   consumed.
 */
 static KosOpResult iter_deliver_to_resume(
     KosContext *ctx,
     PyObject *value,
     int exhausted) {
 
-  KosDynFrame *frame = KosContext_FRAME(ctx);
-  const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
-  void *state = KosDynFrame_RESUME_STATE(frame);
-
   if (exhausted) {
     kos_raise_stop_iteration(value);
     value = NULL;
   }
-
-  if (! resume->direct) {
-    if (value)
-      KosContext_StageDelivery(ctx, value);
-    return EVAL_REPROLOGUE();
-  }
-
-  KosDynFrame_RESUME_KIND(frame) = NULL;
-  KosDynFrame_RESUME_STATE(frame) = NULL;
-
-  KOS_TRACE_RESUME_STEP();
-  return resume->fn(ctx, state, value);
+  return EVAL_RESUME(value);
 }
 
 
@@ -1547,7 +1535,7 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx);
 
 /**
    The signal that ends an in-eval delivery (a control-returned hook, a
-   flattened generator's yield landing on its consumer). The delivery
+   plain return landing on its caller). The delivery
    left a plain bytecode frame current with nothing staged, no error,
    and no goal active: DISPATCH, so the trampoline threads from ctx->pc
    without a prologue pass, and a handler that ran the delivery itself
@@ -1799,6 +1787,8 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
   KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(ctx, val));
   if (likely(r.kind == KOS_RES_DISPATCH))
     RESULT_CONTINUE(ctx);
+  if (r.kind == KOS_RES_RESUME)
+    TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
@@ -1837,8 +1827,8 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   if (! KosDynGen_IS_FLATTENED(gen))
     KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(ctx, gen, val));
-  if (likely(r.kind == KOS_RES_DISPATCH))
-    RESULT_CONTINUE(ctx);
+  if (likely(r.kind == KOS_RES_RESUME))
+    TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
   if (unlikely(r.kind == KOS_RES_YIELD && KosDynGen_IS_FLATTENED(gen))) {
     /* The freeze found no consumer for a generator that had one:
        never hand the trampoline a YIELD it would deliver again. */
@@ -2222,10 +2212,6 @@ KosOpResult KosContext_NextResume(
 }
 
 
-/* Forward declaration: defined below. */
-static KosOpResult eval_step_resume_delivery(KosContext *ctx);
-
-
 /**
    Run revive_await and normalize its outcome for eval_phase_entry: on
    KOS_RES_AWAIT tag the suspension and return the terminal result;
@@ -2434,23 +2420,9 @@ static KosOpResult eval_phase_entry(
     }
   }
 
-  /* Revived with a value (given, or staged by the revive) and the top
-     frame is waiting on one: deliver. */
-  if ((send_val != NULL || KosContext_PENDING_VALUE(ctx))
-      && mode == KOS_MODE_NORMAL
-      && KosContext_FRAME(ctx)
-      && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
-
-    KosOpResult rs = eval_step_resume_delivery(ctx);
-    if (rs.kind != KOS_RES_NORMAL
-        && rs.kind != KOS_RES_REPROLOGUE
-        && rs.kind != KOS_RES_DISPATCH
-        && rs.kind != KOS_RES_POLL)
-      return rs;
-    /* NORMAL / REPROLOGUE / DISPATCH: resume finished cleanly; proceed
-       into dispatch (DISPATCH is loop-internal and must not escape) */
-  }
-
+  /* A revive that found the top frame waiting on a resume staged the
+     sent value in the pending slot; the trampoline's first prologue
+     pass delivers it. */
   *mode_out = mode;
   return EVAL_NORMAL();
 }
@@ -2490,16 +2462,14 @@ static KosOpResult eval_phase_transfer(KosContext *ctx) {
 /**
    Centralized YIELD handler.  Flushes live registers to the frame, marks the
    generator dead-after-yield, freezes gen (the running frame's GEN, from
-   kos_dyn_find_gen), delivers to the consuming FOREACH node or the
-   live frame's resume when there is one, and otherwise tags the
-   suspension event.  val is a new reference; ownership transfers to the
-   caller or consumer.
+   kos_dyn_find_gen), delivers to the live frame's resume when there is
+   one, and otherwise tags the suspension event.  val is a new
+   reference; ownership transfers to the caller or consumer.
 
-   A yield delivered to a flattened consumer ends in kos_eval_delivery_done:
-   DISPATCH when the consumer is a plain bytecode frame, which op_YIELD
-   threads into directly; REPROLOGUE when the prologue must deliver (a
-   consumer waiting on a resume). A yield with no consumer on the chain
-   is the terminal EVAL_YIELD the adapters drive.
+   A yield delivered to a flattened consumer answers RESUME: the
+   consumer frame's resume takes the element through the relay, by
+   tail call from the YIELD row's thread function. A yield with no
+   consumer on the chain is the terminal EVAL_YIELD the adapters run.
 */
 static KosOpResult eval_event_yield(
     KosContext *ctx,
@@ -2521,17 +2491,8 @@ static KosOpResult eval_event_yield(
        yield leaves the evaluator. Never a search outward: a frame
        waiting on its own step sits between the producer and any
        enclosing region. */
-    if (iter_frame_has_resume(ctx)) {
-      KosOpResult dr = iter_deliver_to_resume(ctx, val, 0);
-      if (dr.kind == KOS_RES_NORMAL)
-        return kos_eval_delivery_done(ctx);
-      if (dr.kind == KOS_RES_RAISE) {
-        KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
-        return rs;
-      }
-      return dr;
-    }
+    if (iter_frame_has_resume(ctx))
+      return iter_deliver_to_resume(ctx, val, 0);
   }
   /* Only a yield that stops the evaluator leaves the context not
      running; a delivered yield keeps threading, and the context stays
@@ -2927,17 +2888,8 @@ static KosOpResult eval_event_return_at_frame(
       Py_DECREF(val);
       return EVAL_FATAL();
     }
-    if (iter_frame_has_resume(ctx)) {
-      KosOpResult dr = iter_deliver_to_resume(ctx, val, 1);
-      if (dr.kind == KOS_RES_NORMAL)
-        return kos_eval_delivery_done(ctx);
-      if (dr.kind == KOS_RES_RAISE) {
-        KosOpResult rs;
-        KOS_TRACE_POST_OP_WRAP(event_raise, rs = process_raise(ctx));
-        return rs;
-      }
-      return dr;
-    }
+    if (iter_frame_has_resume(ctx))
+      return iter_deliver_to_resume(ctx, val, 1);
     PyErr_SetString(PyExc_RuntimeError,
                     "generator returned into a frame with no resume"
                     " awaiting it");
@@ -3125,54 +3077,51 @@ static KosOpResult eval_step_drain_goal(KosContext *ctx) {
 
 
 /**
-   One CPS resume delivery: pop the value staged on the current frame's
-   own stack, clear the frame's resume, and invoke it. Caller must only
-   invoke when the eval frame has a resume kind set.
+   The prologue's delivery step, first half: take the delivery staged
+   for the live frame's resume and clear the resume. Caller must only
+   invoke when the live frame has a resume kind set. The pending slot
+   is the live transit; a code-less step frame's own stack carries a
+   delivery only as storage (a drive's exit moved the slot there, or a
+   landing site that still pushes). An empty slot and stack is a cold
+   start: a consumer set the resume directly to defer its first step
+   to this trampoline, and the resume is entered with NULL and no
+   exception set. A failed delivery arrives the same way, NULL with
+   PyErr set, routed here by the prologue's resume offer; the resume
+   handles it or returns EVAL_RAISE to decline, which re-raises with
+   the resume already cleared.
 
-   This is the single point every staged delivery converges on -- a
-   callee's frame return, a step's element, and an awaited
-   resume all reach a resume through here -- so it is also where the
-   ambient await interposes. A staged value that still needs awaiting
-   never reaches the resume: the same resume is set again and the value
-   goes to KosContext_PushOrAwait, which either settles it eagerly
-   (the prologue re-enters here and re-classifies) or suspends (the
-   revive re-enters here with the settled value). A resume is therefore
-   only ever invoked with a settled value, and a value that settles to
-   a further awaitable simply bounces again. Consumers do not classify;
-   that duplication is what this API exists to remove.
+   This is also where the ambient await interposes. A kind that
+   settles its delivery never sees an unsettled value: the resume is
+   set again and the value goes through KosContext_SettleStage, which
+   either settles it eagerly (the prologue re-enters here) or suspends
+   (the revive re-enters here with the settled value). A kind that
+   takes its delivery as it is (a yield-from phase, the for-each store)
+   gets it unsettled: that value is data, never awaited here.
 
-   A resume-carrying frame's own stack holds nothing else, so an empty
-   stack unambiguously means no delivery was ever staged -- a consumer
-   set the resume directly (bypassing KosContext_Call /
-   NextResume) to defer its own first step to this trampoline, the way
-   a cold KOS_ITER_INSTALLED install must (koskari_eval runs as a
-   separate step after install, never nested inside it). That resume is
-   invoked with NULL and no exception set, carries no value to settle,
-   and its own contract says what NULL means.
+   The second half is the prologue's tail call into the resume
+   (KOS_PROLOGUE_DELIVER): a resume threads the consumer on and does
+   not return while the loop runs, so it is never called from a plain
+   function.
 
-   A failed delivery arrives the same way: NULL with PyErr set, staged
-   by nobody, routed here by the prologue's resume offer once
-   process_raise declined to walk past a code-less frame with a resume
-   set. The resume may handle it or return EVAL_RAISE to decline, which
-   re-raises with the resume already cleared above. The one failure
-   that does not come through here is a resume frame the walk reaches
-   above the live frame; dyn_walk.c calls that one directly.
+   :return: 1 when the resume is to be entered now, with the kind,
+     its state and the value in the out parameters; 0 when the pass
+     has a result of its own in out_res (a settle step, a failure)
 */
-static KosOpResult eval_step_resume_delivery(KosContext *ctx) {
+static int eval_step_resume_take(
+    KosContext *ctx,
+    const KosResumeKind **out_resume,
+    void **out_state,
+    PyObject **out_val,
+    KosOpResult *out_res) {
+
   KosDynFrame *frame = KosContext_FRAME(ctx);
   const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
   void *state = KosDynFrame_RESUME_STATE(frame);
   PyObject *val;
-  KosOpResult res = EVAL_NORMAL();
-  int have_res = 0;
 
   KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
 
-  /* The pending slot is the live transit. The frame stack carries a
-     delivery only as storage: across a suspension (a drive's exit
-     moved the slot there), or from a landing site that still pushes --
-     a native frame's return. */
   val = KosContext_PENDING_VALUE(ctx);
   KosContext_PENDING_VALUE(ctx) = NULL;
 
@@ -3182,27 +3131,24 @@ static KosOpResult eval_step_resume_delivery(KosContext *ctx) {
   if (! val && ! KosDynFrame_CODE(frame) && KosContext_StackLen(ctx) > 0) {
     val = KosContext_StackPopRef(ctx);
     if (! val) {
-      res = EVAL_RAISE();
-      have_res = 1;
+      *out_res = EVAL_RAISE();
+      return 0;
+    }
 
 #if KOS_EVAL_SAFETYNET
-    } else if (KosContext_StackLen(ctx) > 0) {
+    if (KosContext_StackLen(ctx) > 0) {
       /* The empty-stack test above is the cold-start discriminator;
          a second staged value would make it lie. */
       Py_DECREF(val);
-      val = NULL;
       PyErr_SetString(PyExc_SystemError,
                       "resume frame staged more than one value");
-      res = EVAL_RAISE();
-      have_res = 1;
-#endif
+      *out_res = EVAL_RAISE();
+      return 0;
     }
+#endif
   }
 
-  /* A kind that takes its delivery as it is (a yield-from phase, the
-     for-each store) gets it unsettled: that value is data, never
-     awaited here. */
-  if (val && ! have_res && resume->settle) {
+  if (val && resume->settle) {
     switch (KosEval_ResultIsValue(val)) {
       case 1:
         break;  /* settled: deliver it below */
@@ -3212,44 +3158,32 @@ static KosOpResult eval_step_resume_delivery(KosContext *ctx) {
            the staged outcome is delivered on a later pass. */
         KosDynFrame_RESUME_KIND(frame) = resume;
         KosDynFrame_RESUME_STATE(frame) = state;
-        res = KosContext_SettleStage(ctx, val);
-        have_res = 1;
-        break;
+        *out_res = KosContext_SettleStage(ctx, val);
+        return 0;
 
       default:
         Py_DECREF(val);
-        res = EVAL_RAISE();
-        have_res = 1;
-        break;
+        *out_res = EVAL_RAISE();
+        return 0;
     }
   }
 
-  if (! have_res) {
-    KOS_TRACE_RESUME_STEP();
-    res = resume->fn(ctx, state, val);
-  }
+  *out_resume = resume;
+  *out_state = state;
+  *out_val = val;
+  return 1;
+}
 
-  /* Every outcome routes through the one hub: a RAISE from here is an
-     ordinary in-eval raise and must run the unwind walk (try/finally
-     extents, node conversion), and an AWAIT must reach
-     eval_event_await, which is where a demand extent denies it and
-     where the suspension event is recorded. Returning either raw would
-     escape koskari_eval unprocessed. */
-  if (res.kind == KOS_RES_NORMAL || res.kind == KOS_RES_REPROLOGUE
-      || res.kind == KOS_RES_POLL)
-    return EVAL_REPROLOGUE();
 
-  /* A resume that threaded into a chain hands back what the chain
-     did; a result already through its event leaves as it is. */
-  if (ctx->terminal)
-    return res;
-
-  {
-    KosOpResult ar = apply_kos_op_result(ctx, res);
-    if (ar.kind == KOS_RES_DISPATCH)
-      return EVAL_REPROLOGUE();
-    return ar;
-  }
+/* A RESUME answer applied rather than relayed: the delivery is staged
+   for the prologue's delivery step, which enters the live frame's
+   resume. Any other answer passes through. */
+static inline KosOpResult apply_resume_result(KosContext *ctx, KosOpResult r) {
+  if (r.kind != KOS_RES_RESUME)
+    return r;
+  if (r.val)
+    KosContext_StageDelivery(ctx, r.val);
+  return EVAL_REPROLOGUE();
 }
 
 
@@ -3282,7 +3216,7 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
     }
     KOS_TRACE_POST_OP_WRAP(event_yield,
         r = eval_event_yield(ctx, gen, res.val));
-    return r;
+    return apply_resume_result(ctx, r);
   }
 
   case KOS_RES_AWAIT: {
@@ -3294,18 +3228,14 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   case KOS_RES_RETURN: {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(return_event, r = eval_event_return(ctx, res.val));
-    return r;
+    return apply_resume_result(ctx, r);
   }
 
   case KOS_RES_CONTROL_RETURNED:
     return kos_eval_post_opcode_control_returned_after_hook(ctx);
 
   case KOS_RES_RESUME:
-    /* Applied rather than relayed: the delivery is staged for the
-       prologue's delivery step, which runs the live frame's resume. */
-    if (res.val)
-      KosContext_StageDelivery(ctx, res.val);
-    return EVAL_REPROLOGUE();
+    return apply_resume_result(ctx, res);
 
   case KOS_RES_FATAL:
   default:
@@ -3403,6 +3333,29 @@ static void kos_eval_report_pc_bounds_error(KosContext *ctx) {
     continue;                                                           \
   }
 
+/* The prologue's delivery step: take the delivery and enter the
+   resume by tail call. The resume threads the consumer on; a result
+   that comes back is the chain's own and reaches the trampoline,
+   which applies it. A pass result instead (a settle step, a failure)
+   re-enters or returns as any other phase's does. Not a do-while: the
+   re-entry must reach the enclosing for. */
+#define KOS_PROLOGUE_DELIVER(ctx)                                       \
+  {                                                                     \
+    const KosResumeKind *kos_pd_resume_;                                \
+    void *kos_pd_state_;                                                \
+    PyObject *kos_pd_val_;                                              \
+    KosOpResult kos_pd_res_;                                            \
+                                                                        \
+    if (eval_step_resume_take((ctx), &kos_pd_resume_, &kos_pd_state_,   \
+                              &kos_pd_val_, &kos_pd_res_)) {            \
+      KOS_TRACE_RESUME_STEP();                                          \
+      TAILCALL(kos_pd_resume_->fn, (ctx), kos_pd_state_, kos_pd_val_);  \
+    }                                                                   \
+    if (kos_pd_res_.kind == KOS_RES_REPROLOGUE)                         \
+      KOS_REENTER_AGAIN(ctx);                                           \
+    return kos_pd_res_;                                                 \
+  }
+
 
 KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
     KosContext *ctx,
@@ -3445,10 +3398,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        none of. A goal waiting on a running thunk is dormant: the thunk's
        own deliveries go through here like anyone else's. */
     if (KosContext_PENDING_VALUE(ctx) && ! will_drive && ! err) {
-      KosOpResult rs = eval_step_resume_delivery(ctx);
-      if (rs.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(ctx);
-      return rs;
+      KOS_PROLOGUE_DELIVER(ctx);
     }
 
     /* A failed delivery reaches its consumer the way a successful one
@@ -3467,10 +3417,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
         && ! KosContext_GOAL(ctx)
         && KosContext_FRAME(ctx)
         && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
-      KosOpResult rs = eval_step_resume_delivery(ctx);
-      if (rs.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(ctx);
-      return rs;
+      KOS_PROLOGUE_DELIVER(ctx);
     }
 
     /* Pending PyErr from a suspended transfer thunk (e.g. RAISE in a
@@ -3507,10 +3454,7 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
 
     if (KosContext_FRAME(ctx)
         && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)) != NULL) {
-      KosOpResult rs = eval_step_resume_delivery(ctx);
-      if (rs.kind == KOS_RES_REPROLOGUE)
-        KOS_REENTER_AGAIN(ctx);
-      return rs;
+      KOS_PROLOGUE_DELIVER(ctx);
     }
 
 #if KOS_EVAL_SAFETYNET
@@ -3788,6 +3732,8 @@ koskari_eval_cleanup:
 
 
 #undef KOS_EVAL_PREPARE_NEXT_INSN
+#undef KOS_PROLOGUE_DELIVER
+#undef KOS_REENTER_AGAIN
 
 
 /* === Unit lifecycle === */
