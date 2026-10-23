@@ -752,14 +752,23 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
             stop_val = Py_None;
             Py_INCREF(stop_val);
           }
-          if (kos_dyn_iter_node_deliver_exhausted(ctx, top, stop_val) < 0) {
-            if (PyErr_Occurred())
+          /* The walk runs the consumer's resume as a plain call, never
+             a thread: a direct step resume is staged for the prologue's
+             delivery step instead. */
+          if (KosIterRequest_StageDirect(ctx, top, 1, stop_val))
+            return EVAL_REPROLOGUE();
+          {
+            KosOpResult dr = KosIterRequest_Deliver(ctx, top, KOS_IWAKE_END,
+                                                    stop_val);
+
+            if (dr.kind == KOS_RES_RAISE)
               /* the iteration node re-emitted (e.g. 1-arg NEXT re-raising
                  StopIteration): keep propagating */
               continue;
-            return EVAL_FATAL();
+            if (dr.kind == KOS_RES_FATAL)
+              return dr;
+            return EVAL_REPROLOGUE();
           }
-          return EVAL_REPROLOGUE();
         }
 
         KosDynNode *region = top;

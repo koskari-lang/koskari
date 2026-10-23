@@ -13,59 +13,22 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
   ITER_NEXT_STORE_VAR: arg = extra index. Schema VAR (name), LABEL (else
-  pc). The for-each step with its element store: one iteration request
-  against the FOREACH node's request on record, the element stored
-  under the name in the frame namespace instead of pushed. Branch to
-  the else pc on exhaustion. Must be inside a PUSH_FOREACH block.
-  Auto-await: a step that defers sets the store resume on the frame,
-  and the element is stored when it arrives. The pre-lowering twin of
-  ITER_NEXT_STORE_FAST, which every site with a fast slot takes
-  instead.
+  pc). The for-each step with its element store: one request for the
+  next element of the FOREACH region's iterator (kos_iter_step), the
+  element stored under the name in the frame namespace by the step's
+  resume, which runs at once when the element is in hand and when it
+  arrives otherwise. Branch to the else pc at the end of the
+  iteration. Must be inside a PUSH_FOREACH block. Auto-await. The
+  pre-lowering twin of ITER_NEXT_STORE_FAST, which every site with a
+  fast slot takes instead.
 */
 KOS_OP_HANDLER(ITER_NEXT_STORE_VAR) {
   KOS_SYNC_PC(ctx, insn);
-  KosDynNode *region = kos_dyn_find_loop(ctx);
-
-  if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "ITER_NEXT_STORE_VAR must be used inside a PUSH_FOREACH"
-                    " block");
-    RESULT_RAISE();
-  }
-
-  kos_foreach_record_else(region, insn);
-
-  {
-    KosDynFrame *frame = KosContext_FRAME(ctx);
-    PyObject *out = NULL;
-
-    switch (kos_foreach_request_next(ctx, region, &out)) {
-      case KOS_IREQ_DELIVERED:
-        if (unlikely(kos_foreach_store_element(ctx, insn, out) < 0))
-          RESULT_RAISE();
-        RESULT_NEXT(ctx);
-
-      case KOS_IREQ_EXHAUSTED:
-        Py_XDECREF(out);
-        KosDynForeach_EXHAUSTED((KosDynForeach *) region) = 1;
-        RESULT_JUMP_AT(ctx, KosExtra_TARGET(KosOp_ROW(insn), 1));
-
-      case KOS_IREQ_CONTINUES:
-        kos_foreach_defer_step(frame, insn);
-        RESULT_RELAY(ctx, kos_iter_installed(ctx));
-
-      case KOS_IREQ_EXIT:
-        kos_foreach_defer_step(frame, insn);
-        RESULT_AWAIT(ctx, out);
-
-      case KOS_IREQ_ERROR:
-      default:
-        RESULT_RAISE();
-    }
-  }
+  RESULT_ENTRY(ctx, kos_iter_step(ctx, (KosOp *) insn,
+                                  &kos_iter_next_store_var_resume_kind),
+               &kos_iter_next_store_var_resume_kind, insn);
 }
 
 

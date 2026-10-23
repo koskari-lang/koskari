@@ -1368,13 +1368,39 @@ KosIterRequestStatus KosIterRequest_Next(
 
 /**
    Deliver a typed event into a iteration node's iteration request: the
-   one entry the eval delivery points call. value is consumed.
+   one entry the eval delivery points call. value is consumed. A live
+   frame carrying a direct resume (KosResumeKind.direct) takes the
+   element, or KosIterEnd at the end of the iteration, by a call of
+   that resume at once; the result is then the consumer chain's own.
 */
 KosOpResult KosIterRequest_Deliver(
     KosContext *ctx,
     KosDynNode *node,
     KosIterWakeEvent ev,
     PyObject *value);
+
+/**
+   The delivery for a caller that runs ahead of the trampoline (a
+   revive, the raise walk), where a resume may not thread the consumer
+   on: when the live frame carries a direct resume, the node's step is
+   finished and idle, the element (or KosIterEnd when exhausted) is
+   staged for the prologue's delivery step with the resume left on the
+   frame, and 1 is returned with value consumed. 0 when the frame
+   carries no direct resume, value untouched: the caller delivers as
+   before.
+*/
+int KosIterRequest_StageDirect(
+    KosContext *ctx,
+    KosDynNode *node,
+    int exhausted,
+    PyObject *value);
+
+/**
+   The end of an iteration, handed to a direct resume in place of an
+   element: a private object compared by identity, never seen by
+   user code. Passed as an owned reference like any delivery.
+*/
+extern PyObject *KosIterEnd;
 
 
 /**

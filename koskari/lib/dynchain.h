@@ -375,16 +375,26 @@ typedef struct KosResumeKind {
   int settle;   /* the delivery is settled before fn sees it: 0 for a
                    kind whose delivery is data, as a delegate's yielded
                    value or a for-each element is */
+  int direct;   /* an iteration node hands this kind its element by
+                   calling fn at once, never staging it: the step
+                   resumes of the for-each instructions. Such a kind
+                   takes its delivery as it is, and a region leaving
+                   the chain clears it from the frame. */
 } KosResumeKind;
 
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 1 }
+    (label), (fnp), (clearp), (clonep), 1, 0 }
 
 /* A kind that takes its delivery as it is. */
 #define KOS_RESUME_KIND_AS_IS(ident, label, fnp, clearp, clonep)        \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 0 }
+    (label), (fnp), (clearp), (clonep), 0, 0 }
+
+/* A kind an iteration node delivers to directly. */
+#define KOS_RESUME_KIND_DIRECT(ident, label, fnp, clearp, clonep)       \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), 0, 1 }
 
 /* The clone of a kind whose state is owned elsewhere and copied with
    the chain (a node's resume, whose state is NULL or the node
@@ -524,9 +534,7 @@ struct KosDynNode {
     struct { KosDynRegionFields region; } loop;
     struct {
       KosDynRegionFields region;
-      uint8_t exhausted;
-      uint32_t iter_next_else_pc;
-      KosIterRequest req;    /* in-flight ITER_NEXT step state */
+      KosIterRequest req;    /* the loop's iterator and its in-flight step */
     } foreach;
     struct {
       PyObject *delegate;
@@ -1378,28 +1386,14 @@ int kos_dyn_next_deliver_exhausted(
     KosDynNext *next,
     PyObject *val);
 
-/**
-   The resume an ITER_NEXT_STORE_* step sets on its frame when the step
-   defers (a Koskari generator installed, an async step awaited): the
-   element is staged for it instead of pushed, and it stores the
-   element where the step instruction names. Defined in
-   eval/eval_iter.c; the node clears it at exhaustion and at its own
-   teardown.
-*/
-extern const KosResumeKind kos_foreach_store_resume_kind;
-
-/* Clear the store resume from the live frame when it is set there. */
-void kos_dyn_foreach_clear_store_resume(KosContext *ctx);
+/* Clear a step resume (a direct kind, see KosResumeKind) from the live
+   frame when one is set there: the region whose step set it is leaving
+   and no element is coming. */
+void kos_dyn_foreach_clear_step_resume(KosContext *ctx);
 
 /* Uninstall hook: the store resume goes with the node. Callers:
    kos_dyn_uninstall_handler. */
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
-
-int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosContext *ctx, KosDynForeach *fe, PyObject *val);
-
-int kos_dyn_foreach_deliver_exhausted(
-    KosContext *ctx, KosDynForeach *fe, PyObject *val);
 
 int kos_dyn_yield_from_deliver_inner_yield(
     KosContext *ctx, KosDynYieldFrom *yf,
@@ -2354,8 +2348,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
   return KosDynRegion_ENABLED(node);
 }
 #define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.region.result)
-#define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
-#define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
 #define KosDynForeach_REQ(r)         (&((KosDynNode *)(r))->u.foreach.req)
 #define KosDynForeach_ITER(r)        (KosDynForeach_REQ(r)->iter)
 

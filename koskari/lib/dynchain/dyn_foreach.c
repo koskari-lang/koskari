@@ -37,8 +37,6 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   KosDynForeach_BREAK_PC(node) = break_pc;
   KosDynForeach_CONTINUE_PC(node) = continue_pc;
   KosDynForeach_RESULT(node) = NULL;
-  KosDynForeach_EXHAUSTED(node) = 0;
-  KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
   KosDynForeach_REQ(node)->iter = NULL;
   KosDynForeach_REQ(node)->islots = NULL;
   KosDynForeach_REQ(node)->mode = KOS_IREQ_IDLE;
@@ -59,8 +57,6 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
   KosDynForeach_CONTINUE_PC(clone) = KosDynForeach_CONTINUE_PC(node);
   KosDynForeach_RESULT(clone) = KosDynForeach_RESULT(node);
   Py_XINCREF(KosDynForeach_RESULT(clone));
-  KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
-  KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
   *KosDynForeach_REQ(clone) = *KosDynForeach_REQ(node);
   Py_XINCREF(KosDynForeach_REQ(clone)->iter);
   return clone;
@@ -94,12 +90,6 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
   if (snapshot_set_obj(data, "iter",
       KosDynForeach_ITER((KosDynForeach *) node)) < 0)
     return -1;
-  if (snapshot_set_int(data, "exhausted",
-      KosDynForeach_EXHAUSTED((KosDynForeach *) node)) < 0)
-    return -1;
-  if (snapshot_set_uint(data, "iter_next_else_pc",
-      KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) node)) < 0)
-    return -1;
   if (snapshot_set_uint(data, "req_mode",
       KosDynForeach_REQ(node)->mode) < 0)
     return -1;
@@ -130,7 +120,7 @@ int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
     PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
     return -1;
   }
-  kos_dyn_foreach_clear_store_resume(ctx);
+  kos_dyn_foreach_clear_step_resume(ctx);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
@@ -142,11 +132,12 @@ int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
 }
 
 
-void kos_dyn_foreach_clear_store_resume(KosContext *ctx) {
+void kos_dyn_foreach_clear_step_resume(KosContext *ctx) {
   KosDynFrame *frame = KosContext_FRAME(ctx);
 
   if (frame
-      && KosDynFrame_RESUME_KIND(frame) == &kos_foreach_store_resume_kind) {
+      && KosDynFrame_RESUME_KIND(frame)
+      && KosDynFrame_RESUME_KIND(frame)->direct) {
     KosDynFrame_RESUME_KIND(frame) = NULL;
     KosDynFrame_RESUME_STATE(frame) = NULL;
   }
@@ -155,61 +146,7 @@ void kos_dyn_foreach_clear_store_resume(KosContext *ctx) {
 
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
   (void) node;
-  kos_dyn_foreach_clear_store_resume(ctx);
-}
-
-
-/**
-   A deferred element lands as the resumed frame expects, the frame
-   being live again by the time it arrives: staged for the resume a
-   STORE step set, else pushed. Consumes val, failure included.
-*/
-static int foreach_deliver_deferred(KosContext *ctx, PyObject *val) {
-  KosDynFrame *frame = KosContext_FRAME(ctx);
-
-  if (frame && KosDynFrame_RESUME_KIND(frame)) {
-    KosContext_StageDelivery(ctx, val);
-    return 0;
-  }
-  return KosContext_StackPUSH(ctx, val);
-}
-
-
-int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosContext *ctx,
-    KosDynForeach *fe,
-    PyObject *val) {
-
-  if (foreach_deliver_deferred(ctx, val) < 0)
-    return -1;
-
-  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 0);
-  kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
-  return 0;
-}
-
-
-/**
-   Exhaustion tail shared by the return delivery (GEN just unwound) and
-   the raise-walk StopIteration conversion (GEN already finished): mark
-   the iterator closed, flag the loop exhausted, and resume at the
-   else pc. val consumed.
-*/
-int kos_dyn_foreach_deliver_exhausted(
-    KosContext *ctx,
-    KosDynForeach *fe,
-    PyObject *val) {
-
-  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 1);
-
-  /* no element is coming: a store resume the step set goes with it */
-  kos_dyn_foreach_clear_store_resume(ctx);
-  KosDynForeach_EXHAUSTED(fe) = 1;
-  KosContext_SET_PC(ctx, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
-  kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
-
-  Py_XDECREF(val);
-  return 0;
+  kos_dyn_foreach_clear_step_resume(ctx);
 }
 
 

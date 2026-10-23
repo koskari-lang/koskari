@@ -216,7 +216,6 @@ static int test_dynforeach_new_free(void) {
     TEST_ASSERT_EQ(KosDynForeach_ENABLED(node), 1, "enabled by default");
     TEST_ASSERT_NULL(KosDynForeach_RESULT(node), "result is NULL");
     TEST_ASSERT_NULL(KosDynForeach_ITER(node), "iter is NULL");
-    TEST_ASSERT_EQ(KosDynForeach_EXHAUSTED(node), 0, "exhausted is 0");
 
     kos_dynforeach_free(node);
 

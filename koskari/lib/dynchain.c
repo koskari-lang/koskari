@@ -2076,7 +2076,7 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
       return 1;
 
     case KOS_DYN_FOREACH:
-      return KosDynForeach_EXHAUSTED(live) == KosDynForeach_EXHAUSTED(tmpl);
+      return 1;
 
     case KOS_DYN_WIND:
       /* a template WIND is always idle (its clone resets the phase, to

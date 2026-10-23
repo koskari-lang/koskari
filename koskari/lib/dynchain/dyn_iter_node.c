@@ -107,10 +107,6 @@ int kos_dyn_iter_node_deliver_yield(
   if (KosDynNode_IS_NEXT(node))
     return kos_dyn_next_deliver_yield(ctx, (KosDynNext *) node, val);
 
-  if (KosDynNode_IS_FOREACH(node))
-    return kos_dyn_foreach_deliver_yield_kos_agen(
-        ctx, (KosDynForeach *) node, val);
-
   if (KosDynNode_IS_YIELD_FROM(node))
     /* Hand the value to the delegating generator; it re-emits as its own
        yield on the next handler dispatch. */
@@ -130,10 +126,6 @@ int kos_dyn_iter_node_deliver_exhausted(
 
   if (KosDynNode_IS_NEXT(node))
     return kos_dyn_next_deliver_exhausted(ctx, (KosDynNext *) node, val);
-
-  if (KosDynNode_IS_FOREACH(node))
-    return kos_dyn_foreach_deliver_exhausted(
-        ctx, (KosDynForeach *) node, val);
 
   if (KosDynNode_IS_YIELD_FROM(node))
     return kos_dyn_yield_from_deliver_exhausted(

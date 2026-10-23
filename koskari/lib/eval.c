@@ -113,6 +113,8 @@ static PyObject *str_rec_frame = NULL;
 */
 static PyObject *_import_fromlist = NULL;
 
+PyObject *KosIterEnd = NULL;
+
 
 /* === Static forward declarations === */
 
@@ -325,6 +327,73 @@ KosIterRequestStatus KosIterRequest_Next(
    :return: EVAL_NORMAL when the site completed and eval continues,
             EVAL_RAISE with PyErr set, EVAL_FATAL on delivery failure
 */
+/* Whether the live frame carries a resume that takes an iteration
+   node's delivery directly (a for-each step resume). */
+static inline int iter_frame_takes_direct(KosContext *ctx) {
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  return frame
+      && KosDynFrame_RESUME_KIND(frame)
+      && KosDynFrame_RESUME_KIND(frame)->direct;
+}
+
+
+/**
+   Hand an element, or the end of the iteration, to the direct resume
+   the live frame carries: the node's step is finished and idle first,
+   the resume is cleared from the frame, and it runs now with the
+   element, or with KosIterEnd when exhausted. The resume threads the
+   consumer on, so what comes back is the chain's own signal. value is
+   consumed; on exhaustion it is the producer's return value, which no
+   for-each wants.
+*/
+static KosOpResult iter_deliver_direct(
+    KosContext *ctx,
+    KosDynNode *node,
+    PyObject *value,
+    int exhausted) {
+
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  const KosResumeKind *resume = KosDynFrame_RESUME_KIND(frame);
+  void *state = KosDynFrame_RESUME_STATE(frame);
+
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+
+  kos_dyn_iter_request_finish(node, exhausted);
+  kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+
+  if (exhausted) {
+    Py_XDECREF(value);
+    value = Py_NewRef(KosIterEnd);
+  }
+
+  KOS_TRACE_RESUME_STEP();
+  return resume->fn(ctx, state, value);
+}
+
+
+int KosIterRequest_StageDirect(
+    KosContext *ctx,
+    KosDynNode *node,
+    int exhausted,
+    PyObject *value) {
+
+  if (! iter_frame_takes_direct(ctx))
+    return 0;
+
+  kos_dyn_iter_request_finish(node, exhausted);
+  kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+
+  if (exhausted) {
+    Py_XDECREF(value);
+    value = Py_NewRef(KosIterEnd);
+  }
+  KosContext_StageDelivery(ctx, value);
+  return 1;
+}
+
+
 KosOpResult KosIterRequest_Deliver(
     KosContext *ctx,
     KosDynNode *node,
@@ -342,6 +411,8 @@ KosOpResult KosIterRequest_Deliver(
 
   switch (ev) {
     case KOS_IWAKE_VALUE:
+      if (iter_frame_takes_direct(ctx))
+        return iter_deliver_direct(ctx, node, value, 0);
       if (kos_dyn_iter_node_deliver_yield(ctx, node, value) < 0)
         return EVAL_FATAL();
       return EVAL_NORMAL();
@@ -359,6 +430,9 @@ KosOpResult KosIterRequest_Deliver(
           }
         }
       }
+
+      if (iter_frame_takes_direct(ctx))
+        return iter_deliver_direct(ctx, node, value, 1);
 
       /* the delivery unlinks and frees the node on every outcome, so
          what the failure branch needs from it is read first */
@@ -459,7 +533,16 @@ static KosOpResult revive_await(
   }
   if (to_push != NULL && KosContext_FRAME(ctx)) {
     KosDynNode *node = kos_dyn_find_iter_node(ctx);
-    if (node && kos_dyn_iter_node_awaiting_py(node)) {
+    if (node && kos_dyn_iter_node_awaiting_py(node)
+        && iter_frame_takes_direct(ctx)) {
+      /* A for-each step's awaited element: the node's step is over, and
+         the element is staged below for the step resume the frame
+         carries, which the entry's delivery step runs. A revive runs
+         ahead of the trampoline, so the resume cannot run the
+         consumer's chain from here. */
+      kos_dyn_iter_request_finish(node, 0);
+      kos_dyn_iter_request_set_mode(node, KOS_IREQ_IDLE);
+    } else if (node && kos_dyn_iter_node_awaiting_py(node)) {
       /* The pending await belongs to the iteration node whose request is
          set: a python async step's awaited result IS the element. */
       KosOpResult dr;
@@ -3910,6 +3993,14 @@ int koskari_eval_init(PyObject *mod) {
       return -1;
   }
 
+  /* The end-of-iteration delivery, a private object compared by
+     identity. */
+  if (! KosIterEnd) {
+    KosIterEnd = PyObject_CallNoArgs((PyObject *) &PyBaseObject_Type);
+    if (! KosIterEnd)
+      return -1;
+  }
+
   /* Initialize string constants (cleared in koskari_eval_clear). */
   STR_CONST(str_aenter, "__aenter__");
   STR_CONST(str_aexit, "__aexit__");
@@ -3983,6 +4074,7 @@ int koskari_eval_clear(PyObject *mod) {
 
   /* Clear import sentinel and string constants initialized in koskari_eval_init. */
   Py_CLEAR(_import_fromlist);
+  Py_CLEAR(KosIterEnd);
 
   Py_CLEAR(str_aenter);
   Py_CLEAR(str_aexit);
