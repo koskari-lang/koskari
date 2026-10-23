@@ -1235,6 +1235,34 @@ static PyObject *domain_current_domain(PyObject *cls, PyObject *unused) {
 }
 
 
+/* The running stack of the calling thread, every domain: a list of
+   the Context objects innermost first, empty when nothing runs. */
+static PyObject *domain_get_stack(PyObject *cls, PyObject *unused) {
+
+  KosTlsState *s = tls_state_current();
+  PyObject *out = PyList_New(0);
+
+  (void) cls;
+  (void) unused;
+  if (! out)
+    return NULL;
+  if (! s)
+    return out;
+
+  for (size_t i = s->ctx_depth; i--; ) {
+    KosContext *ctx = s->ctx_stack[i];
+    if (! ctx)
+      continue;
+    if (PyList_Append(out, (PyObject *) ctx) < 0) {
+      Py_DECREF(out);
+      return NULL;
+    }
+  }
+
+  return out;
+}
+
+
 static PyObject *domain_get_contexts(const PyObject *self, PyObject *unused) {
 
   (void) unused;
@@ -1314,6 +1342,11 @@ static PyMethodDef domain_methods[] = {
    METH_CLASS | METH_NOARGS,
    "Return the Domain answering on this thread: the running context's,"
    " else the innermost with-Domain scope's, else the thread default"},
+  {"get_stack", (PyCFunction) domain_get_stack,
+   METH_CLASS | METH_NOARGS,
+   "Return the Context objects running on this thread under any Domain,"
+   " innermost first; Context.snapshot() pictures each one with its"
+   " dynamic chain"},
   {"get_contexts", (PyCFunction) domain_get_contexts, METH_NOARGS,
    "Return the Context objects running on this thread under this Domain,"
    " innermost first; Context.snapshot() pictures each one"},

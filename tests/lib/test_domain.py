@@ -165,6 +165,52 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
         # the drive is over: the context is no longer running
         self.assertFalse(ctx.running)
 
+    def test_domain_get_stack_reports_every_running_context(self):
+        """
+        Domain.get_stack() holds every Context running on the thread,
+        innermost first, whatever domain each runs under, and each one
+        pictures its own dynamic chain with snapshot(); once the
+        outermost call returns the stack is empty
+        """
+
+        seen = {}
+
+        def inner_probe():
+            seen["stack"] = Domain.get_stack()
+            seen["snapshots"] = [ctx.snapshot() for ctx in seen["stack"]]
+            seen["domains"] = [ctx.domain for ctx in seen["stack"]]
+            return 2
+
+        inner_code, inner_ns = build_expr([
+            ["VAR", "probe"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"probe": inner_probe})
+        inner = make_callable(inner_code, inner_ns)
+
+        def outer_probe():
+            seen["outer_domain"] = Domain.current_domain()
+            with Domain() as block:
+                seen["block"] = block
+                return demand_call(inner)
+
+        outer_code, outer_ns = build_expr([
+            ["VAR", "probe"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"probe": outer_probe})
+        self.assertEqual(demand_call(make_callable(outer_code, outer_ns)), 2)
+
+        stack = seen["stack"]
+        self.assertEqual(len(stack), 2)
+        for ctx in stack:
+            self.assertIsInstance(ctx, Context)
+        self.assertEqual(seen["domains"], [seen["block"], seen["outer_domain"]])
+        self.assertIsNot(seen["block"], seen["outer_domain"])
+        for entry in seen["snapshots"]:
+            self.assertGreaterEqual(len(entry["dynnodes"]), 1)
+        self.assertEqual(Domain.get_stack(), [])
+
     def test_context_is_not_constructible(self):
         with self.assertRaises(TypeError):
             Context()
