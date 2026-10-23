@@ -69,12 +69,9 @@ struct KosTlsState {
                            parameterize span records the active entry's
                            serial, which orders it against the contexts
                            entered before and after it */
-  PyObject **python_domain_stack;
-  size_t python_domain_depth;
-  size_t python_domain_cap;
   /* the thread's default domain (a reference of our own), minted on
      first need: the domain answering when no context is active and no
-     `with Domain():` scope is open. Only evals entered on this thread
+     `with Domain():` block is open. Only evals entered on this thread
      run under it. */
   PyObject *default_domain;
 };
@@ -148,7 +145,6 @@ static void tls_state_release(KosTlsState *s) {
     return;
   PyMem_Free(s->ctx_stack);
   PyMem_Free(s->ctx_serial);
-  PyMem_Free(s->python_domain_stack);
   PyMem_Free(s);
 }
 
@@ -346,24 +342,130 @@ KosContext *kos_ctx_current(void) {
 }
 
 
+/* === with-Domain blocks === */
+
+
 /**
-   The domain answering on the thread without minting one: the active
-   context's, else the innermost `with Domain():` scope's, else the
-   thread default once it exists. Borrowed, or NULL when the thread
-   default has not been minted yet.
+   One `with Domain():` block, open on the running stack. Blocks on
+   one stack chain through prev; the top of the chain lives in a
+   ContextVar, so an asyncio task runs under its own copy of the chain,
+   inherits the blocks open at its creation, and never meets a block
+   opened by another task.
+
+   base_serial orders the block against the Koskari contexts on the
+   thread: it is the serial of the entry active when the block was
+   opened, so the block is inner to that context (opened by Python code
+   the context called out to) and governs every eval entered inside
+   it, while a context entered before it keeps the domain it took at
+   its own entry.
+*/
+typedef struct {
+  PyObject_HEAD
+  PyObject *domain;     /* the KosDomain the block supplies */
+  PyObject *prev;       /* the block beneath on this stack, or NULL */
+  size_t base_serial;   /* the active entry's serial at enter, 0 when
+                           no context was active */
+} KosDomainScope;
+
+
+/* The top block of the running stack, None when no block is open. */
+static PyObject *domain_scope_var = NULL;
+
+/* Blocks entered and not exited, process-wide: at zero the ambient
+   lookup skips the ContextVar read, which keeps the eval entry free of
+   it. */
+static Py_ssize_t domain_scopes_open = 0;
+
+
+static int domain_scope_traverse(PyObject *self, visitproc visit, void *arg) {
+  KosDomainScope *scope = (KosDomainScope *) self;
+  Py_VISIT(scope->domain);
+  Py_VISIT(scope->prev);
+  return 0;
+}
+
+
+static int domain_scope_clear(PyObject *self) {
+  KosDomainScope *scope = (KosDomainScope *) self;
+  Py_CLEAR(scope->domain);
+  Py_CLEAR(scope->prev);
+  return 0;
+}
+
+
+static void domain_scope_dealloc(PyObject *self) {
+  PyObject_GC_UnTrack(self);
+  domain_scope_clear(self);
+  Py_TYPE(self)->tp_free(self);
+}
+
+
+static PyTypeObject KosDomainScopeType = {
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name = "koskari.lib.DomainScope",
+  .tp_basicsize = sizeof(KosDomainScope),
+  .tp_itemsize = 0,
+  .tp_dealloc = domain_scope_dealloc,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
+  .tp_traverse = domain_scope_traverse,
+  .tp_clear = domain_scope_clear,
+  .tp_doc = "One open with-Domain block on the running stack",
+};
+
+
+/* The top block as a new reference, or NULL with no error when none
+   is open. */
+static KosDomainScope *domain_scope_top(void) {
+  PyObject *top = NULL;
+
+  if (domain_scopes_open == 0 || ! domain_scope_var)
+    return NULL;
+  if (PyContextVar_Get(domain_scope_var, NULL, &top) < 0) {
+    PyErr_Clear();
+    return NULL;
+  }
+  if (top == Py_None) {
+    Py_DECREF(top);
+    return NULL;
+  }
+  return (KosDomainScope *) top;
+}
+
+
+static int domain_scope_set_top(PyObject *scope) {
+  PyObject *token = PyContextVar_Set(domain_scope_var,
+                                     scope ? scope : Py_None);
+  if (! token)
+    return -1;
+  Py_DECREF(token);
+  return 0;
+}
+
+
+/**
+   The domain answering on the thread without minting one: the
+   innermost `with Domain():` block when it was opened under the active
+   context (or with none active), else the active context's, else the
+   innermost block's, else the thread default. Borrowed, or NULL when
+   the thread default has not been minted yet.
 */
 static PyObject *domain_ambient_peek(const KosTlsState *s) {
 
-  KosContext *c;
+  KosDomainScope *top = domain_scope_top();
+  KosContext *c = s->ctx_depth > 0 ? s->ctx_stack[s->ctx_depth - 1] : NULL;
+  PyObject *domain;
 
-  if (s->ctx_depth > 0) {
-    c = s->ctx_stack[s->ctx_depth - 1];
-    if (c && KosContext_DOMAIN(c))
-      return KosContext_DOMAIN(c);
-  }
-  if (s->python_domain_depth > 0)
-    return s->python_domain_stack[s->python_domain_depth - 1];
-  return s->default_domain;
+  if (top && top->base_serial == tls_active_serial(s))
+    domain = top->domain;
+  else if (c && KosContext_DOMAIN(c))
+    domain = KosContext_DOMAIN(c);
+  else if (top)
+    domain = top->domain;
+  else
+    domain = s->default_domain;
+
+  Py_XDECREF(top);   /* the var keeps it */
+  return domain;
 }
 
 
@@ -409,40 +511,84 @@ void kos_domain_pop_scope(KosContext *ctx) {
 }
 
 
-int kos_domain_push_python_scope(PyObject *domain) {
+/* Open a block supplying domain on the running stack. */
+static int domain_scope_enter(PyObject *domain) {
   KosTlsState *s;
+  KosDomainScope *scope;
 
-  if (! domain || ! KosDomain_CheckExact(domain)) {
-    PyErr_SetString(PyExc_TypeError, "expected a Domain instance");
+  if (! domain_scope_var) {
+    PyErr_SetString(PyExc_RuntimeError,
+                    "Domain block entered after module teardown");
     return -1;
   }
   s = get_or_alloc_tls_state();
-  if (! s)
+  if (! s) {
+    if (! PyErr_Occurred())
+      PyErr_NoMemory();
     return -1;
-  s->python_domain_stack = (PyObject **) tls_stack_reserve(
-      (void *) s->python_domain_stack, &s->python_domain_cap,
-      s->python_domain_depth);
-  s->python_domain_stack[s->python_domain_depth++] = domain;
-  Py_INCREF(domain);
+  }
+  scope = PyObject_GC_New(KosDomainScope, &KosDomainScopeType);
+  if (! scope)
+    return -1;
+  scope->domain = Py_NewRef(domain);
+  scope->prev = (PyObject *) domain_scope_top();
+  scope->base_serial = tls_active_serial(s);
+  PyObject_GC_Track(scope);
+
+  if (domain_scope_set_top((PyObject *) scope) < 0) {
+    Py_DECREF(scope);
+    return -1;
+  }
+  domain_scopes_open++;
+  Py_DECREF(scope);   /* the var keeps it */
   return 0;
 }
 
 
-int kos_domain_pop_python_scope(const PyObject *domain) {
-  KosTlsState *s = tls_state_current();
+/**
+   Close the innermost open block supplying domain. In order, the top
+   of the chain moves to the block beneath. Out of order on its own
+   stack, the block is unlinked from beneath the blocks above it. A
+   block that is not in the running stack's chain was entered on
+   another task and is refused.
+*/
+static int domain_scope_exit(PyObject *domain) {
+  KosDomainScope *top;
+  KosDomainScope *above;
+  KosDomainScope *scope;
 
-  if (! s || s->python_domain_depth == 0) {
-    PyErr_SetString(PyExc_RuntimeError, "python domain stack underflow");
-    return -1;
-  }
-  if (domain && s->python_domain_stack[s->python_domain_depth - 1] != domain) {
+  if (! domain_scope_var) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "python domain stack mismatch: popped domain not at top");
+                    "Domain block exited after module teardown");
     return -1;
   }
-  s->python_domain_depth--;
-  Py_DECREF(s->python_domain_stack[s->python_domain_depth]);
-  s->python_domain_stack[s->python_domain_depth] = NULL;
+  top = domain_scope_top();
+  if (top && top->domain == domain) {
+    int res = domain_scope_set_top(top->prev);
+    Py_DECREF(top);
+    if (res < 0)
+      return -1;
+    domain_scopes_open--;
+    return 0;
+  }
+
+  above = top;
+  scope = top ? (KosDomainScope *) top->prev : NULL;
+  while (scope && scope->domain != domain) {
+    above = scope;
+    scope = (KosDomainScope *) scope->prev;
+  }
+  if (! scope) {
+    Py_XDECREF(top);
+    PyErr_SetString(PyExc_RuntimeError,
+                    "Domain block exited on a stack it was not entered on");
+    return -1;
+  }
+
+  Py_XINCREF(scope->prev);
+  Py_XSETREF(above->prev, scope->prev);
+  Py_DECREF(top);
+  domain_scopes_open--;
   return 0;
 }
 
@@ -1002,7 +1148,7 @@ PyObject *kos_param_root_resolve_ambient(PyObject *key) {
 
 
 static PyObject *domain_enter(PyObject *self) {
-  if (kos_domain_push_python_scope(self) < 0)
+  if (domain_scope_enter(self) < 0)
     return NULL;
   Py_INCREF(self);
   return self;
@@ -1017,7 +1163,7 @@ static PyObject *domain_exit(PyObject *self, PyObject *args) {
   if (! PyArg_UnpackTuple(args, "__exit__", 3, 3,
                           &exc_type, &exc_val, &exc_tb))
     return NULL;
-  if (kos_domain_pop_python_scope(self) < 0)
+  if (domain_scope_exit(self) < 0)
     return NULL;
   Py_RETURN_NONE;
 }
@@ -1174,9 +1320,9 @@ static PyMethodDef domain_methods[] = {
   {"param_scopes", (PyCFunction) domain_param_scopes, METH_NOARGS,
    "Return {'shadow': {name: cell}, 'root': {name: cell}} for this Domain"},
   {"__enter__", (PyCFunction) domain_enter, METH_NOARGS,
-   "Push this domain onto the per-thread scope stack"},
+   "Open a block on the running stack that this Domain's root answers in"},
   {"__exit__", (PyCFunction) domain_exit, METH_VARARGS,
-   "Pop this domain from the per-thread scope stack"},
+   "Close the block; refused on a stack that did not open it"},
   {NULL, NULL, 0, NULL},
 };
 
@@ -1273,6 +1419,12 @@ int koskari_domain_init(PyObject *mod) {
   if (! param_span_var)
     return -1;
 
+  if (PyType_Ready(&KosDomainScopeType) < 0)
+    return -1;
+  domain_scope_var = PyContextVar_New("koskari.domain", Py_None);
+  if (! domain_scope_var)
+    return -1;
+
   for (PyMethodDef *mdef = domain_mod_methods; mdef->ml_name; mdef++) {
     PyObject *func = PyCFunction_New(mdef, mod);
     if (! func)
@@ -1294,6 +1446,7 @@ int koskari_domain_clear(PyObject *mod) {
   (void) mod;
   Py_CLEAR(tls_state_dict_key);
   Py_CLEAR(param_span_var);
+  Py_CLEAR(domain_scope_var);
   return 0;
 }
 

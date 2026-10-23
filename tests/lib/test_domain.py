@@ -18,6 +18,7 @@ Unit tests for Domain context manager
 :license: GNU General Public License v3
 """
 
+import asyncio
 import threading
 import unittest
 
@@ -43,6 +44,30 @@ class TestDomainExitArity(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TypeError):
             dom.__exit__()
         dom.__exit__(None, None, None)
+
+
+class TestDomainExitOnAnotherTask(unittest.IsolatedAsyncioTestCase):
+    """
+    A `with Domain():` block belongs to the asyncio task that entered
+    it; a sibling task cannot exit it
+    """
+
+    async def test_exit_on_another_task_is_refused(self):
+        dom = Domain()
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def holder():
+            with dom:
+                entered.set()
+                await release.wait()
+
+        holding = asyncio.create_task(holder())
+        await entered.wait()
+        with self.assertRaises(RuntimeError):
+            dom.__exit__(None, None, None)
+        release.set()
+        await holding
 
 
 class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):

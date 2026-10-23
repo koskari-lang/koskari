@@ -37,7 +37,7 @@ import unittest
 import pytest
 
 import koskari.asyncio
-from koskari.lib import Domain, ParamRef
+from koskari.lib import Domain, ParamRef, demand_call
 from koskari.module import load_module_source_async, new_module
 
 
@@ -85,6 +85,17 @@ STORE_SRC = """
     (let [[cell (ref (parameter own_root))]]
       (cell.store "worker"))
     (parameterq own_root "unset"))))
+"""
+
+
+# A function that calls out to Python, and one that stores a parameter
+# with no extent in the way: a `with Domain():` block opened in the
+# callout owns the root the nested call stores into.
+CALLOUT_SRC = """
+(define outer (lambda [cb] (cb)))
+(define inner (lambda []
+  (let [[cell (ref (parameter k))]] (cell.store "stored-inner"))
+  (parameterq k "unset")))
 """
 
 
@@ -216,6 +227,55 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, [])
         self.assertEqual(results, {"run": "worker", "worker": "worker"})
         self.assertEqual(ParamRef("own_root", "none").deref(), "none")
+
+    async def test_interleaved_domain_blocks_on_two_tasks(self):
+        """
+        Two asyncio tasks each inside their own `with Domain():` block,
+        interleaved so the first to enter is the first to exit while the
+        other is still open: each reads its own store and exits cleanly,
+        and neither store reaches the thread root
+        """
+
+        gates = [asyncio.Event() for _ in range(3)]
+
+        async def task(name, gate_in, gate_out):
+            with Domain():
+                ParamRef("k", None).store(name)
+                gate_in.set()
+                await gate_out.wait()
+                return ParamRef("k", None).deref()
+
+        t1 = asyncio.create_task(task("one", gates[0], gates[1]))
+        await gates[0].wait()
+        t2 = asyncio.create_task(task("two", gates[1], gates[2]))
+        await gates[1].wait()
+        gates[2].set()
+        self.assertEqual(await asyncio.gather(t1, t2), ["one", "two"])
+        self.assertEqual(ParamRef("k", "none").deref(), "none")
+
+    async def test_domain_block_inside_callout_owns_nested_store(self):
+        """
+        A `with Domain():` block opened in Python code that Koskari called
+        out to is the current domain for Koskari calls made inside it:
+        a bare store from such a call lands in the block's root and the
+        thread root never sees it
+        """
+
+        module = await self.load("callout", CALLOUT_SRC)
+        seen = {}
+
+        def callback():
+            with Domain() as block:
+                seen["current"] = Domain.current_domain() is block
+                seen["inner"] = demand_call(module.inner)
+                seen["block_root"] = list(block.param_scopes()["root"])
+            seen["after"] = ParamRef("k", "unset").deref()
+
+        demand_call(module.outer, callback)
+        self.assertTrue(seen["current"])
+        self.assertEqual(seen["inner"], "stored-inner")
+        self.assertEqual(seen["block_root"], ["k"])
+        self.assertEqual(seen["after"], "unset")
 
     def test_thread_has_no_foreign_ambient(self):
         """

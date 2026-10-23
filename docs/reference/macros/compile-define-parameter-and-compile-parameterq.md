@@ -32,8 +32,11 @@ scope of its own and never sees these stores. A coroutine or defer runs
 under the root scope of the thread that resumes it, wherever it was
 created; only its `parameterize` bindings travel with it. Inside a
 `with Domain():` block the block's `Domain` supplies the root scope
-instead; after the block, the thread's scope answers again with its
-earlier stores.
+instead, for Python reads and for Koskari calls made inside the block;
+after the block, the thread's scope answers again with its earlier
+stores. The block belongs to the running stack, a thread's synchronous
+stack or one asyncio task, so blocks on different tasks never see each
+other and a block can only be closed by the stack that opened it.
 
 **Examples:**
 

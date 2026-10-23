@@ -148,10 +148,6 @@ void kos_domain_push_scope(KosContext *ctx);
 void kos_domain_pop_scope(KosContext *ctx);
 
 
-int kos_domain_push_python_scope(PyObject *domain);
-int kos_domain_pop_python_scope(const PyObject *domain);
-
-
 /* === unit lifecycle === */
 
 
