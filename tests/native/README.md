@@ -47,7 +47,7 @@ tests/native/
 ├── valgrind-python.supp   # Valgrind suppressions for Python internals
 ├── test_harness.h         # Common macros and unit runner declarations
 ├── test_harness.c         # Main entry point: initializes Python and the library, runs every suite
-├── test_arena.c           # Arena type and Code pack_into relocation
+├── test_arena.c           # Arena and CodeAllocator: reservation, seal, code placement
 ├── test_atom.c            # Symbol and keyword interning
 ├── test_breaker.c         # The eval breaker as read through the compat layer
 ├── test_bytecode.c        # KosCode: instructions, constant pool, position table, read-only protection
