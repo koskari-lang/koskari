@@ -22,8 +22,8 @@
    at the drive's throw kind with the exception as its value, and
    that kind throws it into the delegate. The emit kind waits on a provider
    delegate whose frames are installed: the element it yields, or its
-   end, arrives through the frame. The await kind waits on a python
-   async delegate's step: the awaited result arrives through the
+   end, arrives through the frame. An await kind, one per python async
+   drive, waits on the delegate's step: the awaited result arrives through the
    revive. Every element is re-yielded as the delegating generator's
    own with the drive kind set for the send that answers it; the end
    releases the delegate and threads to the next instruction; the
@@ -242,7 +242,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_kos_iter(
     KosContext *ctx, void *state, PyObject *exc);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_kos_iter(
     KosContext *ctx, void *state, PyObject *value);
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async(
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_iter(
+    KosContext *ctx, void *state, PyObject *value);
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
     KosContext *ctx, void *state, PyObject *value);
 
 /* The throw kinds: a throw into a waiting drive, the exception object
@@ -289,12 +291,15 @@ KOS_RESUME_KIND_DIRECT_THROWABLE(yf_drive_kos_iter_kind, "yield-from",
                                  &yf_throw_kos_iter_kind);
 
 /* The waits on the delegate: an installed provider's element, an
-   awaited python async step. */
+   awaited python async step, one per python async drive. */
 KOS_RESUME_KIND_DIRECT(yf_emit_kos_iter_kind, "yield-from",
                        yf_emit_kos_iter, yield_from_state_clear,
                        yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_await_py_async_kind, "yield-from",
-                       yf_await_py_async, yield_from_state_clear,
+KOS_RESUME_KIND_DIRECT(yf_await_py_async_iter_kind, "yield-from",
+                       yf_await_py_async_iter, yield_from_state_clear,
+                       yield_from_state_clone);
+KOS_RESUME_KIND_DIRECT(yf_await_py_async_gen_kind, "yield-from",
+                       yf_await_py_async_gen, yield_from_state_clear,
                        yield_from_state_clone);
 
 
@@ -320,14 +325,14 @@ static const KosResumeKind *yield_from_drive_kind(uint8_t kind) {
 /* === the phases' shared tails === */
 
 
-/* Set the delegation's next phase on the live frame: kind, with the
-   delegate as its state. */
+/* Set the delegation's next phase on the delegating frame: kind, with
+   the delegate as its state. Every kind reads that frame once at
+   entry and writes its phases there, never through KosContext_FRAME,
+   which a step that installs the delegate's frames has moved. */
 static inline void yf_set_phase(
-    KosContext *ctx,
+    KosDynFrame *frame,
     const KosResumeKind *kind,
     PyObject *delegate) {
-
-  KosDynFrame *frame = KosContext_FRAME(ctx);
 
   KosDynFrame_RESUME_KIND(frame) = kind;
   KosDynFrame_RESUME_STATE(frame) = (void *) delegate;
@@ -338,9 +343,9 @@ static inline void yf_set_phase(
    generator's own, with the drive kind set for the send that answers
    it. A thread function's tail: the yield event takes it from here,
    never a raw result up the chain. */
-#define YF_EMIT(ctx, drive, delegate, element)                          \
+#define YF_EMIT(ctx, frame, drive, delegate, element)                   \
   do {                                                                  \
-    yf_set_phase((ctx), (drive), (delegate));                           \
+    yf_set_phase((frame), (drive), (delegate));                         \
     RESULT_RELAY((ctx), EVAL_YIELD(element));                           \
   } while (0)
 
@@ -418,10 +423,10 @@ static int yf_take_failure(PyObject *delegate) {
 
 /* The outcome of a sync delegate's send or throw (res owned on NEXT
    and RETURN): the element re-yielded, the end, or the failure. */
-#define YF_SYNC_OUTCOME(ctx, drive, delegate, sr, res)                  \
+#define YF_SYNC_OUTCOME(ctx, frame, drive, delegate, sr, res)           \
   do {                                                                  \
     if ((sr) == PYGEN_NEXT)                                             \
-      YF_EMIT((ctx), (drive), (delegate), (res));                       \
+      YF_EMIT((ctx), (frame), (drive), (delegate), (res));              \
     if ((sr) == PYGEN_RETURN) {                                         \
       /* the delegation ends; its value is discarded */                 \
       Py_DECREF(res);                                                   \
@@ -440,6 +445,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_iter(
     KosContext *ctx, void *state, PyObject *value) {
 
   PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *n;
 
   YF_DRIVE_ENTRY(ctx, delegate, value);
@@ -455,7 +461,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_iter(
 
   n = PyIter_Next(delegate);
   if (n)
-    YF_EMIT(ctx, &yf_drive_sync_iter_kind, delegate, n);
+    YF_EMIT(ctx, frame, &yf_drive_sync_iter_kind, delegate, n);
 
   if (PyErr_Occurred()) {
     if (! PyErr_ExceptionMatches(PyExc_StopIteration)) {
@@ -475,6 +481,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_iter(
     KosContext *ctx, void *state, PyObject *exc) {
 
   PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *res = NULL;
   PySendResult sr;
 
@@ -482,7 +489,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_iter(
 
   sr = kos_iter_throw(delegate, exc, &res);
   Py_DECREF(exc);
-  YF_SYNC_OUTCOME(ctx, &yf_drive_sync_iter_kind, delegate, sr, res);
+  YF_SYNC_OUTCOME(ctx, frame, &yf_drive_sync_iter_kind, delegate, sr, res);
 }
 
 
@@ -491,6 +498,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_gen(
     KosContext *ctx, void *state, PyObject *value) {
 
   PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *res = NULL;
   PySendResult sr;
 
@@ -498,7 +506,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_gen(
 
   sr = kos_iter_send(delegate, value ? value : Py_None, &res);
   Py_XDECREF(value);
-  YF_SYNC_OUTCOME(ctx, &yf_drive_sync_gen_kind, delegate, sr, res);
+  YF_SYNC_OUTCOME(ctx, frame, &yf_drive_sync_gen_kind, delegate, sr, res);
 }
 
 
@@ -507,6 +515,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_gen(
     KosContext *ctx, void *state, PyObject *exc) {
 
   PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *res = NULL;
   PySendResult sr;
 
@@ -514,7 +523,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_gen(
 
   sr = kos_iter_throw(delegate, exc, &res);
   Py_DECREF(exc);
-  YF_SYNC_OUTCOME(ctx, &yf_drive_sync_gen_kind, delegate, sr, res);
+  YF_SYNC_OUTCOME(ctx, frame, &yf_drive_sync_gen_kind, delegate, sr, res);
 }
 
 
@@ -530,9 +539,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_gen(
 */
 static KosOpResult yf_py_async_await(
     KosContext *ctx,
+    KosDynFrame *frame,
     PyObject *delegate,
     PyObject *awaitable,
-    const KosResumeKind *drive) {
+    const KosResumeKind *drive,
+    const KosResumeKind *await_kind) {
 
   int suspended = 0;
   PyObject *yielded = NULL;
@@ -548,13 +559,13 @@ static KosOpResult yf_py_async_await(
       Py_DECREF(delegate);
       return EVAL_RAISE();
     }
-    yf_set_phase(ctx, &yf_await_py_async_kind, delegate);
+    yf_set_phase(frame, await_kind, delegate);
     KosContext_FlushLiveRegsToFrame(ctx);
     KosContext_MarkDeadAfterYield(ctx);
     return EVAL_AWAIT(yielded);
   }
   if (result) {
-    yf_set_phase(ctx, drive, delegate);
+    yf_set_phase(frame, drive, delegate);
     return EVAL_YIELD(result);
   }
   if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
@@ -585,62 +596,66 @@ static KosOpResult yf_py_async_no_awaitable(PyObject *delegate) {
 }
 
 
-/**
-   A python async delegate's next or send: build the awaitable for it
-   (__anext__, or asend when gen says the delegate speaks it) and step
-   it. Raw, for the caller to relay.
-*/
-static KosOpResult yf_drive_py_async(
-    KosContext *ctx,
-    PyObject *delegate,
-    PyObject *value,
-    int gen) {
+/* The step the awaitable, or its absence, makes: a thread function's
+   tail. */
+#define YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable, drive, await_kind) \
+  do {                                                                  \
+    if (! (awaitable))                                                  \
+      RESULT_RELAY((ctx), yf_py_async_no_awaitable(delegate));          \
+    RESULT_RELAY((ctx), yf_py_async_await((ctx), (frame), (delegate),   \
+                                          (awaitable), (drive),         \
+                                          (await_kind)));               \
+  } while (0)
 
-  const KosResumeKind *drive =
-      gen ? &yf_drive_py_async_gen_kind : &yf_drive_py_async_iter_kind;
+
+/* A python async iterator steps through __anext__ and takes no send. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_iter(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  PyObject *awaitable;
+
+  YF_DRIVE_ENTRY(ctx, delegate, value);
+
+  if (value && value != Py_None) {
+    Py_DECREF(value);
+    Py_DECREF(delegate);
+    PyErr_SetString(PyExc_TypeError,
+                    "send() to async iterator only accepts None");
+    RESULT_RAISE();
+  }
+  Py_XDECREF(value);
+
+  awaitable = get_await_next(delegate);
+  YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable,
+                   &yf_drive_py_async_iter_kind, &yf_await_py_async_iter_kind);
+}
+
+
+/* A python async generator steps through __anext__ or asend. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_gen(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *awaitable = NULL;
+
+  YF_DRIVE_ENTRY(ctx, delegate, value);
 
   if (! value || value == Py_None) {
     Py_XDECREF(value);
     awaitable = get_await_next(delegate);
-  } else if (gen) {
+  } else {
     PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_asend, value, NULL);
     Py_DECREF(value);
     if (tmp) {
       awaitable = kos_get_awaitable(tmp);
       Py_DECREF(tmp);
     }
-  } else {
-    Py_DECREF(value);
-    Py_DECREF(delegate);
-    PyErr_SetString(PyExc_TypeError,
-                    "send() to async iterator only accepts None");
-    return EVAL_RAISE();
   }
-
-  if (! awaitable)
-    return yf_py_async_no_awaitable(delegate);
-  return yf_py_async_await(ctx, delegate, awaitable, drive);
-}
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_iter(
-    KosContext *ctx, void *state, PyObject *value) {
-
-  PyObject *delegate = (PyObject *) state;
-
-  YF_DRIVE_ENTRY(ctx, delegate, value);
-  RESULT_RELAY(ctx, yf_drive_py_async(ctx, delegate, value, 0));
-}
-
-
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_gen(
-    KosContext *ctx, void *state, PyObject *value) {
-
-  PyObject *delegate = (PyObject *) state;
-
-  YF_DRIVE_ENTRY(ctx, delegate, value);
-  RESULT_RELAY(ctx, yf_drive_py_async(ctx, delegate, value, 1));
+  YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable,
+                   &yf_drive_py_async_gen_kind, &yf_await_py_async_gen_kind);
 }
 
 
@@ -671,6 +686,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
     KosContext *ctx, void *state, PyObject *exc) {
 
   PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *awaitable = NULL;
   PyObject *tmp;
 
@@ -686,35 +702,48 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
     awaitable = kos_get_awaitable(tmp);
     Py_DECREF(tmp);
   }
-  if (! awaitable)
-    RESULT_RELAY(ctx, yf_py_async_no_awaitable(delegate));
-  RESULT_RELAY(ctx, yf_py_async_await(ctx, delegate, awaitable,
-                                      &yf_drive_py_async_gen_kind));
+  YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable,
+                   &yf_drive_py_async_gen_kind, &yf_await_py_async_gen_kind);
 }
 
 
 /* The awaited result of a python async delegate's step: the element,
-   re-yielded with the drive kind set. */
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async(
+   re-yielded with the drive kind set; a failure taken as the drive
+   would take it. */
+#define YF_AWAIT_OUTCOME(ctx, frame, delegate, value, drive)            \
+  do {                                                                  \
+    if (! (value)) {                                                    \
+      if (! PyErr_Occurred()) {                                         \
+        Py_DECREF(delegate);                                            \
+        PyErr_SetString(PyExc_RuntimeError,                             \
+                        "yield-from resume with no await result");      \
+        RESULT_RAISE();                                                 \
+      }                                                                 \
+      if (yf_take_failure(delegate))                                    \
+        YF_FINISH((ctx), (delegate));                                   \
+      RESULT_RAISE();                                                   \
+    }                                                                   \
+    YF_EMIT((ctx), (frame), (drive), (delegate), (value));              \
+  } while (0)
+
+
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_iter(
     KosContext *ctx, void *state, PyObject *value) {
 
   PyObject *delegate = (PyObject *) state;
-  int gen = PyType_Lookup(Py_TYPE(delegate), str_asend) != NULL;
-  const KosResumeKind *drive =
-      gen ? &yf_drive_py_async_gen_kind : &yf_drive_py_async_iter_kind;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
 
-  if (! value) {
-    if (! PyErr_Occurred()) {
-      Py_DECREF(delegate);
-      PyErr_SetString(PyExc_RuntimeError,
-                      "yield-from resume with no await result");
-      RESULT_RAISE();
-    }
-    if (yf_take_failure(delegate))
-      YF_FINISH(ctx, delegate);
-    RESULT_RAISE();
-  }
-  YF_EMIT(ctx, drive, delegate, value);
+  YF_AWAIT_OUTCOME(ctx, frame, delegate, value, &yf_drive_py_async_iter_kind);
+}
+
+
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
+    KosContext *ctx, void *state, PyObject *value) {
+
+  PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  YF_AWAIT_OUTCOME(ctx, frame, delegate, value, &yf_drive_py_async_gen_kind);
 }
 
 
@@ -741,7 +770,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async(
           RESULT_RELAY((ctx), EVAL_REPROLOGUE());                      \
         RESULT_RELAY((ctx), kos_iter_installed(ctx));                  \
       case KOS_ITER_VALUE:                                              \
-        YF_EMIT((ctx), &yf_drive_kos_iter_kind, (delegate), (out));     \
+        YF_EMIT((ctx), (frame), &yf_drive_kos_iter_kind, (delegate),    \
+                (out));                                                 \
       case KOS_ITER_EXHAUSTED:                                          \
         Py_XDECREF(out);                                                \
         YF_FINISH((ctx), (delegate));                                   \
@@ -824,6 +854,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_kos_iter(
     KosContext *ctx, void *state, PyObject *value) {
 
   PyObject *delegate = (PyObject *) state;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   KosIterSlots *islots = NULL;
 
   (void) KosIter_CheckSlots(delegate, &islots);
@@ -845,7 +876,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_kos_iter(
   }
   if (islots)
     islots->ki_finish(delegate, 0);
-  YF_EMIT(ctx, &yf_drive_kos_iter_kind, delegate, value);
+  YF_EMIT(ctx, frame, &yf_drive_kos_iter_kind, delegate, value);
 }
 
 
