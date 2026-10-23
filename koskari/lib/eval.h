@@ -62,6 +62,12 @@ typedef enum KosOpResultKind {
                               the eval breaker up: the handler's relay tails
                               into the breaker service before threading on.
                               Loop-internal like DISPATCH */
+  KOS_RES_RESUME,          /* the live frame's resume takes it from here
+                              with val (owned, or NULL for a plain
+                              continuation): the relay clears the resume
+                              and tail-calls it. An install that left a
+                              resume-carrying frame current answers this.
+                              Loop-internal like DISPATCH */
   KOS_RES_FATAL,           /* hard fault; koskari_eval returns -1 immediately */
 } KosOpResultKind;
 
@@ -78,6 +84,7 @@ struct KosOpResult {
 #define EVAL_YIELD(v)           ((KosOpResult){ KOS_RES_YIELD, (v) })
 #define EVAL_AWAIT(v)           ((KosOpResult){ KOS_RES_AWAIT, (v) })
 #define EVAL_RETURN(v)          ((KosOpResult){ KOS_RES_RETURN, (v) })
+#define EVAL_RESUME(v)          ((KosOpResult){ KOS_RES_RESUME, (v) })
 #define EVAL_CONTROL_RETURNED() ((KosOpResult){ KOS_RES_CONTROL_RETURNED, NULL })
 #define EVAL_DISPATCH()         ((KosOpResult){ KOS_RES_DISPATCH, NULL })
 #define EVAL_POLL()             ((KosOpResult){ KOS_RES_POLL, NULL })
@@ -526,6 +533,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
       RESUME_HOP((resume), (ctx), (state), kos_re_.val);                \
     if (kos_re_.kind == KOS_RES_NORMAL)                                 \
       KOS_THREAD_NEXT(ctx);                                             \
+    if (kos_re_.kind == KOS_RES_RESUME)                                 \
+      TAILCALL(kos_eval_relay, (ctx),                                   \
+               (void *) (uintptr_t) KOS_RES_RESUME, kos_re_.val);       \
     return kos_re_;                                                     \
   } while (0)
 
@@ -972,12 +982,20 @@ static inline void KosContext_StageDelivery(KosContext *ctx, PyObject *val) {
 
 /**
    The result of an iteration install: thread into the installed frame
-   when it can be threaded into, else bounce through the prologue, which
-   runs its resume or its entry sequence.
+   when it can be threaded into; hand a bytecode frame halted on a
+   resume (a generator suspended inside a yield-from) to that resume by
+   tail call, its staged delivery or a plain next; else bounce through
+   the prologue, which runs a code-less frame's entry sequence, whose
+   delivery rides the frame's own stack.
 */
 static inline KosOpResult kos_iter_installed(KosContext *ctx) {
-  return kos_frame_threads(KosContext_FRAME(ctx))
-      ? EVAL_NORMAL() : EVAL_REPROLOGUE();
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  if (kos_frame_threads(frame))
+    return EVAL_NORMAL();
+  if (frame && KosDynFrame_CODE(frame) && KosDynFrame_RESUME_KIND(frame))
+    return EVAL_RESUME(NULL);
+  return EVAL_REPROLOGUE();
 }
 
 

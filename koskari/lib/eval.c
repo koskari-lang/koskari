@@ -2131,6 +2131,34 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     TAILCALL(kos_yield_deliver, ctx, NULL, val);
   case KOS_RES_CONTROL_RETURNED:
     TAILCALL(kos_eval_control_returned, ctx, NULL, NULL);
+  case KOS_RES_RESUME: {
+    /* The live frame's resume takes the delivery by tail call: the
+       prologue's slim bounce without the pass. A delivery already
+       staged for the frame is the value; a kind that settles its
+       delivery goes through the prologue, which settles it. */
+    KosDynFrame *frame = KosContext_FRAME(ctx);
+    const KosResumeKind *resume = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
+    void *state;
+
+    if (unlikely(! resume)) {
+      Py_XDECREF(val);
+      PyErr_SetString(PyExc_SystemError,
+                      "RESUME relay with no resume on the live frame");
+      return EVAL_FATAL();
+    }
+    if (! val && KosContext_PENDING_VALUE(ctx)) {
+      val = KosContext_PENDING_VALUE(ctx);
+      KosContext_PENDING_VALUE(ctx) = NULL;
+    }
+    if (resume->settle && val) {
+      KosContext_PENDING_VALUE(ctx) = val;
+      TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
+    }
+    state = KosDynFrame_RESUME_STATE(frame);
+    KosDynFrame_RESUME_KIND(frame) = NULL;
+    KosDynFrame_RESUME_STATE(frame) = NULL;
+    RESUME_HOP(resume, ctx, state, val);
+  }
   case KOS_RES_DISPATCH:
   case KOS_RES_NORMAL:
     KOS_THREAD_NEXT(ctx);
@@ -3449,6 +3477,13 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
 
   case KOS_RES_CONTROL_RETURNED:
     return kos_eval_post_opcode_control_returned_after_hook(ctx);
+
+  case KOS_RES_RESUME:
+    /* Applied rather than relayed: the delivery is staged for the
+       prologue's delivery step, which runs the live frame's resume. */
+    if (res.val)
+      KosContext_StageDelivery(ctx, res.val);
+    return EVAL_REPROLOGUE();
 
   case KOS_RES_FATAL:
   default:
