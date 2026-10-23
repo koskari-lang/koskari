@@ -75,6 +75,10 @@ class TestForeachStepResume(unittest.IsolatedAsyncioTestCase):
         ns = await self.load()
         self.assertEqual([0, 10, 20], await ns['collect_nested'](3))
 
+    async def test_generator_yields_after_looping_a_generator_to_its_end(self):
+        ns = await self.load()
+        self.assertEqual([3], [v async for v in ns['sum_then_yield'](3)])
+
     async def test_generator_awaiting_between_yields(self):
         ns = await self.load()
         self.assertEqual([0, 1, 2], await ns['collect_awaiting'](3))

@@ -93,6 +93,13 @@ define collect_else [n]:
     out
 
 
+define sum_then_yield [n]:
+    define t 0
+    for-each [v (gen n)]:
+        (set! t (+ t v))
+    yield t
+
+
 define module_out #[]
 
 for-each [mv (gen 3)]:

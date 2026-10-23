@@ -525,8 +525,9 @@ int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
   kos_dyn_commit_dyn_top(ctx, consumer);
   kos_dynchain_free(frame, (KosDynNode *) gen);
   /* The dead GEN may outlive this drive on its owner; it holds no
-     consumer namespace past the chain. */
+     consumer namespace or consumer link past the chain. */
   Py_CLEAR(KosDynNode_NS((KosDynNode *) gen));
+  KosDynNode_PARENT(gen) = NULL;
   /* GEN is dead: drop the keepalive on its owner (ctx is now consistent).
      In the common case the consumer still holds the KPAG, so this is just a
      decrement; if it was the last ref the owner deallocates here. */

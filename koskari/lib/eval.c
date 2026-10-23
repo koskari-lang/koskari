@@ -1810,6 +1810,7 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
 
   KosDynGen *gen = kos_dyn_find_gen(ctx);
   KosOpResult r;
+  int flattened;
 
   (void) insn;
 
@@ -1821,15 +1822,17 @@ KOS_PRESERVE_NONE KosOpResult kos_yield_deliver(
   }
 
   /* The freeze, then the delivery to a flattened consumer, or the
-     terminal YIELD for a generator an adapter drives. The flattened
+     terminal YIELD for a generator an adapter runs. The flattened
      delivery is the YIELD row's own work; the terminal yield is the
-     signal's. */
-  if (! KosDynGen_IS_FLATTENED(gen))
+     signal's. Read before the freeze, which detaches the GEN from its
+     consumer. */
+  flattened = KosDynGen_IS_FLATTENED(gen);
+  if (! flattened)
     KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_yield, r = eval_event_yield(ctx, gen, val));
   if (likely(r.kind == KOS_RES_RESUME))
     TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
-  if (unlikely(r.kind == KOS_RES_YIELD && KosDynGen_IS_FLATTENED(gen))) {
+  if (unlikely(r.kind == KOS_RES_YIELD && flattened)) {
     /* The freeze found no consumer for a generator that had one:
        never hand the trampoline a YIELD it would deliver again. */
     Py_DECREF(r.val);
