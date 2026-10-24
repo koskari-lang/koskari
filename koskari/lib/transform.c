@@ -27,16 +27,6 @@
 #include "lib.h"
 
 
-/* The short kind name ("map", "filter") for messages: the class
-   __name__, which is the last segment of the type's dotted name. */
-static const char *transform_kind(PyTypeObject *type) {
-  const char *name = type->tp_name;
-  const char *dot = strrchr(name, '.');
-
-  return dot ? dot + 1 : name;
-}
-
-
 /* === construction === */
 
 
@@ -183,43 +173,6 @@ int kos_transform_busy(PyObject *self) {
   PyErr_Format(PyExc_ValueError, "%s is already being iterated",
                transform_kind(Py_TYPE(self)));
   return 1;
-}
-
-
-KosIterStepResult kos_transform_step(
-    KosContext *ctx,
-    PyObject *self,
-    PyObject *send_val,
-    PyObject **out,
-    KosTransformStepBody body) {
-
-  KosTransform *t = (KosTransform *) self;
-  KosIterStepResult result;
-
-  if (t->closed) {
-    *out = NULL;
-    return KOS_ITER_EXHAUSTED;
-  }
-
-  if (kos_transform_busy(self))
-    return KOS_ITER_ERROR;
-
-  if (send_val && send_val != Py_None) {
-    PyErr_Format(PyExc_TypeError,
-                 "can't send a value into a %s; it takes none",
-                 transform_kind(Py_TYPE(self)));
-    return KOS_ITER_ERROR;
-  }
-
-  t->busy = 1;
-  result = body(ctx, self, send_val, out);
-
-  /* an installed step keeps the mark until ki_finish or the step
-     clear; every synchronous outcome releases it here */
-  if (result != KOS_ITER_INSTALLED && result != KOS_ITER_INSTALLED_VALUE)
-    t->busy = 0;
-
-  return result;
 }
 
 

@@ -353,8 +353,12 @@ static inline KosGetNextResult op_get_next_from_bound(
 KOS_OP_INLINE void kos_iter_step_finish(KosContext *ctx, int ended) {
   KosDynNode *region = KosContext_DYN_TOP(ctx);
 
-  if (region && KosDynNode_IS_FOREACH(region))
-    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), ended);
+  if (region && KosDynNode_IS_FOREACH(region)) {
+    KosIterRequest *req = KosDynForeach_REQ(region);
+
+    if (req->islots)
+      kos_iter_finish(req->iter, req->islots, ended);
+  }
 }
 
 

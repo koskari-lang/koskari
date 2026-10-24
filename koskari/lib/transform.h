@@ -209,6 +209,24 @@ typedef KosIterStepResult (*KosTransformStepBody)(
     PyObject **out);
 
 
+/* The short kind name ("map", "filter") for messages: the class
+   __name__, which is the last segment of the type's dotted name. */
+static inline const char *transform_kind(PyTypeObject *type) {
+  const char *name = type->tp_name;
+  const char *dot = strrchr(name, '.');
+
+  return dot ? dot + 1 : name;
+}
+
+
+/**
+   The suite's ki_busy: 1 with "KIND is already being iterated" set as
+   a ValueError when a step is in flight, else 0. kos_transform_step
+   and the throw refuse a busy transform through it.
+*/
+int kos_transform_busy(PyObject *self);
+
+
 /**
    The ki_step entry every provider steps through: a closed transform
    is exhausted, a busy one refuses, and a non-None send value is a
@@ -219,12 +237,41 @@ typedef KosIterStepResult (*KosTransformStepBody)(
    source fetch or a plain callable running synchronously in body is
    covered as well.
 */
-KosIterStepResult kos_transform_step(
+KOS_OP_INLINE KosIterStepResult kos_transform_step(
     KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out,
-    KosTransformStepBody body);
+    KosTransformStepBody body) {
+
+  KosTransform *t = (KosTransform *) self;
+  KosIterStepResult result;
+
+  if (t->closed) {
+    *out = NULL;
+    return KOS_ITER_EXHAUSTED;
+  }
+
+  if (kos_transform_busy(self))
+    return KOS_ITER_ERROR;
+
+  if (send_val && send_val != Py_None) {
+    PyErr_Format(PyExc_TypeError,
+                 "can't send a value into a %s; it takes none",
+                 transform_kind(Py_TYPE(self)));
+    return KOS_ITER_ERROR;
+  }
+
+  t->busy = 1;
+  result = body(ctx, self, send_val, out);
+
+  /* an installed step keeps the mark until ki_finish or the step
+     clear; every synchronous outcome releases it here */
+  if (result != KOS_ITER_INSTALLED && result != KOS_ITER_INSTALLED_VALUE)
+    t->busy = 0;
+
+  return result;
+}
 
 
 /**
@@ -326,14 +373,6 @@ KosIterStepResult kos_transform_throw(
     PyObject **out);
 int kos_transform_close(PyObject *self);
 void kos_transform_finish(PyObject *self, int exhausted);
-
-
-/**
-   The suite's ki_busy: 1 with "KIND is already being iterated" set as
-   a ValueError when a step is in flight, else 0. kos_transform_step
-   and the throw refuse a busy transform through it.
-*/
-int kos_transform_busy(PyObject *self);
 
 
 /**
