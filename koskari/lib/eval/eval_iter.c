@@ -571,45 +571,35 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
 }
 
 
-/* === The next request: one entry, one resume, the instruction as state ===
+/* === The next request: KosContext_NextResume, the arity as state ===
 
-   OBJECT_NEXT and its fused twins VAR_NEXT and FAST_NEXT hand their
-   iterator to kos_next_step and name kos_next_resume_kind. The element
-   reaches that resume and nothing else: in hand the handler hops into
-   it (RESULT_ENTRY), deferred the producer's yield or return reaches
-   it through the frame (iter_deliver_to_resume), and an awaited async
-   step's result through the revive's staging. The instruction's
-   operands stay on the operand stack under the halt, where the resume
-   finds them: the iterator on top, the two-argument form's default
-   under it. */
-
-
-/* The arity of a next instruction: OBJECT_NEXT carries it as its arg,
-   the fused twins in their operand record. */
-KOS_OP_INLINE unsigned kos_next_arity(const KosOp *insn) {
-  if (KosOp_OP(insn) == KOS_OP_OBJECT_NEXT)
-    return KosOp_ARG(insn);
-  return (unsigned) KosExtra_IMM(KosOp_ROW(insn), 1);
-}
+   OBJECT_NEXT and its fused twins VAR_NEXT and FAST_NEXT make their
+   request through KosContext_NextResume with kos_next_resume_kind,
+   the instruction's arity as the resume's state. The element reaches
+   that resume and nothing else: in hand the handler hops into it
+   through RESULT_ENTRY, deferred the delivery reaches it through the
+   frame, and an in-hand end through the prologue with StopIteration
+   pending. The instruction's operands stay on the operand stack under
+   the halt, where the resume finds them: the iterator on top, the
+   two-argument form's default under it. */
 
 
 /**
-   The element, the end, or a failure, for a next instruction. The
-   iterator comes off the stack first and the step is finished. An
-   element replaces the default on the stack, when there is one, and
-   threads on. The end, KosIterEnd in hand or StopIteration (or an
-   async source's StopAsyncIteration) pending, leaves the default as
-   the result for the two-argument form and raises StopIteration for
-   the one-argument form, the pending exception standing when it is
-   one. Anything else declines.
+   The element, the end, or a failure, for a next instruction whose
+   arity is state. The iterator comes off the stack first and the step
+   is finished. An element replaces the default on the stack, when
+   there is one, and threads on. The end, StopIteration (or an async
+   source's StopAsyncIteration) pending, leaves the default as the
+   result for the two-argument form and raises StopIteration for the
+   one-argument form, the pending exception standing when it is one.
+   Anything else declines.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
     KosContext *ctx,
     void *state,
     PyObject *value) {
 
-  KosOp *insn = (KosOp *) state;
-  unsigned n = kos_next_arity(insn);
+  unsigned n = (unsigned) (uintptr_t) state;
   PyObject *iter = KosContext_StackPopRef(ctx);
   KosIterSlots *islots;
   int ended;
@@ -627,10 +617,6 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
     }
     ended = PyErr_ExceptionMatches(PyExc_StopIteration)
         || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
-  } else if (value == KosIterEnd) {
-    Py_DECREF(value);
-    value = NULL;
-    ended = 1;
   } else {
     ended = 0;
   }
@@ -676,73 +662,6 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
 
 KOS_RESUME_KIND_AS_IS(kos_next_resume_kind, "next",
                        next_step_resume, NULL, kos_resume_clone_shared);
-
-
-/**
-   One request for the next element of iter (borrowed: it stays on
-   the operand stack under the halted instruction, where the resume
-   takes it) for the next instruction insn. A provider steps through
-   its suite, anything else through op_get_next_from_iter. Reports
-   RETURN with the element, or with KosIterEnd at the end, for the
-   handler's RESULT_ENTRY to hop into the resume; a step that defers
-   sets the resume on the frame and reports the install or the await.
-   A step that fails before it defers raises with no resume set: a
-   resume on the frame always means a step in flight, whose finish
-   is the resume's; a synchronous failure left nothing to finish.
-*/
-KOS_OP_INLINE KosOpResult kos_next_step(
-    KosContext *ctx,
-    KosOp *insn,
-    PyObject *iter) {
-
-  KosDynFrame *frame = KosContext_FRAME(ctx);
-  KosIterSlots *islots;
-
-  if (KosIter_CheckSlots(iter, &islots)) {
-    PyObject *out = NULL;
-
-    switch (kos_iter_step_provider(ctx, iter, islots, NULL, &out)) {
-      case KOS_ITER_VALUE:
-        return EVAL_RETURN(out);
-
-      case KOS_ITER_EXHAUSTED:
-        Py_XDECREF(out);
-        return EVAL_RETURN(Py_NewRef(KosIterEnd));
-
-      case KOS_ITER_INSTALLED:
-      case KOS_ITER_INSTALLED_VALUE:
-        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
-        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
-        return kos_iter_installed(ctx);
-
-      case KOS_ITER_ERROR:
-      default:
-        return EVAL_RAISE();
-    }
-  }
-
-  {
-    PyObject *value = NULL;
-    PyObject *_await = NULL;
-
-    switch (op_get_next_from_iter(ctx, &_await, iter, &value)) {
-      case GET_NEXT_VALUE:
-        return EVAL_RETURN(value);
-
-      case GET_NEXT_EXHAUSTED:
-        return EVAL_RETURN(Py_NewRef(KosIterEnd));
-
-      case GET_NEXT_SUSPEND:
-        KosDynFrame_RESUME_KIND(frame) = &kos_next_resume_kind;
-        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
-        return EVAL_AWAIT(_await);
-
-      case GET_NEXT_ERROR:
-      default:
-        return EVAL_RAISE();
-    }
-  }
-}
 
 
 /**

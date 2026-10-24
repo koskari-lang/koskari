@@ -15,13 +15,13 @@
 
 /**
    OBJECT_NEXT: arg = 1 or 2. Stack: [iter] or [iter, default]. One
-   request for the next element of iter (kos_next_step), the element
-   pushed by the request's resume, which runs at once when the element
-   is in hand and when it arrives otherwise. The operands stay on the
-   stack under the halted instruction, the iterator on top and the
-   default under it: the resume takes the iterator and the default is
-   the result at the end; the one-argument form raises StopIteration
-   there. Auto-await.
+   request for the next element of iter (KosContext_NextResume, the
+   arity as the resume's state), the element pushed by the request's
+   resume, which runs at once when the element is in hand and when it
+   arrives otherwise. The operands stay on the stack under the halted
+   instruction, the iterator on top and the default under it: the
+   resume takes the iterator and the default is the result at the end;
+   the one-argument form raises StopIteration there. Auto-await.
 */
 KOS_OP_HANDLER(OBJECT_NEXT) {
   KOS_SYNC_PC(ctx, insn);
@@ -55,8 +55,10 @@ KOS_OP_HANDLER(OBJECT_NEXT) {
       RESULT_RAISE();
   }
 
-  RESULT_ENTRY(ctx, kos_next_step(ctx, (KosOp *) insn, iter),
-               &kos_next_resume_kind, insn);
+  RESULT_ENTRY(ctx,
+               KosContext_NextResume(ctx, iter, &kos_next_resume_kind,
+                                     (void *) (uintptr_t) n),
+               &kos_next_resume_kind, (void *) (uintptr_t) n);
 }
 
 

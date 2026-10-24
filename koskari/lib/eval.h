@@ -1367,9 +1367,10 @@ KosIterRequestStatus KosIterRequest_Next(
 
 
 /**
-   The end of an iteration, handed to a direct resume in place of an
-   element: a private object compared by identity, never seen by
-   user code. Passed as an owned reference like any delivery.
+   The end of a for-each step's iteration, handed in hand by
+   kos_iter_step to the step instruction's resume in place of an
+   element: a private object compared by identity, never seen by user
+   code. Passed as an owned reference like any delivery.
 */
 extern PyObject *KosIterEnd;
 
