@@ -192,12 +192,21 @@ def resolve_build_flags():
     # build never emits them.
     fat_objects = LINUX and not asan and not lto_link
 
-    if fat_objects and clang and major and major < 17:
-        # such a clang cannot emit fat LTO objects, so every object is
-        # bitcode and only an LTO-aware linker can take it
+    # With no fat objects every object is slim bitcode, which only an
+    # LTO-aware linker can take: the ASan build emits none, and a clang
+    # before 17 cannot emit them at all. Without lld or the gold plugin
+    # the link would fail with bfd's message, so refuse here instead.
+    old_clang = bool(major) and major < 17
+    if LINUX and clang and not lto_link and (asan or old_clang):
+        if asan:
+            reason = "the ASan build emits no fat LTO objects"
+            remedy = "install lld"
+        else:
+            reason = f"clang {major} cannot emit fat LTO objects"
+            remedy = "install lld, or build with clang 17 or newer"
         raise SystemExit(
-            f"koskari: clang {major} needs lld to link its LTO objects;"
-            " install lld, or build with clang 17 or newer")
+            f"koskari: {reason}, and no LTO-aware linker was found;"
+            f" {remedy}")
 
     return BuildFlags(cc, clang, major, debug, asan, lto_link, fat_objects)
 
