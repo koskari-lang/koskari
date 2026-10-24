@@ -68,10 +68,13 @@ KosDomain *KosDomain_New(void);
 
    The lookup variant takes the context from the caller, which is how
    the evaluator resolves (no TLS on that path). The ambient variant is
-   for Python-side entry with no context in hand: it discovers the
-   active context, falling back to the root scope of the innermost
-   python-scope domain, else of the thread default domain. A thread
-   default not yet minted has nothing bound and is not minted here.
+   for Python-side entry with no context in hand: it reads the cells in
+   force on the thread, then the root scope of the domain in force, the
+   one an eval entered here would run under: a `with Domain():` block
+   opened inside the active context's callout, else the active
+   context's domain, else the innermost block's, else the thread
+   default. A thread default not yet minted has nothing bound and is
+   not minted here.
 
    Returns borrowed reference, or NULL when nothing is bound.
 */
@@ -101,11 +104,11 @@ PyObject *kos_param_root_resolve_ambient(PyObject *key);
 PyObject *kos_context_param_refs(KosContext *ctx);
 
 
-/* The Python parameterize spans entered and not yet exited, over the
-   whole process. At zero no stack has one and the span chain is not
-   consulted, so a boundary entry pays one load. A span abandoned
-   without its exit keeps the count up, which only costs the read. */
-extern Py_ssize_t kos_param_spans_open;
+/* Set once a Python parameterize span has been entered anywhere in
+   the process, never cleared: before that no stack has one and the
+   span chain is not consulted, so a boundary entry pays one load;
+   after it a chain may be open on any task, so the var is read. */
+extern int kos_param_spans_used;
 
 
 /**
@@ -128,7 +131,7 @@ static inline PyObject *kos_param_ambient_cells(
     KosTlsState *s,
     KosContext *active) {
 
-  if (unlikely(kos_param_spans_open > 0)) {
+  if (unlikely(kos_param_spans_used)) {
     PyObject *table = kos_param_span_cells(s);
     if (table)
       return table;

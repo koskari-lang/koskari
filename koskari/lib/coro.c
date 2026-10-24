@@ -516,10 +516,17 @@ static int coroutine_step(
     PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
       PyObject *await_result = NULL;
+      PySendResult step;
+
       Py_INCREF(await_iter);
       coro->in_send = 1;
-      PySendResult step = kos_iter_send(await_iter, value ? value : Py_None,
-                                        &await_result);
+      /* the awaitable runs on this coroutine's behalf: its context is
+         the active one for the step, so a parameterize or Domain block
+         the Python code opened under it stays inner to it */
+      kos_domain_push_scope(coro->ctx);
+      step = kos_iter_send(await_iter, value ? value : Py_None,
+                           &await_result);
+      kos_domain_pop_scope(coro->ctx);
       Py_DECREF(await_iter);
       if (step == PYGEN_NEXT) {
         coro->in_send = 0;
@@ -612,10 +619,14 @@ static PyObject *coroutine_throw_pair(
   if (coro->state == KOS_CORO_WAITING_PY) {
     PyObject *await_iter = KosContext_PythonAwaitIter(coro->ctx);
     if (await_iter) {
+      PyObject *await_result = NULL;
+      PySendResult step;
+
       Py_INCREF(await_iter);
       coro->in_send = 1;
-      PyObject *await_result = NULL;
-      PySendResult step = kos_iter_throw(await_iter, exc, &await_result);
+      kos_domain_push_scope(coro->ctx);
+      step = kos_iter_throw(await_iter, exc, &await_result);
+      kos_domain_pop_scope(coro->ctx);
       Py_DECREF(await_iter);
 
       if (step == PYGEN_NEXT) {
@@ -692,7 +703,9 @@ static PyObject *coroutine_close(PyObject *self) {
     if (await_iter) {
       Py_INCREF(await_iter);
       coro->in_send = 1;
+      kos_domain_push_scope(coro->ctx);
       kos_iter_close(await_iter);
+      kos_domain_pop_scope(coro->ctx);
       Py_DECREF(await_iter);
       KosContext_PythonAwaitClearIter(coro->ctx);
       coro->in_send = 0;

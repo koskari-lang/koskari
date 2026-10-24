@@ -70,6 +70,29 @@ class TestDomainExitOnAnotherTask(unittest.IsolatedAsyncioTestCase):
         await holding
 
 
+    async def test_child_task_cannot_exit_an_inherited_block(self):
+        dom = Domain()
+
+        async def child():
+            dom.__exit__(None, None, None)
+
+        with dom:
+            with self.assertRaises(RuntimeError):
+                await asyncio.create_task(child())
+            self.assertIs(Domain.current_domain(), dom)
+
+
+    def test_out_of_order_exit_on_one_stack(self):
+        default = Domain.current_domain()
+        outer, inner = Domain(), Domain()
+        outer.__enter__()
+        inner.__enter__()
+        outer.__exit__(None, None, None)
+        self.assertIs(Domain.current_domain(), inner)
+        inner.__exit__(None, None, None)
+        self.assertIs(Domain.current_domain(), default)
+
+
 class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
     """
     Domain as context manager (with Domain():)
@@ -242,6 +265,34 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
             result = await make_callable(code, ns)()
             self.assertEqual(p.deref(), 1)
         self.assertEqual(result, 42)
+
+
+    async def test_python_store_inside_a_callout_block_lands_in_the_block(self):
+        """
+        A Python callback run from koskari opens a Domain block and
+        stores through ParamRef: the store lands in the block's root,
+        a koskari read made inside the block sees it, and the thread
+        default never does
+        """
+
+        p = ParamRef("blk_key", None)
+        seen = {}
+
+        def probe():
+            with Domain() as block:
+                p.store("in")
+                seen["py read"] = p.deref()
+                seen["block root"] = sorted(block.param_scopes()["root"])
+            return "done"
+
+        code, ns = build_expr([
+            ["VAR", "f"],
+            ["CALL", 0],
+            ["RETURN", 1],
+        ], values={"f": probe})
+        self.assertEqual(await make_callable(code, ns)(), "done")
+        self.assertEqual(seen, {"py read": "in", "block root": ["blk_key"]})
+        self.assertIsNone(p.deref())
 
 
     async def test_domain_root_scope_is_shared_channel(self):

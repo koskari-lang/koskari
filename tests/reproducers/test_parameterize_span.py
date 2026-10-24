@@ -22,6 +22,7 @@ stack: each language's reads see the innermost of the two
 """
 
 
+import asyncio
 import unittest
 
 import pytest
@@ -46,6 +47,9 @@ SRC = """
   (parameterize [[span_width 5]]
     (probe)
     (parameterq span_width None)))
+
+(define call_async [f]
+  (f))
 """
 
 
@@ -112,6 +116,27 @@ class TestParameterizeSpan(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(demand_call(mod.call_within, probe), 6)
         self.assertTrue(ref.empty)
+
+
+    async def test_block_opened_under_a_koskari_context_survives_an_await(self):
+        """
+        A Python coroutine awaited by koskari opens a parameterize block
+        and awaits inside it: the binding holds across the await, for
+        Python and for koskari calls made after it
+        """
+
+        mod = await self.load()
+
+        async def body():
+            with parameterize(span_width=7):
+                before = parameter("span_width", None)
+                await asyncio.sleep(0)
+                after = parameter("span_width", None)
+                inner = await vars(mod)["read_width"]()
+            return before, after, inner
+
+        self.assertEqual(await vars(mod)["call_async"](body), (7, 7, 7))
+        self.assertIsNone(parameter("span_width", None))
 
 
 # The end.

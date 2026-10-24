@@ -425,7 +425,13 @@ static int stepper_resume_await(
   }
 
   {
-    PySendResult r = kos_iter_send(it, send_val ? send_val : Py_None, &step);
+    PySendResult r;
+
+    /* the awaitable runs on the provider's behalf: its context is the
+       active one for the step */
+    kos_domain_push_scope(st->ctx);
+    r = kos_iter_send(it, send_val ? send_val : Py_None, &step);
+    kos_domain_pop_scope(st->ctx);
     Py_XDECREF(send_val);
 
     if (r == PYGEN_NEXT) {

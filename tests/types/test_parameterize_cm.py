@@ -269,14 +269,76 @@ class TestParameterizeTasks(unittest.IsolatedAsyncioTestCase):
 
     async def test_exit_on_another_task_is_refused(self):
         span = parameterize(pcm_key=1)
+        entered = asyncio.Event()
+        release = asyncio.Event()
 
-        async def enter_only():
+        async def holder():
             span.__enter__()
+            entered.set()
+            await release.wait()
+            span.__exit__(None, None, None)
 
-        await asyncio.create_task(enter_only())
+        holding = asyncio.create_task(holder())
+        await entered.wait()
         with self.assertRaises(RuntimeError):
             span.__exit__(None, None, None)
         self.assertIsNone(parameter("pcm_key", None))
+        release.set()
+        await holding
+
+
+    async def test_child_task_cannot_exit_an_inherited_block(self):
+        span = parameterize(pcm_key="parent")
+
+        async def child():
+            span.__exit__(None, None, None)
+
+        with span:
+            with self.assertRaises(RuntimeError):
+                await asyncio.create_task(child())
+            self.assertEqual(parameter("pcm_key"), "parent")
+        self.assertIsNone(parameter("pcm_key", None))
+
+
+    async def test_child_keeps_its_view_through_a_parent_out_of_order_exit(
+            self):
+        outer = parameterize(pcm_key="a", pcm_other="b")
+        inner = parameterize(pcm_key="b2")
+        release = asyncio.Event()
+
+        async def child():
+            await release.wait()
+            return parameter("pcm_key", None), parameter("pcm_other", None)
+
+        outer.__enter__()
+        inner.__enter__()
+        task = asyncio.create_task(child())
+        await asyncio.sleep(0)
+        outer.__exit__(None, None, None)
+        self.assertEqual(parameter("pcm_key"), "b2")
+        self.assertIsNone(parameter("pcm_other", None))
+        inner.__exit__(None, None, None)
+        self.assertIsNone(parameter("pcm_key", None))
+        release.set()
+        self.assertEqual(await task, ("b2", "b"))
+
+
+    async def test_reentered_block_does_not_change_a_child_view(self):
+        span = parameterize(pcm_key="first")
+        release = asyncio.Event()
+
+        async def child():
+            await release.wait()
+            return parameter("pcm_key", None)
+
+        with span:
+            task = asyncio.create_task(child())
+            await asyncio.sleep(0)
+        with parameterize(pcm_key="outer"):
+            with span:
+                self.assertEqual(parameter("pcm_key"), "first")
+                release.set()
+                self.assertEqual(await task, "first")
 
 
 # The end.
