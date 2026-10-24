@@ -36,7 +36,7 @@
 #define CONTEXT_MAX_FREE KOS_FREELIST_CAP(256)  /* cached KosContext cap */
 
 /* Released contexts: cleared, GC-untracked, linked through the domain
-   field, which the constructor's memset clears again on revival. */
+   field, which the constructor clears again on revival. */
 static KosContext *context_freelist = NULL;
 static size_t context_freecount = 0;
 
@@ -101,6 +101,7 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
        and in a debug build the reference total and trace chain the
        dealloc gave up */
     _Py_NewReference((PyObject *) ctx);
+    ctx->domain = NULL;
 
   } else {
     KOS_TRACE_FL_ALLOC("context", 0);
@@ -109,14 +110,14 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
       Py_XDECREF(cells);
       return NULL;
     }
+    memset((char *) ctx + sizeof(PyObject), 0,
+           sizeof(KosContext) - sizeof(PyObject));
   }
 
-  /* every field after the object header starts cleared, so a failure
-     below can release the half-built context through the type, and a
-     revived context carries nothing of its last use */
-  memset((char *) ctx + sizeof(PyObject), 0,
-         sizeof(KosContext) - sizeof(PyObject));
-
+  /* every field after the object header starts cleared, by the memset
+     for a fresh context and by context_clear for a revived one, so a
+     failure below can release the half-built context through the type,
+     and a revived context carries nothing of its last use */
   ctx->param_refs = cells;
 
   /* the live registers over the one-frame chain: what a walk of the
@@ -134,36 +135,8 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
     ctx->acting_pc = KosDynFrame_ACTING_PC(top);
   }
 
-  KosContext_GOAL(ctx) = NULL;
-  Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
-
-  /* Initialize Python await bridging */
-  KosContext_PY_RESUME_INJECT(ctx) = NULL;
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
-
-  KosContext_ENTRY_CALL(ctx) = NULL;
-
-  KosContext_FLAGS(ctx) = 0;
-
   PyObject_GC_Track((PyObject *) ctx);
   return ctx;
-}
-
-
-/**
-   Replace a cached context's parameterize cells with the snapshot in
-   force now, so a context reused across boundary calls sees the
-   dynamic state of each call. s is the calling thread's record
-   (kos_tls_current). Returns -1 with an error set.
-*/
-int KosContext_TakeSnapshot(KosContext *ctx, KosTlsState *s) {
-
-  PyObject *cells;
-
-  if (KosContext_Snapshot(s, &cells) < 0)
-    return -1;
-  Py_XSETREF(ctx->param_refs, cells);
-  return 0;
 }
 
 
@@ -207,6 +180,9 @@ KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx) {
    generator runs KosPyAsyncGen_Teardown before dropping its reference
    so GEN.active is disposed before the context. Also the type's
    tp_clear, so a context inside a garbage cycle drops what it holds.
+   A cleared context is empty, every field after the object header
+   zero, which the freelist revival relies on, so a field added to
+   KosContext is cleared here.
 */
 static int context_clear(PyObject *self) {
 
@@ -242,6 +218,14 @@ static int context_clear(PyObject *self) {
   KosContext_DOMAIN(ctx) = NULL;
   Py_XDECREF(KosContext_PARAM_REFS(ctx));
   KosContext_PARAM_REFS(ctx) = NULL;
+
+  ctx->breaker = NULL;
+  ctx->recursion_limit = 0;
+  ctx->terminal = 0;
+  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
+  KosContext_ENTRY_CALL(ctx) = NULL;
+  KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
+  KosContext_FLAGS(ctx) = 0;
 
   return 0;
 }

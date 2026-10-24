@@ -15,9 +15,8 @@
 tests.lib.test_demand_continuation_token
 
 A continuation captured in one call of a demand wrapper is dead in the
-wrapper's next call, although both calls run on the same reused
-context: applying it from inside the next call, or from Python during
-it, raises KoskariContinuationDead.
+wrapper's next call: applying it from inside the next call, or from
+Python during it, raises KoskariContinuationDead.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3

@@ -607,7 +607,7 @@ class TestDemandWrapperAndApply(unittest.TestCase):
         self.assertIs(dfb.__wrapped__, fn)
 
 
-    def test_cached_context_drops_the_domain_after_the_call(self):
+    def test_wrapper_drops_the_domain_after_the_call(self):
         """
         A wrapper called inside a with-Domain block keeps nothing of
         that domain once the call returns: the domain and its root

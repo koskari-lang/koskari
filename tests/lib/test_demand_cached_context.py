@@ -14,17 +14,17 @@
 """
 tests.lib.test_demand_cached_context
 
-One demand wrapper called many times from Python reuses its cached
-drive context: every call returns its own value, a call that re-enters
-the same wrapper through Python while it is running still completes,
-each call sees the parameterize state in force at that call, a call
-that raised leaves the wrapper usable, and a root parameter store made
-by one call is read by a later call, through the same wrapper or
-another. Calls carrying a keyword argument behave the same: repeated,
-raising, reentrant, and escaping through call/cc. A parameterize
-extent entered inside a boundary call stays in that call, and a
-coroutine created inside it runs under the state at its creation after
-the extent and the call have exited.
+One demand wrapper called many times from Python runs each call on a
+context of its own: every call returns its own value, a call that
+re-enters the same wrapper through Python while it is running still
+completes, each call sees the parameterize state in force at that call,
+a call that raised leaves the wrapper usable, and a root parameter
+store made by one call is read by a later call, through the same
+wrapper or another. Calls carrying a keyword argument behave the same:
+repeated, raising, reentrant, and escaping through call/cc. A
+parameterize extent entered inside a boundary call stays in that call,
+and a coroutine created inside it runs under the state at its creation
+after the extent and the call have exited.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
