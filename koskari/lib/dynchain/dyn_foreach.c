@@ -127,9 +127,23 @@ int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
 }
 
 
+/**
+   The region leaves the chain by an unlink (a transfer, or the raise
+   walk once the step resume has declined). A step still in flight is
+   recorded on the loop's frame, the live frame at this point, as its
+   resume: the frame halted inside this region deferring the step, and
+   anything else that halts the frame sits in a frame or region above.
+   The region owns the iterator, so it finishes the request and clears
+   the frame's resume; a landing that follows then finds a frame with
+   no halt to serve.
+*/
 void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
-  (void) ctx;
-  (void) node;
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+
+  if (frame && KosDynFrame_RESUME_KIND(frame)) {
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(node), 0);
+    kos_dynframe_clear_resume(frame);
+  }
 }
 
 

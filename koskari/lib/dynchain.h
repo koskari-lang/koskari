@@ -345,12 +345,11 @@ typedef struct KosResumeKind {
   int settle;   /* the delivery is settled before fn sees it: 0 for a
                    kind whose delivery is data, as a delegate's yielded
                    value or a for-each element is */
-  int direct;   /* a delivery hands this kind its element by calling
-                   fn at once, never staging it: the step resumes of
-                   the for-each and next instructions, the yield-from
-                   phases. Such a kind takes its delivery as it is,
-                   and a region leaving the chain clears it from the
-                   frame. */
+  int direct;   /* a kind that takes its delivery as it is: the step
+                   resumes of the for-each and next instructions, the
+                   yield-from phases. A for-each step's region clears
+                   it from the frame when the region leaves the chain
+                   with the step in flight. */
 } KosResumeKind;
 
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \

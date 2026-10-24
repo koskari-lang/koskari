@@ -535,10 +535,14 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
 /**
    DELIVERING: push the payload, stage it for the landing frame's
    resume, set it as a pending throw, or raise it at the boundary; then
-   retire the goal. A landing frame that carries a resume was waiting on a
-   delivery when it was captured, and the restore put that resume back
-   through its kind's clone: the payload is that delivery, staged in
-   the pending slot for the prologue pass that follows the drive.
+   retire the goal. A landing frame that carries a resume the goal
+   installed, through a restore record or a spliced template, was
+   waiting on a delivery when it was captured: the payload is that
+   delivery, staged in the pending slot for the prologue pass that
+   follows the drive. A goal that installed no frame state (a shift's)
+   resumes the live frame at a pc, and a resume that frame still
+   carries belongs to the instruction the transfer left: it is cleared
+   and the payload is pushed.
 */
 static KosOpResult goal_deliver(
     KosContext *ctx,
@@ -560,6 +564,9 @@ static KosOpResult goal_deliver(
         "transfer: no frame to deliver to");
     return EVAL_RAISE();
   }
+  if (! goal->target && ! goal->restore)
+    kos_dynframe_clear_resume(KosContext_FRAME(ctx));
+
   if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx))) {
 #if KOS_EVAL_SAFETYNET
     if (KosContext_PENDING_VALUE(ctx)) {

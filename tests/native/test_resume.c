@@ -764,57 +764,6 @@ static int test_capture_restore_apply_hands_over_the_clone(void) {
 }
 
 
-/* A value delivered by a transfer to a landing frame carrying a resume
-   is staged for that resume, not pushed on the frame's stack: the
-   resume was waiting on a delivery when the frame was captured, and
-   the continuation's argument is it. */
-static int test_transfer_delivers_to_a_landing_frame_resume(void) {
-  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
-  TEST_ASSERT_NOT_NULL(ctx, "create context");
-
-  KosContext_EvalEnter(ctx, NULL);
-
-  PyObject *ns = PyDict_New();
-  TEST_ASSERT_NOT_NULL(ns, "create ns");
-  KosDynFrame *live = kos_dyn_push_frame(ctx, NULL, ns);
-  TEST_ASSERT_NOT_NULL(live, "push live frame");
-
-  int marker = 0;
-  KosDynFrame_RESUME_KIND(live) = &resume_recording_kind;
-  KosDynFrame_RESUME_STATE(live) = &marker;
-
-  PyObject *payload = PyLong_FromLong(99);
-  TEST_ASSERT_NOT_NULL(payload, "create payload");
-  KosXferGoal *goal = kos_xfer_goal_new(NULL, (KosDynNode *) live, payload,
-                                        (uint32_t) -1, NULL, 0);
-  TEST_ASSERT_NOT_NULL(goal, "create goal");
-
-  kos_xfer_goal_push(ctx, goal);
-  {
-    int boundary = 0;
-    KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
-    TEST_ASSERT_EQ(r.kind, (int) KOS_RES_NORMAL, "the goal drives through");
-  }
-  TEST_ASSERT_NULL(KosContext_GOAL(ctx), "the goal retired");
-  TEST_ASSERT_SAME(KosContext_PENDING_VALUE(ctx), payload,
-                   "the payload is staged for the resume");
-  TEST_ASSERT(! KosContext_StackHead(ctx)
-              || KosContext_StackLen(ctx) == 0,
-              "the frame stack was not touched");
-  TEST_ASSERT_SAME(KosDynFrame_RESUME_KIND(live), &resume_recording_kind,
-                   "the resume is still set for the delivery");
-
-  Py_CLEAR(KosContext_PENDING_VALUE(ctx));
-  KosDynFrame_RESUME_KIND(live) = NULL;
-  KosDynFrame_RESUME_STATE(live) = NULL;
-  Py_DECREF(payload);
-  KosContext_EvalExit(ctx);
-  Py_DECREF(ctx);
-  Py_DECREF(ns);
-  return 0;
-}
-
-
 /* A transfer restore record clones a template frame's resume state
    through its kind; a template whose kind cannot clone is refused
    with an error in every build, never called through. The template
@@ -1151,7 +1100,6 @@ int run_resume_tests(void) {
   RUN_TEST(test_clone_copies_node_resume);
   RUN_TEST(test_capture_restore_clones_and_clears_unapplied);
   RUN_TEST(test_capture_restore_apply_hands_over_the_clone);
-  RUN_TEST(test_transfer_delivers_to_a_landing_frame_resume);
   RUN_TEST(test_capture_restore_refuses_uncloneable_kind);
   RUN_TEST(test_clone_refuses_step_resume_frame);
   RUN_TEST(test_cache_inert_clears_resume_triple);

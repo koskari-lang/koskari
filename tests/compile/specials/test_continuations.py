@@ -403,4 +403,42 @@ class TestWaitingGoalThunkDeliveries(SpecialsTestCase):
         self.assertEqual(result, 2)
 
 
+    async def test_shift_out_of_a_foreach_step_abandons_the_step(self):
+        """
+        A shift from inside a mapped function, under a reset outside
+        the loop, abandons the step in flight: the reset's value is the
+        handler's, the loop variable never receives it, and the map is
+        finished so a second loop over it carries on from the next
+        element
+        """
+
+        from koskari.lib import KosMap
+
+        src_str = """
+        (let [[m (KosMap (lambda [x] (shift k (* x 100))) #[1 2 3])]
+              [seen #[]]]
+          #((reset (for-each [x m] (seen.append x)))
+            (reset (for-each [x m] (seen.append x)))
+            seen))
+        """
+        expr, _mod = self.compile_expr(src_str, KosMap=KosMap)
+        self.assertEqual(await expr(), (100, 200, []))
+
+
+    async def test_shift_out_of_a_next_step_abandons_the_step(self):
+        """
+        A shift from inside a mapped function stepped by next, under a
+        reset: the reset's value is the handler's, not the element
+        """
+
+        from koskari.lib import KosMap
+
+        src_str = """
+        (let [[m (KosMap (lambda [x] (shift k (* x 100))) #[1 2 3])]]
+          (reset (next m)))
+        """
+        expr, _mod = self.compile_expr(src_str, KosMap=KosMap)
+        self.assertEqual(await expr(), 100)
+
+
 # The end.
