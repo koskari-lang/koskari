@@ -73,8 +73,9 @@ struct KosTlsState {
 
 /* the calling OS thread's record, a C thread-local slot: one TLS load
    on the fast path, checked against the current thread state by its
-   owner field since a thread state can change on one OS thread */
-static _Thread_local KosTlsState *tls_state_slot;
+   owner field since a thread state can change on one OS thread. The
+   initial-exec model keeps that load off __tls_get_addr. */
+static _Thread_local KosTlsState *tls_state_slot KOS_TLS_INITIAL_EXEC;
 
 
 /* Grow `stack` (an array of pointer-sized slots) to admit index `depth`.
@@ -99,9 +100,10 @@ static void *tls_stack_reserve(void *stack, size_t *cap, size_t depth) {
    CPython clears when the thread state is destroyed, and by the thread
    slot of the OS thread that reached it; each holds one count. The
    capsule can be destroyed from another OS thread (a thread state
-   cleared at interpreter shutdown, or by an embedder), which cannot
-   reach this thread's slot: the record then lives on the slot's count,
-   with owner cleared, until this thread next enters and releases it. */
+   cleared at interpreter shutdown, by an embedder, or in a forked
+   child), which cannot reach this thread's slot: the default domain
+   is dropped there, and the record lives on the slot's count, with
+   owner cleared, until this thread next enters and releases it. */
 static const char tls_state_capsule_name[] = "koskari.tls_state";
 static PyObject *tls_state_dict_key = NULL;  /* interned "koskari.tls_state" */
 
@@ -164,8 +166,17 @@ static void tls_state_capsule_free(PyObject *capsule) {
       return;
     }
     tls_state_slot = NULL;
+    s->owner = NULL;
+    tls_state_release(s);
+    return;
   }
+
+  /* another thread: the owner may never enter again (a forked child
+     has no such thread), so the default domain goes now, with the
+     capsule's count held across the drop. A finalizer it runs on this
+     thread finds this thread's own record, never this one. */
   s->owner = NULL;
+  Py_CLEAR(s->default_domain);
   tls_state_release(s);
 }
 
@@ -496,10 +507,23 @@ static PyObject *domain_ambient_peek(const KosTlsState *s) {
 
 
 /* The thread default domain, minted on the first call. Borrowed, or
-   NULL with an error set. */
+   NULL with an error set. Through Python 3.11 the allocation can run a
+   collection whose finalizer mints the default on this thread first;
+   that one is kept and the new one dropped. */
 static PyObject *tls_default_domain(KosTlsState *s) {
-  if (! s->default_domain)
-    s->default_domain = (PyObject *) KosDomain_New();
+
+  PyObject *domain;
+
+  if (s->default_domain)
+    return s->default_domain;
+
+  domain = (PyObject *) KosDomain_New();
+  if (! domain)
+    return NULL;
+  if (s->default_domain)
+    Py_DECREF(domain);
+  else
+    s->default_domain = domain;
   return s->default_domain;
 }
 

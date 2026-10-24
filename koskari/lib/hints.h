@@ -75,6 +75,18 @@
 #endif
 
 
+/* KOS_TLS_INITIAL_EXEC, written after a thread-local's declarator,
+   gives it the initial-exec TLS model. A -fPIC build otherwise takes
+   the dynamic model, which calls __tls_get_addr on each access. Valid
+   here because the interpreter loads the extension once, and a few
+   pointers fit in the C library's static TLS surplus. */
+#if defined(__GNUC__) || defined(__clang__)
+# define KOS_TLS_INITIAL_EXEC __attribute__((tls_model("initial-exec")))
+#else
+# define KOS_TLS_INITIAL_EXEC
+#endif
+
+
 /* Whether the compiler can enforce a tail call (clang, or GCC 15+).
    Opcode dispatch is threaded through musttail, so eval.h refuses to
    build without it. */

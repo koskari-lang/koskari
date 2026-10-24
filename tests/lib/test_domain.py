@@ -19,6 +19,7 @@ Unit tests for Domain context manager
 """
 
 import asyncio
+import os
 import threading
 import unittest
 
@@ -538,6 +539,68 @@ class TestThreadDefaultDomain(unittest.TestCase):
         thread.join()
         self.assertIsInstance(seen.pop("reentered"), Domain)
         self.assertEqual(domains(), before)
+
+
+    @unittest.skipUnless(hasattr(os, "fork"), "requires os.fork")
+    def test_forked_child_releases_other_threads_defaults(self):
+        """
+        A forked child, which has none of the parent's other threads,
+        releases the root values in their default Domains
+        """
+
+        import subprocess
+        import sys
+        import textwrap
+
+        code = textwrap.dedent("""
+            import gc
+            import os
+            import sys
+            import threading
+
+            from koskari.lib import ParamRef
+
+            class Finalized:
+                def __init__(self, fd):
+                    self.fd = fd
+
+                def __del__(self):
+                    os.write(self.fd, b"finalized")
+
+            rfd, wfd = os.pipe()
+            ready = threading.Event()
+            hold = threading.Event()
+
+            def worker():
+                ParamRef("tdd_fork_key").store(Finalized(wfd))
+                ready.set()
+                hold.wait()
+
+            threading.Thread(target=worker, daemon=True).start()
+            ready.wait()
+
+            pid = os.fork()
+            if pid == 0:
+                gc.collect()
+                os._exit(0)
+
+            os.waitpid(pid, 0)
+            os.close(wfd)
+            chunks = []
+            while True:
+                chunk = os.read(rfd, 64)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            print(b"".join(chunks).decode())
+            sys.stdout.flush()
+            os._exit(0)
+            """)
+
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True,
+            text=True, check=True)
+        self.assertIn("finalized", out.stdout, out.stderr)
 
 
     def test_explicit_domain_wins_then_default_returns(self):
