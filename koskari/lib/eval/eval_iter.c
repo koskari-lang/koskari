@@ -365,19 +365,24 @@ KOS_OP_INLINE void kos_iter_step_finish(KosContext *ctx, int ended) {
    end of the iteration, the same judgment the eager step makes: the
    region's request is finished and idle, the error cleared, and the
    resume goes to its else target. Anything else propagates: the
-   resume declines and the raise walk goes on to the region. The
-   region is at dyn_top, the frames above it already unwound.
+   resume finishes the request, since the step it waited on is over
+   and nobody else holds that record, and declines; the raise walk
+   goes on to the region. The region is at dyn_top, the frames above
+   it already unwound.
 
    :return: 1 when the exception was the end, the request finished and
-     the error cleared; 0 to decline, the error still pending
+     the error cleared; 0 to decline, the request finished and the
+     error still pending
 */
 KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
   KosDynNode *region = KosContext_DYN_TOP(ctx);
 
   if (! region || ! KosDynNode_IS_FOREACH(region) || ! PyErr_Occurred())
     return 0;
-  if (! PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(region)))
+  if (! PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(region))) {
+    kos_dyn_iter_request_finish(region, 0);
     return 0;
+  }
 
   PyErr_Clear();
   kos_dyn_iter_request_finish(region, 1);

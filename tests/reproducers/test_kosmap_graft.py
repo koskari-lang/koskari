@@ -32,7 +32,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import KosMap
+from koskari.lib import KosFilter, KosMap
 from koskari.module import load_module_source_async, new_module
 
 
@@ -52,6 +52,17 @@ define slow-inc [x]:
 define boom [x]:
     raise (ValueError "boom")
 
+define boom-at-one [x]:
+    when (== x 1):
+        raise (ValueError "boom")
+    x
+
+define raising-gen [n]:
+    for-each [i (range n)]:
+        when (== i 1):
+            raise (ValueError "gen")
+        yield i
+
 define stopper [x]:
     if (== x 2):
         raise (StopIteration)
@@ -62,6 +73,12 @@ define consume [it]:
     for-each [v it]:
         set! total (+ total v)
     total
+
+define consume-caught [it]:
+    try:
+        (consume it)
+    except [e ValueError]:
+        (str e)
 """
 
 
@@ -103,6 +120,32 @@ class TestKosMapInvokeGraft(unittest.IsolatedAsyncioTestCase):
         # the map is reusable state-wise: not busy, not closed
         m = KosMap(v["inc"], [5])
         self.assertEqual(await v["consume"](m), 6)
+
+    async def test_map_is_usable_after_its_function_raised(self):
+        """
+        a map whose mapped function raised mid-iteration is finished
+        when the loop frame declines the failure, so a later loop over
+        the same map carries on from the next element
+        """
+        mod = await self.load("kmg_reuse_map")
+        v = vars(mod)
+        m = KosMap(v["boom-at-one"], [1, 2, 3])
+        self.assertEqual(await v["consume-caught"](m), "boom")
+        self.assertEqual(await v["consume"](m), 5)
+
+    async def test_filter_is_usable_after_its_predicate_raised(self):
+        mod = await self.load("kmg_reuse_filter")
+        v = vars(mod)
+        f = KosFilter(v["boom-at-one"], [1, 2, 3])
+        self.assertEqual(await v["consume-caught"](f), "boom")
+        self.assertEqual(await v["consume"](f), 5)
+
+    async def test_map_is_usable_after_its_source_raised(self):
+        mod = await self.load("kmg_reuse_source")
+        v = vars(mod)
+        m = KosMap(v["inc"], v["raising-gen"](3))
+        self.assertEqual(await v["consume-caught"](m), "gen")
+        self.assertEqual(await v["consume"](m), 0)
 
     async def test_graft_stopiteration_exhausts(self):
         """
