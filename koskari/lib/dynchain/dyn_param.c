@@ -224,24 +224,30 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
    writes into the context's own table: one shared with a coroutine
    created inside the extent, or with a nested boundary call, is copied
    first. If that copy fails the error is cleared and the table is left
-   as is, as the swap-back does for its own dict failures.
+   as is, as the swap-back does for its own dict failures. The restore
+   runs under the raise walk with the propagating exception live, so
+   that exception is held across the best-effort work and put back
+   after it, as the enter's rollback does.
 */
 static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 
   PyObject *saved = KosDynParam_SAVED(node);
+  PyObject *typ, *val, *tb;
+  PyObject *cells;
+
   if (! saved)
     return;
 
   if (! KosContext_PARAM_REFS(ctx))
     return;
 
-  PyObject *cells = kos_context_param_refs(ctx);
-  if (! cells) {
+  PyErr_Fetch(&typ, &val, &tb);
+  cells = kos_context_param_refs(ctx);
+  if (cells)
+    kos_dynparam_swap_back(cells, saved);
+  else
     PyErr_Clear();
-    return;
-  }
-
-  kos_dynparam_swap_back(cells, saved);
+  PyErr_Restore(typ, val, tb);
 }
 
 
