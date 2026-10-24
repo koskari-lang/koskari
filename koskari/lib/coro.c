@@ -160,13 +160,15 @@ static int coroutine_materialize(KosCoroutine *coro) {
   if (! frame)
     goto fail;
 
-  /* the record's reference to the function moves to the frame; the
-     root bit tells the frame's release that a coroutine root is the one
-     offered to the cache */
+  /* the record's reference to the function moves to the frame; under
+     tracing the root bit tells the frame's release that a coroutine
+     root is the one offered to the cache */
   if (coro->fn) {
     KosDynFrame_FN(frame) = coro->fn;
     coro->fn = NULL;
+#if KOS_TRACE_EVENTS
     KosDynFrame_FLAGS(frame) |= KOS_FRAME_CORO_ROOT;
+#endif
   }
 
   ctx = KosContext_NewFromSnapshot(frame, coro->param_refs);

@@ -221,15 +221,18 @@ static PyObject *demand_deny_suspended(PyObject *value) {
    continuation clone of the frame shares the slot; an occupied slot
    refuses the frame and it frees normally. A reentrant call of the
    same wrapper from its own callee finds the slot emptied by the outer
-   install and allocates. A failed delivery propagates.
+   install and allocates. A failed delivery propagates, with the frame
+   set to return to the slot when the raise walk frees it.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
     KosContext *ctx,
     void *state,
     PyObject *value) {
 
-  if (! value)
+  if (! value) {
+    KosNativeFrame_CacheOnFree(ctx, (KosDynFrame **) state);
     return EVAL_RAISE();
+  }
 
   RESULT_FRAME_RETURN(ctx, value, (KosDynFrame **) state);
 }

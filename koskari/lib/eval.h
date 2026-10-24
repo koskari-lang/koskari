@@ -621,9 +621,10 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob);
    step resume, drive root). When cache is given, sets the frame to
    be stored into that caller-owned one-frame cache when the return
    path frees it (kos_dynframe_cache_inert); a NULL or occupied cache
-   frees as usual. The exception path never caches -- a frame popped by
-   the raise walk is freed, and the cache simply stays empty for the
-   next install. The result is always RETURN carrying value; a resume
+   frees as usual. A resume declining a failure caches the same way
+   through KosNativeFrame_CacheOnFree before it raises, since the raise
+   walk frees the popped frame through the same release. The result is
+   always RETURN carrying value; a resume
    ends with RESULT_FRAME_RETURN, which tails that value into the
    return delivery. value is consumed.
 */
@@ -631,6 +632,13 @@ KosOpResult KosNativeFrame_ReturnToCache(
     KosContext *ctx,
     PyObject *value,
     KosDynFrame **cache);
+
+/**
+   The flagging half of KosNativeFrame_ReturnToCache: set the live
+   code-less frame to be stored into cache when the path that pops it
+   frees it; a NULL cache clears the slot.
+*/
+void KosNativeFrame_CacheOnFree(KosContext *ctx, KosDynFrame **cache);
 
 
 /**

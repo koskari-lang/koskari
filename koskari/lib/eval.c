@@ -2063,18 +2063,15 @@ const KosThreadFn kos_op_handlers[] = {
 
 
 /**
-   Complete a native frame by handing value to the eval loop's return
-   machinery, which owns every delivery terminus (parent frame,
-   step resume, drive root). Clears the program slot and, when cache
-   is given, flags the frame to be cached there when the return path
-   frees it (KOS_FRAME_RETURN_TO_CACHE; native_state becomes the cache
-   slot). The caller returns this result from its handler. value is
-   consumed.
+   Set the live code-less frame to be stored into cache, a caller-owned
+   one-frame slot, when the path that pops it frees it
+   (KOS_FRAME_RETURN_TO_CACHE; the cache slot rides on the frame). A
+   NULL cache clears the slot and the frame frees as usual. Used by the
+   completion and by a resume declining a failure alike: the raise walk
+   frees the popped frame through the same release, so a wrapper keeps
+   its root frame across a raising call.
 */
-KosOpResult KosNativeFrame_ReturnToCache(
-    KosContext *ctx,
-    PyObject *value,
-    KosDynFrame **cache) {
+void KosNativeFrame_CacheOnFree(KosContext *ctx, KosDynFrame **cache) {
 
   KosDynFrame *frame = KosContext_FRAME(ctx);
 
@@ -2084,7 +2081,22 @@ KosOpResult KosNativeFrame_ReturnToCache(
   } else {
     KosDynFrame_CACHE_SLOT(frame) = NULL;
   }
+}
 
+
+/**
+   Complete a native frame by handing value to the eval loop's return
+   machinery, which owns every delivery terminus (parent frame,
+   step resume, drive root), with the frame set to be cached in cache
+   when that path frees it (KosNativeFrame_CacheOnFree). The caller
+   returns this result from its handler. value is consumed.
+*/
+KosOpResult KosNativeFrame_ReturnToCache(
+    KosContext *ctx,
+    PyObject *value,
+    KosDynFrame **cache) {
+
+  KosNativeFrame_CacheOnFree(ctx, cache);
   return EVAL_RETURN(value);
 }
 
@@ -3764,7 +3776,7 @@ KosOpResult koskari_eval(
   host_held = kos_tstate_exc_held(tstate);
   KosExc_Init(&host_exc);
   if (host_held) {
-    KosExc_Fetch(&host_exc);
+    KosExc_FetchFrom(tstate, &host_exc);
     KOS_TRACE_EVENTS_INC(KOS_TE_EXC_FETCH);
   }
   if (host_held || KosExc_Held(KosContext_EXC_INFO(ctx)))
@@ -3883,7 +3895,7 @@ koskari_eval_cleanup:
     KosExcState current;
 
     KosExc_Init(&current);
-    KosExc_Fetch(&current);
+    KosExc_FetchFrom(tstate, &current);
     KOS_TRACE_EVENTS_INC(KOS_TE_EXC_FETCH);
     KosExc_Clear(KosContext_EXC_INFO(ctx));
     KosExc_Move(KosContext_EXC_INFO(ctx), &current);

@@ -84,9 +84,16 @@ static inline void KosExc_Clear(KosExcState *s) {
    inside a generator) are not consulted. The thread state keeps its
    own view; use KosExc_Install to change it. An item holding none
    leaves s empty, so KosExc_Held means an exception is held. */
-static inline void KosExc_Fetch(KosExcState *s) {
+static inline void KosExc_FetchFrom(PyThreadState *tstate, KosExcState *s) {
   KosExc_Clear(s);
-  kos_tstate_exc_top(PyThreadState_Get(), &s->type, &s->value, &s->tb);
+  kos_tstate_exc_top(tstate, &s->type, &s->value, &s->tb);
+}
+
+
+/* KosExc_FetchFrom on the calling thread's state, for a caller that
+   does not hold it. */
+static inline void KosExc_Fetch(KosExcState *s) {
+  KosExc_FetchFrom(PyThreadState_Get(), s);
 }
 
 
