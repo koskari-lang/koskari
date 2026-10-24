@@ -214,12 +214,6 @@ static void yield_from_state_clear(void *state) {
 }
 
 
-/* The kind's clone: a capture shares the delegate. */
-static void *yield_from_state_clone(void *state) {
-  return Py_XNewRef((PyObject *) state);
-}
-
-
 /* The kind's traverse: the delegate is the state's one owned object. */
 static int yield_from_state_traverse(void *state, visitproc visit, void *arg) {
   Py_VISIT((PyObject *) state);
@@ -227,17 +221,20 @@ static int yield_from_state_traverse(void *state, visitproc visit, void *arg) {
 }
 
 
-/* Every yield-from kind owns its delegate the same way. */
+/* Every yield-from kind owns its delegate the same way, and none
+   clones: a capture that reached a delegating frame would be refused
+   by name, and none can, since the delegate in flight sits above the
+   frame as a generator node or a native frame, which refuse first, or
+   runs outside the evaluator with no capture point inside it. One
+   owner, so the clear's close at teardown is the delegate's only. */
 #define YF_KIND(ident, fnp)                                             \
   KOS_RESUME_KIND_DIRECT_OWNING(ident, "yield-from", fnp,               \
-                                yield_from_state_clear,                 \
-                                yield_from_state_clone,                 \
+                                yield_from_state_clear, NULL,           \
                                 yield_from_state_traverse)
 
 #define YF_KIND_THROWABLE(ident, fnp, throwp)                           \
   KOS_RESUME_KIND_DIRECT_OWNING_THROWABLE(ident, "yield-from", fnp,     \
-                                          yield_from_state_clear,       \
-                                          yield_from_state_clone,       \
+                                          yield_from_state_clear, NULL, \
                                           yield_from_state_traverse,    \
                                           throwp)
 
