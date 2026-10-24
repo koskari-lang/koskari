@@ -174,11 +174,13 @@ int KosEval_IsFuture(PyObject *val) {
 
 /**
    One step of a provider through its suite, for every site that
-   steps one: the next request, the for-each step, yield-from and the
-   Python adapters. A sync iterator steps through tp_iternext; a
-   python async iterator through its eager-stepped __anext__. send_val
-   is borrowed (protocol send); *fast_out receives a new reference on
-   DELIVERED/EXHAUSTED, and the awaitable payload on EXIT.
+   steps one in the evaluator: the next request, the for-each step,
+   the native frame's request and yield-from. A StopIteration ending
+   the step is the provider's exhaustion, reported as such with its
+   payload; the provider is not finished here. The consumer that takes
+   the end owns the finish, the same owner that finishes a step whose
+   end arrived through the chain. send_val is borrowed (protocol
+   send); *out receives a new reference on VALUE/EXHAUSTED.
 */
 KosIterStepResult kos_iter_step_provider(
     KosContext *ctx,
@@ -201,7 +203,6 @@ KosIterStepResult kos_iter_step_provider(
 
     if (PyGen_FetchStopIterationValue(&payload) < 0)
       return KOS_ITER_ERROR;
-    islots->ki_finish(iter, ! islots->ki_pyctx_recyclable);
     *out = payload;
     return KOS_ITER_EXHAUSTED;
   }
@@ -211,11 +212,9 @@ KosIterStepResult kos_iter_step_provider(
 
 KosIterRequestStatus KosIterRequest_Next(
     KosContext *ctx,
-    KosDynNode *node,
-    PyObject *send_val,
+    KosIterRequest *req,
     PyObject **fast_out) {
 
-  KosIterRequest *req = kos_dyn_iter_request(node);
   PyObject *iter = req->iter;
   KosIterSlots *islots = req->islots;
 
@@ -234,7 +233,7 @@ KosIterRequestStatus KosIterRequest_Next(
   if (islots) {
     PyObject *out = NULL;
 
-    switch (kos_iter_step_provider(ctx, iter, islots, send_val, &out)) {
+    switch (kos_iter_step_provider(ctx, iter, islots, NULL, &out)) {
       case KOS_ITER_VALUE:
         *fast_out = out;
         return KOS_IREQ_DELIVERED;
@@ -2168,15 +2167,11 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 KosOpResult KosContext_NextResume(
     KosContext *ctx,
     PyObject *iter,
-    PyObject *send_val,
     const KosResumeKind *resume,
     void *state) {
 
   KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *out = NULL;
-
-  (void) send_val;  /* no caller sends into Next yet; matches the
-                        design's future Send entry point */
 
   switch (KosNativeFrame_RequestNext(ctx, iter, &out)) {
     case KOS_IREQ_DELIVERED:

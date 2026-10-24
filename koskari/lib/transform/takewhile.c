@@ -82,7 +82,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
   if (PyErr_Occurred())
     return EVAL_RAISE();
 
-  r = KosContext_NextResume(ctx, t->source, NULL,
+  r = KosContext_NextResume(ctx, t->source,
                               &takewhile_resume_invoke_kind, t);
   RESULT_ENTRY(ctx, r, &takewhile_resume_invoke_kind, t);
 }

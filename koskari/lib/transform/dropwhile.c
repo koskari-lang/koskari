@@ -91,7 +91,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &dropwhile_resume_invoke_kind, t);
     RESULT_ENTRY(ctx, r, &dropwhile_resume_invoke_kind, t);
   }

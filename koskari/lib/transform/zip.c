@@ -108,7 +108,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
        consumer's step resume, and the partial row is cleared by
        ki_finish */
     KosOpResult r = KosContext_NextResume(
-        ctx, t->sources[t->idx], NULL, &zip_resume_deliver_kind, z);
+        ctx, t->sources[t->idx], &zip_resume_deliver_kind, z);
     RESULT_ENTRY(ctx, r, &zip_resume_deliver_kind, z);
   }
 

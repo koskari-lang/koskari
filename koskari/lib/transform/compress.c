@@ -91,7 +91,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
      compress through its StopIteration */
   {
     KosOpResult r = KosContext_NextResume(
-        ctx, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
+        ctx, t->sources[t->idx], &compress_resume_deliver_kind, c);
     RESULT_ENTRY(ctx, r, &compress_resume_deliver_kind, c);
   }
 }

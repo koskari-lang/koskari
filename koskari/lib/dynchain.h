@@ -218,14 +218,9 @@ typedef struct KosIterRequest {
 void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
 
 /**
-   Tell the request's provider its step is over: ki_finish on the bound
-   suite, a no-op for a plain iterator. exhausted marks the provider
-   closed, unless it recycles its durable context and re-derives
-   exhaustion from its source, in which case it stays open (a mapped
-   function's StopIteration is a truncation that builtins.map resumes
-   from).
+   Tell the request's provider its step is over: kos_iter_finish on
+   the bound suite, a no-op for a plain iterator.
 */
-void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted);
 void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted);
 
 
@@ -2170,22 +2165,6 @@ static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
 #define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.region.result)
 #define KosDynForeach_REQ(r)         (&((KosDynNode *)(r))->u.foreach.req)
 #define KosDynForeach_ITER(r)        (KosDynForeach_REQ(r)->iter)
-
-
-/**
-   The iteration request record embedded in a FOREACH node, or NULL
-   for any other kind. The step reads the iterator and its kind from
-   here and nowhere else.
-*/
-static inline KosIterRequest *kos_dyn_iter_request(KosDynNode *node) {
-
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_FOREACH:
-      return KosDynForeach_REQ(node);
-    default:
-      return NULL;
-  }
-}
 
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)

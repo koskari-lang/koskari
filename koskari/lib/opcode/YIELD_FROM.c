@@ -744,7 +744,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
 /* The outcome of a provider delegate's step or throw, sr with out: an
    install leaves the frame read at entry waiting on the emit kind for
    the element, a value is emitted, the end ends the delegation. */
-#define YF_KOS_ITER_OUTCOME(ctx, frame, delegate, sr, out)              \
+#define YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out)      \
   do {                                                                  \
     switch (sr) {                                                       \
       case KOS_ITER_INSTALLED:                                          \
@@ -765,6 +765,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
                 (out));                                                 \
       case KOS_ITER_EXHAUSTED:                                          \
         Py_XDECREF(out);                                                \
+        kos_iter_finish((delegate), (islots), 1);                       \
         YF_FINISH((ctx), (delegate));                                   \
       case KOS_ITER_ERROR:                                              \
       default:                                                          \
@@ -808,7 +809,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_kos_iter(
 
   sr = kos_iter_step_provider(ctx, delegate, islots, value, &out);
   Py_XDECREF(value);
-  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, sr, out);
+  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out);
 }
 
 
@@ -832,7 +833,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_kos_iter(
   }
   sr = islots->ki_throw(ctx, delegate, (PyObject *) Py_TYPE(exc), exc, &out);
   Py_DECREF(exc);
-  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, sr, out);
+  YF_KOS_ITER_OUTCOME(ctx, frame, delegate, islots, sr, out);
 }
 
 
@@ -859,14 +860,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_kos_iter(
     if (islots) {
       int ended = PyErr_ExceptionMatches(PyExc_StopIteration)
           || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
-      islots->ki_finish(delegate, ended && ! islots->ki_pyctx_recyclable);
+      kos_iter_finish(delegate, islots, ended);
     }
     if (yf_take_failure(delegate))
       YF_FINISH(ctx, delegate);
     RESULT_RAISE();
   }
   if (islots)
-    islots->ki_finish(delegate, 0);
+    kos_iter_finish(delegate, islots, 0);
   YF_EMIT(ctx, frame, &yf_drive_kos_iter_kind, delegate, value);
 }
 

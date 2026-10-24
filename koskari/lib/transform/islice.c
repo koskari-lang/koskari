@@ -140,7 +140,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
     return EVAL_RAISE();
 
   if (s->cnt < s->next) {
-    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &islice_resume_discard_kind, s);
     RESULT_ENTRY(ctx, r, &islice_resume_discard_kind, s);
   }
@@ -152,7 +152,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   }
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &islice_resume_emit_kind, s);
     RESULT_ENTRY(ctx, r, &islice_resume_emit_kind, s);
   }

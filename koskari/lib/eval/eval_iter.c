@@ -354,7 +354,7 @@ KOS_OP_INLINE void kos_iter_step_finish(KosContext *ctx, int ended) {
   KosDynNode *region = KosContext_DYN_TOP(ctx);
 
   if (region && KosDynNode_IS_FOREACH(region))
-    kos_dyn_iter_request_finish(region, ended);
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), ended);
 }
 
 
@@ -380,12 +380,12 @@ KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
   if (! region || ! KosDynNode_IS_FOREACH(region) || ! PyErr_Occurred())
     return 0;
   if (! PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(region))) {
-    kos_dyn_iter_request_finish(region, 0);
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), 0);
     return 0;
   }
 
   PyErr_Clear();
-  kos_dyn_iter_request_finish(region, 1);
+  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), 1);
   return 1;
 }
 
@@ -543,7 +543,7 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
   {
     PyObject *out = NULL;
 
-    switch (KosIterRequest_Next(ctx, region, NULL, &out)) {
+    switch (KosIterRequest_Next(ctx, req, &out)) {
       case KOS_IREQ_DELIVERED:
         return EVAL_RETURN(out);
 
@@ -638,7 +638,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
   /* The step is over: the instruction's iterator, held on the stack
      under the halt, is finished when it is a provider and released. */
   if (KosIter_CheckSlots(iter, &islots))
-    islots->ki_finish(iter, ended && ! islots->ki_pyctx_recyclable);
+    kos_iter_finish(iter, islots, ended);
   Py_DECREF(iter);
   if (! value && ! ended)
     return EVAL_RAISE();

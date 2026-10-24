@@ -102,7 +102,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
      pending, and re-entered from batched_resume_deliver: every fetch
      here is a request. */
   while (b->filled < b->n) {
-    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &batched_resume_deliver_kind, b);
     RESULT_ENTRY(ctx, r, &batched_resume_deliver_kind, b);
   }

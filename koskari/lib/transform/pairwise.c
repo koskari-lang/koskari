@@ -72,7 +72,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &pairwise_resume_deliver_kind, t);
     RESULT_ENTRY(ctx, r, &pairwise_resume_deliver_kind, t);
   }

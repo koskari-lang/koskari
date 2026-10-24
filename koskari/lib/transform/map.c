@@ -122,7 +122,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
     return EVAL_RAISE();
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source, NULL,
+      ctx, ((KosTransform *) state)->source,
       &map_resume_after_fetch_kind, state);
   RESULT_ENTRY(ctx, r, &map_resume_after_fetch_kind, state);
 }

@@ -255,10 +255,8 @@ static inline void kos_transform_fetched(PyObject *source, PyObject *element) {
     PyErr_SetNone(PyExc_StopIteration);
   }
   if (KosIter_CheckSlots(source, &islots))
-    islots->ki_finish(
-        source,
-        ! element && kos_transform_source_spent()
-            && ! islots->ki_pyctx_recyclable);
+    kos_iter_finish(source, islots,
+                    ! element && kos_transform_source_spent());
 }
 
 

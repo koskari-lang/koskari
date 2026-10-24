@@ -179,7 +179,7 @@ static int test_next_resume_delivered_reports_in_hand(void) {
   TEST_ASSERT_NOT_NULL(it, "acquire iterator");
 
   ResumeProbe probe = { 0, 0, 0, NULL };
-  KosOpResult r = KosContext_NextResume(ctx, it, NULL, &resume_probe_kind, &probe);
+  KosOpResult r = KosContext_NextResume(ctx, it, &resume_probe_kind, &probe);
 
   TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
                  "a delivered, settled element is reported in hand");

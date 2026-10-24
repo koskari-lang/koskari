@@ -161,7 +161,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
     return EVAL_RAISE();
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source, NULL,
+      ctx, ((KosTransform *) state)->source,
       &accumulate_resume_fold_kind, state);
   RESULT_ENTRY(ctx, r, &accumulate_resume_fold_kind, state);
 }

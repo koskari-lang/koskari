@@ -123,7 +123,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
        zip_longest_resume_deliver, which files it and hops back here */
     {
       KosOpResult r = KosContext_NextResume(
-          ctx, t->sources[t->idx], NULL, &zip_longest_resume_deliver_kind, z);
+          ctx, t->sources[t->idx], &zip_longest_resume_deliver_kind, z);
       RESULT_ENTRY(ctx, r, &zip_longest_resume_deliver_kind, z);
     }
   }

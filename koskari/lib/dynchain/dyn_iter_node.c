@@ -49,21 +49,13 @@ void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter) {
 
 void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted) {
   if (req->islots)
-    req->islots->ki_finish(req->iter,
-                           exhausted && ! req->islots->ki_pyctx_recyclable);
-}
-
-
-void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted) {
-  kos_dyn_iter_request_finish_req(kos_dyn_iter_request(node), exhausted);
+    kos_iter_finish(req->iter, req->islots, exhausted);
 }
 
 
 PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node) {
 
-  KosIterRequest *req = kos_dyn_iter_request(node);
-
-  if (req && req->kind == KOS_IREQ_KIND_PY_ASYNC)
+  if (KosDynForeach_REQ(node)->kind == KOS_IREQ_KIND_PY_ASYNC)
     return PyExc_StopAsyncIteration;
   return PyExc_StopIteration;
 }

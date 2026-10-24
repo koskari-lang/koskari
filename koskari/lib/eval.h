@@ -671,8 +671,7 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    raises StopIteration, which reaches resume through the raise walk
    like an in-flight source's failure does; a request that fails
    before it defers raises at the caller with no resume set, since
-   nothing is in flight for the resume to finish. send_val is accepted
-   for a future Send entry point; unused today. Caller must have a
+   nothing is in flight for the resume to finish. Caller must have a
    current frame, and resume is required: every outcome but a settled
    element in hand and a synchronous failure reaches the caller
    through it.
@@ -680,7 +679,6 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
 KosOpResult KosContext_NextResume(
     KosContext *ctx,
     PyObject *iter,
-    PyObject *send_val,
     const KosResumeKind *resume,
     void *state);
 
@@ -1357,15 +1355,14 @@ void kos_iter_close(PyObject *iter);
 
 
 /**
-   One iteration request against a FOREACH region's request on record:
-   the single site API for stepping the region's iterator over all
-   three protocols. send_val borrowed; *fast_out new ref on
+   One iteration request against a FOREACH region's request on record,
+   which the caller holds: the single site API for stepping the
+   region's iterator over all three protocols. *fast_out new ref on
    DELIVERED/EXHAUSTED, the awaitable payload on EXIT.
 */
 KosIterRequestStatus KosIterRequest_Next(
     KosContext *ctx,
-    KosDynNode *node,
-    PyObject *send_val,
+    KosIterRequest *req,
     PyObject **fast_out);
 
 

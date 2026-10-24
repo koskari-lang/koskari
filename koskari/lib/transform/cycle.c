@@ -163,7 +163,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
     return EVAL_RAISE();
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source, NULL,
+      ctx, ((KosTransform *) state)->source,
       &cycle_resume_deliver_kind, state);
   RESULT_ENTRY(ctx, r, &cycle_resume_deliver_kind, state);
 }

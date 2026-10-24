@@ -132,7 +132,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
     return EVAL_RAISE();
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source, NULL,
+      ctx, ((KosTransform *) state)->source,
       &starmap_resume_invoke_kind, state);
   RESULT_ENTRY(ctx, r, &starmap_resume_invoke_kind, state);
 }

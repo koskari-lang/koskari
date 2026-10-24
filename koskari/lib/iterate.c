@@ -1524,8 +1524,7 @@ static void pyiter_ki_finish(PyObject *self, int exhausted) {
   KosPyIter *gen = (KosPyIter *) self;
 
   if (gen->provider)
-    gen->islots->ki_finish(
-        gen->provider, exhausted && ! gen->islots->ki_pyctx_recyclable);
+    kos_iter_finish(gen->provider, gen->islots, exhausted);
 }
 
 

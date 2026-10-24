@@ -192,6 +192,20 @@ typedef struct KosIterSlots {
 } KosIterSlots;
 
 
+/* A step of iter, a provider with suite islots, is over: tell the
+   provider, exhausted when the step was its end. A provider that
+   recycles its durable context re-derives exhaustion from its source
+   and stays open (a mapped function's StopIteration is a truncation
+   that builtins.map resumes from), so the end is withheld from it. */
+static inline void kos_iter_finish(
+    PyObject *iter,
+    KosIterSlots *islots,
+    int exhausted) {
+
+  islots->ki_finish(iter, exhausted && ! islots->ki_pyctx_recyclable);
+}
+
+
 typedef struct {
   PyTypeObject type;
   KosCallSlots kos_call;

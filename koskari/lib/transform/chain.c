@@ -114,7 +114,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
       }
       /* the next iterable is requested from the series; its
          delivery lands in chain_resume_series */
-      KosOpResult r = KosContext_NextResume(ctx, c->series, NULL,
+      KosOpResult r = KosContext_NextResume(ctx, c->series,
                                               &chain_resume_series_kind, c);
       RESULT_ENTRY(ctx, r, &chain_resume_series_kind, c);
     }
@@ -122,7 +122,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
     /* the element lands in chain_resume_deliver; a spent source is
        released there and the walk re-enters here */
     {
-      KosOpResult r = KosContext_NextResume(ctx, t->source, NULL,
+      KosOpResult r = KosContext_NextResume(ctx, t->source,
                                               &chain_resume_deliver_kind, c);
       RESULT_ENTRY(ctx, r, &chain_resume_deliver_kind, c);
     }

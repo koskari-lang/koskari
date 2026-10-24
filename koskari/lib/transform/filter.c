@@ -110,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
     return EVAL_RAISE();
 
   {
-    KosOpResult r = KosContext_NextResume(ctx, f->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, f->source,
                                             &filter_resume_do_invoke_kind, f);
     RESULT_ENTRY(ctx, r, &filter_resume_do_invoke_kind, f);
   }
