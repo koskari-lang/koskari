@@ -976,6 +976,19 @@ static inline void KosContext_StageDelivery(KosContext *ctx, PyObject *val) {
 }
 
 
+/** Empty the live registers derived from the chain. The caller has
+    freed the chain or moved it elsewhere. */
+static inline void KosContext_ClearLiveRegs(KosContext *ctx) {
+  KosContext_DYN_TOP(ctx) = NULL;
+  KosContext_FRAME(ctx) = NULL;
+  KosContext_CODE(ctx) = NULL;
+  KosContext_BLOCK(ctx) = NULL;
+  KosContext_NAMESPACE(ctx) = NULL;
+  ctx->pc = 0;
+  ctx->acting_pc = 0;
+}
+
+
 /**
    The result of an iteration install: thread into the installed frame
    when it can be threaded into; hand a bytecode frame halted on a
@@ -1526,16 +1539,19 @@ KosOpResult KosContext_Call(
    Install a frame for a native program: a resume and its state in
    place of code and a namespace, with frame_flags ORed in. A tail
    call reuses the live frame, as InstallCallFrame does for bytecode.
-   Otherwise a native frame is pushed. The frame carries the empty
-   namespace. The resume is set here, before the caller makes its
-   call, so a failure raised while this frame is current is delivered
-   to the resume as NULL. Returns the frame, or NULL with PyErr set.
+   Otherwise a native frame is pushed, taken from frame_cache when the
+   slot holds one (frame_cache may be NULL). The frame carries the
+   empty namespace. The resume is set here, before the caller makes
+   its call, so a failure raised while this frame is current is
+   delivered to the resume as NULL. Returns the frame, or NULL with
+   PyErr set.
 */
 KosDynFrame *KosContext_InstallNativeFrame(
     KosContext *ctx,
     const KosResumeKind *resume,
     void *state,
     uint32_t frame_flags,
+    KosDynFrame **frame_cache,
     int tail_call);
 
 
@@ -1545,8 +1561,10 @@ KosDynFrame *KosContext_InstallNativeFrame(
    form of a function whose body calls callable and then continues.
    Installs a native frame carrying resume, state, and frame_flags
    (KOS_FRAME_DEMAND refuses suspension within the call), reusing the
-   live frame on a tail call, and makes the call from it; the inner
-   call is never a tail call, since its return must reach the resume.
+   live frame on a tail call, else taking the frame from frame_cache
+   when the slot holds one (frame_cache may be NULL), and makes the
+   call from it; the inner call is never a tail call, since its
+   return must reach the resume.
    A value back in hand is staged for the resume; a callee's return
    and a settled value reach it the same way. A failure during the
    call reaches resume as a NULL delivery, which it must handle. Later
@@ -1562,6 +1580,7 @@ KosOpResult KosContext_CallInto(
     const KosResumeKind *resume,
     void *state,
     uint32_t frame_flags,
+    KosDynFrame **frame_cache,
     int tail_call);
 
 

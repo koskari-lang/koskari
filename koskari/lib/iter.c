@@ -476,15 +476,8 @@ static int agen_attach_gen_flatten(
   if (KosDynGen_ACTIVE(gen)) {
     /* the wrapper's own context drops its stale chain pointers, unless
        it is the drive context, whose chain the install extends */
-    if (agen->ctx && agen->ctx != ctx) {
-      KosContext_DYN_TOP(agen->ctx) = NULL;
-      KosContext_FRAME(agen->ctx) = NULL;
-      KosContext_CODE(agen->ctx) = NULL;
-      KosContext_BLOCK(agen->ctx) = NULL;
-      KosContext_NAMESPACE(agen->ctx) = NULL;
-      agen->ctx->pc = 0;
-      agen->ctx->acting_pc = 0;
-    }
+    if (agen->ctx && agen->ctx != ctx)
+      KosContext_ClearLiveRegs(agen->ctx);
     if (! agen->started) {
       /* never driven: the frame rests in the slot; the first install
          enters fresh code rather than reviving a yield */
@@ -507,13 +500,7 @@ static int agen_attach_gen_flatten(
     KosDynNode *head = KosContext_DYN_TOP(agen->ctx);
     if (kos_dyn_gen_install_bootstrap(ctx, gen, head) < 0)
       return -1;
-    KosContext_DYN_TOP(agen->ctx) = NULL;
-    KosContext_FRAME(agen->ctx) = NULL;
-    KosContext_CODE(agen->ctx) = NULL;
-    KosContext_BLOCK(agen->ctx) = NULL;
-    KosContext_NAMESPACE(agen->ctx) = NULL;
-    agen->ctx->pc = 0;
-    agen->ctx->acting_pc = 0;
+    KosContext_ClearLiveRegs(agen->ctx);
     return 0;
   }
 

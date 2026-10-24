@@ -190,13 +190,7 @@ static int context_clear(PyObject *self) {
      on it may point at freed memory */
   if (KosContext_DYN_TOP(ctx))
     kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-  KosContext_DYN_TOP(ctx) = NULL;
-  KosContext_FRAME(ctx) = NULL;
-  KosContext_BLOCK(ctx) = NULL;
-  KosContext_NAMESPACE(ctx) = NULL;
-  KosContext_CODE(ctx) = NULL;
-  ctx->pc = 0;
-  ctx->acting_pc = 0;
+  KosContext_ClearLiveRegs(ctx);
 
   while (KosContext_GOAL(ctx)) {
     KosXferGoal *goal = KosContext_GOAL(ctx);
@@ -267,13 +261,7 @@ int KosContext_Recycle(KosContext *ctx) {
      drive derives them again from the frame it installs */
   if (KosContext_DYN_TOP(ctx))
     kos_dynchain_free(KosContext_DYN_TOP(ctx), NULL);
-  KosContext_DYN_TOP(ctx) = NULL;
-  KosContext_FRAME(ctx) = NULL;
-  KosContext_BLOCK(ctx) = NULL;
-  KosContext_NAMESPACE(ctx) = NULL;
-  KosContext_CODE(ctx) = NULL;
-  ctx->pc = 0;
-  ctx->acting_pc = 0;
+  KosContext_ClearLiveRegs(ctx);
 
   KosContext_FLAGS(ctx) &= ~(KOS_CTX_DEAD | KOS_CTX_RUNNING);
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;

@@ -209,23 +209,6 @@ static KosOpResult kos_vinstall_expression(
 
 
 /**
-   Push a frame the caller has unlinked from the function's cache and
-   bound, and tag it with the function so its release can cache it
-   again.
-*/
-static inline KosOpResult func_install_cached_frame(
-    KosContext *ctx,
-    PyObject *callable,
-    KosDynFrame *cached) {
-
-  kos_dyn_push_ready_frame(ctx, cached);
-  Py_INCREF(callable);
-  KosDynFrame_FN(cached) = callable;
-  return kos_call_installed(ctx);
-}
-
-
-/**
    Install a KosFunction call. A simple call (exact arity against plain
    positional formals, no keywords, self-bind resolved) binds by slot
    index, storing the function into its own slot when its body names
@@ -268,10 +251,7 @@ KosOpResult KosFunction_Install(
         Py_INCREF(args[i]);
       (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
                                          nargs);
-      KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
-      (void) KosFunction_PopCachedFrame(callable);
-      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-      return func_install_cached_frame(ctx, callable, cached);
+      return kos_call_install_cached_frame(ctx, callable, cached, 0);
     }
 
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
@@ -321,7 +301,10 @@ KosOpResult KosFunction_Install(
       }
 
       KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
-      return func_install_cached_frame(ctx, callable, cached);
+      kos_dyn_push_ready_frame(ctx, cached);
+      Py_INCREF(callable);
+      KosDynFrame_FN(cached) = callable;
+      return kos_call_installed(ctx);
     }
   }
 

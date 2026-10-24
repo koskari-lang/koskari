@@ -244,7 +244,7 @@ static KosOpResult procedure_kos_vinstall(
 
   return KosContext_CallInto(
       ctx, wrapped, args, nargs, kwnames, &procedure_resume_kind, NULL,
-      KOS_FRAME_DEMAND, tail_call);
+      KOS_FRAME_DEMAND, NULL, tail_call);
 }
 
 

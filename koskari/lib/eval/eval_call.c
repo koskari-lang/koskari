@@ -399,15 +399,16 @@ KosOpResult KosContext_Call(
    Install a frame for a native program, the way InstallCallFrame
    installs one for bytecode: a tail call tears down to the live frame,
    resets it, and refills it as a native frame; otherwise a native
-   frame is pushed. Either way the frame carries the empty namespace,
-   the resume set, and frame_flags. Returns the frame, or NULL with
-   PyErr set.
+   frame is pushed, taken from frame_cache when the slot holds one.
+   Either way the frame carries the empty namespace, the resume set,
+   and frame_flags. Returns the frame, or NULL with PyErr set.
 */
 KosDynFrame *KosContext_InstallNativeFrame(
     KosContext *ctx,
     const KosResumeKind *resume,
     void *state,
     uint32_t frame_flags,
+    KosDynFrame **frame_cache,
     int tail_call) {
 
   KosDynFrame *frame;
@@ -426,7 +427,7 @@ KosDynFrame *KosContext_InstallNativeFrame(
     ctx->pc = 0;
     ctx->acting_pc = 0;
   } else {
-    frame = KosResumeFrame_Install(ctx, NULL, NULL, NULL);
+    frame = KosResumeFrame_Install(ctx, NULL, NULL, frame_cache);
     if (! frame)
       return NULL;
   }
@@ -447,10 +448,11 @@ KosOpResult KosContext_CallInto(
     const KosResumeKind *resume,
     void *state,
     uint32_t frame_flags,
+    KosDynFrame **frame_cache,
     int tail_call) {
 
   KosDynFrame *frame = KosContext_InstallNativeFrame(
-      ctx, resume, state, frame_flags, tail_call);
+      ctx, resume, state, frame_flags, frame_cache, tail_call);
   KosOpResult r;
 
   if (! frame)
@@ -476,7 +478,7 @@ KosOpResult KosContext_SettleInto(
     uint32_t frame_flags) {
 
   KosDynFrame *frame = KosContext_InstallNativeFrame(
-      ctx, resume, state, frame_flags, 0);
+      ctx, resume, state, frame_flags, NULL, 0);
   KosOpResult r;
 
   if (! frame) {
@@ -831,23 +833,20 @@ KOS_OP_INLINE KosOpResult kos_call_invoke_impl(
         }
 
         if (likely(cached)) {
+          KosOpResult r;
+
           /* Cache hit: steal-bind into the cached namespace first -- on
              failure nothing is stolen and the frame stays cached. */
           if (unlikely(KosFormals_SimpleStealApplyBlock(
                   KosDynFrame_NS(cached), *caller_slot, nargs) < 0)) {
             goto fail;
           }
-          KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
-          (void) KosFunction_PopCachedFrame(callable);
           window -= (size_t) nargs;
-          kos_dyn_push_ready_frame(ctx, cached);
-          if (! (flags & KOS_CALL_CALLABLE_OWNED))
-            Py_INCREF(callable);
-          KosDynFrame_FN(cached) = callable;
-          KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+          r = kos_call_install_cached_frame(
+              ctx, callable, cached, flags & KOS_CALL_CALLABLE_OWNED);
           if (window)
             kos_stack_drop_noerr_fast(caller_slot, window);
-          return kos_call_installed(ctx);
+          return r;
         }
 
         frame_ns = KosFunction_SimpleCallNamespaceStealBlock(
@@ -1118,12 +1117,8 @@ KOS_OP_INLINE int kos_call_cached_frame_install(
             KosDynFrame_NS(cached), *KosContext_BLOCK(ctx), nargs) < 0))
     return -1;
 
-  KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
-  (void) KosFunction_PopCachedFrame(callable);
-  kos_dyn_push_ready_frame(ctx, cached);
-  KosDynFrame_FN(cached) = callable;  /* the owned reference transfers */
-  KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-  *out = kos_call_installed(ctx);
+  /* the owned reference transfers */
+  *out = kos_call_install_cached_frame(ctx, callable, cached, 1);
   return 1;
 }
 
@@ -1155,23 +1150,20 @@ static KOS_NOINLINE KosOpResult kos_call_invoke_self_steal(
     goto fail;
 
   if (likely(cached)) {
+    KosOpResult r;
+
     /* Cache hit: steal-bind into the cached namespace first -- on
        failure nothing is stolen and the frame stays cached. */
     if (unlikely(KosFormals_SimpleStealApplySelfBlock(
             KosDynFrame_NS(cached), self_arg, 0, *caller_slot, nargs) < 0)) {
       goto fail;
     }
-    KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
-    (void) KosFunction_PopCachedFrame(callable);
     window -= (size_t) nargs;
-    kos_dyn_push_ready_frame(ctx, cached);
-    if (! (flags & KOS_CALL_CALLABLE_OWNED))
-      Py_INCREF(callable);
-    KosDynFrame_FN(cached) = callable;
-    KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+    r = kos_call_install_cached_frame(
+        ctx, callable, cached, flags & KOS_CALL_CALLABLE_OWNED);
     if (window)
       kos_stack_drop_noerr_fast(caller_slot, window);
-    return kos_call_installed(ctx);
+    return r;
   }
 
   frame_ns = KosFunction_SimpleCallNamespaceStealSelfBlock(

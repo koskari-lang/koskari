@@ -254,6 +254,31 @@ static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
 
 
 /**
+   Take the function's cached frame once the caller has bound the
+   arguments into its namespace: store the function into its own
+   slot, pop the frame from the cache, push it ready, tag it with the
+   function (a new reference unless owned hands the caller's over),
+   count the event, and report the install. The caller has asked
+   kos_eval_check_frame_room for one frame before the bind.
+*/
+KOS_OP_INLINE KosOpResult kos_call_install_cached_frame(
+    KosContext *ctx,
+    PyObject *callable,
+    KosDynFrame *cached,
+    int owned) {
+
+  KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
+  (void) KosFunction_PopCachedFrame(callable);
+  kos_dyn_push_ready_frame(ctx, cached);
+  if (! owned)
+    Py_INCREF(callable);
+  KosDynFrame_FN(cached) = callable;
+  KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+  return kos_call_installed(ctx);
+}
+
+
+/**
    Offer a released frame to the function's frame cache.
    The frame is cached only when the cache is under its cap and the
    frame is provably private: exact Namespace with refcount 1,

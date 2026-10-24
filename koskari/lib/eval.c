@@ -2294,7 +2294,7 @@ static KosOpResult entry_revive_await(
    frame_flags, and its return ends the drive; the install binds any
    argument shape, keywords included. Any other call (another
    callable, a function's first call, a generator) is made through
-   KosContext_Call from a code-less root frame carrying resume and
+   KosContext_CallInto from a code-less root frame carrying resume and
    frame_flags, taken from frame_cache when the slot holds one; the
    slot is also the resume's state, so the resume returns the frame to
    it. A value back in hand is staged for the resume, which the entry
@@ -2329,31 +2329,22 @@ static KOS_NOINLINE KosOpResult eval_phase_entry_call(KosContext *ctx) {
     }
 
   } else {
-    KosDynFrame *frame;
     int cached = call->frame_cache && *call->frame_cache;
 
     /* The root frame comes from the wrapper's slot when it holds one;
        the slot is the resume's state, so the resume returns the frame
-       to it. The inner call is never a tail call: its return must
-       reach this frame's resume. */
-    frame = KosResumeFrame_Install(ctx, call->resume, call->frame_cache,
-                                   call->frame_cache);
-    if (! frame) {
-      r = EVAL_RAISE();
+       to it. */
+    r = KosContext_CallInto(ctx, callable, call->args, call->nargs,
+                            call->kwnames, call->resume, call->frame_cache,
+                            call->frame_flags, call->frame_cache, 0);
 
-    } else {
-      if (cached)
-        KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_CACHED);
-      KosDynFrame_FLAGS(frame) |= call->frame_flags;
-      r = KosContext_Call(ctx, callable, call->args, call->nargs,
-                          call->kwnames, 0, call->resume, call->frame_cache);
-      if (r.kind == KOS_RES_RETURN) {
-        KosContext_StageDelivery(ctx, r.val);
-        r = EVAL_REPROLOGUE();
-      }
-      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
-        return EVAL_NORMAL();
-    }
+    /* The chain was empty, so a live frame now means the root frame
+       was installed; neither a failed call nor a value in hand takes
+       it down. */
+    if (cached && KosContext_FRAME(ctx))
+      KOS_TRACE_EVENTS_INC(KOS_TE_ENTRY_ROOT_CACHED);
+    if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
+      return EVAL_NORMAL();
   }
 
   r = apply_kos_op_result(ctx, r);
