@@ -194,6 +194,85 @@ static int test_domain_null_outside_eval(void) {
 }
 
 
+/* An entry the recursion guard refuses leaves no domain on the
+   context: the domain is taken after the guard. The guard is driven by
+   spending the thread's C recursion budget through CPython's own
+   counter. On an interpreter whose guard is a stack address rather
+   than a counter the budget cannot be spent from a flat call: the loop
+   reaches its cap, nothing is asserted about the refusal, and the test
+   says nothing more. */
+static int test_refused_entry_leaves_no_domain(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    /* every observation is taken inside the spent window and the
+       budget is given back before any assertion, so a failing
+       assertion cannot leave the thread's budget spent */
+    long spent = 0;
+    const long cap = 1L << 20;
+    int budget_spent;
+    int spent_error = 0;
+    int refused = 0;
+    int guard_error = 0;
+    int domain_left = 0;
+    int running_left = 0;
+
+    while (spent < cap && Py_EnterRecursiveCall(" in a test") == 0)
+      spent++;
+    budget_spent = spent < cap;
+
+    if (budget_spent) {
+      KosOpResult ev;
+
+      spent_error = PyErr_ExceptionMatches(PyExc_RecursionError);
+      PyErr_Clear();
+      ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+      refused = ev.kind == KOS_RES_RAISE;
+      guard_error = PyErr_ExceptionMatches(PyExc_RecursionError);
+      PyErr_Clear();
+      Py_XDECREF(ev.val);
+      domain_left = KosContext_DOMAIN(ctx) != NULL;
+      running_left = (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) != 0;
+    }
+
+    while (spent-- > 0)
+      Py_LeaveRecursiveCall();
+
+    if (budget_spent) {
+      TEST_ASSERT(spent_error, "the budget is spent");
+      TEST_ASSERT(refused, "the entry is refused");
+      TEST_ASSERT(guard_error, "with the guard's error");
+      TEST_ASSERT(! domain_left, "the refused entry left no domain");
+      TEST_ASSERT(! running_left, "the refused entry left the context idle");
+    }
+
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: tp_clear then dealloc releases the inject field once === */
 
 
@@ -2919,6 +2998,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_general_call_binds_into_cached_frame);
     RUN_TEST(test_eval_object_add_return);
     RUN_TEST(test_domain_null_outside_eval);
+    RUN_TEST(test_refused_entry_leaves_no_domain);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
     RUN_TEST(test_context_clear_drops_chain_caches);
     RUN_TEST(test_context_clear_releases_staged_delivery);
