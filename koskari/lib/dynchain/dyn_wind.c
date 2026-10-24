@@ -39,7 +39,7 @@ KosDynWind *kos_dynwind_new(
     return NULL;
 
   kos_dynnode_init(wind, KOS_DYN_WIND, parent,
-                   KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_HOLDS_OBLIGATION);
+                   KOS_DYN_CAP_CONTROL_HOOK);
   KosDynWind_BEFORE_THUNK(wind) = before_thunk;
   if (before_thunk)
     Py_INCREF(before_thunk);

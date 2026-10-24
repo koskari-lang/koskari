@@ -517,7 +517,7 @@ static KosOpResult goal_enter(KosContext *ctx, KosXferGoal *goal) {
     if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK))
       continue;
     if (KosDynNode_IS_WITH(node)
-        && ! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_NEEDS_INSTALL_WIND))
+        && KosDynWith_SHOT(node) != KOS_DYN_WITH_SHOT_MULTI)
       continue;
 
     before = KosContext_DYN_TOP(ctx);

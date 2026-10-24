@@ -76,7 +76,7 @@ KOS_OP_HANDLER(CONTINUE) {
         result ? result : Py_NewRef(Py_None));
 
     if (unlikely(wr.kind != KOS_RES_NORMAL))
-      return wr;
+      TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) wr.kind, wr.val);
     RESULT_NEXT_POLL(ctx);
   }
 }

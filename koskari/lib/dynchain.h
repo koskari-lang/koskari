@@ -117,16 +117,19 @@ typedef enum KosDynFlags {
    OWNS_NS follows its code object and moves with it (a placeholder
    filled with code gains it, a cached function frame keeps it).
 */
-#define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
+#define KOS_DYN_CAP_CATCH                    (1u << 0)
 /* a LOOP or FOREACH region still running its body: the region a break
    or continue lands on. CLEAR_LOOP and CLEAR_FOREACH take it away when
    the else clause starts, so a break or continue written there belongs
    to the enclosing loop. The one record of the region's enabled state. */
 #define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
-#define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
 /* the node reacts when control returns into it from a frame it owns:
-   the extent contract has work for it (WITH, WIND); a node
-   without it takes a callee's value on its segment and nothing more */
+   the extent contract has work for it (WITH, WIND), and it carries an
+   obligation slot (KosObligation), what it owes when it is unlinked --
+   a body value, an exception stored while its after thunk or __exit__
+   runs, or a return crossing a leave in flight; kos_dyn_node_ob is the
+   accessor behind the cap. A node without it takes a callee's value on
+   its segment and nothing more */
 #define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
 /** Node participates in raise-walk dispatch (handle/restitch); the fast
@@ -141,14 +144,6 @@ typedef enum KosDynFlags {
    native or code-less frame carries a fill and does not have it. */
 #define KOS_DYN_CAP_OWNS_NS                 (1u << 11)
 
-/* This kind carries an obligation slot (KosObligation): what it owes
-   when it is unlinked -- a body value, an exception stored while its
-   after thunk or __exit__ runs, or a return crossing a leave in flight.
-   kos_dyn_node_ob is the generic accessor behind this cap. */
-#define KOS_DYN_CAP_HOLDS_OBLIGATION         (1u << 12)
-
-/* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
-#define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
 
 typedef enum KosDynWindPhase {
@@ -1682,7 +1677,7 @@ KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return);
 
 
 /**
-   The obligation slot of a KOS_DYN_CAP_HOLDS_OBLIGATION node. Callers
+   The obligation slot of a KOS_DYN_CAP_CONTROL_HOOK node. Callers
    test the cap first; this is the per-kind dispatch behind it.
 */
 KosObligation *kos_dyn_node_ob(KosDynNode *node);

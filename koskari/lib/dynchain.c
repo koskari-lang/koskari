@@ -801,7 +801,7 @@ int kos_dyn_ob_traverse(KosObligation *ob, visitproc visit, void *arg) {
 static KosObligation *kos_dyn_ob_slot_for(KosDynNode *node) {
   KosObligation *ob;
 
-  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_HOLDS_OBLIGATION)) {
+  if (! KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
     PyErr_Format(PyExc_SystemError,
                  "obligation stored on a %s node, which carries none",
                  kos_dynnode_kind_name(KosDynNode_KIND(node)));
@@ -1920,7 +1920,7 @@ static KosOpResult kos_dyn_unlink_top_take(
       return r;
   }
 
-  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_HOLDS_OBLIGATION)) {
+  if (KosDynNode_HAS_CAP(node, KOS_DYN_CAP_CONTROL_HOOK)) {
     KosObligation *slot = kos_dyn_node_ob(node);
     ob = *slot;
     slot->kind = KOS_OB_NONE;
@@ -2058,13 +2058,6 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
              == KosDynFinally_HANDLING_CONTROL(tmpl)
           && KosDynFinally_EXC_SAVED(live) == KosDynFinally_EXC_SAVED(tmpl);
 
-    case KOS_DYN_LOOP:
-      /* the enabled state is a capability, compared above */
-      return 1;
-
-    case KOS_DYN_FOREACH:
-      return 1;
-
     case KOS_DYN_WIND:
       /* a template WIND is always idle (its clone resets the phase, to
          be entered by the landing's replay); the live one matches only
@@ -2082,6 +2075,7 @@ int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl) {
           && ! kos_dyn_with_single_exit_done((KosDynWith *) live);
 
     default:
+      /* a loop region's enabled state is a capability, compared above */
       return 1;
   }
 }
