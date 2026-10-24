@@ -580,11 +580,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_gen(
 
 
 /**
-   A python async delegate's step, the awaitable (consumed) for
-   __anext__, asend or athrow in hand: step it eagerly, and suspend on
-   it with the await kind set when it does not complete at once. A
-   plain function: its result is raw, for its thread-function caller
-   to relay.
+   A python async delegate's step, the awaitable (consumed) that
+   __anext__, asend or athrow returned in hand: step it eagerly, which
+   resolves it to its await iterator once, and suspend on it with the
+   await kind set when it does not complete at once. A plain function:
+   its result is raw, for its thread-function caller to relay.
 */
 static KosOpResult yf_py_async_await(
     KosContext *ctx,
@@ -690,12 +690,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_gen(
     Py_XDECREF(value);
     awaitable = get_await_next(delegate);
   } else {
-    PyObject *tmp = PyObject_CallMethodObjArgs(delegate, str_asend, value, NULL);
+    awaitable = PyObject_CallMethodObjArgs(delegate, str_asend, value, NULL);
     Py_DECREF(value);
-    if (tmp) {
-      awaitable = kos_get_awaitable(tmp);
-      Py_DECREF(tmp);
-    }
   }
   YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable,
                    &yf_drive_py_async_gen_kind, &yf_await_py_async_gen_kind);
@@ -730,8 +726,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
 
   PyObject *delegate = (PyObject *) state;
   KosDynFrame *frame = KosContext_FRAME(ctx);
-  PyObject *awaitable = NULL;
-  PyObject *tmp;
+  PyObject *awaitable;
 
   YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_PY_ASYNC_GEN);
 
@@ -739,12 +734,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
     Py_DECREF(exc);
     YF_FINISH(ctx, delegate);
   }
-  tmp = PyObject_CallMethodObjArgs(delegate, str_athrow, exc, NULL);
+  awaitable = PyObject_CallMethodObjArgs(delegate, str_athrow, exc, NULL);
   Py_DECREF(exc);
-  if (tmp) {
-    awaitable = kos_get_awaitable(tmp);
-    Py_DECREF(tmp);
-  }
   YF_PY_ASYNC_STEP(ctx, frame, delegate, awaitable,
                    &yf_drive_py_async_gen_kind, &yf_await_py_async_gen_kind);
 }

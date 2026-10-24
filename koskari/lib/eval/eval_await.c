@@ -78,9 +78,10 @@ static inline PyObject *KosContext_EagerStepAwaitable(
 
 
 /**
-   The awaitable for one step of an async iterator: am_anext, then
-   kos_get_awaitable on its result. New reference, or NULL on error or
-   when the type has no am_anext, with no exception set in that case.
+   The awaitable for one step of an async iterator: am_anext's result,
+   which the eager step resolves once. New reference, or NULL on error
+   or when the type has no am_anext, with no exception set in that
+   case.
 */
 static PyObject *get_await_next(PyObject *val) {
   PyTypeObject *type = Py_TYPE(val);
@@ -92,13 +93,7 @@ static PyObject *get_await_next(PyObject *val) {
   if (! anext)
     return NULL;
 
-  PyObject *thing = anext(val);
-  if (! thing)
-    return NULL;
-
-  PyObject *awaitable = kos_get_awaitable(thing);
-  Py_DECREF(thing);
-  return awaitable;
+  return anext(val);
 }
 
 

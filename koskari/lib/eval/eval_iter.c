@@ -157,9 +157,10 @@ int KosEval_ResultIsValue(PyObject *result) {
 
 /**
    Get next value from a Python async iterator using the given __anext__
-   awaitable. Caller must have obtained awaitable via get_await_next(iter);
-   this helper consumes it (DECREF). *result_out is set with a new
-   reference on GET_NEXT_VALUE.
+   awaitable. Caller must have obtained awaitable via get_await_next(iter),
+   unresolved, for the eager step to resolve once; this helper consumes
+   it (DECREF). *result_out is set with a new reference on
+   GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_async_iter(
     KosContext *ctx,
@@ -242,9 +243,9 @@ static inline KosGetNextResult op_get_next_from_iter(
   }
 
   /* NULL from get_await_next means the object has no am_anext, with
-     no exception set, or that __anext__ or GetAwaitable failed. A
-     synchronous StopAsyncIteration is this iterator's exhaustion,
-     exactly as it is once the awaitable is stepped. */
+     no exception set, or that __anext__ failed. A synchronous
+     StopAsyncIteration is this iterator's exhaustion, exactly as it is
+     once the awaitable is stepped. */
   if (PyErr_Occurred()) {
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyErr_Clear();
@@ -310,9 +311,8 @@ static inline KosGetNextResult op_get_next_from_bound(
                                          awaitable);
     /* No error: the type lost its __anext__ since the bind classified
        it; take the sync step, which raises for an iterator with neither.
-       Otherwise __anext__ or GetAwaitable failed, or raised
-       StopAsyncIteration synchronously, which is this iterator's
-       exhaustion. */
+       Otherwise __anext__ failed, or raised StopAsyncIteration
+       synchronously, which is this iterator's exhaustion. */
     if (! PyErr_Occurred())
       return op_get_next_from_bound(ctx, KOS_IREQ_KIND_PY_SYNC, await_out,
                                     iter, result_out);
