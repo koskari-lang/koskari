@@ -44,16 +44,6 @@ static PyObject *accumulate_fold(KosAccumulate *a, PyObject *element) {
 }
 
 
-/**
-   Emit the running total, which the provider keeps a reference to.
-*/
-static KosOpResult accumulate_emit(KosContext *ctx, KosAccumulate *a) {
-
-  Py_INCREF(a->total);
-  return KosNativeFrame_ReturnToCache(ctx, a->total, &a->base.cached_frame);
-}
-
-
 /* === the step's CPS resumes ===
 
    No frame-carrying capture: replaying a captured step would
@@ -96,7 +86,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
   Py_CLEAR(a->base.pending);
   Py_SETREF(a->total, value);
 
-  return accumulate_emit(ctx, a);
+  Py_INCREF(a->total);
+  RESULT_FRAME_RETURN(ctx, a->total, &a->base.cached_frame);
 }
 
 
@@ -118,7 +109,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
 
   if (! a->total) {
     a->total = element;  /* steals */
-    return accumulate_emit(ctx, a);
+    Py_INCREF(a->total);
+    RESULT_FRAME_RETURN(ctx, a->total, &a->base.cached_frame);
   }
 
   if (! t->fn.cs_callable) {
@@ -129,7 +121,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
       return EVAL_RAISE();
 
     Py_SETREF(a->total, folded);
-    return accumulate_emit(ctx, a);
+    Py_INCREF(a->total);
+    RESULT_FRAME_RETURN(ctx, a->total, &a->base.cached_frame);
   }
 
   /* pending holds the element across the call; the argument vector
