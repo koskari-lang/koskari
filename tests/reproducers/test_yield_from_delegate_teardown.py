@@ -30,6 +30,7 @@ handler takes it.
 
 import gc
 import unittest
+import weakref
 
 import pytest
 
@@ -132,6 +133,32 @@ class TestYieldFromDelegateTeardown(unittest.IsolatedAsyncioTestCase):
         del g
         gc.collect()
         self.assertEqual(["inner finally", "outer finally"], col)
+
+
+    async def test_cycle_through_the_delegate_is_collected(self):
+        """
+        a suspended delegating generator in a reference cycle through
+        its delegate is collectable: the delegate the frame holds is
+        visible to the cyclic collector
+        """
+        m = await self.load("yf_cycle")
+        col = []
+
+        class Box:
+            pass
+
+        def inner(box):
+            yield box
+            yield 2
+
+        box = Box()
+        g = iter(m["relay"](inner(box), col))
+        box.g = g
+        ref = weakref.ref(box)
+        next(g)
+        del g, box
+        gc.collect()
+        self.assertIsNone(ref())
 
 
     async def test_for_each_break_runs_the_koskari_delegate_finally(self):

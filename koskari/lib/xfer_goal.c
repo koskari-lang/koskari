@@ -303,6 +303,10 @@ int kos_xfer_goal_traverse(KosXferGoal *goal, visitproc visit, void *arg) {
     int r = KosStack_Traverse(goal->restore[i].stack, visit, arg);
     if (r)
       return r;
+    r = kos_resume_traverse(goal->restore[i].resume_kind,
+                            goal->restore[i].resume_state, visit, arg);
+    if (r)
+      return r;
   }
   if (goal->target)
     return kos_dynchain_traverse(goal->target, NULL, visit, arg);

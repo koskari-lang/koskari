@@ -251,19 +251,26 @@ int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
 
 
 /**
-   GC traverse a KOS_DYN_DELIM: visit the owned return chain and a held
+   GC traverse a KOS_DYN_DELIM: visit the owned return chain, a held
    yoyo return-address snapshot -- the snapshot's code, namespace, and
-   operand references have no other owner between invoke and restitch.
+   operand references have no other owner between invoke and restitch
+   -- and the displaced resume's state through its kind.
 */
 static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynNode *chain = KosDynDelim_RETURN_CHAIN((KosDynDelim *) node);
+  KosDynDelim *delim = (KosDynDelim *) node;
+  KosDynNode *chain = KosDynDelim_RETURN_CHAIN(delim);
+  int tr;
 
   if (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME) {
-    int tr = kos_dynnode_traverse(
-        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node), visit, arg);
+    tr = kos_dynnode_traverse(
+        KosDynDelim_RETURN_FRAME_NODE(delim), visit, arg);
     if (tr != 0)
       return tr;
   }
+  tr = kos_resume_traverse(KosDynDelim_SAVED_RESUME_KIND(delim),
+                           KosDynDelim_SAVED_RESUME_STATE(delim), visit, arg);
+  if (tr != 0)
+    return tr;
   if (! chain)
     return 0;
   return kos_dynchain_traverse(chain, NULL, visit, arg);

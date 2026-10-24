@@ -220,6 +220,28 @@ static void *yield_from_state_clone(void *state) {
 }
 
 
+/* The kind's traverse: the delegate is the state's one owned object. */
+static int yield_from_state_traverse(void *state, visitproc visit, void *arg) {
+  Py_VISIT((PyObject *) state);
+  return 0;
+}
+
+
+/* Every yield-from kind owns its delegate the same way. */
+#define YF_KIND(ident, fnp)                                             \
+  KOS_RESUME_KIND_DIRECT_OWNING(ident, "yield-from", fnp,               \
+                                yield_from_state_clear,                 \
+                                yield_from_state_clone,                 \
+                                yield_from_state_traverse)
+
+#define YF_KIND_THROWABLE(ident, fnp, throwp)                           \
+  KOS_RESUME_KIND_DIRECT_OWNING_THROWABLE(ident, "yield-from", fnp,     \
+                                          yield_from_state_clear,       \
+                                          yield_from_state_clone,       \
+                                          yield_from_state_traverse,    \
+                                          throwp)
+
+
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_iter(
     KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_gen(
@@ -249,58 +271,30 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
 
 /* The throw kinds: a throw into a waiting drive, the exception object
    as the value, thrown into the delegate per its kind. */
-KOS_RESUME_KIND_DIRECT(yf_throw_sync_iter_kind, "yield-from",
-                       yf_throw_sync_iter, yield_from_state_clear,
-                       yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_throw_sync_gen_kind, "yield-from",
-                       yf_throw_sync_gen, yield_from_state_clear,
-                       yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_throw_py_async_iter_kind, "yield-from",
-                       yf_throw_py_async_iter, yield_from_state_clear,
-                       yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_throw_py_async_gen_kind, "yield-from",
-                       yf_throw_py_async_gen, yield_from_state_clear,
-                       yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_throw_kos_iter_kind, "yield-from",
-                       yf_throw_kos_iter, yield_from_state_clear,
-                       yield_from_state_clone);
+YF_KIND(yf_throw_sync_iter_kind, yf_throw_sync_iter);
+YF_KIND(yf_throw_sync_gen_kind, yf_throw_sync_gen);
+YF_KIND(yf_throw_py_async_iter_kind, yf_throw_py_async_iter);
+YF_KIND(yf_throw_py_async_gen_kind, yf_throw_py_async_gen);
+YF_KIND(yf_throw_kos_iter_kind, yf_throw_kos_iter);
 
 /* The drive kinds: a next or a send from the consumer, each naming
    the throw kind that takes a throw instead. */
-KOS_RESUME_KIND_DIRECT_THROWABLE(yf_drive_sync_iter_kind, "yield-from",
-                                 yf_drive_sync_iter, yield_from_state_clear,
-                                 yield_from_state_clone,
-                                 &yf_throw_sync_iter_kind);
-KOS_RESUME_KIND_DIRECT_THROWABLE(yf_drive_sync_gen_kind, "yield-from",
-                                 yf_drive_sync_gen, yield_from_state_clear,
-                                 yield_from_state_clone,
-                                 &yf_throw_sync_gen_kind);
-KOS_RESUME_KIND_DIRECT_THROWABLE(yf_drive_py_async_iter_kind, "yield-from",
-                                 yf_drive_py_async_iter,
-                                 yield_from_state_clear,
-                                 yield_from_state_clone,
-                                 &yf_throw_py_async_iter_kind);
-KOS_RESUME_KIND_DIRECT_THROWABLE(yf_drive_py_async_gen_kind, "yield-from",
-                                 yf_drive_py_async_gen,
-                                 yield_from_state_clear,
-                                 yield_from_state_clone,
-                                 &yf_throw_py_async_gen_kind);
-KOS_RESUME_KIND_DIRECT_THROWABLE(yf_drive_kos_iter_kind, "yield-from",
-                                 yf_drive_kos_iter, yield_from_state_clear,
-                                 yield_from_state_clone,
-                                 &yf_throw_kos_iter_kind);
+YF_KIND_THROWABLE(yf_drive_sync_iter_kind, yf_drive_sync_iter,
+                  &yf_throw_sync_iter_kind);
+YF_KIND_THROWABLE(yf_drive_sync_gen_kind, yf_drive_sync_gen,
+                  &yf_throw_sync_gen_kind);
+YF_KIND_THROWABLE(yf_drive_py_async_iter_kind, yf_drive_py_async_iter,
+                  &yf_throw_py_async_iter_kind);
+YF_KIND_THROWABLE(yf_drive_py_async_gen_kind, yf_drive_py_async_gen,
+                  &yf_throw_py_async_gen_kind);
+YF_KIND_THROWABLE(yf_drive_kos_iter_kind, yf_drive_kos_iter,
+                  &yf_throw_kos_iter_kind);
 
 /* The waits on the delegate: an installed provider's element, an
    awaited python async step, one per python async drive. */
-KOS_RESUME_KIND_DIRECT(yf_emit_kos_iter_kind, "yield-from",
-                       yf_emit_kos_iter, yield_from_state_clear,
-                       yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_await_py_async_iter_kind, "yield-from",
-                       yf_await_py_async_iter, yield_from_state_clear,
-                       yield_from_state_clone);
-KOS_RESUME_KIND_DIRECT(yf_await_py_async_gen_kind, "yield-from",
-                       yf_await_py_async_gen, yield_from_state_clear,
-                       yield_from_state_clone);
+YF_KIND(yf_emit_kos_iter_kind, yf_emit_kos_iter);
+YF_KIND(yf_await_py_async_iter_kind, yf_await_py_async_iter);
+YF_KIND(yf_await_py_async_gen_kind, yf_await_py_async_gen);
 
 
 /* The drive kind a delegate kind elects. */

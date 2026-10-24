@@ -350,28 +350,61 @@ typedef struct KosResumeKind {
                    yield-from phases. A for-each step's region clears
                    it from the frame when the region leaves the chain
                    with the step in flight. */
+  int (*traverse)(void *state, visitproc visit, void *arg);
+                /* GC traverse of the state, for a kind whose state owns
+                   a Python object (a yield-from phase owns its
+                   delegate); NULL when the state owns none. Every
+                   holder of a resume state -- a frame, a delimiter's
+                   displaced resume, a transfer's restore record --
+                   visits through it. */
 } KosResumeKind;
 
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 1, 0 }
+    (label), (fnp), (clearp), (clonep), NULL, 1, 0, NULL }
 
 /* A kind that takes its delivery as it is. */
 #define KOS_RESUME_KIND_AS_IS(ident, label, fnp, clearp, clonep)        \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 0, 0 }
+    (label), (fnp), (clearp), (clonep), NULL, 0, 0, NULL }
 
 /* A kind a delivery calls directly. */
 #define KOS_RESUME_KIND_DIRECT(ident, label, fnp, clearp, clonep)       \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 0, 1 }
+    (label), (fnp), (clearp), (clonep), NULL, 0, 1, NULL }
 
 /* A direct kind with a throw kind: a throw into the halt runs throwp
    with the exception object as its value. */
 #define KOS_RESUME_KIND_DIRECT_THROWABLE(ident, label, fnp, clearp,     \
                                          clonep, throwp)                \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), (throwp), 0, 1 }
+    (label), (fnp), (clearp), (clonep), (throwp), 0, 1, NULL }
+
+/* A direct kind whose state owns a Python object: its clear, clone
+   and traverse keep that object's reference count and visibility to
+   the cyclic collector in step. */
+#define KOS_RESUME_KIND_DIRECT_OWNING(ident, label, fnp, clearp,        \
+                                      clonep, traversep)                \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), NULL, 0, 1, (traversep) }
+
+#define KOS_RESUME_KIND_DIRECT_OWNING_THROWABLE(ident, label, fnp,      \
+                                                clearp, clonep,         \
+                                                traversep, throwp)      \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), (throwp), 0, 1, (traversep) }
+
+/* GC traverse of a held resume state through its kind. */
+static inline int kos_resume_traverse(
+    const KosResumeKind *kind,
+    void *state,
+    visitproc visit,
+    void *arg) {
+
+  if (kind && kind->traverse)
+    return kind->traverse(state, visit, arg);
+  return 0;
+}
 
 /* The clone of a kind whose state is owned elsewhere and copied with
    the chain (a node's resume, whose state is NULL or the node

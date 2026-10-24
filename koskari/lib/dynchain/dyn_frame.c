@@ -527,15 +527,16 @@ int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
 
 
 /**
-   GC traverse a KOS_DYN_FRAME: visit the code and fn references.  The
-   frame's namespace and operand segment are visited generically by
-   kos_dynnode_traverse.
+   GC traverse a KOS_DYN_FRAME: visit the code and fn references, and
+   the resume state through its kind.  The frame's namespace and
+   operand segment are visited generically by kos_dynnode_traverse.
 */
 static int dynnode_traverse_frame(KosDynNode *node, visitproc visit, void *arg) {
   KosDynFrame *frame = (KosDynFrame *) node;
   Py_VISIT(KosDynFrame_CODE(frame));
   Py_VISIT(KosDynFrame_FN(frame));
-  return 0;
+  return kos_resume_traverse(KosDynFrame_RESUME_KIND(frame),
+                             KosDynFrame_RESUME_STATE(frame), visit, arg);
 }
 
 
