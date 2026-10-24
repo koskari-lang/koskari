@@ -17,16 +17,20 @@
   FAST_NEXT: fused FAST + OBJECT_NEXT. Arg = extra index. Schema
   FASTVAR (iterator slot), COUNT (n = 1 or 2). Stack: [] or [default]
   per n. Load the iterator from its fast slot and make the next request
-  (KosContext_NextResume, the arity as the resume's state) with the
-  request's resume; the default stays on the stack under the halted
-  instruction and is the result at the end. Auto-await.
+  (KosContext_NextResume, the arity picking the resume's kind). The
+  iterator is the resume's owned state; the default stays on the stack
+  under the halted instruction and is the result at the end. A request
+  that fails before it defers sets no resume, so the iterator is
+  released here. Auto-await.
 */
 KOS_OP_HANDLER(FAST_NEXT) {
   KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
   PyObject *ns = CURRENT_NS();
+  const KosResumeKind *kind;
   PyObject *iter;
+  KosOpResult r;
 
   KOS_OP_REQUIRE_NS(ns);
   if (unlikely(n != 1 && n != 2)) {
@@ -37,15 +41,12 @@ KOS_OP_HANDLER(FAST_NEXT) {
   iter = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
   if (unlikely(! iter))
     RESULT_RAISE();
-  /* the iterator stays on the stack under the halt, where the
-     request's resume takes it */
-  if (unlikely(KosContext_StackPUSH(ctx, iter) < 0))
-    RESULT_RAISE();
-
-  RESULT_ENTRY(ctx,
-               KosContext_NextResume(ctx, iter, &kos_next_resume_kind,
-                                     (void *) (uintptr_t) n),
-               &kos_next_resume_kind, (void *) (uintptr_t) n);
+  /* the resolved reference is the resume's owned state from here */
+  kind = (n == 2) ? &kos_next_default_resume_kind : &kos_next_resume_kind;
+  r = KosContext_NextResume(ctx, iter, kind, iter);
+  if (unlikely(r.kind == KOS_RES_RAISE))
+    Py_DECREF(iter);
+  RESULT_ENTRY(ctx, r, kind, iter);
 }
 
 

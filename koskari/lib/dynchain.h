@@ -402,6 +402,10 @@ static inline int kos_resume_traverse(
    itself): the state is handed on as it is. */
 void *kos_resume_clone_shared(void *state);
 
+/* The clone of a state that is one owned Python object: a new
+   reference to the same object. */
+void *kos_resume_clone_object(void *state);
+
 
 /* The record a LOOP and a FOREACH region share: where break and
    continue land, and the body's last continue value. */

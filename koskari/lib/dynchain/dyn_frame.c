@@ -167,6 +167,16 @@ void *kos_resume_clone_shared(void *state) {
 }
 
 
+/**
+   The clone of a state that is one owned Python object: a new
+   reference to the same object.
+*/
+void *kos_resume_clone_object(void *state) {
+  Py_XINCREF((PyObject *) state);
+  return state;
+}
+
+
 void kos_dynframe_clear_resume(KosDynFrame *frame) {
   const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
 

@@ -575,43 +575,67 @@ KOS_OP_INLINE KosOpResult kos_iter_step(
 }
 
 
-/* === The next request: KosContext_NextResume, the arity as state ===
+/* === The next request: KosContext_NextResume, the arity as kind ===
 
    OBJECT_NEXT and its fused twins VAR_NEXT and FAST_NEXT make their
-   request through KosContext_NextResume with kos_next_resume_kind,
-   the instruction's arity as the resume's state. The element reaches
-   that resume and nothing else: in hand the handler hops into it
-   through RESULT_ENTRY, deferred the delivery reaches it through the
-   frame, and an in-hand end through the prologue with StopIteration
-   pending. The instruction's operands stay on the operand stack under
-   the halt, where the resume finds them: the iterator on top, the
-   two-argument form's default under it. */
+   request through KosContext_NextResume with one of two kinds, the
+   instruction's arity picking it: kos_next_resume_kind for the
+   one-argument form, kos_next_default_resume_kind for the
+   two-argument form. The iterator is the resume's owned state. The
+   element reaches that resume and nothing else: in hand the handler
+   hops into it through RESULT_ENTRY, deferred the delivery reaches it
+   through the frame, and an in-hand end through the prologue with
+   StopIteration pending. The two-argument form's default stays on
+   the operand stack under the halt and is the result at the end. A
+   resume cleared without a delivery, as a transfer landing on the
+   frame clears it, finishes the step. */
 
 
 /**
-   The element, the end, or a failure, for a next instruction whose
-   arity is state. The iterator comes off the stack first and the step
-   is finished. An element replaces the default on the stack, when
-   there is one, and threads on. The end, StopIteration (or an async
-   source's StopAsyncIteration) pending, leaves the default as the
-   result for the two-argument form and raises StopIteration for the
-   one-argument form, the pending exception standing when it is one.
-   Anything else declines.
+   The kind's clear: a resume cleared without its delivery, as a
+   transfer landing on the frame clears it, abandons the step in
+   flight. The provider is finished as not exhausted so it can be
+   stepped again, and the iterator released.
 */
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
+static void kos_next_state_clear(void *state) {
+
+  PyObject *iter = (PyObject *) state;
+  KosIterSlots *islots;
+
+  if (! iter)
+    return;
+  if (KosIter_CheckSlots(iter, &islots))
+    kos_iter_finish(iter, islots, 0);
+  Py_DECREF(iter);
+}
+
+
+/* The kind's traverse: the iterator is the state's one owned object. */
+static int kos_next_state_traverse(void *state, visitproc visit, void *arg) {
+  Py_VISIT((PyObject *) state);
+  return 0;
+}
+
+
+/**
+   The element, the end, or a failure, for a next instruction of arity
+   n, iter being the resume's owned iterator. The step is finished and
+   the iterator released first. An element replaces the default on the
+   stack, when there is one, and the result is NORMAL for the calling
+   resume to thread on. The end, StopIteration (or an async source's
+   StopAsyncIteration) pending, leaves the default as the result for
+   the two-argument form, also NORMAL, and raises StopIteration for
+   the one-argument form, the pending exception standing when it is
+   one. Anything else declines.
+*/
+static inline KosOpResult next_step_deliver(
     KosContext *ctx,
-    void *state,
+    PyObject *iter,
+    unsigned n,
     PyObject *value) {
 
-  unsigned n = (unsigned) (uintptr_t) state;
-  PyObject *iter = KosContext_StackPopRef(ctx);
   KosIterSlots *islots;
   int ended;
-
-  if (unlikely(! iter)) {
-    Py_XDECREF(value);
-    return EVAL_RAISE();
-  }
 
   if (! value) {
     if (unlikely(! PyErr_Occurred())) {
@@ -625,8 +649,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
     ended = 0;
   }
 
-  /* The step is over: the instruction's iterator, held on the stack
-     under the halt, is finished when it is a provider and released. */
+  /* The step is over: the instruction's iterator, owned by the
+     resume's state, is finished when it is a provider and released. */
   if (KosIter_CheckSlots(iter, &islots))
     kos_iter_finish(iter, islots, ended);
   Py_DECREF(iter);
@@ -644,13 +668,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
     }
     if (unlikely(KosContext_StackPUSH(ctx, value) < 0))
       return EVAL_RAISE();
-    KOS_THREAD_NEXT(ctx);
+    return EVAL_NORMAL();
   }
 
   if (n == 2) {
     /* the default already sits where the result goes */
     PyErr_Clear();
-    KOS_THREAD_NEXT(ctx);
+    return EVAL_NORMAL();
   }
   if (PyErr_Occurred()) {
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
@@ -664,8 +688,43 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
 }
 
 
-KOS_RESUME_KIND_AS_IS(kos_next_resume_kind, "next",
-                       next_step_resume, NULL, kos_resume_clone_shared);
+/* The one-argument form's resume: the end raises StopIteration. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosOpResult r = next_step_deliver(ctx, (PyObject *) state, 1, value);
+
+  if (likely(r.kind == KOS_RES_NORMAL))
+    KOS_THREAD_NEXT(ctx);
+  return r;
+}
+
+
+/* The two-argument form's resume: the end leaves the default. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_default_step_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosOpResult r = next_step_deliver(ctx, (PyObject *) state, 2, value);
+
+  if (likely(r.kind == KOS_RES_NORMAL))
+    KOS_THREAD_NEXT(ctx);
+  return r;
+}
+
+
+KOS_RESUME_KIND_AS_IS_OWNING(kos_next_resume_kind, "next",
+                             next_step_resume, kos_next_state_clear,
+                             kos_resume_clone_object,
+                             kos_next_state_traverse);
+
+KOS_RESUME_KIND_AS_IS_OWNING(kos_next_default_resume_kind, "next",
+                             next_default_step_resume, kos_next_state_clear,
+                             kos_resume_clone_object,
+                             kos_next_state_traverse);
 
 
 /**
