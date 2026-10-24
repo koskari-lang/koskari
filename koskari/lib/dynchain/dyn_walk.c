@@ -560,11 +560,14 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
 
   while (KosContext_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL) {
 
-    /* The live frame's resume is first at every level: a frame pop or
-       a generator teardown that reveals a frame with a resume ends the
-       walk with RESUME, and the frame's resume takes the failure as a
-       NULL delivery, where it may thread on. A decline clears the
-       resume and re-enters the walk from this same dyn_top. */
+    /* The live frame's resume is first at every level, the frame the
+       raise ingress entered with and every frame a pop or a generator
+       teardown reveals: a resume is a halted instruction awaiting its
+       delivery, and the failure is that delivery. The walk ends with
+       RESUME and the resume takes the failure as a NULL, against a
+       settled chain where it may thread on. A decline clears the
+       resume and re-enters the walk from this same dyn_top, so this
+       terminates. */
     if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)))
       return EVAL_RESUME(NULL);
 
@@ -767,8 +770,7 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
          pending for the unlink to chain what the node was holding. A
          with fires __exit__ with the exception as its argument and
          stores it itself. */
-      int needs_preserve = (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP))
-          || top_is_barrier
+      int needs_preserve = top_is_barrier
           || (top_is_wind && ! kos_dyn_extent_in_flight(top));
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);

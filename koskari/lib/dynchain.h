@@ -118,7 +118,6 @@ typedef enum KosDynFlags {
    filled with code gains it, a cached function frame keeps it).
 */
 #define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
-#define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
 /* a LOOP or FOREACH region still running its body: the region a break
    or continue lands on. CLEAR_LOOP and CLEAR_FOREACH take it away when
    the else clause starts, so a break or continue written there belongs

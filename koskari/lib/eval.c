@@ -970,13 +970,13 @@ own_fail:
      4. cc dispatch  - continuation signal: handle_continuation_apply
                        (own token: invoke; foreign: cc-unwind goal);
                        REPROLOGUE re-enters the loop with a goal active
-     5. resume       - the live frame has a resume: RESUME with NULL,
-                       the failure pending, before any walk
-     6. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
-                       WITH / unwind extents
-     7. outcome map  - REPROLOGUE: handler applied, restart prologue.
-                       RESUME: a frame pop revealed a frame with a
-                       resume; the failure goes to it, as in step 5.
+     5. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
+                       WITH / unwind extents; the live frame's resume
+                       is first at every level
+     6. outcome map  - REPROLOGUE: handler applied, restart prologue.
+                       RESUME: the live frame, or one a frame pop
+                       revealed, has a resume; the failure goes to it
+                       as a NULL delivery.
                        AWAIT: async unwind started; tag KOS_SUSP_AWAIT,
                        mark suspended, propagate awaitable (caller owns
                        tl.val).
@@ -1014,22 +1014,6 @@ static KosOpResult process_raise(KosContext *ctx) {
 
   if (is_cc_apply)
     return handle_continuation_apply(ctx);
-
-  /* The live frame's resume gets the failure before the walk does,
-     whatever the frame: a resume is a halted instruction awaiting its
-     delivery, and the failure is that delivery. The answer is RESUME
-     with NULL: a thread caller relays it to the resume by tail call,
-     against a settled chain where the resume may thread on, and a
-     plain caller returns it to the trampoline, which delivers it
-     through the prologue. Every pre-walk step above has already run --
-     the goal stack is abandoned, so a transfer in flight cannot
-     outlive the failure the resume is about to handle. It terminates
-     because the delivery clears the resume; the walk answers RESUME
-     the same way each time a frame pop reveals a frame with a
-     resume. */
-  if (KosContext_FRAME(ctx)
-      && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)))
-    return EVAL_RESUME(NULL);
 
   {
     KosOpResult tl = kos_dyn_unwind_raise(ctx);
@@ -2946,9 +2930,8 @@ KOS_OP_INLINE int eval_region_resume_return(
 
 /**
    Resume-parent return predicate, for op_RETURN: the returning frame
-   is dyn_top, and its parent is a frame waiting on a resume with no
-   WITH beneath it to run a control-returned hook. Sets out_parent and
-   returns 1 when it holds.
+   is dyn_top, and its parent is a frame waiting on a resume. Sets
+   out_parent and returns 1 when it holds.
 */
 KOS_OP_INLINE int kos_return_is_resume(
     KosContext *ctx,
@@ -2956,7 +2939,6 @@ KOS_OP_INLINE int kos_return_is_resume(
 
   KosDynNode *child = (KosDynNode *) KosContext_FRAME(ctx);
   KosDynNode *parent;
-  KosDynNode *pp;
 
   if (! child || KosContext_DYN_TOP(ctx) != child)
     return 0;
@@ -2965,10 +2947,6 @@ KOS_OP_INLINE int kos_return_is_resume(
   if (! parent
       || ! KosDynNode_IS_FRAME(parent)
       || ! KosDynFrame_RESUME_KIND((KosDynFrame *) parent))
-    return 0;
-
-  pp = KosDynNode_PARENT(parent);
-  if (pp && KosDynNode_IS_WITH(pp))
     return 0;
 
   *out_parent = parent;
