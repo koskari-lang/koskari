@@ -65,8 +65,9 @@ KosOpResult KosContext_InstallCallFrame(
 
 /**
    Tail-call preamble for a plain-Python callable: pop the frame when it
-   is dyn_top, or defer delivery to a normal RETURN when extent nodes are
-   still open above it.  Sets *tail_defer_return accordingly.
+   is dyn_top and its parent is a plain frame, the one parent that
+   takes a return on its stack; otherwise defer delivery to a normal
+   RETURN. Sets *tail_defer_return accordingly.
 
    :return: 0 on success, -1 on error
 */
@@ -85,12 +86,15 @@ static int tail_prep_py_call(
     if (! parent)
       return 0;
 
-    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) frame)
+    if (KosContext_DYN_TOP(ctx) == (KosDynNode *) frame
+        && kos_return_parent_is_plain(parent))
       return kos_dyn_pop_frame(ctx);
   }
 
-  /* Extent nodes are still open above the frame; skip the tail pop and
-     deliver the result through a normal RETURN so they unwind properly. */
+  /* Extent nodes are still open above the frame, or the parent is a
+     region, a generator or a frame waiting on a resume, whose delivery
+     is the return event's to route: skip the tail pop and deliver the
+     result through a normal RETURN. */
   *tail_defer_return = 1;
   return 0;
 }
@@ -252,7 +256,8 @@ static KosOpResult kos_call_dispatch(
    stack: a value the dispatch reports in hand is pushed or awaited
    there and an installed callee is left current. A plain Python
    callable in tail position gives up the caller's frame before the
-   call. Reached from the class dispatch's legacy arm.
+   call when the frame's parent is a plain frame. Reached from the
+   class dispatch's legacy arm.
 */
 static KosOpResult kos_call_push(
     KosContext *ctx,
@@ -268,8 +273,9 @@ static KosOpResult kos_call_push(
   KosOpResult r;
 
   /* A plain Python callable in tail position gives up the caller's
-     frame before the call; a KosCallable that completes in hand keeps
-     it, and the RETURN following the TAIL_CALL retires it. */
+     frame before the call when the parent is a plain frame; a
+     KosCallable that completes in hand keeps it, and the RETURN
+     following the TAIL_CALL retires it. */
   if (! KosCallable_CheckSlots(callable, &slots)
       && ! KosInstanceCall_Check(callable)) {
     if (tail_prep_py_call(ctx, tail_call, &tail_defer_return) < 0)

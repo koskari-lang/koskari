@@ -134,6 +134,8 @@ static KosOpResult kos_eval_walk_outcome(KosContext *ctx, KosOpResult r);
 
 static KosOpResult eval_parent_return_deliver(KosContext *ctx, PyObject *val);
 
+static inline int kos_return_parent_is_plain(KosDynNode *parent);
+
 static KosOpResult eval_event_yield(
     KosContext *ctx,
     KosDynGen *gen,

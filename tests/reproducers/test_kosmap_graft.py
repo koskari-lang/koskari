@@ -41,6 +41,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 SRC = """
 import-from asyncio sleep
+import-from operator neg
 
 define inc [x]:
     (+ x 1)
@@ -68,11 +69,32 @@ define stopper [x]:
         raise (StopIteration)
     x
 
+define py-name [x]:
+    (str x)
+
+define call-in-try [x]:
+    try:
+        (py-name x)
+    except [e Exception]:
+        "no"
+
+define py-neg [x]:
+    (neg x)
+
+define map-lambda [xs]:
+    (collect (map (lambda [x] (neg x)) xs))
+
 define consume [it]:
     define total 0
     for-each [v it]:
         set! total (+ total v)
     total
+
+define collect [it]:
+    define out #[]
+    for-each [v it]:
+        out.append v
+    out
 
 define consume-caught [it]:
     try:
@@ -146,6 +168,20 @@ class TestKosMapInvokeGraft(unittest.IsolatedAsyncioTestCase):
         m = KosMap(v["inc"], v["raising-gen"](3))
         self.assertEqual(await v["consume-caught"](m), "gen")
         self.assertEqual(await v["consume"](m), 0)
+
+    async def test_mapped_function_tail_calling_python(self):
+        """
+        a mapped Koskari function whose body is a tail call to a Python
+        callable delivers that call's value as the element
+        """
+        mod = await self.load("kmg_py_tail")
+        v = vars(mod)
+        self.assertEqual(await v["collect"](KosMap(v["py-name"], [1, 2, 3])),
+                         ["1", "2", "3"])
+        self.assertEqual(await v["collect"](KosMap(v["py-neg"], [1, 2, 3])),
+                         [-1, -2, -3])
+        self.assertEqual(await v["map-lambda"]([1, 2, 3]), [-1, -2, -3])
+        self.assertEqual(await v["call-in-try"](7), "7")
 
     async def test_graft_stopiteration_exhausts(self):
         """
