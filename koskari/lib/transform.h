@@ -238,14 +238,22 @@ int kos_transform_source_spent(void);
 
 /**
    A fetch resume's first act: the source's step, deferred or not, is
-   over. A provider is finished (ki_finish), exhausted when the
-   delivery is its end; a plain iterator needs nothing. The transform
-   owns its source, so the finish is its own.
+   over. An async source that suspended before its end delivers that
+   end as StopAsyncIteration; the transform is a provider on the sync
+   protocol, whose end is StopIteration, so the source's end is
+   restated as the transform's own here, before the finish, the spent
+   test and the consumer judge it. A provider is finished (ki_finish),
+   exhausted when the delivery is its end; a plain iterator needs
+   nothing. The transform owns its source, so the finish is its own.
 */
 static inline void kos_transform_fetched(PyObject *source, PyObject *element) {
 
   KosIterSlots *islots;
 
+  if (! element && PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+    PyErr_Clear();
+    PyErr_SetNone(PyExc_StopIteration);
+  }
   if (KosIter_CheckSlots(source, &islots))
     islots->ki_finish(
         source,
