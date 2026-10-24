@@ -82,19 +82,6 @@ int koskari_demand_clear(PyObject *mod);
 */
 PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwargs);
 
-/**
-   Koskari_DemandSync over a vectorcall-shaped argument vector: args
-   holds nargs positionals then one value per kwnames entry (kwnames
-   may be NULL). args and kwnames are borrowed. 0 with *out_result a
-   new reference, or -1 with PyErr set.
-*/
-int Koskari_DemandSyncVector(
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    PyObject **out_result);
-
 
 /**
    A Demand wrapper, or a subtype, called from Python: the demand core

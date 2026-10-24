@@ -98,14 +98,9 @@ static PyObject *coroutine_new_bound(
   Py_INCREF(code);
   coro->code = code;
   coro->ns = ns;
-  coro->param_refs = NULL;
+  coro->param_refs = KosContext_Snapshot(kos_tls_current());
   Py_XINCREF(fn);
   coro->fn = fn;
-
-  if (KosContext_Snapshot(kos_tls_current(), &coro->param_refs) < 0) {
-    Py_DECREF(coro);
-    return NULL;
-  }
 
   PyObject_GC_Track((PyObject *) coro);
   return (PyObject *) coro;
@@ -639,8 +634,7 @@ static PyObject *coroutine_throw_pair(
            The send below checks the guard itself, so it drops first. */
         KosContext_PythonAwaitClearIter(coro->ctx);
         coro->state = KOS_CORO_RUNNING;
-        KosContext_PythonResumeSet(
-            coro->ctx, await_result, KOS_RESUME_AWAIT);
+        KosContext_PythonResumeSet(coro->ctx, await_result);
         coro->in_send = 0;
         return coroutine_send((PyObject *) coro, Py_None);
       } else {

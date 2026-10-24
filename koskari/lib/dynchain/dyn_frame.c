@@ -500,39 +500,6 @@ int kos_dyn_pop_frame(KosContext *ctx) {
 }
 
 
-/**
-   Detach the top frame from the context's dynamic chain without freeing it.
-
-   Sets KosContext_DYN_TOP(ctx) to the frame's parent and updates frame_top. Clears the
-   detached frame's parent link so it is fully disconnected from the chain.
-   The frame is returned in *frame_out; caller may keep it (e.g. for async
-   gen storage in agen->ctx).
-
-   :param ctx: context
-   :param frame_out: output; set to the detached frame (may be NULL)
-
-   :return: 0 on success, -1 if top is not a frame
-*/
-int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out) {
-  if (! KosContext_DYN_TOP(ctx)) {
-    PyErr_SetString(PyExc_RuntimeError, "no node to detach");
-    return -1;
-  }
-  if (! KosDynNode_IS_FRAME(KosContext_DYN_TOP(ctx))) {
-    PyErr_SetString(PyExc_RuntimeError, "top node is not a frame");
-    return -1;
-  }
-  KosDynFrame *frame = (KosDynFrame *) KosContext_DYN_TOP(ctx);
-  KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) frame);
-
-  kos_dyn_commit_dyn_top(ctx, parent);
-  KosDynNode_PARENT(frame) = NULL;
-  if (frame_out)
-    *frame_out = frame;
-  return 0;
-}
-
-
 /* === GC traversal === */
 
 

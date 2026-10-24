@@ -377,18 +377,6 @@ PyObject *Koskari_DemandSync(
 }
 
 
-int Koskari_DemandSyncVector(
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    PyObject **out_result) {
-
-  *out_result = demand_sync_vector(callable, args, nargs, kwnames, NULL);
-  return *out_result ? 0 : -1;
-}
-
-
 /* === KosDemand (wrapper) === */
 
 

@@ -365,7 +365,7 @@ static KosOpResult revive_await(
       if (step == PYGEN_RETURN) {
         PyObject *await_result = res;
         KosContext_PythonAwaitClearIter(ctx);
-        KosContext_PythonResumeSet(ctx, await_result, KOS_RESUME_AWAIT);
+        KosContext_PythonResumeSet(ctx, await_result);
         PyErr_Clear();
         /* Fall through: push inject like a normal successful resume */
       }
@@ -376,12 +376,9 @@ static KosOpResult revive_await(
     }
   }
   PyObject *to_push = NULL;
-  uint8_t resume_kind_unused;
   /* Take transfers the stored inject's reference to us (owned == 1);
      the send_val fallback is borrowed from the caller. */
-  int owned = KosContext_PythonResumeTake(
-      ctx, &to_push, &resume_kind_unused);
-  (void) resume_kind_unused;
+  int owned = KosContext_PythonResumeTake(ctx, &to_push);
   if (to_push == NULL && send_val != NULL) {
     to_push = send_val;
   }
@@ -3834,7 +3831,7 @@ KosOpResult koskari_eval(
      and taken by the revive; an entry that skipped the revive (an await
      iterator still pending) clears it here, so the trampoline and the
      chain never touch it. */
-  KosContext_PythonResumeSet(ctx, NULL, KOS_RESUME_NONE);
+  KosContext_PythonResumeSet(ctx, NULL);
 
   /* === the trampoline === */
 

@@ -1165,19 +1165,6 @@ int kos_dyn_pop_frame(KosContext *ctx);
 
 
 /**
-   Detach the top frame without freeing it. Clears the detached frame's
-   parent link so it is fully disconnected from the chain. Caller receives
-   the frame.
-
-   :param ctx: execution context
-   :param frame_out: output; set to the detached frame (may be NULL)
-
-   :return: 0 on success, -1 if top is not a frame
-*/
-int kos_dyn_detach_top_frame(KosContext *ctx, KosDynFrame **frame_out);
-
-
-/**
    Push a prompt delimiter onto the dynamic chain.
 
    :param ctx: execution context

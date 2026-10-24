@@ -149,12 +149,6 @@ typedef enum KosContextFlags {
 
 typedef KosDynFrame KosFrame;
 
-#define KosFrame_CODE(f)       KosDynFrame_CODE(f)
-#define KosFrame_PC(f)         KosDynFrame_PC(f)
-#define KosFrame_ACTING_PC(f)  KosDynFrame_ACTING_PC(f)
-#define KosFrame_STACK(f)      KosDynFrame_STACK(f)
-#define KosFrame_NS(f)         KosDynFrame_NS(f)
-
 
 /**
   KosSuspensionEvent records why the evaluator last suspended.
@@ -803,6 +797,11 @@ struct KosContext {
                          resume delivery leave with it instead of
                          applying it again */
 
+  /* Last eval boundary reason for revive */
+  uint8_t suspension_event;  /* KosSuspensionEvent */
+
+  uint32_t flags;            /* KosContextFlags */
+
   KosEvaluatorToken *token; /* ownership marker for continuations; NULL
                                until the first capture mints it */
   PyObject *domain;         /* KosDomain while an eval runs the context:
@@ -822,7 +821,6 @@ struct KosContext {
 
   /* --- Python bridge: await/yield suspend and resume --- */
   PyObject *py_resume_inject;  /* value to push on next koskari_eval when resuming */
-  uint8_t py_resume_kind;      /* 0=none, 1=await, 2=yield */
   PyObject *py_await_iter;     /* iterator from __await__() when suspended on AWAIT */
 
   /* --- Entry call (set by a Python-boundary entry on a fresh context):
@@ -836,11 +834,6 @@ struct KosContext {
      each other's view. Context-isolated: a fresh context starts with
      empty handler state (no fall-through to the host's). --- */
   KosExcState exc_info;
-
-  /* Last eval boundary reason for revive */
-  uint8_t suspension_event;  /* KosSuspensionEvent */
-
-  uint32_t flags;            /* KosContextFlags */
 };
 
 
@@ -861,11 +854,6 @@ extern PyTypeObject KosContextType;
 #define KosContext_GOAL(c)                   (((KosContext *)(c))->goal)
 #define KosContext_PY_AWAIT_ITER(c)          (((KosContext *)(c))->py_await_iter)
 #define KosContext_PY_RESUME_INJECT(c)       (((KosContext *)(c))->py_resume_inject)
-#define KosContext_PY_RESUME_KIND(c)         (((KosContext *)(c))->py_resume_kind)
-
-#define KOS_RESUME_NONE  0
-#define KOS_RESUME_AWAIT 1
-#define KOS_RESUME_YIELD 2
 #define KosContext_ENTRY_CALL(c)             (((KosContext *)(c))->entry_call)
 #define KosContext_EXC_INFO(c)               (&((KosContext *)(c))->exc_info)
 
@@ -1029,21 +1017,6 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 #define KosContext_StackPopRef(ctx) \
   kos_stack_pop_ref_fast(KosContext_BLOCK(ctx))
 
-#define KosContext_GetFast(ctx, index) \
-  KosNamespace_FastDeref(KosContext_CurrentNamespace(ctx), (index))
-
-#define KosContext_SetFast(ctx, index, value) \
-  KosNamespace_FastStore(KosContext_CurrentNamespace(ctx), (index), (value))
-
-#define KosContext_GetVar(ctx, key) \
-  KosNamespace_Resolve(KosContext_CurrentNamespace(ctx), (key))
-
-#define KosContext_StackSteal_Tail(ctx, s, count) \
-  KosStackSteal_Tail((s), (count), KosContext_BLOCK(ctx))
-
-#define KosContext_StackSteal_TailPrepend(ctx, s, prefix, count) \
-  KosStackSteal_TailPrepend((s), (prefix), (count), KosContext_BLOCK(ctx))
-
 #define KosContext_StackPopTail(ctx, count) \
   KosStack_PopTail(KosContext_BLOCK(ctx), (count))
 
@@ -1074,17 +1047,11 @@ static inline KosOpResult kos_iter_installed(KosContext *ctx) {
 #define KosContext_StackPopTailDict(ctx, count) \
   KosStack_PopTailDict(KosContext_BLOCK(ctx), (count))
 
-#define KosContext_StackPopTailDictNames(ctx, count) \
-  KosStack_PopTailDictNames(KosContext_BLOCK(ctx), (count))
-
 #define KosContext_StackPopTailDictFromNames(ctx, names) \
   KosStack_PopTailDictFromNames(KosContext_BLOCK(ctx), (names))
 
 #define KosContext_StackPeek(ctx) \
   kos_stack_peek_fast(*KosContext_BLOCK(ctx))
-
-#define KosContext_StackPeekAt(ctx, index) \
-  KosStack_PeekAt(*KosContext_BLOCK(ctx), (index))
 
 #define KosContext_StackPeekUnder(ctx, under) \
   kos_stack_peek_under_fast(*KosContext_BLOCK(ctx), (under))
@@ -1228,18 +1195,9 @@ int KosContext_SetFrameCodeAndNamespace(
 
 KosEvaluatorToken *KosContext_Token(const KosContext *ctx);
 
-/**
-  Innermost dyn node that owns a non-NULL operand stack (from dyn_top toward
-  root). NULL if no explicit stack on the chain.
-*/
-KosDynNode *KosContext_InnermostStackOwner(KosContext *ctx);
-
 void KosContext_PythonAwaitClearIter(KosContext *ctx);
 PyObject *KosContext_PythonAwaitIter(KosContext *ctx);
-void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind);
-
-int KosContext_ParentStackPushRef(KosContext *ctx, PyObject *val);
-int KosContext_ParentStackPUSH(KosContext *ctx, PyObject *val);
+void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val);
 
 /**
    Pop TOS and materialize it as a fast sequence for the UNPACK family.
@@ -1255,17 +1213,6 @@ PyObject *KosContext_PopUnpackSequence(
     const char *who);
 
 
-/**
-  Pop tail PyObject * fields into aggregate agg (deepest first, TOS last).
-  Same layout contract as KOS_STACK_BLOCK_POP_ARGS in stack.h.
-*/
-#define KOS_CONTEXT_POP_ARGS(ctx, agg) \
-  kos_stack_pop_tail_ptr_fast( \
-      KosContext_BLOCK(ctx), \
-      sizeof(agg) / sizeof(PyObject *), \
-      (PyObject **)(void *)&(agg))
-
-
 /* === Context lifecycle === */
 
 
@@ -1279,7 +1226,7 @@ PyObject *KosContext_PopUnpackSequence(
   :return: new reference to the context, or NULL on error
 */
 KosContext *KosContext_New(KosDynFrame *top, KosTlsState *s);
-int KosContext_Snapshot(KosTlsState *s, PyObject **cells);
+PyObject *KosContext_Snapshot(KosTlsState *s);
 KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells);
 KosEvaluatorToken *KosContext_EnsureToken(KosContext *ctx);
 

@@ -80,34 +80,20 @@ PyObject *KosContext_PythonAwaitIter(KosContext *ctx) {
 }
 
 
-void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val, uint8_t kind) {
+void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val) {
 
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   KosContext_PY_RESUME_INJECT(ctx) = val;
-  KosContext_PY_RESUME_KIND(ctx) = kind;
-}
-
-
-static inline void KosContext_PythonAwaitSetIter(
-    KosContext *ctx,
-    PyObject *iter) {
-
-  Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
-  KosContext_PY_AWAIT_ITER(ctx) = iter;
 }
 
 
 static inline int KosContext_PythonResumeTake(
     KosContext *ctx,
-    PyObject **out_val,
-    uint8_t *out_kind) {
+    PyObject **out_val) {
 
   if (out_val)
     *out_val = KosContext_PY_RESUME_INJECT(ctx);
-  if (out_kind)
-    *out_kind = KosContext_PY_RESUME_KIND(ctx);
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   return (out_val && *out_val != NULL) ? 1 : 0;
 }
 

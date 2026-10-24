@@ -48,7 +48,6 @@ typedef enum KosTraceEventId {
   KOS_TE_SEG_INLINE_INSTALL,
   KOS_TE_SEG_INLINE_SPILL,
   KOS_TE_RETARGET_WALK_FALLBACK,
-  KOS_TE_PARENT_SLOT_WALK,
   KOS_TE_LIVE_REBUILD,
   /* call-class routing: frame_cached = simple call served by a cached
      frame; simple_steal = steal-bind into a fresh namespace; simple_vector

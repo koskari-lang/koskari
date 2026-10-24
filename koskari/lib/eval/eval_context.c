@@ -65,21 +65,20 @@ static void context_freelist_drain(void) {
    moment are captured; the first writer on either side copies it
    first, see kos_context_param_refs. No domain is part of it: a
    context takes its domain at each eval entry from the thread running
-   it. *cells comes back as a new reference, NULL when there are none.
-   s is the calling thread's record (kos_tls_current). Returns -1 with
-   an error set.
+   it. s is the calling thread's record (kos_tls_current). Returns a
+   new reference to the cells, or NULL when there are none; it cannot
+   fail.
 */
-int KosContext_Snapshot(KosTlsState *s, PyObject **cells) {
+PyObject *KosContext_Snapshot(KosTlsState *s) {
 
   KosContext *active = kos_tls_active_context(s);
   PyObject *table = kos_param_ambient_cells(s, active);
 
-  *cells = NULL;
   if (table && PyDict_GET_SIZE(table) > 0) {
     Py_INCREF(table);
-    *cells = table;
+    return table;
   }
-  return 0;
+  return NULL;
 }
 
 
@@ -141,12 +140,7 @@ KosContext *KosContext_NewFromSnapshot(KosDynFrame *top, PyObject *cells) {
 
 
 KosContext *KosContext_New(KosDynFrame *top, KosTlsState *s) {
-
-  PyObject *cells;
-
-  if (KosContext_Snapshot(s, &cells) < 0)
-    return NULL;
-  return KosContext_NewFromSnapshot(top, cells);
+  return KosContext_NewFromSnapshot(top, KosContext_Snapshot(s));
 }
 
 
@@ -222,7 +216,6 @@ static int context_clear(PyObject *self) {
   ctx->breaker = NULL;
   ctx->recursion_limit = 0;
   ctx->terminal = 0;
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   KosContext_ENTRY_CALL(ctx) = NULL;
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
   KosContext_FLAGS(ctx) = 0;
@@ -286,7 +279,6 @@ int KosContext_Recycle(KosContext *ctx) {
   KosContext_SUSPENSION_EVENT(ctx) = KOS_SUSP_NONE;
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
   Py_CLEAR(KosContext_PY_RESUME_INJECT(ctx));
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
 
   /* residue of the finished run that the next one must not inherit:
      an unconsumed entry call, a staged delivery, and the
