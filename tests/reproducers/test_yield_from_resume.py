@@ -23,6 +23,7 @@ for-each body interleaves with the loop's own step resume.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import os
 import unittest
 
@@ -61,6 +62,44 @@ def py_echo(n):
 async def apy_gen(n):
     for i in range(n):
         yield i * 2
+
+
+async def apy_sleeper(n, log):
+    try:
+        for i in range(n):
+            await asyncio.sleep(0)
+            yield i * 2
+    finally:
+        log.append("sleeper finally")
+
+
+async def apy_echo_sleeper():
+    got = yield 0
+    await asyncio.sleep(0)
+    yield ("got", got)
+
+
+class SlowCounter:
+    """
+    A python async iterator with no asend whose every step awaits
+    """
+
+    def __init__(self, n, fail_at=None):
+        self.i = 0
+        self.n = n
+        self.fail_at = fail_at
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.sleep(0)
+        if self.i == self.fail_at:
+            raise ValueError("step failed")
+        if self.i >= self.n:
+            raise StopAsyncIteration
+        self.i += 1
+        return self.i
 
 
 class TestYieldFromResume(unittest.IsolatedAsyncioTestCase):
@@ -124,6 +163,31 @@ class TestYieldFromResume(unittest.IsolatedAsyncioTestCase):
     async def test_close_closes_the_delegate(self):
         ns = await self.load()
         self.assertEqual((1, ["closed"]), await ns['close_through']())
+
+    async def test_suspending_python_async_generator_delegate(self):
+        ns = await self.load()
+        log = []
+        self.assertEqual([0, 2, 4, "after"],
+                         await ns['collect'](ns['outer'](apy_sleeper(3, log))))
+        self.assertEqual(["sleeper finally"], log)
+
+    async def test_suspending_python_async_iterator_delegate(self):
+        ns = await self.load()
+        self.assertEqual([1, 2, 3, "after"],
+                         await ns['collect'](ns['outer'](SlowCounter(3))))
+
+    async def test_failure_after_an_await_reaches_the_try(self):
+        ns = await self.load()
+        self.assertEqual(
+            [1, "step failed", "after"],
+            await ns['collect'](ns['guarded'](SlowCounter(3, fail_at=1))))
+
+    async def test_send_after_an_awaited_step(self):
+        ns = await self.load()
+        g = ns['outer'](apy_echo_sleeper())
+        self.assertEqual(0, await g.__anext__())
+        self.assertEqual(("got", "x"), await g.asend("x"))
+        self.assertEqual("after", await g.__anext__())
 
 
 # The end.
