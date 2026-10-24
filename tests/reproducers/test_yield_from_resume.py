@@ -24,6 +24,7 @@ for-each body interleaves with the loop's own step resume.
 """
 
 import asyncio
+import gc
 import os
 import unittest
 
@@ -220,6 +221,17 @@ class TestYieldFromResume(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([0, 1, 2, "after", "after", None],
                          await ns['send_nested'](3))
         self.assertEqual([[10, 20, 30]], list(ns['log']))
+
+    async def test_close_releases_a_python_async_generator_delegate(self):
+        ns = await self.load()
+        log = []
+        g = ns['outer'](apy_sleeper(5, log))
+        self.assertEqual(0, await g.__anext__())
+        self.assertIsNone(await g.aclose())
+        gc.collect()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        self.assertEqual(["sleeper finally"], log)
 
     async def test_close_over_a_python_async_iterator_delegate(self):
         ns = await self.load()

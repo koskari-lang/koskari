@@ -18,6 +18,9 @@ Tests for YIELD and async gen opcodes.
 :license: GNU General Public License v3
 """
 
+import gc
+import weakref
+
 import pytest
 
 from koskari.lib import AsyncGenerator, FormalsSpec, demand_call
@@ -359,6 +362,73 @@ class TestAgenDeallocWhenFrozen(CevalTest):
         gc.collect()
         self.assertIn("done", ran)
         self.assertIs(ran["done"], True)
+
+
+class Marker:
+    """
+    A weakly referenceable argument whose lifetime the tests observe
+    """
+
+
+class TestAgenReleasesFrameWhenFinished(CevalTest):
+    """
+    A generator driven from Python releases its frame, and every local
+    with it, when it finishes rather than when the generator object dies
+    """
+
+    def make_generator_fn(self):
+        """
+        A yielding function of one argument that yields once, then returns
+        """
+
+        _, base_ns = build_expr([["CONST", 0], ["RETURN", 1]], values={})
+        code = build_code(
+            [
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=("x",),
+            name="yields_once",
+        )
+        return make_callable(code, base_ns, FormalsSpec(("x",)))
+
+
+    async def test_exhausted_generator_releases_its_locals(self):
+        """
+        Exhausting the generator from Python frees its argument while
+        the generator object is still held
+        """
+
+        fn = self.make_generator_fn()
+        marker = Marker()
+        ref = weakref.ref(marker)
+        g = fn(marker)
+        del marker
+        self.assertIsInstance(g, AsyncGenerator)
+        self.assertEqual([1], [v async for v in g])
+        gc.collect()
+        self.assertIsNone(ref())
+        del g
+
+
+    async def test_closed_generator_releases_its_locals(self):
+        """
+        Closing the generator from Python after its first element frees
+        its argument while the generator object is still held
+        """
+
+        fn = self.make_generator_fn()
+        marker = Marker()
+        ref = weakref.ref(marker)
+        g = fn(marker)
+        del marker
+        self.assertIsInstance(g, AsyncGenerator)
+        self.assertEqual(1, await anext(g))
+        self.assertIsNone(await g.aclose())
+        gc.collect()
+        self.assertIsNone(ref())
+        del g
 
 
 # The end.

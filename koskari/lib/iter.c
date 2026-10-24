@@ -685,13 +685,42 @@ static int agen_iter_close(PyObject *self) {
 }
 
 
+/**
+   The suite's ki_finish: the step is over, and the generator is closed
+   when it was the end. An exhausted finish from the Python-driven
+   completion frees the completed chain on the wrapper's context and
+   the wrapper's GEN, so the generator's locals go when it finishes
+   rather than when the object dies; the next step then reports
+   exhaustion through the missing GEN.
+
+   The chain frees the GEN's chain reference, and the release below
+   the wrapper's own, which frees the GEN and drops its keepalive on
+   the wrapper. A Koskari consumer's completion leaves no chain on the
+   wrapper's context: its finish releases the wrapper's reference
+   alone, before the teardown releases the chain's or after it, and
+   agen->gen is cleared first, so a repeated finish releases nothing.
+   A context whose recycle is refused keeps its chain and the GEN on
+   it, both left for the teardown.
+*/
 static void agen_iter_finish(PyObject *self, int exhausted) {
 
   KosPyAsyncGen *agen = (KosPyAsyncGen *) self;
+  KosDynGen *gen = (KosDynGen *) agen->gen;
 
   agen->in_progress = 0;
-  if (exhausted)
-    agen->closed = 1;
+  if (! exhausted)
+    return;
+
+  agen->closed = 1;
+
+  if (agen->ctx && KosContext_DYN_TOP(agen->ctx)
+      && KosContext_Recycle(agen->ctx) < 0)
+    return;
+
+  if (gen && ! KosDynGen_ACTIVE(gen)) {
+    agen->gen = NULL;
+    kos_dyngen_release(gen);
+  }
 }
 
 
