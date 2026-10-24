@@ -81,7 +81,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
   KosAccumulate *a = (KosAccumulate *) state;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &a->base);
 
   Py_CLEAR(a->base.pending);
   Py_SETREF(a->total, value);
@@ -105,7 +105,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
   kos_transform_fetched(t->source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (! a->total) {
     a->total = element;  /* steals */
@@ -146,17 +146,17 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
     KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source,
-      &accumulate_resume_fold_kind, state);
-  RESULT_ENTRY(ctx, r, &accumulate_resume_fold_kind, state);
+      ctx, t->source, &accumulate_resume_fold_kind, t);
+  RESULT_ENTRY(ctx, r, &accumulate_resume_fold_kind, t);
 }
 
 

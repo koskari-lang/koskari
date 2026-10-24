@@ -100,7 +100,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (t->idx < t->nsrc) {
     /* the element lands in zip_resume_deliver, which files it and
@@ -136,7 +136,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_deliver(
   kos_transform_fetched(t->sources[t->idx], element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   zip_row_set(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;

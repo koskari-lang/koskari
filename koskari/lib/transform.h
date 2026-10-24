@@ -308,6 +308,20 @@ static inline void kos_transform_fetched(PyObject *source, PyObject *element) {
 
 
 /**
+   Decline a failed delivery from a transform's resume: the step frame
+   is set to return to the transform's cache when the raise walk frees
+   it, and the pending exception propagates.
+*/
+static inline KosOpResult kos_transform_decline(
+    KosContext *ctx,
+    KosTransform *t) {
+
+  KosNativeFrame_CacheOnFree(ctx, &t->cached_frame);
+  return EVAL_RAISE();
+}
+
+
+/**
    Undo a partially installed step before reporting KOS_ITER_ERROR:
    release the held element and pop everything pushed since the step
    began (the program frame, a failed call's prepped frame), so the

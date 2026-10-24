@@ -68,7 +68,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
      pops and the consumer's step resume owns the conversion
      (StopIteration truncation parity included). */
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, m);
 
   RESULT_FRAME_RETURN(ctx, value, &m->cached_frame);
 }
@@ -90,7 +90,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
   kos_transform_fetched(m->source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, m);
 
   r = KosContext_Call(
       ctx, m->fn.cs_callable, &element, 1, NULL, 0,
@@ -112,6 +112,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
     KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
@@ -119,12 +120,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
   /* The raise walk is propagating an exception: let it, as every
      resume does. */
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source,
-      &map_resume_after_fetch_kind, state);
-  RESULT_ENTRY(ctx, r, &map_resume_after_fetch_kind, state);
+      ctx, t->source, &map_resume_after_fetch_kind, t);
+  RESULT_ENTRY(ctx, r, &map_resume_after_fetch_kind, t);
 }
 
 

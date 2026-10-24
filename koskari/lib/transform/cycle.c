@@ -123,7 +123,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
 
   if (! element) {
     if (! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
     if (! cycle_switch_to_buffer(c)) {
@@ -155,17 +155,17 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
     KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source,
-      &cycle_resume_deliver_kind, state);
-  RESULT_ENTRY(ctx, r, &cycle_resume_deliver_kind, state);
+      ctx, t->source, &cycle_resume_deliver_kind, t);
+  RESULT_ENTRY(ctx, r, &cycle_resume_deliver_kind, t);
 }
 
 

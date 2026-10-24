@@ -377,7 +377,7 @@ void kos_transform_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
   /* the context teardown runs first: a frame still on the chain that
-     KosNativeFrame_ReturnToCache flagged is stored into cached_frame,
+     KosNativeFrame_CacheOnFree flagged is stored into cached_frame,
      and the free below reclaims it either way */
   kos_transform_clear(self);
   if (t->cached_frame) {

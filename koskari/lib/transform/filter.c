@@ -107,7 +107,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, f);
 
   {
     KosOpResult r = KosContext_NextResume(ctx, f->source,
@@ -131,7 +131,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
   kos_transform_fetched(f->source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, f);
 
   /* None predicate: the element's own truthiness is the verdict. */
   if (! f->fn.cs_callable) {
@@ -176,7 +176,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
   int ok;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, f);
 
   ok = PyObject_IsTrue(value);
   Py_DECREF(value);

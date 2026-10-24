@@ -79,7 +79,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_after_result(
   KosTransform *t = (KosTransform *) state;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   RESULT_FRAME_RETURN(ctx, value, &t->cached_frame);
 }
@@ -101,7 +101,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
   kos_transform_fetched(t->source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   args = starmap_unpack(element);
   if (! args)
@@ -124,17 +124,17 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_invoke(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_start_fetch(
     KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   r = KosContext_NextResume(
-      ctx, ((KosTransform *) state)->source,
-      &starmap_resume_invoke_kind, state);
-  RESULT_ENTRY(ctx, r, &starmap_resume_invoke_kind, state);
+      ctx, t->source, &starmap_resume_invoke_kind, t);
+  RESULT_ENTRY(ctx, r, &starmap_resume_invoke_kind, t);
 }
 
 

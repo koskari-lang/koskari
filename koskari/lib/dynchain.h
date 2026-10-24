@@ -440,7 +440,8 @@ struct KosDynNode {
       /* A caller-owned one-frame cache (KosDynFrame **) this frame
          is stored into when the return path frees it; meaningful
          only while KOS_FRAME_RETURN_TO_CACHE is set, which
-         KosNativeFrame_ReturnToCache alone does. */
+         KosNativeFrame_CacheOnFree alone does, for the return and for
+         a resume declining a failure. */
       void *cache_slot;
       /* CPS consumer resume (the contract is in eval.h): the kind names
          the entry to invoke on the next value staged to this frame and
@@ -2041,7 +2042,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
                                                 offers the frame there
                                                 (kos_dynframe_cache_inert).
                                                 Set only by
-                                                KosNativeFrame_ReturnToCache */
+                                                KosNativeFrame_CacheOnFree */
 #define KosDynFrame_CACHE_SLOT(f) (((KosDynNode *)(f))->u.frame.cache_slot)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)

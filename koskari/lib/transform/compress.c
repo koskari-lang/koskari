@@ -84,7 +84,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   /* the element lands in compress_resume_deliver, which files it
      and hops back here; either source running out ends the
@@ -110,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
   kos_transform_fetched(t->sources[t->idx], element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (t->idx == COMPRESS_DATA) {
     t->pending = element;  /* steals */

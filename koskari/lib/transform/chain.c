@@ -104,7 +104,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   for (;;) {
     if (! t->source) {
@@ -146,7 +146,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
 
   if (! element) {
     if (! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
     Py_CLEAR(t->source);
@@ -173,12 +173,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
 
   if (! iterable) {
     if (! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, &c->base);
 
     /* the series is spent, and with it the chain: the StopIteration
        stands as the step's outcome */
     Py_CLEAR(c->series);
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &c->base);
   }
 
   r = chain_take_source(c, iterable);

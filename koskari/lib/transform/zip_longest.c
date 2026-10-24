@@ -110,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   while (t->idx < t->nsrc) {
     if (! t->sources[t->idx]) {
@@ -154,10 +154,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
 
   if (! element) {
     if (! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, t);
 
+    /* the StopIteration already pending ends it */
     if (! zip_longest_retire(z, t->idx))
-      return EVAL_RAISE();  /* the StopIteration already pending ends it */
+      return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
     zip_longest_fill(z, t->pending, t->idx);

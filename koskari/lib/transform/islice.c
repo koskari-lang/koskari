@@ -137,7 +137,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (s->cnt < s->next) {
     KosOpResult r = KosContext_NextResume(ctx, t->source,
@@ -172,7 +172,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
   kos_transform_fetched(s->base.source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &s->base);
 
   Py_DECREF(element);
   s->cnt++;
@@ -193,7 +193,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
   kos_transform_fetched(s->base.source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &s->base);
 
   s->cnt++;
   islice_advance(s);

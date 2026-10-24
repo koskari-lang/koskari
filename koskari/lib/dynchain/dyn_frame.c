@@ -202,9 +202,9 @@ void kos_dynframe_free(KosDynFrame *frame) {
 
   kos_dynframe_clear_resume(frame);
 
-  /* A completing frame set by KosNativeFrame_ReturnToCache: cache_slot is
-     the holder's cache slot; offer the frame there before the ordinary
-     teardown. */
+  /* A frame set by KosNativeFrame_CacheOnFree, completing or declining
+     a failure: cache_slot is the holder's cache slot; offer the frame
+     there before the ordinary teardown. */
   if (KosDynFrame_FLAGS(frame) & KOS_FRAME_RETURN_TO_CACHE) {
     KosDynFrame **cache =
         (KosDynFrame **) KosDynFrame_CACHE_SLOT(frame);

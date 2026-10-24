@@ -96,7 +96,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   /* Entered from the step's deferred fetch, with the batch so far
      pending, and re-entered from batched_resume_deliver: every fetch
@@ -135,7 +135,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
     PyObject *shorter;
 
     if (! b->filled || ! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
     shorter = batched_short(b);

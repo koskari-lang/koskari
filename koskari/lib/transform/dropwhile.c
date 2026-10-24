@@ -88,7 +88,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   {
     KosOpResult r = KosContext_NextResume(ctx, t->source,
@@ -111,7 +111,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
   kos_transform_fetched(t->source, element);
 
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   /* Retired predicate: every remaining element passes untested. */
   if (d->passed)
@@ -142,7 +142,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
   int ok;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   ok = PyObject_IsTrue(value);
   Py_DECREF(value);
