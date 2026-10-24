@@ -101,9 +101,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(cycle_resume_deliver_kind, "cycle-step",
+KOS_RESUME_KIND_AS_IS(cycle_resume_deliver_kind, "cycle-step",
                 cycle_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(cycle_resume_fetch_kind, "cycle-step",
+KOS_RESUME_KIND_AS_IS(cycle_resume_fetch_kind, "cycle-step",
                 cycle_resume_fetch, kos_transform_step_clear, NULL);
 
 

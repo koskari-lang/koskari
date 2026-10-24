@@ -75,9 +75,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
 
 KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step",
                 filter_resume_after_verdict, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step",
+KOS_RESUME_KIND_AS_IS(filter_resume_do_fetch_kind, "filter-step",
                 filter_resume_do_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
+KOS_RESUME_KIND_AS_IS(filter_resume_do_invoke_kind, "filter-step",
                 filter_resume_do_invoke, kos_transform_step_clear, NULL);
 
 

@@ -75,6 +75,10 @@ define consume [it]:
         set! total (+ total v)
     total
 
+define yield-each [items]:
+    for-each [c items]:
+        yield c
+
 define collect [it]:
     define out (list)
     for-each [v it]:
@@ -362,6 +366,35 @@ class TestProviderErrorPaths(unittest.IsolatedAsyncioTestCase):
     async def agen_123(self):
         for i in (1, 2, 3):
             yield i
+
+    async def test_elements_reach_the_mapper_as_they_are(self):
+        """
+        an element the source yields is data: a coroutine object reaches
+        the mapper unawaited, from a python async generator source and
+        from a koskari generator source that yields objects it did not
+        call for; only a call's result is settled
+        """
+
+        async def make(i):
+            return i
+
+        async def agen():
+            for i in range(2):
+                yield make(i)
+
+        def probe(c):
+            is_coro = asyncio.iscoroutine(c)
+            if is_coro:
+                c.close()
+            return is_coro
+
+        self.assertEqual(
+            [x async for x in KosMap(probe, agen())], [True, True],
+            "python async generator source")
+        self.assertEqual(
+            [x async for x in KosMap(
+                probe, self.v["yield-each"]([make(0), make(1)]))],
+            [True, True], "koskari generator source")
 
     async def test_map_result_awaitable_is_settled(self):
         """

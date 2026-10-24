@@ -49,9 +49,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(pairwise_resume_deliver_kind, "pairwise-step",
+KOS_RESUME_KIND_AS_IS(pairwise_resume_deliver_kind, "pairwise-step",
                 pairwise_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
+KOS_RESUME_KIND_AS_IS(pairwise_resume_fetch_kind, "pairwise-step",
                 pairwise_resume_fetch, kos_transform_step_clear, NULL);
 
 

@@ -77,9 +77,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(batched_resume_deliver_kind, "batched-step",
+KOS_RESUME_KIND_AS_IS(batched_resume_deliver_kind, "batched-step",
                 batched_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(batched_resume_fill_kind, "batched-step",
+KOS_RESUME_KIND_AS_IS(batched_resume_fill_kind, "batched-step",
                 batched_resume_fill, kos_transform_step_clear, NULL);
 
 

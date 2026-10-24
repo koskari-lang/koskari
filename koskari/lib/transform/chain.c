@@ -81,11 +81,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_fetch(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_series(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(chain_resume_deliver_kind, "chain-step",
+KOS_RESUME_KIND_AS_IS(chain_resume_deliver_kind, "chain-step",
                 chain_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(chain_resume_fetch_kind, "chain-step",
+KOS_RESUME_KIND_AS_IS(chain_resume_fetch_kind, "chain-step",
                 chain_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(chain_resume_series_kind, "chain-step",
+KOS_RESUME_KIND_AS_IS(chain_resume_series_kind, "chain-step",
                 chain_resume_series, kos_transform_step_clear, NULL);
 
 

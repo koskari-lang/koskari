@@ -337,14 +337,14 @@ typedef struct KosResumeKind {
   void (*clear)(void *state);
   void *(*clone)(void *state);
   const struct KosResumeKind *throw_kind;
-  int settle;   /* the delivery is settled before fn sees it: 0 for a
-                   kind whose delivery is data, as a delegate's yielded
-                   value or a for-each element is */
-  int direct;   /* a kind that takes its delivery as it is: the step
-                   resumes of the for-each and next instructions, the
-                   yield-from phases. A for-each step's region clears
-                   it from the frame when the region leaves the chain
-                   with the step in flight. */
+  int settle;   /* the delivery is settled before fn sees it: 1 for a
+                   kind that takes a call's result, 0 for a kind whose
+                   delivery is data -- a for-each element, a next's
+                   element, a delegate's yielded value, a transform
+                   source's element -- which reaches fn as it is. A
+                   for-each step's region clears its kind from the
+                   frame when the region leaves the chain with the
+                   step in flight. */
   int (*traverse)(void *state, visitproc visit, void *arg);
                 /* GC traverse of the state, for a kind whose state owns
                    a Python object (a yield-from phase owns its
@@ -354,40 +354,36 @@ typedef struct KosResumeKind {
                    visits through it. */
 } KosResumeKind;
 
+/* A kind that takes a call's result: the delivery is settled first. */
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 1, 0, NULL }
+    (label), (fnp), (clearp), (clonep), NULL, 1, NULL }
 
 /* A kind that takes its delivery as it is. */
 #define KOS_RESUME_KIND_AS_IS(ident, label, fnp, clearp, clonep)        \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 0, 0, NULL }
+    (label), (fnp), (clearp), (clonep), NULL, 0, NULL }
 
-/* A kind a delivery calls directly. */
-#define KOS_RESUME_KIND_DIRECT(ident, label, fnp, clearp, clonep)       \
-  static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 0, 1, NULL }
-
-/* A direct kind with a throw kind: a throw into the halt runs throwp
+/* An as-is kind with a throw kind: a throw into the halt runs throwp
    with the exception object as its value. */
-#define KOS_RESUME_KIND_DIRECT_THROWABLE(ident, label, fnp, clearp,     \
-                                         clonep, throwp)                \
+#define KOS_RESUME_KIND_AS_IS_THROWABLE(ident, label, fnp, clearp,      \
+                                        clonep, throwp)                 \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), (throwp), 0, 1, NULL }
+    (label), (fnp), (clearp), (clonep), (throwp), 0, NULL }
 
-/* A direct kind whose state owns a Python object: its clear, clone
+/* An as-is kind whose state owns a Python object: its clear, clone
    and traverse keep that object's reference count and visibility to
    the cyclic collector in step. */
-#define KOS_RESUME_KIND_DIRECT_OWNING(ident, label, fnp, clearp,        \
-                                      clonep, traversep)                \
+#define KOS_RESUME_KIND_AS_IS_OWNING(ident, label, fnp, clearp,         \
+                                     clonep, traversep)                 \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), NULL, 0, 1, (traversep) }
+    (label), (fnp), (clearp), (clonep), NULL, 0, (traversep) }
 
-#define KOS_RESUME_KIND_DIRECT_OWNING_THROWABLE(ident, label, fnp,      \
-                                                clearp, clonep,         \
-                                                traversep, throwp)      \
+#define KOS_RESUME_KIND_AS_IS_OWNING_THROWABLE(ident, label, fnp,       \
+                                               clearp, clonep,          \
+                                               traversep, throwp)       \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), (throwp), 0, 1, (traversep) }
+    (label), (fnp), (clearp), (clonep), (throwp), 0, (traversep) }
 
 /* GC traverse of a held resume state through its kind. */
 static inline int kos_resume_traverse(

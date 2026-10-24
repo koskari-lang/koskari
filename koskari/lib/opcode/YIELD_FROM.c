@@ -228,15 +228,15 @@ static int yield_from_state_traverse(void *state, visitproc visit, void *arg) {
    runs outside the evaluator with no capture point inside it. One
    owner, so the clear's close at teardown is the delegate's only. */
 #define YF_KIND(ident, fnp)                                             \
-  KOS_RESUME_KIND_DIRECT_OWNING(ident, "yield-from", fnp,               \
-                                yield_from_state_clear, NULL,           \
-                                yield_from_state_traverse)
+  KOS_RESUME_KIND_AS_IS_OWNING(ident, "yield-from", fnp,                \
+                               yield_from_state_clear, NULL,            \
+                               yield_from_state_traverse)
 
 #define YF_KIND_THROWABLE(ident, fnp, throwp)                           \
-  KOS_RESUME_KIND_DIRECT_OWNING_THROWABLE(ident, "yield-from", fnp,     \
-                                          yield_from_state_clear, NULL, \
-                                          yield_from_state_traverse,    \
-                                          throwp)
+  KOS_RESUME_KIND_AS_IS_OWNING_THROWABLE(ident, "yield-from", fnp,      \
+                                         yield_from_state_clear, NULL,  \
+                                         yield_from_state_traverse,     \
+                                         throwp)
 
 
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_iter(

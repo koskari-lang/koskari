@@ -340,8 +340,8 @@ static inline KosGetNextResult op_get_next_from_bound(
    its end. The resume finishes the region's request, since the
    region owns the iterator, then threads on or jumps to the else
    target. The resume's state is the step instruction, which carries
-   the else target and the slot or name. The kinds are direct and
-   take their delivery as it is: an element is data, never awaited.
+   the else target and the slot or name. The kinds take their delivery
+   as it is: an element is data, never awaited.
    A failure reaches the resume as a NULL with the error pending: the
    region's own end is the end of the iteration, anything else
    declines and the raise walk goes on. */
@@ -475,12 +475,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_var_resume(
 }
 
 
-KOS_RESUME_KIND_DIRECT(kos_iter_next_resume_kind, "for-each-step",
+KOS_RESUME_KIND_AS_IS(kos_iter_next_resume_kind, "for-each-step",
                        iter_next_push_resume, NULL, kos_resume_clone_shared);
-KOS_RESUME_KIND_DIRECT(kos_iter_next_store_fast_resume_kind, "for-each-step",
+KOS_RESUME_KIND_AS_IS(kos_iter_next_store_fast_resume_kind, "for-each-step",
                        iter_next_store_fast_resume, NULL,
                        kos_resume_clone_shared);
-KOS_RESUME_KIND_DIRECT(kos_iter_next_store_var_resume_kind, "for-each-step",
+KOS_RESUME_KIND_AS_IS(kos_iter_next_store_var_resume_kind, "for-each-step",
                        iter_next_store_var_resume, NULL,
                        kos_resume_clone_shared);
 
@@ -674,7 +674,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
 }
 
 
-KOS_RESUME_KIND_DIRECT(kos_next_resume_kind, "next",
+KOS_RESUME_KIND_AS_IS(kos_next_resume_kind, "next",
                        next_step_resume, NULL, kos_resume_clone_shared);
 
 

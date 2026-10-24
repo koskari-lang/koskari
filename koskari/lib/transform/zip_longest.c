@@ -89,9 +89,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(zip_longest_resume_deliver_kind, "zip-longest-step",
+KOS_RESUME_KIND_AS_IS(zip_longest_resume_deliver_kind, "zip-longest-step",
                 zip_longest_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(zip_longest_resume_fetch_kind, "zip-longest-step",
+KOS_RESUME_KIND_AS_IS(zip_longest_resume_fetch_kind, "zip-longest-step",
                 zip_longest_resume_fetch, kos_transform_step_clear, NULL);
 
 

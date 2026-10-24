@@ -45,9 +45,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
     KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(takewhile_resume_fetch_kind, "takewhile-step",
+KOS_RESUME_KIND_AS_IS(takewhile_resume_fetch_kind, "takewhile-step",
                 takewhile_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(takewhile_resume_invoke_kind, "takewhile-step",
+KOS_RESUME_KIND_AS_IS(takewhile_resume_invoke_kind, "takewhile-step",
                 takewhile_resume_invoke, kos_transform_step_clear, NULL);
 KOS_RESUME_KIND(takewhile_resume_verdict_kind, "takewhile-step",
                 takewhile_resume_verdict, kos_transform_step_clear, NULL);

@@ -2175,6 +2175,10 @@ KosOpResult KosContext_NextResume(
 
   switch (KosNativeFrame_RequestNext(ctx, iter, &out)) {
     case KOS_IREQ_DELIVERED:
+      /* an element is data to a kind that takes its delivery as it
+         is; a kind that takes a call's result settles it */
+      if (! resume->settle)
+        return EVAL_RETURN(out);
       return kos_entry_value(ctx, frame, out, resume, state);
 
     case KOS_IREQ_CONTINUES:
