@@ -311,7 +311,7 @@ static inline void kos_tstate_exc_top(
 
   PyObject *exc = tstate->exc_info->exc_value;
 
-  if (! exc || exc == Py_None) {
+  if (! kos_tstate_exc_held(tstate)) {
     *type = NULL;
     *value = NULL;
     *tb = NULL;

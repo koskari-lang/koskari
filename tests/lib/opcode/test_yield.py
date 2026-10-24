@@ -431,4 +431,62 @@ class TestAgenReleasesFrameWhenFinished(CevalTest):
         del g
 
 
+async def answer_once():
+    yield 1
+
+
+def context_of_step(agen):
+    """
+    The value and __context__ a sync step of agen's first __anext__
+    carries on its StopIteration, taken inside a handled ValueError
+    """
+
+    try:
+        raise ValueError("handled")
+    except ValueError:
+        step = agen.__anext__()
+        try:
+            step.__next__()
+        except StopIteration as stop:
+            return stop.value, stop.__context__
+    return None
+
+
+class TestAgenStopIterationChaining(CevalTest):
+    """
+    A Koskari generator stepped synchronously from Python carries its
+    element in a StopIteration the way the running interpreter's own
+    generator does, chaining a handled exception or not alike
+    """
+
+    def make_generator_fn(self):
+        """
+        A yielding function of one argument that yields it once
+        """
+
+        _, base_ns = build_expr([["CONST", 0], ["RETURN", 1]], values={})
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=("x",),
+            name="yields_arg",
+        )
+        return make_callable(code, base_ns, FormalsSpec(("x",)))
+
+
+    def test_chaining_matches_the_interpreter(self):
+        """
+        The Koskari generator's StopIteration has the __context__ the
+        Python generator's has, None or the handled ValueError
+        """
+
+        want = context_of_step(answer_once())
+        got = context_of_step(self.make_generator_fn()(1))
+        self.assertEqual(want[0], got[0])
+        self.assertIs(type(want[1]), type(got[1]))
+
+
 # The end.

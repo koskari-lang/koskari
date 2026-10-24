@@ -338,7 +338,7 @@ static inline void kos_tstate_exc_top(
 
   PyObject *exc = tstate->exc_info->exc_value;
 
-  if (! exc || exc == Py_None) {
+  if (! kos_tstate_exc_held(tstate)) {
     *type = NULL;
     *value = NULL;
     *tb = NULL;
@@ -355,8 +355,9 @@ static inline void kos_tstate_exc_top(
 
 
 /* Raise exc, a StopIteration instance, as CPython's generator send
-   raises a return value on the 3.12 this build sees: from 3.12.9
-   _PyGen_SetStopIterationValue raises it through
+   raises a return value on the 3.12 running this build, read from
+   Py_Version so a wheel built on other 3.12 headers still matches:
+   from 3.12.9 _PyGen_SetStopIterationValue raises it through
    PyErr_SetRaisedException, which chains no __context__; 3.12.0
    through 3.12.8 raised through PyErr_SetObject and chained the
    handled exception.
@@ -364,12 +365,12 @@ static inline void kos_tstate_exc_top(
    https://github.com/python/cpython/blob/v3.12.0/Objects/genobject.c
    Steals exc. */
 static inline void kos_raise_stop_instance(PyObject *exc) {
-#if PY_VERSION_HEX >= 0x030C09F0
-  PyErr_SetRaisedException(exc);
-#else
-  PyErr_SetObject(PyExc_StopIteration, exc);
-  Py_DECREF(exc);
-#endif
+  if (Py_Version >= 0x030C09F0) {
+    PyErr_SetRaisedException(exc);
+  } else {
+    PyErr_SetObject(PyExc_StopIteration, exc);
+    Py_DECREF(exc);
+  }
 }
 
 
