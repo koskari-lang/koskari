@@ -129,10 +129,8 @@ typedef enum KosDynFlags {
    without it takes a callee's value on its segment and nothing more */
 #define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
-#define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
 /** Node participates in raise-walk dispatch (handle/restitch); the fast
-   first check before kos_dyn_handle. Distinct from HANDLES_EXCEPTIONS,
-   which marks failed-pop recovery (kos_dyn_exception_unwind). */
+   first check before kos_dyn_handle. */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
 /* The namespace in this node's ns field is its own: a scope the node
@@ -1532,20 +1530,6 @@ KosOpResult kos_dyn_unlink_top(
     int allow_barrier);
 
 
-static inline KosOpResult kos_dyn_pop_nonbarrier_top(
-    KosContext *ctx,
-    KosXferEvent event) {
-  return kos_dyn_unlink_top(ctx, event, 0);
-}
-
-
-static inline KosOpResult kos_dyn_pop_top_allow_barrier(
-    KosContext *ctx,
-    KosXferEvent event) {
-  return kos_dyn_unlink_top(ctx, event, 1);
-}
-
-
 /**
    Which return path a stored pending return re-enters once the node
    whose leave thunk suspended the unwind walk has finished.
@@ -1744,15 +1728,9 @@ int kos_dyn_ob_store_return(
    implementation directly, allowing the compiler to emit a jump table
    with inlined handlers rather than an indirect function-pointer call.
 
-   kos_dyn_exception_unwind: called when exception propagation reaches a
-     HANDLES_EXCEPTIONS node. Returns EVAL_NORMAL to continue unwinding,
-     EVAL_REPROLOGUE if handler applied, EVAL_AWAIT if async started,
-     EVAL_RAISE on error.
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-KosOpResult kos_dyn_exception_unwind(KosContext *ctx, KosDynNode *node);
-
 /**
    Offer a control transit to a node.  Does not unlink; only decides
    whether the node consumes, passes through, defers, or errors.

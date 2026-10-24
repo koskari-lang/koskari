@@ -155,31 +155,6 @@ int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen) {
 }
 
 
-KosOpResult kos_dyn_exception_unwind(
-    KosContext *ctx,
-    KosDynNode *node) {
-
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_PROMPT:
-      if (KOS_XFER_TRACE)
-        SAYF("[xfer] prompt_unwind_exception node=%p: unlinking prompt", (void *) node);
-      {
-        KosOpResult kr = kos_dyn_pop_top_allow_barrier(ctx, KOS_XFER_EVENT_NONE);
-        if (kr.kind != KOS_RES_NORMAL && kr.kind != KOS_RES_REPROLOGUE
-            && kr.kind != KOS_RES_AWAIT)
-          return kr;
-      }
-      /* Exception propagates past the prompt; continue unwinding */
-      return EVAL_NORMAL();
-    case KOS_DYN_DELIM: {
-      int r = kos_dyn_pop_delim(ctx, (KosDynDelim *) node);
-      return (r < 0) ? EVAL_RAISE() : EVAL_NORMAL();
-    }
-    default:
-      return EVAL_NORMAL();
-  }
-}
-
 
 /**
    Generic unwind walk toward a target node. See dynchain.h for the
@@ -761,8 +736,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
       int top_is_wind = (top && KosDynNode_IS_WIND(top));
       int top_is_barrier =
           (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_BARRIER));
-      int top_handles_exceptions =
-          (top && KosDynNode_HAS_CAP(top, KOS_DYN_CAP_HANDLES_EXCEPTIONS));
       /* A wind about to fire its after-thunk runs it clean: the
          exception in flight is held here and stored on the node once
          the thunk has started. A wind (or with) whose thunk is dead is
@@ -770,12 +743,15 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
          pending for the unlink to chain what the node was holding. A
          with fires __exit__ with the exception as its argument and
          stores it itself. */
-      int needs_preserve = top_is_barrier
-          || (top_is_wind && ! kos_dyn_extent_in_flight(top));
+      int needs_preserve =
+          (top_is_wind && ! kos_dyn_extent_in_flight(top));
       if (needs_preserve && PyErr_Occurred())
         PyErr_Fetch(&saved_exc_typ, &saved_exc_val, &saved_exc_tb);
 
-      KosOpResult pop_res = kos_dyn_pop_nonbarrier_top(ctx, KOS_XFER_EVENT_RAISE);
+      /* A barrier is crossed here in one unlink: a raise walks through
+         a prompt, which runs no leave and holds no obligation. */
+      KosOpResult pop_res =
+          kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_RAISE, top_is_barrier);
       if (saved_exc_typ != NULL) {
         if (top_is_wind
             && (pop_res.kind == KOS_RES_REPROLOGUE
@@ -788,12 +764,10 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
             Py_XDECREF(pop_res.val);
             return EVAL_FATAL();
           }
-        } else if (PyErr_Occurred() && ! top_is_barrier) {
+        } else if (PyErr_Occurred()) {
           /* The pop ran user teardown and it raised; the new exception
              supersedes the one in flight, which chains in as __context__
-             (never clobbered). Barrier refusals are machinery noise, not
-             user failures: for those the original is restored below and
-             the recovery branch crosses the barrier properly. */
+             (never clobbered). */
           PyObject *ntyp = NULL, *nval = NULL, *ntb = NULL;
           PyErr_Fetch(&ntyp, &nval, &ntb);
           kos_exc_supersede_chain(&ntyp, &nval, &ntb,
@@ -815,23 +789,6 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
         if (pop_res.kind == KOS_RES_FATAL) {
           /* Evaluator-internal fault: allowed to abend the loop. */
           return EVAL_FATAL();
-        }
-        if (top_handles_exceptions) {
-          KosOpResult exc_res = kos_dyn_exception_unwind(ctx, top);
-          if (exc_res.kind == KOS_RES_AWAIT) {
-            return exc_res;
-          }
-          if (exc_res.kind == KOS_RES_REPROLOGUE) {
-            return EVAL_REPROLOGUE();
-          }
-          if (exc_res.kind == KOS_RES_NORMAL)
-            continue;
-        }
-        if (top_is_barrier) {
-          /* Barrier with no working recovery: a legitimate walk exit. */
-          SAY("[try_local] barrier without recovery -> RAISE\n");
-          kos_eval_prepare_boundary_raise(ctx);
-          return EVAL_RAISE();
         }
         /* A leave raised: the superseding exception keeps walking. The
            failing node is still in place, its call dead at dyn_top, so

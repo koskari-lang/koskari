@@ -25,7 +25,7 @@
 
 
 /**
-   Allocate TRY with handler_pc; HANDLES_EXCEPTIONS cap for kos_dyn_handle.
+   Allocate TRY with handler_pc; INTERCEPTS_RAISE cap for kos_dyn_handle.
 */
 KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynTry *node = kos_dynnode_alloc();
@@ -34,8 +34,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_TRY, parent,
-                   KOS_DYN_CAP_HANDLES_EXCEPTIONS
-                   | KOS_DYN_CAP_INTERCEPTS_RAISE);
+                   KOS_DYN_CAP_INTERCEPTS_RAISE);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
   KosDynTry_EXC_SAVED(node) = 0;

@@ -39,8 +39,7 @@ KosDynPrompt *kos_dynprompt_new(KosDynNode *parent, uint32_t prompt_id) {
     return NULL;
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
-                   KOS_DYN_CAP_BARRIER
-                   | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
+                   KOS_DYN_CAP_BARRIER);
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_POP_PC(prompt) = (uint32_t) -1;
   kos_dynnode_use_inline_segment((KosDynNode *) prompt);
@@ -68,8 +67,7 @@ static KosDynPrompt *kos_dynprompt_new_invocation(
     return NULL;
 
   kos_dynnode_init(prompt, KOS_DYN_PROMPT, parent,
-                   KOS_DYN_CAP_BARRIER
-                   | KOS_DYN_CAP_HANDLES_EXCEPTIONS);
+                   KOS_DYN_CAP_BARRIER);
   KosDynNode_FLAGS((KosDynNode *) prompt) |= KOS_DYNF_INVOCATION;
   KosDynPrompt_ID(prompt) = prompt_id;
   KosDynPrompt_POP_PC(prompt) = (uint32_t) -1;
