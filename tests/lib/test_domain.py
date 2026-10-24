@@ -603,6 +603,54 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertIn("finalized", out.stdout, out.stderr)
 
 
+    def test_finalizer_reentry_at_interpreter_exit(self):
+        """
+        A root value whose finalizer re-enters Koskari while the main
+        thread's and a daemon thread's records are torn down at exit
+        runs to its end, and the process exits cleanly
+        """
+
+        import subprocess
+        import sys
+        import textwrap
+
+        code = textwrap.dedent("""
+            import os
+            import threading
+
+            from koskari.lib import Domain, ParamRef
+
+            class Reentrant:
+                def __init__(self, tag):
+                    self.tag = tag
+
+                def __del__(self, write=os.write, ParamRef=ParamRef,
+                            Domain=Domain):
+                    ParamRef("tdd_exit_seen").store(Domain.current_domain())
+                    write(1, ("finalized " + self.tag + "\\n").encode())
+
+            ParamRef("tdd_exit_key").store(Reentrant("main"))
+            ready = threading.Event()
+
+            def worker():
+                ParamRef("tdd_exit_key").store(Reentrant("daemon"))
+                ready.set()
+                threading.Event().wait()
+
+            threading.Thread(target=worker, daemon=True).start()
+            ready.wait()
+            """)
+
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True,
+            text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertNotIn("Fatal", out.stderr)
+        self.assertNotIn("Exception ignored", out.stderr)
+        self.assertIn("finalized main", out.stdout, out.stderr)
+        self.assertIn("finalized daemon", out.stdout, out.stderr)
+
+
     def test_explicit_domain_wins_then_default_returns(self):
         """
         Inside with Domain() the explicit Domain answers and the thread

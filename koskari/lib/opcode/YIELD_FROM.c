@@ -178,8 +178,10 @@ static int yield_from_normalize(
    released: this runs where nothing can await, and aclose would make
    a coroutine nothing awaits; the delegate finalizes itself (a python
    async generator's finalizer hook runs aclose on the event loop). An
-   explicit close of the delegating generator reaches the inner one
-   through the GeneratorExit throw, which can await.
+   explicit close of the delegating generator takes this path too: its
+   GeneratorExit is never thrown into the delegate but raised at the
+   frame, so a python async delegate is released here and its own
+   finalizer closes it.
 */
 static void yield_from_close_delegate(PyObject *delegate) {
 

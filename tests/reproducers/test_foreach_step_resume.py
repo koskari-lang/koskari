@@ -96,5 +96,18 @@ class TestForeachStepResume(unittest.IsolatedAsyncioTestCase):
         ns = await self.load()
         self.assertEqual([0, 1, 2], ns['module_out'])
 
+    async def test_continue_under_finally_over_a_generator(self):
+        ns = await self.load()
+        log = []
+        self.assertEqual([2, 3, 4],
+                         await ns['continue_under_finally'](5, log))
+        self.assertEqual([0, 1, 2, 3, 4], log)
+
+    async def test_continue_in_nested_loops_over_generators(self):
+        ns = await self.load()
+        self.assertEqual(
+            [(0, 1), (0, 2), (1, 0), (1, 2), 1, (2, 0), (2, 1), 2],
+            await ns['continue_nested'](3))
+
 
 # The end.

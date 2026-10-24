@@ -98,5 +98,14 @@ class TestResumeFirstRaise(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([1.0, "zero"],
                          await ns['plain_iter_error'](OneThenBoom(), []))
 
+    async def test_map_over_a_raising_generator(self):
+        ns = await self.load()
+        self.assertEqual([0, 10, "two"], await ns['mapped_raising'](5))
+
+    async def test_zip_over_a_raising_generator(self):
+        ns = await self.load()
+        self.assertEqual([(0, 0), (1, 1), "two"],
+                         await ns['zipped_raising'](5))
+
 
 # The end.

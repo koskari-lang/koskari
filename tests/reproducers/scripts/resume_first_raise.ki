@@ -82,4 +82,26 @@ define plain_iter_error [it log]:
     log
 
 
+define mapped_raising [n]:
+    ;; a transform over a raising Koskari generator: the error reaches
+    ;; the transform's fetch, then the try around the loop
+    define out #[]
+    try:
+        for-each [v (map (lambda [x] (* x 10)) (raising_gen n))]:
+            out.append v
+    except [e ValueError]:
+        out.append (str e)
+    out
+
+
+define zipped_raising [n]:
+    define out #[]
+    try:
+        for-each [v (zip (raising_gen n) (range 10))]:
+            out.append v
+    except [e ValueError]:
+        out.append (str e)
+    out
+
+
 ;; The end.

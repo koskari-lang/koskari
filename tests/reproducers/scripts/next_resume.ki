@@ -59,6 +59,16 @@ define error_in_producer []:
         #(first (str e))
 
 
+define error_with_default []:
+    ;; the producer's error is not answered with the default
+    define g (bad)
+    define first (next g)
+    try:
+        (next g "dflt")
+    except [e ValueError]:
+        #(first (str e))
+
+
 define next_by_name [n]:
     ;; the iterator held in a local, the fused step forms
     define g (gen n)

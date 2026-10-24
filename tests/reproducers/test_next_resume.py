@@ -77,5 +77,9 @@ class TestNextResume(unittest.IsolatedAsyncioTestCase):
         ns = await self.load()
         self.assertEqual((0, 1, 99), await ns['next_by_name'](2))
 
+    async def test_producer_error_beats_the_default(self):
+        ns = await self.load()
+        self.assertEqual((1, "boom"), await ns['error_with_default']())
+
 
 # The end.

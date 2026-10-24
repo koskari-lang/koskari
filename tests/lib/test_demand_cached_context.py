@@ -98,6 +98,12 @@ SRC = """
 (define outer_defer (lambda [d_make d_read pycall]
   (parameterize [[p 10]]
     #((pycall d_make) (pycall d_read 1) p))))
+
+(define defer_then_rebind (lambda [pysend]
+  (parameterize [[p 10]]
+    (let [[d (defer read_p0)]]
+      (parameterize [[p 20]]
+        #((pysend d) p))))))
 """
 
 
@@ -107,6 +113,13 @@ def pymap(d, items):
 
 def pycall(d, *args):
     return d(*args)
+
+
+def pysend(d):
+    try:
+        d.send(None)
+    except StopIteration as stop:
+        return stop.value
 
 
 class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
@@ -237,6 +250,13 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         result = await mod["outer_defer"](d_make, d_read, pycall)
         self.assertEqual(result[1:], (11, 10))
         self.assertEqual(await result[0], 20)
+
+
+    async def test_enter_after_a_defer_took_the_table(self):
+        # the defer shares the table of the p 10 extent; the p 20 extent
+        # entered after it must copy the table rather than write into it
+        mod = await self.load()
+        self.assertEqual(await mod["defer_then_rebind"](pysend), (10, 20))
 
 
 # The end.

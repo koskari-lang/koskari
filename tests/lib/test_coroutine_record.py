@@ -80,7 +80,13 @@ SRC = """
 (define count_down [n] (if (<= n 0) 0 (+ 1 (count_down (- n 1)))))
 
 (define await_it [c] (await c))
+
+(define await_then_fail [aw] (await aw) (raise (ValueError "after")))
 """
+
+
+def holds_context(coro):
+    return any(isinstance(r, lib.Context) for r in gc.get_referents(coro))
 
 
 class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
@@ -233,6 +239,35 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.value, "woken")
         self.assertFalse(any(isinstance(r, lib.Context)
                              for r in gc.get_referents(coro)))
+
+    async def test_coroutine_raising_after_resume_holds_no_context(self):
+        mod = await self.load()
+        for i in range(12):
+            coro = mod["await_then_fail"](Suspender())
+            self.assertEqual(coro.send(None), "suspended")
+            with self.assertRaises(ValueError):
+                coro.send(None)
+            self.assertFalse(holds_context(coro))
+            self.assertEqual(await mod["mix"](i, 1), i * 31 + 1)
+
+    async def test_coroutine_ended_by_throw_holds_no_context(self):
+        mod = await self.load()
+        for i in range(12):
+            coro = mod["await_it"](Suspender())
+            self.assertEqual(coro.send(None), "suspended")
+            with self.assertRaises(KeyError):
+                coro.throw(KeyError("in"))
+            self.assertFalse(holds_context(coro))
+            self.assertEqual(await mod["mix"](i, 2), i * 31 + 2)
+
+    async def test_started_coroutine_closed_holds_no_context(self):
+        mod = await self.load()
+        for i in range(12):
+            coro = mod["await_it"](Suspender())
+            self.assertEqual(coro.send(None), "suspended")
+            self.assertIsNone(coro.close())
+            self.assertFalse(holds_context(coro))
+            self.assertEqual(await mod["mix"](i, 3), i * 31 + 3)
 
 
 # The end.

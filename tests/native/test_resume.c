@@ -487,14 +487,114 @@ static int test_prologue_drops_stacked_under_pending_exception(void) {
 }
 
 
+/* A pending exception with a resume set and nothing staged: the
+   prologue offers the exception to the resume as a NULL delivery,
+   clearing the resume first. A declining resume propagates the
+   exception. */
+static int test_prologue_offers_pending_exception_to_resume(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  ResumeProbe probe = { 0, 0, 1, NULL };
+  KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
+  KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
+  PyErr_SetString(PyExc_ValueError, "pending");
+
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
+  int raised = PyErr_ExceptionMatches(PyExc_ValueError);
+  PyErr_Clear();
+
+  TEST_ASSERT_EQ(probe.calls, 1, "the prologue offered the error");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "as a NULL delivery");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "the decline propagates");
+  TEST_ASSERT(raised, "the original exception propagates");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame),
+                   "the delivery cleared the resume");
+
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+  return 0;
+}
+
+
+/* The same offer on a bytecode frame whose resume handles the
+   exception: the resume clears it and asks for another pass, and the
+   next pass, as the trampoline runs it, threads into the frame's code
+   to its return. */
+static int test_prologue_resume_handles_pending_exception(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *forty_two = PyLong_FromLong(42);
+  PyObject *one = PyLong_FromLong(1);
+  PyObject *instr = PyList_New(2);
+  PyList_SET_ITEM(instr, 0, resume_test_instr(KOS_OP_CONST, forty_two));
+  PyList_SET_ITEM(instr, 1, resume_test_instr(KOS_OP_RETURN, one));
+  Py_DECREF(one);
+
+  PyObject *nspec = resume_test_nspec();
+  TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+  PyObject *code = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code, "create code");
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, (KosCode *) code, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push bytecode frame");
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
+  KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
+  PyErr_SetString(PyExc_ValueError, "pending");
+
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
+  int still_pending = PyErr_Occurred() != NULL;
+  PyErr_Clear();
+
+  TEST_ASSERT_EQ(probe.calls, 1, "the prologue offered the error");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "as a NULL delivery");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_REPROLOGUE,
+                 "the handling resume asks for another pass");
+  TEST_ASSERT(! still_pending, "the resume handled the exception");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(frame),
+                   "the delivery cleared the resume");
+
+  r = kos_eval_prologue(ctx, NULL, NULL);
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RETURN,
+                 "the frame threaded on to its return");
+  TEST_ASSERT_NOT_NULL(r.val, "a value came back");
+  TEST_ASSERT_EQ(PyLong_AsLong(r.val), 42, "the body's return value");
+  TEST_ASSERT_EQ(probe.calls, 1, "the resume ran once");
+
+  Py_XDECREF(r.val);
+  Py_DECREF(forty_two);
+  Py_DECREF(code);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+  return 0;
+}
+
+
 /* === the raise walk defers to the live frame's resume ===
 
    The walk never calls a resume: a pending exception with a resume on
    the live frame is handed back as RESUME, resume and exception left
    in place, for the caller to deliver as a NULL by tail call or
-   through the prologue (test_prologue_runs_pending_exception). That
-   holds at the walk's entry and again when a frame pop reveals a
-   frame with a resume, before any node above that frame is unwound. */
+   through the prologue (test_prologue_offers_pending_exception_to_resume,
+   test_prologue_resume_handles_pending_exception). That holds at the
+   walk's entry and again when a frame pop reveals a frame with a
+   resume, before any node above that frame is unwound. */
 
 
 static int test_raise_walk_defers_to_the_live_frame_resume(void) {
@@ -1095,6 +1195,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_prologue_runs_pending_exception);
   RUN_TEST(test_prologue_drops_staged_under_pending_exception);
   RUN_TEST(test_prologue_drops_stacked_under_pending_exception);
+  RUN_TEST(test_prologue_offers_pending_exception_to_resume);
+  RUN_TEST(test_prologue_resume_handles_pending_exception);
   RUN_TEST(test_raise_walk_defers_to_the_live_frame_resume);
   RUN_TEST(test_raise_walk_defers_after_a_pop_reveals_a_resume);
   RUN_TEST(test_clone_copies_node_resume);

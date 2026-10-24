@@ -189,5 +189,45 @@ class TestYieldFromResume(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(("got", "x"), await g.asend("x"))
         self.assertEqual("after", await g.__anext__())
 
+    async def test_throw_into_a_python_async_iterator_raises_at_the_point(self):
+        ns = await self.load()
+        g = ns['guarded'](SlowCounter(5))
+        self.assertEqual(1, await g.__anext__())
+        self.assertEqual("zap", await g.athrow(ValueError("zap")))
+        self.assertEqual("after", await g.__anext__())
+
+    async def test_stop_async_iteration_thrown_ends_an_async_iterator_delegation(self):
+        ns = await self.load()
+        g = ns['outer'](SlowCounter(5))
+        self.assertEqual(1, await g.__anext__())
+        self.assertEqual("after", await g.athrow(StopAsyncIteration()))
+
+    async def test_stop_async_iteration_thrown_ends_an_async_generator_delegation(self):
+        ns = await self.load()
+        log = []
+        g = ns['outer'](apy_sleeper(5, log))
+        self.assertEqual(0, await g.__anext__())
+        self.assertEqual("after", await g.athrow(StopAsyncIteration()))
+
+    async def test_stop_async_iteration_thrown_ends_a_koskari_delegation(self):
+        ns = await self.load()
+        g = ns['outer'](ns['echo'](5))
+        self.assertEqual(0, await g.__anext__())
+        self.assertEqual("after", await g.athrow(StopAsyncIteration()))
+
+    async def test_sent_values_reach_a_delegate_two_deep(self):
+        ns = await self.load()
+        self.assertEqual([0, 1, 2, "after", "after", None],
+                         await ns['send_nested'](3))
+        self.assertEqual([[10, 20, 30]], list(ns['log']))
+
+    async def test_close_over_a_python_async_iterator_delegate(self):
+        ns = await self.load()
+        g = ns['outer'](SlowCounter(5))
+        self.assertEqual(1, await g.__anext__())
+        self.assertIsNone(await g.aclose())
+        with self.assertRaises(StopAsyncIteration):
+            await g.__anext__()
+
 
 # The end.

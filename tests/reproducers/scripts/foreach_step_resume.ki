@@ -100,6 +100,35 @@ define sum_then_yield [n]:
     yield t
 
 
+define continue_under_finally [n log]:
+    ;; continue unwinds through the finally into the generator's next
+    ;; step
+    define out #[]
+    for-each [v (gen n)]:
+        try:
+            when (< v 2):
+                (continue)
+            out.append v
+        finally:
+            log.append v
+    out
+
+
+define continue_nested [n]:
+    ;; continue in an inner loop over a generator, then in the outer
+    ;; loop over another
+    define out #[]
+    for-each [a (gen n)]:
+        for-each [b (gen n)]:
+            when (== a b):
+                (continue)
+            out.append #(a b)
+        when (== a 0):
+            (continue)
+        out.append a
+    out
+
+
 define module_out #[]
 
 for-each [mv (gen 3)]:

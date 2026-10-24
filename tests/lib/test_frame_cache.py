@@ -132,6 +132,23 @@ GENERAL_SRC = """
 """
 
 
+CONT_SRC = """
+(define saved (list))
+
+(define capture [n step: 1]
+  (define local (* n step))
+  (+ local (shift k (begin (saved.append k) 0))))
+
+(define run_capture []
+  #((reset (capture 100)) (reset (capture 200 step: 2))
+    (reset (capture 7)) (reset (capture 8 step: 3))))
+
+(define resume_saved []
+  #((call (item saved 0) 1) (call (item saved 1) 2)
+    (call (item saved 0) 5)))
+"""
+
+
 class TestFrameCache(unittest.IsolatedAsyncioTestCase):
 
     async def load(self):
@@ -256,6 +273,24 @@ class TestFrameCacheGeneralCalls(unittest.IsolatedAsyncioTestCase):
         for n in (3, 7, 8, 9, 16, 40, 5):
             with self.subTest(n=n):
                 self.assertEqual(await mod["depthkw"](n), n)
+
+
+class TestFrameCacheContinuations(unittest.IsolatedAsyncioTestCase):
+
+    async def load(self):
+        module = new_module("frame_cache_cont")
+        vars(module)["__file__"] = "<frame_cache_cont>"
+        await load_module_source_async(module, CONT_SRC, layout=False)
+        return vars(module)
+
+
+    async def test_captured_frame_is_not_reused(self):
+        # later calls of capture must not take a frame a saved
+        # continuation still holds, or the captured local is reset
+        mod = await self.load()
+        self.assertEqual(await mod["run_capture"](), (0, 0, 0, 0))
+        gc.collect()
+        self.assertEqual(await mod["resume_saved"](), (101, 402, 105))
 
 
 # The end.

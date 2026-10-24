@@ -2425,6 +2425,140 @@ static int test_agen_flatten_clears_wrapper_registers(void) {
 }
 
 
+/* === A busy async generator refuses its adapter before any eval === */
+
+
+/* the breaker a drive in flight is polling; any address of our own */
+static KosBreakerWord agen_sentinel_breaker = 0;
+
+
+/* An async generator over CONST 1; YIELD 1 with a durable context of
+   its own, its sync adapter, and a drive in flight elsewhere: the
+   generator is marked in progress and its context carries that drive's
+   breaker. Returns 0 with the three set, or -1 with an error set. */
+static int make_busy_agen(
+    PyObject **out_agen,
+    PyObject **out_adapter,
+    const volatile KosBreakerWord **out_saved) {
+
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(1);
+  PyObject *instr = PyList_New(2);
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *agen_obj;
+  KosPyAsyncGen *agen;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  if (! code_obj)
+    return -1;
+
+  ns = PyDict_New();
+  if (! ns) {
+    Py_DECREF(code_obj);
+    return -1;
+  }
+
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  Py_DECREF(code_obj);
+  if (! agen_obj)
+    return -1;
+
+  agen = (KosPyAsyncGen *) agen_obj;
+  agen->ctx = KosContext_New(NULL, kos_tls_current());
+  if (! agen->ctx) {
+    Py_DECREF(agen_obj);
+    return -1;
+  }
+
+  *out_adapter = PyObject_GetIter(agen_obj);
+  if (! *out_adapter) {
+    Py_DECREF(agen_obj);
+    return -1;
+  }
+
+  *out_saved = KosContext_BREAKER(agen->ctx);
+  agen->in_progress = 1;
+  KosContext_BREAKER(agen->ctx) = &agen_sentinel_breaker;
+
+  *out_agen = agen_obj;
+  return 0;
+}
+
+
+static void release_busy_agen(
+    PyObject *agen_obj,
+    PyObject *adapter,
+    const volatile KosBreakerWord *saved) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) agen_obj;
+
+  agen->in_progress = 0;
+  KosContext_BREAKER(agen->ctx) = saved;
+  Py_DECREF(adapter);
+  Py_DECREF(agen_obj);
+}
+
+
+static int test_busy_agen_adapter_leaves_context_untouched(void) {
+
+  PyObject *agen_obj = NULL, *adapter = NULL, *res;
+  const volatile KosBreakerWord *saved = NULL;
+  const volatile KosBreakerWord *seen;
+  int refused;
+
+  TEST_ASSERT_EQ(make_busy_agen(&agen_obj, &adapter, &saved), 0,
+                 "build a busy async generator with an adapter");
+
+  res = PyIter_Next(adapter);
+  refused = (! res && PyErr_Occurred()
+             && PyErr_ExceptionMatches(PyExc_RuntimeError));
+  seen = KosContext_BREAKER(((KosPyAsyncGen *) agen_obj)->ctx);
+
+  Py_XDECREF(res);
+  PyErr_Clear();
+  release_busy_agen(agen_obj, adapter, saved);
+
+  TEST_ASSERT(refused, "the busy step raises RuntimeError");
+  TEST_ASSERT_SAME((void *) seen, (void *) &agen_sentinel_breaker,
+                   "the refused step leaves the context's breaker");
+  return 0;
+}
+
+
+static int test_busy_agen_adapter_throw_leaves_context_untouched(void) {
+
+  PyObject *agen_obj = NULL, *adapter = NULL, *res;
+  const volatile KosBreakerWord *saved = NULL;
+  const volatile KosBreakerWord *seen;
+  int refused;
+
+  TEST_ASSERT_EQ(make_busy_agen(&agen_obj, &adapter, &saved), 0,
+                 "build a busy async generator with an adapter");
+
+  res = PyObject_CallMethod(adapter, "throw", "O",
+                            (PyObject *) PyExc_ValueError);
+  refused = (! res && PyErr_Occurred()
+             && PyErr_ExceptionMatches(PyExc_RuntimeError));
+  seen = KosContext_BREAKER(((KosPyAsyncGen *) agen_obj)->ctx);
+
+  Py_XDECREF(res);
+  PyErr_Clear();
+  release_busy_agen(agen_obj, adapter, saved);
+
+  TEST_ASSERT(refused, "the busy throw raises RuntimeError");
+  TEST_ASSERT_SAME((void *) seen, (void *) &agen_sentinel_breaker,
+                   "the refused throw leaves the context's breaker");
+  return 0;
+}
+
+
 /* === Test runner === */
 
 /* === Elector demotion counts guard misses alone === */
@@ -3038,6 +3172,8 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_opcode_error_caught_by_try);
     RUN_TEST(test_eval_frozen_gen_teardown_without_install);
     RUN_TEST(test_agen_flatten_clears_wrapper_registers);
+    RUN_TEST(test_busy_agen_adapter_leaves_context_untouched);
+    RUN_TEST(test_busy_agen_adapter_throw_leaves_context_untouched);
     RUN_TEST(test_elector_declines_do_not_count_toward_demotion);
     RUN_TEST(test_item_store_site_demotes_and_re_elects);
 

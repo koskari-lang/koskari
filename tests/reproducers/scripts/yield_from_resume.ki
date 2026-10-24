@@ -70,6 +70,19 @@ define send_through [n]:
     out
 
 
+define send_nested [n]:
+    ;; two delegations deep: the sent value reaches the inner delegate
+    define g (outer (outer (echo n)))
+    define out #[]
+    out.append (next g)
+    for-each [k (range 1 n)]:
+        out.append (g.asend (* k 10))
+    out.append (g.asend (* n 10))
+    out.append (next g)
+    out.append (next g None)
+    out
+
+
 define throw_through [n]:
     define g (guarded (echo n))
     define first (next g)

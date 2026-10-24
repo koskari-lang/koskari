@@ -131,5 +131,24 @@ class TestYieldFromThrow(unittest.IsolatedAsyncioTestCase):
         await agen.aclose()
         self.assertEqual(log, ["sync finally"])
 
+    async def test_throw_reaches_a_delegate_two_relays_down(self):
+        v = await self.load()
+        log = []
+        agen = v["relay"](v["relay"](sync_delegate(log)))
+        self.assertEqual(await agen.__anext__(), 1)
+        self.assertEqual(await agen.athrow(ValueError("boom")), "caught")
+        self.assertEqual(log, ["sync caught"])
+        await agen.aclose()
+        self.assertEqual(log, ["sync caught", "sync finally"])
+
+    async def test_uncaught_throw_two_relays_down_propagates(self):
+        v = await self.load()
+        log = []
+        agen = v["relay"](v["relay"](sync_uncaught(log)))
+        self.assertEqual(await agen.__anext__(), 1)
+        with self.assertRaises(ValueError):
+            await agen.athrow(ValueError("boom"))
+        self.assertEqual(log, ["sync finally"])
+
 
 # The end.
