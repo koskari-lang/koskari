@@ -490,11 +490,11 @@ static int test_prologue_drops_stacked_under_pending_exception(void) {
 /* === the raise walk defers to the live frame's resume ===
 
    The walk never calls a resume: a pending exception with a resume on
-   the live frame is handed back as REPROLOGUE, resume and exception
-   left in place, for the prologue's delivery step to deliver as a
-   NULL (test_prologue_runs_pending_exception). That holds at the
-   walk's entry and again when a frame pop reveals a frame with a
-   resume, before any node above that frame is unwound. */
+   the live frame is handed back as RESUME, resume and exception left
+   in place, for the caller to deliver as a NULL by tail call or
+   through the prologue (test_prologue_runs_pending_exception). That
+   holds at the walk's entry and again when a frame pop reveals a
+   frame with a resume, before any node above that frame is unwound. */
 
 
 static int test_raise_walk_defers_to_the_live_frame_resume(void) {
@@ -524,8 +524,8 @@ static int test_raise_walk_defers_to_the_live_frame_resume(void) {
 
   KosOpResult ev = kos_dyn_unwind_raise(ctx);
 
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE,
-                 "the walk hands the delivery to the prologue");
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RESUME,
+                 "the walk hands the delivery to the resume");
   TEST_ASSERT_EQ(probe.calls, 0, "the walk itself called no resume");
   TEST_ASSERT(KosDynFrame_RESUME_KIND(frame) == &resume_probe_kind,
               "the resume stays on the frame for the prologue");
@@ -567,7 +567,7 @@ static int test_raise_walk_defers_after_a_pop_reveals_a_resume(void) {
 
   KosOpResult ev = kos_dyn_unwind_raise(ctx);
 
-  TEST_ASSERT_EQ(ev.kind, KOS_RES_REPROLOGUE,
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_RESUME,
                  "the pop revealed a resume: the walk hands over");
   TEST_ASSERT(KosContext_FRAME(ctx) == bottom,
               "the top frame was popped first");

@@ -222,8 +222,10 @@ typedef enum KosGetNextResult {
    at all; a consumer that only propagates needs no code beyond that
    one line.
 
-   The delivery reaches a code-less step frame through the prologue
-   (process_raise hands off to it rather than walking). A frame
+   The delivery reaches a code-less step frame as a RESUME answer from
+   process_raise rather than from inside the walk: a thread caller
+   relays it to the resume by tail call, and the trampoline delivers
+   one a plain caller returned through the prologue. A frame
    carrying bytecode is never handed a failure that way: its resume is
    a yield-from phase resume, which reads a NULL delivery as a send of
    None, and it is reached through its own node instead.
@@ -683,13 +685,13 @@ KosIterRequestStatus KosNativeFrame_RequestNext(
    bytecode frame current (thread into it) or REPROLOGUE otherwise; an
    awaitable in-flight (EXIT) sets resume and reports EVAL_AWAIT, and
    the AWAITED revive delivers into it. Exhaustion sets resume and
-   raises StopIteration, which reaches resume through the raise walk
-   like an in-flight source's failure does; a request that fails
-   before it defers raises at the caller with no resume set, since
-   nothing is in flight for the resume to finish. Caller must have a
-   current frame, and resume is required: every outcome but a settled
-   element in hand and a synchronous failure reaches the caller
-   through it.
+   raises StopIteration, which reaches resume as a RESUME answer, NULL
+   with StopIteration pending, that RESULT_ENTRY relays; a request
+   that fails before it defers raises at the caller with no resume
+   set, since nothing is in flight for the resume to finish. Caller
+   must have a current frame, and resume is required: every outcome
+   but a settled element in hand and a synchronous failure reaches
+   the caller through it.
 */
 KosOpResult KosContext_NextResume(
     KosContext *ctx,

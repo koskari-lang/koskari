@@ -970,9 +970,13 @@ own_fail:
      4. cc dispatch  - continuation signal: handle_continuation_apply
                        (own token: invoke; foreign: cc-unwind goal);
                        REPROLOGUE re-enters the loop with a goal active
-     5. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
+     5. resume       - the live frame has a resume: RESUME with NULL,
+                       the failure pending, before any walk
+     6. try_local    - kos_dyn_unwind_raise walks TRY / FINALLY /
                        WITH / unwind extents
-     6. outcome map  - REPROLOGUE: handler applied, restart prologue.
+     7. outcome map  - REPROLOGUE: handler applied, restart prologue.
+                       RESUME: a frame pop revealed a frame with a
+                       resume; the failure goes to it, as in step 5.
                        AWAIT: async unwind started; tag KOS_SUSP_AWAIT,
                        mark suspended, propagate awaitable (caller owns
                        tl.val).
@@ -981,10 +985,11 @@ own_fail:
                        (archive boundary-control-reemit.md invariant 7.4).
                        FATAL: mark context dead, EVAL_FATAL.
 
-   :return: EVAL_REPROLOGUE to continue, EVAL_AWAIT on async unwind,
-            EVAL_RAISE to propagate (PyErr set), EVAL_FATAL on internal
-            fault, or the applied return's own result (EVAL_RETURN at
-            the drive root)
+   :return: EVAL_REPROLOGUE to continue, EVAL_RESUME(NULL) when the
+            live frame's resume takes the failure, EVAL_AWAIT on async
+            unwind, EVAL_RAISE to propagate (PyErr set), EVAL_FATAL on
+            internal fault, or the applied return's own result
+            (EVAL_RETURN at the drive root)
 */
 static KosOpResult process_raise(KosContext *ctx) {
 
@@ -1012,26 +1017,27 @@ static KosOpResult process_raise(KosContext *ctx) {
 
   /* The live frame's resume gets the failure before the walk does,
      whatever the frame: a resume is a halted instruction awaiting its
-     delivery, and the failure is that delivery. It is delivered
-     through the prologue rather than called from inside the unwind,
-     against a settled chain where the resume may thread on. Every
-     pre-walk step above has already run -- the goal stack is
-     abandoned, so a transfer in flight cannot outlive the failure the
-     resume is about to handle. Bouncing rather than delivering here is
-     what puts every raise ingress on that one path: this entry is
-     reached straight from apply_kos_op_result, never through the
-     prologue. It terminates because the delivery clears the resume;
-     the walk bounces back here the same way each time a frame pop
-     reveals a frame with a resume. */
+     delivery, and the failure is that delivery. The answer is RESUME
+     with NULL: a thread caller relays it to the resume by tail call,
+     against a settled chain where the resume may thread on, and a
+     plain caller returns it to the trampoline, which delivers it
+     through the prologue. Every pre-walk step above has already run --
+     the goal stack is abandoned, so a transfer in flight cannot
+     outlive the failure the resume is about to handle. It terminates
+     because the delivery clears the resume; the walk answers RESUME
+     the same way each time a frame pop reveals a frame with a
+     resume. */
   if (KosContext_FRAME(ctx)
       && KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)))
-    return EVAL_REPROLOGUE();
+    return EVAL_RESUME(NULL);
 
   {
     KosOpResult tl = kos_dyn_unwind_raise(ctx);
     switch (tl.kind) {
     case KOS_RES_REPROLOGUE:
       return EVAL_REPROLOGUE();
+    case KOS_RES_RESUME:
+      return tl;
     case KOS_RES_AWAIT:
       KosContext_SetSuspensionEvent(ctx, KOS_SUSP_AWAIT);
       KosContext_MarkSuspendedNotRunning(ctx);
@@ -1945,6 +1951,8 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_raise(
 
   KOS_TRACE_TRAMPOLINE_STEP();
   KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
+  if (r.kind == KOS_RES_RESUME)
+    TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME, r.val);
   if (r.kind == KOS_RES_REPROLOGUE)
     TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
   return r;
@@ -2010,7 +2018,10 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
     /* The live frame's resume takes the delivery by tail call: the
        prologue's slim bounce without the pass. A delivery already
        staged for the frame is the value; a kind that settles its
-       delivery goes through the prologue, which settles it. */
+       delivery goes through the prologue, which settles it. A failed
+       delivery arrives as NULL with the error pending and supersedes
+       any staged delivery, in the slot or on a code-less frame's
+       stack, as the prologue's delivery step drops it. */
     KosDynFrame *frame = KosContext_FRAME(ctx);
     const KosResumeKind *resume = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
     void *state;
@@ -2021,7 +2032,11 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
                       "RESUME relay with no resume on the live frame");
       return EVAL_FATAL();
     }
-    if (! val && KosContext_PENDING_VALUE(ctx)) {
+    if (! val && PyErr_Occurred()) {
+      Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+      if (! KosDynFrame_CODE(frame) && KosContext_StackLen(ctx) > 0)
+        Py_XDECREF(KosContext_StackPopRef(ctx));
+    } else if (! val && KosContext_PENDING_VALUE(ctx)) {
       val = KosContext_PENDING_VALUE(ctx);
       KosContext_PENDING_VALUE(ctx) = NULL;
     }
@@ -2231,14 +2246,14 @@ KosOpResult KosContext_NextResume(
       return EVAL_AWAIT(out);
 
     case KOS_IREQ_EXHAUSTED:
-      /* Exhaustion reaches the resume the way an in-flight source's
-         does and the way any failed delivery does: set on the frame
-         with StopIteration pending, for the prologue to deliver as a
-         NULL. */
+      /* Exhaustion reaches the resume the way any failed delivery
+         does: set on the frame with StopIteration pending, answered
+         as RESUME with NULL, which the caller's RESULT_ENTRY relays to
+         the resume by tail call. */
       PyErr_SetNone(PyExc_StopIteration);
       KosDynFrame_RESUME_KIND(frame) = resume;
       KosDynFrame_RESUME_STATE(frame) = state;
-      return EVAL_REPROLOGUE();
+      return EVAL_RESUME(NULL);
 
     case KOS_IREQ_ERROR:
     default:
@@ -2432,7 +2447,9 @@ static KosOpResult eval_phase_entry(
     KosOpResult pr = process_raise(ctx);
     SAYF("[eval] phase_entry process_raise kind=%d\n", (int) pr.kind);
 
-    if (pr.kind == KOS_RES_REPROLOGUE) {
+    /* A RESUME answer leaves the failure pending for the prologue's
+       error offer, which delivers it to the live frame's resume. */
+    if (pr.kind == KOS_RES_REPROLOGUE || pr.kind == KOS_RES_RESUME) {
       *mode_out = KOS_MODE_NORMAL;
       return EVAL_NORMAL();
     }
@@ -2448,6 +2465,13 @@ static KosOpResult eval_phase_entry(
   if (mode == KOS_MODE_NORMAL && resume_return.kind == KOS_OB_RETURN) {
     KosOpResult rr = KosEval_ResumeReturn(ctx, &resume_return);
     switch (rr.kind) {
+    case KOS_RES_RESUME:
+      /* staged for the prologue's delivery step, as the trampoline
+         applies a RESUME answer; a NULL leaves a failure pending */
+      if (rr.val)
+        KosContext_StageDelivery(ctx, rr.val);
+      *mode_out = KOS_MODE_NORMAL;
+      return EVAL_NORMAL();
     case KOS_RES_NORMAL:
     case KOS_RES_REPROLOGUE:
     case KOS_RES_DISPATCH:
@@ -2484,6 +2508,13 @@ static KosOpResult eval_phase_transfer(KosContext *ctx) {
 
   if (xfer.kind == KOS_RES_REPROLOGUE)
     return EVAL_NORMAL();
+  if (xfer.kind == KOS_RES_RESUME) {
+    /* staged for the prologue's delivery step, as the trampoline
+       applies a RESUME answer; a NULL leaves a failure pending */
+    if (xfer.val)
+      KosContext_StageDelivery(ctx, xfer.val);
+    return EVAL_NORMAL();
+  }
   if (xfer.kind != KOS_RES_NORMAL)
     return xfer;  /* AWAIT / RAISE / FATAL */
 
@@ -3344,6 +3375,7 @@ static inline KosOpResult apply_resume_result(KosContext *ctx, KosOpResult r) {
 /**
    Route a non-NORMAL opcode result through the appropriate event handler.
    NORMAL and REPROLOGUE both map to EVAL_REPROLOGUE (re-enter through the prologue).
+   A RESUME answer from any event is applied by apply_resume_result.
 */
 static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   switch (res.kind) {
@@ -3355,7 +3387,7 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   case KOS_RES_RAISE: {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(event_raise, r = process_raise(ctx));
-    return r;
+    return apply_resume_result(ctx, r);
   }
 
   case KOS_RES_YIELD: {
@@ -3376,7 +3408,7 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   case KOS_RES_AWAIT: {
     KosOpResult r;
     KOS_TRACE_POST_OP_WRAP(event_await, r = eval_event_await(ctx, res.val));
-    return r;
+    return apply_resume_result(ctx, r);
   }
 
   case KOS_RES_RETURN: {
@@ -3386,7 +3418,8 @@ static KosOpResult apply_kos_op_result(KosContext *ctx, KosOpResult res) {
   }
 
   case KOS_RES_CONTROL_RETURNED:
-    return kos_eval_post_opcode_control_returned_after_hook(ctx);
+    return apply_resume_result(
+        ctx, kos_eval_post_opcode_control_returned_after_hook(ctx));
 
   case KOS_RES_RESUME:
     return apply_resume_result(ctx, res);
@@ -3565,8 +3598,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
 
        A goal in play is routed past this offer and through the phase
        below, whose process_raise abandons the goal stack and then
-       bounces straight back here with no goal active -- so a transfer
-       still reaches abandon first, and the offer still fires. */
+       answers RESUME, relayed to the resume with no goal active -- so
+       a transfer still reaches abandon first, and the resume still
+       takes the failure. */
     if (err
         && ! KosContext_GOAL(ctx)
         && KosContext_FRAME(ctx)
@@ -3580,6 +3614,9 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_prologue(
        PyErr is still set. */
     if (err) {
       KosOpResult pend = process_raise(ctx);
+      if (pend.kind == KOS_RES_RESUME)
+        TAILCALL(kos_eval_relay, ctx, (void *) (uintptr_t) KOS_RES_RESUME,
+                 pend.val);
       if (pend.kind != KOS_RES_NORMAL) {
         if (pend.kind == KOS_RES_REPROLOGUE)
         KOS_REENTER_AGAIN(ctx);

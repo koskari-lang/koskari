@@ -528,8 +528,9 @@ static void kos_dyn_gen_convert_escaping_stop(void) {
    TRY or FINALLY consumes (jump to handler) or no handler remains, crossing
    frame and generator boundaries as the exception propagates. Returns
    KosOpResult (the eval-loop boundary type): EVAL_REPROLOGUE when a handler
-   applied, EVAL_RAISE when none remains, EVAL_AWAIT when an async unwind
-   started. Callers: process_raise (the unified RAISE ingress in
+   applied, EVAL_RESUME(NULL) when the live frame has a resume to take
+   the failure, EVAL_RAISE when none remains, EVAL_AWAIT when an async
+   unwind started. Callers: process_raise (the unified RAISE ingress in
    eval.c).
 */
 KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
@@ -560,12 +561,12 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
   while (KosContext_FRAME(ctx) && KosContext_DYN_TOP(ctx) != NULL) {
 
     /* The live frame's resume is first at every level: a frame pop or
-       a generator teardown that reveals a frame with a resume hands
-       the walk back to process_raise, which bounces to the prologue's
-       delivery step, where the resume may thread on. A decline clears
-       the resume and re-enters the walk from this same dyn_top. */
+       a generator teardown that reveals a frame with a resume ends the
+       walk with RESUME, and the frame's resume takes the failure as a
+       NULL delivery, where it may thread on. A decline clears the
+       resume and re-enters the walk from this same dyn_top. */
     if (KosDynFrame_RESUME_KIND(KosContext_FRAME(ctx)))
-      return EVAL_REPROLOGUE();
+      return EVAL_RESUME(NULL);
 
     /* Frame crossing: cross into the caller section and keep walking.
        Handler discovery is node-authoritative - a live TRY/FINALLY node
@@ -577,9 +578,9 @@ KosOpResult kos_dyn_unwind_raise(KosContext *ctx) {
         break;
 
       /* A code-less step frame's resume has already seen this
-         exception: process_raise hands it to the prologue, which
-         delivers it as a NULL against a settled chain, and the walk
-         only runs once that resume declined and cleared itself. */
+         exception: process_raise answers RESUME, the resume takes it
+         as a NULL against a settled chain, and the walk only runs
+         once that resume declined and cleared itself. */
 
       {
         KosDynNode *parent = KosDynNode_PARENT(KosContext_DYN_TOP(ctx));

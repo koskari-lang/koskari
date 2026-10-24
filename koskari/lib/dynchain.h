@@ -629,7 +629,8 @@ typedef struct KosDynNode KosDynFrame;
 
    Like every walk it returns KosOpResult: EVAL_REPROLOGUE when a handler
    applied, EVAL_RAISE when no handler remains (PyErr set, surfacing raise
-   prepared), EVAL_AWAIT when an async unwind started, EVAL_RETURN when
+   prepared), EVAL_RESUME(NULL) when the live frame has a resume to take
+   the failure, EVAL_AWAIT when an async unwind started, EVAL_RETURN when
    a resume-carrying frame answered the exception by completing itself
    (the caller applies the return from the live frame).
 
