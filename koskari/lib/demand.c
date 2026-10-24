@@ -145,13 +145,14 @@ iter_fail:
 
 
 /**
-   Finish a value at the demand boundary, whether a Python callable or
-   a Koskari install produced it. A plain value passes through; one
-   that genuinely needs awaiting is eagerly stepped, and denied as a
-   sync violation if it suspends. KosEval_ResultIsValue is the gate
-   rather than demand_step_python_result's own __await__ probe, so a
-   Defer or a future -- both exempt from ambient await -- passes
-   through as the value it is instead of being stepped.
+   Finish a Python callable's result at the demand boundary. A plain
+   value passes through; one that genuinely needs awaiting is eagerly
+   stepped, and denied as a sync violation if it suspends, the
+   violation thrown into the awaitable so it may recover.
+   KosEval_ResultIsValue is the gate rather than
+   demand_step_python_result's own __await__ probe, so a Defer or a
+   future -- both exempt from ambient await -- passes through as the
+   value it is instead of being stepped.
 
    Steals value. Returns a new reference, or NULL with PyErr set.
 */
@@ -166,6 +167,46 @@ static PyObject *demand_finish_value(PyObject *value) {
       Py_DECREF(value);
       return NULL;
   }
+}
+
+
+/**
+   Finish a Koskari return that left the eval as the root frame's own,
+   by the rule the in-eval await applies: a plain value passes through;
+   an awaitable is stepped once and, if it suspends, the yield and the
+   await iterator are dropped, nothing is thrown into it, and the
+   violation is raised. The same outcome a return into the demand root
+   frame's resume gets, whichever arm the entry took.
+
+   Steals value. Returns a new reference, or NULL with PyErr set.
+*/
+static PyObject *demand_deny_suspended(PyObject *value) {
+
+  PyObject *await_iter = NULL;
+  PyObject *yielded = NULL;
+  PyObject *settled;
+
+  switch (KosEval_ResultIsValue(value)) {
+    case 1:
+      return value;
+    case 0:
+      break;
+    default:
+      Py_DECREF(value);
+      return NULL;
+  }
+
+  settled = kos_await_first_step(value, &await_iter, &yielded);
+  Py_DECREF(value);
+  if (settled)
+    return settled;
+  if (! await_iter)
+    return NULL;
+
+  Py_DECREF(yielded);
+  Py_DECREF(await_iter);
+  kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
+  return NULL;
 }
 
 
@@ -295,12 +336,11 @@ static PyObject *demand_run_koskari(
 
   switch (r.kind) {
     case KOS_RES_RETURN:
-      /* The returned value is classified like any other settled
-         result: a function that returns an awaitable as data gets the
-         same eager-step-or-deny treatment a plain Python callable's
-         result gets, instead of leaking an unstepped awaitable out of
-         the demand boundary. */
-      return demand_finish_value(r.val);
+      /* A return that left the eval as the root frame's own: an
+         awaitable returned as data is denied the way the demand root
+         frame's resume denies it in-eval, never thrown into, so a
+         function answers the same on every call shape. */
+      return demand_deny_suspended(r.val);
 
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:

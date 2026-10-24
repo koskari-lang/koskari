@@ -164,6 +164,34 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
         return fn
 
 
+    async def test_returned_awaitable_is_denied_on_every_call_shape(self):
+        """
+        a Function returning an awaitable that would swallow the
+        violation is denied the same way on its first call, through the
+        demand root frame's resume, and on every later call, as the root
+        frame itself: the awaitable is never thrown into
+        """
+        module = new_module("demand_every_shape")
+        vars(module)["__file__"] = "<demand_every_shape>"
+        await load_module_source_async(
+            module, "(define give [a] a)", layout=False)
+        give = vars(module)["give"]
+
+        def _it():
+            try:
+                yield 1
+            except KoskariSyncViolation:
+                return "from_iter"
+
+        class Swallows:
+            def __await__(self):
+                return _it()
+
+        for _ in range(3):
+            with self.assertRaises(KoskariSyncViolation):
+                demand_call(give, Swallows())
+
+
     async def test_function_closure_no_args_via_await(self):
         """
         Function closing over x (no args) returns 100 via await
