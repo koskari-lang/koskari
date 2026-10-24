@@ -359,6 +359,45 @@ class TestDemandYieldingFunction(unittest.TestCase):
         self.assertIn('suspension', str(ctx.exception))
 
 
+    def test_yield_from_suspending_async_delegate_raises_violation(self):
+        """
+        A generator delegating through yield-from to a python async
+        iterator whose step suspends raises KoskariSyncViolation when
+        consumed synchronously
+        """
+
+        import asyncio
+
+        class SleepingCounter:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                await asyncio.sleep(0)
+                return 1
+
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': SleepingCounter()},
+        )
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["YIELD_FROM", 0],
+                ["RETURN", 0],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='yield_from_sleeping_counter',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        gen = demand_call(fn)
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            next(iter(gen))
+        self.assertIn('suspension', str(ctx.exception))
+
+
 class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
     """
     In-eval denial: KoskariSyncViolation raised at the AWAIT site so

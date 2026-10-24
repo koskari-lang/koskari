@@ -172,37 +172,42 @@ static int yield_from_normalize(
 
 
 /**
-   Close a delegate the delegation is leaving while it may still be
-   active: a sync iterator or generator through its close method, a
-   provider through its suite. A python async delegate is only
-   released: this runs where nothing can await, and aclose would make
-   a coroutine nothing awaits; the delegate finalizes itself (a python
-   async generator's finalizer hook runs aclose on the event loop). An
-   explicit close of the delegating generator takes this path too: its
-   GeneratorExit is never thrown into the delegate but raised at the
-   frame, so a python async delegate is released here and its own
-   finalizer closes it.
+   Close a delegate of the given KOS_YF_* kind the delegation is
+   leaving while it may still be active: a sync iterator or generator
+   through its close method, a provider through its suite. A python
+   async delegate is only released: this runs where nothing can await,
+   and aclose would make a coroutine nothing awaits; the delegate
+   finalizes itself (a python async generator's finalizer hook runs
+   aclose on the event loop). An explicit close of the delegating
+   generator takes this path too: its GeneratorExit is never thrown
+   into the delegate but raised at the frame, so a python async
+   delegate is released here and its own finalizer closes it.
 */
-static void yield_from_close_delegate(PyObject *delegate) {
+static void yield_from_close_delegate(PyObject *delegate, int kind) {
 
   KosIterSlots *islots;
 
-  if (KosIter_CheckSlots(delegate, &islots)) {
-    islots->ki_close(delegate);
-    return;
+  switch (kind) {
+    case KOS_YF_KOS_ITER:
+      if (KosIter_CheckSlots(delegate, &islots))
+        islots->ki_close(delegate);
+      return;
+    case KOS_YF_PY_ASYNC_ITER:
+    case KOS_YF_PY_ASYNC_GEN:
+      return;
+    default:
+      kos_iter_close(delegate);
+      return;
   }
-  if (Py_TYPE(delegate)->tp_as_async && Py_TYPE(delegate)->tp_as_async->am_anext)
-    return;
-  kos_iter_close(delegate);
 }
 
 
-/* The kind's clear: a teardown with no delivery coming (the frame
-   freed, cached or reused with the delegation in flight, a raise walk
-   unwinding past it) closes the delegate and releases it. The pending
-   exception, when the teardown runs under one, is kept across the
-   close. */
-static void yield_from_state_clear(void *state) {
+/* The clears' shared body: a teardown with no delivery coming (the
+   frame freed, cached or reused with the delegation in flight, a raise
+   walk unwinding past it) closes the delegate per its kind and
+   releases it. The pending exception, when the teardown runs under
+   one, is kept across the close. */
+static inline void yield_from_state_close(void *state, int kind) {
 
   PyObject *delegate = (PyObject *) state;
   PyObject *typ, *val, *tb;
@@ -210,9 +215,27 @@ static void yield_from_state_clear(void *state) {
   if (! delegate)
     return;
   PyErr_Fetch(&typ, &val, &tb);
-  yield_from_close_delegate(delegate);
+  yield_from_close_delegate(delegate, kind);
   PyErr_Restore(typ, val, tb);
   Py_DECREF(delegate);
+}
+
+
+/* The clear of the kinds over a sync iterator or generator. */
+static void yf_state_clear_sync(void *state) {
+  yield_from_state_close(state, KOS_YF_SYNC_ITER);
+}
+
+
+/* The clear of the kinds over a python async iterator or generator. */
+static void yf_state_clear_py_async(void *state) {
+  yield_from_state_close(state, KOS_YF_PY_ASYNC_ITER);
+}
+
+
+/* The clear of the kinds over a provider. */
+static void yf_state_clear_kos_iter(void *state) {
+  yield_from_state_close(state, KOS_YF_KOS_ITER);
 }
 
 
@@ -228,15 +251,18 @@ static int yield_from_state_traverse(void *state, visitproc visit, void *arg) {
    by name, and none can, since the delegate in flight sits above the
    frame as a generator node or a native frame, which refuse first, or
    runs outside the evaluator with no capture point inside it. One
-   owner, so the clear's close at teardown is the delegate's only. */
-#define YF_KIND(ident, fnp)                                             \
+   owner, so the clear's close at teardown is the delegate's only. One
+   clear per close action: each kind names the clear for its delegate
+   kind, shared by that delegate kind's drive, throw, await and emit
+   kinds. */
+#define YF_KIND(ident, fnp, clearp)                                     \
   KOS_RESUME_KIND_AS_IS_OWNING(ident, "yield-from", fnp,                \
-                               yield_from_state_clear, NULL,            \
+                               clearp, NULL,                            \
                                yield_from_state_traverse)
 
-#define YF_KIND_THROWABLE(ident, fnp, throwp)                           \
+#define YF_KIND_THROWABLE(ident, fnp, clearp, throwp)                   \
   KOS_RESUME_KIND_AS_IS_OWNING_THROWABLE(ident, "yield-from", fnp,      \
-                                         yield_from_state_clear, NULL,  \
+                                         clearp, NULL,                  \
                                          yield_from_state_traverse,     \
                                          throwp)
 
@@ -270,30 +296,38 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
 
 /* The throw kinds: a throw into a waiting drive, the exception object
    as the value, thrown into the delegate per its kind. */
-YF_KIND(yf_throw_sync_iter_kind, yf_throw_sync_iter);
-YF_KIND(yf_throw_sync_gen_kind, yf_throw_sync_gen);
-YF_KIND(yf_throw_py_async_iter_kind, yf_throw_py_async_iter);
-YF_KIND(yf_throw_py_async_gen_kind, yf_throw_py_async_gen);
-YF_KIND(yf_throw_kos_iter_kind, yf_throw_kos_iter);
+YF_KIND(yf_throw_sync_iter_kind, yf_throw_sync_iter,
+        yf_state_clear_sync);
+YF_KIND(yf_throw_sync_gen_kind, yf_throw_sync_gen,
+        yf_state_clear_sync);
+YF_KIND(yf_throw_py_async_iter_kind, yf_throw_py_async_iter,
+        yf_state_clear_py_async);
+YF_KIND(yf_throw_py_async_gen_kind, yf_throw_py_async_gen,
+        yf_state_clear_py_async);
+YF_KIND(yf_throw_kos_iter_kind, yf_throw_kos_iter,
+        yf_state_clear_kos_iter);
 
 /* The drive kinds: a next or a send from the consumer, each naming
    the throw kind that takes a throw instead. */
 YF_KIND_THROWABLE(yf_drive_sync_iter_kind, yf_drive_sync_iter,
-                  &yf_throw_sync_iter_kind);
+                  yf_state_clear_sync, &yf_throw_sync_iter_kind);
 YF_KIND_THROWABLE(yf_drive_sync_gen_kind, yf_drive_sync_gen,
-                  &yf_throw_sync_gen_kind);
+                  yf_state_clear_sync, &yf_throw_sync_gen_kind);
 YF_KIND_THROWABLE(yf_drive_py_async_iter_kind, yf_drive_py_async_iter,
-                  &yf_throw_py_async_iter_kind);
+                  yf_state_clear_py_async, &yf_throw_py_async_iter_kind);
 YF_KIND_THROWABLE(yf_drive_py_async_gen_kind, yf_drive_py_async_gen,
-                  &yf_throw_py_async_gen_kind);
+                  yf_state_clear_py_async, &yf_throw_py_async_gen_kind);
 YF_KIND_THROWABLE(yf_drive_kos_iter_kind, yf_drive_kos_iter,
-                  &yf_throw_kos_iter_kind);
+                  yf_state_clear_kos_iter, &yf_throw_kos_iter_kind);
 
 /* The waits on the delegate: an installed provider's element, an
    awaited python async step, one per python async drive. */
-YF_KIND(yf_emit_kos_iter_kind, yf_emit_kos_iter);
-YF_KIND(yf_await_py_async_iter_kind, yf_await_py_async_iter);
-YF_KIND(yf_await_py_async_gen_kind, yf_await_py_async_gen);
+YF_KIND(yf_emit_kos_iter_kind, yf_emit_kos_iter,
+        yf_state_clear_kos_iter);
+YF_KIND(yf_await_py_async_iter_kind, yf_await_py_async_iter,
+        yf_state_clear_py_async);
+YF_KIND(yf_await_py_async_gen_kind, yf_await_py_async_gen,
+        yf_state_clear_py_async);
 
 
 /* The drive kind a delegate kind elects. */
@@ -354,19 +388,41 @@ static inline void yf_set_phase(
 
 
 /**
-   A delivery of NULL with an exception pending, at any phase: a
-   failure delivered to the delegating frame while it waited.
-   GeneratorExit closes the delegate first (PEP 380) and propagates;
-   the delegate's own end (StopIteration, or StopAsyncIteration from
-   an async delegate) ends the delegation; anything else propagates
-   with the delegate released, as it would have past the node.
-   Returns 1 when the delegation ended and the frame threads on, else
-   0 with the exception standing and the delegate released.
+   Whether the pending exception is the end of a delegate of the given
+   KOS_YF_* kind: StopIteration for a sync delegate, StopAsyncIteration
+   for a python async delegate, and either for a provider, which over
+   an async source may end with either.
 */
-static int yf_take_failure(PyObject *delegate) {
+static inline int yf_is_end(int kind) {
 
-  if (PyErr_ExceptionMatches(PyExc_StopIteration)
-      || PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+  switch (kind) {
+    case KOS_YF_SYNC_ITER:
+    case KOS_YF_SYNC_GEN:
+      return PyErr_ExceptionMatches(PyExc_StopIteration);
+    case KOS_YF_PY_ASYNC_ITER:
+    case KOS_YF_PY_ASYNC_GEN:
+      return PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
+    default:
+      return PyErr_ExceptionMatches(PyExc_StopIteration)
+          || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
+  }
+}
+
+
+/**
+   A delivery of NULL with an exception pending, at any phase: a
+   failure delivered to the delegating frame while it waited, over a
+   delegate of the given KOS_YF_* kind. GeneratorExit closes the
+   delegate per its kind first (PEP 380) and propagates; the end of
+   that kind of delegate (yf_is_end) ends the delegation; anything
+   else, another kind's end among it, propagates with the delegate
+   released, as it would have past the node. Returns 1 when the
+   delegation ended and the frame threads on, else 0 with the
+   exception standing and the delegate released.
+*/
+static int yf_take_failure(PyObject *delegate, int kind) {
+
+  if (yf_is_end(kind)) {
     PyObject *exc = PyErr_GetRaisedException();
     Py_DECREF(exc);
     return 1;
@@ -374,7 +430,7 @@ static int yf_take_failure(PyObject *delegate) {
   if (PyErr_ExceptionMatches(PyExc_GeneratorExit)) {
     PyObject *typ, *val, *tb;
     PyErr_Fetch(&typ, &val, &tb);
-    yield_from_close_delegate(delegate);
+    yield_from_close_delegate(delegate, kind);
     PyErr_Restore(typ, val, tb);
   }
   Py_DECREF(delegate);
@@ -385,10 +441,10 @@ static int yf_take_failure(PyObject *delegate) {
 /* The drive kinds' common entry: a NULL delivery with an error
    pending is a failure delivered to the waiting frame. Relays it or
    finishes the delegation; falls through on a delivery to step on. */
-#define YF_DRIVE_ENTRY(ctx, delegate, value)                            \
+#define YF_DRIVE_ENTRY(ctx, delegate, value, kind)                      \
   do {                                                                  \
     if (! (value) && PyErr_Occurred()) {                                \
-      if (yf_take_failure(delegate))                                    \
+      if (yf_take_failure((delegate), (kind)))                          \
         YF_FINISH((ctx), (delegate));                                   \
       RESULT_RAISE();                                                   \
     }                                                                   \
@@ -398,7 +454,7 @@ static int yf_take_failure(PyObject *delegate) {
 /* A throw kind's entry: the exception object is the delivery; a NULL
    is a failure delivered to the waiting frame, taken as the drive's
    would be. */
-#define YF_THROW_ENTRY(ctx, delegate, exc)                              \
+#define YF_THROW_ENTRY(ctx, delegate, exc, kind)                        \
   do {                                                                  \
     if (! (exc)) {                                                      \
       if (! PyErr_Occurred()) {                                         \
@@ -407,7 +463,7 @@ static int yf_take_failure(PyObject *delegate) {
                         "yield-from throw with no exception");          \
         RESULT_RAISE();                                                 \
       }                                                                 \
-      if (yf_take_failure(delegate))                                    \
+      if (yf_take_failure((delegate), (kind)))                          \
         YF_FINISH((ctx), (delegate));                                   \
       RESULT_RAISE();                                                   \
     }                                                                   \
@@ -441,7 +497,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_iter(
   KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *n;
 
-  YF_DRIVE_ENTRY(ctx, delegate, value);
+  YF_DRIVE_ENTRY(ctx, delegate, value, KOS_YF_SYNC_ITER);
 
   if (value && value != Py_None) {
     Py_DECREF(value);
@@ -478,7 +534,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_iter(
   PyObject *res = NULL;
   PySendResult sr;
 
-  YF_THROW_ENTRY(ctx, delegate, exc);
+  YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_SYNC_ITER);
 
   sr = kos_iter_throw(delegate, exc, &res);
   Py_DECREF(exc);
@@ -495,7 +551,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_sync_gen(
   PyObject *res = NULL;
   PySendResult sr;
 
-  YF_DRIVE_ENTRY(ctx, delegate, value);
+  YF_DRIVE_ENTRY(ctx, delegate, value, KOS_YF_SYNC_GEN);
 
   sr = kos_iter_send(delegate, value ? value : Py_None, &res);
   Py_XDECREF(value);
@@ -512,7 +568,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_sync_gen(
   PyObject *res = NULL;
   PySendResult sr;
 
-  YF_THROW_ENTRY(ctx, delegate, exc);
+  YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_SYNC_GEN);
 
   sr = kos_iter_throw(delegate, exc, &res);
   Py_DECREF(exc);
@@ -546,12 +602,6 @@ static KosOpResult yf_py_async_await(
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
-    if (kos_eval_demand_deny_suspend(
-            ctx, "async suspension is not allowed in demand_sync")) {
-      Py_DECREF(yielded);
-      Py_DECREF(delegate);
-      return EVAL_RAISE();
-    }
     yf_set_phase(frame, await_kind, delegate);
     KosContext_FlushLiveRegsToFrame(ctx);
     KosContext_MarkDeadAfterYield(ctx);
@@ -609,7 +659,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_iter(
   KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *awaitable;
 
-  YF_DRIVE_ENTRY(ctx, delegate, value);
+  YF_DRIVE_ENTRY(ctx, delegate, value, KOS_YF_PY_ASYNC_ITER);
 
   if (value && value != Py_None) {
     Py_DECREF(value);
@@ -634,7 +684,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_py_async_gen(
   KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *awaitable = NULL;
 
-  YF_DRIVE_ENTRY(ctx, delegate, value);
+  YF_DRIVE_ENTRY(ctx, delegate, value, KOS_YF_PY_ASYNC_GEN);
 
   if (! value || value == Py_None) {
     Py_XDECREF(value);
@@ -660,7 +710,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_iter(
 
   PyObject *delegate = (PyObject *) state;
 
-  YF_THROW_ENTRY(ctx, delegate, exc);
+  YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_PY_ASYNC_ITER);
 
   if (PyErr_GivenExceptionMatches(exc, PyExc_StopAsyncIteration)) {
     Py_DECREF(exc);
@@ -683,7 +733,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
   PyObject *awaitable = NULL;
   PyObject *tmp;
 
-  YF_THROW_ENTRY(ctx, delegate, exc);
+  YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_PY_ASYNC_GEN);
 
   if (PyErr_GivenExceptionMatches(exc, PyExc_StopAsyncIteration)) {
     Py_DECREF(exc);
@@ -703,7 +753,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
 /* The awaited result of a python async delegate's step: the element,
    re-yielded with the drive kind set; a failure taken as the drive
    would take it. */
-#define YF_AWAIT_OUTCOME(ctx, frame, delegate, value, drive)            \
+#define YF_AWAIT_OUTCOME(ctx, frame, delegate, value, drive, kind)      \
   do {                                                                  \
     if (! (value)) {                                                    \
       if (! PyErr_Occurred()) {                                         \
@@ -712,7 +762,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_py_async_gen(
                         "yield-from resume with no await result");      \
         RESULT_RAISE();                                                 \
       }                                                                 \
-      if (yf_take_failure(delegate))                                    \
+      if (yf_take_failure((delegate), (kind)))                          \
         YF_FINISH((ctx), (delegate));                                   \
       RESULT_RAISE();                                                   \
     }                                                                   \
@@ -726,7 +776,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_iter(
   PyObject *delegate = (PyObject *) state;
   KosDynFrame *frame = KosContext_FRAME(ctx);
 
-  YF_AWAIT_OUTCOME(ctx, frame, delegate, value, &yf_drive_py_async_iter_kind);
+  YF_AWAIT_OUTCOME(ctx, frame, delegate, value,
+                   &yf_drive_py_async_iter_kind, KOS_YF_PY_ASYNC_ITER);
 }
 
 
@@ -736,7 +787,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_await_py_async_gen(
   PyObject *delegate = (PyObject *) state;
   KosDynFrame *frame = KosContext_FRAME(ctx);
 
-  YF_AWAIT_OUTCOME(ctx, frame, delegate, value, &yf_drive_py_async_gen_kind);
+  YF_AWAIT_OUTCOME(ctx, frame, delegate, value,
+                   &yf_drive_py_async_gen_kind, KOS_YF_PY_ASYNC_GEN);
 }
 
 
@@ -806,7 +858,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_drive_kos_iter(
   KosIterStepResult sr;
   PyObject *out = NULL;
 
-  YF_DRIVE_ENTRY(ctx, delegate, value);
+  YF_DRIVE_ENTRY(ctx, delegate, value, KOS_YF_KOS_ITER);
   YF_KOS_ITER_SLOTS(delegate, islots, value);
 
   sr = kos_iter_step_provider(ctx, delegate, islots, value, &out);
@@ -826,7 +878,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_throw_kos_iter(
   KosIterStepResult sr;
   PyObject *out = NULL;
 
-  YF_THROW_ENTRY(ctx, delegate, exc);
+  YF_THROW_ENTRY(ctx, delegate, exc, KOS_YF_KOS_ITER);
   YF_KOS_ITER_SLOTS(delegate, islots, exc);
 
   if (PyErr_GivenExceptionMatches(exc, PyExc_StopAsyncIteration)) {
@@ -859,12 +911,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult yf_emit_kos_iter(
       PyErr_SetString(PyExc_SystemError, "yield-from emit with no value");
       RESULT_RAISE();
     }
-    if (islots) {
-      int ended = PyErr_ExceptionMatches(PyExc_StopIteration)
-          || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
-      kos_iter_finish(delegate, islots, ended);
-    }
-    if (yf_take_failure(delegate))
+    if (islots)
+      kos_iter_finish(delegate, islots, yf_is_end(KOS_YF_KOS_ITER));
+    if (yf_take_failure(delegate, KOS_YF_KOS_ITER))
       YF_FINISH(ctx, delegate);
     RESULT_RAISE();
   }

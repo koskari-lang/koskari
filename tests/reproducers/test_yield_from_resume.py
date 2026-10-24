@@ -53,6 +53,18 @@ class StopWithValue:
         raise StopIteration(42)
 
 
+class StopAsyncFromSync:
+    """
+    A sync iterator whose first step raises StopAsyncIteration
+    """
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        raise StopAsyncIteration
+
+
 def py_echo(n):
     got = []
     for i in range(n):
@@ -124,6 +136,12 @@ class TestYieldFromResume(unittest.IsolatedAsyncioTestCase):
         ns = await self.load()
         self.assertEqual(["after"],
                          await ns['collect'](ns['outer'](StopWithValue())))
+
+    async def test_stop_async_iteration_from_a_sync_iterator_propagates(self):
+        ns = await self.load()
+        with self.assertRaises(RuntimeError) as cm:
+            await ns['collect'](ns['outer'](StopAsyncFromSync()))
+        self.assertIsInstance(cm.exception.__cause__, StopAsyncIteration)
 
     async def test_python_generator_delegate(self):
         ns = await self.load()

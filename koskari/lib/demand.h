@@ -100,8 +100,9 @@ PyObject *KosDemand_CallVector(
 /**
    Set KoskariSyncViolation on PyErr with msg as the message string.
 
-   Called from eval guard sites (kos_eval_demand_deny_suspend) to raise the
-   violation as an in-eval exception without duplicating exception registration.
+   Called from guard sites (eval_event_await among them) to raise the
+   violation as an in-eval exception without duplicating exception
+   registration.
 */
 void kos_demand_set_sync_violation(const char *msg);
 

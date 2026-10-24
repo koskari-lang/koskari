@@ -102,37 +102,18 @@ static PyObject *get_await_next(PyObject *val) {
 }
 
 
-/* === Demand extent detection and suspension denial === */
+/* === Demand extent detection === */
 
 
 /**
    Return 1 if the current frame carries KOS_FRAME_DEMAND. O(1): the flag is
    inherited by kos_dyn_push_frame at install time, so the current frame always
-   answers for the entire demand extent.
+   answers for the entire demand extent. Every async suspension under a
+   demand extent is intercepted centrally in eval_event_await.
 */
 static int kos_eval_in_demand(KosContext *ctx) {
   KosDynFrame *frame = KosContext_FRAME(ctx);
   return frame && (KosDynFrame_FLAGS(frame) & KOS_FRAME_DEMAND);
-}
-
-
-/**
-   If execution is under a demand extent, set KoskariSyncViolation on PyErr
-   and return 1. Otherwise return 0 (caller continues normally).
-
-   Used by the yield-from resume for a python async delegate, whose
-   resume kind must not be set when denying. All other suspension paths
-   are intercepted centrally in eval_event_await / eval_event_yield.
-*/
-static int kos_eval_demand_deny_suspend(KosContext *ctx, const char *msg) {
-  if (! kos_eval_in_demand(ctx))
-    return 0;
-
-  /* The eager step stored the __await__ iterator for a resumption
-     that is now refused; nothing will drive it again. */
-  KosContext_PythonAwaitClearIter(ctx);
-  kos_demand_set_sync_violation(msg);
-  return 1;
 }
 
 
