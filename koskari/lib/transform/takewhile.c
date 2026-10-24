@@ -138,7 +138,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
     PyObject *element = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(ctx, element, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, element, &t->cached_frame);
   }
 }
 

@@ -120,7 +120,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
   Py_DECREF(p->held);
   p->held = element;  /* steals */
 
-  return KosNativeFrame_ReturnToCache(ctx, row, &t->cached_frame);
+  RESULT_FRAME_RETURN(ctx, row, &t->cached_frame);
 }
 
 

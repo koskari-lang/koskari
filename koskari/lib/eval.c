@@ -1583,6 +1583,19 @@ KOS_OP_INLINE KosOpResult eval_region_return(
     KosDynNode *parent,
     KosDynFrame *ft,
     PyObject *val);
+KOS_OP_INLINE int kos_return_is_region_resume(
+    KosContext *ctx,
+    KosDynNode **out_child,
+    KosDynNode **out_parent,
+    KosDynFrame **out_ft);
+KOS_OP_INLINE int eval_region_resume_return(
+    KosContext *ctx,
+    KosDynNode *child,
+    KosDynNode *parent,
+    KosDynFrame *ft,
+    PyObject *val,
+    const KosResumeKind **out_resume,
+    void **out_state);
 KOS_OP_INLINE int kos_return_is_resume(
     KosContext *ctx,
     KosDynNode **out_parent);
@@ -1725,18 +1738,21 @@ static KosOpResult kos_op_call_star(
 
 
 /**
-   The delivery of RETURN: val is the owned return value.  The three
+   The delivery of RETURN: val is the owned return value.  The four
    shapes that need no walk thread straight on: a plain bytecode parent
    takes the value on its stack and continues at its saved pc (the
    bytecode frame's own resume); a region over such a parent takes the
    value on its segment and reacts through its control-returned hook
-   if it has one; a parent waiting on a resume takes the value by a
-   tail call into that resume.  Anything else -- an extent above the
-   returning frame, a generator or a receiving iteration-node parent,
-   a missing retarget cache, an unsettled value -- signals RETURN and
-   the trampoline's return machinery walks it.  Reached by tail call
-   from every RETURN row, so it carries the KosThreadFn prototype; insn
-   is unused.
+   if it has one; a region with no such hook over a frame waiting on a
+   resume hands the value to that resume by a tail call; a parent
+   waiting on a resume takes the value by a tail call into that
+   resume.  Anything else -- an extent above the returning frame, a
+   generator or a receiving iteration-node parent, a missing retarget
+   cache, an unsettled value -- signals RETURN and the trampoline's
+   return machinery walks it.  Reached by tail call from every RETURN
+   row and from a resume completing its code-less frame
+   (RESULT_FRAME_RETURN), so it carries the KosThreadFn prototype;
+   insn is unused.
 */
 KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
     KosContext *ctx,
@@ -1767,6 +1783,25 @@ KOS_PRESERVE_NONE KosOpResult kos_return_deliver(
     if (r.kind == KOS_RES_REPROLOGUE)
       TAILCALL(kos_eval_prologue, ctx, NULL, NULL);
     return r;
+  }
+
+  /* A frame completing under a region whose frame waits on a resume:
+     a provider's code-less step frame, or its in-hand call of a
+     Koskari function, under a for-each region. The step resume is
+     entered with the region at dyn_top, which kos_iter_step_finish
+     relies on. An unsettled value falls through to the general path. */
+  if (kos_return_is_region_resume(ctx, &child, &parent, &ft)) {
+    const KosResumeKind *resume;
+    void *state;
+    int took;
+
+    KOS_TRACE_POST_OP_WRAP(plain_return,
+        took = eval_region_resume_return(
+            ctx, child, parent, ft, val, &resume, &state));
+    if (likely(took > 0))
+      RESUME_HOP(resume, ctx, state, val);
+    if (unlikely(took < 0))
+      RESULT_RAISE();
   }
 
   if (kos_return_is_resume(ctx, &parent)) {
@@ -2774,6 +2809,107 @@ KOS_OP_INLINE KosOpResult eval_region_return(
   if (KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
     return kos_eval_post_opcode_control_returned_after_hook(ctx);
   return kos_eval_delivery_done(ctx);
+}
+
+
+/**
+   Region-resume return predicate: the frame returns into a chain node
+   that is not a frame or a generator and hooks no control return,
+   beneath a frame waiting on a resume. The shape is a frame installed
+   under a region whose frame waits on a resume, as a provider's
+   code-less step frame or its in-hand call of a Koskari function under
+   a for-each region with the loop frame's step resume already set.
+   The retarget facts are the cached ones kos_return_is_region needs.
+   A hooked node (WITH, WIND) or any missing fact falls through to the
+   general path.
+*/
+KOS_OP_INLINE int kos_return_is_region_resume(
+    KosContext *ctx,
+    KosDynNode **out_child,
+    KosDynNode **out_parent,
+    KosDynFrame **out_ft) {
+
+  KosDynNode *child = (KosDynNode *) KosContext_FRAME(ctx);
+  KosDynNode *parent;
+  KosDynFrame *ft;
+
+  if (! child || KosContext_DYN_TOP(ctx) != child)
+    return 0;
+
+  parent = KosDynNode_PARENT(child);
+  if (! parent
+      || KosDynNode_IS_FRAME(parent)
+      || KosDynNode_IS_GEN(parent)
+      || KosDynNode_HAS_CAP(parent, KOS_DYN_CAP_CONTROL_HOOK))
+    return 0;
+
+  ft = (KosDynFrame *) KosDynFrame_BACK_FRAME(child);
+  if (! ft
+      || ! KosDynNode_IS_FRAME((KosDynNode *) ft)
+      || ! KosDynFrame_CODE(ft)
+      || ! KosDynFrame_RESUME_KIND(ft))
+    return 0;
+
+  if (! KosDynNode_STACK(child)
+      || ! KosSegment_BACK(KosDynNode_STACK(child))
+      || ! KosDynNode_NS(parent))
+    return 0;
+
+  *out_child = child;
+  *out_parent = parent;
+  *out_ft = ft;
+  return 1;
+}
+
+
+/**
+   Region-resume return transition, once kos_return_is_region_resume
+   holds: with val already settled, retarget straight from the cached
+   facts as eval_region_return does, free the callee, then take the
+   resume pair off ft (cleared, as the delivery step clears it) and
+   return 1: the caller tail-calls the resume with val. The resume is
+   entered with the region at dyn_top, which kos_iter_step_finish
+   relies on. val is pushed on no stack. Returns 0 when val still
+   needs settling and nothing was touched, so the general return path
+   applies; returns -1 with PyErr set and val released when the
+   classification fails.
+*/
+KOS_OP_INLINE int eval_region_resume_return(
+    KosContext *ctx,
+    KosDynNode *child,
+    KosDynNode *parent,
+    KosDynFrame *ft,
+    PyObject *val,
+    const KosResumeKind **out_resume,
+    void **out_state) {
+
+  KosSegment **bl;
+
+  switch (KosEval_ResultIsValue(val)) {
+    case 1:
+      break;
+    case 0:
+      return 0;  /* needs settling: the delivery step owns that */
+    default:
+      Py_DECREF(val);
+      return -1;
+  }
+
+  bl = KosSegment_BACK(KosDynNode_STACK(child));
+  KosContext_DYN_TOP(ctx) = parent;
+  KosContext_FRAME(ctx) = ft;
+  KosContext_BLOCK(ctx) = bl;
+  KosContext_NAMESPACE(ctx) = KosDynNode_NS(parent);
+  KosContext_CODE(ctx) = KosDynFrame_CODE(ft);
+  ctx->pc = KosDynFrame_PC(ft);
+  ctx->acting_pc = KosDynFrame_ACTING_PC(ft);
+  kos_dynframe_free((KosDynFrame *) child);
+
+  *out_resume = KosDynFrame_RESUME_KIND(ft);
+  *out_state = KosDynFrame_RESUME_STATE(ft);
+  KosDynFrame_RESUME_KIND(ft) = NULL;
+  KosDynFrame_RESUME_STATE(ft) = NULL;
+  return 1;
 }
 
 

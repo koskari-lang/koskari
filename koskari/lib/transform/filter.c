@@ -142,7 +142,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
       return EVAL_RAISE();
     }
     if (filter_keeps((KosFilter *) state, ok))
-      return KosNativeFrame_ReturnToCache(ctx, element, &f->cached_frame);
+      RESULT_FRAME_RETURN(ctx, element, &f->cached_frame);
 
     Py_DECREF(element);
     filter_refetch(ctx, f);
@@ -187,7 +187,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     PyObject *element = f->pending;
 
     f->pending = NULL;
-    return KosNativeFrame_ReturnToCache(ctx, element, &f->cached_frame);
+    RESULT_FRAME_RETURN(ctx, element, &f->cached_frame);
   }
 
   Py_CLEAR(f->pending);

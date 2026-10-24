@@ -154,7 +154,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult chain_resume_deliver(
     RESUME_HOP(&chain_resume_fetch_kind, ctx, c, NULL);
   }
 
-  return KosNativeFrame_ReturnToCache(ctx, element, &t->cached_frame);
+  RESULT_FRAME_RETURN(ctx, element, &t->cached_frame);
 }
 
 

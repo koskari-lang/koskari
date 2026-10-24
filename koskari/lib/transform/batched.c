@@ -111,7 +111,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_fill(
     PyObject *batch = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(ctx, batch, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, batch, &t->cached_frame);
   }
 }
 
@@ -142,7 +142,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult batched_resume_deliver(
     if (! shorter)
       return EVAL_RAISE();
 
-    return KosNativeFrame_ReturnToCache(ctx, shorter, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, shorter, &t->cached_frame);
   }
 
   PyTuple_SET_ITEM(t->pending, b->filled, element);

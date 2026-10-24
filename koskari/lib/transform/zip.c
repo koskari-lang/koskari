@@ -117,7 +117,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_resume_fetch(
 
     t->pending = NULL;
     zip_row_retrack(row);
-    return KosNativeFrame_ReturnToCache(ctx, row, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, row, &t->cached_frame);
   }
 }
 

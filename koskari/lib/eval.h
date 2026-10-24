@@ -216,7 +216,7 @@ typedef enum KosGetNextResult {
    settled chain, so it may do anything a resume handed a value may
    do. Thread on with
    RESULT_ENTRY or RESUME_HOP to carry the step further, complete the
-   frame with KosNativeFrame_ReturnToCache, or return EVAL_RAISE to
+   frame with RESULT_FRAME_RETURN, or return EVAL_RAISE to
    decline. Declining re-raises with the resume already cleared, so
    the unwind proceeds exactly as it would have with no resume set
    at all; a consumer that only propagates needs no code beyond that
@@ -493,6 +493,20 @@ KOS_PRESERVE_NONE KosOpResult kos_eval_relay(
 #define RESULT_RETURN(ctx, val)  TAILCALL(kos_return_deliver, (ctx), NULL, (val))
 
 /**
+   RESULT_FRAME_RETURN(ctx, value, cache): complete the live code-less
+   frame with value, flagged for cache when cache is given
+   (KosNativeFrame_ReturnToCache), and tail into the return delivery,
+   so the value reaches its terminus through kos_return_deliver's
+   arms -- the parent frame, a region's frame waiting on a resume, a
+   resume-carrying parent -- rather than through the trampoline's
+   general return event. The calling resume must have the KosThreadFn
+   prototype. value is consumed.
+*/
+#define RESULT_FRAME_RETURN(ctx, value, cache)                          \
+  RESULT_RETURN((ctx),                                                  \
+                KosNativeFrame_ReturnToCache((ctx), (value), (cache)).val)
+
+/**
    RESULT_RELAY(ctx, r): end a handler with the result of the helper
    that settled its operation -- the call core, an iteration step, an
    await, a dynamic node's transition. NORMAL means the helper left
@@ -613,8 +627,9 @@ KosOpResult KosEval_ResumeReturn(KosContext *ctx, KosObligation *ob);
    path frees it (kos_dynframe_cache_inert); a NULL or occupied cache
    frees as usual. The exception path never caches -- a frame popped by
    the raise walk is freed, and the cache simply stays empty for the
-   next install. The caller returns this result from its resume. value
-   is consumed.
+   next install. The result is always RETURN carrying value; a resume
+   ends with RESULT_FRAME_RETURN, which tails that value into the
+   return delivery. value is consumed.
 */
 KosOpResult KosNativeFrame_ReturnToCache(
     KosContext *ctx,

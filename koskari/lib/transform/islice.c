@@ -198,7 +198,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
   s->cnt++;
   islice_advance(s);
 
-  return KosNativeFrame_ReturnToCache(ctx, element, &s->base.cached_frame);
+  RESULT_FRAME_RETURN(ctx, element, &s->base.cached_frame);
 }
 
 

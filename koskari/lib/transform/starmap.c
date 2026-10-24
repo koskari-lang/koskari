@@ -81,7 +81,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult starmap_resume_after_result(
   if (! value)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnToCache(ctx, value, &t->cached_frame);
+  RESULT_FRAME_RETURN(ctx, value, &t->cached_frame);
 }
 
 

@@ -129,7 +129,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
       PyObject *kept = t->pending;
 
       t->pending = NULL;
-      return KosNativeFrame_ReturnToCache(ctx, kept, &t->cached_frame);
+      RESULT_FRAME_RETURN(ctx, kept, &t->cached_frame);
     }
     Py_CLEAR(t->pending);
   }

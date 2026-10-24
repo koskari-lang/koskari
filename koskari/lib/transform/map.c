@@ -70,7 +70,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
   if (! value)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnToCache(ctx, value, &m->cached_frame);
+  RESULT_FRAME_RETURN(ctx, value, &m->cached_frame);
 }
 
 

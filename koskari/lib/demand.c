@@ -231,7 +231,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
   if (! value)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnToCache(ctx, value, (KosDynFrame **) state);
+  RESULT_FRAME_RETURN(ctx, value, (KosDynFrame **) state);
 }
 
 
