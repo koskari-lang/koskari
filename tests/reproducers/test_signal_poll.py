@@ -35,6 +35,7 @@ import signal
 
 import pytest
 
+from koskari.lib import KosMap
 from tests.compile.specials import SpecialsTestCase
 
 
@@ -86,6 +87,35 @@ class TestSignalPoll(SpecialsTestCase):
 
         expr, _mod = self.compile_expr(src, Interrupted=Interrupted)
         self.assertEqual(await expr(), 3000)
+
+
+    async def test_signal_at_a_staged_step_drops_the_element(self):
+        """
+        A signal tripped from inside a mapped Koskari function is taken
+        by the prologue's poll once that function's return has staged
+        its element for the loop's step. The failure supersedes the
+        delivery: the loop sees the interrupt, and the element at which
+        it was tripped is never appended
+        """
+
+        src = """
+        (let [[seen #[]] [last None]]
+          (import _thread)
+          (try
+            (begin
+              (for-each [x (KosMap (lambda [x]
+                                     (cond [(== x 1) (_thread.interrupt_main)])
+                                     x)
+                                   (range 4))]
+                (setq last x)
+                (seen.append x))
+              "ran off the end")
+            ((e Interrupted) #(last seen))))
+        """
+
+        expr, _mod = self.compile_expr(src, Interrupted=Interrupted,
+                                       KosMap=KosMap, range=range)
+        self.assertEqual(await expr(), (0, [0]))
 
 
     async def test_backward_jump_loop(self):

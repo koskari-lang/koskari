@@ -402,6 +402,91 @@ static int test_prologue_runs_pending_exception(void) {
 }
 
 
+/* A resume set on the frame, a value staged in the slot, and an
+   exception pending: the failure supersedes the delivery. The resume
+   sees the NULL with the error, the staged value is dropped, and the
+   decline propagates the error. */
+static int test_prologue_drops_staged_under_pending_exception(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  /* a fresh object, so its reference count is observable */
+  PyObject *staged = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(staged, "create staged value");
+  Py_INCREF(staged);
+
+  ResumeProbe probe = { 0, 0, 1, NULL };
+  KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
+  KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
+  KosContext_PENDING_VALUE(ctx) = staged;
+  PyErr_SetString(PyExc_ValueError, "pending");
+
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
+  TEST_ASSERT_EQ(probe.calls, 1, "the resume was offered the failure");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "as a NULL, not the staged value");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "the decline propagates");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
+              "the pending exception is the one propagating");
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx),
+                   "the staged delivery was dropped");
+  TEST_ASSERT_EQ(Py_REFCNT(staged), 1, "and released");
+
+  PyErr_Clear();
+  Py_DECREF(staged);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+  return 0;
+}
+
+
+/* The same with the delivery stored on the code-less frame's stack,
+   as a drive exit leaves it: the stacked value is dropped too. */
+static int test_prologue_drops_stacked_under_pending_exception(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  /* a fresh object, so its reference count is observable */
+  PyObject *stacked = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(stacked, "create stacked value");
+  TEST_ASSERT_EQ(KosContext_StackPushRef(ctx, stacked), 0,
+                 "store the delivery on the frame's stack");
+
+  ResumeProbe probe = { 0, 0, 1, NULL };
+  KosDynFrame_RESUME_KIND(frame) = &resume_probe_kind;
+  KosDynFrame_RESUME_STATE(frame) = (void *) &probe;
+  PyErr_SetString(PyExc_ValueError, "pending");
+
+  KosOpResult r = kos_eval_prologue(ctx, NULL, NULL);
+  TEST_ASSERT_EQ(probe.calls, 1, "the resume was offered the failure");
+  TEST_ASSERT_EQ(probe.seen_null, 1, "as a NULL, not the stacked value");
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RAISE, "the decline propagates");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_ValueError),
+              "the pending exception is the one propagating");
+  TEST_ASSERT_EQ(KosContext_StackLen(ctx), 0, "the stacked value was dropped");
+  TEST_ASSERT_EQ(Py_REFCNT(stacked), 1, "and released");
+
+  PyErr_Clear();
+  Py_DECREF(stacked);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+  return 0;
+}
+
+
 /* === the raise walk defers to the live frame's resume ===
 
    The walk never calls a resume: a pending exception with a resume on
@@ -1059,6 +1144,8 @@ int run_resume_tests(void) {
   RUN_TEST(test_prologue_idle_threads_into_code);
   RUN_TEST(test_prologue_delivers_staged);
   RUN_TEST(test_prologue_runs_pending_exception);
+  RUN_TEST(test_prologue_drops_staged_under_pending_exception);
+  RUN_TEST(test_prologue_drops_stacked_under_pending_exception);
   RUN_TEST(test_raise_walk_defers_to_the_live_frame_resume);
   RUN_TEST(test_raise_walk_defers_after_a_pop_reveals_a_resume);
   RUN_TEST(test_clone_copies_node_resume);

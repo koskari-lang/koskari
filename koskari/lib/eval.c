@@ -3091,7 +3091,11 @@ static KosOpResult eval_step_drain_goal(KosContext *ctx) {
    exception set. A failed delivery arrives the same way, NULL with
    PyErr set, routed here by the prologue's resume offer; the resume
    handles it or returns EVAL_RAISE to decline, which re-raises with
-   the resume already cleared.
+   the resume already cleared. The failure supersedes any delivery
+   staged for the frame, in the slot or on a code-less frame's stack:
+   it is dropped here, as process_raise drops the slot, so a signal
+   taken by the prologue's poll after a hop staged its element never
+   hands that element to the resume as a success.
 
    This is also where the ambient await interposes. A kind that
    settles its delivery never sees an unsettled value: the resume is
@@ -3124,6 +3128,16 @@ static int eval_step_resume_take(
 
   KosDynFrame_RESUME_KIND(frame) = NULL;
   KosDynFrame_RESUME_STATE(frame) = NULL;
+
+  if (unlikely(PyErr_Occurred())) {
+    Py_CLEAR(KosContext_PENDING_VALUE(ctx));
+    if (! KosDynFrame_CODE(frame) && KosContext_StackLen(ctx) > 0)
+      Py_XDECREF(KosContext_StackPopRef(ctx));
+    *out_resume = resume;
+    *out_state = state;
+    *out_val = NULL;
+    return 1;
+  }
 
   val = KosContext_PENDING_VALUE(ctx);
   KosContext_PENDING_VALUE(ctx) = NULL;
