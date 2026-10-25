@@ -607,9 +607,12 @@ class TestThreadDefaultDomain(unittest.TestCase):
 
     def test_finalizer_reentry_at_interpreter_exit(self):
         """
-        A root value whose finalizer re-enters Koskari while the main
-        thread's and a daemon thread's records are torn down at exit
-        runs to its end, and the process exits cleanly
+        At interpreter exit a daemon thread's record is torn down from
+        the main thread and the main thread's record on its own; a root
+        value's finalizer re-entering Koskari from either teardown runs
+        to its end, a value it stores is released with the domain that
+        holds it, including a default domain the re-entry mints during
+        the main thread's teardown, and the process exits cleanly
         """
 
         import subprocess
@@ -622,13 +625,20 @@ class TestThreadDefaultDomain(unittest.TestCase):
 
             from koskari.lib import Domain, ParamRef
 
-            class Reentrant:
+            class Marker:
                 def __init__(self, tag):
                     self.tag = tag
 
+                def __del__(self, write=os.write):
+                    write(1, ("finalized " + self.tag + "\\n").encode())
+
+            class Reentrant(Marker):
                 def __del__(self, write=os.write, ParamRef=ParamRef,
-                            Domain=Domain):
-                    ParamRef("tdd_exit_seen").store(Domain.current_domain())
+                            Domain=Domain, Marker=Marker):
+                    if Domain.current_domain() is None:
+                        raise RuntimeError("no current domain")
+                    ParamRef("tdd_exit_seen").store(
+                        Marker(self.tag + " store"))
                     write(1, ("finalized " + self.tag + "\\n").encode())
 
             ParamRef("tdd_exit_key").store(Reentrant("main"))
@@ -649,8 +659,10 @@ class TestThreadDefaultDomain(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertNotIn("Fatal", out.stderr)
         self.assertNotIn("Exception ignored", out.stderr)
-        self.assertIn("finalized main", out.stdout, out.stderr)
-        self.assertIn("finalized daemon", out.stdout, out.stderr)
+        self.assertIn("finalized daemon\n", out.stdout, out.stderr)
+        self.assertIn("finalized daemon store\n", out.stdout, out.stderr)
+        self.assertIn("finalized main\n", out.stdout, out.stderr)
+        self.assertIn("finalized main store\n", out.stdout, out.stderr)
 
 
     def test_explicit_domain_wins_then_default_returns(self):
