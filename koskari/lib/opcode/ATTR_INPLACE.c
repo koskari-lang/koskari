@@ -28,23 +28,23 @@
 */
 
 KOS_OP_HANDLER(ATTR_INPLACE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
   PyObject *attr = KosExtra_OBJ(row, 1);
 
-  PyObject *const *tail = KosEvalState_StackTailPtr(es, (size_t) (count + 1));
+  PyObject *const *tail = KosContext_StackTailPtr(ctx, (size_t) (count + 1));
   if (! tail)
     RESULT_RAISE();
 
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
   int res = kos_attr_inplace_cached(slot, tail[0], attr, op, &tail[1], count);
-  KosEvalState_StackDropNoErr(es, (size_t) (count + 1));
+  KosContext_StackDropNoErr(ctx, (size_t) (count + 1));
   if (unlikely(res < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

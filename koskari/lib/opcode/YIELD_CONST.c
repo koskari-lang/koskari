@@ -21,10 +21,10 @@
   value.  Marks the code as yielding, as YIELD does.  Stack unchanged.
 */
 KOS_OP_HANDLER(YIELD_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *val = KosOp_OBJ(insn);
   Py_INCREF(val);
-  TAILCALL(kos_yield_deliver, es, insn, val);
+  TAILCALL(kos_yield_deliver, ctx, insn, val);
 }
 
 

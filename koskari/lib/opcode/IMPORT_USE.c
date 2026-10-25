@@ -57,7 +57,7 @@ static int kos_use_stem_is_literal(const char *stem) {
 
 
 KOS_OP_HANDLER(IMPORT_USE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
@@ -73,7 +73,7 @@ KOS_OP_HANDLER(IMPORT_USE) {
     RESULT_RAISE();
   }
 
-  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
+  PyObject *mod = kos_import_module(ctx, name, (long) KosExtra_IMM(row, 1), 1);
   if (! mod)
     RESULT_RAISE();
 
@@ -106,7 +106,7 @@ KOS_OP_HANDLER(IMPORT_USE) {
     /* the bare candidate, with from-import's submodule fallback */
     PyObject *val = kos_import_from_member(mod, stem, &missing);
     if (val) {
-      int stored = frame_ns_store(es, bind, val);
+      int stored = frame_ns_store(ctx, bind, val);
       Py_DECREF(val);
       if (stored < 0) {
         Py_DECREF(mod);
@@ -157,7 +157,7 @@ KOS_OP_HANDLER(IMPORT_USE) {
           RESULT_RAISE();
         }
 
-        int stored = frame_ns_store(es, bound, val);
+        int stored = frame_ns_store(ctx, bound, val);
         Py_DECREF(bound);
         Py_DECREF(val);
         if (stored < 0) {
@@ -183,7 +183,7 @@ KOS_OP_HANDLER(IMPORT_USE) {
   }
   Py_DECREF(mod);
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -21,20 +21,20 @@
 KOS_OP_HANDLER(DUP) {
   int opa = (int) KosOp_ARG(insn);
   if (likely(opa == 1)) {
-    if (unlikely(KosEvalState_StackDup1(es) < 0))
-      RESULT_RAISE_AT(es, insn);
-    RESULT_NEXT(es);
+    if (unlikely(KosContext_StackDup1(ctx) < 0))
+      RESULT_RAISE_AT(ctx, insn);
+    RESULT_NEXT(ctx);
   }
   if (unlikely(opa < 0)) {
     PyErr_Format(PyExc_RuntimeError, "DUP invoked with negative"
                  " argument count: %i", opa);
-    RESULT_RAISE_AT(es, insn);
+    RESULT_RAISE_AT(ctx, insn);
   }
 
-  if (unlikely(KosEvalState_StackDuplicate(es, (size_t) opa) < 0))
-    RESULT_RAISE_AT(es, insn);
+  if (unlikely(KosContext_StackDuplicate(ctx, (size_t) opa) < 0))
+    RESULT_RAISE_AT(ctx, insn);
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

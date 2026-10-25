@@ -20,9 +20,9 @@
 */
 
 KOS_OP_HANDLER(POP_FINALLY) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
-  KosDynNode *region = KosEvalState_CurrentNode(es);
+  KosDynNode *region = KosContext_CurrentNode(ctx);
   if (! region || ! KosDynNode_IS_FINALLY(region)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "POP_FINALLY: top is not a FINALLY region");
@@ -38,9 +38,9 @@ KOS_OP_HANDLER(POP_FINALLY) {
     /* Raise delivery cleared the region stack (dyn_walk consume), so
        there is no promoted value; pop the region and let the restored
        exception continue through the prologue. */
-    if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0))
+    if (unlikely(kos_dyn_pop_finally(ctx, (KosDynFinally *) region) < 0))
       RESULT_RAISE();
-    RESULT_REPROLOGUE(es);
+    RESULT_REPROLOGUE(ctx);
   }
 
   /* A control transfer stored here by an unwind walk resumes as itself
@@ -51,13 +51,13 @@ KOS_OP_HANDLER(POP_FINALLY) {
   if (pending)
     KosDynFinally_HANDLING_CONTROL((KosDynFinally *) region) = 0;
   if (pending == KOS_PENDING_RETURN_TRANSFER)
-    kos_xfer_goal_resume_after_finally(es);
+    kos_xfer_goal_resume_after_finally(ctx);
 
   {
     PyObject *promoted = KosStack_PopRef(&KosDynNode_STACK(region));
     if (! promoted)
       RESULT_RAISE();
-    if (unlikely(kos_dyn_pop_finally(es, (KosDynFinally *) region) < 0)) {
+    if (unlikely(kos_dyn_pop_finally(ctx, (KosDynFinally *) region) < 0)) {
       Py_DECREF(promoted);
       RESULT_RAISE();
     }
@@ -66,22 +66,22 @@ KOS_OP_HANDLER(POP_FINALLY) {
        enabled FINALLY takes its own delivery. */
     switch (pending) {
       case KOS_PENDING_RETURN_FRAME:
-        RESULT_RETURN(es, promoted);
+        RESULT_RETURN(ctx, promoted);
       case KOS_PENDING_RETURN_BREAK:
-        RESULT_RELAY(es, kos_dyn_unwind_to_loop(
-            es, KOS_XFER_EVENT_BREAK, promoted));
+        RESULT_RELAY(ctx, kos_dyn_unwind_to_loop(
+            ctx, KOS_XFER_EVENT_BREAK, promoted));
       case KOS_PENDING_RETURN_CONTINUE:
-        RESULT_RELAY(es, kos_dyn_unwind_to_loop(
-            es, KOS_XFER_EVENT_CONTINUE, promoted));
+        RESULT_RELAY(ctx, kos_dyn_unwind_to_loop(
+            ctx, KOS_XFER_EVENT_CONTINUE, promoted));
       case KOS_PENDING_RETURN_TRANSFER:
         /* The goal holds the payload; the prologue drives it on. */
         Py_DECREF(promoted);
-        RESULT_REPROLOGUE(es);
+        RESULT_REPROLOGUE(ctx);
       default:
         break;
     }
 
-    if (KosEvalState_StackPushRef(es, promoted) < 0) {
+    if (KosContext_StackPushRef(ctx, promoted) < 0) {
       Py_DECREF(promoted);
       RESULT_RAISE();
     }
@@ -91,8 +91,8 @@ KOS_OP_HANDLER(POP_FINALLY) {
   /* Restoring the active exception must run through the prologue so
      eval_phase_pending_exception observes PyErr before the next opcode. */
   if (PyErr_Occurred())
-    RESULT_REPROLOGUE(es);
-  RESULT_NEXT(es);
+    RESULT_REPROLOGUE(ctx);
+  RESULT_NEXT(ctx);
 }
 
 

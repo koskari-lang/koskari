@@ -22,15 +22,15 @@
   the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_STORE) {
-  KOS_SYNC_PC(es, insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
   PyObject *val;
   int rc;
 
-  obj = frame_ns_deref(es, KosOp_OBJ(insn));
+  obj = frame_ns_deref(ctx, KosOp_OBJ(insn));
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -54,7 +54,7 @@ KOS_OP_HANDLER(VAR_ITEM_STORE) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, 1);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

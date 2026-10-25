@@ -162,7 +162,7 @@ static int continuation_raise_apply(
    same-evaluator path; handler releases callable and args.
 */
 static KosOpResult call_call_continuation(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *resume_val) {
 
@@ -211,8 +211,9 @@ static KosOpResult call_call_continuation(
    * to its owner through KoskariContinuationApply below. */
 
   if (KosPyDelimitedContinuation_Check(callable)
-      || KosContinuation_TOKEN_REF(k) == (PyObject *) KosEvalState_Token(es)) {
-    if (kos_invoke_continuation(es, k, resume_val, callable) < 0) {
+      || KosContinuation_TOKEN_REF(k)
+          == (PyObject *) KosContext_Token(ctx)) {
+    if (kos_invoke_continuation(ctx, k, resume_val, callable) < 0) {
       Py_DECREF(resume_val);
       return EVAL_RAISE();
     }
@@ -228,7 +229,7 @@ static KosOpResult call_call_continuation(
 
 
 static KosOpResult kos_vinstall_continuation(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -244,7 +245,7 @@ static KosOpResult kos_vinstall_continuation(
   resume_val = KosValues_PackVector(args, nargs, kwnames);
   if (! resume_val)
     return EVAL_RAISE();
-  r = call_call_continuation(es, callable, resume_val);
+  r = call_call_continuation(ctx, callable, resume_val);
   Py_DECREF(resume_val);
   return r;
 }

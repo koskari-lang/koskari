@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_COLLECT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *nspec = KosOp_OBJ(insn);
   PyObject *parent = CURRENT_NS();
   PyObject *new_ns = NULL;
@@ -38,11 +38,11 @@ KOS_OP_HANDLER(PUSH_COLLECT) {
     RESULT_RAISE();
   }
 
-  KosDynCollect *const col_node = kos_dyn_push_collect(es, new_ns);
+  KosDynCollect *const col_node = kos_dyn_push_collect(ctx, new_ns);
   if (! col_node)
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

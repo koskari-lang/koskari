@@ -200,7 +200,7 @@ quick lookup.
 - `KOS_OP_RAISE`: Raise exception
 - `KOS_OP_RETURN`: Return value
 - `KOS_OP_YIELD`: Yield value (sets YIELDS flag)
-- `KOS_OP_YIELD_FROM`: Yield from iterable (implemented; sets YIELDS flag; delegate to sub-iterator/gen; KOS_DYN_YIELD_FROM; handler in koskari/lib/opcode/YIELD_FROM.c)
+- `KOS_OP_YIELD_FROM`: Yield from iterable (implemented; sets YIELDS flag; delegate to sub-iterator/gen; the delegation is the frame's resume; handler in koskari/lib/opcode/YIELD_FROM.c)
 
 ### Jumps
 - `KOS_OP_JUMP`: Unconditional jump

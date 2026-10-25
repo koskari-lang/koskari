@@ -25,7 +25,8 @@
 
 
 /**
-   FOREACH region: loop PCs, iterator, exhausted flag, for/else PC.
+   FOREACH region: break and continue PCs, the loop result, and the
+   iteration request (iterator, its slots, its kind).
 */
 KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_t continue_pc) {
   KosDynForeach *node = kos_dynnode_alloc();
@@ -33,16 +34,12 @@ KosDynForeach *kos_dynforeach_new(KosDynNode *parent, uint32_t break_pc, uint32_
   if (! node)
     return NULL;
 
-  kos_dynnode_init(node, KOS_DYN_FOREACH, parent, 0);
+  kos_dynnode_init(node, KOS_DYN_FOREACH, parent, KOS_DYN_CAP_LOOP_REGION);
   KosDynForeach_BREAK_PC(node) = break_pc;
   KosDynForeach_CONTINUE_PC(node) = continue_pc;
-  KosDynForeach_ENABLED(node) = 1;
   KosDynForeach_RESULT(node) = NULL;
-  KosDynForeach_EXHAUSTED(node) = 0;
-  KosDynForeach_ITER_NEXT_ELSE_PC(node) = 0;
   KosDynForeach_REQ(node)->iter = NULL;
   KosDynForeach_REQ(node)->islots = NULL;
-  KosDynForeach_REQ(node)->mode = KOS_IREQ_IDLE;
   KosDynForeach_REQ(node)->kind = KOS_IREQ_KIND_NONE;
   kos_dynnode_use_inline_segment((KosDynNode *) node);
   return node;
@@ -58,11 +55,8 @@ KosDynForeach *kos_dynforeach_clone(KosDynForeach *node) {
     return NULL;
   KosDynForeach_BREAK_PC(clone) = KosDynForeach_BREAK_PC(node);
   KosDynForeach_CONTINUE_PC(clone) = KosDynForeach_CONTINUE_PC(node);
-  KosDynForeach_ENABLED(clone) = KosDynForeach_ENABLED(node);
   KosDynForeach_RESULT(clone) = KosDynForeach_RESULT(node);
   Py_XINCREF(KosDynForeach_RESULT(clone));
-  KosDynForeach_EXHAUSTED(clone) = KosDynForeach_EXHAUSTED(node);
-  KosDynForeach_ITER_NEXT_ELSE_PC(clone) = KosDynForeach_ITER_NEXT_ELSE_PC(node);
   *KosDynForeach_REQ(clone) = *KosDynForeach_REQ(node);
   Py_XINCREF(KosDynForeach_REQ(clone)->iter);
   return clone;
@@ -96,15 +90,6 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
   if (snapshot_set_obj(data, "iter",
       KosDynForeach_ITER((KosDynForeach *) node)) < 0)
     return -1;
-  if (snapshot_set_int(data, "exhausted",
-      KosDynForeach_EXHAUSTED((KosDynForeach *) node)) < 0)
-    return -1;
-  if (snapshot_set_uint(data, "iter_next_else_pc",
-      KosDynForeach_ITER_NEXT_ELSE_PC((KosDynForeach *) node)) < 0)
-    return -1;
-  if (snapshot_set_uint(data, "req_mode",
-      KosDynForeach_REQ(node)->mode) < 0)
-    return -1;
   return 0;
 }
 
@@ -112,11 +97,11 @@ static int dynnode_to_dict_foreach(KosDynNode *node, PyObject *data) {
 /**
    Push FOREACH as DYN_TOP. Callers: opcode PUSH_FOREACH.
 */
-KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc) {
-  KosDynForeach *node = kos_dynforeach_new(KosEvalState_DYN_TOP(es), break_pc, continue_pc);
+KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc) {
+  KosDynForeach *node = kos_dynforeach_new(KosContext_DYN_TOP(ctx), break_pc, continue_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynforeach_free(node);
     return NULL;
   }
@@ -127,16 +112,15 @@ KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_
 /**
    Pop FOREACH when top. Callers: opcode POP_FOREACH, kos_dyn_unwind_to_loop.
 */
-int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "FOREACH node is not at top of chain");
     return -1;
   }
-  kos_dyn_foreach_clear_store_resume(es);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynforeach_free(node);
   }
@@ -144,74 +128,23 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node) {
 }
 
 
-void kos_dyn_foreach_clear_store_resume(KosEvalState *es) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-
-  if (frame
-      && KosDynFrame_RESUME_KIND(frame) == &kos_foreach_store_resume_kind) {
-    KosDynFrame_RESUME_KIND(frame) = NULL;
-    KosDynFrame_RESUME_STATE(frame) = NULL;
-  }
-}
-
-
-void kos_dyn_foreach_unwind(KosEvalState *es, KosDynForeach *node) {
-  (void) node;
-  kos_dyn_foreach_clear_store_resume(es);
-}
-
-
 /**
-   A deferred element lands as the resumed frame expects, the frame
-   being live again by the time it arrives: staged for the resume a
-   STORE step set, else pushed. Consumes val, failure included.
+   The region leaves the chain by an unlink (a transfer, or the raise
+   walk once the step resume has declined). A step still in flight is
+   recorded on the loop's frame, the live frame at this point, as its
+   resume: the frame halted inside this region deferring the step, and
+   anything else that halts the frame sits in a frame or region above.
+   The region owns the iterator, so it finishes the request and clears
+   the frame's resume; a landing that follows then finds a frame with
+   no halt to serve.
 */
-static int foreach_deliver_deferred(KosEvalState *es, PyObject *val) {
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node) {
+  KosDynFrame *frame = KosContext_FRAME(ctx);
 
   if (frame && KosDynFrame_RESUME_KIND(frame)) {
-    KosEvalState_StageDelivery(es, val);
-    return 0;
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(node), 0);
+    kos_dynframe_clear_resume(frame);
   }
-  return KosEvalState_StackPUSH(es, val);
-}
-
-
-int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es,
-    KosDynForeach *fe,
-    PyObject *val) {
-
-  if (foreach_deliver_deferred(es, val) < 0)
-    return -1;
-
-  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 0);
-  kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
-  return 0;
-}
-
-
-/**
-   Exhaustion tail shared by the return delivery (GEN just unwound) and
-   the raise-walk StopIteration conversion (GEN already finished): mark
-   the iterator closed, flag the loop exhausted, and resume at the
-   else pc. val consumed.
-*/
-int kos_dyn_foreach_deliver_exhausted(
-    KosEvalState *es,
-    KosDynForeach *fe,
-    PyObject *val) {
-
-  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(fe), 1);
-
-  /* no element is coming: a store resume the step set goes with it */
-  kos_dyn_foreach_clear_store_resume(es);
-  KosDynForeach_EXHAUSTED(fe) = 1;
-  KosEvalState_SET_PC(es, KosDynForeach_ITER_NEXT_ELSE_PC(fe));
-  kos_dyn_iter_request_set_mode((KosDynNode *) fe, KOS_IREQ_IDLE);
-
-  Py_XDECREF(val);
-  return 0;
 }
 
 

@@ -17,11 +17,26 @@ A read of an unbound name with no default raises `NameError`.
 A value lives in the enclosing `parameterize` extent first, then in the
 root scope. `parameterize` binds in the running context's own table, so
 concurrent tasks never see each other's bindings. A store with no
-`parameterize` in the way lands in the root scope, shared by the whole
-computation: the channel for host pre-defines and for values set once at
-startup. A `defer` awaited directly runs under the extents applied at
+`parameterize` in the way lands in the root scope, shared by every call
+on the thread: the channel for host pre-defines and for values set once
+at startup. A `defer` awaited directly runs under the extents applied at
 the await. A task created from it reads the bindings live at its
-creation. The root scope stays shared either way.
+creation. The root scope is the thread's either way.
+
+**Root scope:** Koskari code called from Python shares one root parameter
+scope per thread. The scope is created on first use and lives as long as
+the thread, so a store made with no `parameterize` in the way during one
+call is read by every later call on that thread, through any function,
+and by Python through a `ParamRef`. Another thread starts with a root
+scope of its own and never sees these stores. A coroutine or defer runs
+under the root scope of the thread that resumes it, wherever it was
+created; only its `parameterize` bindings travel with it. Inside a
+`with Domain():` block the block's `Domain` supplies the root scope
+instead, for Python reads and for Koskari calls made inside the block;
+after the block, the thread's scope answers again with its earlier
+stores. The block belongs to the running stack, a thread's synchronous
+stack or one asyncio task, so blocks on different tasks never see each
+other and a block can only be closed by the stack that opened it.
 
 **Examples:**
 

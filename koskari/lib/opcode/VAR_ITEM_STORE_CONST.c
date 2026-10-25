@@ -22,16 +22,16 @@
   slot; the cold twin of the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_STORE_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
   PyObject *val;
   int rc;
 
-  obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  obj = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! obj))
     RESULT_RAISE();
   val = KosExtra_OBJ(row, 1);
@@ -52,7 +52,7 @@ KOS_OP_HANDLER(VAR_ITEM_STORE_CONST) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, 1);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

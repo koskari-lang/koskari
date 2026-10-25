@@ -22,12 +22,12 @@
 */
 
 KOS_OP_HANDLER(SWITCH_EQ_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *rhs = KosExtra_OBJ(row, 1);
 
-  PyObject *value = KosEvalState_StackPeek(es);
+  PyObject *value = KosContext_StackPeek(ctx);
   if (unlikely(! value))
     RESULT_RAISE();
 
@@ -36,11 +36,11 @@ KOS_OP_HANDLER(SWITCH_EQ_CONST) {
     RESULT_RAISE();
 
   if (res) {
-    KosEvalState_StackDropNoErr(es, 1);
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 0));
+    KosContext_StackDropNoErr(ctx, 1);
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 0));
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

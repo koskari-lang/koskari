@@ -1472,27 +1472,10 @@ static int param_ref_init(PyObject *self, PyObject *key, PyObject *default_value
 }
 
 
-/* True when neither a koskari context nor a python Domain scope is
-   ambient, so there is no store to resolve against at all. */
-static int param_ref_no_domain(void) {
-  return (! kos_ctx_current()) && (! kos_domain_current());
-}
-
-
 static PyObject *param_ref_m_deref(PyObject *self) {
   PyObject *cell;
   PyObject *value;
   PyObject *default_val = KosParamRef_DEFAULT(self);
-
-  if (param_ref_no_domain()) {
-    if (default_val) {
-      Py_INCREF(default_val);
-      return default_val;
-    }
-    PyErr_SetString(PyExc_RuntimeError,
-                    "ParamRef.deref outside active domain and no default");
-    return NULL;
-  }
 
   /* a read creates nothing: extent shadow, then root scope, then the
      default this ref declares */
@@ -1539,12 +1522,6 @@ static PyObject *param_ref_m_store(PyObject *self, PyObject *value) {
 static PyObject *param_ref_m_clear(PyObject *self) {
   PyObject *cell;
 
-  if (param_ref_no_domain()) {
-    PyErr_SetString(PyExc_RuntimeError,
-                    "ParamRef.clear outside active domain");
-    return NULL;
-  }
-
   cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
   if (cell)
     Py_CLEAR(KosSymbolicRef_VALUE(cell));
@@ -1554,9 +1531,6 @@ static PyObject *param_ref_m_clear(PyObject *self) {
 
 static PyObject *param_ref_m_is_empty(PyObject *self) {
   PyObject *cell;
-
-  if (param_ref_no_domain())
-    return PyBool_FromLong(1);
 
   cell = kos_param_lookup_ambient(KosParamRef_KEY(self));
   return PyBool_FromLong(! (cell && KosSymbolicRef_VALUE(cell)));

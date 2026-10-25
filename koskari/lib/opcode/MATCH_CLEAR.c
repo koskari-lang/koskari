@@ -18,16 +18,16 @@
   the mark at field 0. Row depth, const.
 */
 KOS_OP_HANDLER(MATCH_CLEAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *mark = kos_match_writable_at(es, row, 0);
+  PyObject *mark = kos_match_writable_at(ctx, row, 0);
   if (unlikely(! mark))
     RESULT_RAISE();
   if (unlikely(KosMatchMark_Clear(mark, KosExtra_OBJ(row, 1)) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -20,7 +20,7 @@
 */
 KOS_OP_HANDLER(MATCH_KEY_FAST) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_key, es, insn, NULL);
+  TAILCALL(kos_match_key, ctx, insn, NULL);
 }
 
 

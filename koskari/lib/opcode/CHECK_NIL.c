@@ -20,8 +20,8 @@
   JUMP_FALSE.
 */
 KOS_OP_HANDLER(CHECK_NIL) {
-  KOS_SYNC_PC(es, insn);
-  PyObject *val = KosEvalState_StackPopRef(es);
+  KOS_SYNC_PC(ctx, insn);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -29,9 +29,9 @@ KOS_OP_HANDLER(CHECK_NIL) {
   Py_DECREF(val);
 
   if (! is_nil)
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

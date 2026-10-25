@@ -16,7 +16,7 @@ tests.reproducers.test_call_inlining
 
 Full-stack reproducer for __call__ inlining: calling a Koskari instance whose
 __call__ is a KosCallable dispatches through the install slot (the
-kos_instance_call sentinel + KosEvalState_Call divert) instead of re-entering
+kos_instance_call sentinel + KosContext_Call divert) instead of re-entering
 the evaluator via tp_call.
 
 :author: Christopher O'Brien <obriencj@gmail.com>

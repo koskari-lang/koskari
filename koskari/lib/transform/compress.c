@@ -60,13 +60,13 @@ static int compress_keeps(PyObject *selector) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(compress_resume_deliver_kind, "compress-step",
+KOS_RESUME_KIND_AS_IS(compress_resume_deliver_kind, "compress-step",
                 compress_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(compress_resume_fetch_kind, "compress-step",
+KOS_RESUME_KIND_AS_IS(compress_resume_fetch_kind, "compress-step",
                 compress_resume_fetch, kos_transform_step_clear, NULL);
 
 
@@ -76,7 +76,7 @@ KOS_RESUME_KIND(compress_resume_fetch_kind, "compress-step",
    entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransformMulti *c = (KosTransformMulti *) state;
   KosTransform *t = &c->base;
@@ -84,15 +84,15 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   /* the element lands in compress_resume_deliver, which files it
      and hops back here; either source running out ends the
      compress through its StopIteration */
   {
-    KosOpResult r = KosEvalState_NextResume(
-        es, t->sources[t->idx], NULL, &compress_resume_deliver_kind, c);
-    RESULT_ENTRY(es, r, &compress_resume_deliver_kind, c);
+    KosOpResult r = KosContext_NextResume(
+        ctx, t->sources[t->idx], &compress_resume_deliver_kind, c);
+    RESULT_ENTRY(ctx, r, &compress_resume_deliver_kind, c);
   }
 }
 
@@ -102,18 +102,20 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_fetch(
    and hop back into the row. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransformMulti *c = (KosTransformMulti *) state;
   KosTransform *t = &c->base;
 
+  kos_transform_fetched(t->sources[t->idx], element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (t->idx == COMPRESS_DATA) {
     t->pending = element;  /* steals */
     t->idx = COMPRESS_SELECTOR;
-    RESUME_HOP(&compress_resume_fetch_kind, es, c, NULL);
+    RESUME_HOP(&compress_resume_fetch_kind, ctx, c, NULL);
   }
 
   {
@@ -127,31 +129,27 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult compress_resume_deliver(
       PyObject *kept = t->pending;
 
       t->pending = NULL;
-      return KosNativeFrame_ReturnToCache(es, kept, &t->cached_frame);
+      RESULT_FRAME_RETURN(ctx, kept, &t->cached_frame);
     }
     Py_CLEAR(t->pending);
   }
 
-  RESUME_HOP(&compress_resume_fetch_kind, es, c, NULL);
+  RESUME_HOP(&compress_resume_fetch_kind, ctx, c, NULL);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult compress_iter_step(
-    KosEvalState *es,
+static KosIterStepResult compress_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransformMulti *c = (KosTransformMulti *) self;
   KosTransform *t = &c->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   t->idx = COMPRESS_DATA;
 
@@ -165,10 +163,10 @@ static KosIterStepResult compress_iter_step(
       PyObject *selector;
       int ok;
 
-      KOS_TRANSFORM_FETCH(es, t, t->sources[COMPRESS_DATA],
+      KOS_TRANSFORM_FETCH(ctx, t, t->sources[COMPRESS_DATA],
                           &compress_resume_fetch_kind, pre_top, out, data);
 
-      switch (KosEvalState_NextOrDefer(es, t->sources[COMPRESS_SELECTOR],
+      switch (KosContext_NextOrDefer(ctx, t->sources[COMPRESS_SELECTOR],
                                        &compress_resume_fetch_kind, c,
                                        &t->cached_frame, &selector)) {
         case KOS_IREQ_DELIVERED:
@@ -181,11 +179,10 @@ static KosIterStepResult compress_iter_step(
         case KOS_IREQ_CONTINUES:
           t->pending = data;  /* steals; held for the selector */
           t->idx = COMPRESS_SELECTOR;
-          t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(data);
-          return kos_transform_step_abort(es, t, pre_top);
+          return kos_transform_step_abort(ctx, t, pre_top);
       }
 
       ok = compress_keeps(selector);
@@ -200,6 +197,16 @@ static KosIterStepResult compress_iter_step(
       Py_DECREF(data);
     }
   }
+}
+
+
+static KosIterStepResult compress_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, compress_step_body);
 }
 
 
@@ -264,6 +271,7 @@ KosEvaluatedTypeObject KosCompressType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

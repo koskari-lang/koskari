@@ -39,15 +39,15 @@
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(takewhile_resume_fetch_kind, "takewhile-step",
+KOS_RESUME_KIND_AS_IS(takewhile_resume_fetch_kind, "takewhile-step",
                 takewhile_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(takewhile_resume_invoke_kind, "takewhile-step",
+KOS_RESUME_KIND_AS_IS(takewhile_resume_invoke_kind, "takewhile-step",
                 takewhile_resume_invoke, kos_transform_step_clear, NULL);
 KOS_RESUME_KIND(takewhile_resume_verdict_kind, "takewhile-step",
                 takewhile_resume_verdict, kos_transform_step_clear, NULL);
@@ -72,7 +72,7 @@ static KosOpResult takewhile_stop(KosTransform *t) {
    trampoline.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
   KosOpResult r;
@@ -80,11 +80,11 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
-  r = KosEvalState_NextResume(es, t->source, NULL,
+  r = KosContext_NextResume(ctx, t->source,
                               &takewhile_resume_invoke_kind, t);
-  RESULT_ENTRY(es, r, &takewhile_resume_invoke_kind, t);
+  RESULT_ENTRY(ctx, r, &takewhile_resume_invoke_kind, t);
 }
 
 
@@ -92,21 +92,23 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_fetch(
    INVOKE: test element against the predicate. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransform *t = (KosTransform *) state;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   /* pending steals the element's reference and holds it across the
      call; the argument vector borrows it for the call's duration. */
   t->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(
-        es, t->fn.cs_callable, &element, 1, NULL, 0,
+    KosOpResult r = KosContext_Call(
+        ctx, t->fn.cs_callable, &element, 1, NULL, 0,
         &takewhile_resume_verdict_kind, t);
-    RESULT_ENTRY(es, r, &takewhile_resume_verdict_kind, t);
+    RESULT_ENTRY(ctx, r, &takewhile_resume_verdict_kind, t);
   }
 }
 
@@ -116,13 +118,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_invoke(
    the run. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
   int ok;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   ok = PyObject_IsTrue(value);
   Py_DECREF(value);
@@ -136,7 +138,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
     PyObject *element = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, element, &t->cached_frame);
   }
 }
 
@@ -144,23 +146,19 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult takewhile_resume_verdict(
 /* === the step === */
 
 
-static KosIterStepResult takewhile_iter_step(
-    KosEvalState *es,
+static KosIterStepResult takewhile_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransform *t = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(es, t, t->source, &takewhile_resume_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, t->source, &takewhile_resume_fetch_kind, pre_top, out,
                         element);
 
     /* Any KosCallable predicate's verdict must come back to this
@@ -168,7 +166,7 @@ static KosIterStepResult takewhile_iter_step(
        is staged raw for takewhile_resume_invoke, which makes the call
        in this evaluator. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-      return kos_transform_stage(es, t, element,
+      return kos_transform_stage(ctx, t, element,
                                  &takewhile_resume_invoke_kind, pre_top);
 
     /* A plain python predicate needs no evaluator at all. */
@@ -203,7 +201,7 @@ static KosIterStepResult takewhile_iter_step(
              frame, which owns every suspension. The element is held
              on the transform until the verdict settles. */
           KosIterStepResult staged = kos_transform_stage(
-              es, t, result, &takewhile_resume_verdict_kind, pre_top);
+              ctx, t, result, &takewhile_resume_verdict_kind, pre_top);
 
           if (staged != KOS_ITER_INSTALLED_VALUE) {
             Py_DECREF(element);
@@ -220,6 +218,16 @@ static KosIterStepResult takewhile_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult takewhile_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, takewhile_step_body);
 }
 
 
@@ -268,6 +276,7 @@ KosEvaluatedTypeObject KosTakeWhileType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

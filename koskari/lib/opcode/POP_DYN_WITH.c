@@ -20,8 +20,8 @@
 */
 
 KOS_OP_HANDLER(POP_DYN_WITH) {
-  KOS_SYNC_PC(es, insn);
-  TAILCALL(op_POP_WITH, es, insn, kos_op_delivery_);
+  KOS_SYNC_PC(ctx, insn);
+  TAILCALL(op_POP_WITH, ctx, insn, kos_op_delivery_);
 }
 
 

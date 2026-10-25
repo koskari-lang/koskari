@@ -27,6 +27,7 @@ iterator's exhaustion, as it is once the awaitable is stepped.
 :license: GNU General Public License v3
 """
 
+import asyncio
 import unittest
 
 import pytest
@@ -42,6 +43,17 @@ define collect [ait]:
     define out (#list)
     for-each [x ait]:
         (out.append x)
+    out
+
+define collect_caught [ait]:
+    define out (#list)
+    try:
+        for-each [x ait]:
+            (out.append x)
+    except [e RuntimeError]:
+        (out.append (str e))
+    for-each [y #[7 8]]:
+        (out.append y)
     out
 """
 
@@ -70,6 +82,25 @@ class StopAnext:
 
     def __anext__(self):
         raise StopAsyncIteration
+
+
+class RaisingAfterAwait:
+    """
+    An async iterator whose step awaits and then fails
+    """
+
+    def __init__(self, good):
+        self.good = good
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.sleep(0)
+        if self.good:
+            self.good -= 1
+            return self.good
+        raise RuntimeError("anext failed after await")
 
 
 class TestForeachPyAiterAnextError(unittest.IsolatedAsyncioTestCase):
@@ -104,6 +135,17 @@ class TestForeachPyAiterAnextError(unittest.IsolatedAsyncioTestCase):
         collect = vars(mod)["collect"]
 
         self.assertEqual(await collect(StopAnext()), [])
+
+    async def test_anext_error_after_await_reaches_the_try(self):
+        """
+        a RuntimeError raised after the step awaited reaches the
+        enclosing try, and a later for-each in the same frame runs
+        """
+
+        mod = await self.load("fpa_anext_await_raise")
+        self.assertEqual(
+            await vars(mod)["collect_caught"](RaisingAfterAwait(2)),
+            [1, 0, "anext failed after await", 7, 8])
 
 
 # The end.

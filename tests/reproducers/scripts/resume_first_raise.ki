@@ -1,0 +1,107 @@
+;; resume_first_raise -- an error raised while a frame waits on a resume
+;; reaches that resume first, which handles the iteration's own end
+;; exception or declines, and then the frame's extents: a try around
+;; the loop catches, a finally runs, a yield-from's try catches, and a
+;; mapped function's StopIteration ends the loop it feeds.
+
+
+define raising_gen [n]:
+    for-each [i (range n)]:
+        when (== i 2):
+            raise (ValueError "two")
+        yield i
+
+
+define caught_around_loop [n]:
+    define out #[]
+    try:
+        for-each [v (raising_gen n)]:
+            out.append v
+    except [e ValueError]:
+        out.append (str e)
+    out
+
+
+define finally_around_loop [n log]:
+    try:
+        for-each [v (raising_gen n)]:
+            log.append v
+    finally:
+        log.append "finally"
+
+
+define truncating [x]:
+    when (== x 3):
+        raise (StopIteration)
+    (* x 10)
+
+
+define truncated_map [n]:
+    define out #[]
+    for-each [v (map truncating (range n))]:
+        out.append v
+    out
+
+
+define delegating [n]:
+    try:
+        yield-from (raising_gen n)
+    except [e ValueError]:
+        yield (str e)
+    yield "after"
+
+
+define caught_in_delegation [n]:
+    define out #[]
+    for-each [v (delegating n)]:
+        out.append v
+    out
+
+
+define outer_over_inner [n]:
+    ;; the inner loop's generator raises; the inner try catches, the
+    ;; outer loop goes on
+    define out #[]
+    for-each [k (range 2)]:
+        try:
+            for-each [v (raising_gen n)]:
+                out.append #(k v)
+        except [e ValueError]:
+            out.append #(k (str e))
+    out
+
+
+define plain_iter_error [it log]:
+    ;; a plain iterator's step raising: reaches the resume, which
+    ;; declines, and the enclosing try catches
+    try:
+        for-each [v it]:
+            log.append v
+    except [e ZeroDivisionError]:
+        log.append "zero"
+    log
+
+
+define mapped_raising [n]:
+    ;; a transform over a raising Koskari generator: the error reaches
+    ;; the transform's fetch, then the try around the loop
+    define out #[]
+    try:
+        for-each [v (map (lambda [x] (* x 10)) (raising_gen n))]:
+            out.append v
+    except [e ValueError]:
+        out.append (str e)
+    out
+
+
+define zipped_raising [n]:
+    define out #[]
+    try:
+        for-each [v (zip (raising_gen n) (range 10))]:
+            out.append v
+    except [e ValueError]:
+        out.append (str e)
+    out
+
+
+;; The end.

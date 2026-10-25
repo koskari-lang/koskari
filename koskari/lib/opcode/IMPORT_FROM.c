@@ -137,7 +137,7 @@ static PyObject *kos_import_from_member(
   exceptions propagate.
 */
 KOS_OP_HANDLER(IMPORT_FROM) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
@@ -153,7 +153,7 @@ KOS_OP_HANDLER(IMPORT_FROM) {
     RESULT_RAISE();
   }
 
-  PyObject *mod = kos_import_module(es, name, (long) KosExtra_IMM(row, 1), 1);
+  PyObject *mod = kos_import_module(ctx, name, (long) KosExtra_IMM(row, 1), 1);
   if (unlikely(! mod))
     RESULT_RAISE();
 
@@ -166,7 +166,7 @@ KOS_OP_HANDLER(IMPORT_FROM) {
       RESULT_RAISE();
     }
 
-    if (unlikely(frame_ns_store(es, PyTuple_GET_ITEM(binds, i), val) < 0)) {
+    if (unlikely(frame_ns_store(ctx, PyTuple_GET_ITEM(binds, i), val) < 0)) {
       Py_DECREF(val);
       Py_DECREF(mod);
       RESULT_RAISE();
@@ -175,7 +175,7 @@ KOS_OP_HANDLER(IMPORT_FROM) {
   }
   Py_DECREF(mod);
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

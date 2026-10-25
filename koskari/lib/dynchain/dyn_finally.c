@@ -34,8 +34,7 @@ KosDynFinally *kos_dynfinally_new(KosDynNode *parent, uint32_t handler_pc) {
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_FINALLY, parent,
-                   KOS_DYN_CAP_HANDLES_EXCEPTIONS
-                   | KOS_DYN_CAP_INTERCEPTS_RAISE);
+                   KOS_DYN_CAP_INTERCEPTS_RAISE);
   KosDynFinally_HANDLER_PC(node) = handler_pc;
   KosDynFinally_ENABLED(node) = 1;
   KosDynFinally_HANDLING_RAISE(node) = 0;
@@ -101,11 +100,11 @@ static int dynnode_to_dict_finally(KosDynNode *node, PyObject *data) {
 /**
    Push FINALLY as DYN_TOP. Callers: opcode PUSH_FINALLY.
 */
-KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
-  KosDynFinally *node = kos_dynfinally_new(KosEvalState_DYN_TOP(es), handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc) {
+  KosDynFinally *node = kos_dynfinally_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynfinally_free(node);
     return NULL;
   }
@@ -116,8 +115,8 @@ KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc) {
 /**
    Pop FINALLY when top. Callers: opcode POP_FINALLY.
 */
-int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "FINALLY node is not at top of chain");
     return -1;
   }
@@ -125,7 +124,7 @@ int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node) {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
     kos_dyn_region_leave_exc((KosDynNode *) node);
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dynfinally_free(node);
   }

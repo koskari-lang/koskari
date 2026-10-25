@@ -1,0 +1,26 @@
+;; churn_demand_call_method -- Python's builtin map driving the bound method
+;; of a koskari class instance, the method wrapped in demand: one
+;; Python-to-koskari boundary call per element through the BoundMethod, which
+;; supplies self ahead of the two positionals.  No Python counterpart: the
+;; point is the koskari demand boundary.
+
+(import-from builtins map)
+
+(define MASK32 0xffffffff)
+
+
+define-class Mixer []:
+    @demand
+    define mix [self a b]:
+        (& (+ (* a 31) (^ b 0x5bd1e995)) MASK32)
+
+
+define churn_demand_call_method [n: 20000]:
+    define acc 0
+    define mixer (Mixer)
+    for-each [v (map mixer.mix (range 0 n) (range n 0 -1))]:
+        set! acc (& (+ (* acc 33) v) MASK32)
+    acc
+
+
+;; The end.

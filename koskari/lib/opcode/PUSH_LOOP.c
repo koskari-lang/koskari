@@ -21,16 +21,16 @@
 */
 
 KOS_OP_HANDLER(PUSH_LOOP) {
-  KOS_SYNC_PC(es, insn);
-  uint32_t continue_pc = KosEvalState_PC(es);  /* next insn; fetch advanced */
+  KOS_SYNC_PC(ctx, insn);
+  uint32_t continue_pc = KosContext_PC(ctx);  /* next insn; fetch advanced */
   uint32_t pop_pc;
 
   /* break lands after the POP_LOOP that closes the extent */
-  if (kos_site_extent_close(es, insn, KOS_EXT_LOOP, "PUSH_LOOP", &pop_pc) < 0)
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_LOOP, "PUSH_LOOP", &pop_pc) < 0)
     RESULT_RAISE();
 
   KosDynNode *region = (KosDynNode *) kos_dyn_push_loop(
-      es, pop_pc + 1u, continue_pc);
+      ctx, pop_pc + 1u, continue_pc);
   if (! region) {
     PyErr_NoMemory();
     RESULT_RAISE();
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(PUSH_LOOP) {
   /* Initialize loop result to None */
   Py_INCREF(Py_None);
   KosDynLoop_RESULT((KosDynLoop *) region) = Py_None;
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

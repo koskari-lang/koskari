@@ -20,7 +20,7 @@
   intermediate is not a pair or is nil.
 */
 KOS_OP_HANDLER(CDR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   int opa = (int) KosOp_ARG(insn);
   if (unlikely(opa <= 0)) {
     PyErr_Format(PyExc_RuntimeError, "CDR invoked with invalid"
@@ -28,7 +28,7 @@ KOS_OP_HANDLER(CDR) {
     RESULT_RAISE();
   }
 
-  PyObject *cur = KosEvalState_StackPopRef(es);
+  PyObject *cur = KosContext_StackPopRef(ctx);
   if (unlikely(! cur))
     RESULT_RAISE();
 
@@ -51,7 +51,7 @@ KOS_OP_HANDLER(CDR) {
     cur = next;
   }
 
-  RESULT_STEAL(es, cur);
+  RESULT_STEAL(ctx, cur);
 }
 
 

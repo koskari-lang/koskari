@@ -21,16 +21,16 @@
   count + 1 slots. count 0 pushes bracket-nil.
 */
 KOS_OP_HANDLER(BRACKET_PROPER) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   size_t count = (size_t) KosOp_ARG(insn);
 
-  if (unlikely(KosEvalState_StackPushRef(es, KosBracketNil)))
+  if (unlikely(KosContext_StackPushRef(ctx, KosBracketNil)))
     RESULT_RAISE();
 
   if (unlikely(count == 0))
-    RESULT_NEXT(es);
+    RESULT_NEXT(ctx);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count + 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, count + 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -38,9 +38,9 @@ KOS_OP_HANDLER(BRACKET_PROPER) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  KosEvalState_StackDropNoErr(es, count + 1);
+  KosContext_StackDropNoErr(ctx, count + 1);
 
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

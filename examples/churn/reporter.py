@@ -88,8 +88,10 @@ class Result:
 
 # Column layout for the human-readable table: (heading, align, width).
 # Labels live in the header row, so the data rows carry only values.
-_COLUMNS = (
-    ("benchmark", "<", 14),
+# The name column is sized per run, from the selected names.
+NAME_HEADING = "benchmark"
+
+_VALUE_COLUMNS = (
     ("py-best", ">", 10),
     ("py-med", ">", 10),
     ("ki-best", ">", 10),
@@ -98,35 +100,49 @@ _COLUMNS = (
 )
 
 
+def name_width(names):
+    """
+    The width of the name column for a run: the longest of ``names``,
+    never narrower than the heading
+    """
+
+    return max([len(NAME_HEADING)] + [len(name) for name in names])
+
+
+def _columns(width):
+    return ((NAME_HEADING, "<", width),) + _VALUE_COLUMNS
+
+
 def _fmt_time(t):
     if t is None:
         return ""
     return "%.4fs" % t
 
 
-def _cells(texts):
+def _cells(texts, width):
     return " ".join(
-        format(text, align + str(width))
-        for text, (_, align, width) in zip(texts, _COLUMNS))
+        format(text, align + str(size))
+        for text, (_, align, size) in zip(texts, _columns(width)))
 
 
-def format_header():
+def format_header(width):
     """
-    Render the table heading row plus an underline rule.
+    Render the table heading row plus an underline rule, the name column
+    ``width`` wide (see :func:`name_width`).
     """
 
-    head = _cells(name for name, _, _ in _COLUMNS)
+    head = _cells((name for name, _, _ in _columns(width)), width)
     return head + "\n" + ("-" * len(head))
 
 
-def format_result(result):
+def format_result(result, width):
     """
     Render one result as a single table row, aligned under
-    :func:`format_header`.
+    :func:`format_header` called with the same ``width``.
     """
 
     if result.note:
-        return format(result.name, "<14") + " " + result.note
+        return format(result.name, "<%d" % width) + " " + result.note
 
     by = {t.label: t for t in result.timings}
     py = by.get("python")
@@ -140,7 +156,7 @@ def format_result(result):
         _fmt_time(ki.best) if ki else "",
         _fmt_time(ki.median) if ki else "",
         ("%.2fx" % ratio) if ratio is not None else "",
-    ))
+    ), width)
     row = row.rstrip()
     if not result.ok:
         row += "  !! MISMATCH"

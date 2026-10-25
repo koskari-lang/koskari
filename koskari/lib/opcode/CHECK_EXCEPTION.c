@@ -20,9 +20,9 @@
 */
 
 KOS_OP_HANDLER(CHECK_EXCEPTION) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
-  PyObject *match = KosEvalState_StackPopRef(es);
+  PyObject *match = KosContext_StackPopRef(ctx);
   if (! match)
     RESULT_RAISE();
 
@@ -39,10 +39,10 @@ KOS_OP_HANDLER(CHECK_EXCEPTION) {
   Py_DECREF(match);
 
   if (! ret) {
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

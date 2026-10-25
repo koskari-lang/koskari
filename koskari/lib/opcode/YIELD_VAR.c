@@ -22,11 +22,11 @@
   yielding.  Stack unchanged.
 */
 KOS_OP_HANDLER(YIELD_VAR) {
-  KOS_SYNC_PC(es, insn);
-  PyObject *val = frame_ns_deref(es, KosOp_OBJ(insn));
+  KOS_SYNC_PC(ctx, insn);
+  PyObject *val = frame_ns_deref(ctx, KosOp_OBJ(insn));
   if (unlikely(! val))
     RESULT_RAISE();
-  TAILCALL(kos_yield_deliver, es, insn, val);
+  TAILCALL(kos_yield_deliver, ctx, insn, val);
 }
 
 

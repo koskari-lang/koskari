@@ -1,9 +1,10 @@
-;; churn_starmap -- Python itertools.starmap driving a koskari method wrapped
-;; in demand, nested two deep.  This is the demand-path churn that koslife's
-;; get-all-groups exercises, and which no other churn kernel touches.  No
-;; Python counterpart: the point is the koskari demand machinery.
+;; churn_starmap -- koskari.itertools starmap driving a koskari method,
+;; nested two deep: the lazy neighbourhood scan a grid program writes, each
+;; cell read a method call made inside the running evaluator.  The Python
+;; counterpart is itertools.starmap over the same methods.
 
-(import-from itertools product starmap)
+(import-from itertools product)
+(import-from koskari.itertools starmap)
 
 (define MASK32 0xffffffff)
 
@@ -44,11 +45,11 @@ define-class ChurnGrid []:
 
 
     define get-group [self x y]:
-        (starmap (demand self.get-cell) (self.group-coord x y))
+        (starmap self.get-cell (self.group-coord x y))
 
 
     define get-all-groups [self]:
-        (starmap (demand self.get-group)
+        (starmap self.get-group
           (product (range 0 self.width) (range 0 self.height)))
 
 

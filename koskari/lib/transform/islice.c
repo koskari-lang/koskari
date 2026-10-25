@@ -92,17 +92,17 @@ static int islice_bound(
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(islice_resume_discard_kind, "islice-step",
+KOS_RESUME_KIND_AS_IS(islice_resume_discard_kind, "islice-step",
                 islice_resume_discard, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(islice_resume_emit_kind, "islice-step",
+KOS_RESUME_KIND_AS_IS(islice_resume_emit_kind, "islice-step",
                 islice_resume_emit, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(islice_resume_skip_kind, "islice-step",
+KOS_RESUME_KIND_AS_IS(islice_resume_skip_kind, "islice-step",
                 islice_resume_skip, kos_transform_step_clear, NULL);
 
 
@@ -129,7 +129,7 @@ static void islice_advance(KosISlice *s) {
    islice_resume_discard: every fetch here is a request.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosISlice *s = (KosISlice *) state;
   KosTransform *t = &s->base;
@@ -137,12 +137,12 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (s->cnt < s->next) {
-    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &islice_resume_discard_kind, s);
-    RESULT_ENTRY(es, r, &islice_resume_discard_kind, s);
+    RESULT_ENTRY(ctx, r, &islice_resume_discard_kind, s);
   }
 
   /* The slice is spent: stop here rather than consuming the rest. */
@@ -152,9 +152,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
   }
 
   {
-    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &islice_resume_emit_kind, s);
-    RESULT_ENTRY(es, r, &islice_resume_emit_kind, s);
+    RESULT_ENTRY(ctx, r, &islice_resume_emit_kind, s);
   }
 }
 
@@ -165,17 +165,19 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_skip(
    arbitrarily long skip stays flat. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosISlice *s = (KosISlice *) state;
 
+  kos_transform_fetched(s->base.source, element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &s->base);
 
   Py_DECREF(element);
   s->cnt++;
 
-  RESUME_HOP(&islice_resume_skip_kind, es, s, NULL);
+  RESUME_HOP(&islice_resume_skip_kind, ctx, s, NULL);
 }
 
 
@@ -184,36 +186,34 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_discard(
    element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult islice_resume_emit(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosISlice *s = (KosISlice *) state;
 
+  kos_transform_fetched(s->base.source, element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &s->base);
 
   s->cnt++;
   islice_advance(s);
 
-  return KosNativeFrame_ReturnToCache(es, element, &s->base.cached_frame);
+  RESULT_FRAME_RETURN(ctx, element, &s->base.cached_frame);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult islice_iter_step(
-    KosEvalState *es,
+static KosIterStepResult islice_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosISlice *s = (KosISlice *) self;
   KosTransform *t = &s->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   {
     /* The discard run and the emitted fetch complete here when the
@@ -222,7 +222,7 @@ static KosIterStepResult islice_iter_step(
     while (s->cnt < s->next) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(es, t, t->source, &islice_resume_skip_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, t->source, &islice_resume_skip_kind,
                           pre_top, out, element);
       Py_DECREF(element);
       s->cnt++;
@@ -237,7 +237,7 @@ static KosIterStepResult islice_iter_step(
     {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(es, t, t->source, &islice_resume_skip_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, t->source, &islice_resume_skip_kind,
                           pre_top, out, element);
 
       s->cnt++;
@@ -247,6 +247,16 @@ static KosIterStepResult islice_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult islice_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, islice_step_body);
 }
 
 
@@ -351,6 +361,7 @@ KosEvaluatedTypeObject KosISliceType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

@@ -55,16 +55,13 @@
    KOS_DYN_NS     - Namespace scope (PUSH_NS/POP_NS)
    KOS_DYN_COLLECT - Collector scope (PUSH_COLLECT/POP_COLLECT); push ns on pop
    KOS_DYN_CC     - Undelimited continuation block (call/cc)
-   KOS_DYN_YIELD_FROM - Yield-from delegation state
    KOS_DYN_PARAM     - Parameter bindings (parameterize extent)
    KOS_DYN_WITH      - Context manager (with / dyn-with); multi vs single-shot
                        is u.with.shot (see KOS_DYN_WITH_SHOT_*), not a second kind
    KOS_DYN_SHIFT     - Shift handler bookmark (transparent; no segment,
                        frame, or namespace of its own)
-   KOS_DYN_GEN       - Generator node; intercepts handle(YIELD/RETURN/RAISE),
+   KOS_DYN_GEN       - Generator node; intercepts handle(RETURN/RAISE),
                        denies handle(SHIFT)
-   KOS_DYN_NEXT      - Iteration node for a standalone NEXT over a Koskari
-                       iterator, and extended FOREACH stepping
 */
 
 typedef enum KosDynKind {
@@ -79,17 +76,10 @@ typedef enum KosDynKind {
   KOS_DYN_NS,
   KOS_DYN_COLLECT,
   KOS_DYN_CC,
-  KOS_DYN_YIELD_FROM,
   KOS_DYN_PARAM,
   KOS_DYN_WITH,
   KOS_DYN_SHIFT,
   KOS_DYN_GEN,
-  /**
-   KOS_DYN_NEXT - Iteration node for standalone NEXT opcode over Koskari
-   async gen (flatten). Pushed at runtime from NEXT.c; self-pops after yield
-   or return is delivered.
-  */
-  KOS_DYN_NEXT,
   /* sentinel value */
   KOS_DYN_UNKNOWN,
 } KosDynKind;
@@ -123,24 +113,29 @@ typedef enum KosDynFlags {
 
 /**
    KosDynNode capability bits. Generic code checks these for behavior
-   instead of node type. Set at creation and copied on clone; a frame's
-   OWNS_NS follows its code object and moves with it (a placeholder
-   filled with code gains it, a cached function frame keeps it).
+   instead of node type. Set at creation and copied on clone. Two
+   change at run time: CLEAR_LOOP and CLEAR_FOREACH take LOOP_REGION
+   away, and a frame's OWNS_NS follows its code object and moves with
+   it (a placeholder filled with code gains it, a cached function frame
+   keeps it).
 */
-#define KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION    (1u << 0)
-#define KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP  (1u << 1)
-#define KOS_DYN_CAP_NEEDS_INSTALL_WIND       (1u << 4)
+#define KOS_DYN_CAP_CATCH                    (1u << 0)
+/* a LOOP or FOREACH region still running its body: the region a break
+   or continue lands on. CLEAR_LOOP and CLEAR_FOREACH take it away when
+   the else clause starts, so a break or continue written there belongs
+   to the enclosing loop. The one record of the region's enabled state. */
+#define KOS_DYN_CAP_LOOP_REGION              (1u << 2)
 /* the node reacts when control returns into it from a frame it owns:
-   the extent contract has work for it (WITH, WIND); a node
-   without it takes a callee's value on its segment and nothing more */
+   the extent contract has work for it (WITH, WIND), and it carries an
+   obligation slot (KosObligation), what it owes when it is unlinked --
+   a body value, an exception stored while its after thunk or __exit__
+   runs, or a return crossing a leave in flight; kos_dyn_node_ob is the
+   accessor behind the cap. A node without it takes a callee's value on
+   its segment and nothing more */
 #define KOS_DYN_CAP_CONTROL_HOOK             (1u << 6)
 #define KOS_DYN_CAP_BARRIER                  (1u << 7)
-#define KOS_DYN_CAP_HANDLES_EXCEPTIONS       (1u << 8)
-/** Iteration node (KOS_DYN_NEXT, extended FOREACH stepping) */
-#define KOS_DYN_CAP_ITER_RECEIVER     (1u << 9)
 /** Node participates in raise-walk dispatch (handle/restitch); the fast
-   first check before kos_dyn_handle. Distinct from HANDLES_EXCEPTIONS,
-   which marks failed-pop recovery (kos_dyn_exception_unwind). */
+   first check before kos_dyn_handle. */
 #define KOS_DYN_CAP_INTERCEPTS_RAISE         (1u << 10)
 
 /* The namespace in this node's ns field is its own: a scope the node
@@ -151,14 +146,6 @@ typedef enum KosDynFlags {
    native or code-less frame carries a fill and does not have it. */
 #define KOS_DYN_CAP_OWNS_NS                 (1u << 11)
 
-/* This kind carries an obligation slot (KosObligation): what it owes
-   when it is unlinked -- a body value, an exception stored while its
-   after thunk or __exit__ runs, or a return crossing a leave in flight.
-   kos_dyn_node_ob is the generic accessor behind this cap. */
-#define KOS_DYN_CAP_HOLDS_OBLIGATION         (1u << 12)
-
-/* Alias for KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION (unified API naming) */
-#define KOS_DYN_CAP_CATCH KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION
 
 
 typedef enum KosDynWindPhase {
@@ -172,27 +159,6 @@ typedef enum KosDynWindPhase {
 
 /* === KosIterRequest: the iteration request sidecar === */
 
-
-/**
-   Wake events a requestor can receive: request completions only. The
-   sidecar consumes machinery-internal traffic (awaited values,
-   provider suspensions, mediated source yields) itself.
-*/
-typedef enum {
-  KOS_IWAKE_VALUE = 0,  /* the requested element arrived */
-  KOS_IWAKE_END,        /* the source is exhausted (payload or NULL) */
-  KOS_IWAKE_EXCEPTION,  /* the request failed; PyErr set */
-} KosIterWakeEvent;
-
-
-/** In-flight step modes; private to the sidecar and the iteration-node
-    delivery machinery -- sites and providers never read them */
-#define KOS_IREQ_IDLE         0u
-#define KOS_IREQ_INSTALLED    1u  /* provider's own frames are in-eval */
-#define KOS_IREQ_AWAITING_PY  2u  /* suspended python async step; the
-                                     awaited completion is the element */
-#define KOS_IREQ_GRAFT_VALUE  3u  /* value graft: the next frame return
-                                     below is the element */
 
 /** What a bound iterator is, so the step calls the one entry it needs.
     Async wins over sync when a type offers both, as the probing order
@@ -219,10 +185,10 @@ typedef struct KosLiveRegs {
 
 
 /**
-   The iteration request record: the single home of an in-flight
-   step's state. Embedded in the FOREACH, NEXT, and YIELD_FROM node
-   arms; the delivery machinery reads the stepped iterator and the
-   mode from here and nowhere else.
+   The iteration request record: the FOREACH region's iterator and
+   how it steps. Embedded in the FOREACH node; the step reads the
+   iterator and its kind from here and nowhere else, and the step
+   resume finishes it on delivery.
 */
 typedef struct KosIterRequest {
   PyObject *iter;       /* stepped iterator; strong ref while the
@@ -232,7 +198,6 @@ typedef struct KosIterRequest {
                                   iter through kos_dyn_iter_request_bind_iter,
                                   so the step and delivery paths never
                                   re-derive it */
-  uint8_t mode;         /* KOS_IREQ_* */
   uint8_t kind;         /* KOS_IREQ_KIND_*: how the step drives iter,
                            classified once at bind so no step probes
                            the type again */
@@ -247,14 +212,9 @@ typedef struct KosIterRequest {
 void kos_dyn_iter_request_bind_iter(KosIterRequest *req, PyObject *iter);
 
 /**
-   Tell the request's provider its step is over: ki_finish on the bound
-   suite, a no-op for a plain iterator. exhausted marks the provider
-   closed, unless it recycles its durable context and re-derives
-   exhaustion from its source, in which case it stays open (a mapped
-   function's StopIteration is a truncation that builtins.map resumes
-   from).
+   Tell the request's provider its step is over: kos_iter_finish on
+   the bound suite, a no-op for a plain iterator.
 */
-void kos_dyn_iter_request_finish(KosDynNode *node, int exhausted);
 void kos_dyn_iter_request_finish_req(KosIterRequest *req, int exhausted);
 
 
@@ -358,33 +318,96 @@ typedef enum KosHandleResult {
    frame freed or cached with the resume still set); NULL means the
    state is borrowed and its owner cleans up. clone runs at a
    continuation capture and at a multi-shot landing; NULL means the
-   capture refuses by name. Clean completion is the owner's business as
-   ever.
+   capture refuses by name. throw_kind is the kind that takes a throw
+   into this halt, with the exception object as its value and the same
+   state: a throw ingress sets it on the frame in place of this kind
+   and stages the exception; NULL means a throw raises at the frame.
+   Clean completion is the owner's business as ever.
 */
 typedef struct KosResumeKind {
   const char *name;
-  struct KosOpResult (KOS_PRESERVE_NONE *fn)(struct KosEvalState *es,
+  struct KosOpResult (KOS_PRESERVE_NONE *fn)(struct KosContext *ctx,
                                               void *state, PyObject *value);
   void (*clear)(void *state);
   void *(*clone)(void *state);
-  int settle;   /* the delivery is settled before fn sees it: 0 for a
-                   kind whose delivery is data, as a delegate's yielded
-                   value or a for-each element is */
+  const struct KosResumeKind *throw_kind;
+  int settle;   /* the delivery is settled before fn sees it: 1 for a
+                   kind that takes a call's result, 0 for a kind whose
+                   delivery is data -- a for-each element, a next's
+                   element, a delegate's yielded value, a transform
+                   source's element -- which reaches fn as it is. A
+                   for-each step's region clears its kind from the
+                   frame when the region leaves the chain with the
+                   step in flight. */
+  int (*traverse)(void *state, visitproc visit, void *arg);
+                /* GC traverse of the state, for a kind whose state owns
+                   a Python object (a yield-from phase owns its
+                   delegate); NULL when the state owns none. Every
+                   holder of a resume state -- a frame, a delimiter's
+                   displaced resume, a transfer's restore record --
+                   visits through it. */
 } KosResumeKind;
 
+/* A kind that takes a call's result: the delivery is settled first. */
 #define KOS_RESUME_KIND(ident, label, fnp, clearp, clonep)              \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 1 }
+    (label), (fnp), (clearp), (clonep), NULL, 1, NULL }
 
 /* A kind that takes its delivery as it is. */
 #define KOS_RESUME_KIND_AS_IS(ident, label, fnp, clearp, clonep)        \
   static const KosResumeKind ident = {                                  \
-    (label), (fnp), (clearp), (clonep), 0 }
+    (label), (fnp), (clearp), (clonep), NULL, 0, NULL }
+
+/* An as-is kind with a throw kind: a throw into the halt runs throwp
+   with the exception object as its value. */
+#define KOS_RESUME_KIND_AS_IS_THROWABLE(ident, label, fnp, clearp,      \
+                                        clonep, throwp)                 \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), (throwp), 0, NULL }
+
+/* An as-is kind whose state owns a Python object: its clear, clone
+   and traverse keep that object's reference count and visibility to
+   the cyclic collector in step. */
+#define KOS_RESUME_KIND_AS_IS_OWNING(ident, label, fnp, clearp,         \
+                                     clonep, traversep)                 \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), NULL, 0, (traversep) }
+
+#define KOS_RESUME_KIND_AS_IS_OWNING_THROWABLE(ident, label, fnp,       \
+                                               clearp, clonep,          \
+                                               traversep, throwp)       \
+  static const KosResumeKind ident = {                                  \
+    (label), (fnp), (clearp), (clonep), (throwp), 0, (traversep) }
+
+/* GC traverse of a held resume state through its kind. */
+static inline int kos_resume_traverse(
+    const KosResumeKind *kind,
+    void *state,
+    visitproc visit,
+    void *arg) {
+
+  if (kind && kind->traverse)
+    return kind->traverse(state, visit, arg);
+  return 0;
+}
 
 /* The clone of a kind whose state is owned elsewhere and copied with
    the chain (a node's resume, whose state is NULL or the node
    itself): the state is handed on as it is. */
 void *kos_resume_clone_shared(void *state);
+
+/* The clone of a state that is one owned Python object: a new
+   reference to the same object. */
+void *kos_resume_clone_object(void *state);
+
+
+/* The record a LOOP and a FOREACH region share: where break and
+   continue land, and the body's last continue value. */
+typedef struct KosDynRegionFields {
+  uint32_t break_pc;
+  uint32_t continue_pc;
+  PyObject *result;
+} KosDynRegionFields;
 
 
 struct KosDynNode {
@@ -419,7 +442,8 @@ struct KosDynNode {
       /* A caller-owned one-frame cache (KosDynFrame **) this frame
          is stored into when the return path frees it; meaningful
          only while KOS_FRAME_RETURN_TO_CACHE is set, which
-         KosNativeFrame_ReturnToCache alone does. */
+         KosNativeFrame_CacheOnFree alone does, for the return and for
+         a resume declining a failure. */
       void *cache_slot;
       /* CPS consumer resume (the contract is in eval.h): the kind names
          the entry to invoke on the next value staged to this frame and
@@ -504,39 +528,14 @@ struct KosDynNode {
       KosExcState saved;      /* handler-visible state before this region */
       KosExcState handling;   /* the raise being propagated through the body */
     } finally_;
-    struct { uint32_t break_pc; uint32_t continue_pc; uint8_t enabled; PyObject *result; } loop;
+    /* LOOP and FOREACH open with the same region record, so a break or
+       continue reads either through KosDynRegion_*; the enabled state
+       is the KOS_DYN_CAP_LOOP_REGION capability. */
+    struct { KosDynRegionFields region; } loop;
     struct {
-      uint32_t break_pc;
-      uint32_t continue_pc;
-      uint8_t enabled;
-      PyObject *result;
-      uint8_t exhausted;
-      uint32_t iter_next_else_pc;
-      KosIterRequest req;    /* in-flight ITER_NEXT step state */
+      KosDynRegionFields region;
+      KosIterRequest req;    /* the loop's iterator and its in-flight step */
     } foreach;
-    struct {
-      PyObject *delegate;
-      uint8_t kind;
-      uint8_t pending_action;
-      PyObject *pending_arg;
-      PyObject *pending_arg_type;  /* for KOS_YF_THROW: exception type */
-      PyObject *inflight;
-      KosIterRequest req;    /* in-flight KOS_ITER delegate step state */
-      /* KosThreadFn: the drive body elected for kind when the node was
-         pushed, tail-called on every entry; the delegate never changes,
-         so no guard. Set by the YIELD_FROM handler, which owns the four
-         bodies. See design/interpreter/electors.md. */
-      void *drive;
-      /* KosThreadFn: the phase resume set on the delegating frame for
-         the delegation's current suspension (the send that answers an
-         emitted yield, an awaited result, a flattened inner yield), run
-         by the prologue's delivery step with what arrived; NULL while
-         the drive runs. The clear on pop and unwind compares against
-         it. resume_emit is the inner-yield phase, set beside drive at
-         push so the node's own delivery code can set it. */
-      void *resume;
-      void *resume_emit;
-    } yield_from;
     struct {
       PyObject *bindings;  /* PyDict: key -> value (what we bind; keys from ParamRef) */
       PyObject *saved;     /* PyDict: key -> value or SENTINEL_UNSET (filled at enter, used at restore; NULL if not yet entered) */
@@ -585,11 +584,6 @@ struct KosDynNode {
       KosLiveRegs host;
       KosLiveRegs frozen;
     } gen;
-    struct {
-      KosIterRequest req;    /* the stepped object and in-flight mode */
-      PyObject *default_val; /* owned; 2-arg NEXT */
-      int n;                 /* 1 or 2 */
-    } next;
   } u;
 
   /* Embedded operand-segment storage for region kinds: stack aims
@@ -634,14 +628,15 @@ typedef struct KosDynNode KosDynFrame;
 
    Like every walk it returns KosOpResult: EVAL_REPROLOGUE when a handler
    applied, EVAL_RAISE when no handler remains (PyErr set, surfacing raise
-   prepared), EVAL_AWAIT when an async unwind started, EVAL_RETURN when
+   prepared), EVAL_RESUME(NULL) when the live frame has a resume to take
+   the failure, EVAL_AWAIT when an async unwind started, EVAL_RETURN when
    a resume-carrying frame answered the exception by completing itself
    (the caller applies the return from the live frame).
 
    Callers: process_raise (the unified RAISE ingress in eval.c).
    Implemented in dynchain.c (dyn_walk).
 */
-KosOpResult kos_dyn_unwind_raise(KosEvalState *es);
+KosOpResult kos_dyn_unwind_raise(KosContext *ctx);
 
 
 typedef struct KosDynNode KosDynPrompt;
@@ -654,12 +649,10 @@ typedef struct KosDynNode KosDynForeach;
 typedef struct KosDynNode KosDynNs;
 typedef struct KosDynNode KosDynCollect;
 typedef struct KosDynNode KosDynCC;
-typedef struct KosDynNode KosDynYieldFrom;
 typedef struct KosDynNode KosDynParam;
 typedef struct KosDynNode KosDynWith;
 typedef struct KosDynNode KosDynShift;
 typedef struct KosDynNode KosDynGen;
-typedef struct KosDynNode KosDynNext;
 
 
 /* === KosContinuation: captured delimited continuation === */
@@ -935,33 +928,33 @@ KosDynNode *kos_dyn_clone_segment(
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_push(KosEvalState *es, KosDynNode *node);
+int kos_dyn_push(KosContext *ctx, KosDynNode *node);
 
 
 /**
-   Flush live PCs, set dyn_top to new_top, retarget live fields on es.
+   Flush live PCs, set dyn_top to new_top, retarget live fields on ctx.
 
    Use for pops, splices, gen install, and any dyn_top change that is not
    kos_dyn_push. Internally captures the previous dyn_top and calls
    kos_dyn_resync_after_pop (incremental parent pop or full rebuild).
    Ordinary pushes must use kos_dyn_push instead.
 */
-void kos_dyn_commit_dyn_top(KosEvalState *es, KosDynNode *new_top);
+void kos_dyn_commit_dyn_top(KosContext *ctx, KosDynNode *new_top);
 
 
 /**
-   Full chain walk: recompute live frame, block, and namespace on es from
-   dyn_top, then snapshot onto ctx.
+   Full chain walk: recompute live frame, block, and namespace on ctx from
+   dyn_top.
 
    Call from outside the dynchain TU when eval lifecycle or opcodes must refresh
-   live fields after a non-standard chain edit (KosContext_New bootstrap, tail
+   live fields after a non-standard chain edit (koskari_eval entry, tail
    koscall, stack assigned on dyn_top after push). Inside dynchain.c, xfer
    INSTALL/PUSH, gen install fallback, and kos_dyn_resync_after_pop when the
    edit is not a single-head parent pop use this instead of incremental retarget.
    Do not call on every opcode; ordinary pushes and pops go through
    kos_dyn_push and kos_dyn_commit_dyn_top.
 */
-void kos_dyn_resync_chain(KosEvalState *es);
+void kos_dyn_resync_chain(KosContext *ctx);
 
 
 /* === Dynamic chain context operations === */
@@ -970,7 +963,7 @@ void kos_dyn_resync_chain(KosEvalState *es);
 /**
    Push a new frame onto the context's dynamic chain.
 
-   Creates a new frame and sets it as dyn_top. Updates frame_top cache.
+   Creates a new frame and sets it as dyn_top and the live frame.
 
    :param ctx: execution context
    :param code: bytecode object (borrowed)
@@ -978,7 +971,7 @@ void kos_dyn_resync_chain(KosEvalState *es);
 
    :return: new frame, or NULL on error
 */
-KosDynFrame *kos_dyn_push_frame(KosEvalState *es, KosCode *code, PyObject *ns);
+KosDynFrame *kos_dyn_push_frame(KosContext *ctx, KosCode *code, PyObject *ns);
 
 /**
    Whether ns can be the namespace a frame runs code in: a code whose
@@ -993,7 +986,7 @@ int kos_code_fits_namespace(KosCode *code, PyObject *ns);
 /* kos_dyn_push_frame without the frame-room check; the caller has run
    kos_eval_check_frame_room for one frame already. */
 KosDynFrame *kos_dyn_push_frame_unchecked(
-    KosEvalState *es,
+    KosContext *ctx,
     KosCode *code,
     PyObject *ns);
 
@@ -1003,7 +996,7 @@ KosDynFrame *kos_dyn_push_frame_unchecked(
 
    :return: new frame, or NULL on error
 */
-KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
+KosDynFrame *kos_dyn_push_frame_empty(KosContext *ctx);
 
 
 /**
@@ -1015,7 +1008,7 @@ KosDynFrame *kos_dyn_push_frame_empty(KosEvalState *es);
 
    :return: new frame, or NULL on error
 */
-KosDynFrame *kos_dyn_push_frame_native(KosEvalState *es);
+KosDynFrame *kos_dyn_push_frame_native(KosContext *ctx);
 
 /**
    The depth of the nearest frame at or below node, 0 when the chain
@@ -1079,7 +1072,7 @@ void kos_dynframe_clear_resume(KosDynFrame *frame);
 
 /* Drop discardable extent nodes (NS, LOOP, FOREACH) above frame before
    tail-call frame reuse; errors on any other open node kind. */
-int kos_dyn_teardown_to_frame(KosEvalState *es, KosDynFrame *frame);
+int kos_dyn_teardown_to_frame(KosContext *ctx, KosDynFrame *frame);
 
 
 /**
@@ -1109,7 +1102,7 @@ void kos_dyngen_release(KosDynGen *gen);
    its chain references. The raise walk and a transfer's leave both
    cross a flattened generator this way. PyErr is preserved across it.
 */
-void kos_dyn_finish_flattened_gen(KosEvalState *es, KosDynGen *gen);
+void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen);
 
 
 /**
@@ -1124,17 +1117,17 @@ void kos_dyn_finish_flattened_gen(KosEvalState *es, KosDynGen *gen);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen);
+int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen);
 
 
 /**
    Bootstrap install: graft GEN and the chain ending at it, headed by
-   chain_head, onto the consumer es. The caller has taken chain_head
+   chain_head, onto the consumer ctx. The caller has taken chain_head
    out of its resting place (the GEN's active slot, or a context's
    dyn top).
 */
 int kos_dyn_gen_install_bootstrap(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynGen *gen,
     KosDynNode *chain_head);
 
@@ -1146,40 +1139,27 @@ int kos_dyn_gen_install_bootstrap(
 
    If GEN.active is NULL, returns 0 (already installed or exhausted).
 */
-int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *gen);
+int kos_dyn_gen_frozen_needs_install(KosContext *ctx, KosDynGen *gen);
 
 
 /**
    Unwind an exhausted gen from the chain. Call when gen's frame returns
    (parent is GEN). Frees frame and restores consumer.
 */
-int kos_dyn_teardown_gen_exhausted(KosEvalState *es);
+int kos_dyn_teardown_gen_exhausted(KosContext *ctx);
 
 
 /**
    Pop the top frame from the context's dynamic chain.
 
    Frees the frame and updates dyn_top to the frame's parent.
-   Updates frame_top cache to find the new topmost frame.
+   Updates the live frame to the new topmost frame.
 
    :param ctx: execution context
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_pop_frame(KosEvalState *es);
-
-
-/**
-   Detach the top frame without freeing it. Clears the detached frame's
-   parent link so it is fully disconnected from the chain. Caller receives
-   the frame.
-
-   :param ctx: execution context
-   :param frame_out: output; set to the detached frame (may be NULL)
-
-   :return: 0 on success, -1 if top is not a frame
-*/
-int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
+int kos_dyn_pop_frame(KosContext *ctx);
 
 
 /**
@@ -1193,7 +1173,7 @@ int kos_dyn_detach_top_frame(KosEvalState *es, KosDynFrame **frame_out);
    :return: new prompt, or NULL on error
 */
 KosDynPrompt *kos_dyn_push_prompt(
-    KosEvalState *es,
+    KosContext *ctx,
     uint32_t prompt_id,
     uint32_t pop_pc);
 
@@ -1208,7 +1188,7 @@ KosDynPrompt *kos_dyn_push_prompt(
 
   :return: 0 on success, -1 on error
 */
-int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt);
+int kos_dyn_pop_prompt(KosContext *ctx, KosDynPrompt *prompt);
 
 
 /**
@@ -1217,7 +1197,7 @@ int kos_dyn_pop_prompt(KosEvalState *es, KosDynPrompt *prompt);
    :return: new DELIM node, or NULL on error
 */
 KosDynDelim *kos_dyn_push_delim(
-   KosEvalState *es,
+   KosContext *ctx,
    uint8_t mode,
    KosDynNode *chain,
    uint32_t pc,
@@ -1231,7 +1211,7 @@ KosDynDelim *kos_dyn_push_delim(
    :param ctx: execution context
    :param delim: DELIM node to pop (must be dyn_top)
 */
-int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
+int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim);
 
 
 /**
@@ -1246,7 +1226,7 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim);
       delimited_return_pc is invalid (sets PyExc_RuntimeError)
 */
 int kos_dyn_finish_delimited_pop_return(
-   KosEvalState *es,
+   KosContext *ctx,
    KosDynDelim *delim,
    PyObject *value);
 
@@ -1258,14 +1238,14 @@ int kos_dyn_finish_delimited_pop_return(
    shift body's POP_SHIFT), frees the delim, and pushes value at the
    restored invoke site. Expects the delim at dyn_top.
 
-   :param es: eval state
+   :param ctx: context
    :param delim: INPLACE DELIM node at dyn_top
    :param value: return value (consumes a reference on success or failure)
 
    :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
 */
 int kos_dyn_finish_inplace_pop_return(
-   KosEvalState *es,
+   KosContext *ctx,
    KosDynDelim *delim,
    PyObject *value);
 
@@ -1280,7 +1260,7 @@ int kos_dyn_finish_inplace_pop_return(
 
    :return: 0 on success, -1 on error (sets PyExc_RuntimeError)
 */
-int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim);
+int kos_dyn_inplace_restitch(KosContext *ctx, KosDynDelim *delim);
 
 
 /**
@@ -1291,7 +1271,7 @@ int kos_dyn_inplace_restitch(KosEvalState *es, KosDynDelim *delim);
 
    :return: the new CC node, or NULL on error
 */
-KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc);
+KosDynCC *kos_dyn_push_cc(KosContext *ctx, uint32_t resume_pc);
 
 
 /**
@@ -1300,7 +1280,7 @@ KosDynCC *kos_dyn_push_cc(KosEvalState *es, uint32_t resume_pc);
    :param ctx: execution context
    :param cc: the CC node to pop (must be at dyn_top)
 */
-int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
+int kos_dyn_pop_cc(KosContext *ctx, KosDynCC *cc);
 
 
 /**
@@ -1314,7 +1294,7 @@ int kos_dyn_pop_cc(KosEvalState *es, KosDynCC *cc);
 
    :return: 0 on success, -1 on error
 */
-int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id);
+int kos_dyn_push_shift(KosContext *ctx, uint32_t prompt_node_id);
 
 
 /**
@@ -1327,7 +1307,7 @@ int kos_dyn_push_shift(KosEvalState *es, uint32_t prompt_node_id);
    :return: new wind node, or NULL on error
 */
 KosDynWind *kos_dyn_push_wind(
-   KosEvalState *es,
+   KosContext *ctx,
    PyObject *before_thunk,
    PyObject *after_thunk);
 
@@ -1336,149 +1316,42 @@ KosDynWind *kos_dyn_push_wind(
    Push a region onto the dynamic chain. TRY and FINALLY take the
    handler pc; LOOP and FOREACH take the break and continue targets.
 
-   :param es: eval state
+   :param ctx: context
    :param handler_pc: handler jump target (TRY, FINALLY)
    :param break_pc: break/exit jump target (LOOP, FOREACH)
    :param continue_pc: continue jump target, or 0 (LOOP, FOREACH)
 
    :return: new region, or NULL on error
 */
-KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc);
-KosDynFinally *kos_dyn_push_finally(KosEvalState *es, uint32_t handler_pc);
-KosDynLoop *kos_dyn_push_loop(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
-KosDynForeach *kos_dyn_push_foreach(KosEvalState *es, uint32_t break_pc, uint32_t continue_pc);
+KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc);
+KosDynFinally *kos_dyn_push_finally(KosContext *ctx, uint32_t handler_pc);
+KosDynLoop *kos_dyn_push_loop(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
+KosDynForeach *kos_dyn_push_foreach(KosContext *ctx, uint32_t break_pc, uint32_t continue_pc);
 
 
-int kos_dyn_push_next_node(
-    KosEvalState *es, PyObject *iter_obj, PyObject *default_val, int n);
-
-void kos_dyn_next_abort_after_failed_attach(KosEvalState *es);
-
-void kos_dyn_unlink_next_node(KosEvalState *es, KosDynNext *node);
-
-int kos_dyn_next_deliver_yield(
-    KosEvalState *es, KosDynNext *next, PyObject *val);
-
-int kos_dyn_next_deliver_exhausted(
-    KosEvalState *es,
-    KosDynNext *next,
-    PyObject *val);
-
-/**
-   The resume an ITER_NEXT_STORE_* step sets on its frame when the step
-   defers (a Koskari generator installed, an async step awaited): the
-   element is staged for it instead of pushed, and it stores the
-   element where the step instruction names. Defined in
-   eval/eval_iter.c; the node clears it at exhaustion and at its own
-   teardown.
-*/
-extern const KosResumeKind kos_foreach_store_resume_kind;
-
-/* Clear the store resume from the live frame when it is set there. */
-void kos_dyn_foreach_clear_store_resume(KosEvalState *es);
-
-/* Uninstall hook: the store resume goes with the node. Callers:
-   kos_dyn_uninstall_handler. */
-void kos_dyn_foreach_unwind(KosEvalState *es, KosDynForeach *node);
-
-int kos_dyn_foreach_deliver_yield_kos_agen(
-    KosEvalState *es, KosDynForeach *fe, PyObject *val);
-
-int kos_dyn_foreach_deliver_exhausted(
-    KosEvalState *es, KosDynForeach *fe, PyObject *val);
-
-int kos_dyn_yield_from_deliver_inner_yield(
-    KosEvalState *es, KosDynYieldFrom *yf,
-    PyObject *inner_val);
-
-int kos_dyn_yield_from_deliver_exhausted(
-    KosEvalState *es, KosDynYieldFrom *yf, PyObject *val);
-
-KosDynNext *kos_dyn_next_clone(KosDynNext *node);
+/* Uninstall hook: a step still in flight is finished and the loop
+   frame's resume cleared. Callers: kos_dyn_uninstall_handler. */
+void kos_dyn_foreach_unwind(KosContext *ctx, KosDynForeach *node);
 
 
-/* === Generic iteration-node dispatch (dyn_iter_node.c) === */
 
+/* === The generator lookup (dyn_gen.c) and the FOREACH request (dyn_iter_node.c) === */
 
-/**
-   Locate the nearest receiving iteration node from active chain state.
-
-   A node is a receiving iteration node iff it carries
-   KOS_DYN_CAP_ITER_RECEIVER -- the capability is the single
-   routing key; no node-kind checks.  NEXT and flattened-delegate
-   YIELD_FROM nodes carry it for their whole lifetime; FOREACH toggles it
-   with the request mode (kos_dyn_iter_request_set_mode).
-   Future receiver kinds (e.g. a GEN-carried yield-from passthru field)
-   join by carrying the capability.
-
-   dyn_top is preferred: after a yield freeze the node that was
-   directly driving the generator sits at dyn_top.  Otherwise walk
-   outward from the running frame and return the nearest receiver.
-
-   :return: borrowed node, or NULL when no receiver is active
-*/
-KosDynNode *kos_dyn_find_iter_node(KosEvalState *es);
 
 /**
    The GEN node of the generator the running frame belongs to: the
    nearest GEN walking outward from the frame, or NULL when the frame
-   is not in a generator. Callers: op_YIELD and the trampoline's YIELD
-   arm, which then freeze it through kos_dyn_gen_freeze.
+   is not in a generator. Callers: kos_yield_deliver and the
+   trampoline's YIELD arm, which then freeze it through
+   kos_dyn_gen_freeze.
 */
-KosDynGen *kos_dyn_find_gen(KosEvalState *es);
+KosDynGen *kos_dyn_find_gen(KosContext *ctx);
 
 /**
-   Deliver a flattened generator's YIELD value to a receiver located by
-   kos_dyn_find_iter_node.  val ownership transfers to the consumer.
-
-   :return: 0 on delivery (caller should REPROLOGUE); -1 on error
-*/
-int kos_dyn_iter_node_deliver_yield(
-    KosEvalState *es, KosDynNode *node, PyObject *val);
-
-/**
-   Deliver exhaustion to a receiving iteration node whose flattened generator
-   was already finished (raise-walk StopIteration conversion): the
-   node-specific exhaustion tail without the GEN unwind. val consumed.
-
-   :return: 0 delivered; -1 with PyErr set when the node re-emits
-       (e.g. 1-arg NEXT); -1 without PyErr on internal failure
-*/
-int kos_dyn_iter_node_deliver_exhausted(
-    KosEvalState *es, KosDynNode *node, PyObject *val);
-
-/**
-   The exception type that ends this node's in-flight step:
-   StopIteration for a flattened Koskari agen step, StopAsyncIteration
-   for a suspended python async iterator step.
+   The exception type that ends the region's step: StopAsyncIteration
+   for a python async iterator, StopIteration for anything else.
 */
 PyObject *kos_dyn_iter_node_exhaustion_exc(KosDynNode *node);
-
-
-/**
-   True when the node's in-flight step is a value graft: the next
-   frame return below delivers as the step element.
-*/
-int kos_dyn_iter_node_value_mode(KosDynNode *node);
-
-
-/**
-   The iterator object an iteration node's request is stepping
-   (borrowed): the FOREACH iter or the NEXT node's object.
-*/
-PyObject *kos_dyn_iter_node_iter_obj(KosDynNode *node);
-
-/**
-   True when the node's in-flight step is a suspended python async
-   iterator being driven through the pending context await.
-*/
-int kos_dyn_iter_node_awaiting_py(KosDynNode *node);
-
-/**
-   Clear a receiving iteration node after its driven generator was torn down on
-   an error path: unlink NEXT / YIELD_FROM nodes, idle a FOREACH step.
-*/
-void kos_dyn_iter_node_abort(KosEvalState *es, KosDynNode *node);
 
 
 /**
@@ -1487,10 +1360,10 @@ void kos_dyn_iter_node_abort(KosEvalState *es, KosDynNode *node);
    :param ctx: execution context
    :param region: region to pop (must be dyn_top)
 */
-int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node);
-int kos_dyn_pop_finally(KosEvalState *es, KosDynFinally *node);
-int kos_dyn_pop_loop(KosEvalState *es, KosDynLoop *node);
-int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
+int kos_dyn_pop_try(KosContext *ctx, KosDynTry *node);
+int kos_dyn_pop_finally(KosContext *ctx, KosDynFinally *node);
+int kos_dyn_pop_loop(KosContext *ctx, KosDynLoop *node);
+int kos_dyn_pop_foreach(KosContext *ctx, KosDynForeach *node);
 
 
 /**
@@ -1502,7 +1375,7 @@ int kos_dyn_pop_foreach(KosEvalState *es, KosDynForeach *node);
 
    :return: new KosDynNs node, or NULL on error
 */
-KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *ns);
+KosDynNs *kos_dyn_push_ns(KosContext *ctx, PyObject *ns);
 
 
 /**
@@ -1511,7 +1384,7 @@ KosDynNs *kos_dyn_push_ns(KosEvalState *es, PyObject *ns);
    :param ctx: execution context
    :param node: NS node to pop (must be dyn_top)
 */
-int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
+int kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node);
 
 
 /**
@@ -1523,21 +1396,21 @@ int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node);
 
    :return: new KosDynCollect node, or NULL on error
 */
-KosDynCollect *kos_dyn_push_collect(KosEvalState *es, PyObject *ns);
+KosDynCollect *kos_dyn_push_collect(KosContext *ctx, PyObject *ns);
 
 
 /**
    Pop the collector scope node at the top of the chain and hand out
    the namespace it collected, revealed for the value stack.
 
-   :param es: eval state
+   :param ctx: context
    :param node: COLLECT node to pop (must be dyn_top)
    :param out_ns: the collected namespace (new ref); untouched on error
    :return: 0, or -1 with an exception set when node is not the top of
      the chain or not a COLLECT node
 */
 int kos_dyn_pop_collect(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynCollect *node,
     PyObject **out_ns);
 
@@ -1551,12 +1424,12 @@ int kos_dyn_pop_collect(
    (swap the cells into the context's shadow table, saving what they
    displace), and pushes.
 
-   :param es: evaluator state
+   :param ctx: evaluator state
    :param bindings: PyDict mapping names to values (borrowed)
 
    :return: new KosDynParam node, or NULL on error
 */
-KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings);
+KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings);
 
 
 /**
@@ -1564,10 +1437,10 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings);
 
    Restores the displaced cells, updates dyn_top, and frees the node.
 
-   :param es: evaluator state
+   :param ctx: evaluator state
    :param node: PARAM node to pop (must be dyn_top)
 */
-int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
+int kos_dyn_pop_param(KosContext *ctx, KosDynParam *node);
 
 
 /**
@@ -1581,7 +1454,7 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node);
    :return: new KosDynWith node, or NULL on error
 */
 KosDynWith *kos_dyn_push_with_provisional(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
@@ -1606,7 +1479,7 @@ KosDynWith *kos_dyn_with_clone(KosDynWith *src);
    :param ctx: execution context
    :param node: WITH node to pop (must be dyn_top)
 */
-int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
+int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node);
 
 
 /**
@@ -1616,8 +1489,8 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
       (kos_dyn_extent_leave); any answer but NORMAL returns unchanged,
       with the node still on the chain -- the caller stores what it
       carries and asks again later.
-   2. The synchronous per-kind teardown runs (PARAM restore, YIELD_FROM
-      close, TRY/FINALLY exception-state restore).
+   2. The synchronous per-kind teardown runs (PARAM restore,
+      TRY/FINALLY exception-state restore).
    3. The node's obligation is detached.
    4. The parent becomes dyn_top; the node is freed.
    5. The obligation is acted on, by its kind and by ev. Under
@@ -1638,23 +1511,9 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node);
      EVAL_AWAIT when its leave is in flight and it stays; EVAL_RAISE
 */
 KosOpResult kos_dyn_unlink_top(
-    KosEvalState *es,
+    KosContext *ctx,
     KosXferEvent ev,
     int allow_barrier);
-
-
-static inline KosOpResult kos_dyn_pop_nonbarrier_top(
-    KosEvalState *es,
-    KosXferEvent event) {
-  return kos_dyn_unlink_top(es, event, 0);
-}
-
-
-static inline KosOpResult kos_dyn_pop_top_allow_barrier(
-    KosEvalState *es,
-    KosXferEvent event) {
-  return kos_dyn_unlink_top(es, event, 1);
-}
 
 
 /**
@@ -1706,20 +1565,20 @@ typedef enum KosPendingReturnKind {
    consumed on every answer.
 */
 KosOpResult kos_dyn_unwind_to_node(
-    KosEvalState *es,
+    KosContext *ctx,
     const KosDynNode *target,
     KosXferEvent event,
     KosDynNode **out_pending);
 
 KosOpResult kos_dyn_unwind_return(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynFrame *frame,
     PyObject *val,
     KosPendingReturnKind kind,
     KosDynDelim **took);
 
 KosOpResult kos_dyn_unwind_to_loop(
-    KosEvalState *es,
+    KosContext *ctx,
     KosXferEvent event,
     PyObject *result);
 
@@ -1735,7 +1594,7 @@ KosOpResult kos_dyn_unwind_to_loop(
    :return: EVAL_REPROLOGUE, or EVAL_RAISE with PyErr set
 */
 KosOpResult kos_dyn_finally_take_transfer(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynFinally *fin);
 
 
@@ -1744,13 +1603,13 @@ KosOpResult kos_dyn_finally_take_transfer(
    validate a node pointer kept across a suspension before it is
    dereferenced.
 */
-int kos_dyn_reaches(KosEvalState *es, const KosDynNode *target);
+int kos_dyn_reaches(KosContext *ctx, const KosDynNode *target);
 
 
 
 
-int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node);
-void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node);
+int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node);
+void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node);
 
 
 /**
@@ -1771,12 +1630,12 @@ void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node);
    live block; take it and advance the phase. abort: the pending call
    died; advance without a result.
 */
-KosOpResult kos_dyn_extent_enter(KosEvalState *es, KosDynNode *node);
+KosOpResult kos_dyn_extent_enter(KosContext *ctx, KosDynNode *node);
 KosOpResult kos_dyn_extent_leave(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *node,
     KosXferEvent ev);
-int kos_dyn_extent_settle(KosEvalState *es, KosDynNode *node);
+int kos_dyn_extent_settle(KosContext *ctx, KosDynNode *node);
 void kos_dyn_extent_abort(KosDynNode *node);
 
 
@@ -1792,8 +1651,8 @@ void kos_dyn_extent_abort(KosDynNode *node);
 
    Callers: kos_dyn_gen_freeze, kos_dyn_gen_install.
 */
-int kos_dyn_extent_freeze(KosEvalState *es, KosDynNode *node);
-int kos_dyn_extent_install(KosEvalState *es, KosDynNode *node);
+int kos_dyn_extent_freeze(KosContext *ctx, KosDynNode *node);
+int kos_dyn_extent_install(KosContext *ctx, KosDynNode *node);
 
 
 /**
@@ -1818,11 +1677,11 @@ int kos_dyn_extent_in_flight(const KosDynNode *node);
    :return: EVAL_NORMAL, or the unlink's result: EVAL_RAISE with the
      stored exception re-raised, or a settle failure
 */
-KosOpResult kos_dyn_settle_top(KosEvalState *es, KosObligation *out_return);
+KosOpResult kos_dyn_settle_top(KosContext *ctx, KosObligation *out_return);
 
 
 /**
-   The obligation slot of a KOS_DYN_CAP_HOLDS_OBLIGATION node. Callers
+   The obligation slot of a KOS_DYN_CAP_CONTROL_HOOK node. Callers
    test the cap first; this is the per-kind dispatch behind it.
 */
 KosObligation *kos_dyn_node_ob(KosDynNode *node);
@@ -1855,20 +1714,14 @@ int kos_dyn_ob_store_return(
    implementation directly, allowing the compiler to emit a jump table
    with inlined handlers rather than an indirect function-pointer call.
 
-   kos_dyn_exception_unwind: called when exception propagation reaches a
-     HANDLES_EXCEPTIONS node. Returns EVAL_NORMAL to continue unwinding,
-     EVAL_REPROLOGUE if handler applied, EVAL_AWAIT if async started,
-     EVAL_RAISE on error.
    kos_dyn_clone: allocate a copy of the node; NULL return on error or if
      the type forbids cloning.
 */
-KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
-
 /**
    Offer a control transit to a node.  Does not unlink; only decides
    whether the node consumes, passes through, defers, or errors.
 
-   :param es: eval state (borrowed ctx for frame/chain reads)
+   :param ctx: context
    :param node: node to offer the event to
    :param event: transfer event (RETURN, RAISE, etc.)
    :param out_ev: event output (for transformed events; may be NULL)
@@ -1883,7 +1736,7 @@ KosOpResult kos_dyn_exception_unwind(KosEvalState *es, KosDynNode *node);
 */
 int kos_dyn_node_same_phase(KosDynNode *live, KosDynNode *tmpl);
 
-KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
+KosHandleResult kos_dyn_handle(KosContext *ctx, KosDynNode *node,
                                KosXferEvent event);
 
 
@@ -1897,7 +1750,7 @@ KosHandleResult kos_dyn_handle(KosEvalState *es, KosDynNode *node,
    :return: handler PC to branch to
 */
 uint32_t kos_dynnode_raise_handler_pc_for_try_finally(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *region);
 
 
@@ -1922,38 +1775,10 @@ uint32_t kos_dynnode_catch_resume_pc(KosDynNode *node);
 
    :return: 0, or -1 with PyErr set
 */
-int kos_dyn_gen_freeze(KosEvalState *es, KosDynGen *gen);
+int kos_dyn_gen_freeze(KosContext *ctx, KosDynGen *gen);
 
 KosDynNode *kos_dyn_clone(KosDynNode *node);
 
-
-void kos_dyn_yieldfrom_unwind(KosEvalState *es, KosDynYieldFrom *node);
-
-/**
-   Clear the node's phase resume from the live frame when it is set
-   there: the delegation is ending (finished, or unwound by a raise),
-   and the frame threads on from its pc. Idempotent.
-*/
-/**
-   Set resume, a KosThreadFn, as the node's phase resume on the live
-   frame: the frame's next delivery runs it instead of an instruction.
-   Every suspension of the delegation ends in this.
-*/
-void kos_dyn_yield_from_set_resume(
-    KosEvalState *es,
-    KosDynYieldFrom *node,
-    const KosResumeKind *resume);
-
-void kos_dyn_yield_from_clear_resume(KosEvalState *es, KosDynYieldFrom *node);
-
-/**
-   Close the delegate of a YIELD_FROM dyn node (on unwind or error).
-   Does not free the node. Callers: kos_dyn_yieldfrom_unwind, opcode
-   YIELD_FROM.
-
-   :param node: YIELD_FROM node, or NULL (no-op)
-*/
-void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
 
 /**
@@ -1964,53 +1789,17 @@ void kos_yieldfrom_close_delegate(KosDynYieldFrom *node);
 
    Callers: opcode/ITER_NEXT.c, kos_dyn_unwind_to_loop.
 
-   :param es: eval state
+   :param ctx: context
 
    :return: the topmost enabled LOOP or FOREACH region, or NULL if the
      walk reaches the root or a live bookmark first
  */
-KosDynNode *kos_dyn_find_loop(KosEvalState *es);
+KosDynNode *kos_dyn_find_loop(KosContext *ctx);
 
 
 
 
 
-/**
-   Push a YIELD_FROM delegation node onto the context's dynamic chain.
-
-   Does not update frame_top (the frame remains the topmost frame).
-   Caller must have normalized the delegate and determined kind.
-
-   :param ctx: execution context
-   :param delegate: normalized delegate (new ref; node takes ownership)
-   :param kind: delegate kind (KOS_YF_SYNC_ITER, … from this header)
-
-   :return: new node, or NULL on error
-*/
-KosDynYieldFrom *kos_dyn_push_yield_from(
-    KosEvalState *es,
-    PyObject *delegate,
-    uint8_t kind);
-
-
-/**
-   Pop a YIELD_FROM node. Caller must have closed the delegate if needed.
-   node must be dyn_top.
-
-   :param ctx: execution context
-   :param node: YIELD_FROM node to pop (must be current dyn_top)
-*/
-int kos_dyn_pop_yield_from(KosEvalState *es, KosDynYieldFrom *node);
-
-
-/**
-   Unlink a YIELD_FROM node whether or not it is dyn_top. When it is top,
-   delegates to kos_dyn_pop_yield_from; otherwise splices the chain and
-   rebuilds live fields.
-
-   :return: 0 on success, -1 on error (sets PyErr)
-*/
-int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 
 
 /* === Prompt and CC lookup === */
@@ -2019,11 +1808,11 @@ int kos_dyn_unlink_yield_from(KosEvalState *es, KosDynYieldFrom *yf);
 /**
    Find the topmost CC (call/cc) block on the dynamic chain.
 
-   :param es: eval state
+   :param ctx: context
 
    :return: topmost KosDynCC, or NULL if none
 */
-KosDynCC *kos_dyn_find_cc(KosEvalState *es);
+KosDynCC *kos_dyn_find_cc(KosContext *ctx);
 
 
 /**
@@ -2032,14 +1821,14 @@ KosDynCC *kos_dyn_find_cc(KosEvalState *es);
    Finds the prompt, validates capture, clones the chain segment,
    and creates a KosContinuation.
 
-   :param es: eval state
+   :param ctx: context
    :param prompt_id: target prompt tag
    :param out_k: output for captured continuation
 
    :return: 0 on success, -1 on error
 */
 int kos_shift_capture(
-   KosEvalState *es,
+   KosContext *ctx,
    uint32_t prompt_id,
    uint32_t resume_pc,
    KosContinuation **out_k);
@@ -2056,12 +1845,12 @@ int kos_shift_capture(
    frame that was current when PUSH_CC was executed. Multi-shot by
    default.
 
-   :param es: eval state
+   :param ctx: context
    :param out_k: output for captured continuation
 
    :return: 0 on success, -1 on error
 */
-int kos_capture_cc(KosEvalState *es, KosContinuation **out_k);
+int kos_capture_cc(KosContext *ctx, KosContinuation **out_k);
 
 
 /**
@@ -2083,7 +1872,7 @@ void kos_continuation_free(KosContinuation *k);
    Pushes a transfer goal from the current position to the continuation's
    captured chain and schedules execution.
 
-   :param es: execution/eval state
+   :param ctx: context
    :param k: continuation to invoke
    :param value: resume value
 
@@ -2097,13 +1886,13 @@ void kos_continuation_free(KosContinuation *k);
    counterpart; both NULL when the roots differ.
 */
 void kos_chain_common_ancestor(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *tmpl,
     KosDynNode **out_live,
     KosDynNode **out_tmpl);
 
 int kos_invoke_continuation(
-   KosEvalState *es,
+   KosContext *ctx,
    KosContinuation *k,
    PyObject *value,
    PyObject *continuation_ref);
@@ -2212,12 +2001,10 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynNode_IS_NS(n)      (KosDynNode_KIND(n) == KOS_DYN_NS)
 #define KosDynNode_IS_COLLECT(n) (KosDynNode_KIND(n) == KOS_DYN_COLLECT)
 #define KosDynNode_IS_CC(n)      (KosDynNode_KIND(n) == KOS_DYN_CC)
-#define KosDynNode_IS_YIELD_FROM(n)  (KosDynNode_KIND(n) == KOS_DYN_YIELD_FROM)
 #define KosDynNode_IS_PARAM(n)       (KosDynNode_KIND(n) == KOS_DYN_PARAM)
 #define KosDynNode_IS_WITH(n)       (KosDynNode_KIND(n) == KOS_DYN_WITH)
 #define KosDynNode_IS_SHIFT(n)    (KosDynNode_KIND(n) == KOS_DYN_SHIFT)
 #define KosDynNode_IS_GEN(n)      (KosDynNode_KIND(n) == KOS_DYN_GEN)
-#define KosDynNode_IS_NEXT(n)     (KosDynNode_KIND(n) == KOS_DYN_NEXT)
 
 #define KosDynGen_OWNER(n)        (((KosDynNode *)(n))->u.gen.owner)
 #define KosDynGen_ACTIVE(n)       (((KosDynNode *)(n))->u.gen.active)
@@ -2244,6 +2031,13 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
    per-context recursion limit whatever sys.setrecursionlimit says. */
 #define KOS_FRAME_DEPTH_MAX       UINT16_MAX
 #define KOS_FRAME_DEMAND          (1u << 0)  /* frame is a demand-sync root */
+#define KOS_FRAME_CORO_ROOT       (1u << 1)  /* the root frame of a Coroutine
+                                                driven from Python; a trace
+                                                fact, set and read only
+                                                under KOS_TRACE_EVENTS by
+                                                the frame-cache
+                                                trace count in
+                                                kos_dynframe_free */
 #define KOS_FRAME_RETURN_TO_CACHE   (1u << 2)  /* a completing code-less
                                                 frame: cache_slot is the
                                                 holder's cache slot
@@ -2251,7 +2045,7 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
                                                 offers the frame there
                                                 (kos_dynframe_cache_inert).
                                                 Set only by
-                                                KosNativeFrame_ReturnToCache */
+                                                KosNativeFrame_CacheOnFree */
 #define KosDynFrame_CACHE_SLOT(f) (((KosDynNode *)(f))->u.frame.cache_slot)
 #define KosDynFrame_FN(f)         (((KosDynNode *)(f))->u.frame.fn)
 #define KosDynFrame_BACK_FRAME(f) (((KosDynNode *)(f))->u.frame.back_frame)
@@ -2312,126 +2106,31 @@ static inline uint32_t kos_dynnode_id(struct KosDynNode *node) {
 #define KosDynFinally_EXC_FROZEN(r)  (((KosDynNode *)(r))->u.finally_.exc_frozen)
 #define KosDynFinally_SAVED(r)       (&((KosDynNode *)(r))->u.finally_.saved)
 #define KosDynFinally_HANDLING(r)    (&((KosDynNode *)(r))->u.finally_.handling)
-#define KosDynLoop_BREAK_PC(r)       (((KosDynNode *)(r))->u.loop.break_pc)
-#define KosDynLoop_CONTINUE_PC(r)    (((KosDynNode *)(r))->u.loop.continue_pc)
-#define KosDynLoop_ENABLED(r)        (((KosDynNode *)(r))->u.loop.enabled)
-#define KosDynLoop_RESULT(r)         (((KosDynNode *)(r))->u.loop.result)
-#define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.break_pc)
-#define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.continue_pc)
-#define KosDynForeach_ENABLED(r)     (((KosDynNode *)(r))->u.foreach.enabled)
-
+/* The region record of a LOOP or a FOREACH, read the same way for
+   either: both arms open with it. */
+#define KosDynRegion_BREAK_PC(r)     (((KosDynNode *)(r))->u.loop.region.break_pc)
+#define KosDynRegion_CONTINUE_PC(r)  (((KosDynNode *)(r))->u.loop.region.continue_pc)
+#define KosDynRegion_RESULT(r)       (((KosDynNode *)(r))->u.loop.region.result)
 /* Whether node is a LOOP or FOREACH region that is still running its
-   body: a region whose else clause has started is disabled and no
-   longer answers a break or continue. */
+   body: a region whose else clause has started no longer answers a
+   break or continue. Read-only; CLEAR_LOOP and CLEAR_FOREACH take the
+   capability away. */
+#define KosDynRegion_ENABLED(r) \
+  (! ! (KosDynNode_CAPS(r) & KOS_DYN_CAP_LOOP_REGION))
+#define KosDynLoop_BREAK_PC(r)       KosDynRegion_BREAK_PC(r)
+#define KosDynLoop_CONTINUE_PC(r)    KosDynRegion_CONTINUE_PC(r)
+#define KosDynLoop_ENABLED(r)        KosDynRegion_ENABLED(r)
+#define KosDynLoop_RESULT(r)         KosDynRegion_RESULT(r)
+#define KosDynForeach_BREAK_PC(r)    (((KosDynNode *)(r))->u.foreach.region.break_pc)
+#define KosDynForeach_CONTINUE_PC(r) (((KosDynNode *)(r))->u.foreach.region.continue_pc)
+#define KosDynForeach_ENABLED(r)     KosDynRegion_ENABLED(r)
+
 static inline int kos_dyn_loop_is_enabled(const KosDynNode *node) {
-  if (KosDynNode_IS_LOOP(node))
-    return KosDynLoop_ENABLED(node);
-  if (KosDynNode_IS_FOREACH(node))
-    return KosDynForeach_ENABLED(node);
-  return 0;
+  return KosDynRegion_ENABLED(node);
 }
-#define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.result)
-#define KosDynForeach_EXHAUSTED(r)   (((KosDynNode *)(r))->u.foreach.exhausted)
-#define KosDynForeach_ITER_NEXT_ELSE_PC(r) (((KosDynNode *)(r))->u.foreach.iter_next_else_pc)
+#define KosDynForeach_RESULT(r)      (((KosDynNode *)(r))->u.foreach.region.result)
 #define KosDynForeach_REQ(r)         (&((KosDynNode *)(r))->u.foreach.req)
 #define KosDynForeach_ITER(r)        (KosDynForeach_REQ(r)->iter)
-
-#define KosDynNext_DEFAULT_VAL(nd) (((KosDynNode *)(nd))->u.next.default_val)
-#define KosDynNext_N(nd) (((KosDynNode *)(nd))->u.next.n)
-#define KosDynNext_REQ(nd) (&((KosDynNode *)(nd))->u.next.req)
-
-/**
-   Yield-from delegate classification. Values stored in KosDynYieldFrom kind.
-   Must stay aligned with yield_from_normalize in opcode/YIELD_FROM.c
-*/
-enum {
-  KOS_YF_SYNC_ITER = 0,
-  KOS_YF_SYNC_GEN = 1,
-  KOS_YF_PY_ASYNC_ITER = 2,
-  KOS_YF_PY_ASYNC_GEN = 3,
-  KOS_YF_KOS_ITER = 4,
-};
-
-
-/**
-   Pending action for yield-from resume inject. Must stay aligned with
-   opcode/YIELD_FROM.c handler
-*/
-enum {
-  KOS_YF_STEP = 0,
-  KOS_YF_SEND = 1,
-  KOS_YF_THROW = 2,
-};
-
-
-#define KosDynYieldFrom_DELEGATE(n)     (((KosDynNode *)(n))->u.yield_from.delegate)
-#define KosDynYieldFrom_KIND(n)         (((KosDynNode *)(n))->u.yield_from.kind)
-#define KosDynYieldFrom_PENDING_ACTION(n) (((KosDynNode *)(n))->u.yield_from.pending_action)
-#define KosDynYieldFrom_PENDING_ARG(n) (((KosDynNode *)(n))->u.yield_from.pending_arg)
-#define KosDynYieldFrom_PENDING_ARG_TYPE(n) (((KosDynNode *)(n))->u.yield_from.pending_arg_type)
-#define KosDynYieldFrom_INFLIGHT(n)    (((KosDynNode *)(n))->u.yield_from.inflight)
-#define KosDynYieldFrom_REQ(n)         (&((KosDynNode *)(n))->u.yield_from.req)
-#define KosDynYieldFrom_DRIVE(n)       (((KosDynNode *)(n))->u.yield_from.drive)
-#define KosDynYieldFrom_RESUME(n)      (((KosDynNode *)(n))->u.yield_from.resume)
-#define KosDynYieldFrom_RESUME_EMIT(n) (((KosDynNode *)(n))->u.yield_from.resume_emit)
-
-/**
-   The iteration request record embedded in a receiver-capable node, or
-   NULL for any other kind. The delivery machinery reads the stepped
-   iterator and the in-flight mode from here and nowhere else.
-*/
-static inline KosIterRequest *kos_dyn_iter_request(KosDynNode *node) {
-
-  switch (KosDynNode_KIND(node)) {
-    case KOS_DYN_FOREACH:
-      return KosDynForeach_REQ(node);
-    case KOS_DYN_NEXT:
-      return KosDynNext_REQ(node);
-    case KOS_DYN_YIELD_FROM:
-      return KosDynYieldFrom_REQ(node);
-    default:
-      return NULL;
-  }
-}
-
-
-/**
-   Set a iteration node's request mode. For FOREACH the
-   KOS_DYN_CAP_ITER_RECEIVER capability stays in lockstep: the
-   node is a receiving iteration node exactly while a step is in flight.
-   NEXT and YIELD_FROM (KOS_ITER kind) carry the capability for their
-   whole lifetime. All mode writes go through this.
-*/
-static inline void kos_dyn_iter_request_set_mode(
-    KosDynNode *node, uint8_t mode) {
-
-  KosIterRequest *req = kos_dyn_iter_request(node);
-
-  req->mode = mode;
-  if (KosDynNode_KIND(node) == KOS_DYN_FOREACH) {
-    if (mode != KOS_IREQ_IDLE)
-      KosDynNode_CAPS(node) |= KOS_DYN_CAP_ITER_RECEIVER;
-    else
-      KosDynNode_CAPS(node) &= ~KOS_DYN_CAP_ITER_RECEIVER;
-  }
-}
-
-
-/**
-   Set a iteration node's request: record the stepped iterator (strong
-   ref) and the in-flight mode
-*/
-static inline void kos_dyn_iter_request_set(
-    KosDynNode *node, PyObject *iter, uint8_t mode) {
-
-  KosIterRequest *req = kos_dyn_iter_request(node);
-  PyObject *prior = req->iter;
-
-  Py_XINCREF(iter);
-  kos_dyn_iter_request_bind_iter(req, iter);
-  Py_XDECREF(prior);
-  kos_dyn_iter_request_set_mode(node, mode);
-}
 
 
 #define KosDynParam_BINDINGS(n)    (((KosDynNode *)(n))->u.param.bindings)

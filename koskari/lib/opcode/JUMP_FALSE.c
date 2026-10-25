@@ -18,20 +18,20 @@
   JUMP_FALSE: arg = target PC. Branch if TOS is false.
 */
 KOS_OP_HANDLER(JUMP_FALSE) {
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (unlikely(! val))
-    RESULT_RAISE_AT(es, insn);
+    RESULT_RAISE_AT(ctx, insn);
 
   int res = kos_object_not(val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))
-    RESULT_RAISE_AT(es, insn);
+    RESULT_RAISE_AT(ctx, insn);
 
   if (res)
-    RESULT_JUMP_AT(es, KosOp_TARGET(insn));
+    RESULT_JUMP_AT(ctx, KosOp_TARGET(insn));
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

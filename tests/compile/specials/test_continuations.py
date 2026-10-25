@@ -22,6 +22,8 @@ Tests for continuation special forms and delimited transfer policy.
 import pytest
 
 import asyncio
+import gc
+import weakref
 
 from . import SpecialsTestCase
 
@@ -401,6 +403,103 @@ class TestWaitingGoalThunkDeliveries(SpecialsTestCase):
         result = await expr()
         self.assertEqual(log, [2, 4, 6])
         self.assertEqual(result, 2)
+
+
+    async def test_shift_out_of_a_foreach_step_abandons_the_step(self):
+        """
+        A shift from inside a mapped function, under a reset outside
+        the loop, abandons the step in flight: the reset's value is the
+        handler's, the loop variable never receives it, and the map is
+        finished so a second loop over it carries on from the next
+        element
+        """
+
+        from koskari.lib import KosMap
+
+        src_str = """
+        (let [[m (KosMap (lambda [x] (shift k (* x 100))) #[1 2 3])]
+              [seen #[]]]
+          #((reset (for-each [x m] (seen.append x)))
+            (reset (for-each [x m] (seen.append x)))
+            seen))
+        """
+        expr, _mod = self.compile_expr(src_str, KosMap=KosMap)
+        self.assertEqual(await expr(), (100, 200, []))
+
+
+    async def test_shift_out_of_a_next_step_abandons_the_step(self):
+        """
+        A shift from inside a mapped function stepped by next, under a
+        reset: the reset's value is the handler's, not the element
+        """
+
+        from koskari.lib import KosMap
+
+        src_str = """
+        (let [[m (KosMap (lambda [x] (shift k (* x 100))) #[1 2 3])]]
+          (reset (next m)))
+        """
+        expr, _mod = self.compile_expr(src_str, KosMap=KosMap)
+        self.assertEqual(await expr(), 100)
+
+
+    async def test_shift_out_of_a_next_step_finishes_the_provider(self):
+        """
+        A shift from inside a mapped function stepped by next, under a
+        reset, finishes the map as abandoned: a later next steps it
+        again from the following element
+        """
+
+        from koskari.lib import KosMap
+
+        src_str = """
+        (let [[m (KosMap (lambda [x]
+                           (cond
+                             [(== x 1) (shift k (* x 100))]
+                             [else: (* x 10)]))
+                         #[1 2 3])]]
+          #((reset (next m)) (next m)))
+        """
+        expr, _mod = self.compile_expr(src_str, KosMap=KosMap)
+        self.assertEqual(await expr(), (100, 20))
+
+
+    async def test_abandoned_next_step_releases_the_map(self):
+        """
+        A next step abandoned by a shift releases its reference to the
+        map: once the caller drops its own, the map is collected, and
+        with it the source only the map holds. The map takes no weak
+        reference, so the source carries the weakref
+        """
+
+        from koskari.lib import KosMap
+
+        class Source:
+            def __init__(self, items):
+                self.items = iter(items)
+
+
+            def __iter__(self):
+                return self
+
+
+            def __next__(self):
+                return next(self.items)
+
+        source = Source([1, 2, 3])
+        ref = weakref.ref(source)
+
+        fn_expr, fn_mod = self.compile_expr(
+            "(lambda [x] (shift k (* x 100)))")
+        m = KosMap(await fn_expr(), source)
+        del fn_expr, fn_mod, source
+
+        expr, mod = self.compile_expr("(reset (next m))", m=m)
+        self.assertEqual(await expr(), 100)
+
+        del expr, mod, m
+        gc.collect()
+        self.assertIsNone(ref())
 
 
 # The end.

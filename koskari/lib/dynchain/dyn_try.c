@@ -25,7 +25,7 @@
 
 
 /**
-   Allocate TRY with handler_pc; HANDLES_EXCEPTIONS cap for kos_dyn_handle.
+   Allocate TRY with handler_pc; INTERCEPTS_RAISE cap for kos_dyn_handle.
 */
 KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
   KosDynTry *node = kos_dynnode_alloc();
@@ -34,8 +34,7 @@ KosDynTry *kos_dyntry_new(KosDynNode *parent, uint32_t handler_pc) {
     return NULL;
 
   kos_dynnode_init(node, KOS_DYN_TRY, parent,
-                   KOS_DYN_CAP_HANDLES_EXCEPTIONS
-                   | KOS_DYN_CAP_INTERCEPTS_RAISE);
+                   KOS_DYN_CAP_INTERCEPTS_RAISE);
   KosDynTry_HANDLER_PC(node) = handler_pc;
   KosDynTry_ENABLED(node) = 1;
   KosDynTry_EXC_SAVED(node) = 0;
@@ -87,11 +86,11 @@ static int dynnode_to_dict_try(KosDynNode *node, PyObject *data) {
 /**
    Push TRY as DYN_TOP. Callers: opcode PUSH_TRY.
 */
-KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
-  KosDynTry *node = kos_dyntry_new(KosEvalState_DYN_TOP(es), handler_pc);
+KosDynTry *kos_dyn_push_try(KosContext *ctx, uint32_t handler_pc) {
+  KosDynTry *node = kos_dyntry_new(KosContext_DYN_TOP(ctx), handler_pc);
   if (! node)
     return NULL;
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dyntry_free(node);
     return NULL;
   }
@@ -102,8 +101,8 @@ KosDynTry *kos_dyn_push_try(KosEvalState *es, uint32_t handler_pc) {
 /**
    Pop TRY when it is top (fast path). Callers: opcode POP_TRY.
 */
-int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_try(KosContext *ctx, KosDynTry *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "TRY node is not at top of chain");
     return -1;
   }
@@ -113,7 +112,7 @@ int kos_dyn_pop_try(KosEvalState *es, KosDynTry *node) {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) node);
 
     kos_dyn_region_leave_exc((KosDynNode *) node);
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) node) = NULL;
     kos_dyntry_free(node);
   }

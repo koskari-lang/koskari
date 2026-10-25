@@ -22,10 +22,10 @@
   one KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(FAST_ITEM_STORE_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj, *obj_ref;
   PyObject *key;
@@ -53,7 +53,7 @@ KOS_OP_HANDLER(FAST_ITEM_STORE_CONST) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, 1);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

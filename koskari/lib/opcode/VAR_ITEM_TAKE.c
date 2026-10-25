@@ -20,14 +20,14 @@
   obj[key]. The access runs through kos_item_take (eval/eval_item.c).
 */
 KOS_OP_HANDLER(VAR_ITEM_TAKE) {
-  KOS_SYNC_PC(es, insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
   PyObject *out;
 
-  obj = frame_ns_deref(es, KosOp_OBJ(insn));
+  obj = frame_ns_deref(ctx, KosOp_OBJ(insn));
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -45,7 +45,7 @@ KOS_OP_HANDLER(VAR_ITEM_TAKE) {
     RESULT_RAISE();
 
   kos_item_replace_top(bl, out);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

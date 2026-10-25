@@ -24,29 +24,29 @@
   instead of a push.
 */
 KOS_OP_HANDLER(CALL_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   unsigned n = KosExtra_IMM(row, 1);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *callable = frame_ns_deref(es, name);
+  PyObject *callable = frame_ns_deref(ctx, name);
   SAYF("CALL_VAR: callable=%R", callable);
   if (unlikely(! callable))
     RESULT_RAISE();
 
   PyObject *const *argv = NULL;
   if (n) {
-    argv = KosEvalState_StackTailPtr(es, n);
+    argv = KosContext_StackTailPtr(ctx, n);
     if (unlikely(! argv)) {
       Py_DECREF(callable);
       RESULT_RAISE();
     }
   }
 
-  RESULT_RELAY(es, kos_call_invoke_from_handler(
-      es, tail, callable, NULL, argv, (Py_ssize_t) n, NULL,
+  RESULT_RELAY(ctx, kos_call_invoke_from_handler(
+      ctx, tail, callable, NULL, argv, (Py_ssize_t) n, NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
 }
 

@@ -20,12 +20,12 @@
   seq[1] into the two names (VAR_STORE semantics).
 */
 KOS_OP_HANDLER(UNPACK_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name0 = KosExtra_OBJ(row, 0);
   PyObject *name1 = KosExtra_OBJ(row, 1);
 
-  PyObject *seq = KosEvalState_PopUnpackSequence(es, 2, 1, "UNPACK_VAR");
+  PyObject *seq = KosContext_PopUnpackSequence(ctx, 2, 1, "UNPACK_VAR");
   if (unlikely(! seq))
     RESULT_RAISE();
 
@@ -37,13 +37,14 @@ KOS_OP_HANDLER(UNPACK_VAR) {
   Py_INCREF(val1);
   Py_DECREF(seq);
 
-  int res = frame_ns_store(es, name0, val0) || frame_ns_store(es, name1, val1);
+  int res = frame_ns_store(ctx, name0, val0)
+      || frame_ns_store(ctx, name1, val1);
   Py_DECREF(val0);
   Py_DECREF(val1);
   if (unlikely(res))
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

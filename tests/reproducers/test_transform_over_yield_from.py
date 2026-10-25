@@ -14,15 +14,13 @@
 """
 tests.reproducers.test_transform_over_yield_from
 
-Defect reproducer, RED until fixed: a transform stepping a koskari
-generator that delegates with yield-from must deliver every value the
-delegate produces. A generator suspended inside yield-from carries the
-node's phase resume, and the install has to bounce through the
-prologue so that resume runs. KosEvalState_NextResume decided on code
-alone where every other consumer of the same outcome also requires no
-resume set, so it threaded straight into the frame, the delivery
-never happened, and the step reported exhaustion. The loop simply
-ended early, with no error.
+Regression test: a transform stepping a koskari generator that
+delegates with yield-from must deliver every value the delegate
+produces. A generator suspended inside yield-from carries the
+delegation's resume, and the install has to hand the frame to that
+resume so the delivery runs. KosContext_NextResume once decided on
+code alone, threaded straight into the frame, and the step reported
+exhaustion: the loop ended early, with no error.
 
 The plain for-each cases are controls: ITER_NEXT asks
 kos_iter_installed and has always been right, so a regression that

@@ -22,16 +22,16 @@ KOS_OP_HANDLER(MATCH_FITS) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  PyObject *cursor = kos_match_cursor_at(ctx, KosExtra_IMM(row, 1));
   if (unlikely(! cursor))
-    RESULT_RAISE_AT(es, insn);
+    RESULT_RAISE_AT(ctx, insn);
 
   Py_ssize_t remaining = KosMatchCursor_Remaining(cursor);
   uint32_t max = KosExtra_IMM(row, 3);
   if (remaining < (Py_ssize_t) KosExtra_IMM(row, 2)
       || (max != KOS_MATCH_UNBOUNDED && remaining > (Py_ssize_t) max))
     KOS_MATCH_MISS(row);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

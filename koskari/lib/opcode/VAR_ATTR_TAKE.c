@@ -19,13 +19,13 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_TAKE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *var_name = KosExtra_OBJ(row, 0);
   PyObject *attr_name = KosExtra_OBJ(row, 1);
 
-  PyObject *obj = frame_ns_deref(es, var_name);
+  PyObject *obj = frame_ns_deref(ctx, var_name);
   if (! obj)
     RESULT_RAISE();
 
@@ -42,7 +42,7 @@ KOS_OP_HANDLER(VAR_ATTR_TAKE) {
     RESULT_RAISE();
   }
 
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

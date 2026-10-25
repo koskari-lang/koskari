@@ -53,15 +53,15 @@ typedef struct KosDropWhile {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(dropwhile_resume_fetch_kind, "dropwhile-step",
+KOS_RESUME_KIND_AS_IS(dropwhile_resume_fetch_kind, "dropwhile-step",
                 dropwhile_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(dropwhile_resume_invoke_kind, "dropwhile-step",
+KOS_RESUME_KIND_AS_IS(dropwhile_resume_invoke_kind, "dropwhile-step",
                 dropwhile_resume_invoke, kos_transform_step_clear, NULL);
 KOS_RESUME_KIND(dropwhile_resume_verdict_kind, "dropwhile-step",
                 dropwhile_resume_verdict, kos_transform_step_clear, NULL);
@@ -71,8 +71,8 @@ KOS_RESUME_KIND(dropwhile_resume_verdict_kind, "dropwhile-step",
    Loop back to FETCH after a dropped element. A tail call, so an
    arbitrarily long dropped run stays flat.
 */
-#define dropwhile_refetch(es, d) \
-  RESUME_HOP(&dropwhile_resume_fetch_kind, (es), (d), NULL)
+#define dropwhile_refetch(ctx, d) \
+  RESUME_HOP(&dropwhile_resume_fetch_kind, (ctx), (d), NULL)
 
 
 /**
@@ -81,19 +81,19 @@ KOS_RESUME_KIND(dropwhile_resume_verdict_kind, "dropwhile-step",
    dropwhile_refetch after a dropped element.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   {
-    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &dropwhile_resume_invoke_kind, t);
-    RESULT_ENTRY(es, r, &dropwhile_resume_invoke_kind, t);
+    RESULT_ENTRY(ctx, r, &dropwhile_resume_invoke_kind, t);
   }
 }
 
@@ -103,26 +103,28 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_fetch(
    has already been retired. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosDropWhile *d = (KosDropWhile *) state;
   KosTransform *t = &d->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   /* Retired predicate: every remaining element passes untested. */
   if (d->passed)
-    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, element, &t->cached_frame);
 
   /* pending steals the element's reference and holds it across the
      call; the argument vector borrows it for the call's duration. */
   t->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(
-        es, t->fn.cs_callable, &element, 1, NULL, 0,
+    KosOpResult r = KosContext_Call(
+        ctx, t->fn.cs_callable, &element, 1, NULL, 0,
         &dropwhile_resume_verdict_kind, d);
-    RESULT_ENTRY(es, r, &dropwhile_resume_verdict_kind, d);
+    RESULT_ENTRY(ctx, r, &dropwhile_resume_verdict_kind, d);
   }
 }
 
@@ -133,14 +135,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_invoke(
    the run. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosDropWhile *d = (KosDropWhile *) state;
   KosTransform *t = &d->base;
   int ok;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   ok = PyObject_IsTrue(value);
   Py_DECREF(value);
@@ -149,7 +151,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
 
   if (ok) {
     Py_CLEAR(t->pending);
-    dropwhile_refetch(es, d);
+    dropwhile_refetch(ctx, d);
   }
 
   {
@@ -157,7 +159,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
 
     d->passed = 1;
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, element, &t->cached_frame);
   }
 }
 
@@ -165,25 +167,21 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult dropwhile_resume_verdict(
 /* === the step === */
 
 
-static KosIterStepResult dropwhile_iter_step(
-    KosEvalState *es,
+static KosIterStepResult dropwhile_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosDropWhile *d = (KosDropWhile *) self;
   KosTransform *t = &d->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   {
     for (;;) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(es, t, t->source, &dropwhile_resume_fetch_kind, pre_top, out,
+      KOS_TRANSFORM_FETCH(ctx, t, t->source, &dropwhile_resume_fetch_kind, pre_top, out,
                           element);
 
       if (d->passed) {
@@ -196,7 +194,7 @@ static KosIterStepResult dropwhile_iter_step(
          element is staged raw for dropwhile_resume_invoke, which
          makes the call in this evaluator. */
       if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-        return kos_transform_stage(es, t, element,
+        return kos_transform_stage(ctx, t, element,
                                    &dropwhile_resume_invoke_kind, pre_top);
 
       /* A plain python predicate needs no evaluator at all. */
@@ -230,7 +228,7 @@ static KosIterStepResult dropwhile_iter_step(
                frame, which owns every suspension. The element is held
                on the transform until the verdict settles. */
             KosIterStepResult staged = kos_transform_stage(
-                es, t, result, &dropwhile_resume_verdict_kind, pre_top);
+                ctx, t, result, &dropwhile_resume_verdict_kind, pre_top);
 
             if (staged != KOS_ITER_INSTALLED_VALUE) {
               Py_DECREF(element);
@@ -248,6 +246,16 @@ static KosIterStepResult dropwhile_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult dropwhile_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, dropwhile_step_body);
 }
 
 
@@ -296,6 +304,7 @@ KosEvaluatedTypeObject KosDropWhileType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

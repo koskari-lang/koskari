@@ -224,7 +224,7 @@ class TestKosISliceTeardown(unittest.IsolatedAsyncioTestCase):
         first = asyncio.ensure_future(s.__anext__())
         await asyncio.sleep(0)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             await s.__anext__()
 
         release.set()

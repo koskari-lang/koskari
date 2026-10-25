@@ -62,8 +62,9 @@ called bare and its coroutine handed to the loop. The per-call
 - **By tag:** `--tag NAME` (repeatable) — `tox -qe churn -- --tag game --tag attr`.
 - **All:** pass nothing.
 
-Tags in use: `dispatch`, `call`, `recursion`, `iteration`, `alloc`, `attr`,
-`slots`, `branch`, `loop`, `demand`, `generator`, `koskari-only`, `float`,
+Tags in use: `dispatch`, `call`, `keyword`, `method`, `recursion`,
+`iteration`, `alloc`, `attr`, `slots`, `branch`, `match`, `loop`, `str`,
+`demand`, `parameterize`, `coroutine`, `await`, `send`, `generator`, `float`,
 `bignum`, `array`, `game`, `async`.
 
 ## Options
@@ -84,17 +85,17 @@ compute-bound loop) and **median** batch time.
 A headed table, one row per benchmark:
 
 ```
-benchmark         py-best     py-med    ki-best     ki-med   ki/py
-------------------------------------------------------------------
-loop              11.1919s   11.1919s   17.3352s   17.3352s   1.57x
-method             3.5169s    3.5169s   10.7684s   10.7684s   3.06x
-starmap                                  0.0219s    0.0219s
+benchmark     py-best     py-med    ki-best     ki-med   ki/py
+--------------------------------------------------------------
+loop         11.1919s   11.1919s   17.3352s   17.3352s   1.57x
+method        3.5169s    3.5169s   10.7684s   10.7684s   3.06x
 ```
 
-`ki/py` is Koskari-best over Python-best (above 1.0 means Koskari is that many
-times slower). Blank cells mean that variant did not run (here, a koskari-only
-benchmark). A `!! MISMATCH` suffix marks a failed correctness check, and the
-run exits non-zero listing the offenders.
+The name column is as wide as the longest selected name. `ki/py` is
+Koskari-best over Python-best (above 1.0 means Koskari is that many times
+slower). Blank cells mean that variant did not run (a koskari-only benchmark,
+or a `--mode` that runs one side). A `!! MISMATCH` suffix marks a failed
+correctness check, and the run exits non-zero listing the offenders.
 
 `--json` writes the same data machine-readably: `mode`, `samples`, `warmup`,
 and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
@@ -113,19 +114,29 @@ and a `results` list, each entry carrying `tags`, `ok`, `expected`, the
 | `field_slots` | same, on a `__slots__` class (SLOT path) | — |
 | `branch` | four-arm if/elif/else density | — |
 | `complex_branch` | `and`/`or`/`not` in loop, if/elif and value positions over compares and bare variables | — |
+| `match_case` | eight-arm structural `match` over a rotating mix of subjects: class, sequence with rest, mapping, guarded and typed captures, strings, else | — |
+| `strcat` | string built by `+` over three pieces and `+=` on one accumulator | — |
 | `nbody` | float arithmetic (benchmarks-game n-body) | energy to 9 places |
 | `fannkuch` | integer array indexing + mutation | `(16, 228)` at n=7 |
 | `pidigits` | arbitrary-precision (bignum) arithmetic | first 50 digits of π |
 | `binary_trees` | allocation churn + recursion | check-sum 129712 |
-| `starmap` | Koskari-only: the `demand` sync path | deterministic baseline |
-| `yieldfrom` | Koskari-only: `yield-from` delegation/teardown | deterministic baseline |
+| `call_kw` | one call per element carrying a keyword argument | deterministic baseline |
+| `starmap` | lazy `starmap` over bound methods nested two deep; Koskari's `starmap` on the Koskari side | deterministic baseline |
+| `demand_call` | `map` over a two-argument function; the Koskari side goes through `demand`, one boundary call per element | deterministic baseline |
+| `demand_call_kw` | `map` over `functools.partial` binding a keyword; the Koskari side goes through `demand` | deterministic baseline |
+| `demand_call_method` | `map` over a bound method; the Koskari side goes through `demand` | deterministic baseline |
+| `demand_call_param` | `demand_call` with one dynamic binding read per call: `parameterize` on the Koskari side, a `contextvars` binding on the Python side | deterministic baseline |
+| `yieldfrom` | `yield-from` delegation, consumed fully and abandoned after one value | deterministic baseline |
+| `coro_call` | hosted: `asyncio.gather` over one coroutine per element; the Koskari side gathers Koskari Coroutines | deterministic baseline |
+| `coro_await` | hosted: serial `await` of one coroutine per element; the Koskari side awaits Koskari Coroutines | deterministic baseline |
+| `coro_send` | `send(None)` into one coroutine per element, result taken from its StopIteration; the Koskari side sends into Koskari Coroutines | deterministic baseline |
 | `async_tree` | hosted: fan-out task tree via `gather` (pyperformance async_tree, no I/O) | leaf count 4096 |
 | `coroutines` | hosted: await-chain recursion (pyperformance coroutines) | fib(25) = 75025 |
 | `async_generators` | hosted: async generator consumed by `async for` (pyperformance async_generators) | sum of range(20000) |
 
-The first seven are RNG-style churn with no external oracle — correctness rests
-on the Python and Koskari answers agreeing. The four *game* benchmarks and the
-three *hosted* async benchmarks carry a known result, so they stay
+The first ten carry no external oracle — correctness rests
+on the Python and Koskari answers agreeing. The four *game* benchmarks and three
+of the *hosted* async benchmarks carry a known result, so they stay
 correctness-checked even in `--mode koskari` with no Python side present.
 
 The hosted kernels are written as Koskari, not as transliterated Python. Every

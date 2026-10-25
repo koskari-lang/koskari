@@ -45,13 +45,13 @@ typedef struct KosPairwise {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(pairwise_resume_deliver_kind, "pairwise-step",
+KOS_RESUME_KIND_AS_IS(pairwise_resume_deliver_kind, "pairwise-step",
                 pairwise_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
+KOS_RESUME_KIND_AS_IS(pairwise_resume_fetch_kind, "pairwise-step",
                 pairwise_resume_fetch, kos_transform_step_clear, NULL);
 
 
@@ -62,19 +62,19 @@ KOS_RESUME_KIND(pairwise_resume_fetch_kind, "pairwise-step",
    every fetch here is a request.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *t = (KosTransform *) state;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   {
-    KosOpResult r = KosEvalState_NextResume(es, t->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, t->source,
                                             &pairwise_resume_deliver_kind, t);
-    RESULT_ENTRY(es, r, &pairwise_resume_deliver_kind, t);
+    RESULT_ENTRY(ctx, r, &pairwise_resume_deliver_kind, t);
   }
 }
 
@@ -90,23 +90,25 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_fetch(
    before the raise carries the exhaustion to the stepping node.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosPairwise *p = (KosPairwise *) state;
   KosTransform *t = &p->base;
   PyObject *row;
+
+  kos_transform_fetched(t->source, element);
 
   if (! element) {
     if (kos_transform_source_spent()) {
       Py_CLEAR(p->held);
       t->closed = 1;
     }
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
   }
 
   if (! p->held) {
     p->held = element;  /* steals */
-    RESUME_HOP(&pairwise_resume_fetch_kind, es, p, NULL);
+    RESUME_HOP(&pairwise_resume_fetch_kind, ctx, p, NULL);
   }
 
   row = PyTuple_Pack(2, p->held, element);
@@ -118,26 +120,22 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult pairwise_resume_deliver(
   Py_DECREF(p->held);
   p->held = element;  /* steals */
 
-  return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
+  RESULT_FRAME_RETURN(ctx, row, &t->cached_frame);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult pairwise_iter_step(
-    KosEvalState *es,
+static KosIterStepResult pairwise_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosPairwise *p = (KosPairwise *) self;
   KosTransform *t = &p->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   {
     PyObject *element;
@@ -146,7 +144,7 @@ static KosIterStepResult pairwise_iter_step(
     /* Prime the pair on the first step. A source of fewer than two
        elements never yields, exactly as Python's does. */
     if (! p->held) {
-      KOS_TRANSFORM_FETCH(es, t, t->source, &pairwise_resume_fetch_kind,
+      KOS_TRANSFORM_FETCH(ctx, t, t->source, &pairwise_resume_fetch_kind,
                           pre_top, out, p->held);
     }
 
@@ -156,7 +154,7 @@ static KosIterStepResult pairwise_iter_step(
     PyObject *held = p->held;
     Py_INCREF(held);
 
-    switch (KosEvalState_NextOrDefer(es, t->source,
+    switch (KosContext_NextOrDefer(ctx, t->source,
                                      &pairwise_resume_fetch_kind, t,
                                      &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
@@ -170,11 +168,10 @@ static KosIterStepResult pairwise_iter_step(
       case KOS_IREQ_CONTINUES:
         /* the held element stays primed for pairwise_resume_deliver */
         Py_DECREF(held);
-        t->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       default:
         Py_DECREF(held);
-        return kos_transform_step_abort(es, t, pre_top);
+        return kos_transform_step_abort(ctx, t, pre_top);
     }
 
     row = PyTuple_Pack(2, held, element);
@@ -190,6 +187,16 @@ static KosIterStepResult pairwise_iter_step(
     return KOS_ITER_VALUE;
   }
 
+}
+
+
+static KosIterStepResult pairwise_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, pairwise_step_body);
 }
 
 
@@ -267,6 +274,7 @@ KosEvaluatedTypeObject KosPairwiseType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

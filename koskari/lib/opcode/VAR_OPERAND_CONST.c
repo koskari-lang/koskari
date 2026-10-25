@@ -22,11 +22,11 @@
 */
 
 KOS_OP_HANDLER(VAR_OPERAND_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name = KosExtra_OBJ(row, 1);
   PyObject *operand = KosExtra_OBJ(row, 2);   /* borrowed */
-  PyObject *obj = frame_ns_deref(es, name);
+  PyObject *obj = frame_ns_deref(ctx, name);
   if (unlikely(! obj))
     RESULT_RAISE();
   PyObject *pair[2] = { obj, operand };
@@ -35,7 +35,7 @@ KOS_OP_HANDLER(VAR_OPERAND_CONST) {
   Py_DECREF(obj);
   if (unlikely(! result))
     RESULT_RAISE();
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

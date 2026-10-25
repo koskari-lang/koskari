@@ -247,29 +247,26 @@ the boundary constraint.
 
 **Node types**:
 * `KOS_DYN_FRAME` — function activation record
-* `KOS_DYN_PROMPT` — reset/shift delimiter; owns a COW stack block for the delimited region; BARRIER + HANDLES_EXCEPTIONS
+* `KOS_DYN_PROMPT` — reset/shift delimiter; owns a COW stack block for the delimited region; BARRIER
 * `KOS_DYN_SHIFT` — shift block marker; simple, no stack block or handlers
 * `KOS_DYN_WIND` — dynamic-wind extent (before/after hooks)
 * `KOS_DYN_TRY` — try block (handler_pc, enabled; owns stack block)
 * `KOS_DYN_FINALLY` — finally block (handler_pc, enabled, handling_raise; owns stack block)
-* `KOS_DYN_LOOP` — while loop (break_pc, continue_pc, enabled; owns stack block)
-* `KOS_DYN_FOREACH` — for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc; owns stack block)
+* `KOS_DYN_LOOP` — while loop (break_pc, continue_pc, result; LOOP_REGION while enabled; owns stack block)
+* `KOS_DYN_FOREACH` — for-each loop (the LOOP record plus its `KosIterRequest`: iter, islots, kind; owns stack block)
   (These four are the region kinds; each has only its own `KosDynNode_IS_*` test.)
 * `KOS_DYN_NS` — namespace scope (PUSH_NS/POP_NS)
 * `KOS_DYN_CC` — call/cc extent (PUSH_CC/POP_CC)
-* `KOS_DYN_YIELD_FROM` — yield-from delegation state (see [EVALUATOR.md](../EVALUATOR.md) §5; [archive/yield-from-execution-model.md](../archive/yield-from-execution-model.md))
 * `KOS_DYN_PARAM` — parameterize extent (PUSH_PARAM/POP_PARAM); binds/restores dynamic param
-* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH, PUSH_DYN_WITH/POP_DYN_WITH for the multi-shot shot); CATCH, CONTROL_HOOK, HOLDS_OBLIGATION
+* `KOS_DYN_WITH` — with context manager extent (PUSH_WITH/POP_WITH, PUSH_DYN_WITH/POP_DYN_WITH for the multi-shot shot); CATCH, CONTROL_HOOK
 
 **Capability bits** govern behavior without kind checks in generic handlers:
 * `KOS_DYN_CAP_CATCH` — node may swallow exception (WITH)
-* `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT)
-* `KOS_DYN_CAP_HANDLES_EXCEPTIONS` — node has `unwind_on_exception` handler invoked during exception unwind when pop is refused (PROMPT, TRY, FINALLY)
-* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort): WIND, WITH
-* `KOS_DYN_CAP_HOLDS_OBLIGATION` — node carries an obligation slot: WIND, WITH
-* `KOS_DYN_CAP_NEEDS_INSTALL_WIND` — node re-enters when a transfer lands it (PARAM, multi-shot WITH)
+* `KOS_DYN_CAP_LOOP_REGION` — a LOOP or FOREACH region still running its body, the target of break and continue; CLEAR_LOOP and CLEAR_FOREACH take it away
+* `KOS_DYN_CAP_BARRIER` — normal pop refused (PROMPT); the raise walk crosses it in one unlink with the barrier allowed
+* `KOS_DYN_CAP_CONTROL_HOOK` — node answers the extent contract (enter, leave, settle, abort) and carries an obligation slot: WIND, WITH. A transfer landing re-enters such a node unless it is a single-shot WITH; PARAM re-winds by kind
+* `KOS_DYN_CAP_INTERCEPTS_RAISE` — the raise walk offers handle(RAISE): TRY, FINALLY, GEN, INPLACE DELIM
 * `KOS_DYN_CAP_OWNS_NS` — node introduced its own namespace, which the collector reaches through it (code FRAME, NS, COLLECT)
-* `KOS_DYN_CAP_PRESERVE_ERR_ACROSS_POP` — preserve exception across pop (YIELD_FROM)
 
 ---
 

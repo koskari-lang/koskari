@@ -23,7 +23,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_NS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *nspec = NULL;
   PyObject *names = NULL;
@@ -58,7 +58,7 @@ KOS_OP_HANDLER(PUSH_NS) {
   }
 
   if (opa > 0) {
-    args = KosEvalState_StackTailPtr(es, (size_t) opa);
+    args = KosContext_StackTailPtr(ctx, (size_t) opa);
     if (unlikely(! args)) {
       Py_DECREF(nspec);
       PyErr_SetString(PyExc_RuntimeError, "PUSH_NS stack underrun");
@@ -84,15 +84,15 @@ KOS_OP_HANDLER(PUSH_NS) {
         RESULT_RAISE();
       }
     }
-    KosEvalState_StackDropNoErr(es, (size_t) opa);
+    KosContext_StackDropNoErr(ctx, (size_t) opa);
   }
 
-  KosDynNs *const ns_node = kos_dyn_push_ns(es, new_ns);
+  KosDynNs *const ns_node = kos_dyn_push_ns(ctx, new_ns);
   if (unlikely(! ns_node)) {
     RESULT_RAISE();
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -19,20 +19,20 @@
   pushing nothing. Row LABEL, depth, depth.
 */
 KOS_OP_HANDLER(MATCH_SPAN) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *mark = kos_match_mark_at(es, KosExtra_IMM(row, 1));
+  PyObject *mark = kos_match_mark_at(ctx, KosExtra_IMM(row, 1));
   if (unlikely(! mark))
     RESULT_RAISE();
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 2));
+  PyObject *cursor = kos_match_cursor_at(ctx, KosExtra_IMM(row, 2));
   if (unlikely(! cursor))
     RESULT_RAISE();
 
   if (KosMatchCursor_INDEX(cursor) == KosMatchMark_INDEX(mark))
     KOS_MATCH_MISS(row);
-  RESULT_STEAL(es, KosMatchMark_Span(mark, cursor));
+  RESULT_STEAL(ctx, KosMatchMark_Span(mark, cursor));
 }
 
 

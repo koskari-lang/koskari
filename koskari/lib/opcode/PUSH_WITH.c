@@ -21,8 +21,8 @@
 */
 
 KOS_OP_HANDLER(PUSH_WITH) {
-  KOS_SYNC_PC(es, insn);
-  PyObject *mgr = KosEvalState_StackPopRef(es);
+  KOS_SYNC_PC(ctx, insn);
+  PyObject *mgr = KosContext_StackPopRef(ctx);
   if (! mgr)
     RESULT_RAISE();
 
@@ -36,7 +36,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
 
   /* the body resumes after the POP_WITH closing the extent */
   uint32_t pop_pc;
-  if (kos_site_extent_close(es, insn, KOS_EXT_WITH, "PUSH_WITH", &pop_pc) < 0) {
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_WITH, "PUSH_WITH", &pop_pc) < 0) {
     Py_DECREF(exit);
     Py_DECREF(enter);
     Py_DECREF(mgr);
@@ -47,7 +47,7 @@ KOS_OP_HANDLER(PUSH_WITH) {
   Py_XINCREF(name_obj);
 
   KosDynWith *with_node = kos_dyn_push_with_provisional(
-      es, mgr, enter, exit, self_bind, name_obj, pop_pc + 1u,
+      ctx, mgr, enter, exit, self_bind, name_obj, pop_pc + 1u,
       KOS_DYN_WITH_SHOT_SINGLE_ACTIVE);
   if (! with_node) {
     Py_DECREF(name_obj);
@@ -57,11 +57,11 @@ KOS_OP_HANDLER(PUSH_WITH) {
     RESULT_RAISE();
   }
 
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult wr = kos_dyn_extent_enter(es, (KosDynNode *) with_node);
+  KosDynFrame *const caller = KosContext_FRAME(ctx);
+  KosOpResult wr = kos_dyn_extent_enter(ctx, (KosDynNode *) with_node);
 
   if (wr.kind == KOS_RES_RAISE) {
-    kos_dyn_pop_with(es, with_node);
+    kos_dyn_pop_with(ctx, with_node);
     RESULT_RAISE();
   }
 
@@ -79,13 +79,13 @@ KOS_OP_HANDLER(PUSH_WITH) {
      prologue's to drain. */
   if (wr.kind != KOS_RES_NORMAL) {
     if (wr.kind == KOS_RES_REPROLOGUE
-        && KosEvalState_FRAME(es) != caller
-        && ! KosEvalState_GOAL(es))
-      RESULT_CONTINUE(es);
+        && KosContext_FRAME(ctx) != caller
+        && ! KosContext_GOAL(ctx))
+      RESULT_CONTINUE(ctx);
     return wr;
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

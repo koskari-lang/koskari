@@ -23,7 +23,7 @@
 KOS_OP_HANDLER(CONST) {
   PyObject *val = KosOp_OBJ(insn);
 
-  RESULT_PUSH(es, val);
+  RESULT_PUSH(ctx, val);
 }
 
 

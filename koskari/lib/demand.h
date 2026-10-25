@@ -36,9 +36,10 @@ typedef struct {
   PyObject_HEAD
   PyObject *wrapped;
   vectorcallfunc vectorcall;
-  KosContext *host;   /* the drive context boundary calls reuse; NULL
-                         until the first one caches it, and detached
-                         while a call runs */
+  KosDynFrame *cached_frame; /* the inert code-less root frame boundary
+                               calls reuse; NULL until the first one
+                               returns it, and emptied while a call
+                               runs */
 } KosDemandObject;
 
 #define KosDemand_VECTORCALL_OFFSET offsetof(KosDemandObject, vectorcall)
@@ -81,19 +82,6 @@ int koskari_demand_clear(PyObject *mod);
 */
 PyObject *Koskari_DemandSync(PyObject *callable, PyObject *args, PyObject *kwargs);
 
-/**
-   Koskari_DemandSync over a vectorcall-shaped argument vector: args
-   holds nargs positionals then one value per kwnames entry (kwnames
-   may be NULL). args and kwnames are borrowed. 0 with *out_result a
-   new reference, or -1 with PyErr set.
-*/
-int Koskari_DemandSyncVector(
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    PyObject **out_result);
-
 
 /**
    A Demand wrapper, or a subtype, called from Python: the demand core
@@ -112,8 +100,9 @@ PyObject *KosDemand_CallVector(
 /**
    Set KoskariSyncViolation on PyErr with msg as the message string.
 
-   Called from eval guard sites (kos_eval_demand_deny_suspend) to raise the
-   violation as an in-eval exception without duplicating exception registration.
+   Called from guard sites (eval_event_await among them) to raise the
+   violation as an in-eval exception without duplicating exception
+   registration.
 */
 void kos_demand_set_sync_violation(const char *msg);
 

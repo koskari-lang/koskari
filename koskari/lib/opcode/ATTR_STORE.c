@@ -25,12 +25,12 @@
 */
 
 KOS_OP_HANDLER(ATTR_STORE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val)
     RESULT_RAISE();
-  PyObject *const *tail = KosEvalState_StackTailPtr(es, 1);
+  PyObject *const *tail = KosContext_StackTailPtr(ctx, 1);
   if (unlikely(! tail)) {
     Py_DECREF(val);
     RESULT_RAISE();
@@ -46,14 +46,14 @@ KOS_OP_HANDLER(ATTR_STORE) {
     KosFieldMode m = kos_resolve_attr_location(obj, name, slot, &off);
     if (m == KOS_FIELD_SLOT) {
       field_slot_store(obj, off, val);      /* val stolen */
-      KosEvalState_StackDropNoErr(es, 1);
-      RESULT_NEXT(es);
+      KosContext_StackDropNoErr(ctx, 1);
+      RESULT_NEXT(ctx);
     }
 #if PY_MINOR_VERSION >= 11
     if (m == KOS_FIELD_INSTANCE_VALUE
         && field_instance_value_store(obj, off, val)) {
-      KosEvalState_StackDropNoErr(es, 1);   /* val stolen */
-      RESULT_NEXT(es);
+      KosContext_StackDropNoErr(ctx, 1);     /* val stolen */
+      RESULT_NEXT(ctx);
     }
 #endif
   }
@@ -64,8 +64,8 @@ KOS_OP_HANDLER(ATTR_STORE) {
   Py_DECREF(val);
   if (res < 0)
     RESULT_RAISE();
-  KosEvalState_StackDropNoErr(es, 1);
-  RESULT_NEXT(es);
+  KosContext_StackDropNoErr(ctx, 1);
+  RESULT_NEXT(ctx);
 }
 
 

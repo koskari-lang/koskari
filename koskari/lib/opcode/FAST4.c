@@ -22,7 +22,7 @@
   failed value included by the push itself.
 */
 KOS_OP_HANDLER(FAST4) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -54,9 +54,9 @@ KOS_OP_HANDLER(FAST4) {
 
   PyObject *vals[4] = { a, b, c, d };
   if (unlikely(kos_stack_push_steal_n_fast(
-                   KosEvalState_BLOCK(es), vals, 4) < 0))
+                   KosContext_BLOCK(ctx), vals, 4) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

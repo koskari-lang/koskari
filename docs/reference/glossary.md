@@ -52,6 +52,12 @@ with examples, see [Guide](../guide/index.md).
 : Read the value held by a ref. See [Bindings and refs](../guide/bindings-and-refs.md)
   and [compile/deref](specials/compile-deref.md).
 
+**domain**
+: The owner of one root parameter scope. Each thread has a default domain of
+  its own, and a `with Domain():` block supplies another for its extent, so a
+  bare parameter store is read by every later call on that thread or inside
+  that block and by no other. A `koskari.lib.Domain`.
+
 **form**
 : A Koskari expression: atoms, lists, or layout-derived s-expressions.
 

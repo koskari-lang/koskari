@@ -22,7 +22,7 @@
   comparison, negated under a set negate bit, fails.
 */
 KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t src = KosExtra_IMM(row, 0);
   int negate = KosCmpSrc_NEGATE(src);
@@ -51,19 +51,19 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
 
       if (sel > KOS_COMPARE_GE) {
         if (((x == y) == (sel == KOS_COMPARE_IS)) != negate)
-          RESULT_NEXT(es);
-        RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+          RESULT_NEXT(ctx);
+        RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 3));
       }
       if (kos_as_ll2(x, y, &a, &b)) {
         if (kos_ll_compare(sel, a, b) != negate)
-          RESULT_NEXT(es);
-        RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+          RESULT_NEXT(ctx);
+        RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 3));
       }
       if (PyFloat_CheckExact(x) && PyFloat_CheckExact(y)) {
         if (kos_double_compare(sel, PyFloat_AS_DOUBLE(x),
                                PyFloat_AS_DOUBLE(y)) != negate)
-          RESULT_NEXT(es);
-        RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+          RESULT_NEXT(ctx);
+        RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 3));
       }
     }
   }
@@ -103,9 +103,9 @@ KOS_OP_HANDLER(CHECK_COMPARE_FAST) {
     RESULT_RAISE();
 
   if ((res != 0) == negate)
-    RESULT_JUMP_AT(es, KosExtra_TARGET(row, 3));
+    RESULT_JUMP_AT(ctx, KosExtra_TARGET(row, 3));
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -20,20 +20,20 @@
 */
 
 KOS_OP_HANDLER(PUSH_PARAM) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *names = KosOp_OBJ(insn);
 
-  PyObject *bindings = KosEvalState_StackPopTailDictFromNames(es, names);
+  PyObject *bindings = KosContext_StackPopTailDictFromNames(ctx, names);
   if (! bindings)
     RESULT_RAISE();
 
   /* the node wraps each value in a fresh cell; bindings stays ours */
-  KosDynParam *node = kos_dyn_push_param_dict(es, bindings);
+  KosDynParam *node = kos_dyn_push_param_dict(ctx, bindings);
   Py_DECREF(bindings);
   if (! node)
     RESULT_RAISE();
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

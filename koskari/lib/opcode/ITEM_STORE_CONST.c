@@ -21,8 +21,8 @@
   (eval/eval_item.c) on the site's one KOS_CACHE_ITEM slot.
 */
 KOS_OP_HANDLER(ITEM_STORE_CONST) {
-  KOS_SYNC_PC(es, insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
@@ -46,7 +46,7 @@ KOS_OP_HANDLER(ITEM_STORE_CONST) {
     RESULT_RAISE();
 
   kos_stack_drop_noerr_fast(bl, 2);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

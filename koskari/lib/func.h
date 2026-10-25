@@ -199,7 +199,7 @@ typedef struct {
                                construction is fail-safe */
   KosDynFrame *cached_frame; /* head of the cached prepared frames
                                 (code + reset ns + cleared stack, fn
-                                NULL) for the next simple calls; owned;
+                                NULL) for the next calls; owned;
                                 NULL when empty. Linked through each
                                 frame's back_frame, newest first, with
                                 the list length in the head's depth
@@ -232,10 +232,12 @@ static inline void KosFunction_StoreSelf(PyObject *self, PyObject *frame_ns) {
 
 /**
    Unlink and return the head of the function's cached frames, or NULL.
-   A hit arm reads the head, steal-binds into its namespace, and calls
+   A steal-bind arm reads the head, binds into its namespace, and calls
    this only once the bind succeeded, so a failed bind leaves the frame
-   cached. The install that follows overwrites the returned frame's
-   back_frame and depth.
+   cached. The general arm of KosFunction_Install calls it before its
+   bind, which can run user code, and offers the frame back through
+   KosFunction_CacheFrame when the bind fails. The install that follows
+   overwrites the returned frame's back_frame and depth.
 */
 static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
   KosFunction *fn = (KosFunction *) self;
@@ -248,6 +250,31 @@ static inline KosDynFrame *KosFunction_PopCachedFrame(PyObject *self) {
     KosDynFrame_BACK_FRAME(head) = NULL;
   }
   return head;
+}
+
+
+/**
+   Take the function's cached frame once the caller has bound the
+   arguments into its namespace: store the function into its own
+   slot, pop the frame from the cache, push it ready, tag it with the
+   function (a new reference unless owned hands the caller's over),
+   count the event, and report the install. The caller has asked
+   kos_eval_check_frame_room for one frame before the bind.
+*/
+KOS_OP_INLINE KosOpResult kos_call_install_cached_frame(
+    KosContext *ctx,
+    PyObject *callable,
+    KosDynFrame *cached,
+    int owned) {
+
+  KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
+  (void) KosFunction_PopCachedFrame(callable);
+  kos_dyn_push_ready_frame(ctx, cached);
+  if (! owned)
+    Py_INCREF(callable);
+  KosDynFrame_FN(cached) = callable;
+  KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
+  return kos_call_installed(ctx);
 }
 
 
@@ -346,11 +373,14 @@ typedef struct {
   PyObject_HEAD
   PyObject *func;
   PyObject *self;
+  vectorcallfunc vectorcall; /* for Py_TPFLAGS_HAVE_VECTORCALL; always set */
 } KosBoundMethod;
 
 
 #define KosBoundMethod_FUNC(bm) (((KosBoundMethod *) (bm))->func)
 #define KosBoundMethod_SELF(bm) (((KosBoundMethod *) (bm))->self)
+
+#define KosBoundMethod_VECTORCALL_OFFSET offsetof(KosBoundMethod, vectorcall)
 
 #define KosBoundMethod_CheckExact(obj)                           \
   ((obj) && ((obj)->ob_type == KOS_EVALUATED_PYTYPE(KosBoundMethodType)))
@@ -441,7 +471,7 @@ PyObject *KosFunction_VectorCall(
    place. Reported through the install contract (evaluated.h).
 */
 KosOpResult KosFunction_Install(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,

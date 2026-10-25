@@ -18,7 +18,7 @@
    the 3 fast slots in row order; an empty slot stays empty.
 */
 KOS_OP_HANDLER(FAST_CLEAR3) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -28,7 +28,7 @@ KOS_OP_HANDLER(FAST_CLEAR3) {
     RESULT_RAISE();
   if (KosNamespace_FastClear(ns, (size_t) KosExtra_IMM(row, 2)) < 0)
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -21,9 +21,13 @@
    callable from Python without suspension.
 
    The demand core is the Python boundary's entry into Koskari: a
-   KosCallable of any kind is called through KosEvalState_CallInto from a
+   KosCallable of any kind is called through KosContext_Call from a
    code-less root frame marked KOS_FRAME_DEMAND, on the boundary's own
-   context. Any attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) under
+   context. A Demand wrapper keeps that root frame, stripped inert,
+   for its next call, as it keeps the context. A simple call of a
+   non-yielding KosFunction instead installs the function's frame as
+   the root frame, marked the same.
+   Any attempt to suspend (KOS_RES_AWAIT or KOS_RES_YIELD) under
    the mark is converted into an in-eval KoskariSyncViolation at the deny
    site so TRY/finally can run; uncaught, the exception surfaces as
    KOS_RES_RAISE.
@@ -141,13 +145,14 @@ iter_fail:
 
 
 /**
-   Finish a value at the demand boundary, whether a Python callable or
-   a Koskari install produced it. A plain value passes through; one
-   that genuinely needs awaiting is eagerly stepped, and denied as a
-   sync violation if it suspends. KosEval_ResultIsValue is the gate
-   rather than demand_step_python_result's own __await__ probe, so a
-   Defer or a future -- both exempt from ambient await -- passes
-   through as the value it is instead of being stepped.
+   Finish a Python callable's result at the demand boundary. A plain
+   value passes through; one that genuinely needs awaiting is eagerly
+   stepped, and denied as a sync violation if it suspends, the
+   violation thrown into the awaitable so it may recover.
+   KosEval_ResultIsValue is the gate rather than
+   demand_step_python_result's own __await__ probe, so a Defer or a
+   future -- both exempt from ambient await -- passes through as the
+   value it is instead of being stepped.
 
    Steals value. Returns a new reference, or NULL with PyErr set.
 */
@@ -165,24 +170,71 @@ static PyObject *demand_finish_value(PyObject *value) {
 }
 
 
+/**
+   Finish a Koskari return that left the eval as the root frame's own,
+   by the rule the in-eval await applies: a plain value passes through;
+   an awaitable is stepped once and, if it suspends, the yield and the
+   await iterator are dropped, nothing is thrown into it, and the
+   violation is raised. The same outcome a return into the demand root
+   frame's resume gets, whichever arm the entry took.
+
+   Steals value. Returns a new reference, or NULL with PyErr set.
+*/
+static PyObject *demand_deny_suspended(PyObject *value) {
+
+  PyObject *await_iter = NULL;
+  PyObject *yielded = NULL;
+  PyObject *settled;
+
+  switch (KosEval_ResultIsValue(value)) {
+    case 1:
+      return value;
+    case 0:
+      break;
+    default:
+      Py_DECREF(value);
+      return NULL;
+  }
+
+  settled = kos_await_first_step(value, &await_iter, &yielded);
+  Py_DECREF(value);
+  if (settled)
+    return settled;
+  if (! await_iter)
+    return NULL;
+
+  Py_DECREF(yielded);
+  Py_DECREF(await_iter);
+  kos_demand_set_sync_violation("async suspension is not allowed in demand_sync");
+  return NULL;
+}
+
+
 /* === Demand core === */
 
 
 /**
    The resume on a demand code-less frame: completes the frame with the
-   called callable's result. A failed delivery propagates.
+   called callable's result, returning the frame to the state's slot.
+   The state is the Demand wrapper's root-frame slot (KosDynFrame **),
+   or NULL when there is no wrapper and the frame frees normally. A
+   continuation clone of the frame shares the slot; an occupied slot
+   refuses the frame and it frees normally. A reentrant call of the
+   same wrapper from its own callee finds the slot emptied by the outer
+   install and allocates. A failed delivery propagates, with the frame
+   set to return to the slot when the raise walk frees it.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult demand_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     void *state,
     PyObject *value) {
 
-  (void) state;
-
-  if (! value)
+  if (! value) {
+    KosNativeFrame_CacheOnFree(ctx, (KosDynFrame **) state);
     return EVAL_RAISE();
+  }
 
-  return KosNativeFrame_ReturnToCache(es, value, NULL);
+  RESULT_FRAME_RETURN(ctx, value, (KosDynFrame **) state);
 }
 
 
@@ -191,65 +243,23 @@ KOS_RESUME_KIND(demand_resume_kind, "demand",
 
 
 /**
-   The drive context for one boundary call: the wrapper's cached host
-   when there is one, taken out of the cache before anything else runs
-   so no other call can see it, and refreshed to the dynamic state in
-   force at this call; otherwise a fresh context. host is NULL when
-   there is no wrapper to cache on. New reference.
-*/
-static KosContext *demand_acquire_host(KosContext **host) {
-
-  if (host && *host) {
-    KosContext *ctx = *host;
-    *host = NULL;
-    if (KosContext_TakeSnapshot(ctx) < 0) {
-      Py_DECREF(ctx);
-      return NULL;
-    }
-    return ctx;
-  }
-  return KosContext_New(NULL);
-}
-
-
-/**
-   Return the drive context after the call: recycled, it stays cached
-   or takes the empty cache; one the recycle cannot account for, or
-   with nowhere to be cached, is released. Consumes ctx.
-*/
-static void demand_release_host(KosContext **host, KosContext *ctx) {
-
-  if (! host) {
-    Py_DECREF(ctx);
-    return;
-  }
-  if (KosContext_Recycle(ctx) < 0) {
-    Py_DECREF(ctx);
-    return;
-  }
-  if (! *host) {
-    /* the cache holds nothing of the finished call: the next acquire's
-       snapshot sets both again */
-    Py_CLEAR(KosContext_DOMAIN(ctx));
-    Py_CLEAR(KosContext_PARAM_REFS(ctx));
-    *host = ctx;
-    return;
-  }
-  Py_DECREF(ctx);
-}
-
-
-/**
    Run a KosCallable to completion from the Python boundary: record the
-   call on the drive context (the wrapper's cached host, or a fresh
-   one), and koskari_eval installs it at entry through
-   KosEvalState_CallInto from a code-less root frame marked
+   call on a context of its own, taken fresh from the context freelist
+   by KosContext_New with the dynamic state in force at this call and
+   released after the call, and koskari_eval installs it at entry
+   through KosContext_Call from a code-less root frame marked
    KOS_FRAME_DEMAND, which is the caller frame every install delivers
-   into, then runs it to its return. Any KosCallable is accepted. The
-   deny guards convert AWAIT and YIELD under the demand mark into
-   KoskariSyncViolation, so koskari_eval answers RETURN, RAISE, or
-   FATAL.
+   into, then runs it to its return. The root frame is taken from
+   cached_frame when it holds one and returned to it by demand_resume.
+   A simple call of a non-yielding KosFunction is installed as the root
+   frame itself, marked KOS_FRAME_DEMAND, and its return ends the
+   drive. Any KosCallable is accepted. The deny guards convert AWAIT
+   and YIELD under the demand mark into KoskariSyncViolation, so
+   koskari_eval answers RETURN, RAISE, or FATAL. The thread record is
+   resolved once here and serves both the context's snapshot and the
+   eval.
 
+   cached_frame is the wrapper's slot, NULL when there is no wrapper.
    args and kwnames are borrowed. Returns a new reference, or NULL with
    PyErr set.
 */
@@ -258,30 +268,31 @@ static PyObject *demand_run_koskari(
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    KosContext **host) {
+    KosDynFrame **cached_frame) {
 
   KosEntryCall call = {
     callable, args, nargs, kwnames, &demand_resume_kind, KOS_FRAME_DEMAND,
+    cached_frame,
   };
-  KosContext *ctx = demand_acquire_host(host);
+  KosTlsState *s = kos_tls_current();
+  KosContext *ctx = KosContext_New(NULL, s);
   KosOpResult r;
 
   if (! ctx)
     return NULL;
 
   KosContext_ENTRY_CALL(ctx) = &call;
-  r = koskari_eval(ctx, NULL, NULL, NULL);
+  r = koskari_eval(ctx, s, NULL, NULL, NULL);
   KosContext_ENTRY_CALL(ctx) = NULL;
-  demand_release_host(host, ctx);
+  Py_DECREF(ctx);
 
   switch (r.kind) {
     case KOS_RES_RETURN:
-      /* The returned value is classified like any other settled
-         result: a function that returns an awaitable as data gets the
-         same eager-step-or-deny treatment a plain Python callable's
-         result gets, instead of leaking an unstepped awaitable out of
-         the demand boundary. */
-      return demand_finish_value(r.val);
+      /* A return that left the eval as the root frame's own: an
+         awaitable returned as data is denied the way the demand root
+         frame's resume denies it in-eval, never thrown into, so a
+         function answers the same on every call shape. */
+      return demand_deny_suspended(r.val);
 
     case KOS_RES_RAISE:
     case KOS_RES_FATAL:
@@ -305,15 +316,17 @@ static PyObject *demand_run_koskari(
 /**
    The demand core over a vectorcall-shaped argument vector. A plain
    Python callable is called and its result finished; a KosCallable
-   runs through demand_run_koskari. args and kwnames are borrowed.
-   Returns a new reference, or NULL with PyErr set.
+   runs through demand_run_koskari on a fresh context of its own.
+   cached_frame is the wrapper's slot, NULL when there is no wrapper.
+   args and kwnames are borrowed. Returns a new reference, or NULL with
+   PyErr set.
 */
 static PyObject *demand_sync_vector(
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
     PyObject *kwnames,
-    KosContext **host) {
+    KosDynFrame **cached_frame) {
 
   SAYF("[demand_sync] callable = %p", callable);
 
@@ -323,7 +336,7 @@ static PyObject *demand_sync_vector(
     return result ? demand_finish_value(result) : NULL;
   }
 
-  return demand_run_koskari(callable, args, nargs, kwnames, host);
+  return demand_run_koskari(callable, args, nargs, kwnames, cached_frame);
 }
 
 
@@ -367,18 +380,6 @@ PyObject *Koskari_DemandSync(
 }
 
 
-int Koskari_DemandSyncVector(
-    PyObject *callable,
-    PyObject *const *args,
-    Py_ssize_t nargs,
-    PyObject *kwnames,
-    PyObject **out_result) {
-
-  *out_result = demand_sync_vector(callable, args, nargs, kwnames, NULL);
-  return *out_result ? 0 : -1;
-}
-
-
 /* === KosDemand (wrapper) === */
 
 
@@ -388,6 +389,7 @@ PyObject *KosDemand_CallVector(
     size_t nargsf,
     PyObject *kwnames) {
 
+  KosDemandObject *d = (KosDemandObject *) self;
   PyObject *wrapped = KosDemand_GetWrapped(self);
 
   if (! wrapped) {
@@ -398,7 +400,7 @@ PyObject *KosDemand_CallVector(
   if (kwnames && ! PyTuple_GET_SIZE(kwnames))
     kwnames = NULL;
   return demand_sync_vector(wrapped, args, PyVectorcall_NARGS(nargsf),
-                            kwnames, &((KosDemandObject *) self)->host);
+                            kwnames, &d->cached_frame);
 }
 
 
@@ -447,7 +449,7 @@ static PyObject *demand_new(
     return NULL;
 
   self->wrapped = NULL;
-  self->host = NULL;
+  self->cached_frame = NULL;
   self->vectorcall = KosCallable_CheckSlots((PyObject *) self, &slots)
       ? slots->kc_pyvectorcall : NULL;
   return (PyObject *) self;
@@ -581,7 +583,10 @@ static void demand_dealloc(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
 
   Py_CLEAR(d->wrapped);
-  Py_CLEAR(d->host);
+  if (d->cached_frame) {
+    kos_dynframe_free(d->cached_frame);
+    d->cached_frame = NULL;
+  }
   Py_TYPE(self)->tp_free(self);
 }
 
@@ -591,7 +596,6 @@ static int demand_traverse(PyObject *self, visitproc visit, void *arg) {
 
   if (d->wrapped)
     Py_VISIT(d->wrapped);
-  Py_VISIT(d->host);
   return 0;
 }
 
@@ -600,7 +604,12 @@ static int demand_clear(PyObject *self) {
   KosDemandObject *d = (KosDemandObject *) self;
 
   Py_CLEAR(d->wrapped);
-  Py_CLEAR(d->host);
+  /* an inert frame holds no Python references, so traverse does not
+     visit it; it is released here and in dealloc */
+  if (d->cached_frame) {
+    kos_dynframe_free(d->cached_frame);
+    d->cached_frame = NULL;
+  }
   return 0;
 }
 
@@ -613,7 +622,7 @@ static int demand_clear(PyObject *self) {
    guards fire under either.
 */
 static KosOpResult demand_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -629,8 +638,8 @@ static KosOpResult demand_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  r = KosEvalState_Call(
-      es, inner, args, nargs, kwnames, tail_call, NULL, NULL);
+  r = KosContext_Call(
+      ctx, inner, args, nargs, kwnames, tail_call, NULL, NULL);
   switch (r.kind) {
     case KOS_RES_RETURN:
       switch (KosEval_ResultIsValue(r.val)) {
@@ -639,8 +648,8 @@ static KosOpResult demand_kos_vinstall(
         case 0:
           /* an awaitable in hand settles under a demand-marked frame,
              so a suspension is denied in-eval at the guard */
-          return KosEvalState_SettleInto(
-              es, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
+          return KosContext_SettleInto(
+              ctx, r.val, &demand_resume_kind, NULL, KOS_FRAME_DEMAND);
         default:
           Py_DECREF(r.val);
           return EVAL_RAISE();
@@ -649,7 +658,7 @@ static KosOpResult demand_kos_vinstall(
     case KOS_RES_NORMAL:
     case KOS_RES_POLL:
     case KOS_RES_REPROLOGUE: {
-      KosDynFrame *frame = KosEvalState_FRAME(es);
+      KosDynFrame *frame = KosContext_FRAME(ctx);
       if (frame)
         KosDynFrame_FLAGS(frame) |= KOS_FRAME_DEMAND;
       return r;

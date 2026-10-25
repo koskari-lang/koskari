@@ -21,12 +21,12 @@ KOS_OP_HANDLER(MATCH_MIN) {
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *list = kos_match_items_at(es, KosExtra_IMM(row, 1));
+  PyObject *list = kos_match_items_at(ctx, KosExtra_IMM(row, 1));
   if (unlikely(! list))
-    RESULT_RAISE_AT(es, insn);
+    RESULT_RAISE_AT(ctx, insn);
   if (PyList_GET_SIZE(list) < (Py_ssize_t) KosExtra_IMM(row, 2))
     KOS_MATCH_MISS(row);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

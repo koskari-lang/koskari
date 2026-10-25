@@ -33,7 +33,7 @@ macros must include it explicitly (same opt-in pattern as `debug.h`).
 | `KOS_TRACE_EVENTS` | 0 | VM / dynchain event counters (`events` key) |
 | `KOS_TRACE_OPCACHE` | 0 | Per-site opcode-cache counters for the method, field, and elector caches (`opcache` key) |
 | `KOS_TRACE_TIMING` | 0 | Per-opcode and post-handler timing (`opcode_timing`, `post_handler_timing`, and summaries) |
-| `KOS_TRACE_EVAL_SYNC` | 0 | `KosEvalState` sync API call counts and wall time (`eval_state_sync` key) |
+| `KOS_TRACE_EVAL_SYNC` | 0 | Live register sync step call counts and wall time (`eval_state_sync` key) |
 
 Flags are defaulted in `tracing.h` with `#ifndef`. Override at build time:
 
@@ -256,14 +256,28 @@ counts (`uint64_t` in C).
 | Key | Meaning |
 |-----|---------|
 | **dyn_handle_enter** | Calls to `kos_dyn_handle` (control transfer offer to a chain node). |
-| **dyn_unwind_step** | Steps in `kos_dyn_pop_one_unwind_walk` (unwind/return walks that pop one node). |
+| **dyn_unwind_step** | Nodes popped by `kos_dyn_unwind_to_node` and `kos_dyn_unwind_return`. |
 | **transfer_goal_new** | Transfer goals created (`kos_xfer_goal_new`). |
-| **raise_local_walk_iter** | Iterations of the walk in `kos_dyn_try_local_raise_body` (local exception handler search). |
+| **raise_local_walk_iter** | Nodes visited by the raise walk (`kos_dyn_unwind_raise`). |
+| **seg_inline_install** | A node's inline operand segment installed as the live block. |
+| **seg_inline_spill** | An inline segment outgrown and spilled to the heap (`KosStack_Grow`). |
+| **retarget_walk_fallback** | `kos_dyn_resync_after_pop` recomputing the live registers by walk; expected zero. |
+| **live_rebuild** | Full register rebuilds from the chain (`kos_dyn_resync_chain`). |
+| **call_frame_cached** | A simple call served by a cached frame (`kos_call_install_cached_frame`). |
+| **call_simple_steal** | A simple call steal-binding into a fresh namespace. |
+| **call_simple_vector** | A simple call bound from a vector: no steal, not cacheable (`KosFunction_Install`). |
+| **call_tail_inplace** | A self-tail call rebinding the live frame's namespace. |
+| **entry_root_install** | A Python-boundary entry call installed as the eval's root frame. |
+| **entry_root_cached** | An entry call's code-less root frame taken from its Demand wrapper's slot. |
+| **tls_resolve** | Resolutions of the per-thread record (`tls_state_current` in `domain.c`). |
+| **exc_fetch** | Fetches of the thread's handled exception by `koskari_eval`'s exception-state swap. |
+| **coro_frame_to_cache** | The root frame of a Coroutine run from Python accepted by its function's frame cache (`kos_dynframe_free`). |
+| **call_frame_cached_general** | A general-shape call (keywords, a consulted default, star, keyword-only, by-ref) bound into a cached frame by `KosFunction_Install`. |
 
 Add new counters in `tracing.h` (`KosTraceEventId`) and `tracing.c` (`kos_te_names`)
 only by **appending** entries; do not reorder existing ids.
 
-C code increments via `KOS_TRACE_EVENTS_INC(KOS_TE_...)` in **dynchain.c**.
+C code increments via `KOS_TRACE_EVENTS_INC(KOS_TE_...)` at the sites above.
 
 ### `opcache`
 
@@ -300,12 +314,12 @@ with only **`count`** and **`total_ns`** (no share fields). Wall time is
 
 | Key | Instrumented API / site |
 |-----|-------------------------|
-| **init** | `KosEvalState_Init` (`eval/eval_state.c`) |
+| **init** | `KosContext_EvalEnter` (`eval/eval_drive.c`) |
 | **unused_sync_from_context** | Reserved slot (removed API; never incremented) |
-| **flush_live_regs** | `KosEvalState_FlushLiveRegsToFrame` (inline in `eval.h`) |
+| **flush_live_regs** | `KosContext_FlushLiveRegsToFrame` (inline in `eval.h`) |
 | **unused_apply_dyn_caches** | Reserved slot (removed API; never incremented) |
-| **rebuild_live_from_chain** | `kos_dyn_rebuild_live_from_chain` (`dynchain.c`) |
-| **retarget_after_push** | `kos_dyn_retarget_after_push` (`dynchain.c`) |
+| **rebuild_live_from_chain** | `kos_dyn_resync_chain` (`dynchain.c`) |
+| **retarget_after_push** | `kos_dyn_resync_after_push` (`dynchain.c`) |
 
 Add new ids in `tracing.h` (`KosTraceEvalSyncId`) and `tracing.c` (`kos_tevs_names`)
 only by **appending** entries. Renaming existing slot strings in place is allowed
@@ -415,10 +429,10 @@ Each freelist entry has four counters:
 - **stack.c** — `KosStack_NewEmpty`, release paths
 - **pair.c** — `KosPair_New`, `pair_dealloc`
 
-**Events** — `KOS_TRACE_EVENTS_INC` in **dynchain.c** (see `events` table).
+**Events** — `KOS_TRACE_EVENTS_INC` at the sites the `events` table names.
 
-**Eval state sync** — `KOS_TRACE_EVAL_SYNC_BEGIN` / `END` in **eval/eval_state.c**
-and `KosEvalState_FlushLiveRegsToFrame` in **eval.h**.
+**Eval state sync** — `KOS_TRACE_EVAL_SYNC_BEGIN` / `END` in **eval/eval_drive.c**
+and `KosContext_FlushLiveRegsToFrame` in **eval.h**.
 
 **Opcode counting** — `KOS_TRACE_THREAD_STEP` in `KOS_THREAD_NEXT`
 (**eval.h**) and at `koskari_eval`'s thread entry (**eval.c**); counts

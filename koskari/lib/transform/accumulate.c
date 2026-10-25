@@ -44,16 +44,6 @@ static PyObject *accumulate_fold(KosAccumulate *a, PyObject *element) {
 }
 
 
-/**
-   Emit the running total, which the provider keeps a reference to.
-*/
-static KosOpResult accumulate_emit(KosEvalState *es, KosAccumulate *a) {
-
-  Py_INCREF(a->total);
-  return KosNativeFrame_ReturnToCache(es, a->total, &a->base.cached_frame);
-}
-
-
 /* === the step's CPS resumes ===
 
    No frame-carrying capture: replaying a captured step would
@@ -67,15 +57,15 @@ static KosOpResult accumulate_emit(KosEvalState *es, KosAccumulate *a) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(accumulate_resume_fetch_kind, "accumulate-step",
+KOS_RESUME_KIND_AS_IS(accumulate_resume_fetch_kind, "accumulate-step",
                 accumulate_resume_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(accumulate_resume_fold_kind, "accumulate-step",
+KOS_RESUME_KIND_AS_IS(accumulate_resume_fold_kind, "accumulate-step",
                 accumulate_resume_fold, kos_transform_step_clear, NULL);
 KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step",
                 accumulate_resume_result, kos_transform_step_clear, NULL);
@@ -86,17 +76,18 @@ KOS_RESUME_KIND(accumulate_resume_result_kind, "accumulate-step",
    step's value. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosAccumulate *a = (KosAccumulate *) state;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, &a->base);
 
   Py_CLEAR(a->base.pending);
   Py_SETREF(a->total, value);
 
-  return accumulate_emit(es, a);
+  Py_INCREF(a->total);
+  RESULT_FRAME_RETURN(ctx, a->total, &a->base.cached_frame);
 }
 
 
@@ -106,17 +97,20 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_result(
    element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosAccumulate *a = (KosAccumulate *) state;
   KosTransform *t = &a->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   if (! a->total) {
     a->total = element;  /* steals */
-    return accumulate_emit(es, a);
+    Py_INCREF(a->total);
+    RESULT_FRAME_RETURN(ctx, a->total, &a->base.cached_frame);
   }
 
   if (! t->fn.cs_callable) {
@@ -127,7 +121,8 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
       return EVAL_RAISE();
 
     Py_SETREF(a->total, folded);
-    return accumulate_emit(es, a);
+    Py_INCREF(a->total);
+    RESULT_FRAME_RETURN(ctx, a->total, &a->base.cached_frame);
   }
 
   /* pending holds the element across the call; the argument vector
@@ -135,10 +130,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
   t->pending = element;
   {
     PyObject *argv[2] = { a->total, element };
-    KosOpResult r = KosEvalState_Call(
-        es, t->fn.cs_callable, argv, 2, NULL, 0,
+    KosOpResult r = KosContext_Call(
+        ctx, t->fn.cs_callable, argv, 2, NULL, 0,
         &accumulate_resume_result_kind, a);
-    RESULT_ENTRY(es, r, &accumulate_resume_result_kind, a);
+    RESULT_ENTRY(ctx, r, &accumulate_resume_result_kind, a);
   }
 }
 
@@ -149,38 +144,34 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fold(
    invoked with NULL.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult accumulate_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
-  r = KosEvalState_NextResume(
-      es, ((KosTransform *) state)->source, NULL,
-      &accumulate_resume_fold_kind, state);
-  RESULT_ENTRY(es, r, &accumulate_resume_fold_kind, state);
+  r = KosContext_NextResume(
+      ctx, t->source, &accumulate_resume_fold_kind, t);
+  RESULT_ENTRY(ctx, r, &accumulate_resume_fold_kind, t);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult accumulate_iter_step(
-    KosEvalState *es,
+static KosIterStepResult accumulate_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosAccumulate *a = (KosAccumulate *) self;
   KosTransform *t = &a->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   /* A seed is the first value and costs no fetch, so a seeded
      accumulate over an empty source still yields once. */
@@ -195,7 +186,7 @@ static KosIterStepResult accumulate_iter_step(
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(es, t, t->source, &accumulate_resume_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, t, t->source, &accumulate_resume_fetch_kind, pre_top, out,
                         element);
 
     if (! a->total) {
@@ -223,7 +214,7 @@ static KosIterStepResult accumulate_iter_step(
        raw for accumulate_resume_fold, which makes the call in this
        evaluator. */
     if (t->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-      return kos_transform_stage(es, t, element,
+      return kos_transform_stage(ctx, t, element,
                                  &accumulate_resume_fold_kind, pre_top);
 
     /* A plain python function needs no evaluator at all. */
@@ -246,7 +237,7 @@ static KosIterStepResult accumulate_iter_step(
           /* Awaitable fold result: stage it, unclassified, and defer
              to accumulate_resume_result -- the await it needs must
              happen from inside koskari_eval's own dispatch. */
-          return kos_transform_stage(es, t, result,
+          return kos_transform_stage(ctx, t, result,
                                      &accumulate_resume_result_kind, pre_top);
         default:
           Py_DECREF(result);
@@ -255,6 +246,16 @@ static KosIterStepResult accumulate_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult accumulate_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, accumulate_step_body);
 }
 
 
@@ -371,6 +372,7 @@ KosEvaluatedTypeObject KosAccumulateType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

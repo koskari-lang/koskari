@@ -21,7 +21,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_COMPARE_VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ops[3];
@@ -29,7 +29,7 @@ KOS_OP_HANDLER(OBJECT_COMPARE_VAR) {
   ops[2] = KosExtra_OBJ(row, 3);   /* borrowed */
 
   PyObject *name = KosExtra_OBJ(row, 2);
-  ops[1] = frame_ns_deref(es, name);
+  ops[1] = frame_ns_deref(ctx, name);
   if (! ops[1])
     RESULT_RAISE();
 
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(OBJECT_COMPARE_VAR) {
   if (unlikely(! result))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

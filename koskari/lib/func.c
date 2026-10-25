@@ -40,6 +40,11 @@ static Py_ssize_t function_compute_simple_arity(
 static PyObject *func_build_template_ns(PyObject *code, PyObject *formals,
                                         PyObject *parent_ns);
 
+static int kos_function_bind_self_if_local(
+    KosFunction *fn,
+    PyObject *frame_ns,
+    PyObject *self);
+
 static PyObject *function_construct(PyTypeObject *type, PyObject *code,
                                     PyObject *formals, PyObject *parent_ns);
 
@@ -161,7 +166,7 @@ static PyMemberDef expression_members[] = {
    a frame.
 */
 static KosOpResult kos_expression_install_core(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     int tail_call) {
 
@@ -173,12 +178,12 @@ static KosOpResult kos_expression_install_core(
     PyObject *agen = KosAsyncGen_NewFromCodeAndNs(code, ns);
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
-  return KosEvalState_InstallCallFrame(es, code, ns, tail_call);
+  return KosContext_InstallCallFrame(ctx, code, ns, tail_call);
 }
 
 
 static KosOpResult kos_vinstall_expression(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -196,7 +201,7 @@ static KosOpResult kos_vinstall_expression(
     return EVAL_RAISE();
   }
 
-  return kos_expression_install_core(es, callable, tail_call);
+  return kos_expression_install_core(ctx, callable, tail_call);
 }
 
 
@@ -211,12 +216,13 @@ static KosOpResult kos_vinstall_expression(
    not in tail position it takes the function's cached frame when one
    is there, else pushes a fresh one; in tail position it refills the
    caller's frame. Any other call binds through the general formals
-   machine. A generator function completes in hand with its new
-   AsyncGenerator. Every installed frame is tagged with the function so
-   its release can cache it.
+   machine: not in tail position into the function's cached frame when
+   one is there, else into a template copy. A generator function
+   completes in hand with its new AsyncGenerator. Every installed frame
+   is tagged with the function so its release can cache it.
 */
 KosOpResult KosFunction_Install(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -237,7 +243,7 @@ KosOpResult KosFunction_Install(
   if (simple && ! tail_call && ! yields) {
     KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
 
-    if (kos_eval_check_frame_room(es, KosEvalState_FRAME(es), 1) < 0)
+    if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0)
       return EVAL_RAISE();
 
     if (cached) {
@@ -245,13 +251,7 @@ KosOpResult KosFunction_Install(
         Py_INCREF(args[i]);
       (void) KosFormals_SimpleStealApply(KosDynFrame_NS(cached), args,
                                          nargs);
-      KosFunction_StoreSelf(callable, KosDynFrame_NS(cached));
-      (void) KosFunction_PopCachedFrame(callable);
-      kos_dyn_push_ready_frame(es, cached);
-      Py_INCREF(callable);
-      KosDynFrame_FN(cached) = callable;
-      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED);
-      return kos_call_installed(es);
+      return kos_call_install_cached_frame(ctx, callable, cached, 0);
     }
 
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(callable, args,
@@ -259,11 +259,53 @@ KosOpResult KosFunction_Install(
     if (! frame_ns)
       return EVAL_RAISE();
     KOS_TRACE_EVENTS_INC(KOS_TE_CALL_SIMPLE_VECTOR);
-    if (! kos_dyn_push_frame_unchecked(es, code, frame_ns))
+    if (! kos_dyn_push_frame_unchecked(ctx, code, frame_ns))
       return EVAL_RAISE();
     Py_INCREF(callable);
-    KosDynFrame_FN(KosEvalState_FRAME(es)) = callable;
-    return kos_call_installed(es);
+    KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
+    return kos_call_installed(ctx);
+  }
+
+  /* A general call binds into a cached frame's namespace, which holds
+     the template state a copy would give. The frame's code passed
+     kos_code_fits_namespace at the frame's first install, and neither
+     has changed since.
+
+     The frame leaves the cache before the bind, where the steal bind
+     above unlinks it only after: the binder can run user code (a
+     by-ref keyword formal's floor test on a dynamic ref), and a call
+     of this function from there must not take the frame being bound.
+     The binder can also fail midway (a bad keyword, a missing
+     argument) with stores already made, where the steal bind fails
+     before any store; the frame then goes back through
+     KosFunction_CacheFrame, which resets the namespace to the template
+     and links it under the cap as the cache is now, or is freed when
+     refused. */
+  if (! simple && ! tail_call && ! yields) {
+    KosDynFrame *cached = KosFunction_CACHED_FRAME(callable);
+
+    if (cached) {
+      KosFunction *fn = (KosFunction *) callable;
+      PyObject *ns = KosDynFrame_NS(cached);
+
+      if (kos_eval_check_frame_room(ctx, KosContext_FRAME(ctx), 1) < 0)
+        return EVAL_RAISE();
+
+      (void) KosFunction_PopCachedFrame(callable);
+      if (KosFormals_VectorApplyFast(KosFunction_FORMALS(fn), ns, args,
+                                     (size_t) nargs, kwnames) < 0
+          || kos_function_bind_self_if_local(fn, ns, callable) < 0) {
+        if (! KosFunction_CacheFrame(callable, cached))
+          kos_dynframe_free(cached);
+        return EVAL_RAISE();
+      }
+
+      KOS_TRACE_EVENTS_INC(KOS_TE_CALL_FRAME_CACHED_GENERAL);
+      kos_dyn_push_ready_frame(ctx, cached);
+      Py_INCREF(callable);
+      KosDynFrame_FN(cached) = callable;
+      return kos_call_installed(ctx);
+    }
   }
 
   if (simple) {
@@ -281,10 +323,10 @@ KosOpResult KosFunction_Install(
     return agen ? EVAL_RETURN(agen) : EVAL_RAISE();
   }
 
-  r = KosEvalState_InstallCallFrame(es, code, frame_ns, tail_call);
+  r = KosContext_InstallCallFrame(ctx, code, frame_ns, tail_call);
   if (r.kind != KOS_RES_RAISE) {
     Py_INCREF(callable);
-    KosDynFrame_FN(KosEvalState_FRAME(es)) = callable;
+    KosDynFrame_FN(KosContext_FRAME(ctx)) = callable;
   }
   return r;
 }
@@ -845,7 +887,7 @@ static PyObject *boundmethod_resolve_function(PyObject *func) {
 
 
 static KosOpResult kos_vinstall_boundmethod(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -859,8 +901,8 @@ static KosOpResult kos_vinstall_boundmethod(
                     "KosBoundMethod eval requires a KosCallable func");
     return EVAL_RAISE();
   }
-  return KosEvalState_CallMethod(
-      es, func, KosBoundMethod_SELF(callable), args, nargs, kwnames,
+  return KosContext_CallMethod(
+      ctx, func, KosBoundMethod_SELF(callable), args, nargs, kwnames,
       tail_call, NULL, NULL);
 }
 
@@ -954,33 +996,68 @@ static Py_hash_t boundmethod_hash(PyObject *self) {
 }
 
 
+/* Self plus up to seven arguments go on the C stack; a longer vector
+   takes a heap buffer. */
+#define BOUNDMETHOD_STACK_ARGS 8
+
+
 /**
-   kc_pycall worker: prepend self and follow the wrapped callable
-   through the generic iteration-node entry.
+   The type's vectorcall entry and its kc_pyvectorcall worker: call the
+   wrapped function with self ahead of the caller's arguments, as one
+   vector. The result is whatever the function's surface returns: a
+   completed value for a Demand family function, a Coroutine for a
+   Function.
+
+   With PY_VECTORCALL_ARGUMENTS_OFFSET the caller lends args[-1]; self
+   goes in that slot for the call and the slot's previous value is put
+   back after it. The flag is not passed on, since that slot is the
+   callee's args[0]. Without the flag, self and the caller's entries
+   (positionals, then keyword values) are copied into a stack buffer,
+   or a heap buffer above BOUNDMETHOD_STACK_ARGS entries.
+
+   Every entry is borrowed, as in CPython's own bound method: the
+   caller holds the arguments and this bound method, which holds func
+   and self, for the duration of the call.
 */
-static PyObject *boundmethod_pycall(
+static PyObject *boundmethod_vectorcall(
     PyObject *self,
-    PyObject *args,
-    PyObject *kwargs) {
+    PyObject *const *args,
+    size_t nargsf,
+    PyObject *kwnames) {
 
+  PyObject *func = KosBoundMethod_FUNC(self);
   PyObject *bound_self = KosBoundMethod_SELF(self);
-  PyObject *bound_args;
-  Py_ssize_t n = args ? PyTuple_GET_SIZE(args) : 0;
+  Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+  Py_ssize_t total = nargs + (kwnames ? PyTuple_GET_SIZE(kwnames) : 0);
+  PyObject *result;
 
-  bound_args = PyTuple_New(1 + n);
-  if (! bound_args)
-    return NULL;
-  Py_INCREF(bound_self);
-  PyTuple_SET_ITEM(bound_args, 0, bound_self);
-  for (Py_ssize_t i = 0; i < n; i++) {
-    PyObject *item = PyTuple_GET_ITEM(args, i);
-    Py_INCREF(item);
-    PyTuple_SET_ITEM(bound_args, 1 + i, item);
+  if (nargsf & PY_VECTORCALL_ARGUMENTS_OFFSET) {
+    PyObject **slot = ((PyObject **) args) - 1;
+    PyObject *prev = *slot;
+
+    *slot = bound_self;
+    result = PyObject_Vectorcall(func, slot, (size_t) (nargs + 1), kwnames);
+    *slot = prev;
+    return result;
   }
 
-  PyObject *result = Koskari_AsyncCall(
-      KosBoundMethod_FUNC(self), bound_args, kwargs);
-  Py_DECREF(bound_args);
+  PyObject *stack[BOUNDMETHOD_STACK_ARGS];
+  PyObject **buf = stack;
+
+  if (total + 1 > BOUNDMETHOD_STACK_ARGS) {
+    buf = PyMem_Malloc((size_t) (total + 1) * sizeof(PyObject *));
+    if (! buf)
+      return PyErr_NoMemory();
+  }
+
+  buf[0] = bound_self;
+  for (Py_ssize_t i = 0; i < total; i++)
+    buf[1 + i] = args[i];
+
+  result = PyObject_Vectorcall(func, buf, (size_t) (nargs + 1), kwnames);
+
+  if (buf != stack)
+    PyMem_Free(buf);
   return result;
 }
 
@@ -995,10 +1072,12 @@ KosEvaluatedTypeObject KosBoundMethodType = {
     .tp_clear = boundmethod_clear,
     .tp_repr = boundmethod_repr,
     .tp_hash = boundmethod_hash,
-    .tp_call = KosCallAdapt_CallAsync,
-    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
-    .tp_doc = "Bound method wrapper. Implements KosCallable by prepending"
-              " self to call arguments.",
+    .tp_call = PyVectorcall_Call,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC
+        | Py_TPFLAGS_HAVE_VECTORCALL,
+    .tp_vectorcall_offset = KosBoundMethod_VECTORCALL_OFFSET,
+    .tp_doc = "Bound method wrapper. Calls its function with self ahead"
+              " of the call arguments.",
     .tp_richcompare = boundmethod_richcompare,
     .tp_members = boundmethod_members,
     .tp_getset = boundmethod_getsets,
@@ -1006,8 +1085,8 @@ KosEvaluatedTypeObject KosBoundMethodType = {
   },
   .kos_call = {
     .kc_vinstall = kos_vinstall_boundmethod,
-    .kc_pycall = boundmethod_pycall,
-    .kc_pyvectorcall = NULL,
+    .kc_pycall = NULL,
+    .kc_pyvectorcall = boundmethod_vectorcall,
   },
 };
 
@@ -1032,6 +1111,7 @@ PyObject *KosBoundMethod_New(PyObject *func, PyObject *self) {
   KosBoundMethod_FUNC(bm) = func;
   Py_INCREF(self);
   KosBoundMethod_SELF(bm) = self;
+  ((KosBoundMethod *) bm)->vectorcall = boundmethod_vectorcall;
   return bm;
 }
 
@@ -1370,7 +1450,6 @@ PyObject *KosFunction_Call(PyObject *self,
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
-  PyObject *coro = NULL;
 
   /* No keywords: ride the vector entry and its simple-bind arm. */
   if (! kwds) {
@@ -1390,9 +1469,7 @@ PyObject *KosFunction_Call(PyObject *self,
   if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
     goto fail;
 
-  coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
-  Py_DECREF(frame_ns);
-  return coro;
+  return KosCoroutine_NewFromFunctionCall(self, frame_ns);
 
  fail:
   Py_XDECREF(frame_ns);
@@ -1527,7 +1604,6 @@ PyObject *KosFunction_VectorCall(
 
   KosFunction *fn = (KosFunction *) self;
   PyObject *frame_ns = NULL;
-  PyObject *coro = NULL;
 
   Py_ssize_t nargs = (Py_ssize_t) PyVectorcall_NARGS(nargsf);
 
@@ -1539,9 +1615,7 @@ PyObject *KosFunction_VectorCall(
     frame_ns = KosFunction_SimpleCallNamespaceFromVector(self, args, nargs);
     if (! frame_ns)
       return NULL;
-    coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
-    Py_DECREF(frame_ns);
-    return coro;
+    return KosCoroutine_NewFromFunctionCall(self, frame_ns);
   }
 
   frame_ns = func_obtain_call_namespace(fn);
@@ -1555,9 +1629,7 @@ PyObject *KosFunction_VectorCall(
   if (kos_function_bind_self_if_local(fn, frame_ns, self) < 0)
     goto fail;
 
-  coro = KosCoroutine_NewFromCode(KosFunction_CODE(fn), frame_ns);
-  Py_DECREF(frame_ns);
-  return coro;
+  return KosCoroutine_NewFromFunctionCall(self, frame_ns);
 
  fail:
   Py_XDECREF(frame_ns);
@@ -1700,7 +1772,14 @@ static PyObject *function_construct(
   KosNamespace_TrackChain(template);
 
   KosFunction_NAME(self) = NULL;
-  ((KosFunction *) self)->vectorcall = KosCallAdapt_VectorAsync;
+
+  /* the type's own vector worker, resolved once here; a type without
+     one leaves the slot NULL and Python calls tp_call instead */
+  {
+    KosCallSlots *slots = KosEvaluated_CallSlots(type);
+    ((KosFunction *) self)->vectorcall =
+        slots ? slots->kc_pyvectorcall : NULL;
+  }
   ((KosFunction *) self)->inspect_signature = NULL;
   ((KosFunction *) self)->creation_annotations = NULL;
   ((KosFunction *) self)->annotations_cache = NULL;
@@ -1782,13 +1861,13 @@ PyObject *KosFunction_NewWithAnnotations(
 
 /**
    Offer a released frame to the function's frame cache.
-   The frame is cached only when a call arm could take it, the cache
-   is under its cap and the frame is provably private: exact Namespace
-   with refcount 1, GC-untracked, no binds dict, and no native
-   handler.  On caching the namespace's raw slots are cleared, the
-   segment is cleared, and the node base is normalized for
-   kos_dyn_push_ready_frame.  The frame's fn field must already be
-   NULL (kos_dynframe_free clears it before offering).
+   The frame is cached only when the cache is under its cap and the
+   frame is provably private: exact Namespace with refcount 1,
+   GC-untracked, no binds dict, and no native handler.  On caching the
+   namespace's raw slots are cleared, the segment is cleared, and the
+   node base is normalized for kos_dyn_push_ready_frame.  The frame's
+   fn field must already be NULL (kos_dynframe_free clears it before
+   offering).
 
    :return: 1 when cached (ownership taken), 0 when refused
 */
@@ -1800,19 +1879,11 @@ int KosFunction_CacheFrame(
   KosDynFrame *head = fn->cached_frame;
   PyObject *ns;
 
-  /* Every consumer of the cache serves a call only when
-     nargs + 1 == simple_arity1. simple_arity1 is the exact positional
-     arity plus one for a function of plain positional formals, and 0
-     for any other shape (defaults, star, keyword-only, positional-only,
-     by-ref), which no call count can match. The self-bind is not a
-     shape: a consumer stores the function into its own slot after the
-     bind when the body names it (KosFunction_StoreSelf). A function no
-     consumer can serve would hold up to KOS_FRAME_CACHE_MAX dead
-     frames for its life, so its offers are refused before any work is
-     done. */
-  if (fn->simple_arity1 == 0)
-    return 0;
-
+  /* Every call shape has a consumer: a simple call steal-binds into
+     a cached frame by slot index, and any other call that is not a
+     tail call binds through the general formals machine into one
+     (KosFunction_Install). The template state the reset below leaves
+     serves both. */
   if (head && KosDynFrame_DEPTH(head) >= KOS_FRAME_CACHE_MAX)
     return 0;
 

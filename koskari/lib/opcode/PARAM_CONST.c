@@ -22,19 +22,19 @@
   the stack. Creates nothing in either store.
 */
 KOS_OP_HANDLER(PARAM_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *cell = kos_param_lookup(KosEvalState_CONTEXT(es), name);
+  PyObject *cell = kos_param_lookup(ctx, name);
   PyObject *value = cell ? KosSymbolicRef_VALUE(cell) : NULL;
 
   if (! value) {
     value = KosExtra_OBJ(row, 1);
   }
 
-  RESULT_PUSH(es, value);
+  RESULT_PUSH(ctx, value);
 }
 
 

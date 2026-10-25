@@ -24,14 +24,14 @@
 */
 
 KOS_OP_HANDLER(CALL_VAR_NAMES) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   Py_ssize_t npos = (Py_ssize_t) KosExtra_IMM(row, 2);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *callable = frame_ns_deref(es, name);
+  PyObject *callable = frame_ns_deref(ctx, name);
   if (! callable)
     RESULT_RAISE();
 
@@ -48,15 +48,15 @@ KOS_OP_HANDLER(CALL_VAR_NAMES) {
 
   PyObject *const *argv = NULL;
   if (ntotal) {
-    argv = KosEvalState_StackTailPtr(es, ntotal);
+    argv = KosContext_StackTailPtr(ctx, ntotal);
     if (! argv) {
       Py_DECREF(callable);
       RESULT_RAISE();
     }
   }
 
-  RESULT_RELAY(es, kos_call_invoke_from_handler(
-      es, tail, callable, NULL, argv, npos, names,
+  RESULT_RELAY(ctx, kos_call_invoke_from_handler(
+      ctx, tail, callable, NULL, argv, npos, names,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED));
 }
 

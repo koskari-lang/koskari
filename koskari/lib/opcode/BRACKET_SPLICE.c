@@ -41,11 +41,11 @@
   Used by compile/quasiquote for a [ ] list holding an unquote-splicing.
 */
 KOS_OP_HANDLER(BRACKET_SPLICE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *tail;
-  PyObject *coll = pair_splice_collect(es, row, "BRACKET_SPLICE", &tail);
+  PyObject *coll = pair_splice_collect(ctx, row, "BRACKET_SPLICE", &tail);
   if (unlikely(! coll))
     RESULT_RAISE();
 
@@ -55,10 +55,10 @@ KOS_OP_HANDLER(BRACKET_SPLICE) {
     /* every segment was empty or nil: bracket-nil, or the stacked tail */
     Py_DECREF(coll);
     if (KosExtra_IMM(row, 1))
-      RESULT_STEAL(es, tail);
+      RESULT_STEAL(ctx, tail);
 
     Py_DECREF(tail);
-    RESULT_PUSH(es, KosBracketNil);
+    RESULT_PUSH(ctx, KosBracketNil);
   }
 
   /* the tail terminates the plain cells after the bracket head */
@@ -89,7 +89,7 @@ KOS_OP_HANDLER(BRACKET_SPLICE) {
   PyObject *result = KosBracketPair_New(items[0], rest);
   Py_DECREF(rest);
   Py_DECREF(coll);
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

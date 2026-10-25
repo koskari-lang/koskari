@@ -37,7 +37,7 @@ import unittest
 import pytest
 
 import koskari.asyncio
-from koskari.lib import Domain, ParamRef
+from koskari.lib import Domain, ParamRef, demand_call
 from koskari.module import load_module_source_async, new_module
 
 
@@ -53,12 +53,12 @@ CAPTURE_SRC = """
 """
 
 
-# Two defers forked from one context, so both resolve against the same
-# domain root scope. Each worker parameterizes `shared` with its own
-# name; barrier B1 forces both extents to be live at the same moment on
-# different threads. After the extents exit, T1 stores with no extent in
-# the way -- which lands in the root scope -- and B2 orders that store
-# before T2's read. B1, B2, and RESULTS are pre-seeded into the module
+# Two defers forked from one context. Each worker parameterizes `shared`
+# with its own name; barrier B1 forces both extents to be live at the
+# same moment on different threads. After the extents exit, T1 stores
+# with no extent in the way -- which lands in the root of the thread
+# running it -- and B2 orders that store before T2's read on its own
+# thread. B1, B2, and RESULTS are pre-seeded into the module
 # namespace.
 SHARED_SRC = """
 (define worker (lambda [name]
@@ -73,6 +73,29 @@ SHARED_SRC = """
     (set! (item RESULTS "after") (parameterq shared "unset")))))
 
 (define probes #[(defer worker "T1") (defer worker "T2")])
+"""
+
+
+# A defer created on the loading thread that stores a parameter with no
+# extent in the way and reads it back: run on another thread, the store
+# lands in that thread's root.
+STORE_SRC = """
+(define probe
+  (defer (lambda []
+    (let [[cell (ref (parameter own_root))]]
+      (cell.store "worker"))
+    (parameterq own_root "unset"))))
+"""
+
+
+# A function that calls out to Python, and one that stores a parameter
+# with no extent in the way: a `with Domain():` block opened in the
+# callout owns the root the nested call stores into.
+CALLOUT_SRC = """
+(define outer (lambda [cb] (cb)))
+(define inner (lambda []
+  (let [[cell (ref (parameter k))]] (cell.store "stored-inner"))
+  (parameterq k "unset")))
 """
 
 
@@ -142,8 +165,8 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         """
         Two threads inside parameterize extents of the same name at the
         same moment each read their own binding, and a store made with no
-        extent in the way reaches the shared root scope and is visible
-        across threads afterward
+        extent in the way lands in the root of the thread running it,
+        which the other thread does not see
         """
 
         seed = {
@@ -168,13 +191,97 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
         # simultaneous extents, private tables: each read its own value
         self.assertEqual(results["T1"], "T1")
         self.assertEqual(results["T2"], "T2")
-        # the fork-shared root cell is a live channel across threads
-        self.assertEqual(results["after"], "cross")
+        # each defer runs under the root of the thread running it: T1's
+        # bare store is T1's thread's and T2 reads nothing
+        self.assertEqual(results["after"], "unset")
+
+    async def test_bare_store_lands_in_the_running_threads_root(self):
+        """
+        A defer created on this thread and run on another stores, with
+        no extent in the way, into the root of the thread running it:
+        a read on that thread after the run sees the value, a read on
+        this thread does not
+        """
+
+        mod = await self.load("param_thread_store", STORE_SRC)
+        probe = vars(mod)["probe"]
+
+        errors = []
+        results = {}
+
+        def run():
+            loop = asyncio.new_event_loop()
+            try:
+                results["run"] = koskari.asyncio.run_until_complete(
+                    loop, probe)
+                results["worker"] = ParamRef("own_root", "none").deref()
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                loop.close()
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(30)
+        self.assertFalse(t.is_alive(), "driver thread hung")
+        self.assertEqual(errors, [])
+        self.assertEqual(results, {"run": "worker", "worker": "worker"})
+        self.assertEqual(ParamRef("own_root", "none").deref(), "none")
+
+    async def test_interleaved_domain_blocks_on_two_tasks(self):
+        """
+        Two asyncio tasks each inside their own `with Domain():` block,
+        interleaved so the first to enter is the first to exit while the
+        other is still open: each reads its own store and exits cleanly,
+        and neither store reaches the thread root
+        """
+
+        gates = [asyncio.Event() for _ in range(3)]
+
+        async def task(name, gate_in, gate_out):
+            with Domain():
+                ParamRef("k", None).store(name)
+                gate_in.set()
+                await gate_out.wait()
+                return ParamRef("k", None).deref()
+
+        t1 = asyncio.create_task(task("one", gates[0], gates[1]))
+        await gates[0].wait()
+        t2 = asyncio.create_task(task("two", gates[1], gates[2]))
+        await gates[1].wait()
+        gates[2].set()
+        self.assertEqual(await asyncio.gather(t1, t2), ["one", "two"])
+        self.assertEqual(ParamRef("k", "none").deref(), "none")
+
+    async def test_domain_block_inside_callout_owns_nested_store(self):
+        """
+        A `with Domain():` block opened in Python code that Koskari called
+        out to is the current domain for Koskari calls made inside it:
+        a bare store from such a call lands in the block's root and the
+        thread root never sees it
+        """
+
+        module = await self.load("callout", CALLOUT_SRC)
+        seen = {}
+
+        def callback():
+            with Domain() as block:
+                seen["current"] = Domain.current_domain() is block
+                seen["inner"] = demand_call(module.inner)
+                seen["block_root"] = list(block.param_scopes()["root"])
+            seen["after"] = ParamRef("k", "unset").deref()
+
+        demand_call(module.outer, callback)
+        self.assertTrue(seen["current"])
+        self.assertEqual(seen["inner"], "stored-inner")
+        self.assertEqual(seen["block_root"], ["k"])
+        self.assertEqual(seen["after"], "unset")
 
     def test_thread_has_no_foreign_ambient(self):
         """
-        A second thread sees none of this thread's ambient state; entering
-        the same Domain object there is the explicit sharing gesture
+        A second thread sees none of this thread's ambient state: its own
+        default Domain has nothing bound; entering the same Domain object
+        there is the explicit sharing gesture
         """
 
         seen = []
@@ -183,7 +290,7 @@ class TestParamThreadIsolation(unittest.IsolatedAsyncioTestCase):
             try:
                 ParamRef("cross_thread").deref()
                 seen.append("no-raise")
-            except RuntimeError:
+            except NameError:
                 seen.append("isolated")
             with dom:
                 seen.append(ParamRef("cross_thread").deref())

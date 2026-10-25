@@ -21,11 +21,10 @@ Koskari native types, predicates, and helper functions
 """
 
 import operator
-from contextlib import contextmanager
 from functools import partial
 
 from .lib import (
-    Domain, FunctionSpec, KoskariSyncViolation, NamespaceSpec, ParamRef,
+    FunctionSpec, KoskariSyncViolation, NamespaceSpec, Parameterize,
     bracket_nil, bracket_pair, cons, gensym, keyword, nil, nilp, pair,
     symbol)
 
@@ -48,43 +47,27 @@ __all__ = (
 )
 
 
-@contextmanager
-def parameterize(**bindings):
+def parameterize(mapping=None, /, **bindings):
     """
     Bind parameters for the extent of a Python block.
 
-    The host-side counterpart of the koskari ``parameterize`` special:
-    ensures a Domain is active (entering a fresh one when none is), stores
-    each binding through its ``ParamRef``, and restores the prior state on
-    exit. Values land in the root scope of the active domain, the channel
-    reserved for host pre-defines, so koskari code invoked inside the
-    block -- including macro bodies run by the compiler -- reads them
-    through normal parameter resolution.
+    The Python-side counterpart of the koskari parameterize special.
+    Inside the block a read of each named parameter, from Python or
+    from koskari code called within it, sees the bound value; at exit
+    the prior binding answers again. A koskari context, coroutine or
+    asyncio task created inside the block keeps the bindings applied
+    at its creation. Blocks belong to the running stack: a thread's
+    synchronous stack, or one asyncio task.
 
-    :param bindings: parameter name to value mappings
+    :param mapping: parameter names (str or symbol) to values, for
+        names that are not Python identifiers
+    :param bindings: parameter names to values
+    :return: the context manager
     """
 
-    entered = None
-    if Domain.current_domain() is None:
-        entered = Domain()
-        entered.__enter__()
-
-    saved = []
-    try:
-        for name, value in bindings.items():
-            ref = ParamRef(name)
-            had = not ref.empty
-            saved.append((ref, had, ref.deref() if had else None))
-            ref.store(value)
-        yield
-    finally:
-        for ref, had, prior in reversed(saved):
-            if had:
-                ref.store(prior)
-            else:
-                ref.clear()
-        if entered is not None:
-            entered.__exit__(None, None, None)
+    if mapping:
+        bindings = {**mapping, **bindings}
+    return Parameterize(bindings)
 
 
 class TypePredicate(partial):

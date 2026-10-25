@@ -22,24 +22,24 @@
   holds, the failed value included by the push itself.
 */
 KOS_OP_HANDLER(VAR3) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *name;
 
   name = KosExtra_OBJ(row, 0);
-  PyObject *a = frame_ns_deref(es, name);
+  PyObject *a = frame_ns_deref(ctx, name);
   if (unlikely(! a))
     RESULT_RAISE();
 
   name = KosExtra_OBJ(row, 1);
-  PyObject *b = frame_ns_deref(es, name);
+  PyObject *b = frame_ns_deref(ctx, name);
   if (unlikely(! b)) {
     Py_DECREF(a);
     RESULT_RAISE();
   }
 
   name = KosExtra_OBJ(row, 2);
-  PyObject *c = frame_ns_deref(es, name);
+  PyObject *c = frame_ns_deref(ctx, name);
   if (unlikely(! c)) {
     Py_DECREF(a);
     Py_DECREF(b);
@@ -48,9 +48,9 @@ KOS_OP_HANDLER(VAR3) {
 
   PyObject *vals[3] = { a, b, c };
   if (unlikely(kos_stack_push_steal_n_fast(
-                   KosEvalState_BLOCK(es), vals, 3) < 0))
+                   KosContext_BLOCK(ctx), vals, 3) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

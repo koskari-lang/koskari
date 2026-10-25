@@ -20,8 +20,8 @@ Steps 5-7 remain.
 
 A call into Koskari made from Koskari flattens: it installs into the
 running evaluator and delivers its result through a resume. A new
-context or eval state running a nested `koskari_eval` for such a call is
-a bug. Recorded in `koskari/lib/CLAUDE.md` (Core invariant: flattening).
+context running a nested `koskari_eval` for such a call is a bug.
+Recorded in `koskari/lib/CLAUDE.md` (Core invariant: flattening).
 
 The Python boundary is outside the invariant. Calling a type is a
 Python-boundary allocator with native rules (`type_call` -> `tp_new` ->
@@ -90,7 +90,7 @@ frames and 1,072 bytes of C stack:
 | 240 | `kos_call_body_window_owned_tail` |
 | 224 | `koskari_eval` |
 | 160 | `demand_sync_ex` |
-| 160 | `KosEvalState_Call` |
+| 160 | `KosContext_Call` |
 | 80 | `procedure_kos_vinstall` |
 | 80 | `kos_vinstall_boundmethod` |
 | 64 | `op_CALL_ATTR` |
@@ -129,12 +129,12 @@ a tuple and dict for `demand_sync_ex`, which nested an eval, or refused
 the callable (D4).
 
 **D3. No call-or-install entry for a non-resume context.** Fixed in the
-working tree. `KosEvalState_CallResult` sets its resume on the current
+working tree. `KosEvalState_CallResult` (removed since by 678c7f31) sets its resume on the current
 frame (`eval/eval_call.c:290`, `:318-335`); inside an install slot that
 is the calling bytecode frame, and the return fast paths assume only
 code-less frames carry resumes (`eval.c:2539-2548`). Each wrapper
 hand-rolled the value-in-hand case and grew a packed fallback.
-`KosEvalState_CallInto` (`eval/eval_call.c`, declared in `eval.h`)
+`KosContext_CallInto` (`eval/eval_call.c`, declared in `eval.h`)
 provides the code-less frame.
 
 **D4. The boundary refuses most KosCallables.** Fixed in the working
@@ -275,7 +275,7 @@ steppers), `iterate.c:1087` (the `KosPyIter` Python-side drive),
 - `tail_call` was dropped by the `Procedure` and non-flattenable
   `Demand` installs (`CallInto` passed 0), so a tail call through either
   wrapper cost two frames per level. Fixed (`540e089d`):
-  `KosEvalState_InstallNativeFrame` reuses the live frame on a tail
+  `KosContext_InstallNativeFrame` reuses the live frame on a tail
   call, and `Demand` forwards `tail_call` to the inner's install.
 - `CallInto` reviewed for leaks, double frees, and stranded frames on
   the value-in-hand, settle, installed-callee, raise-before-install,
@@ -301,12 +301,12 @@ Committed as WIP (`8d59c673`):
 - `eval.c`: `Py_EnterRecursiveCall(" in koskari_eval")` after the
   fast-slot refusal, `Py_LeaveRecursiveCall()` before the context
   release.
-- `eval.h`, `eval/eval_call.c`: `KosEvalState_CallInto`. Pushes a
+- `eval.h`, `eval/eval_call.c`: `KosContext_CallInto`. Pushes a
   code-less frame with no resume set, ORs `frame_flags` into it, calls
   through `KosEvalState_CallResult` with the resume, and stages a value
   back in hand for the resume (REPROLOGUE). It never reports RETURN. The
   frame starts with no resume set: a frame with one set makes
-  `KosEvalState_Call` turn NORMAL into REPROLOGUE (`eval/eval_call.c:199-201`,
+  `KosContext_Call` turn NORMAL into REPROLOGUE (`eval/eval_call.c:199-201`,
   `callable_promote_normal` `callable.c:73`), which `CallResult` reads
   as an installed callee, skipping settling.
 - `object.c`: `procedure_resume` / `procedure_resume_kind` (drop the
@@ -341,7 +341,7 @@ Committed as WIP (`511636b3`):
 Committed as WIP (`33226f50`):
 
 - Step 3: `kospartial_kos_vinstall` (`partial.c`) calls every inner
-  through `KosEvalState_CallResult` / `KosEvalState_CallArgs`;
+  through `KosEvalState_CallResult` / `KosContext_CallArgs`;
   `kospartial_inner_is_flattenable` removed;
   `tests/reproducers/test_partial_flatten.py`,
   `tests/reproducers/scripts/partial_flatten.ki`.
@@ -539,7 +539,7 @@ corrected (done).
 `kospartial_kos_vinstall` no longer splits on whether the inner wants a
 frame. It merges the bound tuple and dict with the call vector into
 one borrowed vector (`KosArgSpread_InitMerged`) and calls
-`KosEvalState_Call`, which handles a plain Python callable
+`KosContext_Call`, which handles a plain Python callable
 (`PyObject_Vectorcall`, then the push-or-await of its result), so a
 coroutine result is awaited. `kospartial_inner_is_flattenable` is
 removed; `KosPartial_Call` remains for `tp_call` only.
@@ -558,17 +558,17 @@ tail position.
   PyObject **out)`.
 - Not a KosCallable: `PyObject_Vectorcall`, then
   `demand_step_python_result`. Unchanged semantics.
-- A KosCallable: the boundary's one context and eval state;
-  `CallInto(&es, callable, args, nargs, kwnames, &demand_resume_kind,
+- A KosCallable: the boundary's one context;
+  `CallInto(ctx, callable, args, nargs, kwnames, &demand_resume_kind,
   NULL, KOS_FRAME_DEMAND)`; freeze on every path. `RAISE` / `FATAL`
   fail. `AWAIT` clears the stored await iterator
-  (`KosEvalState_PythonAwaitClearIter`, as `eval_event_await` does at
+  (`KosContext_PythonAwaitClearIter`, as `eval_event_await` does at
   `eval.c:2482`), sets `KoskariSyncViolation`, and fails. `NORMAL` /
   `REPROLOGUE`: run `koskari_eval`; its RETURN goes to
   `demand_finish_koskari_value`; its AWAIT / YIELD keep the existing
   "missing deny guard" error. `CallInto` never reports RETURN: a value
   in hand is staged, frozen onto the code-less frame's stack, and
-  delivered by the prologue (`eval/eval_state.c:119-131`,
+  delivered by the prologue (`eval/eval_state.c:119-131`, now `eval/eval_drive.c`,
   `eval.c:3446-3450` -> `eval_step_resume_delivery` `:3110-3125`). A
   yielding callable delivers its generator the same way;
   `demand_finish_koskari_value` (`demand.c:181-195`) passes a provider
@@ -649,7 +649,7 @@ since CPython counts two units per level on top of the guard's one.
 | 240 | `kos_call_body_window_owned_tail` | Koskari |
 | 224 | `koskari_eval` | Koskari |
 | 176 | `Koskari_DemandSync` | Koskari |
-| 160 | `KosEvalState_Call` | Koskari |
+| 160 | `KosContext_Call` | Koskari |
 | 144 | `demand_sync_vector` | Koskari |
 | 144 | `slot_tp_init` | CPython |
 | 96 | `_PyObject_Call` | CPython |
@@ -661,7 +661,7 @@ since CPython counts two units per level on top of the guard's one.
 
 Koskari's frames are 1,104 of the 1,424 bytes, split across two runs:
 the call-out (`op_CALL_FAST` -> `kos_call_invoke_body` ->
-`kos_call_body_window_owned_tail` -> `KosEvalState_Call`, 464 bytes, all
+`kos_call_body_window_owned_tail` -> `KosContext_Call`, 464 bytes, all
 live while CPython runs) and the re-entry (`boundmethod_pycall` ->
 `procedure_tp_call` -> `Koskari_DemandSync` -> `demand_sync_vector` ->
 `koskari_eval`, 640 bytes).
@@ -686,9 +686,9 @@ of "call, then deliver", and each makes the call deep inside whichever C
 path decided on it, so every frame of that path stays live under
 CPython. Call-outs: the opcode dispatch's plain-Python branch
 (`kos_call_invoke_impl`); `kos_call_dispatch`'s plain-Python arm,
-shared by `KosEvalState_Call`, `CallArgs` and `CallMethod`, with
+shared by `KosContext_Call`, `CallArgs` and `CallMethod`, with
 `tail_prep_py_call` and `deliver_call_value` in `kos_call_push`;
-`KosEvalState_Call`'s value-in-hand sorting (`kos_entry_value`); the
+`KosContext_Call`'s value-in-hand sorting (`kos_entry_value`); the
 transforms' per-element fast paths.
 Re-entries: a CPython slot binds a `KosBoundMethod` per call, which
 goes `boundmethod_pycall` -> the wrapper's `kc_pycall` -> tuple ->
@@ -697,7 +697,7 @@ state, `CallInto`, freeze) -> `koskari_eval`.
 
 1. **One Python call for the native entries.** Done: `kos_call_dispatch`
    (`eval/eval_call.c`) is the single non-KosCallable arm of
-   `KosEvalState_Call`, `CallArgs` and `CallMethod`, with the one copy
+   `KosContext_Call`, `CallArgs` and `CallMethod`, with the one copy
    of instance-call injection (`kos_instance_call_target`). The
    transforms' inline calls stay: they are the per-element fast path,
    and routing them through a resume would add a resume frame per
@@ -712,7 +712,7 @@ state, `CallInto`, freeze) -> `koskari_eval`.
    off the operand stack. The CALL family's finish is the call; a Python
    call there runs from a threaded step with the handler and dispatch
    frames gone. Prerequisite: the resumable-reads row split for the CALL
-   family. No call record on the eval state (it would grow
+   family. No call record on the context (it would grow
    `koskari_eval`'s frame, the frame being shrunk) and no parallel
    per-opcode steps.
 3. **Re-entry.** Done in the working tree.
@@ -732,7 +732,7 @@ state, `CallInto`, freeze) -> `koskari_eval`.
    - The boundary's call is recorded on the fresh `KosContext`
      (`entry_call`, a borrowed `KosEntryCall`, beside the existing throw
      injection), and `koskari_eval`'s out-of-line phase 0
-     (`eval_phase_entry_call`) installs it on its own eval state.
+     (`eval_phase_entry_call`) installs it on the context.
      Removed: `demand_run_koskari`'s eval state, thaw/freeze, and
      pre-eval result sorting; an `AWAIT` before the eval now goes
      through `apply_kos_op_result`, where the demand mark denies it.

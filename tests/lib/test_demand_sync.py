@@ -18,16 +18,20 @@ Tests for demand_call: invoke Koskari callables synchronously without suspension
 :license: GNU General Public License v3
 """
 
+import functools
 import gc
 import operator
+import sys
 import unittest
 import weakref
 
 import pytest
 
 from koskari.lib import (
-    AsyncGenerator, BoundMethod, FormalsSpec, KoskariSyncViolation,
-    KosPartial, demand, demand_apply, demand_call)
+    AsyncGenerator, BoundMethod, Coroutine, Domain, FormalsSpec,
+    KoskariSyncViolation, KosPartial, ParamRef, demand, demand_apply,
+    demand_call)
+from koskari.module import load_module_source_async, new_module
 from tests import make_callable
 from tests.lib.opcode import build_code, build_expr
 
@@ -158,6 +162,34 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
         )
         fn = make_callable(code, base_ns, FormalsSpec())
         return fn
+
+
+    async def test_returned_awaitable_is_denied_on_every_call_shape(self):
+        """
+        a Function returning an awaitable that would swallow the
+        violation is denied the same way on its first call, through the
+        demand root frame's resume, and on every later call, as the root
+        frame itself: the awaitable is never thrown into
+        """
+        module = new_module("demand_every_shape")
+        vars(module)["__file__"] = "<demand_every_shape>"
+        await load_module_source_async(
+            module, "(define give [a] a)", layout=False)
+        give = vars(module)["give"]
+
+        def _it():
+            try:
+                yield 1
+            except KoskariSyncViolation:
+                return "from_iter"
+
+        class Swallows:
+            def __await__(self):
+                return _it()
+
+        for _ in range(3):
+            with self.assertRaises(KoskariSyncViolation):
+                demand_call(give, Swallows())
 
 
     async def test_function_closure_no_args_via_await(self):
@@ -327,6 +359,45 @@ class TestDemandYieldingFunction(unittest.TestCase):
         self.assertIn('suspension', str(ctx.exception))
 
 
+    def test_yield_from_suspending_async_delegate_raises_violation(self):
+        """
+        A generator delegating through yield-from to a python async
+        iterator whose step suspends raises KoskariSyncViolation when
+        consumed synchronously
+        """
+
+        import asyncio
+
+        class SleepingCounter:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                await asyncio.sleep(0)
+                return 1
+
+        _, base_ns = build_expr(
+            [["CONST", 0], ["RETURN", 1]],
+            local_syms=('a',),
+            values={'a': SleepingCounter()},
+        )
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["YIELD_FROM", 0],
+                ["RETURN", 0],
+            ],
+            local_syms=(),
+            closure_syms=('a',),
+            name='yield_from_sleeping_counter',
+        )
+        fn = make_callable(code, base_ns, FormalsSpec())
+        gen = demand_call(fn)
+        with self.assertRaises(KoskariSyncViolation) as ctx:
+            next(iter(gen))
+        self.assertIn('suspension', str(ctx.exception))
+
+
 class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
     """
     In-eval denial: KoskariSyncViolation raised at the AWAIT site so
@@ -475,7 +546,6 @@ class TestDemandSyncTryExceptAwaitInject(unittest.TestCase):
         self.assertTrue(demand_call(fn))
 
 
-
 class TestDemandSyncPlainPython(unittest.TestCase):
     """
     demand_call on plain Python callables, including coroutine functions.
@@ -574,6 +644,33 @@ class TestDemandWrapperAndApply(unittest.TestCase):
         dfb = demand(fn)
         self.assertIs(dfb, demand(dfb))
         self.assertIs(dfb.__wrapped__, fn)
+
+
+    def test_wrapper_drops_the_domain_after_the_call(self):
+        """
+        A wrapper called inside a with-Domain block keeps nothing of
+        that domain once the call returns: the domain and its root
+        values are collectable when the block exits
+        """
+
+        class Marker:
+            pass
+
+        code, ns = build_expr([
+            ["CONST", 42],
+            ["RETURN", 1],
+        ])
+        wrapped = demand(make_callable(code, ns))
+        marker = Marker()
+        marker_ref = weakref.ref(marker)
+
+        with Domain():
+            ParamRef("demand_cached_domain_key").store(marker)
+            self.assertEqual(wrapped(), 42)
+        del marker
+        gc.collect()
+        self.assertIsNone(marker_ref())
+        self.assertEqual(wrapped(), 42)
 
 
 class TestDemandInEvalDenial(unittest.TestCase):
@@ -908,6 +1005,180 @@ class TestDemandDescriptor(unittest.TestCase):
         self.assertIn('suspension', str(ctx.exception))
 
 
+BOUND_SRC = """
+(define gather (lambda [self a b: 0 *: rest] #(self a b rest)))
+"""
+
+
+def same(fn):
+    """
+    The function itself, for a class attribute that binds as a plain
+    Function
+    """
+
+    return fn
+
+
+class BoundMethodPythonCalls:
+    """
+    A BoundMethod held by Python and called from Python; subclasses
+    choose the class attribute (wrap) and how a call's result is
+    delivered (settle)
+    """
+
+    async def held(self):
+        """
+        A fresh instance and its BoundMethod over gather
+        """
+
+        module = new_module("bound_method_call")
+        vars(module)["__file__"] = "<bound_method_call>"
+        await load_module_source_async(module, BOUND_SRC, layout=False)
+        attr = self.wrap(vars(module)["gather"])
+
+        class C:
+            method = attr
+
+        obj = C()
+        return obj, attr, obj.method
+
+
+    async def test_positionals(self):
+        """
+        positionals follow self
+        """
+
+        obj, _, m = await self.held()
+        self.assertIsInstance(m, BoundMethod)
+        self.assertEqual(await self.settle(m(1, 2)), (obj, 1, 2, ()))
+
+
+    async def test_keywords(self):
+        """
+        a keyword argument reaches its formal
+        """
+
+        obj, _, m = await self.held()
+        self.assertEqual(await self.settle(m(1, b=2)), (obj, 1, 2, ()))
+
+
+    async def test_nine_positionals(self):
+        """
+        nine positionals follow self in order
+        """
+
+        obj, _, m = await self.held()
+        self.assertEqual(
+            await self.settle(m(1, 2, 3, 4, 5, 6, 7, 8, 9)),
+            (obj, 1, 2, (3, 4, 5, 6, 7, 8, 9)))
+
+
+    async def test_nine_positionals_unpacked(self):
+        """
+        nine positionals unpacked from a tuple follow self in order
+        """
+
+        obj, _, m = await self.held()
+        args = (1, 2, 3, 4, 5, 6, 7, 8, 9)
+        self.assertEqual(
+            await self.settle(m(*args)),
+            (obj, 1, 2, (3, 4, 5, 6, 7, 8, 9)))
+
+
+    async def test_star_args(self):
+        """
+        m(*args) passes the tuple's items after self
+        """
+
+        obj, _, m = await self.held()
+        args = (1, 2, 3)
+        self.assertEqual(await self.settle(m(*args)), (obj, 1, 2, (3,)))
+
+
+    async def test_star_args_and_keywords(self):
+        """
+        m(*args, **kwds) passes the items after self and the keywords
+        to their formals
+        """
+
+        obj, _, m = await self.held()
+        args = (1,)
+        kwds = {"b": 3}
+        self.assertEqual(
+            await self.settle(m(*args, **kwds)), (obj, 1, 3, ()))
+
+
+    async def test_partial_positional(self):
+        """
+        functools.partial binding a positional of a bound method
+        """
+
+        obj, _, m = await self.held()
+        part = functools.partial(m, 1)
+        self.assertEqual(await self.settle(part(2)), (obj, 1, 2, ()))
+
+
+    async def test_partial_keyword(self):
+        """
+        functools.partial binding a keyword of a bound method
+        """
+
+        obj, _, m = await self.held()
+        part = functools.partial(m, b=5)
+        self.assertEqual(await self.settle(part(1)), (obj, 1, 5, ()))
+
+
+    async def test_func_and_self(self):
+        """
+        __func__ is the class attribute and __self__ the instance,
+        before and after a call
+        """
+
+        obj, attr, m = await self.held()
+        self.assertIs(m.__func__, attr)
+        self.assertIs(m.__self__, obj)
+        await self.settle(m(1, 2))
+        self.assertIs(m.__func__, attr)
+        self.assertIs(m.__self__, obj)
+
+
+class TestBoundMethodOverDemandPythonCall(
+        BoundMethodPythonCalls,
+        unittest.IsolatedAsyncioTestCase):
+    """
+    A BoundMethod over a Demand returns the value from the call
+    """
+
+    wrap = staticmethod(demand)
+
+
+    async def settle(self, result):
+        """
+        The call's value as returned
+        """
+
+        return result
+
+
+class TestBoundMethodOverFunctionPythonCall(
+        BoundMethodPythonCalls,
+        unittest.IsolatedAsyncioTestCase):
+    """
+    A BoundMethod over a Function returns a coroutine from the call
+    """
+
+    wrap = staticmethod(same)
+
+
+    async def settle(self, result):
+        """
+        The value of the call's coroutine
+        """
+
+        self.assertIsInstance(result, Coroutine)
+        return await result
+
+
 class TestKoskariIterPyIter(unittest.TestCase):
     """
     Koskari PUSH_FOREACH/ITER_NEXT over a KosPyIter.
@@ -1237,6 +1508,375 @@ class TestDemandBoundaryCallables(unittest.TestCase):
 
         fn = _concat_fn()
         self.assertEqual(demand_call(KosPartial(fn, b="y"), "x"), "xy")
+
+
+ROOT_SRC = """
+(define add2 (lambda [a b] (+ a b)))
+
+(define fail2 (lambda [a b] (raise (ValueError (+ a b)))))
+
+(define fact2 (lambda fact2 [n acc]
+  (if (== n 0) acc (fact2 (- n 1) (* acc n)))))
+
+(define descend (lambda [via n]
+  (if (== n 0) 0 (+ 1 (via n)))))
+
+(define escape2 (lambda [a b]
+  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
+
+(define tuple2_probe (lambda [probe a b] (probe) #(a b)))
+
+(define kw_probe (lambda [probe a b: 0] (probe) #(a b)))
+
+(define hook (list))
+(define byref2 (lambda [a &n: 0 b: 0] #(a n b)))
+(define box2 #{"v": 1})
+(define empty_check2 (lambda [] (when hook ((item hook 0))) False))
+(bind! reentering2 (dynamic { (item box2 "v") } { (set! (item box2 "v") %1) }
+                            { None } empty_check2))
+(define call_byref2 (lambda [a b] (byref2 a n: &reentering2 b: b)))
+
+(define await2 (lambda [a b] (await (a)) b))
+
+(define bind_gq (lambda [v probe]
+  (parameterize [[gq v]]
+    (return (probe)))))
+
+(define-class Box ()
+  (begin
+    (define __init__ [self x]
+      (set-attr self x x))))
+"""
+
+
+def frame_node_count():
+    """
+    The number of FRAME nodes on the innermost running context's chain
+    """
+
+    snap = Domain.current_domain().get_contexts()[0].snapshot()
+    return sum(1 for node in snap["dynnodes"] if node["kind"] == "FRAME")
+
+
+class RootSuspender:
+    def __await__(self):
+        yield
+        return None
+
+
+class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
+    """
+    A Demand over a simple two-argument function called from Python:
+    every call after the first runs the function as the drive's root
+    frame
+    """
+
+    async def load(self):
+        module = new_module("demand_root")
+        vars(module)["__file__"] = "<demand_root>"
+        await load_module_source_async(module, ROOT_SRC, layout=False)
+        return vars(module)
+
+
+    async def test_return_value(self):
+        """
+        each call returns its own sum
+        """
+
+        mod = await self.load()
+        d = demand(mod["add2"])
+        self.assertEqual(d(1, 2), 3)
+        self.assertEqual(d(10, 20), 30)
+        self.assertEqual(d("x", "y"), "xy")
+
+
+    async def test_raise_propagates(self):
+        """
+        a raise in the function reaches Python with its type, and the
+        wrapper stays usable
+        """
+
+        mod = await self.load()
+        d = demand(mod["fail2"])
+        for a, b in ((1, 2), (3, 4)):
+            with self.assertRaises(ValueError) as caught:
+                d(a, b)
+            self.assertEqual(caught.exception.args, (a + b,))
+        self.assertEqual(demand(mod["add2"])(5, 6), 11)
+
+
+    async def test_function_naming_itself(self):
+        """
+        a named lambda recursing through its own name, called twice
+        """
+
+        mod = await self.load()
+        d = demand(mod["fact2"])
+        self.assertEqual(d(5, 1), 120)
+        self.assertEqual(d(6, 1), 720)
+        self.assertEqual(d(0, 7), 7)
+
+
+    async def test_reentry_through_python(self):
+        """
+        the function calls back into Python, which calls the same Demand
+        again, three levels deep
+        """
+
+        mod = await self.load()
+        d = demand(mod["descend"])
+        seen = []
+
+        def via(n):
+            seen.append(n)
+            return d(via, n - 1)
+
+        self.assertEqual(d(via, 3), 3)
+        self.assertEqual(seen, [3, 2, 1])
+        self.assertEqual(d(via, 2), 2)
+        self.assertEqual(seen, [3, 2, 1, 2, 1])
+
+
+    async def test_call_cc_escape(self):
+        """
+        a call/cc escape out of the callee's inner lambda returns the
+        escaped value into the rest of the callee's body
+        """
+
+        mod = await self.load()
+        d = demand(mod["escape2"])
+        self.assertEqual(d(1, 2), 4)
+        self.assertEqual(d(10, 20), 31)
+
+
+    async def test_first_call_general_second_root(self):
+        """
+        a fresh function's first call runs its own frame above the demand
+        root frame; the second runs as the drive's root frame
+        """
+
+        mod = await self.load()
+        d = demand(mod["tuple2_probe"])
+        counts = []
+
+        def probe():
+            counts.append(frame_node_count())
+
+        self.assertEqual(d(probe, 1, 2), (1, 2))
+        self.assertEqual(d(probe, 3, 4), (3, 4))
+        self.assertEqual(counts, [2, 1])
+
+
+    async def test_keyword_call_runs_as_root(self):
+        """
+        a call passing a keyword runs its own frame above the demand root
+        frame the first time, and as the drive's root frame the second
+        """
+
+        mod = await self.load()
+        d = demand(mod["kw_probe"])
+        counts = []
+
+        def probe():
+            counts.append(frame_node_count())
+
+        self.assertEqual(d(probe, 1, b=2), (1, 2))
+        self.assertEqual(d(probe, 3, b=4), (3, 4))
+        self.assertEqual(counts, [2, 1])
+
+
+    async def test_bad_keyword_then_good_call(self):
+        """
+        a call the binder refuses raises TypeError, and the wrapper serves
+        the next good call
+        """
+
+        mod = await self.load()
+        d = demand(mod["kw_probe"])
+
+        def probe():
+            pass
+
+        with self.assertRaises(TypeError):
+            d(probe, 1, nope=2)
+        self.assertEqual(d(probe, 1), (1, 0))
+        with self.assertRaises(TypeError):
+            d(probe)
+        with self.assertRaises(TypeError):
+            d()
+        self.assertEqual(d(probe, 5, b=6), (5, 6))
+
+
+    async def test_reentry_from_inside_the_bind(self):
+        """
+        the emptiness check on a by-ref keyword's dynamic ref calls the
+        same function again through Python while the outer call binds
+        """
+
+        mod = await self.load()
+        d = demand(mod["byref2"])
+        outer = demand(mod["call_byref2"])
+        seen = []
+        mod["hook"].append(lambda: seen.append(d(100, b=200)))
+
+        self.assertEqual(outer(1, 2), (1, 1, 2))
+        self.assertEqual(seen, [(100, 0, 200)])
+        self.assertEqual(outer(3, 4), (3, 1, 4))
+        self.assertEqual(seen, [(100, 0, 200), (100, 0, 200)])
+
+
+    async def test_root_arm_keeps_demand_denial(self):
+        """
+        a suspending await raises KoskariSyncViolation on the first call
+        and on the second, which runs as the drive's root frame
+        """
+
+        mod = await self.load()
+        d = demand(mod["await2"])
+        for value in (1, 2):
+            with self.assertRaises(KoskariSyncViolation):
+                d(RootSuspender, value)
+
+
+    async def test_parameterize_binding_ends_with_the_call(self):
+        """
+        a parameterize open at the function's return is unwound: the
+        binding is seen inside the call and absent after it
+        """
+
+        mod = await self.load()
+        d = demand(mod["bind_gq"])
+
+        def probe():
+            return ParamRef("gq").deref()
+
+        with Domain():
+            for value in (5, 6):
+                self.assertEqual(d(value, probe), value)
+                with self.assertRaises(NameError):
+                    ParamRef("gq").deref()
+
+
+    async def test_simple_init_from_python(self):
+        """
+        a class with a simple __init__ instantiated twice from Python
+        """
+
+        mod = await self.load()
+        box = mod["Box"]
+        first = box(3)
+        second = box("y")
+        self.assertEqual(first.x, 3)
+        self.assertEqual(second.x, "y")
+
+
+HANDLED_SRC = """
+(define report (lambda [probe] (probe)))
+
+(define handle_inner (lambda [probe]
+  (try
+    (raise (ValueError "inner"))
+    ([ValueError] (probe)))))
+"""
+
+
+def handled_now():
+    """
+    The exception sys.exc_info() reports, or None
+    """
+
+    return sys.exc_info()[1]
+
+
+class TestDemandHandledException(unittest.IsolatedAsyncioTestCase):
+    """
+    A Demand called from Python runs with its own handled exception
+    (sys.exc_info): it neither sees the caller's nor leaves its own
+    behind
+    """
+
+    async def load(self):
+        module = new_module("demand_handled")
+        vars(module)["__file__"] = "<demand_handled>"
+        await load_module_source_async(module, HANDLED_SRC, layout=False)
+        return vars(module)
+
+
+    async def test_caller_exception_hidden_inside_and_back_after(self):
+        """
+        called inside an except block, the function sees no handled
+        exception, and the caller sees its own again after each call
+        """
+
+        mod = await self.load()
+        d = demand(mod["report"])
+        try:
+            raise KeyError("caller")
+        except KeyError as caught:
+            for _ in range(2):
+                self.assertIsNone(d(handled_now))
+                self.assertIs(sys.exc_info()[1], caught)
+
+
+    async def test_handled_inside_leaves_caller_empty(self):
+        """
+        a function that raises and handles its own exception leaves the
+        caller with no handled exception
+        """
+
+        mod = await self.load()
+        d = demand(mod["handle_inner"])
+        for _ in range(2):
+            seen = d(handled_now)
+            self.assertIsInstance(seen, ValueError)
+            self.assertEqual(seen.args, ("inner",))
+            self.assertEqual(sys.exc_info(), (None, None, None))
+
+
+    async def test_handled_inside_restores_caller_exception(self):
+        """
+        called inside an except block, a function that handles its own
+        exception sees its own inside, and the caller sees its own after
+        """
+
+        mod = await self.load()
+        d = demand(mod["handle_inner"])
+        try:
+            raise KeyError("caller")
+        except KeyError as caught:
+            for _ in range(2):
+                seen = d(handled_now)
+                self.assertIsInstance(seen, ValueError)
+                self.assertIs(sys.exc_info()[1], caught)
+
+
+    async def test_generator_caller_handler_not_left_in_generator(self):
+        """
+        a Python generator driven from inside an except block calls the
+        function: the generator still sees the caller's exception after
+        the call, and none once resumed outside any handler
+        """
+
+        mod = await self.load()
+        d = demand(mod["report"])
+        seen = []
+
+        def gen():
+            d(handled_now)
+            seen.append(sys.exc_info()[1])
+            yield
+            seen.append(sys.exc_info()[1])
+            yield
+
+        g = gen()
+        try:
+            raise KeyError("caller")
+        except KeyError as caught:
+            next(g)
+            self.assertIs(seen[0], caught)
+
+        next(g)
+        self.assertIsNone(seen[1])
 
 
 # The end.

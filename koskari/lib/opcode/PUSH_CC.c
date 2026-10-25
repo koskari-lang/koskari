@@ -20,15 +20,15 @@
 */
 
 KOS_OP_HANDLER(PUSH_CC) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   /* the continuation resumes after the POP_CC closing the extent */
   uint32_t pop_pc;
-  if (kos_site_extent_close(es, insn, KOS_EXT_CC, "PUSH_CC", &pop_pc) < 0)
+  if (kos_site_extent_close(ctx, insn, KOS_EXT_CC, "PUSH_CC", &pop_pc) < 0)
     RESULT_RAISE();
-  if (! kos_dyn_push_cc(es, pop_pc + 1u)) {
+  if (! kos_dyn_push_cc(ctx, pop_pc + 1u)) {
     RESULT_RAISE();
   }
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

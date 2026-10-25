@@ -19,7 +19,7 @@
 */
 KOS_OP_HANDLER(LABEL) {
   (void) insn;
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

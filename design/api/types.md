@@ -288,8 +288,8 @@ nodes on the dynamic chain (TRY, FINALLY, LOOP, FOREACH). See evaluator.md for d
 - Region kinds (formerly `KosDynRegion` with `KosRegionStyle`; now separate kinds):
   - `KOS_DYN_TRY`: try block (handler_pc, enabled)
   - `KOS_DYN_FINALLY`: finally block (handler_pc, enabled, handling_raise)
-  - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, enabled)
-  - `KOS_DYN_FOREACH`: for-each loop (extends LOOP with iter, exhausted, iter_next_else_pc)
+  - `KOS_DYN_LOOP`: while loop (break_pc, continue_pc, result; enabled is the `KOS_DYN_CAP_LOOP_REGION` capability)
+  - `KOS_DYN_FOREACH`: for-each loop (the LOOP record plus its `KosIterRequest`: iter, islots, kind)
 - `KosXferGoal` (`xfer_goal.h`): where a continuation transfer is going (seam,
   target clone, payload, resume pc, the frontier it waits on, outer goal); the
   evaluator's prologue drives it, re-deriving each step from the live chain.

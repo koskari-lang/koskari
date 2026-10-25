@@ -36,9 +36,8 @@ cross into each other -- in either direction -- where the behavior of
 the system being designed can no longer reach. Python calling into
 koskari crosses a boundary (tp_call, `__anext__`, the adapters);
 koskari calling out to a plain python callable crosses one the other
-way. Reserve the word for that seam. (The dynchain's iteration nodes
-were once called "boundary nodes"; the code now says "iteration
-node" or the node kind's name.)
+way. Reserve the word for that seam. (The dynchain's for-each region was
+once called a "boundary node"; the code names the node kind.)
 
 ## bootstrap
 
@@ -170,7 +169,7 @@ its root.
 
 Filling a prepared frame with runnable work. A callable's install slot
 (`kc_vinstall`) installs the frame it needs
-(`KosEvalState_InstallCallFrame`, `KosEvalState_InstallNativeFrame`)
+(`KosContext_InstallCallFrame`, `KosContext_InstallNativeFrame`)
 or completes in hand;
 a generator install (`kos_dyn_gen_install`) re-splices a frozen chain;
 a resume-frame install (`KosResumeFrame_Install`) pushes a code-less
@@ -205,12 +204,14 @@ adapters. Current providers: the koskari generator, KosMap, KosFilter.
 
 ## resume
 
-The `fn` of a `KosResumeKind` set on a codeless frame (`resume_kind`,
-`resume_state`) to receive exactly one delivery: a call's settled result, a callee's
+The `fn` of a `KosResumeKind` set on a frame (`resume_kind`,
+`resume_state`) -- a code-less step frame, or a bytecode frame halted
+on a for-each step, a next request or a yield-from -- to receive
+exactly one delivery: a call's settled result, a callee's
 return, an iteration element, or an awaited value. Invoked with the
 value, or with NULL and an exception set when the operation failed.
-Set through the CPS entries `KosEvalState_Call` and
-`KosEvalState_NextResume`; the map and filter steps are built from
+Set through the CPS entries `KosContext_Call` and
+`KosContext_NextResume`; the map and filter steps are built from
 them. Reference: EVALUATOR.md §8.2.
 
 ## special (special form)

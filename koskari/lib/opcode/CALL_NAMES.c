@@ -22,11 +22,11 @@
   frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_NAMES) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   unsigned opa = KosOp_ARG(insn);
 
-  PyObject *names = KosEvalState_StackPeek(es);
+  PyObject *names = KosContext_StackPeek(ctx);
   if (! names)
     RESULT_RAISE();
   if (! PyTuple_CheckExact(names)) {
@@ -41,22 +41,22 @@ KOS_OP_HANDLER(CALL_NAMES) {
 
   /* Pop the names tuple off the top; the remaining window is the
      standard [callable, pos..., kw_vals...] shape for the core. */
-  names = KosEvalState_StackPopRef(es);
+  names = KosContext_StackPopRef(ctx);
   if (! names)
     RESULT_RAISE();
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, (size_t) total + 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, (size_t) total + 1);
   if (! ptr) {
     Py_DECREF(names);
     RESULT_RAISE();
   }
 
   KosOpResult r = kos_call_invoke_from_handler(
-      es, tail, ptr[0], NULL, total ? ptr + 1 : NULL, npos,
+      ctx, tail, ptr[0], NULL, total ? ptr + 1 : NULL, npos,
       nkwds ? names : NULL,
       KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_CALLABLE);
   Py_DECREF(names);
-  RESULT_RELAY(es, r);
+  RESULT_RELAY(ctx, r);
 }
 
 

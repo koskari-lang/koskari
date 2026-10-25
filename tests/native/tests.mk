@@ -27,6 +27,14 @@ LIB_DIR := ../../koskari/lib
 TEST_SRCS := $(wildcard test_*.c)
 LIB_SRCS := $(wildcard $(LIB_DIR)/*.c)
 
+# Everything a library object textually includes: the headers and the
+# opcode tables beside the sources, and the fragments one directory
+# down (dynchain/, eval/, func/, matcher/, opcode/, transform/), which
+# setup.py lists as depends for the same reason. Coarse on purpose: an
+# edit to any of them rebuilds every object.
+LIB_DEPS := $(wildcard $(LIB_DIR)/*.h) $(wildcard $(LIB_DIR)/*.incl) \
+            $(wildcard $(LIB_DIR)/*/*.c)
+
 # Build output directory (empty = current dir; set e.g. BUILD_DIR=/build in container)
 BUILD_DIR ?=
 OBJDIR := $(or $(BUILD_DIR),.)
@@ -149,13 +157,13 @@ $(TARGET): $(TEST_OBJS) $(LIB_OBJS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Test source compilation
-$(OBJDIR)/%.o: %.c test_harness.h | $(OBJDIR)
+$(OBJDIR)/%.o: %.c test_harness.h $(LIB_DEPS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# Library source compilation (from lib directory)
-# Pattern rule: build .o from .c and matching .h (if exists) in LIB_DIR
-# Assumes: .o and .c in same basename, .h optional, LIB_DIR already set
-$(OBJDIR)/%.o: $(LIB_DIR)/%.c $(LIB_DIR)/%.h $(LIB_DIR)/lib.h | $(OBJDIR)
+# Library source compilation (from lib directory): one object per
+# top-level source, rebuilt when the source or anything it includes
+# changes
+$(OBJDIR)/%.o: $(LIB_DIR)/%.c $(LIB_DEPS) | $(OBJDIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 

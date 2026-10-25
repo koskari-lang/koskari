@@ -216,15 +216,6 @@ PyObject *Koskari_AsyncCall(
 PyObject *KosCallAdapt_CallAsync(
     PyObject *self, PyObject *args, PyObject *kwds);
 
-/**
-   vectorcallfunc filler with the same semantics: dispatch the suite's
-   kc_pyvectorcall when present, else build tuple+dict and defer to
-   Koskari_AsyncCall.
-*/
-PyObject *KosCallAdapt_VectorAsync(
-    PyObject *self, PyObject *const *args, size_t nargsf,
-    PyObject *kwnames);
-
 int koskari_callable_init(PyObject *mod);
 int koskari_callable_clear(PyObject *mod);
 

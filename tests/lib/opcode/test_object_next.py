@@ -444,6 +444,31 @@ class TestNextOpcodes(CevalTest):
         self.assertIn("iterator raised", str(cm.exception))
 
 
+    async def test_next_2_on_iterator_that_raises_propagates_error(self):
+        """
+        OBJECT_NEXT 2 on an iterator whose __next__ raises propagates the
+        error rather than pushing the default
+        """
+
+        class BadIterator(object):
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                raise ValueError("iterator raised")
+
+        code, ns = build_expr([
+            ["CONST", BadIterator()],
+            ["OBJECT_ITER", 0],
+            ["CONST", "default"],
+            ["OBJECT_NEXT", 2],
+            ["RETURN", 1],
+        ])
+        with self.assertRaises(ValueError) as cm:
+            await make_callable(code, ns)()
+        self.assertIn("iterator raised", str(cm.exception))
+
+
 class TestNextAwaitingIter(CevalTest):
     """
     OBJECT_NEXT over python async iterators whose steps genuinely suspend:

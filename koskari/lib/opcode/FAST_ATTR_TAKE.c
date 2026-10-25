@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR_TAKE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *ns = CURRENT_NS();
@@ -45,7 +45,7 @@ KOS_OP_HANDLER(FAST_ATTR_TAKE) {
     RESULT_RAISE();
   }
 
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

@@ -71,8 +71,8 @@ linking from design notes, PRs, or other docs.
 - **dynamic chain / chain node**: At runtime, the evaluator maintains a chain of
   nodes (`KosDynKind`: KOS_DYN_FRAME, KOS_DYN_PROMPT, KOS_DYN_DELIM,
   KOS_DYN_WIND, KOS_DYN_TRY, KOS_DYN_FINALLY, KOS_DYN_LOOP, KOS_DYN_FOREACH,
-  KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_CC, KOS_DYN_YIELD_FROM, KOS_DYN_PARAM,
-  KOS_DYN_WITH, KOS_DYN_SHIFT, KOS_DYN_GEN, KOS_DYN_NEXT). PUSH_* opcodes push a node onto this chain;
+  KOS_DYN_NS, KOS_DYN_COLLECT, KOS_DYN_CC, KOS_DYN_PARAM,
+  KOS_DYN_WITH, KOS_DYN_SHIFT, KOS_DYN_GEN). PUSH_* opcodes push a node onto this chain;
   POP_* opcodes pop it.
   Each opcode section that pushes onto the chain states **Pushes:** the chain node
   type and, when relevant, the static extent kind.
@@ -793,7 +793,7 @@ When adding or changing an opcode:
   `i`-th element of the realized sequence and **TOS = v_0 = seq[0]** (so the
   first binding in source order can use `VAR_STORE` / `FAST_STORE` on TOS
   first). Implementation: pop TOS and materialize it through
-  `KosEvalState_PopUnpackSequence` (an exact tuple or list is used as is,
+  `KosContext_PopUnpackSequence` (an exact tuple or list is used as is,
   anything else goes through `PySequence_Fast`), require `len(seq) == n`, then `KosStack_PushRef` for indices `n-1` down to `0`,
   then `Py_DECREF(seq)`.
 - **Invariants**: `n >= 0`. For `n == 0`, TOS must be an empty sequence after
@@ -1163,7 +1163,7 @@ bottom to top matches push order).
 ### KOS_OP_RETURN
 
 - **Style**: COUNT. Arg = number of values to leave on stack as return value (typically 1).
-- **Stack**: Pops the return value(s) per `arg`. The handler threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction), a **region** over such a parent (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook), and a **resume-carrying parent** (**`kos_return_take_resume`** → **`RESUME_HOP`** into the resume). Only the shapes that need an unwind walk signal **`EVAL_RETURN(val)`**, which **`apply_kos_op_result`** routes to **`eval_event_return`** (**`kos_dyn_unwind_return`**, pop, iterator-boundary or parent delivery, then **`kos_dynnode_on_control_returned`**). **Top-level** or **GEN** parent: **`KOS_RES_RETURN`** from **`koskari_eval`**.
+- **Stack**: Pops the return value(s) per `arg` and tail-calls **`kos_return_deliver`**, which threads its own common shapes: a **plain bytecode parent** (**`kos_return_is_plain`** → **`eval_plain_return`**: retarget the live registers, free the callee, push `val`, tail-call the parent's next instruction); a **region** over such a parent (**`kos_return_is_region`** → **`eval_region_return`**: the same retarget; a WITH or WIND, which carry **`KOS_DYN_CAP_CONTROL_HOOK`**, then runs its control-returned hook); a region with no hook over a **frame waiting on a resume** (**`kos_return_is_region_resume`** → **`eval_region_resume_return`** → **`RESUME_HOP`**); and a **resume-carrying parent** (**`kos_return_is_resume`** → **`kos_return_take_resume`** → **`RESUME_HOP`**). Every other shape goes to **`eval_event_return`**: **`kos_dyn_unwind_return`** over the extents above the frame, a return across a delimiting reset, or the delivery to the parent; a RESUME answer goes through the relay into the live frame's resume. A root frame, or a **GEN** that an adapter runs: **`KOS_RES_RETURN`** from **`koskari_eval`**. A GEN with a parent and no resume waiting is **`EVAL_FATAL`**.
 - **Invariants**: See execution-invariants: in-loop flattening for RETURN.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6–3; **`koskari/lib/opcode/RETURN.c`**.
 
@@ -1179,7 +1179,7 @@ bottom to top matches push order).
 ### KOS_OP_YIELD
 
 - **Style**: COUNT. Arg = number of values to yield (typically 1).
-- **Stack**: Pops the yielded value(s). Sets **`KOS_CODE_YIELDS`** on the code object. Opcode returns **`EVAL_YIELD(val)`**; **`apply_kos_op_result`** routes to **`eval_event_yield`**, which runs **`eval_yield_handle_walk_and_freeze`** (**`kos_dyn_unwind_yield`**), then either **`eval_event_yield_deliver_to_boundary`** when **`kos_dyn_need_kos_agen_boundary_deliver`** (flattened **NEXT** / **FOREACH** / **YIELD_FROM**, often **`EVAL_REPROLOGUE()`** without stopping **`koskari_eval`**) or **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the outer driver.
+- **Stack**: Pops the yielded value(s) and tail-calls **`kos_yield_deliver`**. Sets **`KOS_CODE_YIELDS`** on the code object. **`eval_event_yield`** freezes the running frame's GEN (**`kos_dyn_gen_freeze`**). When the live frame then has a resume -- a flattened consumer: a for-each step, a next request, a yield-from -- **`iter_deliver_to_resume`** hands it the value and the relay's RESUME arm threads into that resume without stopping **`koskari_eval`**. Otherwise the yield is terminal: **`KOS_RES_YIELD`** with **`KOS_SUSP_YIELD`** for the adapter that runs the generator.
 - **Invariants**: Code is treated as async generator when YIELDS flag set.
 - **See also**: [EVALUATOR.md](EVALUATOR.md) §2.6, §5.7; **`koskari/lib/opcode/YIELD.c`**.
 
@@ -1217,12 +1217,12 @@ bottom to top matches push order).
 ### KOS_OP_YIELD_FROM
 
 - **Style**: NOARG.
-- **Stack**: On first entry: consume TOS (subexpr_result), push `KOS_DYN_YIELD_FROM`, and set a phase resume on the node. Each resume drives one step of the delegate (or handles a send/throw/close inject) and sets the next; the opcode itself is not re-entered. On completion: pop the dyn node and continue at the next instruction with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
-- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. Backed by dynamic chain node `KOS_DYN_YIELD_FROM`, which holds the delegate, its kind, and pending action/arg for send/throw/close and for resume-from-await.
+- **Stack**: Consume TOS (subexpr_result) and hop into the delegate kind's drive with a plain next; the handler runs once per delegation. The delegating frame's resume is the delegation: its state is the delegate, its kind is the delegate's kind and the phase (a drive waiting on the consumer's next or send, a throw kind waiting on a throw, the emit kind waiting on an installed provider's element, an await kind waiting on a python async step). Each delivery runs the phase, which sets the next; the opcode itself is not re-entered. At the end the delegate is released and the frame threads on with nothing pushed; the delegate's return value (the StopIteration or StopAsyncIteration value) is discarded. The pc sits past the instruction from first entry.
+- **Execution model**: Single-opcode delegation primitive (conduit); not loop sugar. Full send/throw/close propagation; async flattening for Python and Koskari async gens. No chain node: the delegation lives in the frame's resume slot pair, and the kind's clear closes the delegate on a teardown with no delivery coming.
 - **Delegate kinds** (chosen at first entry by normalizing TOS): **sync iterator** (PyIter_Next); **sync generator** (send/throw/close); **Python async iterator** (__anext__); **Python async generator** (__anext__/asend/athrow/aclose); **Koskari async generator** (driven in-process via koskari_eval). Callables are called once; the return value is classified as above. Fallback: `iter(obj)` for sync iteration.
 - **Rejected**: Coroutines (Koskari or Python). Normalization raises `TypeError: "coroutine object is not async iterable"`. Yielded values are never re-awaited; they are emitted as yields only.
-- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The node keeps a resume set, one succeeding the next, until the delegate exhausts, yields (boundary **`KOS_RES_YIELD`**), or suspends on await (boundary **`KOS_RES_AWAIT`**).
-- **Implementation**: Handler and all YIELD_FROM-dedicated helpers (normalize and classify, the four per-kind drives -- sync iter, sync gen, Python async, Koskari iter -- selected once and stored on the node, yield emission, void finish, and the send/await/emit resume phases that take a transfer plan's throw injection before delivery) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). Delegate close / unwind for the `KOS_DYN_YIELD_FROM` node lives in `koskari/lib/dynchain/dyn_yield_from.c` (e.g. `kos_yieldfrom_close_delegate`, `kos_dyn_yieldfrom_unwind`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
+- **Invariants**: TOS on first entry must be an iterable or async-iterable (or callable returning one). The frame keeps a resume set, one phase succeeding the next, until the delegate ends; every yield of an element (boundary **`KOS_RES_YIELD`**) and every suspension on an await (boundary **`KOS_RES_AWAIT`**) leaves the next phase set. The frame is never suspended toward the consumer while the delegate's frames are installed, which is what lets one resume slot carry both directions.
+- **Implementation**: Handler and every YIELD_FROM helper (normalize and classify; five drive kinds, one per delegate kind, each naming its throw kind; the emit kind and the two await kinds; the kind's clear and clone) live in `koskari/lib/opcode/YIELD_FROM.c` (included into `eval.c`). See [koskari/lib/opcode/README.md](../../koskari/lib/opcode/README.md) for the opcode-fragment layout.
 - **Design**: [design/archive/yield-from-execution-model.md](archive/yield-from-execution-model.md) (archived narrative; see [EVALUATOR.md](EVALUATOR.md) §5)
 - **Covered by**: `tests/lib/opcode/test_yield_from.py` (sync/async delegates, Koskari async gen, send/throw/close, final values, type errors).
 
@@ -1231,7 +1231,7 @@ bottom to top matches push order).
 | index | opcode   | arg | arg view | comment |
 |------:|---------|-----|----------|---------|
 | 0     | CONST   | 0   | 0 ([1,2,3]) | stack: [..., iterable] |
-| 1     | YIELD_FROM | 0 | 0        | first entry: consume TOS, push KOS_DYN_YIELD_FROM, set resume; each resume drives the delegate; on exhaust: pop node, nothing pushed |
+| 1     | YIELD_FROM | 0 | 0        | consume TOS as the delegate and hop into its drive; each delivery runs the phase set on the frame; at the end nothing is pushed |
 | 2     | RETURN  | 1   | 1        | |
 
 
@@ -1321,7 +1321,7 @@ bottom to top matches push order).
 ### KOS_OP_VAR_NEXT {#kos_op_var_next}
 
 - **Style**: EXTRA (VAR, COUNT). Row = iterator name (pool), n (1 or 2).
-- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and run the shared step core (`object_next_step`) -- Koskari agen flatten, ambient async (a suspended python step rides the NEXT boundary), 1-arg raises StopIteration on exhaustion, 2-arg pops and delivers the default.
+- **Stack**: n=1: `[...] -> [..., value]`; n=2: `[..., default] -> [..., value-or-default]`. Fused VAR + OBJECT_NEXT: resolve the iterator name and make the next request (**`KosContext_NextResume`**, the arity picking the resume's kind; the iterator is the resume's owned state, the default stays on the stack under the halted instruction). A Koskari async generator runs flattened; an awaited step suspends the frame and completes the instruction when it resumes. 1-arg raises StopIteration on exhaustion; 2-arg delivers the default.
 - **Invariants**: The fused name resolution runs after the default row (the fusion requires a bare default feeder, so the reorder is unobservable beyond NameError timing).
 - **Compiler form:** Produced by `ByteCodeProcessor.fuse_feeders` when OBJECT_NEXT's iterator feeder is a bare VAR load (the 2-arg form also requires a bare VAR/CONST default). Lowers to FAST_NEXT through the generic schema-driven `convert_fast` path.
 - **Implementation**: `koskari/lib/opcode/VAR_NEXT.c`
@@ -2302,7 +2302,7 @@ POP. See `koskari/compile/specials/imports.py` (`special_import`,
 `special_import_from`, `special_import_all_from`, `special_use`) for the
 compiler forms.
 
-`kos_import_module(es, name, level, leaf)` builds, for a relative import
+`kos_import_module(ctx, name, level, leaf)` builds, for a relative import
 (`level > 0`), a temporary globals dict holding `__name__` / `__package__`
 from the frame's globals namespace (Python requires a dict, not a
 KosNamespace) so `PyImport_ImportModuleLevelObject` can resolve the anchor
@@ -3931,7 +3931,7 @@ feeder key names what it can.
   empty tuple, meaning "no values of that kind on the stack".
 - **Semantics**: Pop `fspec` (TOS). If the defaults names tuple is non-empty
   (length N), pop N values into a defaults dict keyed by it
-  (`KosEvalState_StackPopTailDictFromNames`, same discipline as
+  (`KosContext_StackPopTailDictFromNames`, same discipline as
   BUILD_KWDS_NAMES). Then, if the annotation names tuple is non-empty
   (length M), pop M more values into an annotations dict the same way.
   Build the function against the current frame namespace via
@@ -4108,7 +4108,7 @@ popped.
 
 **Implementation notes** (koskari/lib/opcode/CALL_ATTR.c, eval/eval_call.c):
 
-- **Stack arrangement**: `ptr = KosEvalState_StackTailPtr(es, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
+- **Stack arrangement**: `ptr = KosContext_StackTailPtr(ctx, n + 1)`; `ptr[0]` = obj, `ptr[1..n]` = positional args. Attr name from the EXTRA row. The whole window stays borrowed; `kos_call_invoke` owns its drop.
 
 - **`kos_resolve_named_attr` return value**: -1 = error (exception set); 0 = send self (unbound function found on the type -- the call becomes `fn(obj, *args)`); 1 = omit self (bound method, instance dict, data descriptor result, etc. -- the call is `callable(*args)`). The resolution goes through the row's cache slot.
 
@@ -4153,7 +4153,7 @@ popped.
 ### KOS_OP_CALL_VAR_ATTR {#kos_op_call_var_attr}
 
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), ATTR (attr name), COUNT (npos), NOARG.
-- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(es, var_name)` (owned reference); the handler releases it with `Py_DECREF(obj)` on every exit path.
+- **Stack**: Same as `KOS_OP_CALL_FAST_ATTR`. `obj` is obtained with `frame_ns_deref(ctx, var_name)` (owned reference); the handler releases it with `Py_DECREF(obj)` on every exit path.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR.c): Otherwise identical control flow to `KOS_OP_CALL_FAST_ATTR` / `KOS_OP_CALL_ATTR` (resolve via `kos_resolve_named_attr`, then `kos_call_invoke` with `obj` as `self_arg` when `send_self=0`).
 - **Compiler form:** Emitted by `compile/call-attr` when the receiver is a symbol that reads a variable and the call has only positional arguments. Lowers to **CALL_FAST_ATTR**.
 
@@ -4186,7 +4186,7 @@ popped.
 ### KOS_OP_CALL_VAR_ATTR_STAR {#kos_op_call_var_attr_star}
 
 - **Style**: EXTRA. Schema: VAR (name cpool index for `obj`), ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG.
-- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(es, var_name)` (owned reference, stolen by `kos_op_call_star`). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `kos_op_call_star` resolves, prepends `obj` to the tuple args when the resolution asks for it, and calls through the shared core.
+- **Stack**: Same semantics as [`KOS_OP_CALL_ATTR_STAR`](#kos_op_call_attr_star), but `obj` is **not** on the stack; it is loaded with `frame_ns_deref(ctx, var_name)` (owned reference, stolen by `kos_op_call_star`). Stack layout per opa (bottom … TOS): opa=0 → `[]`; opa=1 → `[pos]`; opa=2 → `[kwd]`; opa=3 → `[pos, kwd]` with `kwd` at TOS (same relative order as CALL_ATTR_STAR without the receiver). Pop order and `opa` handling match [`KOS_OP_CALL_VAR_STAR`](#kos_op_call_var_star) combined with CALL_ATTR_STAR; `kos_op_call_star` resolves, prepends `obj` to the tuple args when the resolution asks for it, and calls through the shared core.
 - **Invariants**: `var_name` and attr name in constant pool; same opa bit meanings as CALL_ATTR_STAR.
 - **Implementation** (koskari/lib/opcode/CALL_VAR_ATTR_STAR.c): Parallel to CALL_ATTR_STAR with VAR receiver semantics (see [`KOS_OP_CALL_VAR_ATTR`](#kos_op_call_var_attr)).
 - **Compiler form:** Emitted by `compile/call-attr` for a variable receiver with `*:` or `**:`. Lowers to **CALL_FAST_ATTR_STAR**.
@@ -4253,7 +4253,7 @@ popped.
 ### KOS_OP_TAIL_CALL_ATTR_STAR {#kos_op_tail_call_attr_star}
 
 - **Style**: EXTRA. Schema: ATTR (attr name), COUNT (opa bitflags: 1 = has *args, 2 = has **kwargs), NOARG, NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_ATTR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_ATTR_STAR; never emitted by a special.
 
 ---
@@ -4277,7 +4277,7 @@ popped.
 ### KOS_OP_TAIL_CALL_VAR_STAR {#kos_op_tail_call_var_star}
 
 - **Style**: EXTRA. Schema: VAR (name), STAR (bitflags), NOARG, NOARG.
-- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_VAR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_STAR; lowers to TAIL_CALL_FAST_STAR.
 
 ---
@@ -4301,7 +4301,7 @@ popped.
 ### KOS_OP_TAIL_CALL_VAR_ATTR_STAR {#kos_op_tail_call_var_attr_star}
 
 - **Style**: EXTRA. Schema: VAR (name for obj), ATTR (attr name), COUNT (opa bitflags), NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_VAR_ATTR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Promotion relabel of a tail-position CALL_VAR_ATTR_STAR; lowers to TAIL_CALL_FAST_ATTR_STAR.
 
 ---
@@ -4325,7 +4325,7 @@ popped.
 ### KOS_OP_TAIL_CALL_FAST_STAR {#kos_op_tail_call_fast_star}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot), STAR (bitflags), NOARG, NOARG.
-- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_FAST_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
@@ -4349,7 +4349,7 @@ popped.
 ### KOS_OP_TAIL_CALL_FAST_ATTR_STAR {#kos_op_tail_call_fast_attr_star}
 
 - **Style**: EXTRA. Schema: FASTVAR (slot for obj), ATTR (attr name), COUNT (opa bitflags), NOARG. One cache slot.
-- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosEvalState_CallArgs` with the tail flag set.
+- **Stack**: Same layout and pop order as CALL_FAST_ATTR_STAR; call via `KosContext_CallArgs` with the tail flag set.
 - **Compiler form:** Fast tier of TAIL_CALL_VAR_ATTR_STAR; see [`KOS_OP_TAIL_CALL_FAST`](#kos_op_tail_call_fast).
 
 ---
@@ -4401,7 +4401,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_PUSH_DYN_WITH {#kos_op_push_dyn_with}
 
 - **Style**: CONST. Arg = constant pool index of binding name or sentinel for no binding (same as PUSH_WITH).
-- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. Node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal leaves through it and re-enters it when it lands the extent.
+- **Stack / behaviour:** Same as PUSH_WITH except pushes KOS_DYN_DYN_WITH. The node's shot is `KOS_DYN_WITH_SHOT_MULTI`: a transfer goal leaves through it and re-enters it when it lands the extent (a landing re-enters a **`KOS_DYN_CAP_CONTROL_HOOK`** node unless it is a single-shot WITH).
 - **Pushes:** KOS_DYN_DYN_WITH.
 
 ### KOS_OP_POP_DYN_WITH {#kos_op_pop_dyn_with}
@@ -4554,7 +4554,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_LOOP {#kos_op_clear_loop}
 
 - **Style**: NOARG.
-- **Stack**: Clears the loop segment. Disables the top LOOP region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
+- **Stack**: Clears the loop segment. Disables the top LOOP region (clears its **`KOS_DYN_CAP_LOOP_REGION`**): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_LOOP takes the loop result from the region's stack. Emitted on normal exit from a while-loop body ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_LOOP. Use CLEAR_FOREACH for FOREACH extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_LOOP.c`
 
@@ -4563,7 +4563,7 @@ Full design: [interpreter/with-dyn-with.md](interpreter/with-dyn-with.md). Summa
 ### KOS_OP_CLEAR_FOREACH {#kos_op_clear_foreach}
 
 - **Style**: NOARG.
-- **Stack**: Clears the loop segment. Disables the top FOREACH region (sets `enabled` to 0): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
+- **Stack**: Clears the loop segment. Disables the top FOREACH region (clears its **`KOS_DYN_CAP_LOOP_REGION`**): a BREAK or CONTINUE issued while it is disabled passes through it to the enclosing loop, and POP_FOREACH takes the loop result from the region's stack. Emitted when a for-each iterator is exhausted naturally, ahead of an else clause.
 - **Invariants**: Top of chain must be KOS_DYN_FOREACH. Use CLEAR_LOOP for LOOP extents.
 - **Implementation**: `koskari/lib/opcode/CLEAR_FOREACH.c`
 
@@ -5068,7 +5068,7 @@ the paired DELIM bookmark to the invoke site.
 - **Style**: CONST. Arg = prompt_id (constant pool index, post-compile).
 - **Stack**: The prompt owns a fresh operand segment (so the reset body has an isolated stack), resolves the PROMPT extent at the push site and records the region's closing pc on the node (POP_SHIFT resumes at that pop_pc + 1), then pushes the prompt node onto the dynamic chain.
 - **Pushes:** KOS_DYN_PROMPT (static extent KOS_EXT_PROMPT; PUSH_SHIFT captures up to this prompt). PROMPT owns the segment for the delimited region; SHIFT does not create one.
-- **Invariants**: PUSH_SHIFT captures up to this prompt. Exception unwinding past a PROMPT drops the segment and unlinks the node via the HANDLES_EXCEPTIONS capability (no kind-specific check in the unwind loop).
+- **Invariants**: PUSH_SHIFT captures up to this prompt. An exception unwinding past a PROMPT drops the segment and unlinks the node in one step: the raise walk unlinks a **`KOS_DYN_CAP_BARRIER`** node with the barrier allowed (`kos_dyn_unlink_top`), with no kind-specific check in the walk.
 - **Compiler form:** Pre-compile arg may be prompt id value or symbol; post-compile arg = pool index.
 
 **Example:** reset (push prompt). Pool: 0 = prompt_id.
@@ -5123,7 +5123,7 @@ the paired DELIM bookmark to the invoke site.
 - **Stack**: Normal case (no active continuation return): pops TOS as the reset result, drops the PROMPT's segment, unlinks the prompt from the chain, and pushes the result onto the parent stack. Invoked-continuation return case: the walk down from the current node finds a **`KOS_DYN_DELIM`** bookmark (mode **`POP_PROMPT`** for a graft, **`INPLACE`** for an in-place invoke), passing invocation prompts and stopping at a live (non-invocation) PROMPT; it pops TOS as result, unwinds to the delim (freeing the invocation prompt and any remnants), delivers the result at the invoke site per the delim's return metadata (an INPLACE delim restitches the displaced state and re-links the stashed span first), and resumes there.
 - **Invariants**: Top of chain must be the matching prompt when POP_PROMPT executes. When returning from an invoked delimited continuation (return path recorded on **`KOS_DYN_DELIM`**), POP_PROMPT transfers control back to the call site with the result value instead of exiting normally. Exactly one value is consumed from the PROMPT's segment and one is injected to the outer stack.
 - **Push-return model**: Delimited invoke uses PUSH (graft frames onto current chain). When the continuation runs and hits POP_PROMPT, it consults the **`KOS_DYN_DELIM`** marker installed for that invoke and resumes at the call site with the value on stack.
-- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the `unwind_on_exception` handler (dispatched via `KOS_DYN_CAP_HANDLES_EXCEPTIONS`) drops the segment and unlinks the PROMPT, then continues unwinding. No POP_PROMPT opcode executes in this path.
+- **Exception propagation**: If an exception escapes past the PROMPT during unwinding, the raise walk drops the segment and unlinks the PROMPT in the same unlink that crosses the barrier (`kos_dyn_unlink_top` with the barrier allowed), then continues unwinding. No POP_PROMPT opcode executes in this path.
 
 **Example:** End of reset body.
 

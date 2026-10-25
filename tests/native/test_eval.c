@@ -69,17 +69,15 @@ static PyObject *make_instr_int(int op, int arg) {
 
 static int install_frozen_gen(KosContext *ctx, KosDynGen *gen) {
 
-    KosEvalState es;
     int r;
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
-    if (! gen || ! kos_dyn_gen_frozen_needs_install_es(&es, gen)) {
-        KosEvalState_FreezeToContext(&es);
+    KosContext_EvalEnter(ctx, NULL);
+    if (! gen || ! kos_dyn_gen_frozen_needs_install(ctx, gen)) {
+        KosContext_EvalExit(ctx);
         return 0;
     }
-    r = kos_dyn_gen_install(&es, gen);
-    KosEvalState_FreezeToContext(&es);
+    r = kos_dyn_gen_install(ctx, gen);
+    KosContext_EvalExit(ctx);
     return r;
 }
 
@@ -134,10 +132,10 @@ static int test_eval_object_add_return(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -152,10 +150,10 @@ static int test_eval_object_add_return(void) {
 }
 
 
-/* === Test: domain non-null on fresh context === */
+/* === Test: no domain on a fresh context, nor after its eval === */
 
 
-static int test_domain_non_null(void) {
+static int test_domain_null_outside_eval(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -176,13 +174,18 @@ static int test_domain_non_null(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    /* every context has a domain, minted as needed when none is ambient;
-       parameter cells start empty (lazy) */
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx), "domain is non-null");
+    /* a context takes its domain at each eval entry and drops it at the
+       exit; parameter cells start empty (lazy) */
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx), "no domain before the eval");
     TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
                 "param cells start unallocated");
+
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    Py_XDECREF(ev.val);
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx), "no domain after the eval");
 
     Py_DECREF(ctx);
     Py_DECREF(code_obj);
@@ -191,7 +194,86 @@ static int test_domain_non_null(void) {
 }
 
 
-/* === Test: tp_clear then dealloc releases each inject field once === */
+/* An entry the recursion guard refuses leaves no domain on the
+   context: the domain is taken after the guard. The guard is driven by
+   spending the thread's C recursion budget through CPython's own
+   counter. On an interpreter whose guard is a stack address rather
+   than a counter the budget cannot be spent from a flat call: the loop
+   reaches its cap, nothing is asserted about the refusal, and the test
+   says nothing more. */
+static int test_refused_entry_leaves_no_domain(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    /* every observation is taken inside the spent window and the
+       budget is given back before any assertion, so a failing
+       assertion cannot leave the thread's budget spent */
+    long spent = 0;
+    const long cap = 1L << 20;
+    int budget_spent;
+    int spent_error = 0;
+    int refused = 0;
+    int guard_error = 0;
+    int domain_left = 0;
+    int running_left = 0;
+
+    while (spent < cap && Py_EnterRecursiveCall(" in a test") == 0)
+      spent++;
+    budget_spent = spent < cap;
+
+    if (budget_spent) {
+      KosOpResult ev;
+
+      spent_error = PyErr_ExceptionMatches(PyExc_RecursionError);
+      PyErr_Clear();
+      ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+      refused = ev.kind == KOS_RES_RAISE;
+      guard_error = PyErr_ExceptionMatches(PyExc_RecursionError);
+      PyErr_Clear();
+      Py_XDECREF(ev.val);
+      domain_left = KosContext_DOMAIN(ctx) != NULL;
+      running_left = (KosContext_FLAGS(ctx) & KOS_CTX_RUNNING) != 0;
+    }
+
+    while (spent-- > 0)
+      Py_LeaveRecursiveCall();
+
+    if (budget_spent) {
+      TEST_ASSERT(spent_error, "the budget is spent");
+      TEST_ASSERT(refused, "the entry is refused");
+      TEST_ASSERT(guard_error, "with the guard's error");
+      TEST_ASSERT(! domain_left, "the refused entry left no domain");
+      TEST_ASSERT(! running_left, "the refused entry left the context idle");
+    }
+
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: tp_clear then dealloc releases the inject field once === */
 
 
 static int test_context_clear_then_dealloc_releases_once(void) {
@@ -215,24 +297,18 @@ static int test_context_clear_then_dealloc_releases_once(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    /* fresh, non-cached objects; the context takes one reference to
-       each and the test keeps two more so a double release is
-       observable as a refcount rather than a freed object */
+    /* a fresh, non-cached object; the context takes one reference
+       and the test keeps two more so a double release is observable
+       as a refcount rather than a freed object */
     PyObject *resume = PyList_New(0);
-    PyObject *inject = PyList_New(0);
     TEST_ASSERT_NOT_NULL(resume, "create resume value");
-    TEST_ASSERT_NOT_NULL(inject, "create inject value");
     Py_INCREF(resume);
     Py_INCREF(resume);
-    Py_INCREF(inject);
-    Py_INCREF(inject);
     KosContext_PY_RESUME_INJECT(ctx) = resume;
-    KosContext_INJECT_VALUE(ctx) = inject;
     TEST_ASSERT_REFCNT(resume, 3, "resume held by test twice and ctx");
-    TEST_ASSERT_REFCNT(inject, 3, "inject held by test twice and ctx");
 
     /* what the collector does to a context in a garbage cycle, then
        what happens when the last reference goes */
@@ -241,12 +317,9 @@ static int test_context_clear_then_dealloc_releases_once(void) {
     Py_DECREF(ctx);
 
     TEST_ASSERT_REFCNT(resume, 2, "resume released exactly once");
-    TEST_ASSERT_REFCNT(inject, 2, "inject released exactly once");
 
     Py_DECREF(resume);
     Py_DECREF(resume);
-    Py_DECREF(inject);
-    Py_DECREF(inject);
     Py_DECREF(code_obj);
 
     return 0;
@@ -277,9 +350,9 @@ static int test_context_clear_drops_chain_caches(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
-    TEST_ASSERT_NOT_NULL(KosContext_FRAME_TOP(ctx), "frame cached");
+    TEST_ASSERT_NOT_NULL(KosContext_FRAME(ctx), "frame cached");
     TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(ctx), "namespace cached");
 
     /* what the collector does to a context in a garbage cycle: the
@@ -289,7 +362,7 @@ static int test_context_clear_drops_chain_caches(void) {
     int res = Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
     TEST_ASSERT_EQ(res, 0, "tp_clear succeeds");
     TEST_ASSERT_NULL(KosContext_DYN_TOP(ctx), "chain dropped");
-    TEST_ASSERT_NULL(KosContext_FRAME_TOP(ctx), "frame cache dropped");
+    TEST_ASSERT_NULL(KosContext_FRAME(ctx), "frame cache dropped");
     TEST_ASSERT_NULL(KosContext_BLOCK(ctx), "block cache dropped");
     TEST_ASSERT_NULL(KosContext_NAMESPACE(ctx), "namespace cache dropped");
 
@@ -300,10 +373,146 @@ static int test_context_clear_drops_chain_caches(void) {
 }
 
 
-/* === Test: two contexts without TLS get distinct domains === */
+/* === Test: tp_clear releases a staged delivery === */
 
 
-static int test_domain_fresh_when_no_tls(void) {
+static int test_context_clear_releases_staged_delivery(void) {
+
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  /* a fresh, non-cached object; the context takes the staged
+     reference, so the count returns to its value before staging only
+     when tp_clear releases it */
+  PyObject *val = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(val, "create staged value");
+  Py_ssize_t before = Py_REFCNT(val);
+
+  Py_INCREF(val);
+  KosContext_StageDelivery(ctx, val);
+  TEST_ASSERT_REFCNT(val, before + 1, "staged value held by ctx");
+
+  /* what the collector does to a context in a garbage cycle collected
+     mid-drive while a delivery is staged */
+  int res = Py_TYPE(ctx)->tp_clear((PyObject *) ctx);
+  TEST_ASSERT_EQ(res, 0, "tp_clear succeeds");
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "staged slot emptied");
+  TEST_ASSERT_REFCNT(val, before, "staged value released");
+
+  Py_DECREF(ctx);
+  Py_DECREF(val);
+
+  return 0;
+}
+
+
+/* === Test: recycle releases a staged delivery === */
+
+
+static int test_context_recycle_releases_staged_delivery(void) {
+
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  PyObject *val = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(val, "create staged value");
+  Py_ssize_t before = Py_REFCNT(val);
+
+  Py_INCREF(val);
+  KosContext_StageDelivery(ctx, val);
+  TEST_ASSERT_REFCNT(val, before + 1, "staged value held by ctx");
+
+  /* the next run on a recycled context must not receive the staged
+     value of the finished one */
+  int res = KosContext_Recycle(ctx);
+  TEST_ASSERT_EQ(res, 0, "recycle succeeds");
+  TEST_ASSERT_NULL(KosContext_PENDING_VALUE(ctx), "staged slot emptied");
+  TEST_ASSERT_REFCNT(val, before, "staged value released");
+
+  Py_DECREF(ctx);
+  Py_DECREF(val);
+
+  return 0;
+}
+
+
+/* === Test: contexts made and dropped past the freelist cap === */
+
+
+/* more than the context freelist keeps, so the drop both caches and
+   frees; under KOS_NOFREELIST every drop frees */
+#define CONTEXT_CHURN_COUNT 300
+
+
+static int test_context_churn_past_freelist_cap(void) {
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *instr = PyList_New(2);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    KosContext *held[CONTEXT_CHURN_COUNT];
+    for (int i = 0; i < CONTEXT_CHURN_COUNT; i++) {
+        PyObject *ns = PyDict_New();
+        TEST_ASSERT_NOT_NULL(ns, "create ns");
+        KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+        TEST_ASSERT_NOT_NULL(frame, "create frame");
+        held[i] = KosContext_New(frame, kos_tls_current());
+        TEST_ASSERT_NOT_NULL(held[i], "create context");
+    }
+
+    /* half the drops run tp_clear first, as the collector does to a
+       context in a garbage cycle */
+    for (int i = 0; i < CONTEXT_CHURN_COUNT; i++) {
+        if (i % 2)
+            TEST_ASSERT_EQ(Py_TYPE(held[i])->tp_clear((PyObject *) held[i]),
+                           0, "tp_clear succeeds");
+        Py_DECREF(held[i]);
+    }
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context after the churn");
+    TEST_ASSERT_REFCNT(ctx, 1, "one reference to the new context");
+    TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) frame,
+                "chain is the new frame");
+    TEST_ASSERT(KosContext_FRAME(ctx) == frame, "live frame is the new one");
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx), "no domain before the eval");
+    TEST_ASSERT(KosContext_PARAM_REFS(ctx) == NULL,
+                "param cells start unallocated");
+    TEST_ASSERT(KosContext_TOKEN(ctx) == NULL, "no evaluator token");
+    TEST_ASSERT_EQ(KosContext_FLAGS(ctx), 0, "flags start cleared");
+    TEST_ASSERT(KosContext_PY_AWAIT_ITER(ctx) == NULL, "no await iterator");
+
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 1, "result is 1");
+
+    Py_XDECREF(ev.val);
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
+/* === Test: contexts created together start without a domain === */
+
+
+static int test_domain_absent_at_creation(void) {
     PyObject *nspec = create_test_nspec();
     TEST_ASSERT_NOT_NULL(nspec, "create nspec");
 
@@ -328,14 +537,12 @@ static int test_domain_fresh_when_no_tls(void) {
     TEST_ASSERT_NOT_NULL(frame1, "create frame1");
     TEST_ASSERT_NOT_NULL(frame2, "create frame2");
 
-    KosContext *ctx1 = KosContext_New(frame1);
-    KosContext *ctx2 = KosContext_New(frame2);
+    KosContext *ctx1 = KosContext_New(frame1, kos_tls_current());
+    KosContext *ctx2 = KosContext_New(frame2, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx1, "create ctx1");
     TEST_ASSERT_NOT_NULL(ctx2, "create ctx2");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx1), "ctx1 domain non-null");
-    TEST_ASSERT_NOT_NULL(KosContext_DOMAIN(ctx2), "ctx2 domain non-null");
-    TEST_ASSERT_NOT_SAME(KosContext_DOMAIN(ctx1), KosContext_DOMAIN(ctx2),
-                         "contexts without TLS get distinct domains");
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx1), "ctx1 has no domain yet");
+    TEST_ASSERT_NULL(KosContext_DOMAIN(ctx2), "ctx2 has no domain yet");
 
     /* each context also owns its own cell table */
     PyObject *cells1 = kos_context_param_refs(ctx1);
@@ -379,10 +586,10 @@ static int test_eval_ctx_current_outside_eval(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "eval returned RETURN");
     TEST_ASSERT(kos_ctx_current() == NULL, "no current context after eval");
@@ -442,10 +649,10 @@ static int test_eval_try_except_catch(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -508,10 +715,10 @@ static int test_eval_try_finally_rerase(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -592,13 +799,13 @@ static int test_eval_reset_shift_invoke(void) {
         goto cleanup;
     }
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
     }
 
-    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     if (ev.kind == KOS_RES_FATAL) {
         if (PyErr_Occurred())
             PyErr_Print();
@@ -675,10 +882,10 @@ static int test_eval_push_cc_capture_cc_pop_cc_returns_continuation(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -768,13 +975,13 @@ static int test_eval_call_continuation_underrun(void) {
         goto cleanup;
     }
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
     }
 
-    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     if (ev.kind == KOS_RES_FATAL) {
         fprintf(stderr, "  FAIL: koskari_eval returned FATAL\n");
         result = -1;
@@ -832,10 +1039,10 @@ static int test_eval_call_wrong_type(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -879,10 +1086,10 @@ static int test_eval_object_add_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -924,10 +1131,10 @@ static int test_eval_return_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -966,10 +1173,10 @@ static int test_eval_dup_underrun(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -1008,10 +1215,10 @@ static int test_eval_call_empty_stack(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -1152,10 +1359,10 @@ static int test_eval_push_collect_pop_collect_build_class_empty(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -1205,10 +1412,10 @@ static int test_eval_push_collect_empty_stack_raises(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -1306,13 +1513,13 @@ static int test_eval_call_zero_args(void) {
         goto cleanup;
     }
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx) {
         kos_dynframe_free(frame);
         goto cleanup;
     }
 
-    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     if (ev.kind == KOS_RES_FATAL) {
         fprintf(stderr, "  FAIL: koskari_eval returned FATAL\n");
         result = -1;
@@ -1396,6 +1603,77 @@ static int test_eval_fast_on_dict_ns(void) {
 }
 
 
+/* === Test: eval entry refuses a context already being evaluated === */
+
+
+static int test_eval_refuses_running_context(void) {
+    /*
+      A context with KOS_CTX_RUNNING set is one some eval holds on a C
+      stack, this thread's or another's. Entering it again is refused
+      with RuntimeError before any state is set up: the flag, the frame
+      and the stack are left as they were, and with the flag cleared the
+      same context evaluates to its result.
+    */
+    PyObject *nspec = create_test_nspec();
+    TEST_ASSERT_NOT_NULL(nspec, "create nspec");
+
+    PyObject *one = PyLong_FromLong(1);
+    PyObject *five = PyLong_FromLong(5);
+
+    PyObject *instr = PyList_New(4);
+    PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, one));
+    PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, five));
+    PyList_SET_ITEM(instr, 2, make_instr_int(
+        KOS_OP_OBJECT_OPERAND, KosOpCount_MAKE(KOS_OPERAND_ADD, 2)));
+    PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+
+    PyObject *code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+    TEST_ASSERT_NOT_NULL(code_obj, "create Code");
+
+    Py_DECREF(one);
+    Py_DECREF(five);
+    Py_DECREF(instr);
+    Py_DECREF(nspec);
+
+    PyObject *ns = PyDict_New();
+    TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+    KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
+    TEST_ASSERT_NOT_NULL(frame, "create frame");
+
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
+    TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+    KosContext_FLAGS(ctx) |= KOS_CTX_RUNNING;
+
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+
+    TEST_ASSERT(ev.kind == KOS_RES_RAISE, "event is RAISE");
+    TEST_ASSERT(PyErr_ExceptionMatches(PyExc_RuntimeError),
+                "exception is RuntimeError");
+    PyErr_Clear();
+    TEST_ASSERT(KosContext_FLAGS(ctx) & KOS_CTX_RUNNING,
+                "running flag left set");
+    TEST_ASSERT(KosContext_FRAME(ctx) == frame, "frame untouched");
+    TEST_ASSERT(KosContext_DYN_TOP(ctx) == (KosDynNode *) frame,
+                "chain untouched");
+    TEST_ASSERT_NULL(KosContext_TOKEN(ctx), "no evaluator token");
+
+    KosContext_FLAGS(ctx) &= ~KOS_CTX_RUNNING;
+
+    ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+    TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN once clear");
+    TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
+    TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 6, "result is 6");
+
+    Py_XDECREF(ev.val);
+    Py_DECREF(ctx);
+    Py_DECREF(code_obj);
+
+    return 0;
+}
+
+
 /* === Test: BUILD_FUNCTION (no defaults) => Function on stack === */
 
 
@@ -1449,10 +1727,10 @@ static int test_eval_build_function_no_defaults(void) {
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -1518,7 +1796,7 @@ static int make_simple_ctx(
     }
     if (! frame) { Py_DECREF(*code_obj_out); return -1; }
 
-    *ctx_out = KosContext_New(frame);
+    *ctx_out = KosContext_New(frame, kos_tls_current());
     if (! *ctx_out) { Py_DECREF(*code_obj_out); return -1; }
     return 0;
 }
@@ -1560,7 +1838,7 @@ static int test_eval_yield_empty_resume(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
     TEST_ASSERT_NOT_NULL(ev.val, "first val not NULL");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded value is 42");
@@ -1568,7 +1846,7 @@ static int test_eval_yield_empty_resume(void) {
 
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
-    ev = koskari_eval(ctx, NULL, NULL, NULL);
+    ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "second val not NULL");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 99, "resumed result is 99");
@@ -1608,7 +1886,7 @@ static int test_eval_yield_send_resume(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded value is 42");
     Py_XDECREF(ev.val);
@@ -1616,7 +1894,7 @@ static int test_eval_yield_send_resume(void) {
     TEST_ASSERT(install_frozen_gen(ctx, dyn_gen) == 0, "install frozen gen");
 
     PyObject *send_val = PyLong_FromLong(7);
-    ev = koskari_eval(ctx, send_val, NULL, NULL);
+    ev = koskari_eval(ctx, NULL, send_val, NULL, NULL);
     Py_DECREF(send_val);
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "second val not NULL");
@@ -1687,17 +1965,18 @@ static int test_eval_await_throw_completes_iterator(void) {
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "frame");
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "first event is AWAIT");
     Py_XDECREF(ev.val);
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "into await iter");
     TEST_ASSERT_NOT_NULL(throw_exc, "throw_exc");
-    ev = koskari_eval(ctx, NULL, (PyObject *) PyExc_ValueError, throw_exc);
+    ev = koskari_eval(
+        ctx, NULL, NULL, (PyObject *) PyExc_ValueError, throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "return val");
@@ -1764,17 +2043,18 @@ static int test_eval_await_throw_reyield(void) {
 
     KosDynFrame *frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "frame");
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "first event is AWAIT");
     Py_XDECREF(ev.val);
 
     PyObject *throw_exc = PyObject_CallFunction(
         (PyObject *) PyExc_ValueError, "s", "first throw");
     TEST_ASSERT_NOT_NULL(throw_exc, "throw_exc");
-    ev = koskari_eval(ctx, NULL, (PyObject *) PyExc_ValueError, throw_exc);
+    ev = koskari_eval(
+        ctx, NULL, NULL, (PyObject *) PyExc_ValueError, throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(ev.kind == KOS_RES_AWAIT, "second event is AWAIT (re-yield)");
     TEST_ASSERT_NOT_NULL(ev.val, "second val");
@@ -1812,7 +2092,7 @@ static int test_eval_yield_throw_resume(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
     Py_XDECREF(ev.val);
 
@@ -1822,7 +2102,8 @@ static int test_eval_yield_throw_resume(void) {
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
     TEST_ASSERT_NOT_NULL(throw_exc, "create throw_exc");
 
-    ev = koskari_eval(ctx, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
+    ev = koskari_eval(
+        ctx, NULL, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(ev.kind == KOS_RES_RAISE, "second event is RAISE");
     TEST_ASSERT(PyErr_Occurred() != NULL, "exception is set");
@@ -1886,7 +2167,7 @@ static int test_eval_yield_throw_caught(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     TEST_ASSERT(ev.kind == KOS_RES_YIELD, "first event is YIELD");
     TEST_ASSERT_EQ(PyLong_AsLong(ev.val), 42, "yielded value is 42");
     Py_XDECREF(ev.val);
@@ -1897,7 +2178,8 @@ static int test_eval_yield_throw_caught(void) {
         (PyObject *) PyExc_ValueError, "s", "thrown into yield");
     TEST_ASSERT_NOT_NULL(throw_exc, "create throw_exc");
 
-    ev = koskari_eval(ctx, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
+    ev = koskari_eval(
+        ctx, NULL, NULL, (PyObject *) Py_TYPE(throw_exc), throw_exc);
     Py_DECREF(throw_exc);
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "second event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -1960,7 +2242,7 @@ static int test_eval_opcode_error_caught_by_try(void) {
     Py_DECREF(instr);
     TEST_ASSERT(rc == 0, "create context");
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
 
     TEST_ASSERT(ev.kind == KOS_RES_RETURN, "event is RETURN");
     TEST_ASSERT_NOT_NULL(ev.val, "val not NULL");
@@ -2053,6 +2335,432 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
 }
 
 
+/* === A generator returning into a frame with no resume is fatal === */
+
+
+static int test_gen_return_into_frame_without_resume_is_fatal(void) {
+
+  /*
+    A GEN whose code frame returns, grafted under a code-less frame
+    that carries no resume: the return tears the GEN down and finds
+    nothing waiting for the end, which is a fatal RuntimeError.
+  */
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(7);
+  PyObject *instr = PyList_New(2);
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *bottom_ns;
+  KosDynGen *gen;
+  KosDynFrame *frame;
+  KosDynFrame *bottom;
+  KosContext *ctx;
+  KosOpResult ev;
+  PyObject *typ = NULL, *exc = NULL, *tb = NULL;
+  PyObject *msg;
+  PyObject *needle;
+  int is_runtime, says_no_resume;
+  int rc;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  gen = kos_dyngen_new(NULL);
+  TEST_ASSERT_NOT_NULL(gen, "create gen");
+  frame = kos_dynframe_new((KosDynNode *) gen, (KosCode *) code_obj, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create the generator's frame");
+
+  ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  bottom_ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
+
+  KosContext_EvalEnter(ctx, NULL);
+  bottom = kos_dyn_push_frame(ctx, NULL, bottom_ns);
+  rc = bottom
+      ? kos_dyn_gen_install_bootstrap(ctx, gen, (KosDynNode *) frame)
+      : -1;
+  KosContext_EvalExit(ctx);
+  TEST_ASSERT(! PyErr_Occurred(), "the setup raised no exception");
+  TEST_ASSERT_NOT_NULL(bottom, "push code-less frame");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(bottom),
+                   "the code-less frame carries no resume");
+  TEST_ASSERT_EQ(rc, 0, "graft the gen under the code-less frame");
+
+  ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+
+  PyErr_Fetch(&typ, &exc, &tb);
+  PyErr_NormalizeException(&typ, &exc, &tb);
+  is_runtime = (typ && PyErr_GivenExceptionMatches(typ,
+                                                   PyExc_RuntimeError));
+  msg = exc ? PyObject_Str(exc) : NULL;
+  needle = PyUnicode_FromString("no resume");
+  says_no_resume = (msg && needle && PyUnicode_Check(msg)
+                    && PyUnicode_Find(msg, needle, 0, PY_SSIZE_T_MAX, 1) >= 0);
+  if (! says_no_resume && msg)
+    fprintf(stderr, "  message: %s\n", PyUnicode_AsUTF8(msg));
+  PyErr_Clear();
+  Py_XDECREF(needle);
+  Py_XDECREF(msg);
+  Py_XDECREF(typ);
+  Py_XDECREF(exc);
+  Py_XDECREF(tb);
+  Py_XDECREF(ev.val);
+  Py_DECREF(ctx);
+  Py_DECREF(code_obj);
+
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_FATAL, "the return is fatal");
+  TEST_ASSERT(is_runtime, "the fault is a RuntimeError");
+  TEST_ASSERT(says_no_resume, "the message names the missing resume");
+  return 0;
+}
+
+
+/* === Test: flatten onto a consumer clears the wrapper's registers === */
+
+
+static int test_agen_flatten_clears_wrapper_registers(void) {
+
+  /*
+    A generator with a context of its own, stepped on a separate
+    consumer context: the flatten moves the chain onto the consumer,
+    and the wrapper context must keep no register pointing into it.
+    The block and namespace registers are given stand-in values before
+    the step, so the test observes whether the flatten clears them.
+  */
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(42);
+  PyObject *instr = PyList_New(2);
+  KosSegment *sentinel_seg = NULL;
+  KosIterSlots *islots = &KosPyAsyncGenType.kos_iter;
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *agen_obj;
+  KosPyAsyncGen *agen;
+  KosContext *consumer;
+  KosIterStepResult r;
+  PyObject *out = NULL;
+  KosOpResult res;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  Py_DECREF(code_obj);
+  TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
+
+  agen = (KosPyAsyncGen *) agen_obj;
+  TEST_ASSERT_NOT_NULL(agen->gen, "agen owns gen");
+  TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
+
+  /* the wrapper's context, made as the Python-drive path makes it */
+  agen->ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(agen->ctx, "create wrapper context");
+
+  consumer = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(consumer, "create consumer context");
+
+  KosContext_BLOCK(agen->ctx) = &sentinel_seg;
+  KosContext_NAMESPACE(agen->ctx) = Py_None;
+
+  KosContext_EvalEnter(consumer, NULL);
+  r = islots->ki_step(consumer, agen_obj, NULL, &out);
+  KosContext_EvalExit(consumer);
+  TEST_ASSERT(! PyErr_Occurred(), "step raised no exception");
+  TEST_ASSERT(r == KOS_ITER_INSTALLED, "step installed onto consumer");
+
+  TEST_ASSERT_NULL(KosContext_BLOCK(agen->ctx),
+                   "flatten cleared the wrapper's block register");
+  TEST_ASSERT_NULL(KosContext_NAMESPACE(agen->ctx),
+                   "flatten cleared the wrapper's namespace register");
+
+  /* run the flattened body to its yield, which freezes the chain back
+     into the generator; the teardown then closes it on the wrapper's
+     context as the neighbouring test does */
+  res = koskari_eval(consumer, NULL, NULL, NULL, NULL);
+  TEST_ASSERT(res.kind == KOS_RES_YIELD, "body yielded on consumer");
+  TEST_ASSERT_EQ(PyLong_AsLong(res.val), 42, "yielded 42");
+  Py_XDECREF(res.val);
+  islots->ki_finish(agen_obj, 0);
+
+  TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE((KosDynGen *) agen->gen),
+                       "gen frozen with active chain");
+
+  KosPyAsyncGen_Teardown(agen);
+  TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+  TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
+
+  Py_DECREF(agen_obj);
+  Py_DECREF(consumer);
+
+  return 0;
+}
+
+
+static int test_agen_flatten_from_wrapper_chain_clears_registers(void) {
+
+  /*
+    The other flatten site: a generator whose chain rests on its own
+    wrapper context (GEN not ACTIVE), stepped on a separate consumer
+    context. The flatten moves the chain from the wrapper's dyn top
+    onto the consumer, and the wrapper context must keep no register
+    pointing into it.
+  */
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(42);
+  PyObject *instr = PyList_New(2);
+  KosIterSlots *islots = &KosPyAsyncGenType.kos_iter;
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *agen_obj;
+  KosPyAsyncGen *agen;
+  KosDynGen *gen;
+  KosDynNode *head;
+  KosContext *consumer;
+  KosIterStepResult r;
+  PyObject *out = NULL;
+  KosOpResult res;
+  int rc;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  Py_DECREF(code_obj);
+  TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
+
+  agen = (KosPyAsyncGen *) agen_obj;
+  gen = (KosDynGen *) agen->gen;
+  TEST_ASSERT_NOT_NULL(gen, "agen owns gen");
+  TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
+
+  /* the wrapper's context, made as the Python-drive path makes it */
+  agen->ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(agen->ctx, "create wrapper context");
+
+  /* move the resting chain out of the GEN's slot onto the wrapper's
+     context, so the step finds it at the wrapper's dyn top */
+  head = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  TEST_ASSERT_NOT_NULL(head, "the unstarted frame rests in the slot");
+  KosContext_EvalEnter(agen->ctx, NULL);
+  rc = kos_dyn_gen_install_bootstrap(agen->ctx, gen, head);
+  KosContext_EvalExit(agen->ctx);
+  TEST_ASSERT(! PyErr_Occurred(), "the move raised no exception");
+  TEST_ASSERT_EQ(rc, 0, "move the chain onto the wrapper context");
+  KosDynGen_ACTIVE(gen) = NULL;
+
+  TEST_ASSERT_NOT_NULL(KosContext_DYN_TOP(agen->ctx),
+                       "the chain is on the wrapper's dyn top");
+  TEST_ASSERT_NOT_NULL(KosContext_FRAME(agen->ctx),
+                       "the wrapper's frame register holds the frame");
+  TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(agen->ctx),
+                       "the wrapper's namespace register is set");
+
+  consumer = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(consumer, "create consumer context");
+
+  KosContext_EvalEnter(consumer, NULL);
+  r = islots->ki_step(consumer, agen_obj, NULL, &out);
+  KosContext_EvalExit(consumer);
+  TEST_ASSERT(! PyErr_Occurred(), "step raised no exception");
+  TEST_ASSERT(r == KOS_ITER_INSTALLED, "step installed onto consumer");
+
+  TEST_ASSERT_NULL(KosContext_DYN_TOP(agen->ctx),
+                   "flatten cleared the wrapper's dyn top");
+  TEST_ASSERT_NULL(KosContext_FRAME(agen->ctx),
+                   "flatten cleared the wrapper's frame register");
+  TEST_ASSERT_NULL(KosContext_CODE(agen->ctx),
+                   "flatten cleared the wrapper's code register");
+  TEST_ASSERT_NULL(KosContext_BLOCK(agen->ctx),
+                   "flatten cleared the wrapper's block register");
+  TEST_ASSERT_NULL(KosContext_NAMESPACE(agen->ctx),
+                   "flatten cleared the wrapper's namespace register");
+
+  /* run the flattened body to its yield, which freezes the chain back
+     into the generator; the teardown then closes it on the wrapper's
+     context as the neighbouring test does */
+  res = koskari_eval(consumer, NULL, NULL, NULL, NULL);
+  TEST_ASSERT(res.kind == KOS_RES_YIELD, "body yielded on consumer");
+  TEST_ASSERT_EQ(PyLong_AsLong(res.val), 42, "yielded 42");
+  Py_XDECREF(res.val);
+  islots->ki_finish(agen_obj, 0);
+
+  TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE((KosDynGen *) agen->gen),
+                       "gen frozen with active chain");
+
+  KosPyAsyncGen_Teardown(agen);
+  TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+  TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
+
+  Py_DECREF(agen_obj);
+  Py_DECREF(consumer);
+
+  return 0;
+}
+
+
+/* === A busy async generator refuses its adapter before any eval === */
+
+
+/* the breaker a drive in flight is polling; any address of our own */
+static KosBreakerWord agen_sentinel_breaker = 0;
+
+
+/* An async generator over CONST 1; YIELD 1 with a durable context of
+   its own, its sync adapter, and a drive in flight elsewhere: the
+   generator is marked in progress and its context carries that drive's
+   breaker. Returns 0 with the three set, or -1 with an error set. */
+static int make_busy_agen(
+    PyObject **out_agen,
+    PyObject **out_adapter,
+    const volatile KosBreakerWord **out_saved) {
+
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(1);
+  PyObject *instr = PyList_New(2);
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *agen_obj;
+  KosPyAsyncGen *agen;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  if (! code_obj)
+    return -1;
+
+  ns = PyDict_New();
+  if (! ns) {
+    Py_DECREF(code_obj);
+    return -1;
+  }
+
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  Py_DECREF(code_obj);
+  if (! agen_obj)
+    return -1;
+
+  agen = (KosPyAsyncGen *) agen_obj;
+  agen->ctx = KosContext_New(NULL, kos_tls_current());
+  if (! agen->ctx) {
+    Py_DECREF(agen_obj);
+    return -1;
+  }
+
+  *out_adapter = PyObject_GetIter(agen_obj);
+  if (! *out_adapter) {
+    Py_DECREF(agen_obj);
+    return -1;
+  }
+
+  *out_saved = KosContext_BREAKER(agen->ctx);
+  agen->in_progress = 1;
+  KosContext_BREAKER(agen->ctx) = &agen_sentinel_breaker;
+
+  *out_agen = agen_obj;
+  return 0;
+}
+
+
+static void release_busy_agen(
+    PyObject *agen_obj,
+    PyObject *adapter,
+    const volatile KosBreakerWord *saved) {
+
+  KosPyAsyncGen *agen = (KosPyAsyncGen *) agen_obj;
+
+  agen->in_progress = 0;
+  KosContext_BREAKER(agen->ctx) = saved;
+  Py_DECREF(adapter);
+  Py_DECREF(agen_obj);
+}
+
+
+static int test_busy_agen_adapter_leaves_context_untouched(void) {
+
+  PyObject *agen_obj = NULL, *adapter = NULL, *res;
+  const volatile KosBreakerWord *saved = NULL;
+  const volatile KosBreakerWord *seen;
+  int refused;
+
+  TEST_ASSERT_EQ(make_busy_agen(&agen_obj, &adapter, &saved), 0,
+                 "build a busy async generator with an adapter");
+
+  res = PyIter_Next(adapter);
+  refused = (! res && PyErr_Occurred()
+             && PyErr_ExceptionMatches(PyExc_RuntimeError));
+  seen = KosContext_BREAKER(((KosPyAsyncGen *) agen_obj)->ctx);
+
+  Py_XDECREF(res);
+  PyErr_Clear();
+  release_busy_agen(agen_obj, adapter, saved);
+
+  TEST_ASSERT(refused, "the busy step raises RuntimeError");
+  TEST_ASSERT_SAME((void *) seen, (void *) &agen_sentinel_breaker,
+                   "the refused step leaves the context's breaker");
+  return 0;
+}
+
+
+static int test_busy_agen_adapter_throw_leaves_context_untouched(void) {
+
+  PyObject *agen_obj = NULL, *adapter = NULL, *res;
+  const volatile KosBreakerWord *saved = NULL;
+  const volatile KosBreakerWord *seen;
+  int refused;
+
+  TEST_ASSERT_EQ(make_busy_agen(&agen_obj, &adapter, &saved), 0,
+                 "build a busy async generator with an adapter");
+
+  res = PyObject_CallMethod(adapter, "throw", "O",
+                            (PyObject *) PyExc_ValueError);
+  refused = (! res && PyErr_Occurred()
+             && PyErr_ExceptionMatches(PyExc_RuntimeError));
+  seen = KosContext_BREAKER(((KosPyAsyncGen *) agen_obj)->ctx);
+
+  Py_XDECREF(res);
+  PyErr_Clear();
+  release_busy_agen(agen_obj, adapter, saved);
+
+  TEST_ASSERT(refused, "the busy throw raises RuntimeError");
+  TEST_ASSERT_SAME((void *) seen, (void *) &agen_sentinel_breaker,
+                   "the refused throw leaves the context's breaker");
+  return 0;
+}
+
+
 /* === Test runner === */
 
 /* === Elector demotion counts guard misses alone === */
@@ -2079,11 +2787,11 @@ static int run_item_site(
         return -1;
     }
 
-    KosContext *ctx = KosContext_New(frame);
+    KosContext *ctx = KosContext_New(frame, kos_tls_current());
     if (! ctx)
         return -1;
 
-    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL);
+    KosOpResult ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
     int kind = (int) ev.kind;
     Py_XDECREF(ev.val);
     if (ev.kind == KOS_RES_RAISE)
@@ -2227,7 +2935,7 @@ static int test_item_store_site_demotes_and_re_elects(void) {
 }
 
 
-/* === frame cache: only a function a call arm can serve fills it === */
+/* === frame cache: a frame of any shape fills it === */
 
 
 /* A function over code that returns 0, with the given formals; the
@@ -2278,13 +2986,12 @@ static KosDynFrame *make_offered_frame(PyObject *fn) {
 }
 
 
-static int test_cache_frame_refuses_function_no_arm_serves(void) {
+static int test_cache_frame_takes_every_shape(void) {
     /*
-      KosFunction_CacheFrame takes a frame only from a function whose
-      simple arity is set: a function with star formals has simple
-      arity 0, so no call arm could ever take its cached frame, and
-      the offer refuses it. A plain positional function of the same
-      shape is cached, so the refusal is the arity's doing.
+      KosFunction_CacheFrame takes a frame of any shape, because the
+      general arm of KosFunction_Install serves every shape: a plain
+      positional function's frame is cached, and so is the frame of a
+      function with star formals, whose simple arity is 0.
     */
     PyObject *pos = Py_BuildValue("(s)", "a");
     TEST_ASSERT_NOT_NULL(pos, "pos tuple");
@@ -2322,21 +3029,16 @@ static int test_cache_frame_refuses_function_no_arm_serves(void) {
     frame = make_offered_frame(starred);
     TEST_ASSERT_NOT_NULL(frame, "star frame");
     int cached = KosFunction_CacheFrame(starred, frame);
-    if (cached)
-      TEST_ASSERT(KosFunction_CACHED_FRAME(starred) == frame,
-                  "a taken frame is on the cache");
-    else
+    if (! cached)
       kos_dynframe_free(frame);
-    TEST_ASSERT_EQ(cached, 0,
-                   "a function no call arm can serve is refused");
-    TEST_ASSERT_NULL(KosFunction_CACHED_FRAME(starred),
-                     "its cache stays empty");
+    TEST_ASSERT_EQ(cached, 1, "a star-formals function's frame is cached");
+    TEST_ASSERT(KosFunction_CACHED_FRAME(starred) == frame,
+                "the cached frame is the one offered");
 
     Py_DECREF(plain);
     Py_DECREF(starred);
     return 0;
 }
-
 
 
 /* A namespace spec with the given two locals, the second the name a
@@ -2417,19 +3119,228 @@ static int test_cache_frame_takes_self_binding_function(void) {
 }
 
 
+/* === frame cache: a general-shape call binds into a cached frame === */
+
+
+/* Code over a spec of the given locals. Returns a new reference. */
+static PyObject *make_code_with_locals(PyObject *locals, PyObject *instr) {
+
+  PyObject *name = PyUnicode_FromString("test");
+  PyObject *closures = PyTuple_New(0);
+  PyObject *nspec = (name && closures)
+      ? KosNamespaceSpec_New(name, locals, closures, NULL) : NULL;
+  PyObject *code = nspec ? KosCode_New(nspec, instr, NULL, NULL, 1, 1)
+      : NULL;
+
+  Py_XDECREF(name);
+  Py_XDECREF(closures);
+  Py_XDECREF(nspec);
+  return code;
+}
+
+
+/* Drive code over a fresh namespace of its spec holding fn in slot 0.
+   The caller owns the outcome's value. */
+static KosOpResult run_with_function(PyObject *code, PyObject *fn) {
+
+  KosOpResult ev = { 0 };
+  KosDynFrame *frame;
+  KosContext *ctx;
+  PyObject *ns = KosNamespace_New(NULL, KosCode_NSPEC(code));
+
+  ev.kind = KOS_RES_FATAL;
+  if (! ns)
+    return ev;
+
+  if (kos_ns_fast_store(ns, 0, fn) < 0) {
+    Py_DECREF(ns);
+    return ev;
+  }
+
+  /* the frame takes the namespace reference */
+  frame = kos_dynframe_new(NULL, (KosCode *) code, ns);
+  if (! frame) {
+    Py_DECREF(ns);
+    return ev;
+  }
+
+  ctx = KosContext_New(frame, kos_tls_current());
+  if (! ctx)
+    return ev;
+
+  ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+  Py_DECREF(ctx);
+  return ev;
+}
+
+
+static int test_general_call_binds_into_cached_frame(void) {
+  /*
+    f [a *: rest] answers [a, rest]. Its calls take the general arm of
+    KosFunction_Install, and once a return has cached its frame the
+    next call binds into that frame: (f 1 2 3) then (f 4) in one drive
+    answer [1, (2, 3)] and [4, ()]. A call failing in the binder after
+    its positional stores ((f big 6 nope: 7), an unexpected keyword)
+    raises TypeError, leaves the frame cached and keeps no reference to
+    its arguments; the next call (f 8) answers [8, ()] from the same
+    frame.
+  */
+  PyObject *f_locals = Py_BuildValue("(ss)", "a", "rest");
+  TEST_ASSERT_NOT_NULL(f_locals, "f locals");
+  PyObject *f_instr = PyList_New(4);
+  TEST_ASSERT_NOT_NULL(f_instr, "f instr list");
+  PyList_SET_ITEM(f_instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(f_instr, 1, make_instr_int(KOS_OP_FAST, 1));
+  PyList_SET_ITEM(f_instr, 2, make_instr_int(KOS_OP_BUILD_LIST, 2));
+  PyList_SET_ITEM(f_instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *f_code = make_code_with_locals(f_locals, f_instr);
+  Py_DECREF(f_locals);
+  Py_DECREF(f_instr);
+  TEST_ASSERT_NOT_NULL(f_code, "f code");
+
+  PyObject *parent = KosNamespace_FromSpec(KosCode_NSPEC(f_code), NULL);
+  TEST_ASSERT_NOT_NULL(parent, "parent namespace");
+  PyObject *pos = Py_BuildValue("(s)", "a");
+  TEST_ASSERT_NOT_NULL(pos, "pos tuple");
+  PyObject *star = PyUnicode_FromString("rest");
+  TEST_ASSERT_NOT_NULL(star, "star name");
+  PyObject *formals = KosFormals_NewFull(pos, NULL, NULL, NULL,
+                                         star, NULL, NULL, NULL);
+  Py_DECREF(pos);
+  Py_DECREF(star);
+  TEST_ASSERT_NOT_NULL(formals, "star formals");
+  PyObject *fn = KosFunction_NewFromFormals(f_code, formals, parent);
+  Py_DECREF(f_code);
+  Py_DECREF(parent);
+  Py_DECREF(formals);
+  TEST_ASSERT_NOT_NULL(fn, "star function");
+  TEST_ASSERT_EQ(KosFunction_SIMPLE_ARITY1(fn), 0,
+                 "star formals are not simple: stored as 0");
+
+  PyObject *locals = Py_BuildValue("(s)", "f");
+  TEST_ASSERT_NOT_NULL(locals, "caller locals");
+  PyObject *one = PyLong_FromLong(1);
+  PyObject *two = PyLong_FromLong(2);
+  PyObject *three = PyLong_FromLong(3);
+  PyObject *four = PyLong_FromLong(4);
+  PyObject *six = PyLong_FromLong(6);
+  PyObject *seven = PyLong_FromLong(7);
+  PyObject *eight = PyLong_FromLong(8);
+  PyObject *big = PyLong_FromLong(1234567891L);
+  PyObject *names = Py_BuildValue("(s)", "nope");
+  TEST_ASSERT(one && two && three && four && six && seven && eight
+              && big && names, "constants");
+
+  /* (list (f 1 2 3) (f 4)) */
+  PyObject *instr = PyList_New(10);
+  TEST_ASSERT_NOT_NULL(instr, "twice instr list");
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, one));
+  PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, two));
+  PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, three));
+  PyList_SET_ITEM(instr, 4, make_instr_int(KOS_OP_CALL, 3));
+  PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 6, make_instr(KOS_OP_CONST, four));
+  PyList_SET_ITEM(instr, 7, make_instr_int(KOS_OP_CALL, 1));
+  PyList_SET_ITEM(instr, 8, make_instr_int(KOS_OP_BUILD_LIST, 2));
+  PyList_SET_ITEM(instr, 9, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *twice = make_code_with_locals(locals, instr);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(twice, "twice code");
+
+  /* (f big 6 nope: 7) */
+  instr = PyList_New(7);
+  TEST_ASSERT_NOT_NULL(instr, "bad instr list");
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, big));
+  PyList_SET_ITEM(instr, 2, make_instr(KOS_OP_CONST, six));
+  PyList_SET_ITEM(instr, 3, make_instr(KOS_OP_CONST, seven));
+  PyList_SET_ITEM(instr, 4, make_instr(KOS_OP_CONST, names));
+  PyList_SET_ITEM(instr, 5, make_instr_int(KOS_OP_CALL_NAMES, 2));
+  PyList_SET_ITEM(instr, 6, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *bad = make_code_with_locals(locals, instr);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(bad, "bad code");
+
+  /* (f 8) */
+  instr = PyList_New(4);
+  TEST_ASSERT_NOT_NULL(instr, "good instr list");
+  PyList_SET_ITEM(instr, 0, make_instr_int(KOS_OP_FAST, 0));
+  PyList_SET_ITEM(instr, 1, make_instr(KOS_OP_CONST, eight));
+  PyList_SET_ITEM(instr, 2, make_instr_int(KOS_OP_CALL, 1));
+  PyList_SET_ITEM(instr, 3, make_instr_int(KOS_OP_RETURN, 1));
+  PyObject *good = make_code_with_locals(locals, instr);
+  Py_DECREF(instr);
+  Py_DECREF(locals);
+  TEST_ASSERT_NOT_NULL(good, "good code");
+
+  PyObject *expect = Py_BuildValue("[[i(ii)][i()]]", 1, 2, 3, 4);
+  TEST_ASSERT_NOT_NULL(expect, "expected twice result");
+  KosOpResult ev = run_with_function(twice, fn);
+  TEST_ASSERT(ev.kind == KOS_RES_RETURN, "the two calls return");
+  TEST_ASSERT_EQ(PyObject_RichCompareBool(ev.val, expect, Py_EQ), 1,
+                 "[[1, (2, 3)], [4, ()]]: no star value left over");
+  Py_DECREF(ev.val);
+  Py_DECREF(expect);
+
+  KosDynFrame *cached = KosFunction_CACHED_FRAME(fn);
+  TEST_ASSERT_NOT_NULL(cached, "the return cached the frame");
+
+  Py_ssize_t big_refs = Py_REFCNT(big);
+  ev = run_with_function(bad, fn);
+  TEST_ASSERT(ev.kind == KOS_RES_RAISE, "the bad keyword raises");
+  TEST_ASSERT(PyErr_ExceptionMatches(PyExc_TypeError), "as TypeError");
+  PyErr_Clear();
+  TEST_ASSERT_EQ(Py_REFCNT(big), big_refs,
+                 "the failed call keeps no reference to its argument");
+  TEST_ASSERT(KosFunction_CACHED_FRAME(fn) == cached,
+              "the frame stays cached after the failed bind");
+
+  expect = Py_BuildValue("[i()]", 8);
+  TEST_ASSERT_NOT_NULL(expect, "expected good result");
+  ev = run_with_function(good, fn);
+  TEST_ASSERT(ev.kind == KOS_RES_RETURN, "the next call returns");
+  TEST_ASSERT_EQ(PyObject_RichCompareBool(ev.val, expect, Py_EQ), 1,
+                 "[8, ()]");
+  Py_DECREF(ev.val);
+  Py_DECREF(expect);
+  TEST_ASSERT(KosFunction_CACHED_FRAME(fn) == cached,
+              "the same frame served it and was cached again");
+
+  Py_DECREF(twice);
+  Py_DECREF(bad);
+  Py_DECREF(good);
+  Py_DECREF(one);
+  Py_DECREF(two);
+  Py_DECREF(three);
+  Py_DECREF(four);
+  Py_DECREF(six);
+  Py_DECREF(seven);
+  Py_DECREF(eight);
+  Py_DECREF(big);
+  Py_DECREF(names);
+  Py_DECREF(fn);
+  return 0;
+}
+
 
 int run_eval_tests(void) {
 
     BEGIN_TEST_SUITE("Eval Tests");
 
     RUN_TEST(test_class_is_not_koscallable);
-    RUN_TEST(test_cache_frame_refuses_function_no_arm_serves);
+    RUN_TEST(test_cache_frame_takes_every_shape);
     RUN_TEST(test_cache_frame_takes_self_binding_function);
+    RUN_TEST(test_general_call_binds_into_cached_frame);
     RUN_TEST(test_eval_object_add_return);
-    RUN_TEST(test_domain_non_null);
+    RUN_TEST(test_domain_null_outside_eval);
+    RUN_TEST(test_refused_entry_leaves_no_domain);
     RUN_TEST(test_context_clear_then_dealloc_releases_once);
     RUN_TEST(test_context_clear_drops_chain_caches);
-    RUN_TEST(test_domain_fresh_when_no_tls);
+    RUN_TEST(test_context_clear_releases_staged_delivery);
+    RUN_TEST(test_context_recycle_releases_staged_delivery);
+    RUN_TEST(test_context_churn_past_freelist_cap);
+    RUN_TEST(test_domain_absent_at_creation);
     RUN_TEST(test_eval_ctx_current_outside_eval);
     RUN_TEST(test_eval_try_except_catch);
     RUN_TEST(test_eval_try_finally_rerase);
@@ -2452,6 +3363,7 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_pop_cc_without_push_cc);
     RUN_TEST(test_eval_call_zero_args);
     RUN_TEST(test_eval_fast_on_dict_ns);
+    RUN_TEST(test_eval_refuses_running_context);
 
     RUN_TEST(test_eval_await_throw_completes_iterator);
     RUN_TEST(test_eval_await_throw_reyield);
@@ -2461,6 +3373,11 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_yield_throw_caught);
     RUN_TEST(test_eval_opcode_error_caught_by_try);
     RUN_TEST(test_eval_frozen_gen_teardown_without_install);
+    RUN_TEST(test_gen_return_into_frame_without_resume_is_fatal);
+    RUN_TEST(test_agen_flatten_clears_wrapper_registers);
+    RUN_TEST(test_agen_flatten_from_wrapper_chain_clears_registers);
+    RUN_TEST(test_busy_agen_adapter_leaves_context_untouched);
+    RUN_TEST(test_busy_agen_adapter_throw_leaves_context_untouched);
     RUN_TEST(test_elector_declines_do_not_count_toward_demotion);
     RUN_TEST(test_item_store_site_demotes_and_re_elects);
 

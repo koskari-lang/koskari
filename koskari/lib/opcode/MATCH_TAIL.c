@@ -20,11 +20,11 @@
   Row LABEL, depth, width, min.
 */
 KOS_OP_HANDLER(MATCH_TAIL) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *cursor = kos_match_cursor_at(es, KosExtra_IMM(row, 1));
+  PyObject *cursor = kos_match_cursor_at(ctx, KosExtra_IMM(row, 1));
   if (unlikely(! cursor))
     RESULT_RAISE();
 
@@ -39,11 +39,11 @@ KOS_OP_HANDLER(MATCH_TAIL) {
     KOS_MATCH_MISS(row);
 
   if (unlikely(next != cursor)
-      && unlikely(KosEvalState_StackSetUnder(es, KosExtra_IMM(row, 1), next) < 0)) {
+      && unlikely(KosContext_StackSetUnder(ctx, KosExtra_IMM(row, 1), next) < 0)) {
     Py_DECREF(span);
     RESULT_RAISE();
   }
-  RESULT_STEAL(es, span);
+  RESULT_STEAL(ctx, span);
 }
 
 

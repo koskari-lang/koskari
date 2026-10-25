@@ -79,7 +79,6 @@ static KosDynParam *push_dyn_param(
     PyObject *key,
     PyObject *value) {
 
-    KosEvalState es;
     KosDynParam *node;
     PyObject *bindings = PyDict_New();
 
@@ -90,10 +89,9 @@ static KosDynParam *push_dyn_param(
         return NULL;
     }
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
-    node = kos_dyn_push_param_dict(&es, bindings);
-    KosEvalState_FreezeToContext(&es);
+    KosContext_EvalEnter(ctx, NULL);
+    node = kos_dyn_push_param_dict(ctx, bindings);
+    KosContext_EvalExit(ctx);
     Py_DECREF(bindings);
     return node;
 }
@@ -115,13 +113,11 @@ static int assert_param_unbound(PyObject *param_ref, const char *what) {
 
 static int pop_dyn_param(KosContext *ctx, KosDynParam *node) {
 
-    KosEvalState es;
     int r;
 
-    KosEvalState_Init(&es, ctx, NULL);
-    KosEvalState_ThawFromContext(&es);
-    r = kos_dyn_pop_param(&es, node);
-    KosEvalState_FreezeToContext(&es);
+    KosContext_EvalEnter(ctx, NULL);
+    r = kos_dyn_pop_param(ctx, node);
+    KosContext_EvalExit(ctx);
     return r;
 }
 
@@ -178,14 +174,15 @@ static int test_paramref_deref_no_domain_no_default_raises(void) {
 }
 
 
-/* === Test: ParamRef store no domain raises === */
+/* === Test: ParamRef store with no domain lands in the thread default === */
 
 
-static int test_paramref_store_no_domain_raises(void) {
+static int test_paramref_store_no_domain_thread_default(void) {
     PyObject *key = PyUnicode_FromString("foo");
     PyObject *default_val = PyLong_FromLong(0);
     PyObject *param_ref;
     PyObject *val = PyLong_FromLong(99);
+    PyObject *value;
     int res;
 
     TEST_ASSERT_NOT_NULL(key, "create key");
@@ -193,16 +190,40 @@ static int test_paramref_store_no_domain_raises(void) {
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
     res = KosRef_Store(param_ref, val);
-    TEST_ASSERT(res == -1, "store returns -1");
-    TEST_ASSERT(PyErr_Occurred(), "error set");
+    TEST_ASSERT(res == 0, "store returns 0");
 
-    PyErr_Clear();
+    value = KosRef_Deref(param_ref);
+    TEST_ASSERT_SAME(value, val, "deref reads the stored value");
+    Py_DECREF(value);
+
+    res = KosRef_Clear(param_ref);
+    TEST_ASSERT(res == 0, "clear returns 0");
+    TEST_ASSERT(KosRef_IsEmpty(param_ref) == 1, "empty after clear");
+
     Py_DECREF(val);
     Py_DECREF(param_ref);
     Py_DECREF(default_val);
     Py_DECREF(key);
 
     return 0;
+}
+
+
+/* === Scope helpers === */
+
+
+/* What an eval entry does to a context: push it active and give it
+   the thread's domain. A context pushed bare has no domain, and a
+   root store through it has nowhere to go. */
+static void enter_scope(KosContext *ctx) {
+    kos_domain_push_scope(ctx);
+    KosContext_DOMAIN(ctx) = Py_NewRef(kos_tls_domain(kos_tls_current()));
+}
+
+
+static void leave_scope(KosContext *ctx) {
+    Py_CLEAR(KosContext_DOMAIN(ctx));
+    kos_domain_pop_scope(ctx);
 }
 
 
@@ -229,14 +250,14 @@ static int test_paramref_store_deref_inside_scope(void) {
     frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     key = PyUnicode_FromString("x");
     param_ref = KosParamRef_New(key, Py_None);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
-    kos_domain_push_scope(ctx);
+    enter_scope(ctx);
 
     stored = PyLong_FromLong(123);
     res = KosRef_Store(param_ref, stored);
@@ -250,7 +271,7 @@ static int test_paramref_store_deref_inside_scope(void) {
 
     Py_DECREF(value);
 
-    kos_domain_pop_scope(ctx);
+    leave_scope(ctx);
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
@@ -283,14 +304,14 @@ static int test_paramref_clear_inside_scope(void) {
     frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     key = PyUnicode_FromString("y");
     param_ref = KosParamRef_New(key, PyLong_FromLong(99));
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
-    kos_domain_push_scope(ctx);
+    enter_scope(ctx);
 
     KosRef_Store(param_ref, PyLong_FromLong(77));
 
@@ -309,7 +330,7 @@ static int test_paramref_clear_inside_scope(void) {
     TEST_ASSERT_EQ(PyLong_AsLong(value), 99, "returns default");
     Py_DECREF(value);
 
-    kos_domain_pop_scope(ctx);
+    leave_scope(ctx);
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
@@ -341,14 +362,14 @@ static int test_paramref_is_empty_inside_scope(void) {
     frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     key = PyUnicode_FromString("z");
     param_ref = KosParamRef_New(key, Py_None);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
 
-    kos_domain_push_scope(ctx);
+    enter_scope(ctx);
 
     empty = KosRef_IsEmpty(param_ref);
     TEST_ASSERT(empty == 1, "empty before store");
@@ -358,7 +379,7 @@ static int test_paramref_is_empty_inside_scope(void) {
     empty = KosRef_IsEmpty(param_ref);
     TEST_ASSERT(empty == 0, "not empty after store");
 
-    kos_domain_pop_scope(ctx);
+    leave_scope(ctx);
 
     Py_DECREF(param_ref);
     Py_DECREF(key);
@@ -393,7 +414,7 @@ static int test_dynparam_push_pop_restore(void) {
     frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
     TEST_ASSERT_NOT_NULL(frame, "create frame");
 
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     TEST_ASSERT_NOT_NULL(ctx, "create context");
 
     key = PyUnicode_FromString("dynparam");
@@ -455,7 +476,7 @@ static int test_dynparam_nested_restore(void) {
 
     ns = PyDict_New();
     frame = kos_dynframe_new(NULL, (KosCode *) code_obj, ns);
-    ctx = KosContext_New(frame);
+    ctx = KosContext_New(frame, kos_tls_current());
     key = PyUnicode_FromString("nested");
     param_ref = KosParamRef_New(key, NULL);
     TEST_ASSERT_NOT_NULL(param_ref, "create ParamRef");
@@ -511,7 +532,7 @@ int run_paramref_tests(void) {
     BEGIN_TEST_SUITE("ParamRef");
     RUN_TEST(test_paramref_deref_no_domain_returns_default);
     RUN_TEST(test_paramref_deref_no_domain_no_default_raises);
-    RUN_TEST(test_paramref_store_no_domain_raises);
+    RUN_TEST(test_paramref_store_no_domain_thread_default);
     RUN_TEST(test_paramref_store_deref_inside_scope);
     RUN_TEST(test_paramref_clear_inside_scope);
     RUN_TEST(test_paramref_is_empty_inside_scope);

@@ -85,13 +85,13 @@ static void zip_longest_fill(KosZipLongest *z, PyObject *row, uint16_t i) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(zip_longest_resume_deliver_kind, "zip-longest-step",
+KOS_RESUME_KIND_AS_IS(zip_longest_resume_deliver_kind, "zip-longest-step",
                 zip_longest_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(zip_longest_resume_fetch_kind, "zip-longest-step",
+KOS_RESUME_KIND_AS_IS(zip_longest_resume_fetch_kind, "zip-longest-step",
                 zip_longest_resume_fetch, kos_transform_step_clear, NULL);
 
 
@@ -102,7 +102,7 @@ KOS_RESUME_KIND(zip_longest_resume_fetch_kind, "zip-longest-step",
    zip_longest_resume_deliver, which re-enters here. Always entered with a NULL value.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosZipLongest *z = (KosZipLongest *) state;
   KosTransform *t = &z->multi.base;
@@ -110,7 +110,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
   while (t->idx < t->nsrc) {
     if (! t->sources[t->idx]) {
@@ -122,9 +122,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     /* the element, or the source's exhaustion, lands in
        zip_longest_resume_deliver, which files it and hops back here */
     {
-      KosOpResult r = KosEvalState_NextResume(
-          es, t->sources[t->idx], NULL, &zip_longest_resume_deliver_kind, z);
-      RESULT_ENTRY(es, r, &zip_longest_resume_deliver_kind, z);
+      KosOpResult r = KosContext_NextResume(
+          ctx, t->sources[t->idx], &zip_longest_resume_deliver_kind, z);
+      RESULT_ENTRY(ctx, r, &zip_longest_resume_deliver_kind, z);
     }
   }
 
@@ -132,7 +132,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
     PyObject *row = t->pending;
 
     t->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, row, &t->cached_frame);
+    RESULT_FRAME_RETURN(ctx, row, &t->cached_frame);
   }
 }
 
@@ -145,49 +145,48 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_fetch(
    element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult zip_longest_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosZipLongest *z = (KosZipLongest *) state;
   KosTransform *t = &z->multi.base;
 
+  kos_transform_fetched(t->sources[t->idx], element);
+
   if (! element) {
     if (! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, t);
 
+    /* the StopIteration already pending ends it */
     if (! zip_longest_retire(z, t->idx))
-      return EVAL_RAISE();  /* the StopIteration already pending ends it */
+      return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
     zip_longest_fill(z, t->pending, t->idx);
     t->idx++;
 
-    RESUME_HOP(&zip_longest_resume_fetch_kind, es, z, NULL);
+    RESUME_HOP(&zip_longest_resume_fetch_kind, ctx, z, NULL);
   }
 
   PyTuple_SET_ITEM(t->pending, (Py_ssize_t) t->idx, element);
   t->idx++;
 
-  RESUME_HOP(&zip_longest_resume_fetch_kind, es, z, NULL);
+  RESUME_HOP(&zip_longest_resume_fetch_kind, ctx, z, NULL);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult zip_longest_iter_step(
-    KosEvalState *es,
+static KosIterStepResult zip_longest_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosZipLongest *z = (KosZipLongest *) self;
   KosTransform *t = &z->multi.base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
   PyObject *row;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
 
   /* zip-longest over no sources is empty, as itertools' is. */
   if (! t->nsrc || ! z->live) {
@@ -217,7 +216,7 @@ static KosIterStepResult zip_longest_iter_step(
         continue;
       }
 
-      switch (KosEvalState_NextOrDefer(es, t->sources[i],
+      switch (KosContext_NextOrDefer(ctx, t->sources[i],
                                        &zip_longest_resume_fetch_kind, z,
                                        &t->cached_frame, &element)) {
         case KOS_IREQ_DELIVERED:
@@ -235,17 +234,26 @@ static KosIterStepResult zip_longest_iter_step(
         case KOS_IREQ_CONTINUES:
           t->idx = i;
           t->pending = row;  /* steals */
-          t->busy = 1;
           return KOS_ITER_INSTALLED_VALUE;
         default:
           Py_DECREF(row);
-          return kos_transform_step_abort(es, t, pre_top);
+          return kos_transform_step_abort(ctx, t, pre_top);
       }
     }
 
     *out = row;
     return KOS_ITER_VALUE;
   }
+}
+
+
+static KosIterStepResult zip_longest_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, zip_longest_step_body);
 }
 
 
@@ -363,6 +371,7 @@ KosEvaluatedTypeObject KosZipLongestType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

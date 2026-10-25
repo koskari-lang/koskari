@@ -32,7 +32,7 @@ import unittest
 
 import pytest
 
-from koskari.lib import KosMap
+from koskari.lib import KosFilter, KosMap
 from koskari.module import load_module_source_async, new_module
 
 
@@ -41,6 +41,7 @@ pytestmark = pytest.mark.phase_reproducers
 
 SRC = """
 import-from asyncio sleep
+import-from operator neg
 
 define inc [x]:
     (+ x 1)
@@ -52,16 +53,54 @@ define slow-inc [x]:
 define boom [x]:
     raise (ValueError "boom")
 
+define boom-at-one [x]:
+    when (== x 1):
+        raise (ValueError "boom")
+    x
+
+define raising-gen [n]:
+    for-each [i (range n)]:
+        when (== i 1):
+            raise (ValueError "gen")
+        yield i
+
 define stopper [x]:
     if (== x 2):
         raise (StopIteration)
     x
+
+define py-name [x]:
+    (str x)
+
+define call-in-try [x]:
+    try:
+        (py-name x)
+    except [e Exception]:
+        "no"
+
+define py-neg [x]:
+    (neg x)
+
+define map-lambda [xs]:
+    (collect (map (lambda [x] (neg x)) xs))
 
 define consume [it]:
     define total 0
     for-each [v it]:
         set! total (+ total v)
     total
+
+define collect [it]:
+    define out #[]
+    for-each [v it]:
+        out.append v
+    out
+
+define consume-caught [it]:
+    try:
+        (consume it)
+    except [e ValueError]:
+        (str e)
 """
 
 
@@ -103,6 +142,46 @@ class TestKosMapInvokeGraft(unittest.IsolatedAsyncioTestCase):
         # the map is reusable state-wise: not busy, not closed
         m = KosMap(v["inc"], [5])
         self.assertEqual(await v["consume"](m), 6)
+
+    async def test_map_is_usable_after_its_function_raised(self):
+        """
+        a map whose mapped function raised mid-iteration is finished
+        when the loop frame declines the failure, so a later loop over
+        the same map carries on from the next element
+        """
+        mod = await self.load("kmg_reuse_map")
+        v = vars(mod)
+        m = KosMap(v["boom-at-one"], [1, 2, 3])
+        self.assertEqual(await v["consume-caught"](m), "boom")
+        self.assertEqual(await v["consume"](m), 5)
+
+    async def test_filter_is_usable_after_its_predicate_raised(self):
+        mod = await self.load("kmg_reuse_filter")
+        v = vars(mod)
+        f = KosFilter(v["boom-at-one"], [1, 2, 3])
+        self.assertEqual(await v["consume-caught"](f), "boom")
+        self.assertEqual(await v["consume"](f), 5)
+
+    async def test_map_is_usable_after_its_source_raised(self):
+        mod = await self.load("kmg_reuse_source")
+        v = vars(mod)
+        m = KosMap(v["inc"], v["raising-gen"](3))
+        self.assertEqual(await v["consume-caught"](m), "gen")
+        self.assertEqual(await v["consume"](m), 0)
+
+    async def test_mapped_function_tail_calling_python(self):
+        """
+        a mapped Koskari function whose body is a tail call to a Python
+        callable delivers that call's value as the element
+        """
+        mod = await self.load("kmg_py_tail")
+        v = vars(mod)
+        self.assertEqual(await v["collect"](KosMap(v["py-name"], [1, 2, 3])),
+                         ["1", "2", "3"])
+        self.assertEqual(await v["collect"](KosMap(v["py-neg"], [1, 2, 3])),
+                         [-1, -2, -3])
+        self.assertEqual(await v["map-lambda"]([1, 2, 3]), [-1, -2, -3])
+        self.assertEqual(await v["call-in-try"](7), "7")
 
     async def test_graft_stopiteration_exhausts(self):
         """

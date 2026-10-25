@@ -20,10 +20,10 @@
   iterator, acquired uniformly over both protocols (kos_iter_acquire).
 */
 KOS_OP_HANDLER(VAR_ITER) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *val = frame_ns_deref(es, name);
+  PyObject *val = frame_ns_deref(ctx, name);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(VAR_ITER) {
   if (unlikely(! res))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

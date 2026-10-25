@@ -87,15 +87,15 @@ static int dynnode_to_dict_ns(KosDynNode *node, PyObject *data) {
    Push NS as DYN_TOP. Callers: PUSH_NS.
 */
 KosDynNs *kos_dyn_push_ns(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *ns) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynNs *ns_node = kos_dynns_new(KosEvalState_DYN_TOP(es), ns);
+  KosDynNs *ns_node = kos_dynns_new(KosContext_DYN_TOP(ctx), ns);
   if (! ns_node)
     return NULL;
 
-  if (kos_dyn_push(es, (KosDynNode *) ns_node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) ns_node) < 0) {
     kos_dynns_free(ns_node);
     return NULL;
   }
@@ -106,14 +106,14 @@ KosDynNs *kos_dyn_push_ns(
 /**
    Unlink and free NS when top. Callers: POP_NS.
 */
-int kos_dyn_pop_ns(KosEvalState *es, KosDynNs *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_ns(KosContext *ctx, KosDynNs *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "NS node is not at top of chain");
     return -1;
   }
 
   KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_NS, "POP_NS", "NS");
-  return kos_dyn_pop_transparent_deliver(es, (KosDynNode *) node);
+  return kos_dyn_pop_transparent_deliver(ctx, (KosDynNode *) node);
 }
 
 

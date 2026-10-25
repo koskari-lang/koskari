@@ -49,8 +49,7 @@
    entry (PEP 590 shape); tuple+dict callers spread onto this shape
    through KosArgSpread.
 
-   es is the live KosEvalState of the running evaluator. Use
-   KosEvalState_CONTEXT(es) when the heap context is needed.
+   ctx is the context of the running evaluator.
 
    The install owns its frame and reports what it did, one of:
 
@@ -58,22 +57,22 @@
      settled (it may be an awaitable); nothing was pushed and no frame
      was touched. The caller settles or delivers it.
    - NORMAL / POLL: a callee frame is installed and current, pushed by
-     the install (KosEvalState_InstallCallFrame), and the call's result
+     the install (KosContext_InstallCallFrame), and the call's result
      arrives by that frame's return.
    - REPROLOGUE / AWAIT: the install pushed a code-less frame and set
-     a resume on it (KosEvalState_CallInto); the resume delivers.
+     a resume on it (KosContext_CallInto); the resume delivers.
    - RAISE: error, PyErr set.
 
    tail_call: 1 if this is a tail call; 0 otherwise. An install that
    takes a frame reuses the caller's frame for a tail call
-   (KosEvalState_InstallCallFrame does this); one that forwards the
+   (KosContext_InstallCallFrame does this); one that forwards the
    call to another callable passes tail_call through unchanged; one
    that completes in hand ignores it, and the RETURN that follows every
    TAIL_CALL retires the caller's frame. An install never pops or
    resets a frame on its own.
 */
 typedef KosOpResult (*KosVectorInstallFunc)(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -106,7 +105,7 @@ typedef struct KosCallSlots {
    branch to else pc, default, StopIteration per site rules). The
    INSTALLED pair means the provider spliced work onto the consumer
    context; the site re-enters the prologue and the result is delivered
-   later at the site's iteration node. ERROR leaves PyErr set; on any
+   later to the site's resume. ERROR leaves PyErr set; on any
    non-INSTALLED outcome the provider has fully undone its own partial
    state. A provider whose step needs its own suspensions or
    sub-iteration runs them under a CPS resume frame (the resume
@@ -117,14 +116,14 @@ typedef enum {
   KOS_ITER_EXHAUSTED,   /* *out: return payload (new ref) or NULL */
   KOS_ITER_INSTALLED,   /* spliced own frames; deferred delivery */
   KOS_ITER_INSTALLED_VALUE, /* spliced a frame whose return IS the
-                               element: the site sets its iteration node's
-                               request to value mode */
+                               element, delivered to the site's resume
+                               as a frame return */
   KOS_ITER_ERROR,       /* PyErr set; *out untouched */
 } KosIterStepResult;
 
 
 typedef KosIterStepResult (*KosIterStepFunc)(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,        /* borrowed; NULL for plain next. A
                                   PROTOCOL send only (a generator's
@@ -132,7 +131,7 @@ typedef KosIterStepResult (*KosIterStepFunc)(
     PyObject **out);
 
 typedef KosIterStepResult (*KosIterThrowFunc)(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *throw_typ,       /* borrowed */
     PyObject *throw_exc,       /* borrowed */
@@ -154,17 +153,30 @@ typedef void (*KosIterFinishFunc)(PyObject *self, int exhausted);
    The provider's durable Python-boundary drive context, when it owns
    one: context-level state (parameterize extents, the in-flight await
    iterator) lives across steps there. NULL slot or NULL return means
-   the adapter owns its own host context.
+   the adapter owns its own drive context.
 */
 typedef struct KosContext *(*KosIterPyCtxFunc)(PyObject *self);
+
+/**
+   Is a step in flight? 1 with the provider's error set when
+   one is, 0 otherwise
+*/
+typedef int (*KosIterBusyFunc)(PyObject *self);
 
 
 /**
    The iter suite: the in-eval iteration interface. A type whose suite
-   carries ki_step is a KosIter provider; NEXT, ITER_NEXT, and
-   YIELD_FROM dispatch it for flattened stepping, and the dynchain
-   delivery walks report completion through ki_finish. The Python
+   carries ki_step is a KosIter provider; the next, for-each step and
+   yield-from resumes dispatch it for flattened stepping, and the
+   delivery paths report completion through ki_finish. The Python
    adapters (iterate.c) drive ki_step against the ki_pyctx context.
+
+   ki_busy returns 1 with the provider's error set when a step
+   is in flight, 0 otherwise; a NULL slot means the provider is never
+   busy. The Python adapters ask it before they begin a drive on the
+   ki_pyctx context, which a drive in flight may share; ki_step and
+   ki_throw still refuse a busy provider themselves, for the opcode
+   sites that step on the running context.
 */
 typedef struct KosIterSlots {
   KosIterStepFunc ki_step;
@@ -172,11 +184,26 @@ typedef struct KosIterSlots {
   KosIterCloseFunc ki_close;
   KosIterFinishFunc ki_finish;
   KosIterPyCtxFunc ki_pyctx;
+  KosIterBusyFunc ki_busy;
   uint8_t ki_pyctx_recyclable;  /* the durable context holds no state
                                    between completed steps; the adapters
                                    recycle it at their reset points
-                                   exactly like an owned host */
+                                   exactly like an owned context */
 } KosIterSlots;
+
+
+/* A step of iter, a provider with suite islots, is over: tell the
+   provider, exhausted when the step was its end. A provider that
+   recycles its durable context re-derives exhaustion from its source
+   and stays open (a mapped function's StopIteration is a truncation
+   that builtins.map resumes from), so the end is withheld from it. */
+static inline void kos_iter_finish(
+    PyObject *iter,
+    KosIterSlots *islots,
+    int exhausted) {
+
+  islots->ki_finish(iter, exhausted && ! islots->ki_pyctx_recyclable);
+}
 
 
 typedef struct {
@@ -270,6 +297,22 @@ static inline int kos_iter_check(PyObject *obj) {
 
 
 /**
+   One step of a provider through its suite, with no request record:
+   ki_step, with a StopIteration ending the step read as the
+   provider's exhaustion, the provider finished and the exception's
+   value in *out as the end's payload. The step entries with a record
+   and the ones without share it. send_val borrowed; *out a new ref on
+   VALUE and EXHAUSTED.
+*/
+KosIterStepResult kos_iter_step_provider(
+    struct KosContext *ctx,
+    PyObject *iter,
+    KosIterSlots *islots,
+    PyObject *send_val,
+    PyObject **out);
+
+
+/**
    An acquired iterator that steps through tp_iternext alone, with no
    evaluator involvement: a plain sync iterator that is not a KosIter
    provider. Anything else -- a provider, a python async iterator --
@@ -284,9 +327,9 @@ static inline int KosIter_CheckSync(PyObject *iter) {
 /**
    The plain-iterator arm the request entries share: a python iterator
    that is no provider and has tp_iternext answers through it alone,
-   with no iteration node, a StopIteration read as exhaustion. Returns
-   1 when iter is such an iterator, with *status set and *out the
-   element on DELIVERED; 0 when iter needs the node. Inline, so a
+   a StopIteration read as exhaustion. Returns 1 when iter is such an
+   iterator, with *status set and *out the element on DELIVERED; 0
+   when iter needs a request. Inline, so a
    provider's per-element fetch is the type test and the call.
 */
 KOS_OP_INLINE int kos_iter_next_plain(
@@ -317,19 +360,19 @@ KOS_OP_INLINE int kos_iter_next_plain(
 
 /**
    Request the next element of iter from a provider's step, which
-   runs outside the drive and so cannot push an iteration node. A
+   runs outside the drive and so cannot defer in place. A
    plain python iterator answers now: DELIVERED with *out the element
    (new ref), EXHAUSTED, or ERROR with PyErr set. Any other kind is
    deferred: a code-less frame carrying resume and state is installed
    (through cache, as KosResumeFrame_Install takes it) and CONTINUES is
    returned, so the step reports its work installed and resume makes
-   the request through KosEvalState_NextResume once the drive reaches
+   the request through KosContext_NextResume once the drive reaches
    the frame. ERROR with nothing installed when the frame cannot be.
    The one place a provider asks for an element from its step; the
    kind of the source is decided here, never by the provider.
 */
-KOS_OP_INLINE KosIterRequestStatus KosEvalState_NextOrDefer(
-    KosEvalState *es,
+KOS_OP_INLINE KosIterRequestStatus KosContext_NextOrDefer(
+    KosContext *ctx,
     PyObject *iter,
     const KosResumeKind *resume,
     void *state,
@@ -343,7 +386,7 @@ KOS_OP_INLINE KosIterRequestStatus KosEvalState_NextOrDefer(
   if (kos_iter_next_plain(iter, out, &status))
     return status;
 
-  if (! KosResumeFrame_Install(es, resume, state, cache))
+  if (! KosResumeFrame_Install(ctx, resume, state, cache))
     return KOS_IREQ_ERROR;
   return KOS_IREQ_CONTINUES;
 }

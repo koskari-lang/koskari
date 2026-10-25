@@ -20,8 +20,8 @@
   through kos_item_take (eval/eval_item.c).
 */
 KOS_OP_HANDLER(ITEM_TAKE) {
-  KOS_SYNC_PC(es, insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KOS_SYNC_PC(ctx, insn);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail;
   PyObject *obj;
   PyObject *key;
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(ITEM_TAKE) {
     RESULT_RAISE();
 
   kos_stack_replace2_fast(bl, out);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

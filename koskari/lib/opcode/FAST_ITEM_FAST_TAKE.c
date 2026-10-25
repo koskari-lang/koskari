@@ -21,9 +21,9 @@
   through kos_item_take (eval/eval_item.c).
 */
 KOS_OP_HANDLER(FAST_ITEM_FAST_TAKE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  PyObject *ns = KosEvalState_NAMESPACE(es);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *obj, *obj_ref;
   PyObject *key, *key_ref;
   PyObject *out;
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(FAST_ITEM_FAST_TAKE) {
 
   if (unlikely(! out))
     RESULT_RAISE();
-  RESULT_STEAL(es, out);
+  RESULT_STEAL(ctx, out);
 }
 
 

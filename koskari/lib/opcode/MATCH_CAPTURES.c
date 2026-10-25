@@ -20,7 +20,7 @@
 */
 KOS_OP_HANDLER(MATCH_CAPTURES) {
   (void) kos_op_delivery_;
-  TAILCALL(kos_match_captures, es, insn, NULL);
+  TAILCALL(kos_match_captures, ctx, insn, NULL);
 }
 
 

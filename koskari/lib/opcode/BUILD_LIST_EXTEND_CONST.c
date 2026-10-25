@@ -23,10 +23,10 @@
 */
 
 KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *seq = KosOp_OBJ(insn);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, 1);
   if (unlikely(! ptr))
     RESULT_RAISE();
 
@@ -43,7 +43,7 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
       if (unlikely(PyList_Append(list, PyTuple_GET_ITEM(seq, i)) < 0))
         RESULT_RAISE();
     }
-    RESULT_NEXT(es);
+    RESULT_NEXT(ctx);
   }
 
   {
@@ -65,7 +65,7 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND_CONST) {
       RESULT_RAISE();
   }
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

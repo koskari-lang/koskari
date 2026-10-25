@@ -10,7 +10,7 @@ specials that rewrite into the bare runtime name `values`.
 Multiple values cross a seam in three shapes today:
 
 - `return` and `yield` take a count: `RETURN n` and `YIELD n` pop n
-  stacked values into a tuple (`KosEvalState_StackPopTail`), one value
+  stacked values into a tuple (`KosContext_StackPopTail`), one value
   rides as itself.
 - A keyword among the values makes the special rewrite its source to
   `(KIND (values ...))`, a call of the `values` type by name

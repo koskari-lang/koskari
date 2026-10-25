@@ -70,11 +70,7 @@ static KosDynParam *kos_dynparam_new_from_bindings(
     return NULL;
   }
 
-  kos_dynnode_init(
-    (KosDynNode *) node,
-    KOS_DYN_PARAM,
-    parent,
-    KOS_DYN_CAP_NEEDS_INSTALL_WIND);
+  kos_dynnode_init((KosDynNode *) node, KOS_DYN_PARAM, parent, 0);
 
   KosDynParam_BINDINGS(node) = cells;
   KosDynParam_SAVED(node) = NULL;
@@ -220,27 +216,42 @@ static int kos_dynparam_enter(KosContext *ctx, KosDynParam *node) {
 
 
 /**
-   Restore the prior cells from SAVED (unwind / transfer).
+   Restore the prior cells from SAVED (unwind / transfer). The swap-back
+   writes into the context's own table: one shared with a coroutine
+   created inside the extent, or with a nested boundary call, is copied
+   first. If that copy fails the error is cleared and the table is left
+   as is, as the swap-back does for its own dict failures. The restore
+   runs under the raise walk with the propagating exception live, so
+   that exception is held across the best-effort work and put back
+   after it, as the enter's rollback does.
 */
 static void kos_dynparam_restore(KosContext *ctx, KosDynParam *node) {
 
   PyObject *saved = KosDynParam_SAVED(node);
+  PyObject *typ, *val, *tb;
+  PyObject *cells;
+
   if (! saved)
     return;
 
-  PyObject *cells = KosContext_PARAM_REFS(ctx);
-  if (! cells)
+  if (! KosContext_PARAM_REFS(ctx))
     return;
 
-  kos_dynparam_swap_back(cells, saved);
+  PyErr_Fetch(&typ, &val, &tb);
+  cells = kos_context_param_refs(ctx);
+  if (cells)
+    kos_dynparam_swap_back(cells, saved);
+  else
+    PyErr_Clear();
+  PyErr_Restore(typ, val, tb);
 }
 
 
 /**
    INSTALL wind: enter bindings. Callers: kos_dyn_wind, install wind span.
 */
-int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node) {
-  return kos_dynparam_enter(KosEvalState_CONTEXT(es), node);
+int kos_dyn_param_wind(KosContext *ctx, KosDynParam *node) {
+  return kos_dynparam_enter(ctx, node);
 }
 
 
@@ -248,10 +259,10 @@ int kos_dyn_param_wind(KosEvalState *es, KosDynParam *node) {
    Restore outer param values on extent unwind. Callers:
    kos_dyn_extent_freeze and kos_dyn_uninstall_handler.
 */
-void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node) {
+void kos_dyn_param_unwind(KosContext *ctx, KosDynParam *node) {
   if (KOS_XFER_TRACE)
     SAYF("[xfer] param unwind node=%p", (void *) node);
-  kos_dynparam_restore(KosEvalState_CONTEXT(es), node);
+  kos_dynparam_restore(ctx, node);
 }
 
 
@@ -259,8 +270,7 @@ void kos_dyn_param_unwind(KosEvalState *es, KosDynParam *node) {
    Push PARAM from a name -> value dict (borrowed): enter then link as
    DYN_TOP. Callers: opcode PUSH_PARAM.
 */
-KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+KosDynParam *kos_dyn_push_param_dict(KosContext *ctx, PyObject *bindings) {
 
   if (! bindings) {
     PyErr_SetString(PyExc_ValueError, "kos_dyn_push_param_dict: bindings is NULL");
@@ -278,7 +288,7 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
   }
 
   KosDynParam *node = kos_dynparam_new_from_bindings(
-      KosEvalState_DYN_TOP(es), bindings);
+      KosContext_DYN_TOP(ctx), bindings);
   if (! node)
     return NULL;
 
@@ -287,7 +297,7 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
     return NULL;
   }
 
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynparam_restore(ctx, node);
     kos_dynparam_free(node);
     return NULL;
@@ -299,10 +309,9 @@ KosDynParam *kos_dyn_push_param_dict(KosEvalState *es, PyObject *bindings) {
 /**
    Restore and unlink PARAM when top. Callers: POP_PARAM, transfer pop.
 */
-int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+int kos_dyn_pop_param(KosContext *ctx, KosDynParam *node) {
 
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "PARAM node is not at top of chain");
     return -1;
   }
@@ -310,7 +319,7 @@ int kos_dyn_pop_param(KosEvalState *es, KosDynParam *node) {
   KOS_DYN_POP_REQUIRE_KIND(node, KOS_DYN_PARAM, "POP_PARAM", "PARAM");
 
   kos_dynparam_restore(ctx, node);
-  return kos_dyn_pop_transparent_deliver(es, (KosDynNode *) node);
+  return kos_dyn_pop_transparent_deliver(ctx, (KosDynNode *) node);
 }
 
 

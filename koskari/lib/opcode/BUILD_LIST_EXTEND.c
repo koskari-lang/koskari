@@ -24,13 +24,13 @@
   a list.
 */
 KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
-  PyObject *iterable = KosEvalState_StackPopRef(es);
+  PyObject *iterable = KosContext_StackPopRef(ctx);
   if (unlikely(! iterable))
     RESULT_RAISE();
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, 1);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, 1);
   if (unlikely(! ptr)) {
     Py_DECREF(iterable);
     RESULT_RAISE();
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(BUILD_LIST_EXTEND) {
     RESULT_RAISE();
   Py_DECREF(result);
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

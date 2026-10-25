@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(FAST_ATTR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
@@ -49,7 +49,7 @@ KOS_OP_HANDLER(FAST_ATTR) {
 #endif
       if (hit) {
         Py_INCREF(hit);
-        RESULT_STEAL(es, hit);
+        RESULT_STEAL(ctx, hit);
       }
     }
   }
@@ -65,7 +65,7 @@ KOS_OP_HANDLER(FAST_ATTR) {
   Py_DECREF(obj);
   if (! val)
     RESULT_RAISE();
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

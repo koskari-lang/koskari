@@ -26,7 +26,7 @@
 
 
 /**
-   Allocate GEN iteration node; owner borrowed, refcount for sharing. Callers:
+   Allocate a GEN node; owner borrowed, refcount for sharing. Callers:
    generator object setup.
 */
 KosDynGen *kos_dyngen_new(PyObject *owner) {
@@ -144,7 +144,7 @@ static void kos_dyngen_keepalive_release(KosDynGen *gen) {
 }
 
 
-void kos_dyn_finish_flattened_gen(KosEvalState *es, KosDynGen *gen) {
+void kos_dyn_finish_flattened_gen(KosContext *ctx, KosDynGen *gen) {
 
   PyObject *typ = NULL, *val = NULL, *tb = NULL;
   KosDynNode *consumer = KosDynNode_PARENT(gen);
@@ -154,7 +154,7 @@ void kos_dyn_finish_flattened_gen(KosEvalState *es, KosDynGen *gen) {
   if (owner && KosIter_CheckSlots(owner, &islots))
     islots->ki_finish(owner, 1);
   PyErr_Fetch(&typ, &val, &tb);
-  kos_dyn_commit_dyn_top(es, consumer);
+  kos_dyn_commit_dyn_top(ctx, consumer);
   KosDynNode_PARENT(gen) = NULL;
   kos_dyngen_keepalive_release(gen);
   kos_dyngen_release(gen);
@@ -176,8 +176,8 @@ static int dynnode_to_dict_gen(KosDynNode *node, PyObject *data) {
 }
 
 
-KosDynGen *kos_dyn_find_gen(KosEvalState *es) {
-  KosDynNode *n = (KosDynNode *) KosEvalState_FRAME(es);
+KosDynGen *kos_dyn_find_gen(KosContext *ctx) {
+  KosDynNode *n = (KosDynNode *) KosContext_FRAME(ctx);
 
   for (; n; n = KosDynNode_PARENT(n)) {
     if (KosDynNode_IS_GEN(n))
@@ -190,11 +190,11 @@ KosDynGen *kos_dyn_find_gen(KosEvalState *es) {
 /**
    Capture the live registers at the current dyn_top into regs.
 */
-static void kos_live_regs_capture(KosEvalState *es, KosLiveRegs *regs) {
-  regs->top = KosEvalState_DYN_TOP(es);
-  regs->frame = (KosDynNode *) KosEvalState_FRAME(es);
-  regs->block = KosEvalState_BLOCK(es);
-  regs->ns = KosEvalState_NAMESPACE(es);
+static void kos_live_regs_capture(KosContext *ctx, KosLiveRegs *regs) {
+  regs->top = KosContext_DYN_TOP(ctx);
+  regs->frame = (KosDynNode *) KosContext_FRAME(ctx);
+  regs->block = KosContext_BLOCK(ctx);
+  regs->ns = KosContext_NAMESPACE(ctx);
 }
 
 
@@ -202,9 +202,9 @@ static void kos_live_regs_capture(KosEvalState *es, KosLiveRegs *regs) {
    Make regs the live registers: dyn_top and the retarget a resync from
    that top would produce, with the outgoing frame's pc flushed.
 */
-static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
-  KosEvalState_DYN_TOP(es) = regs->top;
-  kos_dyn_resync_apply(es, (KosDynFrame *) regs->frame, regs->block,
+static void kos_live_regs_apply(KosContext *ctx, const KosLiveRegs *regs) {
+  KosContext_DYN_TOP(ctx) = regs->top;
+  kos_dyn_resync_apply(ctx, (KosDynFrame *) regs->frame, regs->block,
                        regs->ns, 1);
 }
 
@@ -219,21 +219,21 @@ static void kos_live_regs_apply(KosEvalState *es, const KosLiveRegs *regs) {
    On a failure the nodes already installed are frozen again and the
    span is as the freeze left it.
 */
-static int kos_dyn_gen_install_span(KosEvalState *es, KosDynNode *node) {
+static int kos_dyn_gen_install_span(KosContext *ctx, KosDynNode *node) {
   if (! node)
     return 0;
-  if (kos_dyn_gen_install_span(es, KosDynNode_PARENT(node)) < 0)
+  if (kos_dyn_gen_install_span(ctx, KosDynNode_PARENT(node)) < 0)
     return -1;
-  if (kos_dyn_extent_install(es, node) < 0) {
+  if (kos_dyn_extent_install(ctx, node) < 0) {
     for (KosDynNode *n = KosDynNode_PARENT(node); n; n = KosDynNode_PARENT(n))
-      (void) kos_dyn_extent_freeze(es, n);
+      (void) kos_dyn_extent_freeze(ctx, n);
     return -1;
   }
   return 0;
 }
 
 
-int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
+int kos_dyn_gen_install(KosContext *ctx, KosDynGen *gen) {
   KosDynNode *active;
   KosDynNode *bottom;
   KosDynFrame *invoker_frame;
@@ -244,17 +244,17 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
      Adapter-driven installs have no frame below (invoker 0), so an async
      drive self-cleans any bit a prior demand drive left behind; the
      demand boundary ORs its forced bit in after this install. */
-  invoker_frame = KosEvalState_FRAME(es);
+  invoker_frame = KosContext_FRAME(ctx);
   invoker_demand = invoker_frame
       ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
       : 0;
 
   SAYF("[gen] install ENTER ctx=%p gen=%p dyn_top=%p ctx_dyn_top_kind=%s "
        "active=%p",
-       (void *) KosEvalState_CONTEXT(es), (void *) gen,
-       (void *) KosEvalState_DYN_TOP(es),
-       KosEvalState_DYN_TOP(es)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
+       (void *) ctx, (void *) gen,
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
        (void *) KosDynGen_ACTIVE(gen));
 
@@ -297,7 +297,7 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     unsigned count = KosDynGen_NFRAMES(gen);
     unsigned base = invoker_frame ? KosDynFrame_DEPTH(invoker_frame) : 0;
 
-    if (kos_eval_check_frame_room(es, invoker_frame, count) < 0)
+    if (kos_eval_check_frame_room(ctx, invoker_frame, count) < 0)
       return -1;
     if (base != KosDynGen_BASE_DEPTH(gen)) {
       kos_dyn_renumber_frames_counted(active, (KosDynNode *) gen, base,
@@ -309,13 +309,13 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   /* What the freeze took out comes back before the splice: a refusal
      here leaves the GEN frozen, nothing spliced. */
   if (KosDynNode_FLAGS(gen) & KOS_DYNF_GEN_INSTALLS) {
-    if (kos_dyn_gen_install_span(es, active) < 0)
+    if (kos_dyn_gen_install_span(ctx, active) < 0)
       return -1;
     KosDynNode_FLAGS(gen) &= ~KOS_DYNF_GEN_INSTALLS;
   }
 
   /* The consumer's registers, restored at the next freeze. */
-  kos_live_regs_capture(es, KosDynGen_HOST(gen));
+  kos_live_regs_capture(ctx, KosDynGen_HOST(gen));
 
   /* The span kept its interior unwind caches across the freeze; the
      two on its bottom frame name the consumer, and are rewritten from
@@ -332,12 +332,12 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
     KosDynNode_NS(gen) = Py_XNewRef(KosDynGen_HOST(gen)->ns);
 
   /* 1. GEN's parent = current ctx's active node */
-  KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
   /* 2. Incref GEN */
   kos_dyngen_acquire(gen);
   /* 3. Put GEN's active onto ctx's active; 4. NULL GEN's active.
    * Do NOT overwrite active->parent: the stored chain active -> ... -> gen
-   * is already intact (e.g. YIELD_FROM -> FRAME -> GEN). Overwriting
+   * is already intact (e.g. FOREACH -> FRAME -> GEN). Overwriting
    * would sever links when active is not a direct child of gen. */
   KosDynGen_ACTIVE(gen) = NULL;
   /* frozen.top always equals the active head here: kos_dyn_gen_freeze
@@ -348,16 +348,16 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
   if (KosDynGen_FROZEN(gen)->top == active && KosDynGen_FROZEN(gen)->frame) {
     /* The registers the freeze recorded for this very head: apply
        them. Same outcome as the rebuild without its find walk. */
-    kos_live_regs_apply(es, KosDynGen_FROZEN(gen));
+    kos_live_regs_apply(ctx, KosDynGen_FROZEN(gen));
   } else {
-    kos_dyn_commit_dyn_top(es, active);
+    kos_dyn_commit_dyn_top(ctx, active);
   }
   KosDynGen_FROZEN(gen)->top = NULL;
   /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
   kos_dyngen_keepalive_acquire(gen);
 
   {
-    KosDynFrame *surfaced = KosEvalState_FRAME(es);
+    KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (surfaced) {
       if (invoker_demand)
         KosDynFrame_FLAGS(surfaced) |= KOS_FRAME_DEMAND;
@@ -370,22 +370,22 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
      value at the drive. A frame waiting on a resume (a delegation in
      flight) takes its delivery through the pending slot instead. */
   {
-    KosDynFrame *surfaced = KosEvalState_FRAME(es);
+    KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (! (surfaced && KosDynFrame_RESUME_KIND(surfaced))
-        && KosEvalState_StackPushRef(es, Py_None) < 0)
+        && KosContext_StackPushRef(ctx, Py_None) < 0)
       return -1;
   }
 
   SAYF("[gen] install DONE dyn_top=%p (%s) frame_top=%p chain: ",
-       (void *) KosEvalState_DYN_TOP(es),
-       KosEvalState_DYN_TOP(es)
-           ? kos_dynnode_kind_name(KosDynNode_KIND(KosEvalState_DYN_TOP(es)))
+       (void *) KosContext_DYN_TOP(ctx),
+       KosContext_DYN_TOP(ctx)
+           ? kos_dynnode_kind_name(KosDynNode_KIND(KosContext_DYN_TOP(ctx)))
            : "NULL",
-       (void *) KosEvalState_FRAME(es));
+       (void *) KosContext_FRAME(ctx));
 #if VERBOSE_DEBUG
   {
     KosDynNode *n;
-    for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n))
+    for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n))
       SAYF("%p %s -> ", (void *) n, kos_dynnode_kind_name(KosDynNode_KIND(n)));
     SAY("(end)");
   }
@@ -396,12 +396,12 @@ int kos_dyn_gen_install(KosEvalState *es, KosDynGen *gen) {
 
 /**
    First-run bootstrap: graft GEN and the chain that ends at it onto the
-   consumer es. chain_head is the head of that chain (head -> ... -> gen),
+   consumer ctx. chain_head is the head of that chain (head -> ... -> gen),
    taken out of wherever it rested by the caller: the GEN's active slot
    for a generator never driven, or a context's dyn top.
 */
 int kos_dyn_gen_install_bootstrap(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynGen *gen,
     KosDynNode *chain_head) {
 
@@ -409,14 +409,14 @@ int kos_dyn_gen_install_bootstrap(
   KosDynFrame *invoker_frame;
   uint32_t invoker_demand;
 
-  if (! es || ! gen) {
+  if (! ctx || ! gen) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "NULL es or gen for gen_install_bootstrap");
+                    "NULL ctx or gen for gen_install_bootstrap");
     return -1;
   }
 
   /* Drive-state demand bit: see kos_dyn_gen_install. */
-  invoker_frame = KosEvalState_FRAME(es);
+  invoker_frame = KosContext_FRAME(ctx);
   invoker_demand = invoker_frame
       ? (KosDynFrame_FLAGS(invoker_frame) & KOS_FRAME_DEMAND)
       : 0;
@@ -444,7 +444,7 @@ int kos_dyn_gen_install_bootstrap(
                       " chain");
       return -1;
     }
-    if (kos_eval_check_frame_room(es, invoker_frame, count) < 0)
+    if (kos_eval_check_frame_room(ctx, invoker_frame, count) < 0)
       return -1;
     kos_dyn_renumber_frames_counted(
         chain_head, (KosDynNode *) gen,
@@ -452,18 +452,18 @@ int kos_dyn_gen_install_bootstrap(
   }
 
   /* The consumer's registers, restored at the first freeze. */
-  kos_live_regs_capture(es, KosDynGen_HOST(gen));
+  kos_live_regs_capture(ctx, KosDynGen_HOST(gen));
 
-  KosDynNode_PARENT(gen) = KosEvalState_DYN_TOP(es);
+  KosDynNode_PARENT(gen) = KosContext_DYN_TOP(ctx);
   /* The GEN's chain-membership reference travels with the chain onto
-     es; do NOT acquire a fresh one, or the reference the resting place
+     ctx; do NOT acquire a fresh one, or the reference the resting place
      held is orphaned and the GEN node leaks. */
-  kos_dyn_commit_dyn_top(es, chain_head);
+  kos_dyn_commit_dyn_top(ctx, chain_head);
   /* GEN is now live on the chain: keep its owner (KPAG) alive while running. */
   kos_dyngen_keepalive_acquire(gen);
 
   {
-    KosDynFrame *surfaced = KosEvalState_FRAME(es);
+    KosDynFrame *surfaced = KosContext_FRAME(ctx);
     if (surfaced) {
       if (invoker_demand)
         KosDynFrame_FLAGS(surfaced) |= KOS_FRAME_DEMAND;
@@ -480,16 +480,16 @@ int kos_dyn_gen_install_bootstrap(
 }
 
 
-int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
+int kos_dyn_gen_frozen_needs_install(KosContext *ctx, KosDynGen *g) {
 
   KosDynNode *n;
 
-  if (! es || ! g)
+  if (! ctx || ! g)
     return 0;
   if (! KosDynGen_ACTIVE(g))
     return 0;
 
-  for (n = KosEvalState_DYN_TOP(es); n; n = KosDynNode_PARENT(n)) {
+  for (n = KosContext_DYN_TOP(ctx); n; n = KosDynNode_PARENT(n)) {
     if (n == (KosDynNode *) g)
       return 0;
   }
@@ -503,8 +503,8 @@ int kos_dyn_gen_frozen_needs_install_es(KosEvalState *es, KosDynGen *g) {
    Assumes ctx->dyn_top is the gen's frame, frame->parent is gen.
    Frees the chain from frame down to gen, restores consumer, releases gen.
 */
-int kos_dyn_teardown_gen_exhausted(KosEvalState *es) {
-  KosDynNode *frame = KosEvalState_DYN_TOP(es);
+int kos_dyn_teardown_gen_exhausted(KosContext *ctx) {
+  KosDynNode *frame = KosContext_DYN_TOP(ctx);
   if (! frame || ! KosDynNode_IS_FRAME(frame)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "kos_dyn_teardown_gen_exhausted: dyn_top is not a frame");
@@ -518,16 +518,17 @@ int kos_dyn_teardown_gen_exhausted(KosEvalState *es) {
   }
   KosDynNode *consumer = KosDynNode_PARENT(gen);
 
-  KosEvalState_FlushLiveRegsToFrame(es);
+  KosContext_FlushLiveRegsToFrame(ctx);
   /* The commit resyncs the live registers from the node being removed
      (its parent, stack, and namespace), so it runs while the frame and
      GEN are still allocated; the chain is freed only afterwards. */
-  kos_dyn_commit_dyn_top(es, consumer);
+  kos_dyn_commit_dyn_top(ctx, consumer);
   kos_dynchain_free(frame, (KosDynNode *) gen);
   /* The dead GEN may outlive this drive on its owner; it holds no
-     consumer namespace past the chain. */
+     consumer namespace or consumer link past the chain. */
   Py_CLEAR(KosDynNode_NS((KosDynNode *) gen));
-  /* GEN is dead: drop the keepalive on its owner (es is now consistent).
+  KosDynNode_PARENT(gen) = NULL;
+  /* GEN is dead: drop the keepalive on its owner (ctx is now consistent).
      In the common case the consumer still holds the KPAG, so this is just a
      decrement; if it was the last ref the owner deallocates here. */
   kos_dyngen_keepalive_release(gen);
@@ -550,8 +551,8 @@ static int dynnode_traverse_gen(KosDynNode *node, visitproc visit, void *arg) {
   /* OWNER is a borrowed back-pointer except while the keepalive holds a real
      counted reference on it.  Reporting a borrowed pointer to the cyclic
      collector makes it subtract a phantom reference and collect a live,
-     externally-referenced generator (held by a GC-invisible FOREACH/NEXT/
-     YIELD_FROM dynnode) as cyclic garbage.  Only visit when it is real. */
+     externally-referenced generator (held by a GC-invisible FOREACH
+     dynnode) as cyclic garbage.  Only visit when it is real. */
   if (KosDynNode_FLAGS(node) & KOS_DYNF_GEN_KEEPALIVE)
     Py_VISIT(KosDynGen_OWNER((KosDynGen *) node));
   if (KosDynGen_ACTIVE((KosDynGen *) node))

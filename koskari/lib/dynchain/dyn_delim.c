@@ -200,7 +200,7 @@ static int dynnode_to_dict_delim(KosDynNode *node, PyObject *data) {
    Push DELIM marker via kos_dyn_push.
 */
 KosDynDelim *kos_dyn_push_delim(
-    KosEvalState *es,
+    KosContext *ctx,
     uint8_t mode,
     KosDynNode *chain,
     uint32_t pc,
@@ -208,7 +208,7 @@ KosDynDelim *kos_dyn_push_delim(
     KosDynNode *node) {
 
   // CONTEXT: dirty, touches context directly
-  KosDynDelim *delim = kos_dyndelim_new(KosEvalState_DYN_TOP(es),
+  KosDynDelim *delim = kos_dyndelim_new(KosContext_DYN_TOP(ctx),
                                         mode,
                                         chain,
                                         pc,
@@ -217,7 +217,7 @@ KosDynDelim *kos_dyn_push_delim(
   if (! delim)
     return NULL;
 
-  if (kos_dyn_push(es, (KosDynNode *) delim) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) delim) < 0) {
     kos_dyndelim_free(delim);
     return NULL;
   }
@@ -229,17 +229,17 @@ KosDynDelim *kos_dyn_push_delim(
 /**
    Pop DELIM marker from top of chain.
 */
-int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) delim) {
+int kos_dyn_pop_delim(KosContext *ctx, KosDynDelim *delim) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) delim) {
     PyErr_SetString(PyExc_RuntimeError, "DELIM node is not at top of chain");
     return -1;
   }
 
-  kos_dyn_uninstall_handler(es, (KosDynNode *) delim, KOS_XFER_EVENT_NONE);
+  kos_dyn_uninstall_handler(ctx, (KosDynNode *) delim, KOS_XFER_EVENT_NONE);
   {
     KosDynNode *parent = KosDynNode_PARENT((KosDynNode *) delim);
 
-    kos_dyn_commit_dyn_top(es, parent);
+    kos_dyn_commit_dyn_top(ctx, parent);
     KosDynNode_PARENT((KosDynNode *) delim) = NULL;
     kos_dyndelim_free(delim);
   }
@@ -251,19 +251,26 @@ int kos_dyn_pop_delim(KosEvalState *es, KosDynDelim *delim) {
 
 
 /**
-   GC traverse a KOS_DYN_DELIM: visit the owned return chain and a held
+   GC traverse a KOS_DYN_DELIM: visit the owned return chain, a held
    yoyo return-address snapshot -- the snapshot's code, namespace, and
-   operand references have no other owner between invoke and restitch.
+   operand references have no other owner between invoke and restitch
+   -- and the displaced resume's state through its kind.
 */
 static int dynnode_traverse_delim(KosDynNode *node, visitproc visit, void *arg) {
-  KosDynNode *chain = KosDynDelim_RETURN_CHAIN((KosDynDelim *) node);
+  KosDynDelim *delim = (KosDynDelim *) node;
+  KosDynNode *chain = KosDynDelim_RETURN_CHAIN(delim);
+  int tr;
 
   if (KosDynNode_FLAGS(node) & KOS_DYNF_HOLDS_RETURN_FRAME) {
-    int tr = kos_dynnode_traverse(
-        KosDynDelim_RETURN_FRAME_NODE((KosDynDelim *) node), visit, arg);
+    tr = kos_dynnode_traverse(
+        KosDynDelim_RETURN_FRAME_NODE(delim), visit, arg);
     if (tr != 0)
       return tr;
   }
+  tr = kos_resume_traverse(KosDynDelim_SAVED_RESUME_KIND(delim),
+                           KosDynDelim_SAVED_RESUME_STATE(delim), visit, arg);
+  if (tr != 0)
+    return tr;
   if (! chain)
     return 0;
   return kos_dynchain_traverse(chain, NULL, visit, arg);

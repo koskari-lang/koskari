@@ -13,40 +13,40 @@
   along with this library; if not, see <http://www.gnu.org/licenses/>.
 */
 
-
 /**
   FAST_NEXT: fused FAST + OBJECT_NEXT. Arg = extra index. Schema
   FASTVAR (iterator slot), COUNT (n = 1 or 2). Stack: [] or [default]
-  per n. Load the iterator from its fast slot and run the shared step
-  core (object_next_step): value or default on exhaustion, 1-arg
-  raises StopIteration, auto-await.
+  per n. Load the iterator from its fast slot and make the next request
+  (KosContext_NextResume, the arity picking the resume's kind). The
+  iterator is the resume's owned state; the default stays on the stack
+  under the halted instruction and is the result at the end. A request
+  that fails before it defers sets no resume, so the iterator is
+  released here. Auto-await.
 */
 KOS_OP_HANDLER(FAST_NEXT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   uint16_t n = (uint16_t) KosExtra_IMM(row, 1);
+  PyObject *ns = CURRENT_NS();
+  const KosResumeKind *kind;
+  PyObject *iter;
+  KosOpResult r;
+
+  KOS_OP_REQUIRE_NS(ns);
   if (unlikely(n != 1 && n != 2)) {
     PyErr_Format(PyExc_ValueError, "FAST_NEXT arg must be 1 or 2, got %u", n);
     RESULT_RAISE();
   }
 
-  PyObject *ns = CURRENT_NS();
-  KOS_OP_REQUIRE_NS(ns);
-
-  PyObject *default_val = NULL;
-  if (n == 2) {
-    default_val = KosEvalState_StackPopRef(es);
-    if (unlikely(! default_val))
-      RESULT_RAISE();
-  }
-
-  PyObject *iter = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
-  if (unlikely(! iter)) {
-    Py_XDECREF(default_val);
+  iter = kos_ns_fast_deref(ns, (size_t) KosExtra_IMM(row, 0));
+  if (unlikely(! iter))
     RESULT_RAISE();
-  }
-
-  RESULT_RELAY(es, object_next_step(es, iter, default_val, n));
+  /* the resolved reference is the resume's owned state from here */
+  kind = (n == 2) ? &kos_next_default_resume_kind : &kos_next_resume_kind;
+  r = KosContext_NextResume(ctx, iter, kind, iter);
+  if (unlikely(r.kind == KOS_RES_RAISE))
+    Py_DECREF(iter);
+  RESULT_ENTRY(ctx, r, kind, iter);
 }
 
 

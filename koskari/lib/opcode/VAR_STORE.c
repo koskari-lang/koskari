@@ -19,20 +19,20 @@
   the current frame namespace.
 */
 KOS_OP_HANDLER(VAR_STORE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
-  if (unlikely(frame_ns_store(es, name, val) < 0)) {
+  if (unlikely(frame_ns_store(ctx, name, val) < 0)) {
     Py_DECREF(val);
     RESULT_RAISE();
   }
   Py_DECREF(val);
 
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

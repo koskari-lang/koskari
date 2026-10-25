@@ -21,16 +21,16 @@
   obj[key]. The access runs through kos_item_ref (eval/eval_item.c).
 */
 KOS_OP_HANDLER(VAR_ITEM_VAR_REF) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key;
   PyObject *out;
 
-  obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  obj = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! obj))
     RESULT_RAISE();
-  key = frame_ns_deref(es, KosExtra_OBJ(row, 1));
+  key = frame_ns_deref(ctx, KosExtra_OBJ(row, 1));
   if (unlikely(! key)) {
     Py_DECREF(obj);
     RESULT_RAISE();
@@ -42,7 +42,7 @@ KOS_OP_HANDLER(VAR_ITEM_VAR_REF) {
 
   if (unlikely(! out))
     RESULT_RAISE();
-  RESULT_STEAL(es, out);
+  RESULT_STEAL(ctx, out);
 }
 
 

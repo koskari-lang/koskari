@@ -27,8 +27,8 @@ KOS_OP_HANDLER(CHECK_COMPARE) {
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
   if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_check_compare_elect, es, insn, NULL);
+    TAILCALL(slot->u.elector.fn, ctx, insn, NULL);
+  TAILCALL(el_check_compare_elect, ctx, insn, NULL);
 }
 
 

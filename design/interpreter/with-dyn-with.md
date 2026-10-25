@@ -8,7 +8,7 @@ transfer-plan rules.
 **See also:** [OPCODES.md](../OPCODES.md) (opcode reference), [extent-wind-unwind.md](extent-wind-unwind.md)
 (extent contract and unlink), [execution-invariants.md](execution-invariants.md).
 
-WITH nodes (single-shot `with` and multi-shot `dyn-with`, told apart by `KOS_DYN_CAP_NEEDS_INSTALL_WIND`) answer the same extent contract as WIND: `kos_dyn_extent_enter` / `kos_dyn_extent_leave` answer NORMAL, REPROLOGUE, AWAIT, or RAISE, `settle` takes a returned `__enter__` / `__exit__` result off the block, and the node leaves the chain only through `kos_dyn_unlink_top`.
+WITH nodes (single-shot `with` and multi-shot `dyn-with`, told apart by the node's shot, `u.with.shot`) answer the same extent contract as WIND: `kos_dyn_extent_enter` / `kos_dyn_extent_leave` answer NORMAL, REPROLOGUE, AWAIT, or RAISE, `settle` takes a returned `__enter__` / `__exit__` result off the block, and the node leaves the chain only through `kos_dyn_unlink_top`.
 
 
 ## Goal
@@ -214,8 +214,8 @@ extent:
 
 **Async exit — evaluator flow:** The leave (`kos_dyn_with_leave`) sets the
 node to `KOS_WITH_PHASE_PENDING_EXIT_AWAIT` and calls `exit` through
-`KosEvalState_Call` with no resume. A value in hand is settled by
-`KosEvalState_Settle` and classified for swallow at once; a raise from
+`KosContext_Call` with no resume. A value in hand is settled by
+`KosContext_Settle` and classified for swallow at once; a raise from
 `exit` propagates in place of the exception it was handling; anything else
 (an awaitable such as `__aexit__`'s, or an installed Koskari frame) leaves
 the node on the chain. The exit result must **not** become the
@@ -247,7 +247,7 @@ only used internally for swallow and then discarded in favour of `None`.
 Same as PUSH_WITH, except:
 
 - Pushes the `KOS_DYN_WITH` node with shot `KOS_DYN_WITH_SHOT_MULTI`.
-- The node carries `KOS_DYN_CAP_NEEDS_INSTALL_WIND`: a transfer goal re-enters it when it lands the extent.
+- A transfer goal re-enters the node when it lands the extent: a landing re-enters a `KOS_DYN_CAP_CONTROL_HOOK` node unless it is a single-shot WITH.
 
 
 ### POP_DYN_WITH

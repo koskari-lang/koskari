@@ -21,10 +21,10 @@
   push result.
 */
 KOS_OP_HANDLER(OBJECT_ITER) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (unlikely(! val))
     RESULT_RAISE();
 
@@ -34,7 +34,7 @@ KOS_OP_HANDLER(OBJECT_ITER) {
   if (unlikely(! res))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

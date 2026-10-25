@@ -24,23 +24,23 @@
 */
 
 KOS_OP_HANDLER(PUSH_SHIFT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   uint32_t prompt_id;
   KosContinuation *k = NULL;
   uint32_t resume_pc;
   uint32_t shift_body_pc;
 
-  if (get_prompt_id_from_insn(es, insn, &prompt_id) < 0)
+  if (get_prompt_id_from_insn(ctx, insn, &prompt_id) < 0)
     RESULT_RAISE();
 
-  resume_pc = kos_shift_ic_for((PyObject *) KosEvalState_CurrentCode(es),
-                               KosEvalState_ACTING_PC(es));
+  resume_pc = kos_shift_ic_for((PyObject *) KosContext_CurrentCode(ctx),
+                               KosContext_ACTING_PC(ctx));
   if (resume_pc == KOS_EXTENT_NONE) {
     PyErr_SetString(PyExc_RuntimeError, "PUSH_SHIFT: no SHIFT extent at pc");
     RESULT_RAISE();
   }
 
-  if (kos_shift_capture(es, prompt_id, resume_pc, &k) < 0)
+  if (kos_shift_capture(ctx, prompt_id, resume_pc, &k) < 0)
     RESULT_RAISE();
 
   PyObject *wrapper = KosPyDelimitedContinuation_New(k);
@@ -49,8 +49,8 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
     RESULT_RAISE();
   }
 
-  shift_body_pc = KosEvalState_ACTING_PC(es) + 1;
-  if (kos_dyn_push_shift(es, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
+  shift_body_pc = KosContext_ACTING_PC(ctx) + 1;
+  if (kos_dyn_push_shift(ctx, KosContinuation_LIVE_PROMPT_NODE_ID(k)) < 0) {
     Py_DECREF(wrapper);
     RESULT_RAISE();
   }
@@ -58,15 +58,15 @@ KOS_OP_HANDLER(PUSH_SHIFT) {
   /* Record the live SHIFT node identity for in-place (Path A) invoke
    * detection; capture ran before this node existed. */
   {
-    KosDynNode *shift_node = KosEvalState_DYN_TOP(es);
+    KosDynNode *shift_node = KosContext_DYN_TOP(ctx);
     KosContinuation_LIVE_SHIFT_NODE(k) = shift_node;
     KosContinuation_LIVE_SHIFT_NODE_ID(k) = kos_dynnode_id(shift_node);
   }
 
-  if (unlikely(KosEvalState_StackPUSH(es, wrapper) < 0))
+  if (unlikely(KosContext_StackPUSH(ctx, wrapper) < 0))
     RESULT_RAISE();
-  KosEvalState_SET_PC(es, shift_body_pc);
-  RESULT_CONTINUE(es);
+  KosContext_SET_PC(ctx, shift_body_pc);
+  RESULT_CONTINUE(ctx);
 }
 
 

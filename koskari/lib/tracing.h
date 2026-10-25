@@ -28,7 +28,7 @@
    Compile-flag enabled tracing for Koskari freelists, events, and timing.
    Include this header in .c files that use tracing macros. Not included from
    lib.h; opt-in per file (same pattern as debug.h). eval.h includes this
-   header when instrumenting KosEvalState sync entry points with
+   header when instrumenting the live register sync steps with
    KOS_TRACE_EVAL_SYNC.
 
    Event counters use KosTraceEventId; increment with KOS_TRACE_EVENTS_INC.
@@ -48,7 +48,6 @@ typedef enum KosTraceEventId {
   KOS_TE_SEG_INLINE_INSTALL,
   KOS_TE_SEG_INLINE_SPILL,
   KOS_TE_RETARGET_WALK_FALLBACK,
-  KOS_TE_PARENT_SLOT_WALK,
   KOS_TE_LIVE_REBUILD,
   /* call-class routing: frame_cached = simple call served by a cached
      frame; simple_steal = steal-bind into a fresh namespace; simple_vector
@@ -58,6 +57,23 @@ typedef enum KosTraceEventId {
   KOS_TE_CALL_SIMPLE_STEAL,
   KOS_TE_CALL_SIMPLE_VECTOR,
   KOS_TE_CALL_TAIL_INPLACE,
+  /* a Python-boundary entry call installed as the drive's root frame */
+  KOS_TE_ENTRY_ROOT_INSTALL,
+  /* a Python-boundary entry call's code-less root frame taken from its
+     Demand wrapper's slot */
+  KOS_TE_ENTRY_ROOT_CACHED,
+  /* a resolution of the per-thread record (domain.c tls_state_current) */
+  KOS_TE_TLS_RESOLVE,
+  /* a fetch of the thread's handled exception (sys.exc_info) by a
+     drive's exception-state swap (eval.c koskari_eval) */
+  KOS_TE_EXC_FETCH,
+  /* the root frame of a Coroutine driven from Python accepted by its
+     function's frame cache when freed (dyn_frame.c kos_dynframe_free) */
+  KOS_TE_CORO_FRAME_TO_CACHE,
+  /* a general-shape call (keywords, a consulted default, star,
+     keyword-only, by-ref) bound into a cached frame by
+     KosFunction_Install */
+  KOS_TE_CALL_FRAME_CACHED_GENERAL,
   KOS_TE__COUNT
 } KosTraceEventId;
 
@@ -143,7 +159,7 @@ typedef enum KosTracePostOpId {
 #endif
 
 
-/* === eval state sync timing ids (KOS_TRACE_EVAL_SYNC; add only at end) === */
+/* === drive begin/end sync timing ids (KOS_TRACE_EVAL_SYNC; add only at end) === */
 
 typedef enum KosTraceEvalSyncId {
   KOS_TEVS_init = 0,
@@ -286,7 +302,7 @@ void kos_trace_fl_return(const char *name, int overrun);
 #endif
 
 
-/* === eval state sync (counts + wall time in get_trace_report) === */
+/* === drive begin/end sync (counts + wall time in get_trace_report) === */
 
 #if KOS_TRACE_EVAL_SYNC
 #define KOS_TRACE_EVAL_SYNC_BEGIN() \

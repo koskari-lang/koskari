@@ -48,15 +48,8 @@ static KosDynWith *kos_dyn_with_allocate(
     return NULL;
 
   {
-    uint32_t caps;
-    if (shot == KOS_DYN_WITH_SHOT_MULTI)
-      caps = KOS_DYN_CAP_MAY_SWALLOW_EXCEPTION | KOS_DYN_CAP_NEEDS_INSTALL_WIND
-          | KOS_DYN_CAP_CONTROL_HOOK | KOS_DYN_CAP_HOLDS_OBLIGATION;
-    else
-      caps = KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK
-          | KOS_DYN_CAP_HOLDS_OBLIGATION;
-
-    kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent, caps);
+    kos_dynnode_init((KosDynNode *) node, KOS_DYN_WITH, parent,
+                     KOS_DYN_CAP_CATCH | KOS_DYN_CAP_CONTROL_HOOK);
   }
 
   kos_dynnode_use_inline_segment((KosDynNode *) node);
@@ -222,7 +215,7 @@ static int dynnode_to_dict_with(KosDynNode *node, PyObject *data) {
    Push provisional node before async __enter__ completes (PENDING_ENTER_AWAIT).
 */
 KosDynWith *kos_dyn_push_with_provisional(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *mgr,
     PyObject *enter,
     PyObject *exit,
@@ -232,14 +225,14 @@ KosDynWith *kos_dyn_push_with_provisional(
     uint8_t shot) {
 
   KosDynWith *node = kos_dyn_with_allocate(
-      KosEvalState_DYN_TOP(es), mgr, enter, exit, self_bind, name,
+      KosContext_DYN_TOP(ctx), mgr, enter, exit, self_bind, name,
       resume_pc, shot);
   if (! node)
     return NULL;
 
   KosDynWith_ENTERED(node) = 0;
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_IDLE;
-  if (kos_dyn_push(es, (KosDynNode *) node) < 0) {
+  if (kos_dyn_push(ctx, (KosDynNode *) node) < 0) {
     kos_dynwith_free(node);
     return NULL;
   }
@@ -251,13 +244,13 @@ KosDynWith *kos_dyn_push_with_provisional(
    Roll back a WITH that never entered: __enter__ raised. The node is
    dyn_top and not ENTERED, so the unlink runs no __exit__.
 */
-int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
-  if (! KosEvalState_DYN_TOP(es) || KosEvalState_DYN_TOP(es) != (KosDynNode *) node) {
+int kos_dyn_pop_with(KosContext *ctx, KosDynWith *node) {
+  if (! KosContext_DYN_TOP(ctx) || KosContext_DYN_TOP(ctx) != (KosDynNode *) node) {
     PyErr_SetString(PyExc_RuntimeError, "WITH node is not at top of chain");
     return -1;
   }
   {
-    KosOpResult r = kos_dyn_unlink_top(es, KOS_XFER_EVENT_NONE, 0);
+    KosOpResult r = kos_dyn_unlink_top(ctx, KOS_XFER_EVENT_NONE, 0);
     if (r.kind == KOS_RES_NORMAL)
       return 0;
     /* an __exit__ started here is a caller error: the node was not to
@@ -279,8 +272,8 @@ int kos_dyn_pop_with(KosEvalState *es, KosDynWith *node) {
    the node with the landed frame above it current, and the binding
    belongs to the with's scope, not to whatever frame sits at dyn_top.
 */
-static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
-  PyObject *result = KosEvalState_StackPopRef(es);
+static int kos_dyn_with_bind_entered(KosContext *ctx, KosDynWith *node) {
+  PyObject *result = KosContext_StackPopRef(ctx);
   PyObject *name;
 
   if (! result)
@@ -317,7 +310,7 @@ static int kos_dyn_with_bind_entered(KosEvalState *es, KosDynWith *node) {
    with the error set when the result's truth test raises.
 */
 static int kos_dyn_with_classify_exit(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynWith *node,
     PyObject *result) {
 
@@ -339,11 +332,11 @@ static int kos_dyn_with_classify_exit(
   if (swallow) {
     kos_dyn_ob_clear(ob);
     ob->kind = KOS_OB_SWALLOWED;
-    if (KosEvalState_FRAME(es))
-      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+    if (KosContext_FRAME(ctx))
+      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   } else if (! handling) {
-    if (KosEvalState_FRAME(es))
-      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+    if (KosContext_FRAME(ctx))
+      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
   }
   Py_DECREF(result);
   kos_dyn_with_shot_after_exit_done(node);
@@ -355,7 +348,7 @@ static int kos_dyn_with_classify_exit(
 /**
    Enter: run __enter__ once. See the extent contract in dynchain.h.
 */
-static KosOpResult kos_dyn_with_enter(KosEvalState *es, KosDynWith *node) {
+static KosOpResult kos_dyn_with_enter(KosContext *ctx, KosDynWith *node) {
 
   if (KosDynWith_LEFT(node) || kos_dyn_with_single_exit_done(node)
       || KosDynWith_ENTERED(node))
@@ -368,16 +361,16 @@ static KosOpResult kos_dyn_with_enter(KosEvalState *es, KosDynWith *node) {
   /* A plain function resolved on the type is called with the manager as
      its receiver; anything else was bound at resolution. */
   KosOpResult kr = (KosDynWith_SELF_BIND(node) & KOS_WITH_SELF_ENTER)
-      ? KosEvalState_Call(
-            es, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0, NULL, NULL)
-      : KosEvalState_Call(es, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
+      ? KosContext_Call(
+            ctx, enter_fn, &KosDynWith_MGR(node), 1, NULL, 0, NULL, NULL)
+      : KosContext_Call(ctx, enter_fn, NULL, 0, NULL, 0, NULL, NULL);
 
   /* A value in hand lands on the block, or is awaited there; settled,
      the entry completes now. */
   if (kr.kind == KOS_RES_RETURN) {
-    kr = KosEvalState_PushOrAwait(es, kr.val);
+    kr = KosContext_PushOrAwait(ctx, kr.val);
     if (kr.kind == KOS_RES_NORMAL)
-      return kos_dyn_with_bind_entered(es, node) < 0
+      return kos_dyn_with_bind_entered(ctx, node) < 0
           ? EVAL_RAISE() : EVAL_NORMAL();
   }
   if (kr.kind == KOS_RES_RAISE)
@@ -396,7 +389,7 @@ static KosOpResult kos_dyn_with_enter(KosEvalState *es, KosDynWith *node) {
    after the node is gone.
 */
 static KosOpResult kos_dyn_with_leave(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynWith *node,
     KosXferEvent ev) {
 
@@ -426,8 +419,8 @@ static KosOpResult kos_dyn_with_leave(
   if (kos_dyn_with_single_exit_done(node)) {
     /* __exit__ already ran, possibly on a twin sharing the exit-done
        cell; complete the extent without re-firing it. */
-    if (! PyErr_Occurred() && KosEvalState_FRAME(es))
-      KosEvalState_SET_PC(es, KosDynWith_RESUME_PC(node));
+    if (! PyErr_Occurred() && KosContext_FRAME(ctx))
+      KosContext_SET_PC(ctx, KosDynWith_RESUME_PC(node));
     KosDynWith_PHASE(node) = KOS_WITH_PHASE_LEFT;
     return EVAL_NORMAL();
   }
@@ -462,17 +455,17 @@ static KosOpResult kos_dyn_with_leave(
   }
 
   KosDynWith_PHASE(node) = KOS_WITH_PHASE_PENDING_EXIT_AWAIT;
-  KosOpResult kr = KosEvalState_Call(
-      es, exit_fn, argv, argc, NULL, 0, NULL, NULL);
+  KosOpResult kr = KosContext_Call(
+      ctx, exit_fn, argv, argc, NULL, 0, NULL, NULL);
 
   /* A value in hand is settled, or awaited onto the block; settled,
      the exit classifies now. */
   if (kr.kind == KOS_RES_RETURN) {
     PyObject *result;
 
-    kr = KosEvalState_Settle(es, kr.val, &result);
+    kr = KosContext_Settle(ctx, kr.val, &result);
     if (kr.kind == KOS_RES_NORMAL) {
-      if (kos_dyn_with_classify_exit(es, node, result) < 0)
+      if (kos_dyn_with_classify_exit(ctx, node, result) < 0)
         return EVAL_RAISE();
       return EVAL_NORMAL();
     }
@@ -495,25 +488,25 @@ static KosOpResult kos_dyn_with_leave(
    The pending __enter__ or __exit__ returned; its result is the top of
    the live block.
 */
-static int kos_dyn_with_settle(KosEvalState *es, KosDynWith *node) {
+static int kos_dyn_with_settle(KosContext *ctx, KosDynWith *node) {
 
   /* A pending with node sits above its owning frame, so that frame is
      live while the node is; without it there is no operand block to
      settle from. */
-  if (! KosEvalState_FRAME(es)) {
+  if (! KosContext_FRAME(ctx)) {
     PyErr_SetString(PyExc_SystemError,
                     "with settle: pending node with no live frame");
     return -1;
   }
 
   if (KosDynWith_ENTER_PENDING(node))
-    return kos_dyn_with_bind_entered(es, node);
+    return kos_dyn_with_bind_entered(ctx, node);
 
   if (KosDynWith_EXIT_PENDING(node)) {
-    PyObject *result = KosEvalState_StackPopRef(es);
+    PyObject *result = KosContext_StackPopRef(ctx);
     if (! result)
       return -1;
-    return kos_dyn_with_classify_exit(es, node, result);
+    return kos_dyn_with_classify_exit(ctx, node, result);
   }
   return 0;
 }

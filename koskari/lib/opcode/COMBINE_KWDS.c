@@ -20,7 +20,7 @@
   Merge the m dicts (later overwrite earlier on key clash) and push result.
 */
 KOS_OP_HANDLER(COMBINE_KWDS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned opa = KosOp_ARG(insn);
 
   PyObject *built = PyDict_New();
@@ -28,10 +28,10 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
     RESULT_RAISE();
 
   if (opa == 0) {
-    RESULT_STEAL(es, built);
+    RESULT_STEAL(ctx, built);
   }
 
-  PyObject *const *vals = KosEvalState_StackTailPtr(es, (size_t) opa);
+  PyObject *const *vals = KosContext_StackTailPtr(ctx, (size_t) opa);
   if (unlikely(! vals)) {
     Py_DECREF(built);
     RESULT_RAISE();
@@ -46,14 +46,14 @@ KOS_OP_HANDLER(COMBINE_KWDS) {
                      Py_TYPE(vals[i])->tp_name);
       }
       Py_DECREF(built);
-      KosEvalState_StackDropNoErr(es, (size_t) opa);
+      KosContext_StackDropNoErr(ctx, (size_t) opa);
       RESULT_RAISE();
     }
   }
 
-  KosEvalState_StackDropNoErr(es, (size_t) opa);
+  KosContext_StackDropNoErr(ctx, (size_t) opa);
 
-  RESULT_STEAL(es, built);
+  RESULT_STEAL(ctx, built);
 }
 
 

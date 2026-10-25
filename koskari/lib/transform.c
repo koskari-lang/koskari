@@ -27,16 +27,6 @@
 #include "lib.h"
 
 
-/* The short kind name ("map", "filter") for messages: the class
-   __name__, which is the last segment of the type's dotted name. */
-static const char *transform_kind(PyTypeObject *type) {
-  const char *name = type->tp_name;
-  const char *dot = strrchr(name, '.');
-
-  return dot ? dot + 1 : name;
-}
-
-
 /* === construction === */
 
 
@@ -173,51 +163,33 @@ int kos_transform_source_spent(void) {
 }
 
 
-int kos_transform_step_ready(
-    KosTransform *t,
-    PyObject *send_val,
-    PyObject **out,
-    KosIterStepResult *result) {
+int kos_transform_busy(PyObject *self) {
 
-  if (t->closed) {
-    *out = NULL;
-    *result = KOS_ITER_EXHAUSTED;
+  KosTransform *t = (KosTransform *) self;
+
+  if (! t->busy)
     return 0;
-  }
 
-  if (t->busy) {
-    PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
-                 transform_kind(Py_TYPE(t)));
-    *result = KOS_ITER_ERROR;
-    return 0;
-  }
-
-  if (send_val && send_val != Py_None) {
-    PyErr_Format(PyExc_TypeError,
-                 "can't send a value into a %s; it takes none",
-                 transform_kind(Py_TYPE(t)));
-    *result = KOS_ITER_ERROR;
-    return 0;
-  }
-
+  PyErr_Format(PyExc_ValueError, "%s is already being iterated",
+               transform_kind(Py_TYPE(self)));
   return 1;
 }
 
 
 KosIterStepResult kos_transform_step_abort(
-    KosEvalState *es,
+    KosContext *ctx,
     KosTransform *t,
     KosDynNode *pre_top) {
 
   Py_CLEAR(t->pending);
 
-  if (KosEvalState_DYN_TOP(es) != pre_top) {
+  if (KosContext_DYN_TOP(ctx) != pre_top) {
     PyObject *ftyp, *fval, *ftb;
 
     PyErr_Fetch(&ftyp, &fval, &ftb);
     {
       /* a leave in flight here is abandoned with the step */
-      KosOpResult wr = kos_dyn_unwind_to_node(es, pre_top,
+      KosOpResult wr = kos_dyn_unwind_to_node(ctx, pre_top,
                                               KOS_XFER_EVENT_RAISE, NULL);
       if (wr.kind == KOS_RES_AWAIT)
         Py_XDECREF(wr.val);
@@ -229,26 +201,25 @@ KosIterStepResult kos_transform_step_abort(
 
 
 KosIterStepResult kos_transform_stage(
-    KosEvalState *es,
+    KosContext *ctx,
     KosTransform *t,
     PyObject *value,
     const KosResumeKind *resume,
     KosDynNode *pre_top) {
 
   KosDynFrame *frame = KosResumeFrame_Install(
-      es, resume, t, &t->cached_frame);
+      ctx, resume, t, &t->cached_frame);
 
   if (! frame) {
     Py_XDECREF(value);
-    return kos_transform_step_abort(es, t, pre_top);
+    return kos_transform_step_abort(ctx, t, pre_top);
   }
   /* the frame carries the kind and the record from here; an abort
      below tears it down through the kind's clear */
-  t->busy = 1;
   if (value) {
-    if (KosEvalState_StackPushRef(es, value) < 0) {
+    if (KosContext_StackPushRef(ctx, value) < 0) {
       Py_DECREF(value);
-      return kos_transform_step_abort(es, t, pre_top);
+      return kos_transform_step_abort(ctx, t, pre_top);
     }
     Py_DECREF(value);
   }
@@ -278,7 +249,7 @@ static void close_sources(KosTransform *t) {
 
 
 KosIterStepResult kos_transform_throw(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *self,
     PyObject *throw_typ,
     PyObject *throw_exc,
@@ -286,17 +257,14 @@ KosIterStepResult kos_transform_throw(
 
   KosTransform *t = (KosTransform *) self;
 
-  (void) es;
+  (void) ctx;
   (void) out;
 
-  if (t->busy) {
-    /* A step is in flight and its driver owns the transform's state:
-       every second caller is refused, GeneratorExit included -- the
-       same rule CPython applies to a running async generator. */
-    PyErr_Format(PyExc_RuntimeError, "%s is already being iterated",
-                 transform_kind(Py_TYPE(self)));
+  /* A step is in flight and its driver owns the transform's state:
+     every second caller is refused, GeneratorExit included -- the
+     same rule CPython applies to a running async generator. */
+  if (kos_transform_busy(self))
     return KOS_ITER_ERROR;
-  }
 
   if (PyErr_GivenExceptionMatches(throw_typ, PyExc_GeneratorExit)) {
     /* Generator close semantics: run the source's cleanup, mark
@@ -353,17 +321,17 @@ void kos_transform_step_clear(void *state) {
 
 /**
    The transform's durable drive context, created lazily: python-adapter
-   drives host their work here across steps instead of allocating a
+   drives run their work here across steps instead of allocating a
    context per element. The suite marks it recyclable, so the adapters
    reset it at their completion points; a creation failure falls back
-   to an adapter-owned host.
+   to an adapter-owned context.
 */
 KosContext *kos_transform_pyctx(PyObject *self) {
 
   KosTransform *t = (KosTransform *) self;
 
   if (! t->ctx) {
-    t->ctx = KosContext_New(NULL);
+    t->ctx = KosContext_New(NULL, kos_tls_current());
     if (! t->ctx)
       PyErr_Clear();
   }
@@ -409,7 +377,7 @@ void kos_transform_dealloc(PyObject *self) {
 
   PyObject_GC_UnTrack(self);
   /* the context teardown runs first: a frame still on the chain that
-     KosNativeFrame_ReturnToCache flagged is stored into cached_frame,
+     KosNativeFrame_CacheOnFree flagged is stored into cached_frame,
      and the free below reclaims it either way */
   kos_transform_clear(self);
   if (t->cached_frame) {

@@ -19,14 +19,14 @@
   frame's namespace and push the value.
 */
 KOS_OP_HANDLER(VAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *val = frame_ns_deref(es, name);
+  PyObject *val = frame_ns_deref(ctx, name);
   if (unlikely(! val))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

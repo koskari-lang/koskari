@@ -201,7 +201,7 @@ static PyObject *procedure_repr(PyObject *self) {
    A failed delivery propagates.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult procedure_resume(
-    KosEvalState *es,
+    KosContext *ctx,
     void *state,
     PyObject *value) {
 
@@ -212,7 +212,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult procedure_resume(
 
   Py_DECREF(value);
   Py_INCREF(Py_None);
-  return KosNativeFrame_ReturnToCache(es, Py_None, NULL);
+  RESULT_FRAME_RETURN(ctx, Py_None, NULL);
 }
 
 
@@ -228,7 +228,7 @@ KOS_RESUME_KIND(procedure_resume_kind, "procedure",
    with None.
 */
 static KosOpResult procedure_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -242,9 +242,9 @@ static KosOpResult procedure_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  return KosEvalState_CallInto(
-      es, wrapped, args, nargs, kwnames, &procedure_resume_kind, NULL,
-      KOS_FRAME_DEMAND, tail_call);
+  return KosContext_CallInto(
+      ctx, wrapped, args, nargs, kwnames, &procedure_resume_kind, NULL,
+      KOS_FRAME_DEMAND, NULL, tail_call);
 }
 
 
@@ -348,7 +348,7 @@ static PyObject *iterfunction_repr(PyObject *self) {
    to iterate natively.
 */
 static KosOpResult iterfunction_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -363,8 +363,8 @@ static KosOpResult iterfunction_kos_vinstall(
     return EVAL_RAISE();
   }
 
-  return KosEvalState_Call(
-      es, wrapped, args, nargs, kwnames, tail_call, NULL, NULL);
+  return KosContext_Call(
+      ctx, wrapped, args, nargs, kwnames, tail_call, NULL, NULL);
 }
 
 

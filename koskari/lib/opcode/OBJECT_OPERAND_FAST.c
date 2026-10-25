@@ -23,8 +23,8 @@
 KOS_OP_HANDLER(OBJECT_OPERAND_FAST) {
   KosCacheSlot *slot = KosOp_SLOT(insn);
   if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_operand_fast_elect, es, insn, NULL);
+    TAILCALL(slot->u.elector.fn, ctx, insn, NULL);
+  TAILCALL(el_operand_fast_elect, ctx, insn, NULL);
 }
 
 

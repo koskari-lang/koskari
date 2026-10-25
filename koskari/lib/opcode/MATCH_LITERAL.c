@@ -18,11 +18,11 @@
   Row LABEL, const.
 */
 KOS_OP_HANDLER(MATCH_LITERAL) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *elem = KosEvalState_StackPeek(es);
+  PyObject *elem = KosContext_StackPeek(ctx);
   if (unlikely(! elem))
     RESULT_RAISE();
 
@@ -31,7 +31,7 @@ KOS_OP_HANDLER(MATCH_LITERAL) {
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

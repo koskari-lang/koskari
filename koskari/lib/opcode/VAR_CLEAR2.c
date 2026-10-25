@@ -19,13 +19,13 @@
    row order; an unbound name stays unbound.
 */
 KOS_OP_HANDLER(VAR_CLEAR2) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
-  if (frame_ns_clear(es, KosExtra_OBJ(row, 0)) < 0)
+  if (frame_ns_clear(ctx, KosExtra_OBJ(row, 0)) < 0)
     RESULT_RAISE();
-  if (frame_ns_clear(es, KosExtra_OBJ(row, 1)) < 0)
+  if (frame_ns_clear(ctx, KosExtra_OBJ(row, 1)) < 0)
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

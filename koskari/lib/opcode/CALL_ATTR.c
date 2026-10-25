@@ -22,7 +22,7 @@
    the core turns into a frame reset instead of a push.
 */
 KOS_OP_HANDLER(CALL_ATTR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned tail = KOS_OP_IS_TAIL_CALL(KosOp_OP(insn)) ? KOS_CALL_TAIL : 0;
   const KosExtra *row = KosOp_ROW(insn);
   unsigned n = KosExtra_IMM(row, 1);
@@ -30,7 +30,7 @@ KOS_OP_HANDLER(CALL_ATTR) {
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
+  PyObject *const *ptr = KosContext_StackTailPtr(ctx, count);
   if (! ptr)
     RESULT_RAISE();
 
@@ -47,16 +47,16 @@ KOS_OP_HANDLER(CALL_ATTR) {
   KosOpResult r;
   if (send_self == 0) {
     r = kos_call_invoke_from_handler(
-        es, tail, resolved, NULL, ptr, (Py_ssize_t) n + 1, NULL,
+        ctx, tail, resolved, NULL, ptr, (Py_ssize_t) n + 1, NULL,
         KOS_CALL_ARGV_WINDOW | KOS_CALL_CALLABLE_OWNED);
   } else {
     r = kos_call_invoke_from_handler(
-        es, tail, resolved, NULL, (n > 0) ? &ptr[1] : NULL,
+        ctx, tail, resolved, NULL, (n > 0) ? &ptr[1] : NULL,
         (Py_ssize_t) n, NULL,
         KOS_CALL_ARGV_WINDOW | KOS_CALL_WINDOW_UNDER
         | KOS_CALL_CALLABLE_OWNED);
   }
-  RESULT_RELAY(es, r);
+  RESULT_RELAY(ctx, r);
 }
 
 

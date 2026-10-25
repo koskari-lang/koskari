@@ -30,7 +30,7 @@
    In-place (Path A) invoke readiness: the capture-time live prompt and
    shift nodes are both still on the current chain (pointer + node_id
    match), the shift node lies above the prompt, no barrier node (foreign
-   DELIM, GEN, NEXT, PROMPT) sits between dyn_top and the shift node,
+   DELIM, GEN, PROMPT) sits between dyn_top and the shift node,
    and no transfer goal is active. Returns 1 when in-place invoke
    applies, 0 otherwise (fall back to the PUSH path).
 
@@ -40,7 +40,7 @@
    re-walk the same stretch.
 */
 static int kos_delimited_inplace_ready(
-    KosEvalState *es,
+    KosContext *ctx,
     KosContinuation *k,
     KosDynFrame **out_nested_frame) {
 
@@ -50,15 +50,14 @@ static int kos_delimited_inplace_ready(
 
   if (! prompt || ! shift)
     return 0;
-  if (KosEvalState_GOAL(es))
+  if (KosContext_GOAL(ctx))
     return 0;
 
-  node = KosEvalState_DYN_TOP(es);
+  node = KosContext_DYN_TOP(ctx);
   while (node && node != shift) {
     switch (KosDynNode_KIND(node)) {
       case KOS_DYN_DELIM:
       case KOS_DYN_GEN:
-      case KOS_DYN_NEXT:
       case KOS_DYN_PROMPT:
         return 0;
       default:
@@ -113,14 +112,14 @@ static int kos_delimited_inplace_ready(
    kos_dyn_finish_inplace_pop_return. Borrows value.
 */
 static int kos_delimited_invoke_inplace(
-    KosEvalState *es,
+    KosContext *ctx,
     KosContinuation *k,
     PyObject *value,
     KosDynFrame *nested_frame) {
 
   KosDynNode *shift = KosContinuation_LIVE_SHIFT_NODE(k);
   KosDynNode *prompt = KosContinuation_LIVE_PROMPT_NODE(k);
-  KosDynNode *span_top = KosEvalState_DYN_TOP(es);
+  KosDynNode *span_top = KosContext_DYN_TOP(ctx);
   KosDynNode *slice_top = KosDynNode_PARENT(shift);
   KosDynFrame *resume_frame;
   KosDynDelim *delim;
@@ -152,9 +151,9 @@ static int kos_delimited_invoke_inplace(
     resume_frame = (KosDynFrame *) node;
   }
 
-  KosEvalState_FlushLiveRegsToFrame(es);
-  return_frame = KosEvalState_FRAME(es);
-  return_pc = return_frame ? KosEvalState_PC(es) : (uint32_t) -1;
+  KosContext_FlushLiveRegsToFrame(ctx);
+  return_frame = KosContext_FRAME(ctx);
+  return_pc = return_frame ? KosContext_PC(ctx) : (uint32_t) -1;
 
   /* Nested handler: the slice returns out of the handler's own frame and
      frees it, so restitch has nothing live to resume into and its final
@@ -195,7 +194,7 @@ static int kos_delimited_invoke_inplace(
     KosDynNode_FLAGS((KosDynNode *) delim) |= KOS_DYNF_HOLDS_RETURN_FRAME;
 
   /* The invocation re-delimits: a shift firing inside the resumed slice
-     must capture up to THIS invocation's iteration node, not the original
+     must capture up to THIS invocation's prompt, not the original
      prompt, or its POP_SHIFT discards the remainder of the suspended
      handler (control semantics where shift was promised). The fresh
      instance sits between the delim and the slice; captures inside the
@@ -260,7 +259,7 @@ static int kos_delimited_invoke_inplace(
    * them: the frame runs the slice now, and the prologue would offer
    * the resume cold. */
   KosDynDelim_SAVED_PC(delim) = KosDynFrame_PC(resume_frame);
-  KosDynDelim_SAVED_ACTING_PC(delim) = KosEvalState_ACTING_PC(es);
+  KosDynDelim_SAVED_ACTING_PC(delim) = KosContext_ACTING_PC(ctx);
   KosDynDelim_SAVED_RESUME_KIND(delim) = KosDynFrame_RESUME_KIND(resume_frame);
   KosDynDelim_SAVED_RESUME_STATE(delim) = KosDynFrame_RESUME_STATE(resume_frame);
   KosDynFrame_RESUME_KIND(resume_frame) = NULL;
@@ -269,15 +268,15 @@ static int kos_delimited_invoke_inplace(
 
   KosContinuation_LIVE_SLICE_CONSUMED(k) = 1;
 
-  kos_dyn_commit_dyn_top(es, slice_top);
-  kos_dyn_resync_chain(es);
+  kos_dyn_commit_dyn_top(ctx, slice_top);
+  kos_dyn_resync_chain(ctx);
   /* rebuild leaves live PCs alone when the frame is unchanged (invoke
    * frame == resume frame); load them from the displaced frame state. */
-  kos_dyn_resync_load_regs(es, resume_frame);
+  kos_dyn_resync_load_regs(ctx, resume_frame);
 
   Py_INCREF(value);
   /* StackPUSH consumes the value reference, on failure as well. */
-  return KosEvalState_StackPUSH(es, value);
+  return KosContext_StackPUSH(ctx, value);
 }
 
 
@@ -289,7 +288,7 @@ static int kos_delimited_invoke_inplace(
    replaced. Callers: callable invoke, apply paths.
 */
 int kos_invoke_continuation(
-    KosEvalState *es,
+    KosContext *ctx,
     KosContinuation *k,
     PyObject *value,
     PyObject *continuation_ref) {
@@ -308,8 +307,8 @@ int kos_invoke_continuation(
       && ! KosContinuation_LIVE_SLICE_CONSUMED(k)) {
     KosDynFrame *nested_frame = NULL;
 
-    if (kos_delimited_inplace_ready(es, k, &nested_frame))
-      return kos_delimited_invoke_inplace(es, k, value, nested_frame);
+    if (kos_delimited_inplace_ready(ctx, k, &nested_frame))
+      return kos_delimited_invoke_inplace(ctx, k, value, nested_frame);
   }
 
   /* Delimited k(value): the caller stays on the chain and the segment
@@ -327,19 +326,19 @@ int kos_invoke_continuation(
   KosDynNode *tmpl_stop = NULL;
   if (! is_delimited)
     kos_chain_common_ancestor(
-        es, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop);
+        ctx, KosContinuation_CAPTURED_CHAIN(k), &seam, &tmpl_stop);
 
   /* The landed frames sit above the invoker's frame (delimited) or
      above the seam's frame (undelimited); refuse here, before anything
      moves, so RecursionError raises at the invoke site. */
   {
     KosDynNode *base = is_delimited
-        ? (KosDynNode *) KosEvalState_FRAME(es) : seam;
+        ? (KosDynNode *) KosContext_FRAME(ctx) : seam;
 
     while (base && ! KosDynNode_IS_FRAME(base))
       base = KosDynNode_PARENT(base);
     if (kos_eval_check_frame_room(
-            es, (KosDynFrame *) base,
+            ctx, (KosDynFrame *) base,
             kos_dyn_frame_count(KosContinuation_CAPTURED_CHAIN(k),
                                 tmpl_stop)) < 0)
       return -1;
@@ -399,12 +398,12 @@ int kos_invoke_continuation(
 
   if (is_delimited) {
     KosDynDelim *ret_delim = kos_dyn_push_delim(
-        es,
+        ctx,
         KOS_DYN_DELIM_MODE_POP_PROMPT,
         NULL,
-        KosEvalState_FRAME(es)
-            ? KosEvalState_PC(es) : (uint32_t) -1,
-        KosEvalState_FRAME(es),
+        KosContext_FRAME(ctx)
+            ? KosContext_PC(ctx) : (uint32_t) -1,
+        KosContext_FRAME(ctx),
         NULL);
     if (! ret_delim) {
       kos_dynchain_free(target, NULL);
@@ -417,8 +416,8 @@ int kos_invoke_continuation(
     seam = (KosDynNode *) ret_delim;
     if (KOS_XFER_TRACE)
       SAYF("[xfer] invoke: push DELIM dyn_top=%p frame_top=%p",
-           (void *) KosEvalState_DYN_TOP(es),
-           (void *) KosEvalState_FRAME(es));
+           (void *) KosContext_DYN_TOP(ctx),
+           (void *) KosContext_FRAME(ctx));
   }
 
   {
@@ -429,7 +428,7 @@ int kos_invoke_continuation(
       /* target is freed by kos_xfer_goal_new on failure. Undo only the
          DELIM this call pushed; an undelimited seam is a live node. */
       if (is_delimited && seam)
-        (void) kos_dyn_pop_delim(es, (KosDynDelim *) seam);
+        (void) kos_dyn_pop_delim(ctx, (KosDynDelim *) seam);
       return -1;
     }
     if (tmpl_stop
@@ -437,7 +436,7 @@ int kos_invoke_continuation(
       kos_xfer_goal_free(goal);
       return -1;
     }
-    kos_xfer_goal_push(es, goal);
+    kos_xfer_goal_push(ctx, goal);
   }
   return 0;
 }
@@ -454,14 +453,14 @@ int kos_invoke_continuation(
    the top of the root-anchored run.
 */
 void kos_chain_common_ancestor(
-    KosEvalState *es,
+    KosContext *ctx,
     KosDynNode *tmpl,
     KosDynNode **out_live,
     KosDynNode **out_tmpl) {
 
   size_t n_live = 0;
   size_t n_tmpl = 0;
-  KosDynNode *live = KosEvalState_DYN_TOP(es);
+  KosDynNode *live = KosContext_DYN_TOP(ctx);
   KosDynNode *node;
 
   *out_live = NULL;

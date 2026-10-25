@@ -25,18 +25,18 @@
 */
 
 KOS_OP_HANDLER(CAPTURE_CC) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   KosContinuation *k = NULL;
   PyObject *fn = NULL;
 
   if (KosOp_ARG(insn)) {
-    fn = KosEvalState_StackPopRef(es);
+    fn = KosContext_StackPopRef(ctx);
     if (unlikely(! fn)) {
       PyErr_SetString(PyExc_RuntimeError, "CAPTURE_CC pop underrun");
       RESULT_RAISE();
     }
   }
-  if (kos_capture_cc(es, &k) < 0) {
+  if (kos_capture_cc(ctx, &k) < 0) {
     Py_XDECREF(fn);
     RESULT_RAISE();
   }
@@ -46,11 +46,11 @@ KOS_OP_HANDLER(CAPTURE_CC) {
     kos_continuation_free(k);
     RESULT_RAISE();
   }
-  if (fn && unlikely(KosEvalState_StackPUSH(es, fn) < 0)) {
+  if (fn && unlikely(KosContext_StackPUSH(ctx, fn) < 0)) {
     Py_DECREF(wrapper);
     RESULT_RAISE();
   }
-  RESULT_STEAL(es, wrapper);
+  RESULT_STEAL(ctx, wrapper);
 }
 
 

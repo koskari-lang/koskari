@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(PUSH_WIND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   unsigned count = KosOp_ARG(insn);
   PyObject *before = NULL;
   PyObject *after = NULL;  /* set only when count==2 */
@@ -32,13 +32,13 @@ KOS_OP_HANDLER(PUSH_WIND) {
   }
 
   if (count == 2) {
-    after = KosEvalState_StackPopRef(es);
+    after = KosContext_StackPopRef(ctx);
     if (! after) {
       PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (after)");
       RESULT_RAISE();
     }
   }
-  before = KosEvalState_StackPopRef(es);
+  before = KosContext_StackPopRef(ctx);
   if (! before) {
     Py_XDECREF(after);
     PyErr_SetString(PyExc_RuntimeError, "PUSH_WIND: stack underrun (before)");
@@ -65,7 +65,7 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (after == Py_None || ! after)
     Py_XDECREF(after);
 
-  KosDynWind *wind = kos_dyn_push_wind(es, b, a);
+  KosDynWind *wind = kos_dyn_push_wind(ctx, b, a);
   if (! wind) {
     Py_XDECREF(b);
     Py_XDECREF(a);
@@ -76,8 +76,8 @@ KOS_OP_HANDLER(PUSH_WIND) {
   if (a)
     Py_DECREF(a);
 
-  KosDynFrame *const caller = KosEvalState_FRAME(es);
-  KosOpResult wr = kos_dyn_extent_enter(es, (KosDynNode *) wind);
+  KosDynFrame *const caller = KosContext_FRAME(ctx);
+  KosOpResult wr = kos_dyn_extent_enter(ctx, (KosDynNode *) wind);
   if (wr.kind == KOS_RES_RAISE)
     RESULT_RAISE();
   /* the before-thunk suspended on an awaitable; the revive settles the
@@ -86,19 +86,19 @@ KOS_OP_HANDLER(PUSH_WIND) {
     return wr;
 
   /* REPROLOGUE means one of two things. Either the thunk is a Koskari
-     function whose frame is now the current frame: continue from es->pc
+     function whose frame is now the current frame: continue from ctx->pc
      runs it, and its return settles the wind. Or the call left work for
      the trampoline (a transfer goal pushed by the callee): return so the
      trampoline drains it first. Continuing in that second case would
      run the wind body before the transfer it was meant to make. */
   if (wr.kind == KOS_RES_REPROLOGUE) {
-    if (KosEvalState_FRAME(es) != caller && ! KosEvalState_GOAL(es))
-      RESULT_CONTINUE(es);
+    if (KosContext_FRAME(ctx) != caller && ! KosContext_GOAL(ctx))
+      RESULT_CONTINUE(ctx);
     return wr;
   }
 
   /* NORMAL: no thunk, or it ran in place */
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

@@ -27,6 +27,22 @@ mid-extent cannot leak its bindings anywhere. A `set!` on a parameter inside the
 extent writes the extent's binding and is discarded with it when the block
 exits.
 
+**Root scope:** A read that finds no `parameterize` binding falls through to
+the root scope, one per thread or per `with Domain():` block; see
+[`define-parameter`](../macros/compile-define-parameter-and-compile-parameterq.md).
+
+**Parameterize from Python:** `koskari.types.parameterize` opens the same
+extent over a block of Python code: `with parameterize(width=5):`, or
+`with parameterize({"line-width": 5}):` for a name that is not a Python
+identifier. Inside the block a read from Python or from Koskari code called
+within it sees the binding; a block opened by Python code that Koskari called
+out to is inner to the calling extent. A coroutine, task, or asyncio task
+created inside the block keeps the bindings applied at its creation. The block
+belongs to the running stack, a thread's synchronous stack or one asyncio
+task, so blocks on different tasks never see each other and each exit
+restores only what that block bound. A store inside the block writes the
+block's binding, not the root scope.
+
 **Examples:**
 
 ```koskari

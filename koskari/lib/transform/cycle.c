@@ -97,13 +97,13 @@ static PyObject *cycle_keep(KosCycle *c, PyObject *element) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(cycle_resume_deliver_kind, "cycle-step",
+KOS_RESUME_KIND_AS_IS(cycle_resume_deliver_kind, "cycle-step",
                 cycle_resume_deliver, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(cycle_resume_fetch_kind, "cycle-step",
+KOS_RESUME_KIND_AS_IS(cycle_resume_fetch_kind, "cycle-step",
                 cycle_resume_fetch, kos_transform_step_clear, NULL);
 
 
@@ -114,14 +114,16 @@ KOS_RESUME_KIND(cycle_resume_fetch_kind, "cycle-step",
    element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosCycle *c = (KosCycle *) state;
   KosTransform *t = &c->base;
 
+  kos_transform_fetched(t->source, element);
+
   if (! element) {
     if (! kos_transform_source_spent())
-      return EVAL_RAISE();
+      return kos_transform_decline(ctx, t);
 
     PyErr_Clear();
     if (! cycle_switch_to_buffer(c)) {
@@ -133,7 +135,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
     {
       PyObject *item = cycle_replay(c);
 
-      return KosNativeFrame_ReturnToCache(es, item, &t->cached_frame);
+      RESULT_FRAME_RETURN(ctx, item, &t->cached_frame);
     }
   }
 
@@ -141,7 +143,7 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
   if (! element)
     return EVAL_RAISE();
 
-  return KosNativeFrame_ReturnToCache(es, element, &t->cached_frame);
+  RESULT_FRAME_RETURN(ctx, element, &t->cached_frame);
 }
 
 
@@ -151,38 +153,34 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_deliver(
    invoked with NULL.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult cycle_resume_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
-  r = KosEvalState_NextResume(
-      es, ((KosTransform *) state)->source, NULL,
-      &cycle_resume_deliver_kind, state);
-  RESULT_ENTRY(es, r, &cycle_resume_deliver_kind, state);
+  r = KosContext_NextResume(
+      ctx, t->source, &cycle_resume_deliver_kind, t);
+  RESULT_ENTRY(ctx, r, &cycle_resume_deliver_kind, t);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult cycle_iter_step(
-    KosEvalState *es,
+static KosIterStepResult cycle_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosCycle *c = (KosCycle *) self;
   KosTransform *t = &c->base;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(t, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   /* Replaying: pure C from here on, whatever the original source
      was. */
@@ -194,7 +192,7 @@ static KosIterStepResult cycle_iter_step(
   {
     PyObject *element;
 
-    switch (KosEvalState_NextOrDefer(es, t->source, &cycle_resume_fetch_kind,
+    switch (KosContext_NextOrDefer(ctx, t->source, &cycle_resume_fetch_kind,
                                      t, &t->cached_frame, &element)) {
       case KOS_IREQ_DELIVERED:
         *out = cycle_keep(c, element);
@@ -209,12 +207,21 @@ static KosIterStepResult cycle_iter_step(
         *out = cycle_replay(c);
         return KOS_ITER_VALUE;
       case KOS_IREQ_CONTINUES:
-        t->busy = 1;
         return KOS_ITER_INSTALLED_VALUE;
       default:
-        return kos_transform_step_abort(es, t, pre_top);
+        return kos_transform_step_abort(ctx, t, pre_top);
     }
   }
+}
+
+
+static KosIterStepResult cycle_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, cycle_step_body);
 }
 
 
@@ -307,6 +314,7 @@ KosEvaluatedTypeObject KosCycleType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

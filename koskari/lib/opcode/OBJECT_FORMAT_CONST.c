@@ -19,7 +19,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *rules = KosOp_OBJ(insn);
   PyObject *obj;
   PyObject *res;
@@ -34,7 +34,7 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   }
 #endif
 
-  obj = KosEvalState_StackPopRef(es);
+  obj = KosContext_StackPopRef(ctx);
   if (! obj)
     RESULT_RAISE();
 
@@ -43,7 +43,7 @@ KOS_OP_HANDLER(OBJECT_FORMAT_CONST) {
   if (! res)
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

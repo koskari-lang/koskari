@@ -21,10 +21,10 @@
    metaclass resolution, prepare, namespace merge); pushes resulting class.
 */
 KOS_OP_HANDLER(BUILD_CLASS) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   (void) insn;
 
-  PyObject *ns = KosEvalState_StackPopRef(es);
+  PyObject *ns = KosContext_StackPopRef(ctx);
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (ns)");
     RESULT_RAISE();
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
 
   SAYF("BUILD_CLASS: ns=%R", ns);
 
-  PyObject *pos = KosEvalState_StackPopRef(es);
+  PyObject *pos = KosContext_StackPopRef(ctx);
   if (unlikely(! pos)) {
     Py_DECREF(ns);
     PyErr_SetString(PyExc_RuntimeError, "BUILD_CLASS stack underrun (pos)");
@@ -84,7 +84,7 @@ KOS_OP_HANDLER(BUILD_CLASS) {
 
   SAYF("BUILD_CLASS: cls=%R", cls);
 
-  RESULT_STEAL(es, cls);
+  RESULT_STEAL(ctx, cls);
 }
 
 

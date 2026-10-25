@@ -43,15 +43,14 @@ static int test_breaker_reads_the_interpreter(void) {
   TEST_ASSERT_EQ(koskari_gil_drop_requested(), 0,
                  "no GIL drop requested at rest");
 
-  KosContext *ctx = KosContext_New(NULL);
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(ctx, "create context");
-  KosEvalState es;
-  KosEvalState_Init(&es, ctx, NULL);
-  TEST_ASSERT_SAME((void *) KosEvalState_BREAKER(&es), (void *) w,
-                   "Init caches the located word");
-  TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(&es) != 0, 0,
+  KosContext_EvalEnter(ctx, NULL);
+  TEST_ASSERT_SAME((void *) KosContext_BREAKER(ctx), (void *) w,
+                   "EvalEnter caches the located word");
+  TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(ctx) != 0, 0,
                  "cooperation test is clear at rest");
-  TEST_ASSERT_EQ(kos_call_installed(&es).kind, KOS_RES_NORMAL,
+  TEST_ASSERT_EQ(kos_call_installed(ctx).kind, KOS_RES_NORMAL,
                  "an install threads on when the breaker is clear");
 
   /* A simulated SIGINT: CPython's own tripwire raises the signal
@@ -59,9 +58,9 @@ static int test_breaker_reads_the_interpreter(void) {
   PyErr_SetInterrupt();
   TEST_ASSERT_EQ((*w & KOS_BREAKER_MASK) != 0, 1,
                  "breaker up with a signal pending");
-  TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(&es) != 0, 1,
+  TEST_ASSERT_EQ(KOS_EVAL_BREAKER_UP(ctx) != 0, 1,
                  "cooperation test sees the pending signal");
-  TEST_ASSERT_EQ(kos_call_installed(&es).kind, KOS_RES_POLL,
+  TEST_ASSERT_EQ(kos_call_installed(ctx).kind, KOS_RES_POLL,
                  "an install polls before threading on with the breaker up");
   TEST_ASSERT_EQ(koskari_gil_drop_requested(), 0,
                  "a signal is not a GIL drop request");
@@ -78,7 +77,7 @@ static int test_breaker_reads_the_interpreter(void) {
   TEST_ASSERT_EQ(Py_MakePendingCalls(), 0, "nothing left to handle");
   TEST_ASSERT_EQ((*w & KOS_BREAKER_MASK) != 0, 0,
                  "breaker clear once the signal is handled");
-  TEST_ASSERT_EQ(kos_call_installed(&es).kind, KOS_RES_NORMAL,
+  TEST_ASSERT_EQ(kos_call_installed(ctx).kind, KOS_RES_NORMAL,
                  "installs thread on again");
 
   Py_DECREF(ctx);

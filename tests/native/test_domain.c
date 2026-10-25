@@ -38,9 +38,9 @@ static int test_domain_two_thread_states_on_one_os_thread(void) {
   second = PyThreadState_New(PyThreadState_GetInterpreter(first));
   TEST_ASSERT_NOT_NULL(second, "second thread state");
 
-  a = KosContext_New(NULL);
+  a = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(a, "context a");
-  b = KosContext_New(NULL);
+  b = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(b, "context b");
 
   kos_domain_push_scope(a);
@@ -88,7 +88,7 @@ static int test_domain_record_survives_module_clear(void) {
   PyThreadState *second;
   KosContext *a;
 
-  a = KosContext_New(NULL);
+  a = KosContext_New(NULL, kos_tls_current());
   TEST_ASSERT_NOT_NULL(a, "context a");
 
   koskari_domain_clear(NULL);
@@ -122,9 +122,120 @@ static int test_domain_record_survives_module_clear(void) {
 }
 
 
+/* The ambient cell table, as a boundary entry on this thread sees it. */
+static PyObject *ambient(KosTlsState *s) {
+  return kos_param_ambient_cells(s, kos_tls_active_context(s));
+}
+
+
+/* A Python parameterize span binding one name, entered. New reference. */
+static PyObject *span_enter(const char *name, long value) {
+  PyObject *bindings = Py_BuildValue("{s:l}", name, value);
+  PyObject *span;
+  PyObject *entered;
+
+  if (! bindings)
+    return NULL;
+  span = PyObject_CallFunction((PyObject *) &KosParamSpanType, "O", bindings);
+  Py_DECREF(bindings);
+  if (! span)
+    return NULL;
+  entered = PyObject_CallMethod(span, "__enter__", NULL);
+  if (! entered) {
+    Py_DECREF(span);
+    return NULL;
+  }
+  Py_DECREF(entered);
+  return span;
+}
+
+
+static int span_exit(PyObject *span) {
+  PyObject *r = PyObject_CallMethod(span, "__exit__", "OOO",
+                                    Py_None, Py_None, Py_None);
+  if (! r)
+    return -1;
+  Py_DECREF(r);
+  return 0;
+}
+
+
+/**
+   The ambient cells order a Python span against the active context: a
+   span opened before the context is entered is outer to it and the
+   context's own table answers; a span opened while it is active is
+   inner and the span's table answers; each exit uncovers the view
+   beneath.
+*/
+static int test_domain_span_orders_against_the_active_context(void) {
+  KosTlsState *s = kos_tls_current();
+  PyObject *outer;
+  PyObject *inner;
+  KosContext *a;
+  PyObject *cells;
+  PyObject *mark;
+
+  TEST_ASSERT_NULL(ambient(s), "nothing ambient at start");
+
+  outer = span_enter("span_k", 1);
+  TEST_ASSERT_NOT_NULL(outer, "outer span entered");
+  cells = ambient(s);
+  TEST_ASSERT_NOT_NULL(cells, "the outer span's table is ambient");
+  TEST_ASSERT_NOT_NULL(PyDict_GetItemString(cells, "span_k"),
+                       "the outer span's cell is in it");
+
+  /* a context created inside the span takes the span's table */
+  a = KosContext_New(NULL, s);
+  TEST_ASSERT_NOT_NULL(a, "context a");
+  TEST_ASSERT_SAME(KosContext_PARAM_REFS(a), cells,
+                   "a took the span's table at creation");
+
+  /* active, with a table of its own: the span is outer to it */
+  kos_domain_push_scope(a);
+  cells = kos_context_param_refs(a);
+  TEST_ASSERT_NOT_NULL(cells, "a's own table");
+  mark = PyLong_FromLong(2);
+  TEST_ASSERT_EQ(PyDict_SetItemString(cells, "span_mark", mark), 0,
+                 "mark a's table");
+  Py_DECREF(mark);
+  TEST_ASSERT_SAME(ambient(s), cells,
+                   "a's table is ambient while a is active");
+
+  /* a span opened while a is active is inner to it */
+  inner = span_enter("span_inner", 3);
+  TEST_ASSERT_NOT_NULL(inner, "inner span entered");
+  cells = ambient(s);
+  TEST_ASSERT_NOT_SAME(cells, KosContext_PARAM_REFS(a),
+                       "the inner span's table is ambient");
+  TEST_ASSERT_NOT_NULL(PyDict_GetItemString(cells, "span_inner"),
+                       "it holds the inner span's cell");
+  TEST_ASSERT_NOT_NULL(PyDict_GetItemString(cells, "span_mark"),
+                       "it was built over a's table");
+
+  TEST_ASSERT_EQ(span_exit(inner), 0, "inner span exited");
+  TEST_ASSERT_SAME(ambient(s), KosContext_PARAM_REFS(a),
+                   "a's table is ambient again");
+
+  kos_domain_pop_scope(a);
+  cells = ambient(s);
+  TEST_ASSERT_NOT_NULL(cells, "the outer span answers once a is gone");
+  TEST_ASSERT_NULL(PyDict_GetItemString(cells, "span_mark"),
+                   "without a's mark");
+
+  TEST_ASSERT_EQ(span_exit(outer), 0, "outer span exited");
+  TEST_ASSERT_NULL(ambient(s), "nothing ambient at the end");
+
+  Py_DECREF(inner);
+  Py_DECREF(outer);
+  Py_DECREF(a);
+  return 0;
+}
+
+
 int run_domain_tests(void) {
   BEGIN_TEST_SUITE("Domain");
   RUN_TEST(test_domain_two_thread_states_on_one_os_thread);
+  RUN_TEST(test_domain_span_orders_against_the_active_context);
   RUN_TEST(test_domain_record_survives_module_clear);
   return 0;
 }

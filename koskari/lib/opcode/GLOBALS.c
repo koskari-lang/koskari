@@ -19,15 +19,15 @@
   current frame's namespace to the outermost parent (not dyn_top or let scope).
 */
 KOS_OP_HANDLER(GLOBALS) {
-  KOS_SYNC_PC(es, insn);
-  PyObject *ns = KosEvalState_GlobalsNamespace(es);
+  KOS_SYNC_PC(ctx, insn);
+  PyObject *ns = KosContext_GlobalsNamespace(ctx);
 
   if (unlikely(! ns)) {
     PyErr_SetString(PyExc_RuntimeError, "GLOBALS: namespace is NULL");
     RESULT_RAISE();
   }
 
-  RESULT_PUSH(es, ns);
+  RESULT_PUSH(ctx, ns);
 }
 
 

@@ -1,0 +1,138 @@
+;; foreach_step_resume -- the for-each step's element reaches the step's
+;; resume on every route: in hand from a plain iterator, by a Koskari
+;; generator's yield, through a yield-from delegation two deep, from a
+;; generator whose own body loops, from an awaiting generator, and from
+;; a Python async iterator.
+
+(import-from asyncio sleep)
+
+
+define gen [n]:
+    for-each [i (range n)]:
+        yield i
+
+
+define delegating [n]:
+    yield-from (gen n)
+
+
+define twice [n]:
+    yield-from (delegating n)
+    yield-from (delegating n)
+
+
+define collect_plain [n]:
+    define out #[]
+    for-each [v (range n)]:
+        out.append v
+    out
+
+
+define collect_gen [n]:
+    define out #[]
+    for-each [v (gen n)]:
+        out.append v
+    out
+
+
+define collect_delegated [n]:
+    define out #[]
+    for-each [v (twice n)]:
+        out.append v
+    out
+
+
+define collect_break [n]:
+    ;; abandon each delegation after one value; the outer loop goes on
+    define out #[]
+    for-each [k (range 3)]:
+        for-each [v (twice n)]:
+            out.append #(k v)
+            (break)
+    out
+
+
+define nested_gen [n]:
+    for-each [v (gen n)]:
+        yield (* v 10)
+
+
+define collect_nested [n]:
+    define out #[]
+    for-each [v (nested_gen n)]:
+        out.append v
+    out
+
+
+define awaiting_gen [n]:
+    for-each [i (range n)]:
+        (sleep 0)
+        yield i
+
+
+define collect_awaiting [n]:
+    define out #[]
+    for-each [v (awaiting_gen n)]:
+        out.append v
+    out
+
+
+define collect_source [src]:
+    define out #[]
+    for-each [v src]:
+        out.append v
+    out
+
+
+define collect_else [n]:
+    ;; the end of the iteration lands on the else clause
+    define out #[]
+    (for-each [v (gen n)]
+      (out.append v)
+      [else: (out.append "end")])
+    out
+
+
+define sum_then_yield [n]:
+    define t 0
+    for-each [v (gen n)]:
+        (set! t (+ t v))
+    yield t
+
+
+define continue_under_finally [n log]:
+    ;; continue unwinds through the finally into the generator's next
+    ;; step
+    define out #[]
+    for-each [v (gen n)]:
+        try:
+            when (< v 2):
+                (continue)
+            out.append v
+        finally:
+            log.append v
+    out
+
+
+define continue_nested [n]:
+    ;; continue in an inner loop over a generator, then in the outer
+    ;; loop over another
+    define out #[]
+    for-each [a (gen n)]:
+        for-each [b (gen n)]:
+            when (== a b):
+                (continue)
+            out.append #(a b)
+        when (== a 0):
+            (continue)
+        out.append a
+    out
+
+
+define module_out #[]
+
+for-each [mv (gen 3)]:
+    module_out.append mv
+
+
+;; The end.

@@ -36,7 +36,7 @@ Phases: WIND `IDLE -> PRE_BEGIN -> POST_BEGIN -> PRE_AFTER -> POST_AFTER`;
 WITH `IDLE -> PENDING_ENTER_AWAIT? -> (body) -> PENDING_EXIT_AWAIT? ->
 LEFT`. A single-shot `with` records `exit_done` in a `KosRef` shared with its
 clones, so `__exit__` runs once across every instance; a multi-shot
-`dyn-with` (`KOS_DYN_CAP_NEEDS_INSTALL_WIND`) re-enters on every landing.
+`dyn-with` (shot `KOS_DYN_WITH_SHOT_MULTI`) re-enters on every landing.
 
 Thunks and `__enter__`/`__exit__` bodies are ordinary frames in the same
 `koskari_eval` loop. When one returns into the node (a frame return that

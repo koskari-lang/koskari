@@ -19,20 +19,20 @@
 */
 
 KOS_OP_HANDLER(VAR_BIND) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
   PyObject *name = KosOp_OBJ(insn);
 
-  PyObject *val = KosEvalState_StackPopRef(es);
+  PyObject *val = KosContext_StackPopRef(ctx);
   if (! val)
     RESULT_RAISE();
 
-  int res = frame_ns_bind(es, name, val);
+  int res = frame_ns_bind(ctx, name, val);
   Py_DECREF(val);
 
   if (unlikely(res < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

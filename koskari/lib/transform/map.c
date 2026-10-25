@@ -16,10 +16,10 @@
    design/archive/cps-consumer-api.md). Anything else -- a driven source, or a
    FRAME-shaped or awaitable-returning function without that guarantee
    -- runs under one CPS resume-carrying frame: FETCH requests the next
-   source element via KosEvalState_NextResume, INVOKE applies the
-   function via KosEvalState_Call, and completion delivers the
-   element to the consumer's iteration node. Exhaustion and errors leave
-   the frame as exceptions; the consumer's iteration node converts
+   source element via KosContext_NextResume, INVOKE applies the
+   function via KosContext_Call, and completion delivers the
+   element to the consumer's step resume. Exhaustion and errors leave
+   the frame as exceptions; the consumer's step resume converts
    StopIteration per its own rules, which also gives a mapped
    function's StopIteration builtins.map truncation parity.
 
@@ -41,17 +41,17 @@
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
-KOS_RESUME_KIND(map_resume_after_fetch_kind, "map-step",
+KOS_RESUME_KIND_AS_IS(map_resume_after_fetch_kind, "map-step",
                 map_resume_after_fetch, kos_transform_step_clear, NULL);
 KOS_RESUME_KIND(map_resume_after_result_kind, "map-step",
                 map_resume_after_result, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step",
+KOS_RESUME_KIND_AS_IS(map_resume_start_fetch_kind, "map-step",
                 map_resume_start_fetch, kos_transform_step_clear, NULL);
 
 
@@ -60,41 +60,43 @@ KOS_RESUME_KIND(map_resume_start_fetch_kind, "map-step",
    completes with it directly. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_result(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *m = (KosTransform *) state;
 
   /* The raise walk is propagating an exception: let it, so the frame
-     pops and the consumer's iteration node owns the conversion
+     pops and the consumer's step resume owns the conversion
      (StopIteration truncation parity included). */
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, m);
 
-  return KosNativeFrame_ReturnToCache(es, value, &m->cached_frame);
+  RESULT_FRAME_RETURN(ctx, value, &m->cached_frame);
 }
 
 
 /**
    INVOKE: apply func to element. Every calling shape goes through the
-   one entry -- KosEvalState_Call resolves the callable and prepares
+   one entry -- KosContext_Call resolves the callable and prepares
    (or declines to prepare) a frame per its own suite, so a callable
    that wants no frame still runs in this evaluator rather than
    through the Python boundary. element is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransform *m = (KosTransform *) state;
   KosOpResult r;
 
-  if (! element)
-    return EVAL_RAISE();
+  kos_transform_fetched(m->source, element);
 
-  r = KosEvalState_Call(
-      es, m->fn.cs_callable, &element, 1, NULL, 0,
+  if (! element)
+    return kos_transform_decline(ctx, m);
+
+  r = KosContext_Call(
+      ctx, m->fn.cs_callable, &element, 1, NULL, 0,
       &map_resume_after_result_kind, m);
   Py_DECREF(element);
-  RESULT_ENTRY(es, r, &map_resume_after_result_kind, m);
+  RESULT_ENTRY(ctx, r, &map_resume_after_result_kind, m);
 }
 
 
@@ -108,8 +110,9 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_after_fetch(
    frame is actually dispatched. Always invoked with NULL.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
+  KosTransform *t = (KosTransform *) state;
   KosOpResult r;
 
   (void) value;
@@ -117,35 +120,30 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult map_resume_start_fetch(
   /* The raise walk is propagating an exception: let it, as every
      resume does. */
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, t);
 
-  r = KosEvalState_NextResume(
-      es, ((KosTransform *) state)->source, NULL,
-      &map_resume_after_fetch_kind, state);
-  RESULT_ENTRY(es, r, &map_resume_after_fetch_kind, state);
+  r = KosContext_NextResume(
+      ctx, t->source, &map_resume_after_fetch_kind, t);
+  RESULT_ENTRY(ctx, r, &map_resume_after_fetch_kind, t);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult map_iter_step(
-    KosEvalState *es,
+static KosIterStepResult map_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransform *m = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(m, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   {
     PyObject *element;
 
-    KOS_TRANSFORM_FETCH(es, m, m->source, &map_resume_start_fetch_kind, pre_top, out,
+    KOS_TRANSFORM_FETCH(ctx, m, m->source, &map_resume_start_fetch_kind, pre_top, out,
                         element);
 
     /* A direct-delivery koskari function (cs_direct: its install
@@ -153,14 +151,12 @@ static KosIterStepResult map_iter_step(
        generic call entry -- cached frame, the element's own address
        as the argument vector -- with no helper frame. */
     if (m->fn.cs_kind == KOS_CALL_SHAPE_FRAME && m->fn.cs_direct) {
-      KosOpResult r = KosEvalState_Call(
-          es, m->fn.cs_callable, &element, 1, NULL, 0, NULL, NULL);
+      KosOpResult r = KosContext_Call(
+          ctx, m->fn.cs_callable, &element, 1, NULL, 0, NULL, NULL);
       Py_DECREF(element);
-      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE) {
-        m->busy = 1;
+      if (r.kind == KOS_RES_NORMAL || r.kind == KOS_RES_REPROLOGUE)
         return KOS_ITER_INSTALLED_VALUE;
-      }
-      return kos_transform_step_abort(es, m, pre_top);
+      return kos_transform_step_abort(ctx, m, pre_top);
     }
 
     /* Any other KosCallable -- a values or bound-method FRAME shape
@@ -172,7 +168,7 @@ static KosIterStepResult map_iter_step(
        or need an await -- must happen from inside that later dispatch,
        not here. */
     if (m->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-      return kos_transform_stage(es, m, element,
+      return kos_transform_stage(ctx, m, element,
                                  &map_resume_after_fetch_kind, pre_top);
 
     /* A plain python callable needs no evaluator at all. */
@@ -191,7 +187,7 @@ static KosIterStepResult map_iter_step(
              defer to map_resume_after_result the same way -- the
              await it needs must happen from inside koskari_eval's
              own dispatch, not from map_iter_step. */
-          return kos_transform_stage(es, m, result,
+          return kos_transform_stage(ctx, m, result,
                                      &map_resume_after_result_kind, pre_top);
         default:
           Py_DECREF(result);
@@ -200,6 +196,16 @@ static KosIterStepResult map_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult map_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, map_step_body);
 }
 
 
@@ -248,6 +254,7 @@ KosEvaluatedTypeObject KosMapType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

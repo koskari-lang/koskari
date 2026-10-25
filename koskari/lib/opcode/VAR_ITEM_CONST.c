@@ -21,13 +21,13 @@
   (eval/eval_item.c) with no slot; the cold twin of the FAST row.
 */
 KOS_OP_HANDLER(VAR_ITEM_CONST) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   PyObject *obj;
   PyObject *key = KosExtra_OBJ(row, 1);
   PyObject *out;
 
-  obj = frame_ns_deref(es, KosExtra_OBJ(row, 0));
+  obj = frame_ns_deref(ctx, KosExtra_OBJ(row, 0));
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -36,7 +36,7 @@ KOS_OP_HANDLER(VAR_ITEM_CONST) {
 
   if (unlikely(! out))
     RESULT_RAISE();
-  RESULT_STEAL(es, out);
+  RESULT_STEAL(ctx, out);
 }
 
 

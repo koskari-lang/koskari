@@ -25,9 +25,9 @@
 */
 
 KOS_OP_HANDLER(ATTR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *name = KosOp_OBJ(insn);
-  KosSegment **bl = KosEvalState_BLOCK(es);
+  KosSegment **bl = KosContext_BLOCK(ctx);
   PyObject *const *tail = kos_stack_tail_ptr_fast(*bl, 1);
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(ATTR) {
     if (hit) {
       Py_INCREF(hit);
       kos_elector_replace_top(bl, hit);
-      RESULT_NEXT(es);
+      RESULT_NEXT(ctx);
     }
   }
 
@@ -60,7 +60,7 @@ KOS_OP_HANDLER(ATTR) {
   if (! val)
     RESULT_RAISE();
   kos_elector_replace_top(bl, val);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

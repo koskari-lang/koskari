@@ -49,12 +49,17 @@ static const char *const kos_te_names[KOS_TE__COUNT] = {
   "seg_inline_install",
   "seg_inline_spill",
   "retarget_walk_fallback",
-  "parent_slot_walk",
   "live_rebuild",
   "call_frame_cached",
   "call_simple_steal",
   "call_simple_vector",
   "call_tail_inplace",
+  "entry_root_install",
+  "entry_root_cached",
+  "tls_resolve",
+  "exc_fetch",
+  "coro_frame_to_cache",
+  "call_frame_cached_general",
 };
 
 
@@ -296,7 +301,7 @@ void kos_trace_post_op_exit(void) {
 #endif
 
 
-/* === eval state sync (counts + monotonic wall time per API) === */
+/* === drive begin/end sync (counts + monotonic wall time per API) === */
 
 #if KOS_TRACE_EVAL_SYNC
 

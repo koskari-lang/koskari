@@ -83,6 +83,49 @@ typedef struct {
   (&((KosInterpreterState310 *) (interp))->ceval)
 
 
+/* === Recursion guard === */
+
+/*
+   CPython's C recursion count on 3.10: recursion_depth on the thread
+   state against the limit on the interpreter's ceval state (the mirror
+   above). The USE_STACKCHECK variant of the check is Windows-only and
+   is not replicated.
+*/
+
+
+/* Count one level on tstate: 0 on success, -1 with an error set. The
+   count and its test are _Py_EnterRecursiveCall's; a count past the
+   limit is taken back and Py_EnterRecursiveCall repeats it, raising:
+   https://github.com/python/cpython/blob/v3.10.0/Include/internal/pycore_ceval.h */
+static inline int kos_recursion_enter(
+    PyThreadState *tstate,
+    const char *where) {
+
+  if (++tstate->recursion_depth
+      > KOS_CEVAL_STATE(tstate->interp)->recursion_limit) {
+    --tstate->recursion_depth;
+    return Py_EnterRecursiveCall(where);
+  }
+  return 0;
+}
+
+
+/* Take back one level counted by kos_recursion_enter, as
+   _Py_LeaveRecursiveCall does:
+   https://github.com/python/cpython/blob/v3.10.0/Include/internal/pycore_ceval.h */
+static inline void kos_recursion_leave(PyThreadState *tstate) {
+  tstate->recursion_depth--;
+}
+
+
+/* The recursion limit, the value Py_GetRecursionLimit returns: the
+   interpreter's ceval recursion_limit:
+   https://github.com/python/cpython/blob/v3.10.0/Python/ceval.c */
+static inline int kos_recursion_limit(PyThreadState *tstate) {
+  return KOS_CEVAL_STATE(tstate->interp)->recursion_limit;
+}
+
+
 /* === GC tracked test === */
 
 /* Whether the collector holds op: the _gc_next link word of the PyGC_Head
@@ -148,6 +191,66 @@ static inline int kos_type_is_sequence(PyObject *obj) {
 /* 1 when obj's type is flagged a mapping, else 0, as above. */
 static inline int kos_type_is_mapping(PyObject *obj) {
   return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MAPPING) ? 1 : 0;
+}
+
+
+/* === Handled exception === */
+
+
+/* 1 when the thread state's top handled-exception item holds an
+   exception, 0 otherwise; no references are taken. The top item,
+   PyThreadState.exc_info, is the one PyErr_SetExcInfo writes; the
+   items below it (a caller's handler, seen from inside a generator)
+   are not consulted. The item's exc_value decides when it is set, and
+   holds none when None; with no exc_value, an exc_type that is NULL or
+   None holds none. kos_tstate_exc_top takes what this answers for. */
+static inline int kos_tstate_exc_held(PyThreadState *tstate) {
+  _PyErr_StackItem *item = tstate->exc_info;
+
+  if (item->exc_value)
+    return item->exc_value != Py_None;
+  return item->exc_type && item->exc_type != Py_None;
+}
+
+
+/* New references to the exception the thread state's top
+   handled-exception item holds, the item PyErr_SetExcInfo writes, or
+   NULL in all three when kos_tstate_exc_held answers 0. Takes the
+   item's exc_type, exc_value and exc_traceback as stored; the items
+   below it are not consulted. */
+static inline void kos_tstate_exc_top(
+    PyThreadState *tstate,
+    PyObject **type,
+    PyObject **value,
+    PyObject **tb) {
+
+  _PyErr_StackItem *item = tstate->exc_info;
+
+  if (! kos_tstate_exc_held(tstate)) {
+    *type = NULL;
+    *value = NULL;
+    *tb = NULL;
+    return;
+  }
+
+  *type = Py_XNewRef(item->exc_type);
+  *value = Py_XNewRef(item->exc_value);
+  *tb = Py_XNewRef(item->exc_traceback);
+}
+
+
+/* === StopIteration raise === */
+
+
+/* Raise exc, a StopIteration instance, as CPython's generator send
+   raises a return value on 3.10: _PyGen_SetStopIterationValue raises
+   it through PyErr_SetObject, so the handled exception is chained onto
+   its __context__.
+   https://github.com/python/cpython/blob/v3.10.0/Objects/genobject.c
+   Steals exc. */
+static inline void kos_raise_stop_instance(PyObject *exc) {
+  PyErr_SetObject(PyExc_StopIteration, exc);
+  Py_DECREF(exc);
 }
 
 

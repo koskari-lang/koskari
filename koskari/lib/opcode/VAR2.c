@@ -21,18 +21,18 @@
   raises with nothing pushed.
 */
 KOS_OP_HANDLER(VAR2) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *name = KosExtra_OBJ(row, 0);
 
-  PyObject *a = frame_ns_deref(es, name);
+  PyObject *a = frame_ns_deref(ctx, name);
   if (unlikely(! a))
     RESULT_RAISE();
 
   name = KosExtra_OBJ(row, 1);
 
-  PyObject *b = frame_ns_deref(es, name);
+  PyObject *b = frame_ns_deref(ctx, name);
   if (unlikely(! b)) {
     Py_DECREF(a);
     RESULT_RAISE();
@@ -40,9 +40,9 @@ KOS_OP_HANDLER(VAR2) {
 
   PyObject *vals[2] = { a, b };
   if (unlikely(kos_stack_push_steal_n_fast(
-                   KosEvalState_BLOCK(es), vals, 2) < 0))
+                   KosContext_BLOCK(ctx), vals, 2) < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

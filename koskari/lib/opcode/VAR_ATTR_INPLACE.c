@@ -29,19 +29,19 @@
 */
 
 KOS_OP_HANDLER(VAR_ATTR_INPLACE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   KosOperand op = (KosOperand) KosOpCount_TYPE(KosExtra_IMM(row, 0));
   int count = (int) KosOpCount_COUNT(KosExtra_IMM(row, 0));
   PyObject *name = KosExtra_OBJ(row, 1);
   PyObject *attr = KosExtra_OBJ(row, 2);
 
-  PyObject *obj = frame_ns_deref(es, name);
+  PyObject *obj = frame_ns_deref(ctx, name);
   if (! obj)
     RESULT_RAISE();
 
   PyObject *const *args =
-      count ? KosEvalState_StackTailPtr(es, (size_t) count) : NULL;
+      count ? KosContext_StackTailPtr(ctx, (size_t) count) : NULL;
   if (count && ! args) {
     Py_DECREF(obj);
     RESULT_RAISE();
@@ -50,11 +50,11 @@ KOS_OP_HANDLER(VAR_ATTR_INPLACE) {
   KosCacheSlot *slot = KosOp_SLOT(insn);
 
   int res = kos_attr_inplace_cached(slot, obj, attr, op, args, count);
-  KosEvalState_StackDropNoErr(es, (size_t) count);
+  KosContext_StackDropNoErr(ctx, (size_t) count);
   Py_DECREF(obj);
   if (unlikely(res < 0))
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

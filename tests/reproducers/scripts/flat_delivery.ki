@@ -1,0 +1,47 @@
+;; flat_delivery -- a flattened producer's element reaches its consumer
+;; by tail call, so the C stack stays flat however many elements pass:
+;; a for-each over a Koskari generator, a next loop over one, a
+;; yield-from over one under a for-each, and a for-each over a map of a
+;; Koskari function.
+
+
+define gen [n]:
+    for-each [i (range n)]:
+        yield i
+
+
+define relay [n]:
+    yield-from (gen n)
+
+
+define inc [x]:
+    (+ x 1)
+
+
+define count_foreach [n]:
+    define t 0
+    for-each [v (gen n)]:
+        (set! t (+ t 1))
+    t
+
+
+define sum_next [n]:
+    define g (gen n)
+    define t 0
+    for-each [i (range n)]:
+        (set! t (+ t (next g)))
+    t
+
+
+define count_delegated [n]:
+    define t 0
+    for-each [v (relay n)]:
+        (set! t (+ t 1))
+    t
+
+
+define sum_mapped [n]:
+    define t 0
+    for-each [v (map inc (range n))]:
+        (set! t (+ t v))
+    t

@@ -28,7 +28,7 @@
   push the result.
 */
 KOS_OP_HANDLER(BUILD_FUNCTION) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
 
   PyObject *defnames = KosExtra_OBJ(row, 0);
@@ -41,13 +41,13 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
     RESULT_RAISE();
   }
 
-  PyObject *fspec = KosEvalState_StackPopRef(es);
+  PyObject *fspec = KosContext_StackPopRef(ctx);
   if (unlikely(! fspec))
     RESULT_RAISE();
 
   PyObject *defaults = NULL;
   if (PyTuple_GET_SIZE(defnames) > 0) {
-    defaults = KosEvalState_StackPopTailDictFromNames(es, defnames);
+    defaults = KosContext_StackPopTailDictFromNames(ctx, defnames);
     if (unlikely(! defaults)) {
       Py_DECREF(fspec);
       RESULT_RAISE();
@@ -56,7 +56,7 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
 
   PyObject *annotations = NULL;
   if (PyTuple_GET_SIZE(annnames) > 0) {
-    annotations = KosEvalState_StackPopTailDictFromNames(es, annnames);
+    annotations = KosContext_StackPopTailDictFromNames(ctx, annnames);
     if (unlikely(! annotations)) {
       Py_DECREF(fspec);
       Py_XDECREF(defaults);
@@ -91,7 +91,7 @@ KOS_OP_HANDLER(BUILD_FUNCTION) {
       ((KosFunction *) fn)->module_override = Py_NewRef(KosNamespace_NAME(root));
   }
 
-  RESULT_STEAL(es, fn);
+  RESULT_STEAL(ctx, fn);
 }
 
 

@@ -26,57 +26,26 @@
 
 /* --- Transfer plan and delimited return --- */
 
-/**
-  Consume a pending KOS_INJECT_THROW: ownership of both refs transfers
-  to the caller (slots are nulled without decref).
+int KosContext_ThrowIntoResume(KosContext *ctx) {
 
-  :return: 1 when a throw was taken, 0 when none pending
-*/
-static inline int KosEvalState_TakeInjectThrow(
-    KosEvalState *es,
-    PyObject **type_out,
-    PyObject **value_out) {
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  const KosResumeKind *kind = frame ? KosDynFrame_RESUME_KIND(frame) : NULL;
 
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  if (KosContext_INJECT_MODE(ctx) != KOS_INJECT_THROW)
-    return 0;
-  *value_out = KosContext_INJECT_VALUE(ctx);
-  *type_out = KosContext_INJECT_TYPE(ctx);
-  KosContext_INJECT_MODE(ctx) = KOS_INJECT_NONE;
-  KosContext_INJECT_VALUE(ctx) = NULL;
-  KosContext_INJECT_TYPE(ctx) = NULL;
-  return 1;
-}
-
-
-int KosEvalState_ThrowIntoResume(KosEvalState *es) {
-
-  KosDynFrame *frame = KosEvalState_FRAME(es);
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-  PyObject *exc;
-
-  if (! frame || ! KosDynFrame_RESUME_KIND(frame))
+  if (! kind || ! kind->throw_kind)
     return 0;
   if (PyErr_ExceptionMatches(PyExc_GeneratorExit))
     return 0;
 
-  exc = PyErr_GetRaisedException();
-  KosContext_INJECT_MODE(ctx) = KOS_INJECT_THROW;
-  Py_XSETREF(KosContext_INJECT_VALUE(ctx), exc);
-  Py_XSETREF(KosContext_INJECT_TYPE(ctx),
-             Py_NewRef((PyObject *) Py_TYPE(exc)));
-
-  /* The resume runs on a delivery; the throw it takes first makes the
-     value moot. */
-  Py_INCREF(Py_None);
-  KosEvalState_StageDelivery(es, Py_None);
+  /* The throw is the delivery: the throw kind takes the exception
+     object as its value, over the same state. */
+  KosDynFrame_RESUME_KIND(frame) = kind->throw_kind;
+  KosContext_StageDelivery(ctx, PyErr_GetRaisedException());
   return 1;
 }
 
 
-int KosEvalState_SetFrameCodeAndNamespace(
-    KosEvalState *es,
+int KosContext_SetFrameCodeAndNamespace(
+    KosContext *ctx,
     KosDynFrame *frame,
     KosCode *code,
     PyObject *ns) {
@@ -92,67 +61,47 @@ int KosEvalState_SetFrameCodeAndNamespace(
     KosDynNode_CAPS(frame) |= KOS_DYN_CAP_OWNS_NS;
   else
     KosDynNode_CAPS(frame) &= ~KOS_DYN_CAP_OWNS_NS;
-  if (KosEvalState_FRAME(es) == frame) {
-    KosEvalState_NAMESPACE(es) = ns;
-    KosEvalState_CODE(es) = KosDynFrame_CODE(frame);
-    KosEvalState_BLOCK(es) = &KosDynFrame_STACK(frame);
+  if (KosContext_FRAME(ctx) == frame) {
+    KosContext_NAMESPACE(ctx) = ns;
+    KosContext_CODE(ctx) = KosDynFrame_CODE(frame);
+    KosContext_BLOCK(ctx) = &KosDynFrame_STACK(frame);
   }
   return 0;
 }
 
 
-void KosEvalState_PythonAwaitClearIter(KosEvalState *es) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+void KosContext_PythonAwaitClearIter(KosContext *ctx) {
   Py_CLEAR(KosContext_PY_AWAIT_ITER(ctx));
 }
 
 
-PyObject *KosEvalState_PythonAwaitIter(KosEvalState *es) {
-  return KosContext_PY_AWAIT_ITER(KosEvalState_CONTEXT(es));
+PyObject *KosContext_PythonAwaitIter(KosContext *ctx) {
+  return KosContext_PY_AWAIT_ITER(ctx);
 }
 
 
-void KosEvalState_PythonResumeSet(KosEvalState *es, PyObject *val, uint8_t kind) {
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+void KosContext_PythonResumeSet(KosContext *ctx, PyObject *val) {
 
   Py_XDECREF(KosContext_PY_RESUME_INJECT(ctx));
   KosContext_PY_RESUME_INJECT(ctx) = val;
-  KosContext_PY_RESUME_KIND(ctx) = kind;
 }
 
 
-static inline void KosEvalState_PythonAwaitSetIter(
-    KosEvalState *es,
-    PyObject *iter) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
-
-  Py_XDECREF(KosContext_PY_AWAIT_ITER(ctx));
-  KosContext_PY_AWAIT_ITER(ctx) = iter;
-}
-
-
-static inline int KosEvalState_PythonResumeTake(
-    KosEvalState *es,
-    PyObject **out_val,
-    uint8_t *out_kind) {
-
-  KosContext *ctx = KosEvalState_CONTEXT(es);
+static inline int KosContext_PythonResumeTake(
+    KosContext *ctx,
+    PyObject **out_val) {
 
   if (out_val)
     *out_val = KosContext_PY_RESUME_INJECT(ctx);
-  if (out_kind)
-    *out_kind = KosContext_PY_RESUME_KIND(ctx);
   KosContext_PY_RESUME_INJECT(ctx) = NULL;
-  KosContext_PY_RESUME_KIND(ctx) = KOS_RESUME_NONE;
   return (out_val && *out_val != NULL) ? 1 : 0;
 }
 
 
-KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
-  if (! es)
+KosEvaluatorToken *KosContext_Token(const KosContext *ctx) {
+  if (! ctx)
     return NULL;
-  return KosContext_TOKEN(KosEvalState_CONTEXT(es));
+  return KosContext_TOKEN(ctx);
 }
 
 
@@ -166,14 +115,14 @@ KosEvaluatorToken *KosEvalState_Token(const KosEvalState *es) {
            EVAL_REPROLOGUE when a leave or enter installed a frame;
            EVAL_AWAIT / EVAL_RAISE / EVAL_FATAL otherwise
 */
-static KosOpResult kos_eval_drain_goal(KosEvalState *es) {
+static KosOpResult kos_eval_drain_goal(KosContext *ctx) {
 
   int boundary = 0;
-  KosOpResult r = kos_xfer_goal_drive(es, &boundary);
+  KosOpResult r = kos_xfer_goal_drive(ctx, &boundary);
 
   if (boundary)
     return r;
-  return kos_eval_walk_outcome(es, r);
+  return kos_eval_walk_outcome(ctx, r);
 }
 
 

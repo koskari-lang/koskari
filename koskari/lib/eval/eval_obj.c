@@ -32,8 +32,8 @@
 /* Defined in eval.c: the frame-namespace deref/store helpers, shared with the
    VAR / CALL_VAR / IMPORT opcode families. Forward-declared here because this
    segment is included ahead of their definitions. */
-static PyObject *frame_ns_deref(KosEvalState *es, PyObject *name);
-static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val);
+static PyObject *frame_ns_deref(KosContext *ctx, PyObject *name);
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
 
 
 /* === Operand cores; OBJECT_OPERAND / OBJECT_INPLACE dispatch === */
@@ -46,7 +46,7 @@ static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val);
    Faithful to ceval _obj_op.
  */
 static int obj_op_reduce_n(
-    KosEvalState *es,
+    KosContext *ctx,
     int count,
     KosOperatorReducing *fn) {
 
@@ -61,16 +61,16 @@ static int obj_op_reduce_n(
   if (count == 0) {
     res = fn(NULL, 0);
   } else {
-    PyObject *const *args = KosEvalState_StackTailPtr(es, (size_t) count);
+    PyObject *const *args = KosContext_StackTailPtr(ctx, (size_t) count);
     if (! args)
       return -1;
     res = fn(args, (size_t) count);
-    KosEvalState_StackDropNoErr(es, (size_t) count);
+    KosContext_StackDropNoErr(ctx, (size_t) count);
   }
 
   if (! res)
     return -1;
-  return KosEvalState_StackPUSH(es, res);
+  return KosContext_StackPUSH(ctx, res);
 }
 
 
@@ -78,11 +78,11 @@ static int obj_op_reduce_n(
    (KosOperator_BuildStr), the one COUNT-style reducing handler not
    consolidated into OBJECT_OPERAND. */
 static int obj_op_reducing(
-    KosEvalState *es,
+    KosContext *ctx,
     KosOp *insn,
     KosOperatorReducing *fn) {
 
-  return obj_op_reduce_n(es, (int) KosOp_ARG(insn), fn);
+  return obj_op_reduce_n(ctx, (int) KosOp_ARG(insn), fn);
 }
 
 
@@ -95,13 +95,13 @@ static int obj_op_reducing(
    values (obj_operand: seed is values[0]), applies the reducing operator, drops
    them, pushes. Forced noinline: the switch stays out of the dispatch loop. */
 static KOS_NOINLINE int kos_object_operand(
-    KosEvalState *es,
+    KosContext *ctx,
     KosOperand op,
     int count) {
 
   PyObject *const *args = NULL;
   if (count > 0) {
-    args = KosEvalState_StackTailPtr(es, (size_t) count);
+    args = KosContext_StackTailPtr(ctx, (size_t) count);
     if (! args)
       return -1;
   }
@@ -109,23 +109,23 @@ static KOS_NOINLINE int kos_object_operand(
   PyObject *res = kos_operand_reduce(op, args, (size_t) count);
 
   if (count > 0)
-    KosEvalState_StackDropNoErr(es, (size_t) count);
+    KosContext_StackDropNoErr(ctx, (size_t) count);
   if (! res)
     return -1;
-  return KosEvalState_StackPUSH(es, res);
+  return KosContext_StackPUSH(ctx, res);
 }
 
 
 /* Stack-based OBJECT_INPLACE: reduce `count` stack values through the in-place
    operator and push the result -- the accumulator form used by inplace-item. */
 static KOS_NOINLINE int kos_object_inplace(
-    KosEvalState *es,
+    KosContext *ctx,
     KosOperand op,
     int count) {
 
   PyObject *const *args = NULL;
   if (count > 0) {
-    args = KosEvalState_StackTailPtr(es, (size_t) count);
+    args = KosContext_StackTailPtr(ctx, (size_t) count);
     if (! args)
       return -1;
   }
@@ -133,10 +133,10 @@ static KOS_NOINLINE int kos_object_inplace(
   PyObject *res = kos_inplace_reduce(op, args, (size_t) count);
 
   if (count > 0)
-    KosEvalState_StackDropNoErr(es, (size_t) count);
+    KosContext_StackDropNoErr(ctx, (size_t) count);
   if (! res)
     return -1;
-  return KosEvalState_StackPUSH(es, res);
+  return KosContext_StackPUSH(ctx, res);
 }
 
 
@@ -149,9 +149,9 @@ static KOS_NOINLINE int kos_object_inplace(
    FAST_INPLACE (rhs popped off the stack) and FAST_INPLACE_CONST (rhs
    a pool constant). */
 static KOS_NOINLINE int kos_fast_inplace_apply(
-    KosEvalState *es, KosOperand op, size_t idx, PyObject *rhs) {
+    KosContext *ctx, KosOperand op, size_t idx, PyObject *rhs) {
 
-  PyObject *ns = KosEvalState_NAMESPACE(es);
+  PyObject *ns = KosContext_NAMESPACE(ctx);
   PyObject *obj = kos_ns_fast_deref(ns, idx);
   if (unlikely(! obj))
     return -1;
@@ -170,13 +170,13 @@ static KOS_NOINLINE int kos_fast_inplace_apply(
 /* Augmented assignment to a fast-slot binding from the stack: one rhs
    popped, then the apply. Returns 0/-1. */
 static KOS_NOINLINE int kos_fast_inplace_operand(
-    KosEvalState *es, KosOperand op, size_t idx) {
+    KosContext *ctx, KosOperand op, size_t idx) {
 
-  PyObject *rhs = KosEvalState_StackPopRef(es);
+  PyObject *rhs = KosContext_StackPopRef(ctx);
   if (unlikely(! rhs))
     return -1;
 
-  int res = kos_fast_inplace_apply(es, op, idx, rhs);
+  int res = kos_fast_inplace_apply(ctx, op, idx, rhs);
   Py_DECREF(rhs);
   return res;
 }
@@ -186,13 +186,13 @@ static KOS_NOINLINE int kos_fast_inplace_operand(
    kos_fast_inplace_operand for names resolved through the frame namespace.
    Returns 0/-1. */
 static KOS_NOINLINE int kos_var_inplace_operand(
-    KosEvalState *es, KosOperand op, PyObject *name) {
+    KosContext *ctx, KosOperand op, PyObject *name) {
 
-  PyObject *obj = frame_ns_deref(es, name);
+  PyObject *obj = frame_ns_deref(ctx, name);
   if (unlikely(! obj))
     return -1;
 
-  PyObject *rhs = KosEvalState_StackPopRef(es);
+  PyObject *rhs = KosContext_StackPopRef(ctx);
   if (unlikely(! rhs)) {
     Py_DECREF(obj);
     return -1;
@@ -206,7 +206,7 @@ static KOS_NOINLINE int kos_var_inplace_operand(
   if (unlikely(! result))
     return -1;
 
-  int res = frame_ns_store(es, name, result);
+  int res = frame_ns_store(ctx, name, result);
   Py_DECREF(result);
   return res;
 }

@@ -19,16 +19,16 @@
   index.
 */
 KOS_OP_HANDLER(MATCH_SAME) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
   PyObject *prev = NULL;
   if (unlikely(kos_match_slot_at(
-          es, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &prev) < 0))
+          ctx, KosExtra_IMM(row, 1), KosExtra_IMM(row, 2), &prev) < 0))
     RESULT_RAISE();
 
-  PyObject *elem = KosEvalState_StackPeek(es);
+  PyObject *elem = KosContext_StackPeek(ctx);
   if (unlikely(! elem))
     RESULT_RAISE();
   if (! prev)
@@ -39,7 +39,7 @@ KOS_OP_HANDLER(MATCH_SAME) {
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

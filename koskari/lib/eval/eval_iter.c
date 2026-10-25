@@ -32,7 +32,7 @@
 
 
 /* defined later in eval.c; the deliver helper stores by name through it */
-static int frame_ns_store(KosEvalState *es, PyObject *name, PyObject *val);
+static int frame_ns_store(KosContext *ctx, PyObject *name, PyObject *val);
 
 
 /**
@@ -157,12 +157,13 @@ int KosEval_ResultIsValue(PyObject *result) {
 
 /**
    Get next value from a Python async iterator using the given __anext__
-   awaitable. Caller must have obtained awaitable via get_await_next(iter);
-   this helper consumes it (DECREF). *result_out is set with a new
-   reference on GET_NEXT_VALUE.
+   awaitable. Caller must have obtained awaitable via get_await_next(iter),
+   unresolved, for the eager step to resolve once; this helper consumes
+   it (DECREF). *result_out is set with a new reference on
+   GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_async_iter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **await_out,
     PyObject *iter,
     PyObject **result_out,
@@ -171,12 +172,12 @@ static KosGetNextResult next_from_python_async_iter(
   (void) iter;
   int suspended = 0;
   PyObject *yielded = NULL;
-  PyObject *result = KosEvalState_EagerStepAwaitable(es, awaitable, &suspended,
-                                                     &yielded);
+  PyObject *result = KosContext_EagerStepAwaitable(
+      ctx, awaitable, &suspended, &yielded);
   Py_DECREF(awaitable);
 
   if (suspended && yielded) {
-    KosEvalState_MarkSuspendedNotRunning(es);
+    KosContext_MarkSuspendedNotRunning(ctx);
     *await_out = yielded;
     return GET_NEXT_SUSPEND;
   }
@@ -200,12 +201,12 @@ static KosGetNextResult next_from_python_async_iter(
    *result_out is set with a new reference on GET_NEXT_VALUE.
 */
 static KosGetNextResult next_from_python_sync_iter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **await_out,
     PyObject *iter,
     PyObject **result_out) {
 
-  (void) es;
+  (void) ctx;
   (void) await_out;
 
   PyObject *n = PyIter_Next(iter);
@@ -227,7 +228,7 @@ static KosGetNextResult next_from_python_sync_iter(
    *result_out set only on GET_NEXT_VALUE (caller pushes and DECREF).
 */
 static inline KosGetNextResult op_get_next_from_iter(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject **await_out,
     PyObject *iter,
     PyObject **result_out) {
@@ -236,15 +237,15 @@ static inline KosGetNextResult op_get_next_from_iter(
 
   PyObject *awaitable = get_await_next(iter);
   if (awaitable) {
-    KosGetNextResult r = next_from_python_async_iter(es, await_out, iter,
+    KosGetNextResult r = next_from_python_async_iter(ctx, await_out, iter,
                                                       result_out, awaitable);
     return r;
   }
 
   /* NULL from get_await_next means the object has no am_anext, with
-     no exception set, or that __anext__ or GetAwaitable failed. A
-     synchronous StopAsyncIteration is this iterator's exhaustion,
-     exactly as it is once the awaitable is stepped. */
+     no exception set, or that __anext__ failed. A synchronous
+     StopAsyncIteration is this iterator's exhaustion, exactly as it is
+     once the awaitable is stepped. */
   if (PyErr_Occurred()) {
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyErr_Clear();
@@ -254,7 +255,7 @@ static inline KosGetNextResult op_get_next_from_iter(
   }
 
   if (PyIter_Check(iter))
-    return next_from_python_sync_iter(es, await_out, iter, result_out);
+    return next_from_python_sync_iter(ctx, await_out, iter, result_out);
 
   PyErr_SetString(PyExc_TypeError, "not an iterator");
   return GET_NEXT_ERROR;
@@ -262,7 +263,7 @@ static inline KosGetNextResult op_get_next_from_iter(
 
 
 /**
-   The step for an iteration node's bound Python iterator, keyed by the
+   The step for a FOREACH region's bound Python iterator, keyed by the
    kind its bind recorded, so no step probes the type again. The sync
    arm calls tp_iternext through the type, as CPython's FOR_ITER does,
    and consults the error state only on a NULL result; a StopIteration
@@ -287,7 +288,7 @@ static KOS_NOINLINE KosGetNextResult op_get_next_sync_ended(int had_next) {
 
 
 static inline KosGetNextResult op_get_next_from_bound(
-    KosEvalState *es,
+    KosContext *ctx,
     uint8_t kind,
     PyObject **await_out,
     PyObject *iter,
@@ -306,15 +307,14 @@ static inline KosGetNextResult op_get_next_from_bound(
   if (kind == KOS_IREQ_KIND_PY_ASYNC) {
     PyObject *awaitable = get_await_next(iter);
     if (awaitable)
-      return next_from_python_async_iter(es, await_out, iter, result_out,
+      return next_from_python_async_iter(ctx, await_out, iter, result_out,
                                          awaitable);
     /* No error: the type lost its __anext__ since the bind classified
        it; take the sync step, which raises for an iterator with neither.
-       Otherwise __anext__ or GetAwaitable failed, or raised
-       StopAsyncIteration synchronously, which is this iterator's
-       exhaustion. */
+       Otherwise __anext__ failed, or raised StopAsyncIteration
+       synchronously, which is this iterator's exhaustion. */
     if (! PyErr_Occurred())
-      return op_get_next_from_bound(es, KOS_IREQ_KIND_PY_SYNC, await_out,
+      return op_get_next_from_bound(ctx, KOS_IREQ_KIND_PY_SYNC, await_out,
                                     iter, result_out);
     if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
       PyErr_Clear();
@@ -328,19 +328,197 @@ static inline KosGetNextResult op_get_next_from_bound(
 }
 
 
-/**
-   The step the FOREACH handlers take.  A sync iterator steps through
-   tp_iternext in the handler itself; every other kind steps through
-   KosIterRequest_Next.  The bind guarantees a sync kind carries no
-   provider suite, so the request mode is untouched on this arm.  On
-   DELIVERED *fast_out is the element (new ref), else NULL.
-*/
-KOS_OP_INLINE KosIterRequestStatus kos_foreach_request_next(
-    KosEvalState *es,
-    KosDynNode *region,
-    PyObject **fast_out) {
+/* === The for-each step: one entry, one resume per step instruction ===
 
-  KosIterRequest *req = KosDynForeach_REQ(region);
+   The step instructions ITER_NEXT, ITER_NEXT_STORE_FAST and
+   ITER_NEXT_STORE_VAR each name a resume and hand the request to
+   kos_iter_step. The element reaches that resume and nothing else:
+   in hand, the handler hops into it at once (RESULT_ENTRY); deferred
+   (a Koskari generator installed, a provider's invoke grafted, a
+   python async step awaited), the resume is set on the loop's frame
+   and the delivery that reaches the frame runs it, the element or
+   its end. The resume finishes the region's request, since the
+   region owns the iterator, then threads on or jumps to the else
+   target. The resume's state is the step instruction, which carries
+   the else target and the slot or name. The kinds take their delivery
+   as it is: an element is data, never awaited.
+   A failure reaches the resume as a NULL with the error pending: the
+   region's own end is the end of the iteration, anything else
+   declines and the raise walk goes on. */
+
+
+/* The step is over: finish the region's request, exhausted at the
+   end. The region is at dyn_top when a delivery reaches the loop's
+   frame. */
+KOS_OP_INLINE void kos_iter_step_finish(KosContext *ctx, int ended) {
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
+
+  if (region && KosDynNode_IS_FOREACH(region)) {
+    KosIterRequest *req = KosDynForeach_REQ(region);
+
+    if (req->islots)
+      kos_iter_finish(req->iter, req->islots, ended);
+  }
+}
+
+
+/**
+   A failure delivered to a step resume: NULL with the error pending.
+   The region's own exhaustion exception (StopIteration from an
+   installed step, StopAsyncIteration from an async source) is the
+   end of the iteration, the same judgment the eager step makes: the
+   region's request is finished and idle, the error cleared, and the
+   resume goes to its else target. Anything else propagates: the
+   resume finishes the request, since the step it waited on is over
+   and nobody else holds that record, and declines; the raise walk
+   goes on to the region. The region is at dyn_top, the frames above
+   it already unwound.
+
+   :return: 1 when the exception was the end, the request finished and
+     the error cleared; 0 to decline, the request finished and the
+     error still pending
+*/
+KOS_OP_INLINE int kos_iter_step_ended_by_exception(KosContext *ctx) {
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
+
+  if (! region || ! KosDynNode_IS_FOREACH(region) || ! PyErr_Occurred())
+    return 0;
+  if (! PyErr_ExceptionMatches(kos_dyn_iter_node_exhaustion_exc(region))) {
+    kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), 0);
+    return 0;
+  }
+
+  PyErr_Clear();
+  kos_dyn_iter_request_finish_req(KosDynForeach_REQ(region), 1);
+  return 1;
+}
+
+
+/* The element, the end, or a failure: push it and thread on, or jump
+   to the instruction's else target. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_push_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosOp *insn = (KosOp *) state;
+
+  if (unlikely(! value)) {
+    if (! kos_iter_step_ended_by_exception(ctx))
+      return EVAL_RAISE();
+    KOS_THREAD_AT(ctx, KosOp_TARGET(insn));
+  }
+  if (value == KosIterEnd) {
+    Py_DECREF(value);
+    kos_iter_step_finish(ctx, 1);
+    KOS_THREAD_AT(ctx, KosOp_TARGET(insn));
+  }
+  kos_iter_step_finish(ctx, 0);
+  if (unlikely(KosContext_StackPUSH(ctx, value) < 0))
+    return EVAL_RAISE();
+  KOS_THREAD_NEXT(ctx);
+}
+
+
+/* The element into the fast slot the instruction names, the end, or
+   a failure. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_fast_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosOp *insn = (KosOp *) state;
+  const KosExtra *row = KosOp_ROW(insn);
+
+  if (unlikely(! value)) {
+    if (! kos_iter_step_ended_by_exception(ctx))
+      return EVAL_RAISE();
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+  }
+  if (value == KosIterEnd) {
+    Py_DECREF(value);
+    kos_iter_step_finish(ctx, 1);
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+  }
+  kos_iter_step_finish(ctx, 0);
+  if (unlikely(kos_ns_fast_store_steal(
+          KosContext_NAMESPACE(ctx), (size_t) KosExtra_IMM(row, 0),
+          value) < 0))
+    return EVAL_RAISE();
+  KOS_THREAD_NEXT(ctx);
+}
+
+
+/* The element under the name the instruction names, the end, or a
+   failure. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult iter_next_store_var_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
+
+  KosOp *insn = (KosOp *) state;
+  const KosExtra *row = KosOp_ROW(insn);
+  int res;
+
+  if (unlikely(! value)) {
+    if (! kos_iter_step_ended_by_exception(ctx))
+      return EVAL_RAISE();
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+  }
+  if (value == KosIterEnd) {
+    Py_DECREF(value);
+    kos_iter_step_finish(ctx, 1);
+    KOS_THREAD_AT(ctx, KosExtra_TARGET(row, 1));
+  }
+  kos_iter_step_finish(ctx, 0);
+  res = frame_ns_store(ctx, KosExtra_OBJ(row, 0), value);
+  Py_DECREF(value);
+  if (unlikely(res < 0))
+    return EVAL_RAISE();
+  KOS_THREAD_NEXT(ctx);
+}
+
+
+KOS_RESUME_KIND_AS_IS(kos_iter_next_resume_kind, "for-each-step",
+                       iter_next_push_resume, NULL, kos_resume_clone_shared);
+KOS_RESUME_KIND_AS_IS(kos_iter_next_store_fast_resume_kind, "for-each-step",
+                       iter_next_store_fast_resume, NULL,
+                       kos_resume_clone_shared);
+KOS_RESUME_KIND_AS_IS(kos_iter_next_store_var_resume_kind, "for-each-step",
+                       iter_next_store_var_resume, NULL,
+                       kos_resume_clone_shared);
+
+
+/**
+   One request for the next element of the FOREACH region at dyn_top,
+   for the step instruction insn whose resume is resume. A plain sync
+   iterator steps through tp_iternext here; every other kind through
+   KosIterRequest_Next. Reports RETURN with the element, or with
+   KosIterEnd at the end, for the handler's RESULT_ENTRY to hop into
+   the resume; a deferred step sets the resume on the loop's frame
+   and reports the install or the await. A step that fails before it
+   defers raises at the frame with no resume set: nothing is in
+   flight, the provider has undone its own step, and the raise walks
+   as any instruction's does. The region is at dyn_top
+   when a step runs: the step sits at the loop's continue target and
+   every node the body pushes is gone before CONTINUE.
+*/
+KOS_OP_INLINE KosOpResult kos_iter_step(
+    KosContext *ctx,
+    KosOp *insn,
+    const KosResumeKind *resume) {
+
+  KosDynNode *region = KosContext_DYN_TOP(ctx);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
+  KosIterRequest *req;
+
+  if (unlikely(! region || ! KosDynNode_IS_FOREACH(region))) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "%s must be used inside a PUSH_FOREACH block",
+                 kos_opcode_name((KosOpCode) KosOp_OP(insn)));
+    return EVAL_RAISE();
+  }
+  req = KosDynForeach_REQ(region);
 
   if (likely(req->kind == KOS_IREQ_KIND_PY_SYNC)) {
     PyObject *iter = req->iter;
@@ -353,144 +531,208 @@ KOS_OP_INLINE KosIterRequestStatus kos_foreach_request_next(
       if (req->islots || KosIter_CheckSlots(iter, &fresh)) {
         PyErr_SetString(PyExc_SystemError,
                         "sync iteration request carries a provider suite");
-        *fast_out = NULL;
-        return KOS_IREQ_ERROR;
+        return EVAL_RAISE();
       }
     }
 #endif
 
     n = likely(next) ? next(iter) : NULL;
-    if (likely(n)) {
-      *fast_out = n;
-      return KOS_IREQ_DELIVERED;
-    }
-    *fast_out = NULL;
+    if (likely(n))
+      return EVAL_RETURN(n);
     if (op_get_next_sync_ended(next != NULL) == GET_NEXT_ERROR)
-      return KOS_IREQ_ERROR;
-    return KOS_IREQ_EXHAUSTED;
+      return EVAL_RAISE();
+    return EVAL_RETURN(Py_NewRef(KosIterEnd));
   }
-
-  return KosIterRequest_Next(es, region, NULL, fast_out);
-}
-
-
-/**
-   Record the step instruction's else pc on the FOREACH node before the
-   step, so a raise-walk exhaustion conversion lands on it: ITER_NEXT
-   carries the pc as its arg, the STORE twins as the LABEL field of
-   their operand record.
-*/
-KOS_OP_INLINE void kos_foreach_record_else(
-    KosDynNode *region,
-    const KosOp *step) {
-
-  if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    KosDynForeach_ITER_NEXT_ELSE_PC(region) = KosOp_ARG(step);
-  else
-    KosDynForeach_ITER_NEXT_ELSE_PC(region) =
-        KosOp_PC(KosExtra_TARGET(KosOp_ROW(step), 1));
-}
-
-
-/* The else target of a step instruction, for the exhaustion jump. */
-KOS_OP_INLINE KosOp *kos_foreach_step_else(const KosOp *step) {
-  if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    return KosOp_TARGET(step);
-  return KosExtra_TARGET(KosOp_ROW(step), 1);
-}
-
-
-/**
-   Store an element where an ITER_NEXT_STORE_* step names: the fast
-   slot of ITER_NEXT_STORE_FAST, the name of ITER_NEXT_STORE_VAR, in
-   the current frame namespace. Consumes val, failure included. 0/-1.
-*/
-KOS_OP_INLINE int kos_foreach_store_element(
-    KosEvalState *es,
-    const KosOp *step,
-    PyObject *val) {
-
-  const KosExtra *row = KosOp_ROW(step);
-
-  if (KosOp_OP(step) == KOS_OP_ITER_NEXT_STORE_FAST)
-    return kos_ns_fast_store_steal(
-        KosEvalState_NAMESPACE(es), (size_t) KosExtra_IMM(row, 0), val);
 
   {
-    int res = frame_ns_store(es, KosExtra_OBJ(row, 0), val);
-    Py_DECREF(val);
-    return res;
+    PyObject *out = NULL;
+
+    switch (KosIterRequest_Next(ctx, req, &out)) {
+      case KOS_IREQ_DELIVERED:
+        return EVAL_RETURN(out);
+
+      case KOS_IREQ_EXHAUSTED:
+        Py_XDECREF(out);
+        return EVAL_RETURN(Py_NewRef(KosIterEnd));
+
+      case KOS_IREQ_CONTINUES:
+        /* the install left the producer's frame current; the loop's
+           frame, the one that ran the step, takes the resume */
+        KosDynFrame_RESUME_KIND(frame) = resume;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+        return kos_iter_installed(ctx);
+
+      case KOS_IREQ_EXIT:
+        KosDynFrame_RESUME_KIND(frame) = resume;
+        KosDynFrame_RESUME_STATE(frame) = (void *) insn;
+        return EVAL_AWAIT(out);
+
+      case KOS_IREQ_ERROR:
+      default:
+        return EVAL_RAISE();
+    }
   }
 }
 
 
-/**
-   Deliver an element in hand as the step instruction would: ITER_NEXT
-   pushes it, a STORE twin stores it. For a step run away from its
-   instruction (the CONTINUE back-edge). Consumes val. 0/-1.
-*/
-KOS_OP_INLINE int kos_foreach_deliver_in_hand(
-    KosEvalState *es,
-    const KosOp *step,
-    PyObject *val) {
+/* === The next request: KosContext_NextResume, the arity as kind ===
 
-  if (KosOp_OP(step) == KOS_OP_ITER_NEXT)
-    return KosEvalState_StackPUSH(es, val);
-  return kos_foreach_store_element(es, step, val);
+   OBJECT_NEXT and its fused twins VAR_NEXT and FAST_NEXT make their
+   request through KosContext_NextResume with one of two kinds, the
+   instruction's arity picking it: kos_next_resume_kind for the
+   one-argument form, kos_next_default_resume_kind for the
+   two-argument form. The iterator is the resume's owned state. The
+   element reaches that resume and nothing else: in hand the handler
+   hops into it through RESULT_ENTRY, deferred the delivery reaches it
+   through the frame, and an in-hand end through the prologue with
+   StopIteration pending. The two-argument form's default stays on
+   the operand stack under the halt and is the result at the end. A
+   resume cleared without a delivery, as a transfer landing on the
+   frame clears it, finishes the step. */
+
+
+/**
+   The kind's clear: a resume cleared without its delivery, as a
+   transfer landing on the frame clears it, abandons the step in
+   flight. The provider is finished as not exhausted so it can be
+   stepped again, and the iterator released.
+*/
+static void kos_next_state_clear(void *state) {
+
+  PyObject *iter = (PyObject *) state;
+  KosIterSlots *islots;
+
+  if (! iter)
+    return;
+  if (KosIter_CheckSlots(iter, &islots))
+    kos_iter_finish(iter, islots, 0);
+  Py_DECREF(iter);
+}
+
+
+/* The kind's traverse: the iterator is the state's one owned object. */
+static int kos_next_state_traverse(void *state, visitproc visit, void *arg) {
+  Py_VISIT((PyObject *) state);
+  return 0;
 }
 
 
 /**
-   The store resume: the deferred element of an ITER_NEXT_STORE_* step
-   arrives here, staged by the FOREACH node's delivery because the
-   frame carries this resume, and is stored where the step names. The
-   state is the step instruction that deferred. The kind takes its
-   delivery as it is: settling it would await an element that is
-   itself awaitable. Nothing comes here on failure: the prologue hands
-   no failure to a bytecode frame's resume, and the node clears the
-   resume at exhaustion and at its teardown.
+   The element, the end, or a failure, for a next instruction of arity
+   n, iter being the resume's owned iterator. The step is finished and
+   the iterator released first. An element replaces the default on the
+   stack, when there is one, and the result is NORMAL for the calling
+   resume to thread on. The end, StopIteration (or an async source's
+   StopAsyncIteration) pending, leaves the default as the result for
+   the two-argument form, also NORMAL, and raises StopIteration for
+   the one-argument form, the pending exception standing when it is
+   one. Anything else declines.
 */
-static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult foreach_store_resume(
-    KosEvalState *es,
+static inline KosOpResult next_step_deliver(
+    KosContext *ctx,
+    PyObject *iter,
+    unsigned n,
+    PyObject *value) {
+
+  KosIterSlots *islots;
+  int ended;
+
+  if (! value) {
+    if (unlikely(! PyErr_Occurred())) {
+      Py_DECREF(iter);
+      PyErr_SetString(PyExc_SystemError, "next resume with no delivery");
+      return EVAL_RAISE();
+    }
+    ended = PyErr_ExceptionMatches(PyExc_StopIteration)
+        || PyErr_ExceptionMatches(PyExc_StopAsyncIteration);
+  } else {
+    ended = 0;
+  }
+
+  /* The step is over: the instruction's iterator, owned by the
+     resume's state, is finished when it is a provider and released. */
+  if (KosIter_CheckSlots(iter, &islots))
+    kos_iter_finish(iter, islots, ended);
+  Py_DECREF(iter);
+  if (! value && ! ended)
+    return EVAL_RAISE();
+
+  if (! ended) {
+    if (n == 2) {
+      PyObject *dflt = KosContext_StackPopRef(ctx);
+      if (unlikely(! dflt)) {
+        Py_DECREF(value);
+        return EVAL_RAISE();
+      }
+      Py_DECREF(dflt);
+    }
+    if (unlikely(KosContext_StackPUSH(ctx, value) < 0))
+      return EVAL_RAISE();
+    return EVAL_NORMAL();
+  }
+
+  if (n == 2) {
+    /* the default already sits where the result goes */
+    PyErr_Clear();
+    return EVAL_NORMAL();
+  }
+  if (PyErr_Occurred()) {
+    if (PyErr_ExceptionMatches(PyExc_StopAsyncIteration)) {
+      PyErr_Clear();
+      PyErr_SetNone(PyExc_StopIteration);
+    }
+    return EVAL_RAISE();
+  }
+  PyErr_SetNone(PyExc_StopIteration);
+  return EVAL_RAISE();
+}
+
+
+/* The one-argument form's resume: the end raises StopIteration. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_step_resume(
+    KosContext *ctx,
     void *state,
     PyObject *value) {
 
-  if (unlikely(! value))
-    return EVAL_RAISE();
-  if (unlikely(kos_foreach_store_element(es, (const KosOp *) state, value) < 0))
-    return EVAL_RAISE();
-  return EVAL_NORMAL();
+  KosOpResult r = next_step_deliver(ctx, (PyObject *) state, 1, value);
+
+  if (likely(r.kind == KOS_RES_NORMAL))
+    KOS_THREAD_NEXT(ctx);
+  return r;
 }
 
-const KosResumeKind kos_foreach_store_resume_kind = {
-  "for-each-store", foreach_store_resume, NULL, kos_resume_clone_shared, 0
-};
 
+/* The two-argument form's resume: the end leaves the default. */
+static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult next_default_step_resume(
+    KosContext *ctx,
+    void *state,
+    PyObject *value) {
 
-/**
-   A STORE step that defers (a Koskari generator installed, an async
-   step awaited) sets the store resume on the loop's frame for the
-   element to come: frame is the live frame as it was before the step,
-   since an install leaves the generator's frame current. ITER_NEXT
-   sets nothing, its element is pushed as ever.
-*/
-KOS_OP_INLINE void kos_foreach_defer_step(
-    KosDynFrame *frame,
-    const KosOp *step) {
+  KosOpResult r = next_step_deliver(ctx, (PyObject *) state, 2, value);
 
-  if (KosOp_OP(step) != KOS_OP_ITER_NEXT) {
-    KosDynFrame_RESUME_KIND(frame) = &kos_foreach_store_resume_kind;
-    KosDynFrame_RESUME_STATE(frame) = (void *) step;
-  }
+  if (likely(r.kind == KOS_RES_NORMAL))
+    KOS_THREAD_NEXT(ctx);
+  return r;
 }
+
+
+KOS_RESUME_KIND_AS_IS_OWNING(kos_next_resume_kind, "next",
+                             next_step_resume, kos_next_state_clear,
+                             kos_resume_clone_object,
+                             kos_next_state_traverse);
+
+KOS_RESUME_KIND_AS_IS_OWNING(kos_next_default_resume_kind, "next",
+                             next_default_step_resume, kos_next_state_clear,
+                             kos_resume_clone_object,
+                             kos_next_state_traverse);
 
 
 /**
   Globals
 */
-static inline PyObject *KosEvalState_GlobalsNamespace(KosEvalState *es) {
+static inline PyObject *KosContext_GlobalsNamespace(KosContext *ctx) {
 
-  KosDynFrame *frame = KosEvalState_FRAME(es);
+  KosDynFrame *frame = KosContext_FRAME(ctx);
   PyObject *ns;
 
   if (! frame) {

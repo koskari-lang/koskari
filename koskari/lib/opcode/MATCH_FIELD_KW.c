@@ -18,11 +18,11 @@
   names, pushed; a missing attribute is a miss. Row LABEL, const.
 */
 KOS_OP_HANDLER(MATCH_FIELD_KW) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   const KosExtra *row = KosOp_ROW(insn);
   (void) kos_op_delivery_;
 
-  PyObject *obj = KosEvalState_StackPeek(es);
+  PyObject *obj = KosContext_StackPeek(ctx);
   if (unlikely(! obj))
     RESULT_RAISE();
 
@@ -32,7 +32,7 @@ KOS_OP_HANDLER(MATCH_FIELD_KW) {
     RESULT_RAISE();
   if (! r)
     KOS_MATCH_MISS(row);
-  RESULT_STEAL(es, val);
+  RESULT_STEAL(ctx, val);
 }
 
 

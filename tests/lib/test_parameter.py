@@ -32,7 +32,8 @@ pytestmark = pytest.mark.phase_lib
 
 class TestParameterNoDomain(unittest.TestCase):
     """
-    parameter behavior outside active domain
+    parameter behavior outside any with Domain() and any koskari_eval:
+    the thread's default Domain answers
     """
 
     def test_parameter_no_domain_returns_default(self):
@@ -51,11 +52,24 @@ class TestParameterNoDomain(unittest.TestCase):
 
     def test_parameter_no_domain_no_default_raises(self):
         """
-        parameter outside domain with no default raises RuntimeError
+        parameter of an unbound name outside a with, with no default,
+        raises NameError
         """
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(NameError):
             parameter("x")
+
+    def test_parameter_no_domain_reads_thread_default(self):
+        """
+        parameter outside a with reads a store made in the thread
+        default
+        """
+
+        ref = ParamRef("parameter_no_domain_key")
+        self.addCleanup(ref.clear)
+        ref.store("stored")
+        self.assertEqual(parameter("parameter_no_domain_key"), "stored")
+        self.assertEqual(parameter("parameter_no_domain_key", 1), "stored")
 
     def test_parameter_non_string_non_symbol_raises_typeerror(self):
         """
@@ -77,6 +91,7 @@ class TestParameterInsideScope(unittest.IsolatedAsyncioTestCase):
         """
 
         p = ParamRef(symbol("test_key"), None)
+        self.addCleanup(p.clear)
 
         def store_then_fetch():
             p.store(123)

@@ -71,7 +71,7 @@ static int pair_splice_extend(PyObject *coll, PyObject *item) {
   nothing held on error.
 */
 static PyObject *pair_splice_collect(
-    KosEvalState *es,
+    KosContext *ctx,
     const KosExtra *row,
     const char *opname,
     PyObject **tail) {
@@ -89,7 +89,7 @@ static PyObject *pair_splice_collect(
   PyObject *end;
   if (has_tail) {
     /* the tail is the top stacked value; the segments sit below it */
-    end = KosEvalState_StackPopRef(es);
+    end = KosContext_StackPopRef(ctx);
     if (unlikely(! end))
       return NULL;
     count--;
@@ -104,7 +104,7 @@ static PyObject *pair_splice_collect(
     goto failure;
 
   if (count) {
-    PyObject *const *ptr = KosEvalState_StackTailPtr(es, count);
+    PyObject *const *ptr = KosContext_StackTailPtr(ctx, count);
     if (unlikely(! ptr))
       goto failure;
 
@@ -114,7 +114,7 @@ static PyObject *pair_splice_collect(
     }
 
     /* coll holds its own references to every flattened element */
-    if (unlikely(KosEvalState_StackDrop(es, count) < 0))
+    if (unlikely(KosContext_StackDrop(ctx, count) < 0))
       goto failure;
   }
 
@@ -146,18 +146,18 @@ static PyObject *pair_splice_collect(
   unquote-splicing results into the final list.
 */
 KOS_OP_HANDLER(PAIR_SPLICE) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
 
   PyObject *tail;
   PyObject *coll = pair_splice_collect(
-      es, KosOp_ROW(insn), "PAIR_SPLICE", &tail);
+      ctx, KosOp_ROW(insn), "PAIR_SPLICE", &tail);
   if (unlikely(! coll))
     RESULT_RAISE();
 
   if (PyList_GET_SIZE(coll) == 0) {
     /* every segment was empty or nil: the result is the tail */
     Py_DECREF(coll);
-    RESULT_STEAL(es, tail);
+    RESULT_STEAL(ctx, tail);
   }
 
   /* the tail is the last cell's cdr */
@@ -170,7 +170,7 @@ KOS_OP_HANDLER(PAIR_SPLICE) {
 
   PyObject *result = KosPair_Cons(coll);
   Py_DECREF(coll);
-  RESULT_STEAL(es, result);
+  RESULT_STEAL(ctx, result);
 }
 
 

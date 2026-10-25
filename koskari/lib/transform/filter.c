@@ -15,8 +15,8 @@
    untouched, skipped elements never leaving the loop. Anything
    asynchronous runs under one CPS resume-carrying frame, whose
    resumes carry the three-phase progression -- FETCH requests the
-   next source element (KosEvalState_NextResume), INVOKE applies the
-   predicate (KosEvalState_Call) with the element held on the
+   next source element (KosContext_NextResume), INVOKE applies the
+   predicate (KosContext_Call) with the element held on the
    filter, VERDICT tests the predicate's result and either completes
    the frame with the held element or fetches again. A rejected
    element loops by a tail call into FETCH, never by C
@@ -24,7 +24,7 @@
    frame is cached on the filter between steps
    (KosNativeFrame_ReturnToCache), stripped inert so the cache holds no
    references. Exhaustion and errors leave the frame as exceptions;
-   the consumer's iteration node converts StopIteration per its own
+   the consumer's step resume converts StopIteration per its own
    rules.
 
    :author: Christopher O'Brien <obriencj@gmail.com>
@@ -67,17 +67,17 @@ static inline int filter_keeps(KosFilter *f, int ok) {
    and pending value when the frame is torn down mid-step, and no
    clone (a step in flight refuses capture by name) */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
-    KosEvalState *es, void *state, PyObject *value);
+    KosContext *ctx, void *state, PyObject *value);
 
 KOS_RESUME_KIND(filter_resume_after_verdict_kind, "filter-step",
                 filter_resume_after_verdict, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(filter_resume_do_fetch_kind, "filter-step",
+KOS_RESUME_KIND_AS_IS(filter_resume_do_fetch_kind, "filter-step",
                 filter_resume_do_fetch, kos_transform_step_clear, NULL);
-KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
+KOS_RESUME_KIND_AS_IS(filter_resume_do_invoke_kind, "filter-step",
                 filter_resume_do_invoke, kos_transform_step_clear, NULL);
 
 
@@ -87,8 +87,8 @@ KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
    next fetch by discarding its own frame, never by nesting, and never
    by a bounce through the trampoline.
 */
-#define filter_refetch(es, f) \
-  RESUME_HOP(&filter_resume_do_fetch_kind, (es), (f), NULL)
+#define filter_refetch(ctx, f) \
+  RESUME_HOP(&filter_resume_do_fetch_kind, (ctx), (f), NULL)
 
 
 /**
@@ -96,23 +96,23 @@ KOS_RESUME_KIND(filter_resume_do_invoke_kind, "filter-step",
    value -- either cold, from the driven-source install, or from
    filter_refetch after a rejected element. A NULL with an exception
    already set is the raise walk propagating that exception; this step
-   always lets it propagate (the consumer's iteration node owns the
+   always lets it propagate (the consumer's step resume owns the
    conversion, StopIteration truncation parity included).
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *f = (KosTransform *) state;
 
   (void) value;
 
   if (PyErr_Occurred())
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, f);
 
   {
-    KosOpResult r = KosEvalState_NextResume(es, f->source, NULL,
+    KosOpResult r = KosContext_NextResume(ctx, f->source,
                                             &filter_resume_do_invoke_kind, f);
-    RESULT_ENTRY(es, r, &filter_resume_do_invoke_kind, f);
+    RESULT_ENTRY(ctx, r, &filter_resume_do_invoke_kind, f);
   }
 }
 
@@ -124,12 +124,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_fetch(
    is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
-    KosEvalState *es, void *state, PyObject *element) {
+    KosContext *ctx, void *state, PyObject *element) {
 
   KosTransform *f = (KosTransform *) state;
 
+  kos_transform_fetched(f->source, element);
+
   if (! element)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, f);
 
   /* None predicate: the element's own truthiness is the verdict. */
   if (! f->fn.cs_callable) {
@@ -140,14 +142,14 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
       return EVAL_RAISE();
     }
     if (filter_keeps((KosFilter *) state, ok))
-      return KosNativeFrame_ReturnToCache(es, element, &f->cached_frame);
+      RESULT_FRAME_RETURN(ctx, element, &f->cached_frame);
 
     Py_DECREF(element);
-    filter_refetch(es, f);
+    filter_refetch(ctx, f);
   }
 
   /* Every calling shape goes through the one entry --
-     KosEvalState_Call resolves the predicate and prepares (or declines
+     KosContext_Call resolves the predicate and prepares (or declines
      to prepare) a frame per its own suite, so a predicate that wants
      no frame still runs in this evaluator rather than through the
      Python boundary. pending steals the element's reference and holds
@@ -155,10 +157,10 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
      duration. */
   f->pending = element;
   {
-    KosOpResult r = KosEvalState_Call(
-        es, f->fn.cs_callable, &element, 1, NULL, 0,
+    KosOpResult r = KosContext_Call(
+        ctx, f->fn.cs_callable, &element, 1, NULL, 0,
         &filter_resume_after_verdict_kind, f);
-    RESULT_ENTRY(es, r, &filter_resume_after_verdict_kind, f);
+    RESULT_ENTRY(ctx, r, &filter_resume_after_verdict_kind, f);
   }
 }
 
@@ -168,13 +170,13 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_do_invoke(
    false one releases it and fetches again. value is consumed.
 */
 static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
-    KosEvalState *es, void *state, PyObject *value) {
+    KosContext *ctx, void *state, PyObject *value) {
 
   KosTransform *f = (KosTransform *) state;
   int ok;
 
   if (! value)
-    return EVAL_RAISE();
+    return kos_transform_decline(ctx, f);
 
   ok = PyObject_IsTrue(value);
   Py_DECREF(value);
@@ -185,35 +187,31 @@ static KOS_NOINLINE KOS_PRESERVE_NONE KosOpResult filter_resume_after_verdict(
     PyObject *element = f->pending;
 
     f->pending = NULL;
-    return KosNativeFrame_ReturnToCache(es, element, &f->cached_frame);
+    RESULT_FRAME_RETURN(ctx, element, &f->cached_frame);
   }
 
   Py_CLEAR(f->pending);
-  filter_refetch(es, f);
+  filter_refetch(ctx, f);
 }
 
 
 /* === the step === */
 
 
-static KosIterStepResult filter_iter_step(
-    KosEvalState *es,
+static KosIterStepResult filter_step_body(
+    KosContext *ctx,
     PyObject *self,
     PyObject *send_val,
     PyObject **out) {
 
   KosTransform *f = (KosTransform *) self;
-  KosDynNode *pre_top = KosEvalState_DYN_TOP(es);
-  KosIterStepResult early;
-
-  if (! kos_transform_step_ready(f, send_val, out, &early))
-    return early;
+  KosDynNode *pre_top = KosContext_DYN_TOP(ctx);
 
   {
     for (;;) {
       PyObject *element;
 
-      KOS_TRANSFORM_FETCH(es, f, f->source, &filter_resume_do_fetch_kind, pre_top, out,
+      KOS_TRANSFORM_FETCH(ctx, f, f->source, &filter_resume_do_fetch_kind, pre_top, out,
                           element);
 
       if (! f->fn.cs_callable) {
@@ -239,7 +237,7 @@ static KosIterStepResult filter_iter_step(
          itself -- which can install a callee or need an await -- must
          happen from inside that later dispatch, not here. */
       if (f->fn.cs_kind != KOS_CALL_SHAPE_PLAIN)
-        return kos_transform_stage(es, f, element,
+        return kos_transform_stage(ctx, f, element,
                                    &filter_resume_do_invoke_kind, pre_top);
 
       /* A plain python predicate needs no evaluator at all. */
@@ -274,7 +272,7 @@ static KosIterStepResult filter_iter_step(
                element is held on the filter until the verdict
                settles. */
             KosIterStepResult staged = kos_transform_stage(
-                es, f, result, &filter_resume_after_verdict_kind, pre_top);
+                ctx, f, result, &filter_resume_after_verdict_kind, pre_top);
 
             if (staged != KOS_ITER_INSTALLED_VALUE) {
               Py_DECREF(element);
@@ -292,6 +290,16 @@ static KosIterStepResult filter_iter_step(
     }
   }
 
+}
+
+
+static KosIterStepResult filter_iter_step(
+    KosContext *ctx,
+    PyObject *self,
+    PyObject *send_val,
+    PyObject **out) {
+
+  return kos_transform_step(ctx, self, send_val, out, filter_step_body);
 }
 
 
@@ -360,6 +368,7 @@ KosEvaluatedTypeObject KosFilterType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };
@@ -390,6 +399,7 @@ KosEvaluatedTypeObject KosFilterFalseType = {
     .ki_close = kos_transform_close,
     .ki_finish = kos_transform_finish,
     .ki_pyctx = kos_transform_pyctx,
+    .ki_busy = kos_transform_busy,
     .ki_pyctx_recyclable = 1,
   },
 };

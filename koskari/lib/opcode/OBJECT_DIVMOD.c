@@ -18,17 +18,17 @@
   OBJECT_DIVMOD: pop right, left; call PyNumber_Divmod; push result.
 */
 KOS_OP_HANDLER(OBJECT_DIVMOD) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   if (unlikely(KosOp_ARG(insn) != 2)) {
     PyErr_SetString(PyExc_RuntimeError, "OBJECT_DIVMOD: only arg 2 supported");
     RESULT_RAISE();
   }
 
-  PyObject *right = KosEvalState_StackPopRef(es);
+  PyObject *right = KosContext_StackPopRef(ctx);
   if (unlikely(! right))
     RESULT_RAISE();
 
-  PyObject *left = KosEvalState_StackPopRef(es);
+  PyObject *left = KosContext_StackPopRef(ctx);
   if (unlikely(! left)) {
     Py_DECREF(right);
     RESULT_RAISE();
@@ -41,7 +41,7 @@ KOS_OP_HANDLER(OBJECT_DIVMOD) {
   if (unlikely(! res))
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 

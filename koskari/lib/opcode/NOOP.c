@@ -19,7 +19,7 @@
 */
 KOS_OP_HANDLER(NOOP) {
   (void) insn;
-  RESULT_NEXT(es);  /* continue */
+  RESULT_NEXT(ctx);  /* continue */
 }
 
 

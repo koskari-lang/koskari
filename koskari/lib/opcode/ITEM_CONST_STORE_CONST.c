@@ -23,8 +23,8 @@
 KOS_OP_HANDLER(ITEM_CONST_STORE_CONST) {
   KosCacheSlot *slot = KosOp_SLOT(insn);
   if (likely(slot && slot->kind == KOS_CACHE_ELECTOR))
-    TAILCALL(slot->u.elector.fn, es, insn, NULL);
-  TAILCALL(el_item_const_store_const_elect, es, insn, NULL);
+    TAILCALL(slot->u.elector.fn, ctx, insn, NULL);
+  TAILCALL(el_item_const_store_const_elect, ctx, insn, NULL);
 }
 
 

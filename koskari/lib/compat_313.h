@@ -147,6 +147,50 @@ typedef struct {
 #define KOS_BREAKER_GC_SCHEDULED (1U << 4)  /* _PY_GC_SCHEDULED_BIT */
 
 
+/* === Recursion guard === */
+
+/*
+   CPython's C recursion count on 3.13: c_recursion_remaining on the
+   thread state, counted down past zero, with the Python recursion
+   limit beside it in the public struct _ts.
+*/
+
+
+/* Count one level on tstate: 0 on success, -1 with an error set. The
+   count and its test are _Py_MakeRecCheck's, which on this version
+   trips below zero; a count past the limit is taken back and
+   Py_EnterRecursiveCall repeats it, raising:
+   https://github.com/python/cpython/blob/v3.13.0/Include/internal/pycore_ceval.h */
+static inline int kos_recursion_enter(
+    PyThreadState *tstate,
+    const char *where) {
+
+  if (tstate->c_recursion_remaining-- < 0) {
+    tstate->c_recursion_remaining++;
+    return Py_EnterRecursiveCall(where);
+  }
+  return 0;
+}
+
+
+/* Take back one level counted by kos_recursion_enter, as
+   _Py_LeaveRecursiveCallTstate does:
+   https://github.com/python/cpython/blob/v3.13.0/Include/internal/pycore_ceval.h */
+static inline void kos_recursion_leave(PyThreadState *tstate) {
+  tstate->c_recursion_remaining++;
+}
+
+
+/* The recursion limit, the value Py_GetRecursionLimit returns:
+   Py_SetRecursionLimit writes it to every thread state's
+   py_recursion_limit:
+   https://github.com/python/cpython/blob/v3.13.0/Python/ceval.c
+   https://github.com/python/cpython/blob/v3.13.0/Include/cpython/pystate.h */
+static inline int kos_recursion_limit(PyThreadState *tstate) {
+  return tstate->py_recursion_limit;
+}
+
+
 /* === GC tracked test === */
 
 /* Whether the collector holds op. The free-threaded build keeps the
@@ -223,6 +267,73 @@ static inline int kos_type_is_sequence(PyObject *obj) {
 /* 1 when obj's type is flagged a mapping, else 0, as above. */
 static inline int kos_type_is_mapping(PyObject *obj) {
   return PyType_HasFeature(Py_TYPE(obj), Py_TPFLAGS_MAPPING) ? 1 : 0;
+}
+
+
+/* === Handled exception === */
+
+
+/* 1 when the thread state's top handled-exception item holds an
+   exception, 0 otherwise; no references are taken. The top item,
+   PyThreadState.exc_info, is the one PyErr_SetExcInfo writes; the
+   items below it (a caller's handler, seen from inside a generator)
+   are not consulted. The item holds none when its exc_value is NULL;
+   None is no longer stored there, and is taken as none as well.
+   kos_tstate_exc_top takes what this answers for. */
+static inline int kos_tstate_exc_held(PyThreadState *tstate) {
+  PyObject *exc = tstate->exc_info->exc_value;
+
+  return exc && exc != Py_None;
+}
+
+
+/* New references to the exception the thread state's top
+   handled-exception item holds, the item PyErr_SetExcInfo writes, or
+   NULL in all three when kos_tstate_exc_held answers 0. The item
+   stores only the instance; the type is the instance's and the
+   traceback its __traceback__ (NULL when it has none), as
+   PyErr_GetExcInfo answers. The items below it are not consulted. */
+static inline void kos_tstate_exc_top(
+    PyThreadState *tstate,
+    PyObject **type,
+    PyObject **value,
+    PyObject **tb) {
+
+  PyObject *exc = tstate->exc_info->exc_value;
+
+  if (! kos_tstate_exc_held(tstate)) {
+    *type = NULL;
+    *value = NULL;
+    *tb = NULL;
+    return;
+  }
+
+  *type = Py_NewRef((PyObject *) Py_TYPE(exc));
+  *value = Py_NewRef(exc);
+  *tb = PyException_GetTraceback(exc);
+}
+
+
+/* === StopIteration raise === */
+
+
+/* Raise exc, a StopIteration instance, as CPython's generator send
+   raises a return value on the 3.13 running this build, read from
+   Py_Version so a wheel built on other 3.13 headers still matches:
+   from 3.13.2 _PyGen_SetStopIterationValue raises it through
+   PyErr_SetRaisedException, which chains no __context__; 3.13.0 and
+   3.13.1 raised through PyErr_SetObject and chained the handled
+   exception.
+   https://github.com/python/cpython/blob/v3.13.2/Objects/genobject.c
+   https://github.com/python/cpython/blob/v3.13.0/Objects/genobject.c
+   Steals exc. */
+static inline void kos_raise_stop_instance(PyObject *exc) {
+  if (Py_Version >= 0x030D02F0) {
+    PyErr_SetRaisedException(exc);
+  } else {
+    PyErr_SetObject(PyExc_StopIteration, exc);
+    Py_DECREF(exc);
+  }
 }
 
 

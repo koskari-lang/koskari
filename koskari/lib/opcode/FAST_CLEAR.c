@@ -18,12 +18,12 @@
 */
 
 KOS_OP_HANDLER(FAST_CLEAR) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   PyObject *ns = CURRENT_NS();
   KOS_OP_REQUIRE_NS(ns);
   if (KosNamespace_FastClear(ns, (size_t) KosOp_ARG(insn)) < 0)
     RESULT_RAISE();
-  RESULT_NEXT(es);
+  RESULT_NEXT(ctx);
 }
 
 

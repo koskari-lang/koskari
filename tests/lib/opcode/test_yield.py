@@ -18,6 +18,9 @@ Tests for YIELD and async gen opcodes.
 :license: GNU General Public License v3
 """
 
+import gc
+import weakref
+
 import pytest
 
 from koskari.lib import AsyncGenerator, FormalsSpec, demand_call
@@ -359,6 +362,131 @@ class TestAgenDeallocWhenFrozen(CevalTest):
         gc.collect()
         self.assertIn("done", ran)
         self.assertIs(ran["done"], True)
+
+
+class Marker:
+    """
+    A weakly referenceable argument whose lifetime the tests observe
+    """
+
+
+class TestAgenReleasesFrameWhenFinished(CevalTest):
+    """
+    A generator driven from Python releases its frame, and every local
+    with it, when it finishes rather than when the generator object dies
+    """
+
+    def make_generator_fn(self):
+        """
+        A yielding function of one argument that yields once, then returns
+        """
+
+        _, base_ns = build_expr([["CONST", 0], ["RETURN", 1]], values={})
+        code = build_code(
+            [
+                ["CONST", 1],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=("x",),
+            name="yields_once",
+        )
+        return make_callable(code, base_ns, FormalsSpec(("x",)))
+
+
+    async def test_exhausted_generator_releases_its_locals(self):
+        """
+        Exhausting the generator from Python frees its argument while
+        the generator object is still held
+        """
+
+        fn = self.make_generator_fn()
+        marker = Marker()
+        ref = weakref.ref(marker)
+        g = fn(marker)
+        del marker
+        self.assertIsInstance(g, AsyncGenerator)
+        self.assertEqual([1], [v async for v in g])
+        gc.collect()
+        self.assertIsNone(ref())
+        del g
+
+
+    async def test_closed_generator_releases_its_locals(self):
+        """
+        Closing the generator from Python after its first element frees
+        its argument while the generator object is still held
+        """
+
+        fn = self.make_generator_fn()
+        marker = Marker()
+        ref = weakref.ref(marker)
+        g = fn(marker)
+        del marker
+        self.assertIsInstance(g, AsyncGenerator)
+        self.assertEqual(1, await anext(g))
+        self.assertIsNone(await g.aclose())
+        gc.collect()
+        self.assertIsNone(ref())
+        del g
+
+
+async def answer_once():
+    yield 1
+
+
+def context_of_step(agen):
+    """
+    The value and __context__ a sync step of agen's first __anext__
+    carries on its StopIteration, taken inside a handled ValueError
+    """
+
+    try:
+        raise ValueError("handled")
+    except ValueError:
+        step = agen.__anext__()
+        try:
+            step.__next__()
+        except StopIteration as stop:
+            return stop.value, stop.__context__
+    return None
+
+
+class TestAgenStopIterationChaining(CevalTest):
+    """
+    A Koskari generator stepped synchronously from Python carries its
+    element in a StopIteration the way the running interpreter's own
+    generator does, chaining a handled exception or not alike
+    """
+
+    def make_generator_fn(self):
+        """
+        A yielding function of one argument that yields it once
+        """
+
+        _, base_ns = build_expr([["CONST", 0], ["RETURN", 1]], values={})
+        code = build_code(
+            [
+                ["FAST", 0],
+                ["YIELD", 1],
+                ["RETURN", 0],
+            ],
+            local_syms=("x",),
+            name="yields_arg",
+        )
+        return make_callable(code, base_ns, FormalsSpec(("x",)))
+
+
+    def test_chaining_matches_the_interpreter(self):
+        """
+        The Koskari generator's StopIteration has the __context__ the
+        Python generator's has, None or the handled ValueError
+        """
+
+        want = context_of_step(answer_once())
+        got = context_of_step(self.make_generator_fn()(1))
+        self.assertEqual(want[0], got[0])
+        self.assertIs(type(want[1]), type(got[1]))
 
 
 # The end.

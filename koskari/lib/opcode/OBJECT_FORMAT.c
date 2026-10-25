@@ -20,7 +20,7 @@
 */
 
 KOS_OP_HANDLER(OBJECT_FORMAT) {
-  KOS_SYNC_PC(es, insn);
+  KOS_SYNC_PC(ctx, insn);
   int opa = (int) KosOp_ARG(insn);
   PyObject *obj = NULL;
   PyObject *rules = NULL;
@@ -33,12 +33,12 @@ KOS_OP_HANDLER(OBJECT_FORMAT) {
   }
 
   if (opa == 2) {
-    rules = KosEvalState_StackPopRef(es);
+    rules = KosContext_StackPopRef(ctx);
     if (! rules)
       RESULT_RAISE();
   }
 
-  obj = KosEvalState_StackPopRef(es);
+  obj = KosContext_StackPopRef(ctx);
   if (! obj) {
     Py_XDECREF(rules);
     RESULT_RAISE();
@@ -50,7 +50,7 @@ KOS_OP_HANDLER(OBJECT_FORMAT) {
   if (! res)
     RESULT_RAISE();
 
-  RESULT_STEAL(es, res);
+  RESULT_STEAL(ctx, res);
 }
 
 
