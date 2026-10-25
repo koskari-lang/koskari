@@ -2335,6 +2335,97 @@ static int test_eval_frozen_gen_teardown_without_install(void) {
 }
 
 
+/* === A generator returning into a frame with no resume is fatal === */
+
+
+static int test_gen_return_into_frame_without_resume_is_fatal(void) {
+
+  /*
+    A GEN whose code frame returns, grafted under a code-less frame
+    that carries no resume: the return tears the GEN down and finds
+    nothing waiting for the end, which is a fatal RuntimeError.
+  */
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(7);
+  PyObject *instr = PyList_New(2);
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *bottom_ns;
+  KosDynGen *gen;
+  KosDynFrame *frame;
+  KosDynFrame *bottom;
+  KosContext *ctx;
+  KosOpResult ev;
+  PyObject *typ = NULL, *exc = NULL, *tb = NULL;
+  PyObject *msg;
+  PyObject *needle;
+  int is_runtime, says_no_resume;
+  int rc;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_RETURN, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  gen = kos_dyngen_new(NULL);
+  TEST_ASSERT_NOT_NULL(gen, "create gen");
+  frame = kos_dynframe_new((KosDynNode *) gen, (KosCode *) code_obj, ns);
+  TEST_ASSERT_NOT_NULL(frame, "create the generator's frame");
+
+  ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  bottom_ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(bottom_ns, "create bottom ns");
+
+  KosContext_EvalEnter(ctx, NULL);
+  bottom = kos_dyn_push_frame(ctx, NULL, bottom_ns);
+  rc = bottom
+      ? kos_dyn_gen_install_bootstrap(ctx, gen, (KosDynNode *) frame)
+      : -1;
+  KosContext_EvalExit(ctx);
+  TEST_ASSERT(! PyErr_Occurred(), "the setup raised no exception");
+  TEST_ASSERT_NOT_NULL(bottom, "push code-less frame");
+  TEST_ASSERT_NULL(KosDynFrame_RESUME_KIND(bottom),
+                   "the code-less frame carries no resume");
+  TEST_ASSERT_EQ(rc, 0, "graft the gen under the code-less frame");
+
+  ev = koskari_eval(ctx, NULL, NULL, NULL, NULL);
+
+  PyErr_Fetch(&typ, &exc, &tb);
+  PyErr_NormalizeException(&typ, &exc, &tb);
+  is_runtime = (typ && PyErr_GivenExceptionMatches(typ,
+                                                   PyExc_RuntimeError));
+  msg = exc ? PyObject_Str(exc) : NULL;
+  needle = PyUnicode_FromString("no resume");
+  says_no_resume = (msg && needle && PyUnicode_Check(msg)
+                    && PyUnicode_Find(msg, needle, 0, PY_SSIZE_T_MAX, 1) >= 0);
+  if (! says_no_resume && msg)
+    fprintf(stderr, "  message: %s\n", PyUnicode_AsUTF8(msg));
+  PyErr_Clear();
+  Py_XDECREF(needle);
+  Py_XDECREF(msg);
+  Py_XDECREF(typ);
+  Py_XDECREF(exc);
+  Py_XDECREF(tb);
+  Py_XDECREF(ev.val);
+  Py_DECREF(ctx);
+  Py_DECREF(code_obj);
+
+  TEST_ASSERT_EQ(ev.kind, KOS_RES_FATAL, "the return is fatal");
+  TEST_ASSERT(is_runtime, "the fault is a RuntimeError");
+  TEST_ASSERT(says_no_resume, "the message names the missing resume");
+  return 0;
+}
+
+
 /* === Test: flatten onto a consumer clears the wrapper's registers === */
 
 
@@ -2397,6 +2488,117 @@ static int test_agen_flatten_clears_wrapper_registers(void) {
   TEST_ASSERT(! PyErr_Occurred(), "step raised no exception");
   TEST_ASSERT(r == KOS_ITER_INSTALLED, "step installed onto consumer");
 
+  TEST_ASSERT_NULL(KosContext_BLOCK(agen->ctx),
+                   "flatten cleared the wrapper's block register");
+  TEST_ASSERT_NULL(KosContext_NAMESPACE(agen->ctx),
+                   "flatten cleared the wrapper's namespace register");
+
+  /* run the flattened body to its yield, which freezes the chain back
+     into the generator; the teardown then closes it on the wrapper's
+     context as the neighbouring test does */
+  res = koskari_eval(consumer, NULL, NULL, NULL, NULL);
+  TEST_ASSERT(res.kind == KOS_RES_YIELD, "body yielded on consumer");
+  TEST_ASSERT_EQ(PyLong_AsLong(res.val), 42, "yielded 42");
+  Py_XDECREF(res.val);
+  islots->ki_finish(agen_obj, 0);
+
+  TEST_ASSERT_NOT_NULL(KosDynGen_ACTIVE((KosDynGen *) agen->gen),
+                       "gen frozen with active chain");
+
+  KosPyAsyncGen_Teardown(agen);
+  TEST_ASSERT_NULL(agen->gen, "teardown cleared agen->gen");
+  TEST_ASSERT_NULL(agen->ctx, "teardown cleared agen->ctx");
+
+  Py_DECREF(agen_obj);
+  Py_DECREF(consumer);
+
+  return 0;
+}
+
+
+static int test_agen_flatten_from_wrapper_chain_clears_registers(void) {
+
+  /*
+    The other flatten site: a generator whose chain rests on its own
+    wrapper context (GEN not ACTIVE), stepped on a separate consumer
+    context. The flatten moves the chain from the wrapper's dyn top
+    onto the consumer, and the wrapper context must keep no register
+    pointing into it.
+  */
+  PyObject *nspec = create_test_nspec();
+  PyObject *val = PyLong_FromLong(42);
+  PyObject *instr = PyList_New(2);
+  KosIterSlots *islots = &KosPyAsyncGenType.kos_iter;
+  PyObject *code_obj;
+  PyObject *ns;
+  PyObject *agen_obj;
+  KosPyAsyncGen *agen;
+  KosDynGen *gen;
+  KosDynNode *head;
+  KosContext *consumer;
+  KosIterStepResult r;
+  PyObject *out = NULL;
+  KosOpResult res;
+  int rc;
+
+  PyList_SET_ITEM(instr, 0, make_instr(KOS_OP_CONST, val));
+  PyList_SET_ITEM(instr, 1, make_instr_int(KOS_OP_YIELD, 1));
+  Py_DECREF(val);
+
+  code_obj = KosCode_New(nspec, instr, NULL, NULL, 1, 1);
+  Py_DECREF(nspec);
+  Py_DECREF(instr);
+  TEST_ASSERT_NOT_NULL(code_obj, "create code");
+
+  ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+
+  agen_obj = KosAsyncGen_NewFromCodeAndNs((KosCode *) code_obj, ns);
+  Py_DECREF(code_obj);
+  TEST_ASSERT_NOT_NULL(agen_obj, "create async gen");
+
+  agen = (KosPyAsyncGen *) agen_obj;
+  gen = (KosDynGen *) agen->gen;
+  TEST_ASSERT_NOT_NULL(gen, "agen owns gen");
+  TEST_ASSERT_NULL(agen->ctx, "no context before the first drive");
+
+  /* the wrapper's context, made as the Python-drive path makes it */
+  agen->ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(agen->ctx, "create wrapper context");
+
+  /* move the resting chain out of the GEN's slot onto the wrapper's
+     context, so the step finds it at the wrapper's dyn top */
+  head = (KosDynNode *) KosDynGen_ACTIVE(gen);
+  TEST_ASSERT_NOT_NULL(head, "the unstarted frame rests in the slot");
+  KosContext_EvalEnter(agen->ctx, NULL);
+  rc = kos_dyn_gen_install_bootstrap(agen->ctx, gen, head);
+  KosContext_EvalExit(agen->ctx);
+  TEST_ASSERT(! PyErr_Occurred(), "the move raised no exception");
+  TEST_ASSERT_EQ(rc, 0, "move the chain onto the wrapper context");
+  KosDynGen_ACTIVE(gen) = NULL;
+
+  TEST_ASSERT_NOT_NULL(KosContext_DYN_TOP(agen->ctx),
+                       "the chain is on the wrapper's dyn top");
+  TEST_ASSERT_NOT_NULL(KosContext_FRAME(agen->ctx),
+                       "the wrapper's frame register holds the frame");
+  TEST_ASSERT_NOT_NULL(KosContext_NAMESPACE(agen->ctx),
+                       "the wrapper's namespace register is set");
+
+  consumer = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(consumer, "create consumer context");
+
+  KosContext_EvalEnter(consumer, NULL);
+  r = islots->ki_step(consumer, agen_obj, NULL, &out);
+  KosContext_EvalExit(consumer);
+  TEST_ASSERT(! PyErr_Occurred(), "step raised no exception");
+  TEST_ASSERT(r == KOS_ITER_INSTALLED, "step installed onto consumer");
+
+  TEST_ASSERT_NULL(KosContext_DYN_TOP(agen->ctx),
+                   "flatten cleared the wrapper's dyn top");
+  TEST_ASSERT_NULL(KosContext_FRAME(agen->ctx),
+                   "flatten cleared the wrapper's frame register");
+  TEST_ASSERT_NULL(KosContext_CODE(agen->ctx),
+                   "flatten cleared the wrapper's code register");
   TEST_ASSERT_NULL(KosContext_BLOCK(agen->ctx),
                    "flatten cleared the wrapper's block register");
   TEST_ASSERT_NULL(KosContext_NAMESPACE(agen->ctx),
@@ -3171,7 +3373,9 @@ int run_eval_tests(void) {
     RUN_TEST(test_eval_yield_throw_caught);
     RUN_TEST(test_eval_opcode_error_caught_by_try);
     RUN_TEST(test_eval_frozen_gen_teardown_without_install);
+    RUN_TEST(test_gen_return_into_frame_without_resume_is_fatal);
     RUN_TEST(test_agen_flatten_clears_wrapper_registers);
+    RUN_TEST(test_agen_flatten_from_wrapper_chain_clears_registers);
     RUN_TEST(test_busy_agen_adapter_leaves_context_untouched);
     RUN_TEST(test_busy_agen_adapter_throw_leaves_context_untouched);
     RUN_TEST(test_elector_declines_do_not_count_toward_demotion);

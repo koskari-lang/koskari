@@ -32,6 +32,7 @@ import asyncio
 import gc
 import types
 import unittest
+import weakref
 
 import pytest
 
@@ -51,6 +52,12 @@ def one_step():
 class Suspender:
     def __await__(self):
         return one_step()
+
+
+class Marker:
+    """
+    An argument object a weakref can follow
+    """
 
 
 SRC = """
@@ -134,12 +141,17 @@ class TestCoroutineRecord(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mod["finally_box"], [])
 
     async def test_unstarted_coroutine_is_collected(self):
+        # Coroutine takes no weakref; the argument object only the
+        # coroutine references dies with it
         mod = await self.load()
-        coro = mod["add"](1, 2)
+        arg = Marker()
+        ref = weakref.ref(arg)
+        coro = mod["add"](arg, 2)
         cycle = [coro]
         cycle.append(cycle)
-        del coro, cycle
+        del arg, coro, cycle
         gc.collect()
+        self.assertIsNone(ref())
 
     async def test_binding_errors_surface_when_the_defer_is_made(self):
         mod = await self.load()

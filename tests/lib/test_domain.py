@@ -188,6 +188,8 @@ class TestDomainContextManager(unittest.IsolatedAsyncioTestCase):
 
         # the drive is over: the context is no longer running
         self.assertFalse(ctx.running)
+        self.assertIsNone(ctx.domain)
+        self.assertIsNone(ctx.snapshot()["domain"])
 
     def test_domain_get_stack_reports_every_running_context(self):
         """

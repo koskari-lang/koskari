@@ -29,6 +29,7 @@ import unittest
 
 import pytest
 
+import koskari.lib as lib
 from koskari.module import load_module_source_async, new_module
 
 
@@ -80,6 +81,31 @@ class TestCoroutineFirstSend(unittest.IsolatedAsyncioTestCase):
 
         native = native_add(1, 2)
         koskari = mod["add"](1, 2)
+
+        try:
+            raise ValueError("handled")
+        except ValueError:
+            with self.assertRaises(StopIteration) as native_caught:
+                native.send(None)
+            with self.assertRaises(StopIteration) as koskari_caught:
+                koskari.send(None)
+
+        native_stop = native_caught.exception
+        koskari_stop = koskari_caught.exception
+        self.assertEqual(native_stop.value, 3)
+        self.assertEqual(koskari_stop.value, 3)
+        self.assertEqual(
+            native_stop.__context__ is None,
+            koskari_stop.__context__ is None)
+
+    async def test_defer_send_return_chains_context_as_cpython_does(self):
+        mod = await self.load()
+
+        async def native_add(a, b):
+            return a + b
+
+        native = native_add(1, 2)
+        koskari = lib.defer(mod["add"], 1, 2)
 
         try:
             raise ValueError("handled")

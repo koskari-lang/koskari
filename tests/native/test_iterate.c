@@ -132,7 +132,7 @@ static int test_busy_adapter_throw_leaves_context_untouched(void) {
                  "build a busy map with an adapter");
 
   res = PyObject_CallMethod(adapter, "throw", "O",
-                            (PyObject *) PyExc_ValueError);
+                            (PyObject *) PyExc_KeyError);
   refused = (! res && PyErr_Occurred()
              && PyErr_ExceptionMatches(PyExc_ValueError));
   seen = KosContext_BREAKER(ctx);

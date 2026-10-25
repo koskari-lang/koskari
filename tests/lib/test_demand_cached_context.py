@@ -30,6 +30,7 @@ after the extent and the call have exited.
 :license: GNU General Public License v3
 """
 
+import threading
 import unittest
 from functools import partial
 
@@ -187,6 +188,24 @@ class TestDemandCachedContext(unittest.IsolatedAsyncioTestCase):
         read = lib.demand(mod["read_root"])
         self.assertEqual(store(7), 7)
         self.assertEqual(read(), 7)
+
+
+    async def test_root_store_from_another_thread_stays_there(self):
+        mod = await self.load()
+        self.addCleanup(lib.ParamRef("cc_root").clear)
+        swap = lib.demand(mod["swap_root"])
+        seen = {}
+
+        def worker():
+            seen["first"] = swap("worker")
+            seen["second"] = swap("worker-2")
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+        self.assertEqual(seen, {"first": None, "second": "worker"})
+        self.assertIsNone(swap("main"))
+        self.assertEqual(swap("main-2"), "main")
 
 
     async def test_repeated_keyword_calls(self):

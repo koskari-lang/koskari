@@ -202,6 +202,52 @@ static int test_next_resume_delivered_reports_in_hand(void) {
 }
 
 
+static int test_next_resume_exhausted_sets_the_resume(void) {
+  KosContext *ctx = KosContext_New(NULL, kos_tls_current());
+  TEST_ASSERT_NOT_NULL(ctx, "create context");
+
+  KosContext_EvalEnter(ctx, NULL);
+
+  PyObject *ns = PyDict_New();
+  TEST_ASSERT_NOT_NULL(ns, "create ns");
+  KosDynFrame *frame = kos_dyn_push_frame(ctx, NULL, ns);
+  TEST_ASSERT_NOT_NULL(frame, "push codeless frame");
+
+  PyObject *lst = PyList_New(0);
+  TEST_ASSERT_NOT_NULL(lst, "create list");
+  PyObject *it = kos_iter_acquire(lst);
+  TEST_ASSERT_NOT_NULL(it, "acquire iterator");
+
+  ResumeProbe probe = { 0, 0, 0, NULL };
+  KosOpResult r = KosContext_NextResume(ctx, it, &resume_probe_kind, &probe);
+
+  int stopped = (PyErr_Occurred()
+                 && PyErr_ExceptionMatches(PyExc_StopIteration));
+  const KosResumeKind *kind = KosDynFrame_RESUME_KIND(frame);
+  void *state = KosDynFrame_RESUME_STATE(frame);
+
+  PyErr_Clear();
+  KosDynFrame_RESUME_KIND(frame) = NULL;
+  KosDynFrame_RESUME_STATE(frame) = NULL;
+  Py_XDECREF(r.val);
+  Py_DECREF(it);
+  Py_DECREF(lst);
+  KosContext_EvalExit(ctx);
+  Py_DECREF(ctx);
+
+  TEST_ASSERT_EQ(r.kind, KOS_RES_RESUME,
+                 "exhaustion is answered as a delivery to the resume");
+  TEST_ASSERT_NULL(r.val, "nothing rides the result");
+  TEST_ASSERT(stopped, "StopIteration is pending for the delivery");
+  TEST_ASSERT(kind == &resume_probe_kind,
+              "the resume kind is set on the calling frame");
+  TEST_ASSERT(state == (void *) &probe,
+              "the resume state is set on the calling frame");
+  TEST_ASSERT_EQ(probe.calls, 0, "nothing invoked the resume inline");
+  return 0;
+}
+
+
 /* === a bytecode child's RETURN delivers into a resume-carrying parent === */
 
 
@@ -1189,6 +1235,7 @@ int run_resume_tests(void) {
   RUN_TEST(test_cg_prologue_delivers_staged_resume);
   RUN_TEST(test_dispatch_delivers_through_prologue);
   RUN_TEST(test_next_resume_delivered_reports_in_hand);
+  RUN_TEST(test_next_resume_exhausted_sets_the_resume);
   RUN_TEST(test_return_into_resume_parent);
   RUN_TEST(test_prologue_idle_threads_into_code);
   RUN_TEST(test_prologue_delivers_staged);

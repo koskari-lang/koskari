@@ -161,6 +161,28 @@ class TestYieldFromDelegateTeardown(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(ref())
 
 
+    async def test_collection_releases_a_python_generator_delegate(self):
+        mod = await self.load("yfdt_collect_plain")
+        col = []
+
+        def plain(col):
+            try:
+                yield 1
+                yield 2
+            finally:
+                col.append("plain finally")
+
+        delegate = plain(col)
+        ref = weakref.ref(delegate)
+        gen = mod["relay"](delegate, col)
+        del delegate
+        self.assertEqual(await gen.__anext__(), 1)
+        del gen
+        gc.collect()
+        self.assertEqual(col, ["plain finally"])
+        self.assertIsNone(ref())
+
+
     async def test_for_each_break_runs_the_koskari_delegate_finally(self):
         m = await self.load("yf_break")
         col = await m["loop-outer"]([])
