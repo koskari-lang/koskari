@@ -142,10 +142,10 @@ mean something different by their argument in each form.
 
 **Pipeline**
 
-1. **Pre-compile stream**: Pairs of (opcode, arg). Labels are string names.
+1. **Pre-compile stream**: Pairs of (opcode, arg). Labels are str or int names.
    Constants and names may appear as literal values (e.g. `CONST "hello"`, `VAR
    "x"`). LABEL and POSITION may be present.
-2. **Finalize**: Resolve string labels to instruction indices (pcs). Build the
+2. **Finalize**: Resolve labels to instruction indices (pcs). Build the
    constant pool from in-line values and assign indices. Rewrite CONST, VAR,
    ATTR, and other name/key operands to pool indices. Optionally lower VAR to
    FAST for names that have a fixed slot. Derive extent and position tables.
@@ -158,7 +158,7 @@ mean something different by their argument in each form.
 
 | Pre-compile arg        | Post-compile arg        | Opcodes (examples) |
 |------------------------|-------------------------|---------------------|
-| String label name      | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
+| str or int label name  | pc (uint16)             | JUMP, JUMP_FALSE, JUMP_TRUE, JUMP_AND, JUMP_OR, ITER_NEXT, CHECK_*, PUSH_TRY, PUSH_FINALLY, PUSH_WIND |
 | Literal value          | Constant pool index     | CONST |
 | Name (string/symbol)   | Constant pool index     | VAR, VAR_BIND, VAR_CLEAR, VAR_TAKE, VAR_REF, VAR_STORE; ATTR*, ITEM_CONST* (key) |
 | `(name, value, ...)`     | Extra-table index       | VAR_STORE_CONST (section 12); may lower to FAST_STORE_CONST (section 13) |

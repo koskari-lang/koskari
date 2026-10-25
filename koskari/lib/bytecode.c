@@ -1364,6 +1364,20 @@ static int collect_label(
 }
 
 
+/**
+   A label is an exact str or int: hashing and comparing one runs no
+   Python, so resolving labels while a block is being written cannot
+   run code.
+*/
+static int check_label(PyObject *label, Py_ssize_t i) {
+  if (PyUnicode_CheckExact(label) || PyLong_CheckExact(label))
+    return 0;
+  PyErr_Format(PyExc_TypeError, "Code instruction %zd label must be a str"
+               " or int, not %.100s", i, Py_TYPE(label)->tp_name);
+  return -1;
+}
+
+
 /* === Position unpacking === */
 
 
@@ -1489,7 +1503,7 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
 
     if (op == KOS_OP_LABEL) {
       /* Record label name -> output pc; LABEL itself is not emitted */
-      if (collect_label(coll->labels, b, di)) {
+      if (check_label(b, i) || collect_label(coll->labels, b, di)) {
         goto failure;
       }
       continue;   /* do not advance di */
@@ -1671,6 +1685,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
         }
         /* LABEL: cannot resolve until pass 1 labels are complete; defer */
         if (fk == KOSTYLE_LABEL) {
+          if (check_label(elem, i))
+            goto failure;
           PyObject *idx_obj = PyLong_FromLong(extra_idx);
           PyObject *slot_obj = PyLong_FromLong(slot);
           if (! idx_obj || ! slot_obj) {
@@ -1793,6 +1809,8 @@ static int code_collect(PyObject *self, PyObject *instr, CodeCollect *coll) {
     /* LABEL-style (JUMP etc): emit resolves the operand itself from
        the name -> pc dict pass 1 filled; nothing to record here */
     if (style == KOSTYLE_LABEL) {
+      if (check_label(b, i))
+        goto failure;
       di++;
       continue;
     }

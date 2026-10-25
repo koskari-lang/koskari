@@ -313,50 +313,6 @@ class TestCodeAllocator(unittest.TestCase):
         self.assertFalse(a.arena.sealed)
         self.assertEqual(a.soften(), make_code("a").soften())
 
-    def test_seal_refused_while_a_block_is_being_written(self):
-        """
-        A label's __hash__ runs while the block it belongs to is
-        reserved and being written; a seal it provokes is refused, and
-        the allocator is left open with the reservation rolled back
-        """
-
-        alloc = CodeAllocator()
-        first = make_code("first", allocator=alloc)
-        chunk = first.arena
-        fill = chunk.used
-
-        class SealingLabel:
-            hashes = 0
-
-            def __hash__(self):
-                SealingLabel.hashes += 1
-                # collect hashes once before any reservation; emit's
-                # lookup is the one inside the writable window
-                if SealingLabel.hashes == 2:
-                    alloc.seal()
-                return 1
-
-            def __eq__(self, other):
-                return self is other
-
-        label = SealingLabel()
-        nspec = NamespaceSpec("second", (), ())
-        instr = [
-            [OpCode.JUMP, label],
-            [OpCode.LABEL, label],
-            [OpCode.RETURN, 0],
-        ]
-        with self.assertRaises(RuntimeError):
-            Code(nspec, instr, "second", "<test-arena>", allocator=alloc)
-
-        self.assertFalse(alloc.sealed)
-        self.assertFalse(chunk.sealed)
-        self.assertEqual(chunk.used, aligned(fill))
-
-        sealed = alloc.seal()
-        self.assertEqual(sealed, (chunk,))
-        self.assertTrue(chunk.sealed)
-
     def test_placed_code_executes_across_seal(self):
         alloc = CodeAllocator()
         nspec = NamespaceSpec(None, (), ())

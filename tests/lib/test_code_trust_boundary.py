@@ -18,8 +18,9 @@ tests.lib.test_code_trust_boundary
 Code is the trust boundary for bytecode from any source: its accessors
 bound their index at full width, its finalizer refuses an attribute
 name that is not a str and an operand outside its range, a frame
-refuses a namespace with fewer fast slots than the code needs, and a
-jump cannot enter a block past its push.
+refuses a namespace with fewer fast slots than the code needs, a jump
+cannot enter a block past its push, and a label that is not a str or
+int is refused.
 
 :author: Christopher O'Brien <obriencj@gmail.com>
 :license: GNU General Public License v3
@@ -87,6 +88,33 @@ class TestAttributeNameConstant(unittest.TestCase):
         make([[OpCode.CONST, "receiver"],
               [OpCode.CALL_ATTR_NAMES, ("upper", (), 0, 0)],
               [OpCode.RETURN, 1]])
+
+
+class TestLabelTypes(unittest.TestCase):
+
+    def test_label_that_is_not_a_str_or_int_is_refused(self):
+        class Name(str):
+            pass
+
+        for label in (None, ("a",), 1.0, True, Name("a")):
+            shapes = (
+                [[OpCode.LABEL, label], [OpCode.RETURN, 0]],
+                [[OpCode.JUMP, label], [OpCode.LABEL, "a"],
+                 [OpCode.RETURN, 0]],
+                [[OpCode.CONST, 0],
+                 [OpCode.SWITCH_EQ_CONST, (label, 1, 0, 0)],
+                 [OpCode.LABEL, "a"], [OpCode.RETURN, 1]],
+            )
+            for instrs in shapes:
+                with self.assertRaises(TypeError) as caught:
+                    make(instrs)
+                self.assertIn("label must be a str or int",
+                              str(caught.exception))
+
+    def test_str_and_int_labels_are_accepted(self):
+        make([[OpCode.JUMP, "a"], [OpCode.LABEL, "a"],
+              [OpCode.RETURN, 0]])
+        make([[OpCode.JUMP, 7], [OpCode.LABEL, 7], [OpCode.RETURN, 0]])
 
 
 class TestCompilerPositionWidth(unittest.IsolatedAsyncioTestCase):
