@@ -436,7 +436,7 @@ class TestKioRoundTrip(unittest.TestCase):
         """
 
         alloc = CodeAllocator()
-        spec = self._compiled_spec('(define k (lambda [a] a))\n', alloc)
+        spec = self._compiled_spec('(def k [a] a)\n', alloc)
         self.assertEqual(alloc.chunks, (spec.code.arena,))
 
 
@@ -446,7 +446,7 @@ class TestKioRoundTrip(unittest.TestCase):
         alloc = CodeAllocator()
         spec = self._compiled_spec(
             '(pragma [compiler/pack-module False])\n'
-            '(define k (lambda [a] a))\n', alloc)
+            '(def k [a] a)\n', alloc)
         self.assertIsNone(spec.code.arena)
         self.assertEqual(alloc.chunks, ())
 

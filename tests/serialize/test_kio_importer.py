@@ -212,7 +212,7 @@ class TestKioImporterParity(unittest.TestCase):
 
 
     def test_docstring_via_kio_matches_ki(self):
-        ki, kio = self._both('doc', '"""the module doc"""\n(define x 1)\n')
+        ki, kio = self._both('doc', '"""the module doc"""\n(var x 1)\n')
         self.assertEqual(ki.__doc__, "the module doc")
         self.assertEqual(kio.__doc__, ki.__doc__)
         self.assertEqual(kio.x, 1)
@@ -245,12 +245,12 @@ class TestKioImporterParity(unittest.TestCase):
         """
 
         source = (
-            "(define match-subject int)\n"
+            "(var match-subject int)\n"
             "(define-syntax ext (syntax-match\n"
             "  [(ext (TYPE match-subject)) \"int-arm\"]\n"
             "  [(ext (VALUE y)) \"other-arm\"]))\n"
-            "(define a (ext 7))\n"
-            "(define b (ext \"s\"))\n")
+            "(var a (ext 7))\n"
+            "(var b (ext \"s\"))\n")
         ki, kio = self._both('ext', source)
         self.assertEqual("int-arm", ki.a)
         self.assertEqual("other-arm", ki.b)
@@ -278,12 +278,12 @@ class TestKioImporterParity(unittest.TestCase):
             "    [[(or #[x 1] #[5 y])] #(\"or\" x)]\n"
             "    [[#[k (OPTIONAL z)]] #(\"opt\" k)]\n"
             "    [else: \"none\"]))\n"
-            "(define r1 (classify #[1 #[2 3] 4 5]))\n"
-            "(define r2 (classify #[7 1]))\n"
-            "(define r3 (classify #[8]))\n"
-            "(define r4 (swap-pairs (1 2) (3 4)))\n"
-            "(define r5 (pick 1 2))\n"
-            "(define r6 (pick 1))\n")
+            "(var r1 (classify #[1 #[2 3] 4 5]))\n"
+            "(var r2 (classify #[7 1]))\n"
+            "(var r3 (classify #[8]))\n"
+            "(var r4 (swap-pairs (1 2) (3 4)))\n"
+            "(var r5 (pick 1 2))\n"
+            "(var r6 (pick 1))\n")
         ki, kio = self._both('matchers', source)
         self.assertEqual((1, 2, 3, (4, 5)), ki.r1)
         self.assertEqual(("or", 7), ki.r2)
@@ -484,7 +484,7 @@ class TestKioImporterParity(unittest.TestCase):
         it does under a source load
         """
 
-        ki, kio = self._both('placed', "(define f (lambda [] 1))\n")
+        ki, kio = self._both('placed', "(def f [] 1)\n")
         self.assertTrue(ki.f.code.arena.sealed)
         self.assertIsNotNone(kio.f.code.arena)
         self.assertTrue(kio.f.code.arena.sealed)
@@ -499,8 +499,8 @@ class TestKioImporterParity(unittest.TestCase):
 
         ki, kio = self._both(
             'early',
-            "(define f (lambda [] 1))\n"
-            "(define during f.code.arena.sealed)\n")
+            "(def f [] 1)\n"
+            "(var during f.code.arena.sealed)\n")
         self.assertIs(ki.during, False)
         self.assertIs(kio.during, True)
 
@@ -510,7 +510,7 @@ class TestKioImporterParity(unittest.TestCase):
         _ki, kio = self._both(
             'unplaced',
             "(pragma [compiler/pack-module False])\n"
-            "(define f (lambda [] 1))\n")
+            "(def f [] 1)\n")
         self.assertIsNone(kio.f.code.arena)
 
 
@@ -522,9 +522,9 @@ class TestKioImporterParity(unittest.TestCase):
 
         ki, kio = self._both(
             'toggled',
-            "(define before (lambda [] 1))\n"
+            "(def before [] 1)\n"
             "(pragma [compiler/pack-module False])\n"
-            "(define after (lambda [] 2))\n")
+            "(def after [] 2)\n")
         for mod in (ki, kio):
             self.assertIsNotNone(mod.before.code.arena)
             self.assertTrue(mod.before.code.arena.sealed)

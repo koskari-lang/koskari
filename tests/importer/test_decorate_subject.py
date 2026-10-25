@@ -449,12 +449,12 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
     async def test_entry_point_arm_binds_slot_and_name(self):
         """
         entry-point binds the subject as the module's __entry__ and
-        delivers it unchanged, so the define binds the same function
+        delivers it unchanged, so the def binds the same function
         """
 
         src = """
         (begin
-          (decorate [entry-point] (define main [] 7))
+          (decorate [entry-point] (def main [] 7))
           #[(is __entry__ main) (main)])
         """
         expr, mod = self.compile_expr(src)
@@ -470,8 +470,8 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define tag (lambda [f] (setattr f "tagged" True) f))
-          (decorate [tag entry-point] (define main [] 1))
+          (def tag [f] (setattr f "tagged" True) f)
+          (decorate [tag entry-point] (def main [] 1))
           #[(is __entry__ main) main.tagged])
         """
         expr, _mod = self.compile_expr(src)
@@ -485,7 +485,7 @@ class TestDecorateSubject(unittest.IsolatedAsyncioTestCase):
 
         src = """
         (begin
-          (define f (decorate [entry-point] (lambda [] 2)))
+          (var f (decorate [entry-point] (lambda [] 2)))
           #[(is __entry__ f) (__entry__)])
         """
         expr, _mod = self.compile_expr(src)

@@ -204,7 +204,7 @@ def squares [n]:
     (* i i)
 
 @entry-point
-define main []:
+def main []:
   print (squares 6)
 ```
 

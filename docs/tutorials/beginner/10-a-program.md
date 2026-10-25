@@ -23,11 +23,11 @@ def greet [name]:
   print f"hello, {name}"
 
 @entry-point
-define main []:
+def main []:
   (greet "Ada")
 ```
 
-The `@` line sits over the `define` and marks it. Any name works;
+The `@` line sits over the `def` and marks it. Any name works;
 `main` is the custom.
 :::
 
@@ -91,7 +91,7 @@ def report [numbers]:
   print f"average {(average numbers)}, best {(max numbers)}"
 
 @entry-point
-define main []:
+def main []:
   (report scores)
 ```
 :::

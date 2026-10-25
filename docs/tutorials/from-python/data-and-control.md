@@ -256,7 +256,7 @@ def countdown [n]:
     print "lift-off"
 
 @entry-point
-define main []:
+def main []:
   (countdown 3)
 ```
 

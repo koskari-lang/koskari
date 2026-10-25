@@ -135,7 +135,7 @@ def sign [n]:
     "positive"
 
 @entry-point
-define main []:
+def main []:
   print (sign -3)
   print (sign 0)
   print (sign 9)

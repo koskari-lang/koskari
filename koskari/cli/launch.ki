@@ -106,7 +106,7 @@ def run_command [
 ; === Program entry ===
 
 
-define entry_status [value]:
+def entry_status [value]:
   """
   The exit status an entry's return value maps to, as SystemExit maps
   its code: None is 0, an int is the status, and any other value is
@@ -125,7 +125,7 @@ define entry_status [value]:
     return 1
 
 
-define run_entry [mod]:
+def run_entry [mod]:
   """
   Call the entry function mod holds as __entry__, bound by the
   entry-point decorator or defined under that name, with no arguments
@@ -135,8 +135,8 @@ define run_entry [mod]:
   :return: the entry's exit status; 0 when mod has no entry
   """
 
-  define ns (vars mod)
-  define entry (ns.get "__entry__")
+  var ns (vars mod)
+  var entry (ns.get "__entry__")
   when (None? entry):
     return 0
 
@@ -187,7 +187,7 @@ def main_module_spec [name]:
     raise (ImportError f"No module named {name}")
 
   unless (None? spec.submodule_search_locations):
-    define main_spec (find_spec_on_path
+    var main_spec (find_spec_on_path
       f"{name}.__main__" spec.submodule_search_locations)
     unless (None? main_spec):
       set! spec main_spec
@@ -454,9 +454,9 @@ def run []:
   var interactive_param (ParamRef "*interactive*")
   interactive_param.store options.interactive
 
-  define package_entry (and spec (not (None? spec.submodule_search_locations)))
+  var package_entry (and spec (not (None? spec.submodule_search_locations)))
 
-  define mod None
+  var mod None
   if package_entry:
     ; a package with no __main__ runs its own entry point: imported
     ; under its real name, as any import would, so its relative imports
@@ -488,7 +488,7 @@ def run []:
   ; a program's declared entry runs once its module has loaded and
   ; sealed; an interactive session goes on to the REPL afterward
   when (or command filename):
-    define status (run_entry mod)
+    var status (run_entry mod)
     unless options.interactive:
       return status
 

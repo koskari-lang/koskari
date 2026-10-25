@@ -1544,8 +1544,8 @@ static PyMethodDef domain_methods[] = {
   The koskari_vars callable. It is a KosCallable, so a call from
   Koskari runs its install with the caller's frame still current, in
   tail position too, and reads that frame's namespace. A call from
-  Python reads the namespace of the frame running in the current
-  context's active evaluation. With an object, either answers the
+  Python reads the namespace of the frame running in the thread's
+  active context. With an object, either answers the
   object's __dict__, as Python's vars does.
 */
 typedef struct KosVarsCallable {
@@ -1583,19 +1583,19 @@ static PyObject *vars_of(PyObject *obj) {
 }
 
 
-static PyObject *vars_of_eval(KosEvalState *es) {
-  if (! es || ! KosEvalState_NAMESPACE(es)) {
+static PyObject *vars_of_eval(KosContext *ctx) {
+  if (! ctx || ! KosContext_NAMESPACE(ctx)) {
     PyErr_SetString(PyExc_RuntimeError,
                     "koskari-vars() without an argument outside a running"
                     " evaluation");
     return NULL;
   }
-  return KosEvalState_RevealNamespace(es);
+  return KosContext_RevealNamespace(ctx);
 }
 
 
 static KosOpResult vars_kos_vinstall(
-    KosEvalState *es,
+    KosContext *ctx,
     PyObject *callable,
     PyObject *const *args,
     Py_ssize_t nargs,
@@ -1608,7 +1608,7 @@ static KosOpResult vars_kos_vinstall(
   if (vars_check_args(nargs, kwnames) < 0)
     return EVAL_RAISE();
 
-  PyObject *result = nargs ? vars_of(args[0]) : vars_of_eval(es);
+  PyObject *result = nargs ? vars_of(args[0]) : vars_of_eval(ctx);
   return result ? EVAL_RETURN(result) : EVAL_RAISE();
 }
 
@@ -1627,7 +1627,7 @@ static PyObject *vars_vectorcall(
 
   if (nargs)
     return vars_of(args[0]);
-  return vars_of_eval(kos_tls_active_eval_for_ctx(kos_ctx_current()));
+  return vars_of_eval(kos_ctx_current());
 }
 
 

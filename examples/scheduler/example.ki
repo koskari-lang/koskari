@@ -154,7 +154,7 @@ jobset workload:
 
 
 @entry-point
-define main []:
+def main []:
     (workload heartbeat: 20 snore: True)
 
 

@@ -120,19 +120,19 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
         self._write_ki(
             'ki_launcher_coro',
             '(import asyncio)\n'
-            '(define-coroutine main [] (await (asyncio.sleep 0)) 9)')
+            '(decorate [coroutine-fn] (def main [] (await (asyncio.sleep 0)) 9))')
         code = await hosted_run('ki_launcher_coro', 'main', 'ki-tool', [])
         self.assertEqual(code, 9)
 
     async def test_hosted_run_bare_module_calls_its_entry_point(self):
         self._write_ki(
             'ki_launcher_slot',
-            '(decorate [entry-point] (define main [] 12))')
+            '(decorate [entry-point] (def main [] 12))')
         code = await hosted_run('ki_launcher_slot', None, 'ki-tool', [])
         self.assertEqual(code, 12)
 
     async def test_hosted_run_bare_module_without_entry_point_raises(self):
-        self._write_ki('ki_launcher_noslot', '(define main [] 12)')
+        self._write_ki('ki_launcher_noslot', '(def main [] 12)')
         with self.assertRaises(EntryTargetError) as caught:
             await hosted_run('ki_launcher_noslot', None, 'ki-tool', [])
         self.assertIn('ki_launcher_noslot', str(caught.exception))
@@ -140,7 +140,7 @@ class TestHostedRun(unittest.IsolatedAsyncioTestCase):
     def test_run_target_bare_module(self):
         self._write_ki(
             'ki_launcher_bare',
-            '(decorate [entry-point] (define main [] 13))')
+            '(decorate [entry-point] (def main [] 13))')
         code = run_target('ki_launcher_bare', argv=[])
         self.assertEqual(code, 13)
 

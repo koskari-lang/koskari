@@ -127,7 +127,7 @@ and its value is called with the subject's value.
 
 `@entry-point` is a marking arm: it binds the function as the module's
 `__entry__`, the function the launcher calls when the module runs as a
-program, and delivers it unchanged, so the `define` binds the same
+program, and delivers it unchanged, so the `def` binds the same
 function. See [`entry-point`](../reference/macros/compile-entry-point.md).
 
 The graft arms match a body-less `let`, `with`, or `parameterize` and

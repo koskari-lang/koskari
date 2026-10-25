@@ -5,43 +5,43 @@
 ;; Koskari function.
 
 
-define gen [n]:
+def gen [n]:
     for-each [i (range n)]:
         yield i
 
 
-define relay [n]:
+def relay [n]:
     yield-from (gen n)
 
 
-define inc [x]:
+def inc [x]:
     (+ x 1)
 
 
-define count_foreach [n]:
-    define t 0
+def count_foreach [n]:
+    var t 0
     for-each [v (gen n)]:
         (set! t (+ t 1))
     t
 
 
-define sum_next [n]:
-    define g (gen n)
-    define t 0
+def sum_next [n]:
+    var g (gen n)
+    var t 0
     for-each [i (range n)]:
         (set! t (+ t (next g)))
     t
 
 
-define count_delegated [n]:
-    define t 0
+def count_delegated [n]:
+    var t 0
     for-each [v (relay n)]:
         (set! t (+ t 1))
     t
 
 
-define sum_mapped [n]:
-    define t 0
+def sum_mapped [n]:
+    var t 0
     for-each [v (map inc (range n))]:
         (set! t (+ t v))
     t

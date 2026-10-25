@@ -80,7 +80,7 @@ SHARED_SRC = """
 # extent in the way and reads it back: run on another thread, the store
 # lands in that thread's root.
 STORE_SRC = """
-(define probe
+(var probe
   (defer (lambda []
     (let [[cell (ref (parameter own_root))]]
       (cell.store "worker"))
@@ -92,10 +92,10 @@ STORE_SRC = """
 # with no extent in the way: a `with Domain():` block opened in the
 # callout owns the root the nested call stores into.
 CALLOUT_SRC = """
-(define outer (lambda [cb] (cb)))
-(define inner (lambda []
+(def outer [cb] (cb))
+(def inner []
   (let [[cell (ref (parameter k))]] (cell.store "stored-inner"))
-  (parameterq k "unset")))
+  (parameterq k "unset"))
 """
 
 

@@ -78,7 +78,7 @@ def example []:
 
 
 @entry-point
-define main []:
+def main []:
   (example)
 
 

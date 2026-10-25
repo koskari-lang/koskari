@@ -6,18 +6,18 @@
 
 (import-from builtins map)
 
-(define MASK32 0xffffffff)
+(var MASK32 0xffffffff)
 
 
-define-class Mixer []:
+class Mixer []:
     @demand
-    define mix [self a b]:
+    def mix [self a b]:
         (& (+ (* a 31) (^ b 0x5bd1e995)) MASK32)
 
 
-define churn_demand_call_method [n: 20000]:
-    define acc 0
-    define mixer (Mixer)
+def churn_demand_call_method [n: 20000]:
+    var acc 0
+    var mixer (Mixer)
     for-each [v (map mixer.mix (range 0 n) (range n 0 -1))]:
         set! acc (& (+ (* acc 33) v) MASK32)
     acc

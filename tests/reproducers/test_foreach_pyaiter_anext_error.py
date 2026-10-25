@@ -45,8 +45,8 @@ def collect [ait]:
         (out.append x)
     out
 
-define collect_caught [ait]:
-    define out (#list)
+def collect_caught [ait]:
+    var out (#list)
     try:
         for-each [x ait]:
             (out.append x)

@@ -90,13 +90,13 @@ def consume [it]:
         set! total (+ total v)
     total
 
-define collect [it]:
-    define out #[]
+def collect [it]:
+    var out #[]
     for-each [v it]:
         out.append v
     out
 
-define consume-caught [it]:
+def consume-caught [it]:
     try:
         (consume it)
     except [e ValueError]:

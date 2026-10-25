@@ -26,7 +26,7 @@ def greet [name]:
 
 
 @entry-point
-define main []:
+def main []:
   for-each [name (item-slice sys.argv 1)]:
     (greet name)
 ```

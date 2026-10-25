@@ -53,7 +53,7 @@ class Point [BaseModel]:
 
 
 @entry-point
-define main []:
+def main []:
     print "Point class:" Point
     print "Point.__doc__:" Point.__doc__
     print "Point.__annotations__:" Point.__annotations__

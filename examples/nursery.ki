@@ -361,7 +361,7 @@ def demo-timeout []:
 
 
 @entry-point
-define main []:
+def main []:
     (demo-fanout)
     (demo-sibling-cancel)
     (demo-gather-orphan)

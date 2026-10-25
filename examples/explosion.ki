@@ -57,7 +57,7 @@ def explosion! []:
 
 
 @entry-point
-define main []:
+def main []:
     (explosion!)
     (print "Nice Bakuretsu.")
 

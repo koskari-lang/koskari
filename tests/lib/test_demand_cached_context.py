@@ -46,65 +46,65 @@ pytestmark = pytest.mark.phase_lib
 SRC = """
 (define-parameter p 0)
 
-(define square (lambda [x] (* x x)))
+(def square [x] (* x x))
 
-(define read_p (lambda [x] (+ p x)))
+(def read_p [x] (+ p x))
 
-(define countdown (lambda [d via n]
-  (if (== n 0) 0 (+ 1 (via d (- n 1))))))
+(def countdown [d via n]
+  (if (== n 0) 0 (+ 1 (via d (- n 1)))))
 
-(define both_batches (lambda [d pymap]
+(def both_batches [d pymap]
   (#list
     (parameterize [[p 10]] (pymap d #[1 2]))
-    (parameterize [[p 20]] (pymap d #[1 2])))))
+    (parameterize [[p 20]] (pymap d #[1 2]))))
 
-(define fragile (lambda [x] (if (== x 0) (raise (ValueError "zero")) x)))
+(def fragile [x] (if (== x 0) (raise (ValueError "zero")) x))
 
 (define-parameter cc_root)
 
-(define swap_root (lambda [v]
+(def swap_root [v]
   (define-global cc_root)
-  (define old (parameterq cc_root None))
+  (var old (parameterq cc_root None))
   (set! cc_root v)
-  old))
+  old)
 
-(define store_root (lambda [v]
+(def store_root [v]
   (define-global cc_root)
   (set! cc_root v)
-  v))
+  v)
 
-(define read_root (lambda [] cc_root))
+(def read_root [] cc_root)
 
-(define addkw (lambda [a b: 1] (+ (* a 10) b)))
+(def addkw [a b: 1] (+ (* a 10) b))
 
-(define failkw (lambda [a b: 0]
-  (if (== b 0) (raise (ValueError a)) (+ a b))))
+(def failkw [a b: 0]
+  (if (== b 0) (raise (ValueError a)) (+ a b)))
 
-(define nestkw (lambda [d via n step: 1]
-  (if (== n 0) 0 (+ step (via d n)))))
+(def nestkw [d via n step: 1]
+  (if (== n 0) 0 (+ step (via d n))))
 
-(define escapekw (lambda [a b: 0]
-  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
+(def escapekw [a b: 0]
+  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late"))))))
 
-(define read_p0 (lambda [] p))
+(def read_p0 [] p)
 
-(define shadow_in (lambda [x] (parameterize [[p 20]] (+ p x))))
+(def shadow_in [x] (parameterize [[p 20]] (+ p x)))
 
-(define outer_check (lambda [d_shadow d_read pycall]
+(def outer_check [d_shadow d_read pycall]
   (parameterize [[p 10]]
-    #((pycall d_shadow 1) (pycall d_read 1) p))))
+    #((pycall d_shadow 1) (pycall d_read 1) p)))
 
-(define defer_in (lambda [] (parameterize [[p 20]] (defer read_p0))))
+(def defer_in [] (parameterize [[p 20]] (defer read_p0)))
 
-(define outer_defer (lambda [d_make d_read pycall]
+(def outer_defer [d_make d_read pycall]
   (parameterize [[p 10]]
-    #((pycall d_make) (pycall d_read 1) p))))
+    #((pycall d_make) (pycall d_read 1) p)))
 
-(define defer_then_rebind (lambda [pysend]
+(def defer_then_rebind [pysend]
   (parameterize [[p 10]]
     (let [[d (defer read_p0)]]
       (parameterize [[p 20]]
-        #((pysend d) p))))))
+        #((pysend d) p)))))
 """
 
 

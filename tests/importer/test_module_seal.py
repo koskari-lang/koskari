@@ -153,7 +153,7 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         """a load that raises still seals the chunks it placed into"""
 
         src = """
-(define durable (lambda [x] (+ x 1)))
+(def durable [x] (+ x 1))
 (raise (ValueError "boom"))
 """
         module = new_module("sealtest")
@@ -191,13 +191,13 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         ns["__file__"] = "<sealtest>"
 
         await load_module_source_async(
-            module, "(define one (lambda [] 1))",
+            module, "(def one [] 1)",
             seal=False, detach=False)
         chunk = ns["one"].code.arena
         self.assertIsNotNone(chunk)
 
         await load_module_source_async(
-            module, "(define two (lambda [] 2))",
+            module, "(def two [] 2)",
             seal=False, detach=True)
 
         self.assertIs(ns["two"].code.arena, chunk)
@@ -209,9 +209,9 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         """functions before the toggle are placed, those after are heap"""
 
         src = """
-(define before (lambda [] 1))
+(def before [] 1)
 (pragma [compiler/pack-module False])
-(define after (lambda [] 2))
+(def after [] 2)
 """
         module = await load(src)
         ns = vars(module)
@@ -243,9 +243,9 @@ class TestSealBehavior(unittest.IsolatedAsyncioTestCase):
         """
 
         src = """
-(define keep (lambda [] 1))
+(def keep [] 1)
 ((lambda [] 2))
-(define keep2 (lambda [] 3))
+(def keep2 [] 3)
 """
         gc.disable()
         try:

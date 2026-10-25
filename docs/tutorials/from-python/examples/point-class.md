@@ -43,7 +43,7 @@ class Point []:
 
 
 @entry-point
-define main []:
+def main []:
   print "Point.__annotations__:" Point.__annotations__
 
   var p (Point 3 5)

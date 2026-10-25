@@ -65,8 +65,8 @@ def zip_case []:
     #((next z) s.inner)
 
 
-define gen_case []:
-    define box #[None None]
-    define z (zip (gen_src box) #[10])
+def gen_case []:
+    var box #[None None]
+    var z (zip (gen_src box) #[10])
     (set! (item box 0) z)
     #((next z) (item box 1))

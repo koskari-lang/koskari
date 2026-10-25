@@ -174,7 +174,7 @@ class TestDemandSyncFunctionClosure(unittest.IsolatedAsyncioTestCase):
         module = new_module("demand_every_shape")
         vars(module)["__file__"] = "<demand_every_shape>"
         await load_module_source_async(
-            module, "(define give [a] a)", layout=False)
+            module, "(def give [a] a)", layout=False)
         give = vars(module)["give"]
 
         def _it():
@@ -1006,7 +1006,7 @@ class TestDemandDescriptor(unittest.TestCase):
 
 
 BOUND_SRC = """
-(define gather (lambda [self a b: 0 *: rest] #(self a b rest)))
+(def gather [self a b: 0 *: rest] #(self a b rest))
 """
 
 
@@ -1511,40 +1511,40 @@ class TestDemandBoundaryCallables(unittest.TestCase):
 
 
 ROOT_SRC = """
-(define add2 (lambda [a b] (+ a b)))
+(def add2 [a b] (+ a b))
 
-(define fail2 (lambda [a b] (raise (ValueError (+ a b)))))
+(def fail2 [a b] (raise (ValueError (+ a b))))
 
-(define fact2 (lambda fact2 [n acc]
+(var fact2 (lambda fact2 [n acc]
   (if (== n 0) acc (fact2 (- n 1) (* acc n)))))
 
-(define descend (lambda [via n]
-  (if (== n 0) 0 (+ 1 (via n)))))
+(def descend [via n]
+  (if (== n 0) 0 (+ 1 (via n))))
 
-(define escape2 (lambda [a b]
-  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late")))))))
+(def escape2 [a b]
+  (+ 1 (call/cc (lambda [k] (call k (+ a b)) (raise (ValueError "late"))))))
 
-(define tuple2_probe (lambda [probe a b] (probe) #(a b)))
+(def tuple2_probe [probe a b] (probe) #(a b))
 
-(define kw_probe (lambda [probe a b: 0] (probe) #(a b)))
+(def kw_probe [probe a b: 0] (probe) #(a b))
 
-(define hook (list))
-(define byref2 (lambda [a &n: 0 b: 0] #(a n b)))
-(define box2 #{"v": 1})
-(define empty_check2 (lambda [] (when hook ((item hook 0))) False))
+(var hook (list))
+(def byref2 [a &n: 0 b: 0] #(a n b))
+(var box2 #{"v": 1})
+(def empty_check2 [] (when hook ((item hook 0))) False)
 (bind! reentering2 (dynamic { (item box2 "v") } { (set! (item box2 "v") %1) }
                             { None } empty_check2))
-(define call_byref2 (lambda [a b] (byref2 a n: &reentering2 b: b)))
+(def call_byref2 [a b] (byref2 a n: &reentering2 b: b))
 
-(define await2 (lambda [a b] (await (a)) b))
+(def await2 [a b] (await (a)) b)
 
-(define bind_gq (lambda [v probe]
+(def bind_gq [v probe]
   (parameterize [[gq v]]
-    (return (probe)))))
+    (return (probe))))
 
-(define-class Box ()
+(class Box []
   (begin
-    (define __init__ [self x]
+    (def __init__ [self x]
       (set-attr self x x))))
 """
 
@@ -1771,12 +1771,12 @@ class TestDemandRootCallee(unittest.IsolatedAsyncioTestCase):
 
 
 HANDLED_SRC = """
-(define report (lambda [probe] (probe)))
+(def report [probe] (probe))
 
-(define handle_inner (lambda [probe]
+(def handle_inner [probe]
   (try
     (raise (ValueError "inner"))
-    ([ValueError] (probe)))))
+    ([ValueError] (probe))))
 """
 
 

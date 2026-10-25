@@ -73,7 +73,7 @@ class TestImportRootParameter(unittest.TestCase):
         (set! ki_rootparam_greeting "hello")
         """)
         self.write_ki('ki_rootparam_read', """
-        (define seen (parameterq ki_rootparam_greeting None))
+        (var seen (parameterq ki_rootparam_greeting None))
         """)
         ref = ParamRef('ki_rootparam_greeting')
         self.addCleanup(ref.clear)

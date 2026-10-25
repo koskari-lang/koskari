@@ -242,7 +242,7 @@ def greet [name greeting: "hello" punct: "!"]:
   (+ greeting " " name punct)
 
 @entry-point
-define main []:
+def main []:
   print (greet "Ada")
   print (greet "Grace" greeting: "Hi" punct: ".")
 ```

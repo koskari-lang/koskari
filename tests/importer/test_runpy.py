@@ -57,18 +57,18 @@ class TestRunpy(unittest.TestCase):
             'print "loaded" __name__\n'
             '\n'
             '@entry-point\n'
-            'define main []:\n'
+            'def main []:\n'
             '  print "entry" __name__\n'
             '  3\n')
         self._write(
             'kiboom.ki',
             '@entry-point\n'
-            'define main []:\n'
+            'def main []:\n'
             '  raise (ValueError "boom")\n')
         self._write(
             'kiint.ki',
             '@entry-point\n'
-            'define main []:\n'
+            'def main []:\n'
             '  raise (KeyboardInterrupt)\n')
         pkg = os.path.join(self._tmpdir, 'kpkg')
         os.mkdir(pkg)
@@ -174,14 +174,14 @@ class TestRunpy(unittest.TestCase):
         src = self._write(
             'kstale.ki',
             '@entry-point\n'
-            'define main []:\n'
+            'def main []:\n'
             '  4\n')
         kio = os.path.join(self._tmpdir, 'kstale.kio')
         compile_ki_file_to_kio(src, kio)
         self._write(
             'kstale.ki',
             '@entry-point\n'
-            'define main []:\n'
+            'def main []:\n'
             '  5\n')
         later = os.stat(kio).st_mtime + 10
         os.utime(src, (later, later))
