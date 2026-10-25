@@ -16,7 +16,7 @@ koskari.compile.pragma.settings
 
 Compiler-side pragma settings, registered into the koskari.pragma registry at
 import: compiler/resolution, compiler/call-brackets, compiler/stray-colon,
-compiler/keyword-literals, compiler/tco-enable, compiler/cache-expression,
+compiler/stray-hash, compiler/keyword-literals, compiler/tco-enable, compiler/cache-expression,
 compiler/cache-function, compiler/protect-code, compiler/pack-module,
 compiler/rewrite-limit, and the reserved compiler/convert-fast and
 compiler/compress. Each setting's
@@ -127,6 +127,38 @@ def compiler_stray_colon(level=StrayColon.WARN) -> StrayColon:
     if isinstance(level, StrayColon):
         return level
     return StrayColon(str(level))
+
+
+class StrayHash(Enum):
+    """
+    How the compiler treats a bare ``#`` symbol reaching compilation as a
+    name. A ``#`` prefixes a collection opener (``#(``, ``#[``, ``#{``) or
+    a syntax quote (``#'``, ``#```); followed by anything else it reads as
+    the symbol ``#``, which is almost always a typo for one of those.
+
+    - ``ALLOW``: compile it as an ordinary name lookup, no diagnostic
+    - ``WARN``: compile it, but emit a SyntaxWarning
+    - ``ERROR``: raise a CompilerError
+    """
+
+    ALLOW = "allow"
+    WARN = "warn"
+    ERROR = "error"
+
+
+@pragma_setting("compiler/stray-hash", StrayHash.WARN)
+def compiler_stray_hash(level=StrayHash.WARN) -> StrayHash:
+    """
+    Policy when a bare ``#`` symbol is compiled as a name.
+
+    "warn" - (default) compile it, but emit a SyntaxWarning
+    "error" - raise a CompilerError
+    "allow" - compile it as an ordinary name lookup, no diagnostic
+    """
+
+    if isinstance(level, StrayHash):
+        return level
+    return StrayHash(str(level))
 
 
 class KeywordLiterals(Enum):

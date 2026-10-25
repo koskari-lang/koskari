@@ -146,6 +146,19 @@ turning one off makes its character inert in the reader.
   attached to a name is a keyword, not a stray colon: `(when foo: (foo))`
   passes the keyword `foo:`, which `compiler/keyword-literals` covers
   instead.
+- `compiler/stray-hash`, default `warn`: what happens when a bare `#`
+  symbol is compiled as a name. A `#` prefixes a collection opener
+  (`#(`, `#[`, `#{`) or a syntax quote (`#'`, ``#` ``); followed by a space
+  or the end of the form it reads as the symbol `#`, so `# [1 2]` is a
+  name lookup of `#` followed by a list rather than the list literal
+  `#[1 2]`. One of:
+  - `warn` -- emit a `SyntaxWarning`.
+  - `error` -- raise a compile error.
+  - `allow` -- nothing; the `#` compiles as an ordinary name lookup.
+
+  A bare `[compiler/stray-hash]` selects `warn`. A `#` that begins a
+  longer name, such as `#tuple`, is not a stray hash, and a quoted `'#` is
+  data and never flagged.
 - `compiler/keyword-literals`, default `warn`: what happens when an
   unquoted keyword is compiled as a literal value. A keyword evaluates to
   itself, which is legal but is more often a typo: `(if foo: 1 2)` tests the

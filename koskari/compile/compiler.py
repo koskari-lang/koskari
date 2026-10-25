@@ -36,7 +36,8 @@ from ..types import (
     fill_position, get_position, is_const, is_keyword, is_nil, is_pair,
     is_proper, is_symbol, parameterize)
 from .pragma import (
-    BracketCalls, KeywordLiterals, KoskariPragma, ResolutionMode, StrayColon)
+    BracketCalls, KeywordLiterals, KoskariPragma, ResolutionMode, StrayColon,
+    StrayHash)
 from .processor import ByteCodeProcessor, merge_function_constant_needs
 
 
@@ -76,6 +77,7 @@ _symbol_call = symbol("call")
 _symbol_cons = symbol("cons")
 
 _symbol_colon = symbol(":")
+_symbol_hash = symbol("#")
 
 # the parameter name (active-pragma) reads; the compiler binds it for
 # each compilation turn
@@ -525,6 +527,7 @@ class Compiler:
             resolution_mode=ResolutionMode.KOSKARI,
             bracket_calls=BracketCalls.IGNORE,
             stray_colon=StrayColon.ALLOW,
+            stray_hash=StrayHash.ALLOW,
             keyword_literals=KeywordLiterals.ALLOW):
 
         self.name = name
@@ -540,6 +543,7 @@ class Compiler:
         self._resolution_instance = None
         self.bracket_calls = bracket_calls
         self.stray_colon = stray_colon
+        self.stray_hash = stray_hash
         self.keyword_literals = keyword_literals
         self.protect_code = False
         self.pack_module = True
@@ -640,6 +644,7 @@ class Compiler:
 
         self._bracket_calls = pragma.get("compiler/call-brackets")
         self._stray_colon = pragma.get("compiler/stray-colon")
+        self._stray_hash = pragma.get("compiler/stray-hash")
         self._keyword_literals = pragma.get("compiler/keyword-literals")
 
         self.protect_code = pragma.get("compiler/protect-code", False)
@@ -673,6 +678,18 @@ class Compiler:
         if not isinstance(value, StrayColon):
             value = StrayColon(value)
         self._stray_colon = value
+
+
+    @property
+    def stray_hash(self):
+        return self._stray_hash
+
+
+    @stray_hash.setter
+    def stray_hash(self, value):
+        if not isinstance(value, StrayHash):
+            value = StrayHash(value)
+        self._stray_hash = value
 
 
     @property
@@ -1039,8 +1056,8 @@ class Compiler:
         if bare is not sym:
             fragment.note_mark(sym)
 
-        if bare is _symbol_colon:
-            self.check_stray_colon(bare)
+        if bare is _symbol_colon or bare is _symbol_hash:
+            self.check_stray_symbol(bare)
 
         # TODO: we may want to add an alias/FOO form for
         # compile-time symbolic aliases. These would be distinct
@@ -1089,13 +1106,15 @@ class Compiler:
         self._source_warning(msg, pos[0] if pos else 0)
 
 
-    def check_stray_colon(self, sym, pos=None):
+    def check_stray_symbol(self, sym, pos=None):
         """
-        Diagnose a bare ``:`` symbol compiled as a name per the stray_colon
-        policy. Nothing binds ``:``, so reaching here is always a mistake --
-        usually a layout form half-converted to s-expressions, where the
-        trailing block marker of ``(for-each [x (xs)]: body)`` reads as a
-        symbol element rather than as a block colon.
+        Diagnose a bare ``:`` or ``#`` symbol compiled as a name per the
+        stray_colon or stray_hash policy. Nothing binds either, so reaching
+        here is always a mistake. A stray ``:`` is usually a layout form
+        half-converted to s-expressions, where the trailing block marker of
+        ``(for-each [x (xs)]: body)`` reads as a symbol element rather than
+        as a block colon. A stray ``#`` is usually a typo for a collection
+        opener or a syntax quote.
 
         Symbols are interned and so carry no position of their own; ``pos``
         is the enclosing form's ``(line, col)``, used to attribute a WARN.
@@ -1105,17 +1124,24 @@ class Compiler:
         :param pos: position of the enclosing form, or None
         """
 
-        if (sym is not _symbol_colon
-                or self.stray_colon is StrayColon.ALLOW):
+        if sym is _symbol_colon:
+            level = self.stray_colon.value
+            msg = ("stray ':' symbol compiled as a name; a layout block"
+                   " colon has no meaning inside an s-expression form")
+        elif sym is _symbol_hash:
+            level = self.stray_hash.value
+            msg = ("stray '#' symbol compiled as a name; '#' prefixes a"
+                   " collection opener or a syntax quote")
+        else:
+            return
+
+        if level == 'allow':
             return
 
         if pos is None:
             pos = self._last_position
 
-        msg = ("stray ':' symbol compiled as a name; a layout block colon"
-               " has no meaning inside an s-expression form")
-
-        if self.stray_colon is StrayColon.ERROR:
+        if level == 'error':
             raise CompilerError(msg, sym)
 
         self._source_warning(msg, pos[0] if pos else 0)

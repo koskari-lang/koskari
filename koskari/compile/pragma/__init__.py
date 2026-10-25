@@ -25,7 +25,7 @@ that determine how the compiler operates on code.
 from .resolution import (
     KoskariPragma, PythonPragma, ResolutionPragma, SchemePragma)
 from .settings import (
-    BracketCalls, KeywordLiterals, ResolutionMode, StrayColon)
+    BracketCalls, KeywordLiterals, ResolutionMode, StrayColon, StrayHash)
 
 
 __all__ = (
@@ -38,6 +38,7 @@ __all__ = (
     'KeywordLiterals',
     'ResolutionMode',
     'StrayColon',
+    'StrayHash',
 )
 
 
